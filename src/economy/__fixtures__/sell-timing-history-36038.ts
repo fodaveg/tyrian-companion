@@ -15,7 +15,7 @@
  * (`SELL_TIMING_HISTORY_BAG_DOWNLOADED_ON_UTC`/`_SOURCE_SHA256` below describe
  * exactly this original download; every pre-existing row comes from it.)
  *
- * H18.22 (26 sep 2026, David: the Sale hero card sold the Saco "en el suelo"
+ * H18.33 (26 sep 2026, David: the Sale hero card sold the Saco "en el suelo"
  * inside the festival) adds one row per Halloween year from a SEPARATE
  * re-fetch of the same endpoint on 2026-09-26 (4,984 records, 2012-10-24 to
  * 2026-09-26, SHA-256 of the complete response body as received:

@@ -106,8 +106,8 @@ describe('compareSellNowWithWaiting: honest abstention', () => {
 		});
 	});
 
-	it('no curated start for the next edition (after 13 October 2026) still anchors to THIS edition (H18.22), never a guessed future date', () => {
-		// H18.22 (26 sep 2026): once today is on or after the last catalogued edition's own start,
+	it('no curated start for the next edition (after 13 October 2026) still anchors to THIS edition (H18.33), never a guessed future date', () => {
+		// H18.33 (26 sep 2026): once today is on or after the last catalogued edition's own start,
 		// the reference stays that edition (`referenceFestivalFor`) instead of aborting outright —
 		// `decisionOffsetDays` goes negative ("19 days into the 2026 festival") rather than null. This
 		// fixture was never extended with the corn's own day-19-into-the-festival prices (out of this
@@ -131,10 +131,10 @@ describe('compareSellNowWithWaiting: honest abstention', () => {
 	});
 });
 
-describe('compareSellNowWithWaiting: H18.22, deciding INSIDE the festival, not just before it', () => {
+describe('compareSellNowWithWaiting: H18.33, deciding INSIDE the festival, not just before it', () => {
 	/**
 	 * 26 sep 2026, David: the Sale hero card sold the Saco "en el suelo" once the festival had
-	 * started, "0 temporadas comparables". Before H18.22 `compareSellNowWithWaiting` required a
+	 * started, "0 temporadas comparables". Before H18.33 `compareSellNowWithWaiting` required a
 	 * CATALOGUED edition strictly ahead of today (`festivals.find((f) => f.startsOnUtc > today)`),
 	 * which the 2026 Halloween festival itself stops satisfying the moment it starts (13 October):
 	 * there is no 2027 entry yet (`HALLOWEEN_FESTIVAL_STARTS`, `sell-timing-experiment.ts`, deliberate

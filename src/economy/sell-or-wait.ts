@@ -34,7 +34,7 @@ import {
  * - Today's own place in the festival calendar: every past year is graded from the same distance to
  *   its edition's real start as today is (`decisionOffsetDays`), and only with prices strictly before
  *   today. A past year whose windows have not both closed yet is not graded.
- *   H18.22 (26 sep 2026, David: the Sale hero card sold the Saco "en el suelo" inside the festival):
+ *   H18.33 (26 sep 2026, David: the Sale hero card sold the Saco "en el suelo" inside the festival):
  *   the reference edition is the SOONEST one whose start is still ahead when there is one (a positive
  *   offset, deciding before an announced festival, unchanged since H18.19); once today is on or after
  *   the last catalogued edition's own start and no next one is announced yet, the reference stays
@@ -108,7 +108,7 @@ export interface SellOrWaitComparisonV1 {
 	unitCopper: number;
 	/**
 	 * Days from today to the reference edition's real start; null when no edition (announced or
-	 * already under way, H18.22) covers today at all. Zero or negative once today is on or after that
+	 * already under way, H18.33) covers today at all. Zero or negative once today is on or after that
 	 * edition's own start day — "N days into the festival", never a distance to a future start that
 	 * has not been curated yet.
 	 */
@@ -137,7 +137,7 @@ export function compareSellNowWithWaiting(input: SellOrWaitInput): SellOrWaitCom
 	const basis = {
 		version: SELL_OR_WAIT_VERSION, mode: input.mode, quantity: input.quantity, unitCopper: input.todayUnitCopper,
 	} as const;
-	// H18.22: `next` keeps its name (`closed`/`waitWindow` below both read it) but is no longer
+	// H18.33: `next` keeps its name (`closed`/`waitWindow` below both read it) but is no longer
 	// necessarily in the future — see `referenceFestivalFor`.
 	const next = today === null ? undefined : referenceFestivalFor(festivals, today);
 	if (today === null || next === undefined || !positiveInteger(input.quantity) || !positiveInteger(input.todayUnitCopper)) {
@@ -234,7 +234,7 @@ export function isSellOrWaitComparison(value: unknown): value is SellOrWaitCompa
 		&& (SELL_OR_WAIT_MODES as readonly unknown[]).includes(entry.mode)
 		&& (SELL_OR_WAIT_STRATEGIES as readonly unknown[]).includes(entry.strategy)
 		&& positiveInteger(entry.quantity) && positiveInteger(entry.unitCopper)
-		// H18.22: zero or negative once today is on or after the reference edition's own start
+		// H18.33: zero or negative once today is on or after the reference edition's own start
 		// (`referenceFestivalFor`), never required to be strictly in the future any more.
 		&& nullableInteger(entry.decisionOffsetDays)
 		&& nullableDay(entry.windowFromDay) && nullableDay(entry.windowToDay)
@@ -265,7 +265,7 @@ function verdictOf(verdict: SellTimingOutOfSampleVerdict): SellOrWaitVerdict {
 }
 
 /**
- * H18.22 (26 sep 2026, David's report that the Sale hero card sold the Saco "en el suelo" inside the
+ * H18.33 (26 sep 2026, David's report that the Sale hero card sold the Saco "en el suelo" inside the
  * festival): the festival edition this comparison anchors every year's relative day to.
  *
  * The soonest edition still ahead of `today` when there is one — deciding before an announced

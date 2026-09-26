@@ -143,11 +143,11 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		expect(textOf(container)).toContain('Vender ahora');
 	});
 
-	it('H18.22 (26 sep 2026): says "Todavía no", never "Vender ahora", once the festival has started and the bid sits at its floor', async () => {
+	it('H18.33 (26 sep 2026): says "Todavía no", never "Vender ahora", once the festival has started and the bid sits at its floor', async () => {
 		// David's report: at the festival floor (roughly 0.80x the 26 sep bid, per datawars2 2020-2025),
 		// the hero card sold "en el suelo" because `compareSellNowWithWaiting` aborted to
 		// `insufficient_data` the moment today rolled past the last catalogued festival start
-		// (`HALLOWEEN_FESTIVAL_STARTS` has no 2027 entry yet). `referenceFestivalFor` (H18.22) keeps
+		// (`HALLOWEEN_FESTIVAL_STARTS` has no 2027 entry yet). `referenceFestivalFor` (H18.33) keeps
 		// the 2026 edition as the reference with a negative offset instead, so the real per-year data
 		// this SAME curated fixture already carries (now extended with each year's own day-into-the-
 		// festival price) demonstrates the advantage of waiting to next May. `sell_at_season` displays
