@@ -1,5 +1,26 @@
 # Changelog
 
+## Sin publicar (main, 26 sep 2026) - la comparación de botín de Halloween vuelve a activarse
+
+Lo que sigue está en `main` sin release. Tarea H18.32 de la lista «21.15 Tyrian Companion» de
+Lumbre, decidida por David el 26 sep 2026.
+
+- **La comparación de botín (H11.3) dejó de estar muerta.** Desde que la revisión humana se retiró
+  el 9 sep, su puerta de elegibilidad exigía `certainty: 'confirmed'` en una revisión que ya nadie
+  produce con ese valor, así que ninguna sesión finalizada volvía a sellar una comparación
+  (hallazgo del 24 sep, documentado en `docs/ARCHITECTURE.md`). La puerta ahora lee la clasificación
+  automática de la propia sesión final (`SessionClassificationStatus`, H2.7): es elegible con delta
+  `comparable`, clasificación distinta de `contaminated`/`invalid` (abrir contenedores o consumir no
+  degrada por debajo de `estimated`, regla firmada en `docs/PRODUCT.md`) y sacos desaparecidos netos
+  positivos. Si la clasificación no se pudo resolver en el punto de llamada, la comparación queda no
+  elegible con su propio motivo (`classification_unavailable`), nunca tratada como limpia por
+  defecto (`src/halloween/halloween-loot-comparison.ts`, `src/halloween/halloween-runtime.ts`,
+  `src/main.ts`).
+- Los motivos de exclusión retirados (`review_not_confirmed`, `activities_not_open_only`) siguen en
+  el vocabulario solo para que un record persistido antes de este lote se siga leyendo y pintando;
+  un record nuevo nunca vuelve a producirlos. `bagsDisappearedNet` sigue siendo neto y los textos no
+  afirman aperturas.
+
 ## Release beta 0.2.1 - el token del puente, a la vista
 
 Con el puente con el juego activado no había forma fácil de encontrar dónde copiar el token que
