@@ -147,24 +147,32 @@ function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Tran
 		comparison.createSpan({ text: ` · ${translator.t('sale.hero.sellNow')}: ` });
 		comparison.append(renderMoney(hero.openVsSell.sellCopper, translator));
 	}
-	// `article.createEl('dl', …)` already attaches `figures`; no need to re-append it below (see the
-	// same fix, and its rationale, in `renderSaleView`/`renderRow`).
-	const figures = article.createEl('dl', { cls: 'tyrian-companion-session__figures', attr: { style: '--tyrian-figures:3' } });
-	figures.append(
+	// Review fix (coordinator, round 2, 26 sep 2026): a null figure inside the hero used to render
+	// "Sin datos" ("Publicar"/"Umbral del año" both did, in the acceptance dump), which reads as
+	// exactly the same "no data" contradiction David reported elsewhere — but a null here can mean
+	// two very different things: a field this position structurally never fills (the Saco's advisor
+	// route is `open`, never `sell`/`list`, so it never gets a `marketComparison` to read a listing
+	// net from) versus one merely pending (no account-wide sell-signal state wired yet). Neither
+	// case is "sin datos" to show; a field the hero cannot fill right now is a field it does not
+	// paint, never a placeholder. `--tyrian-figures` reflects however many actually render.
+	const figures = [
 		renderFigure(translator.t('sale.view.hero.instantSell'), hero.instantSellNetCopper, translator),
 		renderFigure(translator.t('sale.view.hero.listing'), hero.listingNetCopper, translator),
 		renderFigure(translator.t('sale.view.hero.yearThreshold'), hero.yearThresholdCopper, translator),
-	);
-	article.append(renderQuoteLine(hero, translator));
+	].filter((figure): figure is HTMLElement => figure !== null);
+	if (figures.length > 0) {
+		const dl = article.createEl('dl', { cls: 'tyrian-companion-session__figures', attr: { style: `--tyrian-figures:${String(figures.length)}` } });
+		dl.append(...figures);
+	}
+	article.append(renderQuoteLine(hero, nowMs, translator));
 	return article;
 }
 
-function renderFigure(label: string, copper: number | null, translator: Translator): HTMLElement {
+function renderFigure(label: string, copper: number | null, translator: Translator): HTMLElement | null {
+	if (copper === null) return null;
 	const figure = createDiv({ cls: 'tyrian-companion-session__figure' });
 	figure.createEl('dt', { text: label });
-	const dd = figure.createEl('dd');
-	if (copper === null) dd.setText(translator.t('sale.view.hero.unknown'));
-	else dd.append(renderMoney(copper, translator));
+	figure.createEl('dd').append(renderMoney(copper, translator));
 	return figure;
 }
 
@@ -275,7 +283,7 @@ function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator)
 	const price = li.createDiv({ cls: 'tyrian-sale__price' });
 	if (row.bidCopper === null) price.setText(translator.t('sale.quote.none'));
 	else price.append(renderMoney(row.bidCopper, translator));
-	price.append(renderQuoteLine(row, translator));
+	price.append(renderQuoteLine(row, nowMs, translator));
 	const value = li.createDiv({ cls: 'tyrian-sale__value' });
 	if (row.instantSellNetCopper === null) {
 		value.setAttribute('data-unknown', 'true');
@@ -310,7 +318,13 @@ function rowDetailText(row: SaleRowViewModel, nowMs: number, translator: Transla
 	return '';
 }
 
-function renderQuoteLine(row: SaleRowViewModel, translator: Translator): HTMLElement {
+/**
+ * Review fix (coordinator, round 2): `nowMs` is the view model's OWN clock, never the wall-clock
+ * `Date.now()` default `relativeTimeLabel` falls back to when nothing is passed — the mismatch
+ * between the two is exactly why the acceptance test's dump ("hace hace 7 horas") did not match
+ * `SEPT_26_MS`, the very instant the model itself was built for.
+ */
+function renderQuoteLine(row: SaleRowViewModel, nowMs: number, translator: Translator): HTMLElement {
 	const p = createEl('p', { cls: 'tyrian-sale__quote' });
 	if (row.quote.quotedAtMs === null) { p.setAttribute('data-state', 'unknown'); return p; }
 	const state = row.quote.stale ? 'stale' : 'fresh';
@@ -320,7 +334,7 @@ function renderQuoteLine(row: SaleRowViewModel, translator: Translator): HTMLEle
 	p.createSpan({
 		text: translator.t('sale.quote.readAt', {
 			time: formatClock(row.quote.quotedAtMs, translator.locale),
-			ago: relativeTimeLabel(new Date(row.quote.quotedAtMs).toISOString(), translator.locale),
+			ago: relativeTimeLabel(new Date(row.quote.quotedAtMs).toISOString(), translator.locale, nowMs),
 		}),
 	});
 	return p;
