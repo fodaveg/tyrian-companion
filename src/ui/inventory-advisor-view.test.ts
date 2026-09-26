@@ -104,6 +104,12 @@ describe('Inventory Advisor view', () => {
 		expect(copy).toContain('Poco espacio: 7 huecos libres entre bolsas y banco (aviso con 20 o menos). Primero lo que libera huecos.');
 		expect(copy).toContain('Materiales: al menos 1500 por material (mínimo visto en tu almacén)');
 		expect(only(find(mount.elements(), 'meter')).attributes.get('value')).toBe('53');
+		// `low`/`optimum` turn the threshold crossing into the meter's own alert state
+		// (fewer occupied slots is optimal), not just `high` on its own.
+		const meter = only(find(mount.elements(), 'meter'));
+		expect(meter.attributes.get('optimum')).toBe('0');
+		expect(meter.attributes.get('low')).toBe(meter.attributes.get('high'));
+		expect(meter.attributes.get('high')).toBe('40');
 		// The table lists the slot-freeing row first and says what it frees.
 		const tableNames = find(mount.elements(), 'th').filter((cell) => cell.scope === 'row').map((cell) => text(walk(cell)).trim());
 		expect(tableNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Bulto', 'Oro']);

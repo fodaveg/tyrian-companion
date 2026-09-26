@@ -972,13 +972,16 @@ function renderResults(
 	return content;
 }
 
-type InventoryAdvisorStorageSpaceView = NonNullable<InventoryAdvisorViewModel['storageSpace']>;
+export type InventoryAdvisorStorageSpaceView = NonNullable<InventoryAdvisorViewModel['storageSpace']>;
 
 /**
  * H18.15: free bag and bank slots, the low-space verdict with the order it implies, and the
  * material capacity. A store the capture did not read says so instead of showing a number.
+ *
+ * Exported so the Sale tab (`sale-view.ts`) renders the SAME block instead of a second copy
+ * of this markup and its data reading.
  */
-function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceView, translator: Translator): HTMLElement {
+export function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceView, translator: Translator): HTMLElement {
 	const section = createEl('section');
 	section.className = 'tyrian-inventory-advisor__storage-space';
 	section.setAttribute('aria-label', translator.t('advisor.view.storage.title'));
@@ -1008,7 +1011,15 @@ function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceView, tran
 		meter.setAttribute('min', '0');
 		meter.setAttribute('max', String(lowSpace.totalSlots));
 		meter.setAttribute('value', String(lowSpace.totalSlots - lowSpace.freeSlots));
-		meter.setAttribute('high', String(Math.max(0, lowSpace.totalSlots - lowSpace.thresholdFreeSlots)));
+		// Fix: `high` alone never turned the crossing into a native alert state — a `<meter>`
+		// only paints its "too high" region red once `optimum` sits BELOW `low`, and this had neither.
+		// Fewer occupied slots is always better, so `optimum` is 0 and `low` collapses onto the same
+		// point as `high` (the threshold crossing itself): below it reads as the good/green zone,
+		// at or above it reads as the alert/red zone, with no "so-so" band in between to invent.
+		const thresholdCrossing = Math.max(0, lowSpace.totalSlots - lowSpace.thresholdFreeSlots);
+		meter.setAttribute('optimum', '0');
+		meter.setAttribute('low', String(thresholdCrossing));
+		meter.setAttribute('high', String(thresholdCrossing));
 		meter.setAttribute('aria-label', translator.t('advisor.view.storage.meter'));
 		section.append(meter);
 	}
