@@ -1,5 +1,27 @@
 # Changelog
 
+## Sin publicar (main, 26 sep 2026) - la pestaña Venta ya no se queda en «Leyendo precios del bazar…»
+
+**Bug real (David, 0.2.3 vía BRAT): al abrir Venta con el asesor sin analizar en esa sesión de
+Obsidian, la pestaña se quedaba indefinidamente en «Leyendo precios del bazar…», sin botón ni acción
+disponible.** Confirmado en campo: pulsar «Analizar sin escribir» en Inventario rellenaba Venta.
+
+- **Causa**: `getSaleViewModel` toma su `status` de `getInventoryAdvisorViewModel`, y sin ningún
+  análisis todavía en memoria (`InventoryAdvisorPresentationController.cached === null`) ese `status`
+  es `loading` hasta que algo pida un refresco explícito. `renderSaleView` pintaba el aviso de carga y
+  devolvía, sin el pie con el botón «Actualizar» que las demás vistas sí ofrecen; nada en Venta
+  disparaba nunca ese refresco por sí sola (`main.ts` tampoco lo hace en el arranque del plugin).
+  Inventario no se quedaba a ciegas por la misma razón, sino porque su barra de sincronización se
+  muestra siempre, aunque esté en `loading`.
+- **Arreglo**: `SaleItemView.onOpen` (`src/ui/sale-item-view.ts`) dispara una vez el mismo
+  `refreshSale` que ya usaba el botón, cuando el modelo abre en `loading` (sin duplicarlo si ya hay
+  uno en marcha, vía el `refreshing` existente). Y `renderSaleView` (`src/ui/sale-view.ts`) añade el
+  mismo pie con el botón «Actualizar» también al estado de carga, para que un refresco que deje el
+  modelo en `loading` (arranque del plugin aún no listo) nunca sea un callejón sin salida.
+- Tests: `sale-item-view.test.ts` (el refresco automático al abrir, sin duplicarlo, el botón de
+  reserva cuando el refresco no cambia el estado, y el paso a bloqueado cuando el análisis no puede
+  correr).
+
 ## Sin publicar (main, 26 sep 2026) - pestaña Sesión según el boceto aprobado (H18.36)
 
 Boceto aprobado por David el 26 sep (`docs/diseno/h18-31-interfaz/boceto.html` y `FICHA.md`): las
