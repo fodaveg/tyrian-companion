@@ -672,8 +672,14 @@ const ES = {
 		'sale.detail.freesSlots.one': 'Libera 1 hueco', 'sale.detail.freesSlots.many': 'Libera {{count}} huecos',
 		'sale.detail.window': 'Su ventana: {{from}} – {{to}}',
 		'sale.detail.notYetWindow': 'Su ventana es del {{from}} al {{to}}: empieza en {{days}} días',
-		'sale.quote.readAt': 'puja leída a las {{time}} · hace {{ago}}', 'sale.quote.none': 'Sin puja',
-		'sale.groups.now': 'Ahora', 'sale.groups.wait': 'Esperar', 'sale.groups.noData': 'Sin datos',
+		// Review fix (coordinator, round 2): `{{ago}}` is `relativeTimeLabel`'s own fully-worded
+		// "hace N minutos"/"ahora" — a literal "hace " here doubled the word ("hace hace 4 minutos").
+		'sale.quote.readAt': 'puja leída a las {{time}} · {{ago}}', 'sale.quote.none': 'Sin puja',
+		// Review fix (coordinator, round 2): this group holds BOTH `wait` rows ("Esperar") and
+		// `not_yet` rows ("Todavía no") — a header naming only one of those two words contradicted
+		// whichever row used the other. "Pendiente" is a neutral category both specific words fit
+		// under; the row's own badge still says the precise word (ficha decision 2, unchanged).
+		'sale.groups.now': 'Ahora', 'sale.groups.wait': 'Pendiente', 'sale.groups.noData': 'Sin datos',
 		'sale.row.head.item': 'Objeto', 'sale.row.head.decision': 'Qué hacer',
 		'sale.row.head.price': 'Puja por unidad', 'sale.row.head.value': 'Neto si vendes ya',
 		'sale.zeroQuantity': '0 unidades: nada que vender.',
@@ -1844,7 +1850,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sale.detail.window': 'Its window: {{from}} – {{to}}',
 	'sale.detail.notYetWindow': 'Its window is {{from}} to {{to}}: starts in {{days}} days',
 	'sale.quote.readAt': 'bid read at {{time}} · {{ago}}', 'sale.quote.none': 'No bid',
-	'sale.groups.now': 'Now', 'sale.groups.wait': 'Wait', 'sale.groups.noData': 'No data',
+	'sale.groups.now': 'Now', 'sale.groups.wait': 'Pending', 'sale.groups.noData': 'No data',
 	'sale.row.head.item': 'Item', 'sale.row.head.decision': 'What to do',
 	'sale.row.head.price': 'Bid per unit', 'sale.row.head.value': 'Net if you sell now',
 	'sale.zeroQuantity': '0 units: nothing to sell.',
