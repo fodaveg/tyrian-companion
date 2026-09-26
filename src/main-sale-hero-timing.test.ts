@@ -143,6 +143,58 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		expect(textOf(container)).toContain('Vender ahora');
 	});
 
+	it('H18.22 (26 sep 2026): says "Todavía no", never "Vender ahora", once the festival has started and the bid sits at its floor', async () => {
+		// David's report: at the festival floor (roughly 0.80x the 26 sep bid, per datawars2 2020-2025),
+		// the hero card sold "en el suelo" because `compareSellNowWithWaiting` aborted to
+		// `insufficient_data` the moment today rolled past the last catalogued festival start
+		// (`HALLOWEEN_FESTIVAL_STARTS` has no 2027 entry yet). `referenceFestivalFor` (H18.22) keeps
+		// the 2026 edition as the reference with a negative offset instead, so the real per-year data
+		// this SAME curated fixture already carries (now extended with each year's own day-into-the-
+		// festival price) demonstrates the advantage of waiting to next May. `sell_at_season` displays
+		// as "Todavía no" (`sale-view-model.ts`'s own `not_yet` mapping, ficha decision 2 — unrelated
+		// to this fix and unchanged by it), not "Esperar", which is `hold`'s own word for a wait with
+		// no specific evidence-backed window.
+		vi.useFakeTimers();
+		vi.setSystemTime(OCT_14_MS);
+		const floorBidCopper = Math.round(342 * 0.80);
+		const harness = {
+			getInventoryAdvisorViewModel: () => advisorModel(2350),
+			inventoryAdvisor: { analysis: () => ({ source: { input: { prices: { items: [{ itemId: 36038, bid: { unitCopper: floorBidCopper } }] } } } }) },
+			settings: { priceHistoryEnabled: true, priceHistoryDailyRetentionDays: 400, recommendationCapitalThresholdCopper: 100_000 },
+			priceHistory: { readDaily: async () => heroFixtureDaily() },
+			vaultId: null,
+			saleHeroTiming: null as unknown,
+		};
+		await runComputeSaleHeroTiming(harness);
+
+		expect(harness.saleHeroTiming).toMatchObject({
+			action: 'sell_at_season', reason: 'wait_advantage_demonstrated',
+			sellWindowFromDay: '2027-05-01', sellWindowToDay: '2027-05-31',
+		});
+
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated harness below.
+		const buildHero = (TyrianCompanionPlugin.prototype as unknown as {
+			buildSaleHeroInput(this: typeof harness & { getSellSignalState(): null }, row: InventoryAdvisorViewRow | null, bidCopper: number | null): SaleViewModelInput['hero'];
+		}).buildSaleHeroInput;
+		const hero = buildHero.call({ ...harness, getSellSignalState: () => null }, heroRow(2350), floorBidCopper);
+		expect(hero).toMatchObject({ decision: { action: 'sell_at_season', reason: 'wait_advantage_demonstrated' } });
+
+		const model = buildSaleViewModel({
+			status: 'ready', nowMs: OCT_14_MS, festivalStartMs: Date.UTC(2026, 9, 13), maxPriceAgeMs: 900_000,
+			hero, rows: [], calendar: [],
+		});
+		expect(model.hero?.action).toBe('not_yet');
+
+		vi.stubGlobal('createEl', (tag: string, options?: { text?: string; cls?: string }) => makeEl(tag, options));
+		vi.stubGlobal('createDiv', (options?: { text?: string; cls?: string }) => makeEl('div', options));
+		vi.stubGlobal('createSpan', (options?: { text?: string; cls?: string }) => makeEl('span', options));
+		const container = makeEl('div');
+		renderSaleView(container as unknown as HTMLElement, model, createTranslator('es'));
+		const text = textOf(container);
+		expect(text).toContain('Todavía no');
+		expect(text).not.toContain('Vender ahora');
+	});
+
 	it('never fabricates a verdict for 0 owned units: the position is not a legendary reservation', async () => {
 		const harness = {
 			getInventoryAdvisorViewModel: () => advisorModel(0),
