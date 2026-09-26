@@ -286,7 +286,12 @@ const ACTION_DATA_ATTR: Record<SaleDisplayAction, string> = {
 	sell: 'sell', wait: 'hold', not_yet: 'none', no_data: 'nodata', deposit: 'deposit', open: 'open',
 };
 
-function renderActionBadge(action: SaleDisplayAction, translator: Translator): HTMLElement {
+/**
+ * Exported for `session-sale-verdict-line.ts` (H18.36): the Sesión tab's line for the Saco reads
+ * this SAME verdict and must render it with the exact same word and marca lateral as Venta, never
+ * a second copy of `ACTION_KEY`/`ACTION_DATA_ATTR` that could drift from this one.
+ */
+export function renderActionBadge(action: SaleDisplayAction, translator: Translator): HTMLElement {
 	const badge = createSpan({ cls: 'tyrian-action' });
 	badge.setAttribute('data-action', ACTION_DATA_ATTR[action]);
 	badge.setText(translator.t(ACTION_KEY[action]));

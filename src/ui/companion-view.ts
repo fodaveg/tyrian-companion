@@ -10,8 +10,10 @@ import { sessionUnobservedMs, type SessionState } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
 import { connectionErrorKey, projectManagedAssetsDescription } from './settings-i18n';
-import { renderSellSignalLine } from './sell-signal-line';
-import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
+import { renderSessionSaleVerdictLine } from './session-sale-verdict-line';
+import type { SaleViewModel } from './sale-view-model';
+import { buildSessionStatusLine, renderSessionStatusLine } from './session-status-line';
+import type { IngamePresenceSnapshot } from '../alerts/alert-ingame-presence';
 import type {
 	SessionStartFailure,
 	SessionRecoveryState,
@@ -102,7 +104,10 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getContaminationReview(): SessionContaminationReview | null;
 	getLootPresentation(): LootPresentationV1 | null;
 	getLiveSessionLoot?(): LiveSessionLootState;
-	getSellSignalState?(): SellSignalRuntimeState | null;
+	/** H18.36: the Saco's line now reads the SAME verdict as Venta's hero card, not this signal. */
+	getSaleViewModel?(): SaleViewModel;
+	/** H18.36: the addon's own connectivity, for the status line under the nav (boceto lámina 1). */
+	getIngamePresence?(): IngamePresenceSnapshot;
 	getManagedAssetsView?(): ManagedAssetsView;
 	/** Relaunches the automatic managed-assets Move blocked by `operation_conflict`. */
 	retryManagedAssetsReconciliation?(): Promise<void>;
@@ -267,6 +272,7 @@ export class TyrianCompanionView extends ItemView {
 		const surface = this.productShell?.content ?? contentEl;
 		surface.empty();
 		surface.addClass('tyrian-companion-view__page');
+		this.renderStatusLine(surface);
 		this.renderSimpleSession(surface, connectionState, sessionState, projection, now);
 		this.renderPendingConfirmationSlot(surface, now);
 		const retryAt = getRetryAt(connectionState);
@@ -282,12 +288,35 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	/**
+	 * The Sesión tab's own status line under the nav (boceto lámina 1): the addon's connectivity and
+	 * when the account was last/will next be polled, the same `.tyrian-product-shell__status`
+	 * `sale-view.ts` already renders for Venta, so all three tabs share one visual language.
+	 */
+	private renderStatusLine(container: HTMLElement): void {
+		const scheduler = this.actions.getAssistedDetectionState().scheduler;
+		const items = buildSessionStatusLine({
+			addonPresence: this.actions.getIngamePresence?.() ?? null,
+			accountLastReadAtMs: scheduler.lastSuccessAt,
+			accountNextReadAtMs: scheduler.nextRunAt,
+		}, this.actions.getLocale());
+		renderSessionStatusLine(container, items);
+	}
+
+	/**
 	 * The sell/hold verdict for the Halloween bag as a permanent line, not only the transient alert
 	 * that fires once and disappears (H14.6). It is account-level evidence, not session-lifecycle
 	 * state, so it renders whenever a signal is decided regardless of whether a session is running.
+	 *
+	 * H18.36 (boceto lámina 2.1, decisión G): reads the SAME verdict as Venta's hero card
+	 * (`getSaleViewModel().hero`), never the account-level sell signal `ui/sell-signal-line.ts`
+	 * still renders for Inventory — Sesión must never say "Espera" while Venta says "Vender ahora"
+	 * for the same saco.
 	 */
-	private renderSellSignal(container: HTMLElement): void {
-		renderSellSignalLine(container, this.actions.getSellSignalState?.(), createTranslator(this.actions.getLocale()));
+	private renderSaleVerdict(container: HTMLElement): void {
+		const hero = this.actions.getSaleViewModel?.().hero ?? null;
+		renderSessionSaleVerdictLine(container, hero, createTranslator(this.actions.getLocale()), () => {
+			void this.actions.getProductActionController?.().run('open-sale').catch(() => undefined);
+		});
 	}
 
 	/**
@@ -523,7 +552,7 @@ export class TyrianCompanionView extends ItemView {
 		this.liveFigures = mount.figureNodes;
 		this.calloutSlot = mount.calloutSlot;
 
-		this.renderSellSignal(mount.sellSignalSlot);
+		this.renderSaleVerdict(mount.sellSignalSlot);
 
 		const recovery = observed.status === 'idle' ? this.actions.getSessionRecoveryState() : { status: 'none' as const };
 		if (recovery.status !== 'none') {

@@ -16,6 +16,7 @@ import type { SessionStopFailure } from '../sessions/manual-session-start-servic
 import type { SessionState } from '../sessions/session';
 import type { SessionCardAction } from './session-card';
 import { ProductActionController } from './product-action-controller';
+import type { SaleHeroViewModel, SaleViewModel } from './sale-view-model';
 
 afterEach(() => {
 	vi.useRealTimers();
@@ -812,7 +813,8 @@ describe('Companion retained product shell', () => {
 			scheduleRefresh: vi.fn(),
 			renderLocalDebugWarning: vi.fn(),
 			// The panels below have their own behavioural suites; this case only watches the shell.
-			renderSellSignal: vi.fn(),
+			renderStatusLine: vi.fn(),
+			renderSaleVerdict: vi.fn(),
 			renderPendingConfirmationSlot: vi.fn(),
 			renderAssistedDetection: vi.fn(),
 			renderHalloweenAlerts: vi.fn(),
@@ -989,55 +991,67 @@ describe('Companion live sack counter', () => {
 	});
 });
 
-/** H14.6: the sell/hold verdict as a permanent card line, independent of whether an alert fired. */
-describe('Companion sell signal line', () => {
-	function renderSellSignal(projection: unknown): RetainedFakeElement {
+/**
+ * H18.36 (boceto lámina 2.1, decisión G): the Saco's line in Sesión now reads the SAME verdict as
+ * Venta's hero card (`getSaleViewModel().hero`), replacing the earlier account-level sell signal
+ * (H14.6) so Sesión never says "Espera" while Venta says "Vender ahora" for the same saco.
+ */
+describe('Companion sale verdict line', () => {
+	function heroWith(action: SaleHeroViewModel['action'] | null): SaleHeroViewModel | null {
+		if (action === null) return null;
+		return {
+			id: '#/sale/hero/36038', itemId: 36038, name: 'Saco de Halloween', icon: null,
+			ownedQuantity: 5, slotsUsed: 1, action, slotsFreedLabel: null, reasonCode: null, window: null,
+			bidCopper: 5_000, instantSellNetCopper: 4_500, listingNetCopper: null,
+			quote: { quotedAtMs: null, stale: false },
+			yearThresholdCopper: null, openVsSell: null,
+		};
+	}
+
+	function renderSaleVerdict(
+		action: SaleHeroViewModel['action'] | null,
+		run: (id: string) => Promise<'completed'> = async () => 'completed' as const,
+	): RetainedFakeElement {
 		const document = new RetainedFakeDocument();
 		installRetainedDom(document);
 		const container = new RetainedFakeElement('div', document);
 		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 			actions: {
 				getLocale: () => 'es' as const,
-				getSellSignalState: () => ({ seedStatus: 'unseeded', seedFailure: null, seedDayCount: 0, projection, lastGainCopper: null }),
+				getSaleViewModel: () => ({ hero: heroWith(action) } as unknown as SaleViewModel),
+				getProductActionController: () => ({ run }),
 			},
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const render = (TyrianCompanionView.prototype as unknown as {
-			renderSellSignal(this: typeof harness, container: HTMLElement): void;
-		}).renderSellSignal;
+			renderSaleVerdict(this: typeof harness, container: HTMLElement): void;
+		}).renderSaleVerdict;
 		render.call(harness, container as unknown as HTMLElement);
 		return container;
 	}
 
-	it('shows price, verb and reason in sell state, with no alert wiring involved', () => {
-		const texts = walkRetained(renderSellSignal({
-			status: 'decided', signal: 'sell', dayUtc: '2026-10-20', bidCopper: 5_000,
-			referenceMaxCopper: 6_000, referenceMinCopper: 3_000, referenceDayCount: 365,
-			sellThresholdCopper: 4_500, inSeason: false, origin: 'seeded',
-		})).map((element) => element.textContent).join(' ');
-		expect(texts).toContain('Saco de Halloween: 0g 50s 0c');
-		expect(texts).toContain('Vende');
-		expect(texts).toContain('45s');
+	it('shows the same badge word Venta uses for "sell"', () => {
+		const texts = walkRetained(renderSaleVerdict('sell')).map((element) => element.textContent).join(' ');
+		expect(texts).toContain('Saco de Halloween en Venta:');
+		expect(texts).toContain('Vender ahora');
 	});
 
-	it('shows price, verb and reason in hold state', () => {
-		const texts = walkRetained(renderSellSignal({
-			status: 'decided', signal: 'hold', dayUtc: '2026-10-20', bidCopper: 3_000,
-			referenceMaxCopper: 6_000, referenceMinCopper: 3_000, referenceDayCount: 365,
-			sellThresholdCopper: 4_500, inSeason: true, origin: 'seeded',
-		})).map((element) => element.textContent).join(' ');
-		expect(texts).toContain('Saco de Halloween: 0g 30s 0c');
-		expect(texts).toContain('Espera');
+	it('shows the same badge word Venta uses for "wait"', () => {
+		const texts = walkRetained(renderSaleVerdict('wait')).map((element) => element.textContent).join(' ');
+		expect(texts).toContain('Esperar');
 	});
 
-	it('renders nothing when the signal has not decided or is neutral', () => {
-		expect(walkRetained(renderSellSignal(null))).toHaveLength(1);
-		expect(walkRetained(renderSellSignal({ status: 'undecidable', reason: 'no_close_today' }))).toHaveLength(1);
-		expect(walkRetained(renderSellSignal({
-			status: 'decided', signal: 'none', dayUtc: '2026-10-20', bidCopper: 4_000,
-			referenceMaxCopper: 6_000, referenceMinCopper: 3_000, referenceDayCount: 365,
-			sellThresholdCopper: 4_500, inSeason: true, origin: 'seeded',
-		}))).toHaveLength(1);
+	it('routes "Ver en Venta" through the SAME product action controller as the nav', () => {
+		const run = vi.fn(async () => 'completed' as const);
+		const container = renderSaleVerdict('sell', run);
+		const button = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Ver en Venta');
+		button?.listeners.get('click')?.[0]?.();
+		expect(run).toHaveBeenCalledWith('open-sale');
+	});
+
+	it('renders nothing without a hero row or with an undecided verdict', () => {
+		expect(walkRetained(renderSaleVerdict(null))).toHaveLength(1);
+		expect(walkRetained(renderSaleVerdict('no_data'))).toHaveLength(1);
 	});
 });
 
@@ -1248,6 +1262,7 @@ class RetainedFakeElement {
 		const child = new RetainedFakeElement('span', this.ownerDocument, options); this.children.push(child); return child;
 	}
 	setAttr(name: string, value: string): void { this.attributes.set(name, value); }
+	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
 	removeAttribute(name: string): void { this.attributes.delete(name); }
 	setText(value: string): void { this.textContent = value; }
 	addClass(value: string): void { this.className = `${this.className} ${value}`.trim(); }
