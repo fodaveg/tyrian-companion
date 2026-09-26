@@ -189,7 +189,7 @@ describe('renderSessionCard', () => {
 		const root = new FakeElement('div');
 		const model: SessionCardModel = {
 			...activeZeroModel(),
-			why: 'La API publica el inventario con minutos de retraso.',
+			why: [{ text: 'La API publica el inventario con minutos de retraso.' }],
 			receipt: {
 				ariaLabel: 'Recorrido del cierre',
 				steps: [

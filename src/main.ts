@@ -2549,6 +2549,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.runtimeReady ? this.sessions.getLastStopFailure() : null;
 	}
 
+	/** H18.36: the session card's own meta line for a stalled cierre (boceto lámina 2.3). */
+	getSessionAutoRetryAt(): number | null {
+		return this.runtimeReady ? this.sessions.getAutoRetryAt() : null;
+	}
+
 	getProvisionalDelta(): StorageDelta | null {
 		return this.runtimeReady ? this.sessions.getProvisionalDelta() : null;
 	}

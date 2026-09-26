@@ -10,6 +10,7 @@ import type { SessionRecoveryState } from '../sessions/manual-session-start-serv
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionState } from '../sessions/session';
 import { createTranslator } from '../core/i18n';
+import { formatClock } from './format-time';
 
 /**
  * Behavioural coverage for the surfaces the Companion view mounts. Every case renders the real
@@ -251,7 +252,26 @@ describe('Companion API settlement surface', () => {
 		captureNow?.click();
 		await Promise.resolve();
 		expect(captureSessionFinalNow).toHaveBeenCalledOnce();
+
+		// H18.36 (boceto lámina 2.2): the cierre's own recorrido, fin marcado (done) · lectura final
+		// (en curso, hacia la hora del wait) · nota guardada (pendiente).
+		const receipt = find(contentEl, (node) => node.className === 'tyrian-receipt');
+		expect(receipt).toBeDefined();
+		const steps = receipt!.children.filter((node) => node.tag === 'li');
+		expect(steps.map((step) => step.attributes.get('data-step'))).toEqual(['done', 'current', 'skip']);
+		expect(texts(contentEl)).toContain('Fin marcado');
+		expect(texts(contentEl)).toContain(formatClock(Date.parse('2026-08-31T10:00:00.000Z'), 'es'));
+		expect(texts(contentEl)).toContain('Lectura final');
+		expect(texts(contentEl)).toContain(`hacia ${formatClock(Date.parse('2026-08-31T10:10:00.000Z'), 'es')}`);
+		expect(texts(contentEl)).toContain('Nota guardada');
+		expect(texts(contentEl)).toContain('después');
 	});
+
+	/**
+	 * Sabotage check: reverting `buildSessionCardModel`'s 'stopping'+wait branch to drop `receipt`
+	 * (the pre-H18.36 shape) makes the `tyrian-receipt` lookup above resolve to `undefined` and the
+	 * `toBeDefined()` assertion fail — the exact regression this test exists to catch.
+	 */
 
 	// H18.7: a final capture that failed after the wait used to leave the card with no action at all.
 	it('offers a visible retry once the final capture failed after the wait', async () => {
@@ -270,6 +290,26 @@ describe('Companion API settlement surface', () => {
 		retry?.click();
 		await Promise.resolve();
 		expect(stopManualSession).toHaveBeenCalledOnce();
+
+		// H18.36 (boceto lámina 2.3): the recorrido shows the failed step, never a code on screen.
+		const receipt = find(contentEl, (node) => node.className === 'tyrian-receipt');
+		const steps = receipt!.children.filter((node) => node.tag === 'li');
+		expect(steps.map((step) => step.attributes.get('data-step'))).toEqual(['done', 'failed', 'skip']);
+		expect(texts(contentEl)).toContain('pendiente');
+	});
+
+	// H18.36 (boceto lámina 2.3, decidido): the meta names when the watch retries on its own.
+	it('names the automatic retry time instead of a generic "reconciliando" once one is scheduled', () => {
+		const { contentEl, render } = mountCompanion({
+			getSessionState: () => stoppingSession(),
+			getSessionSettlementWait: () => null,
+			getSessionStopFailure: () => ({ code: 'snapshot_failed', message: 'offline' }),
+			getSessionAutoRetryAt: () => Date.parse('2026-08-31T10:15:00.000Z'),
+		});
+		render();
+		expect(texts(contentEl)).not.toContain('Reconciliando el inventario y guardando el resumen…');
+		const retryTime = formatClock(Date.parse('2026-08-31T10:15:00.000Z'), 'es');
+		expect(texts(contentEl).some((text) => text.includes(retryTime))).toBe(true);
 	});
 
 	it('offers "Abandonar sesión" beside the retry only when the stop cannot finish on its own', async () => {
@@ -772,6 +812,7 @@ class FakeElement {
 	createDiv(options?: FakeOptions): FakeElement { return this.appendChild('div', options); }
 	createSpan(options?: FakeOptions): FakeElement { return this.appendChild('span', options); }
 	setAttr(name: string, value: string): void { this.attributes.set(name, value); }
+	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
 	removeAttribute(name: string): void { this.attributes.delete(name); }
 	setText(value: string): void { this.textContent = value; }
 	appendText(value: string): void { this.textContent = `${this.textContent}${value}`; }

@@ -1172,6 +1172,20 @@ const ES = {
 		'sessionCard.accountUnavailable': 'Cuenta no disponible',
 		'sessionCard.firstReadingAt': 'Primera lectura a las', 'sessionCard.firstReadingPending': 'Primera lectura pendiente',
 		'sessionCard.detailDisclosure': 'Detalle',
+		// H18.36 (boceto lámina 2.3, decidido): el código de error solo va al portapapeles.
+		'sessionCard.lastErrorLine': 'Último fallo: {{component}}/{{action}}, {{timestamp}}',
+		'sessionCard.copyTechnicalDetail': 'Copiar detalle técnico',
+		// H18.36 (boceto lámina 2.2/2.3): recorrido del cierre y su meta con la hora del reintento.
+		'sessionCard.earnedSoFar': 'Ganado hasta ahora',
+		'sessionCard.receipt.closureAria': 'Recorrido del cierre',
+		'sessionCard.receipt.stopMarked': 'Fin marcado',
+		'sessionCard.receipt.finalReading': 'Lectura final',
+		'sessionCard.receipt.noteSaved': 'Nota guardada',
+		'sessionCard.receipt.towards': 'hacia {{time}}',
+		'sessionCard.receipt.later': 'después',
+		'sessionCard.receipt.pending': 'pendiente',
+		'sessionCard.receipt.failedGeneric': 'falló',
+		'sessionCard.retryAt': 'se reintenta sola a las {{time}}',
 	} as const;
 
 type RuntimeTranslations = { -readonly [K in keyof typeof ES]: string };
@@ -2282,6 +2296,18 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sessionCard.accountUnavailable': 'Account unavailable',
 	'sessionCard.firstReadingAt': 'First reading at', 'sessionCard.firstReadingPending': 'First reading pending',
 	'sessionCard.detailDisclosure': 'Detail',
+	'sessionCard.lastErrorLine': 'Last failure: {{component}}/{{action}}, {{timestamp}}',
+	'sessionCard.copyTechnicalDetail': 'Copy technical detail',
+	'sessionCard.earnedSoFar': 'Earned so far',
+	'sessionCard.receipt.closureAria': 'Closing recorrido',
+	'sessionCard.receipt.stopMarked': 'End marked',
+	'sessionCard.receipt.finalReading': 'Final reading',
+	'sessionCard.receipt.noteSaved': 'Note saved',
+	'sessionCard.receipt.towards': 'around {{time}}',
+	'sessionCard.receipt.later': 'later',
+	'sessionCard.receipt.pending': 'pending',
+	'sessionCard.receipt.failedGeneric': 'failed',
+	'sessionCard.retryAt': 'retries on its own at {{time}}',
 });
 
 export type RuntimeTranslationKey = keyof typeof RUNTIME_CATALOG.es;

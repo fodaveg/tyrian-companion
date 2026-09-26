@@ -87,9 +87,31 @@ describe('Companion incident callout: local diagnostics', () => {
 		const callout = build.call(harness, { errors: [], incidentTone: null }, connected);
 		expect(callout?.tone).toBe('error');
 		expect(callout?.title).toBe('Errors since load: 20');
-		expect(callout?.lines[0]?.text).toContain('network_failure in connection/connection_check');
+		expect(callout?.lines[0]?.text).toContain('connection/connection_check');
 		// The raw ISO timestamp is exactly what `docs/SPEC-paneles-sin-prosa.md` forbids on screen.
 		expect(callout?.lines[0]?.text).not.toContain('2026-09-08T12:22:00.000Z');
+		// H18.36 (boceto lámina 2.3): the error CODE never reaches the visible line — only the
+		// clipboard, behind "Copy technical detail".
+		expect(callout?.lines[0]?.text).not.toContain('network_failure');
+		expect(callout?.lines[0]?.button?.text).toBe('Copy technical detail');
+	});
+
+	it('copies component/action/code/timestamp to the clipboard, never onto the visible line (H18.36)', async () => {
+		const status: LocalDebugStatus = {
+			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
+			bytes: 0, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
+			errorCode: null, queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 1,
+			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure', occurredAt: '2026-09-08T12:22:00.000Z' },
+		};
+		const harness = callHarness({ getLocalDebugStatus: () => status });
+		const writeText = vi.fn(async () => undefined);
+		vi.stubGlobal('navigator', { clipboard: { writeText } });
+
+		const callout = build.call(harness, { errors: [], incidentTone: null }, connected);
+		callout?.lines[0]?.button?.onClick();
+		await Promise.resolve();
+		expect(writeText).toHaveBeenCalledWith('network_failure · connection/connection_check · 2026-09-08T12:22:00.000Z');
 	});
 
 	it('surfaces a failed connection as a warning line with its own Comprobar conexión button', () => {

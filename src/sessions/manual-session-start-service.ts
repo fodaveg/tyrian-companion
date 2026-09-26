@@ -354,6 +354,16 @@ export class ManualSessionStartService {
 		return this.lastStopFailure === null ? null : { ...this.lastStopFailure };
 	}
 
+	/**
+	 * H18.36: when the watch will retry a stalled stopping/provisional session on its own (the
+	 * same `autoRetryAt` `checkSettlement` already arms with backoff), or null with nothing
+	 * scheduled. The card's own meta line (boceto lámina 2.3) reads this instead of a generic
+	 * "Reconciliando…" that never said when.
+	 */
+	getAutoRetryAt(): number | null {
+		return this.autoRetryAt;
+	}
+
 	getProvisionalDelta(): StorageDelta | null {
 		return this.provisionalDelta === null ? null : structuredClone(this.provisionalDelta);
 	}

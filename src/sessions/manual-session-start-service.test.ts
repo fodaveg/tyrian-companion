@@ -370,6 +370,8 @@ describe('ManualSessionStartService', () => {
 		expect(leases.assertOwned).toHaveBeenCalledTimes(3);
 		expect(leases.release).not.toHaveBeenCalled();
 		expect(service.getLastStopFailure()).toBeNull();
+		// H18.36: a clean stop schedules no automatic retry at all.
+		expect(service.getAutoRetryAt()).toBeNull();
 		expect(service.getProvisionalDelta()).toMatchObject({ afterSnapshotId: 'snapshot-after' });
 		expect(priceCapture.capture).toHaveBeenCalledWith('session-1', expect.objectContaining({ status: 'comparable' }));
 		expect(service.getPriceSnapshot()).toMatchObject({
@@ -665,6 +667,9 @@ describe('ManualSessionStartService', () => {
 			notify: vi.fn(),
 		});
 		expect(controller.available().length).toBeGreaterThan(0);
+		// H18.36: the card's own meta line (boceto lámina 2.3) reads this instead of a generic
+		// "Reconciliando…" — a reclaimable error always schedules its own automatic retry.
+		expect(service.getAutoRetryAt()).not.toBeNull();
 	});
 
 	it('does not expose provisional as successful when durable final evidence cannot commit', async () => {

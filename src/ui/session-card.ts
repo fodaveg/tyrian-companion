@@ -70,8 +70,12 @@ export interface SessionCardModel {
 	readonly callout: SessionCardCallout | null;
 	/** 0, 1, 2 or 3 entries; drives `--tyrian-figures` on the grid. */
 	readonly figures: readonly SessionCardFigure[];
-	/** H18.36 (boceto lámina 2.2): the reason a wait/estimate exists, at the vista instead of hidden in Detalle. */
-	readonly why?: string;
+	/**
+	 * H18.36 (boceto lámina 2.2): the reason a wait/estimate exists, at la vista instead of hidden
+	 * in Detalle. One or two paragraphs (the second, `alert`, is the estimate warning), never one
+	 * merged sentence: the two already carry their own separate role/tone.
+	 */
+	readonly why?: readonly { readonly text: string; readonly alert?: boolean }[];
 	/** H18.36 (boceto láminas 2.2/2.3): the cierre's own 3-step recorrido. */
 	readonly receipt?: { readonly ariaLabel: string; readonly steps: readonly ReceiptStep[] };
 	readonly detail: SessionCardDrawer;
@@ -145,7 +149,10 @@ export function renderSessionCard(container: HTMLElement, model: SessionCardMode
 
 	const figureNodes = model.figures.length > 0 ? renderFigures(root, model.figures) : [];
 
-	if (model.why !== undefined) root.createEl('p', { cls: 'tyrian-companion-session__why', text: model.why });
+	for (const paragraph of model.why ?? []) {
+		const p = root.createEl('p', { cls: 'tyrian-companion-session__why', text: paragraph.text });
+		if (paragraph.alert === true) p.setAttr('role', 'alert');
+	}
 	if (model.receipt !== undefined) renderReceipt(root, model.receipt.ariaLabel, model.receipt.steps);
 
 	const sellSignalSlot = root.createDiv();

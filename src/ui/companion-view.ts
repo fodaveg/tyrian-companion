@@ -101,6 +101,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	dismissAssistedProposal(cause: DetectionCorrectionCause, humanBoundaryAt?: string | null): Promise<void>;
 	getSessionStartFailure(): SessionStartFailure | null;
 	getSessionStopFailure(): SessionStopFailure | null;
+	/** H18.36: the cierre's own meta line while it is stalled (boceto lámina 2.3). Null: no retry scheduled. */
+	getSessionAutoRetryAt?(): number | null;
 	getProvisionalDelta(): StorageDelta | null;
 	getContaminationReview(): SessionContaminationReview | null;
 	getLootPresentation(): LootPresentationV1 | null;
@@ -362,12 +364,26 @@ export class TyrianCompanionView extends ItemView {
 			? { text: translator.t('settings.debug.name'), onClick: () => this.actions.openLocalDebugSettings?.() }
 			: undefined;
 
+		// H18.36 (boceto lámina 2.3, decidido): the code never reaches the visible line — it only
+		// goes to the clipboard, behind "Copiar detalle técnico" — this line's own `settings.debug.
+		// lastError` key is shared with Settings' diagnostics panel (`settings-tab.ts`), where the
+		// code stays exactly as before; only THIS callout drops it.
 		const lastErrorLine = (): void => {
 			if (!debug?.lastError) return;
-			lines.push({ text: translator.t('settings.debug.lastError', {
-				code: debug.lastError.code, component: debug.lastError.component,
-				action: debug.lastError.action, timestamp: this.formatMoment(debug.lastError.occurredAt),
-			}) });
+			const lastError = debug.lastError;
+			lines.push({
+				text: translator.t('sessionCard.lastErrorLine', {
+					component: lastError.component, action: lastError.action, timestamp: this.formatMoment(lastError.occurredAt),
+				}),
+				button: {
+					text: translator.t('sessionCard.copyTechnicalDetail'),
+					onClick: () => {
+						void navigator.clipboard.writeText(
+							`${lastError.code} · ${lastError.component}/${lastError.action} · ${lastError.occurredAt}`,
+						).catch(() => undefined);
+					},
+				},
+			});
 		};
 
 		// H15.7: a session/detection/recovery incident always wins the title, even with errors
@@ -568,11 +584,8 @@ export class TyrianCompanionView extends ItemView {
 				this.recoveryRecoverButton = mount.actionButtons[1] ?? null;
 			}
 		} else {
-			if (observed.status === 'stopping' && this.settlementWait() !== null) {
-				mount.detailBody.createEl('p', { text: this.t('view.settlementWhy'), cls: 'tyrian-companion-session__context' });
-				const warning = mount.detailBody.createEl('p', { text: this.t('view.captureNowWarning') });
-				warning.setAttr('role', 'alert');
-			}
+			// H18.36 (boceto lámina 2.2): the why now renders at la vista via `model.why`
+			// (`buildSessionCardModel`'s own 'stopping' branch), never hidden inside Detalle.
 			if (observed.status === 'active') this.liveFiguresKind = 'active';
 			if (observed.status === 'stopping') this.liveFiguresKind = 'stopping';
 		}
@@ -647,10 +660,11 @@ export class TyrianCompanionView extends ItemView {
 
 		if (observed.status === 'stopping') {
 			const wait = this.settlementWait();
+			const stopFailure = this.actions.getSessionStopFailure();
 			const actions: SessionCardAction[] = [];
 			if (wait !== null && this.actions.captureSessionFinalNow) {
 				actions.push({ text: this.t('view.captureNow'), onClick: () => { void this.actions.captureSessionFinalNow?.()?.catch(() => undefined); } });
-			} else if (wait === null && this.actions.getSessionStopFailure() !== null) {
+			} else if (wait === null && stopFailure !== null) {
 				// The final capture failed after the wait (H18.7): it already retries on its own, and
 				// this is the visible way to try right now instead of leaving the card without actions.
 				actions.push({
@@ -663,12 +677,61 @@ export class TyrianCompanionView extends ItemView {
 					actions.push({ text: this.t('view.abandonSession'), onClick: () => { this.actions.confirmAbandonSession?.(); } });
 				}
 			}
+			const stopMarkedAt = { kind: 'time' as const, text: formatClock(Date.parse(observed.stopRequestedAt), locale) };
+			if (wait !== null) {
+				// H18.36 (boceto lámina 2.2, propuesta): the why, visible instead of hidden in Detalle,
+				// and the cierre's own recorrido (fin marcado · lectura final en curso · nota pendiente).
+				return {
+					ariaLabel: copy.session, state: copy.finishing,
+					meta: { text: `· ${observed.startContext.characterName}` },
+					actions, callout,
+					why: [
+						{ text: this.t('view.settlementWhy') },
+						{ text: this.t('view.captureNowWarning'), alert: true },
+					],
+					receipt: {
+						ariaLabel: this.t('sessionCard.receipt.closureAria'),
+						steps: [
+							{ status: 'done', icon: 'check', label: this.t('sessionCard.receipt.stopMarked'), detail: stopMarkedAt },
+							{
+								status: 'current', icon: 'hourglass', label: this.t('sessionCard.receipt.finalReading'),
+								detail: { kind: 'time', text: this.t('sessionCard.receipt.towards', { time: formatClock(wait.dueAt, locale) }) },
+							},
+							{
+								status: 'skip', icon: 'minus', label: this.t('sessionCard.receipt.noteSaved'),
+								detail: { kind: 'small', text: this.t('sessionCard.receipt.later') },
+							},
+						],
+					},
+					figures: [
+						{ label: this.t('view.figure.captureFinalIn'), value: formatCountdown(settlementRemainingSeconds(wait)) },
+						...this.earnedSoFarFigures(locale),
+					],
+					...drawers,
+				};
+			}
+			// H18.36 (boceto lámina 2.3, propuesta): the meta names when the watch retries on its own,
+			// instead of a "Reconciliando…" that never said when; the recorrido shows the failed step.
+			const retryAt = this.actions.getSessionAutoRetryAt?.() ?? null;
 			return {
 				ariaLabel: copy.session, state: copy.finishing,
-				meta: wait === null ? { text: copy.reconciling } : { text: `· ${observed.startContext.characterName}` },
+				meta: { text: retryAt === null ? copy.reconciling : this.t('sessionCard.retryAt', { time: formatClock(retryAt, locale) }) },
 				actions, callout,
-				figures: wait === null ? [] : [{ label: this.t('view.figure.captureFinalIn'), value: formatCountdown(settlementRemainingSeconds(wait)) }],
-				...drawers,
+				receipt: stopFailure === null ? undefined : {
+					ariaLabel: this.t('sessionCard.receipt.closureAria'),
+					steps: [
+						{ status: 'done', icon: 'check', label: this.t('sessionCard.receipt.stopMarked'), detail: stopMarkedAt },
+						{
+							status: 'failed', icon: 'x', label: this.t('sessionCard.receipt.finalReading'),
+							detail: { kind: 'small', text: this.t('sessionCard.receipt.failedGeneric') },
+						},
+						{
+							status: 'skip', icon: 'minus', label: this.t('sessionCard.receipt.noteSaved'),
+							detail: { kind: 'small', text: this.t('sessionCard.receipt.pending') },
+						},
+					],
+				},
+				figures: [], ...drawers,
 			};
 		}
 
@@ -896,6 +959,17 @@ export class TyrianCompanionView extends ItemView {
 	 * active session always arms it at the fixed cadence the detection timeline already reads its
 	 * "next query" from.
 	 */
+	/**
+	 * "Ganado hasta ahora" (boceto lámina 2.2, propuesta): the provisional figure the espera-de-
+	 * cierre state shows beside the countdown, from the SAME live tracker `buildActiveFigures`
+	 * already reads — never a fabricated number while nothing has been observed yet.
+	 */
+	private earnedSoFarFigures(locale: Locale): SessionCardFigure[] {
+		const loot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' as const };
+		if (loot.status === 'idle') return [];
+		return [{ label: this.t('sessionCard.earnedSoFar'), value: simpleMoney(loot.knownTotalCopper, locale), pending: true }];
+	}
+
 	private buildActiveFigures(now: number, copy: ReturnType<typeof simpleSessionCopy>, locale: Locale): SessionCardFigure[] {
 		const loot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' as const };
 		if (loot.status !== 'idle' && loot.updatedAt === null) {
