@@ -264,6 +264,7 @@ import { SALE_VIEW_TYPE, SaleItemView } from './ui/sale-item-view';
 import {
 	buildSaleViewModel,
 	computeInstantSellNetCopper,
+	computeListingNetCopper,
 	type SaleSourceCalendarEntry,
 	type SaleSourceDecision,
 	type SaleSourceRow,
@@ -1639,6 +1640,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const bidByItemId = new Map<number, number | null>(
 			(analysis?.source.input.prices.items ?? []).map((entry) => [entry.itemId, entry.bid?.unitCopper ?? null]),
 		);
+		// Review fix (coordinator, round 2): the Saco's own "Publicar" figure needs the account's real
+		// ask, same live snapshot the bid already comes from.
+		const askByItemId = new Map<number, number | null>(
+			(analysis?.source.input.prices.items ?? []).map((entry) => [entry.itemId, entry.ask?.unitCopper ?? null]),
+		);
 		const calendar: SaleSourceCalendarEntry[] = [];
 		const calendarItemIds = new Set<number>();
 		if (bundleLoad.status === 'available') {
@@ -1656,7 +1662,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}
 		}
 		const heroRow = rowsByItemId.get(HALLOWEEN_PRICE_ALERT_ITEM_ID) ?? null;
-		const hero = this.buildSaleHeroInput(heroRow, bidByItemId.get(HALLOWEEN_PRICE_ALERT_ITEM_ID) ?? null);
+		const hero = this.buildSaleHeroInput(
+			heroRow, bidByItemId.get(HALLOWEEN_PRICE_ALERT_ITEM_ID) ?? null, askByItemId.get(HALLOWEEN_PRICE_ALERT_ITEM_ID) ?? null,
+		);
 		const rows: SaleSourceRow[] = [];
 		for (const [itemId, row] of rowsByItemId) {
 			if (itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID || !calendarItemIds.has(itemId)) continue;
@@ -1683,7 +1691,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * (`getSellSignalState`) stays only for the secondary "umbral del año" figure, never the verdict.
 	 */
 	private buildSaleHeroInput(
-		row: InventoryAdvisorViewRow | null, bidCopper: number | null,
+		row: InventoryAdvisorViewRow | null, bidCopper: number | null, askCopper: number | null = null,
 	): (SaleSourceRow & {
 		yearThresholdCopper: number | null;
 		openVsSell: { openCopper: number; sellCopper: number } | null;
@@ -1711,7 +1719,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 			bidCopper: resolvedBid,
 			instantSellNetCopper: row?.marketComparison?.instantSellCopper
 				?? computeInstantSellNetCopper(resolvedBid, row?.ownedQuantity ?? 0),
-			listingNetCopper: row?.marketComparison?.listingCopper ?? null,
+			// Review fix (coordinator, round 2): same fallback as the bid above, from the account's own
+			// live ask — the advisor never computes `marketComparison` for a container (its route is
+			// always `open`, never `sell`/`list`), so this was the only field the hero could ever
+			// fill on its own account data and never did.
+			listingNetCopper: row?.marketComparison?.listingCopper
+				?? computeListingNetCopper(askCopper, row?.ownedQuantity ?? 0),
 			yearThresholdCopper: projection?.status === 'decided' ? projection.sellThresholdCopper : null,
 			openVsSell: saleOpenVsSellCopper(row?.containerEconomy),
 		};
@@ -4808,15 +4821,25 @@ const SALE_DAY_MS = 86_400_000;
  * tab's own calendar section — distinct from `resolveFestivalCalendarWindow` above, which picks the
  * ONE window that currently governs a position's recommendation; the calendar shows every candidate
  * an item carries (the Saco's "before the festival" AND its May window), never only the governing one.
+ *
+ * Product decision (coordinator, round 2, 26 sep 2026): an `annual` candidate (e.g. Jorcamelo's
+ * plain June window, unrelated to any festival anchor — `inventory-advisor-builtin-bundle.ts`'s own
+ * §5 audit verdict) that has already fully closed THIS year rolls to the SAME interval next year,
+ * never a guessed date: the window's own `opensOn`/`closesOn` are real, curated data, only the YEAR
+ * advances by exactly one. Does not handle a window that wraps the year boundary (`closesOn` before
+ * `opensOn`, e.g. Dec-Jan): no candidate in the curated calendar needs that today.
  */
-function resolveSaleCalendarCandidateSpan(
+export function resolveSaleCalendarCandidateSpan(
 	candidate: FestivalCalendarCandidateV1,
 	anchors: ReadonlyMap<string, FestivalAnchorsTableV1>,
 	nowMs: number,
 ): { fromDay: string; toDay: string } | null {
 	const year = new Date(nowMs).getUTCFullYear();
 	if (candidate.kind === 'annual') {
-		return { fromDay: `${String(year)}-${candidate.window.opensOn}`, toDay: `${String(year)}-${candidate.window.closesOn}` };
+		const todayUtc = priceHistoryDayUtc(nowMs);
+		const closesThisYear = `${String(year)}-${candidate.window.closesOn}`;
+		const resolvedYear = closesThisYear < todayUtc ? year + 1 : year;
+		return { fromDay: `${String(resolvedYear)}-${candidate.window.opensOn}`, toDay: `${String(resolvedYear)}-${candidate.window.closesOn}` };
 	}
 	const table = anchors.get(candidate.window.festivalId);
 	if (table === undefined) return null;
