@@ -133,8 +133,8 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		await view.onOpen();
 		const root = view.contentEl as unknown as FakeElement;
 		const keep = find(root, 'button').filter((button) => button.attributes.get('aria-label') === 'Conservar Material');
-		// One per layout: the wide table and the narrow cards render the same row.
-		expect(keep).toHaveLength(2);
+		// H18.37: one list, one DOM per row (the old table+cards double render is gone).
+		expect(keep).toHaveLength(1);
 
 		keep[0]!.dispatch('click');
 		for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
@@ -146,7 +146,8 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		});
 		const body = text(root);
 		expect(body).toContain('Guardado: «Material» se conserva entero. Está en «Objetos para conservar».');
-		expect(body).toContain('Guardado para conservar');
+		// H18.37: the row's own steady-state note once kept, reversible from "Conservado".
+		expect(body).toContain('Guardado · no se venderá');
 		expect(find(root, 'button').filter((button) => button.attributes.get('aria-label') === 'Conservar Material')).toHaveLength(0);
 	});
 
@@ -165,7 +166,9 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 
 		expect(session.load).not.toHaveBeenCalled();
 		expect(session.upsert.mock.calls[0]![0]).toEqual({ ...minimum, status: 'active', quantity: { mode: 'all' } });
-		expect(text(root)).toContain('Saved to keep');
+		// H18.37: the row's own steady-state note once kept ("Kept", reversible), not the old
+		// static "Saved to keep" span the row can no longer undo without leaving this view.
+		expect(text(root)).toContain('Saved · will not be sold');
 	});
 
 	it('opens without capturing or writing, and a single click on the one guided button runs the whole sync once', async () => {
@@ -218,26 +221,6 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(analysisButton.textContent).toBe('Analizar sin escribir');
 		expect(analysisButton.disabled).toBe(false);
 		expect(syncButton.disabled).toBe(false);
-	});
-
-	it('forwards confirm and cancel only from their own buttons while a destructive plan awaits confirmation', async () => {
-		installDom();
-		const confirm = vi.fn(async () => undefined);
-		const cancel = vi.fn();
-		const summary = { positions: 3, create: 1, update: 1, unchanged: 1, deactivate: 1, conflicts: 0 };
-		const viewActions = actions(() => 'es', { state: { status: 'confirm', summary }, confirm, cancel });
-		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
-		await view.onOpen();
-		const buttons = find(view.contentEl as unknown as FakeElement, 'button');
-		const confirmButton = buttons.find((candidate) => candidate.textContent === 'Confirmar y escribir');
-		const cancelButton = buttons.find((candidate) => candidate.textContent === 'Cancelar');
-		if (!confirmButton || !cancelButton) throw new Error('Confirm/cancel buttons were not mounted.');
-		confirmButton.dispatch('click');
-		cancelButton.dispatch('click');
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(confirm).toHaveBeenCalledOnce();
-		expect(cancel).toHaveBeenCalledOnce();
 	});
 
 	it('shows the persisted last run again after the view closes and reopens, without a view-local cache', async () => {

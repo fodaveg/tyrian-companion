@@ -11,7 +11,6 @@ import {
 	inventoryAdvisorScopeSummary,
 	inventoryAdvisorValueConcentration,
 	prioritizeInventoryAdvisorRowsBySpace,
-	inventoryAdvisorViewLayout,
 	renderInventoryAdvisorView,
 	renderInventoryAdvisorViewFromPort,
 	sortInventoryAdvisorRows,
@@ -110,13 +109,13 @@ describe('Inventory Advisor view', () => {
 		expect(meter.attributes.get('optimum')).toBe('0');
 		expect(meter.attributes.get('low')).toBe(meter.attributes.get('high'));
 		expect(meter.attributes.get('high')).toBe('40');
-		// The table lists the slot-freeing row first and says what it frees.
-		const tableNames = find(mount.elements(), 'th').filter((cell) => cell.scope === 'row').map((cell) => text(walk(cell)).trim());
-		expect(tableNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Bulto', 'Oro']);
+		// H18.37: the single list still lists the slot-freeing row first and says what it frees.
+		const rowNames = find(mount.elements(), 'strong').map((cell) => text(walk(cell)).trim());
+		expect(rowNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Bulto', 'Oro']);
 		expect(copy).toContain('2 huecos');
 
 		const plenty = render(storageModel([heavy, bulky], false), 'en');
-		const plentyNames = find(plenty.elements(), 'th').filter((cell) => cell.scope === 'row').map((cell) => text(walk(cell)).trim());
+		const plentyNames = find(plenty.elements(), 'strong').map((cell) => text(walk(cell)).trim());
 		expect(plentyNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Oro', 'Bulto']);
 		expect(text(plenty.elements())).toContain('Plenty of space: 7 free slots across bags and bank (warning at 5 or fewer). Gold comes first.');
 		expect(text(plenty.elements())).not.toContain('2 slots');
@@ -188,10 +187,12 @@ describe('Inventory Advisor view', () => {
 		['es', 'Compara venta instantánea, publicación y mercader con precios actuales.'],
 		['en', 'Compares instant sell, listing and vendor routes with current prices.'],
 	] as const)('keeps the liquid-route contract off the screen in %s', (locale, expected) => {
-		// The guarantee is documented once, in docs/PRODUCT.md; the panel starts with the controls.
+		// The guarantee is documented once, in docs/PRODUCT.md; the panel starts with the status
+		// line (H18.37, same as Venta) and then the controls.
 		const mount = render(readyModel(), locale);
 		expect(text(mount.elements())).not.toContain(expected);
-		expect(mount.section.children[0]?.className).toBe('tyrian-inventory-advisor__controls');
+		expect(mount.section.children[0]?.className).toBe('tyrian-product-shell__status');
+		expect(mount.section.children[1]?.className).toBe('tyrian-inventory-advisor__controls');
 	});
 
 	it.each([
@@ -284,24 +285,21 @@ describe('Inventory Advisor view', () => {
 		const copy = text(mount.elements());
 		expect(copy).toContain(expected);
 		expect(copy).not.toContain(locale === 'es' ? 'Rutas de venta comparadas' : 'Compared sale routes');
-		// Once in the table layout and once in the card layout; CSS hides one.
-		expect(byClass(mount.elements(), 'tyrian-inventory-advisor__season')).toHaveLength(2);
+		// H18.37: one list, one DOM — the table+cards double render (and the CSS that hid one) is gone.
+		expect(byClass(mount.elements(), 'tyrian-inventory-advisor__season')).toHaveLength(1);
 	});
 
-	it.each([[479, 'cards'], [480, 'cards'], [759, 'cards'], [760, 'table']] as const)(
-		'selects the semantic H5.11 layout at %ipx',
-		(width, expected) => expect(inventoryAdvisorViewLayout(width)).toBe(expected),
-	);
-
-	it('keeps the complete card evidence surface visible at both 480px and 759px breakpoints', () => {
+	it('H18.37: renders the same single-list DOM at every width; only styles.css container queries apply per row (759/520/400)', () => {
 		const styles = readFileSync('styles.css', 'utf8');
-		const cardsRule = styles.indexOf('.tyrian-inventory-advisor__cards {\n\t\tdisplay: grid;');
-		expect(cardsRule).toBeGreaterThan(-1);
-		const breakpoint = styles.lastIndexOf('@container (max-width: 759px)', cardsRule);
-		const compact = styles.slice(breakpoint, styles.indexOf('@container (max-width: 479px)', breakpoint));
-		expect(compact).toMatch(/tyrian-inventory-advisor__table[\s\S]*display:\s*none/u);
-		expect(compact).toMatch(/tyrian-inventory-advisor__cards[\s\S]*display:\s*grid/u);
-		for (const width of [480, 759]) expect(inventoryAdvisorViewLayout(width)).toBe('cards');
+		// The old JS-selected table/cards layout (`inventoryAdvisorViewLayout`) is gone: one `<ul>`,
+		// `subgrid`, and CSS alone reflows each row under 760px (boceto, lámina 3.1).
+		expect(styles).not.toContain('tyrian-inventory-advisor__table');
+		expect(styles).not.toContain('tyrian-inventory-advisor__cards');
+		expect(styles).toMatch(/@container \(max-width: 759px\)[\s\S]*?tyrian-inventory__list[\s\S]*?grid-template-columns/u);
+		expect(styles).toMatch(/@container \(max-width: 520px\)/u);
+		expect(styles).toMatch(/@container \(max-width: 400px\)/u);
+		const mount = render(allStatesAndActionsModel());
+		expect(byClass(mount.elements(), 'tyrian-inventory__list')).toHaveLength(1);
 	});
 
 	it.each([['es', 'Filtros avanzados'], ['en', 'Advanced filters']] as const)(
@@ -329,13 +327,16 @@ describe('Inventory Advisor view', () => {
 			},
 		};
 		const expected = [
+			// H18.37: the Inventory tab's own status line, like Venta's, first of all.
+			'tyrian-product-shell__status',
 			'tyrian-inventory-advisor__controls',
 			'tyrian-inventory-advisor__sync-hint',
-			'tyrian-inventory-advisor__sync-confirm',
 			// Opt-in offer (24 sep 2026), hidden unless the host offers price history.
 			'tyrian-inventory-advisor__opt-in',
 			'tyrian-inventory-advisor__sell-signal',
 			'tyrian-inventory-advisor__state',
+			// H18.37: "Copiar detalle técnico", hidden unless the state carries a safe code.
+			'clickable-icon tyrian-inventory-advisor__state-copy',
 			// H18.18: the outcome of a row's "Conservar", hidden until one is pressed.
 			'tyrian-inventory-advisor__keep-status',
 			'tyrian-inventory-advisor__results',
@@ -346,8 +347,8 @@ describe('Inventory Advisor view', () => {
 		const mount = render(readyModel(), 'es', interactions);
 		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
 		expect(mount.section.children[3]!.hidden).toBe(true);
-		expect(mount.section.children[6]!.hidden).toBe(true);
-		expect(text(walk(mount.section.children[7]!))).toContain('Qué hacer ahora');
+		expect(mount.section.children[7]!.hidden).toBe(true);
+		expect(text(walk(mount.section.children[8]!))).toContain('Qué hacer ahora');
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,
@@ -544,23 +545,25 @@ describe('Inventory Advisor view', () => {
 		review.checked = true;
 		review.dispatch('change');
 		expect(text(mount.elements())).toContain('⚠ Revisión irreversible');
-		expect(find(mount.elements(), 'th').filter((element) => element.scope === 'rowgroup')
-		.map((element) => element.textContent)).toContain('⚠ Revisión irreversible');
-		expect(find(mount.elements(), 'h3').map((element) => element.textContent)).toContain('⚠ Revisión irreversible');
+		expect(byClass(mount.elements(), 'tyrian-inventory__group-heading')
+			.map((element) => element.textContent)).toContain('⚠ Revisión irreversible');
 		expect(find(mount.elements(), 'button').some((button) => walk(button).some((element) => element.textContent?.includes('irreversible') === true))).toBe(false);
 		expect(find(mount.elements(), 'dialog')).toEqual([]);
 	});
 
-	it('renders semantic tables, cards, and long content without raw action or coverage enums in Spanish and English', () => {
+	it('renders one semantic list and long content without raw action or coverage enums in Spanish and English', () => {
 		for (const locale of ['es', 'en'] as const) {
 			const mount = render(allStatesAndActionsModel(), locale);
 			const context = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(-2);
 			for (const input of context) { input.checked = true; input.dispatch('change'); }
 			const allText = text(mount.elements());
-			expect(find(mount.elements(), 'caption')).toHaveLength(1);
-			expect(find(mount.elements(), 'th').some((element) => element.scope === 'col')).toBe(true);
-			expect(find(mount.elements(), 'th').some((element) => element.scope === 'row')).toBe(true);
-			expect(find(mount.elements(), 'article')).toHaveLength(8);
+			// H18.37: one list, `subgrid`, no separate table+cards; the `<ul>` names itself and each
+			// item row carries its own accessible name instead of a `<th scope="row">`/`<caption>`.
+			expect(only(find(mount.elements(), 'ul').filter((element) => element.className === 'tyrian-inventory__list'))
+				.attributes.get('aria-label')).toBeTruthy();
+			expect(byClass(mount.elements(), 'tyrian-inventory__head')).toHaveLength(1);
+			const itemRows = find(mount.elements(), 'li').filter((element) => element.attributes.has('aria-label'));
+			expect(itemRows).toHaveLength(8);
 			expect(find(mount.elements(), 'dl')).toHaveLength(8);
 			expect(allText).toContain('x'.repeat(320));
 			expect(allText).not.toContain('discard_candidate');
@@ -687,9 +690,10 @@ describe('Inventory Advisor view', () => {
 		};
 		const mount = render(model);
 		const rowText = (name: string): string => {
-			const tableRow = find(mount.elements(), 'tr').find((candidate) => text(walk(candidate)).includes(name));
-			if (tableRow === undefined) throw new Error(`Missing table row ${name}.`);
-			return text(walk(tableRow));
+			// H18.37: a single `<li>` row (plus its own `<details>`), not a `<tr>`.
+			const listRow = find(mount.elements(), 'li').find((candidate) => candidate.attributes.get('aria-label') === name);
+			if (listRow === undefined) throw new Error(`Missing list row ${name}.`);
+			return text(walk(listRow));
 		};
 		expect(rowText('Con precio')).toContain('0 oro · 0 plata · 41 cobre');
 		expect(rowText('Con precio')).toContain('0 oro · 1 plata · 23 cobre');
@@ -734,7 +738,8 @@ describe('Inventory Advisor view', () => {
 		const sortSelect = controlWithLabel(mount.elements(), 'select', 'Ordenar por');
 		sortSelect.value = 'quantity_desc';
 		sortSelect.dispatch('change');
-		expect(find(mount.elements(), 'article').map((card) => walk(card).some((element) => element.textContent === 'Bajo valor')))
+		const itemRows = find(mount.elements(), 'li').filter((element) => element.attributes.has('aria-label'));
+		expect(itemRows.map((rowEl) => walk(rowEl).some((element) => element.textContent === 'Bajo valor')))
 			.toEqual([true, false]);
 	});
 
@@ -833,16 +838,16 @@ describe('Inventory Advisor view', () => {
 		expect(details.some((entry) => walk(entry).some((element) => element.textContent === 'Limitada (precios, reglas)'))).toBe(true);
 	});
 
-	it('removes stack noise and combines owned and available quantities in table and card layouts', () => {
+	it('removes stack noise and combines owned and available quantities in the single list', () => {
 		const model = readyModel();
 		model.groups[0]!.rows[0]!.reasonCodes = ['position_not_actionable'];
 		const mount = render(model);
-		const columnLabels = find(mount.elements(), 'th')
-			.filter((element) => element.scope === 'col')
-			.map((element) => element.textContent);
-		expect(columnLabels).toHaveLength(9);
+		const head = only(byClass(mount.elements(), 'tyrian-inventory__head'));
+		const columnLabels = head.children.map((cell) => cell.textContent);
+		expect(columnLabels).toHaveLength(6);
 		expect(columnLabels).not.toContain('Pilas');
 		expect(columnLabels).not.toContain('Disponible');
+		// Owned/available now live in the row's own detail disclosure, not a separate column.
 		expect(text(mount.elements())).toContain('3 (0 disponibles)');
 	});
 
@@ -852,17 +857,18 @@ describe('Inventory Advisor view', () => {
 		expect(options).toHaveLength(5);
 		expect(options.every((input) => input.checked === false)).toBe(true);
 		expect(options.every((input) => !input.disabled)).toBe(true);
-		expect(find(mount.elements(), 'article')).toHaveLength(6);
+		const itemRows = (): number => find(mount.elements(), 'li').filter((element) => element.attributes.has('aria-label')).length;
+		expect(itemRows()).toBe(6);
 		const keep = options[3];
 		if (keep === undefined) throw new Error('Expected the keep visibility option.');
 		keep.checked = true;
 		keep.dispatch('change');
-		expect(find(mount.elements(), 'article')).toHaveLength(7);
+		expect(itemRows()).toBe(7);
 		const review = options[4];
 		if (review === undefined) throw new Error('Expected the review visibility option.');
 		review.checked = true;
 		review.dispatch('change');
-		expect(find(mount.elements(), 'article')).toHaveLength(8);
+		expect(itemRows()).toBe(8);
 	});
 
 	it('names recommendation summaries as non-executing list filters and handles zero, one, and many types', () => {
@@ -897,7 +903,7 @@ describe('Inventory Advisor view', () => {
 		expect(action.value).toBe('sell');
 		expect(advanced.open).toBe(true);
 		expect(mount.document.activeElement).toBe(action);
-		expect(find(mount.elements(), 'article')).toHaveLength(1);
+		expect(find(mount.elements(), 'li').filter((element) => element.attributes.has('aria-label'))).toHaveLength(1);
 		const pressed = only(byClass(mount.elements(), 'tyrian-inventory-advisor__recommendation-action')
 			.filter((button) => button.attributes.get('aria-pressed') === 'true'));
 		expect(walk(pressed).some((element) => element.textContent === 'Ver 1 tipo: Vender ya')).toBe(true);
@@ -922,7 +928,8 @@ describe('Inventory Advisor view', () => {
 		model.groups[0]!.rows[2]!.icon = 'https://user@render.guildwars2.com/file/credentials.png';
 		const mount = render(model);
 		const images = find(mount.elements(), 'img');
-		expect(images).toHaveLength(2);
+		// H18.37: one list, one DOM — the same trusted icon no longer renders once per layout.
+		expect(images).toHaveLength(1);
 		expect(new Set(images.map((image) => image.attributes.get('src')))).toEqual(new Set(['https://render.guildwars2.com/file/abc.png']));
 		expect(images.every((image) => image.attributes.get('alt') === '')).toBe(true);
 		expect(text(mount.elements())).not.toContain('Los iconos visibles se cargan desde el CDN oficial de ArenaNet.');
@@ -932,8 +939,8 @@ describe('Inventory Advisor view', () => {
 		['credential_unavailable', 'La clave seleccionada ya no está disponible en el almacén seguro de Obsidian. Vuelve a seleccionarla en los ajustes.'],
 		['capture_unavailable', 'No se pudo leer la cuenta de Guild Wars 2. Comprueba la clave seleccionada y vuelve a actualizar.'],
 		['capture_invalid', 'La captura de la cuenta no superó la validación de seguridad.'],
-		['capture_snapshot_coverage_incomplete', 'No se pudo leer por completo el inventario de todos los personajes o el inventario compartido. Código seguro: snapshot_coverage_incomplete.'],
-		['capture_snapshot_structure_invalid', 'La respuesta del inventario no tiene una estructura segura para analizar. Código seguro: snapshot_structure_invalid.'],
+		['capture_snapshot_coverage_incomplete', 'No se pudo leer por completo el inventario de todos los personajes o el inventario compartido.'],
+		['capture_snapshot_structure_invalid', 'La respuesta del inventario no tiene una estructura segura para analizar.'],
 		['preferences_unavailable', 'Las preferencias locales del inventario no están disponibles.'],
 		['unexpected_failure', 'La actualización del inventario falló de forma inesperada.'],
 	] as const)('shows the safe actionable reason %s instead of the generic message', (blockedReason, expected) => {
@@ -1060,8 +1067,6 @@ describe('Inventory Advisor view', () => {
 		const button = only(find(walk(section), 'button').filter((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario')));
 		expect(button.disabled).toBe(false);
 		expect(button.attributes.get('aria-label')).toBe('Sincronizar inventario');
-		const confirmPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-confirm'));
-		expect(confirmPanel.hidden).toBe(true);
 		expect(onRun).not.toHaveBeenCalled();
 		button.dispatch('click');
 		expect(onRun).toHaveBeenCalledOnce();
@@ -1098,27 +1103,20 @@ describe('Inventory Advisor view', () => {
 		expect(analysis.disabled).toBe(true);
 	});
 
-	it('pauses for explicit confirmation on a destructive plan, disables the button, and forwards confirm/cancel only from their own controls', () => {
+	it('H18.37: never enters `confirm` (notes write themselves), but disables the button defensively if a caller ever builds that state', () => {
+		// The run controller (`inventory-vault-sync-run-controller.ts`) no longer produces this
+		// status; it always writes a destructive plan directly. This view no longer has a confirm
+		// panel or `onConfirm`/`onCancel` wiring, but a `confirm` state should still never enable
+		// a second concurrent run.
 		const onRun = vi.fn();
-		const onConfirm = vi.fn();
-		const onCancel = vi.fn();
 		const summary = { positions: 3, create: 1, update: 1, unchanged: 0, deactivate: 1, conflicts: 0 };
 		const mount = render(readyModel(), 'es', {
-			inventorySync: { state: { status: 'confirm', summary }, assetsInstalled: true, onRun, onConfirm, onCancel },
+			inventorySync: { state: { status: 'confirm', summary }, assetsInstalled: true, onRun, onConfirm: vi.fn(), onCancel: vi.fn() },
 		});
 		const section = mount.section;
 		const runButton = only(find(walk(section), 'button').filter((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario')));
 		expect(runButton.disabled).toBe(true);
-		const confirmPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-confirm'));
-		expect(confirmPanel.hidden).toBe(false);
-		expect(text(walk(confirmPanel))).toContain('desactivará 1 filas');
-		expect(text(walk(confirmPanel))).toContain('3 filas · 1 nuevas · 1 actualizadas · 0 sin cambios · 1 inactivas · 0 conflictos');
-		const confirmButton = only(find(walk(confirmPanel), 'button').filter((candidate) => candidate.textContent === 'Confirmar y escribir'));
-		const cancelButton = only(find(walk(confirmPanel), 'button').filter((candidate) => candidate.textContent === 'Cancelar'));
-		confirmButton.dispatch('click');
-		expect(onConfirm).toHaveBeenCalledOnce();
-		cancelButton.dispatch('click');
-		expect(onCancel).toHaveBeenCalledOnce();
+		expect(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-confirm')).toEqual([]);
 		expect(onRun).not.toHaveBeenCalled();
 	});
 
@@ -1270,7 +1268,150 @@ describe('Inventory Advisor view', () => {
 		expect(only(byClass(running.elements(), 'tyrian-inventory-advisor__sync-ago')).hidden).toBe(true);
 		expect(only(byClass(running.elements(), 'tyrian-inventory-advisor__progress')).hidden).toBe(false);
 	});
+
+	// H18.37 — the boceto aprobado (docs/diseno/h18-31-interfaz/boceto.html, lámina 1 y 3.1/3.2).
+
+	it('shows the Inventory status line ("Analizado hoy … · Notas guardadas …") only once a run has actually written notes', () => {
+		const withoutSync = render(readyModel());
+		expect(only(byClass(withoutSync.elements(), 'tyrian-product-shell__status')).hidden).toBe(true);
+		const idleNoRun = render(readyModel(), 'es', {
+			inventorySync: { state: { status: 'idle', lastRun: null }, assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn() },
+		});
+		expect(only(byClass(idleNoRun.elements(), 'tyrian-product-shell__status')).hidden).toBe(true);
+		const mount = render(readyModel(), 'es', {
+			inventorySync: {
+				state: { status: 'idle', lastRun: {
+					status: 'success', finishedAt: '2026-09-26T07:31:00.000Z', durationMs: 1200,
+					summary: { positions: 1, create: 0, update: 1, unchanged: 0, deactivate: 0, conflicts: 0 }, error: null,
+				} }, assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
+			},
+		});
+		const status = only(byClass(mount.elements(), 'tyrian-product-shell__status'));
+		expect(status.hidden).toBe(false);
+		expect(status.attributes.get('role')).toBe('status');
+		expect(status.children.map((child) => child.textContent)).toEqual([
+			`Analizado hoy a las ${formatClockFor('2026-09-26T07:31:00.000Z')}`,
+			`Notas guardadas a las ${formatClockFor('2026-09-26T07:31:00.000Z')}`,
+		]);
+		// A failed run has nothing new to report: no notes were saved, so the line stays hidden.
+		const failed = render(readyModel(), 'es', {
+			inventorySync: {
+				state: { status: 'idle', lastRun: {
+					status: 'error', finishedAt: '2026-09-26T07:31:00.000Z', durationMs: 1200,
+					summary: null, error: 'write_unavailable',
+				} }, assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
+			},
+		});
+		expect(only(byClass(failed.elements(), 'tyrian-product-shell__status')).hidden).toBe(true);
+	});
+
+	it('renders exactly one list for the results, never a second table or card layout for the same rows (H18.37)', () => {
+		const mount = render(allStatesAndActionsModel());
+		expect(byClass(mount.elements(), 'tyrian-inventory__list')).toHaveLength(1);
+		expect(find(mount.elements(), 'table')).toEqual([]);
+		expect(byClass(mount.elements(), 'tyrian-inventory-advisor__cards')).toEqual([]);
+		const itemRows = find(mount.elements(), 'li').filter((element) => element.attributes.has('aria-label'));
+		// Deduplicated: one row per distinct item, never one per layout.
+		expect(new Set(itemRows.map((element) => element.attributes.get('aria-label'))).size).toBe(itemRows.length);
+	});
+
+	it('shows "Esperar" for a `hold` decision and "Sin cotización" for a row with no quote, each with its own action mark (H18.37)', () => {
+		const mount = render({
+			...readyModel(),
+			groups: [{ key: 'market', rows: [
+				row({
+					id: '#/explanations/20/0', itemId: 20, name: 'Barra de caramelo', action: 'sell', quantity: 71,
+					decision: {
+						action: 'hold', reason: 'below_local_band', until: null, missing: null,
+						pricePercentile: null, priceCoverageDays: null, priceQuotedAt: null, priceHistoryLastDay: null,
+						sellWindowFromDay: null, sellWindowToDay: null, sellOrWait: null,
+					},
+					value: { status: 'available', route: 'instant_sell', copper: 100 },
+				}),
+				row({
+					id: '#/explanations/21/0', itemId: 21, name: 'Colmillos de plástico', action: 'review',
+					value: { status: 'unavailable', route: null },
+				}),
+			] }],
+		});
+		const waitRow = only(find(mount.elements(), 'li').filter((element) => element.attributes.get('aria-label') === 'Barra de caramelo'));
+		const waitMark = only(byClass(walk(waitRow), 'tyrian-action'));
+		expect(waitMark.textContent).toBe('Esperar');
+		expect(waitMark.attributes.get('data-action')).toBe('hold');
+		// `review` is hidden behind "Incluir además: revisar" by default, same as before H18.37.
+		const review = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').at(-1);
+		if (review === undefined) throw new Error('Expected the review visibility option.');
+		review.checked = true;
+		review.dispatch('change');
+		const noDataRow = only(find(mount.elements(), 'li').filter((element) => element.attributes.get('aria-label') === 'Colmillos de plástico'));
+		const noDataMark = only(byClass(walk(noDataRow), 'tyrian-action'));
+		expect(noDataMark.textContent).toBe('Sin cotización');
+		expect(noDataMark.attributes.get('data-action')).toBe('nodata');
+	});
+
+	it('keeps "Conservar" reversible from the row itself: Conservar → Conservado → Conservar again removes the same exception (H18.37, David 25 sep 2026)', () => {
+		const onKeepItem = vi.fn();
+		const onRemoveKeepException = vi.fn();
+		const notKept = render(readyModel(), 'es', {
+			onKeepItem, onRemoveKeepException,
+			preferences: { status: 'ready', goals: [], keepExceptions: [] },
+		});
+		const button = only(find(notKept.elements(), 'button').filter((candidate) => candidate.attributes.get('aria-label') === 'Conservar Material seguro'));
+		expect(button.attributes.get('aria-pressed')).toBe('false');
+		button.dispatch('click');
+		expect(onKeepItem).toHaveBeenCalledWith(100);
+
+		const kept = render(readyModel(), 'es', {
+			onKeepItem, onRemoveKeepException,
+			preferences: { status: 'ready', goals: [], keepExceptions: [
+				{ version: 1, exceptionId: 'exception-100', itemId: 100, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' },
+			] },
+		});
+		const keptButton = only(find(kept.elements(), 'button')
+			.filter((candidate) => candidate.attributes.get('aria-label') === 'Conservado. Clic para dejar de conservar Material seguro'));
+		expect(keptButton.attributes.get('aria-pressed')).toBe('true');
+		expect(text(kept.elements())).toContain('Guardado · no se venderá');
+		keptButton.dispatch('click');
+		expect(onRemoveKeepException).toHaveBeenCalledWith('exception-100');
+	});
+
+	it('shows the verdict and its lateral mark before the meter and the free-slot line, in Inventory (H18.31, decidido)', () => {
+		const mount = render({
+			...readyModel(),
+			storageSpace: {
+				bags: { free: 5, total: 160 }, bank: { free: 4, total: 210 }, sharedInventory: { free: 0, total: 6 },
+				lowSpace: { freeSlots: 9, totalSlots: 370, thresholdFreeSlots: 20, isLow: true }, materialCapacity: null,
+			},
+		});
+		const space = only(byClass(mount.elements(), 'tyrian-inventory-advisor__storage-space'));
+		expect(space.attributes.get('data-low-space')).toBe('true');
+		const order = space.children.map((child) => child.tag);
+		expect(order.indexOf('p')).toBeLessThan(order.lastIndexOf('p'));
+		expect(order[0]).toBe('p');
+		expect(space.children[0]?.className).toBe('tyrian-inventory-advisor__storage-verdict');
+		expect(order.includes('meter')).toBe(true);
+		expect(order.indexOf('meter')).toBeGreaterThan(0);
+	});
+
+	it('offers "Copiar detalle técnico" on a blocked/failed state instead of printing the safe code as text (H18.37)', () => {
+		vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn() } });
+		const mount = render({ ...readyModel(), status: 'blocked', blockedReason: 'capture_snapshot_coverage_incomplete', groups: [] });
+		expect(text(mount.elements())).not.toContain('Código seguro');
+		expect(text(mount.elements())).not.toContain('snapshot_coverage_incomplete');
+		const copyButton = only(byClass(mount.elements(), 'tyrian-inventory-advisor__state-copy'));
+		expect(text(walk(copyButton))).toContain('Copiar detalle técnico');
+		expect(copyButton.hidden).toBe(false);
+		copyButton.dispatch('click');
+		expect((navigator as unknown as { clipboard: { writeText: ReturnType<typeof vi.fn> } }).clipboard.writeText)
+			.toHaveBeenCalledWith('capture_snapshot_coverage_incomplete');
+		const ready = render(readyModel());
+		expect(only(byClass(ready.elements(), 'tyrian-inventory-advisor__state-copy')).hidden).toBe(true);
+	});
 });
+
+function formatClockFor(iso: string): string {
+	return new Intl.DateTimeFormat('es', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+}
 
 function render(model: InventoryAdvisorViewModel, locale: 'es' | 'en' = 'es', interactions: InventoryAdvisorViewInteractions = {}) {
 	const mount = createMount();

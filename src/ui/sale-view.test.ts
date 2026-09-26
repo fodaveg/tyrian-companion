@@ -155,6 +155,21 @@ describe('sale view render', () => {
 		expect(text(rowEl)).toContain('Libera 1 hueco');
 	});
 
+	it('H18.37: shows the verdict and its lateral mark before the meter and the free-slot line, same as Inventory', () => {
+		const model = buildSaleViewModel(baseInput({
+			storageSpace: {
+				bags: { free: 5, total: 160 }, bank: { free: 4, total: 210 }, sharedInventory: { free: 0, total: 6 },
+				lowSpace: { freeSlots: 9, totalSlots: 376, thresholdFreeSlots: 20, isLow: true },
+				materialCapacity: null,
+			},
+		}));
+		const container = render(model, 'es');
+		const space = byClass(walk(container), 'tyrian-inventory-advisor__storage-space')[0]!;
+		expect(space.attributes.get('data-low-space')).toBe('true');
+		expect(space.children[0]?.className).toBe('tyrian-inventory-advisor__storage-verdict');
+		expect(space.children.map((child) => child.tag)).toEqual(['p', 'meter', 'p']);
+	});
+
 	it('renders a fallen icon as initials, never an empty <img>', () => {
 		const model = buildSaleViewModel(baseInput({
 			rows: [row({ itemId: 1, name: 'Objeto Sin Icono', icon: null })],

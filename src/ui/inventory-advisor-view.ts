@@ -2,7 +2,7 @@ import { setIcon } from 'obsidian';
 
 import type { Locale, Translator } from '../core/i18n';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
-import { inventorySyncPanel, inventorySyncSummaryParams } from './inventory-sync-panel-view';
+import { inventorySyncPanel } from './inventory-sync-panel-view';
 import { renderPriceHistoryPanel, type PriceHistoryPanelInteractions } from './price-history-panel-view';
 import { renderSellSignalLine } from './sell-signal-line';
 import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
@@ -28,7 +28,6 @@ export type InventoryAdvisorViewAction = InventoryAdvisorViewRow['action'];
 export type InventoryAdvisorViewFilterAction = Exclude<InventoryAdvisorViewAction, 'discard_review'>;
 export type InventoryAdvisorViewGroupBy = 'action' | 'evidence';
 export type InventoryAdvisorViewSort = 'value_desc' | 'quantity_desc' | 'name_asc';
-export type InventoryAdvisorViewLayout = 'table' | 'cards';
 export type InventoryAdvisorViewCoverage = InventoryAdvisorViewRow['coverage'];
 export type InventoryAdvisorViewCoverageState = InventoryAdvisorViewCoverage[keyof InventoryAdvisorViewCoverage];
 export type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './inventory-advisor-view-model';
@@ -83,6 +82,11 @@ export interface InventoryAdvisorViewInteractions {
 	 * (H14.6/H14.12): rendered at the top, above the filters, since it is not scoped to a session.
 	 */
 	sellSignalState?: SellSignalRuntimeState | null;
+	/**
+	 * H18.37 (H18.31, lámina 3.1, decision E): "Ver en Venta" on a container row (the Halloween bag).
+	 * Absent hides the button; wiring an actual tab switch is the host's call, not this view's.
+	 */
+	onOpenSale?: () => void;
 }
 
 export interface InventoryAdvisorViewFilters {
@@ -129,11 +133,6 @@ export const INVENTORY_ADVISOR_VIEW_FIXTURE: InventoryAdvisorViewModel = {
 	optionalSources: null,
 	groups: [],
 };
-
-/** Returns the layout selected by the H5.11 container-query breakpoints. */
-export function inventoryAdvisorViewLayout(width: number): InventoryAdvisorViewLayout {
-	return width >= 760 ? 'table' : 'cards';
-}
 
 /** Creates a local fixture port suitable for previews and DOM-only tests. */
 export function createInventoryAdvisorFixturePort(
@@ -470,6 +469,12 @@ function mountInventoryAdvisorView(
 	let unversionedRenders = 0;
 	const section = createEl('section');
 	section.className = 'tyrian-inventory-advisor';
+	// H18.37: the same `.tyrian-product-shell__status` line Venta already shows (`sale-view.ts`),
+	// so every tab states what it read and when. Hidden until a run has actually finished once.
+	const statusLine = createEl('p');
+	statusLine.className = 'tyrian-product-shell__status';
+	statusLine.setAttribute('role', 'status');
+	statusLine.hidden = true;
 	const sellSignal = createDiv();
 	sellSignal.className = 'tyrian-inventory-advisor__sell-signal';
 	// The sync controls sit in the same bar as search and sort: they are the only actions this
@@ -495,23 +500,9 @@ function mountInventoryAdvisorView(
 	const syncPrimaryActions = createDiv();
 	syncPrimaryActions.className = 'tyrian-inventory-advisor__sync-actions tyrian-inventory-advisor__sync-primary-actions';
 	syncPrimaryActions.append(syncButton, syncLastRunAgo, syncAnalyze);
-	const syncConfirm = createDiv();
-	syncConfirm.className = 'tyrian-inventory-advisor__sync-confirm';
-	const syncConfirmTitle = createEl('strong');
-	const syncConfirmBody = createEl('p');
-	const syncConfirmSummary = createEl('p');
-	syncConfirmSummary.className = 'tyrian-inventory-advisor__sync-summary';
-	const syncConfirmActions = createDiv();
-	syncConfirmActions.className = 'tyrian-inventory-advisor__sync-actions';
-	const syncConfirmApply = createEl('button');
-	syncConfirmApply.type = 'button';
-	syncConfirmApply.className = 'mod-cta';
-	syncConfirmApply.addEventListener('click', () => { void interactions.inventorySync?.onConfirm(); });
-	const syncConfirmCancel = createEl('button');
-	syncConfirmCancel.type = 'button';
-	syncConfirmCancel.addEventListener('click', () => { interactions.inventorySync?.onCancel(); });
-	syncConfirmActions.append(syncConfirmApply, syncConfirmCancel);
-	syncConfirm.append(syncConfirmTitle, syncConfirmBody, syncConfirmSummary, syncConfirmActions);
+	// H18.37 (David, 24 sep 2026): notes write themselves. The write-confirmation panel that used
+	// to pause here for a destructive plan (`deactivate > 0`) is gone; the run controller now
+	// applies such a plan directly (`inventory-vault-sync-run-controller.ts`).
 	// Opt-in offer: what is missing without price history, what turning it on does, and the
 	// consent itself. Hidden unless the host passes `priceHistoryOptIn`.
 	const optIn = createDiv();
@@ -560,30 +551,56 @@ function mountInventoryAdvisorView(
 	const state = createEl('p');
 	state.className = 'tyrian-inventory-advisor__state';
 	state.setAttribute('aria-live', 'polite');
+	// H18.37: the safe code behind a blocked/failed state used to render inline ("Código seguro:
+	// …"); it now goes to the clipboard only, on demand, never as text a player has to read or copy
+	// by hand. `model.blockedReason`/`refreshWarning` are already the safe, closed enum values.
+	const stateCopyButton = createEl('button');
+	stateCopyButton.type = 'button';
+	stateCopyButton.className = 'clickable-icon tyrian-inventory-advisor__state-copy';
+	stateCopyButton.hidden = true;
+	const stateCopyIcon = createSpan();
+	setIcon(stateCopyIcon, 'copy');
+	const stateCopyText = createSpan();
+	stateCopyButton.append(stateCopyIcon, stateCopyText);
+	stateCopyButton.addEventListener('click', () => {
+		const code = model.refreshWarning ?? model.blockedReason;
+		if (code !== undefined) void navigator.clipboard?.writeText(code);
+	});
 	// H18.18: the outcome of the last row "Conservar", in its own polite line: the row itself
 	// moves to "keep" (hidden by default) once the preference is saved and reclassified.
 	const keepStatus = createEl('p');
 	keepStatus.className = 'tyrian-inventory-advisor__keep-status';
 	keepStatus.setAttribute('aria-live', 'polite');
 	keepStatus.hidden = true;
-	let pendingKeep: { itemId: number; name: string } | null = null;
+	let pendingKeep: { itemId: number; name: string; mode: 'keep' | 'unkeep' } | null = null;
 	const updateKeepStatus = (): void => {
 		if (pendingKeep === null) { keepStatus.hidden = true; return; }
 		keepStatus.hidden = false;
-		const outcome = keptItemIds(interactions.preferences).has(pendingKeep.itemId) ? 'done'
-			: interactions.preferencesBusy === true ? 'saving' : 'failed';
+		const stillKept = keptExceptionsByItemId(interactions.preferences).has(pendingKeep.itemId);
+		const settled = pendingKeep.mode === 'keep' ? stillKept : !stillKept;
+		const outcome = settled ? (pendingKeep.mode === 'keep' ? 'done' : 'unsaved')
+			: interactions.preferencesBusy === true ? (pendingKeep.mode === 'keep' ? 'saving' : 'unsaving')
+				: (pendingKeep.mode === 'keep' ? 'failed' : 'unsaveFailed');
 		keepStatus.setAttribute('data-outcome', outcome);
 		keepStatus.textContent = translator.t(`advisor.view.keep.${outcome}`, { name: pendingKeep.name });
 	};
 	const keepContext = (): RowKeepContext | null => interactions.onKeepItem === undefined ? null : {
-		kept: keptItemIds(interactions.preferences),
+		kept: keptExceptionsByItemId(interactions.preferences),
 		busy: interactions.preferencesBusy === true,
 		onKeep: (row) => {
-			pendingKeep = { itemId: row.itemId, name: row.name };
+			pendingKeep = { itemId: row.itemId, name: row.name, mode: 'keep' };
 			keepStatus.hidden = false;
 			keepStatus.setAttribute('data-outcome', 'saving');
 			keepStatus.textContent = translator.t('advisor.view.keep.saving', { name: row.name });
 			void interactions.onKeepItem?.(row.itemId);
+		},
+		onUnkeep: (row, exceptionId) => {
+			if (interactions.onRemoveKeepException === undefined) return;
+			pendingKeep = { itemId: row.itemId, name: row.name, mode: 'unkeep' };
+			keepStatus.hidden = false;
+			keepStatus.setAttribute('data-outcome', 'unsaving');
+			keepStatus.textContent = translator.t('advisor.view.keep.unsaving', { name: row.name });
+			void interactions.onRemoveKeepException(exceptionId);
 		},
 	};
 	const results = createDiv();
@@ -722,6 +739,7 @@ function mountInventoryAdvisorView(
 				scope: inventoryAdvisorScopeSummary(allRows, filters),
 				storageSpace: model.storageSpace ?? null,
 				keep: keepContext(),
+				onOpenSale: interactions.onOpenSale,
 			},
 		));
 		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(model, translator);
@@ -759,7 +777,7 @@ function mountInventoryAdvisorView(
 	function arrangeSections(): void {
 		if (arranged) return;
 		arranged = true;
-		const ordered: HTMLElement[] = [controls, syncAssetsHint, syncConfirm, optIn, sellSignal, state, keepStatus, results, syncStatusPanel];
+		const ordered: HTMLElement[] = [statusLine, controls, syncAssetsHint, optIn, sellSignal, state, stateCopyButton, keepStatus, results, syncStatusPanel];
 		if (preferencesEditor !== null) ordered.push(preferencesEditor.element);
 		ordered.push(priceHistoryDisclosure);
 		section.replaceChildren(...ordered);
@@ -798,10 +816,21 @@ function mountInventoryAdvisorView(
 		const sync = interactions.inventorySync;
 		syncPrimaryActions.hidden = sync === undefined;
 		syncAssetsHint.hidden = sync === undefined || sync.assetsInstalled;
-		syncConfirm.hidden = sync === undefined || sync.state.status !== 'confirm';
 		syncStatusPanel.hidden = sync === undefined;
 		if (sync !== undefined) {
 			const lastRun = sync.state.status === 'idle' ? sync.state.lastRun ?? null : null;
+			// H18.37: one clock for both milestones. The one-click flow analyzes and writes in the
+			// same run, so "Analizado" and "Notas guardadas" share `lastRun.finishedAt`; there is no
+			// separate analysis-only timestamp yet (`inventorySyncLastRun` keeps a single `finishedAt`).
+			statusLine.hidden = lastRun === null || lastRun.status !== 'success';
+			if (!statusLine.hidden && lastRun !== null) {
+				const time = formatClockTime(lastRun.finishedAt, translator.locale);
+				const analyzedAt = createSpan();
+				analyzedAt.textContent = translator.t('advisor.view.status.analyzedAt', { time });
+				const notesSavedAt = createSpan();
+				notesSavedAt.textContent = translator.t('advisor.view.status.notesSavedAt', { time });
+				statusLine.replaceChildren(analyzedAt, notesSavedAt);
+			}
 			syncAssetsHint.textContent = translator.t('advisor.sync.assetsHint');
 			const busy = sync.state.status === 'running';
 			syncButtonText.textContent = translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button');
@@ -821,14 +850,6 @@ function mountInventoryAdvisorView(
 			syncAnalyze.disabled = busy || sync.analysisBusy === true || sync.state.status === 'confirm'
 				|| (sync.state.status === 'disabled' && sync.state.reason === 'missing_key');
 			syncPrimaryActions.setAttribute('aria-busy', String(busy || sync.analysisBusy === true));
-
-			if (sync.state.status === 'confirm') {
-				syncConfirmTitle.textContent = translator.t('advisor.sync.confirmTitle');
-				syncConfirmBody.textContent = translator.t('advisor.sync.confirmBody', { deactivate: sync.state.summary.deactivate });
-				syncConfirmSummary.textContent = translator.t('advisor.sync.summaryLine', inventorySyncSummaryParams(sync.state.summary));
-			}
-			syncConfirmApply.textContent = translator.t('advisor.sync.confirmApply');
-			syncConfirmCancel.textContent = translator.t('common.cancel');
 
 			const panel = inventorySyncPanel(sync.state, translator);
 			syncStatusTitle.textContent = panel.statusWord;
@@ -885,6 +906,10 @@ function mountInventoryAdvisorView(
 		syncFilterControlAvailability();
 		if (model.status === 'blocked' || model.status === 'invalid' || model.refreshWarning !== undefined) state.setAttribute('role', 'alert');
 		else state.removeAttribute('role');
+		const technicalCode = model.refreshWarning ?? model.blockedReason;
+		stateCopyButton.hidden = technicalCode === undefined;
+		stateCopyText.textContent = translator.t('advisor.view.copyTechnicalDetail');
+		stateCopyButton.setAttribute('aria-label', translator.t('advisor.view.copyTechnicalDetail'));
 		preferencesEditor?.update();
 		updateKeepStatus();
 		// See `lastResultsKey` above: skip rebuilding the results table when only a
@@ -939,6 +964,7 @@ function renderResults(
 		scope: InventoryAdvisorScopeSummary;
 		storageSpace: InventoryAdvisorStorageSpaceView | null;
 		keep: RowKeepContext | null;
+		onOpenSale?: () => void;
 	},
 ): HTMLElement {
 	const content = createDiv();
@@ -948,6 +974,7 @@ function renderResults(
 	const rowContext: RowRenderContext = {
 		showSlotsFreed: context.storageSpace?.lowSpace?.isLow === true,
 		keep: context.keep,
+		onOpenSale: context.onOpenSale,
 	};
 	if (characterScope !== null) {
 		const scopeNote = createEl('p');
@@ -967,8 +994,7 @@ function renderResults(
 	}
 	const groups = groupInventoryAdvisorRows(rows, groupBy);
 	const concentration = inventoryAdvisorValueConcentration(rows);
-	content.append(renderTable(groups, groupBy, translator, concentration, rowContext));
-	content.append(renderCards(groups, groupBy, translator, concentration, rowContext));
+	content.append(renderInventoryList(groups, groupBy, translator, concentration, rowContext));
 	return content;
 }
 
@@ -985,19 +1011,11 @@ export function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceVie
 	const section = createEl('section');
 	section.className = 'tyrian-inventory-advisor__storage-space';
 	section.setAttribute('aria-label', translator.t('advisor.view.storage.title'));
-	const stores = createEl('p');
-	stores.className = 'tyrian-inventory-advisor__storage-stores';
-	stores.textContent = translator.t('advisor.view.storage.freeSlots', {
-		stores: ([['bags', storageSpace.bags], ['bank', storageSpace.bank], ['sharedInventory', storageSpace.sharedInventory]] as const)
-			.map(([store, count]) => count === null
-				? translator.t('advisor.view.storage.unknown', { store: translator.t(`advisor.view.storage.name.${store}`) })
-				: translator.t('advisor.view.storage.count', {
-					store: translator.t(`advisor.view.storage.name.${store}`), free: count.free, total: count.total,
-				}))
-			.join(' · '),
-	});
-	section.append(stores);
 	const lowSpace = storageSpace.lowSpace;
+	// H18.37: the verdict (and its lateral mark) come first, then the meter, then the free-slot
+	// breakdown — the order David approved for Venta's maqueta (`docs/diseno/halloween-venta`,
+	// `maqueta.html:190-206,529-532`), shared here since `renderStorageSpace` is the same component.
+	section.setAttribute('data-low-space', lowSpace === null ? 'unknown' : String(lowSpace.isLow));
 	const verdict = createEl('p');
 	verdict.className = 'tyrian-inventory-advisor__storage-verdict';
 	if (lowSpace === null) verdict.textContent = translator.t('advisor.view.storage.lowUnknown');
@@ -1006,6 +1024,9 @@ export function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceVie
 		verdict.textContent = translator.t(lowSpace.isLow ? 'advisor.view.storage.low' : 'advisor.view.storage.plenty', {
 			free: lowSpace.freeSlots, threshold: lowSpace.thresholdFreeSlots,
 		});
+	}
+	section.append(verdict);
+	if (lowSpace !== null) {
 		const meter = createEl('meter');
 		meter.className = 'tyrian-inventory-advisor__storage-meter';
 		meter.setAttribute('min', '0');
@@ -1023,7 +1044,18 @@ export function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceVie
 		meter.setAttribute('aria-label', translator.t('advisor.view.storage.meter'));
 		section.append(meter);
 	}
-	section.append(verdict);
+	const stores = createEl('p');
+	stores.className = 'tyrian-inventory-advisor__storage-stores';
+	stores.textContent = translator.t('advisor.view.storage.freeSlots', {
+		stores: ([['bags', storageSpace.bags], ['bank', storageSpace.bank], ['sharedInventory', storageSpace.sharedInventory]] as const)
+			.map(([store, count]) => count === null
+				? translator.t('advisor.view.storage.unknown', { store: translator.t(`advisor.view.storage.name.${store}`) })
+				: translator.t('advisor.view.storage.count', {
+					store: translator.t(`advisor.view.storage.name.${store}`), free: count.free, total: count.total,
+				}))
+			.join(' · '),
+	});
+	section.append(stores);
 	const capacity = storageSpace.materialCapacity;
 	if (capacity !== null) {
 		const materials = createEl('p');
@@ -1124,122 +1156,266 @@ function renderRecommendationSummary(
 	return summary;
 }
 
-function renderTable(
+/**
+ * H18.37: one list, one DOM, `subgrid` columns — the old table (9 columns) and card grid the
+ * same rows used to render twice at once are gone (up to ~1600 rows, doubled). Owned, location
+ * and evidence move to the row's own `<details>` disclosure instead of a column each.
+ */
+function renderInventoryList(
 	groups: readonly InventoryAdvisorViewGroup[],
 	groupBy: InventoryAdvisorViewGroupBy,
 	translator: Translator,
 	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
 	rowContext: RowRenderContext = DEFAULT_ROW_CONTEXT,
-): HTMLTableElement {
-	const table = createEl('table');
-	table.className = 'tyrian-inventory-advisor__table';
-	const caption = createEl('caption');
-	caption.textContent = translator.t('advisor.view.tableCaption');
-	table.append(caption);
-	const head = createEl('thead');
-	const headRow = createEl('tr');
-	for (const label of TABLE_COLUMNS) {
-		const cell = createEl('th');
-		cell.scope = 'col';
-		cell.textContent = translator.t(`advisor.view.${label}`);
-		cell.className = tableColumnClass(label);
-		headRow.append(cell);
+): HTMLElement {
+	const list = createEl('ul');
+	list.className = 'tyrian-inventory__list';
+	list.setAttribute('aria-label', translator.t('advisor.view.tableCaption'));
+	const head = createEl('li');
+	head.className = 'tyrian-inventory__head';
+	head.setAttribute('aria-hidden', 'true');
+	for (const label of INVENTORY_LIST_COLUMNS) {
+		const cell = createSpan();
+		cell.textContent = label === 'explanation' ? translator.t('advisor.view.list.headExplanation')
+			: label === 'value' ? translator.t('sale.row.head.value')
+				: label === 'keep' ? translator.t('advisor.view.keep.button')
+					: translator.t(`advisor.view.${label}`);
+		if (label === 'value') cell.className = 'is-num';
+		head.append(cell);
 	}
-	head.append(headRow);
-	table.append(head);
+	list.append(head);
 	for (const group of groups) {
-		const body = createEl('tbody');
-		const groupRow = createEl('tr');
-		const groupCell = createEl('th');
-		groupCell.scope = 'rowgroup';
-		groupCell.colSpan = TABLE_COLUMNS.length;
-		groupCell.className = 'tyrian-inventory-advisor__group-heading';
-		groupCell.textContent = groupLabel(group.key, groupBy, translator);
-		groupRow.append(groupCell);
-		body.append(groupRow);
-		for (const row of group.rows) body.append(renderTableRow(row, translator, concentration.get(row.id) ?? null, rowContext));
-		body.append(renderSubtotalRow(group.rows, translator));
-		table.append(body);
+		const heading = createEl('li');
+		heading.className = 'tyrian-inventory__group-heading';
+		heading.textContent = groupLabel(group.key, groupBy, translator);
+		list.append(heading);
+		for (const row of group.rows) {
+			list.append(renderInventoryListRow(row, translator, concentration.get(row.id) ?? null, rowContext));
+		}
+		list.append(renderInventoryGroupSubtotal(group.rows, translator));
 	}
-	return table;
+	return list;
 }
 
-const TABLE_COLUMNS = [
-	'item', 'quantity', 'action', 'unitValue', 'value',
-	'owned', 'location', 'evidence', 'explanation',
-] as const;
+const INVENTORY_LIST_COLUMNS = ['item', 'quantity', 'action', 'value', 'explanation', 'keep'] as const;
 
-const NUMERIC_TABLE_COLUMNS: readonly string[] = ['quantity', 'unitValue', 'value', 'owned'];
-const WIDE_TABLE_COLUMNS: readonly string[] = ['owned', 'location', 'evidence', 'explanation'];
-
-function tableColumnClass(label: string): string {
-	return [
-		NUMERIC_TABLE_COLUMNS.includes(label) ? 'tyrian-inventory-advisor__numeric' : '',
-		WIDE_TABLE_COLUMNS.includes(label) ? 'tyrian-inventory-advisor__wide-only' : '',
-	].filter((entry) => entry.length > 0).join(' ');
-}
-
-function renderTableRow(
+function renderInventoryListRow(
 	row: InventoryAdvisorViewRow,
 	translator: Translator,
 	concentration: InventoryAdvisorValueConcentration | null,
 	rowContext: RowRenderContext,
-): HTMLTableRowElement {
-	const tableRow = createEl('tr');
-	const item = createEl('th');
-	item.scope = 'row';
-	appendItemIdentity(item, row);
-	tableRow.append(item);
-	appendCell(tableRow, String(row.quantity), tableColumnClass('quantity'));
-	const decision = decisionCell(row, translator);
+): HTMLLIElement {
+	const item = createEl('li');
+	item.className = 'tyrian-inventory__row';
+	// H18.37: `aria-label` (not `aria-labelledby` + a generated id), so two independently mounted
+	// instances of the same fixture rows never collide on the same DOM id (H18.18's own guarantee).
+	item.setAttribute('aria-label', row.name);
+
+	// H18.37 (rendimiento, ~1600 filas): un solo nodo por celda cuando el contenido es un único
+	// texto; `aria-label` cubre el nombre accesible en vez de un `<span class="sr-only">` aparte.
+	const itemCell = createDiv();
+	itemCell.className = 'tyrian-inventory__cell c-item tyrian-inventory__item';
+	appendItemIdentity(itemCell, row);
+	const stores = createEl('small');
+	stores.textContent = rowStoresSummary(row, translator);
+	itemCell.append(stores);
+
+	const qtyCell = createDiv();
+	qtyCell.className = 'tyrian-inventory__cell c-qty tyrian-inventory__qty';
+	const qtyValue = createEl('b');
+	qtyValue.textContent = String(row.quantity);
+	qtyCell.append(qtyValue);
+
+	const actionCell = createDiv();
+	actionCell.className = 'tyrian-inventory__cell c-action';
+	actionCell.append(renderActionMark(row, translator));
+	const slots = rowContext.showSlotsFreed && row.slotsFreed !== undefined && row.slotsFreed > 0
+		? translator.t(row.slotsFreed === 1 ? 'sale.detail.freesSlots.one' : 'sale.detail.freesSlots.many', { count: row.slotsFreed })
+		: null;
+	if (slots !== null) {
+		const slotsLine = createSpan();
+		slotsLine.className = 'tyrian-action-when';
+		slotsLine.textContent = slots;
+		actionCell.append(slotsLine);
+	}
+
+	const moneyCell = createDiv();
+	moneyCell.className = 'tyrian-inventory__cell c-money tyrian-inventory__money';
+	if (row.value.status !== 'available') moneyCell.setAttribute('data-unknown', 'true');
+	moneyCell.setAttribute('aria-label', `${translator.t('sale.row.head.value')}: ${valueLabel(row, translator)}`);
+	moneyCell.textContent = valueLabel(row, translator);
+
+	const whyCell = createDiv();
+	whyCell.className = 'tyrian-inventory__cell c-why tyrian-inventory__why';
+	whyCell.textContent = explanationLabel(row, translator);
+
+	const dataCell = createDiv();
+	dataCell.className = 'tyrian-inventory__cell c-data tyrian-inventory__data';
+	const dataLine = [decisionMomentLabel(row, translator), sellOrWaitLabel(row, translator)].filter((part) => part !== null).join(' · ');
+	if (dataLine.length > 0) {
+		dataCell.setAttribute('aria-label', `${translator.t('advisor.view.list.headExplanation')}: ${dataLine}`);
+		const dataValue = createSpan();
+		dataValue.textContent = dataLine;
+		dataCell.append(dataValue);
+	}
+	if (row.containerEconomy !== undefined) {
+		const viewInSale = createEl('button');
+		viewInSale.className = 'mod-link';
+		viewInSale.type = 'button';
+		viewInSale.textContent = translator.t('advisor.view.list.viewInSale');
+		viewInSale.addEventListener('click', () => rowContext.onOpenSale?.());
+		dataCell.append(viewInSale);
+	}
+
+	const keepCell = createDiv();
+	keepCell.className = 'tyrian-inventory__cell c-keep tyrian-inventory__keep';
 	const keep = keepControl(row, translator, rowContext.keep);
-	if (keep !== null) decision.append(keep);
-	tableRow.append(decision);
-	appendCell(tableRow, unitValueLabel(row, translator), tableColumnClass('unitValue'));
-	appendCell(tableRow, valueWithConcentrationLabel(row, concentration, translator), tableColumnClass('value'));
-	appendCell(tableRow, ownershipLabel(row, translator), tableColumnClass('owned'));
-	appendCell(tableRow, allocationLabel(row, translator), tableColumnClass('location'));
-	tableRow.append(evidenceCell(row.coverage, translator));
-	tableRow.append(explanationCell(row, translator, rowContext.showSlotsFreed));
-	return tableRow;
+	if (keep !== null) keepCell.append(keep);
+
+	item.append(itemCell, qtyCell, actionCell, moneyCell, whyCell, dataCell, keepCell);
+
+	const detail = rowDetailDisclosure(row, translator, concentration, rowContext.showSlotsFreed);
+	if (detail !== null) item.append(detail);
+	return item;
+}
+
+/**
+ * H18.37: "En propiedad", "Ubicación" y "Evidencia" (H18.31, lámina 3.1) live behind one
+ * disclosure per row instead of three columns; every value below reuses the same label
+ * functions the removed table/card layout already called, so nothing it showed is lost.
+ */
+function rowDetailDisclosure(
+	row: InventoryAdvisorViewRow,
+	translator: Translator,
+	concentration: InventoryAdvisorValueConcentration | null,
+	showSlotsFreed: boolean,
+): HTMLElement | null {
+	const details = createEl('details');
+	details.className = 'tyrian-inventory__more';
+	const summary = createEl('summary');
+	summary.textContent = translator.t('advisor.view.list.detailsSummary');
+	details.append(summary);
+	const list = createEl('dl');
+	addDefinition(list, translator.t('advisor.view.owned'), ownershipLabel(row, translator));
+	addDefinition(list, translator.t('advisor.view.unitValue'), unitValueLabel(row, translator));
+	// The row's own money cell already shows `valueLabel`; only the concentration this row adds
+	// on top of it (never a second copy of the value itself) belongs in the detail disclosure.
+	if (concentration !== null) addDefinition(list, translator.t('sale.row.head.value'), translator.t('advisor.view.valueConcentration', {
+		share: formatBasisPoints(concentration.shareBasisPoints, translator),
+		cumulative: formatBasisPoints(concentration.cumulativeBasisPoints, translator),
+	}));
+	addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
+	addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
+	details.append(list);
+	const context = rowContextDetails(row, translator, showSlotsFreed);
+	if (context !== null) details.append(context);
+	const advanced = advancedEvidenceDetails(row.coverage, translator);
+	if (advanced !== null) details.append(advanced);
+	const season = containerSeasonNotice(row, translator);
+	if (season !== null) details.append(season);
+	const economy = containerEconomyDetails(row, translator);
+	if (economy !== null) details.append(economy);
+	const tail = containerTailDetails(row, translator);
+	if (tail !== null) details.append(tail);
+	const salvage = equipmentSalvageDetails(row, translator);
+	if (salvage !== null) details.append(salvage);
+	return details;
+}
+
+/** Closes each group with the exact totals of the rows above it, never an inferred value. */
+function renderInventoryGroupSubtotal(
+	rows: readonly InventoryAdvisorViewRow[],
+	translator: Translator,
+): HTMLLIElement {
+	const totals = summarizeInventoryAdvisorRows(rows);
+	const subtotal = createEl('li');
+	subtotal.className = 'tyrian-inventory__row tyrian-inventory-advisor__subtotal';
+	const label = createDiv();
+	label.className = 'tyrian-inventory__cell c-item';
+	label.textContent = translator.t('advisor.view.subtotal', { items: totals.items });
+	const qty = createDiv();
+	qty.className = 'tyrian-inventory__cell c-qty';
+	const qtyValue = createEl('b');
+	qtyValue.textContent = String(totals.units);
+	qty.append(qtyValue);
+	const action = createDiv();
+	action.className = 'tyrian-inventory__cell c-action';
+	const money = createDiv();
+	money.className = 'tyrian-inventory__cell c-money';
+	money.textContent = totals.pricedItems === 0
+		? translator.t('advisor.view.value.unavailable')
+		: formatInventoryAdvisorCopper(totals.knownCopper, translator);
+	const why = createDiv();
+	why.className = 'tyrian-inventory__cell c-why';
+	why.textContent = totals.unpricedItems === 0 ? '' : translator.t('advisor.view.unpricedShort', { items: totals.unpricedItems });
+	const data = createDiv();
+	data.className = 'tyrian-inventory__cell c-data';
+	const keep = createDiv();
+	keep.className = 'tyrian-inventory__cell c-keep';
+	subtotal.append(label, qty, action, money, why, data, keep);
+	return subtotal;
 }
 
 /** What every rendered row needs besides itself: the low-space detail and the quick "keep" action. */
 interface RowRenderContext {
 	readonly showSlotsFreed: boolean;
 	readonly keep: RowKeepContext | null;
+	/** "Ver en Venta" on a container row (H18.31, lámina 3.1, decision E); absent hides the button. */
+	readonly onOpenSale?: () => void;
 }
 
 interface RowKeepContext {
-	/** Items an active whole-stack keep exception already covers, from the loaded preferences. */
-	readonly kept: ReadonlySet<number>;
+	/** Items an active whole-stack keep exception already covers, mapped to that exception's id. */
+	readonly kept: ReadonlyMap<number, string>;
 	readonly busy: boolean;
 	readonly onKeep: (row: InventoryAdvisorViewRow) => void;
+	/**
+	 * H18.37 (David, 25 sep 2026, question 5): "Conservar" is reversible from the same row
+	 * (Conservar / Conservado) instead of only from "Preferencias de inventario".
+	 */
+	readonly onUnkeep: (row: InventoryAdvisorViewRow, exceptionId: string) => void;
 }
 
 const DEFAULT_ROW_CONTEXT: RowRenderContext = { showSlotsFreed: false, keep: null };
 
 /**
- * H18.18, criterion 3: "Conservar" on the row itself, the existing keep-exception setting without
- * typing an item id. A row the advisor already keeps offers nothing; an item a keep exception
- * already covers says so instead of offering a second one.
+ * H18.18, criterion 3, widened by H18.37: "Conservar" on the row itself, without typing an item
+ * id, reversible in place (Conservar / Conservado, `aria-pressed`). A row the advisor already
+ * keeps for a reservation goal says so instead of offering a control it would not honor.
  */
 function keepControl(row: InventoryAdvisorViewRow, translator: Translator, keep: RowKeepContext | null): HTMLElement | null {
-	if (keep === null || row.action === 'keep') return null;
-	if (keep.kept.has(row.itemId)) {
-		const saved = createSpan();
-		saved.className = 'tyrian-inventory-advisor__keep-saved';
-		saved.textContent = translator.t('advisor.view.keep.saved');
-		return saved;
+	if (keep === null) return null;
+	if (row.action === 'keep') {
+		const note = createEl('small');
+		note.textContent = translator.t('advisor.view.keep.reservationRules');
+		return note;
 	}
+	const kept = keep.kept.get(row.itemId) ?? null;
 	const button = createEl('button');
 	button.type = 'button';
-	button.className = 'tyrian-inventory-advisor__keep-button';
-	button.textContent = translator.t('advisor.view.keep.button');
-	button.setAttribute('aria-label', translator.t('advisor.view.keep.buttonLabel', { name: row.name }));
 	button.disabled = keep.busy;
-	button.addEventListener('click', () => keep.onKeep(row));
-	return button;
+	const icon = createSpan();
+	icon.className = 'svg-icon is-small';
+	setIcon(icon, 'pin');
+	const label = createSpan();
+	button.append(icon, label);
+	const note = createEl('small');
+	if (kept !== null) {
+		button.setAttribute('aria-pressed', 'true');
+		label.textContent = translator.t('advisor.view.keep.keptButton');
+		button.setAttribute('aria-label', translator.t('advisor.view.keep.keptButtonLabel', { name: row.name }));
+		note.setAttribute('aria-live', 'polite');
+		note.textContent = translator.t('advisor.view.keep.keptNote');
+		button.addEventListener('click', () => keep.onUnkeep(row, kept));
+	} else {
+		button.setAttribute('aria-pressed', 'false');
+		label.textContent = translator.t('advisor.view.keep.button');
+		button.setAttribute('aria-label', translator.t('advisor.view.keep.buttonLabel', { name: row.name }));
+		button.addEventListener('click', () => keep.onKeep(row));
+	}
+	const wrap = createDiv();
+	wrap.append(button, note);
+	return wrap;
 }
 
 /**
@@ -1256,144 +1432,14 @@ export function keepExceptionForItem(itemId: number, existing: readonly KeepExce
 	};
 }
 
-/** Items an active whole-stack keep exception covers; the rows then say "Guardado" instead of offering it again. */
-function keptItemIds(preferences: InventoryPreferencesEditorState | undefined): Set<number> {
-	return new Set((preferences?.keepExceptions ?? [])
+/**
+ * Items an active whole-stack keep exception covers, mapped to that exception's id so the row's
+ * reversible "Conservado" (H18.37) can remove exactly it without a second preferences read.
+ */
+function keptExceptionsByItemId(preferences: InventoryPreferencesEditorState | undefined): Map<number, string> {
+	return new Map((preferences?.keepExceptions ?? [])
 		.filter((entry) => entry.status === 'active' && entry.quantity.mode === 'all')
-		.map((entry) => entry.itemId));
-}
-
-/** Closes each group with the exact totals of the rows above it, never an inferred value. */
-function renderSubtotalRow(
-	rows: readonly InventoryAdvisorViewRow[],
-	translator: Translator,
-): HTMLTableRowElement {
-	const totals = summarizeInventoryAdvisorRows(rows);
-	const subtotalRow = createEl('tr');
-	subtotalRow.className = 'tyrian-inventory-advisor__subtotal';
-	const label = createEl('th');
-	label.scope = 'row';
-	label.textContent = translator.t('advisor.view.subtotal', { items: totals.items });
-	subtotalRow.append(label);
-	appendCell(subtotalRow, String(totals.units), tableColumnClass('quantity'));
-	appendCell(subtotalRow, '', '');
-	appendCell(subtotalRow, '', tableColumnClass('unitValue'));
-	appendCell(subtotalRow, totals.pricedItems === 0
-		? translator.t('advisor.view.value.unavailable')
-		: formatInventoryAdvisorCopper(totals.knownCopper, translator), tableColumnClass('value'));
-	appendCell(subtotalRow, '', tableColumnClass('owned'));
-	appendCell(subtotalRow, '', tableColumnClass('location'));
-	appendCell(subtotalRow, totals.unpricedItems === 0 ? '' : translator.t('advisor.view.unpricedShort', {
-		items: totals.unpricedItems,
-	}), tableColumnClass('evidence'));
-	appendCell(subtotalRow, '', tableColumnClass('explanation'));
-	return subtotalRow;
-}
-
-function decisionCell(row: InventoryAdvisorViewRow, translator: Translator): HTMLTableCellElement {
-	const cell = createEl('td');
-	cell.className = 'tyrian-inventory-advisor__decision';
-	const badge = createSpan();
-	badge.className = `tyrian-inventory-advisor__badge tyrian-inventory-advisor__badge--${row.action}`;
-	badge.textContent = decisionLabel(row, translator);
-	cell.append(badge);
-	return cell;
-}
-
-function evidenceCell(coverage: InventoryAdvisorViewCoverage, translator: Translator): HTMLTableCellElement {
-	const cell = createEl('td');
-	cell.className = `tyrian-inventory-advisor__wide-only tyrian-inventory-advisor__evidence tyrian-inventory-advisor__evidence--${evidenceGroup(coverage)}`;
-	const summary = createSpan();
-	summary.textContent = evidenceLabel(coverage, translator);
-	cell.append(summary);
-	const advanced = advancedEvidenceDetails(coverage, translator);
-	if (advanced !== null) cell.append(advanced);
-	return cell;
-}
-
-function explanationCell(row: InventoryAdvisorViewRow, translator: Translator, showSlotsFreed: boolean): HTMLTableCellElement {
-	const cell = createEl('td');
-	cell.className = tableColumnClass('explanation');
-	const explanation = createEl('p');
-	explanation.textContent = explanationLabel(row, translator);
-	cell.append(explanation);
-	const moment = decisionMomentLabel(row, translator);
-	if (moment !== null) {
-		const momentLine = createEl('p');
-		momentLine.className = 'tyrian-inventory-advisor__decision-moment';
-		momentLine.textContent = moment;
-		cell.append(momentLine);
-	}
-	const sellOrWait = sellOrWaitLabel(row, translator);
-	if (sellOrWait !== null) {
-		const comparisonLine = createEl('p');
-		comparisonLine.className = 'tyrian-inventory-advisor__decision-moment';
-		comparisonLine.textContent = sellOrWait;
-		cell.append(comparisonLine);
-	}
-	const context = rowContextDetails(row, translator, showSlotsFreed);
-	if (context !== null) cell.append(context);
-	const season = containerSeasonNotice(row, translator);
-	if (season !== null) cell.append(season);
-	const economy = containerEconomyDetails(row, translator);
-	if (economy !== null) cell.append(economy);
-	const tail = containerTailDetails(row, translator);
-	if (tail !== null) cell.append(tail);
-	const salvage = equipmentSalvageDetails(row, translator);
-	if (salvage !== null) cell.append(salvage);
-	return cell;
-}
-
-function renderCards(
-	groups: readonly InventoryAdvisorViewGroup[],
-	groupBy: InventoryAdvisorViewGroupBy,
-	translator: Translator,
-	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
-	rowContext: RowRenderContext = DEFAULT_ROW_CONTEXT,
-): HTMLElement {
-	const cards = createDiv();
-	cards.className = 'tyrian-inventory-advisor__cards';
-	for (const group of groups) {
-		const groupHeading = createEl('h3');
-		groupHeading.textContent = groupLabel(group.key, groupBy, translator);
-		cards.append(groupHeading);
-		for (const row of group.rows) {
-			const rowConcentration = concentration.get(row.id) ?? null;
-			const article = createEl('article');
-			article.className = 'tyrian-inventory-advisor__card';
-			const recommendation = createEl('p');
-			recommendation.className = `tyrian-inventory-advisor__card-decision tyrian-inventory-advisor__badge--${row.action}`;
-			recommendation.textContent = `${decisionLabel(row, translator)} · ${valueWithConcentrationLabel(row, rowConcentration, translator)}`;
-			const heading = createEl('h4');
-			appendItemIdentity(heading, row);
-			article.append(recommendation, heading);
-			const keep = keepControl(row, translator, rowContext.keep);
-			if (keep !== null) article.append(keep);
-			const list = createEl('dl');
-			addDefinition(list, translator.t('advisor.view.owned'), ownershipLabel(row, translator));
-			addDefinition(list, translator.t('advisor.view.quantity'), String(row.quantity));
-			addDefinition(list, translator.t('advisor.view.unitValue'), unitValueLabel(row, translator));
-			addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
-			addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
-			const moment = [decisionMomentLabel(row, translator), sellOrWaitLabel(row, translator)].filter((part) => part !== null);
-			addDefinition(list, translator.t('advisor.view.explanation'), [explanationLabel(row, translator), ...moment].join(' · '));
-			article.append(list);
-			const context = rowContextDetails(row, translator, rowContext.showSlotsFreed);
-			if (context !== null) article.append(context);
-			const advanced = advancedEvidenceDetails(row.coverage, translator);
-			if (advanced !== null) article.append(advanced);
-			const season = containerSeasonNotice(row, translator);
-			if (season !== null) article.append(season);
-			const economy = containerEconomyDetails(row, translator);
-			if (economy !== null) article.append(economy);
-			const tail = containerTailDetails(row, translator);
-			if (tail !== null) article.append(tail);
-			const salvage = equipmentSalvageDetails(row, translator);
-			if (salvage !== null) article.append(salvage);
-			cards.append(article);
-		}
-	}
-	return cards;
+		.map((entry) => [entry.itemId, entry.exceptionId]));
 }
 
 function appendCell(row: HTMLTableRowElement, value: string, className = ''): void {
@@ -1477,10 +1523,53 @@ function appendItemIdentity(container: HTMLElement, row: InventoryAdvisorViewRow
 		image.setAttribute('decoding', 'async');
 		image.setAttribute('referrerpolicy', 'no-referrer');
 		container.append(image);
+	} else {
+		// H18.31 (boceto), same fallback Venta already uses for a missing catalog icon.
+		const fallback = createSpan();
+		fallback.className = 'tyrian-inventory__icon';
+		fallback.textContent = initialsFor(row.name);
+		fallback.setAttribute('aria-hidden', 'true');
+		container.append(fallback);
 	}
-	const name = createSpan();
+	const name = createEl('strong');
 	name.textContent = row.name;
 	container.append(name);
+}
+
+/** Same rule Venta's `sale-view.ts` already uses for its icon fallback: up to two initials. */
+function initialsFor(name: string): string {
+	const words = name.trim().split(/\s+/u).filter((word) => word.length > 0);
+	return words.slice(0, 2).map((word) => word[0]!.toUpperCase()).join('');
+}
+
+/**
+ * H18.37: the compact store line under the item's name (e.g. "Bolsas 412 · Banco 1938"), grouped
+ * by broad store instead of `allocationLabel`'s per-slot breakdown, which moved to the row detail.
+ */
+function rowStoreLabel(source: InventoryAdvisorViewRow['allocations'][number]['location']['source'], translator: Translator): string {
+	switch (source) {
+		case 'character': return translator.t('advisor.view.storage.name.bags');
+		case 'shared_inventory': return translator.t('advisor.view.location.shared_inventory');
+		case 'bank': return translator.t('advisor.view.location.bank');
+		case 'materials': return translator.t('advisor.view.location.materials');
+		case 'commerce_delivery': return translator.t('advisor.view.location.commerce_delivery');
+		default: return assertNeverLocationSource(source);
+	}
+}
+
+function assertNeverLocationSource(value: never): string {
+	throw new Error(`Unsupported Inventory Advisor location source: ${JSON.stringify(value)}`);
+}
+
+function rowStoresSummary(row: InventoryAdvisorViewRow, translator: Translator): string {
+	const totals = new Map<string, number>();
+	const order: Array<InventoryAdvisorViewRow['allocations'][number]['location']['source']> = [];
+	for (const allocation of row.allocations) {
+		const key = allocation.location.source;
+		if (!totals.has(key)) order.push(key);
+		totals.set(key, (totals.get(key) ?? 0) + allocation.quantity);
+	}
+	return order.map((key) => `${rowStoreLabel(key, translator)} ${String(totals.get(key))}`).join(' · ');
 }
 
 function safeItemIcon(value: string | null): string | null {
@@ -1518,6 +1607,27 @@ function decisionLabel(row: InventoryAdvisorViewRow, translator: Translator): st
 	const decision = row.decision ?? null;
 	if (decision === null || decision.action === row.action) return actionLabelFor(row.action, translator);
 	return translator.t(`inventory.decision.action.${decision.action}`);
+}
+
+/**
+ * H18.37, `.tyrian-action` (already live in Venta, `styles.css`): the same word + lateral mark this
+ * row shows, instead of `decisionLabel`'s bare text with color for meaning (`styles.css:2146-2170`,
+ * removed). Uses the exact key `decisionLabel` would show for its `data-action` bucket.
+ */
+const ROW_ACTION_MARK: Record<string, string> = {
+	sell: 'sell', list: 'list', vendor: 'vendor', salvage: 'salvage', use: 'use',
+	open: 'open', deposit_material: 'deposit', keep: 'keep', review: 'nodata', discard_review: 'nodata',
+	hold: 'hold', hold_for_legendary: 'keep', sell_at_season: 'hold',
+};
+
+function renderActionMark(row: InventoryAdvisorViewRow, translator: Translator): HTMLElement {
+	const decision = row.decision ?? null;
+	const key = decision !== null && decision.action !== row.action ? decision.action : row.action;
+	const mark = createSpan();
+	mark.className = 'tyrian-action';
+	mark.setAttribute('data-action', ROW_ACTION_MARK[key] ?? 'nodata');
+	mark.textContent = decisionLabel(row, translator);
+	return mark;
 }
 
 /**
@@ -1606,18 +1716,6 @@ function valueLabel(row: InventoryAdvisorViewRow, translator: Translator): strin
 	return row.value.status === 'available'
 		? priceOrFallback(row.value.copper, 'unavailable', translator)
 		: priceOrFallback(null, row.value.status, translator);
-}
-
-function valueWithConcentrationLabel(
-	row: InventoryAdvisorViewRow,
-	concentration: InventoryAdvisorValueConcentration | null,
-	translator: Translator,
-): string {
-	const value = valueLabel(row, translator);
-	return concentration === null ? value : `${value} · ${translator.t('advisor.view.valueConcentration', {
-		share: formatBasisPoints(concentration.shareBasisPoints, translator),
-		cumulative: formatBasisPoints(concentration.cumulativeBasisPoints, translator),
-	})}`;
 }
 
 /** Derives the per-unit figure from the demonstrated net total; it never re-prices an item. */
@@ -2465,4 +2563,11 @@ export function absoluteTimeLabel(iso: string, locale: string): string {
 	const at = Date.parse(iso);
 	if (!Number.isFinite(at)) return iso;
 	return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(at);
+}
+
+/** H18.37: just the clock, for the compact status line (Venta's `sale-view.ts` has its own copy). */
+function formatClockTime(iso: string, locale: string): string {
+	const at = Date.parse(iso);
+	if (!Number.isFinite(at)) return iso;
+	return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(at);
 }
