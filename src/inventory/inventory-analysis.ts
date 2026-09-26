@@ -118,7 +118,8 @@ const DEFAULT_RECOMMENDATION_PORT: InventoryPositionRecommendationPort = {
 	lowStorageSpaceThresholdFreeSlots: () => DEFAULT_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS,
 };
 
-const POSITION_RECOMMENDATION_REQUIRED_DAYS = 42;
+/** `calculatePriceHistoryPercentile`'s own floor, reused by the Sale tab's hero card (`main.ts`) so both callers ask `recommendPosition` for the same amount of history. */
+export const POSITION_RECOMMENDATION_REQUIRED_DAYS = 42;
 
 /** Tie-break between two routes covering the same share of one position: act first, doubt last. */
 const ROUTE_PRIORITY: readonly InventoryObjectRoute[] = [
