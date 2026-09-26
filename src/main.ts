@@ -4878,8 +4878,17 @@ function isPositionRecommendationReasonCode(value: string): value is PositionRec
  * route already decided something other than a market sale, has nothing this tab can time. It
  * shows as "sin datos" rather than guessing, and (ficha decision 3) still gets the low-space
  * "depositar" override in `buildSaleViewModel` when it is a bankable material.
+ *
+ * Review fix (26 sep 2026): `row.marketComparison` only exists for a route the advisor already
+ * classified as `sell`/`list`/`vendor` (`marketComparisonsForLine`, `inventory-advisor-
+ * presentation.ts`); a row whose route landed on `review` (no demonstrated verdict yet) never gets
+ * one, even though `bidCopper` comes from the account's own live price snapshot and is set
+ * regardless of that classification. Before this fix that produced exactly the contradiction David
+ * reported: "Puja por unidad 4g 13s 45c" next to "Neto si vendes ya: Sin datos" for the same row.
+ * `computeInstantSellNetCopper` (`sale-view-model.ts`) is the SAME fallback `buildSaleHeroInput`
+ * already uses for the Saco's own hero card — one fee formula, not a second one for regular rows.
  */
-function saleSourceRowFromAdvisorRow(row: InventoryAdvisorViewRow, bidCopper: number | null): SaleSourceRow {
+export function saleSourceRowFromAdvisorRow(row: InventoryAdvisorViewRow, bidCopper: number | null): SaleSourceRow {
 	const decision = row.decision ?? null;
 	const timed: SaleSourceDecision | null = decision === null ? null
 		: decision.action !== 'sell' && decision.action !== 'hold' && decision.action !== 'sell_at_season' && decision.action !== 'review' ? null
@@ -4894,7 +4903,8 @@ function saleSourceRowFromAdvisorRow(row: InventoryAdvisorViewRow, bidCopper: nu
 		materialStorageEligible: row.materialStorage != null,
 		decision: timed,
 		bidCopper,
-		instantSellNetCopper: row.marketComparison?.instantSellCopper ?? null,
+		instantSellNetCopper: row.marketComparison?.instantSellCopper
+			?? computeInstantSellNetCopper(bidCopper, row.ownedQuantity),
 		listingNetCopper: row.marketComparison?.listingCopper ?? null,
 	};
 }

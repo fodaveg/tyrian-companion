@@ -163,15 +163,27 @@ const DAY_MS = 86_400_000;
 /**
  * Maps `recommendPosition`'s own verdict to the one of three words this view ever shows (ficha
  * decision 2). `hold` (rule (c), no calendar window at all) is "wait"; `sell_at_season` (a specific,
- * evidence-backed future window) is "not_yet"; anything else undecided is "no_data". The mapping
- * never reinterprets the rule itself, only picks its display word.
+ * evidence-backed future window) is "not_yet"; anything else undecided is "no_data" — UNLESS the
+ * account's live price snapshot carries a bid for this position (`bidCopper`, read independently of
+ * `recommendPosition`'s own verdict).
+ *
+ * Review fix (26 sep 2026): `no_data` renders as "Sin cotización" (`sale.action.noData`), the SAME
+ * word the advisor's own `review` route uses for a position with no bid at all (H18.37's own doc
+ * comment: "Sin cotización (nunca Revisar), la palabra de Venta para lo que no tiene puja"). Showing
+ * it for a row that DOES carry a bid — because the timing verdict itself stalled on `review` (an
+ * empty history window, today's close still uncaptured, price history off, …) — is exactly the
+ * contradiction David reported ("Puja por unidad 4g 13s 45c" next to "Sin cotización"): the word
+ * means "no bid", and there is one. `wait` ("Esperar") is the closest EXISTING word for "priced, no
+ * demonstrated verdict yet, not selling automatically" — the same caution `hold` already expresses,
+ * never a new one invented for this case.
  */
-function baseDisplayAction(decision: SaleSourceDecision | null): SaleDisplayAction {
-	if (decision === null) return 'no_data';
-	if (decision.action === 'sell') return 'sell';
-	if (decision.action === 'hold') return 'wait';
-	if (decision.action === 'sell_at_season') return 'not_yet';
-	return 'no_data';
+function baseDisplayAction(decision: SaleSourceDecision | null, bidCopper: number | null): SaleDisplayAction {
+	if (decision !== null) {
+		if (decision.action === 'sell') return 'sell';
+		if (decision.action === 'hold') return 'wait';
+		if (decision.action === 'sell_at_season') return 'not_yet';
+	}
+	return bidCopper === null ? 'no_data' : 'wait';
 }
 
 /**
@@ -203,7 +215,7 @@ function applyOpenVsSellOverride(hero: SaleHeroViewModel): SaleHeroViewModel {
 }
 
 function toRowViewModel(source: SaleSourceRow, isLow: boolean, nowMs: number): SaleRowViewModel {
-	const action = applyLowSpaceOverride(baseDisplayAction(source.decision), source.materialStorageEligible, isLow);
+	const action = applyLowSpaceOverride(baseDisplayAction(source.decision, source.bidCopper), source.materialStorageEligible, isLow);
 	const slotsFreedLabel = isLow && (action === 'sell' || action === 'deposit') ? source.slotsUsed : null;
 	const quotedAtMs = parseIsoOrNull(source.decision?.priceQuotedAt ?? null);
 	const staleAtMs = parseIsoOrNull(source.decision?.until ?? null);
