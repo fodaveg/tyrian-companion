@@ -136,8 +136,16 @@ const H5_11_KEYS = [
 	'advisor.view.scope.reason.materials', 'advisor.view.scope.reason.delivery',
 	'advisor.view.scope.reason.other_characters', 'advisor.view.scope.reason.keep',
 	'advisor.view.scope.reason.review', 'advisor.view.scope.reason.filters',
-	'advisor.view.keep.button', 'advisor.view.keep.buttonLabel', 'advisor.view.keep.saved',
+	'advisor.view.keep.button', 'advisor.view.keep.buttonLabel',
 	'advisor.view.keep.saving', 'advisor.view.keep.done', 'advisor.view.keep.failed',
+	// H18.37: "Conservar" reversible on the row (Conservar/Conservado), the status line, the
+	// technical-detail copy button, and the single subgrid list's own header/detail/link copy.
+	'advisor.view.keep.keptButton', 'advisor.view.keep.keptButtonLabel', 'advisor.view.keep.keptNote',
+	'advisor.view.keep.reservationRules', 'advisor.view.keep.unsaving', 'advisor.view.keep.unsaved',
+	'advisor.view.keep.unsaveFailed',
+	'advisor.view.status.analyzedAt', 'advisor.view.status.notesSavedAt',
+	'advisor.view.copyTechnicalDetail',
+	'advisor.view.list.headExplanation', 'advisor.view.list.detailsSummary', 'advisor.view.list.viewInSale',
 ] as const;
 
 function placeholders(value: string): string[] {
