@@ -260,7 +260,15 @@ import {
 	type SaleSourceRow,
 	type SaleViewModel,
 } from './ui/sale-view-model';
-import { POSITION_RECOMMENDATION_REASON_CODES, type PositionRecommendationReasonCode } from './advisor/inventory-position-recommendation';
+import {
+	POSITION_RECOMMENDATION_REASON_CODES,
+	recommendPosition,
+	type PositionRecommendationReasonCode,
+	type PositionRecommendationSeasonalInput,
+	type PositionRecommendationV1,
+} from './advisor/inventory-position-recommendation';
+import { mergePriceHistoryWithSeed } from './economy/price-seed-history-merge';
+import { POSITION_RECOMMENDATION_REQUIRED_DAYS } from './inventory/inventory-analysis';
 import {
 	InventoryVaultSyncService,
 	type InventoryVaultSyncPlan,
@@ -409,6 +417,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private priceHistory: PriceHistoryRuntime | null = null;
 	/** Deferred to the panel's own load action; never touched from `onload`. */
 	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
+	/** Set once during `initializeRuntime`; `readCachedPriceSeed`'s own key, reused by `refreshSaleHeroTiming`. */
+	private vaultId: string | null = null;
+	/**
+	 * The Sale tab's hero card verdict: `recommendPosition` run directly for the Saco (36038), the
+	 * SAME rule every other row uses, even though the advisor's own route for it is `open` (a
+	 * curated container) and therefore carries no timing of its own (`decideInventoryObjectRoute`
+	 * stands the route instead). Refreshed alongside every `refreshInventoryAdvisor()`; null until
+	 * the first one completes.
+	 */
+	private saleHeroTiming: PositionRecommendationV1 | null = null;
+	private saleHeroTimingFlight: Promise<void> | null = null;
 	/** Deferred to `capture()`'s own decision-4 pass; never touched from `onload`. */
 	private priceSeedBulkRefresh: PriceSeedBulkRefreshService | null = null;
 	/**
@@ -712,6 +731,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
 		const canonicalVaultIdentity = adapter.getBasePath?.() ?? `${this.app.vault.getName()}\0${this.app.vault.configDir}`;
 		const vaultId = await sha256Text(canonicalVaultIdentity.normalize('NFC'));
+		this.vaultId = vaultId;
 		this.managedAssetsPointer = new IndexedDbManagedAssetsPointerStore(
 			window.indexedDB,
 			vaultId,
@@ -990,28 +1010,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 			// Rule (b), M3: the item's calendar window plus the pack's shared sellSignal
 			// parameters, or null (rule (c)) when it has no entry or the pack is unavailable.
-			seasonalInputFor: (itemId) => {
-				const asOf = new Date();
-				const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf.toISOString());
-				if (loaded.status !== 'available') return null;
-				const entry = festivalCalendarEntryForItem(loaded.bundle.festivalCalendar, itemId);
-				if (entry === null) return null;
-				// H18.20: an item can carry several candidate windows (e.g. "before the
-				// festival" anchored to its real start, plus a plain annual one); this
-				// picks whichever governs `asOf`, or returns null when the only
-				// applicable candidate needs a festival year this build has no anchor
-				// for (declared lack of coverage, never a guessed date).
-				const window = resolveFestivalCalendarWindow(entry, FESTIVAL_ANCHORS, asOf.getTime());
-				if (window === null) return null;
-				return {
-					window,
-					parameters: {
-						minimumOfMaxBps: loaded.bundle.economyPack.sellSignal.minimumOfMaxBps,
-						referenceDays: loaded.bundle.economyPack.sellSignal.referenceDays,
-						minimumReferenceDays: loaded.bundle.economyPack.sellSignal.minimumReferenceDays,
-					},
-				};
-			},
+			seasonalInputFor: (itemId) => resolveSaleSeasonalInputFor(itemId, Date.now()),
 			// H18.15: bags + bank at or below this many free slots is "low space".
 			lowStorageSpaceThresholdFreeSlots: () => this.settings.lowStorageSpaceThresholdFreeSlots,
 			// Rule (a), M4: the settings' target list, empty by default.
@@ -1654,27 +1653,28 @@ export default class TyrianCompanionPlugin extends Plugin {
 	/**
 	 * The Saco de Halloween's own hero card.
 	 *
-	 * Its advisor `decision` is NOT the position-recommendation timing: the Saco's route is `open`
-	 * (curated container rule), and `decideInventoryObjectRoute` (`inventory-object-result.ts`)
-	 * stands the advisor's OWN route for every route that is not `sell`/`list`, discarding the
-	 * timing entirely (`NO_EVIDENCE`). The hero's verdict comes from the account-level sell signal
-	 * instead (`getSellSignalState`, already the same detector `sell-signal-line.ts` renders
-	 * elsewhere): simpler than `recommendPosition`'s own wait-comparison (no specific suggested
-	 * window, no "sin ventaja demostrada" reason), but real and never a second guess at the Saco's
-	 * route. Known ficha limitation, not a silent gap.
+	 * Review fix (26 sep 2026): the verdict now comes from `recommendPosition` (`this.saleHeroTiming`,
+	 * refreshed alongside `refreshInventoryAdvisor`), the SAME rule every other Sale row uses, even
+	 * though the advisor's own route for the Saco is `open` and therefore carries no timing of its
+	 * own (`decideInventoryObjectRoute` stands the route instead, discarding it — see
+	 * `saleSourceRowFromAdvisorRow`'s doc comment). The account-level sell signal
+	 * (`getSellSignalState`) stays only for the secondary "umbral del año" figure, never the verdict.
 	 */
 	private buildSaleHeroInput(
 		row: InventoryAdvisorViewRow | null, bidCopper: number | null,
-	): (SaleSourceRow & { yearThresholdCopper: number | null }) | null {
+	): (SaleSourceRow & {
+		yearThresholdCopper: number | null;
+		openVsSell: { openCopper: number; sellCopper: number } | null;
+	}) | null {
+		const timing = this.saleHeroTiming;
 		const projection = this.getSellSignalState()?.projection ?? null;
-		if (row === null && (projection === null || projection.status !== 'decided')) return null;
+		if (row === null && timing === null) return null;
 		const resolvedBid = bidCopper ?? (projection?.status === 'decided' ? projection.bidCopper : null);
-		const decision: SaleSourceDecision | null = projection === null || projection.status !== 'decided' || projection.signal === 'none'
+		const decision: SaleSourceDecision | null = timing === null || timing.action === 'hold_for_legendary'
 			? null
 			: {
-				action: projection.signal === 'sell' ? 'sell' : 'hold',
-				reason: projection.signal === 'sell' ? 'bid_above_reference' : 'below_local_band',
-				until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null,
+				action: timing.action, reason: timing.reason, until: timing.until,
+				priceQuotedAt: timing.priceQuotedAt, sellWindowFromDay: timing.sellWindowFromDay, sellWindowToDay: timing.sellWindowToDay,
 			};
 		return {
 			id: row?.id ?? `#/sale/hero/${String(HALLOWEEN_PRICE_ALERT_ITEM_ID)}`,
@@ -1691,7 +1691,66 @@ export default class TyrianCompanionPlugin extends Plugin {
 				?? computeInstantSellNetCopper(resolvedBid, row?.ownedQuantity ?? 0),
 			listingNetCopper: row?.marketComparison?.listingCopper ?? null,
 			yearThresholdCopper: projection?.status === 'decided' ? projection.sellThresholdCopper : null,
+			openVsSell: saleOpenVsSellCopper(row?.containerEconomy),
 		};
+	}
+
+	/**
+	 * Recomputes the Saco's `recommendPosition` verdict for the Sale tab's hero card. Read-only
+	 * price history (never seeds, never captures on its own): `readDaily` is the same local store
+	 * `sell-signal-runtime.ts`'s own compaction hook reads, and the datawars2 seed is read, never
+	 * downloaded, from whatever `priceSeedBulkRefresh` already cached (mirrors
+	 * `InventoryAnalysisService`'s own `readCachedSeed` port).
+	 */
+	private async refreshSaleHeroTiming(): Promise<void> {
+		if (this.saleHeroTimingFlight !== null) { await this.saleHeroTimingFlight; return; }
+		const flight = this.computeSaleHeroTiming().finally(() => { this.saleHeroTimingFlight = null; });
+		this.saleHeroTimingFlight = flight;
+		await flight;
+	}
+
+	private async computeSaleHeroTiming(): Promise<void> {
+		const nowMs = Date.now();
+		const seasonal = resolveSaleSeasonalInputFor(HALLOWEEN_PRICE_ALERT_ITEM_ID, nowMs);
+		if (seasonal === null) { this.saleHeroTiming = null; return; }
+		const bundleLoad = inventoryAdvisorBuiltinBundleProvider.load(new Date(nowMs).toISOString());
+		const maxPriceAgeMs = bundleLoad.status === 'available'
+			? bundleLoad.bundle.policy.maxPriceAgeMs : FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS;
+		const advisorModel = this.getInventoryAdvisorViewModel();
+		let ownedQuantity = 0;
+		for (const group of advisorModel.groups) {
+			const row = group.rows.find((candidate) => candidate.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID);
+			if (row !== undefined) { ownedQuantity = row.ownedQuantity; break; }
+		}
+		// `recommendPosition`'s `freeQuantity: 0` means "a goal reserves every unit"; the Saco is
+		// never part of a legendary goal, so owning none is shown as the view's own "0 unidades"
+		// state, never fed into the function as a false reservation.
+		if (ownedQuantity <= 0) { this.saleHeroTiming = null; return; }
+		const analysis = this.inventoryAdvisor.analysis();
+		const todayBidCopper = analysis?.source.input.prices.items
+			.find((entry) => entry.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)?.bid?.unitCopper ?? null;
+		const windowDays = this.settings.priceHistoryDailyRetentionDays;
+		const fromDayUtc = new Date(Math.max(0, nowMs - windowDays * 86_400_000)).toISOString().slice(0, 10);
+		const daily = await (this.priceHistory?.readDaily(HALLOWEEN_PRICE_ALERT_ITEM_ID, fromDayUtc) ?? Promise.resolve([]));
+		const seed = this.vaultId === null ? null : await this.readCachedPriceSeed(this.vaultId, HALLOWEEN_PRICE_ALERT_ITEM_ID);
+		const merged = mergePriceHistoryWithSeed(HALLOWEEN_PRICE_ALERT_ITEM_ID, daily, seed);
+		this.saleHeroTiming = recommendPosition({
+			capturedAtMs: nowMs,
+			priceHistoryEnabled: this.settings.priceHistoryEnabled,
+			// Never read: the Saco always has a calendar entry, so rule (b) (`evaluateSeasonalRule`)
+			// decides before rule (c)'s capital-threshold check ever looks at this value.
+			totalSellCopper: null,
+			capitalThresholdCopper: this.settings.recommendationCapitalThresholdCopper,
+			maxPriceAgeMs,
+			priceHistoryDaily: merged,
+			priceHistoryWindowDays: windowDays,
+			priceHistoryRequiredDays: POSITION_RECOMMENDATION_REQUIRED_DAYS,
+			seasonal,
+			legendaryShortfall: null,
+			freeQuantity: ownedQuantity,
+			todayBidCopper,
+			untradeable: false,
+		});
 	}
 
 	/** Applies a "Refresh" button on the Sale tab: the same advisor refresh the Inventory tab already exposes. */
@@ -1870,6 +1929,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const operation = this.inventoryAdvisor.refresh({}, context);
 		this.renderInventoryAdvisorViews();
 		const model = await operation; if (model.status === 'blocked' && model.blockedReason === 'credential_unavailable') this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'advisor.view.blockedReason.credential_unavailable'), 'inventory_advisor_missing_key');
+		// The Sale tab's hero card rides the same refresh: its verdict needs the freshest owned
+		// quantity and today's bid, both of which this analysis just settled.
+		await this.refreshSaleHeroTiming();
 		this.renderInventoryAdvisorViews();
 		};
 		await (this.localDebugActions?.run(
@@ -4696,6 +4758,34 @@ function resolveSaleCalendarCandidateSpan(
 	};
 }
 
+/**
+ * Rule (b), M3: `itemId`'s calendar window plus the pack's shared sellSignal parameters, or null
+ * (rule (c)) when it has no entry or the pack is unavailable. Shared by `setupProductActions`'s own
+ * `InventoryAnalysisService` port (the regular rows) and `refreshSaleHeroTiming` below (the Saco's
+ * hero card): one calendar lookup, not two.
+ */
+export function resolveSaleSeasonalInputFor(itemId: number, asOfMs: number): PositionRecommendationSeasonalInput | null {
+	const asOf = new Date(asOfMs);
+	const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf.toISOString());
+	if (loaded.status !== 'available') return null;
+	const entry = festivalCalendarEntryForItem(loaded.bundle.festivalCalendar, itemId);
+	if (entry === null) return null;
+	// H18.20: an item can carry several candidate windows (e.g. "before the festival" anchored to
+	// its real start, plus a plain annual one); this picks whichever governs `asOf`, or returns
+	// null when the only applicable candidate needs a festival year this build has no anchor for
+	// (declared lack of coverage, never a guessed date).
+	const window = resolveFestivalCalendarWindow(entry, FESTIVAL_ANCHORS, asOfMs);
+	if (window === null) return null;
+	return {
+		window,
+		parameters: {
+			minimumOfMaxBps: loaded.bundle.economyPack.sellSignal.minimumOfMaxBps,
+			referenceDays: loaded.bundle.economyPack.sellSignal.referenceDays,
+			minimumReferenceDays: loaded.bundle.economyPack.sellSignal.minimumReferenceDays,
+		},
+	};
+}
+
 const POSITION_RECOMMENDATION_REASON_SET: ReadonlySet<string> = new Set(POSITION_RECOMMENDATION_REASON_CODES);
 
 /**
@@ -4737,6 +4827,22 @@ function saleSourceRowFromAdvisorRow(row: InventoryAdvisorViewRow, bidCopper: nu
 		instantSellNetCopper: row.marketComparison?.instantSellCopper ?? null,
 		listingNetCopper: row.marketComparison?.listingCopper ?? null,
 	};
+}
+
+/**
+ * Review fix: the curated container economy's own liquid-only comparison
+ * (`evaluateInventoryContainerEconomy`, already run for the Saco's advisor row — never recomputed
+ * here) turned into the two totals the hero card shows side by side. `null` whenever the account's
+ * row carries no `containerEconomy` (activation pending, price stale, market depth missing, etc.):
+ * shown as "no disponible", never guessed from a different calculation.
+ */
+export function saleOpenVsSellCopper(
+	containerEconomy: InventoryAdvisorViewRow['containerEconomy'],
+): { openCopper: number; sellCopper: number } | null {
+	if (containerEconomy == null) return null;
+	const { explanation } = containerEconomy.liquidOnly;
+	const openMicroCopper = BigInt(explanation.open.totalExpectedMicroCopper);
+	return { openCopper: Number(openMicroCopper / 1_000_000n), sellCopper: explanation.sellNow.netCopper };
 }
 
 type PriceHistoryDailyReader = (itemId: number, fromDayUtc: string) => Promise<PriceHistoryDailyV1[]>;
