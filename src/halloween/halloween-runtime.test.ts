@@ -54,7 +54,8 @@ describe('HalloweenRuntime', () => {
 		const finalDelta = delta('comparison-a', 'comparison-b', [36_041]);
 		finalDelta.itemChanges.unshift({ id: 36_038, before: 1_100, after: 0, delta: -1_100 });
 		await runtime.observeDelta({
-			delta: finalDelta, source: 'session_final', episodeId: 'session:comparison', classification: 'exact',
+			delta: finalDelta, source: 'session_final', episodeId: 'session:comparison',
+			classification: { status: 'exact', reasons: [] },
 		});
 		expect(runtime.getState().comparison).toMatchObject({
 			eligible: true, reason: null, bagsDisappearedNet: 1_100,
@@ -69,9 +70,23 @@ describe('HalloweenRuntime', () => {
 		const finalDelta = delta('comparison-c', 'comparison-d', [36_041]);
 		finalDelta.itemChanges.unshift({ id: 36_038, before: 1_100, after: 0, delta: -1_100 });
 		await runtime.observeDelta({
-			delta: finalDelta, source: 'session_final', episodeId: 'session:contaminated', classification: 'contaminated',
+			delta: finalDelta, source: 'session_final', episodeId: 'session:contaminated',
+			classification: { status: 'contaminated', reasons: [] },
 		});
 		expect(runtime.getState().comparison).toMatchObject({ eligible: false, reason: 'session_contaminated' });
+		runtime.dispose();
+	});
+
+	it('marks the comparison ineligible when the final session sold a bag on the Trading Post (H18.32 wiring)', async () => {
+		const runtime = new HalloweenRuntime(options());
+		await runtime.activate();
+		const finalDelta = delta('comparison-g', 'comparison-h', [36_041]);
+		finalDelta.itemChanges.unshift({ id: 36_038, before: 1_100, after: 0, delta: -1_100 });
+		await runtime.observeDelta({
+			delta: finalDelta, source: 'session_final', episodeId: 'session:tp-sell',
+			classification: { status: 'estimated', reasons: [{ code: 'tp_sell_observed' }] },
+		});
+		expect(runtime.getState().comparison).toMatchObject({ eligible: false, reason: 'external_item_movement' });
 		runtime.dispose();
 	});
 

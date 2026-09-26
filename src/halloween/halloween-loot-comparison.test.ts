@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { StorageDelta } from '../account/storage-delta-model';
-import type { SessionClassificationStatus } from '../account/contamination-model';
+import type { SessionClassificationStatus, SessionDeltaClassification } from '../account/contamination-model';
 import {
 	buildHalloweenLootComparison,
 	isHalloweenComparisonRecord,
@@ -20,12 +20,12 @@ describe('Halloween loot comparison', () => {
 		expect(result.outcomes.find(({ itemId }) => itemId === 36_041)?.expectedNumerator).toBe(String(386_935 * 1_100));
 	});
 
-	it('requires a comparable delta, a clean-or-estimated classification, and net missing bags', () => {
+	it('requires a comparable delta, a resolved classification, and net missing bags', () => {
 		const cases = [
 			{ mutate: (value: ReturnType<typeof input>) => { value.delta.status = 'limited'; }, reason: 'delta_not_comparable' },
 			{ mutate: (value: ReturnType<typeof input>) => { value.classification = null; }, reason: 'classification_unavailable' },
-			{ mutate: (value: ReturnType<typeof input>) => { value.classification = 'contaminated'; }, reason: 'session_contaminated' },
-			{ mutate: (value: ReturnType<typeof input>) => { value.classification = 'invalid'; }, reason: 'session_contaminated' },
+			{ mutate: (value: ReturnType<typeof input>) => { value.classification = classification('contaminated'); }, reason: 'session_contaminated' },
+			{ mutate: (value: ReturnType<typeof input>) => { value.classification = classification('invalid'); }, reason: 'session_contaminated' },
 			{ mutate: (value: ReturnType<typeof input>) => { value.delta.itemChanges[0]!.delta = 1; }, reason: 'bags_not_decreased' },
 		] as const;
 		for (const entry of cases) {
@@ -35,9 +35,47 @@ describe('Halloween loot comparison', () => {
 		}
 	});
 
-	it('accepts an estimated classification: opening containers/consuming never contaminates below it', () => {
+	// Review finding (26 sep 2026): selling a bag on the Trading Post degrades the session to
+	// `estimated`/`tp_sell_observed`, never `contaminated` — a status-only gate let it through and
+	// counted the sold bags as opened. Each of these reasons on its own must exclude the session,
+	// regardless of status, because the evidence itself cannot rule out items moving by something
+	// other than opening.
+	it.each<SessionDeltaClassification['reasons'][number]>([
+		{ code: 'tp_sell_observed' },
+		{ code: 'tp_buy_observed' },
+		{ code: 'delivery_items_changed' },
+		{ code: 'roster_changed' },
+		{ code: 'character_unobserved' },
+		{ code: 'delta_limited' },
+		{ code: 'item_losses_observed' },
+	])('excludes with external_item_movement when the classification carries %o', (reason) => {
 		const value = input(1_100, [{ id: 36_041, delta: 4_006 }]);
-		value.classification = 'estimated';
+		value.classification = classification('estimated', [reason]);
+		expect(buildHalloweenLootComparison(value)).toMatchObject({ eligible: false, reason: 'external_item_movement' });
+	});
+
+	// H18.32 correction: `item_losses_observed` alone does not disqualify — only when it is NOT
+	// tagged `detail: 'exempt'` (i.e. some loss was not farmed input; see `contamination.ts`).
+	it('treats an exempt item-loss reason as clean but a non-exempt one as external movement', () => {
+		const exempt = input(1_100, [{ id: 36_041, delta: 4_006 }]);
+		exempt.classification = classification('exact', [{ code: 'item_losses_observed', detail: 'exempt' }]);
+		expect(buildHalloweenLootComparison(exempt)).toMatchObject({ eligible: true, reason: null });
+
+		const notExempt = input(1_100, [{ id: 36_041, delta: 4_006 }]);
+		notExempt.classification = classification('estimated', [{ code: 'item_losses_observed' }]);
+		expect(buildHalloweenLootComparison(notExempt)).toMatchObject({ eligible: false, reason: 'external_item_movement' });
+	});
+
+	// Per the review: wallet-only signals (an NPC purchase, a non-monetary currency spend, a legacy
+	// declared opening, an ambiguous wallet increase) and the API-settlement-window reasons degrade
+	// to `estimated` without ever moving an item count, so none of them exclude the comparison.
+	it('stays eligible when estimated only by reasons that cannot move an item count', () => {
+		const value = input(1_100, [{ id: 36_041, delta: 4_006 }]);
+		value.classification = classification('estimated', [
+			{ code: 'delivery_coins_changed' }, { code: 'wallet_decreased' }, { code: 'consumable_currency_spent' },
+			{ code: 'open_activity_declared' }, { code: 'wallet_increased_ambiguous' },
+			{ code: 'api_settlement_window_skipped' }, { code: 'api_settlement_window_exceeded' },
+		]);
 		expect(buildHalloweenLootComparison(value)).toMatchObject({ eligible: true, reason: null });
 	});
 
@@ -81,7 +119,7 @@ describe('Halloween loot comparison', () => {
 	});
 
 	it('keeps validating and rendering a pre-H18.32 record with the retired reason vocabulary', () => {
-		const current = buildHalloweenLootComparison({ ...input(1_100, []), classification: 'contaminated' });
+		const current = buildHalloweenLootComparison({ ...input(1_100, []), classification: classification('contaminated') });
 		expect(current.reason).toBe('session_contaminated');
 		const legacyReviewNotConfirmed = { ...current, reason: 'review_not_confirmed' };
 		expect(isHalloweenComparisonRecord(legacyReviewNotConfirmed)).toBe(true);
@@ -90,9 +128,16 @@ describe('Halloween loot comparison', () => {
 	});
 });
 
+function classification(
+	status: SessionClassificationStatus,
+	reasons: SessionDeltaClassification['reasons'] = [],
+): Pick<SessionDeltaClassification, 'status' | 'reasons'> {
+	return { status, reasons };
+}
+
 function input(bags: number, gains: { id: number; delta: number }[]): {
 	vaultId: string; accountRef: string; episodeId: string; delta: StorageDelta;
-	classification: SessionClassificationStatus | null;
+	classification: Pick<SessionDeltaClassification, 'status' | 'reasons'> | null;
 } {
 	return {
 		vaultId: 'vault', accountRef: 'account', episodeId: 'session:test',
@@ -104,6 +149,6 @@ function input(bags: number, gains: { id: number; delta: number }[]): {
 				...gains.map(({ id, delta }) => ({ id, before: 0, after: delta, delta }))],
 			currencyChanges: [], availabilityChanges: [], compositionChanges: [],
 		},
-		classification: 'exact',
+		classification: classification('exact'),
 	};
 }

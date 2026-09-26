@@ -1,5 +1,5 @@
 import type { StorageDelta } from '../account/storage-delta-model';
-import type { SessionClassificationStatus } from '../account/contamination-model';
+import type { SessionDeltaClassification } from '../account/contamination-model';
 import {
 	startLocalDebugAction,
 	type LocalDebugActionPort,
@@ -172,8 +172,12 @@ export class HalloweenRuntime {
 		delta: StorageDelta;
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
-		/** The final session's automatic classification status, for the loot-comparison gate (H18.32). */
-		classification?: SessionClassificationStatus;
+		/**
+		 * The final session's own automatic classification, for the loot-comparison gate (H18.32).
+		 * `reasons` matters as much as `status`: an `estimated` session can still have moved items
+		 * outside opening (e.g. `tp_sell_observed`), which the gate has to see to stay honest.
+		 */
+		classification?: Pick<SessionDeltaClassification, 'status' | 'reasons'>;
 	}, parent?: ResolvedLocalDebugActionContext): Promise<HalloweenNoticeV1 | null> {
 		const span = startLocalDebugAction(this.options.diagnostics, {
 			component: 'halloween', action: 'halloween_refresh', ...inheritedIds(parent),
@@ -199,7 +203,7 @@ export class HalloweenRuntime {
 		delta: StorageDelta;
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
-		classification?: SessionClassificationStatus;
+		classification?: Pick<SessionDeltaClassification, 'status' | 'reasons'>;
 	}, generation: number, queuedAccountRef: string | null,
 	parent: ResolvedLocalDebugActionContext | undefined): Promise<HalloweenNoticeV1 | null> {
 		if (this.activation !== null) await this.activation;

@@ -43,7 +43,7 @@ function input() {
 			{ id: 36_041, before: 0, after: 4_006, delta: 4_006 },
 		], currencyChanges: [], availabilityChanges: [], compositionChanges: [],
 	};
-	return { vaultId: 'vault', accountRef: 'account', episodeId: 'session:test', delta, classification: 'exact' as const };
+	return { vaultId: 'vault', accountRef: 'account', episodeId: 'session:test', delta, classification: { status: 'exact' as const, reasons: [] } };
 }
 
 function finalObservation(): HalloweenObservationV1 {

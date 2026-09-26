@@ -3570,7 +3570,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'halloween', action: 'halloween_refresh', state: 'session_final' },
 			() => this.observeHalloweenDelta(delta, 'session_final', `session:${sessionId}`,
-				reviewed.review.classification.status));
+				reviewed.review.classification));
 		// The detector was disarmed when the stop was decided; the next session must be detectable
 		// again without anyone checking the connection by hand (H18.9). It only arms with an account
 		// already connected, and a summary not saved yet never blocks it: `start()` guards that. At

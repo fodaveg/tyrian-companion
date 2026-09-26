@@ -1,5 +1,9 @@
 import type { StorageDelta } from '../account/storage-delta-model';
-import type { SessionClassificationStatus } from '../account/contamination-model';
+import type {
+	SessionClassificationReason,
+	SessionClassificationReasonCode,
+	SessionDeltaClassification,
+} from '../account/contamination-model';
 import {
 	HALLOWEEN_TRICK_OR_TREAT_MODEL_ID,
 	halloweenTrickOrTreatBagModel,
@@ -16,8 +20,9 @@ export const HALLOWEEN_COMPARISON_Z_THRESHOLD_MILLI = 3_450;
  * review this gate used to require was retired 2026-09-09, and `certainty: 'confirmed'` never
  * happens for an automatic review since). They stay in the vocabulary only so a record persisted
  * before H18.32 keeps validating and rendering (`isHalloweenComparisonRecord` below); a freshly
- * built record never produces them again. `classification_unavailable`/`session_contaminated`
- * replace them: the gate now reads the session's own automatic classification instead.
+ * built record never produces them again. `classification_unavailable`/`session_contaminated`/
+ * `external_item_movement` replace them: the gate now reads the session's own automatic
+ * classification instead.
  */
 export type HalloweenComparisonIneligibleReason =
 	| 'delta_not_comparable'
@@ -25,7 +30,33 @@ export type HalloweenComparisonIneligibleReason =
 	| 'activities_not_open_only'
 	| 'classification_unavailable'
 	| 'session_contaminated'
+	| 'external_item_movement'
 	| 'bags_not_decreased';
+
+/**
+ * Review finding (H18.32, corrected 26 sep 2026): a session can be `estimated` for a reason that
+ * still moves the count of bags or other items outside opening — selling a bag on the Trading Post
+ * degrades to `estimated`/`tp_sell_observed`, not `contaminated`, so the status-only gate let it
+ * through and `bagsDisappearedNet` counted sold bags as opened. These reason codes each mean the
+ * evidence itself cannot rule out items moving by something other than opening; `item_losses_observed`
+ * is handled separately below because it only disqualifies when NOT every loss was farmed input
+ * (`detail !== 'exempt'`, see `contamination.ts`).
+ */
+const EXTERNAL_ITEM_MOVEMENT_REASON_CODES: ReadonlySet<SessionClassificationReasonCode> = new Set([
+	'tp_sell_observed', 'tp_buy_observed', 'delivery_items_changed', 'roster_changed',
+	'character_unobserved', 'delta_limited',
+]);
+
+/**
+ * Whether a classification reason means the session's items (not just its wallet) may have moved
+ * by something other than opening a bag. `wallet_decreased`, `delivery_coins_changed`,
+ * `consumable_currency_spent`, `open_activity_declared` and the API-settlement-window reasons never
+ * qualify: none of them can move an item count.
+ */
+function movesItemsOutsideOpening(reason: SessionClassificationReason): boolean {
+	if (reason.code === 'item_losses_observed') return reason.detail !== 'exempt';
+	return EXTERNAL_ITEM_MOVEMENT_REASON_CODES.has(reason.code);
+}
 
 export interface HalloweenComparisonOutcomeV1 {
 	itemId: number;
@@ -74,12 +105,14 @@ export interface HalloweenComparisonInput {
 	episodeId: string;
 	delta: StorageDelta;
 	/**
-	 * The final session's own automatic classification status (H2.7,
-	 * `src/account/contamination-model.ts`), not the retired human review. `null` means the caller
-	 * could not resolve it at this point (e.g. the finalized review was never produced), and that is
-	 * its own explicit ineligibility reason rather than being treated as clean.
+	 * The final session's own automatic classification (H2.7, `src/account/contamination-model.ts`),
+	 * not the retired human review. Only `status`/`reasons` are read, `Pick`ed so this structurally
+	 * accepts either the current envelope or its legacy downgrade (`LegacySessionDeltaClassification`
+	 * in `session-contamination-review.ts`) without importing that module here. `null` means the
+	 * caller could not resolve it at this point (e.g. the finalized review was never produced), and
+	 * that is its own explicit ineligibility reason rather than being treated as clean.
 	 */
-	classification: SessionClassificationStatus | null;
+	classification: Pick<SessionDeltaClassification, 'status' | 'reasons'> | null;
 }
 
 export interface HalloweenDeviationInput {
@@ -171,7 +204,7 @@ export function isHalloweenComparisonRecord(value: unknown): value is HalloweenC
 		!iso(value.observedAt) || typeof value.eligible !== 'boolean' ||
 		(value.reason !== null && (typeof value.reason !== 'string' ||
 			!['delta_not_comparable', 'review_not_confirmed', 'activities_not_open_only', 'classification_unavailable',
-				'session_contaminated', 'bags_not_decreased'].includes(value.reason))) ||
+				'session_contaminated', 'external_item_movement', 'bags_not_decreased'].includes(value.reason))) ||
 		value.eligible !== (value.reason === null) || !nonNegativeInteger(value.bagsDisappearedNet) ||
 		value.minimumBags !== HALLOWEEN_COMPARISON_MINIMUM_BAGS || !Array.isArray(value.outcomes) || value.outcomes.length !== 18 ||
 		typeof value.globalPearsonMilli !== 'string' || !/^\d+$/u.test(value.globalPearsonMilli)) return false;
@@ -211,21 +244,27 @@ function comparisonModel(value: Record<string, unknown>, legacy: boolean): Conta
 }
 
 /**
- * H18.32: the eligibility gate reads the session's own automatic classification
- * (`SessionClassificationStatus`) instead of the retired human review. Per the signed rule
- * (`docs/PRODUCT.md`, «Decisiones de rumbo del 2026-09-08»), opening containers or consuming does
- * not degrade a session below `estimated`, so an `estimated` session is still eligible here; only
- * `contaminated` (an undeclared external activity the delta cannot attribute) or `invalid`
- * (technical failures) disqualify it.
+ * H18.32: the eligibility gate reads the session's own automatic classification instead of the
+ * retired human review. Per the signed rule (`docs/PRODUCT.md`, «Decisiones de rumbo del
+ * 2026-09-08»), opening containers or consuming does not degrade a session below `estimated`, so
+ * an `estimated` session is not disqualified by its status alone; only `contaminated` (an
+ * undeclared external activity the delta cannot attribute) or `invalid` (technical failures)
+ * disqualify by status. But `estimated` also covers reasons that DO move items outside opening —
+ * selling a bag on the Trading Post degrades to `estimated`/`tp_sell_observed`, not `contaminated`
+ * — so a status-only gate would count sold bags as opened (review finding, 26 sep 2026). Every
+ * reason is checked with `movesItemsOutsideOpening`; `wallet_decreased`/`delivery_coins_changed`/
+ * `consumable_currency_spent`/`open_activity_declared`/the API-settlement reasons never disqualify
+ * because none of them can move an item count.
  */
 function ineligibleReason(
 	delta: StorageDelta,
-	classification: SessionClassificationStatus | null,
+	classification: Pick<SessionDeltaClassification, 'status' | 'reasons'> | null,
 	bagsDisappearedNet: number,
 ): HalloweenComparisonIneligibleReason | null {
 	if (delta.status !== 'comparable') return 'delta_not_comparable';
 	if (classification === null) return 'classification_unavailable';
-	if (classification === 'contaminated' || classification === 'invalid') return 'session_contaminated';
+	if (classification.status === 'contaminated' || classification.status === 'invalid') return 'session_contaminated';
+	if (classification.reasons.some(movesItemsOutsideOpening)) return 'external_item_movement';
 	return bagsDisappearedNet > 0 ? null : 'bags_not_decreased';
 }
 

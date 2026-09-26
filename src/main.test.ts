@@ -1103,9 +1103,9 @@ describe('Halloween production gating', () => {
 		expect(harness.sessionSummarySaveState).toBe('failed');
 	});
 
-	it('passes the classification status and stable delta to session_final only once finalization already succeeded', async () => {
+	it('passes the whole classification and stable delta to session_final only once finalization already succeeded', async () => {
 		const stableDelta = { status: 'comparable' } as StorageDelta;
-		const reviewEvidence = { classification: { status: 'exact' } };
+		const reviewEvidence = { classification: { status: 'exact', reasons: [] } };
 		const observeHalloweenDelta = vi.fn(async () => undefined);
 		const harness = {
 			pilotMetrics: null,
@@ -1130,7 +1130,7 @@ describe('Halloween production gating', () => {
 			review: reviewEvidence,
 		});
 		expect(observeHalloweenDelta).toHaveBeenCalledWith(
-			stableDelta, 'session_final', 'session:session-final', 'exact',
+			stableDelta, 'session_final', 'session:session-final', { status: 'exact', reasons: [] },
 		);
 	});
 
@@ -1253,7 +1253,7 @@ describe('completed-session summary persistence', () => {
 				finalizeStoppedSession: vi.fn(async () => ({
 					status: 'finalized' as const,
 					state: { status: 'complete' as const, sessionId: 'session-final', finalizedAt: '2026-09-01T09:00:00.000Z' },
-					review: { classification: { status: 'estimated' } },
+					review: { classification: { status: 'estimated', reasons: [] } },
 				})),
 				getCompletedRuntimeRecord: vi.fn(async () => runtime),
 				markCompletedSummarySaved: vi.fn(async () => true),
@@ -1384,7 +1384,7 @@ describe('detection after a finished session (H18.9, prueba 6)', () => {
 
 		await expect(proto.finishFinalizedSession.call(harness, 'session-1', { status: 'comparable' } as StorageDelta, {
 			state: { sessionId: 'session-1', finalizedAt: '2026-09-01T08:10:00.000Z' },
-			review: { classification: { status: 'exact' } },
+			review: { classification: { status: 'exact', reasons: [] } },
 		})).resolves.toBe(true);
 
 		await vi.waitFor(() => expect(arm).toHaveBeenCalledOnce());
