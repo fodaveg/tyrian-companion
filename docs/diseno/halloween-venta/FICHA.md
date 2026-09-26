@@ -15,8 +15,9 @@ el espacio de almacenamiento (`src/inventory/storage-space.ts`) y la señal de v
 (`src/economy/sell-signal-runtime.ts`, ya usada por `src/ui/sell-signal-line.ts`).
 
 Piezas: línea de estado, bloque de espacio (`renderStorageSpace`, ahora exportado y con `low`/
-`optimum` en el `meter`), tarjeta destacada del Saco de Halloween (36038), calendario de ventanas
-por objeto, lista agrupada Ahora/Esperar/Sin datos con antigüedad de precio por fila, y pie con
+`optimum` en el `meter`), tarjeta destacada del Saco de Halloween (36038, veredicto de
+`recommendPosition` con comparación abrir-vs-vender cuando existe), calendario de ventanas por
+objeto, lista agrupada Ahora/Esperar/Sin datos con antigüedad de precio por fila, y pie con
 «Actualizar».
 
 ## Decisiones de abajo (dentro del alcance autorizado, no reabren las de la maqueta)
@@ -32,7 +33,38 @@ por objeto, lista agrupada Ahora/Esperar/Sin datos con antigüedad de precio por
    evidencia insuficiente); `sell_at_season` → Todavía no (tiene ventana concreta,
    `sellWindowFromDay`/`ToDay`); `review`/`hold_for_legendary` → Sin datos (el segundo se filtra:
    un objeto reservado para una legendaria no es «para vender»). La vista pinta lo que decida la
-   regla; no se reinterpreta.
+   regla; no se reinterpreta. **Esto incluye al Saco (36038)**, corrección del 26 sep 2026 (ver
+   decisión 2-bis): su tarjeta usa la MISMA regla que cualquier fila, no una aparte.
+2-bis. **Corrección de revisión (26 sep 2026)**: la primera entrega sacaba el veredicto del Saco de
+   la señal de venta de cuenta (`sell-signal-runtime.ts`), que en su ventana de venta (−28..−1) y del
+   1 oct al 15 nov solo puede dar `hold`/`none` — la tarjeta protagonista nunca podía decir «Vender
+   ahora» justo cuando el encargo la pidió para eso. Corregido: `computeSaleHeroTiming`
+   (`src/main.ts`) llama a `recommendPosition` directamente para el Saco, con su propia entrada de
+   calendario (`resolveSaleSeasonalInputFor`, compartida con la del resto de filas), aunque la ruta
+   del asesor para el Saco sea `open` y por eso `decideInventoryObjectRoute`
+   (`inventory-object-result.ts`) descarte ese timing al fusionar ruta+momento
+   (`saleSourceRowFromAdvisorRow` ya documentaba este mismo descarte para cualquier fila no-`sell`/
+   `list`; el Saco solo era el caso donde SÍ nos importa el momento). La señal de cuenta se queda
+   como dato secundario (umbral del año), nunca como veredicto. **Medido con el backtest curado real
+   de 7 ediciones** (`sell-timing-history-36038.ts`, `src/main-sale-hero-timing.test.ts`): a 26 sep
+   2026 (dentro de −28..−1, puja 342 por debajo del umbral del 90 %) el veredicto real es `sell`/
+   `no_demonstrated_wait_advantage` («Vender ahora»); a 14 oct 2026 (fuera de esa ventana, calendario
+   resuelve a la ventana anual de mayo porque 2027 no tiene ancla) el veredicto real, con ESTE
+   fixture, es TAMBIÉN `sell` (`wait_evidence_insufficient`: la comparación «vender ya vs esperar a
+   mayo» desde un día ya dentro del festival tiene 0 temporadas comparables en los datos curados,
+   que se construyeron para la decisión ANTES del festival, no para ésta). No encontré una fecha
+   realista donde la regla real, con los datos curados actuales, deje de decir «Vender ahora» sin
+   más historial del que el fixture tiene — es un hallazgo para David, no una plaza sin cubrir del
+   mecanismo: la ausencia de comparación resulta en `wait_evidence_insufficient`/`sell`, nunca en un
+   `hold` inventado, que es la propiedad que pedía la corrección.
+2-ter. **Abrir vs vender (nueva pieza)**: cuando la fila del Saco trae `containerEconomy`
+   (`evaluateInventoryContainerEconomy`, ya calculada por el asesor — nunca recalculada aquí),
+   `saleOpenVsSellCopper` lee `liquidOnly.explanation.open.totalExpectedMicroCopper` (convertido a
+   cobre) y `.sellNow.netCopper`, y `applyOpenVsSellOverride` cambia el veredicto de «Vender ahora» a
+   «Abrir» (`sale.action.open`, reutiliza `advisor.view.action.open`) cuando abrir es mayor. Solo
+   sustituye `sell`; nunca toca esperar/todavía no/sin datos. Sin `containerEconomy` en la fila
+   (activación pendiente, profundidad de mercado ausente, precio caducado…), la comparación se
+   muestra como no disponible, nunca inventada.
 3. **Punto 4 del encargo (decisión de David, 24 sep): con poco espacio, "esperar" pasa a "vender
    ahora"**. Se aplica tanto a `hold` como a `sell_at_season`: los dos significan «no ahora», y la
    regla no distingue entre «esperar genérico» y «ventana concreta demostrada» — solo entre vender
@@ -71,7 +103,7 @@ por objeto, lista agrupada Ahora/Esperar/Sin datos con antigüedad de precio por
 | Eje | Estado | Qué cubre / qué falta |
 |---|---|---|
 | Tokens | Cubierto | Solo variables de Obsidian; una variable propia (`--tyrian-action-mark`), igual que H18.31. |
-| Componentes y estados | PARCIAL (falta ver con datos reales de una cuenta con Halloween activo) | Vender, esperar, todavía no, sin cotización, precio viejo, 0 unidades, icono caído, cargando, bloqueado (fallo de API / límite de peticiones, reutilizando `advisor.view.blockedReason.*`). Verificado con vitest + jsdom, no con Obsidian real. |
+| Componentes y estados | PARCIAL (falta ver con datos reales de una cuenta con Halloween activo) | Vender, esperar, todavía no, abrir (Saco, cuando abrir gana), sin cotización, precio viejo, 0 unidades, icono caído, cargando, bloqueado (fallo de API / límite de peticiones, reutilizando `advisor.view.blockedReason.*`). Verificado con vitest + jsdom y con el backtest real de 7 ediciones, no con Obsidian real. |
 | Responsive | Cubierto | Mismos cortes de contenedor que el resto del plugin (759/520/400), copiados de la maqueta. |
 | Accesibilidad | PARCIAL (falta lector de pantalla real) | `role="status"` en la línea de estado, `meter` nativo, marca de acción con forma (filete sólido/discontinuo) + palabra, nunca solo color. |
 | Contenido real | Cubierto | IDs reales de la auditoría (36038, 36041, 43320, 47909, 48805); nombres del catálogo, no inventados. |
@@ -85,3 +117,9 @@ por objeto, lista agrupada Ahora/Esperar/Sin datos con antigüedad de precio por
   (el Saco tiene dos: antes del festival y mayo). El texto de la fila sí menciona ambas.
 - El escenario de simulación (14 oct) de la maqueta no se implementa: la vista siempre lee «hoy»
   real, según pide el encargo (fuera de alcance el marco de conmutadores).
+- **No medí la cifra real de abrir-vs-vender del Saco con datos de mercado actuales del plugin**:
+  hacerlo exige simular una captura de cuenta completa (catálogo, precios, profundidad de mercado)
+  para llegar a `evaluateInventoryContainerEconomy`, fuera de alcance razonable de este lote. La
+  lógica de lectura y conversión (`saleOpenVsSellCopper`) está probada con un `containerEconomy`
+  de ejemplo con la forma real (`main-sale-hero-timing.test.ts`), no con la cifra que el bazar da
+  hoy.

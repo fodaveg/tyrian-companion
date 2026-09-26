@@ -11,15 +11,25 @@ David aprobó el diseño el 26 sep 2026 («adelante con el diseño»). Maqueta y
   `src/ui/product-shell.ts`, `src/ui/product-action-controller.ts`, `src/main.ts`). Registrada en
   `viewFactories` junto a las otras dos, antes de cualquier `await` de `onload`.
 - **Contenido**: línea de estado, bloque de espacio (reutilizando `renderStorageSpace`, ahora
-  exportado), tarjeta destacada del Saco de Halloween (36038, con la señal de venta existente de
-  `sell-signal-runtime.ts`), calendario de ventanas por objeto (`inventory-advisor-builtin-bundle.ts`
-  + `halloween-festival-anchors.ts`), y lista agrupada Ahora/Esperar/Sin datos con antigüedad de
-  precio por fila, reutilizando las filas y los netos ya calculados por el asesor de inventario
-  (`InventoryAdvisorViewModel`); nada de esto se recalcula por segunda vez.
+  exportado), tarjeta destacada del Saco de Halloween (36038), calendario de ventanas por objeto
+  (`inventory-advisor-builtin-bundle.ts` + `halloween-festival-anchors.ts`), y lista agrupada
+  Ahora/Esperar/Sin datos con antigüedad de precio por fila, reutilizando las filas y los netos ya
+  calculados por el asesor de inventario (`InventoryAdvisorViewModel`); nada de esto se recalcula
+  por segunda vez.
 - **Decisión de David del 24 sep, con poco espacio**: un objeto cuya recomendación es esperar pasa a
   «Vender ahora · libera N huecos»; un material que puede ir al almacén pasa a «Depositar material»
   (reutiliza la acción y el texto ya existentes). Con espacio de sobra, nada cambia. Detalle y una
   discrepancia documentada frente a la maqueta en `docs/diseno/halloween-venta/FICHA.md`.
+- **Corrección de revisión, mismo día**: la tarjeta del Saco sacaba su veredicto de la señal de
+  venta de cuenta, que en su propia ventana de venta solo podía dar «esperar» o nada — la tarjeta
+  protagonista nunca podía decir «Vender ahora» justo cuando el encargo la pidió para eso. Corregido
+  para usar `recommendPosition` con la entrada de calendario del Saco, la MISMA regla que las demás
+  filas, aunque la ruta del asesor para el Saco sea `open` (`src/main.ts`); la señal de cuenta queda
+  como dato secundario (umbral del año). Nueva pieza: cuando el asesor ya calculó la economía de
+  abrir-vs-vender del contenedor (`evaluateInventoryContainerEconomy`), la tarjeta la enseña y, si
+  abrir gana, el veredicto pasa a «Abrir» en vez de «Vender ahora». Medido con el backtest curado
+  real de 7 ediciones: a 26 sep 2026 el veredicto real es «Vender ahora»; documentado en la ficha un
+  hallazgo sobre el mismo backtest a 14 oct.
 - **Arreglo del `meter` de espacio**: `renderStorageSpace` (`inventory-advisor-view.ts`) le faltaban
   `low`/`optimum`; sin ellos, pasar el umbral nunca se pintaba como estado de alerta.
 - Vocabulario propio de la pestaña («Esperar», nunca «Mantener» ni «Conservar»), i18n ES/EN completo,
