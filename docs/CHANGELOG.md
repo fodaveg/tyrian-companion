@@ -52,6 +52,35 @@ disponible.** Confirmado en campo: pulsar «Analizar sin escribir» en Inventari
   reserva cuando el refresco no cambia el estado, y el paso a bloqueado cuando el análisis no puede
   correr).
 
+**Segunda ronda (revisión del volcado por el coordinador)**:
+
+- **fix(sale)**: una puja leída en el mismo instante decía «hace dentro de 0 segundos» — dos bugs a
+  la vez: `sale.quote.readAt` (ES) envolvía `{{ago}}` en un «hace » redundante (`relativeTimeLabel` ya
+  lo incluye), y `relativeTimeLabel` (`inventory-advisor-view.ts`) usaba `numeric:'always'`, que
+  nunca dice «ahora» a los 0 segundos. Arreglado solo para el caso de 0 segundos (no con
+  `numeric:'auto'` a secas, que también cambia semana/mes/año en ±1 y rompía un test de Inventario ya
+  existente). Además, `renderQuoteLine` usaba el reloj de pared en vez del reloj del propio modelo.
+- **fix(sale)**: una fila con puja calculaba su motivo (`no_close_today`, "Sin puja registrada hoy")
+  sobre un histórico insuficiente heredado de una nota anterior al arreglo — recalculado con
+  `recommendPosition` real, ya no contradice la puja visible en la misma fila.
+- **fix(main)**: una ventana de venta ANUAL (Jorcamelo, «1 jun – 30 jun», dato real y auditado, sin
+  relación con Halloween) que ya cerró este año ahora rueda al mismo intervalo del año siguiente en
+  vez de quedarse sin texto de días — `resolveSaleCalendarCandidateSpan`.
+- **fix(sale)**: la tarjeta del saco nunca vuelve a decir «Sin datos»: una cifra que la vista de
+  verdad no puede rellenar (la del saco no se pinta, nunca un placeholder) — `renderFigure`/
+  `renderHeroCard`. Y cuando SÍ hay un dato real que antes no se usaba (el `ask` de su propia nota),
+  se usa: nuevo `computeListingNetCopper`, misma vía que ya existía para la puja instantánea.
+- **fix(sale)**: Trozo de caramelo tiene 3 posiciones reales (banco 720, materiales 1250, personaje
+  2983 = 4953 total); el volcado solo modelaba una y mostraba un «720 · 1 hueco» imposible (una pila
+  de banco no pasa de 250). Confirmado con un test sobre el pipeline REAL
+  (`InventoryAnalysisService`) que ya suma las posiciones de un mismo objeto en una sola fila cuando
+  comparten decisión — el hueco estaba solo en el fixture de la prueba, no en el código de producto.
+- **fix(sale)**: el grupo «Esperar» podía contener filas etiquetadas «Todavía no» — título renombrado
+  a «Pendiente» (categoría neutra); la palabra de cada fila no cambia.
+- Confirmado, no arreglado por ser dato correcto: Colmillos de plástico (36059) no tiene entrada en el
+  calendario de festival curado (auditado: sin histórico de precio medible) y por eso nunca llega a
+  las filas de Venta — no es un bug de agregación.
+
 ## Sin publicar (main, 26 sep 2026) - pestaña Sesión según el boceto aprobado (H18.36)
 
 Boceto aprobado por David el 26 sep (`docs/diseno/h18-31-interfaz/boceto.html` y `FICHA.md`): las
