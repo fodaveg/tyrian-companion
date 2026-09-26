@@ -1,5 +1,39 @@
 # Changelog
 
+## Sin publicar (main, 26 sep 2026) - pestaña Inventario según el boceto aprobado (H18.37)
+
+**Rediseño de la pestaña Inventario** (`docs/diseno/h18-31-interfaz/boceto.html`, láminas 1, 3.1 y
+3.2, aprobado por David el 26 sep). Sustituye la tabla y las tarjetas duplicadas por una sola lista
+con `subgrid` de seis columnas (Objeto · Cantidad · Qué hacer · Neto si vendes ya · Por qué y datos ·
+Conservar); «En propiedad», «Ubicación» y «Evidencia» pasan al detalle desplegable de cada fila.
+
+- **Línea de estado**: Inventario dice «Analizado hoy a las HH:MM · Notas guardadas a las HH:MM»,
+  como ya hacía Venta (`renderInventoryAdvisorView`, nueva `.tyrian-product-shell__status`).
+- **Bloque de espacio** (`renderStorageSpace`, compartido con Venta): el veredicto y su marca lateral
+  van delante del `meter` y de los huecos libres, como aprobó la maqueta de Venta
+  (`docs/diseno/halloween-venta/maqueta.html:190-206,529-532`); antes el orden era huecos · meter ·
+  veredicto y sin marca.
+- **Marca de acción** (`.tyrian-action`, ya viva en Venta) sustituye el color como único indicador;
+  `hold` se lee «Esperar» (antes «Conservar») y lo que no tiene puja se lee «Sin cotización» (antes
+  «Revisar»), con el vocabulario de Venta (`inventory.decision.action.hold`,
+  `advisor.view.action.review`).
+- **«Conservar» reversible en la fila** (Conservar / Conservado, `aria-pressed`): un objeto guardado
+  ya no salta a Preferencias para deshacerse; la fila lo deshace en el sitio
+  (`onRemoveKeepException` cableado desde la fila).
+- **Fallos y bloqueos**: los 13 textos «Código seguro: …» ya no imprimen el código como texto; un
+  botón «Copiar detalle técnico» lo copia al portapapeles bajo demanda.
+- **Sincronización sin pausa** (David, 24 sep 2026: «las notas se escriben solas»): el panel
+  «Confirmar cambios antes de escribir» desaparece; un plan que desactiva filas se escribe
+  directamente (`InventoryVaultOneClickSyncController.afterPreview`), en vez de esperar una
+  confirmación manual.
+- **No implementado en este lote** (reportado, no en silencio): el análisis antiguo con su fecha y su
+  lista a la vista (lámina 3.2) sigue bloqueando por completo (`stale_evidence`), porque
+  `reclassifyInternal` (`inventory-advisor-workflow.ts`) descarta la última captura válida antes de
+  bloquear — no queda nada que enseñar sin rediseñar esa retención.
+- Tests: `inventory-advisor-view.test.ts` (lista única, «Conservar» reversible, Esperar/Sin
+  cotización, línea de estado, copiar detalle técnico), `sale-view.test.ts` (bloque de espacio
+  reordenado en Venta), `inventory-vault-sync-run-controller.test.ts` (escritura directa sin pausa).
+
 ## Sin publicar (main, 26 sep 2026) - las reglas curadas valen hasta mayo de 2027 (H18.35)
 
 **Opción B de David (26 sep 2026, tarea 970c2546).** La sección de abajo medía el hallazgo: con
