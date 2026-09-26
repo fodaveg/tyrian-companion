@@ -96,7 +96,27 @@ describe('Companion incident callout: local diagnostics', () => {
 		expect(callout?.lines[0]?.button?.text).toBe('Copy technical detail');
 	});
 
-	it('copies component/action/code/timestamp to the clipboard, never onto the visible line (H18.36)', async () => {
+	it('hands component/action/code/timestamp to the plugin adapter, never onto the visible line (H18.36)', () => {
+		const status: LocalDebugStatus = {
+			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
+			bytes: 0, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
+			errorCode: null, queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 1,
+			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure', occurredAt: '2026-09-08T12:22:00.000Z' },
+		};
+		const copyLastErrorDetail = vi.fn(async () => undefined);
+		const harness = callHarness({ getLocalDebugStatus: () => status, copyLastErrorDetail });
+
+		const callout = build.call(harness, { errors: [], incidentTone: null }, connected);
+		callout?.lines[0]?.button?.onClick();
+		expect(copyLastErrorDetail).toHaveBeenCalledWith('network_failure · connection/connection_check · 2026-09-08T12:22:00.000Z');
+	});
+
+	// The clipboard write and its Notice-on-failure both live in `main.ts` (`copyLastErrorDetail`,
+	// `main-session-error-copy.test.ts`): `halloween-alert-panel.ts`'s own rule ("Obsidian Notice
+	// belongs to the plugin adapter, never this panel") applies here too, so this view never touches
+	// `navigator.clipboard` or `Notice` directly — only the port, which is optional and never throws.
+	it('never throws when the host shell has not wired the port', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
 			bytes: 0, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
@@ -105,13 +125,9 @@ describe('Companion incident callout: local diagnostics', () => {
 			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure', occurredAt: '2026-09-08T12:22:00.000Z' },
 		};
 		const harness = callHarness({ getLocalDebugStatus: () => status });
-		const writeText = vi.fn(async () => undefined);
-		vi.stubGlobal('navigator', { clipboard: { writeText } });
 
 		const callout = build.call(harness, { errors: [], incidentTone: null }, connected);
-		callout?.lines[0]?.button?.onClick();
-		await Promise.resolve();
-		expect(writeText).toHaveBeenCalledWith('network_failure · connection/connection_check · 2026-09-08T12:22:00.000Z');
+		expect(() => callout?.lines[0]?.button?.onClick()).not.toThrow();
 	});
 
 	it('surfaces a failed connection as a warning line with its own Comprobar conexión button', () => {

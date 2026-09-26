@@ -146,6 +146,11 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	/** Vault path of the note written for the session currently on screen, or null when none is durable. */
 	getSavedSessionNotePath?(): string | null;
 	openSavedSessionNote?(): void;
+	/**
+	 * "Copiar detalle técnico" (incident callout, H18.36): resolves to a Notice on a refused write,
+	 * never rejects. Optional only for the shell that lacks `navigator.clipboard`/`Notice` context.
+	 */
+	copyLastErrorDetail?(detail: string): Promise<void>;
 }
 
 export class TyrianCompanionView extends ItemView {
@@ -381,9 +386,9 @@ export class TyrianCompanionView extends ItemView {
 				button: {
 					text: translator.t('sessionCard.copyTechnicalDetail'),
 					onClick: () => {
-						void navigator.clipboard.writeText(
+						void this.actions.copyLastErrorDetail?.(
 							`${lastError.code} · ${lastError.component}/${lastError.action} · ${lastError.occurredAt}`,
-						).catch(() => undefined);
+						);
 					},
 				},
 			});

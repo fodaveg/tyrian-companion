@@ -357,7 +357,8 @@ type NoticeDiagnosticSource =
 	| 'session_command'
 	| 'live_observation'
 	| 'valuable_loot'
-	| 'ingame_secret_copy';
+	| 'ingame_secret_copy'
+	| 'session_error_copy';
 
 /** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
 export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
@@ -2606,6 +2607,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const path = this.savedSessionNotePath;
 		if (path === null) return;
 		void this.app.workspace.openLinkText(path, '', false);
+	}
+
+	/**
+	 * The incident callout's "Copiar detalle técnico" (H18.36, boceto lámina 2.3): the code
+	 * deliberately never renders as visible text, only to the clipboard, so a refused write has no
+	 * other way to reach the player — it must say so instead of leaving a copy that never happened.
+	 * `companion-view.ts` never touches `Notice` itself (`halloween-alert-panel.ts`'s own rule); this
+	 * mirrors `copyAlertIngameSecretFromCommand`'s try/notify shape.
+	 */
+	async copyLastErrorDetail(detail: string): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(detail);
+		} catch {
+			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'sessionCard.copyTechnicalDetailFailed'), 'session_error_copy');
+		}
 	}
 
 	async retrySessionSummarySave(): Promise<void> {

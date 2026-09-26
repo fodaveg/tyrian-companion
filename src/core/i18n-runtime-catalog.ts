@@ -1188,6 +1188,9 @@ const ES = {
 		// H18.36 (boceto lámina 2.3, decidido): el código de error solo va al portapapeles.
 		'sessionCard.lastErrorLine': 'Último fallo: {{component}}/{{action}}, {{timestamp}}',
 		'sessionCard.copyTechnicalDetail': 'Copiar detalle técnico',
+		// El detalle solo va al portapapeles (nunca como texto legible), así que un portapapeles que
+		// rechaza la escritura tiene que decirlo: si no, el jugador cree que copió y no copió nada.
+		'sessionCard.copyTechnicalDetailFailed': 'No se pudo copiar el detalle técnico.',
 		// H18.36 (boceto lámina 2.2/2.3): recorrido del cierre y su meta con la hora del reintento.
 		'sessionCard.earnedSoFar': 'Ganado hasta ahora',
 		'sessionCard.receipt.closureAria': 'Recorrido del cierre',
@@ -2321,6 +2324,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sessionCard.detailDisclosure': 'Detail',
 	'sessionCard.lastErrorLine': 'Last failure: {{component}}/{{action}}, {{timestamp}}',
 	'sessionCard.copyTechnicalDetail': 'Copy technical detail',
+	'sessionCard.copyTechnicalDetailFailed': 'The technical detail could not be copied.',
 	'sessionCard.earnedSoFar': 'Earned so far',
 	'sessionCard.receipt.closureAria': 'Closing recorrido',
 	'sessionCard.receipt.stopMarked': 'End marked',
