@@ -95,6 +95,7 @@ import type {
 } from './halloween/halloween-price-alert-runtime';
 import { assembleHalloween } from './runtime/assemble-halloween';
 import { HALLOWEEN_PRICE_ALERT_ITEM_ID } from './halloween/halloween-price-alert';
+import { priceHistoryDayUtc } from './economy/price-history-model';
 import type {
 	PriceHistoryDailyV1,
 	PriceHistorySettings,
@@ -115,7 +116,13 @@ import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from './inventory/price-histor
 import { paintPriceHistoryNoteBlock } from './ui/price-history-note-block-controller';
 import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
-import { festivalCalendarEntryForItem, resolveFestivalCalendarWindow, type FestivalAnchorsTableV1 } from './economy/seasonal-window';
+import {
+	festivalAnchorStartMs,
+	festivalCalendarEntryForItem,
+	resolveFestivalCalendarWindow,
+	type FestivalAnchorsTableV1,
+	type FestivalCalendarCandidateV1,
+} from './economy/seasonal-window';
 import { HALLOWEEN_FESTIVAL_ANCHORS } from './economy/models/halloween-festival-anchors';
 import {
 	assembleAdvisor,
@@ -239,11 +246,21 @@ import { projectPendingProposalUi } from './ui/pending-proposal-command';
 import { refreshBackgroundStatus } from './ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
 import { InventoryAdvisorPresentationController } from './ui/inventory-advisor-controller';
-import { buildInventoryAdvisorViewModel, type InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
+import { buildInventoryAdvisorViewModel, type InventoryAdvisorViewModel, type InventoryAdvisorViewRow } from './ui/inventory-advisor-view-model';
 import {
 	INVENTORY_ADVISOR_VIEW_TYPE,
 	InventoryAdvisorItemView,
 } from './ui/inventory-advisor-item-view';
+import { SALE_VIEW_TYPE, SaleItemView } from './ui/sale-item-view';
+import {
+	buildSaleViewModel,
+	computeInstantSellNetCopper,
+	type SaleSourceCalendarEntry,
+	type SaleSourceDecision,
+	type SaleSourceRow,
+	type SaleViewModel,
+} from './ui/sale-view-model';
+import { POSITION_RECOMMENDATION_REASON_CODES, type PositionRecommendationReasonCode } from './advisor/inventory-position-recommendation';
 import {
 	InventoryVaultSyncService,
 	type InventoryVaultSyncPlan,
@@ -502,6 +519,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const viewFactories: Record<string, ViewCreator> = {
 			[COMPANION_VIEW_TYPE]: (leaf) => new TyrianCompanionView(leaf, this),
 			[INVENTORY_ADVISOR_VIEW_TYPE]: (leaf) => new InventoryAdvisorItemView(leaf, this),
+			[SALE_VIEW_TYPE]: (leaf) => new SaleItemView(leaf, this),
 		};
 		await this.localDebugActions!.run({
 			component: 'plugin', action: 'plugin_load',
@@ -1564,6 +1582,121 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel {
 		return this.runtimeReady ? this.inventoryAdvisor.open() : buildInventoryAdvisorViewModel(null);
+	}
+
+	getSaleLocale() {
+		return this.settings.language;
+	}
+
+	/**
+	 * The Venta tab. A synchronous read, like `getInventoryAdvisorViewModel`: it reuses the
+	 * SAME already-computed advisor model (names, icons, per-position `decision`, `marketComparison`
+	 * net values, storage space) rather than a second engine, adding only the raw bid per unit the
+	 * advisor row itself does not carry (`this.inventoryAdvisor.analysis()`'s own price snapshot,
+	 * the same one that model was built from) and the curated festival calendar's raw candidate
+	 * windows (`inventory-advisor-builtin-bundle.ts` + `HALLOWEEN_FESTIVAL_ANCHORS`), which the
+	 * advisor model does not carry at all.
+	 */
+	getSaleViewModel(): SaleViewModel {
+		const nowMs = Date.now();
+		if (!this.runtimeReady) {
+			return buildSaleViewModel({
+				status: 'loading', nowMs, festivalStartMs: null,
+				maxPriceAgeMs: FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS, hero: null, rows: [], calendar: [],
+			});
+		}
+		const advisorModel = this.getInventoryAdvisorViewModel();
+		const bundleLoad = inventoryAdvisorBuiltinBundleProvider.load(new Date(nowMs).toISOString());
+		const maxPriceAgeMs = bundleLoad.status === 'available'
+			? bundleLoad.bundle.policy.maxPriceAgeMs : FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS;
+		const festivalStartMs = festivalAnchorStartMs(HALLOWEEN_FESTIVAL_ANCHORS, new Date(nowMs).getUTCFullYear());
+		const rowsByItemId = new Map<number, InventoryAdvisorViewRow>();
+		for (const group of advisorModel.groups) for (const row of group.rows) {
+			if (!rowsByItemId.has(row.itemId)) rowsByItemId.set(row.itemId, row);
+		}
+		const analysis = this.inventoryAdvisor.analysis();
+		const bidByItemId = new Map<number, number | null>(
+			(analysis?.source.input.prices.items ?? []).map((entry) => [entry.itemId, entry.bid?.unitCopper ?? null]),
+		);
+		const calendar: SaleSourceCalendarEntry[] = [];
+		const calendarItemIds = new Set<number>();
+		if (bundleLoad.status === 'available') {
+			for (const entry of bundleLoad.bundle.festivalCalendar.entries) {
+				calendarItemIds.add(entry.itemId);
+				const advisorRow = rowsByItemId.get(entry.itemId) ?? null;
+				calendar.push({
+					itemId: entry.itemId,
+					name: advisorRow?.name ?? String(entry.itemId),
+					icon: advisorRow?.icon ?? null,
+					candidates: entry.candidates
+						.map((candidate) => resolveSaleCalendarCandidateSpan(candidate, FESTIVAL_ANCHORS, nowMs))
+						.filter((span): span is { fromDay: string; toDay: string } => span !== null),
+				});
+			}
+		}
+		const heroRow = rowsByItemId.get(HALLOWEEN_PRICE_ALERT_ITEM_ID) ?? null;
+		const hero = this.buildSaleHeroInput(heroRow, bidByItemId.get(HALLOWEEN_PRICE_ALERT_ITEM_ID) ?? null);
+		const rows: SaleSourceRow[] = [];
+		for (const [itemId, row] of rowsByItemId) {
+			if (itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID || !calendarItemIds.has(itemId)) continue;
+			if (row.decision?.action === 'hold_for_legendary') continue;
+			rows.push(saleSourceRowFromAdvisorRow(row, bidByItemId.get(itemId) ?? null));
+		}
+		return buildSaleViewModel({
+			status: advisorModel.status,
+			...(advisorModel.blockedReason === undefined ? {} : { blockedReason: advisorModel.blockedReason }),
+			nowMs, festivalStartMs, maxPriceAgeMs,
+			...(advisorModel.storageSpace === undefined ? {} : { storageSpace: advisorModel.storageSpace }),
+			hero, rows, calendar,
+		});
+	}
+
+	/**
+	 * The Saco de Halloween's own hero card.
+	 *
+	 * Its advisor `decision` is NOT the position-recommendation timing: the Saco's route is `open`
+	 * (curated container rule), and `decideInventoryObjectRoute` (`inventory-object-result.ts`)
+	 * stands the advisor's OWN route for every route that is not `sell`/`list`, discarding the
+	 * timing entirely (`NO_EVIDENCE`). The hero's verdict comes from the account-level sell signal
+	 * instead (`getSellSignalState`, already the same detector `sell-signal-line.ts` renders
+	 * elsewhere): simpler than `recommendPosition`'s own wait-comparison (no specific suggested
+	 * window, no "sin ventaja demostrada" reason), but real and never a second guess at the Saco's
+	 * route. Known ficha limitation, not a silent gap.
+	 */
+	private buildSaleHeroInput(
+		row: InventoryAdvisorViewRow | null, bidCopper: number | null,
+	): (SaleSourceRow & { yearThresholdCopper: number | null }) | null {
+		const projection = this.getSellSignalState()?.projection ?? null;
+		if (row === null && (projection === null || projection.status !== 'decided')) return null;
+		const resolvedBid = bidCopper ?? (projection?.status === 'decided' ? projection.bidCopper : null);
+		const decision: SaleSourceDecision | null = projection === null || projection.status !== 'decided' || projection.signal === 'none'
+			? null
+			: {
+				action: projection.signal === 'sell' ? 'sell' : 'hold',
+				reason: projection.signal === 'sell' ? 'bid_above_reference' : 'below_local_band',
+				until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null,
+			};
+		return {
+			id: row?.id ?? `#/sale/hero/${String(HALLOWEEN_PRICE_ALERT_ITEM_ID)}`,
+			itemId: HALLOWEEN_PRICE_ALERT_ITEM_ID,
+			name: row?.name ?? 'Saco de Halloween',
+			icon: row?.icon ?? null,
+			ownedQuantity: row?.ownedQuantity ?? 0,
+			slotsUsed: row?.allocations.length ?? 0,
+			// The Saco is a container, never a bankable material.
+			materialStorageEligible: false,
+			decision,
+			bidCopper: resolvedBid,
+			instantSellNetCopper: row?.marketComparison?.instantSellCopper
+				?? computeInstantSellNetCopper(resolvedBid, row?.ownedQuantity ?? 0),
+			listingNetCopper: row?.marketComparison?.listingCopper ?? null,
+			yearThresholdCopper: projection?.status === 'decided' ? projection.sellThresholdCopper : null,
+		};
+	}
+
+	/** Applies a "Refresh" button on the Sale tab: the same advisor refresh the Inventory tab already exposes. */
+	async refreshSale(): Promise<void> {
+		await this.refreshInventoryAdvisor();
 	}
 
 	getPriceHistoryState(): PriceHistoryRuntimeState {
@@ -3975,6 +4108,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		for (const leaf of this.app.workspace.getLeavesOfType(INVENTORY_ADVISOR_VIEW_TYPE)) {
 			if (leaf.view instanceof InventoryAdvisorItemView) leaf.view.render();
 		}
+		// The Sale tab reads the SAME advisor model, so every refresh that moves it also
+		// moves the Sale tab's own hero card, calendar and grouped list.
+		for (const leaf of this.app.workspace.getLeavesOfType(SALE_VIEW_TYPE)) {
+			if (leaf.view instanceof SaleItemView) leaf.view.render();
+		}
 	}
 
 	private invalidateInventoryAdvisor(): void {
@@ -4098,10 +4236,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private async executeProductAction(
 		id: Exclude<ProductActionId, SessionCommandId>,
 	): Promise<ProductActionOutcome> {
-		if (id === 'open-companion' || id === 'open-inventory-advisor') {
-			const state = id === 'open-companion' ? 'open_companion' : 'open_inventory_advisor';
-			const navigate = id === 'open-companion'
-				? () => this.activateView() : () => this.activateInventoryAdvisorView();
+		if (id === 'open-companion' || id === 'open-inventory-advisor' || id === 'open-sale') {
+			const state = id === 'open-companion' ? 'open_companion'
+				: id === 'open-inventory-advisor' ? 'open_inventory_advisor' : 'open_sale';
+			const navigate = id === 'open-companion' ? () => this.activateView()
+				: id === 'open-inventory-advisor' ? () => this.activateInventoryAdvisorView()
+					: () => this.activateSaleView();
 			await (this.localDebugActions?.run(
 				{ component: 'ui', action: 'command_execute', state }, navigate,
 			) ?? navigate());
@@ -4124,7 +4264,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Maps handled controller states back into the shared action feedback contract. */
 	private productActionOutcome(
-		id: Exclude<ProductActionId, SessionCommandId | 'open-companion' | 'open-inventory-advisor' | 'review-pending-farming-proposal' | 'arm-assisted-detection'>,
+		id: Exclude<ProductActionId, SessionCommandId | 'open-companion' | 'open-inventory-advisor' | 'open-sale' | 'review-pending-farming-proposal' | 'arm-assisted-detection'>,
 	): ProductActionOutcome {
 		if (id === 'disarm-assisted-detection') return detectionActionOutcome(this.getAssistedDetectionState(), 'disarm');
 		if (id === 'refresh-inventory-advisor') return advisorActionOutcome(this.getInventoryAdvisorViewModel());
@@ -4493,6 +4633,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.app.workspace.revealLeaf(leaf);
 	}
 
+	private async activateSaleView(): Promise<void> {
+		const existingLeaf = this.app.workspace.getLeavesOfType(SALE_VIEW_TYPE)[0];
+		const leaf = existingLeaf ?? this.app.workspace.getLeaf(true);
+		await leaf.setViewState({ type: SALE_VIEW_TYPE, active: true });
+		await this.app.workspace.revealLeaf(leaf);
+	}
+
 }
 
 /** Identical to `AssistedDetectionService`'s own freshly-constructed, never-armed state. */
@@ -4521,6 +4668,76 @@ const INGAME_SESSION_LINK_KEY = 'tyrian-companion:ingame-session-link';
 const FESTIVAL_ANCHORS: ReadonlyMap<string, FestivalAnchorsTableV1> = new Map([
 	[HALLOWEEN_FESTIVAL_ANCHORS.festivalId, HALLOWEEN_FESTIVAL_ANCHORS],
 ]);
+
+const SALE_DAY_MS = 86_400_000;
+
+/**
+ * One calendar candidate resolved to this cycle's concrete `YYYY-MM-DD` span, for the Sale
+ * tab's own calendar section — distinct from `resolveFestivalCalendarWindow` above, which picks the
+ * ONE window that currently governs a position's recommendation; the calendar shows every candidate
+ * an item carries (the Saco's "before the festival" AND its May window), never only the governing one.
+ */
+function resolveSaleCalendarCandidateSpan(
+	candidate: FestivalCalendarCandidateV1,
+	anchors: ReadonlyMap<string, FestivalAnchorsTableV1>,
+	nowMs: number,
+): { fromDay: string; toDay: string } | null {
+	const year = new Date(nowMs).getUTCFullYear();
+	if (candidate.kind === 'annual') {
+		return { fromDay: `${String(year)}-${candidate.window.opensOn}`, toDay: `${String(year)}-${candidate.window.closesOn}` };
+	}
+	const table = anchors.get(candidate.window.festivalId);
+	if (table === undefined) return null;
+	const startMs = festivalAnchorStartMs(table, year);
+	if (startMs === null) return null;
+	return {
+		fromDay: priceHistoryDayUtc(startMs + candidate.window.opensOffsetDays * SALE_DAY_MS),
+		toDay: priceHistoryDayUtc(startMs + candidate.window.closesOffsetDays * SALE_DAY_MS),
+	};
+}
+
+const POSITION_RECOMMENDATION_REASON_SET: ReadonlySet<string> = new Set(POSITION_RECOMMENDATION_REASON_CODES);
+
+/**
+ * `decideInventoryObjectRoute` (`inventory-object-result.ts`) only keeps `recommendPosition`'s own
+ * timing when the advisor's route is `sell` or `list`; every other route (open, vendor, salvage,
+ * use, deposit, keep, review, discard review) stands with the ADVISOR's own reason instead
+ * (`InventoryAdvisorReasonCode`, a different closed set). Checking membership in the moment stage's
+ * own set, rather than trusting the wider `action` union, is what keeps a row whose route pre-empted
+ * the timing from reaching `inventory.decision.reason.*` with a key that catalog does not have.
+ */
+function isPositionRecommendationReasonCode(value: string): value is PositionRecommendationReasonCode {
+	return POSITION_RECOMMENDATION_REASON_SET.has(value);
+}
+
+/**
+ * One advisor row turned into the Sale tab's own input shape.
+ *
+ * `hold_for_legendary` and every route other than `sell`/`list` become no decision at all (ficha
+ * decision 2 and the doc comment above): a position reserved for a legendary goal, or one whose
+ * route already decided something other than a market sale, has nothing this tab can time. It
+ * shows as "sin datos" rather than guessing, and (ficha decision 3) still gets the low-space
+ * "depositar" override in `buildSaleViewModel` when it is a bankable material.
+ */
+function saleSourceRowFromAdvisorRow(row: InventoryAdvisorViewRow, bidCopper: number | null): SaleSourceRow {
+	const decision = row.decision ?? null;
+	const timed: SaleSourceDecision | null = decision === null ? null
+		: decision.action !== 'sell' && decision.action !== 'hold' && decision.action !== 'sell_at_season' && decision.action !== 'review' ? null
+			: !isPositionRecommendationReasonCode(decision.reason) ? null
+				: {
+					action: decision.action, reason: decision.reason, until: decision.until,
+					priceQuotedAt: decision.priceQuotedAt, sellWindowFromDay: decision.sellWindowFromDay, sellWindowToDay: decision.sellWindowToDay,
+				};
+	return {
+		id: row.id, itemId: row.itemId, name: row.name, icon: row.icon,
+		ownedQuantity: row.ownedQuantity, slotsUsed: row.allocations.length,
+		materialStorageEligible: row.materialStorage != null,
+		decision: timed,
+		bidCopper,
+		instantSellNetCopper: row.marketComparison?.instantSellCopper ?? null,
+		listingNetCopper: row.marketComparison?.listingCopper ?? null,
+	};
+}
 
 type PriceHistoryDailyReader = (itemId: number, fromDayUtc: string) => Promise<PriceHistoryDailyV1[]>;
 

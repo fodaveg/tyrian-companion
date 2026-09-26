@@ -27,6 +27,7 @@ import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import { COMPANION_VIEW_TYPE, ConfirmAbandonSessionModal } from './ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
+import { SALE_VIEW_TYPE } from './ui/sale-item-view';
 import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 import { SessionCommandController } from './ui/session-command-controller';
 import type { PreparedSessionCommand, SessionCommandPorts } from './ui/session-command-controller';
@@ -1628,11 +1629,11 @@ describe('deferred runtime boot guard', () => {
 		expect(plugin.getConnectionState()).toEqual({ status: 'idle' });
 
 		const registeredViewTypes = registerView.mock.calls.map((call: unknown[]) => call[0]);
-		expect(registeredViewTypes).toEqual(expect.arrayContaining([COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE]));
+		expect(registeredViewTypes).toEqual(expect.arrayContaining([COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE]));
 
 		const registeredCommandIds = addCommand.mock.calls.map((call) => (call[0] as { id: string }).id);
 		expect(registeredCommandIds).toEqual(expect.arrayContaining([
-			'open-companion', 'open-inventory-advisor', 'refresh-inventory-advisor',
+			'open-companion', 'open-inventory-advisor', 'open-sale', 'refresh-inventory-advisor',
 			'arm-assisted-detection', 'disarm-assisted-detection', 'copy-ingame-bridge-token',
 		]));
 		// H14.9: both states read `unattributed_origin` now, not `window_error`/`unhandled_rejection`;
