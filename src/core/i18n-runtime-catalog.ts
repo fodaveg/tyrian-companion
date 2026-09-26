@@ -662,7 +662,7 @@ const ES = {
 		'sale.view.status.festivalActive': 'Halloween está en curso',
 		'sale.view.slots.one': '1 hueco', 'sale.view.slots.many': '{{count}} huecos',
 		'sale.view.hero.instantSell': 'Venta inmediata', 'sale.view.hero.listing': 'Publicar',
-		'sale.view.hero.yearThreshold': 'Umbral del año', 'sale.view.hero.unknown': 'Sin datos',
+		'sale.view.hero.yearThreshold': 'Umbral del año',
 		// Review fix: la comparación abrir-vs-vender ya calculada por la economía de contenedores.
 		'sale.hero.open': 'Abrir', 'sale.hero.sellNow': 'Vender',
 		'sale.action.sell': 'Vender ahora', 'sale.action.wait': 'Esperar', 'sale.action.notYet': 'Todavía no',
@@ -1840,7 +1840,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sale.view.status.festivalActive': 'Halloween is running',
 	'sale.view.slots.one': '1 slot', 'sale.view.slots.many': '{{count}} slots',
 	'sale.view.hero.instantSell': 'Instant sell', 'sale.view.hero.listing': 'List',
-	'sale.view.hero.yearThreshold': 'Year threshold', 'sale.view.hero.unknown': 'No data',
+	'sale.view.hero.yearThreshold': 'Year threshold',
 	'sale.hero.open': 'Open', 'sale.hero.sellNow': 'Sell',
 	'sale.action.sell': 'Sell now', 'sale.action.wait': 'Wait', 'sale.action.notYet': 'Not yet',
 	'sale.action.noData': 'No quote',
