@@ -213,8 +213,7 @@ un reconocimiento vuelve a unread y solo entonces puede emitir uno nuevo.
 ## Comparación y precio de Halloween H11-B
 
 La comparación H11.3 es igual en Linux, macOS y Windows: usa exclusivamente el delta API final y la
-clasificación automática de la sesión finalizada, estado Y razones (H2.7; H18.32, 26 sep 2026).
-«Bolsas desaparecidas netas» no significa aperturas demostradas. El store
+revisión humana finalizada. «Bolsas desaparecidas netas» no significa aperturas demostradas. El store
 local conserva 18 resultados ordenados, incluidos ceros, y la criba exacta BigInt del modelo fijado.
 Cada record nuevo guarda id/versión del modelo y se valida contra un registry histórico inmutable; el
 legacy original conserva su interpretación y una versión desconocida falla cerrada. No lee ni
