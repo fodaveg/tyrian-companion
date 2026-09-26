@@ -113,6 +113,87 @@ describe('SaleItemView wiring', () => {
 		await Promise.resolve();
 		await Promise.resolve();
 	});
+
+	/**
+	 * H18.38 (David, 0.2.3 via BRAT): opening Venta with the advisor unanalyzed this session left
+	 * "Leyendo precios del bazar…" on screen forever — `getSaleViewModel` reports `loading`
+	 * (`buildInventoryAdvisorViewModel(null)`) and `onOpen` never asked for the same refresh the
+	 * footer button already offers. Fails before the `onOpen` auto-trigger: `refreshCalls` stays 0.
+	 */
+	it('auto-triggers the same refresh once when opened with the advisor unanalyzed, and stops saying Leyendo once it resolves', async () => {
+		installDom();
+		let refreshCalls = 0;
+		let resolveRefresh!: () => void;
+		const pending = new Promise<void>((resolve) => { resolveRefresh = resolve; });
+		let status: 'loading' | 'ready' = 'loading';
+		const view = new SaleItemView({} as never, actions(() => buildSaleViewModel(baseInput({ status })), {
+			refreshSale: async () => {
+				refreshCalls += 1;
+				await pending;
+				status = 'ready';
+			},
+		}));
+		await view.onOpen();
+		expect(refreshCalls).toBe(1);
+		const root = view.contentEl as unknown as FakeElement;
+		expect(text(root)).toContain('Leyendo precios del bazar');
+		resolveRefresh();
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(text(root)).not.toContain('Leyendo precios del bazar');
+	});
+
+	it('does not trigger a second refresh while the auto-triggered one is still in flight', async () => {
+		installDom();
+		let refreshCalls = 0;
+		let resolveRefresh!: () => void;
+		const pending = new Promise<void>((resolve) => { resolveRefresh = resolve; });
+		const view = new SaleItemView({} as never, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
+			refreshSale: async () => { refreshCalls += 1; await pending; },
+		}));
+		await view.onOpen();
+		view.render();
+		view.render();
+		expect(refreshCalls).toBe(1);
+		resolveRefresh();
+		await Promise.resolve();
+		await Promise.resolve();
+	});
+
+	it('when the runtime is not ready yet and the refresh leaves the model in loading, shows a working Actualizar button instead of a dead end', async () => {
+		installDom();
+		let refreshCalls = 0;
+		// Mirrors `main.ts`'s `refreshInventoryAdvisor`: `if (!this.runtimeReady) { notify; return; }`
+		// resolves without ever changing the cached model away from `loading`.
+		const view = new SaleItemView({} as never, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
+			refreshSale: async () => { refreshCalls += 1; },
+		}));
+		await view.onOpen();
+		await Promise.resolve();
+		await Promise.resolve();
+		const root = view.contentEl as unknown as FakeElement;
+		expect(text(root)).toContain('Leyendo precios del bazar');
+		const button = find(root, 'button').find((el) => text(el).includes('Actualizar'))!;
+		expect(button).toBeDefined();
+		button.dispatch('click');
+		expect(refreshCalls).toBe(2);
+	});
+
+	it('when the analysis cannot run (missing key), shows the blocked reason instead of Leyendo', async () => {
+		installDom();
+		let status: 'loading' | 'blocked' = 'loading';
+		const view = new SaleItemView({} as never, actions(() => buildSaleViewModel(baseInput({
+			status, ...(status === 'blocked' ? { blockedReason: 'credential_unavailable' } : {}),
+		})), {
+			refreshSale: async () => { status = 'blocked'; },
+		}));
+		await view.onOpen();
+		await Promise.resolve();
+		await Promise.resolve();
+		const root = view.contentEl as unknown as FakeElement;
+		expect(text(root)).not.toContain('Leyendo precios del bazar');
+	});
 });
 
 function installDom(): void {
