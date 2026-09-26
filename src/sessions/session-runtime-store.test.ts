@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
-import { afterSnapshot, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
+import { afterSnapshot, looseHolding, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
 import { compareStorageSnapshots } from '../account/storage-delta';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import {
@@ -276,6 +276,36 @@ describe('session runtime persistence', () => {
 		if (!tampered.review) throw new Error('Reviewed clone is invalid.');
 		tampered.review.classification.status = 'contaminated';
 		expect(isSessionRuntimeRecord(tampered)).toBe(false);
+	});
+
+	// Review fix (26 sep 2026): H18.32 tagged an exempt `item_losses_observed` reason with
+	// `detail: 'exempt'`. A `complete` session persisted before that lote never has the tag, and
+	// `save()`'s strict `verifyReview` check used to reject a re-persist of it outright.
+	it('accepts a completed session whose stored review predates the exempt item-loss detail', () => {
+		const baseline = storageDeltaSnapshot({ holdings: [looseHolding(36_038, 5, { source: 'bank', slot: 0 })] });
+		const final = afterSnapshot({ holdings: [] });
+		const provisional = provisionalState(baseline, final);
+		const delta = compareStorageSnapshots(baseline, final);
+		const review = createSessionContaminationReview(baseline, final, delta, '2026-08-13T09:00:03.000Z');
+		if (!review) throw new Error('Review fixture is invalid.');
+		expect(review.classification.reasons).toContainEqual({ code: 'item_losses_observed', detail: 'exempt' });
+		const finalized = transitionSession(provisional, {
+			type: 'finalize',
+			authority,
+			finalizedAt: '2026-08-13T09:00:04.000Z',
+			classification: review.classification.status,
+		});
+		if (finalized.status !== 'applied') throw new Error('Finalize fixture transition failed.');
+		const record = createSessionRuntimeRecord(
+			finalized.state, baseline, final, delta, Date.parse(review.reviewedAt), review,
+		);
+		expect(isSessionRuntimeRecord(record)).toBe(true);
+		if (!record || !record.review) throw new Error('Reviewed record is invalid.');
+		const preH1832 = structuredClone(record);
+		if (!preH1832.review) throw new Error('Reviewed clone is invalid.');
+		preH1832.review.classification.reasons = preH1832.review.classification.reasons.map((reason) =>
+			reason.code === 'item_losses_observed' ? { code: reason.code } : reason);
+		expect(isSessionRuntimeRecord(preH1832)).toBe(true);
 	});
 
 	it('keeps a valid runtime v3 record with a legacy v1 review loadable and ineligible to recommend', () => {

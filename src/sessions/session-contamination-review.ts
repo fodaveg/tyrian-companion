@@ -14,6 +14,7 @@ import {
 } from '../account/contamination-model';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import { canonicalJson } from '../core/canonical-sha256';
 import {
 	SESSION_API_SETTLEMENTS,
 	type SessionApiSettlement,
@@ -155,15 +156,48 @@ function matchesRecomputedReview(
 		Array.isArray(value.farmedLossItemIds) ? value.farmedLossItemIds as number[] : [],
 	);
 	if (expected === null) return false;
-	if (JSON.stringify(expected) === JSON.stringify(value)) return true;
+	// Two independent, unrelated shape downgrades a persisted review may need, tried in every
+	// combination: H18.32's `item_losses_observed` exempt detail (added 2026-09-26; absent on
+	// anything a `complete` session persisted before it, since the classifier never set it) and the
+	// pre-Lote-S v1 classification envelope (`version: 1`, `permissions.recommend` forced `false`,
+	// unrelated to H18.32 and already handled before it existed). A v1 record never carries the
+	// exempt detail either, so the v1 downgrade is tried against both bases.
+	const bases = [expected, withoutExemptItemLossDetail(expected)];
+	for (const base of bases) {
+		if (JSON.stringify(base) === JSON.stringify(value)) return true;
+	}
 	if (!isRecord(value.classification) || value.classification.version !== 1) return false;
-	const legacy = structuredClone(expected);
-	legacy.classification = {
-		...legacy.classification,
-		version: 1,
-		permissions: { ...legacy.classification.permissions, recommend: false },
-	};
-	return JSON.stringify(legacy) === JSON.stringify(value);
+	for (const base of bases) {
+		const legacy = structuredClone(base);
+		legacy.classification = {
+			...legacy.classification,
+			version: 1,
+			permissions: { ...legacy.classification.permissions, recommend: false },
+		};
+		if (JSON.stringify(legacy) === JSON.stringify(value)) return true;
+	}
+	return false;
+}
+
+/**
+ * The pre-H18.32 shape of a recomputed review: `item_losses_observed` never carried
+ * `detail: 'exempt'` before that lote, so a `complete` session persisted before it recomputes today
+ * with the tag added and would otherwise mismatch (`evidence_mismatch` in
+ * `container-recommendation.ts`, `reviewVerified: false` in `session-runtime-store.ts`, and a
+ * `verifyReview` save rejecting an old `complete` record outright — none of them saw this during
+ * H18.32 because the only fixture exercised, `registro-sesion-9sep.json`, is `provisional`, which
+ * `session-runtime-store.ts` already tolerates not recomputing exactly). Reasons are re-sorted the
+ * same way `contamination.ts`'s `canonicalUnique` does, so a diverging detail can never leave the
+ * array in a different order than a record written before the tag existed.
+ */
+function withoutExemptItemLossDetail(review: SessionContaminationReview): SessionContaminationReview {
+	const clone = structuredClone(review);
+	clone.classification.reasons = clone.classification.reasons
+		.map((reason) => reason.code === 'item_losses_observed' && reason.detail === 'exempt'
+			? { code: reason.code }
+			: reason)
+		.sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
+	return clone;
 }
 
 /**

@@ -184,6 +184,24 @@ describe('recommendContainerDisposition', () => {
 		});
 	});
 
+	// Review fix (26 sep 2026): H18.32 tagged an exempt `item_losses_observed` reason with
+	// `detail: 'exempt'`. A `complete` session persisted before that lote never has the tag, and
+	// `isSessionContaminationReview` used to reject it as `evidence_mismatch` on recompute — this
+	// asserts the session recommends normally instead, exactly like `input()`'s untouched default.
+	it('accepts a complete review persisted before H18.32 without the exempt item-loss detail', () => {
+		expect(ready(input({ legacyItemLossShape: true }))).toEqual(ready(input()));
+	});
+
+	// Negative counterpart: the pre-H18.32 shape only forgives the missing exempt detail, nothing
+	// else. A second, unrelated divergence (a tampered classification status) still rejects.
+	it('still rejects a pre-H18.32 shape carrying any other difference', () => {
+		const value = input({ legacyItemLossShape: true });
+		value.session.review.classification.status = 'estimated';
+		expect(recommendContainerDisposition(value)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }],
+		});
+	});
+
 	it('binds approval to canonical model content and rejects impossible review chronology', () => {
 		const mutated = input();
 		mutated.model.title = 'Same version, different model';
@@ -612,14 +630,23 @@ function input(options: {
 	// anymore, and it is the only path that ever produced that status, so it is no longer
 	// reachable at all — `session_contaminated`'s own blocking test goes with it, see below.
 	reviewKind?: 'exact' | 'legacy' | 'estimated';
+	/**
+	 * H18.32 review fix: also opens and fully spends a curated Halloween bag (a farmed-input loss
+	 * exempt from degrading, H14.1) alongside the `ITEM_ID` gain, then strips the `detail: 'exempt'`
+	 * `item_losses_observed` carries since H18.32 from the persisted review — the shape a `complete`
+	 * session written before that lote actually has on disk.
+	 */
+	legacyItemLossShape?: boolean;
 } = {}): ContainerRecommendationInput {
 	const gainedQuantity = options.gainedQuantity ?? 1;
 	const finalQuantity = options.finalQuantity ?? gainedQuantity;
 	const goals = goalsFor(options.reservedTarget ?? 0, options.intendedUse ?? 'hold');
 	const beforeQuantity = finalQuantity - gainedQuantity;
+	const HALLOWEEN_BAG_ITEM_ID = 36_038;
 	const beforeSnapshot = storageDeltaSnapshot({ holdings: [
 		looseHolding(100, 2, { source: 'bank', slot: 0 }),
 		...(beforeQuantity > 0 ? [looseHolding(ITEM_ID, beforeQuantity, { source: 'bank', slot: 1 })] : []),
+		...(options.legacyItemLossShape ? [looseHolding(HALLOWEEN_BAG_ITEM_ID, 5, { source: 'bank', slot: 2 })] : []),
 	] });
 	const after = afterSnapshot({ holdings: [
 		looseHolding(100, 2, { source: 'bank', slot: 0 }),
@@ -629,6 +656,13 @@ function input(options: {
 	if (delta.status === 'invalid') throw new Error('Invalid delta fixture.');
 	const plan = planFor(after, goals);
 	const overlay = overlayFor(plan, gainedQuantity);
+	// `partitionSessionValuation` (`reservation.ts`) requires `warnings` to include
+	// `item_losses_not_valued` exactly when the delta has an item loss, and `isSessionValuationRecord`
+	// requires non-empty `warnings` to pair with `coverage: 'partial'` — an item loss can never
+	// coexist with `'complete'` coverage in a valid valuation.
+	if (options.legacyItemLossShape) {
+		overlay.valuation = { ...overlay.valuation, coverage: 'partial', warnings: ['item_losses_not_valued'] };
+	}
 	const model = modelFor(options.modelEvMicro ?? 1, options.marketOutcome ?? false);
 	// A skipped API settlement window genuinely degrades to `estimated` (`api_settlement_window_skipped`)
 	// without touching the snapshots/delta identity checks below, so the review still recomputes
@@ -643,6 +677,11 @@ function input(options: {
 		...review.classification, version: 1,
 		permissions: { ...review.classification.permissions, recommend: false },
 	} as never;
+	if (options.legacyItemLossShape) {
+		expect(review.classification.reasons).toContainEqual({ code: 'item_losses_observed', detail: 'exempt' });
+		review.classification.reasons = review.classification.reasons.map((reason) =>
+			reason.code === 'item_losses_observed' ? { code: reason.code } : reason);
+	}
 	const market = {
 		version: 1 as const, batchId: 'batch-1', capturedAt: AS_OF, source: 'gw2-commerce-prices' as const,
 		quotes: [

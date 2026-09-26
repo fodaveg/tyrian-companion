@@ -197,6 +197,37 @@ describe('session contamination review', () => {
 		expect(isSessionContaminationReview(tampered, before, after, delta)).toBe(false);
 	});
 
+	// Review fix (26 sep 2026): H18.32 tagged `item_losses_observed` with `detail: 'exempt'` when
+	// every loss was farmed input. A `complete` session persisted before that lote never has the
+	// tag, and a byte-for-byte recompute would otherwise reject it as a mismatch.
+	it('accepts a review persisted before H18.32 without the exempt item-loss detail', () => {
+		const before = storageDeltaSnapshot({ holdings: [looseHolding(999, 3, { source: 'bank', slot: 0 })] });
+		const after = afterSnapshot({ holdings: [looseHolding(999, 1, { source: 'bank', slot: 0 })] });
+		const delta = compareStorageSnapshots(before, after);
+		const review = createSessionContaminationReview(before, after, delta, REVIEWED_AT, 'settled', [999]);
+		if (!review) throw new Error('Expected review fixture.');
+		expect(review.classification.reasons).toContainEqual({ code: 'item_losses_observed', detail: 'exempt' });
+
+		const preH1832 = structuredClone(review);
+		preH1832.classification.reasons = preH1832.classification.reasons.map((reason) =>
+			reason.code === 'item_losses_observed' ? { code: reason.code } : reason);
+		expect(isSessionContaminationReview(preH1832, before, after, delta)).toBe(true);
+	});
+
+	it('still rejects the pre-H18.32 shape when it also carries an unrelated difference', () => {
+		const before = storageDeltaSnapshot({ holdings: [looseHolding(999, 3, { source: 'bank', slot: 0 })] });
+		const after = afterSnapshot({ holdings: [looseHolding(999, 1, { source: 'bank', slot: 0 })] });
+		const delta = compareStorageSnapshots(before, after);
+		const review = createSessionContaminationReview(before, after, delta, REVIEWED_AT, 'settled', [999]);
+		if (!review) throw new Error('Expected review fixture.');
+
+		const tampered = structuredClone(review);
+		tampered.classification.reasons = tampered.classification.reasons.map((reason) =>
+			reason.code === 'item_losses_observed' ? { code: reason.code } : reason);
+		tampered.classification.status = 'contaminated';
+		expect(isSessionContaminationReview(tampered, before, after, delta)).toBe(false);
+	});
+
 	it('does not mutate evidence inputs', () => {
 		const { before, after, delta } = fixtures();
 		const originals = structuredClone({ before, after, delta });
