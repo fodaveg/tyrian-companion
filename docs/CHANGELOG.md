@@ -31,6 +31,15 @@ Lumbre, decidida por David el 26 sep 2026.
   el vocabulario solo para que un record persistido antes de este lote se siga leyendo y pintando;
   un record nuevo nunca vuelve a producirlos. `bagsDisappearedNet` sigue siendo neto y los textos no
   afirman aperturas.
+- **Segunda corrección de revisión, mismo día:** marcar `item_losses_observed` como exento rompía la
+  recomputación byte a byte de una revisión ya guardada antes de este lote (una sesión `complete` del
+  Laberinto con pérdidas de farmeo, típica). Efecto medido: `container-recommendation.ts` devolvía
+  `evidence_mismatch` para esas sesiones, `session-runtime-store` las cargaba con
+  `reviewVerified: false`, y un `save()` con verificación estricta rechazaba un registro `complete`
+  antiguo por completo. `matchesRecomputedReview` (`src/sessions/session-contamination-review.ts`)
+  ahora también acepta el valor guardado si coincide con la revisión recalculada quitando
+  `detail: 'exempt'` de sus razones `item_losses_observed` — la forma que tenía antes de existir la
+  marca —, combinado con el camino legacy v1 ya existente (un registro v1 tampoco la lleva nunca).
 
 ## Release beta 0.2.1 - el token del puente, a la vista
 
