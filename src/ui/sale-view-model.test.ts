@@ -184,9 +184,63 @@ describe('sale view model: hero card and calendar', () => {
 					decision: { action: 'hold', reason: 'below_local_band', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
 				}),
 				yearThresholdCopper: 430,
+				openVsSell: null,
 			},
 		}));
 		expect(model.hero).toMatchObject({ itemId: 36038, action: 'sell', slotsFreedLabel: 10, yearThresholdCopper: 430 });
+	});
+
+	it('review fix: overrides a hero "sell" verdict to "open" when opening demonstrably beats selling now', () => {
+		const model = buildSaleViewModel(baseInput({
+			hero: {
+				...row({
+					itemId: 36038, name: 'Saco de Halloween', ownedQuantity: 2350, slotsUsed: 10, instantSellNetCopper: 201,
+					decision: { action: 'sell', reason: 'no_demonstrated_wait_advantage', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
+				}),
+				yearThresholdCopper: 430,
+				openVsSell: { openCopper: 295, sellCopper: 201 },
+			},
+		}));
+		expect(model.hero).toMatchObject({ action: 'open' });
+	});
+
+	it('review fix: keeps "sell" when opening does not beat it, or when there is no comparison at all', () => {
+		const beats = buildSaleViewModel(baseInput({
+			hero: {
+				...row({
+					itemId: 36038, name: 'Saco de Halloween', ownedQuantity: 2350,
+					decision: { action: 'sell', reason: 'bid_above_reference', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
+				}),
+				yearThresholdCopper: null,
+				openVsSell: { openCopper: 100, sellCopper: 200 },
+			},
+		}));
+		expect(beats.hero).toMatchObject({ action: 'sell' });
+		const noData = buildSaleViewModel(baseInput({
+			hero: {
+				...row({
+					itemId: 36038, name: 'Saco de Halloween', ownedQuantity: 2350,
+					decision: { action: 'sell', reason: 'bid_above_reference', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
+				}),
+				yearThresholdCopper: null,
+				openVsSell: null,
+			},
+		}));
+		expect(noData.hero).toMatchObject({ action: 'sell' });
+	});
+
+	it('review fix: never overrides a non-"sell" verdict (esperar/todavía no/sin datos stay as-is)', () => {
+		const model = buildSaleViewModel(baseInput({
+			hero: {
+				...row({
+					itemId: 36038, name: 'Saco de Halloween', ownedQuantity: 2350,
+					decision: { action: 'hold', reason: 'below_local_band', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
+				}),
+				yearThresholdCopper: null,
+				openVsSell: { openCopper: 999, sellCopper: 1 },
+			},
+		}));
+		expect(model.hero).toMatchObject({ action: 'wait' });
 	});
 
 	it('resolves a window\'s "open today" flag against the given instant', () => {

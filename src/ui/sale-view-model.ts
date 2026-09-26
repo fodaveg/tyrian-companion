@@ -11,8 +11,12 @@ import type { InventoryAdvisorViewStatus } from './inventory-advisor-view-model'
  * formatted by `sale-view.ts`, this module only decides WHAT the tab shows.
  */
 
-/** The three words this view ever uses for a row's action; see the ficha's decision 1. */
-export type SaleDisplayAction = 'sell' | 'wait' | 'not_yet' | 'deposit' | 'no_data';
+/**
+ * The words this view ever uses for a row's action; see the ficha's decision 1. `open` is the
+ * hero card's own extra word (review fix, ficha decision 2-bis): the Saco is a curated container,
+ * and when opening it demonstrably beats selling it now, the verdict is never "vender ahora".
+ */
+export type SaleDisplayAction = 'sell' | 'wait' | 'not_yet' | 'deposit' | 'open' | 'no_data';
 
 /** `recommendPosition`'s own action union, minus `hold_for_legendary` (filtered before this module sees it). */
 export type SaleSourceDecisionAction = 'sell' | 'hold' | 'sell_at_season' | 'review';
@@ -80,6 +84,13 @@ export interface SaleRowViewModel {
 export interface SaleHeroViewModel extends SaleRowViewModel {
 	/** The trailing year's 90th-percentile bid (`evaluateSellSignal`'s own threshold), or null while undecidable. */
 	yearThresholdCopper: number | null;
+	/**
+	 * Review fix: the curated container economy's own liquid-only comparison
+	 * (`evaluateInventoryContainerEconomy`'s `explanation.sellNow`/`explanation.open`), already net.
+	 * Null when the account's advisor row carries no `containerEconomy` (no market depth, activation
+	 * pending, price stale, etc.) — shown as "no disponible", never guessed.
+	 */
+	openVsSell: { openCopper: number; sellCopper: number } | null;
 }
 
 export interface SaleGroupsViewModel {
@@ -129,7 +140,10 @@ export interface SaleViewModelInput {
 	festivalStartMs: number | null;
 	maxPriceAgeMs: number;
 	storageSpace?: InventoryAdvisorStorageSpace | null;
-	hero: (SaleSourceRow & { yearThresholdCopper: number | null }) | null;
+	hero: (SaleSourceRow & {
+		yearThresholdCopper: number | null;
+		openVsSell: { openCopper: number; sellCopper: number } | null;
+	}) | null;
 	rows: SaleSourceRow[];
 	calendar: SaleSourceCalendarEntry[];
 }
@@ -161,6 +175,21 @@ function applyLowSpaceOverride(action: SaleDisplayAction, materialStorageEligibl
 	if (materialStorageEligible && action !== 'sell') return 'deposit';
 	if (action === 'wait' || action === 'not_yet') return 'sell';
 	return action;
+}
+
+/**
+ * Review fix (26 sep 2026): the Saco's `recommendPosition` verdict answers "if I sell, when", never
+ * "should I sell or open" — that second question is the curated container economy's own, already
+ * computed for this exact position. When it demonstrably favours opening over an instant sale, "sell
+ * now" is never a correct verdict for this hero card; `open` wins, using the word the advisor's own
+ * route vocabulary already carries. Every other action (wait, not_yet, deposit, no_data) is left
+ * alone: this rule only ever REPLACES "sell" with "open", never invents an opinion the moment stage
+ * did not already reach.
+ */
+function applyOpenVsSellOverride(hero: SaleHeroViewModel): SaleHeroViewModel {
+	if (hero.action !== 'sell' || hero.openVsSell === null) return hero;
+	if (hero.openVsSell.openCopper <= hero.openVsSell.sellCopper) return hero;
+	return { ...hero, action: 'open' };
 }
 
 function toRowViewModel(source: SaleSourceRow, isLow: boolean, nowMs: number): SaleRowViewModel {
@@ -199,14 +228,15 @@ function dayWithinSpan(dayUtc: string, fromDay: string, toDay: string): boolean 
 /** Builds the render-ready model. Pure: no clock, no translator, no network. */
 export function buildSaleViewModel(input: SaleViewModelInput): SaleViewModel {
 	const isLow = input.storageSpace?.lowSpace?.isLow === true;
-	const hero = input.hero === null ? null : {
+	const hero = input.hero === null ? null : applyOpenVsSellOverride({
 		...toRowViewModel(input.hero, isLow, input.nowMs),
 		yearThresholdCopper: input.hero.yearThresholdCopper,
-	};
+		openVsSell: input.hero.openVsSell,
+	});
 	const rows = input.rows.map((row) => toRowViewModel(row, isLow, input.nowMs));
 	const groups: SaleGroupsViewModel = { now: [], wait: [], noData: [] };
 	for (const row of rows) {
-		if (row.action === 'sell' || row.action === 'deposit') groups.now.push(row);
+		if (row.action === 'sell' || row.action === 'deposit' || row.action === 'open') groups.now.push(row);
 		else if (row.action === 'wait' || row.action === 'not_yet') groups.wait.push(row);
 		else groups.noData.push(row);
 	}
