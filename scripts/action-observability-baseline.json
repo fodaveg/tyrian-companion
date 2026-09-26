@@ -3,9 +3,9 @@
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
 		"catch_clause": 466,
-		"promise_catch": 37,
-		"void_expression": 95,
-		"callback_registration": 170
+		"promise_catch": 38,
+		"void_expression": 97,
+		"callback_registration": 171
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -12647,11 +12647,44 @@
 					"reason": "Allowlisted promise_catch: The \"renderProductShell\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderProductShell\"."
 				},
 				{
+					"id": "5a8e1dcb330083452ea55a48e4d1ac06e55985c8",
+					"kind": "void_expression",
+					"line": 46,
+					"column": 75,
+					"endLine": 46,
+					"endColumn": 135,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "options.actions.run().catch",
+						"scope": "renderProductShell",
+						"justification": "The \"renderProductShell\" owner deliberately detaches \"options.actions.run().catch\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderProductShell\" owner deliberately detaches \"options.actions.run().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"options.actions.run().catch\" in \"renderProductShell\"."
+				},
+				{
+					"id": "d4ca764c4c5f130b2087be959df5133ef9e3c2d0",
+					"kind": "promise_catch",
+					"line": 46,
+					"column": 80,
+					"endLine": 46,
+					"endColumn": 135,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderProductShell",
+						"justification": "The \"renderProductShell\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"renderProductShell\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderProductShell\"."
+				},
+				{
 					"id": "e754c1b70d919765dcd7cc057d5230d1daad27d2",
 					"kind": "callback_registration",
-					"line": 109,
+					"line": 113,
 					"column": 2,
-					"endLine": 113,
+					"endLine": 117,
 					"endColumn": 4,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -12666,9 +12699,9 @@
 				{
 					"id": "448da18cca90aa0896e2fdf2368964c343548244",
 					"kind": "callback_registration",
-					"line": 171,
+					"line": 175,
 					"column": 3,
-					"endLine": 171,
+					"endLine": 175,
 					"endColumn": 101,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -12683,9 +12716,9 @@
 				{
 					"id": "b241c29fda348bd4538852943878391a7e6b188d",
 					"kind": "void_expression",
-					"line": 171,
+					"line": 175,
 					"column": 44,
-					"endLine": 171,
+					"endLine": 175,
 					"endColumn": 97,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12699,9 +12732,9 @@
 				{
 					"id": "168f298c4968915fa8a7f21606d1cc715be2a80d",
 					"kind": "promise_catch",
-					"line": 171,
+					"line": 175,
 					"column": 49,
-					"endLine": 171,
+					"endLine": 175,
 					"endColumn": 97,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -13768,6 +13801,55 @@
 						"justification": "The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
+				}
+			]
+		},
+		"src/ui/sale-item-view.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/ui/sale-view-model.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/ui/sale-view.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "72037c499fbd82fab98f133fbdaa4b778d13e108",
+					"kind": "callback_registration",
+					"line": 303,
+					"column": 2,
+					"endLine": 303,
+					"endColumn": 78,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderFoot",
+						"justification": "The \"renderFoot\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderFoot\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderFoot\"."
+				},
+				{
+					"id": "19960b28238b840e86dec67b2c67e8cfdb9c28be",
+					"kind": "void_expression",
+					"line": 303,
+					"column": 43,
+					"endLine": 303,
+					"endColumn": 74,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "interactions.onRefresh",
+						"scope": "renderFoot",
+						"justification": "The \"renderFoot\" owner deliberately detaches \"interactions.onRefresh\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderFoot\" owner deliberately detaches \"interactions.onRefresh\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onRefresh\" in \"renderFoot\"."
 				}
 			]
 		}
