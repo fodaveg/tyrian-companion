@@ -1,5 +1,35 @@
 # Changelog
 
+## Sin publicar (main, 26 sep 2026) - la pestaña Venta enseña bien los datos reales
+
+David reportó (26 sep, tras "Analizar sin escribir") que su cuenta real mostraba la pestaña Venta
+con datos contradictorios: el saco de Halloween con «Sin cotización» + «Histórico insuficiente»
+junto a una puja y un neto reales; filas con puja real cayendo en «Sin cotización»/«Sin datos»; el
+saco sin decir cuántas unidades tiene; y las ventanas de venta sin marca de hoy y con barras que no
+mostraban la ventana. Causa raíz única para las dos primeras: `selectDerivedWatchListItemIds`
+(`economy/price-history-model.ts`) rankea el watch list SOLO por capital, así que un objeto de
+temporada barato (el saco: 321 cobre de valor total) nunca entra en la lista que
+`refreshPriceSeeds`/`updateDerivedWatchList` usan para pedir su histórico a datawars2 — aunque la
+API lo tenga desde 2020, el plugin nunca se lo pide. Confirmado con la nota real del propio 36038
+(`tc_recommendation: review`, `tc_recommendation_reason: insufficient_reference`).
+
+- **fix(inventory)**: un objeto del calendario de temporada entra siempre al watch list de histórico
+  de precios, sin importar su capital — `inventory-analysis.ts`.
+- **fix(sale)**: una fila con puja calcula su neto de venta inmediata a partir del bid en cuenta
+  aunque el asesor no haya calculado un `marketComparison` (la misma vía que ya usaba la tarjeta del
+  saco) — `main.ts` (`saleSourceRowFromAdvisorRow`).
+- **fix(sale)**: la etiqueta "Sin cotización" (no_data) solo aparece cuando NO hay puja; con puja y
+  sin veredicto todavía, la fila dice "Esperar" en vez de fingir que no hay precio —
+  `ui/sale-view-model.ts` (`baseDisplayAction`).
+- **fix(sale)**: la tarjeta del saco dice cuántas unidades tiene, igual que cualquier otra fila —
+  `ui/sale-view.ts` (`renderHeroCard`).
+- **feat(sale)**: las ventanas de venta marcan "hoy" sobre un eje compartido y dicen cuánto falta o
+  cuánto queda por objeto; la barra de cada ventana ahora se posiciona con `--from`/`--to` reales en
+  vez de un contorno fijo del 60 % — `ui/sale-view.ts` (`renderCalendar`), `styles.css`.
+- Limpieza incidental necesaria para poder verificar lo anterior con aserciones de estructura DOM: se
+  quitaron varios `append()` redundantes en `sale-view.ts` que no hacían nada en un DOM real (un nodo
+  ya adjunto por `createEl`/`createDiv`/`createSpan` no se duplica al reasignarlo) pero que sí
+  duplicaban cada fila, la tarjeta del saco y el pie en el doble de pruebas usado por sus tests.
 ## Sin publicar (main, 26 sep 2026) - la pestaña Venta ya no se queda en «Leyendo precios del bazar…»
 
 **Bug real (David, 0.2.3 vía BRAT): al abrir Venta con el asesor sin analizar en esa sesión de
