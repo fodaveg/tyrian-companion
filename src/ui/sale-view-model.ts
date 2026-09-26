@@ -314,4 +314,18 @@ export function computeInstantSellNetCopper(bidCopper: number | null, quantity: 
 	return result.status === 'ok' ? result.value.netCopper : null;
 }
 
+/**
+ * Review fix (coordinator, round 2, 26 sep 2026): the Saco's "Publicar" figure only ever read
+ * `row.marketComparison?.listingCopper`, which the advisor never computes for a container (its own
+ * route is always `open`, never `sell`/`list` — `marketComparisonsForLine`'s own filter). David's
+ * real note DOES carry a listing price for it (`tc_unit_list_copper`) — a field this view can fill,
+ * so it must, the same way `computeInstantSellNetCopper` already does for the bid. Same 15% total
+ * fee policy the rest of the plugin already charges, the `listing` route instead of `instant_sell`.
+ */
+export function computeListingNetCopper(askCopper: number | null, quantity: number): number | null {
+	if (askCopper === null || !Number.isSafeInteger(quantity) || quantity <= 0) return null;
+	const result = createTradingPostValueWithPolicy('listing', askCopper, quantity);
+	return result.status === 'ok' ? result.value.netCopper : null;
+}
+
 export { DAY_MS as SALE_DAY_MS };
