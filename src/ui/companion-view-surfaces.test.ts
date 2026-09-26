@@ -171,7 +171,9 @@ describe('Companion assisted detection surface', () => {
 });
 
 describe('Companion durable history surface', () => {
-	it('mounts the panel idle and only reads the Vault when its action is pressed', async () => {
+	// H18.36 (boceto lámina 2.5, David 26 sep): the panel reads itself once on its own — no
+	// "Cargar historial" click required — and mounts below the card, only while idle.
+	it('reads the Vault on its own, without a "Cargar historial" click, once idle', async () => {
 		const loadSessionHistory = vi.fn(async (): Promise<SessionHistoryLoadResult> => ({ status: 'ok', sessions: [], ignored: 0 }));
 		const { contentEl, render } = mountCompanion({ loadSessionHistory });
 
@@ -179,15 +181,96 @@ describe('Companion durable history surface', () => {
 
 		const panel = find(contentEl, (node) => node.className.includes('tyrian-session-history'));
 		expect(panel).toBeDefined();
-		expect(loadSessionHistory).not.toHaveBeenCalled();
-		const load = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Cargar historial');
-		expect(load?.attributes.get('aria-controls')).toBeDefined();
-
-		load?.click();
-		await Promise.resolve();
-		await Promise.resolve();
 		expect(loadSessionHistory).toHaveBeenCalledOnce();
+		expect(find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Cargar historial')).toBeUndefined();
+
+		await Promise.resolve();
+		await Promise.resolve();
 		expect(texts(contentEl)).toContain('No hay sesiones finalizadas');
+		const refresh = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Actualizar historial');
+		expect(refresh?.className).toContain('mod-link');
+	});
+
+	it('mounts nothing below the card while a session is running', () => {
+		const { contentEl, render } = mountCompanion({ getSessionState: () => activeSession() });
+		render();
+		expect(find(contentEl, (node) => node.className.includes('tyrian-session-history'))).toBeUndefined();
+	});
+
+	/**
+	 * Sabotage: reverting `renderSimpleSession` to gate the panel on `observed.status !== 'idle'`
+	 * inverted, or to call `renderSessionHistoryPanel` unconditionally, makes one of the two cases
+	 * above fail — either the idle case never sees a panel, or the active case sees one it should not.
+	 */
+	it('forces a fresh read once a session that just ended leaves the view idle, even if history already loaded once', async () => {
+		let status: 'active' | 'idle' = 'active';
+		const loadSessionHistory = vi.fn(async (): Promise<SessionHistoryLoadResult> => ({ status: 'ok', sessions: [], ignored: 0 }));
+		const { render } = mountCompanion({
+			loadSessionHistory,
+			getSessionState: () => (status === 'active' ? activeSession() : { version: 1, status: 'idle' }),
+		});
+		render();
+		expect(loadSessionHistory).not.toHaveBeenCalled();
+		await Promise.resolve();
+		status = 'idle';
+		render();
+		expect(loadSessionHistory).toHaveBeenCalledOnce();
+		await Promise.resolve();
+		await Promise.resolve();
+		render();
+		// The session just ended: a second render while still idle must NOT read the Vault again.
+		expect(loadSessionHistory).toHaveBeenCalledOnce();
+	});
+});
+
+/** H18.36 (boceto lámina 2.1): Avisos primero en el Laberinto, Botín primero el resto del año. */
+describe('Companion gaveto order and Botín', () => {
+	function drawerSummaries(contentEl: FakeElement): (string | null)[] {
+		return walk(contentEl)
+			.filter((node) => node.tag === 'details')
+			.map((details) => details.children.find((child) => child.tag === 'summary')?.textContent ?? null);
+	}
+
+	it('puts Botín before Avisos outside the Labyrinth, with Detalle always last', () => {
+		const { contentEl, render } = mountCompanion({ getSessionState: () => activeSession() });
+		render();
+		expect(drawerSummaries(contentEl)).toEqual(['Botín', 'Avisos', 'Detalle']);
+	});
+
+	it('puts Avisos before Botín inside the Labyrinth, with Detalle still last', () => {
+		const { contentEl, render } = mountCompanion({
+			getSessionState: () => activeSession(),
+			getIngamePresence: () => ({
+				status: 'present', presenceId: 'p', revision: 1, startedAtMs: 0, lastSeenAtMs: null,
+				graceUntilMs: null, connections: 1, instances: 1,
+				context: { source: 'nexus', state: 'gameplay', mapId: 866, character: 'Astra Uno', labyrinth: true },
+			}),
+		});
+		render();
+		expect(drawerSummaries(contentEl)).toEqual(['Avisos', 'Botín', 'Detalle']);
+	});
+
+	it('lists each observed item with its price, and the unpriced count in the closed suffix', () => {
+		const { contentEl, render } = mountCompanion({
+			getSessionState: () => activeSession(),
+			getLiveSessionLoot: () => ({
+				status: 'observing', sessionId: 'session', restored: false,
+				rows: [
+					{ itemId: 1, name: 'Barra de caramelo', quantity: 3, unitCopper: 100, totalCopper: 300, priceStatus: 'known' },
+					{ itemId: 2, name: 'Objeto raro', quantity: 1, unitCopper: null, totalCopper: null, priceStatus: 'unquoted' },
+				],
+				knownTotalCopper: 300, sackQuantity: 4, hasUnknownValue: true, updatedAt: '2026-09-26T22:00:00.000Z', error: null,
+			}),
+		});
+		render();
+		const lootDrawer = walk(contentEl).find((node) => node.tag === 'details'
+			&& node.children.find((child) => child.tag === 'summary')?.textContent === 'Botín')!;
+		expect(lootDrawer.children.find((child) => child.tag === 'summary')?.children
+			.find((child) => child.tag === 'small')?.textContent).toBe('2 objetos · 1 sin precio');
+		const text = texts(lootDrawer).join(' ');
+		expect(text).toContain('Barra de caramelo ×3');
+		expect(text).toContain('Objeto raro ×1');
+		expect(text).toContain('sin precio');
 	});
 });
 

@@ -60,9 +60,12 @@ export class SessionHistoryPanelController {
 let panelSequence = 0;
 
 /**
- * Mounts the explicit durable-history action and its accessible responsive result region. No
- * header and no `mod-cta` (Lote P, 9 sep 2026): the outer "Historial" gaveto already names this
- * surface, so the first row here is just the short state and the plain "Cargar historial" button.
+ * Mounts the durable-history surface and its accessible responsive result region.
+ *
+ * H18.36 (boceto lámina 2.5, David 26 sep: "como recomiendas" a la pregunta 1): the caller
+ * (`companion-view.ts`) reads it itself — once on open, once after a session saves — so there is
+ * no "Cargar historial" state or button here anymore; the one button left is "Actualizar
+ * historial", a plain secondary link (`mod-link`, never `mod-cta`) for the rare manual re-read.
  */
 export function mountSessionHistoryPanel(
 	container: HTMLElement,
@@ -72,10 +75,16 @@ export function mountSessionHistoryPanel(
 	const t = createTranslator(locale);
 	const section = container.createEl('section', { cls: 'tyrian-session-history' });
 	section.setAttr('aria-label', t.t('sessionHistory.title'));
-	const heading = section.createDiv({ cls: 'tyrian-session-history__header' });
-	const stateLabel = heading.createEl('small', { text: t.t('view.drawer.historyIdle') });
+	// Keeps the `tyrian-session-history__header` class (its own 44px touch-target contract,
+	// `session-history-panel-architecture.test.ts`) alongside the shared status-line look H18.36
+	// gives every other tab's own state line.
+	const heading = section.createEl('p', { cls: 'tyrian-session-history__header tyrian-product-shell__status' });
+	// Wrapped in its own `<span>` so the shared `.tyrian-product-shell__status > span + span::before`
+	// rule still draws the "·" before the button, the same separator every other status line gets.
+	const stateLabel = heading.createSpan().createEl('small', { text: t.t('view.drawer.historyIdle') });
 	const stateId = `tyrian-session-history-state-${String(panelSequence += 1)}`;
-	const button = heading.createEl('button', { text: t.t('sessionHistory.load') });
+	const buttonWrap = heading.createSpan();
+	const button = buttonWrap.createEl('button', { cls: 'mod-link', text: t.t('sessionHistory.refresh') });
 	button.setAttr('title', t.t('sessionHistory.intro'));
 	button.setAttr('aria-controls', stateId);
 	const stateRegion = section.createDiv({ cls: 'tyrian-session-history__state' });
@@ -85,8 +94,7 @@ export function mountSessionHistoryPanel(
 
 	const render = (state: SessionHistoryPanelState): void => {
 		button.disabled = state.status === 'loading';
-		button.setText(state.status === 'idle' ? t.t('sessionHistory.load')
-			: state.status === 'loading' ? t.t('sessionHistory.loadingAction') : t.t('sessionHistory.refresh'));
+		button.setText(state.status === 'loading' ? t.t('sessionHistory.loadingAction') : t.t('sessionHistory.refresh'));
 		stateLabel.setText(shortStateLabel(state, t));
 		stateRegion.empty();
 		stateRegion.setAttr('aria-busy', state.status === 'loading' ? 'true' : 'false');

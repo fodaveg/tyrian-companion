@@ -10,11 +10,12 @@ import { renderSessionCard, type SessionCardModel } from './session-card';
  * every case here builds its own explicit `SessionCardModel` instead of driving the real runtime.
  */
 
-function baseDrawers(): Pick<SessionCardModel, 'detail' | 'alerts' | 'history'> {
+function baseDrawers(): Pick<SessionCardModel, 'detail' | 'alerts' | 'loot' | 'drawerOrder'> {
 	return {
 		detail: { summary: 'Detalle', suffix: 'Detección desactivada' },
 		alerts: { summary: 'Avisos', suffix: '0 sin revisar' },
-		history: { summary: 'Historial', suffix: 'sin cargar' },
+		loot: { summary: 'Botín', suffix: 'sin botín' },
+		drawerOrder: ['loot', 'alerts', 'detail'],
 	};
 }
 
@@ -40,7 +41,8 @@ function activeZeroModel(): SessionCardModel {
 		figures: [{ label: 'Primera lectura', value: '12:18', band: 'La API de cuenta responde desde una caché de 5 a 10 minutos.', pending: true }],
 		detail: { summary: 'Detalle', suffix: 'Detección activa · próxima 12:18' },
 		alerts: { summary: 'Avisos', suffix: '0 nuevos' },
-		history: { summary: 'Historial', suffix: 'sin cargar' },
+		loot: { summary: 'Botín', suffix: 'sin botín' },
+		drawerOrder: ['alerts', 'loot', 'detail'],
 	};
 }
 
@@ -58,7 +60,8 @@ function activeThirtyModel(): SessionCardModel {
 		],
 		detail: { summary: 'Detalle', suffix: 'Detección activa · próxima 12:43' },
 		alerts: { summary: 'Avisos', suffix: '1 nuevo' },
-		history: { summary: 'Historial', suffix: 'sin cargar' },
+		loot: { summary: 'Botín', suffix: '3 objetos' },
+		drawerOrder: ['detail', 'alerts', 'loot'],
 	};
 }
 
@@ -80,7 +83,8 @@ function finishedModel(): SessionCardModel {
 		],
 		detail: { summary: 'Detalle', suffix: 'Detección desactivada' },
 		alerts: { summary: 'Avisos', suffix: 'Todas las alertas están revisadas' },
-		history: { summary: 'Historial', suffix: '12 sesiones', open: true },
+		loot: { summary: 'Botín', suffix: '12 objetos', open: true },
+		drawerOrder: ['detail', 'alerts', 'loot'],
 	};
 }
 
@@ -134,7 +138,7 @@ describe('renderSessionCard', () => {
 		expect(dlAttr).toBe('--tyrian-figures:1');
 	});
 
-	it('renders active-30min with three figures and the drawers in Detalle · Avisos · Historial order', () => {
+	it('renders active-30min with three figures and the drawers in the model\'s own drawerOrder', () => {
 		const root = new FakeElement('div');
 		renderSessionCard(root as unknown as HTMLElement, activeThirtyModel());
 
@@ -144,7 +148,8 @@ describe('renderSessionCard', () => {
 
 		const drawers = findAll(root, (n) => n.tag === 'details');
 		expect(drawers).toHaveLength(3);
-		expect(drawers.map((d) => d.children.find((c) => c.tag === 'summary')?.textContent)).toEqual(['Detalle', 'Avisos', 'Historial']);
+		// H18.36: Historial left the card entirely; Botín replaces it as the third gaveto.
+		expect(drawers.map((d) => d.children.find((c) => c.tag === 'summary')?.textContent)).toEqual(['Detalle', 'Avisos', 'Botín']);
 	});
 
 	it('renders the finished state with the badge, two actions and one mod-cta on "Abrir la nota"', () => {

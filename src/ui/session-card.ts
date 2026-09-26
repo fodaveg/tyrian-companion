@@ -80,7 +80,14 @@ export interface SessionCardModel {
 	readonly receipt?: { readonly ariaLabel: string; readonly steps: readonly ReceiptStep[] };
 	readonly detail: SessionCardDrawer;
 	readonly alerts: SessionCardDrawer;
-	readonly history: SessionCardDrawer;
+	/** H18.36 (boceto lámina 2.1): the Botín gaveto, replacing Historial (moved out of the card). */
+	readonly loot: SessionCardDrawer;
+	/**
+	 * H18.36 (boceto lámina 2.1, decisión: "Avisos primero en el Laberinto, Botín primero el resto
+	 * del año"): the render order for the three gaveteros above, always all three, Detalle always
+	 * last — it is what the player looks at LEAST in the moment (FICHA's own framing for the swap).
+	 */
+	readonly drawerOrder: readonly ('detail' | 'alerts' | 'loot')[];
 }
 
 export interface SessionCardFigureNodes {
@@ -107,8 +114,8 @@ export interface SessionCardMount {
 	readonly detailBody: HTMLElement;
 	readonly alertsDrawer: HTMLDetailsElement;
 	readonly alertsBody: HTMLElement;
-	readonly historyDrawer: HTMLDetailsElement;
-	readonly historyBody: HTMLElement;
+	readonly lootDrawer: HTMLDetailsElement;
+	readonly lootBody: HTMLElement;
 }
 
 export function renderSessionCard(container: HTMLElement, model: SessionCardModel): SessionCardMount {
@@ -157,16 +164,21 @@ export function renderSessionCard(container: HTMLElement, model: SessionCardMode
 
 	const sellSignalSlot = root.createDiv();
 
-	const drawers = root.createDiv({ cls: 'tyrian-companion-session__drawers' });
-	const detail = renderDrawer(drawers, model.detail);
-	const alerts = renderDrawer(drawers, model.alerts);
-	const history = renderDrawer(drawers, model.history);
-
+	const drawersEl = root.createDiv({ cls: 'tyrian-companion-session__drawers' });
+	type DrawerId = 'detail' | 'alerts' | 'loot';
+	const mounts: Partial<Record<DrawerId, { drawer: HTMLDetailsElement; body: HTMLElement }>> = {};
+	for (const id of model.drawerOrder) mounts[id] = renderDrawer(drawersEl, model[id]);
+	if (mounts.detail === undefined || mounts.alerts === undefined || mounts.loot === undefined) {
+		// `drawerOrder` is the caller's own invariant (always Detalle, Avisos and Botín, exactly
+		// once each, Detalle last): a partial or duplicated list is a caller bug, never a state to
+		// render around silently.
+		throw new Error('SessionCardModel.drawerOrder must list detail, alerts and loot exactly once.');
+	}
 	return {
 		root, heading, meta, clock, calloutSlot, figureNodes, sellSignalSlot, actionButtons,
-		detailDrawer: detail.drawer, detailBody: detail.body,
-		alertsDrawer: alerts.drawer, alertsBody: alerts.body,
-		historyDrawer: history.drawer, historyBody: history.body,
+		detailDrawer: mounts.detail.drawer, detailBody: mounts.detail.body,
+		alertsDrawer: mounts.alerts.drawer, alertsBody: mounts.alerts.body,
+		lootDrawer: mounts.loot.drawer, lootBody: mounts.loot.body,
 	};
 }
 

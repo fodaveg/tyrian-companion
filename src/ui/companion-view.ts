@@ -6,7 +6,7 @@ import { formatClock, formatRelativeDay } from './format-time';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
-import { sessionUnobservedMs, type SessionState } from '../sessions/session';
+import { sessionUnobservedMs, type SessionState, type SessionStatus } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
 import { connectionErrorKey, projectManagedAssetsDescription } from './settings-i18n';
@@ -167,7 +167,7 @@ export class TyrianCompanionView extends ItemView {
 	private calloutSlot: HTMLElement | null = null;
 	private detectionTimelineNodes: { last: HTMLElement; result: HTMLElement; next: HTMLElement } | null = null;
 	/** Carries each gaveto's open/closed state across a full `render()`, so a rebuild never closes it. */
-	private drawerOpen = { detail: false, alerts: false, history: false };
+	private drawerOpen = { detail: false, alerts: false, loot: false };
 	private pendingConfirmationContainer: HTMLElement | null = null;
 	private pendingConfirmationFocusTarget: HTMLElement | null = null;
 	private pendingConfirmationKey: string | null = null;
@@ -176,6 +176,9 @@ export class TyrianCompanionView extends ItemView {
 	/** Retained across rerenders so a loaded history survives a repaint without rescanning the Vault. */
 	private sessionHistoryController: SessionHistoryPanelController | null = null;
 	private sessionHistoryMount: SessionHistoryPanelMount | null = null;
+	/** H18.36: null until the first render; used only to detect the transition INTO idle (a session
+	 *  that just ended), which forces a fresh historial read even if one already succeeded before. */
+	private lastObservedSessionStatus: SessionStatus | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -466,11 +469,12 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	/**
-	 * Remounts the durable-history panel against its retained controller inside the Historial
-	 * gaveto; mounting never reads the Vault. The panel used to sit behind its own inner
-	 * `<details>` — now the outer gaveto is the only disclosure, so it mounts flat.
+	 * H18.36 (boceto lámina 2.5): the durable-history panel now mounts BELOW the card, visible only
+	 * with no session in progress — it is what the tab is for once there is nothing running — and
+	 * reads itself on the two moments David decided (`onOpen`, once layout is ready; and after a
+	 * session summary saves), never behind a "Cargar historial" click.
 	 */
-	private renderSessionHistory(container: HTMLElement): void {
+	private renderSessionHistoryPanel(container: HTMLElement, forceReload: boolean): void {
 		this.sessionHistoryController ??= new SessionHistoryPanelController(
 			() => this.actions.loadSessionHistory(),
 		);
@@ -480,18 +484,40 @@ export class TyrianCompanionView extends ItemView {
 			this.actions.getLocale(),
 			this.sessionHistoryController,
 		);
+		if (forceReload || this.sessionHistoryController.current().status === 'idle') void this.sessionHistoryController.load();
 	}
 
-	/** `sin cargar` / `N sesiones`: the short state the Historial gaveto's `<summary>` carries closed. */
-	private historyDrawerSuffix(): string {
-		const state = this.sessionHistoryController?.current();
-		if (state?.status === 'ready') {
-			const count = state.aggregate.sessionCount;
-			return count === 1
-				? this.t('view.drawer.historyCount', { count })
-				: this.t('view.drawer.historyCountPlural', { count });
+	/**
+	 * H18.36 (boceto lámina 2.1): the Botín gaveto's closed state — "N objetos" and, when any lack a
+	 * quote, "· M sin precio" (never silently rounded into the count).
+	 */
+	private lootDrawerSuffix(): string {
+		const loot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' as const };
+		if (loot.status === 'idle' || loot.rows.length === 0) return this.t('sessionCard.loot.empty');
+		const unpriced = loot.rows.filter((row) => row.priceStatus !== 'known').length;
+		if (unpriced > 0) return this.t('sessionCard.loot.countUnpriced', { count: loot.rows.length, unpriced });
+		return loot.rows.length === 1
+			? this.t('sessionCard.loot.count', { count: loot.rows.length })
+			: this.t('sessionCard.loot.countPlural', { count: loot.rows.length });
+	}
+
+	/** H18.36 (boceto lámina 2.1): the Botín gaveto's body — one row per observed item this session. */
+	private renderLoot(container: HTMLElement): void {
+		const loot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' as const };
+		if (loot.status === 'idle' || loot.rows.length === 0) {
+			container.createEl('p', { text: this.t('sessionCard.loot.empty'), cls: 'tyrian-companion-session__context' });
+			return;
 		}
-		return this.t('view.drawer.historyIdle');
+		const locale = this.actions.getLocale();
+		const list = container.createEl('ul', { cls: 'tyrian-companion-session__list' });
+		for (const row of loot.rows) {
+			const li = list.createEl('li');
+			li.createEl('strong', { text: `${row.name} ×${String(row.quantity)}` });
+			li.createSpan({
+				text: row.priceStatus === 'known' && row.totalCopper !== null
+					? simpleMoney(row.totalCopper, locale) : this.t('sessionCard.loot.unpriced'),
+			});
+		}
 	}
 
 	/** `sin avisos` / `N avisos`: avisos of the session on screen, or of the last 24h with none running. */
@@ -548,8 +574,11 @@ export class TyrianCompanionView extends ItemView {
 		// Field initializers never ran for a harness built via `Object.create` instead of `new`
 		// (several tests isolate a single method that way); this keeps `renderSimpleSession` itself
 		// safe to call directly without every one of them stubbing the new fields by hand.
-		this.drawerOpen ??= { detail: false, alerts: false, history: false };
+		this.drawerOpen ??= { detail: false, alerts: false, loot: false };
 
+		// H18.36 (boceto lámina 2.1, decisión): Avisos primero en el Laberinto, Botín primero el
+		// resto del año; Detalle siempre último, porque es lo que menos se mira en el momento.
+		const inLabyrinth = this.actions.getIngamePresence?.()?.context?.labyrinth === true;
 		const drawers = {
 			detail: {
 				summary: copy.detailDisclosure,
@@ -560,7 +589,8 @@ export class TyrianCompanionView extends ItemView {
 				summary: this.t('halloween.title.generic'), suffix: this.alertsDrawerSuffix(now),
 				open: this.drawerOpen.alerts || this.hasFreshUnreadAlert(now),
 			},
-			history: { summary: this.t('view.drawer.history'), suffix: this.historyDrawerSuffix(), open: this.drawerOpen.history },
+			loot: { summary: this.t('view.drawer.loot'), suffix: this.lootDrawerSuffix(), open: this.drawerOpen.loot },
+			drawerOrder: (inLabyrinth ? ['alerts', 'loot', 'detail'] : ['loot', 'alerts', 'detail']) as SessionCardModel['drawerOrder'],
 		};
 		const callout = this.buildIncidentCallout(projection, connection);
 		const model = this.buildSessionCardModel(connection, observed, projection, now, copy, locale, drawers, callout);
@@ -592,11 +622,23 @@ export class TyrianCompanionView extends ItemView {
 
 		this.renderAssistedDetection(mount.detailBody, connection, session);
 		this.renderHalloweenAlerts(mount.alertsBody);
-		this.renderSessionHistory(mount.historyBody);
+		this.renderLoot(mount.lootBody);
 
 		mount.detailDrawer.addEventListener('toggle', () => { this.drawerOpen.detail = mount.detailDrawer.open; });
 		mount.alertsDrawer.addEventListener('toggle', () => { this.drawerOpen.alerts = mount.alertsDrawer.open; });
-		mount.historyDrawer.addEventListener('toggle', () => { this.drawerOpen.history = mount.historyDrawer.open; });
+		mount.lootDrawer.addEventListener('toggle', () => { this.drawerOpen.loot = mount.lootDrawer.open; });
+
+		// H18.36 (boceto lámina 2.5): historial fuera del cajón, solo sin sesión en curso, leído
+		// solo (nunca por un botón) — una vez al llegar aquí, y otra vez cuando una sesión que
+		// acaba de terminar deja la vista en reposo.
+		if (observed.status === 'idle') {
+			const justFinished = this.lastObservedSessionStatus !== null && this.lastObservedSessionStatus !== 'idle';
+			this.renderSessionHistoryPanel(container, justFinished);
+		} else {
+			this.sessionHistoryMount?.dispose();
+			this.sessionHistoryMount = null;
+		}
+		this.lastObservedSessionStatus = observed.status;
 	}
 
 	/**
@@ -612,7 +654,7 @@ export class TyrianCompanionView extends ItemView {
 		now: number,
 		copy: ReturnType<typeof simpleSessionCopy>,
 		locale: Locale,
-		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'history'>,
+		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'loot' | 'drawerOrder'>,
 		callout: SessionCardCallout | null,
 	): SessionCardModel {
 		if (observed.status === 'idle') {
@@ -824,7 +866,7 @@ export class TyrianCompanionView extends ItemView {
 		copy: ReturnType<typeof simpleSessionCopy>,
 		locale: Locale,
 		callout: SessionCardCallout | null,
-		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'history'>,
+		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'loot' | 'drawerOrder'>,
 	): SessionCardModel {
 		const saveState = this.actions.getSessionSummarySaveState?.() ?? 'unknown';
 		const state = saveState === 'saved' ? copy.saved
@@ -862,7 +904,7 @@ export class TyrianCompanionView extends ItemView {
 		recovery: Exclude<SessionRecoveryState, { status: 'none' }>,
 		copy: ReturnType<typeof simpleSessionCopy>,
 		callout: SessionCardCallout | null,
-		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'history'>,
+		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'loot' | 'drawerOrder'>,
 	): SessionCardModel {
 		const working = recovery.status === 'working';
 		const busy = recovery.status === 'busy';
