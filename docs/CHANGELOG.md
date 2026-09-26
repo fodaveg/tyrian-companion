@@ -1,6 +1,6 @@
 # Changelog
 
-## Sin publicar (main, 26 sep 2026) - la pestaña Venta enseña bien los datos reales
+## Release beta 0.2.4 - la pestaña Venta enseña bien los datos reales
 
 David reportó (26 sep, tras "Analizar sin escribir") que su cuenta real mostraba la pestaña Venta
 con datos contradictorios: el saco de Halloween con «Sin cotización» + «Histórico insuficiente»
