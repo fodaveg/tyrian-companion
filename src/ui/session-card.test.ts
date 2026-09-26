@@ -182,6 +182,47 @@ describe('renderSessionCard', () => {
 		const drawers = findAll(root, (n) => n.tag === 'details');
 		expect(drawers.every((d) => d.className === 'tyrian-companion-session__drawer')).toBe(true);
 	});
+
+	// H18.36 (boceto láminas 2.2/2.3): the cierre's own "why" paragraph and 3-step recorrido,
+	// rendered after the figures and before the sell-signal slot/drawers.
+	it('mounts the "why" paragraph and the recorrido after the figures, in that order', () => {
+		const root = new FakeElement('div');
+		const model: SessionCardModel = {
+			...activeZeroModel(),
+			why: 'La API publica el inventario con minutos de retraso.',
+			receipt: {
+				ariaLabel: 'Recorrido del cierre',
+				steps: [
+					{ status: 'done', icon: 'check', label: 'Fin marcado', detail: { kind: 'time', text: '21:43' } },
+					{ status: 'current', icon: 'hourglass', label: 'Lectura final', detail: { kind: 'time', text: 'hacia 21:53' } },
+					{ status: 'skip', icon: 'minus', label: 'Nota guardada', detail: { kind: 'small', text: 'después' } },
+				],
+			},
+		};
+		const mount = renderSessionCard(root as unknown as HTMLElement, model);
+		const section = mount.root as unknown as FakeElement;
+		const why = findAll(section, (n) => n.className === 'tyrian-companion-session__why')[0];
+		expect(why?.textContent).toBe('La API publica el inventario con minutos de retraso.');
+		const receipt = findAll(section, (n) => n.className === 'tyrian-receipt')[0];
+		expect(receipt?.attributes.get('aria-label')).toBe('Recorrido del cierre');
+		expect(findAll(receipt!, (n) => n.tag === 'li')).toHaveLength(3);
+		// Fixed anchor order (session-card.ts's own docstring): figures → why → receipt → drawers.
+		const topLevel = section.children.map((child) => child.className || child.tag);
+		const figuresIndex = topLevel.findIndex((cls) => cls.includes('tyrian-companion-session__figures'));
+		const whyIndex = topLevel.findIndex((cls) => cls.includes('tyrian-companion-session__why'));
+		const receiptIndex = topLevel.findIndex((cls) => cls.includes('tyrian-receipt'));
+		const drawersIndex = topLevel.findIndex((cls) => cls.includes('tyrian-companion-session__drawers'));
+		expect(figuresIndex).toBeLessThan(whyIndex);
+		expect(whyIndex).toBeLessThan(receiptIndex);
+		expect(receiptIndex).toBeLessThan(drawersIndex);
+	});
+
+	it('mounts neither "why" nor the recorrido when the model carries none', () => {
+		const root = new FakeElement('div');
+		renderSessionCard(root as unknown as HTMLElement, activeZeroModel());
+		expect(findAll(root, (n) => n.className === 'tyrian-companion-session__why')).toHaveLength(0);
+		expect(findAll(root, (n) => n.className === 'tyrian-receipt')).toHaveLength(0);
+	});
 });
 
 describe('styles.css container queries (no fixed pixel widths inside the component)', () => {
@@ -232,6 +273,7 @@ class FakeElement {
 		return child;
 	}
 	setAttr(name: string, value: string): void { this.attributes.set(name, value); }
+	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
 	setText(value: string): void { this.textContent = value; }
 	appendText(value: string): void { this.textContent = `${this.textContent}${value}`; }
 	empty(): void { this.children.splice(0); this.textContent = ''; }

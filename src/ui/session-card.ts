@@ -5,10 +5,12 @@
  * 1-second repaint of `clock` plus the mounts the three drawer bodies are filled with.
  *
  * Anatomy, fixed order, matches `diseno-sesion/FICHA.md` §1-§4 class for class:
- *   header (state + badge, meta, 0-2 actions) → callout (0 or 1) → figures (0..3) →
- *   sell-signal slot (filled by the caller with `renderSellSignalLine`) → 3 drawers, always
- *   present, always Detalle · Avisos · Historial in that order.
+ *   header (state + badge, meta, 0-2 actions) → callout (0 or 1) → figures (0..3) → why (0 or 1,
+ *   H18.36) → receipt (0 or 1, H18.36) → sell-signal slot (filled by the caller with
+ *   `renderSellSignalLine`) → 3 drawers, always present, always Detalle · Avisos · Historial in
+ *   that order.
  */
+import { renderReceipt, type ReceiptStep } from './receipt';
 
 export interface SessionCardBadge {
 	readonly text: string;
@@ -68,6 +70,10 @@ export interface SessionCardModel {
 	readonly callout: SessionCardCallout | null;
 	/** 0, 1, 2 or 3 entries; drives `--tyrian-figures` on the grid. */
 	readonly figures: readonly SessionCardFigure[];
+	/** H18.36 (boceto lámina 2.2): the reason a wait/estimate exists, at the vista instead of hidden in Detalle. */
+	readonly why?: string;
+	/** H18.36 (boceto láminas 2.2/2.3): the cierre's own 3-step recorrido. */
+	readonly receipt?: { readonly ariaLabel: string; readonly steps: readonly ReceiptStep[] };
 	readonly detail: SessionCardDrawer;
 	readonly alerts: SessionCardDrawer;
 	readonly history: SessionCardDrawer;
@@ -138,6 +144,9 @@ export function renderSessionCard(container: HTMLElement, model: SessionCardMode
 	if (model.callout !== null) renderSessionCardCallout(calloutSlot, model.callout);
 
 	const figureNodes = model.figures.length > 0 ? renderFigures(root, model.figures) : [];
+
+	if (model.why !== undefined) root.createEl('p', { cls: 'tyrian-companion-session__why', text: model.why });
+	if (model.receipt !== undefined) renderReceipt(root, model.receipt.ariaLabel, model.receipt.steps);
 
 	const sellSignalSlot = root.createDiv();
 
