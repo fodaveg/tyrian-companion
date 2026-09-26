@@ -36,7 +36,7 @@ import {
 } from './inventory-container-economy';
 import type { InventoryAdvisorInputV1 } from './inventory-advisor-model';
 
-const BEFORE_EXPIRY = '2026-11-30T23:59:59.999Z';
+const BEFORE_EXPIRY = '2027-05-31T23:59:59.999Z';
 
 describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 	it('loads the exact deterministic policy and source-backed curated packs', () => {
@@ -49,7 +49,7 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 			rulePack: {
 				id: 'tc.inventory-rules.curated-v2', version: 2,
 				reviewStatus: 'human_reviewed', reviewedAt: '2026-08-16T05:22:24.000Z',
-				sha256: '0e2fa8b0711ca13673a0a11ce9892dcd9c05a8a8ea86d9b6027587790abece6c',
+				sha256: '0bc7c68d76f2d1dc4af09dbaa67e460a892f00661743ef0f99794ff41265a3fe',
 				rules: [{ ruleId: 'open-36038-capability-v1', recommendation: { status: 'enabled' } }],
 			},
 			knowledgePack: { id: 'tc.inventory-knowledge.curated-v2', version: 2 },
@@ -63,7 +63,7 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 					89_002, 89_007, 89_065, 89_070, 89_071,
 				],
 				policy: { openAdvantageBps: 1_000, saleBasis: 'immediate_and_listing' },
-				sha256: 'ae719b5517565933d510a55e10217059675c2c94ec49ba4853095e2995975172',
+				sha256: '394d119fd65bd86ce58a14d0ef506eebf9ccb9091fb43d80d5c045f760ff97ab',
 			},
 		});
 		expect(result.bundle.rulePack.sources).toEqual(sources());
@@ -88,11 +88,11 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		expect(sha256FestivalCalendar(result.bundle.festivalCalendar)).toBe(result.bundle.festivalCalendar.sha256);
 		expect(result.bundle.rulePack).toMatchObject({
 			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: '2026-08-16T05:22:24.000Z', reviewStatus: 'human_reviewed',
-			validUntil: '2026-12-01T00:00:00.000Z',
+			validUntil: '2027-06-01T00:00:00.000Z',
 		});
 		expect(result.bundle.knowledgePack).toMatchObject({
 			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: '2026-08-14T18:04:33.000Z',
-			validUntil: '2026-12-01T00:00:00.000Z',
+			validUntil: '2027-06-01T00:00:00.000Z',
 		});
 	});
 
@@ -325,7 +325,7 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		expect(isInventoryAdvisorResultForInput(beforeResult, beforeExpiry, loaded.bundle.knowledgePack)).toBe(true);
 		expect(applyInventoryDiscardAllowlist({ engineInput: beforeEngine, producerResult: beforeResult }).status).toBe('ready');
 
-		const atExpiry = rebaseInput(advisorInput(loaded.bundle, '2026-12-01T00:00:00.000Z', 36038), '2026-12-01T00:00:00.000Z');
+		const atExpiry = rebaseInput(advisorInput(loaded.bundle, '2027-06-01T00:00:00.000Z', 36038), '2027-06-01T00:00:00.000Z');
 		const atExpiryEngine = { input: atExpiry, knowledgePack: loaded.bundle.knowledgePack };
 		const rejectedByClassifier = classifyInventoryAdvisor(atExpiryEngine);
 		expect(rejectedByClassifier.status).toBe('limited');
@@ -414,18 +414,18 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		const result = createInventoryAdvisorBuiltinBundleProvider().load(BEFORE_EXPIRY);
 		if (result.status !== 'available') throw new Error(`expected bundle for ${locale}`);
 		expect(JSON.stringify(result.bundle)).not.toContain('locale');
-		expect(result.bundle.rulePack.sha256).toBe('0e2fa8b0711ca13673a0a11ce9892dcd9c05a8a8ea86d9b6027587790abece6c');
-		expect(result.bundle.knowledgePack.sha256).toBe('2cdae85cb1dbe9d517b603ea5cb4f5c11f1cce5ccf72b7624196647c89114d46');
+		expect(result.bundle.rulePack.sha256).toBe('0bc7c68d76f2d1dc4af09dbaa67e460a892f00661743ef0f99794ff41265a3fe');
+		expect(result.bundle.knowledgePack.sha256).toBe('1093ddbef138170057b51895efb4831b87b530b61ffdb5f88b588ceee07a2a7b');
 	});
 
 	it('treats human activation as inclusive and validUntil as exclusive', () => {
 		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:22:23.999Z')).toEqual({ status: 'unavailable', reason: 'invalid', bundle: null });
 		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:22:24.000Z').status).toBe('available');
 		expect(inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY).status).toBe('available');
-		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-12-01T00:00:00.000Z')).toEqual({
+		expect(inventoryAdvisorBuiltinBundleProvider.load('2027-06-01T00:00:00.000Z')).toEqual({
 			status: 'unavailable', reason: 'expired', bundle: null,
 		});
-		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-12-01T00:00:00.001Z')).toEqual({
+		expect(inventoryAdvisorBuiltinBundleProvider.load('2027-06-01T00:00:00.001Z')).toEqual({
 			status: 'unavailable', reason: 'expired', bundle: null,
 		});
 		expect(inventoryAdvisorBuiltinBundleProvider.load('not-a-date')).toEqual({

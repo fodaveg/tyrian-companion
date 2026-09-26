@@ -15,7 +15,7 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		);
 		expect(loaded.bundle.economyPack.modelFingerprint).toBe(sha256StandardCanonicalValue(model));
 		expect(loaded.bundle.economyPack.sha256).toBe(
-			'ae719b5517565933d510a55e10217059675c2c94ec49ba4853095e2995975172',
+			'394d119fd65bd86ce58a14d0ef506eebf9ccb9091fb43d80d5c045f760ff97ab',
 		);
 		expect(JSON.stringify(model)).not.toContain('personalValuation');
 		expect(JSON.stringify(loaded.bundle.economyPack)).not.toContain('personalValuation');

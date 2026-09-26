@@ -183,9 +183,9 @@ describe('H5.11 inventory advisor workflow', () => {
 			capture: { capture },
 			preferences: { load: preferences },
 			rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
-		// H13.7 moved the expiry past the close of the Halloween window; the
+		// H18.34 moved the expiry to cover the Saco's "sell in May 2027" window; the
 		// instant that must fail closed moved with it.
-		now: () => Date.parse('2026-12-01T00:00:00.000Z'),
+		now: () => Date.parse('2027-06-01T00:00:00.000Z'),
 		});
 		// H18.5: an expired bundle now surfaces its OWN blocked reason instead of the generic
 		// "missing rules" — this is the built-in bundle's real `validUntil`, reached, not a fixture.
