@@ -945,46 +945,19 @@
 	margin-block-start: 0;
 }
 
-.tyrian-session-history__performance-groups {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-	gap: var(--size-4-3);
-}
-
-.tyrian-session-history__performance-group {
-	min-width: 0;
-	padding: var(--size-4-3);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-m);
-}
-
-.tyrian-session-history__performance-group dl {
-	display: grid;
-	grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
-	gap: var(--size-4-1) var(--size-4-3);
-}
-
-.tyrian-session-history__performance-group dd {
-	min-width: 0;
-	margin-inline-start: 0;
-	overflow-wrap: anywhere;
-}
-
 .tyrian-session-history__warning {
 	color: var(--text-muted);
 	overflow-wrap: anywhere;
 }
 
-.tyrian-session-history__comparison dl,
-.tyrian-session-history__card dl {
+.tyrian-session-history__comparison dl {
 	display: grid;
 	grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
 	gap: var(--size-4-1) var(--size-4-3);
 	margin-block-end: 0;
 }
 
-.tyrian-session-history__comparison dd,
-.tyrian-session-history__card dd {
+.tyrian-session-history__comparison dd {
 	min-width: 0;
 	margin-inline-start: 0;
 	overflow-wrap: anywhere;
@@ -1016,8 +989,28 @@
 	overflow-wrap: anywhere;
 }
 
-.tyrian-session-history__cards {
-	display: none;
+/* H18.36 (boceto lámina 2.5, decidido): una sola tabla; las columnas menos esenciales se ocultan
+ * por ancho de contenedor en vez de duplicar el DOM en tarjetas. */
+.tyrian-session-history .is-num {
+	text-align: end;
+}
+
+.tyrian-session-history__quality::before {
+	content: "";
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	margin-inline-end: var(--size-4-1);
+	border-radius: 50%;
+	border: 1.5px solid currentColor;
+}
+
+.tyrian-session-history__quality[data-quality="exact"]::before {
+	background: currentColor;
+}
+
+.tyrian-session-history__quality[data-quality="estimated"]::before {
+	background: linear-gradient(90deg, currentColor 50%, transparent 50%);
 }
 
 @container (max-width: 759px) {
@@ -1032,9 +1025,10 @@
 	.tyrian-session-history__metric:nth-child(-n + 2) {
 		border-block-end: 1px solid var(--background-modifier-border);
 	}
+}
 
-	.tyrian-session-history th:nth-child(6),
-	.tyrian-session-history td:nth-child(6) {
+@container (max-width: 520px) {
+	.tyrian-session-history .is-wide {
 		display: none;
 	}
 }
@@ -1053,9 +1047,7 @@
 	}
 
 	.tyrian-session-history__summary,
-	.tyrian-session-history__comparison dl,
-	.tyrian-session-history__performance-group dl,
-	.tyrian-session-history__card dl {
+	.tyrian-session-history__comparison dl {
 		grid-template-columns: minmax(0, 1fr);
 	}
 
@@ -1066,21 +1058,6 @@
 
 	.tyrian-session-history__metric:last-child {
 		border-block-end: 0;
-	}
-
-	.tyrian-session-history__table-overflow {
-		display: none;
-	}
-
-	.tyrian-session-history__cards {
-		display: grid;
-		max-block-size: 36rem;
-		overflow-y: auto;
-	}
-
-	.tyrian-session-history__card {
-		padding-block: var(--size-4-3);
-		border-block-end: 1px solid var(--background-modifier-border);
 	}
 }
 

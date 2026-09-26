@@ -1094,7 +1094,7 @@ const ES = {
 		'sessionHistory.conflictPreserved': 'No se muestra un historial parcial. Las notas permanecen intactas.',
 		'sessionHistory.unavailableTitle': 'No se pudo cargar el historial',
 		'sessionHistory.unavailableBody': 'El historial no está disponible ahora. No se cambió ninguna nota; puedes reintentarlo.',
-		'sessionHistory.ready': 'Historial validado. Los totales solo aparecen cuando todas las sesiones aportan ese dato.',
+		'sessionHistory.ready': 'Historial validado.',
 		'sessionHistory.readAt': '{{count}} sesión · leídas a las {{time}}',
 		'sessionHistory.readAtPlural': '{{count}} sesiones · leídas a las {{time}}',
 		'sessionHistory.sessions': 'Sesiones', 'sessionHistory.duration': 'Duración total', 'sessionHistory.sacks': 'Sacos',
@@ -1105,6 +1105,9 @@ const ES = {
 		'sessionHistory.sacksPerHour': 'Sacos por hora', 'sessionHistory.immediatePerHour': 'Valor inmediato por hora',
 		'sessionHistory.listingPerHour': 'Valor listado por hora',
 		'sessionHistory.performance': 'Rendimiento por actividad, build y calidad',
+		// H18.36 (boceto lámina 2.5, decidido): rendimiento en tabla, calidad con forma.
+		'sessionHistory.performanceTableCaption': 'Oro por hora vendiendo ya, ponderado por duración. Una calidad nunca se promedia con otra.',
+		'sessionHistory.performanceGroup': 'Grupo',
 		// H18.10 (Anexo 2): una sesión del Laberinto (sacos, llaves) sale `estimated` de forma
 		// rutinaria, así que exigir `exact`/confianza alta para comparar dejaba la comparación
 		// casi siempre vacía. Ahora cada calidad tiene su propio grupo y su propia tasa; nunca se
@@ -2241,7 +2244,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sessionHistory.conflictPreserved': 'A partial history is not shown. All notes remain unchanged.',
 	'sessionHistory.unavailableTitle': 'History could not be loaded',
 	'sessionHistory.unavailableBody': 'History is unavailable right now. No note was changed; you can retry.',
-	'sessionHistory.ready': 'History validated. Totals appear only when every session provides that value.',
+	'sessionHistory.ready': 'History validated.',
 	'sessionHistory.readAt': '{{count}} session · read at {{time}}',
 	'sessionHistory.readAtPlural': '{{count}} sessions · read at {{time}}',
 	'sessionHistory.sessions': 'Sessions', 'sessionHistory.duration': 'Total duration', 'sessionHistory.sacks': 'Sacks',
@@ -2252,6 +2255,8 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sessionHistory.sacksPerHour': 'Sacks per hour', 'sessionHistory.immediatePerHour': 'Immediate value per hour',
 	'sessionHistory.listingPerHour': 'Listing value per hour',
 	'sessionHistory.performance': 'Performance by activity, build, and quality',
+	'sessionHistory.performanceTableCaption': 'Gold per hour selling now, weighted by duration. One quality is never averaged with another.',
+	'sessionHistory.performanceGroup': 'Group',
 	'sessionHistory.performanceIntro': 'Each activity, build, and quality forms its own group with its own rate: one quality is never averaged with another. Only groups with at least {{minimum}} fully valued sessions are compared. Rates are weighted by duration.',
 	'sessionHistory.performanceMissingContext': '{{count}} sessions are outside groups because build is not declared.',
 	'sessionHistory.performanceQualityExcluded': '{{count}} sessions are excluded: their quality is not comparable (for example, contaminated by external activity).',

@@ -158,6 +158,10 @@ function renderState(container: HTMLElement, locale: Locale, state: SessionHisto
 
 function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate, loadedAt: string): void {
 	const t = createTranslator(locale);
+	// H18.36: dropped the obsolete second sentence ("Los totales solo aparecen cuando todas las
+	// sesiones aportan ese dato") — the summary below already shows a partial subtotal (H18.10's
+	// `completeNumber`/`completeMoney`) instead of withholding the metric, so the old sentence
+	// contradicted what the player could see right under it.
 	container.createEl('p', { text: t.t('sessionHistory.ready'), cls: 'tyrian-session-history__ready' });
 	const summary = container.createDiv({ cls: 'tyrian-session-history__summary' });
 	appendMetric(summary, t.t('sessionHistory.sessions'), String(aggregate.sessionCount));
@@ -191,7 +195,6 @@ function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionH
 	renderPerformance(container, locale, aggregate);
 
 	renderTable(container, locale, aggregate.sessions);
-	renderCards(container, locale, aggregate.sessions);
 
 	const footerKey = aggregate.sessionCount === 1 ? 'sessionHistory.readAt' : 'sessionHistory.readAtPlural';
 	container.createEl('small', {
@@ -227,8 +230,7 @@ function renderPerformance(container: HTMLElement, locale: Locale, aggregate: Se
 		section.createEl('p', { text: t.t('sessionHistory.performanceEmpty') });
 		return;
 	}
-	const groups = section.createDiv({ cls: 'tyrian-session-history__performance-groups' });
-	for (const group of aggregate.performance.groups) renderPerformanceGroup(groups, locale, group);
+	renderPerformanceTable(section, locale, aggregate.performance.groups);
 }
 
 const PERFORMANCE_ACTIVITY_KEY = {
@@ -248,84 +250,88 @@ const PERFORMANCE_EXCLUSION_KEY = {
 } as const;
 
 /**
- * Quality is now part of the group itself (H18.10): the heading names it with the same
- * `qualityLabel` copy the per-session table already uses, and an `estimated` group gets an
- * explicit note that its rate is never averaged with an `exact` one, since grouping keeps them in
- * separate buckets precisely so a Labyrinth session's routinely `estimated` rate stops being
- * silently excluded from every comparison instead of quietly merged into one.
+ * H18.36 (boceto lámina 2.5, decidido): one table instead of an `<article>` per group — quality
+ * still names itself with the same shape/word `.tyrian-session-history__quality` already uses in
+ * the per-session table (never color alone), and every sentence the article used to carry (the
+ * comparable-sample status, the estimated-rate caveat, the exclusion reasons) survives as a
+ * `<small>` under the group's own header cell, never dropped.
  */
-function renderPerformanceGroup(container: HTMLElement, locale: Locale, group: SessionHistoryPerformanceGroup): void {
+function renderPerformanceTable(container: HTMLElement, locale: Locale, groups: readonly SessionHistoryPerformanceGroup[]): void {
 	const t = createTranslator(locale);
-	const article = container.createEl('article', { cls: 'tyrian-session-history__performance-group' });
-	article.createEl('h5', {
-		text: `${t.t(PERFORMANCE_ACTIVITY_KEY[group.activity])} · ${group.build} · ${qualityLabel(group.quality, t)}`,
-	});
-	article.createEl('p', {
-		text: t.t(PERFORMANCE_STATUS_KEY[group.status], {
-			eligible: group.eligibleSessions,
-			total: group.sessionCount,
-			minimum: SESSION_HISTORY_PERFORMANCE_MINIMUM,
-		}),
-	});
-	const details = article.createEl('dl');
-	appendDetail(details, t.t('sessionHistory.sacksPerHour'), group.sacksPerHourMilli === null ? t.t('sessionHistory.unknown') : rate(group.sacksPerHourMilli, locale));
-	appendDetail(details, t.t('sessionHistory.immediatePerHour'), money(group.immediateCopperPerHour, locale));
-	if (group.quality === 'estimated') {
-		article.createEl('p', { text: t.t('sessionHistory.performanceEstimatedNote') });
-	}
-	if (group.exclusions.length > 0) {
-		article.createEl('p', {
-			text: `${t.t('sessionHistory.performanceExcluded')}: ${group.exclusions.map((reason) => t.t(PERFORMANCE_EXCLUSION_KEY[reason])).join(' · ')}`,
-			cls: 'tyrian-session-history__warning',
-		});
-	}
+	const overflow = container.createDiv({ cls: 'tyrian-session-history__table-overflow' });
+	const table = overflow.createEl('table');
+	table.createEl('caption', { text: t.t('sessionHistory.performanceTableCaption') });
+	const head = table.createEl('thead').createEl('tr');
+	appendHeaderCell(head, t.t('sessionHistory.performanceGroup'));
+	appendHeaderCell(head, t.t('sessionHistory.sessions'), 'is-num');
+	appendHeaderCell(head, t.t('sessionHistory.immediatePerHour'), 'is-num');
+	appendHeaderCell(head, t.t('sessionHistory.sacksPerHour'), 'is-num is-wide');
+	const body = table.createEl('tbody');
+	for (const group of groups) renderPerformanceRow(body, locale, group);
 }
 
+function renderPerformanceRow(body: HTMLElement, locale: Locale, group: SessionHistoryPerformanceGroup): void {
+	const t = createTranslator(locale);
+	const tr = body.createEl('tr');
+	const groupHeader = tr.createEl('th', { attr: { scope: 'row' } });
+	groupHeader.createSpan({
+		cls: 'tyrian-session-history__quality', attr: { 'data-quality': group.quality },
+		text: `${t.t(PERFORMANCE_ACTIVITY_KEY[group.activity])} · ${group.build} · ${qualityLabel(group.quality, t)}`,
+	});
+	if (group.quality === 'estimated') {
+		groupHeader.createEl('small', { text: t.t('sessionHistory.performanceEstimatedNote') });
+	}
+	if (group.exclusions.length > 0) {
+		groupHeader.createEl('small', {
+			cls: 'tyrian-session-history__warning',
+			text: `${t.t('sessionHistory.performanceExcluded')}: ${group.exclusions.map((reason) => t.t(PERFORMANCE_EXCLUSION_KEY[reason])).join(' · ')}`,
+		});
+	}
+	const sessionsCell = tr.createEl('td', { cls: 'is-num' });
+	sessionsCell.createSpan({ text: `${String(group.eligibleSessions)}/${String(group.sessionCount)}` });
+	sessionsCell.createEl('small', {
+		text: t.t(PERFORMANCE_STATUS_KEY[group.status], {
+			eligible: group.eligibleSessions, total: group.sessionCount, minimum: SESSION_HISTORY_PERFORMANCE_MINIMUM,
+		}),
+	});
+	appendCell(tr, money(group.immediateCopperPerHour, locale), 'is-num');
+	appendCell(tr, group.sacksPerHourMilli === null ? t.t('sessionHistory.unknown') : rate(group.sacksPerHourMilli, locale), 'is-num is-wide');
+}
+
+/**
+ * H18.36 (boceto lámina 2.5, decidido): one table, never a table AND a duplicate `<article>` per
+ * card — `Duración`/`Sacos`/`Valor listado` hide at a narrow container width (`.is-wide`) instead
+ * of the whole table swapping for a second DOM that could drift from it. A session's own durable
+ * loot list (H18.10) now renders as a detail row right under it, since there is no card left to
+ * hold it.
+ */
 function renderTable(container: HTMLElement, locale: Locale, rows: readonly SessionHistorySummaryRow[]): void {
 	const t = createTranslator(locale);
 	const overflow = container.createDiv({ cls: 'tyrian-session-history__table-overflow' });
 	const table = overflow.createEl('table');
 	table.createEl('caption', { text: t.t('sessionHistory.tableCaption') });
 	const head = table.createEl('thead').createEl('tr');
-	for (const label of [
-		t.t('sessionHistory.ended'), t.t('sessionHistory.duration'), t.t('sessionHistory.quality'),
-		t.t('sessionHistory.sacks'), t.t('sessionHistory.immediateValue'), t.t('sessionHistory.listingValue'),
-	]) {
-		const header = head.createEl('th', { text: label });
-		header.setAttr('scope', 'col');
-	}
+	appendHeaderCell(head, t.t('sessionHistory.ended'));
+	appendHeaderCell(head, t.t('sessionHistory.duration'), 'is-num is-wide');
+	appendHeaderCell(head, t.t('sessionHistory.quality'));
+	appendHeaderCell(head, t.t('sessionHistory.sacks'), 'is-num is-wide');
+	appendHeaderCell(head, t.t('sessionHistory.immediateValue'), 'is-num');
+	appendHeaderCell(head, t.t('sessionHistory.listingValue'), 'is-num is-wide');
 	const body = table.createEl('tbody');
 	for (const row of rows) {
 		const tr = body.createEl('tr');
 		const ended = tr.createEl('th', { text: formatTimestamp(row.endedAt, locale) });
 		ended.setAttr('scope', 'row');
-		appendCell(tr, formatSessionHistoryDuration(row.durationMs, locale));
+		appendCell(tr, formatSessionHistoryDuration(row.durationMs, locale), 'is-num is-wide');
 		appendCell(tr, `${qualityLabel(row.classification, t)} · ${confidenceLabel(row.confidence, t)}`);
-		appendCell(tr, row.sacks === null ? t.t('sessionHistory.unknown') : formatNumber(row.sacks, locale));
-		appendCell(tr, money(row.immediateCopper, locale));
-		appendCell(tr, money(row.listingCopper, locale));
-	}
-}
-
-function renderCards(container: HTMLElement, locale: Locale, rows: readonly SessionHistorySummaryRow[]): void {
-	const t = createTranslator(locale);
-	const cards = container.createDiv({ cls: 'tyrian-session-history__cards' });
-	cards.setAttr('aria-label', t.t('sessionHistory.tableCaption'));
-	for (const row of rows) {
-		const article = cards.createEl('article', { cls: 'tyrian-session-history__card' });
-		article.createEl('h4', { text: formatTimestamp(row.endedAt, locale) });
-		const details = article.createEl('dl');
-		appendDetail(details, t.t('sessionHistory.duration'), formatSessionHistoryDuration(row.durationMs, locale));
-		appendDetail(details, t.t('sessionHistory.quality'), `${qualityLabel(row.classification, t)} · ${confidenceLabel(row.confidence, t)}`);
-		appendDetail(details, t.t('sessionHistory.sacks'), row.sacks === null ? t.t('sessionHistory.unknown') : formatNumber(row.sacks, locale));
-		appendDetail(details, t.t('sessionHistory.immediateValue'), money(row.immediateCopper, locale));
-		appendDetail(details, t.t('sessionHistory.listingValue'), money(row.listingCopper, locale));
-		// H18.10: `loot-presentation-view.ts` had no consumer; the durable per-session gains list
-		// it already parsed back from the note's own results table now renders here.
-		if (row.lootRows.length > 0) {
-			article.createEl('h5', { text: t.t('loot.regionLabel') });
-			renderStoredSessionLoot(article, row.lootRows);
-		}
+		appendCell(tr, row.sacks === null ? t.t('sessionHistory.unknown') : formatNumber(row.sacks, locale), 'is-num is-wide');
+		appendCell(tr, money(row.immediateCopper, locale), 'is-num');
+		appendCell(tr, money(row.listingCopper, locale), 'is-num is-wide');
+		if (row.lootRows.length === 0) continue;
+		const lootRow = body.createEl('tr', { cls: 'tyrian-session-history__loot-row' });
+		const lootCell = lootRow.createEl('td', { attr: { colspan: '6' } });
+		lootCell.createEl('small', { text: t.t('loot.regionLabel') });
+		renderStoredSessionLoot(lootCell, row.lootRows);
 	}
 }
 
@@ -340,7 +346,12 @@ function appendDetail(container: HTMLElement, label: string, value: string): voi
 	container.createEl('dd', { text: value });
 }
 
-function appendCell(row: HTMLElement, text: string): void { row.createEl('td', { text }); }
+function appendCell(row: HTMLElement, text: string, cls?: string): void { row.createEl('td', { text, ...(cls === undefined ? {} : { cls }) }); }
+
+function appendHeaderCell(row: HTMLElement, text: string, cls?: string): void {
+	const header = row.createEl('th', { text, ...(cls === undefined ? {} : { cls }) });
+	header.setAttr('scope', 'col');
+}
 
 /**
  * A single unrated session used to withhold this metric entirely, leaving only "unknown, X/Y have

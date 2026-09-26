@@ -69,7 +69,9 @@ describe('mountSessionHistoryPanel', () => {
 		expect(document.activeElement).toBe(button);
 		expect(allText(container)).toContain('History validated');
 		expect(descendants(container).some((element) => element.tag === 'caption')).toBe(true);
-		expect(descendants(container).some((element) => element.tag === 'article')).toBe(true);
+		// H18.36: one table only — no duplicate `.tyrian-session-history__cards` DOM to drift from it.
+		expect(descendants(container).some((element) => element.className.includes('tyrian-session-history__cards'))).toBe(false);
+		expect(descendants(container).filter((element) => element.tag === 'table').length).toBeGreaterThanOrEqual(1);
 		// Column headers and the per-row "ended" cell are both `<th>`: only the exact accessible
 		// scope on each distinguishes them for a screen reader.
 		const headers = descendants(container).filter((element) => element.tag === 'th');
@@ -136,6 +138,14 @@ describe('mountSessionHistoryPanel', () => {
 		expect(visible).toContain('Halloween · Power Reaper · Exacta');
 		expect(visible).toContain('2/2 sesiones comparables');
 		expect(visible).toContain('Muestra insuficiente: 1/2 sesiones comparables');
+
+		// H18.36 (boceto lámina 2.5, decidido): rendimiento en tabla, calidad con forma — no more
+		// one `<article>` per group.
+		const qualitySpans = descendants(container).filter((element) => element.className.includes('tyrian-session-history__quality'));
+		expect(qualitySpans.length).toBeGreaterThanOrEqual(1);
+		expect(qualitySpans[0]?.attributes.get('data-quality')).toBe('exact');
+		const wideCells = descendants(container).filter((element) => element.className.split(' ').includes('is-wide'));
+		expect(wideCells.length).toBeGreaterThan(0);
 	});
 
 	it('labels a session outside the Labyrinth "All year" instead of hiding it from performance', async () => {
@@ -201,8 +211,9 @@ describe('mountSessionHistoryPanel', () => {
 	});
 
 	// H18.10: `loot-presentation-view.ts` had no consumer at all; the durable gains list a note's
-	// own results table already carries now renders in each session's history card.
-	it('renders each session’s durable gains list in its card', async () => {
+	// own results table already carries now renders as a detail row under each session (H18.36:
+	// there is no history card anymore — one table, no duplicate cards DOM).
+	it('renders each session’s durable gains list as its own detail row', async () => {
 		const document = new FakeDocument();
 		const container = new FakeElement('div', document);
 		const controller = new SessionHistoryPanelController(async () => ({
@@ -277,7 +288,7 @@ function allText(root: FakeElement): string {
 	return descendants(root).map((element) => element.textContent).join(' ');
 }
 
-interface FakeOptions { readonly text?: string; readonly cls?: string }
+interface FakeOptions { readonly text?: string; readonly cls?: string; readonly attr?: Record<string, string> }
 
 class FakeDocument { activeElement: FakeElement | null = null }
 
@@ -292,6 +303,7 @@ class FakeElement {
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument, options: FakeOptions = {}) {
 		this.className = options.cls ?? '';
 		this.textContent = options.text ?? '';
+		for (const [name, value] of Object.entries(options.attr ?? {})) this.attributes.set(name, value);
 	}
 
 	createEl(tag: string, options?: FakeOptions): FakeElement {
