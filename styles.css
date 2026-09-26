@@ -2818,11 +2818,18 @@
 	border-block-end: 1px solid var(--background-modifier-border);
 }
 
+/*
+ * Review fix (26 sep 2026): `--from`/`--to` are percentages along the shared axis `sale-view.ts`'s
+ * `axisFor` computes (one axis for every window this calendar shows, plus today) — the same "one
+ * axis for all, hueco = ventana" idea as `docs/diseno/halloween-venta/maqueta.html`. Before this,
+ * the bar never read either variable and rendered as an identical, unpositioned 60%-wide outline
+ * for every entry regardless of its real dates: closed windows and open ones looked the same size.
+ */
 .tyrian-sale__bar {
 	position: absolute;
 	inset-block: 2px 2px;
-	inset-inline: 0;
-	width: 60%;
+	left: calc(var(--from) * 1%);
+	width: calc((var(--to) - var(--from)) * 1%);
 	border: 1.5px solid var(--text-muted);
 	border-radius: 3px;
 	background: var(--background-primary);
@@ -2831,6 +2838,16 @@
 .tyrian-sale__bar[data-open="true"] {
 	border-color: var(--text-normal);
 	background: var(--text-normal);
+}
+
+/* [NUEVO] marca de "hoy" en el eje compartido, review fix 26 sep 2026. */
+.tyrian-sale__today {
+	position: absolute;
+	inset-block: -4px 0;
+	left: calc(var(--at) * 1%);
+	width: 2px;
+	margin-left: -1px;
+	background: var(--interactive-accent);
 }
 
 /* Lista agrupada Ahora/Esperar/Sin datos: una fila por objeto. */

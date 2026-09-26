@@ -50,10 +50,14 @@ export function renderSaleView(
 		return;
 	}
 	if (model.storageSpace != null) container.append(renderStorageSpace(model.storageSpace, translator));
+	// `createDiv` already attaches `sale` under `container`; a real DOM no-ops a later `appendChild`
+	// of the same node (it just re-attaches in place), but re-asserting it here duplicated the whole
+	// tab's subtree under any test double that models `append` as a plain array push (found while
+	// building the review-fix DOM assertions for the calendar's own bars, 26 sep 2026).
 	const sale = container.createDiv({ cls: 'tyrian-sale' });
 	sale.setAttribute('aria-label', translator.t('sale.view.title'));
 	if (model.hero !== null) sale.append(renderHeroCard(model.hero, model.nowMs, translator));
-	if (model.calendar.length > 0) sale.append(renderCalendar(model.calendar, translator));
+	if (model.calendar.length > 0) sale.append(renderCalendar(model.calendar, model.nowMs, translator));
 	if (model.status === 'empty' && model.hero === null && model.calendar.length === 0) {
 		sale.createEl('p', { text: translator.t('sale.view.empty') });
 	}
@@ -61,7 +65,6 @@ export function renderSaleView(
 	sale.append(renderGroup('wait', model.groups.wait, model, translator));
 	sale.append(renderGroup('noData', model.groups.noData, model, translator));
 	sale.append(renderFoot(translator, interactions));
-	container.append(sale);
 }
 
 function renderStatusLine(model: SaleViewModel, translator: Translator): HTMLElement {
@@ -128,10 +131,12 @@ function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Tran
 	const h3 = head.createEl('h3', { attr: { id: `tyrian-sale-hero-${String(hero.itemId)}` } });
 	h3.append(renderIcon(hero.name, hero.icon));
 	h3.createSpan({ text: hero.name });
+	// Review fix (26 sep 2026): David's report — the hero card never said how many Sacos he owns.
+	// Same convention `renderRow` already uses for every other row's identity line, quantity first.
 	const small = head.createEl('small');
-	small.textContent = translator.t(hero.slotsUsed === 1 ? 'sale.view.slots.one' : 'sale.view.slots.many', {
-		quantity: hero.ownedQuantity, count: hero.slotsUsed,
-	});
+	small.textContent = hero.ownedQuantity === 0
+		? translator.t('sale.zeroQuantity')
+		: `${String(hero.ownedQuantity)} · ${translator.t(hero.slotsUsed === 1 ? 'sale.view.slots.one' : 'sale.view.slots.many', { count: hero.slotsUsed })}`;
 	const verdict = article.createEl('p', { cls: 'tyrian-sale__verdict' });
 	verdict.append(renderActionBadge(hero.action, translator));
 	verdict.append(createSpan({ text: rowDetailText(hero, nowMs, translator) }));
@@ -142,13 +147,14 @@ function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Tran
 		comparison.createSpan({ text: ` · ${translator.t('sale.hero.sellNow')}: ` });
 		comparison.append(renderMoney(hero.openVsSell.sellCopper, translator));
 	}
+	// `article.createEl('dl', …)` already attaches `figures`; no need to re-append it below (see the
+	// same fix, and its rationale, in `renderSaleView`/`renderRow`).
 	const figures = article.createEl('dl', { cls: 'tyrian-companion-session__figures', attr: { style: '--tyrian-figures:3' } });
 	figures.append(
 		renderFigure(translator.t('sale.view.hero.instantSell'), hero.instantSellNetCopper, translator),
 		renderFigure(translator.t('sale.view.hero.listing'), hero.listingNetCopper, translator),
 		renderFigure(translator.t('sale.view.hero.yearThreshold'), hero.yearThresholdCopper, translator),
 	);
-	article.append(figures);
 	article.append(renderQuoteLine(hero, translator));
 	return article;
 }
@@ -162,11 +168,23 @@ function renderFigure(label: string, copper: number | null, translator: Translat
 	return figure;
 }
 
-function renderCalendar(entries: readonly SaleCalendarRowViewModel[], translator: Translator): HTMLElement {
+/**
+ * Review fix (26 sep 2026): David's report — the calendar had no mark for today and a closed
+ * window's bar rendered as a fixed, unpositioned 60%-wide outline (`styles.css`'s old
+ * `.tyrian-sale__bar` never read `--from`/`--to` at all), identical for every entry regardless of
+ * its real dates. `axisFor` builds one shared day axis across every span this calendar shows (plus
+ * today), the same "one axis for all" idea `docs/diseno/halloween-venta/maqueta.html` uses (there
+ * with a fixed 42-day window; here sized to whatever the actual data spans, so it never clips a
+ * real window off-screen). `--from`/`--to`/`--at` carry PERCENTAGES along that axis, read by
+ * `.tyrian-sale__bar`/`.tyrian-sale__today` in `styles.css`.
+ */
+function renderCalendar(entries: readonly SaleCalendarRowViewModel[], nowMs: number, translator: Translator): HTMLElement {
 	const section = createEl('section', { cls: 'tyrian-sale__windows' });
 	const headingId = 'tyrian-sale-windows-heading';
 	section.setAttribute('aria-labelledby', headingId);
 	section.createEl('h3', { text: translator.t('sale.calendar.title'), attr: { id: headingId } });
+	const todayUtc = priceHistoryDayUtc(nowMs);
+	const axis = axisFor(entries, todayUtc);
 	const list = section.createEl('ul');
 	for (const entry of entries) {
 		const item = list.createEl('li');
@@ -174,22 +192,47 @@ function renderCalendar(entries: readonly SaleCalendarRowViewModel[], translator
 		label.append(renderIcon(entry.name, entry.icon));
 		label.createEl('strong', { text: entry.name });
 		const spansText = entry.spans.map((span) => `${formatDayShort(span.fromDay, translator.locale)} – ${formatDayShort(span.toDay, translator.locale)}`).join(' · ');
-		const openToday = entry.spans.some((span) => span.openToday);
-		label.createEl('small', {
-			text: openToday ? `${spansText} · ${translator.t('sale.detail.opensToday')}` : spansText,
-		});
+		label.createEl('small', { text: `${spansText}${calendarDaysDetail(entry, todayUtc, translator)}` });
 		const track = item.createSpan({ cls: 'tyrian-sale__track', attr: { 'aria-hidden': 'true' } });
 		const primary = entry.spans[0];
 		if (primary !== undefined) {
-			const bar = createSpan({ cls: 'tyrian-sale__bar' });
+			const bar = createSpan({ cls: 'tyrian-sale__bar', attr: { style: `--from:${String(axis.pct(primary.fromDay))};--to:${String(axis.pct(primary.toDay))}` } });
 			bar.setAttribute('data-open', String(primary.openToday));
 			track.append(bar);
 		}
-		item.append(track);
-		list.append(item);
+		const today = createSpan({ cls: 'tyrian-sale__today', attr: { style: `--at:${String(axis.pct(todayUtc))}` } });
+		track.append(today);
 	}
-	section.append(list);
 	return section;
+}
+
+/** One shared day axis (0-100 %) covering every span this calendar renders, plus today. */
+function axisFor(entries: readonly SaleCalendarRowViewModel[], todayUtc: string): { pct(dayUtc: string): number } {
+	const days = [todayUtc, ...entries.flatMap((entry) => entry.spans.flatMap((span) => [span.fromDay, span.toDay]))];
+	const startMs = Math.min(...days.map((day) => Date.parse(`${day}T00:00:00.000Z`)));
+	const endMs = Math.max(...days.map((day) => Date.parse(`${day}T00:00:00.000Z`)));
+	const spanDays = Math.max(1, Math.round((endMs - startMs) / DAY_MS));
+	return {
+		pct: (dayUtc: string) => {
+			const offsetDays = Math.round((Date.parse(`${dayUtc}T00:00:00.000Z`) - startMs) / DAY_MS);
+			return Math.min(100, Math.max(0, (offsetDays / spanDays) * 100));
+		},
+	};
+}
+
+/** "abierta: quedan N días" for the span open today, "faltan N días" for the soonest one still to come. */
+function calendarDaysDetail(entry: SaleCalendarRowViewModel, todayUtc: string, translator: Translator): string {
+	const openSpan = entry.spans.find((span) => span.openToday);
+	if (openSpan !== undefined) {
+		const days = Math.max(0, Math.round((Date.parse(`${openSpan.toDay}T00:00:00.000Z`) - Date.parse(`${todayUtc}T00:00:00.000Z`)) / DAY_MS));
+		return ` · ${translator.t('sale.calendar.opensToday', { days })}`;
+	}
+	const upcoming = entry.spans
+		.filter((span) => span.fromDay > todayUtc)
+		.sort((left, right) => left.fromDay.localeCompare(right.fromDay))[0];
+	if (upcoming === undefined) return '';
+	const days = Math.max(0, Math.round((Date.parse(`${upcoming.fromDay}T00:00:00.000Z`) - Date.parse(`${todayUtc}T00:00:00.000Z`)) / DAY_MS));
+	return ` · ${translator.t('sale.calendar.opensIn', { days })}`;
 }
 
 const GROUP_LABEL_KEY: Record<keyof SaleGroupsViewModel, TranslationKey> = {
@@ -212,7 +255,6 @@ function renderGroup(
 	head.createSpan({ text: translator.t('sale.row.head.price') });
 	head.createSpan({ text: translator.t('sale.row.head.value') });
 	for (const row of rows) list.append(renderRow(row, model.nowMs, translator));
-	section.append(list);
 	return section;
 }
 
@@ -241,7 +283,10 @@ function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator)
 	} else {
 		value.append(renderMoney(row.instantSellNetCopper, translator));
 	}
-	li.append(item, decision, price, value);
+	// `item`/`decision`/`price`/`value` are already attached via `li.createDiv` above; a real DOM
+	// no-ops a repeated `appendChild` of the same node, but re-asserting all four here duplicated
+	// every row under any test double that models `append` as a plain array push (found while
+	// building the review-fix DOM assertions, 26 sep 2026 — see the same fix in `renderSaleView`).
 	return li;
 }
 
@@ -328,7 +373,6 @@ function renderFoot(translator: Translator, interactions: SaleViewInteractions):
 	button.createSpan({ text: translator.t('sale.foot.refresh') });
 	button.disabled = interactions.refreshing === true;
 	button.addEventListener('click', () => { void interactions.onRefresh?.(); });
-	foot.append(button);
 	return foot;
 }
 
