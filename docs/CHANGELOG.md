@@ -1,5 +1,30 @@
 # Changelog
 
+## Sin publicar (main, 26 sep 2026) - nueva pestaña Venta de Halloween
+
+David aprobó el diseño el 26 sep 2026 («adelante con el diseño»). Maqueta y ficha en
+`docs/diseno/halloween-venta`.
+
+- **Pestaña Venta nueva** en la navegación del producto (Compañero / Inventario / Venta / Ajustes),
+  con vista, comando de paleta (`open-sale`) y entrada de acción propios
+  (`src/ui/sale-item-view.ts`, `src/ui/sale-view.ts`, `src/ui/sale-view-model.ts`,
+  `src/ui/product-shell.ts`, `src/ui/product-action-controller.ts`, `src/main.ts`). Registrada en
+  `viewFactories` junto a las otras dos, antes de cualquier `await` de `onload`.
+- **Contenido**: línea de estado, bloque de espacio (reutilizando `renderStorageSpace`, ahora
+  exportado), tarjeta destacada del Saco de Halloween (36038, con la señal de venta existente de
+  `sell-signal-runtime.ts`), calendario de ventanas por objeto (`inventory-advisor-builtin-bundle.ts`
+  + `halloween-festival-anchors.ts`), y lista agrupada Ahora/Esperar/Sin datos con antigüedad de
+  precio por fila, reutilizando las filas y los netos ya calculados por el asesor de inventario
+  (`InventoryAdvisorViewModel`); nada de esto se recalcula por segunda vez.
+- **Decisión de David del 24 sep, con poco espacio**: un objeto cuya recomendación es esperar pasa a
+  «Vender ahora · libera N huecos»; un material que puede ir al almacén pasa a «Depositar material»
+  (reutiliza la acción y el texto ya existentes). Con espacio de sobra, nada cambia. Detalle y una
+  discrepancia documentada frente a la maqueta en `docs/diseno/halloween-venta/FICHA.md`.
+- **Arreglo del `meter` de espacio**: `renderStorageSpace` (`inventory-advisor-view.ts`) le faltaban
+  `low`/`optimum`; sin ellos, pasar el umbral nunca se pintaba como estado de alerta.
+- Vocabulario propio de la pestaña («Esperar», nunca «Mantener» ni «Conservar»), i18n ES/EN completo,
+  y revisión del censo de observabilidad para los boundaries nuevos.
+
 ## Sin publicar (main, 26 sep 2026) - la comparación de botín de Halloween vuelve a activarse
 
 Lo que sigue está en `main` sin release. Tarea H18.32 de la lista «21.15 Tyrian Companion» de
