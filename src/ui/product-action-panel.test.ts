@@ -199,8 +199,13 @@ describe('product action surface', () => {
 		const nav = elements.find((element) => element.className.includes('tyrian-product-shell__nav'))!;
 		const tabs = walk(nav).filter((element) => element.tag === 'button');
 		expect(tabs).toHaveLength(4);
-		expect(tabs.map((tab) => tab.textContent)).toEqual(['Session', 'Inventory', 'Sale', 'Settings']);
+		// H18.36: Ajustes is now an icon-only button (no visible text), identified by its
+		// aria-label and Lucide icon instead of the tab word it used to share with the other three.
+		expect(tabs.map((tab) => tab.textContent)).toEqual(['Session', 'Inventory', 'Sale', '']);
 		expect(tabs[1]!.attributes.get('aria-current')).toBe('page');
+		expect(tabs[3]!.attributes.get('aria-label')).toBe('Tyrian Companion settings');
+		expect(tabs[3]!.attributes.get('data-icon')).toBe('settings');
+		expect(tabs[3]!.className).toContain('clickable-icon');
 		// The "Sale" tab navigates through the SAME controller as the other two, not a
 		// bespoke callback.
 		tabs[2]!.dispatch('click');
@@ -283,6 +288,7 @@ class FakeElement {
 	createDiv(options?: FakeOptions): FakeElement { const child = new FakeElement('div', this.ownerDocument, options); this.children.push(child); return child; }
 	createSpan(options?: FakeOptions): FakeElement { const child = new FakeElement('span', this.ownerDocument, options); this.children.push(child); return child; }
 	setAttr(name: string, value: string): void { this.attributes.set(name, value); }
+	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
 	removeAttribute(name: string): void { this.attributes.delete(name); }
 	setText(value: string): void { this.textContent = value; }
 	addClass(value: string): void { this.className = `${this.className} ${value}`.trim(); }

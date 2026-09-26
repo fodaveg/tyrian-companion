@@ -3007,3 +3007,16 @@
 @media (prefers-reduced-motion: reduce) {
 	.tyrian-sale * { transition: none !important; animation: none !important; }
 }
+
+/* ==========================================================================
+ * H18.36 (docs/diseno/h18-31-interfaz): la pestaña Sesión según el boceto
+ * aprobado el 26 sep 2026. Solo variables de Obsidian.
+ * ========================================================================== */
+
+/* Lámina 1: Ajustes como icono al final de la barra, nunca una cuarta pestaña. */
+.tyrian-product-shell__nav .tyrian-product-shell__settings {
+	margin-inline-start: auto;
+	padding: 0 var(--size-4-2);
+	border-block-end: 0;
+	height: var(--input-height);
+}

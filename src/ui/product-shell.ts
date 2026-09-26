@@ -1,3 +1,5 @@
+import { setIcon } from 'obsidian';
+
 import { createTranslator, type Locale, type Translator } from '../core/i18n';
 import type { ProductActionController, ProductActionDescriptor, ProductActionGroup } from './product-action-controller';
 
@@ -44,7 +46,16 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 	appendNav(nav, t.t('shell.nav.companion'), options.active === 'companion', () => { void options.actions.run('open-companion').catch(() => undefined); });
 	appendNav(nav, t.t('shell.nav.inventory'), options.active === 'inventory', () => { void options.actions.run('open-inventory-advisor').catch(() => undefined); });
 	appendNav(nav, t.t('shell.nav.sale'), options.active === 'sale', () => { void options.actions.run('open-sale').catch(() => undefined); });
-	appendNav(nav, t.t('shell.nav.settings'), options.active === 'settings', options.openSettings);
+	// H18.36 (boceto lámina 1): Ajustes opens a modal, not a view, so it never belongs beside the
+	// three tabs that switch what the panel shows — a fourth text button with `aria-current`
+	// promised a destination it never had. An icon-only `clickable-icon` at the end of the bar,
+	// like Obsidian's own view-header icons, keeps the vocabulary of "opens something else".
+	const settingsButton = nav.createEl('button', {
+		cls: 'clickable-icon tyrian-product-shell__settings',
+		attr: { 'aria-label': t.t('shell.settingsAria'), type: 'button' },
+	});
+	setIcon(settingsButton, 'settings');
+	settingsButton.addEventListener('click', options.openSettings);
 
 	if (options.missingApiKey) {
 		const warning = shell.createDiv({ cls: 'tyrian-product-shell__attention' });

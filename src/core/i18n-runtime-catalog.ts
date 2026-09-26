@@ -1016,7 +1016,9 @@ const ES = {
 		// H14.20: lote K, copy de `product-shell.ts`, antes en un objeto `UI` local no
 		// registrado en el catálogo central.
 		'shell.title': 'Tyrian Companion',
-		'shell.nav.companion': 'Sesión', 'shell.nav.inventory': 'Inventario', 'shell.nav.sale': 'Venta', 'shell.nav.settings': 'Ajustes',
+		'shell.nav.companion': 'Sesión', 'shell.nav.inventory': 'Inventario', 'shell.nav.sale': 'Venta',
+		// H18.36: aria-label del icono de Ajustes, ya que el botón dejó de llevar la palabra visible.
+		'shell.settingsAria': 'Ajustes de Tyrian Companion',
 		'shell.missingTitle': 'Falta vincular la clave API',
 		'shell.missingBody': 'Las acciones de cuenta seguirán bloqueadas hasta seleccionar un secreto de Obsidian.',
 		'shell.missingAction': 'Vincular clave',
@@ -2130,7 +2132,8 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'loot.valuedKinds': 'Valued kinds',
 	'loot.action.open': 'Open', 'loot.action.sell': 'Sell',
 	'shell.title': 'Tyrian Companion',
-	'shell.nav.companion': 'Session', 'shell.nav.inventory': 'Inventory', 'shell.nav.sale': 'Sale', 'shell.nav.settings': 'Settings',
+	'shell.nav.companion': 'Session', 'shell.nav.inventory': 'Inventory', 'shell.nav.sale': 'Sale',
+	'shell.settingsAria': 'Tyrian Companion settings',
 	'shell.missingTitle': 'API key not linked',
 	'shell.missingBody': 'Account actions remain blocked until an Obsidian secret is selected.',
 	'shell.missingAction': 'Link key',
