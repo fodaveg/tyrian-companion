@@ -2,9 +2,9 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 466,
-		"promise_catch": 38,
-		"void_expression": 99,
+		"catch_clause": 467,
+		"promise_catch": 39,
+		"void_expression": 102,
 		"callback_registration": 173
 	},
 	"files": {
@@ -6311,6 +6311,20 @@
 					"reason": "Allowlisted void_expression: The \"openSavedSessionNote\" owner deliberately detaches \"this.app.workspace.openLinkText\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.app.workspace.openLinkText\" in \"openSavedSessionNote\"."
 				},
 				{
+					"id": "e888a13d53e7a49720e8f704f480da7a2f5bfc51",
+					"kind": "catch_clause",
+					"line": 2622,
+					"column": 5,
+					"endLine": 2624,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.emitNotice"
+					},
+					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
+				},
+				{
 					"id": "d68011562db5cf937631919107151626c431ad0d",
 					"kind": "catch_clause",
 					"line": 2626,
@@ -10625,6 +10639,55 @@
 					"reason": "Allowlisted void_expression: The \"onClick\" owner explicitly handles \"this.resolveManagedAssetsConflict\": the Resolve action of the session card only detaches resolveManagedAssetsConflict; the retry runs retryManagedAssetsReconciliation in main, whose managed-assets lifecycle span records success or conflict. Verified target: \"this.resolveManagedAssetsConflict\" in \"onClick\"."
 				},
 				{
+					"id": "f5e0bdb561915a3539e0eb76b46b0c72fe28dbe1",
+					"kind": "void_expression",
+					"line": 331,
+					"column": 4,
+					"endLine": 331,
+					"endColumn": 92,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.getProductActionController().run().catch",
+						"scope": "renderSaleVerdict",
+						"justification": "The \"renderSaleVerdict\" owner deliberately detaches \"this.actions.getProductActionController().run().catch\"; that named operation owns rejection and terminal diagnostics (H15.13, product-action-controller.ts)."
+					},
+					"reason": "Allowlisted void_expression: The \"renderSaleVerdict\" owner deliberately detaches \"this.actions.getProductActionController().run().catch\"; that named operation owns rejection and terminal diagnostics (H15.13, product-action-controller.ts). Verified target: \"this.actions.getProductActionController().run().catch\" in \"renderSaleVerdict\"."
+				},
+				{
+					"id": "96ff996b0c9a037a6877e60cb888ac1f463d4aa2",
+					"kind": "promise_catch",
+					"line": 331,
+					"column": 9,
+					"endLine": 331,
+					"endColumn": 92,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderSaleVerdict",
+						"justification": "The \"renderSaleVerdict\" owner explicitly handles \"intentional_noop\" as local recovery: \"open-sale\"'s rejection is already recorded by ProductActionController.run's own diagnostics.event before it rethrows (H15.13)."
+					},
+					"reason": "Allowlisted promise_catch: The \"renderSaleVerdict\" owner explicitly handles \"intentional_noop\" as local recovery: \"open-sale\"'s rejection is already recorded by ProductActionController.run's own diagnostics.event before it rethrows (H15.13). Verified recovery: \"intentional_noop\" in \"renderSaleVerdict\"."
+				},
+				{
+					"id": "71d29359a943577caba41b190b5a3cd5c1ead65a",
+					"kind": "void_expression",
+					"line": 389,
+					"column": 7,
+					"endLine": 391,
+					"endColumn": 8,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.copyLastErrorDetail",
+						"scope": "onClick",
+						"justification": "The \"onClick\" owner explicitly handles \"this.actions.copyLastErrorDetail\": the port's own try/catch (main.ts) never rejects and raises a Notice on a refused clipboard write, so nothing further needs logging here."
+					},
+					"reason": "Allowlisted void_expression: The \"onClick\" owner explicitly handles \"this.actions.copyLastErrorDetail\": the port's own try/catch (main.ts) never rejects and raises a Notice on a refused clipboard write, so nothing further needs logging here. Verified target: \"this.actions.copyLastErrorDetail\" in \"onClick\"."
+				},
+				{
 					"id": "6adfc4fcea4a2ef4e4a78dce3444ab3589148b2b",
 					"kind": "void_expression",
 					"line": 389,
@@ -10639,6 +10702,22 @@
 						"justification": "The \"onClick\" owner explicitly handles \"this.checkConnection\": the callout Comprobar conexión button detaches checkConnection, the connection command in main whose action runner records its own outcome; the card only draws the button, disabled while the retry cooldown runs."
 					},
 					"reason": "Allowlisted void_expression: The \"onClick\" owner explicitly handles \"this.checkConnection\": the callout Comprobar conexión button detaches checkConnection, the connection command in main whose action runner records its own outcome; the card only draws the button, disabled while the retry cooldown runs. Verified target: \"this.checkConnection\" in \"onClick\"."
+				},
+				{
+					"id": "6a5f91c00d032a1d359e87b89c610981baf920c1",
+					"kind": "void_expression",
+					"line": 492,
+					"column": 81,
+					"endLine": 492,
+					"endColumn": 122,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.sessionHistoryController.load",
+						"scope": "renderSessionHistoryPanel",
+						"justification": "The \"renderSessionHistoryPanel\" owner explicitly handles \"this.sessionHistoryController.load\": a rejection there already resolves to the panel's own \"unavailable\" state, rendered by mountSessionHistoryPanel, so nothing further needs logging."
+					},
+					"reason": "Allowlisted void_expression: The \"renderSessionHistoryPanel\" owner explicitly handles \"this.sessionHistoryController.load\": a rejection there already resolves to the panel's own \"unavailable\" state, rendered by mountSessionHistoryPanel, so nothing further needs logging. Verified target: \"this.sessionHistoryController.load\" in \"renderSessionHistoryPanel\"."
 				},
 				{
 					"id": "890af555c5bdbfcc4d9ae1d0fff15ab89f8a2833",
@@ -10673,23 +10752,6 @@
 						"justification": "The \"renderSimpleSession\" owner explicitly handles \"addEventListener\": the toggle listener only remembers whether the Avisos drawer is open so the next render keeps it; it performs no action and has no failure to record."
 					},
 					"reason": "Allowlisted callback_registration: The \"renderSimpleSession\" owner explicitly handles \"addEventListener\": the toggle listener only remembers whether the Avisos drawer is open so the next render keeps it; it performs no action and has no failure to record. Verified registration: \"addEventListener\" in \"renderSimpleSession\"."
-				},
-				{
-					"id": "bd3e2728a011dc08f19af2a28b37509bfe1ebdd3",
-					"kind": "callback_registration",
-					"line": 554,
-					"column": 3,
-					"endLine": 554,
-					"endColumn": 112,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderSimpleSession",
-						"justification": "The \"renderSimpleSession\" owner explicitly handles \"addEventListener\": the toggle listener only remembers whether the Historial drawer is open so the next render keeps it; it performs no action and has no failure to record."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderSimpleSession\" owner explicitly handles \"addEventListener\": the toggle listener only remembers whether the Historial drawer is open so the next render keeps it; it performs no action and has no failure to record. Verified registration: \"addEventListener\" in \"renderSimpleSession\"."
 				},
 				{
 					"id": "c284db029907a1968b3b33060aeb5f9f4afca2f5",
@@ -10789,6 +10851,23 @@
 						"justification": "The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H18.7): stopManualSession's rejection is already recorded, structured, by the diagnostics span wrapping it in main.ts, exactly as the Terminar button's own catch already does."
 					},
 					"reason": "Allowlisted promise_catch: The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H18.7): stopManualSession's rejection is already recorded, structured, by the diagnostics span wrapping it in main.ts, exactly as the Terminar button's own catch already does. Verified recovery: \"intentional_noop\" in \"onClick\"."
+				},
+				{
+					"id": "5763e776b0d9ca0f02d33601caecde8ec7211dda",
+					"kind": "callback_registration",
+					"line": 634,
+					"column": 3,
+					"endLine": 634,
+					"endColumn": 103,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderSimpleSession",
+						"justification": "The \"renderSimpleSession\" owner explicitly handles \"addEventListener\": the toggle listener only remembers whether the Botín drawer is open so the next render keeps it; it performs no action and has no failure to record."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderSimpleSession\" owner explicitly handles \"addEventListener\": the toggle listener only remembers whether the Botín drawer is open so the next render keeps it; it performs no action and has no failure to record. Verified registration: \"addEventListener\" in \"renderSimpleSession\"."
 				},
 				{
 					"id": "8220d41b3689dfdf0cd5219a1d6e9e2eff33de86",
@@ -13919,6 +13998,21 @@
 					"reason": "Allowlisted void_expression: The \"renderFoot\" owner deliberately detaches \"interactions.onRefresh\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onRefresh\" in \"renderFoot\"."
 				}
 			]
+		},
+		"src/ui/receipt.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/ui/session-sale-verdict-line.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/ui/session-status-line.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		}
 	}
 }
