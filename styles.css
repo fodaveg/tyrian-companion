@@ -2028,33 +2028,6 @@
 	border-block-end: 1px solid var(--background-modifier-border);
 }
 
-.tyrian-inventory-advisor__table {
-	width: 100%;
-	border-collapse: collapse;
-	table-layout: fixed;
-}
-
-.tyrian-inventory-advisor__table caption {
-	padding: var(--size-4-2);
-	color: var(--text-muted);
-	text-align: start;
-}
-
-.tyrian-inventory-advisor__table th,
-.tyrian-inventory-advisor__table td {
-	padding: var(--size-4-2);
-	border-block-end: 1px solid var(--background-modifier-border);
-	text-align: start;
-	overflow-wrap: anywhere;
-}
-
-.tyrian-inventory-advisor__table th[scope='row'],
-.tyrian-inventory-advisor__card h4 {
-	display: flex;
-	align-items: center;
-	gap: var(--size-4-2);
-}
-
 .tyrian-inventory-advisor__item-icon {
 	width: 32px;
 	height: 32px;
@@ -2064,36 +2037,23 @@
 	background: var(--background-secondary);
 }
 
-.tyrian-inventory-advisor__numeric {
-	text-align: end;
-	font-variant-numeric: tabular-nums;
-	white-space: nowrap;
-}
-
-.tyrian-inventory-advisor__table thead th {
-	position: sticky;
-	inset-block-start: 0;
-	background: var(--background-primary);
-	z-index: 1;
-}
-
-.tyrian-inventory-advisor__table tbody tr:hover td {
-	background: var(--background-modifier-hover);
-}
-
-.tyrian-inventory-advisor__subtotal th,
-.tyrian-inventory-advisor__subtotal td {
-	border-block-start: 1px solid var(--background-modifier-border);
+/* H18.37: the single list's own group heading/subtotal row, `<li>`-based (no `<table>` left). */
+.tyrian-inventory__group-heading {
+	grid-column: 1 / -1;
+	padding: var(--size-4-2);
+	background: var(--background-secondary);
 	color: var(--text-muted);
-	font-weight: var(--font-semibold);
+	font-size: var(--font-smallest);
+	letter-spacing: .08em;
+	text-transform: uppercase;
 }
 
-.tyrian-inventory-advisor__badge {
-	display: inline-block;
-	padding-inline: var(--size-4-2);
-	border: 1px solid currentcolor;
-	border-radius: var(--radius-s);
-	font-size: var(--font-ui-smaller);
+.tyrian-inventory-advisor__subtotal {
+	border-block-start: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-inventory-advisor__subtotal .tyrian-inventory__cell {
+	color: var(--text-muted);
 	font-weight: var(--font-semibold);
 }
 
@@ -2123,75 +2083,6 @@
 .tyrian-inventory-advisor__advanced-evidence summary:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
-}
-
-.tyrian-inventory-advisor__group-heading {
-	background: var(--background-secondary);
-	color: var(--text-muted);
-	font-size: var(--font-smallest);
-	letter-spacing: .08em;
-	text-transform: uppercase;
-}
-
-.tyrian-inventory-advisor__decision,
-.tyrian-inventory-advisor__card-decision {
-	font-weight: var(--font-semibold);
-}
-
-.tyrian-inventory-advisor__card-decision {
-	margin-block: 0 var(--size-4-2);
-	color: var(--text-accent);
-}
-
-.tyrian-inventory-advisor__badge--sell,
-.tyrian-inventory-advisor__badge--list {
-	color: var(--color-green);
-}
-
-.tyrian-inventory-advisor__badge--vendor {
-	color: var(--color-yellow);
-}
-
-.tyrian-inventory-advisor__badge--salvage {
-	color: var(--color-blue);
-}
-
-.tyrian-inventory-advisor__badge--use,
-.tyrian-inventory-advisor__badge--open {
-	color: var(--color-purple);
-}
-
-.tyrian-inventory-advisor__badge--keep {
-	color: var(--text-muted);
-}
-
-.tyrian-inventory-advisor__badge--review,
-.tyrian-inventory-advisor__badge--discard_review {
-	color: var(--text-warning);
-}
-
-.tyrian-inventory-advisor__cards {
-	display: none;
-}
-
-.tyrian-inventory-advisor__card {
-	padding: var(--size-4-3);
-	border-block-end: 1px solid var(--background-modifier-border);
-}
-
-.tyrian-inventory-advisor__card h4 {
-	margin-block-start: 0;
-}
-
-.tyrian-inventory-advisor__card dl {
-	display: grid;
-	grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
-	gap: var(--size-4-1) var(--size-4-3);
-}
-
-.tyrian-inventory-advisor__card dd {
-	margin: 0;
-	overflow-wrap: anywhere;
 }
 
 .tyrian-inventory-advisor__container-economy {
@@ -2279,23 +2170,225 @@
 	overflow-wrap: anywhere;
 }
 
+/* ==========================================================================
+ * H18.37 — Inventario: lista única con `subgrid`, aprobada en
+ * docs/diseno/h18-31-interfaz/boceto.html (lámina 3.1). Sustituye la tabla y
+ * las tarjetas (arriba: `__table`, `__cards`, `__badge*`, `__card*`, ya
+ * retiradas). Solo variables de Obsidian.
+ * ========================================================================== */
+
+.tyrian-inventory__list {
+	display: grid;
+	grid-template-columns: minmax(9rem, 1.4fr) minmax(6.5rem, .8fr) minmax(11rem, 1.1fr)
+		minmax(6.5rem, .8fr) minmax(9rem, 1.8fr) auto;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border-block-start: 1px solid var(--background-modifier-border);
+	font-variant-numeric: tabular-nums;
+}
+
+.tyrian-inventory__head,
+.tyrian-inventory__row {
+	display: grid;
+	grid-column: 1 / -1;
+	grid-template-columns: subgrid;
+	column-gap: var(--size-4-3);
+	align-items: start;
+}
+
+.tyrian-inventory__head {
+	padding: var(--size-4-2);
+	border-block-end: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory__head .is-num {
+	text-align: end;
+}
+
+.tyrian-inventory__row {
+	grid-template-rows: auto 1fr auto;
+	padding: var(--size-4-3) var(--size-4-2);
+	border-block-end: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-inventory__row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.tyrian-inventory__row > .c-item { grid-column: 1; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-qty { grid-column: 2; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-action { grid-column: 3; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-money { grid-column: 4; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-why { grid-column: 5; grid-row: 1; }
+.tyrian-inventory__row > .c-data { grid-column: 5; grid-row: 2; margin-block-start: var(--size-4-1); }
+.tyrian-inventory__row > .c-keep { grid-column: 6; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .tyrian-inventory__more { grid-column: 1 / -1; grid-row: 3; margin-block-start: var(--size-4-2); }
+
+.tyrian-inventory__cell {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory__item {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--size-4-2);
+}
+
+.tyrian-inventory__item strong {
+	display: block;
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory__item small {
+	display: block;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.tyrian-inventory__qty {
+	display: grid;
+}
+
+.tyrian-inventory__qty b {
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory__money {
+	text-align: end;
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory__money[data-unknown='true'] {
+	color: var(--text-muted);
+	font-weight: var(--font-normal);
+}
+
+.tyrian-inventory__why {
+	color: var(--text-muted);
+}
+
+.tyrian-inventory__data {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.tyrian-inventory__keep {
+	display: grid;
+	justify-items: end;
+	gap: var(--size-2-2);
+}
+
+.tyrian-inventory__keep button[aria-pressed='true'] {
+	box-shadow: 0 0 0 1.5px var(--interactive-accent);
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory__keep small {
+	min-height: 1.3em;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-align: end;
+}
+
+.tyrian-action-when {
+	display: block;
+	margin-block-start: var(--size-2-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* The row's own detail disclosure: owned, location and evidence (H18.31, lámina 3.1). */
+.tyrian-inventory__more {
+	font-size: var(--font-ui-smaller);
+}
+
+.tyrian-inventory__more summary {
+	display: flex;
+	align-items: center;
+	min-height: 44px;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.tyrian-inventory__more dl {
+	display: grid;
+	grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+	gap: var(--size-4-1) var(--size-4-3);
+	margin: 0;
+}
+
+.tyrian-inventory__more dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+/* [NUEVO] H18.37: variantes de `.tyrian-action` (ya viva en Venta) que Inventario necesita
+ * y Venta no: `list`/`keep` las aprobó el boceto; `vendor`/`salvage`/`use` extienden el mismo
+ * lenguaje (palabra + filete lateral) a las acciones que la tabla retirada pintaba solo con color. */
+.tyrian-action[data-action='list'] { --tyrian-action-mark: var(--color-green); border-inline-start-style: double; }
+.tyrian-action[data-action='keep'] { --tyrian-action-mark: var(--text-normal); }
+.tyrian-action[data-action='vendor'] { --tyrian-action-mark: var(--color-yellow); }
+.tyrian-action[data-action='salvage'] { --tyrian-action-mark: var(--color-blue); }
+.tyrian-action[data-action='use'] { --tyrian-action-mark: var(--color-purple); }
+
 @container (max-width: 759px) {
 	.tyrian-price-history__controls {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
-	.tyrian-inventory-advisor__table {
+	.tyrian-inventory__list {
+		grid-template-columns: minmax(0, 1fr) auto;
+	}
+
+	.tyrian-inventory__head {
 		display: none;
 	}
 
-	.tyrian-inventory-advisor__cards {
-		display: grid;
-		gap: var(--size-4-2);
+	.tyrian-inventory__row {
+		grid-template-rows: none;
+		row-gap: var(--size-4-1);
+		padding-inline: 0;
 	}
 
-	.tyrian-inventory-advisor__cards h3 {
-		margin-block: var(--size-4-3) 0;
+	.tyrian-inventory__row > .c-item { grid-column: 1; grid-row: 1; }
+	.tyrian-inventory__row > .c-money { grid-column: 2; grid-row: 1; }
+	.tyrian-inventory__row > .c-action { grid-column: 1 / -1; grid-row: 2; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-qty { grid-column: 1 / -1; grid-row: 3; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-why { grid-column: 1 / -1; grid-row: 4; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-data { grid-column: 1; grid-row: 5; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-keep { grid-column: 2; grid-row: 5; align-self: end; }
+	.tyrian-inventory__row > .tyrian-inventory__more { grid-column: 1 / -1; grid-row: 6; padding-inline-start: 40px; }
+
+	.tyrian-inventory__qty {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0 var(--size-4-2);
 	}
+
+	.tyrian-action-when {
+		display: inline;
+		margin: 0 0 0 var(--size-4-2);
+	}
+}
+
+@container (max-width: 520px) {
+	.tyrian-inventory__keep {
+		justify-items: start;
+	}
+}
+
+@container (max-width: 400px) {
+	.tyrian-inventory__row > .c-money {
+		grid-column: 1;
+		grid-row: 2;
+	}
+
+	.tyrian-inventory__row > .c-item { grid-row: 1; }
 }
 
 @container (max-width: 479px) {
@@ -2319,7 +2412,7 @@
 		width: 100%;
 	}
 
-	.tyrian-inventory-advisor__card dl {
+	.tyrian-inventory__more dl {
 		grid-template-columns: minmax(0, 1fr);
 	}
 
