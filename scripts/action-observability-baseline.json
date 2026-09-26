@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 466,
 		"promise_catch": 38,
-		"void_expression": 97,
-		"callback_registration": 172
+		"void_expression": 98,
+		"callback_registration": 173
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -11898,56 +11898,6 @@
 					"reason": "Allowlisted void_expression: The \"mountInventoryAdvisorView\" owner deliberately detaches \"interactions.inventorySync.onAnalyze\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.inventorySync.onAnalyze\" in \"mountInventoryAdvisorView\"."
 				},
 				{
-					"id": "4783209de183b29df657fc9caf42fd87e5453d7d",
-					"kind": "callback_registration",
-					"line": 509,
-					"column": 2,
-					"endLine": 509,
-					"endColumn": 101,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "mountInventoryAdvisorView",
-						"justification": "The \"mountInventoryAdvisorView\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"mountInventoryAdvisorView\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"mountInventoryAdvisorView\"."
-				},
-				{
-					"id": "b555a47ba61d3563b40a8970dd57826e6768e2f7",
-					"kind": "void_expression",
-					"line": 509,
-					"column": 53,
-					"endLine": 509,
-					"endColumn": 97,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "interactions.inventorySync.onConfirm",
-						"scope": "mountInventoryAdvisorView",
-						"justification": "The \"mountInventoryAdvisorView\" owner deliberately detaches \"interactions.inventorySync.onConfirm\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"mountInventoryAdvisorView\" owner deliberately detaches \"interactions.inventorySync.onConfirm\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.inventorySync.onConfirm\" in \"mountInventoryAdvisorView\"."
-				},
-				{
-					"id": "711cccedfdf7c810c553c1a63ceb33d9b04fb572",
-					"kind": "callback_registration",
-					"line": 512,
-					"column": 2,
-					"endLine": 512,
-					"endColumn": 96,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "mountInventoryAdvisorView",
-						"justification": "The \"mountInventoryAdvisorView\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"mountInventoryAdvisorView\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"mountInventoryAdvisorView\"."
-				},
-				{
 					"id": "0f891bddbc9ed05e861fe9c813c7185a07679219",
 					"kind": "callback_registration",
 					"line": 527,
@@ -12014,6 +11964,39 @@
 					"reason": "Allowlisted void_expression: The \"mountInventoryAdvisorView\" owner deliberately detaches \"interactions.priceHistoryOptIn.onDismiss\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.priceHistoryOptIn.onDismiss\" in \"mountInventoryAdvisorView\"."
 				},
 				{
+					"id": "61f67388b03516aa6b2f0e85f883be689a41a3a5",
+					"kind": "callback_registration",
+					"line": 565,
+					"column": 2,
+					"endLine": 568,
+					"endColumn": 4,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "mountInventoryAdvisorView",
+						"justification": "The \"mountInventoryAdvisorView\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"mountInventoryAdvisorView\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"mountInventoryAdvisorView\"."
+				},
+				{
+					"id": "4461f24094a49578b3ce1633943b249dc45b47bb",
+					"kind": "void_expression",
+					"line": 567,
+					"column": 27,
+					"endLine": 567,
+					"endColumn": 68,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "navigator.clipboard.writeText",
+						"scope": "mountInventoryAdvisorView",
+						"justification": "The \"mountInventoryAdvisorView\" owner deliberately detaches \"navigator.clipboard.writeText\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"mountInventoryAdvisorView\" owner deliberately detaches \"navigator.clipboard.writeText\"; that named operation owns rejection and terminal diagnostics. Verified target: \"navigator.clipboard.writeText\" in \"mountInventoryAdvisorView\"."
+				},
+				{
 					"id": "9aefaa2cb7e216b4534fd541c6cd48599eb3d741",
 					"kind": "void_expression",
 					"line": 586,
@@ -12028,6 +12011,22 @@
 						"justification": "The \"onKeep\" owner deliberately detaches \"interactions.onKeepItem\"; that named operation owns rejection and terminal diagnostics."
 					},
 					"reason": "Allowlisted void_expression: The \"onKeep\" owner deliberately detaches \"interactions.onKeepItem\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onKeepItem\" in \"onKeep\"."
+				},
+				{
+					"id": "d60c9bc8043f66f11928b7823a0cc282be35344c",
+					"kind": "void_expression",
+					"line": 603,
+					"column": 4,
+					"endLine": 603,
+					"endColumn": 56,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "interactions.onRemoveKeepException",
+						"scope": "onUnkeep",
+						"justification": "The \"onUnkeep\" owner deliberately detaches \"interactions.onRemoveKeepException\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"onUnkeep\" owner deliberately detaches \"interactions.onRemoveKeepException\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onRemoveKeepException\" in \"onUnkeep\"."
 				},
 				{
 					"id": "71923c911c84faecc1bd8e0a749e246afeba1e3b",
@@ -12053,6 +12052,40 @@
 					"column": 2,
 					"endLine": 1230,
 					"endColumn": 58,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "keepControl",
+						"justification": "The \"keepControl\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"keepControl\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"keepControl\"."
+				},
+				{
+					"id": "3123876ab82edf86e38e6fec2294202f21e84acb",
+					"kind": "callback_registration",
+					"line": 1274,
+					"column": 3,
+					"endLine": 1274,
+					"endColumn": 72,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderInventoryListRow",
+						"justification": "The \"renderInventoryListRow\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderInventoryListRow\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderInventoryListRow\"."
+				},
+				{
+					"id": "25f734b0e2fd9f44a47a5ab7bdeec4031f384a93",
+					"kind": "callback_registration",
+					"line": 1417,
+					"column": 3,
+					"endLine": 1417,
+					"endColumn": 67,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
