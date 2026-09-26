@@ -1,8 +1,36 @@
 # Changelog
 
-## Sin publicar (main, 26 sep 2026) - renovado el conocimiento curado del asesor y de la Venta (H18.34)
+## Release beta 0.2.3 - esperar o vender funciona dentro del festival, y la Venta avisa cuando caducan sus reglas
 
-David pidió renovar los datos curados con fecha de caducidad antes del 12 nov 2026, para que la
+**Corrección de la pestaña Venta (H18.33).** Hallazgo de la revisión de la 0.2.2, lote pedido por
+David el 26 sep 2026: la tarjeta destacada del Saco de Halloween habría recomendado vender «en el
+suelo» una vez empezado el festival: `recommendPosition` daba `sell`/
+`wait_evidence_insufficient` ("0 temporadas comparables") justo cuando el mercado (datawars2,
+2020-2025) muestra que esperar a mayo suele ganar tras comisiones.
+
+- **Causa medida** (con el histórico real de datawars2, no el fixture recortado de test):
+  `compareSellNowWithWaiting` (`src/economy/sell-or-wait.ts`) exigía una edición del festival
+  CATALOGADA estrictamente futura (`festivals.find((f) => f.startsOnUtc > today)`,
+  `HALLOWEEN_FESTIVAL_STARTS` en `src/economy/sell-timing-experiment.ts`, sin entrada 2027 —
+  deliberado, un 2027 real no está anunciado). Desde el inicio del festival 2026 (13 oct) en
+  adelante no existe tal edición futura, así que la función abortaba a `insufficient_data` con 0
+  temporadas SIN IMPORTAR cuánto histórico real se le diera.
+- **Arreglo**: `referenceFestivalFor` (nueva función en `sell-or-wait.ts`) mantiene la edición YA
+  EMPEZADA como referencia cuando no hay una futura anunciada, con `decisionOffsetDays` en cero o
+  negativo ("N días dentro del festival") en vez de abortar. Solo hasta que cierra también la mayo
+  siguiente de esa edición (`nextMayWindowFor`); pasado eso, sigue absteniéndose exactamente igual
+  que antes, sin adivinar ninguna fecha. La semántica de la regla (comparación out-of-sample,
+  entrenamiento/prueba, ventaja neta tras comisiones) no cambia, solo la SELECCIÓN de a qué edición
+  se ancla cada día del calendario.
+- Fixture `src/economy/__fixtures__/sell-timing-history-36038.ts` ampliado con un día por edición
+  (el día siguiente al inicio real de cada Halloween 2014-2025), descargado de datawars2 el 26 sep
+  2026, para poder probar el arreglo con datos reales dentro del festival.
+- Tests en la regla (`sell-or-wait.test.ts`) y en el cableado (`main-sale-hero-timing.test.ts`): a
+  14 oct 2026 (festival empezado) con la puja al nivel del suelo, la tarjeta pasa de «Vender ahora»
+  a «Todavía no» (`sell_at_season`/`wait_advantage_demonstrated`, ventana sugerida mayo 2027); antes
+  del festival (26 sep) el veredicto no cambia.
+
+**Datos curados renovados (H18.34).** David pidió renovar los datos curados con fecha de caducidad antes del 12 nov 2026, para que la
 recomendación de esperar a vender el Saco en mayo de 2027 no se quede sin conocimiento vivo a mitad
 de camino.
 
@@ -38,35 +66,6 @@ de camino.
   ficheros que cargan el bundle real; estado explicado cubierto en `sale-view-model.test.ts`,
   `sale-view.test.ts` (ES/EN) y `main-sale-hero-timing.test.ts` (cableado real de `getSaleViewModel` +
   DOM, con reloj posterior a `validUntil`).
-
-## Sin publicar (main, 26 sep 2026) - la comparación esperar-o-vender ya funciona DENTRO del festival
-
-**Corrección de revisión (H18.22).** David reportó que la tarjeta destacada del Saco de Halloween
-vendía "en el suelo" una vez empezado el festival: `recommendPosition` daba `sell`/
-`wait_evidence_insufficient` ("0 temporadas comparables") justo cuando el mercado (datawars2,
-2020-2025) muestra que esperar a mayo suele ganar tras comisiones.
-
-- **Causa medida** (con el histórico real de datawars2, no el fixture recortado de test):
-  `compareSellNowWithWaiting` (`src/economy/sell-or-wait.ts`) exigía una edición del festival
-  CATALOGADA estrictamente futura (`festivals.find((f) => f.startsOnUtc > today)`,
-  `HALLOWEEN_FESTIVAL_STARTS` en `src/economy/sell-timing-experiment.ts`, sin entrada 2027 —
-  deliberado, un 2027 real no está anunciado). Desde el inicio del festival 2026 (13 oct) en
-  adelante no existe tal edición futura, así que la función abortaba a `insufficient_data` con 0
-  temporadas SIN IMPORTAR cuánto histórico real se le diera.
-- **Arreglo**: `referenceFestivalFor` (nueva función en `sell-or-wait.ts`) mantiene la edición YA
-  EMPEZADA como referencia cuando no hay una futura anunciada, con `decisionOffsetDays` en cero o
-  negativo ("N días dentro del festival") en vez de abortar. Solo hasta que cierra también la mayo
-  siguiente de esa edición (`nextMayWindowFor`); pasado eso, sigue absteniéndose exactamente igual
-  que antes, sin adivinar ninguna fecha. La semántica de la regla (comparación out-of-sample,
-  entrenamiento/prueba, ventaja neta tras comisiones) no cambia, solo la SELECCIÓN de a qué edición
-  se ancla cada día del calendario.
-- Fixture `src/economy/__fixtures__/sell-timing-history-36038.ts` ampliado con un día por edición
-  (el día siguiente al inicio real de cada Halloween 2014-2025), descargado de datawars2 el 26 sep
-  2026, para poder probar el arreglo con datos reales dentro del festival.
-- Tests en la regla (`sell-or-wait.test.ts`) y en el cableado (`main-sale-hero-timing.test.ts`): a
-  14 oct 2026 (festival empezado) con la puja al nivel del suelo, la tarjeta pasa de «Vender ahora»
-  a «Todavía no» (`sell_at_season`/`wait_advantage_demonstrated`, ventana sugerida mayo 2027); antes
-  del festival (26 sep) el veredicto no cambia.
 
 ## Release beta 0.2.2 - pestaña Venta de Halloween, y la comparación de botín vuelve a activarse
 
