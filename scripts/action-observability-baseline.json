@@ -5,7 +5,7 @@
 		"catch_clause": 467,
 		"promise_catch": 40,
 		"void_expression": 102,
-		"callback_registration": 174
+		"callback_registration": 175
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
