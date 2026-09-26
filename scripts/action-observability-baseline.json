@@ -4,7 +4,7 @@
 	"totals": {
 		"catch_clause": 466,
 		"promise_catch": 38,
-		"void_expression": 98,
+		"void_expression": 99,
 		"callback_registration": 173
 	},
 	"files": {
@@ -13857,7 +13857,24 @@
 		"src/ui/sale-item-view.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
+			"boundaries": [
+				{
+					"id": "54269a8f4657940af0624c17755096ed3569bf9b",
+					"kind": "void_expression",
+					"line": 43,
+					"column": 61,
+					"endLine": 43,
+					"endColumn": 83,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.runRefresh",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" boundary deliberately detaches \"this.runRefresh\": opening a loading snapshot fires the same footer refresh once, and `runRefresh` itself owns rendering the outcome (success, blocked reason, or the retry button) on completion."
+					},
+					"reason": "Allowlisted void_expression: The \"onOpen\" boundary deliberately detaches \"this.runRefresh\": opening a loading snapshot fires the same footer refresh once, and `runRefresh` itself owns rendering the outcome (success, blocked reason, or the retry button) on completion. Verified target: \"this.runRefresh\" in \"onOpen\"."
+				}
+			]
 		},
 		"src/ui/sale-view-model.ts": {
 			"classification": "production_source",
