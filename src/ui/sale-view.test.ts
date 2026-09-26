@@ -193,6 +193,40 @@ describe('sale view render', () => {
 		expect(badges.some((badge) => badge.attributes.get('data-action') === 'open')).toBe(true);
 	});
 
+	/**
+	 * Review fix (coordinator, round 2): David's real dump read "puja leída a las 09:35 · hace dentro
+	 * de 0 segundos" — `relativeTimeLabel` already returns a fully-worded "hace N minutos"/"in N
+	 * minutes", and `sale.quote.readAt`'s ES template wrapped it in ANOTHER "hace ", doubling the
+	 * word for a past instant and contradicting it outright for a future/zero one. Separately, a
+	 * quote read in the very same instant (`now` === `quotedAtMs`, exactly the acceptance test's own
+	 * clock) rendered "dentro de 0 segundos" ("in 0 seconds") instead of "ahora" ("now").
+	 */
+	it('review fix: a quote read in the SAME instant says "ahora", never "hace dentro de 0 segundos"', () => {
+		const quotedAtIso = new Date(NOW_MS).toISOString();
+		const model = buildSaleViewModel(baseInput({
+			hero: {
+				...row({
+					itemId: 36038, name: 'Saco de Halloween', bidCopper: 342,
+					decision: { action: 'sell', reason: 'no_demonstrated_wait_advantage', until: null, priceQuotedAt: quotedAtIso, sellWindowFromDay: null, sellWindowToDay: null },
+				}),
+				yearThresholdCopper: null, openVsSell: null,
+			},
+			rows: [row({
+				itemId: 47909, name: 'Barra de caramelo', bidCopper: 41_345,
+				decision: { action: 'hold', reason: 'below_local_band', until: null, priceQuotedAt: quotedAtIso, sellWindowFromDay: null, sellWindowToDay: null },
+			})],
+		}));
+		const copy = text(render(model, 'es'));
+		expect(copy).not.toMatch(/hace\s+hace/u);
+		expect(copy).not.toMatch(/dentro de 0 segundos/u);
+		expect(copy).toContain('ahora');
+
+		const en = text(render(model, 'en'));
+		expect(en).not.toMatch(/ago\s+ago/u);
+		expect(en).not.toMatch(/in 0 seconds/u);
+		expect(en).toContain('now');
+	});
+
 	it('renders the storage space block and low-space override reaching an actual row, not just the model', () => {
 		const model = buildSaleViewModel(baseInput({
 			storageSpace: {

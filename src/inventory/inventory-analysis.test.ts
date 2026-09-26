@@ -281,6 +281,36 @@ describe('inventory analysis: the moment stage inside the one result', () => {
 		expect(refreshPriceSeeds).toHaveBeenCalledWith([CHEAP_SEASONAL_ITEM]);
 	});
 
+	/**
+	 * Review fix (coordinator, round 2, 26 sep 2026): David's real Trozo de caramelo (#36041) is
+	 * split across THREE positions — bank 720, materials 1250, character 2983, total 4953 — with
+	 * nothing reserving any of it (no legendary goal touches candy). The acceptance dump only ever
+	 * modeled the bank position (720) and showed "720 · 1 hueco", which is both an incomplete total
+	 * AND an impossible slot count (bank stacks cap at 250). Verifies the REAL advisor pipeline
+	 * (`InventoryAnalysisService` + `InventoryAdvisorPresentationController`, not a hand-built
+	 * fixture) already sums every position of the same item, sharing the same decision, into ONE row
+	 * — `getSaleViewModel`'s own per-itemId row map (`main.ts`) reads whichever single row this
+	 * produces, so if this holds here, that map is not the source of the missing quantity.
+	 */
+	it('one item split across bank, materials and a character sums into ONE row with the true total (review fix)', async () => {
+		const ITEM_ID = 36_041;
+		const port = recommendationPort({
+			readDaily: async (itemId) => itemId === ITEM_ID ? dailySeries(itemId, 36, 300, 5, AS_OF_MS) : [],
+			seasonalInputFor: (itemId) => itemId === ITEM_ID ? { window: WINDOW, parameters: SIGNAL } : null,
+		});
+		const { rows } = await analyse(
+			[bank(ITEM_ID, 720, 0), materials(ITEM_ID, 1250, 7), character(ITEM_ID, 2983, 'Personaje 1', 0)],
+			{ port },
+		);
+		const sellRows = rows.filter((row) => row.itemId === ITEM_ID);
+		// One row, not three: the advisor already aggregates same-decision positions by item.
+		expect(sellRows).toHaveLength(1);
+		expect(sellRows[0]).toMatchObject({ ownedQuantity: 4953, quantity: 4953 });
+		// Its own allocations cover all three physical positions, not just the first one seen.
+		expect(sellRows[0]?.allocations).toHaveLength(3);
+		expect(sellRows[0]?.allocations.reduce((sum, allocation) => sum + allocation.quantity, 0)).toBe(4953);
+	});
+
 	it('an empty legendary-target setting never reads the legendary armory and reserves nothing (M4 test 8)', async () => {
 		const readLegendaryArmoryCounts = vi.fn(async (): Promise<ReadonlyMap<number, number> | null> => null);
 		const port = recommendationPort({ legendaryTargetItemIds: () => [], readLegendaryArmoryCounts });
@@ -595,6 +625,10 @@ function bank(itemId: number, quantity: number, slot: number): ItemHolding {
 
 function character(itemId: number, quantity: number, name: string, slot: number): ItemHolding {
 	return { kind: 'item', itemId, quantity, state: 'loose', location: { source: 'character', character: name, container: 'bag', bagIndex: 0, slot }, metadata: {} };
+}
+
+function materials(itemId: number, quantity: number, category: number): ItemHolding {
+	return { kind: 'item', itemId, quantity, state: 'loose', location: { source: 'materials', category }, metadata: {} };
 }
 
 function goal(goalId: string, title: string, itemId: number, quantity: number): ReservationGoal {

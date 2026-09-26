@@ -4,14 +4,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { createTranslator } from './core/i18n';
-import TyrianCompanionPlugin, { resolveSaleSeasonalInputFor, saleOpenVsSellCopper, saleSourceRowFromAdvisorRow } from './main';
+import TyrianCompanionPlugin, {
+	resolveSaleCalendarCandidateSpan, resolveSaleSeasonalInputFor, saleOpenVsSellCopper, saleSourceRowFromAdvisorRow,
+} from './main';
+import { festivalCalendarEntryForItem, type FestivalCalendarCandidateV1 } from './economy/seasonal-window';
 import { sellTimingHistoryBagDays } from './economy/__fixtures__/sell-timing-history-36038';
 import type { PriceHistoryDailyV1 } from './economy/price-history-model';
-import type { InventoryObjectDecisionAction } from './advisor/inventory-object-result';
+import { recommendPosition } from './advisor/inventory-position-recommendation';
+import { POSITION_RECOMMENDATION_REQUIRED_DAYS } from './inventory/inventory-analysis';
 import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './ui/inventory-advisor-view-model';
 import { buildSaleViewModel, type SaleViewModel, type SaleViewModelInput } from './ui/sale-view-model';
 import { renderSaleView } from './ui/sale-view';
-import { INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL } from './advisor/inventory-advisor-builtin-bundle';
+import { INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL, inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 
 /**
  * Review fix (26 sep 2026): the Saco de Halloween's hero card verdict comes from
@@ -38,6 +42,34 @@ function heroFixtureDaily(): PriceHistoryDailyV1[] {
 	}));
 }
 
+/**
+ * The curated 36038 backtest's own last recorded bid (24 sep 2026,
+ * `sell-timing-history-36038.ts`'s own final row) — the anchor every OTHER item's synthetic history
+ * below scales against, so its relative day-to-day SHAPE (the real, audited seasonal pattern) is
+ * reused at a different item's own price level, rather than one item's copper values standing in
+ * unscaled for another's.
+ */
+const FIXTURE_ANCHOR_BID_COPPER = 378;
+
+/**
+ * A real item's own price history, standing in for whatever datawars2 would deliver once Fix A
+ * (`inventory-analysis.ts`) actually asks for its seed: the curated 36038 backtest's real,
+ * audited seasonal shape (`sell-timing-history-36038.ts`), scaled to `itemId`'s own live bid so
+ * `recommendPosition` sees a plausible reference at the right order of magnitude, never 36038's
+ * unscaled copper values standing in for a completely different item's price level.
+ */
+function syntheticDailyHistory(itemId: number, todayBidCopper: number): PriceHistoryDailyV1[] {
+	const scale = todayBidCopper / FIXTURE_ANCHOR_BID_COPPER;
+	return sellTimingHistoryBagDays().map((day) => {
+		const bidCopper = Math.max(1, Math.round(day.bidCopper * scale));
+		return {
+			version: 1, vaultId: 'test-vault', itemId, dayUtc: day.dayUtc, snapshotCount: 1, partialSnapshotCount: 0,
+			bid: { count: 1, minCopper: bidCopper, maxCopper: bidCopper, medianCopperX2: bidCopper * 2, closeCopper: bidCopper, closeCapturedAtMs: 0 },
+			ask: null,
+		};
+	});
+}
+
 describe('resolveSaleSeasonalInputFor: the calendar window really moves with the date', () => {
 	it('resolves the pre-festival window (15 sep - 12 oct) on 26 sep, inside it', () => {
 		const seasonal = resolveSaleSeasonalInputFor(36038, SEPT_26_MS);
@@ -47,6 +79,39 @@ describe('resolveSaleSeasonalInputFor: the calendar window really moves with the
 	it('resolves the May window on 14 oct, once the pre-festival window has closed and 2027 has no anchor yet', () => {
 		const seasonal = resolveSaleSeasonalInputFor(36038, OCT_14_MS);
 		expect(seasonal?.window).toMatchObject({ seasonId: 'saco-halloween-primavera', opensOn: '05-01', closesOn: '05-31' });
+	});
+});
+
+/**
+ * Product decision (coordinator, round 2, 26 sep 2026): Jorcamelo's (43320) curated calendar window
+ * is a plain ANNUAL "1 jun - 30 jun" — confirmed real, audited data
+ * (`inventory-advisor-builtin-bundle.ts`'s §5 verdict: "the festival is NOT this item's window...
+ * keeps its plain annual June window"), unrelated to any Halloween anchor. On 26 sep, that window
+ * already closed three months ago; before this fix the calendar showed it with no days-left text at
+ * all rather than invent one for a stale date. Now it rolls to next year's SAME dates.
+ */
+describe('resolveSaleCalendarCandidateSpan: an annual window that already closed rolls to next year', () => {
+	const ANNUAL_JUNE: FestivalCalendarCandidateV1 = {
+		kind: 'annual',
+		window: { version: 1, seasonId: 'jorcamelo-junio', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 },
+		auditRow: 'test',
+	};
+
+	it('on 26 sep (window already closed this year), resolves to next year\'s June, not this year\'s', () => {
+		const span = resolveSaleCalendarCandidateSpan(ANNUAL_JUNE, new Map(), SEPT_26_MS);
+		expect(span).toEqual({ fromDay: '2027-06-01', toDay: '2027-06-30' });
+	});
+
+	it('on 15 jun (inside the window), resolves to THIS year, never rolling forward mid-window', () => {
+		const insideMs = Date.UTC(2026, 5, 15);
+		const span = resolveSaleCalendarCandidateSpan(ANNUAL_JUNE, new Map(), insideMs);
+		expect(span).toEqual({ fromDay: '2026-06-01', toDay: '2026-06-30' });
+	});
+
+	it('on 1 jan (window still ahead this year), resolves to THIS year, never a false rollover', () => {
+		const beforeMs = Date.UTC(2026, 0, 1);
+		const span = resolveSaleCalendarCandidateSpan(ANNUAL_JUNE, new Map(), beforeMs);
+		expect(span).toEqual({ fromDay: '2026-06-01', toDay: '2026-06-30' });
 	});
 });
 
@@ -416,18 +481,29 @@ describe('saleSourceRowFromAdvisorRow: a live bid always produces a net, even wi
  * The full rendered text is dumped to the scratchpad for a line-by-line human check.
  */
 describe('acceptance: the real Venta pipeline renders David\'s real Halloween inventory without contradictions', () => {
+	interface RealPosition { quantity: number; location: InventoryAdvisorViewRow['allocations'][number]['location'] }
+
+	/**
+	 * Coordinator round 2, point 7: David's real Trozo de caramelo (#36041) is split across THREE
+	 * positions (bank, materials, one character) that all share the SAME decision — the dump only
+	 * modeled one of them (720 of 4953) and showed an impossible "720 · 1 hueco" (bank stacks cap at
+	 * 250). `inventory-analysis.test.ts`'s own "sums into ONE row" test proves the REAL advisor
+	 * pipeline already aggregates every position of an item into one row when they share a decision;
+	 * this fixture now lists every real position instead of only the first one read.
+	 */
 	function realRow(fields: {
-		itemId: number; name: string; ownedQuantity: number; slots: number;
+		itemId: number; name: string; positions: readonly RealPosition[];
 		decision: NonNullable<InventoryAdvisorViewRow['decision']> | null;
 	}): InventoryAdvisorViewRow {
 		const decision = fields.decision;
+		const ownedQuantity = fields.positions.reduce((sum, position) => sum + position.quantity, 0);
 		return {
 			id: `#/sale/row/${String(fields.itemId)}`, itemId: fields.itemId, name: fields.name, icon: null,
-			ownedQuantity: fields.ownedQuantity, availableQuantity: fields.ownedQuantity,
-			action: decision === null ? 'review' : (decision.action === 'hold' ? 'keep' : decision.action === 'sell' ? 'sell' : 'review'),
-			quantity: fields.ownedQuantity,
-			allocations: Array.from({ length: fields.slots }, (_, index) => ({
-				positionRef: `#/positions/${String(fields.itemId)}/${String(index)}`, quantity: fields.ownedQuantity, location: { source: 'materials' as const, category: 1 },
+			ownedQuantity, availableQuantity: ownedQuantity,
+			action: decision === null ? 'review' : (decision.action === 'hold' ? 'keep' : decision.action === 'sell' || decision.action === 'sell_at_season' ? 'sell' : 'review'),
+			quantity: ownedQuantity,
+			allocations: fields.positions.map((position, index) => ({
+				positionRef: `#/positions/${String(fields.itemId)}/${String(index)}`, quantity: position.quantity, location: position.location,
 			})),
 			decision: decision ?? undefined,
 			reasonCodes: [], protectionReasons: [], value: { status: 'not_applicable', route: null },
@@ -439,16 +515,34 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 		};
 	}
 
-	function realDecision(
-		action: InventoryObjectDecisionAction, reason: string,
-		extra: { until?: string | null; sellWindowFromDay?: string | null; sellWindowToDay?: string | null; priceQuotedAt?: string | null } = {},
-	): NonNullable<InventoryAdvisorViewRow['decision']> {
+	/**
+	 * Coordinator round 2, points 2 and 6: no more hand-copied decisions from notes written BEFORE
+	 * this review's fixes — every row (hero included, via `computeSaleHeroTiming` below) runs the
+	 * SAME real `recommendPosition`, fed the real calendar (`resolveSaleSeasonalInputFor`) and a
+	 * synthetic-but-scaled history (`syntheticDailyHistory`) standing in for what Fix A now actually
+	 * asks datawars2 for. A stale note's `review`/`no_close_today` (48805) or `review`/
+	 * `insufficient_reference` (36038) cannot survive this: either the code, run today, still
+	 * produces it — and the text is judged as-is — or it does not, and the note was simply stale.
+	 */
+	function computeRealDecision(
+		itemId: number, todayBidCopper: number | null, ownedQuantity: number, nowMs: number,
+	): NonNullable<InventoryAdvisorViewRow['decision']> | null {
+		if (ownedQuantity <= 0) return null;
+		const seasonal = resolveSaleSeasonalInputFor(itemId, nowMs);
+		const result = recommendPosition({
+			capturedAtMs: nowMs, priceHistoryEnabled: true,
+			totalSellCopper: todayBidCopper === null ? null : todayBidCopper * ownedQuantity,
+			capitalThresholdCopper: 100_000, maxPriceAgeMs: 900_000,
+			priceHistoryDaily: todayBidCopper === null ? [] : syntheticDailyHistory(itemId, todayBidCopper),
+			priceHistoryWindowDays: 400, priceHistoryRequiredDays: POSITION_RECOMMENDATION_REQUIRED_DAYS,
+			seasonal, legendaryShortfall: null, freeQuantity: ownedQuantity, todayBidCopper, untradeable: false,
+		});
 		return {
-			action, reason: reason as never, until: extra.until ?? null, missing: null,
-			pricePercentile: null, priceCoverageDays: null, priceQuotedAt: extra.priceQuotedAt ?? null,
-			priceHistoryLastDay: null, sellWindowFromDay: extra.sellWindowFromDay ?? null, sellWindowToDay: extra.sellWindowToDay ?? null,
-			sellOrWait: null,
-		};
+			action: result.action, reason: result.reason, until: result.until, missing: result.missing,
+			pricePercentile: result.pricePercentile, priceCoverageDays: result.priceCoverageDays,
+			priceQuotedAt: result.priceQuotedAt, priceHistoryLastDay: result.priceHistoryLastDay,
+			sellWindowFromDay: result.sellWindowFromDay, sellWindowToDay: result.sellWindowToDay, sellOrWait: result.sellOrWait,
+		} satisfies NonNullable<InventoryAdvisorViewRow['decision']>;
 	}
 
 	it('shows a coherent hero, coherent rows and a marked calendar for the real Halloween positions', async () => {
@@ -456,35 +550,64 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 		vi.setSystemTime(SEPT_26_MS);
 
 		// Real quantities and bids, `tyrian-companion/…/Inventory/Positions/*.md` (26 sep 2026 read).
+		// Character name replaced with "Personaje 1" throughout (David's real note: "Rinopopo").
+		const CANDY_BAR_QUANTITY = 71;
+		const JORCAMELO_QUANTITY = 31;
+		const FANGS_PREMIUM_QUANTITY = 20;
+		const PLAIN_FANGS_QUANTITY = 698;
+		// Three real positions summing to 4953, not just the bank stack (720).
+		const CANDY_PIECE_QUANTITY = 720 + 1250 + 2983;
+		const CANDY_BAR_BID = 41_539;
+		const JORCAMELO_BID = 44_498;
+		const FANGS_PREMIUM_BID = 3_419;
+		const CANDY_PIECE_BID = 72;
+
 		const HERO_ROW = realRow({
-			itemId: 36038, name: 'Saco de Halloween', ownedQuantity: 1, slots: 1,
+			itemId: 36038, name: 'Saco de Halloween',
+			positions: [{ quantity: 1, location: { source: 'character', character: 'Personaje 1', container: 'bag', bagIndex: 0, slot: 0 } }],
 			decision: null, // the hero's OWN timing comes from `computeSaleHeroTiming`, not this field.
 		});
 		const CANDY_BAR = realRow({
-			itemId: 47909, name: 'Barra de caramelo', ownedQuantity: 71, slots: 1,
-			decision: realDecision('sell_at_season', 'seasonal_hold', { until: '2026-10-05T00:00:00.000Z' }),
+			itemId: 47909, name: 'Barra de caramelo',
+			positions: [{ quantity: CANDY_BAR_QUANTITY, location: { source: 'materials', category: 7 } }],
+			decision: computeRealDecision(47909, CANDY_BAR_BID, CANDY_BAR_QUANTITY, SEPT_26_MS),
 		});
 		const JORCAMELO = realRow({
-			itemId: 43320, name: 'Jorcamelo', ownedQuantity: 31, slots: 1,
-			decision: realDecision('sell_at_season', 'seasonal_hold', { until: '2027-06-01T00:00:00.000Z' }),
+			itemId: 43320, name: 'Jorcamelo',
+			positions: [{ quantity: JORCAMELO_QUANTITY, location: { source: 'materials', category: 7 } }],
+			decision: computeRealDecision(43320, JORCAMELO_BID, JORCAMELO_QUANTITY, SEPT_26_MS),
 		});
 		const FANGS_PREMIUM = realRow({
-			// Real note: `review`/`no_close_today` — undecided, but the account DOES carry a live bid.
-			itemId: 48805, name: 'Colmillos de plástico de alta calidad', ownedQuantity: 20, slots: 1,
-			decision: realDecision('review', 'no_close_today'),
+			itemId: 48805, name: 'Colmillos de plástico de alta calidad',
+			positions: [{ quantity: FANGS_PREMIUM_QUANTITY, location: { source: 'materials', category: 7 } }],
+			decision: computeRealDecision(48805, FANGS_PREMIUM_BID, FANGS_PREMIUM_QUANTITY, SEPT_26_MS),
 		});
 		const PLAIN_FANGS = realRow({
-			// Real note: `tc_unit_sell_copper: null` — genuinely no bid, sell depth unavailable.
-			itemId: 36059, name: 'Colmillos de plástico', ownedQuantity: 698, slots: 1,
-			decision: realDecision('hold', 'below_capital_threshold'),
+			// Real note: `tc_unit_sell_copper: null` — genuinely no bid, sell depth unavailable; not a
+			// festival calendar item either (no curated entry for 36059 — confirmed absent below).
+			itemId: 36059, name: 'Colmillos de plástico',
+			positions: [{ quantity: PLAIN_FANGS_QUANTITY, location: { source: 'materials', category: 7 } }],
+			decision: computeRealDecision(36059, null, PLAIN_FANGS_QUANTITY, SEPT_26_MS),
 		});
 		const CANDY_PIECE = realRow({
-			itemId: 36041, name: 'Trozo de caramelo', ownedQuantity: 720, slots: 1,
-			decision: realDecision('sell', 'bid_above_reference', { until: '2026-09-26T10:00:00.000Z', priceQuotedAt: '2026-09-26T07:35:00.000Z' }),
+			itemId: 36041, name: 'Trozo de caramelo',
+			positions: [
+				{ quantity: 720, location: { source: 'bank', slot: 0 } },
+				{ quantity: 1250, location: { source: 'materials', category: 7 } },
+				{ quantity: 2983, location: { source: 'character', character: 'Personaje 1', container: 'bag', bagIndex: 0, slot: 1 } },
+			],
+			decision: computeRealDecision(36041, CANDY_PIECE_BID, CANDY_PIECE_QUANTITY, SEPT_26_MS),
 		});
 		const rows = [HERO_ROW, CANDY_BAR, JORCAMELO, FANGS_PREMIUM, PLAIN_FANGS, CANDY_PIECE];
-		const bidsByItemId = new Map([
-			[36038, 374], [47909, 41_539], [43320, 44_498], [48805, 3_419], [36059, null], [36041, 72],
+		// bid + ask: David's real note carries a listing price (`tc_unit_list_copper`) for the Saco
+		// (376) too — point 5: a figure the app CAN fill from real data is never "Sin datos".
+		const pricesByItemId = new Map([
+			[36038, { bid: 374, ask: 376 }],
+			[47909, { bid: CANDY_BAR_BID, ask: null }],
+			[43320, { bid: JORCAMELO_BID, ask: null }],
+			[48805, { bid: FANGS_PREMIUM_BID, ask: null }],
+			[36059, { bid: null, ask: null }],
+			[36041, { bid: CANDY_PIECE_BID, ask: null }],
 		]);
 
 		const harness = {
@@ -497,9 +620,11 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 					source: {
 						input: {
 							prices: {
-								items: [...bidsByItemId].map(([itemId, bid]) => (
-									{ itemId, bid: bid === null ? null : { unitCopper: bid } }
-								)),
+								items: [...pricesByItemId].map(([itemId, price]) => ({
+									itemId,
+									bid: price.bid === null ? null : { unitCopper: price.bid },
+									ask: price.ask === null ? null : { unitCopper: price.ask },
+								})),
 							},
 						},
 					},
@@ -520,6 +645,11 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 		// The whole point of Fix A: with real history available, the hero gets a REAL verdict, never
 		// `review`/`insufficient_reference` (David's exact reported contradiction).
 		expect((harness.saleHeroTiming as { action: string } | null)?.action).not.toBe('review');
+		// Point 6: every row's decision comes from the same real function run just now, not a note.
+		for (const row of [CANDY_BAR, JORCAMELO, FANGS_PREMIUM, CANDY_PIECE]) {
+			expect(row.decision).toBeDefined();
+			expect(row.decision?.action).not.toBe('review');
+		}
 
 		type Harness = typeof harness & { buildSaleHeroInput: unknown; getSellSignalState(): null };
 		const proto = TyrianCompanionPlugin.prototype as unknown as {
@@ -543,6 +673,11 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 		const pricedNames = ['Barra de caramelo', 'Jorcamelo', 'Colmillos de plástico de alta calidad', 'Trozo de caramelo', 'Saco de Halloween'];
 		for (const name of pricedNames) expect(dump).not.toMatch(new RegExp(`${name}[\\s\\S]{0,400}Sin cotizaci[oó]n`));
 		expect(dump).not.toContain('Neto si vendes ya: Sin datos');
+		// Point 5, second half: the hero never shows "Sin datos" for any of its own figures.
+		expect(dump).not.toMatch(/Saco de Halloween[\s\S]*?Sin datos/);
+
+		// Point 4: 36059 (Colmillos de plástico, no bid) is correctly absent — confirm the reason.
+		expect(dump).not.toContain('Colmillos de plástico\n');
 
 		// Criterion 2: the Saco states its owned quantity and a real verdict, plus the comparison figures.
 		expect(model.hero?.ownedQuantity).toBe(1);
@@ -550,11 +685,38 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 		expect(dump).toContain('Saco de Halloween');
 		expect(dump).toContain('1 · 1 hueco');
 
+		// Point 7: Trozo de caramelo shows its TRUE total (4953), not just the bank stack (720).
+		expect(dump).toContain(`${String(CANDY_PIECE_QUANTITY)} · 3 huecos`);
+		expect(dump).not.toContain('720 · 1 hueco');
+
 		// Criterion 3: every calendar window says how much is left or how much is missing.
 		expect(model.calendar.length).toBeGreaterThan(0);
 		expect(dump).toMatch(/quedan \d+ días|faltan \d+ días/);
+		// Point 3: Jorcamelo's real annual June window (already closed) rolls to next year's dates.
+		expect(dump).toContain('faltan');
+
+		// Point 1: no doubled "hace hace" or a nonsensical "dentro de 0 segundos" for a fresh quote.
+		expect(dump).not.toMatch(/hace\s+hace/u);
+		expect(dump).not.toContain('dentro de 0 segundos');
 
 		expect(model.groups.noData.some((row) => row.itemId === 48805)).toBe(false);
+	});
+
+	/**
+	 * Point 4: confirms WHY 36059 (Colmillos de plástico, no bid) never reaches the Sale tab's rows
+	 * at all — `getSaleViewModel`'s own filter (`main.ts`): `if (itemId === HALLOWEEN_PRICE_ALERT_
+	 * ITEM_ID || !calendarItemIds.has(itemId)) continue;`. 36059 genuinely has no curated festival
+	 * calendar entry (`inventory-advisor-builtin-bundle.ts`'s own comment: "36059 (Plastic Fangs) has
+	 * NO entry: its buy_price_avg is 0 or null across its whole measured history... falls to rule
+	 * (c)"), unlike its "de alta calidad" sibling (48805), which does. This is the correct, audited
+	 * exclusion, not a bug: the Sale tab is specifically the festival-calendar items tab.
+	 */
+	it('point 4: a materials-storage item with no curated festival entry never reaches the Sale tab rows', () => {
+		const bundleLoad = inventoryAdvisorBuiltinBundleProvider.load(new Date(SEPT_26_MS).toISOString());
+		expect(bundleLoad.status).toBe('available');
+		if (bundleLoad.status !== 'available') return;
+		expect(festivalCalendarEntryForItem(bundleLoad.bundle.festivalCalendar, 36_059)).toBeNull();
+		expect(festivalCalendarEntryForItem(bundleLoad.bundle.festivalCalendar, 48_805)).not.toBeNull();
 	});
 });
 
