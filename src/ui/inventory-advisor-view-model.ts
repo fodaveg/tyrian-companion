@@ -94,6 +94,33 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 	};
 }
 
+/**
+ * H18.35: live override applied by `main.ts` on every `getInventoryAdvisorViewModel()` read,
+ * mirroring `SaleViewModel`'s own `rulesExpiredAtMs` (`sale-view-model.ts`, H18.34): checked fresh
+ * against `nowMs` on each call, never against the cached `InventoryAdvisorPresentationController`
+ * result, which only updates on an explicit refresh and can otherwise keep reading `ready`/`limited`
+ * long after the curated builtin bundle's own `validUntil` has passed. `rulesExpiredAtMs` is the
+ * caller's own live check (`inventoryAdvisorBuiltinBundleProvider.load(now)`); null leaves `model`
+ * exactly as built. Non-null replaces it with the SAME shape a genuine `rules_expired` block from
+ * the workflow itself already produces (`InventoryAdvisorPresentationController`'s own `blocked`
+ * branch): no groups, no optional-source disclosure, so a stale row never renders beside the notice.
+ */
+export function applyLiveInventoryAdvisorRulesExpiry(
+	model: InventoryAdvisorViewModel,
+	rulesExpiredAtMs: number | null,
+): InventoryAdvisorViewModel {
+	if (rulesExpiredAtMs === null) return model;
+	return {
+		status: 'blocked',
+		title: model.title,
+		detail: detailFor('blocked'),
+		blockedReason: 'rules_expired',
+		optionalSources: null,
+		groups: [],
+		...(model.contentVersion === undefined ? {} : { contentVersion: model.contentVersion }),
+	};
+}
+
 function detailFor(status: Exclude<InventoryAdvisorViewStatus, 'loading'>): string {
 	const details: Record<Exclude<InventoryAdvisorViewStatus, 'loading'>, string> = {
 		empty: 'No recommendations match these filters.',

@@ -293,6 +293,58 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		 * because `renderSaleView` never reaches `renderBlocked` at all.
 		 */
 	});
+
+	/**
+	 * H18.35: the Asesor tab had the SAME silent-staleness gap H18.34 fixed on the Venta tab —
+	 * `InventoryAdvisorPresentationController.open()` returns whatever the last refresh cached, and
+	 * nothing forces a rebuild the instant the clock crosses the curated bundle's own `validUntil`.
+	 * `getInventoryAdvisorViewModel` now re-checks live on every call, exactly like `getSaleViewModel`.
+	 */
+	describe('getInventoryAdvisorViewModel: a cached "ready" model is blocked once the live clock crosses validUntil (H18.35)', () => {
+		const AFTER_VALID_UNTIL_MS = Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) + 1;
+
+		function runGetInventoryAdvisorViewModel(harness: {
+			runtimeReady: boolean;
+			inventoryAdvisor: { open(): InventoryAdvisorViewModel };
+		}): InventoryAdvisorViewModel {
+			const proto = TyrianCompanionPlugin.prototype as unknown as {
+				getInventoryAdvisorViewModel(this: typeof harness): InventoryAdvisorViewModel;
+			};
+			return proto.getInventoryAdvisorViewModel.call(harness);
+		}
+
+		/**
+		 * Sabotage: reverting `getInventoryAdvisorViewModel` to `return this.inventoryAdvisor.open()`
+		 * (the pre-fix behaviour, trusting only the cached controller result) makes this fail on
+		 * `expect(model.status).toBe('blocked')` — it stays `'ready'`, with the stale row still in
+		 * `model.groups`, exactly the silent staleness this fix removes.
+		 */
+		it('shows the explained expiry even while the cached advisor result still reads "ready"', () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(AFTER_VALID_UNTIL_MS);
+			const harness = {
+				runtimeReady: true,
+				// Deliberately stale: `InventoryAdvisorPresentationController.open()` reprojects the last
+				// refresh's cache and never re-checks the bundle's own caducity on its own.
+				inventoryAdvisor: { open: () => advisorModel(2350) },
+			};
+			const model = runGetInventoryAdvisorViewModel(harness);
+
+			expect(model.status).toBe('blocked');
+			expect(model.blockedReason).toBe('rules_expired');
+			expect(model.groups).toEqual([]);
+		});
+
+		it('does not override a merely stale-cache "ready" before validUntil is actually reached', () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) - 1);
+			const harness = { runtimeReady: true, inventoryAdvisor: { open: () => advisorModel(2350) } };
+			const model = runGetInventoryAdvisorViewModel(harness);
+
+			expect(model.status).toBe('ready');
+			expect(model.groups).not.toEqual([]);
+		});
+	});
 });
 
 interface FakeElement {

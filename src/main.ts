@@ -118,6 +118,7 @@ import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advis
 import {
 	inventoryAdvisorBuiltinBundleProvider,
 	INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL,
+	type InventoryAdvisorBuiltinBundleProvider,
 } from './advisor/inventory-advisor-builtin-bundle';
 import {
 	festivalAnchorStartMs,
@@ -249,7 +250,12 @@ import { projectPendingProposalUi } from './ui/pending-proposal-command';
 import { refreshBackgroundStatus } from './ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
 import { InventoryAdvisorPresentationController } from './ui/inventory-advisor-controller';
-import { buildInventoryAdvisorViewModel, type InventoryAdvisorViewModel, type InventoryAdvisorViewRow } from './ui/inventory-advisor-view-model';
+import {
+	applyLiveInventoryAdvisorRulesExpiry,
+	buildInventoryAdvisorViewModel,
+	type InventoryAdvisorViewModel,
+	type InventoryAdvisorViewRow,
+} from './ui/inventory-advisor-view-model';
 import {
 	INVENTORY_ADVISOR_VIEW_TYPE,
 	InventoryAdvisorItemView,
@@ -1582,8 +1588,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.settings.language;
 	}
 
+	/**
+	 * H18.35: the cached `InventoryAdvisorPresentationController` result only updates on an explicit
+	 * refresh, so without this the Asesor tab could keep showing `ready`/`limited` well after the
+	 * curated builtin bundle's own `validUntil`, exactly the silent staleness H18.34 already fixed for
+	 * the Venta tab's `SaleViewModel.rulesExpiredAtMs`. Checked fresh on every read, never on the
+	 * cached model's own `status`.
+	 */
 	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel {
-		return this.runtimeReady ? this.inventoryAdvisor.open() : buildInventoryAdvisorViewModel(null);
+		if (!this.runtimeReady) return buildInventoryAdvisorViewModel(null);
+		return applyLiveInventoryAdvisorRulesExpiry(this.inventoryAdvisor.open(), liveRulesExpiredAtMs(Date.now()));
 	}
 
 	getSaleLocale() {
@@ -1614,8 +1628,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// H18.34: checked fresh against `nowMs` on every call, never against `advisorModel`'s own
 		// `status` (which only updates on an explicit advisor refresh and can still read `ready` well
 		// after the curated bundle's `validUntil` — the silent "sin datos" this field exists to fix).
-		const rulesExpiredAtMs = bundleLoad.status === 'unavailable' && bundleLoad.reason === 'expired'
-			? Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) : null;
+		const rulesExpiredAtMs = liveRulesExpiredAtMsFromLoad(bundleLoad);
 		const festivalStartMs = festivalAnchorStartMs(HALLOWEEN_FESTIVAL_ANCHORS, new Date(nowMs).getUTCFullYear());
 		const rowsByItemId = new Map<number, InventoryAdvisorViewRow>();
 		for (const group of advisorModel.groups) for (const row of group.rows) {
@@ -4727,6 +4740,25 @@ const SELL_SIGNAL_SERIES_SPAN_MS = (SELL_SIGNAL_REFERENCE_DAYS + 1) * 86_400_000
  * used only as the fallback: the live wiring always prefers the pack's own `policy.maxPriceAgeMs`.
  */
 const FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS = 900_000;
+
+/**
+ * H18.35: the one place that turns an `inventoryAdvisorBuiltinBundleProvider.load` result into the
+ * live `rulesExpiredAtMs` both `getSaleViewModel` (H18.34) and `getInventoryAdvisorViewModel`
+ * (H18.35) check on every read, never on a cached advisor result's own `status`. `null` for every
+ * other outcome (`available`, or `unavailable` with `reason: 'invalid'`): only the bundle's own
+ * `validUntil`, past, produces a date.
+ */
+function liveRulesExpiredAtMsFromLoad(
+	bundleLoad: ReturnType<InventoryAdvisorBuiltinBundleProvider['load']>,
+): number | null {
+	return bundleLoad.status === 'unavailable' && bundleLoad.reason === 'expired'
+		? Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) : null;
+}
+
+/** Same check from a bare instant, for callers that have not already loaded the bundle themselves. */
+function liveRulesExpiredAtMs(nowMs: number): number | null {
+	return liveRulesExpiredAtMsFromLoad(inventoryAdvisorBuiltinBundleProvider.load(new Date(nowMs).toISOString()));
+}
 
 /** H18.26: per-vault local storage key of the link between the in-game presence and its session. */
 const INGAME_SESSION_LINK_KEY = 'tyrian-companion:ingame-session-link';

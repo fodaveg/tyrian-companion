@@ -1,5 +1,32 @@
 # Changelog
 
+## Sin publicar (main, 26 sep 2026) - la pestaña Asesor también avisa en vivo cuando caducan sus reglas
+
+**Cableado en vivo (H18.35).** La pestaña Venta re-comprueba la caducidad del paquete curado en cada
+lectura desde H18.34 (`SaleViewModel.rulesExpiredAtMs`); la pestaña Asesor no lo hacía: mostraba lo
+que la última actualización explícita hubiera guardado, así que podía seguir leyendo `ready`/
+`limited` mucho después de que el paquete cruzara su propio `validUntil`, hasta la próxima vez que
+alguien pulsara «Actualizar».
+
+- **Arreglo**: `applyLiveInventoryAdvisorRulesExpiry` (nueva función pura en
+  `src/ui/inventory-advisor-view-model.ts`) sustituye un modelo cacheado por el mismo bloqueo
+  `status: 'blocked'`/`blockedReason: 'rules_expired'` que el workflow ya produce tras una
+  actualización real posterior a `validUntil` (mismo texto i18n, sin filas obsoletas). `main.ts`'s
+  `getInventoryAdvisorViewModel()` calcula la caducidad contra el reloj real en cada llamada
+  (`liveRulesExpiredAtMs`, compartida con `getSaleViewModel`) y aplica el override.
+- Tests: `inventory-advisor-view-model.test.ts` (la función pura, con sabotaje documentado) y
+  `main-sale-hero-timing.test.ts` (el cableado real de `getInventoryAdvisorViewModel`, con el reloj
+  después de `validUntil` y un resultado cacheado `ready`).
+- **Medido, sin cambiar** (H18.35, tarea 970c2546): con el clasificador real, la fila del Saco
+  (36038) pasa a `coverage.rules: 'limited'` y `action: 'review'` (`knowledge_stale`) hacia el
+  12-14 nov 2026 — el gatillo de 90 días de `maxRulePackAgeMs`, sin tocar. Esto también apaga la
+  comparación «abrir vs. vender» de la tarjeta destacada de Venta (`openVsSell`), porque el
+  clasificador nunca llega a evaluar la economía del contenedor una vez la fila está en revisión; el
+  veredicto de temporización (`recommendPosition`, calendario) sigue funcionando porque no depende
+  de esa comprobación. Ninguna de las dos pestañas queda `blocked` a nivel de workflow antes de
+  `validUntil` (1 jun 2027). Detalle y las dos opciones para decidir (mover `HUMAN_REVIEWED_AT` cada
+  release, o ampliar `maxRulePackAgeMs`) quedan en el informe de la tarea, no en este changelog.
+
 ## Release beta 0.2.3 - esperar o vender funciona dentro del festival, y la Venta avisa cuando caducan sus reglas
 
 **Corrección de la pestaña Venta (H18.33).** Hallazgo de la revisión de la 0.2.2, lote pedido por
