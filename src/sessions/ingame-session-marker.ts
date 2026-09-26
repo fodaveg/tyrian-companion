@@ -132,6 +132,17 @@ export class IngameSessionMarker {
 		return this.link?.sessionId === sessionId ? this.link.labyrinthAt : null;
 	}
 
+	/**
+	 * H18.36: the Sesión tab's own badge (boceto lámina 2.1) reads `owner`/`labyrinthAt` for the
+	 * session ON SCREEN, the same two fields the note already reads through `labyrinthObservedAt`.
+	 * Null for a session this marker never linked (never enabled, or started before the addon saw
+	 * it) — the badge and the "la marcó Nexus" meta suffix simply do not render, never a guess.
+	 */
+	linkFor(sessionId: string): Pick<IngameSessionLink, 'owner' | 'labyrinthAt'> | null {
+		if (this.link === null || this.link.sessionId !== sessionId) return null;
+		return { owner: this.link.owner, labyrinthAt: this.link.labyrinthAt };
+	}
+
 	dispose(): void {
 		this.disposed = true;
 	}

@@ -3020,3 +3020,9 @@
 	border-block-end: 0;
 	height: var(--input-height);
 }
+
+/* Lámina 1: un ítem que necesita atención (sin señal, cierre sin terminar) sube a --text-normal. */
+.tyrian-product-shell__status [data-tone="attention"] {
+	color: var(--text-normal);
+	font-weight: var(--font-medium);
+}

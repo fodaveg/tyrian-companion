@@ -157,6 +157,21 @@ describe('H18.26: the in-game presence marks the session', () => {
 		expect(game.marker.labyrinthObservedAt('another-session')).toBeNull();
 	});
 
+	/** H18.36: the Sesión tab's own badge and meta suffix (boceto lámina 2.1) read this. */
+	it('linkFor: owner and labyrinthAt for the session on screen, null for any other', async () => {
+		const game = harness();
+		game.connect('a');
+		game.report('a', OUTSIDE);
+		await game.settled();
+		expect(game.marker.linkFor('session-1')).toEqual({ owner: 'automatic', labyrinthAt: null });
+		expect(game.marker.linkFor('another-session')).toBeNull();
+
+		clock += 60_000;
+		game.report('a', LABYRINTH);
+		await game.settled();
+		expect(game.marker.linkFor('session-1')).toEqual({ owner: 'automatic', labyrinthAt: new Date(clock).toISOString() });
+	});
+
 	it('keeps the session through a short disconnection', async () => {
 		const game = harness();
 		game.connect('a');

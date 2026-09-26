@@ -66,6 +66,7 @@ import {
 	type SessionHistoryPanelMount,
 } from './session-history-panel';
 import { formatDecimal } from './format-number';
+import { relativeTimeLabel } from './inventory-advisor-view';
 import {
 	renderSessionCard,
 	renderSessionCardCallout,
@@ -108,6 +109,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getSaleViewModel?(): SaleViewModel;
 	/** H18.36: the addon's own connectivity, for the status line under the nav (boceto lámina 1). */
 	getIngamePresence?(): IngamePresenceSnapshot;
+	/** H18.36: the "Laberinto" badge and "la marcó Nexus" meta suffix (boceto lámina 2.1). */
+	getIngameSessionLink?(sessionId: string): { owner: 'automatic' | 'adopted'; labyrinthAt: string | null } | null;
 	getManagedAssetsView?(): ManagedAssetsView;
 	/** Relaunches the automatic managed-assets Move blocked by `operation_conflict`. */
 	retryManagedAssetsReconciliation?(): Promise<void>;
@@ -622,9 +625,19 @@ export class TyrianCompanionView extends ItemView {
 			const detection = this.actions.getAssistedDetectionState();
 			const fallbackCallout: SessionCardCallout | null = detection.status === 'error' || detection.status === 'disarmed'
 				? { tone: 'warning', title: copy.observationFailed, lines: [] } : null;
+			// H18.36 (boceto lámina 2.1, propuesta): the addon's own marker for the session on
+			// screen, never guessed — `linkFor` is null unless the bridge actually linked it.
+			const link = this.actions.getIngameSessionLink?.(observed.sessionId) ?? null;
+			const labyrinthBadge = this.t('sessionCard.labyrinthBadge');
+			const badge = link !== null && link.labyrinthAt !== null
+				? { text: labyrinthBadge, title: labyrinthBadge, ariaLabel: labyrinthBadge } : undefined;
+			const ownerSuffix = link?.owner === 'automatic' ? ` · ${this.t('sessionCard.markedByAddon')}` : '';
 			return {
-				ariaLabel: copy.session, state: copy.active,
-				meta: { clock: formatElapsed(now - Date.parse(observed.baseline.completedAt)), text: `· ${observed.startContext.characterName}` },
+				ariaLabel: copy.session, state: copy.active, badge,
+				meta: {
+					clock: formatElapsed(now - Date.parse(observed.baseline.completedAt)),
+					text: `· ${observed.startContext.characterName}${ownerSuffix}`,
+				},
 				// `stopManualSession` now rejects when its diagnostics span already logged the cause
 				// (H15.2, 2026-09-10 incident): swallow it here, there is nothing more this button can do.
 				actions: [{ text: copy.finish, cta: true, onClick: () => { void this.actions.stopManualSession().catch(() => undefined); } }],
@@ -898,11 +911,24 @@ export class TyrianCompanionView extends ItemView {
 		const totalCopper = loot.status === 'idle' ? 0 : loot.knownTotalCopper;
 		const sacks = loot.status === 'idle' ? 0 : loot.sackQuantity;
 		const figures: SessionCardFigure[] = [
-			{ label: copy.observedValue, value: simpleMoney(totalCopper, locale), band: this.goldRateHeadline(totalCopper, windowMs, locale) },
+			// H18.36 (boceto lámina 2.1, decidido): «Ganado», nunca «Valor observado» ni «en vivo»
+			// (David 24 sep: la tarjeta nunca dice «en vivo», dice cuándo se leyó la cuenta).
+			{ label: this.t('sessionCard.earned'), value: simpleMoney(totalCopper, locale), band: this.goldRateHeadline(totalCopper, windowMs, locale) },
 			{ label: copy.sacks, value: String(sacks), band: liveSackRateHeadline(sacks, windowMs, copy, locale) },
 		];
-		const lastSuccessAt = this.actions.getAssistedDetectionState().scheduler.lastSuccessAt;
-		if (lastSuccessAt !== null) figures.push({ label: this.t('view.detectionLastQuery'), value: formatClock(lastSuccessAt, locale) });
+		const scheduler = this.actions.getAssistedDetectionState().scheduler;
+		if (scheduler.lastSuccessAt !== null) {
+			const bandParts = [formatClock(scheduler.lastSuccessAt, locale)];
+			if (scheduler.nextRunAt !== null) {
+				bandParts.push(this.t('view.status.accountNext', { time: formatClock(scheduler.nextRunAt, locale) }));
+			}
+			figures.push({
+				label: this.t('sessionCard.accountReadFigure'),
+				value: relativeTimeLabel(new Date(scheduler.lastSuccessAt).toISOString(), locale, now),
+				band: bandParts.join(' · '),
+				title: this.t('view.figure.firstReadingBand'),
+			});
+		}
 		return figures;
 	}
 

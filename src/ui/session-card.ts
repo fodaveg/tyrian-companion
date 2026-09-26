@@ -48,6 +48,8 @@ export interface SessionCardFigure {
 	readonly value: string;
 	readonly band?: string;
 	readonly pending?: boolean;
+	/** H18.36: the account-cache disclaimer on "Lectura de la cuenta" (boceto lámina 2.1). */
+	readonly title?: string;
 }
 
 export interface SessionCardDrawer {
@@ -161,6 +163,7 @@ function renderFigures(container: HTMLElement, figures: readonly SessionCardFigu
 	for (const figure of figures) {
 		const item = list.createDiv({ cls: 'tyrian-companion-session__figure' });
 		if (figure.pending === true) item.setAttr('data-pending', 'true');
+		if (figure.title !== undefined) item.setAttr('title', figure.title);
 		item.createEl('dt', { text: figure.label });
 		const dd = item.createEl('dd', { text: figure.value });
 		const band = figure.band !== undefined ? item.createEl('small', { text: figure.band }) : null;

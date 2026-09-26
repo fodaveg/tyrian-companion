@@ -3230,6 +3230,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	/**
+	 * H18.36: the Sesión tab's own "Laberinto" badge and "la marcó Nexus" meta suffix (boceto
+	 * lámina 2.1) read this for the session on screen. Null with no addon marker (bridge disabled,
+	 * or the running session started before this plugin load's marker linked it).
+	 */
+	getIngameSessionLink(sessionId: string): { owner: 'automatic' | 'adopted'; labyrinthAt: string | null } | null {
+		return this.ingameSessionMarker?.linkFor(sessionId) ?? null;
+	}
+
+	/**
 	 * The link lives in Obsidian's per-vault local storage, never in `data.json`: it names a session
 	 * of THIS vault on THIS machine and must not sync. A host without that API keeps no link, which
 	 * only means an automatic session found after a reload is treated as one started by hand.

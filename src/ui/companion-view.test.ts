@@ -1055,6 +1055,58 @@ describe('Companion sale verdict line', () => {
 	});
 });
 
+/** H18.36 (boceto lámina 2.1): the "Laberinto" badge and "la marcó Nexus" meta suffix. */
+describe('Companion active-session Laberinto badge and owner suffix', () => {
+	function buildActiveModel(link: { owner: 'automatic' | 'adopted'; labyrinthAt: string | null } | null) {
+		const now = Date.parse('2026-09-26T22:05:00.000Z');
+		const observed = {
+			status: 'active' as const, sessionId: 'session-1',
+			baseline: { completedAt: '2026-09-26T21:00:00.000Z' },
+			startContext: { characterName: 'Astra Uno' },
+		};
+		const drawer = { summary: '', suffix: '' };
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getSessionState: () => observed,
+				getAssistedDetectionState: () => ({
+					status: 'armed' as const, armedAt: '2026-09-26T21:00:00.000Z', lastSnapshotAt: null,
+					scheduler: {
+						status: 'scheduled' as const, intervalMs: 300_000, nextRunAt: null,
+						lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
+					},
+				}),
+				getLiveSessionLoot: () => ({ status: 'idle' as const }),
+				getIngameSessionLink: () => link,
+				stopManualSession: async () => undefined,
+			},
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const build = (TyrianCompanionView.prototype as unknown as {
+			buildSessionCardModel(
+				this: typeof harness, connection: unknown, observed: unknown, projection: unknown, now: number,
+				copy: unknown, locale: string, drawers: unknown, callout: unknown,
+			): { badge?: { text: string }; meta: { text: string } };
+		}).buildSessionCardModel;
+		return build.call(
+			harness, { status: 'connected' }, observed, { items: [], errors: [] }, now,
+			simpleSessionCopy('es'), 'es', { detail: drawer, alerts: drawer, history: drawer }, null,
+		);
+	}
+
+	it('shows the Laberinto badge once the addon tagged the session, never before', () => {
+		expect(buildActiveModel(null).badge).toBeUndefined();
+		expect(buildActiveModel({ owner: 'automatic', labyrinthAt: null }).badge).toBeUndefined();
+		expect(buildActiveModel({ owner: 'automatic', labyrinthAt: '2026-09-26T22:00:00.000Z' }).badge?.text).toBe('Laberinto');
+	});
+
+	it('appends "la marcó Nexus" to the meta line only for an automatic link, never an adopted one', () => {
+		expect(buildActiveModel(null).meta.text).toBe('· Astra Uno');
+		expect(buildActiveModel({ owner: 'adopted', labyrinthAt: null }).meta.text).toBe('· Astra Uno');
+		expect(buildActiveModel({ owner: 'automatic', labyrinthAt: null }).meta.text).toBe('· Astra Uno · la marcó Nexus');
+	});
+});
+
 /** H14.5: the escape hatch for a managed-assets `operation_conflict` that never resolves itself. */
 /**
  * H14.5's escape hatch for an `operation_conflict` that never resolves on its own now lives inside
