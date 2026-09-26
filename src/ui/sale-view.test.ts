@@ -113,6 +113,26 @@ describe('sale view render', () => {
 		expect(badges.some((badge) => badge.attributes.get('data-action') === 'nodata')).toBe(true);
 	});
 
+	it('review fix: shows the open-vs-sell comparison and the "Abrir" badge when opening beats selling now', () => {
+		const model = buildSaleViewModel(baseInput({
+			hero: {
+				...row({
+					itemId: 36038, name: 'Saco de Halloween', ownedQuantity: 2350, bidCopper: 342, instantSellNetCopper: 201,
+					decision: { action: 'sell', reason: 'no_demonstrated_wait_advantage', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
+				}),
+				yearThresholdCopper: 430,
+				openVsSell: { openCopper: 295, sellCopper: 201 },
+			},
+		}));
+		expect(model.hero?.action).toBe('open');
+		const container = render(model, 'es');
+		const copy = text(container);
+		expect(copy).toContain('Abrir');
+		expect(copy).toContain('Vender');
+		const badges = byClass(walk(container), 'tyrian-action');
+		expect(badges.some((badge) => badge.attributes.get('data-action') === 'open')).toBe(true);
+	});
+
 	it('renders the storage space block and low-space override reaching an actual row, not just the model', () => {
 		const model = buildSaleViewModel(baseInput({
 			storageSpace: {

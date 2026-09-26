@@ -122,6 +122,13 @@ function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Tran
 	const verdict = article.createEl('p', { cls: 'tyrian-sale__verdict' });
 	verdict.append(renderActionBadge(hero.action, translator));
 	verdict.append(createSpan({ text: rowDetailText(hero, nowMs, translator) }));
+	if (hero.openVsSell !== null) {
+		const comparison = article.createEl('p', { cls: 'tyrian-sale__why' });
+		comparison.createEl('strong', { text: `${translator.t('sale.hero.open')}: ` });
+		comparison.append(renderMoney(hero.openVsSell.openCopper, translator));
+		comparison.createSpan({ text: ` · ${translator.t('sale.hero.sellNow')}: ` });
+		comparison.append(renderMoney(hero.openVsSell.sellCopper, translator));
+	}
 	const figures = article.createEl('dl', { cls: 'tyrian-companion-session__figures', attr: { style: '--tyrian-figures:3' } });
 	figures.append(
 		renderFigure(translator.t('sale.view.hero.instantSell'), hero.instantSellNetCopper, translator),
