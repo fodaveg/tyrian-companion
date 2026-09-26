@@ -1,5 +1,34 @@
 # Changelog
 
+## Sin publicar (main, 26 sep 2026) - las reglas curadas valen hasta mayo de 2027 (H18.35)
+
+**Opción B de David (26 sep 2026, tarea 970c2546).** La sección de abajo medía el hallazgo: con
+`maxRulePackAgeMs` en 90 días, la fila del Saco (36038) caía a `coverage.rules: 'review'` /
+`knowledge_stale` hacia el 12-14 nov 2026, tres meses antes de que el bundle expirara de verdad
+(`VALID_UNTIL` = 1 jun 2027) y en pleno hueco entre Halloween y la ventana de venta de mayo. En vez
+de programar revisiones humanas cada 90 días, David eligió ampliar el techo de la política.
+
+- **Arreglo**: `INVENTORY_ADVISOR_BUILTIN_BUNDLE.policy.maxRulePackAgeMs`
+  (`src/advisor/inventory-advisor-builtin-bundle.ts`) pasa de 7_776_000_000 ms (90 días) a
+  25_920_000_000 ms (300 días). El mínimo medido para cubrir el paquete desde el instante más
+  antiguo que cualquier comprobación de frescura usa (`PUBLISHED_AT`, también citado por cada
+  `SOURCES[].retrievedAt` que revisa `inventory-advisor-discard.ts`) hasta `VALID_UNTIL`
+  (1 jun 2027) es 290,25 días; 300 días redondea con ~10 días de margen y cabe dentro de
+  `bounded(maxRulePackAgeMs, 1 día, 366 días)` (`inventory-advisor-contract.ts`).
+  `exactPolicy()` (mismo fichero) y sus tests se actualizaron al nuevo literal.
+- **Efecto colateral documentado, no nuevo código**: la allowlist de descarte
+  (`inventory-advisor-discard.ts:220,241`, `freshEvidence`/`lineEligible`) comprueba
+  `source.retrievedAt` de `rulePack.sources`/`knowledgePack.sources` contra el mismo
+  `maxRulePackAgeMs`, así que su ventana de frescura se amplía igual, sin tocar su código.
+- **Test de aceptación** (`inventory-advisor-builtin-bundle.test.ts`): con el clasificador y el
+  workflow reales (`InventoryAdvisorWorkflow.refresh` + `createInventoryAdvisorBuiltinRulesProvider`),
+  el 2027-05-15 la fila 36038 sigue con `coverage.rules: 'complete'`, sin `knowledge_stale`, con
+  `row.containerEconomy` expuesto y `openVsSell` no nulo en la tarjeta de Venta; el 2027-06-02 el
+  bundle está caducado (`VALID_UNTIL`, sin relación con `maxRulePackAgeMs`). Sabotaje documentado:
+  volver a 7_776_000_000 hace caer la aserción de mayo con `coverage.rules` en `'limited'`.
+- No se tocaron `HUMAN_REVIEWED_AT`, `PUBLISHED_AT` ni `VALID_UNTIL`; los hashes del rule pack y del
+  knowledge pack no cambian porque `policy` no forma parte de su contenido con hash.
+
 ## Sin publicar (main, 26 sep 2026) - la pestaña Asesor también avisa en vivo cuando caducan sus reglas
 
 **Cableado en vivo (H18.35).** La pestaña Venta re-comprueba la caducidad del paquete curado en cada
