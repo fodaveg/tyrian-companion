@@ -45,6 +45,30 @@ export interface InventoryAdvisorBuiltinBundleProvider {
 	load(asOf: string): InventoryAdvisorBuiltinBundleLoadResult;
 }
 
+/**
+ * H18.34 (26 sep 2026): renewal ahead of the H13.7 `validUntil`, requested so the Saco's
+ * sell-or-wait verdict (`docs/audit/2026-09-11-festivales-datawars2.md`) survives its own "sell in
+ * May" recommendation instead of going dark mid-window. Every fact `SOURCES` cites was re-checked
+ * against its source on this date: `gw2-api-item-36038` live against `GET /v2/items/36038?lang=en`
+ * (still `type: Container`, still carries `NoSalvage`, matching `use`/`open`/`salvage` below), and
+ * the two wiki sources by nature of pinning an exact `oldid` (revisions do not change once written).
+ * Nothing changed, so `PUBLISHED_AT`/`HUMAN_REVIEWED_AT`/`SOURCES` stay exactly as originally
+ * recorded — re-confirming an unchanged, `oldid`-pinned fact is not a new publication event, and
+ * moving `reviewedAt` to today would make `inventory-sell-or-wait-acceptance.test.ts`'s 2026-09-24
+ * backtest (and every other fixed-`asOf` test predating today) reject the bundle as not-yet-published.
+ * Only `VALID_UNTIL` moves, exactly like H13.7.
+ *
+ * This does NOT keep the pack `ready` (vs `review`) through the new `validUntil`: the policy's
+ * `maxRulePackAgeMs` (90 days, `INVENTORY_ADVISOR_BUILTIN_BUNDLE.policy`) makes `rulePackFresh`/
+ * `knowledgeFresh` (`inventory-advisor-classifier.ts`) go stale around 2026-11-14 (90 days after
+ * `HUMAN_REVIEWED_AT`) — a PRE-EXISTING ceiling, unchanged by this task and already inside the old
+ * `validUntil` window too (2026-12-01 was already past that cliff). Respected, not extended, per this
+ * task's own instructions. What DOES stay `ready` through `VALID_UNTIL` is the Halloween economy
+ * pack (`inventory-container-economy.ts`): `evaluateInventoryContainerEconomy` never consults
+ * `maxRulePackAgeMs`, only `pack.validUntil`, so the Saco's open-vs-sell comparison keeps working:
+ * only the identity/capability rule (an "open" ASSERTION covering ITEM 36038 the classifier reuses
+ * for OTHER items too) goes to review after the 90-day mark, until a further `reviewedAt` refresh.
+ */
 const PUBLISHED_AT = '2026-08-14T18:04:33.000Z';
 const HUMAN_REVIEWED_AT = '2026-08-16T05:22:24.000Z';
 /**
@@ -54,13 +78,23 @@ const HUMAN_REVIEWED_AT = '2026-08-16T05:22:24.000Z';
  * the bundle expires on the earlier of the two. The date is now past the close
  * of the window (15 November UTC, inclusive), which is the same invariant
  * `isInventoryContainerEconomyPack` now enforces on the economy pack.
+ *
+ * H18.34: extended again to cover the ficha's "sell in May 2027" candidate window
+ * (`FESTIVAL_CALENDAR_ENTRIES`, `saco-halloween-primavera`) closing 2027-05-31, plus margin.
  */
-const VALID_UNTIL = '2026-12-01T00:00:00.000Z';
-// `validUntil` is hashed content, so moving it for H13.7 changed both digests.
-// Recomputed with the repository's own hash functions, never transcribed:
+const VALID_UNTIL = '2027-06-01T00:00:00.000Z';
+/**
+ * H18.34: exported so a caller that already knows the bundle is `unavailable`/`expired` (the load
+ * result itself carries no timestamp once it is `null`) can still say WHEN without duplicating the
+ * literal above. Rule pack and knowledge pack share `VALID_UNTIL`, so this is the bundle's one true
+ * hard boundary, not an approximation.
+ */
+export const INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL = VALID_UNTIL;
+// `validUntil` and `reviewedAt` are hashed content, so moving them for H13.7/H18.34 changed both
+// digests each time. Recomputed with the repository's own hash functions, never transcribed:
 // `node node_modules/jiti/lib/jiti-cli.mjs scripts/recompute-bundle-hashes.ts`.
-const RULE_PACK_SHA256 = '0e2fa8b0711ca13673a0a11ce9892dcd9c05a8a8ea86d9b6027587790abece6c';
-const KNOWLEDGE_PACK_SHA256 = '2cdae85cb1dbe9d517b603ea5cb4f5c11f1cce5ccf72b7624196647c89114d46';
+const RULE_PACK_SHA256 = '0bc7c68d76f2d1dc4af09dbaa67e460a892f00661743ef0f99794ff41265a3fe';
+const KNOWLEDGE_PACK_SHA256 = '1093ddbef138170057b51895efb4831b87b530b61ffdb5f88b588ceee07a2a7b';
 
 const SOURCES = [
 	{ id: 'gw2-api-item-36038', url: 'https://api.guildwars2.com/v2/items/36038?lang=en', retrievedAt: PUBLISHED_AT },

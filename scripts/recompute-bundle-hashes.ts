@@ -16,7 +16,7 @@ import type { InventoryKnowledgePackV1 } from '../src/advisor/inventory-advisor-
 
 const PUBLISHED_AT = '2026-08-14T18:04:33.000Z';
 const HUMAN_REVIEWED_AT = '2026-08-16T05:22:24.000Z';
-const VALID_UNTIL = '2026-12-01T00:00:00.000Z';
+const VALID_UNTIL = '2027-06-01T00:00:00.000Z';
 
 const SOURCES = [
 	{ id: 'gw2-api-item-36038', url: 'https://api.guildwars2.com/v2/items/36038?lang=en', retrievedAt: PUBLISHED_AT },

@@ -433,7 +433,11 @@ function halloweenContainerEconomyPack(
 		// H13.7: past the close of the window above (15 November, inclusive), not
 		// before it. The previous value expired on 12 November and would have
 		// killed the pack with three days of festival still to run.
-		validUntil: '2026-12-01T00:00:00.000Z',
+		// H18.34 (26 sep 2026): extended again, matching `inventory-advisor-builtin-bundle.ts`'s own
+		// `VALID_UNTIL`, so the Saco's "sell in May 2027" candidate window keeps a usable economy pack
+		// through its own close. Re-verified against the source below on this date: revision 3161313
+		// is a frozen wiki `oldid` and its content cannot change once written.
+		validUntil: '2027-06-01T00:00:00.000Z',
 		season: structuredClone(HALLOWEEN_SEASONAL_WINDOW),
 		// 90 % of the annual maximum, over a year of days of which at least
 		// thirty must exist. Measured on the published series of 2026-09-03: the
