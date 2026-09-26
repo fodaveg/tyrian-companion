@@ -1,0 +1,1193 @@
+<title>Interfaz Tyrian H18.31</title>
+<style>
+/* ==========================================================================
+ * CAPA 1 · Imitación de Obsidian. NO se implementa: en el plugin estas
+ * variables las pone Obsidian (o el tema de David). Valores aproximados del
+ * tema por defecto 1.x, los mismos que docs/diseno/halloween-venta.
+ * El conmutador de tema es CSS puro (:has), sin script.
+ * ========================================================================== */
+:root, :root:has(#bx-theme-light:checked) {
+	color-scheme: light;
+	--background-primary: #ffffff;
+	--background-secondary: #f6f6f6;
+	--background-modifier-border: #e0e0e0;
+	--background-modifier-hover: rgba(0, 0, 0, .075);
+	--background-modifier-form-field: #ffffff;
+	--text-normal: #222222;
+	--text-muted: #5c5c5c;
+	--text-faint: #ababab;
+	--text-on-accent: #ffffff;
+	--interactive-normal: #ffffff;
+	--interactive-hover: #f2f2f2;
+	--interactive-accent: #8a6cef;
+	--text-accent: #7a5ce0;
+	--text-error: #e93147;
+	--text-warning: #ec7500;
+	--text-success: #08b94e;
+	--color-orange: #ec7500;
+	--color-yellow: #e0ac00;
+	--color-green: #08b94e;
+	--color-red-rgb: 233, 49, 71;
+	--color-orange-rgb: 236, 117, 0;
+	--color-blue-rgb: 8, 109, 221;
+	--input-shadow: 0 0 0 1px rgba(0, 0, 0, .14), 0 2px 3px rgba(0, 0, 0, .05);
+	--font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", Roboto, sans-serif;
+	--font-monospace: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+	--font-ui-smaller: 12px;
+	--font-ui-small: 13px;
+	--font-ui-medium: 15px;
+	--font-ui-large: 20px;
+	--font-normal: 400;
+	--font-medium: 500;
+	--font-semibold: 600;
+	--line-height-normal: 1.5;
+	--line-height-tight: 1.3;
+	--size-2-1: 2px; --size-2-2: 4px; --size-2-3: 6px;
+	--size-4-1: 4px; --size-4-2: 8px; --size-4-3: 12px; --size-4-4: 16px; --size-4-5: 20px; --size-4-6: 24px; --size-4-8: 32px;
+	--radius-s: 4px; --radius-m: 8px; --radius-l: 12px;
+	--input-height: 30px;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+		--background-primary: #1e1e1e;
+		--background-secondary: #262626;
+		--background-modifier-border: #363636;
+		--background-modifier-hover: rgba(255, 255, 255, .075);
+		--background-modifier-form-field: #2a2a2a;
+		--text-normal: #dadada;
+		--text-muted: #b3b3b3;
+		--text-faint: #666666;
+		--interactive-normal: #3f3f3f;
+		--interactive-hover: #4a4a4a;
+		--text-accent: #a68af9;
+		--text-error: #fb464c;
+		--text-warning: #e9973f;
+		--text-success: #44cf6e;
+		--color-orange: #e9973f;
+		--color-yellow: #e0de71;
+		--color-green: #44cf6e;
+		--color-red-rgb: 251, 70, 76;
+		--color-orange-rgb: 233, 151, 63;
+		--color-blue-rgb: 2, 122, 255;
+		--input-shadow: inset 0 .5px .5px .5px rgba(255, 255, 255, .09), 0 2px 4px rgba(0, 0, 0, .15);
+	}
+}
+:root[data-theme="dark"], :root:has(#bx-theme-dark:checked) {
+	color-scheme: dark;
+	--background-primary: #1e1e1e;
+	--background-secondary: #262626;
+	--background-modifier-border: #363636;
+	--background-modifier-hover: rgba(255, 255, 255, .075);
+	--background-modifier-form-field: #2a2a2a;
+	--text-normal: #dadada;
+	--text-muted: #b3b3b3;
+	--text-faint: #666666;
+	--interactive-normal: #3f3f3f;
+	--interactive-hover: #4a4a4a;
+	--text-accent: #a68af9;
+	--text-error: #fb464c;
+	--text-warning: #e9973f;
+	--text-success: #44cf6e;
+	--color-orange: #e9973f;
+	--color-yellow: #e0de71;
+	--color-green: #44cf6e;
+	--color-red-rgb: 251, 70, 76;
+	--color-orange-rgb: 233, 151, 63;
+	--color-blue-rgb: 2, 122, 255;
+	--input-shadow: inset 0 .5px .5px .5px rgba(255, 255, 255, .09), 0 2px 4px rgba(0, 0, 0, .15);
+}
+
+/* Sin <!doctype> el navegador entra en modo quirks y las tablas no heredan el cuerpo de letra.
+   Obsidian corre en modo estándar: esto solo lo iguala. */
+table { font-size: inherit; font-weight: inherit; line-height: inherit; color: inherit; }
+.leaf button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-1);
+	height: var(--input-height);
+	padding: 0 var(--size-4-3);
+	border: 0;
+	border-radius: var(--radius-s);
+	background: var(--interactive-normal);
+	box-shadow: var(--input-shadow);
+	color: var(--text-normal);
+	font: inherit;
+	font-size: var(--font-ui-small);
+	white-space: nowrap;
+	cursor: pointer;
+}
+.leaf button:hover { background: var(--interactive-hover); }
+.leaf button.mod-cta { background: var(--interactive-accent); color: var(--text-on-accent); }
+.leaf button.clickable-icon { padding: 0 var(--size-2-3); background: transparent; box-shadow: none; color: var(--text-muted); }
+.leaf button.clickable-icon:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.leaf button.mod-link { height: auto; padding: 0; background: none; box-shadow: none; color: var(--text-accent); text-decoration: underline; text-underline-offset: 2px; }
+.leaf input[type="search"], .leaf input[type="time"] {
+	height: var(--input-height);
+	padding: 0 var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font: inherit;
+	font-size: var(--font-ui-small);
+}
+.leaf :focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.leaf progress, .leaf meter { accent-color: var(--interactive-accent); }
+.leaf .callout { --callout-color: var(--color-blue-rgb); margin: 0; padding: var(--size-4-3) var(--size-4-3) var(--size-4-3) var(--size-4-6); border-radius: var(--radius-s); background: rgba(var(--callout-color), .1); }
+.leaf .callout[data-callout="warning"] { --callout-color: var(--color-orange-rgb); }
+.leaf .callout[data-callout="error"] { --callout-color: var(--color-red-rgb); }
+.leaf .callout-title { display: flex; align-items: center; gap: var(--size-4-2); font-weight: var(--font-semibold); color: rgb(var(--callout-color)); }
+.leaf .callout-content { margin-top: var(--size-4-1); color: var(--text-normal); }
+.leaf .callout-content p { margin: 0; }
+.leaf .svg-icon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.leaf .svg-icon.is-small { width: 14px; height: 14px; }
+
+/* ==========================================================================
+ * CAPA 2 · Componentes. Esto es lo que va (o ya está) en styles.css.
+ * Solo variables de Obsidian: CERO colores fijos en esta capa.
+ * Etiquetas: [vivo styles.css:N] ya existe en 3c5502d · [aprobado Venta]
+ * aprobado en docs/diseno/halloween-venta y reutilizado · [NUEVO] propuesta.
+ * ========================================================================== */
+
+.tyrian-product-surface { /* [vivo styles.css:1] */
+	container-type: inline-size;
+	padding: var(--size-4-4);
+	color: var(--text-normal);
+	font-family: var(--font-interface);
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-normal);
+	overflow-x: hidden;
+}
+.sr-only { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Barra de navegación [vivo styles.css:332-354]: <nav> + aria-current, NO tablist. */
+.tyrian-product-shell__nav { display: flex; align-items: flex-end; gap: var(--size-4-1); margin-block-end: var(--size-4-4); border-block-end: 1px solid var(--background-modifier-border); overflow-x: auto; }
+.leaf .tyrian-product-shell__nav button { height: auto; padding: var(--size-4-2) var(--size-4-3); border: 0; border-block-end: 3px solid transparent; border-radius: 0; background: transparent; box-shadow: none; color: var(--text-muted); white-space: nowrap; }
+.leaf .tyrian-product-shell__nav button[aria-current="page"] { border-block-end-color: var(--interactive-accent); color: var(--text-normal); font-weight: var(--font-semibold); }
+/* [NUEVO] Ajustes como icono al final: abre un modal, no una vista. */
+.leaf .tyrian-product-shell__nav .tyrian-product-shell__settings { margin-inline-start: auto; margin-block-end: var(--size-4-1); padding: 0 var(--size-2-3); border-block-end: 0; height: var(--input-height); }
+
+/* Línea de estado [vivo styles.css:2544-2558, hoy solo en Venta] + su hueco bajo la barra [NUEVO]. */
+.tyrian-product-shell__status { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--size-4-1) var(--size-4-2); margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-product-shell__status > span + span::before { content: "·"; margin-inline-end: var(--size-4-2); color: var(--text-faint); }
+.tyrian-product-shell__nav + .tyrian-product-shell__status { margin-block: calc(-1 * var(--size-4-2)) var(--size-4-4); }
+.tyrian-product-shell__status [data-tone="attention"] { color: var(--text-normal); font-weight: var(--font-medium); }
+
+/* Tarjeta de sesión [vivo styles.css:16-320]. */
+.tyrian-companion-session { container-type: inline-size; display: grid; gap: var(--size-4-4); }
+.tyrian-companion-session__header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--size-4-3) var(--size-4-4); }
+.tyrian-companion-session__state { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--size-4-2); margin: 0; font-size: var(--font-ui-large); font-weight: var(--font-semibold); line-height: var(--line-height-tight); }
+.tyrian-companion-session__meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--size-4-2); margin: var(--size-4-1) 0 0; color: var(--text-muted); font-size: var(--font-ui-small); }
+.tyrian-companion-session__clock { font-variant-numeric: tabular-nums; font-weight: var(--font-medium); color: var(--text-normal); }
+.tyrian-companion-session__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--size-4-2); }
+.tyrian-companion-session__badge { display: inline-block; padding: 0 var(--size-4-2); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-normal); line-height: 1.6; }
+.tyrian-companion-session__figures { display: grid; grid-template-columns: repeat(var(--tyrian-figures, 3), minmax(0, 1fr)); gap: var(--size-4-4); margin: 0; }
+.tyrian-companion-session__figure { min-width: 0; margin: 0; }
+.tyrian-companion-session__figure + .tyrian-companion-session__figure { padding-inline-start: var(--size-4-4); border-inline-start: 1px solid var(--background-modifier-border); }
+.tyrian-companion-session__figure dt { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); letter-spacing: .06em; text-transform: uppercase; }
+.tyrian-companion-session__figure dd { margin: var(--size-4-1) 0 0; font-size: var(--font-ui-large); font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; line-height: var(--line-height-tight); overflow-wrap: anywhere; }
+.tyrian-companion-session__figure small { display: block; margin-top: var(--size-2-2); color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; line-height: var(--line-height-tight); }
+.tyrian-companion-session__figure[data-pending="true"] dd { color: var(--text-muted); font-weight: var(--font-medium); }
+.tyrian-companion-session__drawers { display: grid; }
+.tyrian-companion-session__drawer { border-top: 1px solid var(--background-modifier-border); }
+.tyrian-companion-session__drawer > summary { display: flex; align-items: center; gap: var(--size-4-2); padding: var(--size-4-3) 0; list-style: none; cursor: pointer; font-weight: var(--font-medium); }
+.tyrian-companion-session__drawer > summary::-webkit-details-marker { display: none; }
+.tyrian-companion-session__drawer > summary::before { flex: 0 0 auto; width: .6em; color: var(--text-muted); content: "\25B8"; }
+.tyrian-companion-session__drawer[open] > summary::before { transform: rotate(90deg); }
+.tyrian-companion-session__drawer > summary > small { margin-inline-start: auto; color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-normal); text-align: end; }
+.tyrian-companion-session__drawer-body { display: grid; gap: var(--size-4-3); padding: 0 0 var(--size-4-4); }
+.tyrian-companion-session__list { display: grid; margin: 0; padding: 0; list-style: none; }
+.tyrian-companion-session__list li { display: flex; align-items: baseline; justify-content: space-between; gap: var(--size-4-3); padding: var(--size-4-2) 0; border-top: 1px solid var(--background-modifier-border); }
+.tyrian-companion-session__list li:first-child { border-top: 0; }
+.tyrian-companion-session__list strong { font-weight: var(--font-medium); }
+.tyrian-companion-session__list span { color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: end; }
+.tyrian-companion-session__context { margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); } /* [vivo styles.css:213] */
+.tyrian-companion-session__rows { display: grid; grid-template-columns: minmax(7rem, max-content) 1fr; gap: var(--size-4-2) var(--size-4-3); margin: 0; } /* [vivo styles.css:697] */
+.tyrian-companion-session__rows dt { color: var(--text-muted); overflow-wrap: anywhere; }
+.tyrian-companion-session__rows dd { margin-inline-start: 0; min-width: 0; overflow-wrap: anywhere; }
+.tyrian-product-surface .callout-title button { flex: 0 0 auto; margin-inline-start: auto; }
+
+/* [NUEVO] Título del callout en color de texto: el naranja por defecto da 2,95:1 sobre blanco. */
+.tyrian-product-surface .callout-title { color: var(--text-normal); }
+.tyrian-product-surface .callout-title-inner { flex: 1 1 0; min-width: 0; }
+.tyrian-product-surface .callout-title .svg-icon { color: rgb(var(--callout-color)); }
+.tyrian-product-surface .callout-content { color: var(--text-muted); }
+.tyrian-product-surface .callout-actions { display: flex; flex-wrap: wrap; gap: var(--size-4-2); margin-top: var(--size-4-2); }
+
+/* [NUEVO] Recorrido de una operación: TRES pasos (hecho · en curso · falló · pendiente · sin paso). */
+.tyrian-receipt { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--size-4-2); margin: 0; padding: 0; list-style: none; font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-receipt li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 0 var(--size-4-1); align-content: start; padding-block-start: var(--size-4-2); border-block-start: 2px solid var(--background-modifier-border); color: var(--text-muted); }
+.tyrian-receipt li > .svg-icon { grid-row: span 2; margin-top: 1px; }
+.tyrian-receipt li > time, .tyrian-receipt li > small { grid-column: 2; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-receipt li[data-step="done"] { border-block-start-color: var(--text-muted); color: var(--text-normal); }
+.tyrian-receipt li[data-step="done"] > .svg-icon { color: var(--text-success); }
+.tyrian-receipt li[data-step="current"] { border-block-start-color: var(--interactive-accent); color: var(--text-normal); font-weight: var(--font-medium); }
+.tyrian-receipt li[data-step="failed"] { border-block-start-color: var(--text-error); color: var(--text-normal); font-weight: var(--font-medium); }
+.tyrian-receipt li[data-step="failed"] > .svg-icon { color: var(--text-error); }
+.tyrian-receipt li[data-step="skip"] { border-block-start-style: dashed; }
+
+/* [NUEVO] Avisos con su recorrido. */
+.tyrian-companion-session__alerts { display: grid; margin: 0; padding: 0; list-style: none; }
+.tyrian-companion-session__alerts > li { display: grid; gap: var(--size-4-2); padding: var(--size-4-3) 0; border-top: 1px solid var(--background-modifier-border); }
+.tyrian-companion-session__alerts > li:first-child { border-top: 0; padding-top: 0; }
+.tyrian-companion-session__alert-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--size-4-3); }
+.tyrian-companion-session__alert-head strong { font-weight: var(--font-medium); }
+.tyrian-companion-session__alert-head span { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.tyrian-companion-session__why { margin: 0; color: var(--text-muted); }
+.tyrian-companion-session__why strong { color: var(--text-normal); font-variant-numeric: tabular-nums; }
+
+/* [NUEVO] Corregir hora (decisión de David del 24 sep: «la hora se corrige después»). */
+.tyrian-session-fix { display: flex; flex-wrap: wrap; align-items: end; gap: var(--size-4-2) var(--size-4-3); margin: 0; }
+.tyrian-session-fix label { display: grid; gap: var(--size-2-2); color: var(--text-muted); font-size: var(--font-ui-smaller); }
+
+/* Marca de acción [vivo styles.css:2566-2598] + list/keep [NUEVO para Inventario]. */
+.tyrian-action { display: inline-flex; align-items: center; gap: var(--size-4-1); padding: 0 var(--size-4-2); border: 1px solid var(--background-modifier-border); border-inline-start: 4px solid var(--tyrian-action-mark, var(--text-faint)); border-radius: var(--radius-s); color: var(--text-normal); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); line-height: 1.8; white-space: nowrap; }
+.tyrian-action[data-action="sell"] { --tyrian-action-mark: var(--color-green); }
+.tyrian-action[data-action="hold"] { --tyrian-action-mark: var(--interactive-accent); }
+.tyrian-action[data-action="deposit"] { --tyrian-action-mark: var(--text-muted); }
+.tyrian-action[data-action="open"] { --tyrian-action-mark: var(--text-accent); }
+.tyrian-action[data-action="nodata"] { --tyrian-action-mark: var(--background-modifier-border); border-style: dashed; color: var(--text-muted); font-weight: var(--font-medium); }
+.tyrian-action[data-action="list"] { --tyrian-action-mark: var(--color-green); border-inline-start-style: double; } /* [NUEVO] */
+.tyrian-action[data-action="keep"] { --tyrian-action-mark: var(--text-normal); } /* [NUEVO] */
+
+/* Icono caído [vivo styles.css:2600-2613]: iniciales con borde discontinuo. */
+.tyrian-inventory__icon { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: var(--radius-s); background: var(--background-secondary); border: 1px dashed var(--text-muted); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); }
+
+/* Bloque de espacio [aprobado Venta: maqueta.html:190-206]; el código lo pinta hoy sin la marca lateral. */
+.tyrian-inventory-advisor__storage-space { display: grid; gap: var(--size-4-1); padding: var(--size-4-3) var(--size-4-4); border-inline-start: 3px solid var(--interactive-accent); border-radius: var(--radius-s); background: var(--background-secondary); }
+.tyrian-inventory-advisor__storage-space[data-low-space="true"] { border-inline-start-color: var(--color-orange); }
+.tyrian-inventory-advisor__storage-space p { margin: 0; overflow-wrap: anywhere; }
+.tyrian-inventory-advisor__storage-verdict strong { font-weight: var(--font-semibold); }
+.tyrian-inventory-advisor__storage-stores, .tyrian-inventory-advisor__storage-materials { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-inventory-advisor__storage-meter { display: block; inline-size: 100%; height: var(--size-4-2); }
+.tyrian-inventory-advisor__storage-meter::-webkit-meter-bar { height: var(--size-4-2); border: 0; border-radius: var(--radius-s); background: var(--background-modifier-border); }
+.tyrian-inventory-advisor__storage-meter::-webkit-meter-optimum-value,
+.tyrian-inventory-advisor__storage-meter::-webkit-meter-suboptimum-value { border-radius: var(--radius-s); background: var(--text-muted); }
+.tyrian-inventory-advisor__storage-meter::-webkit-meter-even-less-good-value { border-radius: var(--radius-s); background: var(--color-orange); }
+
+/* Resumen-filtro «Qué hacer ahora» [vivo: botones aria-pressed, inventory-advisor-view.ts:1096-1122], en fila compacta [NUEVO]. */
+.tyrian-chips { display: flex; flex-wrap: wrap; gap: var(--size-4-1); margin: 0; padding: 0; list-style: none; }
+.leaf .tyrian-chips button { height: 26px; padding: 0 var(--size-4-2); border-radius: var(--radius-m); font-size: var(--font-ui-smaller); }
+.leaf .tyrian-chips button[aria-pressed="true"] { box-shadow: 0 0 0 1.5px var(--interactive-accent); font-weight: var(--font-semibold); }
+.tyrian-chips button span { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* [NUEVO] Historial: una sola tabla, calidad con forma. */
+.tyrian-session-history { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--size-4-3); container-type: inline-size; }
+.tyrian-session-history__summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border-block: 1px solid var(--background-modifier-border); }
+.tyrian-session-history__metric { display: grid; align-content: start; gap: var(--size-4-1); min-width: 0; margin: 0; padding: var(--size-4-3); border-inline-end: 1px solid var(--background-modifier-border); }
+.tyrian-session-history__metric:last-child { border-inline-end: 0; }
+.tyrian-session-history__metric dt { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); letter-spacing: .04em; text-transform: uppercase; }
+.tyrian-session-history__metric dd { margin: 0; font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tyrian-session-history__metric small { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-session-history h3 { margin: var(--size-4-2) 0 0; font-size: var(--font-ui-medium); }
+.tyrian-session-history table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.tyrian-session-history caption { padding-block: var(--size-4-2); color: var(--text-muted); text-align: start; font-size: var(--font-ui-smaller); }
+.tyrian-session-history th, .tyrian-session-history td { padding: var(--size-4-2); border-block-end: 1px solid var(--background-modifier-border); text-align: start; vertical-align: top; }
+.tyrian-session-history thead th { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); }
+.tyrian-session-history .is-num { text-align: end; }
+.tyrian-session-history tbody th { font-weight: var(--font-medium); }
+.tyrian-session-history td small, .tyrian-session-history th small { display: block; color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-normal); }
+.tyrian-session-history__quality::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-inline-end: var(--size-4-1); border-radius: 50%; border: 1.5px solid currentColor; }
+.tyrian-session-history__quality[data-quality="exact"]::before { background: currentColor; }
+.tyrian-session-history__quality[data-quality="estimated"]::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+.tyrian-session-history__quality[data-quality="incomplete"]::before { border-style: dashed; }
+.tyrian-session-history__hole { padding: 0 var(--size-2-2); border: 1px dashed var(--text-muted); border-radius: var(--radius-s); color: var(--text-muted); font-weight: var(--font-normal); }
+
+/* [NUEVO] Inventario: una sola lista por objeto (subgrid). */
+.tyrian-inventory { display: grid; gap: var(--size-4-4); container-type: inline-size; }
+.tyrian-inventory__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); }
+.tyrian-inventory__bar input[type="search"] { flex: 1 1 12rem; min-width: 0; }
+.tyrian-inventory__list { display: grid; grid-template-columns: minmax(9rem, 1.4fr) minmax(6.5rem, .8fr) minmax(11rem, 1.1fr) minmax(6.5rem, .8fr) minmax(9rem, 1.8fr) auto; margin: 0; padding: 0; list-style: none; border-block-start: 1px solid var(--background-modifier-border); font-variant-numeric: tabular-nums; }
+.tyrian-inventory__head, .tyrian-inventory__row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: var(--size-4-3); align-items: start; }
+.tyrian-inventory__head { padding: var(--size-4-2); border-block-end: 1px solid var(--background-modifier-border); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); }
+.tyrian-inventory__head .is-num { text-align: end; }
+.tyrian-inventory__row { grid-template-rows: auto 1fr; padding: var(--size-4-3) var(--size-4-2); border-block-end: 1px solid var(--background-modifier-border); }
+.tyrian-inventory__row:hover { background: var(--background-modifier-hover); }
+.tyrian-inventory__row > .c-item { grid-column: 1; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-qty { grid-column: 2; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-action { grid-column: 3; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-money { grid-column: 4; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-why { grid-column: 5; grid-row: 1; }
+.tyrian-inventory__row > .c-data { grid-column: 5; grid-row: 2; margin-top: var(--size-4-1); }
+.tyrian-inventory__row > .c-keep { grid-column: 6; grid-row: 1 / span 2; }
+.tyrian-inventory__cell { min-width: 0; overflow-wrap: anywhere; }
+.tyrian-inventory__item { display: flex; align-items: flex-start; gap: var(--size-4-2); }
+.tyrian-inventory__item strong { display: block; font-weight: var(--font-semibold); }
+.tyrian-inventory__item small, .tyrian-inventory__cell small { display: block; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__qty { display: grid; }
+.tyrian-inventory__qty b { font-weight: var(--font-semibold); }
+.tyrian-inventory__qty span { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__money { text-align: end; font-weight: var(--font-semibold); }
+.tyrian-inventory__money[data-unknown="true"] { color: var(--text-muted); font-weight: var(--font-normal); }
+.tyrian-inventory__why { color: var(--text-muted); }
+.tyrian-inventory__data { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__data [data-stale="true"] { color: var(--text-normal); }
+.tyrian-inventory__data [data-stale="true"]::before { content: "\25CB\00a0"; }
+.tyrian-inventory__keep { display: grid; justify-items: end; gap: var(--size-2-2); }
+.leaf .tyrian-inventory__keep button[aria-pressed="true"] { box-shadow: 0 0 0 1.5px var(--interactive-accent); font-weight: var(--font-semibold); }
+.tyrian-inventory__keep small { min-height: 1.3em; color: var(--text-muted); font-size: var(--font-ui-smaller); text-align: end; }
+.tyrian-action-when { display: block; margin-top: var(--size-2-2); color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--size-4-2); margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+
+/* Responsive por contenedor: los cortes de styles.css (759 / 520 / 400). */
+@container (max-width: 759px) {
+	.tyrian-inventory__list { grid-template-columns: minmax(0, 1fr) auto; }
+	.tyrian-inventory__head { display: none; }
+	.tyrian-inventory__row { grid-template-rows: none; row-gap: var(--size-4-1); padding-inline: 0; }
+	.tyrian-inventory__row > .c-item { grid-column: 1; grid-row: 1; }
+	.tyrian-inventory__row > .c-money { grid-column: 2; grid-row: 1; }
+	.tyrian-inventory__row > .c-action { grid-column: 1 / -1; grid-row: 2; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-qty { grid-column: 1 / -1; grid-row: 3; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-why { grid-column: 1 / -1; grid-row: 4; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-data { grid-column: 1; grid-row: 5; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-keep { grid-column: 2; grid-row: 5; align-self: end; }
+	.tyrian-inventory__qty { display: flex; flex-wrap: wrap; gap: 0 var(--size-4-2); }
+	.tyrian-inventory__qty > * + *::before { content: "·"; margin-inline-end: var(--size-4-2); color: var(--text-faint); }
+	.tyrian-action-when { display: inline; margin: 0 0 0 var(--size-4-2); }
+}
+@container (max-width: 520px) {
+	.tyrian-companion-session__figures { grid-template-columns: minmax(0, 1fr); gap: var(--size-4-3); }
+	.tyrian-companion-session__figure + .tyrian-companion-session__figure { padding-inline-start: 0; padding-block-start: var(--size-4-3); border-inline-start: 0; border-block-start: 1px solid var(--background-modifier-border); }
+	.tyrian-receipt { grid-template-columns: minmax(0, 1fr); gap: 0; }
+	.tyrian-receipt li { grid-template-columns: 16px minmax(0, 1fr) auto; padding-block: var(--size-4-1); border-block-start: 0; border-inline-start: 2px solid var(--background-modifier-border); padding-inline-start: var(--size-4-2); }
+	.tyrian-receipt li[data-step="done"] { border-inline-start-color: var(--text-muted); }
+	.tyrian-receipt li[data-step="current"] { border-inline-start-color: var(--interactive-accent); }
+	.tyrian-receipt li[data-step="failed"] { border-inline-start-color: var(--text-error); }
+	.tyrian-receipt li[data-step="skip"] { border-inline-start-style: dashed; }
+	.tyrian-receipt li > .svg-icon { grid-row: auto; }
+	.tyrian-receipt li > time, .tyrian-receipt li > small { grid-column: 3; text-align: end; }
+	.tyrian-session-history__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.tyrian-session-history__metric:nth-child(2) { border-inline-end: 0; }
+	.tyrian-session-history__metric:nth-child(-n + 2) { border-block-end: 1px solid var(--background-modifier-border); }
+	.tyrian-session-history .is-wide { display: none; }
+	.tyrian-session-history th, .tyrian-session-history td { padding-inline: var(--size-4-1); }
+	.tyrian-companion-session__rows { grid-template-columns: minmax(0, 1fr); gap: 0 0; }
+	.tyrian-companion-session__rows dd + dt { margin-top: var(--size-4-2); }
+}
+@container (max-width: 400px) {
+	.tyrian-product-shell__status { display: grid; }
+	.tyrian-product-shell__status > span + span::before { content: none; }
+	.tyrian-companion-session__header { grid-template-columns: minmax(0, 1fr); }
+	.tyrian-companion-session__actions { justify-content: stretch; }
+	.tyrian-companion-session__actions button { flex: 1 1 auto; }
+	.tyrian-product-surface .callout-title { flex-wrap: wrap; }
+	.tyrian-product-surface .callout-title button { order: 3; width: 100%; margin-inline-start: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.tyrian-product-surface *, .tyrian-product-surface *::before { transition: none !important; animation: none !important; }
+}
+
+/* ==========================================================================
+ * CAPA 0 · Marco del boceto (láminas, etiquetas de estado, notas,
+ * conmutadores). No se implementa.
+ * ========================================================================== */
+html, body { background: var(--background-secondary); color: var(--text-normal); }
+body { margin: 0; }
+.bx { max-width: 1240px; margin: 0 auto; padding: 0 16px 64px; font-family: var(--font-interface); font-size: 14px; line-height: 1.5; }
+.bx-top { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 0 -16px 20px; padding: 10px 16px; background: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border); font-size: 13px; }
+.bx-top b { font-weight: 600; }
+.bx-top fieldset { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin: 0; padding: 0; border: 0; min-width: 0; }
+.bx-top legend { float: left; margin-right: 6px; color: var(--text-muted); }
+.bx-top label { display: inline-flex; gap: 4px; align-items: center; min-height: 28px; cursor: pointer; }
+.bx-top label[hidden] { display: none; }
+.bx > h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.25; }
+.bx > h2 { margin: 44px 0 6px; padding-top: 14px; border-top: 2px solid var(--text-normal); font-size: 18px; }
+.bx-lede { max-width: 72ch; margin: 0 0 10px; color: var(--text-muted); }
+.bx-spec { margin: 28px 0 0; }
+.bx-spec > header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 8px; }
+.bx-spec > header h3 { margin: 0; font-size: 15px; }
+.bx-tag { display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 1.5px solid; border-radius: 999px; color: var(--text-normal); font-size: 12px; font-weight: 600; line-height: 22px; white-space: nowrap; }
+.bx-tag::before { font-weight: 700; }
+.bx-tag[data-s="impl"] { border-color: var(--text-success); }
+.bx-tag[data-s="impl"]::before { content: "\2713"; color: var(--text-success); }
+.bx-tag[data-s="prop"] { border-style: dashed; border-color: var(--interactive-accent); }
+.bx-tag[data-s="prop"]::before { content: "\25CC"; color: var(--text-accent); }
+.bx-tag[data-s="dec"] { border-color: var(--text-accent); }
+.bx-tag[data-s="dec"]::before { content: "\25CF"; color: var(--text-accent); }
+.bx-tag[data-s="obs"] { border-color: var(--text-faint); color: var(--text-muted); text-decoration: line-through; }
+.bx-tag[data-s="obs"]::before { content: "\2715"; text-decoration: none; }
+.bx-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 0 0 10px; padding: 0; list-style: none; color: var(--text-muted); font-size: 13px; }
+.bx-legend li { display: inline-flex; gap: 6px; align-items: center; }
+.bx-pair { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px; overflow-x: auto; padding-bottom: 4px; }
+.leaf { flex: 0 0 auto; width: 860px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-primary); overflow: hidden; }
+.leaf.is-narrow { width: 320px; }
+.leaf-title { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--background-modifier-border); color: var(--text-muted); font-size: 12px; font-family: var(--font-interface); }
+.leaf-title .leaf-w::after { content: "central · 860 px"; }
+.leaf.is-narrow .leaf-title .leaf-w::after { content: "lateral · 320 px"; }
+.leaf-sub { margin: 0; padding: 6px 16px; border-block: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-muted); font-size: 12px; font-family: var(--font-interface); }
+.leaf-sub:first-child { border-block-start: 0; }
+.leaf-sub + .tyrian-product-surface > .tyrian-product-shell__status:first-child:not(:last-child) { margin-block-end: var(--size-4-4); }
+:root:has(#bx-w-narrow:checked) .leaf { width: 320px; }
+:root:has(#bx-w-narrow:checked) .leaf .leaf-title .leaf-w::after { content: "lateral · 320 px"; }
+:root:has(#bx-w-narrow:checked) .leaf.is-narrow, :root:has(#bx-w-wide:checked) .leaf.is-narrow { display: none; }
+.bx-notes { max-width: 860px; margin: 10px 0 0; padding: 0 0 0 18px; color: var(--text-muted); font-size: 13px; }
+.bx-notes li { margin: 3px 0; }
+.bx-notes b { color: var(--text-normal); font-weight: 600; }
+.bx-mine { padding: 0 5px; border: 1px solid var(--text-accent); border-radius: 3px; color: var(--text-normal); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.bx-src { padding: 0 5px; border-radius: 3px; background: var(--background-modifier-hover); color: var(--text-normal); font-size: 11px; white-space: nowrap; }
+.bx-scroll { max-width: 100%; overflow-x: auto; }
+.bx-delta { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 13px; }
+.bx-delta caption { padding: 4px 0 6px; color: var(--text-muted); text-align: start; }
+.bx-delta th, .bx-delta td { padding: 6px 10px; border-bottom: 1px solid var(--background-modifier-border); text-align: left; vertical-align: top; }
+.bx-delta th { color: var(--text-muted); font-weight: 600; }
+.bx-delta td:nth-child(2) { white-space: nowrap; }
+.bx code { font-family: var(--font-monospace); font-size: 12px; overflow-wrap: anywhere; }
+.bx-ref { display: grid; gap: 10px; max-width: 860px; padding: 16px 18px; border: 1px solid var(--background-modifier-border); border-inline-start: 4px solid var(--text-success); border-radius: 8px; background: var(--background-primary); }
+.bx-ref p, .bx-ref ul { margin: 0; }
+.bx-ref ul { padding-left: 18px; }
+.bx-questions { max-width: 860px; margin: 0; padding-left: 22px; }
+.bx-questions > li { margin: 0 0 14px; }
+.bx-questions p { margin: 4px 0 0; color: var(--text-muted); }
+.bx-questions b { color: var(--text-normal); }
+.ej { text-decoration: underline dotted var(--text-accent) 2px; text-underline-offset: 3px; }
+:root:has(#bx-examples:not(:checked)) .ej { text-decoration: none; }
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+	<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+	<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+	<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+	<symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+	<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+	<symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol>
+	<symbol id="i-settings" viewBox="0 0 24 24"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+	<symbol id="i-unplug" viewBox="0 0 24 24"><path d="m19 5 3-3"/><path d="m2 22 3-3"/><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></symbol>
+	<symbol id="i-pending" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3.5 3"/></symbol>
+	<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+	<symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"/><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></symbol>
+	<symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+</svg>
+<div class="bx" lang="es">
+
+<div class="bx-top" role="group" aria-label="Controles del boceto">
+	<b>H18.31 · boceto</b>
+	<fieldset><legend>Tema</legend>
+		<label><input type="radio" name="bx-theme" id="bx-theme-auto" checked> Sistema</label>
+		<label><input type="radio" name="bx-theme" id="bx-theme-light"> Claro</label>
+		<label><input type="radio" name="bx-theme" id="bx-theme-dark"> Oscuro</label>
+	</fieldset>
+	<fieldset><legend>Panel</legend>
+		<label data-both hidden><input type="radio" name="bx-width" id="bx-w-both" checked> Los dos</label>
+		<label><input type="radio" name="bx-width" id="bx-w-narrow"> Lateral 320</label>
+		<label><input type="radio" name="bx-width" id="bx-w-wide"> Central 860</label>
+	</fieldset>
+	<label><input type="checkbox" id="bx-examples" checked> Subrayar cifras de ejemplo</label>
+</div>
+
+<h1>Tyrian Companion · Sesión, Inventario y Venta</h1>
+<p class="bx-lede">Pieza de aprobación de H18.31, actualizada sobre <code>main@3c5502d</code> (0.2.3, 26 sep 2026). Modo componente: todo sale de las variables de Obsidian y de piezas que ya tiene <code>styles.css</code> o que David aprobó en la maqueta de Venta. Cada lámina es un panel de Obsidian con el mismo HTML en el lateral (320 px) y en el centro (860 px).</p>
+<p class="bx-lede">Nombres e IDs de objeto reales (36038, 47909, 36059, 43320…). Los textos que ya existen se copian del catálogo <code>i18n-runtime-catalog.ts</code>. <span class="ej">Lo subrayado así</span> es cifra de ejemplo en el orden de magnitud real, no un dato.</p>
+<ul class="bx-legend" aria-label="Estados de cada lámina y pieza">
+	<li><span class="bx-tag" data-s="impl">implementado</span> ya está en 3c5502d</li>
+	<li><span class="bx-tag" data-s="dec">decidido, sin implementar</span> lo decidió David; falta código</li>
+	<li><span class="bx-tag" data-s="prop">propuesta pendiente de aprobar</span></li>
+	<li><span class="bx-tag" data-s="obs">obsoleto</span> se retira del boceto</li>
+</ul>
+<p class="bx-lede">Notas: <span class="bx-src">David 24 sep</span> decisión suya · <span class="bx-src">Auditoría §x</span> exigencia de la auditoría final · <span class="bx-mine">Decisión mía</span> propuesta mía, se puede tumbar.</p>
+
+<!-- ======================================================================= -->
+<h2 id="delta">0 · Qué hay ya en 3c5502d, lámina a lámina</h2>
+<p class="bx-lede">Medido en el código, no en la ficha anterior. Las rutas son de <code>src/</code> salvo que se diga otra cosa.</p>
+<div class="bx-scroll"><table class="bx-delta">
+	<thead><tr><th scope="col">Lámina</th><th scope="col">Estado</th><th scope="col">Ya implementado</th><th scope="col">Obsoleto</th><th scope="col">Queda por aprobar e implementar</th></tr></thead>
+	<tbody>
+		<tr><th scope="row">1 · Navegación</th><td><span class="bx-tag" data-s="prop">propuesta</span></td><td><code>&lt;nav&gt;</code> con Sesión · Inventario · Venta · Ajustes y <code>aria-current</code> (<code>ui/product-shell.ts:43-47,194-198</code>). Línea de estado solo en Venta (<code>ui/sale-view.ts:61-93</code>).</td><td><code>role="tablist"</code> con flechas: cada botón abre otra hoja (<code>main.ts:4691-4710</code>).</td><td>Línea de estado en Sesión e Inventario. Ajustes como icono.</td></tr>
+		<tr><th scope="row">2.1 · En curso</th><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>Tarjeta con cajones fijos Detalle · Avisos · Historial (<code>ui/session-card.ts:142-145</code>). Cifras «Valor observado», «Sacos» y «Última consulta» (<code>ui/companion-view.ts:857-878</code>). Marcado por el addon y etiqueta del Laberinto, solo en lógica (<code>sessions/ingame-session-marker.ts:5-21</code>). Motivos H18.32 de la comparación de botín (<code>ui/halloween-alert-panel.ts:177-198</code>).</td><td>Paso «Recibido en el juego»: el protocolo v2 no tiene acuse (<code>docs/SPEC-puente-ingame.md:224</code>).</td><td>«Ganado» y «Lectura de la cuenta» (decidido). Insignia Laberinto y «la marcó Nexus». Avisos primero. Cajón Botín. Recorrido de 3 pasos.</td></tr>
+		<tr><th scope="row">2.2 · Espera de cierre</th><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>«Terminando sesión» con «Captura final en» y cuenta atrás. Botón «Capturar ya» desde el 1 sep (<code>ui/companion-view.ts:606-631</code>).</td><td>La nota «sin botón Cerrar ya»: el botón ya existía.</td><td>Frase de por qué se espera, a la vista. Recorrido. Cifras provisionales.</td></tr>
+		<tr><th scope="row">2.3 · Fallo al cerrar</th><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>Reintento solo y «Reintentar finalizar sesión». «Abandonar sesión» con confirmación. «Reintentar guardado» (<code>ui/companion-view.ts:611-622,646-655,699-707</code>).</td><td>—</td><td>Texto sin código crudo. «Copiar detalle técnico». Recorrido.</td></tr>
+		<tr><th scope="row">2.4 · Sin señal</th><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>Regla de 10 min y fin en la hora observada, solo en lógica (<code>sessions/ingame-session-marker.ts:8-9</code>).</td><td>—</td><td>Todo el estado en pantalla: hoy la tarjeta no enseña la presencia del addon.</td></tr>
+		<tr><th scope="row">2.5 · Sin sesión e historial</th><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>«Listo para empezar». Historial dentro de su cajón, cargado a mano. Subtotal conocido y «N sin valorar». Rendimiento por actividad · build · calidad (<code>ui/session-history-panel.ts:73-100,151-274,343-355</code>).</td><td>Fila «si falta una, Desconocido» del antes. Aún queda el texto viejo en <code>core/i18n-runtime-catalog.ts:1060</code>.</td><td>Historial fuera del cajón y leído al abrir. Una tabla, no tabla y tarjetas. Corregir hora.</td></tr>
+		<tr><th scope="row">3.1 · Poco espacio</th><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>Bloque de espacio compartido con Venta, umbral 20 (<code>ui/inventory-advisor-view.ts:984-1039</code>, <code>core/settings.ts:35-39</code>). Orden por huecos y «Libera N huecos». «Conservar» por fila. Tres relojes y vender-o-esperar en texto (<code>:1227-1243,1529-1563</code>).</td><td>Tres <code>meter</code> por almacén: la maqueta de Venta aprobó uno.</td><td>Una lista con <code>subgrid</code> (hoy tabla y tarjetas, <code>:970-971</code>). Marca de acción (hoy color como texto, <code>styles.css:2146-2170</code>). «Esperar» en vez de «Conservar» para <code>hold</code>. «Conservar» reversible.</td></tr>
+		<tr><th scope="row">3.2 · Estados del análisis</th><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>«Se conserva el último resultado válido…» (<code>ui/inventory-advisor-view.ts:1427-1434</code>). Progreso solo mientras corre.</td><td>—</td><td>Quitar «Código seguro: …» (<code>core/i18n-runtime-catalog.ts:387-399</code>) y «Confirmar cambios antes de escribir» (<code>:452-454</code>). Análisis antiguo con fecha.</td></tr>
+		<tr><th scope="row">4.1 · 4.2 · Venta</th><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td>Pestaña Venta de la maqueta aprobada el 26 sep (<code>ui/sale-view.ts</code>, <code>sale-view-model.ts</code>, <code>sale-item-view.ts</code>). Estado H18.34 de reglas caducadas (<code>ui/sale-view.ts:101-116</code>).</td><td>Las dos láminas: las sustituye la maqueta aprobada.</td><td>Nada en este boceto.</td></tr>
+	</tbody>
+</table></div>
+
+<!-- ======================================================================= -->
+<h2 id="navegacion">1 · Navegación: las tres pestañas y su línea de estado</h2>
+<p class="bx-lede">La barra ya está en el código y su semántica es la buena: cada botón abre otra hoja de Obsidian, así que es navegación (<code>&lt;nav&gt;</code> + <code>aria-current="page"</code>), no un <code>tablist</code>. Lo que falta es que las tres pestañas digan igual qué han leído y cuándo.</p>
+
+<section class="bx-spec" aria-label="Lámina 1, navegación">
+	<header><h3>1 · Barra y línea de estado de cada pestaña</h3><span class="bx-tag" data-s="prop">propuesta pendiente de aprobar</span></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span class="leaf-w"></span></div>
+		<p class="leaf-sub">Pestaña Sesión · jue 24 sep, 21:46</p>
+		<div class="tyrian-product-surface">
+			<nav class="tyrian-product-shell__nav" aria-label="Tyrian Companion"><button aria-current="page">Sesión</button><button aria-current="false">Inventario</button><button aria-current="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes de Tyrian Companion" title="Ajustes"><svg class="svg-icon" aria-hidden="true"><use href="#i-settings"/></svg></button></nav>
+			<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span>Cuenta leída a las 21:36</span><span>siguiente hacia las 21:47</span></p>
+			<p class="tyrian-companion-session__state">Sesión activa <span class="tyrian-companion-session__badge">la marcó Nexus</span></p>
+		</div>
+		<p class="leaf-sub">Pestaña Inventario</p>
+		<div class="tyrian-product-surface">
+			<nav class="tyrian-product-shell__nav" aria-label="Tyrian Companion" inert><button aria-current="false">Sesión</button><button aria-current="page">Inventario</button><button aria-current="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes de Tyrian Companion"><svg class="svg-icon" aria-hidden="true"><use href="#i-settings"/></svg></button></nav>
+			<p class="tyrian-product-shell__status" role="status"><span>Analizado hoy a las 21:02</span><span>Notas guardadas a las 21:03</span></p>
+			<section class="tyrian-inventory-advisor__storage-space" aria-label="Espacio en la cuenta" data-low-space="true">
+				<p class="tyrian-inventory-advisor__storage-verdict"><strong>Poco espacio:</strong> <span class="ej">9</span> huecos libres entre bolsas y banco (aviso con 20 o menos). Primero lo que libera huecos.</p>
+			</section>
+		</div>
+		<p class="leaf-sub">Pestaña Venta · texto vivo de <code>sale-view.ts:61-93</code></p>
+		<div class="tyrian-product-surface">
+			<nav class="tyrian-product-shell__nav" aria-label="Tyrian Companion" inert><button aria-current="false">Sesión</button><button aria-current="false">Inventario</button><button aria-current="page">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes de Tyrian Companion"><svg class="svg-icon" aria-hidden="true"><use href="#i-settings"/></svg></button></nav>
+			<p class="tyrian-product-shell__status" role="status"><span>Precios leídos a las 07:35, hace 3 min</span><span>Valen hasta las 07:50</span><span>Halloween empieza el 13 oct: faltan 17 días</span></p>
+			<p class="tyrian-companion-session__context">El resto de la pestaña es la maqueta aprobada: lámina 4.</p>
+		</div>
+	</div>
+	</div>
+	<div class="bx-scroll"><table class="bx-delta">
+		<caption>Piezas de la lámina</caption>
+		<thead><tr><th scope="col">Pieza</th><th scope="col">Estado</th><th scope="col">Dónde</th></tr></thead>
+		<tbody>
+			<tr><td>Barra <code>&lt;nav&gt;</code>, trazo de 3 px en acento, «Venta» como nombre corto</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/product-shell.ts:43-47</code>, <code>styles.css:332-354</code>, <code>core/i18n-runtime-catalog.ts:997</code></td></tr>
+			<tr><td>Línea de estado de Venta</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/sale-view.ts:61-93</code>, <code>styles.css:2544-2558</code></td></tr>
+			<tr><td>Línea de estado en Sesión e Inventario, bajo la barra</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>misma clase <code>.tyrian-product-shell__status</code></td></tr>
+			<tr><td>Ajustes como botón de icono al final de la barra</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy es un cuarto botón de texto (<code>ui/product-shell.ts:47</code>)</td></tr>
+			<tr><td><code>role="tablist"</code>, flechas, Inicio y Fin</td><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td>cada botón abre otra hoja: <code>main.ts:4691-4710</code></td></tr>
+		</tbody>
+	</table></div>
+	<ul class="bx-notes">
+		<li><b>Se queda <code>&lt;nav&gt;</code> con <code>aria-current</code>.</b> Un <code>tablist</code> promete paneles dentro de la misma vista, y aquí cada botón abre otra hoja de Obsidian. Con un lector de pantalla, las flechas moverían el foco a algo que no existe. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>La misma línea de estado en las tres pestañas.</b> Venta ya dice qué leyó y hasta cuándo vale. Sesión dirá si el addon responde y cuándo se leyó la cuenta. Inventario dirá cuándo se analizó y cuándo se guardaron las notas. <span class="bx-mine">Decisión mía (24 sep, sigue viva)</span></li>
+		<li><b>Ajustes sale como icono.</b> Abre un modal, no una vista: con aspecto de pestaña promete un sitio al que no lleva. <span class="bx-mine">Decisión mía (24 sep, sigue viva)</span></li>
+		<li><b>«Sesión», en singular.</b> Es el nombre implementado. La maqueta de Venta escribió «Sesiones», pero esa barra quedó fuera de su alcance (<code>docs/diseno/halloween-venta/FICHA.md</code>, decisión 7). No se propone renombrar.</li>
+	</ul>
+</section>
+
+<!-- ======================================================================= -->
+<h2 id="sesion">2 · Sesión</h2>
+<p class="bx-lede">La sesión sirve para ver cuánto has ganado. La marca el addon (inicio y fin) y la hora se corrige después. Nada pide confirmación. <span class="bx-src">David 24 sep</span></p>
+
+<!-- 2.1 -->
+<section class="bx-spec" aria-label="Lámina 2.1, sesión en curso en el Laberinto">
+	<header><h3>2.1 · En curso en el Laberinto, con avisos</h3><span class="bx-tag" data-s="prop">propuesta pendiente de aprobar</span></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>sáb 17 oct 2026, 22:05</span><span class="leaf-w"></span></div>
+		<div class="tyrian-product-surface">
+			<nav class="tyrian-product-shell__nav" aria-label="Tyrian Companion" inert><button aria-current="page">Sesión</button><button aria-current="false">Inventario</button><button aria-current="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes de Tyrian Companion"><svg class="svg-icon" aria-hidden="true"><use href="#i-settings"/></svg></button></nav>
+			<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span>Mapa del Laberinto</span><span>Cuenta leída a las 22:01</span></p>
+			<section class="tyrian-companion-session" aria-label="Sesión de farmeo">
+				<header class="tyrian-companion-session__header">
+					<div>
+						<h2 class="tyrian-companion-session__state">Sesión activa <span class="tyrian-companion-session__badge">Laberinto</span></h2>
+						<p class="tyrian-companion-session__meta"><span class="tyrian-companion-session__clock">55:12</span><span>· Astra Uno</span><span>· la marcó Nexus</span></p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button class="mod-cta">Terminar</button></div>
+				</header>
+				<dl class="tyrian-companion-session__figures">
+					<div class="tyrian-companion-session__figure"><dt>Ganado</dt><dd class="ej">14g 22s 10c</dd><small><span class="ej">14,1–16,2</span> g/h · vendiendo ya</small></div>
+					<div class="tyrian-companion-session__figure"><dt>Sacos</dt><dd class="ej">212</dd><small><span class="ej">206–240</span> sacos/h</small></div>
+					<div class="tyrian-companion-session__figure" title="La API de cuenta responde desde una caché de 5 a 10 minutos."><dt>Lectura de la cuenta</dt><dd>hace 4 min</dd><small>22:01 · siguiente hacia las 22:07</small></div>
+				</dl>
+				<p class="tyrian-product-shell__status"><span>Saco de Halloween en Venta: <span class="tyrian-action" data-action="sell">Vender ahora</span></span><span><button class="mod-link">Ver en Venta</button></span></p>
+				<div class="tyrian-companion-session__drawers">
+					<details class="tyrian-companion-session__drawer" open><summary>Avisos <small>2 · 1 sin enviar al juego</small></summary>
+						<div class="tyrian-companion-session__drawer-body">
+							<p class="tyrian-companion-session__context">Avisa si el valor total supera el umbral de Ajustes, o si desbloquea una skin o mini.</p>
+							<ul class="tyrian-companion-session__alerts">
+								<li><div class="tyrian-companion-session__alert-head"><strong>Barra de caramelo ×3</strong><span class="ej">12g 24s 00c</span></div>
+									<ol class="tyrian-receipt" aria-label="Recorrido del aviso">
+										<li data-step="done"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-check"/></svg>Visto en la cuenta<time>21:58</time></li>
+										<li data-step="done"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-check"/></svg>Enviado a Nexus<time>21:58</time></li>
+										<li data-step="skip"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-minus"/></svg>En la nota<small>al cerrar</small></li>
+									</ol>
+								</li>
+								<li><div class="tyrian-companion-session__alert-head"><strong>Barra de caramelo ×2</strong><span class="ej">8g 16s 00c</span></div>
+									<ol class="tyrian-receipt" aria-label="Recorrido del aviso">
+										<li data-step="done"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-check"/></svg>Visto en la cuenta<time>22:04</time></li>
+										<li data-step="failed"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-x"/></svg>No llegó a Nexus<small>sin conexión: solo escritorio</small></li>
+										<li data-step="skip"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-minus"/></svg>En la nota<small>al cerrar</small></li>
+									</ol>
+								</li>
+							</ul>
+							<dl class="tyrian-companion-session__rows"><dt>Comparación de botín</dt><dd>Sesión ignorada: no desaparecieron bolsas en el cambio neto.</dd></dl>
+						</div>
+					</details>
+					<details class="tyrian-companion-session__drawer"><summary>Botín <small>9 objetos · 1 sin precio</small></summary></details>
+					<details class="tyrian-companion-session__drawer"><summary>Detalle <small>Detección activa · próxima 22:07</small></summary></details>
+				</div>
+			</section>
+		</div>
+	</div>
+	</div>
+	<div class="bx-scroll"><table class="bx-delta">
+		<caption>Piezas de la lámina</caption>
+		<thead><tr><th scope="col">Pieza</th><th scope="col">Estado</th><th scope="col">Dónde</th></tr></thead>
+		<tbody>
+			<tr><td>Cabecera «Sesión activa», reloj y personaje, «Terminar»</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/companion-view.ts:592-603</code></td></tr>
+			<tr><td>Cifra «Sacos» con su banda por hora</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/companion-view.ts:871-874</code></td></tr>
+			<tr><td>Avisos se abre solo con un aviso fresco; texto de la política</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/companion-view.ts:409,464-468,513</code></td></tr>
+			<tr><td>Comparación de botín con los motivos de H18.32</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/halloween-alert-panel.ts:177-198</code>, <code>core/i18n-runtime-catalog.ts:944-947</code></td></tr>
+			<tr><td>«Ganado» como cifra principal; «Lectura de la cuenta: hace N min · siguiente hacia»</td><td><span class="bx-tag" data-s="dec">decidido, sin implementar</span></td><td>hoy «Valor observado» y «Última consulta» (<code>ui/companion-view.ts:872,876</code>)</td></tr>
+			<tr><td>Insignia «Laberinto» y «la marcó Nexus»</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>el dato existe: <code>IngameSessionLink.labyrinthAt</code> y <code>owner</code> (<code>sessions/ingame-session-marker.ts:25-32</code>)</td></tr>
+			<tr><td>Avisos como primer cajón en el Laberinto; cajón Botín</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy orden fijo Detalle · Avisos · Historial (<code>ui/session-card.ts:142-145</code>); el botín de la sesión no se lista</td></tr>
+			<tr><td>Recorrido del aviso en 3 pasos (visto · enviado · en la nota)</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>el envío por canal ya se sabe: <code>alerts/alert-emitter.ts:33,46</code></td></tr>
+			<tr><td>Línea del saco: veredicto de Venta en vez de la señal de cuenta</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy «Saco de Halloween: … · Espera/Vende» (<code>ui/sell-signal-line.ts:15-36</code>)</td></tr>
+			<tr><td>Paso «Recibido en el juego»</td><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td>sin acuse en el protocolo v2 (<code>docs/SPEC-puente-ingame.md:224,262-270</code>)</td></tr>
+		</tbody>
+	</table></div>
+	<ul class="bx-notes">
+		<li><b>«Ganado» y nunca «en vivo».</b> La tercera cifra dice cuándo se leyó la cuenta y cuándo toca la siguiente; la caché va en el <code>title</code>. Hoy la tarjeta aún dice «la observación en vivo se ha detenido» (<code>core/i18n-runtime-catalog.ts:1112</code>). <span class="bx-src">David 24 sep</span></li>
+		<li><b>La banda en g/h ya existe</b> (<code>ui/companion-view.ts:927-935</code>). Solo cambia la etiqueta de la cifra.</li>
+		<li><b>Tres pasos, no cuatro.</b> El plugin sabe si escribió el aviso en la conexión del addon, pero el addon no contesta que lo enseñó. Pintar «Recibido en el juego» sería afirmar algo que nadie confirma. Ver pregunta 3. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>La línea del saco lee el mismo veredicto que Venta.</b> Hoy sale de la señal de cuenta, que en su ventana solo puede dar «Espera» o nada (<code>docs/diseno/halloween-venta/FICHA.md</code>, 2-bis). Venta puede decir «Vender ahora» a la vez. Ver pregunta 6. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>Avisos primero en el Laberinto, Botín primero el resto del año.</b> El cajón de arriba es lo que David mira en ese momento. <span class="bx-mine">Decisión mía (24 sep, sigue viva)</span></li>
+	</ul>
+</section>
+
+<!-- 2.2 -->
+<section class="bx-spec" aria-label="Lámina 2.2, espera de cierre">
+	<header><h3>2.2 · Terminando: la espera de 10 minutos</h3><span class="bx-tag" data-s="prop">propuesta pendiente de aprobar</span></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>jue 24 sep, 21:46</span><span class="leaf-w"></span></div>
+		<div class="tyrian-product-surface">
+			<nav class="tyrian-product-shell__nav" aria-label="Tyrian Companion" inert><button aria-current="page">Sesión</button><button aria-current="false">Inventario</button><button aria-current="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes de Tyrian Companion"><svg class="svg-icon" aria-hidden="true"><use href="#i-settings"/></svg></button></nav>
+			<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span data-tone="attention">Terminando la sesión</span></p>
+			<section class="tyrian-companion-session" aria-label="Sesión de farmeo">
+				<header class="tyrian-companion-session__header">
+					<div>
+						<h2 class="tyrian-companion-session__state">Terminando sesión</h2>
+						<p class="tyrian-companion-session__meta"><span>20:28 – 21:43</span><span>· Astra Uno</span><span>· fin marcado por Nexus</span></p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button>Capturar ya</button></div>
+				</header>
+				<dl class="tyrian-companion-session__figures" style="--tyrian-figures:2">
+					<div class="tyrian-companion-session__figure"><dt>Captura final en</dt><dd>7:00</dd><small>hacia las 21:53</small></div>
+					<div class="tyrian-companion-session__figure" data-pending="true"><dt>Ganado hasta ahora</dt><dd class="ej">3g 12s 40c</dd><small>provisional · vendiendo ya</small></div>
+				</dl>
+				<p class="tyrian-companion-session__why">La API publica el inventario con minutos de retraso. Lo que consigas mientras tanto puede sumarse a esta sesión. <strong>Capturar ya</strong> puede no incluir los últimos minutos; la sesión quedará marcada como estimada.</p>
+				<ol class="tyrian-receipt" aria-label="Recorrido del cierre">
+					<li data-step="done"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-check"/></svg>Fin marcado<time>21:43</time></li>
+					<li data-step="current"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-hourglass"/></svg>Lectura final<time>hacia 21:53</time></li>
+					<li data-step="skip"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pending"/></svg>Nota guardada<small>después</small></li>
+				</ol>
+			</section>
+		</div>
+	</div>
+	</div>
+	<div class="bx-scroll"><table class="bx-delta">
+		<caption>Piezas de la lámina</caption>
+		<thead><tr><th scope="col">Pieza</th><th scope="col">Estado</th><th scope="col">Dónde</th></tr></thead>
+		<tbody>
+			<tr><td>«Terminando sesión», cifra «Captura final en» con cuenta atrás de 1 s</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/companion-view.ts:606-631,942-959</code></td></tr>
+			<tr><td>«Capturar ya» y su aviso de sesión estimada</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/companion-view.ts:609-610,539-543</code>, <code>core/i18n-runtime-catalog.ts:156-160</code> (desde fe5a8b1, 1 sep)</td></tr>
+			<tr><td>El porqué de la espera a la vista, no escondido en Detalle</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy dentro del cajón Detalle (<code>ui/companion-view.ts:540</code>)</td></tr>
+			<tr><td>«Ganado hasta ahora» provisional y recorrido del cierre</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy la tarjeta enseña solo la cuenta atrás</td></tr>
+			<tr><td>«Sin botón Cerrar ya»</td><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td>partía de que no existía; existe</td></tr>
+		</tbody>
+	</table></div>
+	<ul class="bx-notes">
+		<li><b>La cuenta atrás se queda como está.</b> Es una cifra de la tarjeta y ya se repinta cada segundo. La barra de progreso del boceto anterior no añade nada. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>«Capturar ya» se queda, secundario.</b> Funciona desde el 1 sep. Quitarlo dejaría sin salida a quien tiene que cerrar Obsidian ahora. Ver pregunta 2. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>«Puede sumarse»</b> declara que la atribución es incierta, sin pedir nada. <span class="bx-src">Auditoría §3.C</span></li>
+	</ul>
+</section>
+
+<!-- 2.3 -->
+<section class="bx-spec" aria-label="Lámina 2.3, fallo al cerrar">
+	<header><h3>2.3 · Fallo al cerrar, nota sin guardar y sesión abandonada</h3><span class="bx-tag" data-s="prop">propuesta pendiente de aprobar</span></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>jue 24 sep, 21:54</span><span class="leaf-w"></span></div>
+		<p class="leaf-sub">Falla la lectura final</p>
+		<div class="tyrian-product-surface">
+			<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span data-tone="attention">Cierre sin terminar</span></p>
+			<section class="tyrian-companion-session" aria-label="Sesión de farmeo">
+				<header class="tyrian-companion-session__header">
+					<div>
+						<h2 class="tyrian-companion-session__state">Terminando sesión <span class="tyrian-companion-session__badge">Provisional</span></h2>
+						<p class="tyrian-companion-session__meta"><span>20:28 – 21:43</span><span>· se reintenta sola a las <span class="ej">21:58</span></span></p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button class="mod-cta">Reintentar finalizar sesión</button></div>
+				</header>
+				<div class="callout" data-callout="error" role="alert">
+					<div class="callout-title"><svg class="svg-icon" aria-hidden="true"><use href="#i-alert"/></svg><span class="callout-title-inner">No se pudo leer la cuenta al cerrar</span></div>
+					<div class="callout-content"><p>La línea base y el resultado provisional están a salvo.</p>
+						<div class="callout-actions"><button class="clickable-icon"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-copy"/></svg>Copiar detalle técnico</button></div></div>
+				</div>
+				<ol class="tyrian-receipt" aria-label="Recorrido del cierre">
+					<li data-step="done"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-check"/></svg>Fin marcado<time>21:43</time></li>
+					<li data-step="failed"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-x"/></svg>Lectura final<time>falló 21:53</time></li>
+					<li data-step="skip"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pending"/></svg>Nota guardada<small>pendiente</small></li>
+				</ol>
+				<dl class="tyrian-companion-session__figures" style="--tyrian-figures:1">
+					<div class="tyrian-companion-session__figure" data-pending="true"><dt>Ganado hasta 21:43</dt><dd class="ej">3g 12s 40c</dd><small>provisional · vendiendo ya</small></div>
+				</dl>
+			</section>
+		</div>
+		<p class="leaf-sub">Falla la nota</p>
+		<div class="tyrian-product-surface">
+			<section class="tyrian-companion-session" aria-label="Sesión de farmeo">
+				<header class="tyrian-companion-session__header">
+					<div>
+						<h2 class="tyrian-companion-session__state">Resumen local pendiente de guardar <span class="tyrian-companion-session__badge">Exacta</span></h2>
+						<p class="tyrian-companion-session__meta"><span class="tyrian-companion-session__clock">1 h 15 min</span><span>· Astra Uno</span></p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button>Reintentar guardado</button><button class="mod-cta">Nueva sesión</button></div>
+				</header>
+				<ol class="tyrian-receipt" aria-label="Recorrido del cierre">
+					<li data-step="done"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-check"/></svg>Fin marcado<time>21:43</time></li>
+					<li data-step="done"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-check"/></svg>Lectura final<time>21:53</time></li>
+					<li data-step="failed"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-x"/></svg>Nota guardada<time>falló 21:53</time></li>
+				</ol>
+			</section>
+		</div>
+		<p class="leaf-sub">Sin arreglo posible: la clave es de otra cuenta</p>
+		<div class="tyrian-product-surface">
+			<section class="tyrian-companion-session" aria-label="Sesión de farmeo">
+				<header class="tyrian-companion-session__header">
+					<div>
+						<h2 class="tyrian-companion-session__state">Sesión abandonada</h2>
+						<p class="tyrian-companion-session__meta">Abandonada: la clave de API pasó a otra cuenta. Sin botín.</p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button class="mod-cta">Iniciar sesión</button></div>
+				</header>
+			</section>
+		</div>
+	</div>
+	</div>
+	<div class="bx-scroll"><table class="bx-delta">
+		<caption>Piezas de la lámina</caption>
+		<thead><tr><th scope="col">Pieza</th><th scope="col">Estado</th><th scope="col">Dónde</th></tr></thead>
+		<tbody>
+			<tr><td>Reintento automático y «Reintentar finalizar sesión» en la cabecera</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/companion-view.ts:611-617</code>, <code>core/i18n.ts:17</code></td></tr>
+			<tr><td>«Resumen local pendiente de guardar», «Reintentar guardado», «Nueva sesión»</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/companion-view.ts:699-723</code></td></tr>
+			<tr><td>«Abandonar sesión» con confirmación y estado «Sesión abandonada»</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/companion-view.ts:620-622,646-655</code>, <code>core/i18n-runtime-catalog.ts:204-207</code></td></tr>
+			<tr><td>Meta con la hora del próximo reintento, en vez de «Reconciliando el inventario…»</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy <code>copy.reconciling</code> también tras el fallo (<code>ui/companion-view.ts:626</code>)</td></tr>
+			<tr><td>Callout sin código y «Copiar detalle técnico»</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy el callout puede añadir el último error con su código (<code>ui/companion-view.ts:333-339</code>)</td></tr>
+			<tr><td>Recorrido del cierre</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>—</td></tr>
+		</tbody>
+	</table></div>
+	<ul class="bx-notes">
+		<li><b>La cabecera sigue diciendo «Terminando sesión»</b>, como el código, con la insignia «Provisional». Lo nuevo es la meta: cuándo vuelve a intentarlo solo. La hora exacta del reintento no la he medido en el código: está subrayada. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>El código de error no se pinta.</b> Va al portapapeles con «Copiar detalle técnico». <span class="bx-mine">Decisión mía (24 sep, sigue viva)</span></li>
+		<li><b>Nota sin guardar sin callout.</b> La cabecera ya lo dice y trae el botón. Un callout repetiría la misma frase. <span class="bx-mine">Decisión mía</span></li>
+	</ul>
+</section>
+
+<!-- 2.4 -->
+<section class="bx-spec" aria-label="Lámina 2.4, sin señal del juego">
+	<header><h3>2.4 · Sin señal del addon</h3><span class="bx-tag" data-s="prop">propuesta pendiente de aprobar</span></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>jue 24 sep, 22:44</span><span class="leaf-w"></span></div>
+		<div class="tyrian-product-surface">
+			<nav class="tyrian-product-shell__nav" aria-label="Tyrian Companion" inert><button aria-current="page">Sesión</button><button aria-current="false">Inventario</button><button aria-current="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes de Tyrian Companion"><svg class="svg-icon" aria-hidden="true"><use href="#i-settings"/></svg></button></nav>
+			<p class="tyrian-product-shell__status" role="status"><span data-tone="attention">Nexus sin señal desde las 22:40</span><span>Cuenta leída a las 22:38</span></p>
+			<section class="tyrian-companion-session" aria-label="Sesión de farmeo">
+				<header class="tyrian-companion-session__header">
+					<div>
+						<h2 class="tyrian-companion-session__state">Sesión activa <span class="tyrian-companion-session__badge">Sin señal</span></h2>
+						<p class="tyrian-companion-session__meta"><span class="tyrian-companion-session__clock">39:04</span><span>· Astra Uno</span></p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button class="mod-cta">Terminar</button></div>
+				</header>
+				<div class="callout" data-callout="warning" role="status">
+					<div class="callout-title"><svg class="svg-icon" aria-hidden="true"><use href="#i-unplug"/></svg><span class="callout-title-inner">Nexus no responde desde las 22:40</span></div>
+					<div class="callout-content"><p>Si no vuelve antes de las 22:50, la sesión se cerrará con fin a las 22:40. Podrás corregir la hora después.</p></div>
+				</div>
+				<dl class="tyrian-companion-session__figures" style="--tyrian-figures:2">
+					<div class="tyrian-companion-session__figure"><dt>Ganado</dt><dd class="ej">1g 04s 90c</dd><small>vendiendo ya</small></div>
+					<div class="tyrian-companion-session__figure" title="La API de cuenta responde desde una caché de 5 a 10 minutos."><dt>Lectura de la cuenta</dt><dd>hace 6 min</dd><small>22:38 · siguiente hacia las 22:45</small></div>
+				</dl>
+			</section>
+		</div>
+	</div>
+	</div>
+	<div class="bx-scroll"><table class="bx-delta">
+		<caption>Piezas de la lámina</caption>
+		<thead><tr><th scope="col">Pieza</th><th scope="col">Estado</th><th scope="col">Dónde</th></tr></thead>
+		<tbody>
+			<tr><td>Cierre tras 10 min sin señal, con fin en la hora observada; una sesión iniciada a mano no la cierra el addon</td><td><span class="bx-tag" data-s="impl">implementado</span> (lógica)</td><td><code>sessions/ingame-session-marker.ts:5-21</code></td></tr>
+			<tr><td>Insignia «Sin señal», línea de estado y callout con la hora a la que actúa</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>la tarjeta no lee la presencia del addon (<code>ui/companion-view.ts</code> no la consulta)</td></tr>
+			<tr><td>«Podrás corregir la hora después»</td><td><span class="bx-tag" data-s="dec">decidido, sin implementar</span></td><td>no hay formulario de corrección en el código; ver lámina 2.5</td></tr>
+		</tbody>
+	</table></div>
+	<ul class="bx-notes">
+		<li><b>«Sin señal», no «juego cerrado».</b> Que el addon deje de contestar puede ser un fallo del addon o del puente. <span class="bx-src">Auditoría §3.F</span></li>
+		<li><b>Regla de 10 minutos a la vista</b>, con la hora a la que actúa y el fin que pondrá. <span class="bx-src">David 24 sep</span></li>
+		<li><b>Sesión iniciada a mano:</b> el addon la adopta pero no la cierra (<code>ingame-session-marker.ts:14-19</code>). En ese caso el callout diría «La sesión sigue abierta: la iniciaste a mano» y no daría hora de cierre. No está dibujado. <span class="bx-mine">Supuesto mío sobre el texto</span></li>
+	</ul>
+</section>
+
+<!-- 2.5 -->
+<section class="bx-spec" aria-label="Lámina 2.5, sin sesión e historial">
+	<header><h3>2.5 · Listo para empezar, con historial y corrección de hora</h3><span class="bx-tag" data-s="prop">propuesta pendiente de aprobar</span></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>jue 24 sep, 22:10</span><span class="leaf-w"></span></div>
+		<div class="tyrian-product-surface">
+			<nav class="tyrian-product-shell__nav" aria-label="Tyrian Companion" inert><button aria-current="page">Sesión</button><button aria-current="false">Inventario</button><button aria-current="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes de Tyrian Companion"><svg class="svg-icon" aria-hidden="true"><use href="#i-settings"/></svg></button></nav>
+			<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span>La sesión empieza sola al entrar al juego</span></p>
+			<section class="tyrian-companion-session" aria-label="Sesión de farmeo">
+				<header class="tyrian-companion-session__header">
+					<div>
+						<h2 class="tyrian-companion-session__state">Listo para empezar</h2>
+						<p class="tyrian-companion-session__meta"><span>Última: hoy 20:28 – 21:43 · 1 h 15 min · <b class="ej">3g 12s 40c</b></span><button class="mod-link">Abrir la nota</button></p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button class="mod-cta">Iniciar sesión</button></div>
+				</header>
+				<div class="tyrian-companion-session__drawers">
+					<details class="tyrian-companion-session__drawer" open><summary>Corregir hora <small>última sesión</small></summary>
+						<div class="tyrian-companion-session__drawer-body">
+							<form class="tyrian-session-fix" aria-label="Corregir la hora de la última sesión" onsubmit="return false">
+								<label>Inicio <input type="time" value="20:28"></label>
+								<label>Fin <input type="time" value="21:43"></label>
+								<button type="submit">Guardar</button>
+							</form>
+							<p class="tyrian-companion-session__context">Cambia la duración y el oro por hora, y reescribe la nota. El botín medido no cambia.</p>
+						</div>
+					</details>
+				</div>
+			</section>
+
+			<section class="tyrian-session-history" aria-label="Historial" style="margin-top:20px">
+				<p class="tyrian-product-shell__status"><span>14 sesiones · leídas a las 21:45</span><span><button class="mod-link">Actualizar historial</button></span></p>
+				<dl class="tyrian-session-history__summary">
+					<div class="tyrian-session-history__metric"><dt>Sesiones</dt><dd>14</dd></div>
+					<div class="tyrian-session-history__metric"><dt>Duración total</dt><dd class="ej">19 h 40 min</dd></div>
+					<div class="tyrian-session-history__metric"><dt>Sacos</dt><dd class="ej">2.480</dd><small>de 12 sesiones</small></div>
+					<div class="tyrian-session-history__metric"><dt>Valor inmediato</dt><dd class="ej">98g 12s 40c conocido</dd><small>2 sin valorar</small></div>
+				</dl>
+
+				<h3>Rendimiento por actividad, build y calidad</h3>
+				<table>
+					<caption>Oro por hora vendiendo ya, ponderado por duración. Una calidad nunca se promedia con otra.</caption>
+					<thead><tr><th scope="col">Grupo</th><th scope="col" class="is-num">Sesiones</th><th scope="col" class="is-num">Valor inmediato por hora</th><th scope="col" class="is-num is-wide">Sacos por hora</th></tr></thead>
+					<tbody>
+						<tr><th scope="row"><span class="tyrian-session-history__quality" data-quality="exact">Halloween · <span class="tyrian-session-history__hole">build</span> · Exacta</span></th><td class="is-num">4/4</td><td class="is-num ej">10g 94s</td><td class="is-num is-wide ej">231</td></tr>
+						<tr><th scope="row"><span class="tyrian-session-history__quality" data-quality="estimated">Halloween · <span class="tyrian-session-history__hole">build</span> · Estimada</span><small>Tasa estimada: no se compara con una tasa exacta.</small></th><td class="is-num">2/2</td><td class="is-num ej">≈ 10g 02s</td><td class="is-num is-wide ej">218</td></tr>
+						<tr><th scope="row"><span class="tyrian-session-history__quality" data-quality="exact">Todo el año · <span class="tyrian-session-history__hole">build</span> · Exacta</span></th><td class="is-num">5/5</td><td class="is-num ej">2g 41s</td><td class="is-num is-wide">—</td></tr>
+						<tr><th scope="row"><span class="tyrian-session-history__quality" data-quality="incomplete">Sin valorar</span><small>no entran en la tasa</small></th><td class="is-num">2</td><td class="is-num">—</td><td class="is-num is-wide">—</td></tr>
+					</tbody>
+				</table>
+
+				<h3>Sesiones</h3>
+				<table>
+					<caption>De la más reciente a la más antigua</caption>
+					<thead><tr><th scope="col">Cuándo</th><th scope="col" class="is-num is-wide">Duración</th><th scope="col" class="is-num is-wide">Sacos</th><th scope="col" class="is-num">Valor inmediato</th></tr></thead>
+					<tbody>
+						<tr><th scope="row">Hoy 20:28<small><span class="tyrian-session-history__quality" data-quality="exact">Exacta</span></small></th><td class="is-num is-wide">1 h 15 min</td><td class="is-num is-wide">—</td><td class="is-num ej">3g 12s 40c</td></tr>
+						<tr><th scope="row">Ayer 18:05<small><span class="tyrian-session-history__quality" data-quality="incomplete">Sin valorar</span></small></th><td class="is-num is-wide">2 h 40 min</td><td class="is-num is-wide">—</td><td class="is-num">Desconocido<small>2 objetos sin precio</small></td></tr>
+						<tr><th scope="row">21 sep 19:12<small><span class="tyrian-session-history__quality" data-quality="estimated">Estimada</span></small></th><td class="is-num is-wide">55 min</td><td class="is-num is-wide">—</td><td class="is-num ej">≈ 1g 80s 00c<small>cerrada por desconexión</small></td></tr>
+						<tr><th scope="row">2 nov 2025 21:00<small><span class="tyrian-session-history__quality" data-quality="exact">Exacta</span></small></th><td class="is-num is-wide">1 h 30 min</td><td class="is-num is-wide ej">412</td><td class="is-num ej">16g 40s 10c</td></tr>
+					</tbody>
+				</table>
+				<p class="tyrian-product-shell__status"><span>Mostrando 4 de 14</span><span><button class="mod-link">Ver todas</button></span></p>
+			</section>
+		</div>
+	</div>
+	</div>
+	<div class="bx-scroll"><table class="bx-delta">
+		<caption>Piezas de la lámina</caption>
+		<thead><tr><th scope="col">Pieza</th><th scope="col">Estado</th><th scope="col">Dónde</th></tr></thead>
+		<tbody>
+			<tr><td>«Listo para empezar» e «Iniciar sesión»</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/companion-view.ts:573-583</code></td></tr>
+			<tr><td>Subtotal conocido con «N sin valorar»; nunca «total» si falta una</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/session-history-panel.ts:343-355</code>, <code>core/i18n-runtime-catalog.ts:1095</code></td></tr>
+			<tr><td>Rendimiento por actividad · build · calidad, calidades separadas, abandonadas fuera</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/session-history-panel.ts:195-274</code></td></tr>
+			<tr><td>Pie «14 sesiones · leídas a las 21:45»</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/session-history-panel.ts:188-192</code></td></tr>
+			<tr><td>Historial fuera del cajón, visible y leído al abrir la pestaña</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy dentro del cajón y con «Cargar historial» (<code>ui/session-history-panel.ts:73-100</code>)</td></tr>
+			<tr><td>Una sola tabla que pierde columnas en estrecho</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy tabla y tarjetas a la vez (<code>ui/session-history-panel.ts:185-186</code>)</td></tr>
+			<tr><td>Rendimiento en tabla, calidad con forma</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy un artículo por grupo con su <code>dl</code></td></tr>
+			<tr><td>Corregir hora de la última sesión</td><td><span class="bx-tag" data-s="dec">decidido, sin implementar</span></td><td><code>docs/SPEC-puente-ingame.md:17-18</code>; formulario propuesta mía</td></tr>
+			<tr><td>Texto «Los totales solo aparecen cuando todas las sesiones aportan ese dato»</td><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td><code>core/i18n-runtime-catalog.ts:1060</code> contradice el subtotal ya implementado</td></tr>
+		</tbody>
+	</table></div>
+	<ul class="bx-notes">
+		<li><b>El historial sale del cajón.</b> Sin sesión en curso, es para lo que sirve la pestaña. Hoy la lectura recorre el vault y por eso es a mano. Ver pregunta 1. <span class="bx-mine">Decisión mía (24 sep, sigue viva)</span></li>
+		<li><b>El recuadro discontinuo «build» es un hueco.</b> El grupo lleva el nombre de build que declare la sesión, y no invento uno.</li>
+		<li><b>Corregir hora</b> es el único sitio donde la sesión admite una mano: el addon marca y el jugador corrige después, sin confirmar nada. <span class="bx-mine">Decisión mía: la forma</span></li>
+		<li><b>La calidad se ve con forma</b> (círculo lleno, medio, discontinuo) y con palabra, no con color. <span class="bx-mine">Decisión mía</span></li>
+	</ul>
+</section>
+
+<!-- ======================================================================= -->
+<h2 id="inventario">3 · Inventario</h2>
+<p class="bx-lede">Un resultado por objeto, el mismo en la pestaña, las notas y la Base. Con poco espacio, primero liberar; con espacio de sobra, maximizar oro. <span class="bx-src">David 24 sep</span> Las palabras de acción son las de la pestaña Venta, que David ya aprobó.</p>
+
+<section class="bx-spec" aria-label="Lámina 3.1, inventario con poco espacio">
+	<header><h3>3.1 · Poco espacio: una sola lista por objeto</h3><span class="bx-tag" data-s="prop">propuesta pendiente de aprobar</span></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>sáb 26 sep, 09:40</span><span class="leaf-w"></span></div>
+		<div class="tyrian-product-surface">
+			<nav class="tyrian-product-shell__nav" aria-label="Tyrian Companion" inert><button aria-current="false">Sesión</button><button aria-current="page">Inventario</button><button aria-current="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes de Tyrian Companion"><svg class="svg-icon" aria-hidden="true"><use href="#i-settings"/></svg></button></nav>
+			<p class="tyrian-product-shell__status" role="status"><span>Analizado hoy a las 09:31</span><span>Notas guardadas a las 09:32</span></p>
+			<div class="tyrian-inventory">
+				<section class="tyrian-inventory-advisor__storage-space" aria-label="Espacio en la cuenta" data-low-space="true">
+					<p class="tyrian-inventory-advisor__storage-verdict"><strong>Poco espacio:</strong> <span class="ej">9</span> huecos libres entre bolsas y banco (aviso con 20 o menos). Primero lo que libera huecos.</p>
+					<meter class="tyrian-inventory-advisor__storage-meter" min="0" max="370" low="350" high="350" optimum="0" value="361" aria-label="Huecos ocupados entre bolsas y banco">361 de 370</meter>
+					<p class="tyrian-inventory-advisor__storage-stores">Huecos libres: bolsas <span class="ej">5</span>/160 · banco <span class="ej">4</span>/210 · almacén compartido <span class="ej">0</span>/6</p>
+					<p class="tyrian-inventory-advisor__storage-materials">Materiales: al menos <span class="ej">1250</span> por material (mínimo visto en tu almacén)</p>
+				</section>
+
+				<div class="tyrian-inventory__bar">
+					<input type="search" placeholder="Nombre o ID del objeto" aria-label="Buscar objetos">
+					<button><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-refresh"/></svg>Analizar sin escribir</button>
+				</div>
+				<ul class="tyrian-chips" aria-label="Qué hacer ahora: filtra la lista">
+					<li><button aria-pressed="true">Todo <span>9</span></button></li>
+					<li><button aria-pressed="false">Vender ya <span>1</span></button></li>
+					<li><button aria-pressed="false">Publicar en el bazar <span>2</span></button></li>
+					<li><button aria-pressed="false">Abrir <span>1</span></button></li>
+					<li><button aria-pressed="false">Esperar <span>1</span></button></li>
+					<li><button aria-pressed="false">Conservar <span>2</span></button></li>
+					<li><button aria-pressed="false">Sin cotización <span>2</span></button></li>
+				</ul>
+
+				<ul class="tyrian-inventory__list" aria-label="Objetos, primero lo que más espacio libera">
+					<li class="tyrian-inventory__head" aria-hidden="true"><span>Objeto</span><span>Cantidad</span><span>Qué hacer</span><span class="is-num">Neto si vendes ya</span><span>Por qué · datos</span><span></span></li>
+
+					<li class="tyrian-inventory__row" aria-labelledby="it-36038">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">SH</span><div><strong id="it-36038">Saco de Halloween</strong><small>Bolsas <span class="ej">412</span> · Banco <span class="ej">1938</span></small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b><span class="ej">2350</span></b><span>0 reservados</span><span><span class="ej">2350</span> libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="open">Abrir</span><span class="tyrian-action-when">libera <span class="ej">10</span> huecos</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Neto si vendes ya: </span><span class="ej">68g 31s 45c</span></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Contenedor: abrir o vender el saco se decide en Venta, con su propia comparación.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>precio del 2026-09-26<br><button class="mod-link">Ver en Venta</button></div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" aria-label="Conservar Saco de Halloween"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pin"/></svg>Conservar</button><small></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" aria-labelledby="it-coast">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">EC</span><div><strong id="it-coast">Esquirla de las Costas Bajas</strong><small>Banco 200 · personajes 73</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>273</b><span>150 reservadas</span><span>123 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="sell">Vender ya</span><span class="tyrian-action-when">73 de 123 libres · libera 1 hueco</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Neto si vendes ya: </span><span class="ej">5g 11s 00c</span></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">La reserva está en el banco; lo que llevan tus personajes sobra y ocupa bolsa.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>precio del 2026-09-26 · análisis vigente hasta el 2026-09-27</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" aria-label="Conservar Esquirla de las Costas Bajas"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pin"/></svg>Conservar</button><small></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" aria-labelledby="it-amber">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">PA</span><div><strong id="it-amber">Pedazo de ámbar gris antiguo</strong><small>Almacén de materiales</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>313</b><span>0 reservados</span><span>313 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="list">Publicar en el bazar</span><span class="tyrian-action-when">no libera huecos</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Neto si vendes ya: </span><span class="ej">374g 00s 00c</span></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Sin reserva. Publicar rinde más que vender a la puja.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>precio del 2026-09-26</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="true" aria-label="Conservar Pedazo de ámbar gris antiguo"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pin"/></svg>Conservado</button><small aria-live="polite">Guardado · no se venderá</small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" aria-labelledby="it-coin">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">MM</span><div><strong id="it-coin">Moneda mística</strong><small>Almacén de materiales</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>243</b><span>100 reservadas</span><span>143 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="list">Publicar en el bazar</span><span class="tyrian-action-when">las 143 libres · no libera huecos</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Neto si vendes ya: </span><span class="ej">182g 32s 50c</span></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">100 para tu objetivo de legendaria; el resto no hace falta.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>precio del 2026-09-26</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" aria-label="Conservar Moneda mística"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pin"/></svg>Conservar</button><small></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" aria-labelledby="it-47909">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">BC</span><div><strong id="it-47909">Barra de caramelo</strong><small>Banco</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>71</b><span>0 reservadas</span><span>71 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="hold">Esperar</span><span class="tyrian-action-when">ocupa 1 hueco</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Neto si vendes ya: </span><span class="ej">246g 22s 80c</span></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Esperar tiene ventaja demostrada frente a vender ahora.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>precio del 2026-09-26 · ventana sugerida del <span class="ej">2026-10-13</span> al <span class="ej">2026-10-19</span></div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" aria-label="Conservar Barra de caramelo"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pin"/></svg>Conservar</button><small></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" aria-labelledby="it-36059">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">CP</span><div><strong id="it-36059">Colmillos de plástico</strong><small>Bolsas</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b><span class="ej">57</span></b><span>0 reservados</span><span><span class="ej">57</span> libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="nodata">Sin cotización</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money" data-unknown="true"><span class="sr-only">Neto si vendes ya: </span>No disponible</div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Nadie compra este objeto en el bazar.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>Sin puja</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" aria-label="Conservar Colmillos de plástico"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pin"/></svg>Conservar</button><small></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" aria-labelledby="it-janthir">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">EJ</span><div><strong id="it-janthir">Esquirla de Janthir Syntri</strong><small>Almacén de materiales</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>273</b><span>0 reservadas</span><span>273 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="nodata">Sin cotización</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money" data-unknown="true"><span class="sr-only">Neto si vendes ya: </span>No disponible</div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">No se pudo leer el precio de hoy. El histórico acaba hace 60 días y no vale como precio de hoy.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span><span data-stale="true">precio de hoy: sin leer</span><br>histórico hasta el 2026-07-28</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" aria-label="Conservar Esquirla de Janthir Syntri"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pin"/></svg>Conservar</button><small></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" aria-labelledby="it-gem">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">GA</span><div><strong id="it-gem">Gema amalgamada</strong><small>Almacén de materiales</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>389</b><span>389 reservadas</span><span>0 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="keep">Conservar para legendaria</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money" data-unknown="true"><span class="sr-only">Neto si vendes ya: </span>No aplica</div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Reservado para un objetivo.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>tabla de legendarias hasta el 2026-12-10</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><small>la reserva manda</small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" aria-labelledby="it-43320">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">JO</span><div><strong id="it-43320">Jorcamelo</strong><small>Banco</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>31</b><span>31 reservados · incierto</span><span>0 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="keep">Conservar para legendaria</span><span class="tyrian-action-when">reserva incierta</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money" data-unknown="true"><span class="sr-only">Neto si vendes ya: </span>No aplica</div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Tu objetivo no está en la tabla de legendarias: no se sabe cuántos hacen falta y se conservan todos.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>tabla de legendarias hasta el 2026-12-10</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><small>la reserva manda</small></div>
+					</li>
+				</ul>
+				<p class="tyrian-inventory__foot"><span>Mostrando: bolsas y almacén compartido, banco y materiales · <span class="ej">12</span> objetos fuera del filtro (entrega del bazar)</span><button class="mod-link">Filtros avanzados</button></p>
+			</div>
+		</div>
+	</div>
+	</div>
+	<div class="bx-scroll"><table class="bx-delta">
+		<caption>Piezas de la lámina</caption>
+		<thead><tr><th scope="col">Pieza</th><th scope="col">Estado</th><th scope="col">Dónde</th></tr></thead>
+		<tbody>
+			<tr><td>Bloque de espacio: huecos por almacén, un <code>meter</code>, veredicto con umbral 20, materiales «al menos N»</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/inventory-advisor-view.ts:984-1039</code>, <code>inventory/storage-space.ts:50-70</code>, <code>core/settings.ts:35-39</code></td></tr>
+			<tr><td>…con el veredicto delante y la marca lateral, como en la maqueta de Venta</td><td><span class="bx-tag" data-s="dec">decidido, sin implementar</span></td><td>aprobado en <code>docs/diseno/halloween-venta/maqueta.html:190-206,529-532</code>; el código pinta huecos, <code>meter</code> y veredicto en ese orden y sin marca (<code>styles.css:1907-1932</code>)</td></tr>
+			<tr><td>Orden por huecos que libera y «libera N huecos» por fila</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/inventory-advisor-view.ts:702-706,1672-1690</code></td></tr>
+			<tr><td>Resumen «Qué hacer ahora» con botones <code>aria-pressed</code> que filtran</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/inventory-advisor-view.ts:1065-1125</code>; la fila compacta es propuesta</td></tr>
+			<tr><td>«Conservar» en la fila sin teclear IDs</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/inventory-advisor-view.ts:1227-1243,563-588</code></td></tr>
+			<tr><td>Precio, vigencia y ventana en texto (tres relojes), vender o esperar con rango</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/inventory-advisor-view.ts:1529-1563</code></td></tr>
+			<tr><td>Alcance «Mostrando: … · N objetos fuera del filtro»</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/inventory-advisor-view.ts:1042-1057</code></td></tr>
+			<tr><td>Una sola lista con <code>subgrid</code> y seis columnas</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy tabla de 9 columnas y tarjetas a la vez (<code>:970-971,1167-1170</code>)</td></tr>
+			<tr><td>Marca de acción <code>.tyrian-action</code> en vez de color como texto</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>viva en Venta (<code>styles.css:2566-2598</code>); en Inventario, verde y amarillo como texto (<code>:2146-2170</code>)</td></tr>
+			<tr><td>«Esperar» para <code>hold</code> y «Sin cotización» para lo que no tiene puja</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy <code>hold</code> se lee «Conservar» (<code>core/i18n-runtime-catalog.ts:508</code>) y sin puja se va a «Revisar»</td></tr>
+			<tr><td>«Conservar» reversible desde la fila (Conservar / Conservado)</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy pasa a «Guardado para conservar» y se deshace en Preferencias</td></tr>
+			<tr><td>Tres <code>meter</code> por almacén</td><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td>la maqueta de Venta aprobó uno</td></tr>
+		</tbody>
+	</table></div>
+	<ul class="bx-notes">
+		<li><b>Una sola lista, un solo DOM.</b> <code>subgrid</code> alinea columnas en ancho; bajo 760 px cada fila se apila. Hoy el código pinta tabla y tarjetas y el CSS esconde una: hasta 1.600 filas dos veces. <span class="bx-src">Auditoría §6</span></li>
+		<li><b>«Conservar» significa hoy tres cosas en esta pestaña:</b> la acción del asesor, la decisión <code>hold</code> (esperar a temporada) y el botón de la fila. Aquí <code>hold</code> se dice «Esperar», como en Venta, y «Conservar» queda para guardar el objeto. Ver pregunta 5. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>El saco dice «Abrir» aquí y remite a Venta.</b> Su ruta en el asesor es abrir (<code>docs/diseno/halloween-venta/FICHA.md</code>, 2-bis). Si la fila dijera algo propio sobre vender, podría contradecir la tarjeta de Venta. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>El bloque de espacio es el de Venta</b>, sin tocar: David lo aprobó allí y es el mismo componente (<code>renderStorageSpace</code>, exportado para las dos pestañas). <span class="bx-mine">Decisión mía: reusarlo sin cambios</span></li>
+		<li><b>«Conservar» reversible.</b> Un clic equivocado se deshace en la misma fila, sin buscar en Preferencias. La fila no salta de sitio hasta el siguiente análisis (fila del ámbar). <span class="bx-mine">Decisión mía (24 sep, en parte aplicada)</span></li>
+		<li><b>Fechas como las escribe el código</b> (<code>precio del 2026-09-26</code>, <code>inventory.decision.clock.*</code>). Pasarlas a «hoy 09:31» sería otro cambio; no lo propongo aquí.</li>
+		<li><b>Iconos:</b> el boceto no carga red, así que todas las filas usan el sustituto con iniciales y borde discontinuo, que es el estilo vivo del icono caído. En el plugin, el icono real es una imagen del catálogo.</li>
+	</ul>
+</section>
+
+<section class="bx-spec" aria-label="Lámina 3.2, estados del análisis">
+	<header><h3>3.2 · Estados del análisis: espacio de sobra, antiguo, analizando y fallo</h3><span class="bx-tag" data-s="prop">propuesta pendiente de aprobar</span></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>cabeceras de la misma pestaña</span><span class="leaf-w"></span></div>
+		<p class="leaf-sub">Espacio de sobra</p>
+		<div class="tyrian-product-surface">
+			<p class="tyrian-product-shell__status" role="status"><span>Analizado hoy a las 09:31</span><span>Notas guardadas a las 09:32</span></p>
+			<section class="tyrian-inventory-advisor__storage-space" aria-label="Espacio en la cuenta" data-low-space="false">
+				<p class="tyrian-inventory-advisor__storage-verdict"><strong>Espacio de sobra:</strong> <span class="ej">64</span> huecos libres entre bolsas y banco (aviso con 20 o menos). Primero el oro.</p>
+				<meter class="tyrian-inventory-advisor__storage-meter" min="0" max="370" low="350" high="350" optimum="0" value="306" aria-label="Huecos ocupados entre bolsas y banco">306 de 370</meter>
+				<p class="tyrian-inventory-advisor__storage-stores">Huecos libres: bolsas <span class="ej">38</span>/160 · banco <span class="ej">26</span>/210 · almacén compartido <span class="ej">2</span>/6</p>
+			</section>
+		</div>
+		<p class="leaf-sub">Análisis de hace dos días</p>
+		<div class="tyrian-product-surface">
+			<div class="callout" data-callout="warning" role="status">
+				<div class="callout-title"><svg class="svg-icon" aria-hidden="true"><use href="#i-clock"/></svg><span class="callout-title-inner">Este análisis es del 24 sep a las 21:02</span><button>Analizar sin escribir</button></div>
+				<div class="callout-content"><p>Precios y cantidades pueden haber cambiado. La lista sigue a la vista.</p></div>
+			</div>
+		</div>
+		<p class="leaf-sub">Analizando</p>
+		<div class="tyrian-product-surface">
+			<div class="tyrian-inventory">
+				<p class="tyrian-product-shell__status" role="status"><span data-tone="attention">Analizando…</span><span>personajes 3 de 5</span></p>
+				<ol class="tyrian-receipt" aria-label="Recorrido del análisis">
+					<li data-step="current"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-hourglass"/></svg>Leyendo la cuenta<small>3 de 5</small></li>
+					<li data-step="skip"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pending"/></svg>Analizado<small>—</small></li>
+					<li data-step="skip"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-pending"/></svg>Notas guardadas<small>—</small></li>
+				</ol>
+			</div>
+		</div>
+		<p class="leaf-sub">Falla la lectura</p>
+		<div class="tyrian-product-surface">
+			<div class="callout" data-callout="error" role="alert">
+				<div class="callout-title"><svg class="svg-icon" aria-hidden="true"><use href="#i-alert"/></svg><span class="callout-title-inner">No se pudo leer el inventario de todos los personajes</span><button><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-refresh"/></svg>Reintentar</button></div>
+				<div class="callout-content"><p>Se conserva el último resultado válido, de hoy a las 09:31.</p>
+					<div class="callout-actions"><button class="clickable-icon"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-copy"/></svg>Copiar detalle técnico</button></div></div>
+			</div>
+		</div>
+		<p class="leaf-sub">Hoy en 3c5502d: lo que se retira</p>
+		<div class="tyrian-product-surface">
+			<p class="tyrian-companion-session__context"><span class="bx-tag" data-s="obs">obsoleto</span> «Se conserva el último resultado válido. La actualización nueva falló: No se pudo leer por completo el inventario de todos los personajes o el inventario compartido. Código seguro: snapshot_coverage_incomplete.»</p>
+			<p class="tyrian-companion-session__context"><span class="bx-tag" data-s="obs">obsoleto</span> «Confirmar cambios antes de escribir. El plan desactivará 3 filas que ya no aparecen en la cuenta. Nada se escribe hasta que confirmes.» · Confirmar y escribir</p>
+		</div>
+	</div>
+	</div>
+	<div class="bx-scroll"><table class="bx-delta">
+		<caption>Piezas de la lámina</caption>
+		<thead><tr><th scope="col">Pieza</th><th scope="col">Estado</th><th scope="col">Dónde</th></tr></thead>
+		<tbody>
+			<tr><td>Veredicto «Espacio de sobra … Primero el oro»</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>core/i18n-runtime-catalog.ts:631</code></td></tr>
+			<tr><td>Se conserva el último resultado si falla la actualización</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/inventory-advisor-view.ts:1427-1434</code>, <code>core/i18n-runtime-catalog.ts:433</code></td></tr>
+			<tr><td>Progreso solo mientras corre</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td><code>ui/inventory-advisor-view.ts:533-559,837-841</code></td></tr>
+			<tr><td>Análisis antiguo con fecha y la lista a la vista</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>hoy <code>stale_evidence</code> bloquea: «La captura del inventario ha caducado» (<code>core/i18n-runtime-catalog.ts:404</code>)</td></tr>
+			<tr><td>Fallo sin código, con «Copiar detalle técnico»</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>13 textos con «Código seguro: …» (<code>core/i18n-runtime-catalog.ts:387-399</code>)</td></tr>
+			<tr><td>Recorrido del análisis en 3 pasos</td><td><span class="bx-tag" data-s="prop">propuesta</span></td><td>—</td></tr>
+			<tr><td>«Confirmar cambios antes de escribir»</td><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td><code>core/i18n-runtime-catalog.ts:452-454</code>, <code>ui/inventory-advisor-view.ts:498-514</code></td></tr>
+		</tbody>
+	</table></div>
+	<ul class="bx-notes">
+		<li><b>Un análisis viejo no se esconde</b>: se enseña con su fecha y un aviso llano. <span class="bx-src">Auditoría §6</span></li>
+		<li><b>Las notas se escriben solas.</b> Si una nota la editaste tú, los campos gestionados se actualizan sin tocar tu texto. <span class="bx-src">David 24 sep</span> <span class="bx-src">Auditoría §3.E</span></li>
+		<li><b>«Analizar sin escribir»</b> es el nombre vivo del botón; se mantiene.</li>
+	</ul>
+</section>
+
+<!-- ======================================================================= -->
+<h2 id="venta">4 · Venta</h2>
+<section class="bx-spec" aria-label="Lámina 4, venta">
+	<header><h3>4 · Venta: la aprobada el 26 sep</h3><span class="bx-tag" data-s="impl">implementado</span></header>
+	<div class="bx-ref">
+		<p><b>No se rediseña aquí.</b> David aprobó la maqueta de Venta el 26 sep («adelante con el diseño») y está implementada. Referencia: <code>docs/diseno/halloween-venta/maqueta.html</code> y su <code>FICHA.md</code>.</p>
+		<ul>
+			<li>Vista: <code>src/ui/sale-view.ts</code>, modelo <code>sale-view-model.ts</code>, hoja <code>sale-item-view.ts</code>, botón «Venta» en la barra (<code>product-shell.ts:46</code>).</li>
+			<li>Estado añadido en H18.34 (<code>sale-view.ts:101-116</code>), texto vivo: «Las reglas de venta caducaron el 1 jun: actualiza el plugin.» La fecha real de caducidad del paquete curado es el 1 jun 2027 (<code>advisor/inventory-advisor-builtin-bundle.ts:85</code>).</li>
+			<li>Lo que este boceto toma de Venta: la línea de estado, la marca de acción, el bloque de espacio y el vocabulario («Vender ahora», «Esperar», «Sin cotización»).</li>
+		</ul>
+	</div>
+	<div class="bx-scroll"><table class="bx-delta">
+		<caption>Qué pasó con las láminas de Venta del 24 sep</caption>
+		<thead><tr><th scope="col">Lámina y pieza</th><th scope="col">Estado</th><th scope="col">Por qué</th></tr></thead>
+		<tbody>
+			<tr><td>4.1 · Tarjetas con «Vender ahora / del 25 sep al 12 oct / mayo de 2027»</td><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td>la tarjeta aprobada del saco lleva Venta inmediata · Publicar · Umbral del año</td></tr>
+			<tr><td>4.1 · Gráfico de puntos de 7 temporadas con teclado</td><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td>la maqueta aprobada no lo incluye; la comparación va en texto</td></tr>
+			<tr><td>4.1 · Tres relojes</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td>como «puja leída a las … · hace …» y «Valen hasta las …»</td></tr>
+			<tr><td>4.2 · datawars2 caído</td><td><span class="bx-tag" data-s="obs">obsoleto</span></td><td>fuera de la maqueta aprobada</td></tr>
+			<tr><td>4.2 · Reglas de festival caducadas</td><td><span class="bx-tag" data-s="impl">implementado</span></td><td>H18.34, texto de arriba</td></tr>
+		</tbody>
+	</table></div>
+</section>
+
+<!-- ======================================================================= -->
+<h2 id="preguntas">5 · Lo que David tiene que contestar para aprobar</h2>
+<ol class="bx-questions">
+	<li><b>¿El historial sale del cajón y se lee solo al abrir la pestaña?</b>
+		<p>Recomiendo que sí: se lee una vez al abrir Obsidian y otra cuando se guarda una sesión, sin botón. Evita que la pestaña sin sesión enseñe un cajón cerrado y pida un clic justo para lo que sirve. Coste: recorre las notas del vault.</p></li>
+	<li><b>¿Se queda «Capturar ya» durante la espera de cierre?</b>
+		<p>Recomiendo que sí, como botón secundario, con su aviso de sesión estimada a la vista. Es un control que funciona desde el 1 sep; quitarlo deja sin salida a quien tiene que cerrar Obsidian ya.</p></li>
+	<li><b>¿Basta «Enviado a Nexus» en el recorrido de cada aviso?</b>
+		<p>Recomiendo tres pasos ahora (visto, enviado, en la nota) y el acuse del addon como tarea aparte. «Recibido en el juego» exige cambiar el protocolo v2 en el plugin y en los dos addons; pintarlo sin eso afirma algo que nadie confirma.</p></li>
+	<li><b>¿Inventario pasa a una sola lista de seis columnas?</b>
+		<p>Recomiendo que sí: Objeto · Cantidad · Qué hacer · Neto si vendes ya · Por qué y datos · Conservar. «En propiedad», «Ubicación» y «Evidencia» pasan a detalle. Hoy se pintan tabla y tarjetas a la vez, hasta 1.600 filas dos veces, y dos DOM que pueden divergir.</p></li>
+	<li><b>¿«Conservar» queda solo para guardar un objeto, y <code>hold</code> se dice «Esperar» como en Venta?</b>
+		<p>Recomiendo que sí, con un botón que se deshace en la misma fila (Conservar / Conservado). Hoy «Conservar» es a la vez una acción, la decisión de esperar y el botón. David puede ver «Conservar» en la Barra de caramelo, creer que ya la protegió, y no saber deshacerlo.</p></li>
+	<li><b>¿La línea del saco en Sesión lee el veredicto de Venta?</b>
+		<p>Recomiendo que sí: «Saco de Halloween en Venta: Vender ahora · Ver en Venta», del mismo cálculo que la tarjeta del saco. Hoy sale de la señal de cuenta, que puede decir «Espera» mientras Venta dice «Vender ahora»: dos consejos opuestos para el mismo saco.</p></li>
+</ol>
+
+</div>
+<script>
+/* Mejora progresiva: con script, cada lámina se pinta a 320 y a 860 px con el MISMO HTML (clon con
+   ids sufijados). Sin script, el conmutador «Panel» cambia el ancho del único panel por CSS. */
+(() => {
+	document.querySelector('.bx-top [data-both]')?.removeAttribute('hidden');
+	document.querySelectorAll('[data-leaf]').forEach((leaf) => {
+		const clone = leaf.cloneNode(true);
+		clone.classList.add('is-narrow');
+		clone.removeAttribute('data-leaf');
+		clone.querySelectorAll('[id]').forEach((el) => { el.id += '--n'; });
+		clone.querySelectorAll('[aria-labelledby]').forEach((el) => {
+			el.setAttribute('aria-labelledby', el.getAttribute('aria-labelledby').split(' ').map((id) => `${id}--n`).join(' '));
+		});
+		leaf.parentNode.insertBefore(clone, leaf);
+	});
+})();
+</script>
