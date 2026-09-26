@@ -36,7 +36,13 @@ export function renderSaleView(
 	container.addClass('tyrian-sale-page');
 	container.append(renderStatusLine(model, translator));
 	if (model.status === 'loading') {
-		container.append(renderLoading(translator));
+		const surface = renderLoading(translator);
+		// H18.38: a stuck "Leyendo…" with nothing behind it (David, 0.2.3): the auto-triggered
+		// refresh (`sale-item-view.ts`) covers the common case, but if the runtime is not ready yet
+		// or the refresh otherwise leaves the model in `loading`, the same working button the other
+		// states already offer is the escape hatch, not a dead end.
+		surface.append(renderFoot(translator, interactions));
+		container.append(surface);
 		return;
 	}
 	if (model.status === 'blocked' || model.status === 'invalid') {

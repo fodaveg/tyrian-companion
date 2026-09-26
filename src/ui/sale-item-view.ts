@@ -33,7 +33,15 @@ export class SaleItemView extends ItemView {
 	getViewType(): string { return SALE_VIEW_TYPE; }
 	getDisplayText(): string { return createTranslator(this.actions.getSaleLocale()).t('sale.view.title'); }
 	getIcon(): string { return 'candy'; }
-	async onOpen(): Promise<void> { this.closed = false; this.render(); }
+	async onOpen(): Promise<void> {
+		this.closed = false;
+		this.render();
+		// H18.38 (David, 0.2.3): opening still only reads the memory snapshot, but a snapshot that
+		// says "loading" because the advisor never analyzed this session needs the SAME one-click
+		// refresh the footer button already offers, fired once, not a silent wait for a click that
+		// nothing on screen invites. `runRefresh` already no-ops while one is in flight or absent.
+		if (this.actions.getSaleViewModel().status === 'loading') void this.runRefresh();
+	}
 	async onClose(): Promise<void> {
 		this.closed = true;
 		this.productShell?.dispose();
