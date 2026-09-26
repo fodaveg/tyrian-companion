@@ -12,6 +12,21 @@
  * Downloaded 2026-09-24. SHA-256 of the complete, untrimmed response body
  * (4,982 records, 2012-10-24 to 2026-09-24) as received:
  * `335c4cdc1c15a1f93615480a443febf55c4f5589c7c5970b485f3f54d1f865b7`.
+ * (`SELL_TIMING_HISTORY_BAG_DOWNLOADED_ON_UTC`/`_SOURCE_SHA256` below describe
+ * exactly this original download; every pre-existing row comes from it.)
+ *
+ * H18.22 (26 sep 2026, David: the Sale hero card sold the Saco "en el suelo"
+ * inside the festival) adds one row per Halloween year from a SEPARATE
+ * re-fetch of the same endpoint on 2026-09-26 (4,984 records, 2012-10-24 to
+ * 2026-09-26, SHA-256 of the complete response body as received:
+ * `e8aed4c778587ba40a3ce077777e0a475db754535138eb7344f2aee356ba57eb`): the day
+ * right AFTER that year's real start (`decisionDayFor(festival, -1)`), the
+ * decision day `compareSellNowWithWaiting` reads once today has moved past
+ * the last catalogued edition's own start (`referenceFestivalFor`,
+ * `sell-or-wait.ts`). At that offset the pre-festival window is empty by
+ * construction (`preFestivalWindowFor`'s width clamps to 0 for any offset
+ * ≤ 1), so no window days are needed for it, only the single decision-day
+ * price.
  *
  * The endpoint only carries `buy_price_avg` from 2019-07-13 onward; before
  * that it reports only `buy_price_min`/`buy_price_max` per day. So that every
@@ -60,6 +75,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2014-10-18', 337],
 	['2014-10-19', 334],
 	['2014-10-20', 339],
+	['2014-10-22', 327],
 	['2015-05-01', 396],
 	['2015-05-02', 387],
 	['2015-05-03', 390],
@@ -110,6 +126,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2015-10-20', 519],
 	['2015-10-21', 510],
 	['2015-10-22', 516],
+	['2015-10-24', 498],
 	['2016-05-01', 1153],
 	['2016-05-02', 1112],
 	['2016-05-03', 1137],
@@ -160,6 +177,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2016-10-15', 1499],
 	['2016-10-16', 1507],
 	['2016-10-17', 1597],
+	['2016-10-19', 1338],
 	['2017-05-01', 450],
 	['2017-05-02', 461],
 	['2017-05-03', 455],
@@ -210,6 +228,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2017-10-14', 430],
 	['2017-10-15', 427],
 	['2017-10-16', 444],
+	['2017-10-18', 455],
 	['2018-05-01', 382],
 	['2018-05-02', 402],
 	['2018-05-03', 394],
@@ -257,6 +276,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2018-10-13', 498],
 	['2018-10-14', 515],
 	['2018-10-15', 512],
+	['2018-10-17', 708],
 	['2019-05-01', 922],
 	['2019-05-02', 960],
 	['2019-05-03', 933],
@@ -307,6 +327,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2019-10-12', 950],
 	['2019-10-13', 888],
 	['2019-10-14', 902],
+	['2019-10-16', 527],
 	['2020-05-01', 501],
 	['2020-05-02', 490],
 	['2020-05-03', 498],
@@ -357,6 +378,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2020-10-10', 586],
 	['2020-10-11', 581],
 	['2020-10-12', 535],
+	['2020-10-14', 405],
 	['2021-05-01', 458],
 	['2021-05-02', 468],
 	['2021-05-03', 473],
@@ -407,6 +429,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2021-10-02', 407],
 	['2021-10-03', 398],
 	['2021-10-04', 452],
+	['2021-10-06', 382],
 	['2022-05-01', 358],
 	['2022-05-02', 329],
 	['2022-05-03', 329],
@@ -457,6 +480,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2022-10-15', 394],
 	['2022-10-16', 376],
 	['2022-10-17', 390],
+	['2022-10-19', 322],
 	['2023-05-01', 369],
 	['2023-05-02', 369],
 	['2023-05-03', 382],
@@ -507,6 +531,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2023-10-14', 418],
 	['2023-10-15', 420],
 	['2023-10-16', 376],
+	['2023-10-18', 410],
 	['2024-05-01', 518],
 	['2024-05-02', 571],
 	['2024-05-03', 572],
@@ -557,6 +582,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2024-10-12', 576],
 	['2024-10-13', 582],
 	['2024-10-14', 552],
+	['2024-10-16', 395],
 	['2025-05-01', 475],
 	['2025-05-02', 476],
 	['2025-05-03', 478],
@@ -607,6 +633,7 @@ const ROWS: readonly (readonly [string, number])[] = [
 	['2025-10-04', 439],
 	['2025-10-05', 434],
 	['2025-10-06', 393],
+	['2025-10-08', 362],
 	['2026-05-01', 418],
 	['2026-05-02', 391],
 	['2026-05-03', 394],
