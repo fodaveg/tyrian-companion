@@ -57,11 +57,14 @@ export function inventorySyncPanel(
 			summaryLine: null, lastRunNote: null, finishedAtLine: null,
 		};
 	}
+	// H18.37 (David, 24 sep 2026): notes write themselves, so the run controller never enters
+	// `'confirm'` anymore. It stays a valid value on the wire type; this projects it like an
+	// untouched idle panel instead of resurrecting the removed confirmation copy.
 	if (state.status === 'confirm') return {
-		tone: 'normal', statusWord: translator.t('advisor.sync.status.confirm'),
-		message: translator.t('advisor.sync.confirmBody', { deactivate: state.summary.deactivate }),
-		percent: 80, progressLabel: progressLabel(80, null, null, null),
-		summaryLine: translator.t('advisor.sync.summaryLine', inventorySyncSummaryParams(state.summary)), lastRunNote: null, finishedAtLine: null,
+		tone: 'normal', statusWord: translator.t('advisor.sync.status.idle'),
+		message: translator.t('advisor.sync.idle'),
+		percent: 0, progressLabel: progressLabel(0, null, null, null),
+		summaryLine: null, lastRunNote: null, finishedAtLine: null,
 	};
 	if (state.status === 'conflict') return {
 		tone: 'normal', statusWord: translator.t('advisor.sync.status.conflict'),

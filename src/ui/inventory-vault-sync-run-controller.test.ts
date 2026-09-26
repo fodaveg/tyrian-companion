@@ -26,31 +26,29 @@ describe('inventory Vault one-click sync controller', () => {
 		expect(final).toMatchObject({ status: 'idle', lastRun: { status: 'success' } });
 	});
 
-	it('pauses for explicit confirmation when the plan deactivates rows, and only writes after confirm()', async () => {
+	it('H18.37 (David, 24 sep 2026): writes directly even when the plan deactivates rows, never pausing for confirm()', async () => {
 		const plan = planWith(['create', 'deactivate']);
 		const applied: InventoryVaultSyncResult = { status: 'applied', created: 1, updated: 0, deactivated: 1 };
 		const ports = portsFor({
 			previewSync: vi.fn(async () => plan),
 			applySync: vi.fn(async (_p: InventoryVaultSyncPlan, onStep: (completed: number, total: number) => void) => { onStep(2, 2); return applied; }),
 		});
-		const { controller } = harness(ports);
-		const paused = await controller.run();
-		expect(paused).toMatchObject({ status: 'confirm', summary: { deactivate: 1 } });
-		expect(ports.applySync).not.toHaveBeenCalled();
-		const done = await controller.confirm();
+		const { controller, changes } = harness(ports);
+		const done = await controller.run();
 		expect(ports.applySync).toHaveBeenCalledOnce();
+		expect(changes.some((state) => state.status === 'confirm')).toBe(false);
 		expect(done).toMatchObject({ status: 'idle', lastRun: { status: 'success' } });
 	});
 
-	it('discards a pending destructive plan on cancel without ever calling applySync', async () => {
+	it('`confirm()` and `cancel()` are no-ops: the controller never enters `confirm` to call them on', async () => {
 		const ports = portsFor({ previewSync: vi.fn(async () => planWith(['deactivate'])) });
 		const { controller } = harness(ports);
 		await controller.run();
-		expect(controller.current().status).toBe('confirm');
+		expect(controller.current().status).not.toBe('confirm');
+		expect(controller.canConfirm()).toBe(false);
 		controller.cancel();
-		expect(controller.current()).toMatchObject({ status: 'idle' });
 		expect(await controller.confirm()).toMatchObject({ status: 'idle' });
-		expect(ports.applySync).not.toHaveBeenCalled();
+		expect(ports.applySync).toHaveBeenCalledOnce();
 	});
 
 	it('stops at conflict without writing when the plan has real conflicts, and again when canApply is false', async () => {
@@ -319,7 +317,7 @@ describe('inventory Vault one-click sync controller', () => {
 		},
 	);
 
-	it('ignores a second run() while already running or awaiting confirmation', async () => {
+	it('ignores a second run() while already running', async () => {
 		const pending = deferred<void>();
 		const ports = portsFor({ refreshAdvisor: vi.fn(() => pending.promise) });
 		const { controller } = harness(ports);

@@ -207,11 +207,9 @@ export class InventoryVaultOneClickSyncController {
 			this.enter({ status: 'conflict', summary }, generation);
 			return;
 		}
-		if (summary.deactivate > 0) {
-			this.plan = structuredClone(plan);
-			this.enter({ status: 'confirm', summary }, generation);
-			return;
-		}
+		// H18.37 (David, 24 sep 2026): notes write themselves. A plan that deactivates rows no
+		// longer pauses for a human confirmation before writing; `'confirm'` stays a valid state
+		// on the wire only for a caller mid-migration and is never entered by this controller.
 		await this.applyPlan(plan, summary, startedAt, generation);
 	}
 
