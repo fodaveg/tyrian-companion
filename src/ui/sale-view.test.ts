@@ -113,6 +113,66 @@ describe('sale view render', () => {
 		expect(badges.some((badge) => badge.attributes.get('data-action') === 'nodata')).toBe(true);
 	});
 
+	/**
+	 * Review fix (26 sep 2026): David's report — the calendar had no mark for "today" and every
+	 * bar rendered as the same fixed, unpositioned outline regardless of its real dates (open or
+	 * closed looked the same size). NOW_MS is 26 sep 2026.
+	 */
+	it('review fix: marks today on the shared axis and states days left/until per window', () => {
+		const model = buildSaleViewModel(baseInput({
+			calendar: [
+				{
+					itemId: 36038, name: 'Saco de Halloween', icon: null,
+					// Open today (15 sep – 12 oct): closes in 16 days.
+					candidates: [{ fromDay: '2026-09-15', toDay: '2026-10-12' }],
+				},
+				{
+					itemId: 47909, name: 'Barra de caramelo', icon: null,
+					// Not open yet (6 oct – 19 oct): opens in 10 days.
+					candidates: [{ fromDay: '2026-10-06', toDay: '2026-10-19' }],
+				},
+			],
+		}));
+		const container = render(model, 'es');
+		const copy = text(container);
+		expect(copy).toContain('quedan 16 días');
+		expect(copy).toContain('faltan 10 días');
+		const todays = byClass(walk(container), 'tyrian-sale__today');
+		expect(todays.length).toBeGreaterThan(0);
+		for (const marker of todays) {
+			const at = marker.attributes.get('style') ?? '';
+			expect(at).toMatch(/--at:\d/);
+		}
+		const bars = byClass(walk(container), 'tyrian-sale__bar');
+		expect(bars).toHaveLength(2);
+		for (const bar of bars) {
+			const style = bar.attributes.get('style') ?? '';
+			const from = Number(/--from:([\d.]+)/.exec(style)?.[1]);
+			const to = Number(/--to:([\d.]+)/.exec(style)?.[1]);
+			expect(Number.isFinite(from)).toBe(true);
+			expect(Number.isFinite(to)).toBe(true);
+			expect(to).toBeGreaterThan(from); // a real window, never a zero-width bar.
+		}
+	});
+
+	/**
+	 * Review fix (26 sep 2026): David's report — the hero card never said how many Sacos he owns,
+	 * unlike every other row (`sale.view.slots.*` never actually interpolates `{{quantity}}`).
+	 */
+	it('review fix: the hero card states the owned quantity, not just the slot count', () => {
+		const model = buildSaleViewModel(baseInput({
+			hero: {
+				...row({
+					itemId: 36038, name: 'Saco de Halloween', ownedQuantity: 2350, slotsUsed: 10, bidCopper: 342,
+					decision: { action: 'sell', reason: 'no_demonstrated_wait_advantage', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
+				}),
+				yearThresholdCopper: null, openVsSell: null,
+			},
+		}));
+		const container = render(model, 'es');
+		expect(text(container)).toContain('2350');
+	});
+
 	it('review fix: shows the open-vs-sell comparison and the "Abrir" badge when opening beats selling now', () => {
 		const model = buildSaleViewModel(baseInput({
 			hero: {

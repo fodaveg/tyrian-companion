@@ -1,11 +1,13 @@
+import { writeFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { createTranslator } from './core/i18n';
-import TyrianCompanionPlugin, { resolveSaleSeasonalInputFor, saleOpenVsSellCopper } from './main';
+import TyrianCompanionPlugin, { resolveSaleSeasonalInputFor, saleOpenVsSellCopper, saleSourceRowFromAdvisorRow } from './main';
 import { sellTimingHistoryBagDays } from './economy/__fixtures__/sell-timing-history-36038';
 import type { PriceHistoryDailyV1 } from './economy/price-history-model';
+import type { InventoryObjectDecisionAction } from './advisor/inventory-object-result';
 import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './ui/inventory-advisor-view-model';
 import { buildSaleViewModel, type SaleViewModel, type SaleViewModelInput } from './ui/sale-view-model';
 import { renderSaleView } from './ui/sale-view';
@@ -344,6 +346,215 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 			expect(model.status).toBe('ready');
 			expect(model.groups).not.toEqual([]);
 		});
+	});
+});
+
+/**
+ * Review fix (26 sep 2026): David's own screenshot of the "Sin datos" group showed "Puja por
+ * unidad 4g 13s 45c" next to "Neto si vendes ya: Sin datos" — a live bid, but no net — for the same
+ * row (Barra de caramelo, #47909). `row.marketComparison` (`advisor row → SaleSourceRow`) only
+ * exists for a route the advisor already classified `sell`/`list`/`vendor`
+ * (`marketComparisonsForLine`); a row still on `review` never gets one, even though `bidCopper`
+ * comes from the account's own live price snapshot, set independently of that classification.
+ */
+describe('saleSourceRowFromAdvisorRow: a live bid always produces a net, even with no advisor market comparison', () => {
+	const CANDY_BAR_ITEM_ID = 47909; // Barra de caramelo, David's real note: 71 units, bid ~4g13s45c.
+	const REAL_BID_COPPER = 41_345;
+	const REAL_OWNED_QUANTITY = 71;
+
+	function reviewRow(): InventoryAdvisorViewRow {
+		return {
+			id: '#/sale/row/47909', itemId: CANDY_BAR_ITEM_ID, name: 'Barra de caramelo', icon: null,
+			ownedQuantity: REAL_OWNED_QUANTITY, availableQuantity: REAL_OWNED_QUANTITY, action: 'review', quantity: REAL_OWNED_QUANTITY,
+			allocations: [{ positionRef: '#/positions/47909/0', quantity: REAL_OWNED_QUANTITY, location: { source: 'materials', category: 1 } }],
+			reasonCodes: [], protectionReasons: [], value: { status: 'not_applicable', route: null },
+			// The advisor never computed a comparison for a `review` route: exactly David's real case.
+			marketComparison: null, burden: null,
+			coverage: { snapshot: 'complete', inventory: 'complete', catalog: 'complete', prices: 'complete', reservations: 'complete', accountSignals: 'complete', rules: 'complete' },
+			irreversibleReviewOnly: false, discardProof: null,
+		};
+	}
+
+	it('computes an instant-sell net from the bid itself, never leaving it null just because the route stalled on review', () => {
+		const result = saleSourceRowFromAdvisorRow(reviewRow(), REAL_BID_COPPER);
+		expect(result.bidCopper).toBe(REAL_BID_COPPER);
+		expect(result.instantSellNetCopper).not.toBeNull();
+		expect(result.instantSellNetCopper).toBeGreaterThan(0);
+	});
+
+	/**
+	 * Sabotage: reverting `saleSourceRowFromAdvisorRow`'s `instantSellNetCopper` to
+	 * `row.marketComparison?.instantSellCopper ?? null` (dropping the `computeInstantSellNetCopper`
+	 * fallback) makes this fail on `expect(result.instantSellNetCopper).not.toBeNull()`.
+	 */
+	it('never shows the "no quote" badge for a row that carries a real bid, once fed through the real view model', () => {
+		const sourceRow = saleSourceRowFromAdvisorRow(reviewRow(), REAL_BID_COPPER);
+		const model = buildSaleViewModel({
+			status: 'ready', nowMs: Date.UTC(2026, 8, 26), festivalStartMs: null, maxPriceAgeMs: 900_000,
+			hero: null, rows: [sourceRow], calendar: [],
+		});
+		const rendered = [...model.groups.now, ...model.groups.wait, ...model.groups.noData]
+			.find((row) => row.itemId === CANDY_BAR_ITEM_ID);
+		expect(rendered).toBeDefined();
+		expect(rendered?.action).not.toBe('no_data');
+		expect(rendered?.instantSellNetCopper).not.toBeNull();
+	});
+});
+
+/**
+ * Acceptance test (task D, review 26 sep 2026): the real `getSaleViewModel` + `computeSaleHeroTiming`
+ * + `buildSaleViewModel` + `renderSaleView` pipeline, fed David's REAL Halloween inventory —
+ * quantities, bids and recommendations read from his own notes in
+ * `42.31 Datos de cuenta de Guild Wars 2/Inventory/Positions/` (read-only; no account id, no
+ * character name — "Personaje 1" stands in for "Rinopopo"). The curated festival calendar comes
+ * from the REAL `inventoryAdvisorBuiltinBundleProvider`, never a hand-built one. The hero's own
+ * timing runs the REAL `recommendPosition` against the curated 2019-2025 backtest fixture
+ * (`sell-timing-history-36038`), simulating the state Fix A (`inventory-analysis.ts`) now reaches
+ * once a real sync seeds it — this file only proves the RENDER is coherent once history exists,
+ * `inventory-analysis.test.ts` proves the seeding wiring that gets it there.
+ *
+ * The full rendered text is dumped to the scratchpad for a line-by-line human check.
+ */
+describe('acceptance: the real Venta pipeline renders David\'s real Halloween inventory without contradictions', () => {
+	function realRow(fields: {
+		itemId: number; name: string; ownedQuantity: number; slots: number;
+		decision: NonNullable<InventoryAdvisorViewRow['decision']> | null;
+	}): InventoryAdvisorViewRow {
+		const decision = fields.decision;
+		return {
+			id: `#/sale/row/${String(fields.itemId)}`, itemId: fields.itemId, name: fields.name, icon: null,
+			ownedQuantity: fields.ownedQuantity, availableQuantity: fields.ownedQuantity,
+			action: decision === null ? 'review' : (decision.action === 'hold' ? 'keep' : decision.action === 'sell' ? 'sell' : 'review'),
+			quantity: fields.ownedQuantity,
+			allocations: Array.from({ length: fields.slots }, (_, index) => ({
+				positionRef: `#/positions/${String(fields.itemId)}/${String(index)}`, quantity: fields.ownedQuantity, location: { source: 'materials' as const, category: 1 },
+			})),
+			decision: decision ?? undefined,
+			reasonCodes: [], protectionReasons: [], value: { status: 'not_applicable', route: null },
+			// Real note: none of these positions had a `marketComparison` from the advisor's own route
+			// classification (review fix's whole point — `saleSourceRowFromAdvisorRow` no longer needs one).
+			marketComparison: null, burden: null,
+			coverage: { snapshot: 'complete', inventory: 'complete', catalog: 'complete', prices: 'complete', reservations: 'complete', accountSignals: 'complete', rules: 'complete' },
+			irreversibleReviewOnly: false, discardProof: null,
+		};
+	}
+
+	function realDecision(
+		action: InventoryObjectDecisionAction, reason: string,
+		extra: { until?: string | null; sellWindowFromDay?: string | null; sellWindowToDay?: string | null; priceQuotedAt?: string | null } = {},
+	): NonNullable<InventoryAdvisorViewRow['decision']> {
+		return {
+			action, reason: reason as never, until: extra.until ?? null, missing: null,
+			pricePercentile: null, priceCoverageDays: null, priceQuotedAt: extra.priceQuotedAt ?? null,
+			priceHistoryLastDay: null, sellWindowFromDay: extra.sellWindowFromDay ?? null, sellWindowToDay: extra.sellWindowToDay ?? null,
+			sellOrWait: null,
+		};
+	}
+
+	it('shows a coherent hero, coherent rows and a marked calendar for the real Halloween positions', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(SEPT_26_MS);
+
+		// Real quantities and bids, `tyrian-companion/…/Inventory/Positions/*.md` (26 sep 2026 read).
+		const HERO_ROW = realRow({
+			itemId: 36038, name: 'Saco de Halloween', ownedQuantity: 1, slots: 1,
+			decision: null, // the hero's OWN timing comes from `computeSaleHeroTiming`, not this field.
+		});
+		const CANDY_BAR = realRow({
+			itemId: 47909, name: 'Barra de caramelo', ownedQuantity: 71, slots: 1,
+			decision: realDecision('sell_at_season', 'seasonal_hold', { until: '2026-10-05T00:00:00.000Z' }),
+		});
+		const JORCAMELO = realRow({
+			itemId: 43320, name: 'Jorcamelo', ownedQuantity: 31, slots: 1,
+			decision: realDecision('sell_at_season', 'seasonal_hold', { until: '2027-06-01T00:00:00.000Z' }),
+		});
+		const FANGS_PREMIUM = realRow({
+			// Real note: `review`/`no_close_today` — undecided, but the account DOES carry a live bid.
+			itemId: 48805, name: 'Colmillos de plástico de alta calidad', ownedQuantity: 20, slots: 1,
+			decision: realDecision('review', 'no_close_today'),
+		});
+		const PLAIN_FANGS = realRow({
+			// Real note: `tc_unit_sell_copper: null` — genuinely no bid, sell depth unavailable.
+			itemId: 36059, name: 'Colmillos de plástico', ownedQuantity: 698, slots: 1,
+			decision: realDecision('hold', 'below_capital_threshold'),
+		});
+		const CANDY_PIECE = realRow({
+			itemId: 36041, name: 'Trozo de caramelo', ownedQuantity: 720, slots: 1,
+			decision: realDecision('sell', 'bid_above_reference', { until: '2026-09-26T10:00:00.000Z', priceQuotedAt: '2026-09-26T07:35:00.000Z' }),
+		});
+		const rows = [HERO_ROW, CANDY_BAR, JORCAMELO, FANGS_PREMIUM, PLAIN_FANGS, CANDY_PIECE];
+		const bidsByItemId = new Map([
+			[36038, 374], [47909, 41_539], [43320, 44_498], [48805, 3_419], [36059, null], [36041, 72],
+		]);
+
+		const harness = {
+			runtimeReady: true,
+			getInventoryAdvisorViewModel: (): InventoryAdvisorViewModel => ({
+				status: 'ready', title: 'x', detail: 'y', groups: [{ key: 'curated', rows }],
+			}),
+			inventoryAdvisor: {
+				analysis: () => ({
+					source: {
+						input: {
+							prices: {
+								items: [...bidsByItemId].map(([itemId, bid]) => (
+									{ itemId, bid: bid === null ? null : { unitCopper: bid } }
+								)),
+							},
+						},
+					},
+				}),
+			},
+			settings: { priceHistoryEnabled: true, priceHistoryDailyRetentionDays: 400, recommendationCapitalThresholdCopper: 100_000 },
+			// Simulates the state Fix A reaches after a real sync seeds 36038's datawars2 history: the
+			// full curated backtest is what `readDaily` returns (this file's OWN sanctioned fixture).
+			priceHistory: { readDaily: async () => heroFixtureDaily() },
+			vaultId: null,
+			saleHeroTiming: null as unknown,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated harness below.
+		const compute = (TyrianCompanionPlugin.prototype as unknown as {
+			computeSaleHeroTiming(this: typeof harness): Promise<void>;
+		}).computeSaleHeroTiming;
+		await compute.call(harness);
+		// The whole point of Fix A: with real history available, the hero gets a REAL verdict, never
+		// `review`/`insufficient_reference` (David's exact reported contradiction).
+		expect((harness.saleHeroTiming as { action: string } | null)?.action).not.toBe('review');
+
+		type Harness = typeof harness & { buildSaleHeroInput: unknown; getSellSignalState(): null };
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			getSaleViewModel(this: Harness): SaleViewModel;
+			buildSaleHeroInput: unknown;
+		};
+		const model = proto.getSaleViewModel.call({ ...harness, buildSaleHeroInput: proto.buildSaleHeroInput, getSellSignalState: () => null });
+
+		vi.stubGlobal('createEl', (tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) => makeEl(tag, options));
+		vi.stubGlobal('createDiv', (options?: { text?: string; cls?: string; attr?: Record<string, string> }) => makeEl('div', options));
+		vi.stubGlobal('createSpan', (options?: { text?: string; cls?: string; attr?: Record<string, string> }) => makeEl('span', options));
+		const container = makeEl('div');
+		renderSaleView(container as unknown as HTMLElement, model, createTranslator('es'));
+
+		const lines = textOf(container).split('\n').filter((line) => line.trim() !== '');
+		const dump = lines.join('\n');
+		const dumpPath = '/tmp/claude-1000/-home-fodaveg-code-tyrian-companion/d3671ce6-a44c-4f1c-8165-fef8a1aaa2c8/scratchpad/venta-render-real.txt';
+		writeFileSync(dumpPath, dump, 'utf8');
+
+		// Criterion 1: no row carrying a bid ever reads "Sin cotización" or "Sin datos".
+		const pricedNames = ['Barra de caramelo', 'Jorcamelo', 'Colmillos de plástico de alta calidad', 'Trozo de caramelo', 'Saco de Halloween'];
+		for (const name of pricedNames) expect(dump).not.toMatch(new RegExp(`${name}[\\s\\S]{0,400}Sin cotizaci[oó]n`));
+		expect(dump).not.toContain('Neto si vendes ya: Sin datos');
+
+		// Criterion 2: the Saco states its owned quantity and a real verdict, plus the comparison figures.
+		expect(model.hero?.ownedQuantity).toBe(1);
+		expect(model.hero?.action).not.toBe('no_data');
+		expect(dump).toContain('Saco de Halloween');
+		expect(dump).toContain('1 · 1 hueco');
+
+		// Criterion 3: every calendar window says how much is left or how much is missing.
+		expect(model.calendar.length).toBeGreaterThan(0);
+		expect(dump).toMatch(/quedan \d+ días|faltan \d+ días/);
+
+		expect(model.groups.noData.some((row) => row.itemId === 48805)).toBe(false);
 	});
 });
 
