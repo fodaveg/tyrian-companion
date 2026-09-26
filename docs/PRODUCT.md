@@ -286,18 +286,26 @@ La versión `0.1.0` valida la base técnica:
   solo salen con evidencia completa y fresca. H4.16 ya añade una allowlist excepcional y pura: solo
   conserva candidatos review-only cuando reproduce exactamente el productor H4.15 y prueba ausencia
   de rutas, reservas y excepciones. H5.11 presenta rutas líquidas manuales respaldadas para items sin una
-  capacidad curada, mientras reserva uso/abrir/reciclar para reglas curadas. Por defecto muestra únicamente
-  bolsas de personaje e inventario compartido; banco, materiales, delivery y pendientes son opt-in reales:
-  la captura los lee como fuentes opcionales que nunca invalidan el inventario básico. Un filtro de personaje
+  capacidad curada, mientras reserva uso/abrir/reciclar para reglas curadas. Desde la decisión del
+  26 sep 2026, el Inventario muestra por defecto todas las ubicaciones disponibles, incluidos banco,
+  materiales, delivery y los objetos conservados o pendientes de revisión. Las fuentes opcionales
+  inaccesibles siguen declarando su cobertura; no se inventan posiciones ausentes. Un filtro de personaje
   acota la vista a las bolsas de un personaje observado y declara ese alcance; el orden visible se aplica
   después de acotar, y los objetos sin precio demostrado se cuentan aparte en vez de sumarse como cero.
   Desde H18.18 una línea dice qué alcance se muestra y cuántos objetos quedan fuera del filtro y por qué
   (banco, materiales, conservar, revisar…), y cada fila ofrece «Conservar», que escribe la excepción de
-  conservación del objeto entero sin teclear su id. Desde H18.15 la vista muestra los huecos libres de
-  bolsas, banco y almacén compartido, el estado de poco espacio contra el umbral de ajustes (bolsas + banco;
-  sin banco leído no se declara) y la capacidad de materiales como «al menos N» cuando ninguna está
+  conservación del objeto entero sin teclear su id. El orden inicial es neto descendente, también
+  cuando hay poco espacio; los objetos sin valoración quedan aparte, sin convertir desconocido en cero.
+  La valoración de una posición no se confunde con su recomendación: conservar o depositar no elimina
+  un valor de mercado conocido. Desde H18.15 la vista muestra los huecos libres de bolsas, banco y
+  almacén compartido. La decisión del 26 sep sustituye la suma de bolsas de todos los personajes:
+  las bolsas deben corresponder al personaje con actividad reciente y, si no se puede identificar
+  con evidencia suficiente, su espacio es desconocido. `last_modified` es una inferencia de actividad
+  API, no una garantía de personaje activo; la vista indica esa procedencia. El umbral sigue sumando
+  las bolsas elegidas y el banco; sin cualquiera de ambos datos no se afirma que hay poco espacio.
+  La vista muestra la capacidad de materiales como «al menos N» cuando ninguna está
   configurada y alguna pila supera 250 (N es el siguiente múltiplo de 250 que la contiene, fuente
-  `observed_minimum`). Con poco espacio, lo que vacía huecos enteros va primero; con espacio de sobra, el oro.
+  `observed_minimum`).
   H5.12 ya aporta edición local explícita con CAS. David aprobó el 2026-08-16 la regla y comparación económica
   built-in de 36038: puede recomendar manualmente abrir, vender o llevar al mercader con evidencia completa.
 - El histórico de precios sigue desactivado por defecto: es opt-in (decisión de David del 24 sep 2026).
@@ -306,6 +314,10 @@ La versión `0.1.0` valida la base técnica:
   `/v2/commerce/prices` periódicamente y siembra desde datawars2; el botón «Activar histórico de precios»
   es el consentimiento y escribe el mismo ajuste que la pestaña de Ajustes. «Ahora no» lo oculta hasta la
   siguiente versión del plugin (`priceHistoryNoticeDismissedVersion`). Mostrar el aviso no hace peticiones.
+  El 26 sep 2026 David delegó en Codex resolver la descarga que faltaba en Venta («decide tu»):
+  el botón «Actualizar» también puede completar las semillas de datawars2 necesarias para los objetos
+  de calendario, con el opt-in vigente y los límites existentes. Ya no depende exclusivamente de
+  «Sincronizar». Abrir Venta no autoriza esta nueva descarga de semillas; el disparador es el clic.
 - H5.6 ofrece Preview, Apply, Repair, Move y Remove para assets gestionados. H5.7 añade una Base Halloween ES/EN al mismo bundle: cinco vistas consumen notas schema v2 con evento explícito y mantienen fuera de mejor g/h cualquier sesión estimada, contaminada, parcial o no evaluada. H5.8 mantiene esos outputs portables entre macOS, Linux y Windows mediante rutas NFC relativas, sin rutas personales ni nombres incompatibles; la reescritura canónica de settings elimina propiedades desconocidas y conserva solo las rutas legacy autorizadas para reubicar o retirar explícitamente. No se escribe al cargar en el Vault ni se sobrescriben modificaciones humanas. H18.18: tras una «Sincronizar inventario» correcta, las Bases ya instaladas en la carpeta de salida siguen solas a una versión nueva del plugin por la misma vía que Apply, siempre que la vista previa no encuentre conflicto; una Base editada o borrada a mano deja la actualización en la vista previa manual y se avisa una vez por carga. Nunca instala por sí sola.
 - El inventario durable añade Preview y Apply dentro del Inventory Advisor. Produce una fila por
   objeto, ubicación y personaje, con cantidad y precio de venta instantánea propios. Las Bases

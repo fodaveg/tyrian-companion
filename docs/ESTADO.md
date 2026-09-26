@@ -1,5 +1,12 @@
 # Estado
 
+## Corrección de Venta e Inventario del 26 sep 2026
+
+El candidato 0.2.5 continúa el relevo de la 0.2.4: histórico desde Actualizar, ventanas coherentes,
+netos con profundidad, Inventario completo y bolsas del personaje con actividad reciente.
+El [informe del candidato](audit/2026-09-26-venta-inventario.md) distingue las verificaciones
+del código y las capturas de la instalación y carga en Obsidian. Hebra sigue fuera de este lote.
+
 ## Vertical activa
 
 **Estado a 24 sep 2026.** La 0.1.35 incorpora H17.1 (magic find derivado de la API de Guild Wars 2). La auditoría final consolidada del 24 de septiembre está **cerrada pero sin implementación**: decisiones de producto tomadas (sesiones, inventario, entrega en el juego) quedan en plan H18 en Lumbre en curso. Cambios de documentación, rearmado de detección y ajustes a lifecycle están **pendientes de implementar**. La 0.1.31 publicó los once lotes del audit del 8 sep; la 0.1.32 y la 0.1.33 llevan el H15

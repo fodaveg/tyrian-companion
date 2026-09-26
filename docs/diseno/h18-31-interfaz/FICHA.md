@@ -73,7 +73,7 @@ piezas con la cita `fichero:línea`.
 | 6 | Historial debajo de la tarjeta, leído al abrir | **Viva**, sin implementar (pregunta 1). |
 | 7 | Acciones con marca lateral y texto en `--text-normal` | **Aplicada en Venta** (`styles.css:2566-2598`); **viva** para Inventario. |
 | 8 | «Conservar» no mueve la fila hasta el siguiente análisis | **Aplicada en parte**: la fila se queda y dice «Guardado para conservar» (`ui/inventory-advisor-view.ts:1229-1234`), pero no se deshace desde la fila (pregunta 5). |
-| 9 | «Poco espacio» = bolsas de todos los personajes + banco, umbral 20 | **Aplicada** (`core/settings.ts:35-39`, `inventory/storage-space.ts:50-70`). |
+| 9 | «Poco espacio» = bolsas de todos los personajes + banco, umbral 20 | **Sustituida por David el 26 sep**: bolsas del personaje con actividad reciente + banco. Una selección ambigua deja el espacio desconocido; la actividad API se etiqueta como inferencia. Ver `docs/PRODUCT.md`. |
 | 10 | Supuesto: las reglas se renuevan con una versión nueva del plugin | **Cae como supuesto**: ya es el mecanismo (H18.34, «actualiza el plugin»). |
 
 ## Decisiones mías nuevas (se pueden tumbar)

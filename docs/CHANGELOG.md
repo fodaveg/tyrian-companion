@@ -1,5 +1,25 @@
 # Changelog
 
+## Release beta 0.2.5 - coherencia de Venta e Inventario
+
+- «Actualizar» en Venta completa el histórico de los objetos de calendario con el consentimiento
+  existente; la apertura de la pestaña no siembra. Las descargas de Sincronizar y Venta se serializan.
+- El calendario muestra la misma ventana que la recomendación, con un eje próximo legible y fechas
+  explícitas para ventanas lejanas. Jorcamelo compara su temporada de junio, no Halloween.
+- Los netos de venta requieren valoración con profundidad suficiente; la mejor puja por sí sola no
+  demuestra que pueda venderse toda una pila a ese precio. Los importes compactos conservan su
+  lectura accesible completa.
+- Inventario incluye todas las ubicaciones disponibles y ordena por neto, también al conservar o
+  depositar. Las bolsas se acotan al personaje con actividad reciente identificable, con procedencia
+  visible; ante ambigüedad el espacio queda desconocido.
+- Se corrigen los controles ocultos que el CSS de Obsidian hacía visibles y el resumen que llamaba
+  «Vender ya» a objetos cuya recomendación temporal era esperar.
+- La aceptación económica usa cinco respuestas públicas completas de datawars2 procesadas por el
+  parser de producción. Se sustituyen los fixtures pendientes que usaban siempre el punto medio.
+
+Fuentes, verificación y límites: [informe del candidato](audit/2026-09-26-venta-inventario.md).
+La preparación de este candidato no acredita publicación ni instalación en Obsidian.
+
 ## Release beta 0.2.4 - la pestaña Venta enseña bien los datos reales
 
 David reportó (26 sep, tras "Analizar sin escribir") que su cuenta real mostraba la pestaña Venta

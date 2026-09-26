@@ -372,6 +372,17 @@ Los warnings tienen causa explícita: `future_capabilities` describe una conexi�
 
 ## Snapshot de almacenamiento
 
+La selección de bolsas de Inventario (26 sep 2026) consume actividad de `/v2/characters?ids=all`
+en la operación autenticada existente. `parseCharacterActivity` y `chooseLastPlayedCharacter`
+producen `StorageSnapshotPass.lastPlayedCharacter`, con personaje y origen `last_modified` o
+`age_delta`; no cambia la propiedad ni el delta de objetos. Una fecha más reciente única sobre
+el roster completo es una inferencia de actividad API. Si no resuelve la selección, solo un
+personaje con aumento de edad sobre una referencia completa del mismo contexto puede resolverla.
+Una selección ambigua o una lectura de actividad no disponible deja las bolsas desconocidas;
+nunca recupera la suma de bolsas de toda la cuenta. La referencia de edad permanece fija durante
+las pasadas de una captura y se aísla por cuenta, contexto y alcance. El banco y el inventario
+compartido conservan sus contadores propios; `lowSpace` requiere bolsas elegidas y banco conocidos.
+
 `StorageSnapshotService` es un servicio de dominio puro que H3.2 invoca únicamente desde la acción explícita **Start session**; cargar el plugin o abrir la vista no lo ejecuta. Cada captura abre una `GuildWars2Operation` o reutiliza la operación ya fijada por un workflow mayor, conserva el valor efímero del secreto y verifica `tokeninfo → account` antes de capturar. Cuenta, permisos y restricciones quedan copiados en un contexto inmutable; identidad y capacidades nunca proceden del caller. La operación elegida se reutiliza para todos los endpoints y reintentos del snapshot. Todas las rutas de almacenamiento incluyen `?v=2024-07-20T01:00:00.000Z` mediante `PINNED_SCHEMA`; fijar el esquema evita que un cambio de forma de la API altere silenciosamente una captura.
 
 Las fuentes obligatorias son roster de personajes, inventario codificado de cada personaje, inventario compartido, banco y materiales. `wallet` y `commerce/delivery` se consultan solo con `wallet` y `tradingpost`; sin permiso o sin la URL opcional autorizada quedan como `skipped`, no como error. La falta de capacidades obligatorias o de cualquiera de sus URLs exactas —incluidas las rutas dinámicas resueltas después del roster— produce `SnapshotCapabilityError` antes de lanzar el lote. Una respuesta `206`, fuente inaccesible o personaje ausente marca cobertura `partial` y nunca puede producir calidad estable. Payloads inválidos, fallos desconocidos y respuestas `401/403` se propagan: no se disfrazan como un snapshot parcial vacío.
@@ -605,6 +616,14 @@ La acción conserva `manual_only`, `sideEffects:'none'` y `requiresUserAction:tr
 ni adapter que deposite en la cuenta.
 
 ## Inventario durable en Vault
+
+La valoración que ordena Inventario se separa de la acción recomendada (26 sep 2026).
+`InventoryObjectResultsV1.valuationByDecision` se obtiene de los mismos
+`buildInventoryVaultPositionCores` y `totalSellCopper` que alimentan las notas y la Base.
+Solo suma posiciones completas atribuibles a la decisión: una posición repartida, profundidad
+insuficiente o cantidad que no coincide deja el neto desconocido, sin prorratearlo. Conservar,
+depositar o esperar no borra una valoración demostrada ni convierte esa valoración en permiso
+para vender. La presentación conserva todas las ubicaciones por defecto y ordena por neto.
 
 Las notas no capturan nada propio (H18.16). Se escriben desde el análisis que ya muestra el Inventory
 Advisor: su evidencia (instantánea, catálogo, precios, profundidad del bazar y nivel de acceso al
