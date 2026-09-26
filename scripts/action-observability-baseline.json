@@ -3,7 +3,7 @@
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
 		"catch_clause": 467,
-		"promise_catch": 39,
+		"promise_catch": 40,
 		"void_expression": 102,
 		"callback_registration": 174
 	},
@@ -4142,6 +4142,40 @@
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
+				{
+					"id": "71e7236cb10371beb61b8dc4ed70f011bfbe4669",
+					"kind": "callback_registration",
+					"line": 97,
+					"column": 18,
+					"endLine": 97,
+					"endColumn": 78,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "run",
+						"justification": "The \"then\" callback in \"run\" serializes runSequential behind the previous run. Its returned promise is awaited by run and errors propagate to that explicit action; per-item request outcomes remain observed by refreshOne."
+					},
+					"reason": "Allowlisted callback_registration: The \"then\" callback in \"run\" serializes runSequential behind the previous run. Its returned promise is awaited by run and errors propagate to that explicit action; per-item request outcomes remain observed by refreshOne. Verified registration: \"then\" in \"run\"."
+				},
+				{
+					"id": "222863fe557a117178af7447f76f286600bfe194",
+					"kind": "promise_catch",
+					"line": 98,
+					"column": 18,
+					"endLine": 98,
+					"endColumn": 47,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "run",
+						"justification": "The \"intentional_noop\" recovery in \"run\" repairs only the internal queue tail after rejection so later explicit actions can run. The original flight is separately awaited and returned to the caller, so the action error is not swallowed."
+					},
+					"reason": "Allowlisted promise_catch: The \"intentional_noop\" recovery in \"run\" repairs only the internal queue tail after rejection so later explicit actions can run. The original flight is separately awaited and returned to the caller, so the action error is not swallowed. Verified recovery: \"intentional_noop\" in \"run\"."
+				},
 				{
 					"id": "d46dff02b04cf063be71f5a21b244415134c6345",
 					"kind": "catch_clause",
@@ -13960,20 +13994,20 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "54269a8f4657940af0624c17755096ed3569bf9b",
+					"id": "3c8bd52710f880e378c9017b5773b44f4b680336",
 					"kind": "void_expression",
 					"line": 43,
 					"column": 61,
 					"endLine": 43,
-					"endColumn": 83,
+					"endColumn": 88,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
 						"target": "this.runRefresh",
 						"scope": "onOpen",
-						"justification": "The \"onOpen\" boundary deliberately detaches \"this.runRefresh\": opening a loading snapshot fires the same footer refresh once, and `runRefresh` itself owns rendering the outcome (success, blocked reason, or the retry button) on completion."
+						"justification": "The \"onOpen\" owner deliberately detaches \"this.runRefresh\" with refreshSeeds=false, preventing seed downloads on view-open. runRefresh owns busy/final rendering and the advisor action owns terminal outcomes; the footer remains the explicit retry path."
 					},
-					"reason": "Allowlisted void_expression: The \"onOpen\" boundary deliberately detaches \"this.runRefresh\": opening a loading snapshot fires the same footer refresh once, and `runRefresh` itself owns rendering the outcome (success, blocked reason, or the retry button) on completion. Verified target: \"this.runRefresh\" in \"onOpen\"."
+					"reason": "Allowlisted void_expression: The \"onOpen\" owner deliberately detaches \"this.runRefresh\" with refreshSeeds=false, preventing seed downloads on view-open. runRefresh owns busy/final rendering and the advisor action owns terminal outcomes; the footer remains the explicit retry path. Verified target: \"this.runRefresh\" in \"onOpen\"."
 				}
 			]
 		},
@@ -14034,6 +14068,31 @@
 		"src/ui/session-status-line.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/economy/__fixtures__/datawars2-real-history-36038-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
+			"boundaries": []
+		},
+		"src/economy/__fixtures__/datawars2-real-history-36041-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
+			"boundaries": []
+		},
+		"src/economy/__fixtures__/datawars2-real-history-43320-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
+			"boundaries": []
+		},
+		"src/economy/__fixtures__/datawars2-real-history-47909-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
+			"boundaries": []
+		},
+		"src/economy/__fixtures__/datawars2-real-history-48805-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
 			"boundaries": []
 		}
 	}
