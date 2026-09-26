@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// H18.35's acceptance test below imports `resolveSaleSeasonalInputFor`/`saleOpenVsSellCopper`
+// from `../main`, which imports `electron` at module scope (like `main-sale-hero-timing.test.ts`).
+vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
@@ -27,6 +31,7 @@ import {
 } from './inventory-advisor-classifier';
 import { applyInventoryDiscardAllowlist, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import { moduleBoundaryFacts } from '../test/module-boundary';
 import {
 	isInventoryContainerEconomyPack,
@@ -35,6 +40,7 @@ import {
 	type InventoryContainerPriceEvidenceV1,
 } from './inventory-container-economy';
 import type { InventoryAdvisorInputV1 } from './inventory-advisor-model';
+import { resolveSaleSeasonalInputFor, saleOpenVsSellCopper } from '../main';
 
 const BEFORE_EXPIRY = '2027-05-31T23:59:59.999Z';
 
@@ -521,6 +527,106 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		}
 		const result = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
 		expect(JSON.stringify(result)).not.toMatch(/"(?:executor|execution|sideEffects|requiresUserAction)"/u);
+	});
+
+	/**
+	 * H18.35 (26 sep 2026, David's option "B"): fase 1 measured that with the OLD 90-day
+	 * `maxRulePackAgeMs`, row 36038 fell to `coverage.rules: 'limited'` / `knowledge_stale` around
+	 * 12-14 nov 2026 — three months before `VALID_UNTIL` (1 jun 2027) and mid-way through the gap
+	 * between Halloween and the Saco's "sell in May" window. These tests run the REAL classifier
+	 * (`classifyInventoryAdvisor`), the REAL discard allowlist (`applyInventoryDiscardAllowlist`) and
+	 * the REAL presentation layer (`buildInventoryAdvisorPresentation`) — no simulated advisor model —
+	 * plus the REAL Sale-card helpers from `main.ts` (`resolveSaleSeasonalInputFor`,
+	 * `saleOpenVsSellCopper`), to demonstrate the new 300-day ceiling keeps the Saco's row usable
+	 * through 15 May 2027, and that the bundle still hard-expires at its own `VALID_UNTIL`
+	 * regardless of `maxRulePackAgeMs`.
+	 */
+	describe('H18.35: maxRulePackAgeMs (300 days) covers the curated pack through VALID_UNTIL', () => {
+		function saco36038EngineInputAt(asOf: string) {
+			const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf);
+			if (loaded.status !== 'available') throw new Error(`expected built-in bundle at ${asOf}`);
+			const bundle = loaded.bundle;
+			const input = rebaseInput(advisorInput(bundle, asOf, 36_038), asOf);
+			const prices: InventoryContainerPriceEvidenceV1 = {
+				version: 1 as const,
+				accountId: input.snapshot.accountId,
+				snapshotId: input.snapshot.snapshotId,
+				schemaVersion: PINNED_SCHEMA,
+				capturedAt: asOf,
+				source: 'gw2-commerce-prices' as const,
+				requestedItemIds: structuredClone(bundle.economyPack.expectedPriceItemIds),
+				status: 'complete' as const,
+				items: bundle.economyPack.expectedPriceItemIds.map((itemId) => ({
+					itemId, whitelisted: true,
+					bid: { unitCopper: itemId === 36_038 ? 200 : 100, quantity: 1_000 }, ask: null,
+				})),
+				missingItemIds: [],
+			};
+			return {
+				input, knowledgePack: bundle.knowledgePack,
+				containerEconomy: {
+					pack: bundle.economyPack,
+					prices,
+					marketDepth: {
+						version: 1 as const,
+						capturedAt: prices.capturedAt,
+						source: 'gw2-commerce-listings' as const,
+						requestedItemIds: structuredClone(bundle.economyPack.expectedPriceItemIds),
+						status: 'complete' as const,
+						items: prices.items.map((item) => ({
+							itemId: item.itemId, coverage: 'complete' as const,
+							buys: [{ unitCopper: item.bid!.unitCopper, quantity: 1_000_000 }], sells: [],
+						})),
+					},
+				},
+			};
+		}
+
+		function classifiedRowFor36038(asOf: string) {
+			const engineInput = saco36038EngineInputAt(asOf);
+			const producerResult = classifyInventoryAdvisor(engineInput);
+			const contextualResult = applyInventoryDiscardAllowlist({ engineInput, producerResult });
+			const presentation = buildInventoryAdvisorPresentation({
+				input: engineInput.input, result: contextualResult,
+				discardContext: { engineInput, producerResult },
+			});
+			const row = presentation.groups.flatMap((group) => group.rows).find((candidate) => candidate.itemId === 36_038) ?? null;
+			return { engineInput, producerResult, row };
+		}
+
+		it('keeps row 36038 complete/fresh, containerEconomy exposed, and the Sale card\'s openVsSell populated on 2027-05-15', () => {
+			const asOf = '2027-05-15T00:00:00.000Z';
+			const { producerResult, row } = classifiedRowFor36038(asOf);
+			expect(producerResult.status).toBe('ready');
+			const line = producerResult.report?.lines.find((candidate) => candidate.itemId === 36_038);
+			expect(line?.coverage.rules).toBe('complete');
+			expect(row).not.toBeNull();
+			expect(row?.reasonCodes).not.toContain('knowledge_stale');
+			expect(row?.containerEconomy).not.toBeNull();
+
+			const seasonal = resolveSaleSeasonalInputFor(36_038, Date.parse(asOf));
+			expect(seasonal).not.toBeNull();
+			const openVsSell = saleOpenVsSellCopper(row?.containerEconomy ?? null);
+			expect(openVsSell).not.toBeNull();
+			expect(openVsSell?.openCopper).toBeGreaterThan(0);
+		});
+
+		it('still hard-expires the built-in bundle on 2027-06-02, past its own VALID_UNTIL (unaffected by maxRulePackAgeMs)', () => {
+			expect(inventoryAdvisorBuiltinBundleProvider.load('2027-06-02T00:00:00.000Z')).toEqual({
+				status: 'unavailable', reason: 'expired', bundle: null,
+			});
+		});
+
+		it('sabotage: the OLD 90-day maxRulePackAgeMs falls back to review/knowledge_stale on 2027-05-15', () => {
+			const asOf = '2027-05-15T00:00:00.000Z';
+			const engineInput = saco36038EngineInputAt(asOf);
+			engineInput.input = { ...engineInput.input, policy: { ...engineInput.input.policy, maxRulePackAgeMs: 7_776_000_000 } };
+			const sabotagedResult = classifyInventoryAdvisor(engineInput);
+			const line = sabotagedResult.report?.lines.find((candidate) => candidate.itemId === 36_038);
+			expect(line?.coverage.rules).toBe('limited');
+			expect(line?.decisions.some((decision) => decision.action === 'review')).toBe(true);
+			expect(line?.reasons).toContainEqual(expect.objectContaining({ code: 'knowledge_stale' }));
+		});
 	});
 });
 
