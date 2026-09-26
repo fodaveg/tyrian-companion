@@ -1,5 +1,45 @@
 # Changelog
 
+## Sin publicar (main, 26 sep 2026) - pestaña Sesión según el boceto aprobado (H18.36)
+
+Boceto aprobado por David el 26 sep (`docs/diseno/h18-31-interfaz/boceto.html` y `FICHA.md`): las
+piezas "propuesta"/"decidido, sin implementar" de la lámina 1 (Sesión y Ajustes) y las láminas
+2.1-2.5, con sus respuestas "como recomiendas".
+
+- **Barra**: Ajustes pasa a icono (`clickable-icon`) al final de la barra, nunca una cuarta pestaña;
+  nueva línea de estado bajo la barra en Sesión (`Nexus conectado`/`sin señal desde HH:MM` · `Cuenta
+  leída a las HH:MM` · `siguiente hacia las HH:MM`).
+- **2.1 (en curso)**: la cifra principal dice «Ganado», nunca «en vivo»; nueva cifra «Lectura de la
+  cuenta» (hace N min, con la hora y la siguiente); insignia «Laberinto» y sufijo «la marcó Nexus»
+  (`IngameSessionMarker.linkFor`, nuevo); la línea del saco de Halloween lee el MISMO veredicto que
+  la tarjeta destacada de Venta (`getSaleViewModel().hero`), nunca la señal de cuenta; nuevo cajón
+  Botín (sustituye a Historial, que sale del cajón) con el orden Avisos-primero-en-el-Laberinto /
+  Botín-primero-el-resto-del-año, Detalle siempre último.
+- **2.2 (espera de cierre)**: el porqué de la espera pasa a la vista (ya no escondido en Detalle);
+  cifra provisional «Ganado hasta ahora»; nuevo recorrido de 3 pasos (fin marcado · lectura final ·
+  nota guardada).
+- **2.3 (fallo al cerrar)**: la meta nombra la hora del próximo reintento automático
+  (`ManualSessionStartService.getAutoRetryAt`, nuevo) en vez de «Reconciliando…»; el código de error
+  ya no llega a la línea visible del callout — solo al portapapeles, tras un nuevo botón «Copiar
+  detalle técnico»; recorrido del cierre con el paso fallido.
+- **2.4 (sin señal)**: insignia «Sin señal» y callout con la hora en la que actuará la regla de 10
+  minutos y el fin que pondrá (`getIngamePresence()`); una sesión iniciada a mano dice que sigue
+  abierta, sin hora de cierre.
+- **2.5 (sin sesión e historial)**: el historial sale del cajón, se mueve debajo de la tarjeta y se
+  lee solo (al abrir y al terminar una sesión), sin botón «Cargar historial» («Actualizar historial»
+  queda como enlace secundario); una sola tabla para las sesiones (las columnas Duración, Sacos y
+  Valor listado se ocultan en estrecho con `.is-wide`, sin tarjetas duplicadas); rendimiento por
+  actividad/build/calidad también en tabla, con la calidad marcada por forma; quitada la frase
+  obsoleta que contradecía el subtotal parcial ya implementado.
+- Nuevos módulos: `ui/receipt.ts` (recorrido de 3 pasos, reutilizable), `ui/session-status-line.ts`,
+  `ui/session-sale-verdict-line.ts`.
+- **Pendiente, no implementado en este lote** (reportado, no inventado): el formulario «Corregir
+  hora» de la última sesión — reescribir con seguridad la nota y el histórico sin tocar el botín
+  medido exige una primitiva de parcheo de nota que no llegué a completar con la verificación
+  necesaria para tocar notas reales del vault; y el recorrido de 3 pasos por aviso individual (2.1)
+  — el paso «enviado a Nexus» necesitaría persistir el resultado de entrega por aviso, dato que hoy
+  no sobrevive más allá del propio envío.
+
 ## Sin publicar (main, 26 sep 2026) - pestaña Inventario según el boceto aprobado (H18.37)
 
 **Rediseño de la pestaña Inventario** (`docs/diseno/h18-31-interfaz/boceto.html`, láminas 1, 3.1 y
