@@ -1,4 +1,5 @@
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
@@ -667,7 +668,8 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 		const lines = textOf(container).split('\n').filter((line) => line.trim() !== '');
 		const dump = lines.join('\n');
 		const dumpPath = '/tmp/claude-1000/-home-fodaveg-code-tyrian-companion/d3671ce6-a44c-4f1c-8165-fef8a1aaa2c8/scratchpad/venta-render-real.txt';
-		writeFileSync(dumpPath, dump, 'utf8');
+		// Best-effort: the scratchpad only exists on the dev machine, never in CI.
+		if (existsSync(dirname(dumpPath))) writeFileSync(dumpPath, dump, 'utf8');
 
 		// Criterion 1: no row carrying a bid ever reads "Sin cotización" or "Sin datos".
 		const pricedNames = ['Barra de caramelo', 'Jorcamelo', 'Colmillos de plástico de alta calidad', 'Trozo de caramelo', 'Saco de Halloween'];
