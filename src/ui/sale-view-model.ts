@@ -1,0 +1,253 @@
+import type { InventoryAdvisorStorageSpace } from '../advisor/inventory-advisor-presentation-model';
+import type { InventoryAdvisorWorkflowBlockedReason } from '../advisor/inventory-advisor-workflow';
+import type { PositionRecommendationReasonCode } from '../advisor/inventory-position-recommendation';
+import { priceHistoryDayUtc } from '../economy/price-history-model';
+import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
+import { prioritizeSpaceFreeingActions } from '../inventory/storage-space';
+import type { InventoryAdvisorViewStatus } from './inventory-advisor-view-model';
+
+/**
+ * The Sale tab (`docs/diseno/halloween-venta`). Pure, translator-free: every text and date is
+ * formatted by `sale-view.ts`, this module only decides WHAT the tab shows.
+ */
+
+/** The three words this view ever uses for a row's action; see the ficha's decision 1. */
+export type SaleDisplayAction = 'sell' | 'wait' | 'not_yet' | 'deposit' | 'no_data';
+
+/** `recommendPosition`'s own action union, minus `hold_for_legendary` (filtered before this module sees it). */
+export type SaleSourceDecisionAction = 'sell' | 'hold' | 'sell_at_season' | 'review';
+
+export interface SaleSourceDecision {
+	action: SaleSourceDecisionAction;
+	/** Forwarded as-is to `inventory.decision.reason.*`; this module never inspects its value. */
+	reason: PositionRecommendationReasonCode;
+	/** ISO instant this verdict stops being trustworthy, or null when it is not price-bound. */
+	until: string | null;
+	/** ISO instant the price behind this verdict was read, or null when it is not price-bound. */
+	priceQuotedAt: string | null;
+	sellWindowFromDay: string | null;
+	sellWindowToDay: string | null;
+}
+
+export interface SaleSourceRow {
+	id: string;
+	itemId: number;
+	name: string;
+	icon: string | null;
+	ownedQuantity: number;
+	/** Whole bag/shared-inventory/bank slots this stack occupies (one per position, `storage-space.ts`'s own rule). */
+	slotsUsed: number;
+	/** True when the row carries a `materialStorage` context: it can be deposited without losing the sale. */
+	materialStorageEligible: boolean;
+	/** Null only when the row never reached `recommendPosition` (should not happen for a calendar item, but never assumed). */
+	decision: SaleSourceDecision | null;
+	bidCopper: number | null;
+	/** Already net of `GW2_TRADING_POST_FEE_POLICY`; null when no comparison exists for this row. */
+	instantSellNetCopper: number | null;
+	listingNetCopper: number | null;
+}
+
+export interface SaleWindowSpan {
+	fromDay: string;
+	toDay: string;
+	openToday: boolean;
+}
+
+export interface SaleQuote {
+	quotedAtMs: number | null;
+	/** True once `nowMs` passed the decision's own `until`; null decisions are never stale. */
+	stale: boolean;
+}
+
+export interface SaleRowViewModel {
+	id: string;
+	itemId: number;
+	name: string;
+	icon: string | null;
+	ownedQuantity: number;
+	slotsUsed: number;
+	action: SaleDisplayAction;
+	/** Non-null exactly when low space is active and this row sits in the "Ahora" group: the count to show in "Libera N huecos". */
+	slotsFreedLabel: number | null;
+	reasonCode: PositionRecommendationReasonCode | null;
+	window: SaleWindowSpan | null;
+	bidCopper: number | null;
+	instantSellNetCopper: number | null;
+	listingNetCopper: number | null;
+	quote: SaleQuote;
+}
+
+export interface SaleHeroViewModel extends SaleRowViewModel {
+	/** The trailing year's 90th-percentile bid (`evaluateSellSignal`'s own threshold), or null while undecidable. */
+	yearThresholdCopper: number | null;
+}
+
+export interface SaleGroupsViewModel {
+	now: SaleRowViewModel[];
+	wait: SaleRowViewModel[];
+	noData: SaleRowViewModel[];
+}
+
+export interface SaleCalendarRowViewModel {
+	itemId: number;
+	name: string;
+	icon: string | null;
+	/** One span per calendar candidate this item carries (the Saco has two: before the festival, and May). */
+	spans: SaleWindowSpan[];
+}
+
+export interface SaleViewModel {
+	status: InventoryAdvisorViewStatus;
+	blockedReason?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
+	nowMs: number;
+	festivalStartMs: number | null;
+	/** The latest `priceQuotedAt` this view saw, or null without one; drives the status line's "read at HH:MM". */
+	capturedAtMs: number | null;
+	maxPriceAgeMs: number;
+	storageSpace?: InventoryAdvisorStorageSpace | null;
+	hero: SaleHeroViewModel | null;
+	groups: SaleGroupsViewModel;
+	calendar: SaleCalendarRowViewModel[];
+}
+
+export interface SaleSourceCalendarCandidate {
+	fromDay: string;
+	toDay: string;
+}
+
+export interface SaleSourceCalendarEntry {
+	itemId: number;
+	name: string;
+	icon: string | null;
+	candidates: SaleSourceCalendarCandidate[];
+}
+
+export interface SaleViewModelInput {
+	status: InventoryAdvisorViewStatus;
+	blockedReason?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
+	nowMs: number;
+	festivalStartMs: number | null;
+	maxPriceAgeMs: number;
+	storageSpace?: InventoryAdvisorStorageSpace | null;
+	hero: (SaleSourceRow & { yearThresholdCopper: number | null }) | null;
+	rows: SaleSourceRow[];
+	calendar: SaleSourceCalendarEntry[];
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Maps `recommendPosition`'s own verdict to the one of three words this view ever shows (ficha
+ * decision 2). `hold` (rule (c), no calendar window at all) is "wait"; `sell_at_season` (a specific,
+ * evidence-backed future window) is "not_yet"; anything else undecided is "no_data". The mapping
+ * never reinterprets the rule itself, only picks its display word.
+ */
+function baseDisplayAction(decision: SaleSourceDecision | null): SaleDisplayAction {
+	if (decision === null) return 'no_data';
+	if (decision.action === 'sell') return 'sell';
+	if (decision.action === 'hold') return 'wait';
+	if (decision.action === 'sell_at_season') return 'not_yet';
+	return 'no_data';
+}
+
+/**
+ * David's 24 sep 2026 decision (ficha decision 3): with plenty of space nothing here changes; with
+ * little space, "wait" and "not_yet" both mean "not now" and both flip to "sell" (freeing the slot
+ * now beats a demonstrated-but-later gain), UNLESS the row can be deposited into material storage
+ * instead, which never loses the sale and so wins over selling early.
+ */
+function applyLowSpaceOverride(action: SaleDisplayAction, materialStorageEligible: boolean, isLow: boolean): SaleDisplayAction {
+	if (!isLow) return action;
+	if (materialStorageEligible && action !== 'sell') return 'deposit';
+	if (action === 'wait' || action === 'not_yet') return 'sell';
+	return action;
+}
+
+function toRowViewModel(source: SaleSourceRow, isLow: boolean, nowMs: number): SaleRowViewModel {
+	const action = applyLowSpaceOverride(baseDisplayAction(source.decision), source.materialStorageEligible, isLow);
+	const slotsFreedLabel = isLow && (action === 'sell' || action === 'deposit') ? source.slotsUsed : null;
+	const quotedAtMs = parseIsoOrNull(source.decision?.priceQuotedAt ?? null);
+	const staleAtMs = parseIsoOrNull(source.decision?.until ?? null);
+	const window = source.decision?.sellWindowFromDay != null && source.decision.sellWindowToDay != null
+		? {
+			fromDay: source.decision.sellWindowFromDay,
+			toDay: source.decision.sellWindowToDay,
+			openToday: dayWithinSpan(priceHistoryDayUtc(nowMs), source.decision.sellWindowFromDay, source.decision.sellWindowToDay),
+		}
+		: null;
+	return {
+		id: source.id, itemId: source.itemId, name: source.name, icon: source.icon,
+		ownedQuantity: source.ownedQuantity, slotsUsed: source.slotsUsed,
+		action, slotsFreedLabel,
+		reasonCode: source.decision?.reason ?? null,
+		window,
+		bidCopper: source.bidCopper, instantSellNetCopper: source.instantSellNetCopper, listingNetCopper: source.listingNetCopper,
+		quote: { quotedAtMs, stale: staleAtMs !== null && nowMs > staleAtMs },
+	};
+}
+
+function parseIsoOrNull(value: string | null): number | null {
+	if (value === null) return null;
+	const parsed = Date.parse(value);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
+function dayWithinSpan(dayUtc: string, fromDay: string, toDay: string): boolean {
+	return fromDay <= dayUtc && dayUtc <= toDay;
+}
+
+/** Builds the render-ready model. Pure: no clock, no translator, no network. */
+export function buildSaleViewModel(input: SaleViewModelInput): SaleViewModel {
+	const isLow = input.storageSpace?.lowSpace?.isLow === true;
+	const hero = input.hero === null ? null : {
+		...toRowViewModel(input.hero, isLow, input.nowMs),
+		yearThresholdCopper: input.hero.yearThresholdCopper,
+	};
+	const rows = input.rows.map((row) => toRowViewModel(row, isLow, input.nowMs));
+	const groups: SaleGroupsViewModel = { now: [], wait: [], noData: [] };
+	for (const row of rows) {
+		if (row.action === 'sell' || row.action === 'deposit') groups.now.push(row);
+		else if (row.action === 'wait' || row.action === 'not_yet') groups.wait.push(row);
+		else groups.noData.push(row);
+	}
+	groups.now = prioritizeSpaceFreeingActions(
+		groups.now.map((row) => ({ row, slotsFreed: row.slotsFreedLabel ?? 0, goldValue: row.instantSellNetCopper ?? 0 })),
+		{ isLow },
+	).map((entry) => entry.row);
+	const capturedAtMs = latestQuotedAtMs([hero, ...rows]);
+	const calendar: SaleCalendarRowViewModel[] = input.calendar.map((entry) => ({
+		itemId: entry.itemId, name: entry.name, icon: entry.icon,
+		spans: entry.candidates.map((candidate) => ({
+			fromDay: candidate.fromDay, toDay: candidate.toDay,
+			openToday: dayWithinSpan(priceHistoryDayUtc(input.nowMs), candidate.fromDay, candidate.toDay),
+		})),
+	}));
+	return {
+		status: input.status, ...(input.blockedReason === undefined ? {} : { blockedReason: input.blockedReason }),
+		nowMs: input.nowMs, festivalStartMs: input.festivalStartMs, capturedAtMs, maxPriceAgeMs: input.maxPriceAgeMs,
+		...(input.storageSpace === undefined ? {} : { storageSpace: input.storageSpace }),
+		hero, groups, calendar,
+	};
+}
+
+function latestQuotedAtMs(rows: readonly (SaleRowViewModel | null)[]): number | null {
+	let latest: number | null = null;
+	for (const row of rows) {
+		if (row === null || row.quote.quotedAtMs === null) continue;
+		if (latest === null || row.quote.quotedAtMs > latest) latest = row.quote.quotedAtMs;
+	}
+	return latest;
+}
+
+/**
+ * Wraps `GW2_TRADING_POST_FEE_POLICY` (`gw2-fees.ts`) for the ONE case this view cannot read a
+ * ready-made `marketComparison` for (the Saco's container route may carry none): never a new fee
+ * formula, the same 15% total the rest of the plugin already charges.
+ */
+export function computeInstantSellNetCopper(bidCopper: number | null, quantity: number): number | null {
+	if (bidCopper === null || !Number.isSafeInteger(quantity) || quantity <= 0) return null;
+	const result = createTradingPostValueWithPolicy('instant_sell', bidCopper, quantity);
+	return result.status === 'ok' ? result.value.netCopper : null;
+}
+
+export { DAY_MS as SALE_DAY_MS };
