@@ -32,15 +32,27 @@ import {
  *
  * What it adds on top of the experiment, and nothing more:
  * - Today's own place in the festival calendar: every past year is graded from the same distance to
- *   its edition's real start as today is to the next one (`decisionOffsetDays`), and only with
- *   prices strictly before today. A past year whose windows have not both closed yet is not graded.
+ *   its edition's real start as today is (`decisionOffsetDays`), and only with prices strictly before
+ *   today. A past year whose windows have not both closed yet is not graded.
+ *   H18.22 (26 sep 2026, David: the Sale hero card sold the Saco "en el suelo" inside the festival):
+ *   the reference edition is the SOONEST one whose start is still ahead when there is one (a positive
+ *   offset, deciding before an announced festival, unchanged since H18.19); once today is on or after
+ *   the last catalogued edition's own start and no next one is announced yet, the reference stays
+ *   that same edition and the offset goes to zero or negative — "how many days since THIS edition
+ *   started", never a guessed future start date. Every historical year is then read at that same
+ *   relative day into its OWN edition, so a decision made inside the festival is graded against what
+ *   the market actually did at the equivalent day of every past edition, not against an abstention
+ *   this module used to return the moment the calendar rolled past the last known start. This lasts
+ *   only through the reference edition's own following May (`nextMayWindowFor`): once that closes too
+ *   with still no newer edition catalogued, there is truly nothing dated left to anchor to, and this
+ *   abstains exactly as before.
  * - Money, for the player's own stack: the median ratio and its range become a net advantage in
  *   copper for `quantity` units at today's quote, both sides after the same trading-post fees.
  * - An honest abstention: `insufficient_data` when either the training or the test years lack
  *   `SELL_TIMING_MINIMUM_TEST_YEARS_WITH_DATA` graded seasons (the experiment's own floor), or when
- *   the next edition has no curated start date. Without training data the experiment falls back to
- *   `sell_now` and would call that "no demonstrated advantage"; here that is "insufficient data",
- *   because nothing was measured at all.
+ *   no edition — announced or already under way — covers today at all. Without training data the
+ *   experiment falls back to `sell_now` and would call that "no demonstrated advantage"; here that is
+ *   "insufficient data", because nothing was measured at all.
  *
  * Pure: data in, data out. It never fetches, reads a store or looks at the clock.
  */
@@ -94,7 +106,12 @@ export interface SellOrWaitComparisonV1 {
 	strategy: SellTimingStrategy;
 	quantity: number;
 	unitCopper: number;
-	/** Days from today to the next edition's real start; null when that edition has no curated start. */
+	/**
+	 * Days from today to the reference edition's real start; null when no edition (announced or
+	 * already under way, H18.22) covers today at all. Zero or negative once today is on or after that
+	 * edition's own start day — "N days into the festival", never a distance to a future start that
+	 * has not been curated yet.
+	 */
 	decisionOffsetDays: number | null;
 	/** The window to sell in when waiting, inclusive UTC days; null unless `verdict` is `wait`. */
 	windowFromDay: string | null;
@@ -120,7 +137,9 @@ export function compareSellNowWithWaiting(input: SellOrWaitInput): SellOrWaitCom
 	const basis = {
 		version: SELL_OR_WAIT_VERSION, mode: input.mode, quantity: input.quantity, unitCopper: input.todayUnitCopper,
 	} as const;
-	const next = today === null ? undefined : festivals.find((festival) => festival.startsOnUtc > today);
+	// H18.22: `next` keeps its name (`closed`/`waitWindow` below both read it) but is no longer
+	// necessarily in the future — see `referenceFestivalFor`.
+	const next = today === null ? undefined : referenceFestivalFor(festivals, today);
 	if (today === null || next === undefined || !positiveInteger(input.quantity) || !positiveInteger(input.todayUnitCopper)) {
 		return abstain(basis, null, 0);
 	}
@@ -215,7 +234,9 @@ export function isSellOrWaitComparison(value: unknown): value is SellOrWaitCompa
 		&& (SELL_OR_WAIT_MODES as readonly unknown[]).includes(entry.mode)
 		&& (SELL_OR_WAIT_STRATEGIES as readonly unknown[]).includes(entry.strategy)
 		&& positiveInteger(entry.quantity) && positiveInteger(entry.unitCopper)
-		&& (entry.decisionOffsetDays === null || positiveInteger(entry.decisionOffsetDays))
+		// H18.22: zero or negative once today is on or after the reference edition's own start
+		// (`referenceFestivalFor`), never required to be strictly in the future any more.
+		&& nullableInteger(entry.decisionOffsetDays)
 		&& nullableDay(entry.windowFromDay) && nullableDay(entry.windowToDay)
 		&& (entry.windowFromDay === null) === (entry.windowToDay === null)
 		&& (entry.windowFromDay !== null) === (entry.verdict === 'wait')
@@ -241,6 +262,36 @@ function abstain(
 
 function verdictOf(verdict: SellTimingOutOfSampleVerdict): SellOrWaitVerdict {
 	return verdict === 'advantage_demonstrated' ? 'wait' : verdict;
+}
+
+/**
+ * H18.22 (26 sep 2026, David's report that the Sale hero card sold the Saco "en el suelo" inside the
+ * festival): the festival edition this comparison anchors every year's relative day to.
+ *
+ * The soonest edition still ahead of `today` when there is one — deciding before an announced
+ * festival, `decisionOffsetDays` positive, unchanged since H18.19. Otherwise (today is on or after
+ * the LAST catalogued edition's own start, which is exactly what happens for the whole festival and
+ * every day after it: editions are only catalogued one at a time as ArenaNet announces them, same
+ * discipline as the sibling `HALLOWEEN_FESTIVAL_ANCHORS` table's own doc comment, `2027 onward, until
+ * announced`, `halloween-festival-anchors.ts`) that same last edition stays the reference, with
+ * `decisionOffsetDays` at zero or negative: "N days into this edition", not a guessed future start.
+ *
+ * Only through that edition's own following May (`nextMayWindowFor`), inclusive: past that, the
+ * reference edition's whole modelled cycle (festival plus the May after it) has closed with still no
+ * newer edition catalogued, and there is truly nothing dated left to anchor to — `undefined`, so the
+ * caller abstains exactly as it did before this edition existed at all, never stretching a stale
+ * reference across an indefinite stretch of unaccounted calendar.
+ */
+function referenceFestivalFor(
+	festivals: readonly SellTimingFestivalYear[],
+	today: string,
+): SellTimingFestivalYear | undefined {
+	const upcoming = festivals.find((festival) => festival.startsOnUtc > today);
+	if (upcoming !== undefined) return upcoming;
+	// No festival starts after today: every catalogued edition, `festivals` sorted ascending, already
+	// started on or before today, so the last one is the most recent.
+	const last = festivals[festivals.length - 1];
+	return last !== undefined && today <= nextMayWindowFor(last).toUtc ? last : undefined;
 }
 
 function waitWindow(strategy: SellTimingStrategy, next: SellTimingFestivalYear, decisionOffsetDays: number): SellTimingWindow | null {
