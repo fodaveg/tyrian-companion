@@ -20,10 +20,11 @@ vi.mock('obsidian', async (importOriginal) => ({
 }));
 
 import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
-import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
+import { DEFAULT_SETTINGS, type CollectorMode, type TyrianSettings } from './core/settings';
 import type { TyrianHost, TyrianPriceHistoryStore } from './host/tyrian-host';
 import { HalloweenRuntime } from './halloween/halloween-runtime';
 import type { PriceHistoryRuntimeState } from './economy/price-history-runtime';
+import { loadCollectorMode } from './runtime/collector-instance';
 import { COLLECTOR_HEARTBEAT_INTERVAL_MS, parseCollectorStatusNote } from './runtime/collector-status';
 import { AssistedDetectionService } from './sessions/assisted-detection-service';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
@@ -31,17 +32,21 @@ import { ManualSessionStartService } from './sessions/manual-session-start-servi
 import type { ActiveSessionState } from './sessions/session';
 
 /**
- * R1b (SPEC-TYRIAN-EN-HEBRA.md section 4) against the real `initializeRuntime`: a consult
- * installation reads, and nothing else. No Guild Wars 2 request, no note or Base written, no
- * bridge port, no poll armed, no `compactAndPrune`. The collector boots exactly as before and adds
- * one thing: its footprint in the status note.
+ * R1b (SPEC-TYRIAN-EN-HEBRA.md section 4) against the real `initializeRuntime`: a consult DEVICE
+ * reads, and nothing else. No Guild Wars 2 request, no note or Base written, no bridge port, no
+ * poll armed, no `compactAndPrune`. The collector boots exactly as before and adds one thing: its
+ * footprint in the status note. The mode is per device: it lives in local IndexedDB, never in
+ * `data.json`, so a synced `data.json` cannot flip it.
  */
 interface CollectorModeHarness {
 	settings: TyrianSettings;
+	collectorMode: CollectorMode | undefined;
+	vaultId: string | null;
 	runtimeReady: boolean;
 	initializeRuntime(): Promise<void>;
 	shutdownRuntime(): Promise<void>;
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
+	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult>;
 	getPriceHistoryState(): PriceHistoryRuntimeState;
 	readonly host: TyrianHost;
 }
@@ -56,20 +61,19 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 	});
 
 	it('consult: boots with no request, no vault write, no bridge port, no poll and no compactAndPrune', async () => {
-		const active = activeSession();
-		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue(active);
+		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue(activeSession());
 		const armLive = vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot');
 		const halloweenActivate = vi.spyOn(HalloweenRuntime.prototype, 'activate');
-		// Everything that would do something for a collector is switched on.
+		// Everything that would do something for a collector is switched on, the key included.
 		const world = collectorModePlugin({
-			collectorMode: 'consult', apiKeySecret: 'gw2-main', alertIngameEnabled: true,
-			priceHistoryEnabled: true, halloweenEnabled: true,
-		});
+			apiKeySecret: 'gw2-main', alertIngameEnabled: true, priceHistoryEnabled: true, halloweenEnabled: true,
+		}, { mode: 'consult' });
 
 		await world.plugin.initializeRuntime();
 		await settle();
 
 		expect(world.plugin.runtimeReady).toBe(true);
+		expect(world.plugin.collectorMode).toBe('consult');
 		expect(outbound.urls).toEqual([]);
 		expect(world.writes).toEqual([]);
 		expect(world.listen).not.toHaveBeenCalled();
@@ -86,7 +90,7 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 
 	it('collector: boots as before and writes its footprint in the status note, beating every fifteen minutes', async () => {
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
-		const world = collectorModePlugin({ collectorMode: 'collector', priceHistoryEnabled: true });
+		const world = collectorModePlugin({ priceHistoryEnabled: true }, { mode: 'collector' });
 
 		await world.plugin.initializeRuntime();
 		await settle();
@@ -102,47 +106,95 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 		await world.plugin.shutdownRuntime();
 	});
 
-	it('switching to consult stops the heartbeat and the capture without a reload', async () => {
+	it('seeds the local mode once from the spec rule: a key means collector, none means consult', async () => {
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
-		const world = collectorModePlugin({ collectorMode: 'collector', priceHistoryEnabled: true });
+		for (const [apiKeySecret, expected] of [['gw2-main', 'collector'], ['', 'consult']] as const) {
+			const world = collectorModePlugin({ apiKeySecret });
+			await world.plugin.initializeRuntime();
+			await settle();
+
+			expect(world.plugin.collectorMode).toBe(expected);
+			// Stored locally: a later read ignores whatever seed it is offered.
+			const stored = await loadCollectorMode(world.factory, world.plugin.vaultId!, () => 'consult');
+			expect(stored).toBe(expected);
+			// Seeding wrote nothing to data.json.
+			expect(world.saved).toEqual([]);
+			await world.plugin.shutdownRuntime();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it('changing the mode on one device writes the local store only, never data.json', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main', priceHistoryEnabled: true }, { mode: 'collector' });
 		await world.plugin.initializeRuntime();
 		await settle();
 		const heartbeatHandle = world.intervalHandle(COLLECTOR_HEARTBEAT_INTERVAL_MS);
 		const compactions = world.compactAndPrune.mock.calls.length;
+		const settingsBefore = structuredClone(world.plugin.settings);
 
-		await expect(world.plugin.updateSettings({ collectorMode: 'consult' }))
-			.resolves.toMatchObject({ status: 'saved' });
+		await expect(world.plugin.updateCollectorMode('consult')).resolves.toMatchObject({ status: 'saved' });
 		await settle();
 
-		expect(world.plugin.settings.collectorMode).toBe('consult');
+		expect(world.plugin.collectorMode).toBe('consult');
+		await expect(loadCollectorMode(world.factory, world.plugin.vaultId!, () => 'collector')).resolves.toBe('consult');
+		expect(world.saved).toEqual([]);
+		expect(world.plugin.settings).toEqual(settingsBefore);
+		// And it applies without a reload: no heartbeat, no capture.
 		expect(world.cleared()).toContain(heartbeatHandle);
 		expect(world.plugin.getPriceHistoryState().status).toBe('ready');
 		expect(world.compactAndPrune.mock.calls.length).toBe(compactions);
 		await world.plugin.shutdownRuntime();
 	});
 
+	it('a synced data.json with a key never changes a local mode already set', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const factory = new IDBFactory();
+		// This device was set to consult earlier (its data.json then had no key).
+		const first = collectorModePlugin({}, { factory });
+		await first.plugin.initializeRuntime();
+		await settle();
+		expect(first.plugin.collectorMode).toBe('consult');
+		await first.plugin.shutdownRuntime();
+		vi.unstubAllGlobals();
+
+		// Sync then delivers the collector's data.json, key included, and the plugin reloads.
+		const reloaded = collectorModePlugin({ apiKeySecret: 'gw2-main', alertIngameEnabled: true }, { factory });
+		await reloaded.plugin.initializeRuntime();
+		await settle();
+		expect(reloaded.plugin.collectorMode).toBe('consult');
+		expect(reloaded.listen).not.toHaveBeenCalled();
+		// A later synced settings change does not touch it either.
+		await reloaded.plugin.updateSettings({ apiKeySecret: 'gw2-other' });
+		expect(reloaded.plugin.collectorMode).toBe('consult');
+		await expect(loadCollectorMode(factory, reloaded.plugin.vaultId!, () => 'collector')).resolves.toBe('consult');
+		await reloaded.plugin.shutdownRuntime();
+	});
+
 	it('refuses consult while a farming session is still open, and keeps collecting', async () => {
 		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue(activeSession());
 		vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot').mockReturnValue({ status: 'error' } as never);
-		const world = collectorModePlugin({ collectorMode: 'collector' });
+		const world = collectorModePlugin({}, { mode: 'collector' });
 		await world.plugin.initializeRuntime();
 		await settle();
 
-		await expect(world.plugin.updateSettings({ collectorMode: 'consult' }))
+		await expect(world.plugin.updateCollectorMode('consult'))
 			.resolves.toEqual({ status: 'blocked', reason: 'session_in_progress' });
-		expect(world.plugin.settings.collectorMode).toBe('collector');
-		expect(world.saved).toEqual([]);
+		expect(world.plugin.collectorMode).toBe('collector');
+		await expect(loadCollectorMode(world.factory, world.plugin.vaultId!, () => 'consult')).resolves.toBe('collector');
 		await world.plugin.shutdownRuntime();
 	});
 });
 
 /** Drains the fire-and-forget work the boot leaves behind (IndexedDB and the first heartbeat). */
 async function settle(): Promise<void> {
-	// The real clock, not the stubbed `window` one: fake-indexeddb settles on Node's own timers.
 	for (let round = 0; round < 5; round += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function collectorModePlugin(overrides: Partial<TyrianSettings>) {
+function collectorModePlugin(
+	overrides: Partial<TyrianSettings>,
+	options: { readonly mode?: CollectorMode; readonly factory?: IDBFactory } = {},
+) {
 	const notes = new Map<string, string>();
 	const writes: string[] = [];
 	const saved: unknown[] = [];
@@ -189,6 +241,8 @@ function collectorModePlugin(overrides: Partial<TyrianSettings>) {
 	target.app = app;
 	target.manifest = manifest;
 	target.settings = { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
+	// The seed `onload` leaves; absent, `initializeRuntime` derives it from the settings.
+	if (options.mode !== undefined) target.collectorMode = options.mode;
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
@@ -199,11 +253,12 @@ function collectorModePlugin(overrides: Partial<TyrianSettings>) {
 		refreshAlertIngameServerRow: vi.fn(), refreshSessionHistoryRow: vi.fn(), refreshForLocaleChange: vi.fn(),
 	};
 
+	const factory = options.factory ?? new IDBFactory();
 	const intervals = new Map<number, number>();
 	const cleared: number[] = [];
 	let nextTimer = 1;
 	vi.stubGlobal('window', {
-		indexedDB: new IDBFactory(),
+		indexedDB: factory,
 		setInterval: vi.fn((_callback: () => void, delayMs: number) => { intervals.set(nextTimer, delayMs); return nextTimer++; }),
 		clearInterval: vi.fn((handle: number) => { cleared.push(handle); }),
 		setTimeout: vi.fn(() => nextTimer++),
@@ -230,6 +285,7 @@ function collectorModePlugin(overrides: Partial<TyrianSettings>) {
 
 	return {
 		plugin: target,
+		factory,
 		notes,
 		writes,
 		saved,

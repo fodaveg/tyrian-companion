@@ -206,7 +206,7 @@ describe('settings information architecture', () => {
 	it('assigns all 36 existing rows to explicit intent categories', () => {
 		// An upgraded installation with a key is the collector: its first tab is unchanged by R1b.
 		const plugin = settingsPlugin();
-		plugin.settings.collectorMode = 'collector';
+		plugin.collectorMode = 'collector';
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const assignments = tab.getSettingCategoryAssignments();
 		expect(assignments).toHaveLength(36);
@@ -230,7 +230,7 @@ describe('settings information architecture', () => {
 	// on the tab the settings open to, and the row stays put while the player flips it.
 	it('mounts the mode row first on the first tab of a consult installation, and keeps it there on a switch', async () => {
 		const plugin = settingsPlugin();
-		expect(plugin.settings.collectorMode).toBe('consult');
+		expect(plugin.getCollectorMode()).toBe('consult');
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		expect(tab.getMountedSettingNames('essentials')).toEqual([
 			'This installation\'s mode', 'API key', 'Output folder', 'Default character', 'Alert me about a drop from',
@@ -243,9 +243,13 @@ describe('settings information architecture', () => {
 		const control = renderControl(definition, 'dropdown');
 		expect(control.options).toEqual(['collector', 'consult']);
 		expect(control.value).toBe('consult');
+		const before = structuredClone(plugin.settings);
 		await control.change('collector');
 
-		expect(plugin.settings.collectorMode).toBe('collector');
+		// This device's mode, written locally: the synced settings (data.json) are untouched.
+		expect(plugin.updateCollectorMode).toHaveBeenCalledWith('collector');
+		expect(plugin.getCollectorMode()).toBe('collector');
+		expect(plugin.settings).toEqual(before);
 		expect(tab.getMountedSettingNames('essentials')[0]).toBe('This installation\'s mode');
 	});
 
@@ -525,6 +529,13 @@ function settingsPlugin() {
 	const plugin = {
 		settings: { ...DEFAULT_SETTINGS, language: 'en' as const } as TyrianSettings,
 		updateSettings: async (update: Partial<TyrianSettings>) => { Object.assign(plugin.settings, update); },
+		// R1b: this device's mode, outside the settings; a new install starts in consult.
+		collectorMode: 'consult' as 'collector' | 'consult',
+		getCollectorMode: () => plugin.collectorMode,
+		updateCollectorMode: vi.fn(async (mode: 'collector' | 'consult') => {
+			plugin.collectorMode = mode;
+			return { status: 'saved' as const, inventoryAdvisor: 'unchanged' as const };
+		}),
 		previewSessionHistoryScrub: async () => undefined,
 		cancelSessionHistoryScrubPreview: () => undefined,
 		scrubSessionHistory: async () => undefined,

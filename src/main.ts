@@ -101,7 +101,7 @@ import type { SellSignalRuntime, SellSignalRuntimeState } from './economy/sell-s
 import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
 import { CollectorHeartbeat } from './runtime/collector-status';
-import { loadCollectorInstanceId } from './runtime/collector-instance';
+import { loadCollectorInstanceId, loadCollectorMode, saveCollectorMode } from './runtime/collector-instance';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
 import { PriceSeedBulkRefreshService, type PriceSeedQueueCoverage } from './economy/price-seed-bulk-refresh';
 import { fetchPriceSeed } from './economy/price-seed-source';
@@ -139,7 +139,8 @@ import type { ReservationGoal } from './economy/reservation-model';
 import { LEGENDARY_MATERIALS_TABLE, legendaryMaterialsEntryFor } from './economy/legendary-materials';
 import {
 	ALERT_INGAME_SECRET_ID,
-	isCollector,
+	collectorModeSeed,
+	type CollectorMode,
 	mergeSettingsUpdate,
 	migrateSettings,
 	priceHistoryOptInOffered,
@@ -495,6 +496,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private ingameSessionMarker: IngameSessionMarker | null = null;
 	/** R1b: the collector's footprint in the status note. Running only while this installation collects. */
 	private collectorHeartbeat: CollectorHeartbeat | null = null;
+	/**
+	 * R1b: this DEVICE's mode, kept in local `kv` (`runtime/collector-instance.ts`), never in
+	 * `data.json`. The seed on load, this device's stored mode once `initializeRuntime` reads it;
+	 * only `updateCollectorMode` changes it. Read through `consulting`.
+	 */
+	collectorMode: CollectorMode | undefined;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
@@ -547,6 +554,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const runtime = createTyrianCoreRuntime(this.host);
 		const boot = await runtime.boot();
 		this.settings = boot.settings;
+		// R1b: the seed until `initializeRuntime` reads this device's own mode; nothing collects before that.
+		this.collectorMode ??= collectorModeSeed(this.settings);
 		this.localDebug = boot.localDebug;
 		this.localDebugActions = boot.localDebugActions;
 		this.lootPresentation = new LootPresentationCache(
@@ -667,6 +676,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		const vaultId = await sha256Text(host.vault.canonicalIdentity().normalize('NFC'));
 		this.vaultId = vaultId;
+		// R1b: this device's mode, read before any service that collects is built. The first time,
+		// the seed (the spec's rule over data.json) is stored locally; after that data.json no longer
+		// decides. Without IndexedDB the seed stands for this run and is not stored.
+		const seed = this.collectorMode ?? collectorModeSeed(this.settings);
+		try {
+			this.collectorMode = await loadCollectorMode(indexedDB, vaultId, () => seed);
+		} catch (error) {
+			this.collectorMode = seed;
+			this.localDebugActions?.event({
+				component: 'settings', action: 'settings_load', level: 'warn', phase: 'failure',
+				code: 'storage_failure', state: 'collector_mode', message: error,
+			});
+		}
 		this.managedAssetsPointer = new IndexedDbManagedAssetsPointerStore(
 			indexedDB,
 			vaultId,
@@ -1170,6 +1192,39 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{ component: 'vault', action: 'vault_write', state: 'managed_assets_reconcile' },
 			() => this.reconcileManagedAssetsRoot());
 		this.syncCollectorHeartbeat();
+	}
+
+	/** R1b: this device's mode, for the Settings selector. */
+	getCollectorMode(): CollectorMode {
+		return this.collectorMode ?? collectorModeSeed(this.settings);
+	}
+
+	/**
+	 * R1b: the Settings selector's write. Stores the mode in this device's local `kv` only, so no
+	 * synced `data.json` carries it to another device, then applies it without a reload. Consult is
+	 * refused while a session is still open: finishing it (its final capture, its note) needs the API.
+	 */
+	async updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult> {
+		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<SettingsUpdateResult> => {
+			const vaultId = this.vaultId;
+			if (!this.runtimeReady || vaultId === null) {
+				this.notifyRuntimeStarting();
+				return { status: 'blocked', reason: 'runtime_starting' };
+			}
+			if (mode === this.collectorMode) return { status: 'saved', inventoryAdvisor: 'unchanged' };
+			if (mode === 'consult' && sessionInProgress(this.sessions.getState())) {
+				this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
+				return { status: 'blocked', reason: 'session_in_progress' };
+			}
+			// Published only after the durable write, like `updateSettings`.
+			await saveCollectorMode(this.host.kv.indexedDB, vaultId, mode);
+			this.collectorMode = mode;
+			await this.applyCollectorModeChange(context);
+			return { status: 'saved', inventoryAdvisor: 'unchanged' };
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'settings', action: 'settings_save', state: 'collector_mode' }, perform,
+		) ?? perform());
 	}
 
 	/** R1b: what `refusedInConsult` shows when an action only the collector may take is refused. */
@@ -4033,14 +4088,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousSalvagePreferences = JSON.stringify(resolveEquipmentSalvagePreferences(this.settings));
 		const previousAlertIngameEnabled = this.settings.alertIngameEnabled;
 		const previousAlertIngamePort = this.settings.alertIngamePort;
-		const previousCollectorMode = this.settings.collectorMode;
 		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.host.vault.configDir, this.host.locale());
-		// R1b: a session still open needs the API to finish (its final capture, its note), so the
-		// collector stays one until it closes rather than stranding it half-measured.
-		if (previousCollectorMode === 'collector' && nextSettings.collectorMode === 'consult' && sessionInProgress(this.sessions.getState())) {
-			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
-			return { status: 'blocked', reason: 'session_in_progress' };
-		}
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		// Publish the new runtime view only after its durable write succeeds. A rejected
 		// save therefore leaves every subsequent Refresh on the last persisted overlay.
@@ -4131,7 +4179,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// An explicit folder change takes Bases/templates with it, so the selector stays the
 		// single source of truth without a separate manual step.
 		if (previousOutputFolder !== this.settings.outputFolder) await this.reconcileManagedAssetsRoot(context);
-		if (previousCollectorMode !== this.settings.collectorMode) await this.applyCollectorModeChange(context);
 		return { status: 'saved', inventoryAdvisor: inventoryAdvisorResult };
 		};
 		let result: SettingsUpdateResult;
@@ -5248,12 +5295,13 @@ function fireAndForgetLocal(
 }
 
 /**
- * R1b: whether this installation is in consult mode (`TyrianSettings.collectorMode`). A module
+ * R1b: whether this device is in consult mode (`TyrianCompanionPlugin.collectorMode`). A module
  * function rather than a method so every plugin path can ask it, including the ones the tests
- * drive with a plain object as `this`; see `isCollector` for why only an explicit `consult` reads.
+ * drive with a plain object as `this`. Only an explicit `consult` reads: the plugin always sets
+ * the mode (seed on load, then the local store), so an object without one was built before R1b.
  */
-function consulting(plugin: { readonly settings?: Partial<Pick<TyrianSettings, 'collectorMode'>> }): boolean {
-	return plugin.settings?.collectorMode !== undefined && !isCollector({ collectorMode: plugin.settings.collectorMode });
+function consulting(plugin: { readonly collectorMode?: CollectorMode }): boolean {
+	return plugin.collectorMode === 'consult';
 }
 
 /**
@@ -5262,7 +5310,7 @@ function consulting(plugin: { readonly settings?: Partial<Pick<TyrianSettings, '
  * does nothing.
  */
 function refusedInConsult(plugin: {
-	readonly settings?: Partial<Pick<TyrianSettings, 'collectorMode'>>;
+	readonly collectorMode?: CollectorMode;
 	notifyConsultMode(): void;
 }): boolean {
 	if (!consulting(plugin)) return false;

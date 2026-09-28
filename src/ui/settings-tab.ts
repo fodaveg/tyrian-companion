@@ -22,6 +22,7 @@ import {
 	MAX_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS,
 	POLLING_INTERVAL_OPTIONS,
 	resolveVaultFolderInput,
+	type CollectorMode,
 	type MaterialStorageCapacity,
 	type TyrianSettings,
 } from '../core/settings';
@@ -61,7 +62,12 @@ import type { EquipmentSalvageKit, EquipmentSalvageSaleStrategy } from '../econo
  */
 export type SettingsCategory = 'essentials' | 'advanced';
 type SettingSaveState = 'saving' | 'saved' | 'error';
-type SettingsWriter = (settings: Partial<TyrianSettings>) => Promise<SettingsUpdateResult | null>;
+/**
+ * What a row saves. `collectorMode` is not a setting (R1b): it is this device's, so `writeSettings`
+ * routes it to `updateCollectorMode` and it never reaches data.json. A row saves one or the other.
+ */
+type SettingsRowUpdate = Partial<TyrianSettings> & { readonly collectorMode?: CollectorMode };
+type SettingsWriter = (settings: SettingsRowUpdate) => Promise<SettingsUpdateResult | null>;
 type CategorizedSettingRenderer = (setting: Setting, save: SettingsWriter) => void;
 interface CategorizedSettingDefinition {
 	category: SettingsCategory;
@@ -164,7 +170,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
-		this.collectorModeOnFirstTab = this.plugin.settings.collectorMode === 'consult';
+		this.collectorModeOnFirstTab = this.plugin.getCollectorMode() === 'consult';
 		this.renderSettings();
 	}
 
@@ -223,7 +229,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			name: definition.name,
 			desc: definition.desc,
 			render: (setting) => definition.render(setting,
-				(settings) => this.settingsWrites.enqueue(() => this.plugin.updateSettings(settings))),
+				(settings) => this.settingsWrites.enqueue(() => this.writeSettings(settings))),
 		}));
 	}
 
@@ -295,11 +301,11 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	}
 
 	/** Announces every durable setting write and keeps its state across runtime-triggered rerenders. */
-	private async saveSettings(index: number, settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult | null> {
+	private async saveSettings(index: number, settings: SettingsRowUpdate): Promise<SettingsUpdateResult | null> {
 		const revision = (this.saveRevisions.get(index) ?? 0) + 1;
 		this.saveRevisions.set(index, revision);
 		const result = await runSettingWrite(
-			() => this.settingsWrites.enqueue(() => this.plugin.updateSettings(settings)),
+			() => this.settingsWrites.enqueue(() => this.writeSettings(settings)),
 			(state) => {
 				if (this.saveRevisions.get(index) !== revision) return;
 				this.saveStates.set(index, state);
@@ -316,8 +322,16 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		return result;
 	}
 
+	/** Sends a row's save to the plugin: this device's mode to `updateCollectorMode`, the rest to `updateSettings`. */
+	private async writeSettings(update: SettingsRowUpdate): Promise<SettingsUpdateResult> {
+		const { collectorMode, ...settings } = update;
+		return collectorMode === undefined
+			? await this.plugin.updateSettings(settings)
+			: await this.plugin.updateCollectorMode(collectorMode);
+	}
+
 	private definitions(): CategorizedSettingDefinition[] {
-		this.collectorModeOnFirstTab ??= this.plugin.settings.collectorMode === 'consult';
+		this.collectorModeOnFirstTab ??= this.plugin.getCollectorMode() === 'consult';
 		return [
 			{
 				// R1b: a consult installation (every new one) finds the switch on the first tab; the
@@ -330,7 +344,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						dropdown
 							.addOption('collector', this.t('settings.collectorMode.collector'))
 							.addOption('consult', this.t('settings.collectorMode.consult'))
-							.setValue(this.plugin.settings.collectorMode)
+							.setValue(this.plugin.getCollectorMode())
 							.onChange(async (collectorMode) => {
 								await save({ collectorMode: collectorMode === 'collector' ? 'collector' : 'consult' });
 							}),

@@ -44,13 +44,6 @@ import { createInventoryAdvisorBuiltinRulesProvider } from './advisor/inventory-
 import type { AlertDeliveryReport } from './alerts/alert-emitter';
 import type { AlertV1 } from './alerts/alert-contract';
 
-/**
- * R1b: every harness here drives the plugin as it ran before the collector/consult split, which is
- * what an upgraded installation with a key keeps being. `DEFAULT_SETTINGS` is now a NEW install,
- * which starts in consult, so the fixtures name the collector explicitly.
- */
-const COLLECTOR_DEFAULTS: TyrianSettings = { ...DEFAULT_SETTINGS, collectorMode: 'collector' };
-
 interface StartIntentHarness {
 	app: unknown;
 	settings: { language: 'en'; preferredCharacter: string };
@@ -139,7 +132,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			halloweenObservationActive: () => true,
 			halloween: { activate, disable, setOnline },
 			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
-			settings: COLLECTOR_DEFAULTS,
+			settings: DEFAULT_SETTINGS,
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const switchHalloweenAccount = (TyrianCompanionPlugin.prototype as unknown as {
@@ -182,7 +175,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			halloweenObservationActive: () => true,
 			halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
 			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
-			settings: COLLECTOR_DEFAULTS,
+			settings: DEFAULT_SETTINGS,
 			// `checkConnection` calls `this.switchHalloweenAccount`; the harness needs the real
 			// implementation, not a mock, since that private method is exactly what H14.11 fixes.
 			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
@@ -229,7 +222,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 					scheduler: {}, lastSnapshotAt: null,
 				}),
 			},
-			settings: { ...COLLECTOR_DEFAULTS },
+			settings: { ...DEFAULT_SETTINGS },
 			localDebugActions,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
@@ -263,7 +256,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 			assistedDetection: {
 				arm: async () => ({ status: 'armed' as const, armedAt: '2026-09-10T00:00:00.000Z', scheduler: {}, lastSnapshotAt: null }),
 			},
-			settings: { ...COLLECTOR_DEFAULTS },
+			settings: { ...DEFAULT_SETTINGS },
 			localDebugActions,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
@@ -282,7 +275,7 @@ describe('atomic settings persistence', () => {
 		const events: string[] = [];
 		// Capture is off by default, so this scenario states its own precondition.
 		const settings = {
-			...COLLECTOR_DEFAULTS, debugLoggingEnabled: true, debugLoggingLevel: 'debug',
+			...DEFAULT_SETTINGS, debugLoggingEnabled: true, debugLoggingLevel: 'debug',
 		} as TyrianSettings;
 		const localDebug = {
 			flush: vi.fn(async () => { events.push('flush'); }),
@@ -322,7 +315,7 @@ describe('atomic settings persistence', () => {
 
 	it('keeps the persisted personal overlay in memory and in the next Refresh rules after save rejection', async () => {
 		const settings = {
-			...COLLECTOR_DEFAULTS,
+			...DEFAULT_SETTINGS,
 			halloweenPersonalValuation: { version: 1 as const, values: [
 				{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' as const },
 			] },
@@ -369,7 +362,7 @@ describe('atomic settings persistence', () => {
 	] as const)('reports %s reclassification truthfully as %s after persistence', async (viewStatus, expected) => {
 		const events: string[] = [];
 		const settings: TyrianSettings = {
-			...COLLECTOR_DEFAULTS,
+			...DEFAULT_SETTINGS,
 			halloweenPersonalValuation: { version: 1, values: [
 				{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
 			] },
@@ -1044,7 +1037,7 @@ describe('price-history opt-in offer (David, 24 sep 2026)', () => {
 	/** Only `settings`, `manifest` and the Settings tab's own `updateSettings`: any other member would be undefined. */
 	function harness(): OptInHarness & { updates: Partial<TyrianSettings>[] } {
 		const updates: Partial<TyrianSettings>[] = [];
-		const settings: TyrianSettings = { ...COLLECTOR_DEFAULTS };
+		const settings: TyrianSettings = { ...DEFAULT_SETTINGS };
 		const plugin = withObsidianHost({
 			settings,
 			manifest: { version: '0.1.35' },
@@ -1390,7 +1383,7 @@ describe('detection after a finished session (H18.9, prueba 6)', () => {
 			connection: { getState: () => ({ status: 'connected' as const }) },
 			assistedDetection: { arm },
 			checkConnection,
-			settings: { ...COLLECTOR_DEFAULTS },
+			settings: { ...DEFAULT_SETTINGS },
 			renderViews: vi.fn(), emitNotice: vi.fn(), localDebugActions: null,
 		});
 
@@ -1408,7 +1401,7 @@ describe('managed-assets root reconciliation', () => {
 	it('relocates already-installed Bases when the output folder changes, and equalizes both roots', async () => {
 		const vault = new MemoryAssetVault();
 		const manager = await buildManagedAssetsManager(vault);
-		const harness = buildManagedAssetsRootHarness(manager, { ...COLLECTOR_DEFAULTS, outputFolder: 'Origin' });
+		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Origin' });
 
 		await harness.applyManagedAssets();
 		expect(harness.settings.managedAssetsRoot).toBe('Origin');
@@ -1428,12 +1421,12 @@ describe('managed-assets root reconciliation', () => {
 		// Bootstraps a real install at the shallow root, then walks the setting forward without
 		// going through updateSettings, mirroring the persisted-data.json shape this heals: an
 		// old install whose managed root never followed a later, deeper output-folder change.
-		const bootstrapHarness = buildManagedAssetsRootHarness(manager, { ...COLLECTOR_DEFAULTS, outputFolder: 'Tyrian Companion' });
+		const bootstrapHarness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Tyrian Companion' });
 		await bootstrapHarness.applyManagedAssets();
 		expect(vault.contents.has('Tyrian Companion/Bases/Sessions.base')).toBe(true);
 
 		const harness = buildManagedAssetsRootHarness(manager, {
-			...COLLECTOR_DEFAULTS,
+			...DEFAULT_SETTINGS,
 			outputFolder: '02 - Áreas/Guild Wars 2/Tyrian Companion',
 			managedAssetsRoot: 'Tyrian Companion',
 		});
@@ -1449,7 +1442,7 @@ describe('managed-assets root reconciliation', () => {
 		const vault = new MemoryAssetVault();
 		const manager = await buildManagedAssetsManager(vault);
 		const harness = buildManagedAssetsRootHarness(manager, {
-			...COLLECTOR_DEFAULTS,
+			...DEFAULT_SETTINGS,
 			outputFolder: 'New Home',
 			managedAssetsRoot: null,
 			legacyManagedAssetsRoot: 'Old/CON',
@@ -1464,7 +1457,7 @@ describe('managed-assets root reconciliation', () => {
 	it('leaves an already-matching root untouched and does not report it as relocated', async () => {
 		const vault = new MemoryAssetVault();
 		const manager = await buildManagedAssetsManager(vault);
-		const harness = buildManagedAssetsRootHarness(manager, { ...COLLECTOR_DEFAULTS, outputFolder: 'Home' });
+		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' });
 		await harness.applyManagedAssets();
 		const before = vault.writeCount;
 
@@ -1481,7 +1474,7 @@ describe('automatic Base update behind the inventory sync (H18.18)', () => {
 	async function installed(syncStatus: 'success' | 'error' = 'success') {
 		const vault = new MemoryAssetVault();
 		const manager = await buildManagedAssetsManager(vault);
-		const harness = buildManagedAssetsRootHarness(manager, { ...COLLECTOR_DEFAULTS, outputFolder: 'Home' });
+		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' });
 		await harness.applyManagedAssets();
 		const notices: string[] = [];
 		const plugin = Object.assign(harness, {
@@ -1958,7 +1951,7 @@ describe('local diagnostics composition', () => {
 			clear: vi.fn(async () => true),
 		};
 		const harness = withObsidianHost({
-			settings: { ...COLLECTOR_DEFAULTS, apiKeySecret: 'private-secret-name', preferredCharacter: 'Astra' },
+			settings: { ...DEFAULT_SETTINGS, apiKeySecret: 'private-secret-name', preferredCharacter: 'Astra' },
 			manifest: { id: 'tyrian-companion', version: '0.1.14' },
 			localDebug,
 			localDebugActions: null,

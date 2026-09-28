@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	DEFAULT_SETTINGS,
 	hasLegacyPaths,
-	isCollector,
+	collectorModeSeed,
 	mergeSettingsUpdate,
 	migrateSettings,
 	normalizeVaultFolder,
@@ -113,8 +113,6 @@ describe('migrateSettings', () => {
 			...DEFAULT_SETTINGS,
 			schemaVersion: SETTINGS_SCHEMA_VERSION,
 			apiKeySecret: 'gw2-primary',
-			// R1b: an upgraded installation that names a key keeps collecting.
-			collectorMode: 'collector',
 		});
 		expect(migrateSettings(migrated)).toEqual(migrated);
 	});
@@ -523,55 +521,25 @@ describe('normalizeVaultFolder', () => {
 	});
 });
 
-describe('collector mode (R1b)', () => {
-	// A 0.2.5 `data.json`: every field the previous release wrote, and no `collectorMode`.
-	const preR1b = (apiKeySecret: string): Record<string, unknown> => {
-		const { collectorMode: _collectorMode, ...previous } = { ...DEFAULT_SETTINGS, apiKeySecret };
-		return previous;
-	};
-
-	it('keeps an installation that already had a key configured as the collector', () => {
-		const persisted = preR1b('gw2-main');
-		const migrated = migrateSettings(persisted);
-
-		expect(migrated.collectorMode).toBe('collector');
-		expect(isCollector(migrated)).toBe(true);
-		// Decided once: the choice is written back, so the next load reads it instead of re-deriving it.
-		expect(shouldPersistSettingsOnLoad(persisted, migrated)).toBe(true);
-		expect(migrateSettings(JSON.parse(JSON.stringify(migrated)) as unknown).collectorMode).toBe('collector');
+describe('collector mode seed (R1b)', () => {
+	it('seeds a device whose settings name a key as the collector, and anything else as consult', () => {
+		expect(collectorModeSeed({ ...DEFAULT_SETTINGS, apiKeySecret: 'gw2-main' })).toBe('collector');
+		expect(collectorModeSeed(migrateSettings({ apiKeySecret: 'gw2-main' }))).toBe('collector');
+		expect(collectorModeSeed(migrateSettings(null))).toBe('consult');
+		expect(collectorModeSeed({ apiKeySecret: '' })).toBe('consult');
+		expect(collectorModeSeed({ apiKeySecret: '   ' })).toBe('consult');
 	});
 
-	it('starts a new installation, or one that never named a key, in consult', () => {
-		expect(DEFAULT_SETTINGS.collectorMode).toBe('consult');
-		expect(migrateSettings(null).collectorMode).toBe('consult');
-		expect(migrateSettings(undefined).collectorMode).toBe('consult');
-		expect(migrateSettings({}).collectorMode).toBe('consult');
-		expect(migrateSettings(preR1b('')).collectorMode).toBe('consult');
-		expect(migrateSettings(preR1b('   ')).collectorMode).toBe('consult');
-		expect(isCollector(migrateSettings(null))).toBe(false);
-	});
-
-	it('never overrides an explicit choice, and reads an unknown value like an absent one', () => {
-		expect(migrateSettings({ ...preR1b('gw2-main'), collectorMode: 'consult' }).collectorMode).toBe('consult');
-		expect(migrateSettings({ ...preR1b(''), collectorMode: 'collector' }).collectorMode).toBe('collector');
-		expect(migrateSettings({ ...preR1b('gw2-main'), collectorMode: 'reader' }).collectorMode).toBe('collector');
-		expect(migrateSettings({ ...preR1b(''), collectorMode: 7 }).collectorMode).toBe('consult');
-	});
-
-	it('changes only through an explicit update, which later key edits do not undo', () => {
-		const fresh = migrateSettings(null);
-		const withKey = mergeSettingsUpdate(fresh, { apiKeySecret: 'gw2-main' });
-		expect(withKey.collectorMode).toBe('consult');
-		const collector = mergeSettingsUpdate(withKey, { collectorMode: 'collector' });
-		expect(collector.collectorMode).toBe('collector');
-		expect(mergeSettingsUpdate(collector, { apiKeySecret: '' }).collectorMode).toBe('collector');
-	});
-
-	it('leaves the rest of an upgraded installation exactly as it was', () => {
-		const persisted = { ...preR1b('gw2-main'), pollingIntervalMinutes: 60, priceHistoryEnabled: true };
-		const { collectorMode, ...rest } = migrateSettings(persisted);
-		expect(collectorMode).toBe('collector');
-		expect(rest).toEqual(persisted);
+	it('never keeps a mode in data.json: a stray field is dropped, a current file is not rewritten', () => {
+		const current = { ...DEFAULT_SETTINGS, apiKeySecret: 'gw2-main' };
+		const migrated = migrateSettings(current);
+		expect(migrated).not.toHaveProperty('collectorMode');
+		expect(shouldPersistSettingsOnLoad(current, migrated)).toBe(false);
+		// A data.json written by the unreleased first R1b cut, or synced from one.
+		const stray = { ...current, collectorMode: 'consult' };
+		expect(migrateSettings(stray)).not.toHaveProperty('collectorMode');
+		expect(shouldPersistSettingsOnLoad(stray, migrateSettings(stray))).toBe(true);
+		expect(mergeSettingsUpdate(migrated, { apiKeySecret: '' })).not.toHaveProperty('collectorMode');
 	});
 });
 

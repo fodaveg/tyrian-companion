@@ -45,10 +45,13 @@ export const ALERT_INGAME_SECRET_ID = 'tyrian-companion-ingame';
 
 export type Language = 'es' | 'en';
 /**
- * R1b (SPEC-TYRIAN-EN-HEBRA.md section 4): what this installation does with the account. Only a
+ * R1b (SPEC-TYRIAN-EN-HEBRA.md section 4): what this DEVICE does with the account. Only a
  * `collector` calls the Guild Wars 2 API (polls, captures, prices), writes notes and Bases, opens
- * the in-game bridge port and raises alerts; a `consult` installation reads what is already there.
- * One collector per account is the intent; `collector-status.ts` warns when a second one shows up.
+ * the in-game bridge port and raises alerts; a `consult` device reads what is already there.
+ *
+ * Deliberately NOT a field of `TyrianSettings`: `data.json` travels with Obsidian Sync's plugin
+ * settings, so a mode kept there would switch every synced device at once. It lives in the host's
+ * local `kv` (`runtime/collector-instance.ts`), seeded once by `collectorModeSeed`.
  */
 export type CollectorMode = 'collector' | 'consult';
 export type MaterialStorageCapacity = 250 | 500 | 750 | 1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000;
@@ -89,8 +92,6 @@ export interface TyrianSettings {
 	schemaVersion: typeof SETTINGS_SCHEMA_VERSION;
 	/** Name of the Obsidian SecretStorage entry, never the secret value. */
 	apiKeySecret: string;
-	/** R1b: collector or consult. A first run starts in consult; see `collectorModeValue` for an upgrade. */
-	collectorMode: CollectorMode;
 	language: Language;
 	outputFolder: string;
 	preferredCharacter: string;
@@ -184,8 +185,6 @@ export interface TyrianSettings {
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	schemaVersion: SETTINGS_SCHEMA_VERSION,
 	apiKeySecret: '',
-	// A new installation reads until the player makes it the account's collector (R1b).
-	collectorMode: 'consult',
 	// Reserve locale only. A fresh install adopts the host's app language, see `hostLanguage`.
 	language: 'en',
 	outputFolder: 'Tyrian Companion',
@@ -260,9 +259,6 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 	return {
 		schemaVersion: SETTINGS_SCHEMA_VERSION,
 		apiKeySecret: stringOrDefault(data.apiKeySecret, DEFAULT_SETTINGS.apiKeySecret),
-		// R1b. Read defensively rather than riding a schema bump, same precedent as
-		// `recommendationCapitalThresholdCopper` below: a bump would reset the polling cadence.
-		collectorMode: collectorModeValue(data),
 		// An explicit choice always wins; only an absent or unsupported value asks the host.
 		language: data.language === 'en' || data.language === 'es' ? data.language : hostLanguage(hostLocale),
 		outputFolder: normalizeVaultFolder(data.outputFolder, configDir),
@@ -426,23 +422,13 @@ export function alertIngamePortValue(value: unknown): number {
 }
 
 /**
- * R1b migration. A valid stored mode always wins. A `data.json` that predates the field and
- * already names an API key comes from an installation that was collecting, so it stays the
- * collector and updating changes nothing it does; anything else starts in consult. The result is
- * written back by `shouldPersistSettingsOnLoad`, so this decides once per installation.
+ * R1b: the mode a device starts with when it has none stored locally yet. Settings that name an
+ * API key come from an installation that was collecting (or from a synced `data.json` that did),
+ * so it stays the collector and updating changes nothing it does; anything else, a first run
+ * included, starts in consult. Read once per device: the local mode wins from then on.
  */
-function collectorModeValue(data: Record<string, unknown>): CollectorMode {
-	if (data.collectorMode === 'collector' || data.collectorMode === 'consult') return data.collectorMode;
-	return typeof data.apiKeySecret === 'string' && data.apiKeySecret.trim().length > 0 ? 'collector' : 'consult';
-}
-
-/**
- * Whether this installation is the account's collector (R1b). Only an explicit `consult` reads:
- * `migrateSettings` always sets the field, so a runtime object without it can only be one built
- * before R1b, which collected.
- */
-export function isCollector(settings: Pick<TyrianSettings, 'collectorMode'>): boolean {
-	return settings.collectorMode !== 'consult';
+export function collectorModeSeed(settings: Pick<TyrianSettings, 'apiKeySecret'>): CollectorMode {
+	return settings.apiKeySecret.trim().length > 0 ? 'collector' : 'consult';
 }
 
 /** A short manifest-style version (`0.1.35`); anything else reads as "never dismissed". */
