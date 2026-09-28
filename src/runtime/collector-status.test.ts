@@ -82,6 +82,13 @@ describe('collector status note (R1b)', () => {
 		expect(collectorStatusNotePath(ROOT)).toBe(NOTE);
 	});
 
+	it('writes a host value it could not read back as unknown, so the note stays reclaimable', () => {
+		const odd = { ...footprint('instance-a', T0), hostVersion: '0.12 (build 91)', platform: 'beos' as never };
+		expect(parseCollectorStatusNote(renderCollectorStatusNote(odd, 'en'))).toEqual({
+			...footprint('instance-a', T0), hostVersion: 'unknown', platform: 'unknown',
+		});
+	});
+
 	it('does not mistake any other note for a status note', () => {
 		const valid = renderCollectorStatusNote(footprint('instance-a', T0), 'en');
 		for (const foreign of [

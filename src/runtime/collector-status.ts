@@ -51,16 +51,20 @@ export function collectorStatusNotePath(root: string): string {
 	return `${root}/${COLLECTOR_STATUS_NOTE_RELATIVE_PATH}`;
 }
 
-/** The whole note. Frontmatter only carries the footprint; the body is one line for a curious reader. */
+/**
+ * The whole note. Frontmatter only carries the footprint; the body is one line for a curious reader.
+ * A platform or version outside the shape `parseCollectorStatusNote` accepts is written as
+ * `unknown`: a host string it could not read back would leave a note no beat could ever reclaim.
+ */
 export function renderCollectorStatusNote(footprint: CollectorFootprint, locale: Locale): string {
 	return [
 		'---',
 		`tc_kind: ${COLLECTOR_STATUS_NOTE_KIND}`,
 		`tc_collector_schema: ${String(COLLECTOR_STATUS_SCHEMA)}`,
 		`tc_collector_instance: ${JSON.stringify(footprint.instanceId)}`,
-		`tc_collector_platform: ${footprint.platform}`,
-		`tc_collector_host_version: ${JSON.stringify(footprint.hostVersion)}`,
-		`tc_collector_plugin_version: ${JSON.stringify(footprint.pluginVersion)}`,
+		`tc_collector_platform: ${PLATFORMS.has(footprint.platform) ? footprint.platform : 'unknown'}`,
+		`tc_collector_host_version: ${JSON.stringify(readableVersion(footprint.hostVersion))}`,
+		`tc_collector_plugin_version: ${JSON.stringify(readableVersion(footprint.pluginVersion))}`,
 		`tc_collector_heartbeat_at: ${JSON.stringify(footprint.heartbeatAt)}`,
 		'---',
 		createTranslator(locale).t('collector.statusNote.body'),
@@ -228,6 +232,10 @@ export class CollectorHeartbeat {
 			if (this.options.vault.file(current) === null) await this.options.vault.createFolder(current);
 		}
 	}
+}
+
+function readableVersion(value: unknown): string {
+	return typeof value === 'string' && VERSION.test(value) ? value : 'unknown';
 }
 
 function exactIso(value: string): boolean {
