@@ -1,7 +1,12 @@
+/*
+ * R1c: padding lives on `.tyrian-product-shell` (the sole child this class always wraps), not here.
+ * A container can't be queried by an @container rule tied to itself (dcc848a already measured this:
+ * "its own @container rule for 8 px can never apply to the container itself"), so the 599px rule
+ * below targets the child instead, and this element only ever establishes the container.
+ */
 .tyrian-product-surface {
 	container-type: inline-size;
 	max-width: 84rem;
-	padding: var(--size-4-4);
 	overflow-x: hidden;
 }
 
@@ -321,6 +326,7 @@
 }
 
 .tyrian-product-shell {
+	padding: var(--size-4-4);
 	color: var(--text-normal);
 }
 
@@ -640,7 +646,7 @@
 }
 
 @container (max-width: 599px) {
-	.tyrian-product-surface {
+	.tyrian-product-shell {
 		padding: var(--size-4-2);
 	}
 
@@ -670,12 +676,13 @@
 	}
 }
 
-.tyrian-companion-view {
-	container-type: inline-size;
-	max-width: 84rem;
-	padding: var(--size-4-4);
-	overflow-x: hidden;
-}
+/*
+ * R1c: `contentEl` always carries `.tyrian-product-surface` too (`product-shell.ts` adds it in JS),
+ * which already sets `container-type`/`max-width`/`overflow-x` on this same element; the 599px
+ * padding rule lives on `.tyrian-product-shell` now, for the self-query reason at its definition.
+ * Repeating those three properties here only let this later block win the padding one by cascade
+ * order over the @container rule targeting the same selector, which is the bug this removes.
+ */
 
 .tyrian-companion-view button,
 .tyrian-companion-view summary {

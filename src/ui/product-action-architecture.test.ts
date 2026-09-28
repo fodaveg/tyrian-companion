@@ -53,4 +53,20 @@ describe('product action architecture', () => {
 		expect(styles).toMatch(/tyrian-action-panel__action button[\s\S]*?min-height:\s*44px/u);
 		expect(styles).toContain('.tyrian-product-shell button:focus-visible');
 	});
+
+	// R1c (Hebra checkpoint 16): a container cannot be queried by an @container rule tied to
+	// itself. `.tyrian-product-surface` establishes the container `contentEl` always carries (from
+	// `renderProductShell`), so its own padding must be queried on `.tyrian-product-shell`, its one
+	// direct child, or the 599px rule below never actually applies to any of the three views.
+	it('queries the shell child for the narrow padding, never the surface that establishes the container', () => {
+		const styles = readModuleSource('styles.css');
+		const surfaceBlock = styles.match(/\.tyrian-product-surface\s*\{[^}]*\}/u)?.[0] ?? '';
+		expect(surfaceBlock).not.toContain('padding');
+		expect(styles).toMatch(/\.tyrian-product-shell\s*\{\s*padding: var\(--size-4-4\);/u);
+		expect(styles).toMatch(/@container \(max-width: 599px\)\s*\{\s*\.tyrian-product-shell\s*\{\s*padding: var\(--size-4-2\);/u);
+		// The Companion view's own `contentEl` also carries `.tyrian-product-surface`; repeating
+		// container-type/max-width/padding/overflow-x on `.tyrian-companion-view` let this later,
+		// equal-specificity block win the padding one over the @container rule above on that view only.
+		expect(styles).not.toMatch(/^\.tyrian-companion-view \{/mu);
+	});
 });
