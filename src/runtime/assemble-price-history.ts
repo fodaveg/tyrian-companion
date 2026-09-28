@@ -23,6 +23,7 @@ import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
+import type { TyrianPriceHistoryPort } from '../host/tyrian-host-storage';
 import { PriceHistoryRuntime } from '../economy/price-history-runtime';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { SellSignalRuntime } from '../economy/sell-signal-runtime';
@@ -37,7 +38,7 @@ export interface PriceHistoryCompactionPort {
 }
 
 export interface PriceHistoryAssemblyInput {
-	factory: IDBFactory;
+	priceHistory: Pick<TyrianPriceHistoryPort, 'open'>;
 	vaultId: string;
 	gateway: PublicCatalogGateway;
 	rateLimit: RateLimitCoordinator;
@@ -69,7 +70,7 @@ export interface PriceHistoryAssembly {
 export function assemblePriceHistory(input: PriceHistoryAssemblyInput): PriceHistoryAssembly {
 	const sellSignal = assembleSellSignal(input);
 	const priceHistory = new PriceHistoryRuntime({
-		factory: input.factory,
+		priceHistory: input.priceHistory,
 		vaultId: input.vaultId,
 		diagnostics: input.diagnostics,
 		persistenceDiagnostics: input.capturePersistence,

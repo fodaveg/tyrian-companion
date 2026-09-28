@@ -808,7 +808,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.halloweenPriceAlert = halloweenServices.priceAlert;
 		this.halloween = halloweenServices.runtime;
 		const priceServices = assemblePriceHistory({
-			factory: indexedDB,
+			priceHistory: host.priceHistory,
 			vaultId,
 			diagnostics: this.localDebugActions ?? undefined,
 			capturePersistence: this.persistenceDiagnostics('price_history', 'price_history_capture'),
@@ -834,7 +834,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.priceHistory = priceServices.priceHistory;
 		// Construction opens no I/O; the datawars2 download only ever starts from `loadPriceHistorySeries`.
 		this.priceHistoryPanelSeed = new PriceHistoryPanelSeedService({
-			factory: indexedDB,
+			priceHistory: host.priceHistory,
 			vaultId,
 			transport,
 			now: () => Date.now(),
@@ -843,7 +843,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// Construction opens no I/O; decision 4 (SPEC-recomendacion-por-objeto.md §7) only ever
 		// runs from inside `capture()`'s own post-sync pass, itself gated on `priceHistoryEnabled`.
 		this.priceSeedBulkRefresh = new PriceSeedBulkRefreshService({
-			factory: indexedDB,
+			priceHistory: host.priceHistory,
 			vaultId,
 			now: () => Date.now(),
 			// H18.19: a festival-calendar item keeps its whole published history, not the sell rule's
