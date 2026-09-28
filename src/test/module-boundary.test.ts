@@ -1,3 +1,5 @@
+import { builtinModules } from 'node:module';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -7,6 +9,7 @@ import {
 	moduleBoundaryFacts,
 	moduleBoundaryViolations,
 	moduleSpecifiers,
+	nodeGlobalReferences,
 	propertyCallChains,
 	referencedNames,
 	sourceModulePaths,
@@ -99,24 +102,79 @@ const OBSIDIAN_UI_AWAITING_R1C: readonly string[] = [
 ];
 /** Vitest infrastructure (the Obsidian mock and the harnesses that drive the plugin); never bundled. */
 const TEST_INFRASTRUCTURE_DIRECTORY = 'src/test/';
+/**
+ * Test data, not product: each one reads a recorded response from disk and hashes it at test
+ * time, so it needs Node (`node:fs` line 1 and `node:crypto` line 2 in the five datawars2
+ * fixtures, `node:crypto` line 1 in the H8 helper package fixture). No production module imports
+ * them. An EXPLICIT list with a ratchet, like the UI one.
+ */
+const NODE_TEST_FIXTURES: readonly string[] = [
+	'src/economy/__fixtures__/datawars2-real-history-36038-2026-09-26.ts',
+	'src/economy/__fixtures__/datawars2-real-history-36041-2026-09-26.ts',
+	'src/economy/__fixtures__/datawars2-real-history-43320-2026-09-26.ts',
+	'src/economy/__fixtures__/datawars2-real-history-47909-2026-09-26.ts',
+	'src/economy/__fixtures__/datawars2-real-history-48805-2026-09-26.ts',
+	'src/platform/test/mumble-v2-helper-package-fixture.ts',
+];
+const NODE_BUILTINS = new Set(builtinModules.map((name) => name.replace(/^node:/u, '')));
+
+function isNodeBuiltin(specifier: string): boolean {
+	return specifier.startsWith('node:') || NODE_BUILTINS.has(specifier.split('/')[0] ?? '');
+}
 
 function hostOnlySpecifiers(path: string): string[] {
 	return moduleBoundaryFacts(path).specifiers.filter((specifier) => HOST_ONLY_SPECIFIERS
 		.some((forbidden) => specifier === forbidden || specifier.startsWith(`${forbidden}/`)));
 }
 
+/** What a module outside the Obsidian side would need a host other than a webview for. */
+function webviewViolations(path: string): string[] {
+	const facts = moduleBoundaryFacts(path);
+	return [
+		...facts.specifiers.filter((specifier) => isNodeBuiltin(specifier) || HOST_ONLY_SPECIFIERS.includes(specifier)
+			|| HOST_ONLY_SPECIFIERS.some((forbidden) => specifier.startsWith(`${forbidden}/`)))
+			.map((specifier) => `${path} -> import ${specifier}`),
+		...facts.nodeGlobals.map((global) => `${path} -> global ${global}`),
+	];
+}
+
 describe('R1a host boundary', () => {
-	it('keeps obsidian, electron and net inside the Obsidian host, main.ts and the listed UI files', () => {
+	it('keeps obsidian, electron, net and every Node builtin or global inside the Obsidian side', () => {
 		const offenders = sourceModulePaths()
 			.filter((path) => !path.startsWith(OBSIDIAN_HOST_DIRECTORY) && path !== OBSIDIAN_PLUGIN_ENTRY
-				&& !OBSIDIAN_UI_AWAITING_R1C.includes(path) && !path.startsWith(TEST_INFRASTRUCTURE_DIRECTORY))
-			.flatMap((path) => hostOnlySpecifiers(path).map((specifier) => `${path} -> ${specifier}`));
+				&& !OBSIDIAN_UI_AWAITING_R1C.includes(path) && !path.startsWith(TEST_INFRASTRUCTURE_DIRECTORY)
+				&& !NODE_TEST_FIXTURES.includes(path))
+			.flatMap((path) => webviewViolations(path));
 		expect(offenders).toEqual([]);
 	});
 
-	it('drops a UI file from the exception list as soon as it no longer needs it', () => {
-		const stale = OBSIDIAN_UI_AWAITING_R1C.filter((path) => hostOnlySpecifiers(path).length === 0);
-		expect(stale).toEqual([]);
+	it('lets the listed UI files and fixtures reach Obsidian or Node, and nothing else', () => {
+		// The exceptions are for exactly what they are listed for: the UI may still import
+		// obsidian, never a Node builtin or global; a fixture may use Node, never Obsidian.
+		expect(OBSIDIAN_UI_AWAITING_R1C.flatMap((path) => webviewViolations(path)
+			.filter((violation) => !/ -> import (?:obsidian|electron)$/u.test(violation)))).toEqual([]);
+		expect(NODE_TEST_FIXTURES.flatMap((path) => hostOnlySpecifiers(path))).toEqual([]);
+	});
+
+	it('drops a UI file or a fixture from its exception list as soon as it no longer needs it', () => {
+		const staleUi = OBSIDIAN_UI_AWAITING_R1C.filter((path) => hostOnlySpecifiers(path).length === 0);
+		expect(staleUi).toEqual([]);
+		const staleFixtures = NODE_TEST_FIXTURES.filter((path) => moduleBoundaryFacts(path).specifiers.every((specifier) => !isNodeBuiltin(specifier)));
+		expect(staleFixtures).toEqual([]);
+	});
+
+	it('reads Node globals off the syntax: free and through a global object, never a member or a typeof', () => {
+		expect(nodeGlobalReferences(`
+			const joined = Buffer.concat([a, b]);
+			const env = process.env.X;
+			const socket = (window as any).require('net');
+			const bytes = (globalThis as any)['Buffer'];
+			const hasProcess = typeof process !== 'undefined';
+			const shape = { process: 1, Buffer: 2 };
+			function run(vault: { process(): void }, data: Buffer): void { vault.process(); void data; }
+		`)).toEqual(['Buffer', 'process', 'window.require', 'globalThis.Buffer']);
+		expect(moduleSpecifiers(`const socket = (window as any).require('net'); globalThis.require('node:fs');`))
+			.toEqual(['net', 'node:fs']);
 	});
 
 	it('turns red for a core module that reaches Obsidian, Electron or node:net, even for types', () => {

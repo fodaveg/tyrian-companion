@@ -62,11 +62,14 @@ export interface ModuleBoundaryFacts {
 	readonly exportedNames: Set<string>;
 	readonly classMemberNames: Set<string>;
 	readonly propertyCallChains: string[];
+	/** `nodeGlobalReferences`: free `Buffer`/`process` and host globals read off a global object. */
+	readonly nodeGlobals: string[];
 }
 
 export function moduleBoundaryFacts(path: string, root = process.cwd()): ModuleBoundaryFacts {
 	const source = readModuleSource(path, root);
 	return {
+		nodeGlobals: nodeGlobalReferences(source),
 		specifiers: moduleSpecifiers(source),
 		names: referencedNames(source),
 		exportedNames: exportedDeclarationNames(source),
@@ -186,8 +189,11 @@ export function moduleSpecifiers(source: string): string[] {
 		} else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
 			record(node, node.argument.literal);
 		} else if (ts.isCallExpression(node)) {
+			// `window.require('net')` and `(globalThis as any).require(…)` load a module exactly like a
+			// bare `require`; only the receiver differs, so they are the same specifier to a frontier.
 			if (node.expression.kind === ts.SyntaxKind.ImportKeyword
-				|| (ts.isIdentifier(node.expression) && node.expression.text === 'require')) {
+				|| (ts.isIdentifier(node.expression) && node.expression.text === 'require')
+				|| globalObjectMember(node.expression)?.member === 'require') {
 				record(node, node.arguments[0]);
 			}
 		}
@@ -195,6 +201,77 @@ export function moduleSpecifiers(source: string): string[] {
 	};
 	visit(file);
 	return discovered.sort((left, right) => left.position - right.position).map(({ specifier }) => specifier);
+}
+
+/** The objects a module can reach a host global through, besides naming it directly. */
+const GLOBAL_OBJECTS = new Set(['globalThis', 'window', 'self', 'global']);
+/** Node's own globals, which a webview (Hebra) does not have. */
+const NODE_GLOBALS = new Set(['Buffer', 'process']);
+
+function unwrapExpression(expression: ts.Expression): ts.Expression {
+	let current: ts.Expression = expression;
+	while (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isNonNullExpression(current)
+		|| ts.isTypeAssertionExpression(current) || ts.isSatisfiesExpression(current)) {
+		current = (current as ts.ParenthesizedExpression).expression;
+	}
+	return current;
+}
+
+/** `globalThis.x`, `(window as any)['x']` and the like: the global object and the member read off it. */
+function globalObjectMember(expression: ts.Expression): { owner: string; member: string } | null {
+	const node = unwrapExpression(expression);
+	let member: string | null = null;
+	let receiver: ts.Expression | null = null;
+	if (ts.isPropertyAccessExpression(node)) { member = node.name.text; receiver = node.expression; }
+	else if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)) {
+		member = node.argumentExpression.text;
+		receiver = node.expression;
+	}
+	if (member === null || receiver === null) return null;
+	const owner = unwrapExpression(receiver);
+	return ts.isIdentifier(owner) && GLOBAL_OBJECTS.has(owner.text) ? { owner: owner.text, member } : null;
+}
+
+/**
+ * Every use of a Node-only global in a source: a free `Buffer`/`process` (not a member such as
+ * `vault.process`, not a declaration or property name), and `Buffer`, `process` or `require` read
+ * off `globalThis`/`window`/`self`/`global`. A bare `typeof process` feature test is not a use;
+ * what it guards is. Returned in source order, one label per use (`Buffer`, `window.require`).
+ *
+ * Scope is not resolved: a local binding named `Buffer` or `process` would read as the global.
+ * None exists in `src/` (measured at R1a); renaming one is cheaper than a checker pass per file.
+ */
+export function nodeGlobalReferences(source: string): string[] {
+	// Parents set: whether an identifier is a free read depends on the node around it.
+	const file = ts.createSourceFile('node-globals.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const found: string[] = [];
+	const visit = (node: ts.Node): void => {
+		if (ts.isIdentifier(node) && NODE_GLOBALS.has(node.text) && isFreeReference(node)) found.push(node.text);
+		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+			const read = globalObjectMember(node);
+			if (read !== null && (NODE_GLOBALS.has(read.member) || read.member === 'require')) found.push(`${read.owner}.${read.member}`);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return found;
+}
+
+function isFreeReference(node: ts.Identifier): boolean {
+	const parent = node.parent;
+	// A feature test, not a use.
+	if (ts.isTypeOfExpression(parent)) return false;
+	// A member (`vault.process`), a key or member declaration (`{ process: … }`, `process() {}`) or a
+	// binding's own name: the name of something else, not a read of the global.
+	const namedBy = (ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent)
+		|| ts.isPropertyDeclaration(parent) || ts.isPropertySignature(parent) || ts.isMethodDeclaration(parent)
+		|| ts.isMethodSignature(parent) || ts.isGetAccessor(parent) || ts.isSetAccessor(parent) || ts.isEnumMember(parent)
+		|| ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isBindingElement(parent)
+		|| ts.isFunctionDeclaration(parent) || ts.isClassDeclaration(parent)) && parent.name === node;
+	if (namedBy || ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent)) return false;
+	// A type position (`bytes: Buffer`, `NodeJS.Process`) names a type, not the runtime global.
+	if (ts.isTypeReferenceNode(parent) || (ts.isQualifiedName(parent) && parent.right === node)) return false;
+	return true;
 }
 
 /**
