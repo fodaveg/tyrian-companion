@@ -48,7 +48,7 @@ vi.mock('obsidian', () => {
 	return { Setting, SecretComponent, PluginSettingTab, AbstractInputSuggest, ItemView: class {}, Menu: class {}, Modal: class {}, Notice: class {}, setIcon: () => undefined, setTooltip: () => undefined };
 });
 
-import { createObsidianUi, ObsidianSettingTab } from './obsidian-ui';
+import { createObsidianUi, ObsidianSettingTab, type ObsidianSettingsPanel } from './obsidian-ui';
 
 describe('ObsidianHost ui.setting', () => {
 	const app = { vault: {} };
@@ -129,6 +129,44 @@ describe('ObsidianSettingTab', () => {
 		expect([definition!.name, definition!.desc]).toEqual(['Carpeta', 'Dónde']);
 		expect(row.setting).toBe(setting);
 		expect(row.settingEl).toBe(setting.settingEl);
+	});
+});
+
+describe('ObsidianHost ui.settingsPanel', () => {
+	it('adds an ObsidianSettingTab whose display, hide and settings search are the registration\'s', () => {
+		const events: unknown[][] = [];
+		const addSettingTab = vi.fn();
+		const plugin = { app: { vault: {} }, addSettingTab } as unknown as Plugin;
+		const dispose = createObsidianUi(plugin).settingsPanel({
+			mount: (container) => { events.push(['mount', container]); },
+			unmount: (container) => { events.push(['unmount', container]); },
+			settingDefinitions: () => [{ name: 'Carpeta', desc: 'Dónde', render: (row) => { events.push(['render', row.settingEl]); } }],
+		});
+		const [tab] = addSettingTab.mock.calls[0] as [ObsidianSettingTab<ObsidianSettingsPanel>];
+		expect(tab).toBeInstanceOf(ObsidianSettingTab);
+
+		const opened: { display(): void } = tab;
+		opened.display();
+		tab.hide();
+		const [definition] = tab.getSettingDefinitions() as unknown as Array<{ name: string; desc: string; render(setting: unknown): void }>;
+		definition!.render({ settingEl: 'row', descEl: {}, controlEl: {} });
+		dispose();
+
+		expect([definition!.name, definition!.desc]).toEqual(['Carpeta', 'Dónde']);
+		expect(events).toEqual([
+			['mount', { role: 'tab-container' }],
+			['unmount', { role: 'tab-container' }],
+			['render', 'row'],
+			['unmount', { role: 'tab-container' }],
+		]);
+	});
+
+	it('lists nothing for the settings search when the registration offers no definitions', () => {
+		const addSettingTab = vi.fn();
+		createObsidianUi({ app: {}, addSettingTab } as unknown as Plugin)
+			.settingsPanel({ mount: () => undefined, unmount: () => undefined });
+		const [tab] = addSettingTab.mock.calls[0] as [ObsidianSettingTab<ObsidianSettingsPanel>];
+		expect(tab.getSettingDefinitions()).toEqual([]);
 	});
 });
 

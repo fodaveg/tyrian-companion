@@ -1,4 +1,4 @@
-import { apiVersion, getLanguage, Platform, type Plugin } from 'obsidian';
+import { apiVersion, getLanguage, Platform, type App, type Plugin } from 'obsidian';
 // @ts-expect-error Electron is provided by Obsidian desktop and externalized by the bundle.
 import { shell } from 'electron';
 
@@ -40,6 +40,18 @@ export function createObsidianHost(plugin: Plugin): TyrianHost {
 		settings: {
 			load: async () => await plugin.loadData() as unknown,
 			save: async (data) => { await plugin.saveData(data); },
+		},
+		// Per-vault, per-device, never synced. An app without the API keeps nothing: load answers
+		// null and save does nothing, which is what the core did itself before R1c.
+		localStorage: {
+			load: (key) => {
+				const app = plugin.app as Partial<Pick<App, 'loadLocalStorage'>>;
+				return typeof app.loadLocalStorage === 'function' ? app.loadLocalStorage.call(plugin.app, key) as unknown : null;
+			},
+			save: (key, value) => {
+				const app = plugin.app as Partial<Pick<App, 'saveLocalStorage'>>;
+				if (typeof app.saveLocalStorage === 'function') app.saveLocalStorage.call(plugin.app, key, value);
+			},
 		},
 		kv,
 		priceHistory: indexedDbPriceHistoryPort(kv),

@@ -20,8 +20,8 @@ import type {
 	TyrianButtonControl,
 	TyrianDropdownControl,
 	TyrianModalRequest,
-	TyrianPanelRegistration,
 	TyrianSecretControl,
+	TyrianSettingDefinition,
 	TyrianSettingRow,
 	TyrianTextControl,
 	TyrianToggleControl,
@@ -80,8 +80,14 @@ export function createObsidianUi(plugin: Plugin): TyrianUiPort {
 			});
 			return () => { active = false; };
 		},
+		// The plugin's own tab: display mounts the panel, hide unmounts it, and Obsidian's settings
+		// search lists the panel's `settingDefinitions` (none when it has no such member).
 		settingsPanel: (panel) => {
-			const tab = new HostSettingTab(app(), plugin, panel);
+			const tab = new ObsidianSettingTab(app(), plugin, (containerEl) => ({
+				mount: (container) => { panel.mount(container); },
+				unmount: () => { panel.unmount(containerEl); },
+				getSettingDefinitions: () => panel.settingDefinitions?.() ?? [],
+			}));
 			plugin.addSettingTab(tab);
 			return () => { panel.unmount(tab.containerEl); };
 		},
@@ -211,7 +217,7 @@ export class ObsidianSettingRow implements TyrianSettingRow {
 export interface ObsidianSettingsPanel {
 	mount(containerEl: HTMLElement): void;
 	unmount(): void;
-	getSettingDefinitions(): ReadonlyArray<{ readonly name: string; readonly desc: string; render(setting: TyrianSettingRow): void }>;
+	getSettingDefinitions(): readonly TyrianSettingDefinition[];
 }
 
 /**
@@ -265,21 +271,5 @@ class VaultFolderInputSuggest extends AbstractInputSuggest<string> {
 
 	renderSuggestion(path: string, el: HTMLElement): void {
 		el.setText(path === '' ? '/' : path);
-	}
-}
-
-class HostSettingTab extends PluginSettingTab {
-	constructor(app: App, plugin: Plugin, private readonly panel: TyrianPanelRegistration) {
-		super(app, plugin);
-	}
-
-	display(): void {
-		this.containerEl.empty();
-		this.panel.mount(this.containerEl);
-	}
-
-	hide(): void {
-		this.panel.unmount(this.containerEl);
-		super.hide();
 	}
 }

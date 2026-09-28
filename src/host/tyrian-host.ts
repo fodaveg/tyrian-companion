@@ -79,6 +79,18 @@ export interface TyrianSettingsPort {
 	save(data: unknown): Promise<void>;
 }
 
+/**
+ * Small values that belong to THIS vault on THIS device and must never sync (Obsidian's
+ * `App.loadLocalStorage`/`saveLocalStorage`). Synchronous, like those. Today only the in-game
+ * session link (`readIngameSessionLink`/`writeIngameSessionLink` in the core).
+ */
+export interface TyrianLocalStoragePort {
+	/** The stored value, or null when there is none (or the host keeps none). */
+	load(key: string): unknown;
+	/** Stores the value; null clears it. */
+	save(key: string, value: unknown): void;
+}
+
 // ---------------------------------------------------------------------------------------------
 // tcpServer
 // ---------------------------------------------------------------------------------------------
@@ -209,9 +221,19 @@ export interface TyrianCodeBlockContext {
 	readonly frontmatter: unknown;
 }
 
+/** A settings row as a host lists it for its own settings search: name, description and how to build it. */
+export interface TyrianSettingDefinition {
+	readonly name: string;
+	readonly desc: string;
+	render(setting: TyrianSettingRow): void;
+}
+
 export interface TyrianPanelRegistration {
+	/** Renders the panel into `container`, clearing whatever an earlier mount left there. */
 	mount(container: HTMLElement): void;
 	unmount(container: HTMLElement): void;
+	/** Obsidian's settings search (`PluginSettingTab.getSettingDefinitions`); a host without one ignores it. */
+	settingDefinitions?(): readonly TyrianSettingDefinition[];
 }
 
 export interface TyrianModalRequest {
@@ -345,6 +367,8 @@ export interface TyrianHost {
 	readonly http: TyrianHttpPort;
 	readonly secrets: TyrianSecretsPort;
 	readonly settings: TyrianSettingsPort;
+	/** Optional: without it no in-game session link is kept, so a session the addon started is treated as manual after a reload. */
+	readonly localStorage?: TyrianLocalStoragePort;
 	readonly kv: TyrianKvPort;
 	readonly priceHistory: TyrianPriceHistoryPort;
 	readonly tcpServer: TyrianTcpServerPort;

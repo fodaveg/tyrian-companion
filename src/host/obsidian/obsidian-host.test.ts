@@ -164,6 +164,23 @@ describe('ObsidianHost secrets, settings and environment', () => {
 		}
 	});
 
+	it('keeps the per-vault local storage through the app, and nothing where the app has no such API', () => {
+		const { plugin } = fakePlugin();
+		const host = createObsidianHost(plugin);
+		// The test app has no local storage: nothing is kept and nothing throws.
+		expect(host.localStorage?.load('tyrian-companion:ingame-session-link')).toBeNull();
+		host.localStorage?.save('tyrian-companion:ingame-session-link', { sessionId: 'a' });
+
+		const app = (plugin as unknown as { app: Record<string, unknown> }).app;
+		const stored = new Map<string, unknown>();
+		Object.assign(app, {
+			loadLocalStorage(this: unknown, key: string) { return this === app ? stored.get(key) ?? null : 'unbound'; },
+			saveLocalStorage(this: unknown, key: string, value: unknown) { if (this === app) stored.set(key, value); },
+		});
+		host.localStorage?.save('tyrian-companion:ingame-session-link', { sessionId: 'b' });
+		expect(host.localStorage?.load('tyrian-companion:ingame-session-link')).toEqual({ sessionId: 'b' });
+	});
+
 	it('reads the manifest when asked, so a manifest assigned after construction is the one reported', () => {
 		const { plugin } = fakePlugin();
 		const host = createObsidianHost(plugin);

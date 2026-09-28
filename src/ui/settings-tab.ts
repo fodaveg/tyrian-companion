@@ -1,4 +1,11 @@
-import type { TyrianButtonControl, TyrianSecretControl, TyrianSettingRow, TyrianUiPort, TyrianVault } from '../host/tyrian-host';
+import type {
+	TyrianButtonControl,
+	TyrianSecretControl,
+	TyrianSettingDefinition,
+	TyrianSettingRow,
+	TyrianUiPort,
+	TyrianVault,
+} from '../host/tyrian-host';
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import {
 	projectManagedAssetsActions,
@@ -105,13 +112,6 @@ export function percentDisplayToBps(value: string): number | 'invalid' {
 	if (!Number.isFinite(percent) || percent < 0) return 'invalid';
 	const bps = Math.round(percent * 100);
 	return Number.isSafeInteger(bps) && bps >= 0 && bps <= 100_000 ? bps : 'invalid';
-}
-
-/** A row as a host lists it (Obsidian's settings search): its name, its description and how to build it. */
-export interface TyrianSettingDefinition {
-	readonly name: string;
-	readonly desc: string;
-	render(setting: TyrianSettingRow): void;
 }
 
 /** What the settings panel needs from the host: rows, modals, the folder picker and the config folder. */
