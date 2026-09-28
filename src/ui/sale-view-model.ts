@@ -127,6 +127,14 @@ export interface SaleViewModel {
 	hero: SaleHeroViewModel | null;
 	groups: SaleGroupsViewModel;
 	calendar: SaleCalendarRowViewModel[];
+	/**
+	 * R1b: true exactly when this device is in consult mode and never captured anything this
+	 * session, so `status` alone (an ordinary `empty`) cannot say WHY: `refreshInventoryAdvisor`/
+	 * `refreshSale` refuse in consult (`refusedInConsult`), so nothing here will ever fill this
+	 * tab on its own. `sale-view.ts` renders a dedicated final state for it, with no refresh
+	 * action (one only the collector could carry out).
+	 */
+	consultOnly?: boolean;
 }
 
 export interface SaleSourceCalendarCandidate {
@@ -156,6 +164,8 @@ export interface SaleViewModelInput {
 	}) | null;
 	rows: SaleSourceRow[];
 	calendar: SaleSourceCalendarEntry[];
+	/** See `SaleViewModel.consultOnly`. */
+	consultOnly?: boolean;
 }
 
 const DAY_MS = 86_400_000;
@@ -299,6 +309,7 @@ export function buildSaleViewModel(input: SaleViewModelInput): SaleViewModel {
 		nowMs: input.nowMs, festivalStartMs: input.festivalStartMs, capturedAtMs, maxPriceAgeMs: input.maxPriceAgeMs,
 		rulesExpiredAtMs: null,
 		...(input.storageSpace === undefined ? {} : { storageSpace: input.storageSpace }),
+		...(input.consultOnly === undefined ? {} : { consultOnly: input.consultOnly }),
 		hero, groups, calendar,
 	};
 }
