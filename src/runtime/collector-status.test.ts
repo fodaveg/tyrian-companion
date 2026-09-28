@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { TyrianVaultFile } from '../host/tyrian-host';
 import { canonicalPathFor } from './canonical-path';
-import { loadCollectorInstanceId } from './collector-instance';
+import { loadCollectorInstanceId, loadCollectorMode, saveCollectorMode } from './collector-instance';
 import {
 	COLLECTOR_HEARTBEAT_FRESH_MS,
 	COLLECTOR_HEARTBEAT_INTERVAL_MS,
@@ -240,6 +240,23 @@ describe('loadCollectorInstanceId (R1b)', () => {
 		expect(first).toBe('11111111-1111-4111-8111-111111111111');
 		expect(other).toBe('22222222-2222-4222-8222-222222222222');
 		expect(createId).toHaveBeenCalledTimes(2);
+	});
+
+	it('seeds the mode once per vault, keeps it against any later seed, and changes it only by an explicit save', async () => {
+		const factory = new IDBFactory();
+		const seed = vi.fn((): 'collector' | 'consult' => 'collector');
+
+		await expect(loadCollectorMode(factory, VAULT_A, seed)).resolves.toBe('collector');
+		await expect(loadCollectorMode(factory, VAULT_A, () => 'consult')).resolves.toBe('collector');
+		await expect(loadCollectorMode(factory, VAULT_B, () => 'consult')).resolves.toBe('consult');
+		expect(seed).toHaveBeenCalledOnce();
+
+		await saveCollectorMode(factory, VAULT_A, 'consult');
+		await expect(loadCollectorMode(factory, VAULT_A, () => 'collector')).resolves.toBe('consult');
+		// The mode and the installation id live side by side without touching each other.
+		const id = await loadCollectorInstanceId(factory, VAULT_A, () => '33333333-3333-4333-8333-333333333333');
+		await saveCollectorMode(factory, VAULT_A, 'collector');
+		await expect(loadCollectorInstanceId(factory, VAULT_A)).resolves.toBe(id);
 	});
 
 	it('refuses a vault identity that is not a vaultId hash', async () => {
