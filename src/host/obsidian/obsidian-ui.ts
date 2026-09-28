@@ -5,6 +5,7 @@ import {
 	Notice,
 	PluginSettingTab,
 	SecretComponent,
+	Setting,
 	setIcon,
 	setTooltip,
 	type App,
@@ -14,8 +15,14 @@ import {
 
 import { VaultFolderInputSuggest } from '../../ui/vault-folder-suggest';
 import type {
+	TyrianButtonControl,
+	TyrianDropdownControl,
 	TyrianModalRequest,
 	TyrianPanelRegistration,
+	TyrianSecretControl,
+	TyrianSettingRow,
+	TyrianTextControl,
+	TyrianToggleControl,
 	TyrianUiPort,
 	TyrianViewRegistration,
 } from '../tyrian-host';
@@ -113,6 +120,7 @@ export function createObsidianUi(plugin: Plugin): TyrianUiPort {
 			const suggest = new VaultFolderInputSuggest(app(), input, onSelect);
 			return () => { suggest.close(); };
 		},
+		setting: (container) => new ObsidianSettingRow(app(), new Setting(container)),
 		secretPicker: (container, value, onChange) => {
 			let active = true;
 			new SecretComponent(app(), container).setValue(value).onChange(async (name) => {
@@ -154,6 +162,45 @@ class HostModal extends Modal {
 	onClose(): void {
 		this.contentEl.empty();
 		this.request.onClose?.();
+	}
+}
+
+/**
+ * `TyrianSettingRow` over a real `Setting`: every call goes straight to it, and the controls it
+ * hands out ARE Obsidian's own components, so the row's DOM and behavior are exactly those of
+ * `new Setting(container)`. `addSecret` is the one without a `Setting` method of its own: it is
+ * the `addComponent` + `SecretComponent` pair ui/settings-tab.ts used before R1c.
+ */
+export class ObsidianSettingRow implements TyrianSettingRow {
+	constructor(private readonly app: App, readonly setting: Setting) {}
+
+	get settingEl(): HTMLElement { return this.setting.settingEl; }
+
+	get descEl(): HTMLElement { return this.setting.descEl; }
+
+	get controlEl(): HTMLElement { return this.setting.controlEl; }
+
+	setName(name: string): this { this.setting.setName(name); return this; }
+
+	setDesc(description: string): this { this.setting.setDesc(description); return this; }
+
+	setTooltip(tooltip: string): this { this.setting.setTooltip(tooltip); return this; }
+
+	addText(build: (text: TyrianTextControl) => unknown): this { this.setting.addText(build); return this; }
+
+	addDropdown(build: (dropdown: TyrianDropdownControl) => unknown): this { this.setting.addDropdown(build); return this; }
+
+	addToggle(build: (toggle: TyrianToggleControl) => unknown): this { this.setting.addToggle(build); return this; }
+
+	addButton(build: (button: TyrianButtonControl) => unknown): this { this.setting.addButton(build); return this; }
+
+	addSecret(build: (secret: TyrianSecretControl) => unknown): this {
+		this.setting.addComponent((element) => {
+			const secret = new SecretComponent(this.app, element);
+			build(secret);
+			return secret;
+		});
+		return this;
 	}
 }
 

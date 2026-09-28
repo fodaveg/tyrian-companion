@@ -228,6 +228,68 @@ export type TyrianMenuEntry =
 	| { readonly kind: 'item'; readonly title: string; readonly icon: string; onClick(): void }
 	| { readonly kind: 'separator' };
 
+/*
+ * A settings row and its controls: the part of Obsidian's `Setting`, `TextComponent`,
+ * `DropdownComponent`, `ToggleComponent`, `ButtonComponent` and `SecretComponent` that
+ * ui/settings-tab.ts and ui/manual-session-start-modal.ts use (R1c). Each call returns the same
+ * row or control, so they chain as in Obsidian.
+ */
+
+export interface TyrianTextControl {
+	readonly inputEl: HTMLInputElement;
+	setPlaceholder(placeholder: string): TyrianTextControl;
+	setValue(value: string): TyrianTextControl;
+	onChange(callback: (value: string) => unknown): TyrianTextControl;
+}
+
+export interface TyrianDropdownControl {
+	readonly selectEl: HTMLSelectElement;
+	addOption(value: string, display: string): TyrianDropdownControl;
+	setValue(value: string): TyrianDropdownControl;
+	setDisabled(disabled: boolean): TyrianDropdownControl;
+	onChange(callback: (value: string) => unknown): TyrianDropdownControl;
+}
+
+export interface TyrianToggleControl {
+	readonly toggleEl: HTMLElement;
+	setValue(on: boolean): TyrianToggleControl;
+	setDisabled(disabled: boolean): TyrianToggleControl;
+	setTooltip(tooltip: string): TyrianToggleControl;
+	onChange(callback: (on: boolean) => unknown): TyrianToggleControl;
+}
+
+export interface TyrianButtonControl {
+	readonly buttonEl: HTMLButtonElement;
+	setButtonText(text: string): TyrianButtonControl;
+	/** The row's call to action (`mod-cta`). */
+	setCta(): TyrianButtonControl;
+	setDisabled(disabled: boolean): TyrianButtonControl;
+	onClick(callback: (event: MouseEvent) => unknown): TyrianButtonControl;
+}
+
+/** Picks or creates a named entry of `secrets`; the value is the entry NAME, never the secret. */
+export interface TyrianSecretControl {
+	setValue(name: string): TyrianSecretControl;
+	onChange(callback: (name: string) => unknown): TyrianSecretControl;
+}
+
+/** One labelled row: name and description on one side, its controls on the other. */
+export interface TyrianSettingRow {
+	readonly settingEl: HTMLElement;
+	/** Rows append their own status lines here (connection, save state, feedback). */
+	readonly descEl: HTMLElement;
+	readonly controlEl: HTMLElement;
+	setName(name: string): TyrianSettingRow;
+	setDesc(description: string): TyrianSettingRow;
+	setTooltip(tooltip: string): TyrianSettingRow;
+	addText(build: (text: TyrianTextControl) => unknown): TyrianSettingRow;
+	addDropdown(build: (dropdown: TyrianDropdownControl) => unknown): TyrianSettingRow;
+	addToggle(build: (toggle: TyrianToggleControl) => unknown): TyrianSettingRow;
+	addButton(build: (button: TyrianButtonControl) => unknown): TyrianSettingRow;
+	/** settings-tab.ts's API key and in-game token rows (`SecretComponent` via `addComponent`). */
+	addSecret(build: (secret: TyrianSecretControl) => unknown): TyrianSettingRow;
+}
+
 export interface TyrianUiPort {
 	/** main.ts:548-561: ui/companion-view.ts, ui/inventory-advisor-item-view.ts, ui/sale-item-view.ts (ItemView). */
 	registerView(view: TyrianViewRegistration): TyrianDisposer;
@@ -264,6 +326,8 @@ export interface TyrianUiPort {
 	notice(message: string, onClick?: () => void): void;
 	/** ui/vault-folder-suggest.ts via ui/settings-tab.ts (suggests existing folders while typing; free text allowed). */
 	pickFolder(input: HTMLInputElement, onSelect: (path: string) => void | Promise<void>): TyrianDisposer;
+	/** ui/settings-tab.ts and ui/manual-session-start-modal.ts (`new Setting(container)`): a row appended to `container`. */
+	setting(container: HTMLElement): TyrianSettingRow;
 	/** ui/settings-tab.ts:319/934 (`SecretComponent`: pick or create a named secret). */
 	secretPicker(container: HTMLElement, value: string, onChange: (name: string) => void | Promise<void>): TyrianDisposer;
 	/** No consumer today: no view opens an external URL. */
