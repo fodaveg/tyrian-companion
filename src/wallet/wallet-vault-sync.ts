@@ -110,14 +110,15 @@ export function walletNoteRelativePath(currencyId: number): string {
 }
 
 /**
- * The currency a note's wallet marker names, when it is one the writer writes (a positive safe
- * integer); null for a note without the marker or with any other value.
+ * The currency a note's wallet marker names, when the marker is genuinely the note's own
+ * (`validateWalletNoteMarker`, the same structural check `classifyWalletNote` runs), one the
+ * writer writes (a positive safe integer); null for a note without an owned marker, for one whose
+ * marker is merely quoted somewhere in the note (for instance inside a code block, with no real
+ * frontmatter behind it), or with any other value.
  */
 export function walletNoteCurrencyId(content: string): number | null {
-	const raw = WALLET_MARKER_PATTERN.exec(content)?.[3];
-	if (raw === undefined) return null;
-	const currencyId = Number(raw);
-	return positive(currencyId) ? currencyId : null;
+	const validation = validateWalletNoteMarker(content);
+	return validation.status === 'valid' ? validation.currencyId : null;
 }
 
 /**
@@ -375,27 +376,47 @@ function markerLine(currencyId: number, hash: string | null): string {
 	return hash === null ? `${base} -->` : `${base} hash=${hash} -->`;
 }
 
-async function classifyWalletNote(content: string): Promise<
-	| { status: 'owned'; note: OwnedWalletNote }
+type WalletMarkerValidation =
 	| { status: 'foreign' }
 	| { status: 'conflict'; currencyId: number | null }
-> {
+	| { status: 'valid'; currencyId: number; hash: string; markerText: string; fields: WalletNoteFields };
+
+/**
+ * The synchronous checks a currency note's marker text must pass before its currency id can be
+ * trusted for anything but display: the marker's own schema and name, a hash present, and real
+ * frontmatter that parses as `WalletNoteFields` naming that same currency (never the marker text
+ * merely quoted somewhere else in the note, for instance inside a code block, with no matching
+ * frontmatter behind it). `classifyWalletNote` continues from here to verify the hash
+ * cryptographically before calling a note owned; `walletNoteCurrencyId` (R1a's `canonicalPathFor`)
+ * needs nothing past this point, since a path is only ever built from `currencyId`.
+ */
+function validateWalletNoteMarker(content: string): WalletMarkerValidation {
 	const marker = content.match(WALLET_MARKER_PATTERN);
 	if (!marker) return content.includes(MARKER_PREFIX) ? { status: 'conflict', currencyId: null } : { status: 'foreign' };
 	const currencyId = marker[3] ? Number(marker[3]) : null;
 	if (marker[1] !== String(WALLET_NOTE_SCHEMA_VERSION) || marker[2] !== WALLET_NOTE_MARKER || currencyId === null || !marker[4]) {
 		return { status: 'conflict', currencyId };
 	}
-	const markerWithHash = marker[0];
-	const unsigned = content.replace(markerWithHash, markerLine(currencyId, null));
-	if (await sha256Text(unsigned) !== marker[4]) return { status: 'conflict', currencyId };
 	const frontmatter = content.match(/^---\n([\s\S]*?)\n---\n/u);
 	if (!frontmatter) return { status: 'conflict', currencyId };
 	let parsed: unknown;
 	try { parsed = parseYaml(frontmatter[1]!); }
 	catch { return { status: 'conflict', currencyId }; }
 	if (!isWalletNoteFields(parsed) || parsed.tc_currency_id !== currencyId) return { status: 'conflict', currencyId };
-	return { status: 'owned', note: { fields: parsed, content } };
+	return { status: 'valid', currencyId, hash: marker[4], markerText: marker[0], fields: parsed };
+}
+
+async function classifyWalletNote(content: string): Promise<
+	| { status: 'owned'; note: OwnedWalletNote }
+	| { status: 'foreign' }
+	| { status: 'conflict'; currencyId: number | null }
+> {
+	const validation = validateWalletNoteMarker(content);
+	if (validation.status !== 'valid') return validation;
+	const { currencyId, hash, markerText, fields } = validation;
+	const unsigned = content.replace(markerText, markerLine(currencyId, null));
+	if (await sha256Text(unsigned) !== hash) return { status: 'conflict', currencyId };
+	return { status: 'owned', note: { fields, content } };
 }
 
 function positionFromFields(fields: WalletNoteFields): WalletVaultPosition {

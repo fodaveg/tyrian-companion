@@ -337,12 +337,15 @@ export function inventoryNoteRelativePath(positionId: string): string {
 }
 
 /**
- * The position a note's inventory marker names, when it has the shape the writer produces; null
- * for a note without the marker or with a position id no writer could have put in a file name.
+ * The position a note's inventory marker names, when the marker is genuinely the note's own
+ * (`validateInventoryNoteMarker`, the same structural check `classifyInventoryNote` runs) and has
+ * the shape the writer produces; null for a note without an owned marker, for one whose marker is
+ * merely quoted somewhere in the note (for instance inside a code block, with no real frontmatter
+ * behind it), or with a position id no writer could have put in a file name.
  */
 export function inventoryNotePositionId(content: string): string | null {
-	const positionId = INVENTORY_MARKER_PATTERN.exec(content)?.[3];
-	return positionId !== undefined && POSITION_ID_PATTERN.test(positionId) ? positionId : null;
+	const validation = validateInventoryNoteMarker(content);
+	return validation.status === 'valid' && POSITION_ID_PATTERN.test(validation.positionId) ? validation.positionId : null;
 }
 /**
  * H18.16: closes the managed body. Everything after this line is the user's text. The marker
@@ -1100,24 +1103,32 @@ function markerLine(position: string, hash: string | null): string {
 	return hash === null ? `${base} -->` : `${base} hash=${hash} -->`;
 }
 
-/**
- * Recognises an owned note and splits it into managed and user parts (H18.16).
- *
- * The managed block is the text between the marker line and `END_MARKER`, and the marker's hash
- * must match it: an edit inside it is the one edit that still makes the note a conflict, since
- * rewriting it would delete what the user typed there. Frontmatter keys the plugin does not manage
- * and any text outside the block are the user's and never block anything.
- *
- * A note written before `END_MARKER` existed is recognised two ways: byte for byte by its old
- * whole-note hash (nothing added yet), or by its managed block rendered from its own managed
- * values followed by whatever the user appended. It stays in that older shape until its data
- * changes; the next rewrite adds the end marker.
- */
-async function classifyInventoryNote(content: string): Promise<
-	| { status: 'owned'; note: OwnedInventoryNote }
+type InventoryMarkerValidation =
 	| { status: 'foreign' }
 	| { status: 'conflict'; positionId: string | null }
-> {
+	| {
+		status: 'valid';
+		positionId: string;
+		hash: string;
+		markerText: string;
+		fields: InventoryNoteFields;
+		managed: Record<string, unknown>;
+		userFrontmatter: string | null;
+		prefix: string;
+		afterMarker: string;
+	};
+
+/**
+ * The synchronous checks a position note's marker text must pass before its position id can be
+ * trusted for anything but display: the marker's own schema and name, a hash present, real
+ * frontmatter right where the writer would have put it (never the marker text merely quoted
+ * somewhere else in the note, for instance inside a code block), and frontmatter fields that
+ * parse as `InventoryNoteFields` naming that same position. `classifyInventoryNote` continues
+ * from here to verify the hash cryptographically before calling a note owned;
+ * `inventoryNotePositionId` (R1a's `canonicalPathFor`) needs nothing past this point, since a
+ * path is only ever built from `positionId`.
+ */
+function validateInventoryNoteMarker(content: string): InventoryMarkerValidation {
 	const marker = content.match(INVENTORY_MARKER_PATTERN);
 	if (!marker) return content.includes(MARKER_PREFIX) ? { status: 'conflict', positionId: null } : { status: 'foreign' };
 	const positionId = marker[3] ?? null;
@@ -1137,16 +1148,48 @@ async function classifyInventoryNote(content: string): Promise<
 	if (parsed === null) return { status: 'conflict', positionId };
 	const fields = migrateInventoryNoteFields(parsed.managed);
 	if (!isInventoryNoteFields(fields) || fields.tc_position_id !== positionId) return { status: 'conflict', positionId };
-	const prefix = rest.slice(0, markerAt);
-	const afterMarker = rest.slice(markerAt + marker[0].length + 1);
+	return {
+		status: 'valid',
+		positionId,
+		hash: marker[4],
+		markerText: marker[0],
+		fields,
+		managed: parsed.managed,
+		userFrontmatter: parsed.userFrontmatter,
+		prefix: rest.slice(0, markerAt),
+		afterMarker: rest.slice(markerAt + marker[0].length + 1),
+	};
+}
+
+/**
+ * Recognises an owned note and splits it into managed and user parts (H18.16).
+ *
+ * The managed block is the text between the marker line and `END_MARKER`, and the marker's hash
+ * must match it: an edit inside it is the one edit that still makes the note a conflict, since
+ * rewriting it would delete what the user typed there. Frontmatter keys the plugin does not manage
+ * and any text outside the block are the user's and never block anything.
+ *
+ * A note written before `END_MARKER` existed is recognised two ways: byte for byte by its old
+ * whole-note hash (nothing added yet), or by its managed block rendered from its own managed
+ * values followed by whatever the user appended. It stays in that older shape until its data
+ * changes; the next rewrite adds the end marker.
+ */
+async function classifyInventoryNote(content: string): Promise<
+	| { status: 'owned'; note: OwnedInventoryNote }
+	| { status: 'foreign' }
+	| { status: 'conflict'; positionId: string | null }
+> {
+	const validation = validateInventoryNoteMarker(content);
+	if (validation.status !== 'valid') return validation;
+	const { positionId, hash, markerText, fields, managed, userFrontmatter, prefix, afterMarker } = validation;
 	const endAt = endMarkerAt(afterMarker);
 	let block: string;
 	let suffix: string;
 	if (endAt >= 0) {
 		block = afterMarker.slice(0, endAt);
 		suffix = afterMarker.slice(endAt + END_MARKER.length).replace(/^\n/u, '');
-		if (await sha256Text(block) !== marker[4]) return { status: 'conflict', positionId };
-	} else if (await sha256Text(content.replace(marker[0], markerLine(positionId, null))) === marker[4]) {
+		if (await sha256Text(block) !== hash) return { status: 'conflict', positionId };
+	} else if (await sha256Text(content.replace(markerText, markerLine(positionId, null))) === hash) {
 		block = afterMarker;
 		suffix = '';
 	} else {
@@ -1155,9 +1198,9 @@ async function classifyInventoryNote(content: string): Promise<
 		block = expected;
 		suffix = afterMarker.slice(expected.length);
 	}
-	const currentKeys = INVENTORY_NOTE_KEYS.every((key) => key in parsed.managed)
-		&& RETIRED_INVENTORY_NOTE_KEYS.every((key) => !(key in parsed.managed));
-	return { status: 'owned', note: { fields, currentKeys, block, userFrontmatter: parsed.userFrontmatter, prefix, suffix } };
+	const currentKeys = INVENTORY_NOTE_KEYS.every((key) => key in managed)
+		&& RETIRED_INVENTORY_NOTE_KEYS.every((key) => !(key in managed));
+	return { status: 'owned', note: { fields, currentKeys, block, userFrontmatter, prefix, suffix } };
 }
 
 /** Where `END_MARKER` starts as a whole line of `text`, or -1. */

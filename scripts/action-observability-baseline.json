@@ -5901,9 +5901,9 @@
 				{
 					"id": "141d4c2e4aa3307cf767fe38a424572aa0097641",
 					"kind": "callback_registration",
-					"line": 789,
+					"line": 792,
 					"column": 18,
-					"endLine": 794,
+					"endLine": 797,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5918,9 +5918,9 @@
 				{
 					"id": "a78d61b9118d4baa957488b228e9eca8520e566c",
 					"kind": "catch_clause",
-					"line": 844,
+					"line": 847,
 					"column": 6,
-					"endLine": 855,
+					"endLine": 858,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5934,9 +5934,9 @@
 				{
 					"id": "a0b4ce29b6c1afd4bf36c3ab095bee38e9448d22",
 					"kind": "catch_clause",
-					"line": 893,
+					"line": 896,
 					"column": 5,
-					"endLine": 898,
+					"endLine": 901,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5948,27 +5948,27 @@
 					"reason": "Allowlisted catch_clause: The \"applyInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"applyInternal\"."
 				},
 				{
-					"id": "eb4ff78e55377ca58eea0f473ebe5e0feafa0d01",
+					"id": "d7963c7e5fb68b49242374e7f244c20807086816",
 					"kind": "catch_clause",
-					"line": 1136,
+					"line": 1147,
 					"column": 2,
-					"endLine": 1136,
+					"endLine": 1147,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
-						"scope": "classifyInventoryNote",
-						"justification": "The \"classifyInventoryNote\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "validateInventoryNoteMarker",
+						"justification": "The \"validateInventoryNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
-					"reason": "Allowlisted catch_clause: The \"classifyInventoryNote\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"classifyInventoryNote\"."
+					"reason": "Allowlisted catch_clause: The \"validateInventoryNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"validateInventoryNoteMarker\"."
 				},
 				{
 					"id": "032f7ed343a7a1bc32067cb8eb4600aa80853a58",
 					"kind": "catch_clause",
-					"line": 1380,
+					"line": 1423,
 					"column": 3,
-					"endLine": 1380,
+					"endLine": 1423,
 					"endColumn": 86,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14014,9 +14014,9 @@
 				{
 					"id": "3506c7bc5ee1223fa20b6a5c51f91ce24b4e2561",
 					"kind": "callback_registration",
-					"line": 237,
+					"line": 238,
 					"column": 18,
-					"endLine": 239,
+					"endLine": 240,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -14031,9 +14031,9 @@
 				{
 					"id": "06e7884dfc8ec76e4f4144cabb4ab8e340825518",
 					"kind": "catch_clause",
-					"line": 270,
+					"line": 271,
 					"column": 6,
-					"endLine": 283,
+					"endLine": 284,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14047,9 +14047,9 @@
 				{
 					"id": "546c662a5e510b9559779c7030003a9e333e549d",
 					"kind": "catch_clause",
-					"line": 305,
+					"line": 306,
 					"column": 5,
-					"endLine": 310,
+					"endLine": 311,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14061,27 +14061,27 @@
 					"reason": "Allowlisted catch_clause: The \"applyInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"applyInternal\"."
 				},
 				{
-					"id": "c5c7365973cc3f5abfd3c485137bc9b8169b661a",
+					"id": "cfb3a078df9c07465b06a945f071e84629ee8293",
 					"kind": "catch_clause",
-					"line": 396,
+					"line": 404,
 					"column": 2,
-					"endLine": 396,
+					"endLine": 404,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
-						"scope": "classifyWalletNote",
-						"justification": "The \"classifyWalletNote\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "validateWalletNoteMarker",
+						"justification": "The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
-					"reason": "Allowlisted catch_clause: The \"classifyWalletNote\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"classifyWalletNote\"."
+					"reason": "Allowlisted catch_clause: The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"validateWalletNoteMarker\"."
 				},
 				{
 					"id": "46c48179e65474f23e34a573d93113ba087cfc50",
 					"kind": "catch_clause",
-					"line": 458,
+					"line": 479,
 					"column": 3,
-					"endLine": 458,
+					"endLine": 479,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
