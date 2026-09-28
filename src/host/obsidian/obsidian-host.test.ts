@@ -5,6 +5,8 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import type { TyrianVaultChange } from '../tyrian-host';
 import { labelledVault, sessionHistoryVault } from '../../runtime/vault-ports';
+import { loadTyrianSettings } from '../../runtime/tyrian-runtime';
+import { setMockLanguage } from '../../test/obsidian-mock';
 import { createObsidianHost } from './obsidian-host';
 
 class TFolder {
@@ -147,6 +149,19 @@ describe('ObsidianHost secrets, settings and environment', () => {
 		await expect(host.settings.load()).resolves.toEqual({ language: 'es' });
 		await host.settings.save({ language: 'en' });
 		expect(saved).toEqual([{ language: 'en' }]);
+	});
+
+	it('reports the app language through host.locale(), so a first run\'s loadTyrianSettings adopts it', async () => {
+		const { plugin } = fakePlugin();
+		(plugin as unknown as { loadData: () => Promise<unknown> }).loadData = async () => ({});
+		setMockLanguage('es');
+		try {
+			const host = createObsidianHost(plugin);
+			expect(host.locale()).toBe('es');
+			await expect(loadTyrianSettings(host)).resolves.toMatchObject({ language: 'es' });
+		} finally {
+			setMockLanguage('en');
+		}
 	});
 
 	it('reads the manifest when asked, so a manifest assigned after construction is the one reported', () => {
