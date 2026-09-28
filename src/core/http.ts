@@ -379,8 +379,6 @@ export class HostRequestTransport extends ResilientHttpTransport {
 	}
 }
 
-const UTF8 = new TextEncoder();
-
 /**
  * Refuses to DECODE a body larger than the caller declared, before it is parsed.
  *
@@ -391,27 +389,49 @@ const UTF8 = new TextEncoder();
  * which the parser then walks. So the check goes here, ahead of the parse, and the caller gets
  * the same transport failure it already handles rather than a new outcome to route.
  *
- * The cap is in BYTES of the body as it came over the wire, measured as the UTF-8 encoding of the
- * text the port returned (Obsidian decodes the body as UTF-8, so for a UTF-8 body the two agree).
+ * The cap is in BYTES of the body as it came over the wire: the UTF-8 length of the text the port
+ * returned (Obsidian decodes the body as UTF-8, so for a UTF-8 body the two agree). It is COUNTED,
+ * never encoded: every UTF-16 unit takes at least one UTF-8 byte, so a text with more units than
+ * the cap is refused on its `length` alone, and a shorter one is counted unit by unit, stopping at
+ * the first byte past the cap. Nothing is allocated, so a 300 MB answer costs the text the host
+ * already holds and no second copy of it.
  *
  * `network` and not a status: no server said anything about the size. It is the plugin refusing
  * to read what arrived, and the diagnostic should say so instead of inventing a 413 nobody sent.
  * It is thrown rather than retried for the same reason a timeout is not retried by size:
  * downloading it twice is the worse answer.
  *
- * The body is only MEASURED when a cap was declared: encoding the text for the many callers that
+ * The body is only MEASURED when a cap was declared: counting it for the many callers that
  * declared none would be work nobody asked for.
  */
 function refuseOversizedBody(text: string, maxResponseBytes: number | undefined): void {
 	if (maxResponseBytes === undefined) return;
-	const byteLength = UTF8.encode(text).byteLength;
-	if (byteLength <= maxResponseBytes) return;
+	if (text.length <= maxResponseBytes && utf8ByteLengthWithin(text, maxResponseBytes)) return;
 	throw new HttpTransportError(
 		'network',
 		null,
 		null,
-		`Response body of ${String(byteLength)} bytes exceeds the ${String(maxResponseBytes)} byte cap declared for this request.`,
+		`Response body of more than ${String(maxResponseBytes)} bytes exceeds the byte cap declared for this request.`,
 	);
+}
+
+/**
+ * True when `text` encodes to at most `limit` UTF-8 bytes, the same count `TextEncoder` would
+ * give (a lone surrogate becomes U+FFFD, three bytes). Stops at the first byte past `limit`.
+ */
+function utf8ByteLengthWithin(text: string, limit: number): boolean {
+	let bytes = 0;
+	for (let index = 0; index < text.length; index += 1) {
+		const unit = text.charCodeAt(index);
+		if (unit < 0x80) bytes += 1;
+		else if (unit < 0x800) bytes += 2;
+		else if (unit >= 0xd800 && unit <= 0xdbff && index + 1 < text.length) {
+			const next = text.charCodeAt(index + 1);
+			if (next >= 0xdc00 && next <= 0xdfff) { bytes += 4; index += 1; } else bytes += 3;
+		} else bytes += 3;
+		if (bytes > limit) return false;
+	}
+	return true;
 }
 
 /** Accepts only reviewed endpoint identifiers; no URL segment is ever promoted to diagnostics. */

@@ -66,6 +66,41 @@ describe('response size cap', () => {
 	});
 
 	/**
+	 * A body longer (in UTF-16 units) than the cap is over it in UTF-8 bytes too, so it is refused
+	 * without encoding a second copy of it: a 300 MB answer must not cost another 300 MB.
+	 */
+	it('refuses a body longer than the cap on its length alone, without encoding it', async () => {
+		const encode = vi.spyOn(TextEncoder.prototype, 'encode');
+		const probe = sizedBody(CAP * 10);
+		const transport = new HostRequestTransport(probe.port, inertTimer());
+
+		const error = await sendSeedRequest(transport, CAP).catch((thrown: unknown) => thrown);
+
+		expect((error as HttpTransportError).kind).toBe('network');
+		expect((error as Error).message).toContain('byte cap');
+		expect(encode).not.toHaveBeenCalled();
+	});
+
+	/** The count stops being an estimate right at the cap: exactly what `TextEncoder` would say. */
+	it.each([
+		['ascii', 'plain text'],
+		['two-byte', 'ññññ ç'],
+		['three-byte', '€ 雪'],
+		['surrogate pair', 'bag 🎃 bag'],
+		['lone surrogate', 'broken \ud83c here'],
+	])('counts a %s body exactly at the cap and one byte under it', async (_kind, content) => {
+		const bytes = new TextEncoder().encode(content).byteLength;
+		const refusal = async (cap: number): Promise<string> => {
+			const transport = new HostRequestTransport(bodyOf(content).port, inertTimer());
+			const error = await sendSeedRequest(transport, cap).catch((thrown: unknown) => thrown);
+			return error instanceof Error ? error.message : 'no error';
+		};
+		// At the cap the size check lets it through (the non-JSON text then fails to parse instead).
+		expect(await refusal(bytes)).not.toContain('byte cap');
+		expect(await refusal(bytes - 1)).toContain('byte cap');
+	});
+
+	/**
 	 * The control that makes the two above mean something: the same oversized
 	 * answer goes through untouched when no cap is declared, so what refuses it
 	 * is the number the caller asked for and not the size by itself. Every
