@@ -6,7 +6,7 @@ import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { ConnectionErrorCode } from '../account/account-service';
 import type { ConnectionState } from '../account/connection-service';
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
-import type { LegendaryArmoryOptionsResult } from '../main';
+import type { LegendaryArmoryOptionsResult } from './settings-panel-actions';
 import {
 	CONNECTION_ERROR_KEYS,
 	projectConnectionDescription,

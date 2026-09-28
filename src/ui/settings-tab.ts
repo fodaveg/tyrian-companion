@@ -27,8 +27,12 @@ import {
 import type { PriceHistoryDailyRetentionDays, PriceHistoryIntervalMinutes, PriceHistoryRawRetentionDays } from '../economy/price-history-model';
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
 import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel, type LocalDebugStatus } from '../core/local-debug-contract';
-import type TyrianCompanionPlugin from '../main';
-import type { LegendaryArmoryOptionV1, LocalDebugExportPreview, SettingsUpdateResult } from '../main';
+import type {
+	LegendaryArmoryOptionV1,
+	LocalDebugExportPreview,
+	SettingsPanelActions,
+	SettingsUpdateResult,
+} from './settings-panel-actions';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
 import type { PilotMetricsExportPreview } from '../sessions/pilot-metrics-export';
 import {
@@ -155,12 +159,13 @@ export class TyrianCompanionSettingTab {
 	private collectorModeOnFirstTab: boolean | null = null;
 
 	/**
-	 * @param containerEl Where the tab renders: Obsidian's `PluginSettingTab.containerEl` from the
-	 * start; a host that only has it on `mount` passes nothing here.
+	 * @param plugin The core's settings and actions (`settings-panel-actions.ts`), host-neutral.
+	 * @param containerEl Where the tab renders when it is known from the start; a host that only
+	 * has it on `mount` (the core registers the panel through `host.ui.settingsPanel`) passes nothing.
 	 */
 	constructor(
 		private readonly host: SettingsPanelHost,
-		private readonly plugin: TyrianCompanionPlugin,
+		private readonly plugin: SettingsPanelActions,
 		private containerEl: HTMLElement | null = null,
 	) {
 		this.sessionHistoryScrubController = new SessionHistoryScrubController({

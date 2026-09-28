@@ -308,42 +308,24 @@ import {
 	WalletVaultSyncController,
 	type WalletVaultSyncViewState,
 } from './ui/wallet-vault-sync-controller';
+import type {
+	AlertIngameSecretCopyOutcome,
+	LegendaryArmoryOptionsResult,
+	LegendaryArmoryOptionV1,
+	LocalDebugExportPreview,
+	SessionHistoryView,
+	SettingsUpdateResult,
+} from './ui/settings-panel-actions';
 
-export type SessionHistoryView =
-	| { status: 'idle' | 'working' | 'conflict' | 'invalid' | 'unavailable'; sessions: number; erased: number; alreadyAbsent: number }
-	| { status: 'written' | 'unchanged'; sessions: number; erased: 0; alreadyAbsent: 0 }
-	| { status: 'scrub_previewing' | 'scrub_blocked' | 'scrub_conflict' | 'scrub_unavailable'; sessions: number; erased: number; alreadyAbsent: number }
-	| { status: 'scrub_ready'; sessions: number; erased: 0; alreadyAbsent: 0 }
-	| { status: 'scrubbing' | 'scrub_stale'; sessions: number; erased: number; alreadyAbsent: number }
-	| { status: 'erased' | 'already_absent'; sessions: 0; erased: number; alreadyAbsent: number };
-
-export type SettingsUpdateResult =
-	| { status: 'blocked'; reason: 'runtime_starting' }
-	/** R1b: consult is refused while a session is still open; finishing it needs the API. */
-	| { status: 'blocked'; reason: 'session_in_progress' }
-	| { status: 'saved'; inventoryAdvisor: 'unchanged' | 'reclassified' | 'next_refresh' };
-
-export interface LocalDebugExportPreview {
-	readonly included: readonly ['logs', 'version', 'platform', 'settingsCore', 'settingsFlags'];
-	readonly excluded: readonly ['secret_name', 'character', 'paths', 'payloads'];
-}
-
-/** One `GET /v2/legendaryarmory` entry, named and iconed via the public catalog (M4). */
-export interface LegendaryArmoryOptionV1 {
-	itemId: number;
-	name: string;
-	icon: string | null;
-	/** `false` when `LEGENDARY_MATERIALS_TABLE` has no curated entry for this legendary yet. */
-	hasTable: boolean;
-	/** H18.5: `true` once `LEGENDARY_MATERIALS_TABLE.validUntil` is past, whether or not `hasTable`
-	 * is also true — a stale table is still read and used (`buildLegendaryReservationGoals` has no
-	 * `asOf` gate of its own), so this is what makes that caducity visible instead of silent. */
-	tableStale: boolean;
-}
-
-export type LegendaryArmoryOptionsResult =
-	| { status: 'ok'; options: readonly LegendaryArmoryOptionV1[] }
-	| { status: 'error' };
+/** The answers this core gives the settings panel, declared with the panel's actions (R1c). */
+export type {
+	AlertIngameSecretCopyOutcome,
+	LegendaryArmoryOptionsResult,
+	LegendaryArmoryOptionV1,
+	LocalDebugExportPreview,
+	SessionHistoryView,
+	SettingsUpdateResult,
+} from './ui/settings-panel-actions';
 
 type NoticeDiagnosticSource =
 	| 'halloween_price_alert'
@@ -369,12 +351,6 @@ type NoticeDiagnosticSource =
 export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
 /** Commands `onload` registers besides `PRODUCT_ACTION_IDS`; the load journal counts both. */
 const STANDALONE_COMMAND_IDS = [ALERT_INGAME_SECRET_COMMAND_ID] as const;
-
-/**
- * Where "Copy token" left the bridge secret: on the clipboard (`copied`, or `generated` when it had
- * to create one first), or in the fallback modal because the clipboard refused it (`shown`).
- */
-export type AlertIngameSecretCopyOutcome = 'copied' | 'generated' | 'shown';
 
 export default class TyrianCompanionPlugin extends Plugin {
 	settings: TyrianSettings = migrateSettings(null);
