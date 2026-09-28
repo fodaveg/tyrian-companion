@@ -54,7 +54,7 @@ describe('buildCompanionStatus', () => {
 
 	it.each([
 		['busy', 'Inicio: Ya hay una sesión o recuperación pendiente. Resuélvela antes de iniciar otra.', 'Start: A session or recovery is already pending. Resolve it before starting another one.'],
-		['coordination_unavailable', 'Inicio: La coordinación local no está disponible. Recarga Obsidian antes de volver a iniciar.', 'Start: Local coordination is unavailable. Reload Obsidian before starting again.'],
+		['coordination_unavailable', 'Inicio: La coordinación local no está disponible. Recarga la aplicación antes de volver a iniciar.', 'Start: Local coordination is unavailable. Reload the app before starting again.'],
 		['invalid_input', 'Inicio: Los datos de inicio no son válidos. Revisa el personaje y el Hallazgo mágico.', 'Start: The start details are invalid. Review the character and Magic Find.'],
 		['missing_capability', 'Inicio: La clave API no permite leer la configuración del personaje. Añade el permiso builds y vuelve a comprobar la conexión.', 'Start: The API key cannot read the character build. Add the builds permission and check the connection again.'],
 		['snapshot_failed', 'Inicio: No se pudo capturar la línea base. Comprueba la conexión y vuelve a iniciar.', 'Start: The baseline could not be captured. Check the connection and start again.'],
@@ -68,7 +68,7 @@ describe('buildCompanionStatus', () => {
 	});
 
 	it.each([
-		['coordination_unavailable', 'Final: La coordinación local no está disponible. Recarga Obsidian, recupera la sesión guardada y vuelve a terminarla.', 'Stop: Local coordination is unavailable. Reload Obsidian, recover the saved session, and finish it again.'],
+		['coordination_unavailable', 'Final: La coordinación local no está disponible. Recarga la aplicación, recupera la sesión guardada y vuelve a terminarla.', 'Stop: Local coordination is unavailable. Reload the app, recover the saved session, and finish it again.'],
 		['snapshot_failed', 'Final: No se pudo capturar la instantánea final. La línea base está a salvo; comprueba la conexión y vuelve a terminar.', 'Stop: The final snapshot could not be captured. The baseline is safe; check the connection and finish again.'],
 		['lease_lost', 'Final: Otra ventana tomó la autoridad de la sesión. Termínala o recupérala allí antes de reintentar.', 'Stop: Another window took session authority. Finish or recover the session there before retrying.'],
 		['delta_invalid', 'Final: La instantánea final no se pudo comparar con la línea base. Conserva la sesión, comprueba la cuenta y la conexión y vuelve a terminar.', 'Stop: The final snapshot could not be compared with the baseline. Keep the session, check the account and connection, and finish again.'],
@@ -170,7 +170,7 @@ describe('buildCompanionStatus', () => {
 
 		expect(corrupt.items[1]?.detail).not.toBe(unavailable.items[1]?.detail);
 		expect(corrupt.items[1]?.detail).toBe('The saved farming session could not be read and was left untouched. Discard it to use the session controls again.');
-		expect(unavailable.items[1]?.detail).toBe('The local recovery store is unavailable. Reload Obsidian and try again.');
+		expect(unavailable.items[1]?.detail).toBe('The local recovery store is unavailable. Reload the app and try again.');
 
 		expect(corrupt.errors[0]).not.toBe(unavailable.errors[0]);
 	});

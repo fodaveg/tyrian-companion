@@ -980,7 +980,7 @@ describe('Inventory Advisor view', () => {
 	});
 
 	it.each([
-		['credential_unavailable', 'La clave seleccionada ya no está disponible en el almacén seguro de Obsidian. Vuelve a seleccionarla en los ajustes.'],
+		['credential_unavailable', 'La clave seleccionada ya no está disponible en el almacén seguro. Vuelve a seleccionarla en los ajustes.'],
 		['capture_unavailable', 'No se pudo leer la cuenta de Guild Wars 2. Comprueba la clave seleccionada y vuelve a actualizar.'],
 		['capture_invalid', 'La captura de la cuenta no superó la validación de seguridad.'],
 		['capture_snapshot_coverage_incomplete', 'No se pudo leer por completo el inventario de todos los personajes o el inventario compartido.'],

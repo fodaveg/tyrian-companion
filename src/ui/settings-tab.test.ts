@@ -107,7 +107,7 @@ describe('Settings i18n projection', () => {
 
 
 	it.each([
-		['missing_key', 'Selecciona una clave API de Obsidian antes de comprobar la conexión.', 'Select an Obsidian API key before checking the connection.'],
+		['missing_key', 'Selecciona una clave API antes de comprobar la conexión.', 'Select an API key before checking the connection.'],
 		['key_invalid', 'La clave API fue rechazada. Selecciona una clave válida y vuelve a intentarlo.', 'The API key was rejected. Select a valid key and try again.'],
 		['key_expired', 'La clave API ha caducado. Crea o selecciona una clave vigente y vuelve a intentarlo.', 'The API key has expired. Create or select a current key and try again.'],
 		['url_restricted', 'La clave API restringe endpoints necesarios. Usa una que permita tokeninfo y account.', 'The API key restricts required endpoints. Use a key that permits tokeninfo and account.'],
@@ -453,7 +453,7 @@ describe('output folder exclusion hint', () => {
 		};
 		definition.render(setting as never);
 
-		expect(divs.some((div) => div.text === 'Recommended: add "02 - Áreas/Guild Wars 2/Tyrian Companion/Inventory/Positions" to Obsidian\'s Excluded files.')).toBe(true);
+		expect(divs.some((div) => div.text === 'Recommended: exclude "02 - Áreas/Guild Wars 2/Tyrian Companion/Inventory/Positions" from search.')).toBe(true);
 		expect(pickFolder).toHaveBeenCalledOnce();
 		expect((pickFolder.mock.calls[0] as unknown[])[0]).toBe(component.inputEl);
 	});

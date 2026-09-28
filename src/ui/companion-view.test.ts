@@ -175,7 +175,7 @@ describe('Companion incident callout: local diagnostics', () => {
 	});
 
 	it.each([
-		['missing_key', 'Selecciona una clave API de Obsidian antes de comprobar la conexión.'],
+		['missing_key', 'Selecciona una clave API antes de comprobar la conexión.'],
 		['key_invalid', 'La clave API fue rechazada. Selecciona una clave válida y vuelve a intentarlo.'],
 		['key_expired', 'La clave API ha caducado. Crea o selecciona una clave vigente y vuelve a intentarlo.'],
 		['url_restricted', 'La clave API restringe endpoints necesarios. Usa una que permita tokeninfo y account.'],

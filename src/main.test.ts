@@ -971,7 +971,7 @@ describe('inventory analysis-only action', () => {
 
 		expect(emitNotice).toHaveBeenCalledOnce();
 		expect(emitNotice).toHaveBeenCalledWith(
-			'La clave seleccionada ya no está disponible en el almacén seguro de Obsidian. Vuelve a seleccionarla en los ajustes.',
+			'La clave seleccionada ya no está disponible en el almacén seguro. Vuelve a seleccionarla en los ajustes.',
 			'inventory_advisor_missing_key',
 		);
 	});

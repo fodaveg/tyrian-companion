@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TRANSLATIONS, createTranslator } from './i18n';
+import { RUNTIME_CATALOG } from './i18n-runtime-catalog';
 
 describe('i18n catalogue', () => {
 	it('has exactly the same typed keys in Spanish and English', () => {
@@ -15,6 +16,28 @@ describe('i18n catalogue', () => {
 	it('selects the requested locale and interpolates text values without HTML handling', () => {
 		expect(createTranslator('es').t('settings.minutes', { minutes: 15 })).toBe('15 minutos');
 		expect(createTranslator('en').t('settings.minutes', { minutes: '<15>' })).toBe('<15> minutes');
+	});
+
+	// R1c (Hebra checkpoint 16): the shell, view, settings and status copy renders in every host
+	// alike (companion-view.ts adds `.tyrian-companion-view` on the same `contentEl` regardless of
+	// which host mounted it), so it cannot name Obsidian specifically without lying on any other
+	// one. `note.*` is the one namespace excluded on purpose: that copy lands inside the persisted
+	// session note, not a view/modal/settings surface, and a note already written keeps whatever
+	// host wrote it — this is about what a live view or panel renders, not a note's own text.
+	it('keeps every view, modal, and settings-panel string host-neutral', () => {
+		const inScope = (key: string): boolean => !key.startsWith('note.');
+		for (const [locale, catalog] of Object.entries(TRANSLATIONS)) {
+			for (const [key, value] of Object.entries(catalog)) {
+				if (!inScope(key)) continue;
+				expect(value, `TRANSLATIONS.${locale}.${key}`).not.toMatch(/\bObsidian\b/u);
+			}
+		}
+		for (const [locale, catalog] of Object.entries(RUNTIME_CATALOG)) {
+			for (const [key, value] of Object.entries(catalog)) {
+				if (!inScope(key)) continue;
+				expect(value, `RUNTIME_CATALOG.${locale}.${key}`).not.toMatch(/\bObsidian\b/u);
+			}
+		}
 	});
 
 	it('keeps every H5.11 Inventory Advisor key localized in both central catalogues', () => {
