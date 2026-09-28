@@ -13,7 +13,15 @@ import { renderStoredSessionLoot } from './loot-presentation-view';
 
 /** Complete visible state machine for the manually loaded history panel. */
 export type SessionHistoryPanelState =
-	| { readonly status: 'idle' | 'loading' | 'empty' | 'unavailable' }
+	| { readonly status: 'idle' | 'loading' | 'empty' }
+	/**
+	 * `reason` distinguishes the two ways a load can go unavailable, because only one of them is
+	 * safe to retry on its own: `not_ready` is the core still starting (`loadSessionHistory`'s own
+	 * `{ status: 'unavailable' }` before `runtimeReady`), which resolves itself and is retried once
+	 * automatically by the view; `failed` is a rejected `loadHistory()` call, an unexpected failure
+	 * that must never auto-retry into a loop and only clears on the explicit refresh button.
+	 */
+	| { readonly status: 'unavailable'; readonly reason: 'not_ready' | 'failed' }
 	| { readonly status: 'conflict'; readonly invalid: number; readonly duplicates: number }
 	/** `loadedAt` (ISO) feeds the footer "N sesiones · leídas a las HH:MM" (Lote P): when it was
 	 *  read, not when this repaints — a full `render()` remounts the panel on every card refresh. */
@@ -45,7 +53,7 @@ export class SessionHistoryPanelController {
 		this.setState({ status: 'loading' });
 		const flight = this.loadHistory().then(
 			(result) => this.setState(projectLoadResult(result, new Date().toISOString())),
-			() => this.setState({ status: 'unavailable' }),
+			() => this.setState({ status: 'unavailable', reason: 'failed' }),
 		).finally(() => { if (this.flight === flight) this.flight = null; });
 		this.flight = flight;
 		return flight;
@@ -118,7 +126,10 @@ function shortStateLabel(state: SessionHistoryPanelState, t: Translator): string
 }
 
 function projectLoadResult(result: SessionHistoryLoadResult, loadedAt: string): SessionHistoryPanelState {
-	if (result.status === 'unavailable') return { status: 'unavailable' };
+	// The core's own `loadSessionHistory` only ever answers `unavailable` while `runtimeReady` is
+	// false (`tyrian-companion-core.ts`'s `loadSessionHistory`); a real read failure never reaches
+	// here; it rejects instead, straight into the `.load()` catch above with `reason: 'failed'`.
+	if (result.status === 'unavailable') return { status: 'unavailable', reason: 'not_ready' };
 	if (result.status === 'conflict') {
 		return { status: 'conflict', invalid: result.invalid, duplicates: result.duplicates };
 	}
