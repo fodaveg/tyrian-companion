@@ -13,6 +13,7 @@
  * repaints). They move behind this function together with the views they feed (R1c).
  */
 
+import { installDomHelpers } from '../host/dom-polyfill';
 import type { CreateTyrianRuntime, TyrianHost, TyrianRuntime } from '../host/tyrian-host';
 import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import { LocalDebugLogger } from '../core/local-debug-logger';
@@ -83,8 +84,15 @@ export function createTyrianCoreRuntime(host: TyrianHost): TyrianCoreRuntime {
 	};
 }
 
-/** The host-neutral runtime for an embedding host (Hebra). See the module comment for its R1a scope. */
-export const createTyrianRuntime: CreateTyrianRuntime = (host) => createTyrianCoreRuntime(host);
+/**
+ * The host-neutral runtime for an embedding host (Hebra). See the module comment for its R1a scope.
+ * R1c: it first adds Obsidian's DOM helpers the UI builds with to a webview that lacks them
+ * (`installDomHelpers`, a no-op where they exist); `main.ts` does not come through here.
+ */
+export const createTyrianRuntime: CreateTyrianRuntime = (host) => {
+	installDomHelpers();
+	return createTyrianCoreRuntime(host);
+};
 
 async function bootTyrian(host: TyrianHost): Promise<TyrianBoot> {
 	let settings: TyrianSettings;

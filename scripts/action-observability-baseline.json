@@ -5677,6 +5677,11 @@
 				}
 			]
 		},
+		"src/host/dom-polyfill.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/host/indexed-db-price-history.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
