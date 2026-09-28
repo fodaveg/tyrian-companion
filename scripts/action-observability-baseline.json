@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 467,
+		"catch_clause": 469,
 		"promise_catch": 40,
 		"void_expression": 102,
 		"callback_registration": 177
@@ -1182,12 +1182,12 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "03b1963abe4f5f5e625a1664c092e6b9558e7db0",
+					"id": "3332d5f06a74a5d4b820eb557b444c0c655f4a96",
 					"kind": "catch_clause",
 					"line": 141,
 					"column": 3,
-					"endLine": 141,
-					"endColumn": 88,
+					"endLine": 151,
+					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
 						"type": "direct_observability_call",
@@ -3123,27 +3123,27 @@
 		},
 		"src/economy/__fixtures__/datawars2-real-history-36038-2026-09-26.ts": {
 			"classification": "production_source",
-			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
 		"src/economy/__fixtures__/datawars2-real-history-36041-2026-09-26.ts": {
 			"classification": "production_source",
-			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
 		"src/economy/__fixtures__/datawars2-real-history-43320-2026-09-26.ts": {
 			"classification": "production_source",
-			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
 		"src/economy/__fixtures__/datawars2-real-history-47909-2026-09-26.ts": {
 			"classification": "production_source",
-			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
 		"src/economy/__fixtures__/datawars2-real-history-48805-2026-09-26.ts": {
 			"classification": "production_source",
-			"reason": "Test-only adapter for a versioned public datawars2 response: verifies its SHA-256 and uses the production parser. No downloads, account access or detached work. Kept in the production_source census category because the scanner deliberately includes all non-test TypeScript, including fixtures.",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
 		"src/economy/__fixtures__/sell-timing-history-36038.ts": {
@@ -5938,7 +5938,24 @@
 		"src/inventory/inventory-analysis.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
+			"boundaries": [
+				{
+					"id": "dc7f0827e6cf3ae91959e43238668e52e8ae6002",
+					"kind": "catch_clause",
+					"line": 234,
+					"column": 4,
+					"endLine": 234,
+					"endColumn": 72,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "evaluate",
+						"justification": "The \"evaluate\" owner explicitly handles \"intentional_noop\" as local recovery: the seed preload is auxiliary, and its rejection is already recorded by the core port's price_seed_bulk_refresh span before it reaches this catch."
+					},
+					"reason": "Allowlisted catch_clause: The \"evaluate\" owner explicitly handles \"intentional_noop\" as local recovery: the seed preload is auxiliary, and its rejection is already recorded by the core port's price_seed_bulk_refresh span before it reaches this catch. Verified recovery: \"intentional_noop\" in \"evaluate\"."
+				}
+			]
 		},
 		"src/inventory/inventory-vault-sync.ts": {
 			"classification": "production_source",
@@ -6527,6 +6544,20 @@
 						"justification": "The \"initializeRuntime\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"initializeRuntime\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"initializeRuntime\"."
+				},
+				{
+					"id": "67fd1b8c40f46ad632a7869918ea8e84229a6265",
+					"kind": "catch_clause",
+					"line": 994,
+					"column": 7,
+					"endLine": 997,
+					"endColumn": 6,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "span.failure"
+					},
+					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				},
 				{
 					"id": "ec5f92ef8f7fca865d94cb22b85c586504f84bce",
@@ -12652,6 +12683,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/ui/inventory-sync-timing-summary.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/ui/inventory-vault-sync-controller.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -14232,11 +14268,6 @@
 					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
 				}
 			]
-		},
-		"src/ui/inventory-sync-timing-summary.ts": {
-			"classification": "production_source",
-			"reason": "H18.39: pure duration-formatting helper; no catch, promise .catch(), void expression or registered callback.",
-			"boundaries": []
 		}
 	}
 }
