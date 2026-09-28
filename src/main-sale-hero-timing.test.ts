@@ -23,6 +23,9 @@ import { buildSaleViewModel, type SaleViewModel, type SaleViewModelInput } from 
 import { renderSaleView } from './ui/sale-view';
 import { INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL, inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 
+/** The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does. */
+const icons = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
+
 /**
  * Review fix (26 sep 2026): the Saco de Halloween's hero card verdict comes from
  * `recommendPosition`, the SAME rule every other Sale row uses, instead of the simpler
@@ -220,7 +223,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		vi.stubGlobal('createDiv', (options?: { text?: string; cls?: string }) => makeEl('div', options));
 		vi.stubGlobal('createSpan', (options?: { text?: string; cls?: string }) => makeEl('span', options));
 		const container = makeEl('div');
-		renderSaleView(container as unknown as HTMLElement, model, createTranslator('es'));
+		renderSaleView(container as unknown as HTMLElement, icons, model, createTranslator('es'));
 		expect(textOf(container)).toContain('Vender ahora');
 	});
 
@@ -270,7 +273,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		vi.stubGlobal('createDiv', (options?: { text?: string; cls?: string }) => makeEl('div', options));
 		vi.stubGlobal('createSpan', (options?: { text?: string; cls?: string }) => makeEl('span', options));
 		const container = makeEl('div');
-		renderSaleView(container as unknown as HTMLElement, model, createTranslator('es'));
+		renderSaleView(container as unknown as HTMLElement, icons, model, createTranslator('es'));
 		const text = textOf(container);
 		expect(text).toContain('Todavía no');
 		expect(text).not.toContain('Vender ahora');
@@ -322,7 +325,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 			vi.stubGlobal('createDiv', (options?: { text?: string; cls?: string }) => makeEl('div', options));
 			vi.stubGlobal('createSpan', (options?: { text?: string; cls?: string }) => makeEl('span', options));
 			const container = makeEl('div');
-			renderSaleView(container as unknown as HTMLElement, model, createTranslator('es'));
+			renderSaleView(container as unknown as HTMLElement, icons, model, createTranslator('es'));
 			return textOf(container);
 		}
 
@@ -682,7 +685,7 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 		vi.stubGlobal('createDiv', (options?: { text?: string; cls?: string; attr?: Record<string, string> }) => makeEl('div', options));
 		vi.stubGlobal('createSpan', (options?: { text?: string; cls?: string; attr?: Record<string, string> }) => makeEl('span', options));
 		const container = makeEl('div');
-		renderSaleView(container as unknown as HTMLElement, model, createTranslator('es'));
+		renderSaleView(container as unknown as HTMLElement, icons, model, createTranslator('es'));
 
 		const lines = textOf(container).split('\n').filter((line) => line.trim() !== '');
 		const dump = lines.join('\n');

@@ -9,6 +9,9 @@ import {
 import { mountActionPanel, renderProductShell } from './product-shell';
 import type { SessionCommandId } from './session-command-model';
 
+/** The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does. */
+const icons = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
+
 afterEach(() => {
 	vi.useRealTimers();
 	vi.restoreAllMocks();
@@ -188,7 +191,7 @@ describe('product action surface', () => {
 		const openSettings = vi.fn();
 		const execute = vi.fn(async () => 'completed' as const);
 		const mount = renderProductShell(root as unknown as HTMLElement, {
-			locale: 'en', active: 'inventory', actions: createController({ execute }), missingApiKey: true, openSettings,
+			locale: 'en', active: 'inventory', actions: createController({ execute }), missingApiKey: true, openSettings, ui: icons,
 		});
 		const elements = walk(root);
 		expect((mount.panel as unknown as FakeElement).tag).toBe('aside');
@@ -221,7 +224,7 @@ describe('product action surface', () => {
 		const document = installFakeDocument();
 		const root = new FakeElement('div', document);
 		const mount = renderProductShell(root as unknown as HTMLElement, {
-			locale: 'es', active: 'companion', actions: createController(), missingApiKey: false, openSettings: vi.fn(),
+			locale: 'es', active: 'companion', actions: createController(), missingApiKey: false, openSettings: vi.fn(), ui: icons,
 		});
 		expect(walk(root).some((element) => element.className.includes('tyrian-action-panel'))).toBe(false);
 		expect((mount.panel as unknown as FakeElement).hidden).toBe(true);

@@ -1,6 +1,6 @@
-import { ItemView, type WorkspaceLeaf } from 'obsidian';
-
+import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale } from '../core/i18n';
+import type { TyrianViewDescriptor } from './mounted-views';
 import type { ProductActionController } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
 import { renderSaleView } from './sale-view';
@@ -19,20 +19,32 @@ export interface SaleViewActions {
 	openProductSettings?(): void;
 }
 
-/** Thin Obsidian adapter. Opening and rendering only read the controller's memory snapshot. */
-export class SaleItemView extends ItemView {
+/** The Sale tab for `TyrianUiPort.registerView`: in Hebra, the 960×720 dialog (agreed with Hebra, R1c). */
+export function saleView(actions: Pick<SaleViewActions, 'getSaleLocale'>): TyrianViewDescriptor {
+	return {
+		type: SALE_VIEW_TYPE,
+		title: () => createTranslator(actions.getSaleLocale()).t('sale.view.title'),
+		icon: 'candy',
+		placement: 'dialog',
+	};
+}
+
+/**
+ * The Sale tab's controller, mounted by the host into `contentEl` (an `ItemView`'s content in
+ * Obsidian). Opening and rendering only read the controller's memory snapshot.
+ */
+export class SaleItemView {
 	private closed = false;
 	private refreshing = false;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
 
-	constructor(leaf: WorkspaceLeaf, private readonly actions: SaleViewActions) {
-		super(leaf);
-	}
+	constructor(
+		readonly contentEl: HTMLElement,
+		private readonly ui: Pick<TyrianUiPort, 'setIcon'>,
+		private readonly actions: SaleViewActions,
+	) {}
 
-	getViewType(): string { return SALE_VIEW_TYPE; }
-	getDisplayText(): string { return createTranslator(this.actions.getSaleLocale()).t('sale.view.title'); }
-	getIcon(): string { return 'candy'; }
 	async onOpen(): Promise<void> {
 		this.closed = false;
 		this.render();
@@ -64,12 +76,13 @@ export class SaleItemView extends ItemView {
 				actions: actionController,
 				missingApiKey,
 				openSettings: () => this.actions.openProductSettings?.(),
+				ui: this.ui,
 			});
 			this.productShellKey = shellKey;
 		}
 		const surface = this.productShell?.content ?? this.contentEl;
 		this.productShell?.update();
-		renderSaleView(surface, model, createTranslator(locale), {
+		renderSaleView(surface, this.ui, model, createTranslator(locale), {
 			refreshing: this.refreshing,
 			onRefresh: this.actions.refreshSale === undefined ? undefined : () => this.runRefresh(),
 		});

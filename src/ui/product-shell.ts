@@ -1,4 +1,4 @@
-import { setIcon } from 'obsidian';
+import type { TyrianUiPort } from '../host/tyrian-host';
 
 import { createTranslator, type Locale, type Translator } from '../core/i18n';
 import type { ProductActionController, ProductActionDescriptor, ProductActionGroup } from './product-action-controller';
@@ -11,6 +11,8 @@ export interface ProductShellOptions {
 	readonly actions: ProductActionController;
 	readonly missingApiKey: boolean;
 	readonly openSettings: () => void;
+	/** Paints the Lucide icon of the settings button. */
+	readonly ui: Pick<TyrianUiPort, 'setIcon'>;
 }
 
 export interface ProductShellMount {
@@ -54,7 +56,7 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 		cls: 'clickable-icon tyrian-product-shell__settings',
 		attr: { 'aria-label': t.t('shell.settingsAria'), type: 'button' },
 	});
-	setIcon(settingsButton, 'settings');
+	options.ui.setIcon(settingsButton, 'settings');
 	settingsButton.addEventListener('click', options.openSettings);
 
 	if (options.missingApiKey) {

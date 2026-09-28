@@ -114,13 +114,6 @@ const OBSIDIAN_PLUGIN_ENTRY = 'src/main.ts';
  * behind once its file no longer needs it.
  */
 const OBSIDIAN_UI_AWAITING_R1C: readonly string[] = [
-	'src/ui/companion-view.ts',
-	'src/ui/inventory-advisor-item-view.ts',
-	'src/ui/inventory-advisor-view.ts',
-	'src/ui/product-shell.ts',
-	'src/ui/receipt.ts',
-	'src/ui/sale-item-view.ts',
-	'src/ui/sale-view.ts',
 	'src/ui/settings-tab.ts',
 	'src/ui/vault-folder-suggest.ts',
 ];

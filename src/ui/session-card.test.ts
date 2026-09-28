@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest';
 
 import { renderSessionCard, type SessionCardModel } from './session-card';
 
+/** The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does. */
+const icons = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
+
 /**
  * DOM coverage for the five mockup states (`diseno-sesion/sesion.html`, cases 1-5): reposo,
  * activa 0 s, activa 30 min, terminada and reposo+callout. `session-card.ts` is a pure render, so
@@ -111,7 +114,7 @@ function idleWithCalloutModel(): SessionCardModel {
 describe('renderSessionCard', () => {
 	it('renders the idle state with no figures, no callout and a single mod-cta', () => {
 		const root = new FakeElement('div');
-		const mount = renderSessionCard(root as unknown as HTMLElement, idleModel());
+		const mount = renderSessionCard(root as unknown as HTMLElement, icons, idleModel());
 		const fakeRoot = mount.root as unknown as FakeElement;
 
 		expect(fakeRoot.className).toContain('tyrian-companion-session');
@@ -127,7 +130,7 @@ describe('renderSessionCard', () => {
 
 	it('renders active-0s with a single pending figure and no fabricated zero', () => {
 		const root = new FakeElement('div');
-		const mount = renderSessionCard(root as unknown as HTMLElement, activeZeroModel());
+		const mount = renderSessionCard(root as unknown as HTMLElement, icons, activeZeroModel());
 
 		const figures = findAll(root, (n) => n.className.includes('tyrian-companion-session__figure') && n.tag === 'div');
 		expect(figures).toHaveLength(1);
@@ -140,7 +143,7 @@ describe('renderSessionCard', () => {
 
 	it('renders active-30min with three figures and the drawers in the model\'s own drawerOrder', () => {
 		const root = new FakeElement('div');
-		renderSessionCard(root as unknown as HTMLElement, activeThirtyModel());
+		renderSessionCard(root as unknown as HTMLElement, icons, activeThirtyModel());
 
 		const figures = findAll(root, (n) => n.className.includes('tyrian-companion-session__figure') && n.tag === 'div');
 		expect(figures).toHaveLength(3);
@@ -154,7 +157,7 @@ describe('renderSessionCard', () => {
 
 	it('renders the finished state with the badge, two actions and one mod-cta on "Abrir la nota"', () => {
 		const root = new FakeElement('div');
-		renderSessionCard(root as unknown as HTMLElement, finishedModel());
+		renderSessionCard(root as unknown as HTMLElement, icons, finishedModel());
 
 		const badge = findAll(root, (n) => n.className.includes('tyrian-companion-session__badge'))[0];
 		expect(badge?.textContent).toBe('Limitada');
@@ -170,7 +173,7 @@ describe('renderSessionCard', () => {
 
 	it('renders the idle+callout state with a data-callout attribute and a relative-day line', () => {
 		const root = new FakeElement('div');
-		renderSessionCard(root as unknown as HTMLElement, idleWithCalloutModel());
+		renderSessionCard(root as unknown as HTMLElement, icons, idleWithCalloutModel());
 
 		const callout = findAll(root, (n) => n.className === 'callout')[0];
 		expect(callout?.attributes.get('data-callout')).toBe('error');
@@ -183,7 +186,7 @@ describe('renderSessionCard', () => {
 
 	it('keeps a single .tyrian-companion-session__drawer class shared by the three gaveteros', () => {
 		const root = new FakeElement('div');
-		renderSessionCard(root as unknown as HTMLElement, activeThirtyModel());
+		renderSessionCard(root as unknown as HTMLElement, icons, activeThirtyModel());
 		const drawers = findAll(root, (n) => n.tag === 'details');
 		expect(drawers.every((d) => d.className === 'tyrian-companion-session__drawer')).toBe(true);
 	});
@@ -204,7 +207,7 @@ describe('renderSessionCard', () => {
 				],
 			},
 		};
-		const mount = renderSessionCard(root as unknown as HTMLElement, model);
+		const mount = renderSessionCard(root as unknown as HTMLElement, icons, model);
 		const section = mount.root as unknown as FakeElement;
 		const why = findAll(section, (n) => n.className === 'tyrian-companion-session__why')[0];
 		expect(why?.textContent).toBe('La API publica el inventario con minutos de retraso.');
@@ -224,7 +227,7 @@ describe('renderSessionCard', () => {
 
 	it('mounts neither "why" nor the recorrido when the model carries none', () => {
 		const root = new FakeElement('div');
-		renderSessionCard(root as unknown as HTMLElement, activeZeroModel());
+		renderSessionCard(root as unknown as HTMLElement, icons, activeZeroModel());
 		expect(findAll(root, (n) => n.className === 'tyrian-companion-session__why')).toHaveLength(0);
 		expect(findAll(root, (n) => n.className === 'tyrian-receipt')).toHaveLength(0);
 	});

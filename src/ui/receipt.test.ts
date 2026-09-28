@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { renderReceipt, type ReceiptStep } from './receipt';
 
+/** The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does. */
+const icons = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
+
 describe('renderReceipt', () => {
 	it('mounts one <li data-step> per step, with the icon, label and a time/small detail', () => {
 		const container = new FakeElement('div');
@@ -10,7 +13,7 @@ describe('renderReceipt', () => {
 			{ status: 'failed', icon: 'x', label: 'No llegó a Nexus', detail: { kind: 'small', text: 'sin conexión' } },
 			{ status: 'skip', icon: 'minus', label: 'En la nota', detail: { kind: 'small', text: 'al cerrar' } },
 		];
-		const list = renderReceipt(container as unknown as HTMLElement, 'Recorrido del aviso', steps);
+		const list = renderReceipt(container as unknown as HTMLElement, icons, 'Recorrido del aviso', steps);
 		expect((list as unknown as FakeElement).tag).toBe('ol');
 		expect((list as unknown as FakeElement).attributes.get('aria-label')).toBe('Recorrido del aviso');
 		const items = (list as unknown as FakeElement).children;
@@ -30,7 +33,7 @@ describe('renderReceipt', () => {
 
 	it('omits the detail element for a step with none', () => {
 		const container = new FakeElement('div');
-		const list = renderReceipt(container as unknown as HTMLElement, 'x', [{ status: 'current', icon: 'hourglass', label: 'Lectura final' }]);
+		const list = renderReceipt(container as unknown as HTMLElement, icons, 'x', [{ status: 'current', icon: 'hourglass', label: 'Lectura final' }]);
 		const item = (list as unknown as FakeElement).children[0]!;
 		expect(item.children).toHaveLength(2);
 	});

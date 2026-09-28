@@ -1,4 +1,4 @@
-import { setIcon } from 'obsidian';
+import type { TyrianUiPort } from '../host/tyrian-host';
 
 import type { TranslationKey, Translator } from '../core/i18n';
 import { formatLootMoney } from '../sessions/loot-presentation';
@@ -24,24 +24,28 @@ export interface SaleViewInteractions {
 	refreshing?: boolean;
 }
 
+/** The host's Lucide icons (`TyrianUiPort.setIcon`), the only host capability this render needs. */
+type IconPainter = Pick<TyrianUiPort, 'setIcon'>;
+
 const DAY_MS = 86_400_000;
 
 export function renderSaleView(
 	container: HTMLElement,
+	ui: IconPainter,
 	model: SaleViewModel,
 	translator: Translator,
 	interactions: SaleViewInteractions = {},
 ): void {
 	container.empty();
 	container.addClass('tyrian-sale-page');
-	container.append(renderStatusLine(model, translator));
+	container.append(renderStatusLine(model, translator, ui));
 	if (model.status === 'loading') {
 		const surface = renderLoading(translator);
 		// H18.38: a stuck "Leyendo…" with nothing behind it (David, 0.2.3): the auto-triggered
 		// refresh (`sale-item-view.ts`) covers the common case, but if the runtime is not ready yet
 		// or the refresh otherwise leaves the model in `loading`, the same working button the other
 		// states already offer is the escape hatch, not a dead end.
-		surface.append(renderFoot(translator, interactions));
+		surface.append(renderFoot(translator, interactions, ui));
 		container.append(surface);
 		return;
 	}
@@ -56,24 +60,24 @@ export function renderSaleView(
 	// building the review-fix DOM assertions for the calendar's own bars, 26 sep 2026).
 	const sale = container.createDiv({ cls: 'tyrian-sale' });
 	sale.setAttribute('aria-label', translator.t('sale.view.title'));
-	if (model.hero !== null) sale.append(renderHeroCard(model.hero, model.nowMs, translator));
+	if (model.hero !== null) sale.append(renderHeroCard(model.hero, model.nowMs, translator, ui));
 	if (model.calendar.length > 0) sale.append(renderCalendar(model.calendar, model.nowMs, translator));
 	if (model.status === 'empty' && model.hero === null && model.calendar.length === 0) {
 		sale.createEl('p', { text: translator.t('sale.view.empty') });
 	}
-	sale.append(renderGroup('now', model.groups.now, model, translator));
-	sale.append(renderGroup('wait', model.groups.wait, model, translator));
-	sale.append(renderGroup('noData', model.groups.noData, model, translator));
-	sale.append(renderFoot(translator, interactions));
+	sale.append(renderGroup('now', model.groups.now, model, translator, ui));
+	sale.append(renderGroup('wait', model.groups.wait, model, translator, ui));
+	sale.append(renderGroup('noData', model.groups.noData, model, translator, ui));
+	sale.append(renderFoot(translator, interactions, ui));
 }
 
-function renderStatusLine(model: SaleViewModel, translator: Translator): HTMLElement {
+function renderStatusLine(model: SaleViewModel, translator: Translator, ui: IconPainter): HTMLElement {
 	const status = createEl('p', { cls: 'tyrian-product-shell__status' });
 	status.setAttribute('role', 'status');
 	if (model.status === 'loading') {
 		const span = createSpan();
 		const icon = createSpan({ cls: 'is-small' });
-		setIcon(icon, 'loader-2');
+		ui.setIcon(icon, 'loader-2');
 		span.append(icon, createSpan({ text: ` ${translator.t('sale.view.loading')}` }));
 		status.append(span);
 		return status;
@@ -124,7 +128,7 @@ function renderBlocked(model: SaleViewModel, translator: Translator): HTMLElemen
 	return surface;
 }
 
-function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Translator): HTMLElement {
+function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Translator, ui: IconPainter): HTMLElement {
 	const article = createEl('article', { cls: 'tyrian-sale__card tyrian-sale__card--hero' });
 	article.setAttribute('aria-labelledby', `tyrian-sale-hero-${String(hero.itemId)}`);
 	const head = article.createDiv({ cls: 'tyrian-sale__head' });
@@ -162,7 +166,7 @@ function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Tran
 		const dl = article.createEl('dl', { cls: 'tyrian-companion-session__figures', attr: { style: `--tyrian-figures:${String(figures.length)}` } });
 		dl.append(...figures);
 	}
-	article.append(renderQuoteLine(hero, nowMs, translator));
+	article.append(renderQuoteLine(hero, nowMs, translator, ui));
 	return article;
 }
 
@@ -239,6 +243,7 @@ function renderGroup(
 	rows: readonly SaleRowViewModel[],
 	model: SaleViewModel,
 	translator: Translator,
+	ui: IconPainter,
 ): HTMLElement {
 	const section = createEl('section', { cls: 'tyrian-sale__group' });
 	if (rows.length === 0) { section.hidden = true; return section; }
@@ -249,11 +254,11 @@ function renderGroup(
 	head.createSpan({ text: translator.t('sale.row.head.decision') });
 	head.createSpan({ text: translator.t('sale.row.head.price') });
 	head.createSpan({ text: translator.t('sale.row.head.value') });
-	for (const row of rows) list.append(renderRow(row, model.nowMs, translator));
+	for (const row of rows) list.append(renderRow(row, model.nowMs, translator, ui));
 	return section;
 }
 
-function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator): HTMLElement {
+function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator, ui: IconPainter): HTMLElement {
 	const li = createEl('li', { cls: 'tyrian-sale__row', attr: { 'data-item': String(row.itemId) } });
 	const item = li.createDiv({ cls: 'tyrian-sale__item' });
 	item.append(renderIcon(row.name, row.icon));
@@ -268,7 +273,7 @@ function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator)
 	const price = li.createDiv({ cls: 'tyrian-sale__price' });
 	if (row.bidCopper === null) price.setText(translator.t('sale.quote.none'));
 	else price.append(renderMoney(row.bidCopper, translator));
-	price.append(renderQuoteLine(row, nowMs, translator));
+	price.append(renderQuoteLine(row, nowMs, translator, ui));
 	const value = li.createDiv({ cls: 'tyrian-sale__value' });
 	if (row.instantSellNetCopper === null) {
 		value.setAttribute('data-unknown', 'true');
@@ -309,13 +314,13 @@ function rowDetailText(row: SaleRowViewModel, nowMs: number, translator: Transla
  * between the two is exactly why the acceptance test's dump ("hace hace 7 horas") did not match
  * `SEPT_26_MS`, the very instant the model itself was built for.
  */
-function renderQuoteLine(row: SaleRowViewModel, nowMs: number, translator: Translator): HTMLElement {
+function renderQuoteLine(row: SaleRowViewModel, nowMs: number, translator: Translator, ui: IconPainter): HTMLElement {
 	const p = createEl('p', { cls: 'tyrian-sale__quote' });
 	if (row.quote.quotedAtMs === null) { p.setAttribute('data-state', 'unknown'); return p; }
 	const state = row.quote.stale ? 'stale' : 'fresh';
 	p.setAttribute('data-state', state);
 	const icon = p.createSpan({ cls: 'is-small' });
-	setIcon(icon, state === 'stale' ? 'hourglass' : 'clock');
+	ui.setIcon(icon, state === 'stale' ? 'hourglass' : 'clock');
 	p.createSpan({
 		text: translator.t('sale.quote.readAt', {
 			time: formatClock(row.quote.quotedAtMs, translator.locale),
@@ -363,12 +368,12 @@ function initialsFor(name: string): string {
 	return words.slice(0, 2).map((word) => word[0]!.toUpperCase()).join('');
 }
 
-function renderFoot(translator: Translator, interactions: SaleViewInteractions): HTMLElement {
+function renderFoot(translator: Translator, interactions: SaleViewInteractions, ui: IconPainter): HTMLElement {
 	const foot = createDiv({ cls: 'tyrian-sale__foot' });
 	foot.createEl('p', { text: translator.t('sale.foot.note') });
 	const button = foot.createEl('button', { attr: { type: 'button' } });
 	const icon = button.createSpan();
-	setIcon(icon, 'refresh-cw');
+	ui.setIcon(icon, 'refresh-cw');
 	button.createSpan({ text: translator.t('sale.foot.refresh') });
 	button.disabled = interactions.refreshing === true;
 	button.addEventListener('click', () => { void interactions.onRefresh?.(); });

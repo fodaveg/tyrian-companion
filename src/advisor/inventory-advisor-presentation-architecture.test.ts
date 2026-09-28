@@ -66,7 +66,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'ports.objects.derivedGoals', 'ports.objects.evaluate'],
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {
-		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
+		// R1c: type-only, the host's `setIcon` (`TyrianUiPort`) and the view's registration descriptor;
+		// no `obsidian` any more, the host mounts this controller (`host/obsidian/obsidian-ui.ts`).
+		imports: ['../host/tyrian-host', './mounted-views', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
 			'../economy/reservation-model', '../economy/price-history-model', '../economy/price-history-runtime',
 			// H18.17: type-only, for the queue-coverage shape a pure model owns (`PriceSeedQueueCoverage`).
 			// The view calls nothing on it; it only reads the count fields H18.17 added to the panel.
@@ -87,7 +89,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	}],
 	['src/ui/inventory-advisor-view.ts', {
 		// Locale-independent integer-copper formatting only; no I/O or capability is introduced.
-		imports: ['obsidian', '../core/i18n', '../core/copper-format', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
+		// R1c: type-only, the host's `setIcon` (`TyrianUiPort`) in place of Obsidian's.
+		imports: ['../host/tyrian-host', '../core/i18n', '../core/copper-format', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
 			// H13.2: type-only, for the decision union the economy layer owns. The
 			// view maps its `hold` onto the existing `keep` label and calls nothing.
 			'../advisor/inventory-container-economy',

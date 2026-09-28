@@ -1,6 +1,6 @@
 import {
 	Menu, Notice, Plugin,
-	type App, type MarkdownPostProcessorContext, type ViewCreator,
+	type App, type MarkdownPostProcessorContext,
 } from 'obsidian';
 
 import { createObsidianHost } from './host/obsidian/obsidian-host';
@@ -217,6 +217,7 @@ import type { SessionStartInput } from './sessions/session-start-capture';
 import { assembleSessions } from './runtime/assemble-sessions';
 import {
 	COMPANION_VIEW_TYPE,
+	companionView,
 	ConfirmAbandonSessionModal,
 	ConfirmClearCompletedSessionModal,
 	ConfirmDiscardSessionModal,
@@ -256,8 +257,10 @@ import {
 import {
 	INVENTORY_ADVISOR_VIEW_TYPE,
 	InventoryAdvisorItemView,
+	inventoryAdvisorView,
 } from './ui/inventory-advisor-item-view';
-import { SALE_VIEW_TYPE, SaleItemView } from './ui/sale-item-view';
+import { MountedViews } from './ui/mounted-views';
+import { SALE_VIEW_TYPE, SaleItemView, saleView } from './ui/sale-item-view';
 import {
 	buildSaleViewModel,
 	computeListingNetCopper,
@@ -384,6 +387,23 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private get host(): TyrianHost {
 		this.obsidianHost ??= createObsidianHost(this);
 		return this.obsidianHost;
+	}
+	/**
+	 * R1c: the view controllers the host has mounted, one set per view type, which the repaints
+	 * walk (they used to walk `workspace.getLeavesOfType`). Built on first use, like `host`.
+	 */
+	private viewControllers: {
+		readonly companion: MountedViews<TyrianCompanionView>;
+		readonly inventoryAdvisor: MountedViews<InventoryAdvisorItemView>;
+		readonly sale: MountedViews<SaleItemView>;
+	} | null = null;
+	private get mountedViews(): NonNullable<TyrianCompanionPlugin['viewControllers']> {
+		this.viewControllers ??= {
+			companion: new MountedViews((container) => new TyrianCompanionView(container, this.host.ui, this)),
+			inventoryAdvisor: new MountedViews((container) => new InventoryAdvisorItemView(container, this.host.ui, this)),
+			sale: new MountedViews((container) => new SaleItemView(container, this.host.ui, this)),
+		};
+		return this.viewControllers;
 	}
 	private connection!: ConnectionService;
 	private sessions!: ManualSessionStartService;
@@ -565,20 +585,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// A settings load that failed is recorded, flushed and rethrown by `start()`: nothing registers.
 		if (boot.settingsLoadFailure !== null) await runtime.start();
 		// One source for both the registration loop and the journal count, so they cannot drift apart.
-		const viewFactories: Record<string, ViewCreator> = {
-			[COMPANION_VIEW_TYPE]: (leaf) => new TyrianCompanionView(leaf, this),
-			[INVENTORY_ADVISOR_VIEW_TYPE]: (leaf) => new InventoryAdvisorItemView(leaf, this),
-			[SALE_VIEW_TYPE]: (leaf) => new SaleItemView(leaf, this),
-		};
+		const views = this.mountedViews;
+		const viewRegistrations = [
+			views.companion.registration(companionView(this)),
+			views.inventoryAdvisor.registration(inventoryAdvisorView(this)),
+			views.sale.registration(saleView(this)),
+		];
 		await this.localDebugActions.run({
 			component: 'plugin', action: 'plugin_load',
 			details: {
 				commandCount: PRODUCT_ACTION_IDS.length + STANDALONE_COMMAND_IDS.length,
-				viewCount: Object.keys(viewFactories).length,
+				viewCount: viewRegistrations.length,
 			},
 		}, async () => {
 
-		for (const [type, factory] of Object.entries(viewFactories)) this.registerView(type, factory);
+		for (const view of viewRegistrations) this.host.ui.registerView(view);
 		// Registration itself is inert: it hands Obsidian a callback, nothing runs until a note
 		// with this block is actually rendered. `docs/PLATFORM_POLICY.md` H9.2 covers the request
 		// that callback may then make.
@@ -4229,23 +4250,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private flushRenderViews(): void {
 		this.productActions?.refresh();
 		this.refreshSessionRibbon();
-		for (const leaf of this.app.workspace.getLeavesOfType(COMPANION_VIEW_TYPE)) {
-			if (leaf.view instanceof TyrianCompanionView) {
-				leaf.view.render();
-			}
-		}
+		for (const view of this.mountedViews.companion.current()) view.render();
 	}
 
 	private renderInventoryAdvisorViews(): void {
 		this.productActions?.refresh();
-		for (const leaf of this.app.workspace.getLeavesOfType(INVENTORY_ADVISOR_VIEW_TYPE)) {
-			if (leaf.view instanceof InventoryAdvisorItemView) leaf.view.render();
-		}
+		for (const view of this.mountedViews.inventoryAdvisor.current()) view.render();
 		// The Sale tab reads the SAME advisor model, so every refresh that moves it also
 		// moves the Sale tab's own hero card, calendar and grouped list.
-		for (const leaf of this.app.workspace.getLeavesOfType(SALE_VIEW_TYPE)) {
-			if (leaf.view instanceof SaleItemView) leaf.view.render();
-		}
+		for (const view of this.mountedViews.sale.current()) view.render();
 	}
 
 	private invalidateInventoryAdvisor(): void {
@@ -4274,11 +4287,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private refreshBackgroundIndicators(): void {
 		this.refreshSessionRibbon();
-		refreshBackgroundStatus(
-			this.app.workspace.getLeavesOfType(COMPANION_VIEW_TYPE)
-				.map((leaf) => leaf.view)
-				.filter((view): view is TyrianCompanionView => view instanceof TyrianCompanionView),
-		);
+		refreshBackgroundStatus(this.mountedViews.companion.current());
 	}
 
 	private async acquirePendingIntent(intent: PendingProposalIntent): Promise<{
@@ -4468,7 +4477,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return new Promise((resolve) => {
 			let confirmed = false;
 			this.discardModal = new ModalClass(
-				this.app,
+				this.host.ui,
 				() => { confirmed = true; resolve(() => this.performDiscardRecoveredSession()); return Promise.resolve(); },
 				() => { this.discardModal = null; if (!confirmed) resolve(null); },
 				() => this.settings.language,
@@ -4482,7 +4491,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return new Promise((resolve) => {
 			let confirmed = false;
 			this.clearModal = new ConfirmClearCompletedSessionModal(
-				this.app,
+				this.host.ui,
 				() => { confirmed = true; resolve(() => this.performClearCompletedSession()); return Promise.resolve(); },
 				() => { this.clearModal = null; if (!confirmed) resolve(null); },
 				() => this.settings.language,
@@ -4496,7 +4505,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return new Promise((resolve) => {
 			let confirmed = false;
 			this.abandonModal = new ConfirmAbandonSessionModal(
-				this.app,
+				this.host.ui,
 				() => { confirmed = true; resolve(() => this.performAbandonSession()); return Promise.resolve(); },
 				() => { this.abandonModal = null; if (!confirmed) resolve(null); },
 				() => this.settings.language,

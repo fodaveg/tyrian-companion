@@ -833,6 +833,8 @@ describe('Companion retained product shell', () => {
 			contentEl,
 			refreshInterval: null,
 			dynamicStatusNodes: new Map(),
+			// The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does.
+			ui: { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } },
 			headerPhase: null,
 			headerElapsed: null,
 			checkButton: null,

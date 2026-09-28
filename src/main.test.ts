@@ -537,10 +537,11 @@ describe('abandon session command', () => {
 
 	function abandonHarness() {
 		const performAbandonSession = vi.fn(async () => undefined);
-		const plugin = {
+		// The real confirmation through the real `ObsidianHost` (`host.ui.openModal`), as in production.
+		const plugin = withObsidianHost({
 			app: {}, settings: { language: 'es' }, abandonModal: null as ConfirmAbandonSessionModal | null,
 			performAbandonSession,
-		};
+		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
 		const prepare = (TyrianCompanionPlugin.prototype as unknown as {
 			prepareAbandonIntent(this: typeof plugin): Promise<PreparedSessionCommand | null>;

@@ -1,4 +1,4 @@
-import { setIcon } from 'obsidian';
+import type { TyrianUiPort } from '../host/tyrian-host';
 
 /**
  * The 3-step "recorrido" (boceto `docs/diseno/h18-31-interfaz`, decisión A): a fixed 3-column list
@@ -20,14 +20,19 @@ export interface ReceiptStep {
 	readonly detail?: { readonly kind: 'time' | 'small'; readonly text: string };
 }
 
-export function renderReceipt(container: HTMLElement, ariaLabel: string, steps: readonly ReceiptStep[]): HTMLElement {
+export function renderReceipt(
+	container: HTMLElement,
+	ui: Pick<TyrianUiPort, 'setIcon'>,
+	ariaLabel: string,
+	steps: readonly ReceiptStep[],
+): HTMLElement {
 	const list = container.createEl('ol', { cls: 'tyrian-receipt', attr: { 'aria-label': ariaLabel } });
 	for (const step of steps) {
 		const li = list.createEl('li');
 		li.setAttr('data-step', step.status);
 		const icon = li.createSpan({ cls: 'svg-icon is-small' });
 		icon.setAttr('aria-hidden', 'true');
-		setIcon(icon, step.icon);
+		ui.setIcon(icon, step.icon);
 		li.createSpan({ text: step.label });
 		if (step.detail !== undefined) li.createEl(step.detail.kind, { text: step.detail.text });
 	}

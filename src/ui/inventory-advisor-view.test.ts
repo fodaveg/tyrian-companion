@@ -26,6 +26,9 @@ import type { InventoryPreferencesEditorState } from '../advisor/inventory-prefe
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
 
+/** The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does. */
+const icons = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Inventory Advisor view', () => {
@@ -355,6 +358,7 @@ describe('Inventory Advisor view', () => {
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,
+			icons,
 			{ ...readyModel(), status: 'loading', groups: [] },
 			createTranslator('es'), undefined, interactions,
 		);
@@ -387,11 +391,11 @@ describe('Inventory Advisor view', () => {
 			expect(onDismiss).toHaveBeenCalledOnce();
 
 			// Busy: both buttons disabled so a double click writes once.
-			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator(locale), undefined,
+			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator(locale), undefined,
 				{ priceHistoryOptIn: { busy: true, onEnable, onDismiss } });
 			expect(find(walk(block), 'button').map((button) => button.disabled)).toEqual([true, true]);
 			// The host stops offering (enabled, or «Ahora no»): the block leaves.
-			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator(locale), undefined, {});
+			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator(locale), undefined, {});
 			expect(block.hidden).toBe(true);
 		});
 
@@ -445,6 +449,7 @@ describe('Inventory Advisor view', () => {
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,
+			icons,
 			{ ...readyModel(), contentVersion: 8 }, createTranslator('es'),
 		);
 		expect(controls.attributes.has('aria-disabled')).toBe(false);
@@ -527,6 +532,7 @@ describe('Inventory Advisor view', () => {
 			const portMount = createMount();
 			renderInventoryAdvisorViewFromPort(
 				portMount.container as unknown as HTMLElement,
+				icons,
 				createInventoryAdvisorFixturePort(readyModel()),
 				createTranslator('en'),
 			);
@@ -658,7 +664,7 @@ describe('Inventory Advisor view', () => {
 			groups: [{ key: 'market', rows: [row({ itemId: 11, name: 'De Borja', action: 'sell',
 				allocations: [{ positionRef: '#/positions/11/0', quantity: 3, location: { source: 'character', character: 'Borja', container: 'bag', bagIndex: 0, slot: 0 } }] })] }],
 		};
-		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, withoutAstra, createTranslator('es'));
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, withoutAstra, createTranslator('es'));
 		expect(characterSelect.value).toBe('all');
 		expect(characterSelect.children.map((option) => option.value)).toEqual(['all', 'Borja']);
 		expect(text(mount.elements())).not.toContain('Solo de Astra');
@@ -1007,7 +1013,7 @@ describe('Inventory Advisor view', () => {
 		expect(left.section.attributes.get('aria-label')).toBe('Asesor de inventario');
 		expect(right.section.attributes.get('aria-label')).toBe('Inventory advisor');
 		const portMount = createMount();
-		renderInventoryAdvisorViewFromPort(portMount.container as unknown as HTMLElement, createInventoryAdvisorFixturePort(model), createTranslator('en'));
+		renderInventoryAdvisorViewFromPort(portMount.container as unknown as HTMLElement, icons, createInventoryAdvisorFixturePort(model), createTranslator('en'));
 		expect(portMount.container.children[0]?.attributes.get('aria-label')).toBe('Inventory advisor');
 	});
 
@@ -1053,7 +1059,7 @@ describe('Inventory Advisor view', () => {
 		expect(exceptionInputs[1]?.disabled).toBe(true);
 		exceptionForm.dispatch('submit');
 		expect(callbacks.upsertException).toHaveBeenCalledWith(expect.objectContaining({ exceptionId: 'exception-existing', quantity: { mode: 'all' } }));
-		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('es'), undefined, interactions);
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator('es'), undefined, interactions);
 		expect(exceptionInputs[1]?.disabled).toBe(true);
 		const newException = only(find(walk(exceptionForm), 'button').filter((button) => button.textContent === 'Nueva excepción'));
 		newException.dispatch('click');
@@ -1066,18 +1072,18 @@ describe('Inventory Advisor view', () => {
 		expect(mount.document.activeElement).toBe(load);
 		preferences = { status: 'conflict', goals: [preferenceGoal('goal-existing')], keepExceptions: [preferenceException('exception-existing', 'all')] };
 		goalInputs[0]!.value = 'Draft preserved';
-		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('es'), undefined, interactions);
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator('es'), undefined, interactions);
 		expect(goalInputs[0]?.value).toBe('Draft preserved');
 		expect(exceptionInputs[1]?.disabled).toBe(true);
 		expect(only(find(mount.elements(), 'button').filter((button) => button.attributes.get('aria-label') === 'Quitar objetivo goal-existing')).disabled).toBe(true);
 		expect(only(find(mount.elements(), 'button').filter((button) => button.attributes.get('aria-label') === 'Editar objetivo goal-existing')).disabled).toBe(true);
 		preferences = { status: 'ready', goals: [preferenceGoal('goal-existing')], keepExceptions: [preferenceException('exception-existing', 'minimum')] };
 		preferencesBusy = true;
-		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('es'), undefined, interactions);
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator('es'), undefined, interactions);
 		expect(exceptionInputs[1]?.disabled).toBe(true);
 		preferencesBusy = false;
 		const beforeLocale = text(mount.elements());
-		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('en'), undefined, interactions);
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator('en'), undefined, interactions);
 		expect(beforeLocale).toContain('ID del objeto 10');
 		expect(text(mount.elements())).toContain('Item ID 10');
 		expect(text(mount.elements())).not.toMatch(/vault-hash|account-a|generation/u);
@@ -1131,13 +1137,13 @@ describe('Inventory Advisor view', () => {
 		expect(onRun).not.toHaveBeenCalled();
 
 		interactions.inventorySync!.analysisBusy = true;
-		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, { ...readyModel(), status: 'loading' }, createTranslator('es'), undefined, interactions);
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, { ...readyModel(), status: 'loading' }, createTranslator('es'), undefined, interactions);
 		expect(analysis.textContent).toBe('Analizando…');
 		expect(analysis.disabled).toBe(true);
 
 		interactions.inventorySync!.analysisBusy = false;
 		interactions.inventorySync!.state = { status: 'disabled', reason: 'missing_key' };
-		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('es'), undefined, interactions);
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator('es'), undefined, interactions);
 		expect(analysis.disabled).toBe(true);
 	});
 
@@ -1251,7 +1257,7 @@ describe('Inventory Advisor view', () => {
 
 		const tick = (percent: number): boolean => {
 			const before = results.children[0];
-			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, model, createTranslator('es'), undefined, interactionsAt(percent));
+			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, model, createTranslator('es'), undefined, interactionsAt(percent));
 			return results.children[0] !== before;
 		};
 		const rebuildsAcross = (ticks: number): number => {
@@ -1268,7 +1274,7 @@ describe('Inventory Advisor view', () => {
 		// A genuine content change (a fresh capture landing) still rebuilds exactly once.
 		const before = results.children[0];
 		renderInventoryAdvisorView(
-			mount.container as unknown as HTMLElement, { ...model, contentVersion: 2 }, createTranslator('es'), undefined, interactionsAt(60),
+			mount.container as unknown as HTMLElement, icons, { ...model, contentVersion: 2 }, createTranslator('es'), undefined, interactionsAt(60),
 		);
 		expect(results.children[0]).not.toBe(before);
 	});
@@ -1453,7 +1459,7 @@ function formatClockFor(iso: string): string {
 
 function render(model: InventoryAdvisorViewModel, locale: 'es' | 'en' = 'es', interactions: InventoryAdvisorViewInteractions = {}) {
 	const mount = createMount();
-	renderInventoryAdvisorView(mount.container as unknown as HTMLElement, model, createTranslator(locale), undefined, interactions);
+	renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, model, createTranslator(locale), undefined, interactions);
 	const section = mount.container.children[0];
 	if (!section) throw new Error('Expected a rendered Inventory Advisor section.');
 	return { ...mount, section, elements: () => walk(mount.container) };

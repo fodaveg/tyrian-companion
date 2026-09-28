@@ -1,5 +1,4 @@
-import { ItemView, type WorkspaceLeaf } from 'obsidian';
-
+import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale } from '../core/i18n';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { InventoryPreferencesEditorSession } from '../advisor/inventory-preferences-runtime';
@@ -13,6 +12,7 @@ import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-ser
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
 import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
+import type { TyrianViewDescriptor } from './mounted-views';
 import type { ProductActionController } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
 
@@ -60,8 +60,21 @@ export interface InventoryAdvisorViewActions {
 	getSellSignalState?(): SellSignalRuntimeState | null;
 }
 
-/** Thin Obsidian adapter. Opening and rendering only read the controller's memory snapshot. */
-export class InventoryAdvisorItemView extends ItemView {
+/** The Inventory tab for `TyrianUiPort.registerView`: in Hebra, the 960×720 dialog (agreed with Hebra, R1c). */
+export function inventoryAdvisorView(actions: Pick<InventoryAdvisorViewActions, 'getInventoryAdvisorLocale'>): TyrianViewDescriptor {
+	return {
+		type: INVENTORY_ADVISOR_VIEW_TYPE,
+		title: () => createTranslator(actions.getInventoryAdvisorLocale()).t('advisor.view.title'),
+		icon: 'package-search',
+		placement: 'dialog',
+	};
+}
+
+/**
+ * The Inventory tab's controller, mounted by the host into `contentEl` (an `ItemView`'s content
+ * in Obsidian). Opening and rendering only read the controller's memory snapshot.
+ */
+export class InventoryAdvisorItemView {
 	private preferencesBusy = false;
 	private analysisBusy = false;
 	private syncBusy = false;
@@ -74,13 +87,13 @@ export class InventoryAdvisorItemView extends ItemView {
 	private priceHistoryCatalog: Record<number, { name: string; icon: string | null }> = {};
 	private priceHistoryCatalogKey: string | null = null;
 
-	constructor(leaf: WorkspaceLeaf, private readonly actions: InventoryAdvisorViewActions) {
-		super(leaf);
+	constructor(
+		readonly contentEl: HTMLElement,
+		private readonly ui: Pick<TyrianUiPort, 'setIcon'>,
+		private readonly actions: InventoryAdvisorViewActions,
+	) {
 		this.preferenceSession = this.actions.createInventoryPreferencesEditorSession?.();
 	}
-	getViewType(): string { return INVENTORY_ADVISOR_VIEW_TYPE; }
-	getDisplayText(): string { return createTranslator(this.actions.getInventoryAdvisorLocale()).t('advisor.view.title'); }
-	getIcon(): string { return 'package-search'; }
 	async onOpen(): Promise<void> { this.closed = false; this.render(); }
 	async onClose(): Promise<void> {
 		this.closed = true;
@@ -136,6 +149,7 @@ export class InventoryAdvisorItemView extends ItemView {
 			actions: actionController,
 			missingApiKey,
 			openSettings: () => this.actions.openProductSettings?.(),
+			ui: this.ui,
 			});
 			this.productShellKey = shellKey;
 		}
@@ -143,6 +157,7 @@ export class InventoryAdvisorItemView extends ItemView {
 		this.productShell?.update();
 		renderInventoryAdvisorView(
 			surface,
+			this.ui,
 			model,
 			createTranslator(this.actions.getInventoryAdvisorLocale()),
 			undefined,

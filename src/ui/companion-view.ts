@@ -1,5 +1,4 @@
-import { ItemView, Modal, type App, type WorkspaceLeaf } from 'obsidian';
-
+import type { TyrianUiPort } from '../host/tyrian-host';
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import { createTranslator, type Locale } from '../core/i18n';
 import { formatClock, formatRelativeDay } from './format-time';
@@ -67,6 +66,8 @@ import {
 } from './session-history-panel';
 import { formatDecimal } from './format-number';
 import { relativeTimeLabel } from './inventory-advisor-view';
+import type { TyrianViewDescriptor } from './mounted-views';
+import { TyrianModal, type TyrianModalUi } from './tyrian-modal';
 import {
 	renderSessionCard,
 	renderSessionCardCallout,
@@ -153,7 +154,21 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	copyLastErrorDetail?(detail: string): Promise<void>;
 }
 
-export class TyrianCompanionView extends ItemView {
+/** The Companion tab for `TyrianUiPort.registerView`: in Hebra, a tab of the right column (agreed with Hebra, R1c). */
+export function companionView(actions: Pick<CompanionActions, 'getLocale'>): TyrianViewDescriptor {
+	return {
+		type: COMPANION_VIEW_TYPE,
+		title: () => translateRuntime(createTranslator(actions.getLocale()), 'view.displayName'),
+		icon: 'compass',
+		placement: 'column',
+	};
+}
+
+/**
+ * The Companion tab's controller, mounted by the host into `contentEl` (an `ItemView`'s content in
+ * Obsidian). Its modals open through the host (`ui.openModal`).
+ */
+export class TyrianCompanionView {
 	private refreshInterval: number | null = null;
 	/** Torn down in `onClose`; set once in `onOpen` so a repeated `render()` never registers twice. */
 	private visibilityCleanup: (() => void) | null = null;
@@ -186,23 +201,10 @@ export class TyrianCompanionView extends ItemView {
 	private lastObservedSessionStatus: SessionStatus | null = null;
 
 	constructor(
-		leaf: WorkspaceLeaf,
+		readonly contentEl: HTMLElement,
+		private readonly ui: Pick<TyrianUiPort, 'setIcon' | 'openModal'>,
 		private readonly actions: CompanionActions,
-	) {
-		super(leaf);
-	}
-
-	getViewType(): string {
-		return COMPANION_VIEW_TYPE;
-	}
-
-	getDisplayText(): string {
-		return this.t('view.displayName');
-	}
-
-	getIcon(): string {
-		return 'compass';
-	}
+	) {}
 
 	async onOpen(): Promise<void> {
 		this.actions.localDebugViewEvent?.('open');
@@ -278,6 +280,7 @@ export class TyrianCompanionView extends ItemView {
 				actions: actionController,
 				missingApiKey,
 				openSettings: () => this.actions.openProductSettings?.(),
+				ui: this.ui,
 			});
 			this.productShellKey = shellKey;
 		}
@@ -601,7 +604,7 @@ export class TyrianCompanionView extends ItemView {
 		const model = this.buildSessionCardModel(connection, observed, projection, now, copy, locale, drawers, callout);
 		const errorRecoveryActions = this.sessionErrorRecoveryActions(session);
 		const cardModel = errorRecoveryActions.length > 0 ? { ...model, actions: errorRecoveryActions } : model;
-		const mount = renderSessionCard(container, cardModel);
+		const mount = renderSessionCard(container, this.ui, cardModel);
 		this.headerElapsed = mount.clock;
 		this.liveFigures = mount.figureNodes;
 		this.calloutSlot = mount.calloutSlot;
@@ -1242,7 +1245,7 @@ export class TyrianCompanionView extends ItemView {
 		const dismiss = actions.createEl('button', { text: this.t('view.dismiss') });
 		dismiss.addEventListener('click', () => {
 			new DetectionCorrectionModal(
-				this.app, next.phase,
+				this.ui, next.phase,
 				(cause, humanBoundaryAt) => this.actions.dismissPendingProposal(intent, cause, humanBoundaryAt),
 				() => this.actions.getLocale(),
 			).open();
@@ -1473,7 +1476,7 @@ export class TyrianCompanionView extends ItemView {
 		const dismiss = container.createEl('button', { text: this.t('view.dismissProposal') });
 		dismiss.addEventListener('click', () => {
 			new DetectionCorrectionModal(
-				this.app,
+				this.ui,
 				phase,
 				(cause, boundary) => this.actions.dismissAssistedProposal(cause, boundary),
 				() => this.actions.getLocale(),
@@ -1669,22 +1672,25 @@ function durableImmediateCopper(row: LootPresentationRow): number | null {
 }
 
 
-export class ConfirmDiscardSessionModal extends Modal {
+export class ConfirmDiscardSessionModal extends TyrianModal {
 	constructor(
-		app: App,
+		ui: TyrianModalUi,
 		private readonly onConfirm: () => Promise<void>,
 		private readonly onClosed: () => void = () => undefined,
 		private readonly getLocale: () => Locale = () => 'es',
 	) {
-		super(app);
+		super(ui);
 	}
 
 	onClose(): void {
 		this.onClosed();
 	}
 
+	protected title(): string {
+		return runtimeText(this.getLocale(), 'modal.discardTitle');
+	}
+
 	onOpen(): void {
-		this.setTitle(runtimeText(this.getLocale(), 'modal.discardTitle'));
 		this.contentEl.createEl('p', {
 			text: runtimeText(this.getLocale(), 'modal.discardDetail'),
 		});
@@ -1707,22 +1713,25 @@ export class ConfirmDiscardSessionModal extends Modal {
  * it and that discarding erases it, instead of reusing `ConfirmDiscardSessionModal`'s copy, which
  * implies a readable, resumable session is being given up.
  */
-export class ConfirmDiscardUnreadableSessionModal extends Modal {
+export class ConfirmDiscardUnreadableSessionModal extends TyrianModal {
 	constructor(
-		app: App,
+		ui: TyrianModalUi,
 		private readonly onConfirm: () => Promise<void>,
 		private readonly onClosed: () => void = () => undefined,
 		private readonly getLocale: () => Locale = () => 'es',
 	) {
-		super(app);
+		super(ui);
 	}
 
 	onClose(): void {
 		this.onClosed();
 	}
 
+	protected title(): string {
+		return runtimeText(this.getLocale(), 'modal.discardUnreadableTitle');
+	}
+
 	onOpen(): void {
-		this.setTitle(runtimeText(this.getLocale(), 'modal.discardUnreadableTitle'));
 		this.contentEl.createEl('p', {
 			text: runtimeText(this.getLocale(), 'modal.discardUnreadableDetail'),
 		});
@@ -1739,18 +1748,21 @@ export class ConfirmDiscardUnreadableSessionModal extends Modal {
 	}
 }
 
-export class ConfirmClearCompletedSessionModal extends Modal {
+export class ConfirmClearCompletedSessionModal extends TyrianModal {
 	constructor(
-		app: App,
+		ui: TyrianModalUi,
 		private readonly onConfirm: () => Promise<void>,
 		private readonly onClosed: () => void = () => undefined,
 		private readonly getLocale: () => Locale = () => 'es',
 	) {
-		super(app);
+		super(ui);
+	}
+
+	protected title(): string {
+		return runtimeText(this.getLocale(), 'modal.clearTitle');
 	}
 
 	onOpen(): void {
-		this.setTitle(runtimeText(this.getLocale(), 'modal.clearTitle'));
 		this.contentEl.createEl('p', {
 			text: runtimeText(this.getLocale(), 'modal.clearDetail'),
 		});
@@ -1776,18 +1788,21 @@ export class ConfirmClearCompletedSessionModal extends Modal {
  * discard and clear confirmations: keeping the session is the focused, default choice, and closing
  * the modal any other way does nothing.
  */
-export class ConfirmAbandonSessionModal extends Modal {
+export class ConfirmAbandonSessionModal extends TyrianModal {
 	constructor(
-		app: App,
+		ui: TyrianModalUi,
 		private readonly onConfirm: () => Promise<void>,
 		private readonly onClosed: () => void = () => undefined,
 		private readonly getLocale: () => Locale = () => 'es',
 	) {
-		super(app);
+		super(ui);
+	}
+
+	protected title(): string {
+		return runtimeText(this.getLocale(), 'modal.abandonTitle');
 	}
 
 	onOpen(): void {
-		this.setTitle(runtimeText(this.getLocale(), 'modal.abandonTitle'));
 		this.contentEl.createEl('p', { text: runtimeText(this.getLocale(), 'modal.abandonDetail') });
 		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepSession'), cls: 'mod-cta' });
@@ -1806,18 +1821,21 @@ export class ConfirmAbandonSessionModal extends Modal {
 	}
 }
 
-class DetectionCorrectionModal extends Modal {
+class DetectionCorrectionModal extends TyrianModal {
 	constructor(
-		app: App,
+		ui: TyrianModalUi,
 		private readonly phase: 'start' | 'stop',
 		private readonly onConfirm: (cause: DetectionCorrectionCause, humanBoundaryAt: string | null) => Promise<void>,
 		private readonly getLocale: () => Locale = () => 'es',
 	) {
-		super(app);
+		super(ui);
+	}
+
+	protected title(): string {
+		return runtimeText(this.getLocale(), this.phase === 'start' ? 'modal.correctionStartTitle' : 'modal.correctionStopTitle');
 	}
 
 	onOpen(): void {
-		this.setTitle(runtimeText(this.getLocale(), this.phase === 'start' ? 'modal.correctionStartTitle' : 'modal.correctionStopTitle'));
 		this.contentEl.createEl('p', {
 			text: runtimeText(this.getLocale(), 'modal.correctionDetail'),
 		});

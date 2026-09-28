@@ -706,8 +706,11 @@ function mountCompanion(overrides: Partial<CompanionActions> = {}): {
 	const actions: CompanionActions = { ...baseActions(), ...overrides };
 	// No projection stub: the card is asserted against the real status projection, because a fake
 	// one would keep every integrated line green while the model stopped feeding it.
+	// The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does.
+	const ui = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
 	const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 		actions, contentEl, refreshInterval: null,
+		ui,
 		headerElapsed: null, checkButton: null,
 		liveFigures: [], liveFiguresKind: null, calloutSlot: null,
 		drawerOpen: { detail: false, alerts: false, history: false },

@@ -4,9 +4,8 @@ import { createTranslator } from '../core/i18n';
 import { renderSaleView } from './sale-view';
 import { buildSaleViewModel, type SaleSourceRow, type SaleViewModelInput } from './sale-view-model';
 
-vi.mock('obsidian', () => ({
-	setIcon: (el: { setAttribute(name: string, value: string): void }, iconId: string) => { el.setAttribute('data-icon', iconId); },
-}));
+/** The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does. */
+const icons = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -37,7 +36,7 @@ function installDom(): void {
 function render(model: ReturnType<typeof buildSaleViewModel>, locale: 'es' | 'en' = 'es') {
 	installDom();
 	const container = new FakeElement('div', new FakeDocument());
-	renderSaleView(container as unknown as HTMLElement, model, createTranslator(locale));
+	renderSaleView(container as unknown as HTMLElement, icons, model, createTranslator(locale));
 	return container;
 }
 

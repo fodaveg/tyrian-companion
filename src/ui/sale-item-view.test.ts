@@ -1,16 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SALE_VIEW_TYPE, SaleItemView, type SaleViewActions } from './sale-item-view';
+import { SALE_VIEW_TYPE, SaleItemView, saleView, type SaleViewActions } from './sale-item-view';
 import { ProductActionController } from './product-action-controller';
 import { buildSaleViewModel, type SaleSourceRow, type SaleViewModel, type SaleViewModelInput } from './sale-view-model';
 
-vi.mock('obsidian', () => ({
-	ItemView: class {
-		readonly contentEl = new FakeElement('div', activeDocument);
-		constructor(_leaf: unknown) {}
-	},
-	setIcon: (el: { setAttribute(name: string, value: string): void }, iconId: string) => { el.setAttribute('data-icon', iconId); },
-}));
+/** The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does. */
+const icons = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
+
+/** The content element the host mounts a view into (an `ItemView`'s `contentEl` in Obsidian). */
+function content(): HTMLElement { return new FakeElement('div', activeDocument) as unknown as HTMLElement; }
 
 let activeDocument: FakeDocument;
 
@@ -48,8 +46,10 @@ describe('SaleItemView wiring', () => {
 				decision: { action: 'sell', reason: 'seasonal_sell_window', until: null, priceQuotedAt: null, sellWindowFromDay: '2026-09-22', sellWindowToDay: '2026-10-19' },
 			})],
 		}));
-		const view = new SaleItemView({} as never, actions(() => model));
-		expect(view.getViewType()).toBe(SALE_VIEW_TYPE);
+		const registration = saleView(actions(() => model));
+		expect([registration.type, registration.title(), registration.icon, registration.placement])
+			.toEqual([SALE_VIEW_TYPE, 'Venta de Halloween', 'candy', 'dialog']);
+		const view = new SaleItemView(content(), icons, actions(() => model));
 		await view.onOpen();
 		expect(text(view.contentEl as unknown as FakeElement)).toContain('Colmillos de plástico de alta calidad');
 		expect(text(view.contentEl as unknown as FakeElement)).toContain('Vender ahora');
@@ -68,7 +68,7 @@ describe('SaleItemView wiring', () => {
 				decision: { action: 'hold', reason: 'below_local_band', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
 			})],
 		}));
-		const view = new SaleItemView({} as never, actions(() => model));
+		const view = new SaleItemView(content(), icons, actions(() => model));
 		await view.onOpen();
 		const root = view.contentEl as unknown as FakeElement;
 		const jorcamelo = find(root, 'li').find((li) => li.attributes.get('data-item') === '43320')!;
@@ -81,7 +81,7 @@ describe('SaleItemView wiring', () => {
 		const execute = vi.fn(async () => 'completed' as const);
 		const controller = productController(execute);
 		const model = buildSaleViewModel(baseInput({}));
-		const view = new SaleItemView({} as never, actions(() => model, {
+		const view = new SaleItemView(content(), icons, actions(() => model, {
 			getProductActionController: () => controller, hasConfiguredApiKey: () => true, openProductSettings: () => undefined,
 		}));
 		await view.onOpen();
@@ -101,7 +101,7 @@ describe('SaleItemView wiring', () => {
 		let finish!: () => void;
 		const pending = new Promise<void>((resolve) => { finish = resolve; });
 		const model = buildSaleViewModel(baseInput({}));
-		const view = new SaleItemView({} as never, actions(() => model, {
+		const view = new SaleItemView(content(), icons, actions(() => model, {
 			refreshSale: async (options) => { expect(options?.refreshSeeds).toBe(true); refreshed += 1; await pending; },
 		}));
 		await view.onOpen();
@@ -126,7 +126,7 @@ describe('SaleItemView wiring', () => {
 		let resolveRefresh!: () => void;
 		const pending = new Promise<void>((resolve) => { resolveRefresh = resolve; });
 		let status: 'loading' | 'ready' = 'loading';
-		const view = new SaleItemView({} as never, actions(() => buildSaleViewModel(baseInput({ status })), {
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status })), {
 			refreshSale: async (options) => {
 				expect(options?.refreshSeeds).toBe(false);
 				refreshCalls += 1;
@@ -150,7 +150,7 @@ describe('SaleItemView wiring', () => {
 		let refreshCalls = 0;
 		let resolveRefresh!: () => void;
 		const pending = new Promise<void>((resolve) => { resolveRefresh = resolve; });
-		const view = new SaleItemView({} as never, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
 			refreshSale: async () => { refreshCalls += 1; await pending; },
 		}));
 		await view.onOpen();
@@ -167,7 +167,7 @@ describe('SaleItemView wiring', () => {
 		let refreshCalls = 0;
 		// Mirrors `main.ts`'s `refreshInventoryAdvisor`: `if (!this.runtimeReady) { notify; return; }`
 		// resolves without ever changing the cached model away from `loading`.
-		const view = new SaleItemView({} as never, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
 			refreshSale: async () => { refreshCalls += 1; },
 		}));
 		await view.onOpen();
@@ -184,7 +184,7 @@ describe('SaleItemView wiring', () => {
 	it('when the analysis cannot run (missing key), shows the blocked reason instead of Leyendo', async () => {
 		installDom();
 		let status: 'loading' | 'blocked' = 'loading';
-		const view = new SaleItemView({} as never, actions(() => buildSaleViewModel(baseInput({
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({
 			status, ...(status === 'blocked' ? { blockedReason: 'credential_unavailable' } : {}),
 		})), {
 			refreshSale: async () => { status = 'blocked'; },

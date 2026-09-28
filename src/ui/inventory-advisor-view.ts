@@ -1,5 +1,5 @@
 import { formatCopperVisual } from '../core/copper-format';
-import { setIcon } from 'obsidian';
+import type { TyrianUiPort } from '../host/tyrian-host';
 
 import type { Locale, Translator } from '../core/i18n';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
@@ -404,11 +404,18 @@ interface MountedInventoryAdvisorView {
 	update(model: InventoryAdvisorViewModel, translator: Translator, interactions: InventoryAdvisorViewInteractions): void;
 }
 
+/**
+ * The host's Lucide icons (`TyrianUiPort.setIcon`), the only host capability this render needs.
+ * Fixed when a container is first mounted: a later render into it only updates.
+ */
+type IconPainter = Pick<TyrianUiPort, 'setIcon'>;
+
 const mountedViews = new WeakMap<object, MountedInventoryAdvisorView>();
 
 /** Renders a prepared model. It has no knowledge of capture, prices, or account clients. */
 export function renderInventoryAdvisorView(
 	container: HTMLElement,
+	ui: IconPainter,
 	model: InventoryAdvisorViewModel,
 	translator: Translator,
 	initialFilters: InventoryAdvisorViewFilters = { query: '', action: 'all', groupBy: 'none' },
@@ -419,11 +426,12 @@ export function renderInventoryAdvisorView(
 		mounted.update(model, translator, interactions);
 		return;
 	}
-	mountedViews.set(container, mountInventoryAdvisorView(container, model, translator, initialFilters, interactions));
+	mountedViews.set(container, mountInventoryAdvisorView(container, ui, model, translator, initialFilters, interactions));
 }
 
 function mountInventoryAdvisorView(
 	container: HTMLElement,
+	ui: IconPainter,
 	initialModel: InventoryAdvisorViewModel,
 	initialTranslator: Translator,
 	initialFilters: InventoryAdvisorViewFilters,
@@ -466,7 +474,7 @@ function mountInventoryAdvisorView(
 	syncButton.className = 'tyrian-inventory-advisor__sync-button';
 	const syncButtonIcon = createSpan();
 	syncButtonIcon.className = 'tyrian-inventory-advisor__sync-button-icon';
-	setIcon(syncButtonIcon, 'refresh-cw');
+	ui.setIcon(syncButtonIcon, 'refresh-cw');
 	const syncButtonText = createSpan();
 	syncButton.append(syncButtonIcon, syncButtonText);
 	syncButton.addEventListener('click', () => { void interactions.inventorySync?.onRun(); });
@@ -538,7 +546,7 @@ function mountInventoryAdvisorView(
 	stateCopyButton.className = 'clickable-icon tyrian-inventory-advisor__state-copy';
 	stateCopyButton.hidden = true;
 	const stateCopyIcon = createSpan();
-	setIcon(stateCopyIcon, 'copy');
+	ui.setIcon(stateCopyIcon, 'copy');
 	const stateCopyText = createSpan();
 	stateCopyButton.append(stateCopyIcon, stateCopyText);
 	stateCopyButton.addEventListener('click', () => {
@@ -564,6 +572,7 @@ function mountInventoryAdvisorView(
 		keepStatus.textContent = translator.t(`advisor.view.keep.${outcome}`, { name: pendingKeep.name });
 	};
 	const keepContext = (): RowKeepContext | null => interactions.onKeepItem === undefined ? null : {
+		ui,
 		kept: keptExceptionsByItemId(interactions.preferences),
 		busy: interactions.preferencesBusy === true,
 		onKeep: (row) => {
@@ -924,10 +933,11 @@ function optionalSourceCoverageLabel(
 /** Reads a prepared local model once and delegates all rendering to the DOM adapter. */
 export function renderInventoryAdvisorViewFromPort(
 	container: HTMLElement,
+	ui: IconPainter,
 	port: InventoryAdvisorViewPort,
 	translator: Translator,
 ): void {
-	renderInventoryAdvisorView(container, port.getViewModel(), translator);
+	renderInventoryAdvisorView(container, ui, port.getViewModel(), translator);
 }
 
 function renderResults(
@@ -1365,6 +1375,8 @@ interface RowRenderContext {
 }
 
 interface RowKeepContext {
+	/** Paints the control's pin icon. */
+	readonly ui: IconPainter;
 	/** Items an active whole-stack keep exception already covers, mapped to that exception's id. */
 	readonly kept: ReadonlyMap<number, string>;
 	readonly busy: boolean;
@@ -1396,7 +1408,7 @@ function keepControl(row: InventoryAdvisorViewRow, translator: Translator, keep:
 	button.disabled = keep.busy;
 	const icon = createSpan();
 	icon.className = 'svg-icon is-small';
-	setIcon(icon, 'pin');
+	keep.ui.setIcon(icon, 'pin');
 	const label = createSpan();
 	button.append(icon, label);
 	const note = createEl('small');

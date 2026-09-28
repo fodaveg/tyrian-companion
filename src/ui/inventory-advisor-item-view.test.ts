@@ -21,13 +21,11 @@ import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import { InventoryAdvisorItemView, type InventoryAdvisorViewActions } from './inventory-advisor-item-view';
 import { ProductActionController } from './product-action-controller';
 
-vi.mock('obsidian', () => ({
-	ItemView: class {
-		readonly contentEl = new FakeElement('div', activeDocument);
-		constructor(_leaf: unknown) {}
-	},
-	setIcon: (el: { setAttribute(name: string, value: string): void }, iconId: string) => { el.setAttribute('data-icon', iconId); },
-}));
+/** The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does. */
+const icons = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
+
+/** The content element the host mounts a view into (an `ItemView`'s `contentEl` in Obsidian). */
+function content(): HTMLElement { return new FakeElement('div', activeDocument) as unknown as HTMLElement; }
 
 let activeDocument: FakeDocument;
 
@@ -43,8 +41,8 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		let leftLocale: 'es' | 'en' = 'es';
 		const leftActions = actions(() => leftLocale);
 		const rightActions = actions(() => 'en');
-		const left = new InventoryAdvisorItemView({} as never, leftActions.value);
-		const right = new InventoryAdvisorItemView({} as never, rightActions.value);
+		const left = new InventoryAdvisorItemView(content(), icons, leftActions.value);
+		const right = new InventoryAdvisorItemView(content(), icons, rightActions.value);
 		await left.onOpen();
 		await right.onOpen();
 
@@ -81,7 +79,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const pending = new Promise<void>((resolve) => { finish = resolve; });
 		const controller = productController(() => pending);
 		const viewActions = actions(() => 'es', { productActions: controller });
-		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 		await view.onOpen();
 		const root = view.contentEl as unknown as FakeElement;
 		const search = find(root, 'input').find((input) => input.type === 'search')!;
@@ -107,7 +105,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const pending = new Promise<void>((resolve) => { finish = resolve; });
 		const controller = productController(async () => undefined);
 		const viewActions = actions(() => 'es', { productActions: controller, analyze: () => pending });
-		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 		await view.onOpen();
 		const root = view.contentEl as unknown as FakeElement;
 		const analyzeButton = find(root, 'button').find((candidate) => candidate.textContent === 'Analizar sin escribir')!;
@@ -127,7 +125,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 	it('keeps an item from its row without typing its id, loading the preferences first (H18.18)', async () => {
 		installDom();
 		const session = preferenceSession([]);
-		const view = new InventoryAdvisorItemView({} as never, {
+		const view = new InventoryAdvisorItemView(content(), icons, {
 			...actions(() => 'es').value, createInventoryPreferencesEditorSession: () => session.value,
 		});
 		await view.onOpen();
@@ -156,7 +154,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const minimum = { version: 1 as const, exceptionId: 'keep-10', itemId: 10, status: 'paused' as const,
 			basis: 'owned' as const, quantity: { mode: 'minimum' as const, value: 1 }, reason: 'build' as const };
 		const session = preferenceSession([minimum], 'ready');
-		const view = new InventoryAdvisorItemView({} as never, {
+		const view = new InventoryAdvisorItemView(content(), icons, {
 			...actions(() => 'en').value, createInventoryPreferencesEditorSession: () => session.value,
 		});
 		await view.onOpen();
@@ -175,7 +173,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		installDom();
 		const run = vi.fn(async () => undefined);
 		const viewActions = actions(() => 'es', { state: { status: 'idle', lastRun: null }, run });
-		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 		await view.onOpen();
 		expect(run).not.toHaveBeenCalled();
 		const button = find(view.contentEl as unknown as FakeElement, 'button')
@@ -194,7 +192,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const analyze = vi.fn(() => pending);
 		const run = vi.fn(async () => undefined);
 		const viewActions = actions(() => 'es', { state: { status: 'idle', lastRun: null }, analyze, run });
-		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 		await view.onOpen();
 		const analysisButton = find(view.contentEl as unknown as FakeElement, 'button')
 			.find((candidate) => candidate.textContent === 'Analizar sin escribir');
@@ -232,7 +230,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		let queries = 0;
 		const getState = vi.fn((): InventoryVaultSyncRunState => { queries += 1; return { status: 'idle', lastRun }; });
 		const viewActions = actions(() => 'es', { getState });
-		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 		await view.onOpen();
 		expect(text(view.contentEl as unknown as FakeElement)).toContain('Sincronización terminada');
 		const queriesWhileOpen = queries;
@@ -245,7 +243,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 
 		// A brand-new ItemView instance backed by the same actions shows the same saved run:
 		// the outcome lives behind the action port, never in the closed view's own fields.
-		const remounted = new InventoryAdvisorItemView({} as never, viewActions.value);
+		const remounted = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 		await remounted.onOpen();
 		expect(text(remounted.contentEl as unknown as FakeElement)).toContain('Sincronización terminada');
 	});
@@ -256,7 +254,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 			installDom();
 			const run = vi.fn(async () => undefined);
 			const viewActions = actions(() => 'es', { state: { status: 'idle', lastRun: null }, run });
-			const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+			const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 			await view.onOpen();
 			view.render();
 			const button = find(view.contentEl as unknown as FakeElement, 'button')
@@ -282,7 +280,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 				resolveCatalog,
 			},
 		});
-		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 		expect(resolveCatalog).not.toHaveBeenCalled();
 		await view.onOpen();
 		expect(resolveCatalog).toHaveBeenCalledTimes(1);
@@ -311,7 +309,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 				getSeedState,
 			},
 		});
-		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 		await view.onOpen();
 		expect(getSeedState).toHaveBeenCalledWith(36_038);
 		const body = text(view.contentEl as unknown as FakeElement);
@@ -332,7 +330,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 			},
 		});
 		viewActions.value.getPriceSeedQueueCoverage = getPriceSeedQueueCoverage;
-		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
 		await view.onOpen();
 		expect(getPriceSeedQueueCoverage).toHaveBeenCalled();
 		const body = text(view.contentEl as unknown as FakeElement);
@@ -343,7 +341,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 	it('offers price history while it is off; the click turns it on through the host and the offer leaves', async () => {
 		installDom();
 		const host = optInHost();
-		const view = new InventoryAdvisorItemView({} as never, host.actions);
+		const view = new InventoryAdvisorItemView(content(), icons, host.actions);
 		await view.onOpen();
 		const root = view.contentEl as unknown as FakeElement;
 		const block = optInBlock(root);
@@ -363,7 +361,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 	it('hides the offer on «Ahora no» and keeps it hidden for this version, back on the next one', async () => {
 		installDom();
 		const host = optInHost();
-		const view = new InventoryAdvisorItemView({} as never, host.actions);
+		const view = new InventoryAdvisorItemView(content(), icons, host.actions);
 		await view.onOpen();
 		const root = view.contentEl as unknown as FakeElement;
 		buttonWithText(root, 'Ahora no').dispatch('click');
@@ -374,7 +372,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(optInBlock(root).hidden).toBe(true);
 
 		// A new view instance reads the same persisted preference: still hidden.
-		const reopened = new InventoryAdvisorItemView({} as never, host.actions);
+		const reopened = new InventoryAdvisorItemView(content(), icons, host.actions);
 		await reopened.onOpen();
 		expect(optInBlock(reopened.contentEl as unknown as FakeElement).hidden).toBe(true);
 		// The next release offers it again.
@@ -388,7 +386,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		let offered = false;
 		const used = await ambientCapabilityUse(async () => {
 			installDom();
-			const view = new InventoryAdvisorItemView({} as never, host.actions);
+			const view = new InventoryAdvisorItemView(content(), icons, host.actions);
 			await view.onOpen();
 			view.render();
 			offered = !optInBlock(view.contentEl as unknown as FakeElement).hidden;

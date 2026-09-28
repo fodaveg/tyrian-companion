@@ -10,6 +10,7 @@
  *   `renderSellSignalLine`) → 3 drawers, always present, always Detalle · Avisos · Historial in
  *   that order.
  */
+import type { TyrianUiPort } from '../host/tyrian-host';
 import { renderReceipt, type ReceiptStep } from './receipt';
 
 export interface SessionCardBadge {
@@ -118,7 +119,11 @@ export interface SessionCardMount {
 	readonly lootBody: HTMLElement;
 }
 
-export function renderSessionCard(container: HTMLElement, model: SessionCardModel): SessionCardMount {
+export function renderSessionCard(
+	container: HTMLElement,
+	ui: Pick<TyrianUiPort, 'setIcon'>,
+	model: SessionCardModel,
+): SessionCardMount {
 	const root = container.createEl('section', { cls: 'tyrian-companion-session' });
 	root.setAttr('aria-label', model.ariaLabel);
 
@@ -160,7 +165,7 @@ export function renderSessionCard(container: HTMLElement, model: SessionCardMode
 		const p = root.createEl('p', { cls: 'tyrian-companion-session__why', text: paragraph.text });
 		if (paragraph.alert === true) p.setAttr('role', 'alert');
 	}
-	if (model.receipt !== undefined) renderReceipt(root, model.receipt.ariaLabel, model.receipt.steps);
+	if (model.receipt !== undefined) renderReceipt(root, ui, model.receipt.ariaLabel, model.receipt.steps);
 
 	const sellSignalSlot = root.createDiv();
 
