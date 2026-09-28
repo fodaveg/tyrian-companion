@@ -18,7 +18,7 @@ import {
 	isComparableStorageSnapshot,
 	isInventoryAdvisorStorageSnapshot,
 } from './storage-delta';
-import { StorageSnapshotService, type StorageSnapshotCaptureProgress } from './storage-snapshot-service';
+import { StorageSnapshotService, type StorageSnapshotCaptureProgress, type StorageSnapshotPassTelemetry } from './storage-snapshot-service';
 
 type PassFixture = Record<string, unknown>;
 
@@ -151,6 +151,35 @@ describe('StorageSnapshotService', () => {
 		});
 		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
 		expect(isComparableStorageSnapshot(snapshot)).toBe(true);
+	});
+
+	it('H18.39 (David, 26 sep 2026): reports real roster, per-character and per-store durations, never a name or an id', async () => {
+		const fixture = clientFor([passWith(), passWith()]);
+		let clock = 0;
+		const telemetry: StorageSnapshotPassTelemetry[] = [];
+		const snapshot = await new StorageSnapshotService(fixture.client, { now: () => { clock += 1; return clock; } })
+			.captureInventoryWithOperation(
+				fixture.client.beginOperation(), undefined, (pass) => telemetry.push(pass),
+			);
+		// The default fixture's core is complete on the first pass, so the advisor still runs its
+		// confirmatory second pass (`passes: 2` in the neighboring test above): one telemetry entry
+		// per pass, in order.
+		expect(snapshot.passes).toBe(2);
+		expect(telemetry.map((pass) => pass.pass)).toEqual([1, 2]);
+		for (const pass of telemetry) {
+			expect(pass.durationMs).toBeGreaterThan(0);
+			expect(pass.roster.characterCount).toBe(1);
+			expect(pass.roster.durationMs).toBeGreaterThan(0);
+			// One entry per character, in roster order — an index, never the character's own name.
+			expect(pass.characters).toHaveLength(1);
+			expect(pass.characters[0]).toMatchObject({ index: 0 });
+			expect(pass.characters[0]!.durationMs).toBeGreaterThan(0);
+			expect(pass.characters[0]!.itemCount).toBeGreaterThan(0);
+			// Every account store this fixture's token can reach: shared inventory, bank, materials.
+			expect(pass.stores.map((store) => store.source).sort()).toEqual(['bank', 'materials', 'shared_inventory']);
+			for (const store of pass.stores) expect(store.durationMs).toBeGreaterThan(0);
+			expect(JSON.stringify(pass)).not.toContain(characterName);
+		}
 	});
 
 	it('carries free slots per bag, character, and bank into the finished snapshot (H18.15)', async () => {

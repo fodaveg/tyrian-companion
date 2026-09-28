@@ -57,6 +57,36 @@ export interface StorageSnapshotCaptureProgress {
 	readonly characters: { readonly completed: number; readonly total: number };
 }
 
+export interface StorageSnapshotServiceOptions {
+	/** Injectable clock for pass telemetry (H18.39); defaults to `Date.now`. */
+	now?: () => number;
+}
+
+/**
+ * H18.39 (David, 26 sep 2026: "¿por qué tarda tanto en preparar el inventario?"): one capture
+ * pass's own timing, measured with the injected clock. Never a name, an id or a key — an index
+ * (roster order, never a character name) and counts only, matching `StorageSnapshotCaptureProgress`'s
+ * own privacy bar. `onPassTelemetry` (below) receives one of these per completed pass, in order.
+ */
+export interface StorageSnapshotPassTelemetry {
+	readonly pass: number;
+	readonly durationMs: number;
+	readonly roster: { readonly durationMs: number; readonly characterCount: number };
+	readonly characters: readonly { readonly index: number; readonly durationMs: number; readonly itemCount: number }[];
+	readonly stores: readonly {
+		readonly source: 'shared_inventory' | 'bank' | 'materials' | 'commerce_delivery';
+		readonly durationMs: number;
+		readonly itemCount: number;
+	}[];
+}
+
+/** Mutable output parameter `capturePass` fills in as it runs; `timedPass` reads it once resolved. */
+interface StorageSnapshotPassTelemetryBuilder {
+	roster: { durationMs: number; characterCount: number } | null;
+	characters: { index: number; durationMs: number; itemCount: number }[];
+	stores: { source: 'shared_inventory' | 'bank' | 'materials' | 'commerce_delivery'; durationMs: number; itemCount: number }[];
+}
+
 const REQUIRED_SCOPES = ['account', 'characters', 'inventories'] as const;
 
 /** Captures a consistency-qualified storage snapshot without writing or valuing assets. */
@@ -67,8 +97,14 @@ export class StorageSnapshotService {
 	private readonly inventoryAdvisorCharacterLimit = createLimiter(1);
 	/** Successful capture baselines are isolated by verified account, permissions and scope. */
 	private readonly previousCharacterActivity = new Map<string, readonly CharacterActivity[]>();
+	private readonly now: () => number;
 
-	constructor(private readonly client: Pick<GuildWars2Client, 'beginOperation'>) {}
+	constructor(
+		private readonly client: Pick<GuildWars2Client, 'beginOperation'>,
+		options: StorageSnapshotServiceOptions = {},
+	) {
+		this.now = options.now ?? Date.now;
+	}
 
 	async capture(actionContext?: ResolvedLocalDebugActionContext): Promise<StorageSnapshot> {
 		const operation = this.client.beginOperation(actionContext);
@@ -83,26 +119,30 @@ export class StorageSnapshotService {
 	/**
 	 * Captures only character bags and shared inventory for the Inventory Advisor.
 	 * `onProgress` is optional and observed only by callers that want a live status
-	 * (today, the one-click sync); it never changes what is captured.
+	 * (today, the one-click sync); it never changes what is captured. `onPassTelemetry`
+	 * (H18.39) is likewise observed only by a caller measuring where a refresh spends its
+	 * time (roster, each character, each account store), one call per completed pass.
 	 */
 	async captureInventoryWithOperation(
 		operation: GuildWars2Operation,
 		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
+		onPassTelemetry?: (telemetry: StorageSnapshotPassTelemetry) => void,
 	): Promise<StorageSnapshot> {
-		return this.captureScopedWithOperation(operation, 'inventory_advisor', onProgress);
+		return this.captureScopedWithOperation(operation, 'inventory_advisor', onProgress, onPassTelemetry);
 	}
 
 	private async captureScopedWithOperation(
 		operation: GuildWars2Operation,
 		scope: StorageSnapshotCaptureScope,
 		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
+		onPassTelemetry?: (telemetry: StorageSnapshotPassTelemetry) => void,
 	): Promise<StorageSnapshot> {
 		const context = await verifySnapshotContext(operation, this.globalLimit);
 		const key = `${context.key}:${scope}`;
 		const existing = this.inFlight.get(key);
 		if (existing) return existing;
 		const activity: CaptureActivity = { previous: this.previousCharacterActivity.get(key) ?? null, current: null };
-		const promise = this.captureInternal(operation, context, scope, activity, onProgress).then((snapshot) => {
+		const promise = this.captureInternal(operation, context, scope, activity, onProgress, onPassTelemetry).then((snapshot) => {
 			if (activity.current !== null && snapshot.coverage.sources.characters.status === 'complete') {
 				this.previousCharacterActivity.set(key, activity.current);
 			}
@@ -120,6 +160,7 @@ export class StorageSnapshotService {
 		scope: StorageSnapshotCaptureScope,
 		activity: CaptureActivity,
 		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
+		onPassTelemetry?: (telemetry: StorageSnapshotPassTelemetry) => void,
 	): Promise<StorageSnapshot> {
 		const startedAt = new Date().toISOString();
 		const snapshotId = crypto.randomUUID();
@@ -127,14 +168,15 @@ export class StorageSnapshotService {
 			? createAdvisorProgressReporter(onProgress)
 			: null;
 		const sharedInventoryLastModified: { value: string | null } = { value: null };
-		const first = await this.capturePass(operation, context, scope, activity,
+		const first = await this.timedPass(1, operation, context, scope, activity,
 			advisorProgress?.first ?? onProgress,
-			scope === 'complete' ? (value) => { sharedInventoryLastModified.value = value; } : undefined);
+			scope === 'complete' ? (value) => { sharedInventoryLastModified.value = value; } : undefined,
+			onPassTelemetry);
 		if (scope === 'inventory_advisor') {
 			if (!advisorPassComplete(first.coverage) || hasIncompleteCoverage(first.coverage)) {
 				if (shouldRetryAdvisorPass(first.coverage)) {
-					const second = await this.capturePass(operation, context, scope, activity,
-						advisorProgress?.second);
+					const second = await this.timedPass(2, operation, context, scope, activity,
+						advisorProgress?.second, undefined, onPassTelemetry);
 					const secondCoreComplete = advisorPassComplete(second.coverage);
 					return finalizeStorageSnapshot({
 						pass: second,
@@ -162,8 +204,8 @@ export class StorageSnapshotService {
 					completedAt: new Date().toISOString(),
 				});
 			}
-			const second = await this.capturePass(operation, context, scope, activity,
-				advisorProgress?.second);
+			const second = await this.timedPass(2, operation, context, scope, activity,
+				advisorProgress?.second, undefined, onPassTelemetry);
 			if (!advisorPassComplete(second.coverage) || hasIncompleteCoverage(second.coverage)) {
 				return finalizeStorageSnapshot({
 					pass: second,
@@ -239,7 +281,8 @@ export class StorageSnapshotService {
 				completedAt: new Date().toISOString(),
 			});
 		}
-		const second = await this.capturePass(operation, context, scope, activity);
+		const second = await this.timedPass(2, operation, context, scope, activity,
+			undefined, undefined, onPassTelemetry);
 		if (hasTransientCoverageFailure(second.coverage)) {
 			return finalizeStorageSnapshot({
 				pass: second,
@@ -263,7 +306,8 @@ export class StorageSnapshotService {
 			});
 		}
 
-		const third = await this.capturePass(operation, context, scope, activity);
+		const third = await this.timedPass(3, operation, context, scope, activity,
+			undefined, undefined, onPassTelemetry);
 		return finalizeStorageSnapshot(qualifyStorageSnapshotTriple(first, second, third), {
 			accountId: context.accountId,
 			snapshotId,
@@ -272,6 +316,44 @@ export class StorageSnapshotService {
 		});
 	}
 
+	/**
+	 * Times one whole `capturePass` call (H18.39: David, 26 sep 2026, "¿por qué tarda tanto en
+	 * preparar el inventario?"). `onPassTelemetry` is optional and observed only by a caller
+	 * measuring where a refresh spends its time; it never changes what is captured, and a pass
+	 * that throws reports nothing (there is nothing complete to time).
+	 */
+	private async timedPass(
+		pass: number,
+		operation: GuildWars2Operation,
+		context: VerifiedSnapshotContext,
+		scope: StorageSnapshotCaptureScope,
+		activity: CaptureActivity,
+		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
+		onSharedInventoryLastModified?: (value: string | null) => void,
+		onPassTelemetry?: (telemetry: StorageSnapshotPassTelemetry) => void,
+	): Promise<StorageSnapshotPass> {
+		if (onPassTelemetry === undefined) {
+			return this.capturePass(operation, context, scope, activity, onProgress, onSharedInventoryLastModified);
+		}
+		const builder: StorageSnapshotPassTelemetryBuilder = { roster: null, characters: [], stores: [] };
+		const startedAt = this.now();
+		const result = await this.capturePass(operation, context, scope, activity, onProgress, onSharedInventoryLastModified, builder);
+		onPassTelemetry({
+			pass,
+			durationMs: this.now() - startedAt,
+			roster: builder.roster ?? { durationMs: 0, characterCount: 0 },
+			characters: builder.characters,
+			stores: builder.stores,
+		});
+		return result;
+	}
+
+	/**
+	 * One capture pass (H18.39). `passTelemetry`, when supplied, is filled in as the pass runs —
+	 * the same side-channel-output shape as `activity` above — and read by `timedPass` once this
+	 * resolves. Nothing here changes what is captured; a caller that never asks for timing pays
+	 * nothing beyond the injected clock reads themselves.
+	 */
 	private async capturePass(
 		operation: GuildWars2Operation,
 		context: VerifiedSnapshotContext,
@@ -279,6 +361,7 @@ export class StorageSnapshotService {
 		activity: CaptureActivity,
 		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
 		onSharedInventoryLastModified?: (value: string | null) => void,
+		passTelemetry?: StorageSnapshotPassTelemetryBuilder,
 	): Promise<StorageSnapshotPass> {
 		const coverage = emptyCoverage(context.permissions, context.urls, scope);
 		const holdings: StorageSnapshotPass['holdings'] = [];
@@ -301,6 +384,7 @@ export class StorageSnapshotService {
 		// H18.38: `ids=all` on the same roster call returns full character objects (name, age,
 		// last_modified…) instead of bare names; `parseCharacterActivity` reads both shapes, so an
 		// endpoint or fixture still answering the bare form keeps working unchanged.
+		const rosterStartedAt = this.now();
 		const rosterResult = await captureSource(
 			() => this.globalLimit(() => operation.requestDetailed(withCharactersRoster())),
 			parseCharacterActivity,
@@ -313,6 +397,7 @@ export class StorageSnapshotService {
 		const lastPlayedCharacter = rosterResult.coverage.status === 'complete'
 			? chooseLastPlayedCharacter(characterActivity, activity.previous) : null;
 		activity.current = rosterResult.coverage.status === 'complete' ? characterActivity : null;
+		if (passTelemetry) passTelemetry.roster = { durationMs: this.now() - rosterStartedAt, characterCount: roster.length };
 
 		if (context.urls.length > 0) {
 			const unavailable = roster
@@ -345,6 +430,7 @@ export class StorageSnapshotService {
 				true,
 				onSharedInventoryLastModified,
 				(value) => { sharedInventoryFreeSlots = value; },
+				passTelemetry,
 			).finally(reportAccountStore),
 		];
 		if (coverage.sources.bank.status === 'complete') accountTasks.push(
@@ -359,6 +445,7 @@ export class StorageSnapshotService {
 				scope === 'complete',
 				undefined,
 				(value) => { bankFreeSlots = value; },
+				passTelemetry,
 			).finally(reportAccountStore),
 		);
 		if (coverage.sources.materials.status === 'complete') accountTasks.push(
@@ -371,6 +458,9 @@ export class StorageSnapshotService {
 				'account/materials',
 				parseMaterials,
 				scope === 'complete',
+				undefined,
+				undefined,
+				passTelemetry,
 			).finally(reportAccountStore),
 		);
 
@@ -382,16 +472,18 @@ export class StorageSnapshotService {
 		}
 		if (coverage.sources.commerce_delivery.status === 'complete') {
 			optionalTasks.push(
-				this.captureDelivery(operation, this.globalLimit, coverage, holdings, currencies).finally(reportAccountStore),
+				this.captureDelivery(operation, this.globalLimit, coverage, holdings, currencies, passTelemetry).finally(reportAccountStore),
 			);
 		}
 
 		const characterLimit = scope === 'inventory_advisor'
 			? this.inventoryAdvisorCharacterLimit
 			: this.characterLimit;
-		const characterTasks = roster.map((character) =>
+		const characterTasks = roster.map((character, characterIndex) =>
 			characterLimit(() =>
 				this.globalLimit(async () => {
+					const characterStartedAt = this.now();
+					const holdingsBefore = holdings.length;
 					const path = withSchema(`characters/${encodeURIComponent(character)}/inventory`);
 					// H18.15: the holdings parse runs first, so a shape it rejects never adds this
 					// character's bags to `characterBagFreeSlots` either.
@@ -415,6 +507,11 @@ export class StorageSnapshotService {
 					}
 					coverage.characters[character] = result.coverage;
 					if (result.value) holdings.push(...result.value);
+					// H18.39: an index in roster order, never the character's own name.
+					passTelemetry?.characters.push({
+						index: characterIndex, durationMs: this.now() - characterStartedAt,
+						itemCount: holdings.length - holdingsBefore,
+					});
 				}),
 			).finally(reportCharacter),
 		);
@@ -454,7 +551,10 @@ export class StorageSnapshotService {
 		/** H18.15: only supplied for `shared_inventory`/`bank`, the two flat stores whose free-slot
 		 * count `parseContainerFreeSlots` can read; `materials` never passes this. */
 		onFreeSlots?: (value: ContainerFreeSlots) => void,
+		/** H18.39: filled in as this store's own request resolves; never changes what is captured. */
+		passTelemetry?: StorageSnapshotPassTelemetryBuilder,
 	): Promise<void> {
+		const startedAt = this.now();
 		const result = await captureSource(
 			() => limit(() => operation.requestDetailed(withSchema(path))).then((response) => {
 				onLastModified?.(readHeader(response.headers, 'last-modified'));
@@ -471,6 +571,7 @@ export class StorageSnapshotService {
 		);
 		coverage.sources[source] = result.coverage;
 		if (result.value) holdings.push(...result.value);
+		passTelemetry?.stores.push({ source, durationMs: this.now() - startedAt, itemCount: result.value?.length ?? 0 });
 	}
 
 	private async captureCurrencies(
@@ -497,7 +598,10 @@ export class StorageSnapshotService {
 		coverage: SnapshotCoverage,
 		holdings: StorageSnapshotPass['holdings'],
 		currencies: StorageSnapshotPass['currencies'],
+		/** H18.39: filled in as this store's own request resolves; never changes what is captured. */
+		passTelemetry?: StorageSnapshotPassTelemetryBuilder,
 	): Promise<void> {
+		const startedAt = this.now();
 		const result = await captureSource(
 			() => limit(() => operation.requestDetailed(withSchema('commerce/delivery'))),
 			parseDelivery,
@@ -505,10 +609,13 @@ export class StorageSnapshotService {
 			false,
 		);
 		coverage.sources.commerce_delivery = result.coverage;
+		let itemCount = 0;
 		if (result.value) {
 			holdings.push(...result.value.holdings);
 			currencies.push(...result.value.currencies);
+			itemCount = result.value.holdings.length + result.value.currencies.length;
 		}
+		passTelemetry?.stores.push({ source: 'commerce_delivery', durationMs: this.now() - startedAt, itemCount });
 	}
 
 	/**
