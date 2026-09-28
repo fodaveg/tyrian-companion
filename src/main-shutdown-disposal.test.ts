@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import TyrianCompanionPlugin from './main';
+import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 
 /**
  * H14.14: `shutdownRuntime` used to leave three catalog-cache-backed instances open (the session
@@ -25,13 +25,13 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		const alertIngameServerClose = vi.fn(() => new Promise<void>((resolve) => {
 			setTimeout(() => { closeResolved = true; resolve(); }, 0);
 		}));
-		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			sessionCatalog: { dispose: sessionCatalogDispose },
 			productActions: { dispose: productActionsDispose },
 			alertIngameServer: { close: alertIngameServerClose },
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const shutdownRuntime = (TyrianCompanionPlugin.prototype as unknown as {
+		const shutdownRuntime = (TyrianCompanionCore.prototype as unknown as {
 			shutdownRuntime(this: typeof harness): Promise<void>;
 		}).shutdownRuntime;
 

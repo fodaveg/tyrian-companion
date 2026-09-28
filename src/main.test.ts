@@ -12,7 +12,8 @@ vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
 	startAlertIngameServer: alertIngameServerMocks.start,
 }));
 
-import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
+import TyrianCompanionPlugin from './main';
+import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -81,7 +82,7 @@ describe('connection diagnostics composition', () => {
 			},
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const checkConnection = (TyrianCompanionPlugin.prototype as unknown as {
+		const checkConnection = (TyrianCompanionCore.prototype as unknown as {
 			checkConnection(this: typeof harness): Promise<ConnectionState>;
 		}).checkConnection;
 
@@ -110,7 +111,7 @@ describe('connection diagnostics composition', () => {
 			reconcilePendingProposals: vi.fn(async () => undefined),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const checkConnection = (TyrianCompanionPlugin.prototype as unknown as {
+		const checkConnection = (TyrianCompanionCore.prototype as unknown as {
 			checkConnection(this: typeof harness): Promise<ConnectionState>;
 		}).checkConnection;
 
@@ -135,7 +136,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			settings: DEFAULT_SETTINGS,
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const switchHalloweenAccount = (TyrianCompanionPlugin.prototype as unknown as {
+		const switchHalloweenAccount = (TyrianCompanionCore.prototype as unknown as {
 			switchHalloweenAccount(this: typeof harness, accountId: string): Promise<string>;
 		}).switchHalloweenAccount;
 
@@ -157,7 +158,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 
 	it('checkConnection does not reactivate Halloween across repeated calls for the same account', async () => {
 		const activate = vi.fn(async () => undefined);
-		const prototype = TyrianCompanionPlugin.prototype as unknown as {
+		const prototype = TyrianCompanionCore.prototype as unknown as {
 			checkConnection(this: unknown): Promise<ConnectionState>;
 			switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
 		};
@@ -226,7 +227,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 			localDebugActions,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const armAssistedDetection = (TyrianCompanionPlugin.prototype as unknown as {
+		const armAssistedDetection = (TyrianCompanionCore.prototype as unknown as {
 			armAssistedDetection(this: typeof harness): Promise<string>;
 		}).armAssistedDetection;
 
@@ -260,7 +261,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 			localDebugActions,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const armAssistedDetection = (TyrianCompanionPlugin.prototype as unknown as {
+		const armAssistedDetection = (TyrianCompanionCore.prototype as unknown as {
 			armAssistedDetection(this: typeof harness): Promise<string>;
 		}).armAssistedDetection;
 
@@ -300,7 +301,7 @@ describe('atomic settings persistence', () => {
 			renderInventoryAdvisorViews: vi.fn(),
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const updateSettings = (TyrianCompanionPlugin.prototype as unknown as {
+		const updateSettings = (TyrianCompanionCore.prototype as unknown as {
 			updateSettings(this: typeof harness, update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 		}).updateSettings;
 
@@ -330,7 +331,7 @@ describe('atomic settings persistence', () => {
 			inventoryAdvisor: { reclassify },
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const updateSettings = (TyrianCompanionPlugin.prototype as unknown as {
+		const updateSettings = (TyrianCompanionCore.prototype as unknown as {
 			updateSettings(
 				this: typeof harness,
 				update: Partial<TyrianSettings>,
@@ -386,7 +387,7 @@ describe('atomic settings persistence', () => {
 			renderViews: vi.fn(),
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const updateSettings = (TyrianCompanionPlugin.prototype as unknown as {
+		const updateSettings = (TyrianCompanionCore.prototype as unknown as {
 			updateSettings(
 				this: typeof harness,
 				update: Partial<TyrianSettings>,
@@ -409,7 +410,7 @@ describe('assisted proposal invalidation metrics', () => {
 		const pendingWrite = new Promise<boolean>(() => undefined);
 		const proposalExcluded = vi.fn(() => { events.push('excluded'); return pendingWrite; });
 		const disarm = vi.fn(() => { events.push('disarm'); });
-		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+		const plugin = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			runtimeReady: true,
 			localDebugActions: null,
 			runRuntimeMutation: (operation: () => void) => { operation(); return true; },
@@ -419,7 +420,7 @@ describe('assisted proposal invalidation metrics', () => {
 			},
 			pilotMetrics: { proposalExcluded },
 			renderViews: vi.fn(() => { events.push('render'); }),
-		}) as unknown as TyrianCompanionPlugin;
+		}) as unknown as TyrianCompanionCore;
 
 		plugin.disarmAssistedDetection();
 
@@ -430,7 +431,7 @@ describe('assisted proposal invalidation metrics', () => {
 
 	it('still disarms immediately when the optional metrics hook fails synchronously', () => {
 		const disarm = vi.fn();
-		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+		const plugin = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			runtimeReady: true,
 			localDebugActions: null,
 			runRuntimeMutation: (operation: () => void) => { operation(); return true; },
@@ -440,7 +441,7 @@ describe('assisted proposal invalidation metrics', () => {
 			},
 			pilotMetrics: { proposalExcluded: () => { throw new Error('pilot unavailable'); } },
 			renderViews: vi.fn(),
-		}) as unknown as TyrianCompanionPlugin;
+		}) as unknown as TyrianCompanionCore;
 
 		expect(() => plugin.disarmAssistedDetection()).not.toThrow();
 		expect(disarm).toHaveBeenCalledWith('user');
@@ -468,11 +469,11 @@ describe('persisted pilot recovery classification', () => {
 			ensurePilotRecoveryPresented: (_id: string) => Promise.resolve(false),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated reload harness.
-		const ensure = (TyrianCompanionPlugin.prototype as unknown as {
+		const ensure = (TyrianCompanionCore.prototype as unknown as {
 			ensurePilotRecoveryPresented(this: typeof harness, id: string): Promise<boolean>;
 		}).ensurePilotRecoveryPresented;
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated reload harness.
-		const classify = (TyrianCompanionPlugin.prototype as unknown as {
+		const classify = (TyrianCompanionCore.prototype as unknown as {
 			classifyPilotRecovery(this: typeof harness, kind: 'forced_restart' | 'organic'): Promise<boolean>;
 		}).classifyPilotRecovery;
 		harness.ensurePilotRecoveryPresented = async (id) => await ensure.call(harness, id);
@@ -497,7 +498,7 @@ describe('manual session start command', () => {
 			startManualSession,
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const prepareStartIntent = (TyrianCompanionPlugin.prototype as unknown as {
+		const prepareStartIntent = (TyrianCompanionCore.prototype as unknown as {
 			prepareStartIntent(this: StartIntentHarness): Promise<PreparedSessionCommand | null>;
 		}).prepareStartIntent;
 		const notify = vi.fn();
@@ -543,7 +544,7 @@ describe('abandon session command', () => {
 			performAbandonSession,
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const prepare = (TyrianCompanionPlugin.prototype as unknown as {
+		const prepare = (TyrianCompanionCore.prototype as unknown as {
 			prepareAbandonIntent(this: typeof plugin): Promise<PreparedSessionCommand | null>;
 		}).prepareAbandonIntent;
 		const notify = vi.fn();
@@ -595,7 +596,7 @@ describe('product navigation diagnostics', () => {
 			activateInventoryAdvisorView,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+		const execute = (TyrianCompanionCore.prototype as unknown as {
 			executeProductAction(
 				this: typeof harness,
 				id: 'open-companion' | 'open-inventory-advisor',
@@ -627,7 +628,7 @@ describe('product navigation diagnostics', () => {
 			reviewPendingProposalOutcome,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+		const execute = (TyrianCompanionCore.prototype as unknown as {
 			executeProductAction(
 				this: typeof harness,
 				id: 'review-pending-farming-proposal',
@@ -652,7 +653,7 @@ describe('product navigation diagnostics', () => {
 			localDebugActions: null,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const review = (TyrianCompanionPlugin.prototype as unknown as {
+		const review = (TyrianCompanionCore.prototype as unknown as {
 			reviewPendingProposalOutcome(
 				this: typeof harness,
 				intent: PendingProposalIntent,
@@ -686,7 +687,7 @@ describe('product navigation diagnostics', () => {
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'proposal-review' }),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const review = (TyrianCompanionPlugin.prototype as unknown as {
+		const review = (TyrianCompanionCore.prototype as unknown as {
 			reviewPendingProposalOutcome(
 				this: typeof harness,
 				intent: PendingProposalIntent,
@@ -728,7 +729,7 @@ describe('product navigation diagnostics', () => {
 			pilotMetrics: { proposalPresented },
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const presented = (TyrianCompanionPlugin.prototype as unknown as {
+		const presented = (TyrianCompanionCore.prototype as unknown as {
 			recordPendingProposalPresented(this: typeof harness, intent: PendingProposalIntent): Promise<void>;
 		}).recordPendingProposalPresented;
 		await presented.call(harness, proposalIntent(proposal as never));
@@ -740,7 +741,7 @@ describe('product navigation diagnostics', () => {
 
 	it('does not announce success when an advisor refresh discovers the selected credential is absent', async () => {
 		const refreshInventoryAdvisor = vi.fn(async () => undefined);
-		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as {
+		const plugin = Object.assign(Object.create(TyrianCompanionCore.prototype) as {
 			refreshInventoryAdvisor(): Promise<void>;
 			getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
 		}, {
@@ -752,7 +753,7 @@ describe('product navigation diagnostics', () => {
 			}),
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+		const execute = (TyrianCompanionCore.prototype as unknown as {
 			executeProductAction(
 				this: typeof plugin,
 				id: 'refresh-inventory-advisor',
@@ -775,7 +776,7 @@ describe('product navigation diagnostics', () => {
 	])('maps a handled inventory $id error to failed', async ({ id, state }) => {
 		const previewInventoryVaultSync = vi.fn(async () => undefined);
 		const applyInventoryVaultSync = vi.fn(async () => undefined);
-		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as {
+		const plugin = Object.assign(Object.create(TyrianCompanionCore.prototype) as {
 			previewInventoryVaultSync(openView?: boolean): Promise<void>;
 			applyInventoryVaultSync(): Promise<void>;
 			inventoryVaultSync: { current(): typeof state };
@@ -785,7 +786,7 @@ describe('product navigation diagnostics', () => {
 			inventoryVaultSync: { current: () => state },
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+		const execute = (TyrianCompanionCore.prototype as unknown as {
 			executeProductAction(
 				this: typeof plugin,
 				actionId: 'preview-inventory-vault-sync' | 'apply-inventory-vault-sync',
@@ -810,7 +811,7 @@ describe('product navigation diagnostics', () => {
 	])('maps a handled wallet $id terminal state to $expected', async ({ id, state, expected }) => {
 		const previewWalletVaultSync = vi.fn(async () => undefined);
 		const applyWalletVaultSync = vi.fn(async () => undefined);
-		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as {
+		const plugin = Object.assign(Object.create(TyrianCompanionCore.prototype) as {
 			previewWalletVaultSync(): Promise<void>;
 			applyWalletVaultSync(): Promise<void>;
 			walletVaultSync: { current(): typeof state };
@@ -820,7 +821,7 @@ describe('product navigation diagnostics', () => {
 			walletVaultSync: { current: () => state },
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+		const execute = (TyrianCompanionCore.prototype as unknown as {
 			executeProductAction(
 				this: typeof plugin,
 				actionId: 'preview-wallet-vault-sync' | 'apply-wallet-vault-sync',
@@ -842,16 +843,16 @@ describe('product navigation diagnostics', () => {
 			assistedDetection: { arm: armRuntime },
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const arm = (TyrianCompanionPlugin.prototype as unknown as {
+		const arm = (TyrianCompanionCore.prototype as unknown as {
 			armAssistedDetection(this: typeof armHarness): Promise<'unavailable'>;
 		}).armAssistedDetection;
-		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as {
+		const plugin = Object.assign(Object.create(TyrianCompanionCore.prototype) as {
 			armAssistedDetection(): Promise<'unavailable'>;
 		}, {
 			armAssistedDetection: () => arm.call(armHarness),
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+		const execute = (TyrianCompanionCore.prototype as unknown as {
 			executeProductAction(
 				this: typeof plugin,
 				id: 'arm-assisted-detection',
@@ -875,7 +876,7 @@ describe('durable inventory Vault commands', () => {
 			activateInventoryAdvisorView: activate, renderInventoryAdvisorViews: render,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
+		const invoke = (TyrianCompanionCore.prototype as unknown as {
 			previewInventoryVaultSync(this: InventoryVaultIntentHarness, openView?: boolean): Promise<void>;
 		}).previewInventoryVaultSync;
 		expect(preview).not.toHaveBeenCalled();
@@ -899,7 +900,7 @@ describe('durable inventory Vault commands', () => {
 			activateInventoryAdvisorView: vi.fn(async () => { order.push('open'); }),
 			renderInventoryAdvisorViews: vi.fn(() => { order.push('render'); }),
 		};
-		const prototype = TyrianCompanionPlugin.prototype as unknown as {
+		const prototype = TyrianCompanionCore.prototype as unknown as {
 			previewInventoryVaultSync(this: InventoryVaultIntentHarness, openView?: boolean): Promise<void>;
 			applyInventoryVaultSync(this: InventoryVaultIntentHarness): Promise<void>;
 		};
@@ -929,7 +930,7 @@ describe('durable inventory Vault commands', () => {
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'inventory-sync-storage-failure' }),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
+		const invoke = (TyrianCompanionCore.prototype as unknown as {
 			applyInventoryVaultSync(this: typeof plugin): Promise<void>;
 		}).applyInventoryVaultSync;
 
@@ -962,7 +963,7 @@ describe('inventory analysis-only action', () => {
 			emitNotice,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
+		const invoke = (TyrianCompanionCore.prototype as unknown as {
 			refreshInventoryAdvisor(this: typeof plugin): Promise<void>;
 		}).refreshInventoryAdvisor;
 
@@ -987,7 +988,7 @@ describe('inventory analysis-only action', () => {
 			refreshSaleHeroTiming: vi.fn(async () => undefined),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
+		const invoke = (TyrianCompanionCore.prototype as unknown as {
 			refreshInventoryAdvisor(this: typeof plugin): Promise<void>;
 		}).refreshInventoryAdvisor;
 		const operation = invoke.call(plugin);
@@ -1015,7 +1016,7 @@ describe('one-click inventory sync outcome persistence', () => {
 			saveData(data: unknown): Promise<void>;
 		}
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const record = (TyrianCompanionPlugin.prototype as unknown as {
+		const record = (TyrianCompanionCore.prototype as unknown as {
 			recordInventorySyncOutcome(this: OutcomeHarness, next: typeof outcome): Promise<void>;
 		}).recordInventorySyncOutcome;
 		await record.call(plugin, outcome);
@@ -1030,7 +1031,7 @@ describe('price-history opt-in offer (David, 24 sep 2026)', () => {
 		manifest: { version: string };
 		updateSettings(update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	}
-	const proto = TyrianCompanionPlugin.prototype as unknown as {
+	const proto = TyrianCompanionCore.prototype as unknown as {
 		isPriceHistoryOptInOffered(this: OptInHarness): boolean;
 		enablePriceHistory(this: OptInHarness): Promise<void>;
 		dismissPriceHistoryOptIn(this: OptInHarness): Promise<void>;
@@ -1077,7 +1078,7 @@ describe('configured notes root', () => {
 			settings: { outputFolder: '02 - Áreas/Guild Wars 2/Tyrian Companion', managedAssetsRoot: 'Tyrian Companion' },
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const configuredNotesRoot = (TyrianCompanionPlugin.prototype as unknown as {
+		const configuredNotesRoot = (TyrianCompanionCore.prototype as unknown as {
 			configuredNotesRoot(this: { settings: { outputFolder: string; managedAssetsRoot: string | null } }): string;
 		}).configuredNotesRoot;
 		expect(configuredNotesRoot.call(plugin)).toBe('02 - Áreas/Guild Wars 2/Tyrian Companion');
@@ -1096,13 +1097,13 @@ describe('Halloween production gating', () => {
 			sessions: {
 				finalizeStoppedSession: vi.fn(async () => ({ status: 'failed' as const, message: 'boom' })),
 			},
-			sessionSummarySaveState: 'unknown' as TyrianCompanionPlugin['sessionSummarySaveState'],
+			sessionSummarySaveState: 'unknown' as TyrianCompanionCore['sessionSummarySaveState'],
 			emitNotice: vi.fn(),
 			settings: { language: 'en' as const },
 			observeHalloweenDelta,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
-		const finalize = (TyrianCompanionPlugin.prototype as unknown as {
+		const finalize = (TyrianCompanionCore.prototype as unknown as {
 			finalizeAndPersistStoppedSession(this: typeof harness, sessionId: string, delta: StorageDelta): Promise<void>;
 		}).finalizeAndPersistStoppedSession;
 		await finalize.call(harness, 'session-review-only', { status: 'comparable' } as StorageDelta);
@@ -1117,7 +1118,7 @@ describe('Halloween production gating', () => {
 		const harness = {
 			pilotMetrics: null,
 			sessions: { getCompletedRuntimeRecord: vi.fn(async () => ({ marker: 'runtime' })) },
-			sessionSummarySaveState: 'unknown' as TyrianCompanionPlugin['sessionSummarySaveState'],
+			sessionSummarySaveState: 'unknown' as TyrianCompanionCore['sessionSummarySaveState'],
 			emitNotice: vi.fn(),
 			settings: { language: 'en' as const },
 			persistCompletedSessionSummary: vi.fn(async () => null),
@@ -1126,7 +1127,7 @@ describe('Halloween production gating', () => {
 			observeHalloweenDelta,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
-		const finish = (TyrianCompanionPlugin.prototype as unknown as {
+		const finish = (TyrianCompanionCore.prototype as unknown as {
 			finishFinalizedSession(
 				this: typeof harness, sessionId: string, delta: StorageDelta,
 				reviewed: { state: { sessionId: string; finalizedAt: string }; review: unknown },
@@ -1150,7 +1151,7 @@ describe('Halloween production gating', () => {
 			observeHalloweenDelta,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
-		const observe = (TyrianCompanionPlugin.prototype as unknown as {
+		const observe = (TyrianCompanionCore.prototype as unknown as {
 			observeAcceptedHalloweenDelta(this: typeof harness, value: StorageDelta): Promise<void>;
 		}).observeAcceptedHalloweenDelta;
 		await observe.call(harness, delta);
@@ -1173,7 +1174,7 @@ describe('non-destructive next-session rotation', () => {
 		const openManualSessionStart = vi.fn();
 		const runtime = { state: { status: 'complete' as const, sessionId: 'session-rotation' }, delta: null };
 		let currentReceipt = receipt;
-		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			sessions: {
 				getState: () => ({ status: 'complete' as const, sessionId: 'session-rotation' }),
 				getCompletedSummaryReceipt: () => currentReceipt,
@@ -1190,7 +1191,7 @@ describe('non-destructive next-session rotation', () => {
 			renderViews: vi.fn(), sessionSummarySaveState: 'saved', storedSessionLootSummary: null, localDebugActions: null,
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit production-method harness.
-		const rotate = (TyrianCompanionPlugin.prototype as unknown as {
+		const rotate = (TyrianCompanionCore.prototype as unknown as {
 			rotateToNewSession(this: typeof harness): Promise<void>;
 		}).rotateToNewSession;
 		return { harness, rotate, readSession, scan, resetCompletedSession, openManualSessionStart };
@@ -1227,7 +1228,7 @@ describe('non-destructive next-session rotation', () => {
 
 describe('completed-session summary persistence', () => {
 	it('keeps the durable runtime visible and exposes retry when the Vault write fails', async () => {
-		const proto = TyrianCompanionPlugin.prototype as unknown as {
+		const proto = TyrianCompanionCore.prototype as unknown as {
 			retrySessionSummarySave(this: unknown): Promise<void>;
 		};
 		const harness = Object.assign(Object.create(proto) as object, {
@@ -1249,7 +1250,7 @@ describe('completed-session summary persistence', () => {
 
 	it('writes the core summary before optional Halloween enrichment and keeps it saved when enrichment throws', async () => {
 		const order: string[] = [];
-		const proto = TyrianCompanionPlugin.prototype as unknown as {
+		const proto = TyrianCompanionCore.prototype as unknown as {
 			finalizeAndPersistStoppedSession(this: unknown, sessionId: string, delta: StorageDelta): Promise<boolean>;
 		};
 		const delta = { status: 'comparable' } as StorageDelta;
@@ -1286,7 +1287,7 @@ describe('stop observation teardown ordering', () => {
 	it('disarms immediately after stop and stays disarmed when later persistence fails', async () => {
 		const order: string[] = [];
 		let detectorState = 'armed';
-		const proto = TyrianCompanionPlugin.prototype as unknown as {
+		const proto = TyrianCompanionCore.prototype as unknown as {
 			performStopManualSession(this: unknown): Promise<void>;
 		};
 		const harness = Object.assign(Object.create(proto) as object, {
@@ -1315,7 +1316,7 @@ describe('stop workflow outcome in the receipt and the pilot (H18.4)', () => {
 		const accept = vi.fn(async () => true);
 		const proposalDecided = vi.fn(async () => true);
 		const intent = { proposalId: 'proposal-1', accountId: 'account-1', phase: 'stop' as const, binding: { kind: 'session' as const, sessionId: 'session-1', baselineSnapshotId: 'before' } };
-		const proto = TyrianCompanionPlugin.prototype as unknown as {
+		const proto = TyrianCompanionCore.prototype as unknown as {
 			performStopManualSession(this: unknown, intent?: unknown): Promise<void>;
 		};
 		const harness = Object.assign(Object.create(proto) as object, {
@@ -1367,7 +1368,7 @@ describe('detection after a finished session (H18.9, prueba 6)', () => {
 	it('re-arms the detector once the first summary is saved, without a manual connection check', async () => {
 		const arm = vi.fn(async () => ({ status: 'armed' as const, armedAt: '2026-09-10T00:00:00.000Z', scheduler: {}, lastSnapshotAt: null }));
 		const checkConnection = vi.fn();
-		const proto = TyrianCompanionPlugin.prototype as unknown as {
+		const proto = TyrianCompanionCore.prototype as unknown as {
 			finishFinalizedSession(this: unknown, sessionId: string, delta: StorageDelta, reviewed: unknown): Promise<boolean>;
 		};
 		const harness = Object.assign(Object.create(proto) as object, {
@@ -1492,7 +1493,7 @@ describe('automatic Base update behind the inventory sync (H18.18)', () => {
 			emitNotice: (_message: string, source: string) => { notices.push(source); },
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const update = (TyrianCompanionPlugin.prototype as unknown as {
+		const update = (TyrianCompanionCore.prototype as unknown as {
 			updateManagedAssetsAfterInventorySync(this: typeof plugin): Promise<void>;
 		}).updateManagedAssetsAfterInventorySync;
 		return { vault, manager, plugin, notices, update: () => update.call(plugin) };
@@ -1575,10 +1576,10 @@ interface RuntimeReadyHarness {
 describe('deferred runtime boot guard', () => {
 	it('answers connection and session state neutrally instead of touching an unassigned service', () => {
 		const harness: RuntimeReadyHarness = { runtimeReady: false };
-		const getConnectionState = (TyrianCompanionPlugin.prototype as unknown as {
+		const getConnectionState = (TyrianCompanionCore.prototype as unknown as {
 			getConnectionState(this: RuntimeReadyHarness): ConnectionState;
 		}).getConnectionState.bind(harness);
-		const getSessionState = (TyrianCompanionPlugin.prototype as unknown as {
+		const getSessionState = (TyrianCompanionCore.prototype as unknown as {
 			getSessionState(this: RuntimeReadyHarness): SessionState;
 		}).getSessionState.bind(harness);
 
@@ -1618,7 +1619,7 @@ describe('deferred runtime boot guard', () => {
 		vi.stubGlobal('document', {});
 
 		await plugin.onload();
-		const debugActions = (plugin as unknown as {
+		const debugActions = (plugin.core as unknown as {
 			localDebugActions: { event(context: { action: string; state?: string }): void };
 		}).localDebugActions;
 		const globalEvent = vi.spyOn(debugActions, 'event');
@@ -1632,7 +1633,7 @@ describe('deferred runtime boot guard', () => {
 		// The saved-leaf restore this guards against races `onLayoutReady`, so the
 		// deferred boot must not have run yet when `onload` itself resolves.
 		expect(onLayoutReadyCallback).not.toBeNull();
-		expect(plugin.getConnectionState()).toEqual({ status: 'idle' });
+		expect(plugin.core.getConnectionState()).toEqual({ status: 'idle' });
 
 		const registeredViewTypes = registerView.mock.calls.map((call: unknown[]) => call[0]);
 		expect(registeredViewTypes).toEqual(expect.arrayContaining([COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE]));
@@ -1653,8 +1654,8 @@ describe('deferred runtime boot guard', () => {
 		// Session start/stop route through `SessionCommandController`, whose context is
 		// itself guarded: with `runtimeReady` still false every command reports
 		// unavailable, so these never reach the unassigned `sessions` service.
-		expect(() => plugin.openManualSessionStart()).not.toThrow();
-		await expect(plugin.stopManualSession()).resolves.toBeUndefined();
+		expect(() => plugin.core.openManualSessionStart()).not.toThrow();
+		await expect(plugin.core.stopManualSession()).resolves.toBeUndefined();
 	});
 
 	it('journals the number of views it actually registers', async () => {
@@ -1709,7 +1710,7 @@ describe('completed session note delivery', () => {
 			renderViews: vi.fn(),
 			emitNotice: vi.fn(),
 		});
-		const methods = TyrianCompanionPlugin.prototype as unknown as {
+		const methods = TyrianCompanionCore.prototype as unknown as {
 			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
 			getSavedSessionNotePath(this: typeof harness): string | null;
 			openSavedSessionNote(this: typeof harness): void;
@@ -1740,7 +1741,7 @@ describe('completed session note delivery', () => {
 			renderViews: vi.fn(),
 			emitNotice: vi.fn(),
 		});
-		const methods = TyrianCompanionPlugin.prototype as unknown as {
+		const methods = TyrianCompanionCore.prototype as unknown as {
 			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
 			openSavedSessionNote(this: typeof harness): void;
 		};
@@ -1772,7 +1773,7 @@ describe('completed session note delivery', () => {
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'note-write' }),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const persist = (TyrianCompanionPlugin.prototype as unknown as {
+		const persist = (TyrianCompanionCore.prototype as unknown as {
 			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
 		}).persistCompletedSessionSummary;
 
@@ -1803,7 +1804,7 @@ describe('alert dispatch diagnostics', () => {
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'alert-dispatch' }),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const dispatch = (TyrianCompanionPlugin.prototype as unknown as {
+		const dispatch = (TyrianCompanionCore.prototype as unknown as {
 			dispatchAlert(this: typeof harness, alert: AlertV1): void;
 		}).dispatchAlert;
 		const alert: AlertV1 = {
@@ -1841,7 +1842,7 @@ describe('in-game alert server start diagnostics', () => {
 			settingTab: { refreshAlertIngameServerRow: vi.fn() },
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const ensure = (TyrianCompanionPlugin.prototype as unknown as {
+		const ensure = (TyrianCompanionCore.prototype as unknown as {
 			ensureAlertIngameServer(this: typeof harness): Promise<unknown>;
 		}).ensureAlertIngameServer;
 
@@ -1873,7 +1874,7 @@ describe('managed assets preview diagnostics', () => {
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'managed-assets-preview' }),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const preview = (TyrianCompanionPlugin.prototype as unknown as {
+		const preview = (TyrianCompanionCore.prototype as unknown as {
 			previewManagedAssets(this: typeof harness): Promise<void>;
 		}).previewManagedAssets;
 
@@ -1900,7 +1901,7 @@ describe('pilot metrics export diagnostics', () => {
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'pilot-metrics-export' }),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const exportMetrics = (TyrianCompanionPlugin.prototype as unknown as {
+		const exportMetrics = (TyrianCompanionCore.prototype as unknown as {
 			exportPilotMetrics(this: typeof harness): Promise<unknown>;
 		}).exportPilotMetrics;
 
@@ -1927,7 +1928,7 @@ describe('local diagnostics composition', () => {
 		await expect(logger.exportSanitized()).resolves.not.toBe('');
 		const harness = { localDebug: logger, localDebugActions: actions };
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const clear = (TyrianCompanionPlugin.prototype as unknown as {
+		const clear = (TyrianCompanionCore.prototype as unknown as {
 			clearLocalDebugLogs(this: typeof harness): Promise<boolean>;
 		}).clearLocalDebugLogs;
 
@@ -1964,7 +1965,7 @@ describe('local diagnostics composition', () => {
 				write: async (path: string, value: string) => { writes.set(path, value); },
 			} } },
 		});
-		const proto = TyrianCompanionPlugin.prototype as unknown as {
+		const proto = TyrianCompanionCore.prototype as unknown as {
 			copyLocalDebugEntries(this: typeof harness, limit?: number): Promise<number>;
 			exportLocalDebugPackage(this: typeof harness): Promise<string | null>;
 			previewLocalDebugExport(this: typeof harness): { included: readonly string[]; excluded: readonly string[] };
@@ -2002,7 +2003,7 @@ describe('local diagnostics composition', () => {
 			app: { vault: { adapter: { getFullPath: (path: string) => `/vault/${path}` } } },
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const open = (TyrianCompanionPlugin.prototype as unknown as {
+		const open = (TyrianCompanionCore.prototype as unknown as {
 			openLocalDebugFolder(this: typeof harness): Promise<boolean>;
 		}).openLocalDebugFolder;
 		await expect(open.call(harness)).resolves.toBe(true);
@@ -2011,7 +2012,7 @@ describe('local diagnostics composition', () => {
 
 	it('flushes the unload terminal and then drains the flush terminal before resolving', async () => {
 		const events: string[] = [];
-		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			localDebug: { flush: vi.fn(async () => { events.push('flush'); }) },
 			localDebugActions: { run: async (context: { action: string }, action: () => Promise<unknown>) => {
 				events.push(`start:${context.action}`);
@@ -2020,7 +2021,7 @@ describe('local diagnostics composition', () => {
 				return result;
 			} },
 			sessions: { dispose: vi.fn(async () => { events.push('sessions:dispose'); }) },
-		}) as unknown as TyrianCompanionPlugin;
+		}) as unknown as TyrianCompanionCore;
 		harness.onunload();
 		await harness.awaitLocalDebugShutdown();
 		expect(events).toEqual([
@@ -2121,7 +2122,7 @@ function buildManagedAssetsRootHarness(
 	manager: ManagedAssetsManager,
 	initialSettings: TyrianSettings,
 ): ManagedAssetsRootHarness {
-	const proto = TyrianCompanionPlugin.prototype as unknown as {
+	const proto = TyrianCompanionCore.prototype as unknown as {
 		applyManagedAssets(this: ManagedAssetsRootHarness): Promise<void>;
 		updateSettings(this: ManagedAssetsRootHarness, update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 		relocateManagedAssets(this: ManagedAssetsRootHarness): Promise<unknown>;
@@ -2157,7 +2158,7 @@ function buildManagedAssetsRootHarness(
 describe('recovery backend failure observability (H15.6)', () => {
 	it('logs session_recover failure with the backend status as its code, never the free-text message', async () => {
 		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
-		const proto = TyrianCompanionPlugin.prototype as unknown as {
+		const proto = TyrianCompanionCore.prototype as unknown as {
 			performRecoverSession(this: unknown): Promise<void>;
 		};
 		const plugin = {
@@ -2211,10 +2212,10 @@ describe('capture-now failure observability (H15.9)', () => {
 	it('shows one Notice, logs session_finish with the real cause, and never leaves the rejection unhandled', async () => {
 		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
 		const notify = vi.fn();
-		const proto = TyrianCompanionPlugin.prototype as unknown as {
+		const proto = TyrianCompanionCore.prototype as unknown as {
 			captureSessionFinalNow(this: unknown): Promise<void>;
 		};
-		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			settings: { language: 'en' as const },
 			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
 			assistedDetection: { getState: () => ({ status: 'armed' }) },

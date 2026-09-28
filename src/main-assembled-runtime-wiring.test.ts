@@ -31,7 +31,8 @@ vi.mock('obsidian', async (importOriginal) => ({
 
 import { compareStorageSnapshots } from './account/storage-delta';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
-import TyrianCompanionPlugin from './main';
+import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
 import { DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER } from './alerts/alert-contract';
 import type { EmittedAlertRecordV1 } from './alerts/alert-queue-record';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
@@ -219,7 +220,7 @@ describe('H16.5 connection warmup cabling', () => {
 	});
 
 	it('warms the connection at startup when a key is already configured, without a manual check', async () => {
-		const checkConnection = vi.spyOn(TyrianCompanionPlugin.prototype, 'checkConnection')
+		const checkConnection = vi.spyOn(TyrianCompanionCore.prototype, 'checkConnection')
 			.mockResolvedValue({ status: 'idle' });
 		const record = activeSessionRecord();
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
@@ -241,7 +242,7 @@ describe('H16.5 connection warmup cabling', () => {
 	});
 
 	it('never asks for a connection at startup when no key is configured', async () => {
-		const checkConnection = vi.spyOn(TyrianCompanionPlugin.prototype, 'checkConnection')
+		const checkConnection = vi.spyOn(TyrianCompanionCore.prototype, 'checkConnection')
 			.mockResolvedValue({ status: 'idle' });
 		const record = activeSessionRecord();
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
@@ -375,24 +376,18 @@ function assembledRuntimePlugin(factory: IDBFactory): AssembledRuntimeHarness {
 		vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager,
 	} as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const plugin = new TyrianCompanionPlugin(app, manifest);
-	const target = plugin as unknown as AssembledRuntimeHarness & {
-		app: App;
-		manifest: PluginManifest;
+	const { core } = obsidianPluginCore(app, manifest);
+	const target = core as unknown as AssembledRuntimeHarness & {
 		localDebug: null;
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
-		registerEvent(event: unknown): void;
 	};
-	target.app = app;
-	target.manifest = manifest;
 	target.settings = structuredClone(DEFAULT_SETTINGS);
 	// R1b: this device collects, as every install did before the collector/consult split.
-	plugin.collectorMode = 'collector';
+	core.collectorMode = 'collector';
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
-	target.registerEvent = vi.fn();
 
 	vi.stubGlobal('window', {
 		indexedDB: factory,

@@ -84,10 +84,11 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	// R1a. Composition only: `ObsidianHost` hands `createObsidianHttpPort()` to the core as
 	// `TyrianHost.http`; it opens no call itself.
 	'src/host/obsidian/obsidian-host.ts',
-	'src/main.ts',
 	// H13.10. Composition only: it names the transport type so it can hand the
 	// one the plugin already built to the sell signal. It opens no call itself.
 	'src/runtime/assemble-price-history.ts',
+	// R1c. The composition that was main.ts: it builds the transports and hands them on.
+	'src/runtime/tyrian-companion-core.ts',
 	'src/sessions/api-poll-scheduler.ts',
 	'src/sessions/assisted-detection-service.ts',
 	'src/sessions/manual-session-start-service.ts',
@@ -95,14 +96,16 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 ];
 const REVIEWED_SECRET_PROVIDER_IMPORT_FILES = [
 	'src/account/guild-wars-2-client.ts',
-	'src/main.ts',
+	// R1c. The composition that was main.ts (`HostApiKeyProvider` over `host.secrets`).
+	'src/runtime/tyrian-companion-core.ts',
 ];
 const REVIEWED_SECRET_CAPABILITY_FILES = [
 	'src/account/guild-wars-2-client.ts',
 	'src/core/secret-provider.ts',
 	// R1a. `TyrianHost.secrets` over Obsidian's `SecretStorage`: list, get and set, nothing else.
 	'src/host/obsidian/obsidian-host.ts',
-	'src/main.ts',
+	// R1c. The composition that was main.ts: the in-game bridge token through `host.secrets`.
+	'src/runtime/tyrian-companion-core.ts',
 ];
 const PRODUCTION_FILES = productionSourceFiles(process.cwd());
 

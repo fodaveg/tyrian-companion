@@ -25,15 +25,15 @@ describe('H9.7 durable session history boundary', () => {
 
 	it('keeps history off the core surface, with global scans explicit and archival checks exact', () => {
 		const companion = readModuleSource('src/ui/companion-view.ts');
-		const main = readModuleSource('src/main.ts');
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		// The panel is mounted by the Companion surface, but only the button may reach the Vault.
 		expect(calleeChains(companion)).toContain('mountSessionHistoryPanel');
 		expect(classMethodCallChains(companion, 'TyrianCompanionView', 'onOpen')
 			.some((chain) => chain.endsWith('loadSessionHistory'))).toBe(false);
-		expect(classMethodCallChains(main, 'TyrianCompanionPlugin', 'loadSessionHistory'))
+		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'loadSessionHistory'))
 			.toContain('this.sessionHistory.scan');
 		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.scan')).toHaveLength(1);
-		expect(classMethodCallChains(main, 'TyrianCompanionPlugin', 'inspectCompletedSessionSummary'))
+		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'inspectCompletedSessionSummary'))
 			.toContain('this.sessionHistory.readSession');
 		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.readSession')).toHaveLength(1);
 	});

@@ -45,7 +45,7 @@ describe('pilot metrics architecture', () => {
 		const receipts = readModuleSource('src/sessions/pending-proposal-model.ts');
 		expect(receipts).toContain("PROPOSAL_RECEIPT_VERSION = 1");
 		expect(receipts).not.toContain('accepted_workflow_failed');
-		const main = readModuleSource('src/main.ts');
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		for (const hook of [
 			'proposalPresented', "workflow: 'succeeded'", "workflow: 'failed'", 'sessionStarted',
 			'sessionCompleted', 'recoveryPresented', 'recoveryFinished', 'proposalExcluded',
@@ -73,16 +73,16 @@ describe('pilot metrics architecture', () => {
 		expect(assisted).not.toContain('PilotBoundaryModal');
 		expect(assisted).toContain('openManualSessionStart(null)');
 		expect(assisted).toContain('stopManualSession(null)');
-		const main = readModuleSource('src/main.ts');
-		const review = classMethodBody(main, 'TyrianCompanionPlugin', 'reviewPendingProposalOutcome');
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
+		const review = classMethodBody(main, 'TyrianCompanionCore', 'reviewPendingProposalOutcome');
 		expect(review).not.toContain('proposalPresented');
 		expect(main).not.toContain('if (recoveryId) await this.ensurePilotRecoveryPresented(recoveryId)');
 	});
 
 	it('scopes the journal by the already-derived vault id and exposes atomic opt-out', () => {
-		const main = readModuleSource('src/main.ts');
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		// R1a: the factory is the host's (`TyrianHost.kv.indexedDB`, `window.indexedDB` in Obsidian).
-		const initializeRuntime = classMethodBody(main, 'TyrianCompanionPlugin', 'initializeRuntime');
+		const initializeRuntime = classMethodBody(main, 'TyrianCompanionCore', 'initializeRuntime');
 		expect(initializeRuntime).toContain('const indexedDB = host.kv.indexedDB;');
 		expect(initializeRuntime).toMatch(/assembleSessions\(\{\s*\n\s*factory: indexedDB,\s*\n\s*vaultId,/u);
 		expect(readModuleSource('src/runtime/assemble-sessions.ts'))
@@ -101,17 +101,17 @@ describe('pilot metrics architecture', () => {
 	});
 
 	it('closes every product invalidation of a live assisted proposal without changing successful workflow closure', () => {
-		const main = readModuleSource('src/main.ts');
-		const disarm = classMethodBody(main, 'TyrianCompanionPlugin', 'disarmAssistedDetection');
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
+		const disarm = classMethodBody(main, 'TyrianCompanionCore', 'disarmAssistedDetection');
 		expect(disarm).toContain("invalidateAndDisarmAssistedDetection('user')");
-		const settings = classMethodBody(main, 'TyrianCompanionPlugin', 'updateSettings');
+		const settings = classMethodBody(main, 'TyrianCompanionCore', 'updateSettings');
 		// `'mode_off'` is gone (Lote S, 2026-09-09): there is no more `detectionMode` toggle to turn
 		// off, so `updateSettings` never invalidates a live proposal for that reason anymore.
 		expect(settings).not.toContain("invalidateAndDisarmAssistedDetection('mode_off')");
 		expect(settings).toContain("invalidateAndDisarmAssistedDetection('connection_changed')");
-		const shutdown = classMethodBody(main, 'TyrianCompanionPlugin', 'shutdownRuntime');
+		const shutdown = classMethodBody(main, 'TyrianCompanionCore', 'shutdownRuntime');
 		expect(shutdown).toContain('const pilotProposalClosure = this.excludeLiveAssistedProposal()');
-		const stopWorkflow = classMethodBody(main, 'TyrianCompanionPlugin', 'performStopManualSession');
+		const stopWorkflow = classMethodBody(main, 'TyrianCompanionCore', 'performStopManualSession');
 		expect(stopWorkflow).toContain("this.assistedDetection.disarm('session_stopped')");
 		expect(stopWorkflow).not.toContain("invalidateAndDisarmAssistedDetection('session_stopped')");
 	});

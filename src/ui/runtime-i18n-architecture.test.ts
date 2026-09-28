@@ -5,6 +5,7 @@ import { readModuleSource } from '../test/module-boundary';
 
 const RUNTIME_UI_FILES = [
 	'src/main.ts',
+	'src/runtime/tyrian-companion-core.ts',
 	'src/ui/companion-view.ts',
 	'src/ui/companion-status-model.ts',
 	'src/ui/inventory-advisor-view.ts',

@@ -40,7 +40,7 @@ import {
 	type InventoryContainerPriceEvidenceV1,
 } from './inventory-container-economy';
 import type { InventoryAdvisorInputV1 } from './inventory-advisor-model';
-import { resolveSaleSeasonalInputFor, saleOpenVsSellCopper } from '../main';
+import { resolveSaleSeasonalInputFor, saleOpenVsSellCopper } from '../runtime/tyrian-companion-core';
 
 const BEFORE_EXPIRY = '2027-05-31T23:59:59.999Z';
 

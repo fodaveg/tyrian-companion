@@ -28,7 +28,9 @@ vi.mock('./ui/alert-ingame-secret-modal', () => ({
 	},
 }));
 
-import TyrianCompanionPlugin, { ALERT_INGAME_SECRET_COMMAND_ID, type AlertIngameSecretCopyOutcome } from './main';
+import TyrianCompanionPlugin from './main';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
+import { ALERT_INGAME_SECRET_COMMAND_ID, type AlertIngameSecretCopyOutcome } from './runtime/tyrian-companion-core';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import type { LocalDebugLogger } from './core/local-debug-logger';
@@ -134,13 +136,14 @@ describe('0.2.1 "Copy in-game bridge token" command', () => {
 	it('registers the command on load, named from the catalog', () => {
 		const commands: Array<{ id: string; name: string; callback?: () => void }> = [];
 		const plugin = new TyrianCompanionPlugin({} as App, { id: 'tyrian-companion' } as PluginManifest);
-		plugin.settings = { ...DEFAULT_SETTINGS, language: 'es' };
+		// Registered through the core's host, which hands Obsidian's `addCommand` the command.
 		plugin.addCommand = vi.fn((command: { id: string; name: string }) => {
 			commands.push(command);
 			return command;
 		});
-		(plugin as unknown as { registerAlertIngameSecretCommand(): void }).registerAlertIngameSecretCommand();
-		const copy = vi.spyOn(plugin as unknown as SecretCopyHarness, 'copyAlertIngameSecretFromCommand').mockResolvedValue();
+		plugin.core.settings = { ...DEFAULT_SETTINGS, language: 'es' };
+		(plugin.core as unknown as { registerAlertIngameSecretCommand(): void }).registerAlertIngameSecretCommand();
+		const copy = vi.spyOn(plugin.core as unknown as SecretCopyHarness, 'copyAlertIngameSecretFromCommand').mockResolvedValue();
 
 		expect(commands.map(({ id, name }) => ({ id, name }))).toEqual([
 			{ id: ALERT_INGAME_SECRET_COMMAND_ID, name: 'Copiar token del puente con el juego' },
@@ -202,15 +205,13 @@ function secretCopyPlugin(
 		setSecret: (id: string, value: string) => { secrets.set(id, value); },
 	};
 	const app = { vault: { configDir: 'test-config-dir' }, secretStorage } as unknown as App;
-	const plugin = new TyrianCompanionPlugin(app, { id: 'tyrian-companion' } as PluginManifest);
+	const { core } = obsidianPluginCore(app, { id: 'tyrian-companion' } as PluginManifest);
 	const records: LocalDebugRecordInput[] = [];
 	const saved: Array<Partial<TyrianSettings>> = [];
-	const target = plugin as unknown as SecretCopyHarness & {
-		app: App;
+	const target = core as unknown as SecretCopyHarness & {
 		localDebugActions: LocalDebugActionRunner;
 		updateSettings(update: Partial<TyrianSettings>): Promise<unknown>;
 	};
-	target.app = app;
 	target.settings = { ...structuredClone(DEFAULT_SETTINGS), language: 'en', ...settings };
 	target.localDebugActions = new LocalDebugActionRunner({
 		diagnostics: { record: (input: LocalDebugRecordInput) => { records.push(input); return true; } } as unknown as LocalDebugLogger,

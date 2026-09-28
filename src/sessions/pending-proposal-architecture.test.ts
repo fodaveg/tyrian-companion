@@ -24,11 +24,11 @@ describe('pending confirmation background boundary', () => {
 	});
 
 	it('routes detector background changes through the in-place status port', () => {
-		const source = readModuleSource('src/main.ts');
+		const source = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		const composition = readModuleSource('src/runtime/assemble-sessions.ts');
 		// The detector's state change is an in-place status refresh, never a repaint: the
 		// composition forwards it untouched and the plugin answers with the status port.
-		expect(classMethodBody(source, 'TyrianCompanionPlugin', 'initializeRuntime'))
+		expect(classMethodBody(source, 'TyrianCompanionCore', 'initializeRuntime'))
 			.toContain('onDetectionStateChange: () => this.refreshBackgroundIndicators()');
 		expect(composition).toMatch(/new AssistedDetectionService\(\{[\s\S]*onStateChange: input\.onDetectionStateChange/u);
 		expect(composition).not.toContain('renderViews');
@@ -40,9 +40,9 @@ describe('pending confirmation background boundary', () => {
 	});
 
 	it('keeps ordinary manual workflows independent from pending queue receipts', () => {
-		const source = readModuleSource('src/main.ts');
-		const stop = classMethodBody(source, 'TyrianCompanionPlugin', 'performStopManualSession');
-		const start = classMethodBody(source, 'TyrianCompanionPlugin', 'startManualSession');
+		const source = readModuleSource('src/runtime/tyrian-companion-core.ts');
+		const stop = classMethodBody(source, 'TyrianCompanionCore', 'performStopManualSession');
+		const start = classMethodBody(source, 'TyrianCompanionCore', 'startManualSession');
 		for (const workflow of [stop, start]) {
 			expect(workflow).toContain('const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null');
 			expect(workflow).toContain('if (intent && pendingClaim)');
@@ -51,14 +51,14 @@ describe('pending confirmation background boundary', () => {
 	});
 
 	it('registers claim renewal timers with plugin unload lifecycle', () => {
-		const source = readModuleSource('src/main.ts');
-		expect(classMethodBody(source, 'TyrianCompanionPlugin', 'initializeRuntime'))
+		const source = readModuleSource('src/runtime/tyrian-companion-core.ts');
+		expect(classMethodBody(source, 'TyrianCompanionCore', 'initializeRuntime'))
 			.toContain('this.pendingClaimRenewals = sessionServices.pendingClaimRenewals');
 		expect(readModuleSource('src/runtime/assemble-sessions.ts'))
 			.toContain('new PendingProposalRenewalRegistry({');
-		expect(classMethodBody(source, 'TyrianCompanionPlugin', 'shutdownRuntime'))
+		expect(classMethodBody(source, 'TyrianCompanionCore', 'shutdownRuntime'))
 			.toContain('this.pendingClaimRenewals?.dispose()');
-		expect(classMethodBody(source, 'TyrianCompanionPlugin', 'acquirePendingIntent'))
+		expect(classMethodBody(source, 'TyrianCompanionCore', 'acquirePendingIntent'))
 			.toContain('const stopRenewal = this.pendingClaimRenewals.start');
 		expect(source).not.toMatch(/window\.setInterval\(\(\) => \{\s*void this\.pendingProposals\.renew/u);
 	});

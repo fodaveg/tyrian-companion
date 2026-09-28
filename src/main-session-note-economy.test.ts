@@ -37,7 +37,7 @@ import {
 	type SessionPriceSnapshot,
 } from './economy/session-price-snapshot';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from './economy/session-valuation';
-import TyrianCompanionPlugin from './main';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import type { StorageSnapshot } from './account/storage-snapshot-model';
 import type { StorageDelta } from './account/storage-delta-model';
@@ -371,23 +371,17 @@ function notePlugin(factory: IDBFactory, notes: Map<string, string>): NoteHarnes
 	};
 	const app = { vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager } as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const plugin = new TyrianCompanionPlugin(app, manifest);
-	const target = plugin as unknown as NoteHarness & {
-		app: App;
-		manifest: PluginManifest;
+	const { core } = obsidianPluginCore(app, manifest);
+	const target = core as unknown as NoteHarness & {
 		settings: typeof DEFAULT_SETTINGS;
 		localDebug: null;
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
-		registerEvent(event: unknown): void;
 	};
-	target.app = app;
-	target.manifest = manifest;
 	target.settings = structuredClone(DEFAULT_SETTINGS);
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
-	target.registerEvent = vi.fn();
 
 	vi.stubGlobal('window', {
 		indexedDB: factory,

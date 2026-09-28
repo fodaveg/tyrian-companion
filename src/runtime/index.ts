@@ -5,6 +5,6 @@
  * `npm run build:host-esm` bundles this file and fails if it does. No CSS, no path aliases.
  */
 
-export { createTyrianRuntime } from './tyrian-runtime';
+export { createTyrianRuntime } from './tyrian-companion-core';
 export { canonicalPathFor } from './canonical-path';
 export type * from '../host/tyrian-host';

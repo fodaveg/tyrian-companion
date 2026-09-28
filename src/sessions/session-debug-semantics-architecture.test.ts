@@ -82,7 +82,7 @@ describe('session debug semantics', () => {
 	 * anywhere else and the text match stays here in the meantime.
 	 */
 	it('reserves human session actions for gestures and labels internal maintenance explicitly', () => {
-		const source = readModuleSource('src/main.ts');
+		const source = readModuleSource('src/runtime/tyrian-companion-core.ts');
 
 		expect(source).toContain("this.persistenceDiagnostics('session', 'session_lease')");
 		expect(source).not.toContain("this.persistenceDiagnostics('session', 'session_start')");

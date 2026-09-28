@@ -8,6 +8,8 @@ import { compareStorageSnapshots } from './account/storage-delta';
 import { ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS } from './alerts/alert-contract';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import TyrianCompanionPlugin from './main';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
+import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { DEFAULT_SETTINGS } from './core/settings';
@@ -158,7 +160,7 @@ describe('deferred runtime startup failure', () => {
 		vi.stubGlobal('window', {});
 		vi.stubGlobal('document', {});
 		vi.spyOn(
-			TyrianCompanionPlugin.prototype as unknown as { initializeRuntime(): Promise<void> },
+			TyrianCompanionCore.prototype as unknown as { initializeRuntime(): Promise<void> },
 			'initializeRuntime',
 		).mockRejectedValue(new Error('boot broke'));
 
@@ -170,8 +172,8 @@ describe('deferred runtime startup failure', () => {
 		// then `run()`'s, then `fireAndForget`'s); a macrotask boundary is enough to drain them.
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
-		expect((plugin as unknown as { runtimeReady: boolean }).runtimeReady).toBe(false);
-		await expect(plugin.checkConnection()).resolves.toEqual({ status: 'idle' });
+		expect((plugin.core as unknown as { runtimeReady: boolean }).runtimeReady).toBe(false);
+		await expect(plugin.core.checkConnection()).resolves.toEqual({ status: 'idle' });
 
 		const notice = runSync.mock.calls.find(([context]) => context.action === 'notification_emit');
 		expect(notice?.[0]).toMatchObject({ state: 'plugin_start_failed' });
@@ -205,15 +207,12 @@ function runtimeBootPlugin(factory: IDBFactory, notes = new Map<string, string>(
 	};
 	const app = { vault, workspace, fileManager: vault.fileManager } as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const plugin = new TyrianCompanionPlugin(app, manifest);
-	const target = plugin as unknown as {
-		app: App;
-		manifest: PluginManifest;
+	const { core } = obsidianPluginCore(app, manifest);
+	const target = core as unknown as {
 		settings: typeof DEFAULT_SETTINGS;
 		localDebug: null;
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
-		registerEvent(event: unknown): void;
 		runtimeReady: boolean;
 		initializeRuntime(): Promise<void>;
 		getLiveSessionLoot(): LiveSessionLootState;
@@ -221,15 +220,12 @@ function runtimeBootPlugin(factory: IDBFactory, notes = new Map<string, string>(
 		getSessionSummarySaveState(): 'unknown' | 'saving' | 'saved' | 'failed';
 		getStoredSessionLootSummary(): StoredSessionLootSummary | null;
 	};
-	target.app = app;
-	target.manifest = manifest;
 	target.settings = structuredClone(DEFAULT_SETTINGS);
 	// R1b: this device collects, as every install did before the collector/consult split.
-	plugin.collectorMode = 'collector';
+	core.collectorMode = 'collector';
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
-	target.registerEvent = vi.fn();
 
 	vi.stubGlobal('window', {
 		indexedDB: factory,

@@ -4,7 +4,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import type { InventoryAdvisorCaptureReceiptV1 } from '../advisor/inventory-advisor-evidence-model';
 import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
-import TyrianCompanionPlugin, { createInventoryAdvisorCommandCallbacks } from '../main';
+import { TyrianCompanionCore, createInventoryAdvisorCommandCallbacks } from '../runtime/tyrian-companion-core';
 import {
 	inventoryAdvisorWorkflowFailureReceipt,
 	inventoryAdvisorWorkflowReceipt,
@@ -14,7 +14,7 @@ import { withObsidianHost } from '../test/obsidian-host-harness';
 
 describe('H5.11 Inventory Advisor runtime integration', () => {
 	it('registers separate open and explicit refresh commands without polling or on-load capture', () => {
-		const source = readModuleSource('src/main.ts');
+		const source = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		const actionSource = readModuleSource('src/ui/product-action-controller.ts');
 		expect(actionSource).toContain("'open-inventory-advisor',");
 		expect(actionSource).toContain("'refresh-inventory-advisor',");
@@ -38,11 +38,11 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		const onload = inventoryAdvisorOnloadSource(source);
 		expect(inventoryAdvisorOnloadSafe(source)).toBe(true);
 		expect(onload).not.toMatch(/setInterval[^\n]*inventory|inventory[^\n]*setInterval/iu);
-		expect(classMethodBody(source, 'TyrianCompanionPlugin', 'renderViews')).not.toContain('renderInventoryAdvisorViews');
+		expect(classMethodBody(source, 'TyrianCompanionCore', 'renderViews')).not.toContain('renderInventoryAdvisorViews');
 	});
 
 	it('wires the exact built-in review-only provider instead of an unavailable production stub', () => {
-		const source = readModuleSource('src/main.ts');
+		const source = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		expect(source).toMatch(/const inventoryTransport = new HostRequestTransport\(host\.http, \{[\s\S]*?timeoutMs: 30_000,[\s\S]*?diagnostics: this\.localDebugActions \?\? undefined,[\s\S]*?\}\);/u);
 		expect(source.match(/operationPolicies: GW2_CHARACTER_OPERATION_POLICIES/gu)).toHaveLength(2);
 		// The advisor stack gets the inventory-scoped client, catalog and snapshots, never the
@@ -67,7 +67,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		'capture.capture("es")',
 		'InventoryAdvisorEvidenceService.capture("es")',
 	])('turns red when onload is sabotaged with %s', (call) => {
-		const source = readModuleSource('src/main.ts');
+		const source = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		const sabotaged = source.replace('async onload(): Promise<void> {', `async onload(): Promise<void> {\n\t\t${call};`);
 		expect(inventoryAdvisorOnloadSafe(sabotaged)).toBe(false);
 	});
@@ -105,7 +105,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 			workflow: null,
 			snapshot: null,
 		};
-		const writeReceipt = (TyrianCompanionPlugin.prototype as unknown as {
+		const writeReceipt = (TyrianCompanionCore.prototype as unknown as {
 			writeInventoryAdvisorCaptureReceipt(
 				this: CaptureReceiptHarness,
 				receipt: InventoryAdvisorCaptureReceiptV1,
@@ -118,8 +118,8 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 			path: 'test-config-dir/plugins/tyrian-companion/inventory-advisor-capture-receipt.json',
 			data: `${JSON.stringify(receipt, null, '\t')}\n`,
 		}]);
-		const mainSource = readModuleSource('src/main.ts');
-		const writer = classMethodBody(mainSource, 'TyrianCompanionPlugin', 'writeInventoryAdvisorCaptureReceipt');
+		const mainSource = readModuleSource('src/runtime/tyrian-companion-core.ts');
+		const writer = classMethodBody(mainSource, 'TyrianCompanionCore', 'writeInventoryAdvisorCaptureReceipt');
 		expect(writer).not.toContain('saveData');
 	});
 

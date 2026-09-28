@@ -2,7 +2,7 @@
 
 ## Capas
 
-`src/main.ts` es la composición del plugin. Registra la vista, el comando y los ajustes, y conecta adaptadores de Obsidian con servicios independientes.
+`src/runtime/tyrian-companion-core.ts` es la composición de Tyrian, sin Obsidian: `createTyrianRuntime(host)` construye los servicios y registra las vistas, los comandos, el ribbon con su menú, el bloque de código, el panel de ajustes y los avisos, todo por `TyrianHost` (`src/host/tyrian-host.ts`). `src/main.ts` es solo el adaptador de Obsidian: crea el `ObsidianHost` (`src/host/obsidian/`), le pasa ese host a la misma composición y reenvía `onload`/`onunload`. Hebra arranca la misma composición con su propio host (`src/runtime/index.ts`).
 
 - `core`: transporte HTTP resiliente, configuración versionada, acceso diferido a secretos, limitación FIFO de concurrencia y diagnóstico local seguro.
 - `account`: cliente de Guild Wars 2, validación runtime, conexión, estado efímero y snapshots de almacenamiento.

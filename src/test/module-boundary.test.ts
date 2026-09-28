@@ -103,7 +103,8 @@ describe('negative module frontiers', () => {
  * R1a (SPEC-TYRIAN-EN-HEBRA.md section 1): the core runs inside Hebra, a webview with no Obsidian,
  * no Electron and no Node. `obsidian`, `electron` and `net` are reachable only from the Obsidian
  * host adapter and the plugin entry: since R1c the whole UI in `src/ui/` goes through
- * `TyrianHost.ui`, with no file-by-file exception left. Type-only imports count too: Hebra
+ * `TyrianHost.ui`, with no file-by-file exception left, and the core the entry used to be lives in
+ * `src/runtime/`, so the entry itself is only the adapter. Type-only imports count too: Hebra
  * type-checks the submodule without the `obsidian` package.
  */
 const HOST_ONLY_SPECIFIERS = ['obsidian', 'electron', 'net', 'node:net'];
@@ -123,6 +124,13 @@ const R1C_UI_OFF_OBSIDIAN: readonly string[] = [
 	'src/ui/settings-tab.ts',
 	'src/ui/vault-folder-suggest.ts',
 ];
+/** R1c: the core `main.ts` used to be, now host-neutral; the scan below must reach it too. */
+const R1C_CORE_OFF_OBSIDIAN = 'src/runtime/tyrian-companion-core.ts';
+/**
+ * R1c: everything the plugin entry may import. It is the Obsidian adapter and nothing else: the
+ * plugin class, the host it builds and the core it hands that host to.
+ */
+const OBSIDIAN_PLUGIN_ENTRY_IMPORTS = ['obsidian', './host/obsidian/obsidian-host', './runtime/tyrian-companion-core'];
 /** Vitest infrastructure (the Obsidian mock and the harnesses that drive the plugin); never bundled. */
 const TEST_INFRASTRUCTURE_DIRECTORY = 'src/test/';
 /**
@@ -167,9 +175,14 @@ describe('R1a host boundary', () => {
 			.filter((path) => !path.startsWith(OBSIDIAN_HOST_DIRECTORY) && path !== OBSIDIAN_PLUGIN_ENTRY
 				&& !path.startsWith(TEST_INFRASTRUCTURE_DIRECTORY) && !NODE_TEST_FIXTURES.includes(path));
 		expect(scanned.flatMap((path) => webviewViolations(path))).toEqual([]);
-		// Not vacuous for the UI: the eleven files R1c took off Obsidian are among the ones scanned.
-		expect(scanned).toEqual(expect.arrayContaining([...R1C_UI_OFF_OBSIDIAN]));
+		// Not vacuous for the UI: the eleven files R1c took off Obsidian are among the ones scanned,
+		// and so is the core that was `main.ts`.
+		expect(scanned).toEqual(expect.arrayContaining([...R1C_UI_OFF_OBSIDIAN, R1C_CORE_OFF_OBSIDIAN]));
 	}, 30_000); // parses every src/ module: 1.9 s here, 6.3 s on the GitHub runner, past the 5 s default (CI run 36391764610)
+
+	it('keeps the plugin entry a thin adapter: obsidian, its host and the core, nothing else', () => {
+		expect(moduleBoundaryFacts(OBSIDIAN_PLUGIN_ENTRY).specifiers).toEqual(OBSIDIAN_PLUGIN_ENTRY_IMPORTS);
+	});
 
 	it('lets the listed fixtures reach Node, and never Obsidian', () => {
 		expect(NODE_TEST_FIXTURES.flatMap((path) => hostOnlySpecifiers(path))).toEqual([]);

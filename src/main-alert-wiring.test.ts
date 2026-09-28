@@ -10,7 +10,8 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { compareStorageSnapshots } from './account/storage-delta';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
-import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
+import type { SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import { ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS, type AlertV1 } from './alerts/alert-contract';
 import type { AlertDeliveryReport } from './alerts/alert-emitter';
 import type { AlertIngameServerHandle } from './alerts/alert-ingame-server';
@@ -383,29 +384,21 @@ function alertWiringPlugin(factory: IDBFactory, hostApis: Record<string, unknown
 		},
 	} as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const plugin = new TyrianCompanionPlugin(app, manifest);
-	const target = plugin as unknown as AlertWiringHarness & {
-		app: App;
-		manifest: PluginManifest;
+	// Only the settings-toggle test below calls `updateSettings`; every other test never
+	// touches persistence, so a no-op `saveData` is enough to keep the real save-then-publish
+	// order in `updateSettings` from throwing on the base `Plugin` class's absent stub.
+	const { core } = obsidianPluginCore(app, manifest, { saveData: vi.fn(async () => undefined) });
+	const target = core as unknown as AlertWiringHarness & {
 		localDebug: null;
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
-		registerEvent(event: unknown): void;
-		saveData(data: unknown): Promise<void>;
 	};
-	target.app = app;
-	target.manifest = manifest;
 	target.settings = structuredClone(DEFAULT_SETTINGS);
 	// R1b: this device collects, as every install did before the collector/consult split.
-	plugin.collectorMode = 'collector';
+	core.collectorMode = 'collector';
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
-	target.registerEvent = vi.fn();
-	// Only the settings-toggle test below calls `updateSettings`; every other test never
-	// touches persistence, so a no-op here is enough to keep the real save-then-publish
-	// order in `updateSettings` from throwing on the base `Plugin` class's absent stub.
-	target.saveData = vi.fn(async () => undefined);
 
 	vi.stubGlobal('window', {
 		indexedDB: factory,

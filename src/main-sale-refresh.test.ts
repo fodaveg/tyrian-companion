@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import TyrianCompanionPlugin from './main';
+import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
+import { withObsidianHost } from './test/obsidian-host-harness';
 import type { PositionRecommendationV1 } from './advisor/inventory-position-recommendation';
 import { indexedDbPriceHistoryPort } from './host/indexed-db-price-history';
 import { PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
@@ -56,20 +57,22 @@ describe('Sale refresh: explicit action to real cache, merge and hero recommenda
 			},
 			renderInventoryAdvisorViews: () => undefined,
 		};
-		Object.setPrototypeOf(harness, TyrianCompanionPlugin.prototype);
+		// The plugin used to build its `ObsidianHost` on first use from the prototype; the core is
+		// handed one, so the harness gets the same real host (its seed cache reads `window.indexedDB`).
+		Object.setPrototypeOf(withObsidianHost(harness), TyrianCompanionCore.prototype);
 		try {
-			await TyrianCompanionPlugin.prototype.refreshSale.call(harness as never, { refreshSeeds: false });
+			await TyrianCompanionCore.prototype.refreshSale.call(harness as never, { refreshSeeds: false });
 			expect(fetched).toEqual([]);
 			expect(harness.saleHeroTiming).toMatchObject({ action: 'review', reason: 'insufficient_reference' });
 			harness.settings.priceHistoryEnabled = false;
-			await TyrianCompanionPlugin.prototype.refreshSale.call(harness as never);
+			await TyrianCompanionCore.prototype.refreshSale.call(harness as never);
 			expect(fetched).toEqual([]);
 			harness.settings.priceHistoryEnabled = true;
-			await TyrianCompanionPlugin.prototype.refreshSale.call(harness as never);
+			await TyrianCompanionCore.prototype.refreshSale.call(harness as never);
 			expect([...fetched].sort()).toEqual([...daysById.keys()].sort());
 			expect(harness.saleHeroTiming?.action).not.toBe('review');
 			expect(harness.saleHeroTiming?.sellOrWait?.seasons).toBe(7);
-			await TyrianCompanionPlugin.prototype.refreshSale.call(harness as never);
+			await TyrianCompanionCore.prototype.refreshSale.call(harness as never);
 			expect(fetched).toHaveLength(5);
 		} finally {
 			service.dispose();

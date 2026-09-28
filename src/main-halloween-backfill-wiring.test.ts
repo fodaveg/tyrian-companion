@@ -11,7 +11,7 @@ vi.mock('obsidian', async (importOriginal) => ({
 	requestUrl: async () => ({ status: 404, headers: {}, json: [], text: '[]' }),
 }));
 
-import TyrianCompanionPlugin from './main';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
 import { DEFAULT_SETTINGS } from './core/settings';
 import type { HalloweenRuntime } from './halloween/halloween-runtime';
 
@@ -94,22 +94,16 @@ function bootedHarness(
 	};
 	const app = { vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager } as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const plugin = new TyrianCompanionPlugin(app, manifest);
-	const target = plugin as unknown as HalloweenBackfillHarness & {
-		app: App;
-		manifest: PluginManifest;
+	const { core } = obsidianPluginCore(app, manifest);
+	const target = core as unknown as HalloweenBackfillHarness & {
 		localDebug: null;
 		localDebugActions: null;
-		registerEvent(event: unknown): void;
 	};
-	target.app = app;
-	target.manifest = manifest;
 	target.settings = { ...structuredClone(DEFAULT_SETTINGS), halloweenEnabled: true };
 	// R1b: the Halloween observation is the collector's; this device collects, as every install did before.
-	plugin.collectorMode = 'collector';
+	core.collectorMode = 'collector';
 	target.localDebug = null;
 	target.localDebugActions = null;
-	target.registerEvent = vi.fn();
 
 	vi.stubGlobal('window', {
 		indexedDB: new IDBFactory(),

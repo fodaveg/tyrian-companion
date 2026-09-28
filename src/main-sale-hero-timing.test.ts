@@ -5,9 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { createTranslator } from './core/i18n';
-import TyrianCompanionPlugin, {
-	resolveSaleCalendarCandidateSpan, resolveSaleSeasonalInputFor, saleOpenVsSellCopper, saleSourceRowFromAdvisorRow,
-} from './main';
+import {
+	TyrianCompanionCore,
+	resolveSaleCalendarCandidateSpan,
+	resolveSaleSeasonalInputFor,
+	saleOpenVsSellCopper,
+	saleSourceRowFromAdvisorRow,
+} from './runtime/tyrian-companion-core';
 import { festivalCalendarEntryForItem, type FestivalCalendarCandidateV1 } from './economy/seasonal-window';
 import { sellTimingHistoryBagDays } from './economy/__fixtures__/sell-timing-history-36038';
 import { datawars2RealHistorySacoDays } from './economy/__fixtures__/datawars2-real-history-36038-2026-09-26';
@@ -185,7 +189,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		vaultId: string | null;
 	}): Promise<void> {
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated harness below.
-		const compute = (TyrianCompanionPlugin.prototype as unknown as {
+		const compute = (TyrianCompanionCore.prototype as unknown as {
 			computeSaleHeroTiming(this: typeof harness): Promise<void>;
 		}).computeSaleHeroTiming;
 		await compute.call(harness);
@@ -207,7 +211,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		expect(harness.saleHeroTiming).toMatchObject({ action: 'sell', reason: 'no_demonstrated_wait_advantage' });
 
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated harness below.
-		const buildHero = (TyrianCompanionPlugin.prototype as unknown as {
+		const buildHero = (TyrianCompanionCore.prototype as unknown as {
 			buildSaleHeroInput(this: typeof harness & { getSellSignalState(): null }, row: InventoryAdvisorViewRow | null, bidCopper: number | null): SaleViewModelInput['hero'];
 		}).buildSaleHeroInput;
 		const hero = buildHero.call({ ...harness, getSellSignalState: () => null }, heroRow(2350), 342);
@@ -257,7 +261,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		});
 
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated harness below.
-		const buildHero = (TyrianCompanionPlugin.prototype as unknown as {
+		const buildHero = (TyrianCompanionCore.prototype as unknown as {
 			buildSaleHeroInput(this: typeof harness & { getSellSignalState(): null }, row: InventoryAdvisorViewRow | null, bidCopper: number | null): SaleViewModelInput['hero'];
 		}).buildSaleHeroInput;
 		const hero = buildHero.call({ ...harness, getSellSignalState: () => null }, heroRow(2350), floorBidCopper);
@@ -313,7 +317,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 			getSellSignalState(): null;
 		}): SaleViewModel {
 			type Harness = typeof harness & { buildSaleHeroInput: unknown };
-			const proto = TyrianCompanionPlugin.prototype as unknown as {
+			const proto = TyrianCompanionCore.prototype as unknown as {
 				getSaleViewModel(this: Harness): SaleViewModel;
 				buildSaleHeroInput: unknown;
 			};
@@ -390,7 +394,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 			runtimeReady: boolean;
 			inventoryAdvisor: { open(): InventoryAdvisorViewModel };
 		}): InventoryAdvisorViewModel {
-			const proto = TyrianCompanionPlugin.prototype as unknown as {
+			const proto = TyrianCompanionCore.prototype as unknown as {
 				getInventoryAdvisorViewModel(this: typeof harness): InventoryAdvisorViewModel;
 			};
 			return proto.getInventoryAdvisorViewModel.call(harness);
@@ -659,7 +663,7 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 			saleHeroTiming: null as unknown,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated harness below.
-		const compute = (TyrianCompanionPlugin.prototype as unknown as {
+		const compute = (TyrianCompanionCore.prototype as unknown as {
 			computeSaleHeroTiming(this: typeof harness): Promise<void>;
 		}).computeSaleHeroTiming;
 		await compute.call(harness);
@@ -673,7 +677,7 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 		}
 
 		type Harness = typeof harness & { buildSaleHeroInput: unknown; getSellSignalState(): null };
-		const proto = TyrianCompanionPlugin.prototype as unknown as {
+		const proto = TyrianCompanionCore.prototype as unknown as {
 			getSaleViewModel(this: Harness): SaleViewModel;
 			buildSaleHeroInput: unknown;
 		};

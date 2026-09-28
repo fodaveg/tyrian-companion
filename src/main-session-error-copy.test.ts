@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import TyrianCompanionPlugin from './main';
+import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 
 /**
  * Sesión's incident callout "Copiar detalle técnico" (H18.36, boceto lámina 2.3): the code never
@@ -21,7 +21,7 @@ describe('"Copiar detalle técnico" (companion-view.ts incident callout)', () =>
 		emitNotice(message: string, source: string): void;
 	}
 	// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with an explicit isolated harness below.
-	const copyLastErrorDetail = (TyrianCompanionPlugin.prototype as unknown as {
+	const copyLastErrorDetail = (TyrianCompanionCore.prototype as unknown as {
 		copyLastErrorDetail(this: CopyLastErrorDetailHarness, detail: string): Promise<void>;
 	}).copyLastErrorDetail;
 

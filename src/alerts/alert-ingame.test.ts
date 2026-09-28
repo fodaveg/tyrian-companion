@@ -6,7 +6,7 @@ import { createTranslator, type Locale } from '../core/i18n';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import { ALERT_KINDS, ALERT_REASONS, type AlertReason, type AlertV1 } from './alert-contract';
 import { ALERT_INGAME_PAYLOAD_VERSION, alertIngameContent, alertIngamePayload } from './alert-ingame';
-import TyrianCompanionPlugin from '../main';
+import { TyrianCompanionCore } from '../runtime/tyrian-companion-core';
 
 const ALERT: AlertV1 = {
 	kind: 'valuable_loot', itemId: 36_038, name: 'Saco de Halloween', quantity: 3,
@@ -49,7 +49,7 @@ describe('H13.9/H13.15 in-game alert payload', () => {
 /**
  * The unlock collection is what the emitter knows and the channel must not.
  *
- * The sentence under suspicion is the REAL one: `TyrianCompanionPlugin.prototype.alertBodyText`
+ * The sentence under suspicion is the REAL one: `TyrianCompanionCore.prototype.alertBodyText`
  * is invoked directly, bound to a minimal `this` carrying only `settings.language`, which is all
  * that method reads. This is the exact function `main.ts` calls to build the toast copy and the
  * webhook diagnostic body — not a local reimplementation that could quietly drift from it. Every
@@ -127,7 +127,7 @@ describe('H13.9/H13.15 in-game alert reason containment', () => {
  * needs nothing else.
  */
 function realToastBodyText(alert: AlertV1, locale: Locale): string {
-	const alertBodyText = (TyrianCompanionPlugin.prototype as unknown as {
+	const alertBodyText = (TyrianCompanionCore.prototype as unknown as {
 		alertBodyText(this: { settings: { language: Locale } }, alert: AlertV1): string;
 	}).alertBodyText.bind({ settings: { language: locale } });
 	return alertBodyText(alert);

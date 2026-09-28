@@ -1,20 +1,17 @@
 /**
- * `createTyrianRuntime(host)`: the host-neutral runtime Hebra embeds (R1a, SPEC-TYRIAN-EN-HEBRA.md).
+ * The first step of Tyrian's boot (R1a, SPEC-TYRIAN-EN-HEBRA.md): the part with no UI in it.
  *
- * R1a scope. `start()` runs the part of the plugin's boot that has no UI and no Obsidian in it:
- * it loads and migrates the settings through `host.settings` and `host.locale()`, and brings up
- * the local diagnostics log over `host.diagnostics`. `stop()` drains that log. `main.ts` boots
- * through this same object (`createTyrianCoreRuntime`), in the same order as before R1a, so what
- * Hebra runs here is exactly what Obsidian runs.
+ * `createTyrianCoreRuntime(host).boot()` loads and migrates the settings through `host.settings`
+ * and `host.locale()`, and brings up the local diagnostics log over `host.diagnostics`; `start()`
+ * waits for that log and rethrows a settings load failure, `stop()` drains it.
  *
- * The account, session, inventory, price-history, Halloween and alert services are NOT started
- * here yet: they are composed by `TyrianCompanionPlugin.initializeRuntime` and driven by ~150
- * plugin methods that the views call directly (`plugin.getSessionState()`, modals, notices,
- * repaints). They move behind this function together with the views they feed (R1c).
+ * Since R1c the whole runtime is `createTyrianRuntime` (`tyrian-companion-core.ts`): its `onload`
+ * boots through this object first, in the same order as before R1a, then registers the views and
+ * commands and composes every service. This module stays apart so the boot can be tested and read
+ * on its own.
  */
 
-import { installDomHelpers } from '../host/dom-polyfill';
-import type { CreateTyrianRuntime, TyrianHost, TyrianRuntime } from '../host/tyrian-host';
+import type { TyrianHost, TyrianRuntime } from '../host/tyrian-host';
 import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import { LocalDebugLogger } from '../core/local-debug-logger';
 import { LocalDebugJsonlWriter } from '../core/local-debug-writer';
@@ -43,12 +40,12 @@ export interface TyrianBoot {
 	readonly localDebugActions: LocalDebugActionRunner;
 	/**
 	 * `debug_initialize`, then the `settings_load` success record when the settings loaded. It is
-	 * left in flight on purpose: `main.ts` registers its views and commands while it runs.
+	 * left in flight on purpose: the core registers its views and commands while it runs.
 	 */
 	readonly diagnosticsReady: Promise<void>;
 }
 
-/** `TyrianRuntime` plus the two-step boot `main.ts` needs to keep its registration order. */
+/** `TyrianRuntime` plus the two-step boot the core (`tyrian-companion-core.ts`) needs to keep its registration order. */
 export interface TyrianCoreRuntime extends TyrianRuntime {
 	/**
 	 * Loads the settings and builds the diagnostics log, resolving as soon as both exist. Runs
@@ -83,16 +80,6 @@ export function createTyrianCoreRuntime(host: TyrianHost): TyrianCoreRuntime {
 		},
 	};
 }
-
-/**
- * The host-neutral runtime for an embedding host (Hebra). See the module comment for its R1a scope.
- * R1c: it first adds Obsidian's DOM helpers the UI builds with to a webview that lacks them
- * (`installDomHelpers`, a no-op where they exist); `main.ts` does not come through here.
- */
-export const createTyrianRuntime: CreateTyrianRuntime = (host) => {
-	installDomHelpers();
-	return createTyrianCoreRuntime(host);
-};
 
 async function bootTyrian(host: TyrianHost): Promise<TyrianBoot> {
 	let settings: TyrianSettings;
@@ -138,7 +125,7 @@ async function initializeLocalDebug(
 
 /**
  * Records the `debug_flush` terminal and then drains it, so the flush's own record reaches the
- * file too. `main.ts`'s shutdown and `stop()` end the same way.
+ * file too. The core's shutdown and `stop()` end the same way.
  */
 export async function flushTyrianLocalDebug(
 	localDebug: LocalDebugLogger | null,

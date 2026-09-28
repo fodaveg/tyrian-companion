@@ -16,7 +16,7 @@ describe('H11.3 and H11.5 architecture contract', () => {
 	});
 
 	it('seals only finalized review output and writes comparison in the same IndexedDB transaction', () => {
-		const main = readModuleSource('src/main.ts');
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		// The guard moved into `finalizeAndPersistStoppedSession` (Lote S, 2026-09-09: nobody reviews
 		// a session anymore, so there is only one finalize path left) and reads negated —
 		// `finishFinalizedSession`, the only caller of `observeHalloweenDelta` on this path, never

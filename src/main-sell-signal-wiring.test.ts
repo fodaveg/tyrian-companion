@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import TyrianCompanionPlugin from './main';
+import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import type { LocalDebugLogger } from './core/local-debug-logger';
@@ -169,7 +170,7 @@ describe('H13.2 sell signal cabling', () => {
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'sell-signal-compact' }),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const evaluate = (TyrianCompanionPlugin.prototype as unknown as {
+		const evaluate = (TyrianCompanionCore.prototype as unknown as {
 			evaluateSellSignal(this: typeof harness, port: { nowMs: number; readDaily: () => Promise<PriceHistoryDailyV1[]> }): Promise<void>;
 		}).evaluateSellSignal;
 
@@ -216,24 +217,18 @@ function sellSignalPlugin(factory: IDBFactory): SellSignalWiringHarness {
 		vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager,
 	} as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const plugin = new TyrianCompanionPlugin(app, manifest);
-	const target = plugin as unknown as SellSignalWiringHarness & {
-		app: App;
-		manifest: PluginManifest;
+	const { core } = obsidianPluginCore(app, manifest);
+	const target = core as unknown as SellSignalWiringHarness & {
 		localDebug: null;
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
-		registerEvent(event: unknown): void;
 	};
-	target.app = app;
-	target.manifest = manifest;
 	target.settings = structuredClone(DEFAULT_SETTINGS);
 	// R1b: this device collects, as every install did before the collector/consult split.
-	plugin.collectorMode = 'collector';
+	core.collectorMode = 'collector';
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
-	target.registerEvent = vi.fn();
 
 	vi.stubGlobal('window', {
 		indexedDB: factory,

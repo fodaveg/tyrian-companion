@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import TyrianCompanionPlugin from './main';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
 import { companionView, TyrianCompanionView } from './ui/companion-view';
 import { MountedViews } from './ui/mounted-views';
 
@@ -31,15 +31,11 @@ describe('H14.13 renderViews coalescing', () => {
 		await companion.registration(companionView({ getLocale: () => 'es' })).mount({} as HTMLElement);
 		const app = {} as App;
 		const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-		const plugin = new TyrianCompanionPlugin(app, manifest) as unknown as {
-			app: App; viewControllers: unknown; renderViews(): void;
-		};
 		// The test double for `Plugin` (`src/test/obsidian-mock.ts`) does not set `this.app` the
-		// way the real Obsidian base class does; every other `main-*.test.ts` harness does this
-		// same assignment after construction.
-		plugin.app = app;
-		plugin.viewControllers = { companion, inventoryAdvisor: new MountedViews(() => view), sale: new MountedViews(() => view) };
-		return plugin;
+		// way the real Obsidian base class does; `obsidianPluginCore` makes that assignment.
+		const core = obsidianPluginCore(app, manifest).core as unknown as { viewControllers: unknown; renderViews(): void };
+		core.viewControllers = { companion, inventoryAdvisor: new MountedViews(() => view), sale: new MountedViews(() => view) };
+		return core;
 	}
 
 	it('collapses four renderViews() calls in the same tick into a single repaint', async () => {

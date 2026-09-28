@@ -8,9 +8,9 @@ describe('product action architecture', () => {
 	// action, a visible disabled reason, live feedback, and routes clicks to controller.run").
 
 	it('registers the palette exactly once, wired to the plugin\'s own session commands and executor', () => {
-		const main = readModuleSource('src/main.ts');
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		expect(calleeChains(main).filter((chain) => chain === 'registerProductActionPalette')).toHaveLength(1);
-		const setup = classMethodBody(main, 'TyrianCompanionPlugin', 'setupProductActions');
+		const setup = classMethodBody(main, 'TyrianCompanionCore', 'setupProductActions');
 		expect(setup).toContain('sessionCommands: this.sessionCommands');
 		expect(setup).toContain('execute: (id) => this.executeProductAction');
 	});
@@ -29,16 +29,16 @@ describe('product action architecture', () => {
 	});
 
 	it('refreshes the product actions from both view repaints, never from inside their own setup', () => {
-		const main = readModuleSource('src/main.ts');
-		const setup = classMethodCallChains(main, 'TyrianCompanionPlugin', 'setupProductActions');
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
+		const setup = classMethodCallChains(main, 'TyrianCompanionCore', 'setupProductActions');
 		expect(setup).not.toContain('this.renderViews');
 		expect(setup).not.toContain('this.renderInventoryAdvisorViews');
 		expect(setup).not.toContain('this.settingTab.refreshForSettingsChange');
 		// `renderViews()` only marks the Companion surface dirty; the coalesced microtask it
 		// schedules is what actually refreshes the actions, in `flushRenderViews`.
-		expect(classMethodCallChains(main, 'TyrianCompanionPlugin', 'flushRenderViews'))
+		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'flushRenderViews'))
 			.toContain('this.productActions?.refresh');
-		expect(classMethodCallChains(main, 'TyrianCompanionPlugin', 'renderInventoryAdvisorViews'))
+		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'renderInventoryAdvisorViews'))
 			.toContain('this.productActions?.refresh');
 	});
 

@@ -7,7 +7,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { openIndexedDb } from './core/indexed-db-open';
 import { DEFAULT_SETTINGS } from './core/settings';
-import TyrianCompanionPlugin from './main';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
 import {
 	COORDINATION_DB_NAME,
 	COORDINATION_DB_VERSION,
@@ -127,25 +127,19 @@ function fixturePlugin(factory: IDBFactory): FixtureHarness {
 	};
 	const app = { vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager } as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const plugin = new TyrianCompanionPlugin(app, manifest);
-	const target = plugin as unknown as FixtureHarness & {
-		app: App;
-		manifest: PluginManifest;
+	const { core } = obsidianPluginCore(app, manifest);
+	const target = core as unknown as FixtureHarness & {
 		settings: typeof DEFAULT_SETTINGS;
 		localDebug: null;
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
-		registerEvent(event: unknown): void;
 	};
-	target.app = app;
-	target.manifest = manifest;
 	target.settings = structuredClone(DEFAULT_SETTINGS);
 	// R1b: this device collects, as every install did before the collector/consult split.
-	plugin.collectorMode = 'collector';
+	core.collectorMode = 'collector';
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
-	target.registerEvent = vi.fn();
 
 	vi.stubGlobal('window', {
 		indexedDB: factory,

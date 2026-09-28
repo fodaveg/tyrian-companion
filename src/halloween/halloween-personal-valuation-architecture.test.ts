@@ -32,7 +32,7 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 	it('wires a dynamic settings overlay into memory-only reclassification without coupling it to Halloween opt-in', () => {
 		const settings = readModuleSource('src/core/settings.ts');
 		const settingsTab = readModuleSource('src/ui/settings-tab.ts');
-		const main = readModuleSource('src/main.ts');
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 14');
 		expect(settings).toContain('halloweenPersonalValuation: { version: 1 as const, values: [] }');
 		expect(settingsTab.indexOf("settings.halloween.personal.name")).toBeLessThan(

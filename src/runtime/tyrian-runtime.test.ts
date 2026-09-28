@@ -3,11 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { LocalDebugStoragePort } from '../core/local-debug-writer';
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION } from '../core/settings';
 import type { TyrianHost } from '../host/tyrian-host';
-import { createTyrianRuntime } from './index';
 import { createTyrianCoreRuntime, loadTyrianSettings } from './tyrian-runtime';
 
 /**
- * R1a: what `createTyrianRuntime` runs is only what any host can give it. This host has no
+ * R1a: what the boot runs is only what any host can give it. This host has no
  * Obsidian behind it at all: settings, locale, config dir and a diagnostics store in memory.
  */
 function neutralHost(persisted: unknown, options: { locale?: string; loadFails?: Error } = {}) {
@@ -41,10 +40,10 @@ const LOGGING = {
 	...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'debug',
 };
 
-describe('createTyrianRuntime (R1a)', () => {
+describe('createTyrianCoreRuntime: the boot, before any UI (R1a)', () => {
 	it('loads the settings through the host and brings the diagnostics log up and down', async () => {
 		const { host, records } = neutralHost(LOGGING);
-		const runtime = createTyrianRuntime(host);
+		const runtime = createTyrianCoreRuntime(host);
 
 		await runtime.start();
 		await runtime.stop();
@@ -94,6 +93,6 @@ describe('createTyrianRuntime (R1a)', () => {
 
 	it('stops cleanly when it was never started', async () => {
 		const { host } = neutralHost(LOGGING);
-		await expect(createTyrianRuntime(host).stop()).resolves.toBeUndefined();
+		await expect(createTyrianCoreRuntime(host).stop()).resolves.toBeUndefined();
 	});
 });

@@ -69,9 +69,12 @@ describe('H8.7 safe launch architecture boundary', () => {
 	});
 
 	it('does not wire launch into main.ts onload', () => {
-		const main = readFileSync('src/main.ts', 'utf8');
-		expect(main).not.toMatch(/mumble-v2-(?:launch|process-adapter)/u);
-		expect(onloadSpawnViolations(main)).toBe(false);
+		// R1c: `main.ts` forwards `onload` to the core, whose own `onload` is the boot; both count.
+		for (const path of ['src/main.ts', 'src/runtime/tyrian-companion-core.ts']) {
+			const source = readFileSync(path, 'utf8');
+			expect(source).not.toMatch(/mumble-v2-(?:launch|process-adapter)/u);
+			expect(onloadSpawnViolations(source)).toBe(false);
+		}
 	});
 
 	it('turns red causally for an onload spawn call, directly or through a computed access', () => {

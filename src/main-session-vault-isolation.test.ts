@@ -7,7 +7,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { compareStorageSnapshots } from './account/storage-delta';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import { DEFAULT_SETTINGS } from './core/settings';
-import TyrianCompanionPlugin from './main';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { createSessionContaminationReview } from './sessions/session-contamination-review';
 import type { CompleteSessionState, SessionSnapshotReference } from './sessions/session';
@@ -135,23 +135,17 @@ function vaultPlugin(factory: IDBFactory, basePath: string): VaultHarness {
 	};
 	const app = { vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager } as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const plugin = new TyrianCompanionPlugin(app, manifest);
-	const target = plugin as unknown as VaultHarness & {
-		app: App;
-		manifest: PluginManifest;
+	const { core } = obsidianPluginCore(app, manifest);
+	const target = core as unknown as VaultHarness & {
 		settings: typeof DEFAULT_SETTINGS;
 		localDebug: null;
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
-		registerEvent(event: unknown): void;
 	};
-	target.app = app;
-	target.manifest = manifest;
 	target.settings = structuredClone(DEFAULT_SETTINGS);
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
-	target.registerEvent = vi.fn();
 
 	vi.stubGlobal('window', {
 		indexedDB: factory,

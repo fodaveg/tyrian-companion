@@ -18,6 +18,7 @@ describe('H11-A architecture and UI contract', () => {
 		const runtime = readModuleSource('src/halloween/halloween-runtime.ts');
 		const composition = readModuleSource('src/runtime/assemble-halloween.ts');
 		const main = readModuleSource('src/main.ts');
+		const core = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		// R1c: the foreground adapter is the host. The core hands every notice to `host.ui.notice`,
 		// and Obsidian's `Notice` is built only in the Obsidian host's UI port.
 		const obsidianUi = readModuleSource('src/host/obsidian/obsidian-ui.ts');
@@ -26,7 +27,8 @@ describe('H11-A architecture and UI contract', () => {
 		expect(composition).not.toContain('new Notice');
 		expect(composition).toMatch(/onNotice:[\s\S]*emitPolicyAlert/u);
 		expect(main).not.toContain('new Notice');
-		expect(main).toContain('this.host.ui.notice(');
+		expect(core).not.toContain('new Notice');
+		expect(core).toContain('this.host.ui.notice(');
 		expect(obsidianUi).toContain('new Notice');
 	});
 
@@ -58,7 +60,8 @@ describe('H11-A architecture and UI contract', () => {
 	});
 
 	it('wires opt-in note backfill and accepted-session gating into production composition', () => {
-		const main = readModuleSource('src/main.ts');
+		// R1c: the production composition is the host-neutral core `main.ts` hands its host to.
+		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		expect(readModuleSource('src/runtime/assemble-halloween.ts'))
 			.toMatch(/loadBackfill:[\s\S]*scanHalloweenSessionNotes/u);
 		expect(main).toContain('observeAcceptedHalloweenDelta(delta)');

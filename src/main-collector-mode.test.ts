@@ -19,7 +19,8 @@ vi.mock('obsidian', async (importOriginal) => ({
 	},
 }));
 
-import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
+import { obsidianPluginCore } from './test/obsidian-host-harness';
+import type { SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import { DEFAULT_SETTINGS, type CollectorMode, type TyrianSettings } from './core/settings';
 import type { TyrianHost, TyrianPriceHistoryStore } from './host/tyrian-host';
 import { HalloweenRuntime } from './halloween/halloween-runtime';
@@ -227,27 +228,19 @@ function collectorModePlugin(
 		secretStorage: { listSecrets: () => ['gw2-main'], getSecret: () => 'secret-value', setSecret: vi.fn() },
 	} as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const plugin = new TyrianCompanionPlugin(app, manifest);
-	const target = plugin as unknown as CollectorModeHarness & {
-		app: App;
-		manifest: PluginManifest;
+	const { core } = obsidianPluginCore(app, manifest, { saveData: vi.fn(async (data: unknown) => { saved.push(data); }) });
+	const target = core as unknown as CollectorModeHarness & {
 		localDebug: null;
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
 		settingTab: Record<string, () => void>;
-		registerEvent(event: unknown): void;
-		saveData(data: unknown): Promise<void>;
 	};
-	target.app = app;
-	target.manifest = manifest;
 	target.settings = { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
 	// The seed `onload` leaves; absent, `initializeRuntime` derives it from the settings.
 	if (options.mode !== undefined) target.collectorMode = options.mode;
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
-	target.registerEvent = vi.fn();
-	target.saveData = vi.fn(async (data: unknown) => { saved.push(data); });
 	target.settingTab = {
 		refreshForSettingsChange: vi.fn(), refreshConnectionRow: vi.fn(), refreshManagedAssetsRow: vi.fn(),
 		refreshAlertIngameServerRow: vi.fn(), refreshSessionHistoryRow: vi.fn(), refreshForLocaleChange: vi.fn(),
