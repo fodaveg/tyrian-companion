@@ -33,13 +33,13 @@ describe('SessionHistoryPanelController', () => {
 
 		const unavailable = new SessionHistoryPanelController(async () => ({ status: 'unavailable' }));
 		await unavailable.load();
-		expect(unavailable.current()).toEqual({ status: 'unavailable' });
+		expect(unavailable.current()).toEqual({ status: 'unavailable', reason: 'not_ready' });
 	});
 
-	it('maps a rejected port to unavailable without leaking the error', async () => {
+	it('maps a rejected port to unavailable, tagged "failed" (never "not_ready", which the view auto-retries)', async () => {
 		const controller = new SessionHistoryPanelController(async () => await Promise.reject(new Error('private path')));
 		await controller.load();
-		expect(controller.current()).toEqual({ status: 'unavailable' });
+		expect(controller.current()).toEqual({ status: 'unavailable', reason: 'failed' });
 	});
 });
 
