@@ -31,6 +31,39 @@ describe('arm-assisted-detection availability (H15.12)', () => {
 	});
 });
 
+/** R1b: in consult mode only navigation stays available, and nothing reaches the executor. */
+describe('consult mode (R1b)', () => {
+	it('leaves only navigation available and says why for every other action', async () => {
+		const execute = vi.fn(async () => 'completed' as const);
+		const sessionRun = vi.fn(async () => 'completed' as const);
+		const checkConnection = vi.fn(async () => ({ status: 'connected', details: {} } as never));
+		const controller = createController({
+			hasKey: true, execute, sessionRun, checkConnection, isCollector: () => false,
+			connection: () => ({ status: 'idle' }),
+		});
+
+		for (const action of controller.all()) {
+			if (action.group === 'navigation') expect(action.available, action.id).toBe(true);
+			else {
+				expect(action.available, action.id).toBe(false);
+				expect(action.disabledReason, action.id).toBe('Esta instalación está en modo consulta. Cámbiala a recolector en Ajustes.');
+			}
+		}
+		await expect(controller.run('start-farming-session')).resolves.toBe('unavailable');
+		await expect(controller.run('refresh-inventory-advisor')).resolves.toBe('unavailable');
+		expect(checkConnection).not.toHaveBeenCalled();
+		expect(sessionRun).not.toHaveBeenCalled();
+		expect(execute).not.toHaveBeenCalled();
+		await expect(controller.run('open-inventory-advisor')).resolves.toBe('completed');
+	});
+
+	it('keeps every action as before for the collector', () => {
+		const collector = createController({ hasKey: true, isCollector: () => true }).all();
+		const unset = createController({ hasKey: true }).all();
+		expect(collector).toEqual(unset);
+	});
+});
+
 /**
  * H15.13: `product-shell.ts` and the palette's `checkCallback` both swallow `controller.run()`'s
  * rejection with `.catch(() => undefined)`, so a `'failed'` outcome (or a thrown `execute`) never
@@ -159,6 +192,7 @@ function createController(overrides: {
 	readonly recovery?: NonNullable<ProductActionControllerPorts['getRecoveryState']>;
 	readonly checkConnection?: NonNullable<ProductActionControllerPorts['checkConnection']>;
 	readonly canStartSession?: NonNullable<ProductActionControllerPorts['canStartSession']>;
+	readonly isCollector?: NonNullable<ProductActionControllerPorts['isCollector']>;
 	readonly diagnostics?: LocalDebugActionPort;
 } = {}): ProductActionController {
 	return new ProductActionController({
@@ -176,6 +210,7 @@ function createController(overrides: {
 		getRecoveryState: overrides.recovery ?? (() => ({ status: 'none' } as never)),
 		checkConnection: overrides.checkConnection,
 		canStartSession: overrides.canStartSession,
+		isCollector: overrides.isCollector,
 		diagnostics: overrides.diagnostics,
 	});
 }

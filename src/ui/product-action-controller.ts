@@ -61,6 +61,11 @@ export interface ProductActionControllerPorts {
 	checkConnection?(): Promise<ConnectionState>;
 	/** Whether a session could start right now if the account were connected (H15.25). */
 	canStartSession?(): boolean;
+	/**
+	 * R1b: false in consult mode, where every action but navigation is the collector's and is
+	 * shown unavailable with that reason. Absent means collector, the behaviour before R1b.
+	 */
+	isCollector?(): boolean;
 	diagnostics?: LocalDebugActionPort;
 }
 
@@ -145,9 +150,11 @@ export class ProductActionController {
 		const locale = this.ports.getLocale();
 		const translator = createTranslator(locale);
 		const session = isSessionCommand(id) ? this.ports.sessionCommands.describe(id) : null;
-		const availability = isSessionCommand(id)
-			? this.sessionAvailability(id, session!, translator)
-			: this.nonSessionAvailability(id);
+		const availability = GROUP_BY_ID[id] !== 'navigation' && this.ports.isCollector?.() === false
+			? { available: false, reason: translator.t('productAction.reason.consult') }
+			: isSessionCommand(id)
+				? this.sessionAvailability(id, session!, translator)
+				: this.nonSessionAvailability(id);
 		const retryAt = getRetryAt(this.ports.getConnectionState());
 		const coolingDown = retryAt !== null && retryAt > Date.now();
 		const externallyRunning = GROUP_BY_ID[id] === 'inventory' && this.ports.isInventoryBusy()
@@ -217,7 +224,8 @@ export class ProductActionController {
 		// `start-farming-session` never disables on a merely-unchecked connection (the Detalle
 		// button doesn't either, see `sessionAvailability` below); it checks it here instead,
 		// exactly where `openManualSessionStart` does (H15.25).
-		if (id === 'start-farming-session' && this.ports.getConnectionState().status === 'idle') {
+		if (id === 'start-farming-session' && this.ports.isCollector?.() !== false
+			&& this.ports.getConnectionState().status === 'idle') {
 			await this.ports.checkConnection?.();
 		}
 		if (!this.describe(id).available || this.running.has(id)) return 'unavailable';
