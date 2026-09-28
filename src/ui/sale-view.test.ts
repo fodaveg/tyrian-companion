@@ -336,6 +336,25 @@ describe('sale view render', () => {
 		expect(text(container)).toContain('Leyendo precios del bazar');
 		expect(find(container, 'li')).toHaveLength(0);
 	});
+
+	/**
+	 * R1b (Hebra's report, 28 sep 2026): a consult device that never captured anything this session
+	 * used to stay on "Leyendo precios del bazar…" forever, because `refreshInventoryAdvisor`/
+	 * `refreshSale` both refuse in consult and nothing else was ever going to move `status` off
+	 * `loading`. `consultOnly` reaches a final, explained state instead, with no refresh button
+	 * (a refresh here is an action only the collector may take).
+	 */
+	it('R1b: consultOnly reaches a final state that names consult mode, never "Leyendo…", with no refresh button', () => {
+		const model = buildSaleViewModel(baseInput({ status: 'empty', consultOnly: true }));
+		expect(model.status).not.toBe('loading');
+		const container = render(model, 'es');
+		expect(text(container)).toContain('modo consulta');
+		expect(text(container)).not.toContain('Leyendo precios del bazar');
+		expect(find(container, 'button')).toHaveLength(0);
+		const en = text(render(buildSaleViewModel(baseInput({ status: 'empty', consultOnly: true })), 'en'));
+		expect(en).toContain('consult mode');
+		expect(en).not.toMatch(/\bObsidian\b/u);
+	});
 });
 
 interface FakeOptions { readonly text?: string; readonly cls?: string; readonly attr?: Record<string, string> }
