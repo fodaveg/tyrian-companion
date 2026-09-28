@@ -228,7 +228,10 @@ export class InventoryAnalysisService {
 				.filter((itemId) => this.recommendation.seasonalInputFor(itemId) !== null);
 			const watchListItemIds = normalizePriceHistoryItemIds([...derivedItemIds, ...seasonalItemIds]);
 			await this.recommendation.updateDerivedWatchList(watchListItemIds);
-			await this.recommendation.refreshPriceSeeds(watchListItemIds);
+			// The seed preload is auxiliary: if it rejects (e.g. IndexedDB unavailable) the analysis
+			// still runs on what is cached. The port implementation records the failure locally.
+			try { await this.recommendation.refreshPriceSeeds(watchListItemIds); }
+			catch { /* recorded by the port; never invalidates the analysis */ }
 		}
 		const itemIds = [...new Set(cores.map((core) => core.itemId))];
 		// No point reading a store nothing writes to: price history is opt-in, and the moment stage

@@ -984,8 +984,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// H18.17: the outcome used to be discarded here, so neither a `no_seed` retry
 			// schedule nor the queue's coverage ever reached anything past this call.
 			refreshPriceSeeds: async (itemIds) => {
-				const outcome = await this.priceSeedBulkRefresh?.run(itemIds);
-				if (outcome !== undefined) this.priceSeedQueueCoverage = outcome.queueCoverage;
+				const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
+					component: 'price_history', action: 'price_history_load_series', state: 'price_seed_bulk_refresh',
+				});
+				try {
+					const outcome = await this.priceSeedBulkRefresh?.run(itemIds);
+					if (outcome !== undefined) this.priceSeedQueueCoverage = outcome.queueCoverage;
+					span.success('refreshed', { itemCount: itemIds.length });
+				} catch (error) {
+					span.failure(error, 'storage_failure', 'store_unavailable', { itemCount: itemIds.length });
+					throw error;
+				}
 			},
 			// Rule (b), M3: the item's calendar window plus the pack's shared sellSignal
 			// parameters, or null (rule (c)) when it has no entry or the pack is unavailable.

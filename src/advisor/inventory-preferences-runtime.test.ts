@@ -197,6 +197,15 @@ describe('InventoryPreferencesRuntime', () => {
 		expect(runtime.current()).toEqual({ status: 'not_loaded', goals: [], keepExceptions: [] });
 	});
 
+	it('turns a rejected IndexedDB read into preferences_unavailable instead of throwing', async () => {
+		const store = new MemoryPreferencesStore();
+		store.read = async () => { throw new Error('idb_open_failed'); };
+		const runtime = new InventoryPreferencesRuntime(new InventoryPreferencesService(store, () => NOW), 'vault-hash');
+
+		await expect(runtime.load(capture('account-a'))).resolves.toEqual({ status: 'blocked', reason: 'preferences_unavailable' });
+		expect(runtime.current()).toMatchObject({ status: 'blocked', code: 'unavailable' });
+	});
+
 	it('keeps a local draft state on CAS conflict and blocks future/corrupt/unavailable records', async () => {
 		const store = new MemoryPreferencesStore();
 		const first = new InventoryPreferencesRuntime(new InventoryPreferencesService(store, () => NOW), 'vault-hash');

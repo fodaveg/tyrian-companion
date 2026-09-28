@@ -138,7 +138,17 @@ export class InventoryPreferencesRuntime {
 		const epoch = this.epoch;
 		let result: InventoryPreferencesOperationResult;
 		try { result = await this.service.list(scope, span.context); }
-		catch (error) { span.failure(error, 'storage_failure', 'unavailable'); throw error; }
+		catch (error) {
+			// A local IndexedDB failure must not escape `refresh()` and invalidate the whole advisor
+			// view: it is the same "preferences unavailable" outcome as an unreadable scope. The span
+			// is closed once, by `failure`, which already records the error class.
+			span.failure(error, 'storage_failure', 'unavailable');
+			const unavailable = { status: 'blocked', reason: 'preferences_unavailable' } as const;
+			if (epoch === this.epoch && this.scope !== null && sameScope(this.scope, scope)) {
+				this.state = { status: 'blocked', code: 'unavailable', goals: [], keepExceptions: [] };
+			}
+			return unavailable;
+		}
 		if (epoch !== this.epoch || this.scope === null || !sameScope(this.scope, scope)) {
 			const stale = { status: 'blocked', reason: 'preferences_unavailable' } as const;
 			span.cancel('stale');
