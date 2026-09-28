@@ -92,6 +92,10 @@ export class InventoryVaultOneClickSyncController {
 	private captureProgress: InventoryVaultSyncCaptureProgress | null = null;
 	/** Guards against a percent dip (a capture retry restarting its own counters, a stale tick). */
 	private maxPercent = 0;
+	/** H18.39: when the CURRENTLY active running phase was entered; reset at the start of every run. */
+	private phaseEnteredAt = 0;
+	/** H18.39: every phase already LEFT this run, measured; the active phase is added by `phasesMsSnapshot`. */
+	private phaseDurationsMs: Partial<Record<InventoryVaultSyncRunPhase, number>> = {};
 
 	constructor(
 		private readonly ports: InventoryVaultSyncRunPorts,
@@ -125,6 +129,7 @@ export class InventoryVaultOneClickSyncController {
 		this.plan = null;
 		this.captureProgress = null;
 		this.maxPercent = 0;
+		this.phaseDurationsMs = {};
 		this.enter({ status: 'running', ...this.progressFor('capture', startedAt) }, generation);
 		let plan: InventoryVaultSyncPlan;
 		try {
@@ -271,14 +276,40 @@ export class InventoryVaultOneClickSyncController {
 			...(errorName === undefined ? {} : { errorName }),
 			...(written === undefined ? {} : { written }),
 			...(total === undefined ? {} : { total }),
+			phasesMs: this.phasesMsSnapshot(),
 		};
 		this.lastRun = outcome;
 		this.onFinished(outcome);
 		this.enter({ status: 'idle', lastRun: outcome }, generation);
 	}
 
+	/**
+	 * H18.39: every phase already left, plus the currently active one computed live (never
+	 * mutating state) — read exactly once, right before `settle` hands the run's own state to
+	 * `enter`, since `enter` itself is what records the transition OUT of the active phase.
+	 */
+	private phasesMsSnapshot(): NonNullable<InventoryVaultSyncLastRun['phasesMs']> {
+		const durations = { ...this.phaseDurationsMs };
+		if (this.state.status === 'running') durations[this.state.phase] = Math.max(0, this.now() - this.phaseEnteredAt);
+		return {
+			captureMs: durations.capture ?? 0,
+			preferencesMs: durations.preferences ?? 0,
+			classificationMs: durations.classification ?? 0,
+			previewMs: durations.preview ?? 0,
+			applyMs: durations.apply ?? 0,
+		};
+	}
+
+	/** Records the wall-clock time spent in whichever running phase `next` leaves behind, if any. */
 	private enter(next: InventoryVaultSyncRunState, generation: number): void {
 		if (this.disposed || generation !== this.generation) return;
+		const now = this.now();
+		if (this.state.status === 'running' && (next.status !== 'running' || next.phase !== this.state.phase)) {
+			this.phaseDurationsMs[this.state.phase] = Math.max(0, now - this.phaseEnteredAt);
+		}
+		if (next.status === 'running' && (this.state.status !== 'running' || next.phase !== this.state.phase)) {
+			this.phaseEnteredAt = now;
+		}
 		this.state = next;
 		this.onChange(this.current());
 	}

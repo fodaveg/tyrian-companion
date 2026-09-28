@@ -92,6 +92,48 @@ describe('inventory Vault one-click sync controller', () => {
 		expect([running.at(-1)?.completed, running.at(-1)?.total]).toEqual([1, 1]);
 	});
 
+	it('H18.39 (David, 26 sep 2026): records a real, measured duration for each of the five phases', async () => {
+		const ports = portsFor({
+			refreshAdvisor: vi.fn(async (onPhase: (phase: 'capture' | 'preferences' | 'classification') => void) => {
+				onPhase('preferences'); onPhase('classification');
+			}),
+			previewSync: vi.fn(async () => planWith(['create'])),
+			applySync: vi.fn(async (_p: InventoryVaultSyncPlan, onStep: (completed: number, total: number) => void) => {
+				onStep(1, 1);
+				return { status: 'applied', created: 1, updated: 0, deactivated: 0 } as const;
+			}),
+		});
+		let finished: InventoryVaultSyncLastRun | null = null;
+		const { controller } = harness(ports, null, (outcome) => { finished = outcome; });
+		await controller.run();
+		const phasesMs = finished!.phasesMs;
+		expect(phasesMs).toBeDefined();
+		// Every phase actually ran (the mocked ports above enter each one), so every duration is a
+		// real, positive measurement from the injected clock — never a fabricated placeholder.
+		expect(phasesMs!.captureMs).toBeGreaterThan(0);
+		expect(phasesMs!.preferencesMs).toBeGreaterThan(0);
+		expect(phasesMs!.classificationMs).toBeGreaterThan(0);
+		expect(phasesMs!.previewMs).toBeGreaterThan(0);
+		expect(phasesMs!.applyMs).toBeGreaterThan(0);
+		// The five measured legs never exceed the run's own total duration.
+		const sum = phasesMs!.captureMs + phasesMs!.preferencesMs + phasesMs!.classificationMs
+			+ phasesMs!.previewMs + phasesMs!.applyMs;
+		expect(sum).toBeLessThanOrEqual(finished!.durationMs);
+	});
+
+	it('H18.39: a run blocked before any phase transition settles without a fabricated phasesMs entry', async () => {
+		const ports = portsFor({
+			refreshAdvisor: vi.fn(async () => { throw new MissingApiKeyError(); }),
+		});
+		let finished: InventoryVaultSyncLastRun | null = null;
+		const { controller } = harness(ports, null, (outcome) => { finished = outcome; });
+		await controller.run();
+		expect(finished!.status).toBe('error');
+		// Capture is the one phase this run actually entered; every phase after it never ran.
+		expect(finished!.phasesMs).toMatchObject({ preferencesMs: 0, classificationMs: 0, previewMs: 0, applyMs: 0 });
+		expect(finished!.phasesMs!.captureMs).toBeGreaterThan(0);
+	});
+
 	it('raises the percent inside capture as simulated character inventories resolve, never past the phase’s own slice', async () => {
 		const total = 12;
 		const ports = portsFor({

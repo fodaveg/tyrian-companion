@@ -86,6 +86,19 @@ export interface InventoryVaultSyncLastRun {
 	total?: number;
 	/** The underlying rejection's class only (H15.11), never its message or stack. */
 	errorName?: string;
+	/**
+	 * H18.39 (David, 26 sep 2026: "¿por qué tarda tanto en preparar el inventario?"): how long each
+	 * of the run's own fixed phases (`INVENTORY_VAULT_SYNC_RUN_PHASES`) actually took, measured with
+	 * the controller's own injected clock. Absent on a pre-0.2.7 install or a run that never reached
+	 * a phase transition (an immediate `disabledReason`, for instance).
+	 */
+	phasesMs?: {
+		captureMs: number;
+		preferencesMs: number;
+		classificationMs: number;
+		previewMs: number;
+		applyMs: number;
+	};
 }
 
 export interface TyrianSettings {
@@ -482,6 +495,7 @@ function inventoryVaultSyncLastRun(value: unknown): InventoryVaultSyncLastRun | 
 	const total = typeof value.total === 'number' && Number.isInteger(value.total) && value.total >= 0 ? value.total : undefined;
 	const errorName = typeof value.errorName === 'string' && value.errorName.length > 0 && value.errorName.length <= 128
 		? value.errorName : undefined;
+	const phasesMs = inventoryVaultSyncPhasesMs(value.phasesMs);
 	return {
 		status: value.status as InventoryVaultSyncRunStatus,
 		finishedAt: value.finishedAt,
@@ -491,7 +505,22 @@ function inventoryVaultSyncLastRun(value: unknown): InventoryVaultSyncLastRun | 
 		...(written === undefined ? {} : { written }),
 		...(total === undefined ? {} : { total }),
 		...(errorName === undefined ? {} : { errorName }),
+		...(phasesMs === undefined ? {} : { phasesMs }),
 	};
+}
+
+const SYNC_RUN_PHASE_MS_FIELDS = ['captureMs', 'preferencesMs', 'classificationMs', 'previewMs', 'applyMs'] as const;
+
+/** Tolerates an absent field (pre-0.2.7) and purges anything that is not exactly this closed shape. */
+function inventoryVaultSyncPhasesMs(value: unknown): InventoryVaultSyncLastRun['phasesMs'] | undefined {
+	if (!isRecord(value)) return undefined;
+	const phases = {} as Record<(typeof SYNC_RUN_PHASE_MS_FIELDS)[number], number>;
+	for (const field of SYNC_RUN_PHASE_MS_FIELDS) {
+		const entry = value[field];
+		if (typeof entry !== 'number' || !Number.isFinite(entry) || entry < 0) return undefined;
+		phases[field] = entry;
+	}
+	return phases;
 }
 
 function inventoryVaultSyncPlanSummarySnapshot(value: unknown): InventoryVaultSyncPlanSummarySnapshot | null {
