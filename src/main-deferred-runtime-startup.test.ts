@@ -85,6 +85,13 @@ describe('deferred runtime startup with persisted terminal state', () => {
 		expect(plugin.getLiveSessionLoot()).toMatchObject({ status: 'observing', sessionId: 'session-1', restored: true });
 	});
 
+	// Hebra checkpoint 16: the Acompañante view can mount as the restored tab before
+	// `initializeRuntime()` resolves, and it reads this getter on every render.
+	it('answers an idle live-loot state to a view that reads before initializeRuntime finishes', () => {
+		const plugin = runtimeBootPlugin(new IDBFactory());
+		expect(plugin.getLiveSessionLoot()).toEqual({ status: 'idle' });
+	});
+
 	it('reaches runtimeReady when no terminal session is persisted', async () => {
 		const plugin = runtimeBootPlugin(new IDBFactory());
 		await expect(plugin.initializeRuntime()).resolves.toBeUndefined();

@@ -2615,7 +2615,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	getLiveSessionLoot(): LiveSessionLootState {
-		return this.liveSessionLoot.getState();
+		// H checkpoint 16 (Hebra): `liveSessionLoot` is assigned inside `initializeRuntime`, but a
+		// saved-tab view can mount and read this before that finishes. Answer with the same `idle`
+		// state the tracker itself starts in, instead of throwing on the still-unassigned field.
+		return this.runtimeReady ? this.liveSessionLoot.getState() : { status: 'idle' };
 	}
 
 	/** The sell/hold verdict for the Halloween bag, a permanent surface rather than only a transient alert. */
