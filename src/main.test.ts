@@ -1695,10 +1695,11 @@ describe('completed session note delivery', () => {
 	it('remembers the note it just wrote and opens exactly that path', async () => {
 		const openLinkText = vi.fn(async () => undefined);
 		const write = vi.fn(async () => ({ status: 'written' as const, path: 'Tyrian Companion/Sessions/2026-08-31.md' }));
-		const harness = {
+		// The note opens through the real `ObsidianHost` (`host.ui.openNote` -> `openLinkText`), as in production.
+		const harness = withObsidianHost({
 			app: { workspace: { openLinkText } },
 			runtimeReady: true,
-			sessionSummarySaveState: 'unknown' as 'unknown' | 'saving' | 'saved' | 'failed',
+			sessionSummarySaveState: 'unknown',
 			savedSessionNotePath: null as string | null,
 			settings: { language: 'en' as const },
 			sessionNotes: { write },
@@ -1707,7 +1708,7 @@ describe('completed session note delivery', () => {
 			sessions: { markCompletedSummarySaved: vi.fn(async () => true) },
 			renderViews: vi.fn(),
 			emitNotice: vi.fn(),
-		};
+		});
 		const methods = TyrianCompanionPlugin.prototype as unknown as {
 			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
 			getSavedSessionNotePath(this: typeof harness): string | null;
@@ -1727,18 +1728,18 @@ describe('completed session note delivery', () => {
 
 	it('keeps no path to open when the note could not be written', async () => {
 		const openLinkText = vi.fn(async () => undefined);
-		const harness = {
+		const harness = withObsidianHost({
 			app: { workspace: { openLinkText } },
 			runtimeReady: true,
-			sessionSummarySaveState: 'unknown' as 'unknown' | 'saving' | 'saved' | 'failed',
-			savedSessionNotePath: 'stale/path.md' as string | null,
+			sessionSummarySaveState: 'unknown',
+			savedSessionNotePath: 'stale/path.md',
 			settings: { language: 'en' as const },
 			sessionNotes: { write: vi.fn(async () => ({ status: 'conflict' as const, message: 'conflict' })) },
 			sessionNoteInput: () => ({ session: 'input' }),
 			prepareSessionEconomyEvidence: vi.fn(async () => undefined),
 			renderViews: vi.fn(),
 			emitNotice: vi.fn(),
-		};
+		});
 		const methods = TyrianCompanionPlugin.prototype as unknown as {
 			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
 			openSavedSessionNote(this: typeof harness): void;

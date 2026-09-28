@@ -33,10 +33,10 @@ import type {
  * `TyrianUiPort` over the Obsidian plugin API.
  *
  * Every member is the Obsidian call the UI made directly before, moved here unchanged, so moving a
- * caller onto the port changes no behavior. Since R1c the views (`registerView`), modals
- * (`openModal`), settings rows (`setting`), icons (`setIcon`) and folder suggestions (`pickFolder`)
- * of `src/ui/` come through it; `main.ts` still registers its commands, ribbon, code block and
- * notices directly (the next R1c step), and the settings tab is `ObsidianSettingTab` below.
+ * caller onto the port changes no behavior. Since R1c everything Tyrian shows in Obsidian comes
+ * through it: the views, modals, settings rows, icons and folder suggestions of `src/ui/`, and the
+ * core's commands, ribbon and its menu, code block, notices, settings tab (`ObsidianSettingTab`
+ * below, with Obsidian's settings search) and lifecycle (`onReady`, `onVisibilityChange`).
  */
 export function createObsidianUi(plugin: Plugin): TyrianUiPort {
 	const app = () => plugin.app;

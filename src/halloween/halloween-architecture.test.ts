@@ -18,11 +18,16 @@ describe('H11-A architecture and UI contract', () => {
 		const runtime = readModuleSource('src/halloween/halloween-runtime.ts');
 		const composition = readModuleSource('src/runtime/assemble-halloween.ts');
 		const main = readModuleSource('src/main.ts');
+		// R1c: the foreground adapter is the host. The core hands every notice to `host.ui.notice`,
+		// and Obsidian's `Notice` is built only in the Obsidian host's UI port.
+		const obsidianUi = readModuleSource('src/host/obsidian/obsidian-ui.ts');
 		expect(runtime).toContain("wording: 'observed_change'");
 		expect(runtime).not.toContain('new Notice');
 		expect(composition).not.toContain('new Notice');
 		expect(composition).toMatch(/onNotice:[\s\S]*emitPolicyAlert/u);
-		expect(main).toContain('new Notice');
+		expect(main).not.toContain('new Notice');
+		expect(main).toContain('this.host.ui.notice(');
+		expect(obsidianUi).toContain('new Notice');
 	});
 
 	it('covers the 7-axis UI checklist without hardcoded assets or colors', () => {

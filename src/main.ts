@@ -1,11 +1,14 @@
-import {
-	Menu, Notice, Plugin,
-	type App, type MarkdownPostProcessorContext,
-} from 'obsidian';
+import { Plugin } from 'obsidian';
 
 import { createObsidianHost } from './host/obsidian/obsidian-host';
-import { ObsidianSettingTab } from './host/obsidian/obsidian-ui';
-import type { TyrianHost, TyrianPriceSeedCache, TyrianVaultChange } from './host/tyrian-host';
+import type {
+	TyrianCodeBlockContext,
+	TyrianHost,
+	TyrianMenuEntry,
+	TyrianPriceSeedCache,
+	TyrianRibbonHandle,
+	TyrianVaultChange,
+} from './host/tyrian-host';
 import { labelledVault, sessionHistoryVault } from './runtime/vault-ports';
 import { createTyrianCoreRuntime, flushTyrianLocalDebug } from './runtime/tyrian-runtime';
 import { GuildWars2AccountGateway } from './account/account-service';
@@ -507,7 +510,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessionCommands!: SessionCommandController;
 	private productActions!: ProductActionController;
 	private sessionDispatch!: SessionCommandDispatch;
-	private sessionRibbon: HTMLElement | null = null;
+	private sessionRibbon: TyrianRibbonHandle | null = null;
 	private managedAssets!: ManagedAssetsManager;
 	private managedAssetsLifecycle!: ManagedAssetsLifecycle;
 	private managedAssetsPointer!: IndexedDbManagedAssetsPointerStore;
@@ -577,16 +580,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}, async () => {
 
 		for (const view of viewRegistrations) this.host.ui.registerView(view);
-		// Registration itself is inert: it hands Obsidian a callback, nothing runs until a note
+		// Registration itself is inert: it hands the host a callback, nothing runs until a note
 		// with this block is actually rendered. `docs/PLATFORM_POLICY.md` H9.2 covers the request
 		// that callback may then make.
-		this.registerMarkdownCodeBlockProcessor(
+		this.host.ui.registerCodeBlock(
 			PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE,
-			(source, el, ctx) => this.paintPriceHistoryNoteBlockView(source, el, ctx),
+			(source, el, context) => this.paintPriceHistoryNoteBlockView(source, el, context),
 		);
-		const settingTab = new ObsidianSettingTab(this.app, this, (containerEl) => new TyrianCompanionSettingTab(this.host, this, containerEl));
-		this.settingTab = settingTab.panel;
-		this.addSettingTab(settingTab);
+		// The panel gets its container on mount; its rows also feed the host's settings search.
+		const settingTab = new TyrianCompanionSettingTab(this.host, this);
+		this.settingTab = settingTab;
+		this.host.ui.settingsPanel({
+			mount: (containerEl) => { settingTab.mount(containerEl); },
+			unmount: () => { settingTab.unmount(); },
+			settingDefinitions: () => settingTab.getSettingDefinitions(),
+		});
 		this.setupSessionCommands();
 		this.setupProductActions();
 		this.registerAlertIngameSecretCommand();
@@ -621,8 +629,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			);
 			else handle();
 		});
-		this.registerDomEvent(document, 'visibilitychange', () => {
-			if (!this.runtimeReady || document.visibilityState !== 'visible') return;
+		this.host.ui.onVisibilityChange((visible) => {
+			if (!this.runtimeReady || !visible) return;
 			// After a suspend the session lease may have expired: renew (or take it back) right away.
 			this.sessions.notifyWake();
 			if (this.runRuntimeMutation(() => this.assistedDetection.notifyWake())) {
@@ -633,7 +641,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.priceHistory?.notifyWake();
 		});
 
-		this.app.workspace.onLayoutReady(() => {
+		this.host.ui.onReady(() => {
 			this.localDebugActions?.fireAndForget(
 				{ component: 'plugin', action: 'plugin_load', state: 'runtime_initialize' },
 				// The trace already reaches the log through this same `run()`, on rethrow
@@ -1443,9 +1451,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	openProductSettings(): void {
-		const host = this.app as typeof this.app & { setting?: { open(): void; openTabById(id: string): void } };
-		host.setting?.open();
-		host.setting?.openTabById(this.manifest.id);
+		this.host.ui.openSettings();
 	}
 
 	/** Returns only the bounded health projection intended for visible diagnostics UI. */
@@ -1477,11 +1483,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Navigates from a degraded Companion warning to this plugin's diagnostics settings. */
 	openLocalDebugSettings(): void {
-		const open = (): void => {
-			const host = this.app as typeof this.app & { setting?: { open(): void; openTabById(id: string): void } };
-			host.setting?.open();
-			host.setting?.openTabById(this.manifest.id);
-		};
+		const open = (): void => { this.host.ui.openSettings(); };
 		if (this.localDebugActions) this.localDebugActions.runSync(
 			{ component: 'ui', action: 'command_execute', state: 'open_debug_settings' }, open,
 		);
@@ -1877,7 +1879,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private async paintPriceHistoryNoteBlockView(
 		source: string,
 		el: HTMLElement,
-		ctx: MarkdownPostProcessorContext,
+		ctx: TyrianCodeBlockContext,
 	): Promise<void> {
 		const frontmatterItemName = frontmatterTcItemName(ctx.frontmatter);
 		await paintPriceHistoryNoteBlock(el, source, {
@@ -2612,7 +2614,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	openSavedSessionNote(): void {
 		const path = this.savedSessionNotePath;
 		if (path === null) return;
-		void this.app.workspace.openLinkText(path, '', false);
+		this.host.ui.openNote(path);
 	}
 
 	/**
@@ -3191,7 +3193,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private registerAlertIngameSecretCommand(): void {
-		this.addCommand({
+		this.host.ui.registerCommand({
 			id: ALERT_INGAME_SECRET_COMMAND_ID,
 			name: createTranslator(this.settings.language).t('commands.copyIngameBridgeToken'),
 			callback: () => { void this.copyAlertIngameSecretFromCommand(); },
@@ -3279,15 +3281,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	/**
-	 * The link lives in Obsidian's per-vault local storage, never in `data.json`: it names a session
-	 * of THIS vault on THIS machine and must not sync. A host without that API keeps no link, which
-	 * only means an automatic session found after a reload is treated as one started by hand.
+	 * The link lives in the host's per-vault local storage (`host.localStorage`, Obsidian's
+	 * `loadLocalStorage`), never in `data.json`: it names a session of THIS vault on THIS machine and
+	 * must not sync. A host without that storage keeps no link, which only means an automatic
+	 * session found after a reload is treated as one started by hand.
 	 */
 	private readIngameSessionLink(): unknown {
-		const storage = this.app as Partial<Pick<App, 'loadLocalStorage'>>;
-		if (typeof storage.loadLocalStorage !== 'function') return null;
+		const storage = this.host.localStorage;
+		if (storage === undefined) return null;
 		try {
-			return storage.loadLocalStorage.call(this.app, INGAME_SESSION_LINK_KEY) as unknown;
+			return storage.load(INGAME_SESSION_LINK_KEY);
 		} catch (error) {
 			this.recordIngameSessionFailure(error);
 			return null;
@@ -3295,10 +3298,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private writeIngameSessionLink(link: IngameSessionLink | null): void {
-		const storage = this.app as Partial<Pick<App, 'saveLocalStorage'>>;
-		if (typeof storage.saveLocalStorage !== 'function') return;
+		const storage = this.host.localStorage;
+		if (storage === undefined) return;
 		try {
-			storage.saveLocalStorage.call(this.app, INGAME_SESSION_LINK_KEY, link);
+			storage.save(INGAME_SESSION_LINK_KEY, link);
 		} catch (error) {
 			this.recordIngameSessionFailure(error);
 		}
@@ -3400,10 +3403,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Records only the closed delivery cause; visible notice text never enters diagnostics. */
 	private emitNotice(message: string, source: NoticeDiagnosticSource, onClick?: () => void): void {
-		const deliver = (): void => {
-			const notice = new Notice(message);
-			if (onClick) notice.containerEl.addEventListener('click', onClick);
-		};
+		const deliver = (): void => { this.host.ui.notice(message, onClick); };
 		if (this.localDebugActions) this.localDebugActions.runSync(
 			{ component: 'notification', action: 'notification_emit', state: source },
 			deliver,
@@ -4310,8 +4310,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		this.sessionDispatch = createSessionCommandDispatch(this.sessionCommands);
-		this.sessionRibbon = this.addRibbonIcon('compass', createTranslator(this.settings.language).t('commands.ribbon'), (event) => {
-			this.openSessionCommandMenu(event);
+		this.sessionRibbon = this.host.ui.ribbon({
+			icon: 'compass',
+			title: createTranslator(this.settings.language).t('commands.ribbon'),
+			onClick: (event) => { this.openSessionCommandMenu(event); },
 		});
 		this.refreshSessionRibbon();
 	}
@@ -4349,7 +4351,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		registerProductActionPalette(
-			{ addCommand: (command) => { this.addCommand(command); } },
+			{ addCommand: (command) => { this.host.ui.registerCommand(command); } },
 			this.productActions,
 		);
 	}
@@ -4397,28 +4399,30 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private openSessionCommandMenu(event: MouseEvent): void {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const menu = new Menu();
+		const menu: TyrianMenuEntry[] = [];
 		if (this.pendingProposals.getState().pendingCount > 0) {
 			const next = this.pendingProposals.getState().next;
-			menu.addItem((item) => item.setTitle(translateRuntime(createTranslator(this.settings.language), 'commands.reviewPending')).setIcon('inbox')
-				.onClick(() => { if (next) consumeRecorded(this.reviewPendingProposal(proposalIntent(next))); }));
-			menu.addSeparator();
+			menu.push({
+				kind: 'item', title: translateRuntime(createTranslator(this.settings.language), 'commands.reviewPending'), icon: 'inbox',
+				onClick: () => { if (next) consumeRecorded(this.reviewPendingProposal(proposalIntent(next))); },
+			});
+			menu.push({ kind: 'separator' });
 		}
 		for (const entry of projectSessionMenu(this.sessionCommands.available(), this.settings.language)) {
-			if (entry.type === 'separator') menu.addSeparator();
+			if (entry.type === 'separator') menu.push({ kind: 'separator' });
 			else if (entry.type === 'open') {
-				menu.addItem((item) => item.setTitle(entry.title).setIcon(entry.icon).onClick(() => {
+				menu.push({ kind: 'item', title: entry.title, icon: entry.icon, onClick: () => {
 					fireAndForgetLocal(this.localDebugActions,
 						{ component: 'ui', action: 'command_execute', state: 'open_companion' }, () => this.activateView());
-				}));
+				} });
 			} else {
-				menu.addItem((item) => item.setTitle(entry.command.name).setIcon(entry.command.icon)
-					.onClick(() => { fireAndForgetLocal(this.localDebugActions,
+				menu.push({ kind: 'item', title: entry.command.name, icon: entry.command.icon,
+					onClick: () => { fireAndForgetLocal(this.localDebugActions,
 						{ component: 'session', action: 'command_execute', state: entry.command.id },
-						() => this.sessionCommands.run(entry.command.id)); }));
+						() => this.sessionCommands.run(entry.command.id)); } });
 			}
 		}
-		menu.showAtMouseEvent(event);
+		this.host.ui.openMenu(menu, event);
 	}
 
 	private prepareSessionCommand(id: SessionCommandId): Promise<PreparedSessionCommand | null> {
@@ -4734,31 +4738,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const title = pending.ribbonLabel || next
 			? translator.t('commands.ribbonCurrentAction', { label: pending.ribbonLabel ?? next!.name })
 			: translator.t('commands.ribbon');
-		this.sessionRibbon.setAttr('aria-label', title);
-		this.sessionRibbon.setAttr('title', title);
-		this.sessionRibbon.toggleClass('tyrian-companion-ribbon--pending', pending.pendingCount > 0);
+		// The ribbon has a live title and a pending flag, no badge (`TyrianRibbonHandle`).
+		this.sessionRibbon.setTitle(title);
+		this.sessionRibbon.setPending(pending.pendingCount > 0);
 	}
 
+	/** Opens the Companion, or focuses it where it is already open (`host.ui.revealView`). */
 	private async activateView(): Promise<void> {
-		const existingLeaf = this.app.workspace.getLeavesOfType(COMPANION_VIEW_TYPE)[0];
-		const leaf = existingLeaf ?? this.app.workspace.getLeaf(true);
-
-		await leaf.setViewState({ type: COMPANION_VIEW_TYPE, active: true });
-		await this.app.workspace.revealLeaf(leaf);
+		await this.host.ui.revealView(COMPANION_VIEW_TYPE);
 	}
 
 	private async activateInventoryAdvisorView(): Promise<void> {
-		const existingLeaf = this.app.workspace.getLeavesOfType(INVENTORY_ADVISOR_VIEW_TYPE)[0];
-		const leaf = existingLeaf ?? this.app.workspace.getLeaf(true);
-		await leaf.setViewState({ type: INVENTORY_ADVISOR_VIEW_TYPE, active: true });
-		await this.app.workspace.revealLeaf(leaf);
+		await this.host.ui.revealView(INVENTORY_ADVISOR_VIEW_TYPE);
 	}
 
 	private async activateSaleView(): Promise<void> {
-		const existingLeaf = this.app.workspace.getLeavesOfType(SALE_VIEW_TYPE)[0];
-		const leaf = existingLeaf ?? this.app.workspace.getLeaf(true);
-		await leaf.setViewState({ type: SALE_VIEW_TYPE, active: true });
-		await this.app.workspace.revealLeaf(leaf);
+		await this.host.ui.revealView(SALE_VIEW_TYPE);
 	}
 
 }
