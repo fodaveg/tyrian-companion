@@ -567,6 +567,18 @@ describe('inventory Vault preview and apply', () => {
 		expect(canonicalPathFor(ROOT, '<!-- tyrian-companion-inventory schema=6 marker=x position=../../escape -->')).toEqual([]);
 	});
 
+	it('R1a: canonicalPathFor never adopts a note that only quotes the position marker, for instance inside a code block', () => {
+		const quoted = [
+			'# How Tyrian Companion marks a position note',
+			'',
+			'```',
+			`<!-- tyrian-companion-inventory schema=1 marker=tyrian_companion_inventory_position position=42-c-account hash=${'a'.repeat(64)} -->`,
+			'```',
+			'',
+		].join('\n');
+		expect(canonicalPathFor(ROOT, quoted)).toEqual([]);
+	});
+
 	it('writes deterministic opaque filenames and redacts capture identities and raw credentials', async () => {
 		const accountId = 'account-private-123';
 		const snapshotId = 'snapshot-private-456';

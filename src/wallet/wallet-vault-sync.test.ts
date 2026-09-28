@@ -101,6 +101,18 @@ describe('wallet Vault preview and apply', () => {
 		expect(canonicalPathFor('../outside', vault.contents.get(written[0]!)!)).toEqual([]);
 	});
 
+	it('R1a: canonicalPathFor never adopts a note that only quotes the currency marker, for instance inside a code block', () => {
+		const quoted = [
+			'# How Tyrian Companion marks a currency note',
+			'',
+			'```',
+			`<!-- tyrian-companion-wallet schema=1 marker=tyrian_companion_wallet_currency currency=1 hash=${'a'.repeat(64)} -->`,
+			'```',
+			'',
+		].join('\n');
+		expect(canonicalPathFor(ROOT, quoted)).toEqual([]);
+	});
+
 	it('deactivates a currency dropped from the catalog while preserving its last known balance, not zeroing it', async () => {
 		const vault = new MemoryWalletVault();
 		const service = new WalletVaultSyncService(vault, CONFIG_DIR);

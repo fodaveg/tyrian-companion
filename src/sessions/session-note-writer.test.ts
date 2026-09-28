@@ -388,6 +388,21 @@ describe('SessionNoteWriter', () => {
 		expect(canonicalPathFor(root, vault.contents.get(created.path)!.replace(/\n/gu, '\r\n'))).toEqual([preferred, collision]);
 	});
 
+	it('R1a: canonicalPathFor never adopts a session note whose tc_started_at is not the writer\'s exact ISO string', async () => {
+		const root = 'Tyrian Companion';
+		const vault = new MemoryVault();
+		const writer = new SessionNoteWriter(vault);
+		const created = await writer.write(sessionInput());
+		if (created.status !== 'written') throw new Error('Fixture note was not written.');
+		const written = vault.contents.get(created.path)!;
+		// A date-only value still parses with `Date.parse`, but `toISOString()` never produces it:
+		// the check `sessionNotePathIdentity` runs is the exact round-trip, not mere parseability.
+		const notIso = written.replace(/(tc_started_at: ")([^"]+)(")/u, (_match, open: string, value: string, close: string) =>
+			`${open}${value.slice(0, 10)}${close}`);
+		expect(notIso).not.toBe(written);
+		expect(canonicalPathFor(root, notIso)).toEqual([]);
+	});
+
 	it('R1a: canonicalPathFor lists the collision path second, where the writer puts a note whose preferred path is taken', async () => {
 		const root = 'Tyrian Companion';
 		const vault = new MemoryVault();
