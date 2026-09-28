@@ -177,6 +177,8 @@ export interface TyrianViewRegistration {
 	title(): string;
 	/** Lucide name. */
 	readonly icon: string;
+	/** In Hebra, `'column'` is a tab of the right column (its `el` 288 px wide) and `'dialog'` the 960×720 dialog; absent means `'column'`. ObsidianHost ignores it. */
+	readonly placement?: 'column' | 'dialog';
 	mount(container: HTMLElement): void | Promise<void>;
 	unmount(container: HTMLElement): void | Promise<void>;
 }
