@@ -382,6 +382,81 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 	});
 
 	/**
+	 * R1b (Hebra's report, 28 sep 2026): `refreshInventoryAdvisor`/`refreshSale` both refuse in
+	 * consult (`refusedInConsult`), so a consult device that captured nothing this session left
+	 * `advisorModel.status` stuck at `loading` forever — Venta showed "Leyendo precios del
+	 * bazar…" with nothing ever going to move it (8 s and counting, per the report). These run the
+	 * real `getSaleViewModel` through the same isolated-method pattern as H18.34 above, then the
+	 * real DOM (`renderSaleView`).
+	 */
+	describe('getSaleViewModel: a consult device with nothing captured reaches a final state, never stuck "loading" (R1b)', () => {
+		function runGetSaleViewModel(harness: {
+			runtimeReady: boolean;
+			collectorMode?: 'collector' | 'consult';
+			getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
+			inventoryAdvisor: { analysis(): null };
+			saleHeroTiming: unknown;
+			getSellSignalState(): null;
+		}): SaleViewModel {
+			type Harness = typeof harness & { buildSaleHeroInput: unknown };
+			const proto = TyrianCompanionCore.prototype as unknown as {
+				getSaleViewModel(this: Harness): SaleViewModel;
+				buildSaleHeroInput: unknown;
+			};
+			return proto.getSaleViewModel.call({ ...harness, buildSaleHeroInput: proto.buildSaleHeroInput });
+		}
+
+		function renderModel(model: SaleViewModel): string {
+			vi.stubGlobal('createEl', (tag: string, options?: { text?: string; cls?: string }) => makeEl(tag, options));
+			vi.stubGlobal('createDiv', (options?: { text?: string; cls?: string }) => makeEl('div', options));
+			vi.stubGlobal('createSpan', (options?: { text?: string; cls?: string }) => makeEl('span', options));
+			const container = makeEl('div');
+			renderSaleView(container as unknown as HTMLElement, icons, model, createTranslator('es'));
+			return textOf(container);
+		}
+
+		/** Never refreshed this session: exactly what `InventoryAdvisorPresentationController` starts as. */
+		const loadingAdvisorModel: InventoryAdvisorViewModel = { status: 'loading', title: 'x', detail: 'y', groups: [] };
+
+		it('consult, nothing captured: reaches a final state (never "loading"), names consult mode, and renders no refresh button', () => {
+			const harness = {
+				runtimeReady: true,
+				collectorMode: 'consult' as const,
+				getInventoryAdvisorViewModel: () => loadingAdvisorModel,
+				inventoryAdvisor: { analysis: () => null },
+				saleHeroTiming: null as unknown,
+				getSellSignalState: () => null,
+			};
+			const model = runGetSaleViewModel(harness);
+
+			expect(model.status).not.toBe('loading');
+			expect(model.consultOnly).toBe(true);
+			expect(model.hero).toBeNull();
+
+			const text = renderModel(model);
+			expect(text).toContain('modo consulta');
+			expect(text).not.toContain('Leyendo precios del bazar');
+		});
+
+		/** The collector path must not change at all: still the ordinary "Leyendo…" until its own refresh completes. */
+		it('collector, nothing captured yet: keeps the ordinary "loading" state untouched', () => {
+			const harness = {
+				runtimeReady: true,
+				collectorMode: 'collector' as const,
+				getInventoryAdvisorViewModel: () => loadingAdvisorModel,
+				inventoryAdvisor: { analysis: () => null },
+				saleHeroTiming: null as unknown,
+				getSellSignalState: () => null,
+			};
+			const model = runGetSaleViewModel(harness);
+
+			expect(model.status).toBe('loading');
+			expect(model.consultOnly).toBeUndefined();
+			expect(renderModel(model)).toContain('Leyendo precios del bazar');
+		});
+	});
+
+	/**
 	 * H18.35: the Asesor tab had the SAME silent-staleness gap H18.34 fixed on the Venta tab —
 	 * `InventoryAdvisorPresentationController.open()` returns whatever the last refresh cached, and
 	 * nothing forces a rebuild the instant the clock crosses the curated bundle's own `validUntil`.
