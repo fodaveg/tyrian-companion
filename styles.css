@@ -3040,6 +3040,17 @@
 	height: var(--input-height);
 }
 
+/*
+ * R1c: in Hebra's 288 px inspector column the surface leaves 256 px, and the three tabs with 12 px
+ * each side plus the gear need 272-275: Ajustes ended up cut behind the bar's scroll. Only below
+ * 320 px of surface does each tab drop to 8 px each side; the gear keeps its own padding (above).
+ */
+@container (max-width: 320px) {
+	.tyrian-product-shell__nav button {
+		padding-inline: var(--size-4-2);
+	}
+}
+
 /* Lámina 1: un ítem que necesita atención (sin señal, cierre sin terminar) sube a --text-normal. */
 .tyrian-product-shell__status [data-tone="attention"] {
 	color: var(--text-normal);
