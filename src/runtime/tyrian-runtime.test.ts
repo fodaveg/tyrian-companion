@@ -71,6 +71,17 @@ describe('createTyrianRuntime (R1a)', () => {
 		expect(legacy.saved[0]).not.toHaveProperty('apiKey');
 	});
 
+	it('R1b: an upgraded installation with a key stays the collector, and a new one starts in consult', async () => {
+		const { collectorMode: _collectorMode, ...previousRelease } = { ...DEFAULT_SETTINGS, apiKeySecret: 'gw2-main' };
+		const upgraded = neutralHost(previousRelease);
+		await expect(loadTyrianSettings(upgraded.host)).resolves.toMatchObject({ collectorMode: 'collector' });
+		expect(upgraded.saved).toEqual([{ ...previousRelease, collectorMode: 'collector' }]);
+
+		const fresh = neutralHost(null);
+		await expect(loadTyrianSettings(fresh.host)).resolves.toMatchObject({ collectorMode: 'consult' });
+		expect(fresh.saved).toEqual([expect.objectContaining({ collectorMode: 'consult' })]);
+	});
+
 	it('records a settings load failure, flushes it and rethrows it from start', async () => {
 		const failure = new Error('settings unreadable');
 		const { host } = neutralHost(LOGGING, { loadFails: failure });

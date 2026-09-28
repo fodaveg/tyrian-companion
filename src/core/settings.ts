@@ -44,6 +44,13 @@ export const MAX_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS = 2_000;
 export const ALERT_INGAME_SECRET_ID = 'tyrian-companion-ingame';
 
 export type Language = 'es' | 'en';
+/**
+ * R1b (SPEC-TYRIAN-EN-HEBRA.md section 4): what this installation does with the account. Only a
+ * `collector` calls the Guild Wars 2 API (polls, captures, prices), writes notes and Bases, opens
+ * the in-game bridge port and raises alerts; a `consult` installation reads what is already there.
+ * One collector per account is the intent; `collector-status.ts` warns when a second one shows up.
+ */
+export type CollectorMode = 'collector' | 'consult';
 export type MaterialStorageCapacity = 250 | 500 | 750 | 1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000;
 
 export type InventoryVaultSyncRunStatus = 'success' | 'error';
@@ -82,6 +89,8 @@ export interface TyrianSettings {
 	schemaVersion: typeof SETTINGS_SCHEMA_VERSION;
 	/** Name of the Obsidian SecretStorage entry, never the secret value. */
 	apiKeySecret: string;
+	/** R1b: collector or consult. A first run starts in consult; see `collectorModeValue` for an upgrade. */
+	collectorMode: CollectorMode;
 	language: Language;
 	outputFolder: string;
 	preferredCharacter: string;
@@ -175,6 +184,8 @@ export interface TyrianSettings {
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	schemaVersion: SETTINGS_SCHEMA_VERSION,
 	apiKeySecret: '',
+	// A new installation reads until the player makes it the account's collector (R1b).
+	collectorMode: 'consult',
 	// Reserve locale only. A fresh install adopts the host's app language, see `hostLanguage`.
 	language: 'en',
 	outputFolder: 'Tyrian Companion',
@@ -249,6 +260,9 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 	return {
 		schemaVersion: SETTINGS_SCHEMA_VERSION,
 		apiKeySecret: stringOrDefault(data.apiKeySecret, DEFAULT_SETTINGS.apiKeySecret),
+		// R1b. Read defensively rather than riding a schema bump, same precedent as
+		// `recommendationCapitalThresholdCopper` below: a bump would reset the polling cadence.
+		collectorMode: collectorModeValue(data),
 		// An explicit choice always wins; only an absent or unsupported value asks the host.
 		language: data.language === 'en' || data.language === 'es' ? data.language : hostLanguage(hostLocale),
 		outputFolder: normalizeVaultFolder(data.outputFolder, configDir),
@@ -409,6 +423,22 @@ export function alertWebhookDestination(value: unknown): string {
 export function alertIngamePortValue(value: unknown): number {
 	return Number.isSafeInteger(value) && (value as number) >= ALERT_INGAME_MIN_PORT && (value as number) <= ALERT_INGAME_MAX_PORT
 		? value as number : DEFAULT_ALERT_INGAME_PORT;
+}
+
+/**
+ * R1b migration. A valid stored mode always wins. A `data.json` that predates the field and
+ * already names an API key comes from an installation that was collecting, so it stays the
+ * collector and updating changes nothing it does; anything else starts in consult. The result is
+ * written back by `shouldPersistSettingsOnLoad`, so this decides once per installation.
+ */
+function collectorModeValue(data: Record<string, unknown>): CollectorMode {
+	if (data.collectorMode === 'collector' || data.collectorMode === 'consult') return data.collectorMode;
+	return typeof data.apiKeySecret === 'string' && data.apiKeySecret.trim().length > 0 ? 'collector' : 'consult';
+}
+
+/** Whether this installation is the account's collector (R1b); false means consult. */
+export function isCollector(settings: Pick<TyrianSettings, 'collectorMode'>): boolean {
+	return settings.collectorMode === 'collector';
 }
 
 /** A short manifest-style version (`0.1.35`); anything else reads as "never dismissed". */
