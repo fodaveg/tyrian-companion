@@ -281,11 +281,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "20c3d53134dc281c3414d7fb08a529fb4234213d",
+					"id": "94cd7fe2315ee2ff70316d752b63e5d7e7e8b5b6",
 					"kind": "callback_registration",
-					"line": 105,
+					"line": 145,
 					"column": 19,
-					"endLine": 110,
+					"endLine": 150,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -298,11 +298,11 @@
 					"reason": "Allowlisted callback_registration: The \"captureScopedWithOperation\" owner returns its \"then\" promise: it records only the verified-context activity baseline on success; rejection propagates to the capture owner and terminal diagnostics. Verified registration: \"then\" in \"captureScopedWithOperation\"."
 				},
 				{
-					"id": "b7e2671b88c5a03fbde6b9ac7d75c0a99b169667",
+					"id": "c2c3083d7274ba31641848d3e67e09ff4fa02590",
 					"kind": "callback_registration",
-					"line": 105,
+					"line": 145,
 					"column": 19,
-					"endLine": 112,
+					"endLine": 152,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -317,9 +317,9 @@
 				{
 					"id": "b6d91fc8296c9f2556b0f838a0ebb59b944f0e89",
 					"kind": "callback_registration",
-					"line": 436,
+					"line": 559,
 					"column": 10,
-					"endLine": 439,
+					"endLine": 562,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -334,9 +334,9 @@
 				{
 					"id": "1467f365a98f5de706585cb0186a5aceb0bfb859",
 					"kind": "catch_clause",
-					"line": 507,
+					"line": 637,
 					"column": 5,
-					"endLine": 509,
+					"endLine": 639,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -350,9 +350,9 @@
 				{
 					"id": "e525efc37f56a39924c6c3be81abae9134fb54b5",
 					"kind": "catch_clause",
-					"line": 629,
+					"line": 764,
 					"column": 4,
-					"endLine": 647,
+					"endLine": 782,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -779,11 +779,11 @@
 					"reason": "Allowlisted callback_registration: The \"capture\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"capture\"."
 				},
 				{
-					"id": "d2b0a9ecc2b082297176c60a95ef5304de808cad",
+					"id": "5a7c0d42695901f992fb15e15691a79e135ec5b0",
 					"kind": "catch_clause",
-					"line": 118,
+					"line": 122,
 					"column": 5,
-					"endLine": 122,
+					"endLine": 126,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -795,11 +795,11 @@
 					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"captureInternal\"."
 				},
 				{
-					"id": "00e478d04a796e5a92fdc0ae8fdcc017795ad6e7",
+					"id": "c9c5f100bf7ac55436d9763cf71453750e3ea71e",
 					"kind": "catch_clause",
-					"line": 188,
+					"line": 210,
 					"column": 5,
-					"endLine": 193,
+					"endLine": 215,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -813,9 +813,9 @@
 				{
 					"id": "fb07df20c1acab17e9d4a938dc644c2c3c3b6f99",
 					"kind": "catch_clause",
-					"line": 202,
+					"line": 225,
 					"column": 5,
-					"endLine": 204,
+					"endLine": 227,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -829,9 +829,9 @@
 				{
 					"id": "cfc02c478f94b779d9ee54eb627d6d6da880060e",
 					"kind": "catch_clause",
-					"line": 210,
+					"line": 233,
 					"column": 3,
-					"endLine": 210,
+					"endLine": 233,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -845,9 +845,9 @@
 				{
 					"id": "bf5c52b661ea56712002ecf3f4eac65ea2dcf240",
 					"kind": "catch_clause",
-					"line": 309,
+					"line": 348,
 					"column": 4,
-					"endLine": 309,
+					"endLine": 348,
 					"endColumn": 47,
 					"classification": "allowlisted",
 					"evidence": {
@@ -861,9 +861,9 @@
 				{
 					"id": "8d09cd4342374b5f9ce10c4dd24d59bc1511447a",
 					"kind": "catch_clause",
-					"line": 348,
+					"line": 387,
 					"column": 2,
-					"endLine": 348,
+					"endLine": 387,
 					"endColumn": 73,
 					"classification": "allowlisted",
 					"evidence": {
@@ -877,9 +877,9 @@
 				{
 					"id": "bc703a0c50dd2460dff391e06394f32d3e974705",
 					"kind": "catch_clause",
-					"line": 396,
+					"line": 435,
 					"column": 5,
-					"endLine": 396,
+					"endLine": 435,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -893,9 +893,9 @@
 				{
 					"id": "eb7fc5eae8241421f79ba2465951ff14de6cfa50",
 					"kind": "catch_clause",
-					"line": 451,
+					"line": 490,
 					"column": 4,
-					"endLine": 451,
+					"endLine": 490,
 					"endColumn": 129,
 					"classification": "allowlisted",
 					"evidence": {
@@ -909,9 +909,9 @@
 				{
 					"id": "64c34bc724f0a9e2d6982a0e8b92ae9d3acc391c",
 					"kind": "catch_clause",
-					"line": 475,
+					"line": 514,
 					"column": 4,
-					"endLine": 475,
+					"endLine": 514,
 					"endColumn": 144,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14232,6 +14232,11 @@
 					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
 				}
 			]
+		},
+		"src/ui/inventory-sync-timing-summary.ts": {
+			"classification": "production_source",
+			"reason": "H18.39: pure duration-formatting helper; no catch, promise .catch(), void expression or registered callback.",
+			"boundaries": []
 		}
 	}
 }
