@@ -655,6 +655,9 @@ const ES = {
 		'sale.view.title': 'Venta de Halloween',
 		'sale.view.loading': 'Leyendo precios del bazar…',
 		'sale.view.empty': 'No hay objetos de temporada en el inventario todavía.',
+		// R1b: el estado final de Venta en un dispositivo en consulta que no capturó nada esta
+		// sesión (`TyrianCompanionCore.getSaleViewModel`); nunca «Obsidian», host-neutro.
+		'sale.view.consultEmpty': 'Este dispositivo está en modo consulta: la venta se calcula en el recolector.',
 		'sale.view.blocked': 'La venta no está disponible ahora mismo.',
 		// H18.34: distinto del genérico `advisor.view.blockedReason.rules_expired` — esta vista
 		// muestra la fecha exacta de caducidad, no solo que «hace falta publicar una revisión».
@@ -1837,6 +1840,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sale.view.title': 'Halloween sale',
 	'sale.view.loading': 'Reading bazaar prices…',
 	'sale.view.empty': 'No seasonal items in the inventory yet.',
+	'sale.view.consultEmpty': 'This device is in consult mode: sale is calculated on the collector.',
 	'sale.view.blocked': 'The sale tab is not available right now.',
 	// H18.34: distinct from the generic `advisor.view.blockedReason.rules_expired` — this view
 	// shows the exact expiry date, not just that "a published review is due".
