@@ -749,6 +749,88 @@ describe('Companion retained product shell', () => {
 		expect(retrySessionSummarySave).toHaveBeenCalledOnce();
 	});
 
+	// H18.36 bug (28 sep 2026, reported from Hebra/Obsidian): a view mounted before the core finishes
+	// starting reads `loadSessionHistory` while `runtimeReady` is still false, lands the panel on
+	// `unavailable`, and then never retries once the core is ready — because the reload guard only
+	// fires on the controller's own `idle` state or a just-finished session, neither of which this
+	// idle-to-idle transition produces. The fix: an `unavailable` panel tagged `not_ready` is also a
+	// reload trigger, so the core's post-startup `renderViews()` (the very next render) retries once.
+	it('retries session history once after the core finishes starting, with no reopen', async () => {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const container = new RetainedFakeElement('div', document);
+		let runtimeReady = false;
+		const loadSessionHistory = vi.fn(async () => (runtimeReady
+			? { status: 'ok' as const, sessions: [], ignored: 0 }
+			: { status: 'unavailable' as const }));
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getProvisionalDelta: () => null,
+				getContaminationReview: () => null,
+				getSessionRecoveryState: () => ({ status: 'none' as const }),
+				hasConfiguredApiKey: () => true,
+				getLiveSessionLoot: () => ({ status: 'idle' as const }),
+				...minimalDrawerActions(),
+				loadSessionHistory,
+			},
+			drawerOpen: { detail: false, alerts: false, loot: false },
+		});
+		const session = { version: 1 as const, status: 'idle' as const };
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
+		}).renderSimpleSession;
+		const historyController = (): { current(): { status: string } } =>
+			(harness as unknown as { sessionHistoryController: { current(): { status: string } } }).sessionHistoryController;
+
+		// First mount, core still starting.
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
+		await vi.waitFor(() => expect(historyController().current().status).toBe('unavailable'));
+		expect(loadSessionHistory).toHaveBeenCalledOnce();
+
+		// Core finishes starting; `renderViews()` repaints the mounted view (same idle session, no
+		// reopen, no `onOpen` call).
+		runtimeReady = true;
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
+		await vi.waitFor(() => expect(historyController().current().status).toBe('empty'));
+		expect(loadSessionHistory).toHaveBeenCalledTimes(2);
+	});
+
+	it('never auto-retries session history after a real read failure, only the explicit refresh does', async () => {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const container = new RetainedFakeElement('div', document);
+		const loadSessionHistory = vi.fn(async () => { throw new Error('vault read failed'); });
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getProvisionalDelta: () => null,
+				getContaminationReview: () => null,
+				getSessionRecoveryState: () => ({ status: 'none' as const }),
+				hasConfiguredApiKey: () => true,
+				getLiveSessionLoot: () => ({ status: 'idle' as const }),
+				...minimalDrawerActions(),
+				loadSessionHistory,
+			},
+			drawerOpen: { detail: false, alerts: false, loot: false },
+		});
+		const session = { version: 1 as const, status: 'idle' as const };
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
+		}).renderSimpleSession;
+
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
+		await vi.waitFor(() => expect(loadSessionHistory).toHaveBeenCalledOnce());
+
+		// Two more repaints of the same idle session must not hammer the failing read again.
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
+		await Promise.resolve();
+		expect(loadSessionHistory).toHaveBeenCalledOnce();
+	});
+
 	it('counts down a busy recovery lease and re-enables its buttons once the lease clears', () => {
 		vi.useFakeTimers();
 		const startedAt = Date.parse('2026-09-05T18:00:00.000Z');
