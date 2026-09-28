@@ -1,5 +1,22 @@
 # Changelog
 
+## Release beta 0.2.7 - el historial carga solo y se ve cuánto tarda el inventario
+
+- El historial del Acompañante ya no se queda en «No se pudo cargar el historial» cuando la vista
+  se abre antes de que termine el arranque (pestaña restaurada al abrir): se vuelve a pedir una vez
+  al terminar. Si la lectura falla de verdad, no reintenta solo.
+- Ajustes › Avanzado › «Duración del último análisis de inventario»: total y cada fase (captura,
+  preferencias, clasificación, vista previa y escritura de notas) del último análisis, sin activar
+  nada. El recibo local de captura del asesor añade la duración del roster, de cada personaje (por
+  su orden, nunca por su nombre), de cada almacén, del catálogo, de los precios y de la profundidad
+  de mercado. Sirve para decidir con cifras reales si merece la pena leer los personajes en
+  paralelo; hoy se leen de uno en uno para no agotar el tiempo de espera del transporte HTTP.
+- El aviso de diagnóstico de Ajustes deja el color de alerta en el borde y el texto en color normal:
+  el contraste pasa de 1,4:1 a 15,9:1 en tema claro y 12,2:1 en oscuro.
+
+Límites: gate local y CI verdes sobre `c870067`; sin QA en Obsidian real antes de publicar. La
+instalación y la carga por BRAT quedan pendientes.
+
 ## Release beta 0.2.6 - el plugin se separa de Obsidian para poder correr también en Hebra
 
 El comportamiento en Obsidian debería ser el mismo que en 0.2.5, salvo lo que se lista abajo. Por
