@@ -386,7 +386,7 @@ function assembledRuntimePlugin(factory: IDBFactory): AssembledRuntimeHarness {
 	};
 	target.app = app;
 	target.manifest = manifest;
-	target.settings = structuredClone(DEFAULT_SETTINGS);
+	target.settings = { ...structuredClone(DEFAULT_SETTINGS), collectorMode: 'collector' }; // R1b: an upgraded install with a key collects.
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();

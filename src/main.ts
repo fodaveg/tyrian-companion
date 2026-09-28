@@ -100,6 +100,8 @@ import type {
 import type { SellSignalRuntime, SellSignalRuntimeState } from './economy/sell-signal-runtime';
 import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
+import { CollectorHeartbeat } from './runtime/collector-status';
+import { loadCollectorInstanceId } from './runtime/collector-instance';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
 import { PriceSeedBulkRefreshService, type PriceSeedQueueCoverage } from './economy/price-seed-bulk-refresh';
 import { fetchPriceSeed } from './economy/price-seed-source';
@@ -137,6 +139,7 @@ import type { ReservationGoal } from './economy/reservation-model';
 import { LEGENDARY_MATERIALS_TABLE, legendaryMaterialsEntryFor } from './economy/legendary-materials';
 import {
 	ALERT_INGAME_SECRET_ID,
+	isCollector,
 	mergeSettingsUpdate,
 	migrateSettings,
 	priceHistoryOptInOffered,
@@ -311,6 +314,8 @@ export type SessionHistoryView =
 
 export type SettingsUpdateResult =
 	| { status: 'blocked'; reason: 'runtime_starting' }
+	/** R1b: consult is refused while a session is still open; finishing it needs the API. */
+	| { status: 'blocked'; reason: 'session_in_progress' }
 	| { status: 'saved'; inventoryAdvisor: 'unchanged' | 'reclassified' | 'next_refresh' };
 
 export interface LocalDebugExportPreview {
@@ -347,6 +352,8 @@ type NoticeDiagnosticSource =
 	| 'managed_assets_relocated'
 	| 'managed_assets_blocked'
 	| 'managed_assets_updated'
+	| 'consult_mode'
+	| 'collector_conflict'
 	| 'session_command'
 	| 'live_observation'
 	| 'valuable_loot'
@@ -486,6 +493,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private alertIngamePresence: IngamePresenceTracker | null = null;
 	/** H18.26: turns that presence into the session lifecycle; built once the runtime is ready. */
 	private ingameSessionMarker: IngameSessionMarker | null = null;
+	/** R1b: the collector's footprint in the status note. Running only while this installation collects. */
+	private collectorHeartbeat: CollectorHeartbeat | null = null;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
@@ -727,6 +736,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// load. Cached for the plugin's lifetime once it succeeds; a failure is not cached, so the
 		// next click retries instead of being stuck on a transient error forever.
 		this.loadLegendaryArmoryOptions = async (): Promise<LegendaryArmoryOptionsResult> => {
+			if (refusedInConsult(this)) return { status: 'error' };
 			if (this.legendaryArmoryOptionsCache !== null) return { status: 'ok', options: this.legendaryArmoryOptionsCache };
 			if (this.legendaryArmoryOptionsInFlight !== null) return await this.legendaryArmoryOptionsInFlight;
 			const request = (async (): Promise<LegendaryArmoryOptionsResult> => {
@@ -829,6 +839,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			heldQuantity: () => this.observedBagQuantity(),
 			itemName: () => translateRuntime(createTranslator(this.settings.language), 'alerts.bagName'),
 			emitAlert: (alert) => { this.dispatchAlert(alert); },
+			// R1b: a consult installation opens the local series read-only (no capture, no compaction).
+			collector: () => !consulting(this),
 		});
 		this.sellSignal = priceServices.sellSignal;
 		this.priceHistory = priceServices.priceHistory;
@@ -1118,7 +1130,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const startupFinalization = this.sessions.takeStartupFinalization();
 		const restoredSession = this.sessions.getState();
 		if (restoredSession.status === 'active') this.startLiveObservation(restoredSession.sessionId, true);
-		else if (startupFinalization) {
+		// R1b: the finished session's note is a collector write. A consult installation (the mode
+		// changed under an unfinished session, e.g. through a synced data.json) leaves it unwritten.
+		else if (startupFinalization && !consulting(this)) {
 			await this.finishFinalizedSession(
 				startupFinalization.sessionId, startupFinalization.delta, startupFinalization.review,
 			);
@@ -1145,7 +1159,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// `missing_key`/`capture_unavailable` and stayed that way until the player pressed
 		// "Comprobar conexión" by hand. Warming the connection here, once and non-blocking, means
 		// the very first refresh after a reload already sees the key `checkConnection` would have.
-		if (this.hasConfiguredApiKey()) fireAndForgetLocal(this.localDebugActions,
+		// R1b: only the collector talks to the account, so only the collector warms the connection.
+		if (!consulting(this) && this.hasConfiguredApiKey()) fireAndForgetLocal(this.localDebugActions,
 			{ component: 'connection', action: 'connection_check', state: 'startup_warmup' },
 			() => this.checkConnection());
 		// Heals a root left behind by a folder change made before this version shipped the
@@ -1154,6 +1169,85 @@ export default class TyrianCompanionPlugin extends Plugin {
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'vault', action: 'vault_write', state: 'managed_assets_reconcile' },
 			() => this.reconcileManagedAssetsRoot());
+		this.syncCollectorHeartbeat();
+	}
+
+	/** R1b: what `refusedInConsult` shows when an action only the collector may take is refused. */
+	notifyConsultMode(): void {
+		this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultMode'), 'consult_mode');
+	}
+
+	/**
+	 * R1b: runs the collector's heartbeat (`collector-status.ts`) exactly while this installation
+	 * collects, and stops it in consult. Without a local instance id (IndexedDB unavailable) there
+	 * is no heartbeat at all rather than one under a throwaway id; the failure reaches the log.
+	 */
+	private syncCollectorHeartbeat(): void {
+		if (consulting(this) || this.unloaded) {
+			this.collectorHeartbeat?.stop();
+			this.collectorHeartbeat = null;
+			return;
+		}
+		const vaultId = this.vaultId;
+		if (this.collectorHeartbeat !== null || vaultId === null) return;
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'vault', action: 'vault_write', state: 'collector_heartbeat' },
+			async () => {
+				const instanceId = await loadCollectorInstanceId(this.host.kv.indexedDB, vaultId);
+				// The mode may have flipped, or another call won, while the id was loading.
+				if (consulting(this) || this.unloaded || this.collectorHeartbeat !== null) return;
+				const heartbeat = new CollectorHeartbeat({
+					vault: labelledVault(this.host.vault, 'Collector status note'),
+					root: () => this.configuredNotesRoot(),
+					instanceId,
+					environment: this.host.environment,
+					locale: () => this.settings.language,
+					// Same rule as every note writer: nothing is written under a root with a legacy path pending.
+					writable: () => this.settings.legacyOutputFolder === null && this.settings.legacyManagedAssetsRoot === null,
+					setInterval: (callback, delayMs) => window.setInterval(callback, delayMs),
+					clearInterval: (handle) => { window.clearInterval(handle); },
+					run: (beat) => {
+						fireAndForgetLocal(this.localDebugActions,
+							{ component: 'vault', action: 'vault_write', state: 'collector_heartbeat' }, beat);
+					},
+					onConflict: (other) => {
+						this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.collectorConflict', {
+							platform: other.platform, version: other.hostVersion,
+						}), 'collector_conflict');
+					},
+				});
+				this.collectorHeartbeat = heartbeat;
+				heartbeat.start();
+			});
+	}
+
+	/**
+	 * R1b: applies a collector/consult switch made in Settings without a reload, through the same
+	 * paths the boot and the individual toggles use: the bridge port, detection, price history
+	 * (reopened in the new mode), Halloween, the heartbeat and the connection warm-up.
+	 */
+	private async applyCollectorModeChange(context?: ResolvedLocalDebugActionContext): Promise<void> {
+		const collector = !consulting(this);
+		this.syncAlertIngameServer();
+		if (!collector) this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('mode_off'));
+		if (this.priceHistory !== null && this.settings.priceHistoryEnabled) {
+			const settings = priceHistorySettingsFrom(this.settings);
+			await this.priceHistory.configure({ ...settings, enabled: false }, context);
+			await this.priceHistory.activate(settings, context);
+			this.priceHistory.setOnline(this.host.environment.isOnline());
+		}
+		if (this.halloween !== null) {
+			if (this.halloweenObservationActive()) {
+				await this.halloween.activate(context);
+				this.halloween.setOnline(this.host.environment.isOnline());
+			} else this.halloween.disable(context);
+		}
+		this.syncCollectorHeartbeat();
+		if (collector && this.hasConfiguredApiKey()) fireAndForgetLocal(this.localDebugActions,
+			{ component: 'connection', action: 'connection_check', state: 'collector_mode' },
+			() => this.checkConnection());
+		this.settingTab.refreshForSettingsChange();
+		this.renderInventoryAdvisorViews();
 	}
 
 	onunload(): void {
@@ -1201,6 +1295,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.alertIngameServer = null;
 		this.ingameSessionMarker?.dispose();
 		this.ingameSessionMarker = null;
+		this.collectorHeartbeat?.stop();
+		this.collectorHeartbeat = null;
 		this.alertIngamePresence?.dispose();
 		this.alertIngamePresence = null;
 		this.startModal?.close();
@@ -1241,6 +1337,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		let state: ConnectionState = { status: 'idle' };
 		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<LocalDebugActionOutcome> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); state = { status: 'idle' }; return { phase: 'success', code: 'ok' }; }
+		// R1b: `tokeninfo` and `account` are Guild Wars 2 requests.
+		if (refusedInConsult(this)) { state = this.connection.getState(); return { phase: 'skip', code: 'skipped', state: 'consult_mode' }; }
 		const check = this.connection.check(context);
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
@@ -1615,6 +1713,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Explicit Sale refresh may fill the calendar's history, using the existing opt-in and cache. */
 	async refreshSale(options: { refreshSeeds: boolean } = { refreshSeeds: true }): Promise<void> {
+		if (refusedInConsult(this)) return;
 		if (this.runtimeReady && options.refreshSeeds && this.settings.priceHistoryEnabled) {
 			const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
 			if (loaded.status === 'available') {
@@ -1791,6 +1890,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async refreshInventoryAdvisor(): Promise<void> {
+		if (refusedInConsult(this)) return;
 		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<void> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const operation = this.inventoryAdvisor.refresh({}, context);
@@ -1861,6 +1961,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** The one-click flow: refresh, preview, and (unless it must pause) apply. */
 	async runInventoryVaultSync(): Promise<void> {
+		if (refusedInConsult(this)) return;
 		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.run());
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 		await this.updateManagedAssetsAfterInventorySync();
@@ -1868,6 +1969,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Writes a plan that paused for confirmation because it would deactivate rows. */
 	async confirmInventoryVaultSync(): Promise<void> {
+		if (refusedInConsult(this)) return;
 		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.confirm());
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 		await this.updateManagedAssetsAfterInventorySync();
@@ -1930,6 +2032,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async previewInventoryVaultSync(openView = false): Promise<void> {
+		if (refusedInConsult(this)) return;
 		const perform = async (): Promise<void> => {
 		if (openView) await this.activateInventoryAdvisorView();
 		const operation = this.inventoryVaultSync.preview();
@@ -1941,6 +2044,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async applyInventoryVaultSync(): Promise<void> {
+		if (refusedInConsult(this)) return;
 		const perform = async () => {
 			const operation = this.inventoryVaultSync.apply();
 			this.renderInventoryAdvisorViews();
@@ -1965,6 +2069,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async previewWalletVaultSync(): Promise<void> {
+		if (refusedInConsult(this)) return;
 		const perform = async (): Promise<void> => {
 		const state = await this.walletVaultSync.preview();
 		this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
@@ -1973,6 +2078,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async applyWalletVaultSync(): Promise<void> {
+		if (refusedInConsult(this)) return;
 		const perform = async () => {
 			const state = await this.walletVaultSync.apply();
 			this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
@@ -2110,7 +2216,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * the local debug log instead of only the UI.
 	 */
 	async exportPilotMetrics(): Promise<PilotMetricsExportResult | null> {
-		if (!this.runtimeReady) return null;
+		if (!this.runtimeReady || refusedInConsult(this)) return null;
 		const plan = this.pilotMetricsExportPlan;
 		if (!plan) return null;
 		const perform = async () => {
@@ -2266,6 +2372,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async armAssistedDetection(): Promise<ProductActionOutcome> {
+		if (refusedInConsult(this)) return 'unavailable';
 		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<ProductActionOutcome> => {
 			if (!this.runtimeReady) { this.notifyRuntimeStarting(); return 'unavailable'; }
 			const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
@@ -2520,6 +2627,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.notifyRuntimeStarting();
 			return Promise.resolve({ status: 'unavailable', message: 'Tyrian Companion is still starting.' });
 		}
+		// R1b: the scrub rewrites session notes, which only the collector writes.
+		if (refusedInConsult(this)) {
+			return Promise.resolve({ status: 'unavailable', message: 'This installation is in consult mode.' });
+		}
 		if (this.sessionHistoryPreviewFlight) return this.sessionHistoryPreviewFlight;
 		this.sessionHistoryView = { status: 'scrub_previewing', sessions: 0, erased: 0, alreadyAbsent: 0 };
 		this.settingTab.refreshSessionHistoryRow();
@@ -2555,6 +2666,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 			return Promise.resolve({
 				status: 'unavailable', erased: 0, alreadyAbsent: 0,
 				message: 'Tyrian Companion is still starting.',
+			});
+		}
+		if (refusedInConsult(this)) {
+			return Promise.resolve({
+				status: 'unavailable', erased: 0, alreadyAbsent: 0, message: 'This installation is in consult mode.',
 			});
 		}
 		if (this.sessionHistoryScrubFlight) return this.sessionHistoryScrubFlight;
@@ -2614,7 +2730,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** True while the Halloween observation surface is live: the pack's window, or the manual widening. */
 	private halloweenObservationActive(): boolean {
-		return halloweenObservationActive(this.settings.halloweenEnabled, Date.now());
+		// R1b: the observation polls the account and keeps its own store; consult reads neither.
+		return !consulting(this) && halloweenObservationActive(this.settings.halloweenEnabled, Date.now());
 	}
 
 	/**
@@ -2639,6 +2756,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * the alert IS the product, so a failed delivery now surfaces as its own failure record.
 	 */
 	private dispatchAlert(alert: AlertV1): void {
+		// R1b: only the collector alerts. Nothing in consult produces one; this keeps it that way.
+		if (consulting(this)) return;
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'notification', action: 'notification_emit', state: alertNoticeSource(alert.kind) },
 			async () => {
@@ -2834,7 +2953,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * itself and never reaches this method as a rejection, so it cannot stop the plugin load.
 	 */
 	private syncAlertIngameServer(): void {
-		if (!this.settings.alertIngameEnabled) {
+		// R1b: the bridge port is the collector's; switching to consult closes it like the toggle does.
+		if (!this.settings.alertIngameEnabled || consulting(this)) {
 			if (this.alertIngameServer === null) return;
 			const stale = this.alertIngameServer;
 			this.alertIngameServer = null;
@@ -2851,6 +2971,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async ensureAlertIngameServer(): Promise<AlertIngameServerHandle | null> {
+		if (consulting(this)) return null;
 		const port = this.settings.alertIngamePort;
 		if (this.alertIngameServer !== null && this.alertIngameServerPort === port) return this.alertIngameServer;
 		if (this.alertIngameServer !== null) {
@@ -3034,7 +3155,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			presence: () => this.getIngamePresence(),
 			now: () => Date.now(),
 			port: {
-				enabled: () => this.settings.alertIngameEnabled && this.hasConfiguredApiKey(),
+				enabled: () => this.settings.alertIngameEnabled && this.hasConfiguredApiKey() && !consulting(this),
 				session: () => this.ingameSessionView(),
 				start: async (character) => await this.startIngameSession(character),
 				stopAt: async (_sessionId, endedAtMs) => {
@@ -3283,6 +3404,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	async applyManagedAssets(): Promise<void> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
+		if (refusedInConsult(this)) return;
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -3294,6 +3416,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	async repairManagedAssets(): Promise<void> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
+		if (refusedInConsult(this)) return;
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -3307,6 +3430,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * pointer could not be confirmed to match the retained root first). */
 	async relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return null; }
+		if (refusedInConsult(this)) return null;
 		const destination = this.settings.outputFolder;
 		const legacyRoot = this.settings.legacyManagedAssetsRoot;
 		if (!await this.ensureManagedAssetsAuthority(parent)) return null;
@@ -3321,6 +3445,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	async removeManagedAssets(): Promise<void> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
+		if (refusedInConsult(this)) return;
 		const legacyRoot = this.settings.legacyManagedAssetsRoot;
 		if (!await this.ensureManagedAssetsAuthority()) return;
 		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.remove(legacyRoot ?? undefined));
@@ -3347,7 +3472,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * that into something that fires on its own the next time Obsidian starts.
 	 */
 	private async reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
-		if (this.settings.legacyManagedAssetsRoot !== null) return;
+		// R1b: moving the Bases is a collector write; a consult installation leaves them where they are.
+		if (consulting(this) || this.settings.legacyManagedAssetsRoot !== null) return;
 		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
 		const result = await this.relocateManagedAssets(parent);
 		const translator = createTranslator(this.settings.language);
@@ -3761,6 +3887,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	openManualSessionStart(humanBoundaryAt: string | null = null): void {
+		if (refusedInConsult(this)) return;
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'session', action: 'session_start' }, async () => {
 				if (humanBoundaryAt === null) {
@@ -3867,6 +3994,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * cadence that still buys new bytes, and the one the latency copy quotes.
 	 */
 	private startLiveObservation(sessionId: string, restored: boolean): void {
+		// R1b: the loot poll is a Guild Wars 2 request; a consult installation never starts one.
+		if (consulting(this)) return;
 		this.sessionSummarySaveState = 'unknown';
 		this.storedSessionLootSummary = null;
 		this.savedSessionNotePath = null;
@@ -3904,7 +4033,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousSalvagePreferences = JSON.stringify(resolveEquipmentSalvagePreferences(this.settings));
 		const previousAlertIngameEnabled = this.settings.alertIngameEnabled;
 		const previousAlertIngamePort = this.settings.alertIngamePort;
+		const previousCollectorMode = this.settings.collectorMode;
 		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.host.vault.configDir, this.host.locale());
+		// R1b: a session still open needs the API to finish (its final capture, its note), so the
+		// collector stays one until it closes rather than stranding it half-measured.
+		if (previousCollectorMode === 'collector' && nextSettings.collectorMode === 'consult' && sessionInProgress(this.sessions.getState())) {
+			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
+			return { status: 'blocked', reason: 'session_in_progress' };
+		}
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		// Publish the new runtime view only after its durable write succeeds. A rejected
 		// save therefore leaves every subsequent Refresh on the last persisted overlay.
@@ -3995,6 +4131,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// An explicit folder change takes Bases/templates with it, so the selector stays the
 		// single source of truth without a separate manual step.
 		if (previousOutputFolder !== this.settings.outputFolder) await this.reconcileManagedAssetsRoot(context);
+		if (previousCollectorMode !== this.settings.collectorMode) await this.applyCollectorModeChange(context);
 		return { status: 'saved', inventoryAdvisor: inventoryAdvisorResult };
 		};
 		let result: SettingsUpdateResult;
@@ -4174,6 +4311,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			canStartSession: () => this.runtimeReady
 				&& this.sessions.getRecoveryState().status === 'none'
 				&& (this.sessions.getState().status === 'idle' || this.sessions.getState().status === 'abandoned'),
+			isCollector: () => !consulting(this),
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		registerProductActionPalette(
@@ -5107,6 +5245,37 @@ function fireAndForgetLocal(
 ): void {
 	if (actions) actions.fireAndForget(context, action);
 	else action().catch(() => undefined);
+}
+
+/**
+ * R1b: whether this installation is in consult mode (`TyrianSettings.collectorMode`). A module
+ * function rather than a method so every plugin path can ask it, including the ones the tests
+ * drive with a plain object as `this`; see `isCollector` for why only an explicit `consult` reads.
+ */
+function consulting(plugin: { readonly settings?: Partial<Pick<TyrianSettings, 'collectorMode'>> }): boolean {
+	return plugin.settings?.collectorMode !== undefined && !isCollector({ collectorMode: plugin.settings.collectorMode });
+}
+
+/**
+ * R1b: the gate on every explicit action only the collector may take (a Guild Wars 2 request, a
+ * note, Base or export write). True in consult, after saying so once per attempt; the caller then
+ * does nothing.
+ */
+function refusedInConsult(plugin: {
+	readonly settings?: Partial<Pick<TyrianSettings, 'collectorMode'>>;
+	notifyConsultMode(): void;
+}): boolean {
+	if (!consulting(plugin)) return false;
+	plugin.notifyConsultMode();
+	return true;
+}
+
+/**
+ * R1b: a session between its start and its final note (an `error` still wraps one of those
+ * states). Idle, complete and abandoned sessions need nothing more from the API.
+ */
+function sessionInProgress(state: SessionState): boolean {
+	return state.status !== 'idle' && state.status !== 'complete' && state.status !== 'abandoned';
 }
 
 /** Consumes a promise whose rejection was already captured by its inner diagnostic action. */

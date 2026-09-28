@@ -26,7 +26,7 @@ import type { HalloweenRuntime } from './halloween/halloween-runtime';
  * inspects `main.ts` as text cannot see.
  */
 interface HalloweenBackfillHarness {
-	settings: { outputFolder: string; halloweenEnabled: boolean };
+	settings: { outputFolder: string; halloweenEnabled: boolean; collectorMode: 'collector' | 'consult' };
 	runtimeReady: boolean;
 	initializeRuntime(): Promise<void>;
 	halloween: HalloweenRuntime | null;
@@ -104,7 +104,8 @@ function bootedHarness(
 	};
 	target.app = app;
 	target.manifest = manifest;
-	target.settings = { ...structuredClone(DEFAULT_SETTINGS), halloweenEnabled: true };
+	// R1b: the Halloween observation is the collector's; an upgraded install with a key collects.
+	target.settings = { ...structuredClone(DEFAULT_SETTINGS), halloweenEnabled: true, collectorMode: 'collector' };
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.registerEvent = vi.fn();

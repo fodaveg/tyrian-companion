@@ -436,9 +436,13 @@ function collectorModeValue(data: Record<string, unknown>): CollectorMode {
 	return typeof data.apiKeySecret === 'string' && data.apiKeySecret.trim().length > 0 ? 'collector' : 'consult';
 }
 
-/** Whether this installation is the account's collector (R1b); false means consult. */
+/**
+ * Whether this installation is the account's collector (R1b). Only an explicit `consult` reads:
+ * `migrateSettings` always sets the field, so a runtime object without it can only be one built
+ * before R1b, which collected.
+ */
 export function isCollector(settings: Pick<TyrianSettings, 'collectorMode'>): boolean {
-	return settings.collectorMode === 'collector';
+	return settings.collectorMode !== 'consult';
 }
 
 /** A short manifest-style version (`0.1.35`); anything else reads as "never dismissed". */
