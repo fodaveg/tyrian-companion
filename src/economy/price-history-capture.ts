@@ -9,7 +9,8 @@ import {
 	type PriceHistorySnapshotV1,
 	type PriceHistoryTuple,
 } from './price-history-model';
-import { PriceHistoryStoreError, type IndexedDbPriceHistoryStore } from './price-history-store';
+import { PriceHistoryStoreError } from './price-history-store';
+import type { TyrianPriceHistoryStore } from '../host/tyrian-host-storage';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 export type PriceHistoryCaptureResult =
@@ -32,7 +33,7 @@ export class PriceHistoryCaptureService {
 	) {}
 
 	capture(
-		store: IndexedDbPriceHistoryStore,
+		store: TyrianPriceHistoryStore,
 		vaultId: string,
 		slotStartMs: number,
 		intervalMinutes: PriceHistoryIntervalMinutes,
@@ -48,7 +49,7 @@ export class PriceHistoryCaptureService {
 	}
 
 	private async captureInternal(
-		store: IndexedDbPriceHistoryStore,
+		store: TyrianPriceHistoryStore,
 		vaultId: string,
 		slotStartMs: number,
 		intervalMinutes: PriceHistoryIntervalMinutes,

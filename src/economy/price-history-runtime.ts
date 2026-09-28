@@ -7,6 +7,7 @@ import {
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
 import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
+import type { TyrianPriceHistoryPort, TyrianPriceHistoryStore } from '../host/tyrian-host-storage';
 import { ApiPollScheduler, type ApiPollOutcome, type ApiPollSchedulerState } from '../sessions/api-poll-scheduler';
 import { PriceHistoryCaptureService } from './price-history-capture';
 import {
@@ -19,7 +20,7 @@ import {
 	type PriceHistorySide,
 	type PriceHistoryWindowDays,
 } from './price-history-model';
-import { IndexedDbPriceHistoryStore, PriceHistoryStoreError, type PriceHistoryStoreFailure } from './price-history-store';
+import { PriceHistoryStoreError, type PriceHistoryStoreFailure } from './price-history-store';
 
 const DAY_MS = 86_400_000;
 
@@ -41,7 +42,7 @@ export interface PriceHistoryRuntimeState {
 }
 
 export interface PriceHistoryRuntimeOptions {
-	factory: IDBFactory;
+	priceHistory: Pick<TyrianPriceHistoryPort, 'open'>;
 	vaultId: string;
 	gateway: PublicCatalogGateway;
 	rateLimit: RateLimitCoordinator;
@@ -66,7 +67,7 @@ export class PriceHistoryRuntime {
 	private readonly capture: PriceHistoryCaptureService;
 	private readonly scheduler: ApiPollScheduler;
 	private readonly onStateChange: () => void;
-	private store: IndexedDbPriceHistoryStore | null = null;
+	private store: TyrianPriceHistoryStore | null = null;
 	private settings: PriceHistorySettings = { ...DEFAULT_PRICE_HISTORY_SETTINGS };
 	private activation: Promise<void> | null = null;
 	private generation = 0;
@@ -260,7 +261,7 @@ export class PriceHistoryRuntime {
 	}
 
 	private async readSeries(
-		store: IndexedDbPriceHistoryStore,
+		store: TyrianPriceHistoryStore,
 		generation: number,
 		seriesGeneration: number,
 		itemId: number,
@@ -299,11 +300,9 @@ export class PriceHistoryRuntime {
 	}
 
 	private async activateInternal(generation: number): Promise<void> {
-		let opened: IndexedDbPriceHistoryStore | null = null;
+		let opened: TyrianPriceHistoryStore | null = null;
 		try {
-			opened = await IndexedDbPriceHistoryStore.open(
-				this.options.factory, undefined, undefined, this.options.persistenceDiagnostics,
-			);
+			opened = await this.options.priceHistory.open(this.options.persistenceDiagnostics);
 			if (!this.current(generation)) { opened.close(); return; }
 			this.store = opened;
 			const watch = await opened.ensureSeedWatchList(this.options.vaultId, this.now());
@@ -382,7 +381,7 @@ export class PriceHistoryRuntime {
 		return { kind: 'success' };
 	}
 
-	private async refreshSelectedSeries(store: IndexedDbPriceHistoryStore, generation: number): Promise<void> {
+	private async refreshSelectedSeries(store: TyrianPriceHistoryStore, generation: number): Promise<void> {
 		const { selectedItemId, selectedSide, windowDays } = this.state;
 		if (selectedItemId === null) return;
 		const seriesGeneration = ++this.seriesGeneration;
@@ -436,7 +435,7 @@ export class PriceHistoryRuntime {
 		return !this.disposed && this.settings.enabled && generation === this.generation;
 	}
 
-	private owns(generation: number, store: IndexedDbPriceHistoryStore): boolean {
+	private owns(generation: number, store: TyrianPriceHistoryStore): boolean {
 		return this.current(generation) && this.store === store;
 	}
 }
