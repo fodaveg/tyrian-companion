@@ -102,18 +102,24 @@ describe('negative module frontiers', () => {
 /**
  * R1a (SPEC-TYRIAN-EN-HEBRA.md section 1): the core runs inside Hebra, a webview with no Obsidian,
  * no Electron and no Node. `obsidian`, `electron` and `net` are reachable only from the Obsidian
- * host adapter, the plugin entry and the UI files R1c has not migrated yet. Type-only imports
- * count too: Hebra type-checks the submodule without the `obsidian` package.
+ * host adapter and the plugin entry: since R1c the whole UI in `src/ui/` goes through
+ * `TyrianHost.ui`, with no file-by-file exception left. Type-only imports count too: Hebra
+ * type-checks the submodule without the `obsidian` package.
  */
 const HOST_ONLY_SPECIFIERS = ['obsidian', 'electron', 'net', 'node:net'];
 const OBSIDIAN_HOST_DIRECTORY = 'src/host/obsidian/';
 const OBSIDIAN_PLUGIN_ENTRY = 'src/main.ts';
-/**
- * The UI that still talks to Obsidian directly. An EXPLICIT list, never a pattern: R1c moves each
- * file onto `TyrianHost.ui` and deletes its line here, and the ratchet below fails any line left
- * behind once its file no longer needs it.
- */
-const OBSIDIAN_UI_AWAITING_R1C: readonly string[] = [
+/** The UI files that imported `obsidian` until R1c; the scan below must still reach every one. */
+const R1C_UI_OFF_OBSIDIAN: readonly string[] = [
+	'src/ui/alert-ingame-secret-modal.ts',
+	'src/ui/companion-view.ts',
+	'src/ui/inventory-advisor-item-view.ts',
+	'src/ui/inventory-advisor-view.ts',
+	'src/ui/manual-session-start-modal.ts',
+	'src/ui/product-shell.ts',
+	'src/ui/receipt.ts',
+	'src/ui/sale-item-view.ts',
+	'src/ui/sale-view.ts',
 	'src/ui/settings-tab.ts',
 	'src/ui/vault-folder-suggest.ts',
 ];
@@ -157,25 +163,19 @@ function webviewViolations(path: string): string[] {
 
 describe('R1a host boundary', () => {
 	it('keeps obsidian, electron, net and every Node builtin or global inside the Obsidian side', () => {
-		const offenders = sourceModulePaths()
+		const scanned = sourceModulePaths()
 			.filter((path) => !path.startsWith(OBSIDIAN_HOST_DIRECTORY) && path !== OBSIDIAN_PLUGIN_ENTRY
-				&& !OBSIDIAN_UI_AWAITING_R1C.includes(path) && !path.startsWith(TEST_INFRASTRUCTURE_DIRECTORY)
-				&& !NODE_TEST_FIXTURES.includes(path))
-			.flatMap((path) => webviewViolations(path));
-		expect(offenders).toEqual([]);
+				&& !path.startsWith(TEST_INFRASTRUCTURE_DIRECTORY) && !NODE_TEST_FIXTURES.includes(path));
+		expect(scanned.flatMap((path) => webviewViolations(path))).toEqual([]);
+		// Not vacuous for the UI: the eleven files R1c took off Obsidian are among the ones scanned.
+		expect(scanned).toEqual(expect.arrayContaining([...R1C_UI_OFF_OBSIDIAN]));
 	}, 30_000); // parses every src/ module: 1.9 s here, 6.3 s on the GitHub runner, past the 5 s default (CI run 36391764610)
 
-	it('lets the listed UI files and fixtures reach Obsidian or Node, and nothing else', () => {
-		// The exceptions are for exactly what they are listed for: the UI may still import
-		// obsidian, never a Node builtin or global; a fixture may use Node, never Obsidian.
-		expect(OBSIDIAN_UI_AWAITING_R1C.flatMap((path) => webviewViolations(path)
-			.filter((violation) => !/ -> import (?:obsidian|electron)$/u.test(violation)))).toEqual([]);
+	it('lets the listed fixtures reach Node, and never Obsidian', () => {
 		expect(NODE_TEST_FIXTURES.flatMap((path) => hostOnlySpecifiers(path))).toEqual([]);
 	});
 
-	it('drops a UI file or a fixture from its exception list as soon as it no longer needs it', () => {
-		const staleUi = OBSIDIAN_UI_AWAITING_R1C.filter((path) => hostOnlySpecifiers(path).length === 0);
-		expect(staleUi).toEqual([]);
+	it('drops a fixture from its exception list as soon as it no longer needs it', () => {
 		const staleFixtures = NODE_TEST_FIXTURES.filter((path) => moduleBoundaryFacts(path).specifiers.every((specifier) => !isNodeBuiltin(specifier)));
 		expect(staleFixtures).toEqual([]);
 	});

@@ -217,6 +217,7 @@ export interface TyrianPanelRegistration {
 export interface TyrianModalRequest {
 	readonly title?: string;
 	mount(content: HTMLElement, close: () => void): void;
+	/** Runs once the modal has closed (its `close`, Esc, the ✕) and the host has emptied `content`. */
 	onClose?(): void;
 }
 
@@ -239,6 +240,7 @@ export interface TyrianTextControl {
 	readonly inputEl: HTMLInputElement;
 	setPlaceholder(placeholder: string): TyrianTextControl;
 	setValue(value: string): TyrianTextControl;
+	setDisabled(disabled: boolean): TyrianTextControl;
 	onChange(callback: (value: string) => unknown): TyrianTextControl;
 }
 

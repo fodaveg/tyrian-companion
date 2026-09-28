@@ -1,13 +1,4 @@
-import {
-	PluginSettingTab,
-	Modal,
-	SecretComponent,
-	Setting,
-	type App,
-	type ButtonComponent,
-	type SettingDefinitionItem,
-} from 'obsidian';
-
+import type { TyrianButtonControl, TyrianSecretControl, TyrianSettingRow, TyrianUiPort, TyrianVault } from '../host/tyrian-host';
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import {
 	projectManagedAssetsActions,
@@ -42,7 +33,7 @@ import {
 } from '../sessions/pilot-metrics-model';
 import { SessionHistoryScrubController } from './session-history-scrub-controller';
 import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
-import { VaultFolderInputSuggest } from './vault-folder-suggest';
+import { TyrianModal, type TyrianModalUi } from './tyrian-modal';
 import { HalloweenPersonalValuationSettings } from './halloween-personal-valuation-settings';
 import type { EquipmentSalvageKit, EquipmentSalvageSaleStrategy } from '../economy/equipment-salvage-economy';
 
@@ -68,7 +59,7 @@ type SettingSaveState = 'saving' | 'saved' | 'error';
  */
 type SettingsRowUpdate = Partial<TyrianSettings> & { readonly collectorMode?: CollectorMode };
 type SettingsWriter = (settings: SettingsRowUpdate) => Promise<SettingsUpdateResult | null>;
-type CategorizedSettingRenderer = (setting: Setting, save: SettingsWriter) => void;
+type CategorizedSettingRenderer = (setting: TyrianSettingRow, save: SettingsWriter) => void;
 interface CategorizedSettingDefinition {
 	category: SettingsCategory;
 	/** Rows that depend on a parent toggle are omitted from the tab entirely while their parent is off. */
@@ -116,18 +107,36 @@ export function percentDisplayToBps(value: string): number | 'invalid' {
 	return Number.isSafeInteger(bps) && bps >= 0 && bps <= 100_000 ? bps : 'invalid';
 }
 
-export class TyrianCompanionSettingTab extends PluginSettingTab {
-	private connectionSetting: Setting | null = null;
+/** A row as a host lists it (Obsidian's settings search): its name, its description and how to build it. */
+export interface TyrianSettingDefinition {
+	readonly name: string;
+	readonly desc: string;
+	render(setting: TyrianSettingRow): void;
+}
+
+/** What the settings panel needs from the host: rows, modals, the folder picker and the config folder. */
+export interface SettingsPanelHost {
+	readonly ui: Pick<TyrianUiPort, 'setting' | 'openModal' | 'pickFolder'>;
+	readonly vault: Pick<TyrianVault, 'configDir'>;
+}
+
+/**
+ * The plugin's settings panel, rendered into the container the host mounts it in (a
+ * `PluginSettingTab`'s `containerEl` in Obsidian, `host/obsidian/obsidian-ui.ts`). `mount` and
+ * `unmount` are the shape of `TyrianPanelRegistration`.
+ */
+export class TyrianCompanionSettingTab {
+	private connectionSetting: TyrianSettingRow | null = null;
 	private connectionStatusEl: HTMLElement | null = null;
-	private connectionButton: ButtonComponent | null = null;
+	private connectionButton: TyrianButtonControl | null = null;
 	private countdownInterval: number | null = null;
-	private managedAssetsSetting: Setting | null = null;
+	private managedAssetsSetting: TyrianSettingRow | null = null;
 	private alertIngameServerFeedbackEl: HTMLElement | null = null;
-	private sessionHistorySetting: Setting | null = null;
-	private sessionHistoryButton: ButtonComponent | null = null;
-	private sessionHistoryScrubButton: ButtonComponent | null = null;
+	private sessionHistorySetting: TyrianSettingRow | null = null;
+	private sessionHistoryButton: TyrianButtonControl | null = null;
+	private sessionHistoryScrubButton: TyrianButtonControl | null = null;
 	private readonly sessionHistoryScrubController: SessionHistoryScrubController;
-	private readonly managedAssetButtons = new Map<ManagedAssetsAction, ButtonComponent>();
+	private readonly managedAssetButtons = new Map<ManagedAssetsAction, TyrianButtonControl>();
 	private readonly halloweenPersonalValuation: HalloweenPersonalValuationSettings;
 	/** True once the user opts into salvage time cost this render session, even before either value is set. */
 	private salvageTimeRevealed = false;
@@ -139,20 +148,24 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	/** M4: `null` until the "Cargar lista" button succeeds once; `'loading'`/`'error'` are transient render states. */
 	private legendaryArmoryOptions: readonly LegendaryArmoryOptionV1[] | null | 'loading' | 'error' = null;
 	/**
-	 * R1b: whether the mode row sits on the first tab, decided when the tab opens (`display`) and
+	 * R1b: whether the mode row sits on the first tab, decided when the tab opens (`mount`) and
 	 * kept across the rerenders a save triggers, so switching the mode never whisks the row away
 	 * from under the pointer. Null until first read: the mode at that moment decides.
 	 */
 	private collectorModeOnFirstTab: boolean | null = null;
 
+	/**
+	 * @param containerEl Where the tab renders: Obsidian's `PluginSettingTab.containerEl` from the
+	 * start; a host that only has it on `mount` passes nothing here.
+	 */
 	constructor(
-		app: App,
+		private readonly host: SettingsPanelHost,
 		private readonly plugin: TyrianCompanionPlugin,
+		private containerEl: HTMLElement | null = null,
 	) {
-		super(app, plugin);
 		this.sessionHistoryScrubController = new SessionHistoryScrubController({
 			preview: () => this.plugin.previewSessionHistoryScrub(),
-			confirm: (preview) => confirmSessionHistoryScrub(this.app, this.t.bind(this), preview),
+			confirm: (preview) => confirmSessionHistoryScrub(this.host.ui, this.t.bind(this), preview),
 			cancelPreview: (token) => this.plugin.cancelSessionHistoryScrubPreview(token),
 			scrub: (token) => this.plugin.scrubSessionHistory(token),
 		});
@@ -169,7 +182,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		});
 	}
 
-	display(): void {
+	/** Opens the tab into `containerEl` (Obsidian's `display`). */
+	mount(containerEl: HTMLElement): void {
+		this.containerEl = containerEl;
 		this.collectorModeOnFirstTab = this.plugin.getCollectorMode() === 'consult';
 		this.renderSettings();
 	}
@@ -180,10 +195,11 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	}
 
 	refreshForSettingsChange(): void {
-		if (this.containerEl.isConnected) this.renderSettings();
+		if (this.containerEl?.isConnected === true) this.renderSettings();
 	}
 
 	private renderSettings(): void {
+		if (this.containerEl === null) return;
 		const focus = captureSettingsFocus(this.containerEl);
 		this.clearCountdown();
 		this.connectionSetting = null;
@@ -210,7 +226,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			},
 		);
 		for (const [index, definition] of mountedSettingDefinitions(definitions, this.activeCategory)) {
-			const setting = new Setting(section).setName(definition.name).setDesc(definition.desc);
+			const setting = this.host.ui.setting(section).setName(definition.name).setDesc(definition.desc);
 			if (definition.tooltip !== undefined) setting.setTooltip(definition.tooltip);
 			setting.settingEl.dataset.tyrianSettingRow = String(index);
 			definition.render(setting, (settings) => this.saveSettings(index, settings));
@@ -224,7 +240,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		}
 	}
 
-	getSettingDefinitions(): SettingDefinitionItem[] {
+	getSettingDefinitions(): TyrianSettingDefinition[] {
 		return this.definitions().map((definition) => ({
 			name: definition.name,
 			desc: definition.desc,
@@ -242,7 +258,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		return mountedSettingDefinitions(this.definitions(), category).map(([, { name }]) => name);
 	}
 
-	hide(): void {
+	/** Closes the tab (Obsidian's `hide`): stops the countdown and lets go of every row. */
+	unmount(): void {
 		this.clearCountdown();
 		this.connectionSetting = null;
 		this.connectionStatusEl = null;
@@ -253,7 +270,6 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.sessionHistoryButton = null;
 		this.sessionHistoryScrubButton = null;
 		this.managedAssetButtons.clear();
-		super.hide();
 	}
 
 	refreshConnectionRow(): void {
@@ -309,7 +325,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			(state) => {
 				if (this.saveRevisions.get(index) !== revision) return;
 				this.saveStates.set(index, state);
-				const row = this.containerEl.querySelector<HTMLElement>(`[data-tyrian-setting-row="${String(index)}"]`);
+				const row = this.containerEl?.querySelector<HTMLElement>(`[data-tyrian-setting-row="${String(index)}"]`);
 				const description = row?.querySelector<HTMLElement>('.setting-item-description');
 				if (description !== undefined && description !== null) {
 					renderSettingSaveState(description, state, this.t.bind(this));
@@ -355,8 +371,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				category: 'essentials',
 				name: this.t('settings.apiKey.name'), desc: this.t('settings.apiKey.desc'),
 				render: (setting, save) => {
-					setting.addComponent((element) =>
-						new SecretComponent(this.app, element)
+					setting.addSecret((secret) =>
+						secret
 							.setValue(this.plugin.settings.apiKeySecret)
 							.onChange(async (apiKeySecret) => {
 								await save({ apiKeySecret });
@@ -422,7 +438,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 					// A rejected value is never silently swapped for the default: the field keeps
 					// what the user typed and the previously saved folder stays in effect.
 					const applyOutputFolder = async (outputFolder: string) => {
-						const resolved = resolveVaultFolderInput(outputFolder, this.app.vault.configDir);
+						const resolved = resolveVaultFolderInput(outputFolder, this.host.vault.configDir);
 						if (resolved.status === 'invalid') {
 							error.setText(this.t('settings.output.invalid'));
 							error.setAttr('title', this.t('settings.output.invalid.tooltip'));
@@ -437,7 +453,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							.setPlaceholder(this.t('settings.output.placeholder'))
 							.setValue(this.plugin.settings.outputFolder)
 							.onChange(applyOutputFolder);
-						new VaultFolderInputSuggest(this.app, text.inputEl, applyOutputFolder);
+						this.host.ui.pickFolder(text.inputEl, applyOutputFolder);
 					});
 				},
 			},
@@ -969,14 +985,13 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status');
 					feedback.setAttr('aria-live', 'polite');
-					let selector: SecretComponent | null = null;
-					setting.addComponent((element) => {
-						selector = new SecretComponent(this.app, element)
+					let selector: TyrianSecretControl | null = null;
+					setting.addSecret((secret) => {
+						selector = secret
 							.setValue(this.plugin.settings.alertIngameSecret)
 							.onChange(async (alertIngameSecret) => {
 								await save({ alertIngameSecret });
 							});
-						return selector;
 					});
 					setting.addButton((button) => button.setButtonText(this.t('settings.alerts.ingame.secret.copy'))
 						.onClick(async () => {
@@ -1018,7 +1033,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						this.managedAssetButtons.set('remove', button);
 						button.buttonEl.addClass('mod-warning');
 						button.setButtonText(this.t('settings.assets.remove')).onClick(async () => {
-							await runConfirmedManagedAssetsRemoval(() => confirmManagedAssetsRemoval(this.app, this.t.bind(this)), () => this.plugin.removeManagedAssets());
+							await runConfirmedManagedAssetsRemoval(() => confirmManagedAssetsRemoval(this.host.ui, this.t.bind(this)), () => this.plugin.removeManagedAssets());
 						});
 					});
 					this.refreshManagedAssetsRow();
@@ -1118,7 +1133,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							button.setDisabled(true);
 							try {
 								const file = await runConfirmedLocalDebugExport(
-									() => confirmLocalDebugExport(this.app, this.t.bind(this), this.plugin.previewLocalDebugExport()),
+									() => confirmLocalDebugExport(this.host.ui, this.t.bind(this), this.plugin.previewLocalDebugExport()),
 									() => this.plugin.exportLocalDebugPackage(),
 								);
 								if (file === false) return;
@@ -1132,7 +1147,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							button.setDisabled(true);
 							try {
 								const cleared = await runConfirmedLocalDebugClear(
-									() => confirmLocalDebugClear(this.app, this.t.bind(this)),
+									() => confirmLocalDebugClear(this.host.ui, this.t.bind(this)),
 									() => this.plugin.clearLocalDebugLogs(),
 								);
 								if (cleared === null) return;
@@ -1235,7 +1250,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						button.setDisabled(true);
 						try {
 							const preview = await this.plugin.previewPilotMetricsExport();
-							if (!preview || !await confirmPilotMetricsExport(this.app, this.t.bind(this), preview)) return;
+							if (!preview || !await confirmPilotMetricsExport(this.host.ui, this.t.bind(this), preview)) return;
 							const result = await this.plugin.exportPilotMetrics();
 							const exported = result?.status === 'written' || result?.status === 'unchanged';
 							setPilotStatus(this.t(exported ? 'settings.pilot.exported' : 'settings.pilot.failed'), !exported);
@@ -1244,7 +1259,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 					setting.addButton((button) => {
 						button.buttonEl.addClass('mod-warning');
 						button.setButtonText(this.t('settings.pilot.clear')).onClick(async () => {
-							if (!await confirmPilotMetricsClear(this.app, this.t.bind(this))) return;
+							if (!await confirmPilotMetricsClear(this.host.ui, this.t.bind(this))) return;
 							button.setDisabled(true);
 							try {
 								const cleared = await this.plugin.clearPilotMetrics();
@@ -1258,7 +1273,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 					setting.addButton((button) => {
 						button.buttonEl.addClass('mod-warning');
 						button.setButtonText(this.t('settings.pilot.disable')).onClick(async () => {
-							if (!await confirmPilotMetricsDisable(this.app, this.t.bind(this))) return;
+							if (!await confirmPilotMetricsDisable(this.host.ui, this.t.bind(this))) return;
 							button.setDisabled(true);
 							try {
 								const deleted = await this.plugin.disablePilotMetrics();
@@ -1287,6 +1302,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private startCountdown(state: ConnectionState): void {
 		this.clearCountdown();
 		if (
+			this.containerEl === null ||
 			this.connectionSetting === null ||
 			this.connectionButton === null ||
 			!isCoolingDown(getRetryAt(state))
@@ -1301,7 +1317,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 
 	private clearCountdown(): void {
 		if (this.countdownInterval !== null) {
-			this.containerEl.win.clearInterval(this.countdownInterval);
+			this.containerEl?.win.clearInterval(this.countdownInterval);
 			this.countdownInterval = null;
 		}
 	}
@@ -1446,12 +1462,13 @@ function isHistoryOperationWorking(status: string): boolean {
 	return status === 'working' || status === 'scrub_previewing' || status === 'scrub_ready' || status === 'scrubbing';
 }
 
-function confirmManagedAssetsRemoval(app: App, t: (key: TranslationKey) => string): Promise<boolean> {
+function confirmManagedAssetsRemoval(ui: TyrianModalUi, t: (key: TranslationKey) => string): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
-		const modal = new class extends Modal {
+		const modal = new class extends TyrianModal {
+			protected title(): string { return t('settings.remove.title'); }
+
 			onOpen(): void {
-				this.setTitle(t('settings.remove.title'));
 				this.contentEl.createEl('p', { text: t('settings.remove.desc') });
 				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
 				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
@@ -1459,21 +1476,22 @@ function confirmManagedAssetsRemoval(app: App, t: (key: TranslationKey) => strin
 				remove.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
-		}(app);
+		}(ui);
 		modal.open();
 	});
 }
 
 function confirmSessionHistoryScrub(
-	app: App,
+	ui: TyrianModalUi,
 	t: (key: TranslationKey, params?: TranslationParams) => string,
 	preview: Extract<SessionHistoryScrubPreview, { status: 'ready' }>,
 ): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
-		const modal = new class extends Modal {
+		const modal = new class extends TyrianModal {
+			protected title(): string { return t('settings.history.scrubModal.title'); }
+
 			onOpen(): void {
-				this.setTitle(t('settings.history.scrubModal.title'));
 				this.contentEl.createEl('p', {
 					text: t('settings.history.scrubModal.summary', { sessions: preview.sessions }),
 				});
@@ -1489,7 +1507,7 @@ function confirmSessionHistoryScrub(
 				scrub.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
-		}(app);
+		}(ui);
 		modal.open();
 	});
 }
@@ -1548,15 +1566,16 @@ export async function runConfirmedLocalDebugClear(
 
 /** Requires an exact-content preview before creating any support package. */
 function confirmLocalDebugExport(
-	app: App,
+	ui: TyrianModalUi,
 	t: (key: TranslationKey, params?: TranslationParams) => string,
 	preview: LocalDebugExportPreview,
 ): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
-		const modal = new class extends Modal {
+		const modal = new class extends TyrianModal {
+			protected title(): string { return t('settings.debug.exportModal.title'); }
+
 			onOpen(): void {
-				this.setTitle(t('settings.debug.exportModal.title'));
 				this.contentEl.createEl('p', { text: t('settings.debug.exportModal.intro') });
 				const list = this.contentEl.createEl('ul');
 				for (const item of preview.included) list.createEl('li', { text: t(`settings.debug.exportModal.${item}`) });
@@ -1568,21 +1587,22 @@ function confirmLocalDebugExport(
 				confirm.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
-		}(app);
+		}(ui);
 		modal.open();
 	});
 }
 
 /** Keeps destructive log clearing behind a dedicated confirmation. */
 function confirmLocalDebugClear(
-	app: App,
+	ui: TyrianModalUi,
 	t: (key: TranslationKey) => string,
 ): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
-		const modal = new class extends Modal {
+		const modal = new class extends TyrianModal {
+			protected title(): string { return t('settings.debug.clearModal.title'); }
+
 			onOpen(): void {
-				this.setTitle(t('settings.debug.clearModal.title'));
 				this.contentEl.createEl('p', { text: t('settings.debug.clearModal.desc') });
 				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
 				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
@@ -1590,21 +1610,22 @@ function confirmLocalDebugClear(
 				clear.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
-		}(app);
+		}(ui);
 		modal.open();
 	});
 }
 
 function confirmPilotMetricsExport(
-	app: App,
+	ui: TyrianModalUi,
 	t: (key: TranslationKey, params?: TranslationParams) => string,
 	preview: PilotMetricsExportPreview,
 ): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
-		const modal = new class extends Modal {
+		const modal = new class extends TyrianModal {
+			protected title(): string { return t('settings.pilot.preview.title'); }
+
 			onOpen(): void {
-				this.setTitle(t('settings.pilot.preview.title'));
 				this.contentEl.createEl('p', { text: t('settings.pilot.preview.summary', {
 					observations: preview.observationCount, platforms: preview.platformCount,
 				}) });
@@ -1621,20 +1642,21 @@ function confirmPilotMetricsExport(
 				confirm.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
-		}(app);
+		}(ui);
 		modal.open();
 	});
 }
 
 function confirmPilotMetricsClear(
-	app: App,
+	ui: TyrianModalUi,
 	t: (key: TranslationKey) => string,
 ): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
-		const modal = new class extends Modal {
+		const modal = new class extends TyrianModal {
+			protected title(): string { return t('settings.pilot.clear.title'); }
+
 			onOpen(): void {
-				this.setTitle(t('settings.pilot.clear.title'));
 				this.contentEl.createEl('p', { text: t('settings.pilot.clear.desc') });
 				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
 				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
@@ -1642,20 +1664,21 @@ function confirmPilotMetricsClear(
 				clear.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
-		}(app);
+		}(ui);
 		modal.open();
 	});
 }
 
 function confirmPilotMetricsDisable(
-	app: App,
+	ui: TyrianModalUi,
 	t: (key: TranslationKey) => string,
 ): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
-		const modal = new class extends Modal {
+		const modal = new class extends TyrianModal {
+			protected title(): string { return t('settings.pilot.disable.title'); }
+
 			onOpen(): void {
-				this.setTitle(t('settings.pilot.disable.title'));
 				for (const key of [
 					'settings.pilot.disable.desc',
 					'settings.pilot.disable.descExports',
@@ -1667,7 +1690,7 @@ function confirmPilotMetricsDisable(
 				disable.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
-		}(app);
+		}(ui);
 		modal.open();
 	});
 }

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
  * Records what the row asks of Obsidian's own `Setting` and `SecretComponent`: the point of
  * `ObsidianSettingRow` is that it adds nothing between a caller and them.
  */
-const recorded = vi.hoisted(() => ({ settings: [] as unknown[], secrets: [] as unknown[] }));
+const recorded = vi.hoisted(() => ({ settings: [] as unknown[], secrets: [] as unknown[], suggests: [] as unknown[] }));
 
 vi.mock('obsidian', () => {
 	class Setting {
@@ -30,10 +30,25 @@ vi.mock('obsidian', () => {
 		setValue(value: string): this { this.calls.push(['setValue', value]); return this; }
 		onChange(callback: unknown): this { this.calls.push(['onChange', callback]); return this; }
 	}
-	return { Setting, SecretComponent, ItemView: class {}, Menu: class {}, Modal: class {}, Notice: class {}, PluginSettingTab: class {}, AbstractInputSuggest: class {}, setIcon: () => undefined, setTooltip: () => undefined };
+	class PluginSettingTab {
+		readonly containerEl = { role: 'tab-container' };
+		hides = 0;
+		constructor(readonly app: unknown, readonly plugin: unknown) {}
+		hide(): void { this.hides += 1; }
+	}
+	class AbstractInputSuggest {
+		selectCallback: ((value: string) => void) | null = null;
+		closes = 0;
+		value = '';
+		constructor(readonly app: unknown, readonly inputEl: unknown) { recorded.suggests.push(this); }
+		onSelect(callback: (value: string) => void): this { this.selectCallback = callback; return this; }
+		setValue(value: string): void { this.value = value; }
+		close(): void { this.closes += 1; }
+	}
+	return { Setting, SecretComponent, PluginSettingTab, AbstractInputSuggest, ItemView: class {}, Menu: class {}, Modal: class {}, Notice: class {}, setIcon: () => undefined, setTooltip: () => undefined };
 });
 
-import { createObsidianUi } from './obsidian-ui';
+import { createObsidianUi, ObsidianSettingTab } from './obsidian-ui';
 
 describe('ObsidianHost ui.setting', () => {
 	const app = { vault: {} };
@@ -73,5 +88,76 @@ describe('ObsidianHost ui.setting', () => {
 		expect(secret.app).toBe(app);
 		expect(secret.element).toBe(setting.controlEl);
 		expect(secret.calls).toEqual([['setValue', 'gw2-primary'], ['onChange', onChange]]);
+	});
+});
+
+describe('ObsidianSettingTab', () => {
+	function panel() {
+		const events: unknown[][] = [];
+		return {
+			events,
+			mount: (containerEl: HTMLElement) => { events.push(['mount', containerEl]); },
+			unmount: () => { events.push(['unmount']); },
+			getSettingDefinitions: () => [{ name: 'Carpeta', desc: 'Dónde', render: (row: unknown) => { events.push(['render', row]); } }],
+		};
+	}
+
+	it('builds the panel with the tab\'s own containerEl and mounts it there on display', () => {
+		const created: unknown[] = [];
+		const tab = new ObsidianSettingTab({} as never, {} as never, (containerEl) => { created.push(containerEl); return panel(); });
+		// What Obsidian calls when the tab opens (`display`, typed deprecated since 1.13 for new code).
+		const opened: { display(): void } = tab;
+		opened.display();
+		expect(created).toEqual([{ role: 'tab-container' }]);
+		expect(tab.panel.events).toEqual([['mount', { role: 'tab-container' }]]);
+	});
+
+	it('unmounts the panel before Obsidian\'s own hide', () => {
+		const tab = new ObsidianSettingTab({} as never, {} as never, panel);
+		tab.hide();
+		expect(tab.panel.events).toEqual([['unmount']]);
+		expect((tab as unknown as { hides: number }).hides).toBe(1);
+	});
+
+	it('lists the panel\'s rows for Obsidian\'s settings search, each built on the Setting Obsidian gives it', () => {
+		const app = { vault: {} };
+		const tab = new ObsidianSettingTab(app as never, {} as never, panel);
+		const [definition] = tab.getSettingDefinitions() as unknown as Array<{ name: string; desc: string; render(setting: unknown): void }>;
+		const setting = { settingEl: {}, descEl: {}, controlEl: {} };
+		definition!.render(setting);
+		const [, row] = tab.panel.events[0] as [string, { setting: unknown; settingEl: unknown }];
+		expect([definition!.name, definition!.desc]).toEqual(['Carpeta', 'Dónde']);
+		expect(row.setting).toBe(setting);
+		expect(row.settingEl).toBe(setting.settingEl);
+	});
+});
+
+describe('ObsidianHost ui.pickFolder', () => {
+	it('suggests the vault\'s folders matching what is typed, root as "/", and hands the choice back', () => {
+		const folders = [
+			{ path: '/', isRoot: () => true },
+			{ path: 'Tyrian Companion', isRoot: () => false },
+			{ path: 'Notas', isRoot: () => false },
+		];
+		const app = { vault: { getAllFolders: (includeRoot: boolean) => (includeRoot ? folders : folders.slice(1)) } };
+		const chosen: string[] = [];
+		const input = { role: 'input' } as unknown as HTMLInputElement;
+		const dispose = createObsidianUi({ app } as unknown as Plugin).pickFolder(input, (path) => { chosen.push(path); });
+		const suggest = recorded.suggests.at(-1) as {
+			app: unknown; inputEl: unknown; value: string; closes: number; selectCallback: (value: string) => void;
+			getSuggestions(query: string): string[]; renderSuggestion(path: string, el: { setText(text: string): void }): void;
+		};
+
+		expect([suggest.app, suggest.inputEl]).toEqual([app, input]);
+		expect(suggest.getSuggestions('tyrian')).toEqual(['Tyrian Companion']);
+		expect(suggest.getSuggestions('')).toEqual(['', 'Notas', 'Tyrian Companion']);
+		const shown: string[] = [];
+		suggest.renderSuggestion('', { setText: (text) => { shown.push(text); } });
+		expect(shown).toEqual(['/']);
+
+		suggest.selectCallback('Notas');
+		expect([suggest.value, suggest.closes, chosen]).toEqual(['Notas', 1, ['Notas']]);
+		dispose();
+		expect(suggest.closes).toBe(2);
 	});
 });

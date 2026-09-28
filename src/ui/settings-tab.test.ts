@@ -427,7 +427,9 @@ describe('output folder exclusion hint', () => {
 	it('recommends excluding the real Inventory/Positions folder under the configured output folder', () => {
 		const plugin = settingsPlugin();
 		plugin.settings.outputFolder = '02 - Áreas/Guild Wars 2/Tyrian Companion';
-		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		// R1c: the row's folder suggestions come from the host (`ui.pickFolder`), not an Obsidian class.
+		const pickFolder = vi.fn(() => () => undefined);
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' }, ui: { pickFolder } } as never, plugin as never);
 		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
 			.find((candidate) => candidate.name === 'Output folder');
 		if (definition === undefined) throw new Error('Expected the output folder setting.');
@@ -452,6 +454,8 @@ describe('output folder exclusion hint', () => {
 		definition.render(setting as never);
 
 		expect(divs.some((div) => div.text === 'Recommended: add "02 - Áreas/Guild Wars 2/Tyrian Companion/Inventory/Positions" to Obsidian\'s Excluded files.')).toBe(true);
+		expect(pickFolder).toHaveBeenCalledOnce();
+		expect((pickFolder.mock.calls[0] as unknown[])[0]).toBe(component.inputEl);
 	});
 });
 

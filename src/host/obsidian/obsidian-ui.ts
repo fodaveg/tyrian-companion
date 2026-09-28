@@ -1,4 +1,5 @@
 import {
+	AbstractInputSuggest,
 	ItemView,
 	Menu,
 	Modal,
@@ -10,10 +11,11 @@ import {
 	setTooltip,
 	type App,
 	type Plugin,
+	type SettingDefinitionItem,
 	type WorkspaceLeaf,
 } from 'obsidian';
 
-import { VaultFolderInputSuggest } from '../../ui/vault-folder-suggest';
+import { matchVaultFolders } from '../../ui/vault-folder-suggest';
 import type {
 	TyrianButtonControl,
 	TyrianDropdownControl,
@@ -30,10 +32,11 @@ import type {
 /**
  * `TyrianUiPort` over the Obsidian plugin API.
  *
- * R1a: nothing in `src/` reaches for this port yet; `main.ts` still registers its views, commands,
- * ribbon and modals directly. It exists so `ObsidianHost` is a complete `TyrianHost`, and it is
- * where R1c moves each of those registrations, one surface at a time. Every member mirrors what
- * `main.ts` does today for the same surface, so moving a caller here changes no behavior.
+ * Every member is the Obsidian call the UI made directly before, moved here unchanged, so moving a
+ * caller onto the port changes no behavior. Since R1c the views (`registerView`), modals
+ * (`openModal`), settings rows (`setting`), icons (`setIcon`) and folder suggestions (`pickFolder`)
+ * of `src/ui/` come through it; `main.ts` still registers its commands, ribbon, code block and
+ * notices directly (the next R1c step), and the settings tab is `ObsidianSettingTab` below.
  */
 export function createObsidianUi(plugin: Plugin): TyrianUiPort {
 	const app = () => plugin.app;
@@ -201,6 +204,67 @@ export class ObsidianSettingRow implements TyrianSettingRow {
 			return secret;
 		});
 		return this;
+	}
+}
+
+/** What `ObsidianSettingTab` drives: the plugin's own settings panel (ui/settings-tab.ts). */
+export interface ObsidianSettingsPanel {
+	mount(containerEl: HTMLElement): void;
+	unmount(): void;
+	getSettingDefinitions(): ReadonlyArray<{ readonly name: string; readonly desc: string; render(setting: TyrianSettingRow): void }>;
+}
+
+/**
+ * The plugin's settings tab: a `PluginSettingTab` whose `display`, `hide` and
+ * `getSettingDefinitions` (Obsidian's settings search) are the panel's, each row handed over as an
+ * `ObsidianSettingRow` over the `Setting` Obsidian built. The panel is created with the tab's own
+ * `containerEl`, as `TyrianCompanionSettingTab` had it before R1c.
+ */
+export class ObsidianSettingTab<T extends ObsidianSettingsPanel> extends PluginSettingTab {
+	readonly panel: T;
+
+	constructor(app: App, plugin: Plugin, createPanel: (containerEl: HTMLElement) => T) {
+		super(app, plugin);
+		this.panel = createPanel(this.containerEl);
+	}
+
+	display(): void { this.panel.mount(this.containerEl); }
+
+	hide(): void {
+		this.panel.unmount();
+		super.hide();
+	}
+
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return this.panel.getSettingDefinitions().map((definition) => ({
+			name: definition.name,
+			desc: definition.desc,
+			render: (setting: Setting) => { definition.render(new ObsidianSettingRow(this.app, setting)); },
+		}));
+	}
+}
+
+/**
+ * Suggests existing Vault folders while a folder-path setting is typed (`pickFolder`). A path that
+ * does not yet exist remains fully typeable: this only offers matches, it never rejects free text.
+ */
+class VaultFolderInputSuggest extends AbstractInputSuggest<string> {
+	constructor(app: App, inputEl: HTMLInputElement, onSelectFolder: (path: string) => void | Promise<void>) {
+		super(app, inputEl);
+		this.onSelect((path) => {
+			this.setValue(path);
+			this.close();
+			void onSelectFolder(path);
+		});
+	}
+
+	protected getSuggestions(query: string): string[] {
+		const folderPaths = this.app.vault.getAllFolders(true).map((folder) => (folder.isRoot() ? '' : folder.path));
+		return matchVaultFolders(folderPaths, query);
+	}
+
+	renderSuggestion(path: string, el: HTMLElement): void {
+		el.setText(path === '' ? '/' : path);
 	}
 }
 

@@ -4,6 +4,7 @@ import {
 } from 'obsidian';
 
 import { createObsidianHost } from './host/obsidian/obsidian-host';
+import { ObsidianSettingTab } from './host/obsidian/obsidian-ui';
 import type { TyrianHost, TyrianPriceSeedCache, TyrianVaultChange } from './host/tyrian-host';
 import { labelledVault, sessionHistoryVault } from './runtime/vault-ports';
 import { createTyrianCoreRuntime, flushTyrianLocalDebug } from './runtime/tyrian-runtime';
@@ -607,8 +608,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE,
 			(source, el, ctx) => this.paintPriceHistoryNoteBlockView(source, el, ctx),
 		);
-		this.settingTab = new TyrianCompanionSettingTab(this.app, this);
-		this.addSettingTab(this.settingTab);
+		const settingTab = new ObsidianSettingTab(this.app, this, (containerEl) => new TyrianCompanionSettingTab(this.host, this, containerEl));
+		this.settingTab = settingTab.panel;
+		this.addSettingTab(settingTab);
 		this.setupSessionCommands();
 		this.setupProductActions();
 		this.registerAlertIngameSecretCommand();
