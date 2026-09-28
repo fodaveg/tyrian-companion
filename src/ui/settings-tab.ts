@@ -27,6 +27,7 @@ import {
 import type { PriceHistoryDailyRetentionDays, PriceHistoryIntervalMinutes, PriceHistoryRawRetentionDays } from '../economy/price-history-model';
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
 import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel, type LocalDebugStatus } from '../core/local-debug-contract';
+import { formatInventorySyncTimingSummary } from './inventory-sync-timing-summary';
 import type {
 	LegendaryArmoryOptionV1,
 	LocalDebugExportPreview,
@@ -1021,6 +1022,7 @@ export class TyrianCompanionSettingTab {
 				},
 			},
 			...this.debugDefinitions(),
+			...this.inventoryTimingDefinitions(),
 			...this.pilotDefinitions(),
 			{
 				category: 'advanced',
@@ -1162,6 +1164,29 @@ export class TyrianCompanionSettingTab {
 							finally { button.setDisabled(false); this.refreshForSettingsChange(); }
 						});
 					});
+				},
+			},
+		];
+	}
+
+	/**
+	 * H18.39 (David, 26 sep 2026: "¿por qué tarda tanto en preparar el inventario? ¿mejorará en
+	 * Hebra?"): the last one-click inventory sync's five measured phases, in plain language. Reads
+	 * only the persisted `inventorySyncLastRun` — no toggle to flip, nothing to export or open.
+	 */
+	private inventoryTimingDefinitions(): CategorizedSettingDefinition[] {
+		return [
+			{
+				category: 'advanced',
+				name: this.t('settings.inventoryTiming.name'), desc: this.t('settings.inventoryTiming.desc'),
+				render: (setting) => {
+					const summaryEl = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					summaryEl.setAttr('role', 'status');
+					const summary = formatInventorySyncTimingSummary(
+						this.plugin.settings.inventorySyncLastRun, this.plugin.settings.language,
+					);
+					summaryEl.setText(summary ?? this.t('settings.inventoryTiming.empty'));
+					setting.settingEl.addClass('tyrian-companion-settings__diagnostics');
 				},
 			},
 		];

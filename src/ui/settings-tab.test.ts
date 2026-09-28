@@ -202,17 +202,18 @@ describe('settings information architecture', () => {
 	// row shown only while the bridge is on, to 30/34. H18.15 adds the low-storage-space threshold,
 	// another "Advanced" row, to 31/35. 0.2.1 moves the bridge secret to "Essentials", still shown
 	// only while the bridge is on: 5 assigned there, 30 under "Advanced". R1b adds the
-	// collector/consult row, to 36: under "Advanced" for a collector (next test for consult).
-	it('assigns all 36 existing rows to explicit intent categories', () => {
+	// collector/consult row, to 37 (H18.39 added the inventory-timing row): under "Advanced" for a
+	// collector (next test for consult).
+	it('assigns all 37 existing rows to explicit intent categories', () => {
 		// An upgraded installation with a key is the collector: its first tab is unchanged by R1b.
 		const plugin = settingsPlugin();
 		plugin.collectorMode = 'collector';
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const assignments = tab.getSettingCategoryAssignments();
-		expect(assignments).toHaveLength(36);
+		expect(assignments).toHaveLength(37);
 		// H14.20: the first screen of a new install is exactly the four rows it needs; the fifth
 		// "Essentials" row, the bridge token, only mounts once the bridge is on (next test). Every
-		// other row (30) lives under the single "Advanced" tab.
+		// other row (31) lives under the single "Advanced" tab.
 		const essentials = assignments.filter(({ category }) => category === 'essentials');
 		expect(essentials).toHaveLength(5);
 		expect(essentials.map(({ name }) => name).sort()).toEqual(
@@ -221,7 +222,7 @@ describe('settings information architecture', () => {
 		expect(tab.getMountedSettingNames('essentials').sort()).toEqual(
 			['API key', 'Alert me about a drop from', 'Default character', 'Output folder'].sort(),
 		);
-		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(31);
+		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(32);
 		expect(tab.getMountedSettingNames('advanced')).toContain('This installation\'s mode');
 		expect(assignments.every(({ category }) => SETTINGS_CATEGORIES.includes(category))).toBe(true);
 	});
