@@ -2400,7 +2400,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (intent.phase !== 'start' || this.startModal) return;
 		this.startModal = new ManualSessionStartModal(
-			this.app,
+			this.host.ui,
 			this.settings.preferredCharacter,
 			() => this.settings.language,
 			(input) => { fireAndForgetLocal(this.localDebugActions,
@@ -3143,7 +3143,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 					details: { reason: unmappedErrorLogDetails(error).reason },
 				});
 				const translator = createTranslator(this.settings.language);
-				new AlertIngameSecretModal(this.app, secret, {
+				new AlertIngameSecretModal(this.host.ui, secret, {
 					title: translator.t('settings.alerts.ingame.secret.name'),
 					hint: translator.t('settings.alerts.ingame.secret.manualCopy'),
 				}).open();
@@ -3961,7 +3961,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private openManualSessionStartWithBoundary(humanBoundaryAt: string): void {
 		if (!this.runtimeReady || this.startModal) return;
 		this.startModal = new ManualSessionStartModal(
-			this.app, this.settings.preferredCharacter, () => this.settings.language,
+			this.host.ui, this.settings.preferredCharacter, () => this.settings.language,
 			(input) => { fireAndForgetLocal(
 				this.localDebugActions,
 				{ component: 'session', action: 'session_start', state: 'pilot_boundary' },
@@ -4449,7 +4449,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return new Promise((resolve) => {
 			let submitted = false;
 			this.startModal = new ManualSessionStartModal(
-				this.app,
+				this.host.ui,
 				this.settings.preferredCharacter,
 				() => this.settings.language,
 				(input) => { submitted = true; resolve(() => this.startManualSession(input)); },

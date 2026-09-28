@@ -1,5 +1,4 @@
-import { Modal, Setting, type App } from 'obsidian';
-
+import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale, type Translator } from '../core/i18n';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
 import {
@@ -7,16 +6,21 @@ import {
 	normalizeSessionStartInput,
 	type SessionStartInput,
 } from '../sessions/session-start-capture';
+import { TyrianModal } from './tyrian-modal';
 
-export class ManualSessionStartModal extends Modal {
+export class ManualSessionStartModal extends TyrianModal {
+	/** Where the form's rows come from (`new Setting(contentEl)` before R1c). */
+	private readonly rows: Pick<TyrianUiPort, 'setting'>;
+
 	constructor(
-		app: App,
+		ui: Pick<TyrianUiPort, 'openModal' | 'setting'>,
 		private readonly preferredCharacter: string,
 		private readonly getLocale: () => Locale,
 		private readonly onSubmit: (input: SessionStartInput) => void,
 		private readonly onDismiss: () => void = () => undefined,
 	) {
-		super(app);
+		super(ui);
+		this.rows = ui;
 	}
 
 	onOpen(): void {
@@ -39,7 +43,7 @@ export class ManualSessionStartModal extends Modal {
 		error.setAttr('role', 'alert');
 		error.setAttr('aria-live', 'polite');
 
-		new Setting(contentEl)
+		this.rows.setting(contentEl)
 			.setName(t('manual.character.name'))
 			.setDesc(t('manual.character.desc'))
 			.addText((text) => {
@@ -49,7 +53,7 @@ export class ManualSessionStartModal extends Modal {
 					.onChange((value) => { characterName = value; });
 			});
 
-		new Setting(contentEl)
+		this.rows.setting(contentEl)
 			.setName(t('manual.magicFind.name'))
 			.setDesc(t('manual.magicFind.desc'))
 			.addText((text) => {
@@ -62,7 +66,7 @@ export class ManualSessionStartModal extends Modal {
 					.onChange((value) => { magicFindText = value; });
 			});
 
-		new Setting(contentEl)
+		this.rows.setting(contentEl)
 			.setName(t('manual.consumablesBonus.name'))
 			.setDesc(t('manual.consumablesBonus.desc'))
 			.addText((text) => {
@@ -74,7 +78,7 @@ export class ManualSessionStartModal extends Modal {
 					.onChange((value) => { consumablesBonusText = value; });
 			});
 
-		new Setting(contentEl)
+		this.rows.setting(contentEl)
 			.addButton((button) => {
 				button.setButtonText(t('manual.start'))
 					.setCta()
@@ -93,8 +97,8 @@ export class ManualSessionStartModal extends Modal {
 		focusInput(characterName ? magicFindInput : characterInput);
 	}
 
+	/** The host empties the content as it closes (ObsidianHost's `Modal.onClose`), before this runs. */
 	onClose(): void {
-		this.contentEl.empty();
 		this.onDismiss();
 	}
 }

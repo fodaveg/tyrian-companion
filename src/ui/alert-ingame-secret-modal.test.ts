@@ -1,7 +1,7 @@
-import type { App } from 'obsidian';
 import { describe, expect, it } from 'vitest';
 
 import { AlertIngameSecretModal } from './alert-ingame-secret-modal';
+import type { TyrianModalUi } from './tyrian-modal';
 
 const SECRET = 's'.repeat(43);
 
@@ -43,8 +43,7 @@ function openModal() {
 		element: { value: string; focused: boolean; selected: boolean; focus(): void; select(): void };
 	}> = [];
 	let emptied = false;
-	let title = '';
-	const modal = new AlertIngameSecretModal({} as App, SECRET, { title: 'Addon token', hint: 'Copy it with Ctrl+C.' });
+	let title: string | undefined = '';
 	const contentEl = {
 		createEl: (tag: string, options: { text?: string; type?: string; attr?: Record<string, string> } = {}) => {
 			const element = {
@@ -57,7 +56,17 @@ function openModal() {
 		},
 		empty: () => { emptied = true; created.length = 0; },
 	};
-	Object.assign(modal, { contentEl, setTitle: (value: string) => { title = value; } });
-	modal.onOpen();
+	// The host's modal slot (`TyrianUiPort.openModal`): it shows the title and mounts the content
+	// at once, and closing runs the modal's own `onClose`. It empties nothing itself, so what the
+	// second test sees emptied is the modal's own doing.
+	const ui: TyrianModalUi = {
+		openModal: (request) => {
+			title = request.title;
+			request.mount(contentEl as unknown as HTMLElement, () => { request.onClose?.(); });
+			return { close: () => { request.onClose?.(); } };
+		},
+	};
+	const modal = new AlertIngameSecretModal(ui, SECRET, { title: 'Addon token', hint: 'Copy it with Ctrl+C.' });
+	modal.open();
 	return { modal, created, emptied: () => emptied, title: () => title };
 }
