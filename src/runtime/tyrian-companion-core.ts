@@ -1643,6 +1643,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			});
 		}
 		const advisorModel = this.getInventoryAdvisorViewModel();
+		// R1b (Hebra's report, 28 sep 2026): `refreshInventoryAdvisor`/`refreshSale` both refuse in
+		// consult (`refusedInConsult`), so a consult device that captured nothing this session left
+		// `advisorModel.status` at `loading` forever — nothing here was ever going to move it. Venta
+		// must not sit in "Leyendo…" waiting for a refresh that will never run; it reaches a final,
+		// explained state instead, with no action that needs the API.
+		if (consulting(this) && advisorModel.status === 'loading') {
+			return buildSaleViewModel({
+				status: 'empty', consultOnly: true, nowMs, festivalStartMs: null,
+				maxPriceAgeMs: FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS, hero: null, rows: [], calendar: [],
+			});
+		}
 		const bundleLoad = inventoryAdvisorBuiltinBundleProvider.load(new Date(nowMs).toISOString());
 		const maxPriceAgeMs = bundleLoad.status === 'available'
 			? bundleLoad.bundle.policy.maxPriceAgeMs : FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS;
