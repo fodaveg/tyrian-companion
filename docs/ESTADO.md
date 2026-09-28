@@ -1,5 +1,12 @@
 # Estado
 
+## Tyrian dentro de Hebra (en curso desde el 28 sep 2026)
+
+El estado, los checkpoints y cómo retomar viven en el repo de Hebra:
+`~/code/hebra/docs/RELEVO-TYRIAN-EN-HEBRA.md` (sección «7. Lado Tyrian»). El contrato es
+`docs/SPEC-TYRIAN-EN-HEBRA.md` del mismo repo. Aquí, el contrato de host está en
+`src/host/tyrian-host.ts`.
+
 ## Corrección de Venta e Inventario del 26 sep 2026
 
 El candidato 0.2.5 continúa el relevo de la 0.2.4: histórico desde Actualizar, ventanas coherentes,
