@@ -58,6 +58,8 @@ export interface PriceHistoryAssemblyInput {
 	emitAlert: (alert: AlertV1) => void;
 	diagnostics?: LocalDebugActionPort;
 	capturePersistence?: LocalDebugPersistenceProbe;
+	/** R1b: `PriceHistoryRuntimeOptions.collector`; a consult installation only reads the series. */
+	collector?: () => boolean;
 }
 
 export interface PriceHistoryAssembly {
@@ -77,6 +79,7 @@ export function assemblePriceHistory(input: PriceHistoryAssemblyInput): PriceHis
 		gateway: input.gateway,
 		rateLimit: input.rateLimit,
 		onStateChange: input.onStateChange,
+		collector: input.collector,
 		afterCompaction: async (port) => {
 			await input.evaluatePriceAlert(port);
 			await input.evaluateSellSignal(port);

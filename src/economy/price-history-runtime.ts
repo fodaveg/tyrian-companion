@@ -59,6 +59,13 @@ export interface PriceHistoryRuntimeOptions {
 	) => ApiPollScheduler;
 	diagnostics?: LocalDebugActionPort;
 	persistenceDiagnostics?: LocalDebugPersistenceProbe;
+	/**
+	 * R1b: whether this installation is the account's collector, read at every activation. A
+	 * consult installation (false) only opens the store to READ what the collector left: it never
+	 * captures, never seeds or grows the watch list and never calls `compactAndPrune`, which
+	 * writes. Absent means collector, which is what every activation did before R1b.
+	 */
+	collector?: () => boolean;
 }
 
 /** Opt-in runtime. Construction performs no IndexedDB, timer, listener, or network operation. */
@@ -166,6 +173,8 @@ export class PriceHistoryRuntime {
 		const generation = ++this.generation;
 		this.seriesGeneration += 1;
 		this.scheduler.updateInterval(priceHistoryIntervalMs(settings.intervalMinutes));
+		// A consult installation reads the retention the collector applied; it never prunes itself.
+		if (!this.collecting()) { this.emit(); return; }
 		try {
 			await store.compactAndPrune(this.options.vaultId, this.now(), settings.rawRetentionDays, settings.dailyRetentionDays);
 			if (this.owns(generation, store)) this.emit();
@@ -184,7 +193,7 @@ export class PriceHistoryRuntime {
 			details: { itemCount: itemIds.length },
 		}, this.now);
 		const store = this.store;
-		if (store === null || !this.settings.enabled) { span.skip('skipped', this.state.status); return; }
+		if (store === null || !this.settings.enabled || !this.collecting()) { span.skip('skipped', this.state.status); return; }
 		const generation = this.generation;
 		try {
 			await store.observeItems(this.options.vaultId, itemIds, this.now());
@@ -228,7 +237,7 @@ export class PriceHistoryRuntime {
 			details: { itemCount: itemIds.length },
 		}, this.now);
 		const store = this.store;
-		if (store === null || !this.settings.enabled) { span.skip('skipped', this.state.status); return; }
+		if (store === null || !this.settings.enabled || !this.collecting()) { span.skip('skipped', this.state.status); return; }
 		const generation = this.generation;
 		try {
 			await store.applyDerivedWatchList(this.options.vaultId, itemIds, this.now());
@@ -305,15 +314,21 @@ export class PriceHistoryRuntime {
 			opened = await this.options.priceHistory.open(this.options.persistenceDiagnostics);
 			if (!this.current(generation)) { opened.close(); return; }
 			this.store = opened;
-			const watch = await opened.ensureSeedWatchList(this.options.vaultId, this.now());
+			// Read once: a mode change reactivates the runtime rather than flipping it mid-activation.
+			const collector = this.collecting();
+			const watch = collector
+				? await opened.ensureSeedWatchList(this.options.vaultId, this.now())
+				: await opened.readWatchList(this.options.vaultId);
 			if (!this.owns(generation, opened)) return;
-			await opened.compactAndPrune(this.options.vaultId, this.now(), this.settings.rawRetentionDays, this.settings.dailyRetentionDays);
-			if (!this.owns(generation, opened)) return;
+			if (collector) {
+				await opened.compactAndPrune(this.options.vaultId, this.now(), this.settings.rawRetentionDays, this.settings.dailyRetentionDays);
+				if (!this.owns(generation, opened)) return;
+			}
 			this.setState({
-				status: 'collecting', watchItemIds: watch.map(({ itemId }) => itemId),
+				status: collector ? 'collecting' : 'ready', watchItemIds: watch.map(({ itemId }) => itemId),
 				selectedItemId: watch[0]?.itemId ?? null,
 			});
-			this.scheduler.start(priceHistoryIntervalMs(this.settings.intervalMinutes));
+			if (collector) this.scheduler.start(priceHistoryIntervalMs(this.settings.intervalMinutes));
 		} catch (error) {
 			if (this.current(generation) && (opened === null || this.store === opened)) this.storeFailure(error);
 			else opened?.close();
@@ -325,7 +340,7 @@ export class PriceHistoryRuntime {
 			component: 'price_history', action: 'price_history_capture', ...inheritedIds(parent),
 		}, this.now);
 		const store = this.store;
-		if (store === null || !this.settings.enabled) {
+		if (store === null || !this.settings.enabled || !this.collecting()) {
 			span.skip('skipped', this.state.status);
 			return { kind: 'fatal' };
 		}
@@ -437,6 +452,11 @@ export class PriceHistoryRuntime {
 
 	private owns(generation: number, store: TyrianPriceHistoryStore): boolean {
 		return this.current(generation) && this.store === store;
+	}
+
+	/** R1b: see `PriceHistoryRuntimeOptions.collector`. */
+	private collecting(): boolean {
+		return this.options.collector?.() ?? true;
 	}
 }
 

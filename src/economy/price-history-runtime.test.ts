@@ -208,6 +208,102 @@ describe('PriceHistoryRuntime', () => {
 	});
 });
 
+describe('PriceHistoryRuntime in consult mode (R1b)', () => {
+	/** The real IndexedDB port, with every store call recorded by name. */
+	function recordingPort(factory: IDBFactory) {
+		const calls: string[] = [];
+		const port = indexedDbPriceHistoryPort({ indexedDB: factory });
+		return {
+			calls,
+			port: {
+				open: async (...args: Parameters<typeof port.open>) => {
+					const store = await port.open(...args);
+					return new Proxy(store, {
+						get(target, property, receiver) {
+							const value = Reflect.get(target, property, receiver) as unknown;
+							if (typeof value !== 'function') return value;
+							return (...callArgs: unknown[]) => {
+								calls.push(String(property));
+								return (value as (...values: unknown[]) => unknown).apply(target, callArgs);
+							};
+						},
+					});
+				},
+			},
+		};
+	}
+
+	function consultRuntime(factory: IDBFactory, vaultId: string, scheduler: FakeScheduler, requestDetailed = vi.fn()) {
+		const recording = recordingPort(factory);
+		const runtime = new PriceHistoryRuntime({
+			priceHistory: recording.port, vaultId, collector: () => false,
+			gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now: () => 1_800_001 }), now: () => 1_800_001,
+			scheduler: (poll, onStateChange) => {
+				scheduler.poll = poll; scheduler.onStateChange = onStateChange;
+				return scheduler as unknown as ApiPollScheduler;
+			},
+		});
+		return { runtime, calls: recording.calls, requestDetailed };
+	}
+
+	it('only reads what the collector left: no capture, no watch-list write, no compactAndPrune', async () => {
+		const factory = new IDBFactory();
+		const vaultId = `vault-${crypto.randomUUID()}`;
+		// The collector seeds the watch list and captures one slot into the same store.
+		const collectorScheduler = new FakeScheduler();
+		const collector = createRuntime(factory, vi.fn(async (path: string) => response(path)), collectorScheduler,
+			() => 1_800_001, () => undefined, vaultId);
+		await collector.activate(ENABLED);
+		await collectorScheduler.poll();
+		const collected = await collector.readDaily(36_038, '1970-01-01');
+		collector.dispose();
+		expect(collected).toHaveLength(1);
+
+		const scheduler = new FakeScheduler();
+		const { runtime, calls, requestDetailed } = consultRuntime(factory, vaultId, scheduler);
+		await runtime.activate(ENABLED);
+		expect(runtime.getState()).toMatchObject({ status: 'ready', watchItemIds: [36_038, 36_041, 48_715, 73_474, 105_402] });
+		await expect(runtime.readDaily(36_038, '1970-01-01')).resolves.toEqual(collected);
+		await runtime.configure({ ...ENABLED, rawRetentionDays: 2, dailyRetentionDays: 42 });
+		await runtime.observeSessionItemIds([19_721]);
+		await runtime.applyDerivedWatchList([19_721]);
+		// Even a poll that reached it (the scheduler is never started) captures nothing.
+		expect(await scheduler.poll()).toEqual({ kind: 'fatal' });
+		runtime.setOnline(true);
+		runtime.notifyWake();
+
+		expect(scheduler.start).not.toHaveBeenCalled();
+		expect(requestDetailed).not.toHaveBeenCalled();
+		expect(calls).not.toContain('compactAndPrune');
+		expect(calls).not.toContain('ensureSeedWatchList');
+		expect(calls).not.toContain('observeItems');
+		expect(calls).not.toContain('applyDerivedWatchList');
+		expect(calls).not.toContain('claimSlot');
+		expect(calls).not.toContain('commitSlot');
+		expect(calls).toEqual(expect.arrayContaining(['readWatchList', 'readDaily']));
+		runtime.dispose();
+	});
+
+	it('keeps the collector path unchanged when the option is absent', async () => {
+		const factory = new IDBFactory();
+		const recording = recordingPort(factory);
+		const scheduler = new FakeScheduler();
+		const runtime = new PriceHistoryRuntime({
+			priceHistory: recording.port, vaultId: `vault-${crypto.randomUUID()}`,
+			gateway: { requestDetailed: vi.fn() }, rateLimit: new RateLimitCoordinator({ now: () => 1_000 }), now: () => 1_000,
+			scheduler: (poll, onStateChange) => {
+				scheduler.poll = poll; scheduler.onStateChange = onStateChange;
+				return scheduler as unknown as ApiPollScheduler;
+			},
+		});
+		await runtime.activate(ENABLED);
+		expect(recording.calls).toEqual(['ensureSeedWatchList', 'compactAndPrune']);
+		expect(scheduler.start).toHaveBeenCalledWith(900_000);
+		expect(runtime.getState().status).toBe('collecting');
+		runtime.dispose();
+	});
+});
+
 class FakeScheduler {
 	poll: () => Promise<ApiPollOutcome> = async () => ({ kind: 'fatal' });
 	onStateChange: (state: Readonly<ApiPollSchedulerState>) => void = () => undefined;
