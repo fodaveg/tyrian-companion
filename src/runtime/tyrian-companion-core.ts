@@ -556,6 +556,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * error is rethrown into at `onLayoutReady`; this is only the flag `notifyRuntimeStarting` reads.
 	 */
 	private runtimeFailure: unknown = null;
+	/**
+	 * One-shot fan-out for `whenRuntimeReady()`: a `tyrian-price-history` note block that painted
+	 * before startup finished is the only reader (H18 28 sep). Flushed exactly once, whichever
+	 * happens first: `runtimeReady` flips `true`, or startup fails outright — never both, so a
+	 * waiter never resolves twice and a terminal failure never leaves a block waiting forever.
+	 */
+	private runtimeReadyWaiters: Array<() => void> = [];
 	/** True once `onunload` has run; guards the deferred boot tail against writing after teardown. */
 	private unloaded = false;
 	/** Local diagnostics remain optional and fail-open throughout teardown and isolated unit harnesses. */
@@ -670,7 +677,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				// The trace already reaches the log through this same `run()`, on rethrow
 				// (`writeFailure`); this `.catch` only records that the boot broke, for
 				// `notifyRuntimeStarting` to tell apart from one still in progress.
-				() => this.initializeRuntime().catch((error: unknown) => { this.runtimeFailure = error; throw error; }),
+				() => this.initializeRuntime().catch((error: unknown) => {
+					this.runtimeFailure = error;
+					this.settleRuntimeReadyWaiters();
+					throw error;
+				}),
 			);
 		});
 		});
@@ -1193,6 +1204,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 		if (this.unloaded) return;
 		this.runtimeReady = true;
+		this.settleRuntimeReadyWaiters();
 		this.startIngameSessionMarking();
 		if (this.settings.priceHistoryEnabled) {
 			await this.priceHistory.activate(priceHistorySettingsFrom(this.settings));
@@ -1939,7 +1951,21 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			ensure: async (itemId) => await this.priceHistoryPanelSeed?.ensure(itemId)
 				?? this.getPriceHistorySeedState(itemId),
 			itemName: () => frontmatterItemName,
+			// A note can render this block before `initializeRuntime` finishes (H18 bug, 28 sep):
+			// nothing else ever repaints a code block on its own, so without this the block was
+			// stuck on "loading" forever. Retried exactly once, the moment startup settles.
+			whenReady: () => this.whenRuntimeReady(),
 		});
+	}
+
+	/** Resolves once, the first time after this call that `runtimeReady` settles (ready or failed). */
+	private whenRuntimeReady(): Promise<void> {
+		if (this.runtimeReady || this.runtimeFailure !== null) return Promise.resolve();
+		return new Promise((resolve) => { this.runtimeReadyWaiters.push(resolve); });
+	}
+
+	private settleRuntimeReadyWaiters(): void {
+		for (const resolve of this.runtimeReadyWaiters.splice(0)) resolve();
 	}
 
 	/**
