@@ -13392,11 +13392,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "88301f94d7cb900d95433be69d28cc40a2083e8e",
+					"id": "ec8e50250febf1379a0612d528d61c0fc6878e69",
 					"kind": "callback_registration",
-					"line": 46,
+					"line": 54,
 					"column": 18,
-					"endLine": 49,
+					"endLine": 57,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -13404,16 +13404,16 @@
 						"type": "reviewed_registered_callback",
 						"registration": "then",
 						"scope": "load",
-						"justification": "The \"load\" owner explicitly handles \"then\": the history load's then only projects the result or the unavailable state into the panel; loadHistory itself runs under the session-history action in main, which records the read outcome."
+						"justification": "The \"load\" owner explicitly handles \"then\": the history load's then only projects the result (carrying the unavailable reason: not_ready tag) or an unavailable/failed state into the panel; loadHistory itself runs under the session-history action in main, which records the read outcome."
 					},
-					"reason": "Allowlisted callback_registration: The \"load\" owner explicitly handles \"then\": the history load's then only projects the result or the unavailable state into the panel; loadHistory itself runs under the session-history action in main, which records the read outcome. Verified registration: \"then\" in \"load\"."
+					"reason": "Allowlisted callback_registration: The \"load\" owner explicitly handles \"then\": the history load's then only projects the result (carrying the unavailable reason: not_ready tag) or an unavailable/failed state into the panel; loadHistory itself runs under the session-history action in main, which records the read outcome. Verified registration: \"then\" in \"load\"."
 				},
 				{
-					"id": "bb7a44d2c1c2898218088dd4bbe7a9e686949656",
+					"id": "d96ad50f6dcc0b5c4054284644658545a799b4fb",
 					"kind": "callback_registration",
-					"line": 46,
+					"line": 54,
 					"column": 18,
-					"endLine": 49,
+					"endLine": 57,
 					"endColumn": 71,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -13428,9 +13428,9 @@
 				{
 					"id": "01c0b042ec82eda7fd59a3bdf1e7c1c4c571f300",
 					"kind": "callback_registration",
-					"line": 97,
+					"line": 113,
 					"column": 2,
-					"endLine": 97,
+					"endLine": 113,
 					"endColumn": 69,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -13445,9 +13445,9 @@
 				{
 					"id": "83ec1ee4a0efae7fbe8edc5b038a19bd914db732",
 					"kind": "void_expression",
-					"line": 97,
+					"line": 113,
 					"column": 43,
-					"endLine": 97,
+					"endLine": 113,
 					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
