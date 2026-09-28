@@ -130,11 +130,7 @@ async function assembleNote(
 	frontmatter: Record<string, string | number | null>,
 	contents: Record<SessionNoteBlockId, string>,
 ): Promise<RenderedSessionNote> {
-	const started = new Date(baselineCompletedAt);
-	const year = String(started.getUTCFullYear()).padStart(4, '0');
-	const date = `${year}-${pad(started.getUTCMonth() + 1)}-${pad(started.getUTCDate())}`;
-	const time = `${pad(started.getUTCHours())}${pad(started.getUTCMinutes())}${pad(started.getUTCSeconds())}Z`;
-	const base = `${outputFolder}/sessions/${year}/${date} ${time} - `;
+	const [preferredPath, collisionPath] = sessionNoteRelativePaths(baselineCompletedAt, sessionRef);
 	const blocks = {} as RenderedSessionNote['blocks'];
 	for (const id of SESSION_NOTE_BLOCK_IDS) {
 		const content = contents[id];
@@ -150,11 +146,43 @@ async function assembleNote(
 	const body = `${heading}\n\n${SESSION_NOTE_BLOCK_IDS.map((id) => blocks[id].serialized).join('\n\n')}\n\n${notes}\n`;
 	return {
 		sessionRef, accountRef,
-		preferredPath: `${base}${sessionRef.slice(0, 16)}.md`,
-		collisionPath: `${base}${sessionRef}.md`,
+		preferredPath: `${outputFolder}/${preferredPath}`,
+		collisionPath: `${outputFolder}/${collisionPath}`,
 		frontmatter, blocks,
 		content: `${serializeFrontmatter(frontmatter, [])}${body}`,
 	};
+}
+
+/**
+ * The two paths a session note can take, relative to the output folder: the preferred one (the
+ * first 16 characters of `sessionRef`) and, when that one is occupied by another note, the
+ * collision one (the whole ref). Both sit under `sessions/<year>/`, named by the UTC instant the
+ * session's baseline was completed. The writer builds its paths with it, and R1a's
+ * `canonicalPathFor` answers with it, so the two cannot drift apart.
+ */
+export function sessionNoteRelativePaths(baselineCompletedAt: string, sessionRef: string): readonly [string, string] {
+	const started = new Date(baselineCompletedAt);
+	const year = String(started.getUTCFullYear()).padStart(4, '0');
+	const date = `${year}-${pad(started.getUTCMonth() + 1)}-${pad(started.getUTCDate())}`;
+	const time = `${pad(started.getUTCHours())}${pad(started.getUTCMinutes())}${pad(started.getUTCSeconds())}Z`;
+	const base = `sessions/${year}/${date} ${time} - `;
+	return [`${base}${sessionRef.slice(0, 16)}.md`, `${base}${sessionRef}.md`];
+}
+
+/**
+ * What a session note's own frontmatter says about where it was written: its `tc_session_ref`
+ * and `tc_started_at`. A valid runtime record always has `tc_started_at` equal to the baseline's
+ * `completedAt` (the delta window opens there, and `session-runtime-store.ts` rejects a record
+ * whose delta or baseline reference disagree), so it rebuilds the writer's path exactly. Null
+ * for anything that is not a `gw2_farming_session` note carrying both values.
+ */
+export function sessionNotePathIdentity(content: string): { sessionRef: string; baselineCompletedAt: string } | null {
+	const parsed = parseFrontmatter(content);
+	if (!parsed || parsed.frontmatter.tc_kind !== 'gw2_farming_session') return null;
+	const startedAt = parsed.frontmatter.tc_started_at;
+	if (parsed.sessionRef === null || !/^[a-f0-9]{64}$/u.test(parsed.sessionRef)) return null;
+	if (typeof startedAt !== 'string' || !Number.isFinite(Date.parse(startedAt))) return null;
+	return { sessionRef: parsed.sessionRef, baselineCompletedAt: startedAt };
 }
 
 export async function mergeRenderedSessionNote(

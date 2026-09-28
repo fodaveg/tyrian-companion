@@ -20,6 +20,7 @@ import {
 	type SessionNoteInput,
 } from './session-note-model';
 import { renderSessionNote } from './session-note-renderer';
+import { canonicalPathFor } from '../runtime/canonical-path';
 import {
 	SessionNoteWriter,
 	writeSessionNoteBeforeClear,
@@ -363,6 +364,44 @@ describe('SessionNoteWriter', () => {
 		expect(marked).toContain('Motivo: la clave de API pasó a otra cuenta a mitad de sesión');
 		expect(marked).toContain('tc_observed_immediate_copper: null');
 		expect([...vault.contents.keys()].filter((path) => path.endsWith('.md'))).toEqual([created.path]);
+	});
+
+	it('R1a: canonicalPathFor answers every written session note with the path the writer chose', async () => {
+		const root = 'Tyrian Companion';
+		const vault = new MemoryVault();
+		const writer = new SessionNoteWriter(vault);
+		const input = sessionInput();
+		const created = await writer.write(input);
+		if (created.status !== 'written') throw new Error('Fixture note was not written.');
+		const [preferred, collision] = canonicalPathFor(root, vault.contents.get(created.path)!);
+		expect(`${root}/${preferred!}`).toBe(created.path);
+		expect(collision).toMatch(/^sessions\/\d{4}\/.* - [a-f0-9]{64}\.md$/u);
+
+		// The same note rewritten as abandoned keeps its path, and still answers with it.
+		const { finalSnapshot: _final, stoppedAt: _stopped, finalizedAt: _finalized, classification: _classification, status: _status,
+			...kept } = input.runtime.state as Extract<SessionNoteInput['runtime']['state'], { status: 'complete' }>;
+		const state: AbandonedSessionState = { ...kept, status: 'abandoned', abandonedAt: '2026-08-13T09:30:00.000Z', reason: 'account_changed' };
+		await expect(writer.writeAbandoned({ state, locale: 'es', outputFolder: root })).resolves.toEqual({ status: 'written', path: created.path });
+		expect(`${root}/${canonicalPathFor(root, vault.contents.get(created.path)!)[0]!}`).toBe(created.path);
+
+		// Only a CRLF copy differs in line endings: same answer.
+		expect(canonicalPathFor(root, vault.contents.get(created.path)!.replace(/\n/gu, '\r\n'))).toEqual([preferred, collision]);
+	});
+
+	it('R1a: canonicalPathFor lists the collision path second, where the writer puts a note whose preferred path is taken', async () => {
+		const root = 'Tyrian Companion';
+		const vault = new MemoryVault();
+		const input = sessionInput();
+		const note = await rendered(input);
+		await vault.createFolder(note.preferredPath.slice(0, note.preferredPath.lastIndexOf('/')));
+		await vault.create(note.preferredPath, '---\ntc_session_ref: "different"\n---\nHuman note\n');
+		const result = await new SessionNoteWriter(vault).write(input);
+		expect(result).toEqual({ status: 'written', path: note.collisionPath });
+
+		const paths = canonicalPathFor(root, vault.contents.get(note.collisionPath)!).map((path) => `${root}/${path}`);
+		expect(paths).toEqual([note.preferredPath, note.collisionPath]);
+		// The human note that took the preferred path carries no Tyrian marker, so it is never adopted.
+		expect(canonicalPathFor(root, vault.contents.get(note.preferredPath)!)).toEqual([]);
 	});
 
 	it('fails closed for tampered, duplicate or out-of-order managed markers', async () => {

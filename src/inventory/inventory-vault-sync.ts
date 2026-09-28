@@ -323,6 +323,27 @@ const SOURCE_CODES: Record<InventoryPositionSource, string> = {
 };
 const INVENTORY_FOLDER = 'Inventory/Positions';
 const MARKER_PREFIX = '<!-- tyrian-companion-inventory';
+/** The marker line of every position note; `classifyInventoryNote` and `inventoryNotePositionId` read the same one. */
+const INVENTORY_MARKER_PATTERN = /<!-- tyrian-companion-inventory schema=(\d+) marker=([^\s]+) position=([^\s]+)(?: hash=([a-f0-9]{64}))? -->/u;
+/** `<itemId>-<source>-<account|character hash>`: the only shape `positionId` produces, and a safe file name. */
+const POSITION_ID_PATTERN = /^[1-9]\d*-[csbm]-(?:account|[a-f0-9]{24})$/u;
+
+/**
+ * Where the note of one position lives, relative to the output folder. The writer builds every
+ * path with it, and R1a's `canonicalPathFor` answers with it, so the two cannot drift apart.
+ */
+export function inventoryNoteRelativePath(positionId: string): string {
+	return `${INVENTORY_FOLDER}/${positionId}.md`;
+}
+
+/**
+ * The position a note's inventory marker names, when it has the shape the writer produces; null
+ * for a note without the marker or with a position id no writer could have put in a file name.
+ */
+export function inventoryNotePositionId(content: string): string | null {
+	const positionId = INVENTORY_MARKER_PATTERN.exec(content)?.[3];
+	return positionId !== undefined && POSITION_ID_PATTERN.test(positionId) ? positionId : null;
+}
 /**
  * H18.16: closes the managed body. Everything after this line is the user's text. The marker
  * line's `hash` covers only the managed body between the two lines, so text the user adds around
@@ -676,7 +697,7 @@ export class InventoryVaultSyncService {
 			if (position.positionId !== await positionId(position.itemId, position.source, position.character)) {
 				throw new Error('invalid_inventory_sync_input');
 			}
-			const path = `${folder}/${position.positionId}.md`;
+			const path = `${normalizedRoot}/${inventoryNoteRelativePath(position.positionId)}`;
 			const fields = fieldsFor(position, input.locale);
 			desired.set(position.positionId, { position, path, fields, block: renderInventoryBlock(fields) });
 		}
@@ -698,7 +719,7 @@ export class InventoryVaultSyncService {
 				continue;
 			}
 			const owned = classified.note;
-			const expectedPath = `${folder}/${owned.fields.tc_position_id}.md`;
+			const expectedPath = `${normalizedRoot}/${inventoryNoteRelativePath(owned.fields.tc_position_id)}`;
 			if (file.path !== expectedPath || seenOwned.has(owned.fields.tc_position_id)) {
 				steps.push(step(owned.fields.tc_position_id, file.path, 'conflict', content, null));
 				conflictPaths.add(file.path);
@@ -1097,7 +1118,7 @@ async function classifyInventoryNote(content: string): Promise<
 	| { status: 'foreign' }
 	| { status: 'conflict'; positionId: string | null }
 > {
-	const marker = content.match(/<!-- tyrian-companion-inventory schema=(\d+) marker=([^\s]+) position=([^\s]+)(?: hash=([a-f0-9]{64}))? -->/u);
+	const marker = content.match(INVENTORY_MARKER_PATTERN);
 	if (!marker) return content.includes(MARKER_PREFIX) ? { status: 'conflict', positionId: null } : { status: 'foreign' };
 	const positionId = marker[3] ?? null;
 	if (marker[1] !== String(INVENTORY_NOTE_SCHEMA_VERSION) || marker[2] !== INVENTORY_NOTE_MARKER || !positionId || !marker[4]) {
@@ -1189,7 +1210,7 @@ function isInventoryVaultSyncInput(value: unknown): value is InventoryVaultSyncI
 }
 
 function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
-	return record(value) && typeof value.positionId === 'string' && /^[1-9]\d*-[csbm]-(?:account|[a-f0-9]{24})$/u.test(value.positionId) &&
+	return record(value) && typeof value.positionId === 'string' && POSITION_ID_PATTERN.test(value.positionId) &&
 		positive(value.itemId) && inventorySource(value.source) && (value.character === null || nonEmptyText(value.character)) &&
 		(value.source === 'character' ? value.character !== null : value.character === null) && positive(value.quantity) &&
 		nullableNonNegative(value.unitSellCopper) && nullableNonNegative(value.totalSellCopper) &&

@@ -18,6 +18,7 @@ import {
 	type InventoryVaultPort,
 	type InventoryVaultPositionCore,
 } from './inventory-vault-sync';
+import { canonicalPathFor } from '../runtime/canonical-path';
 
 const ROOT = 'Tyrian Companion';
 const CONFIG_DIR = 'vault-config';
@@ -550,6 +551,20 @@ describe('inventory Vault preview and apply', () => {
 			status: 'storage_failure', message: 'An inventory note could not be created.', written: 2, errorName: 'EACCES',
 		});
 		expect(vault.markdownFiles()).toHaveLength(2);
+	});
+
+	it('R1a: canonicalPathFor answers every note the writer wrote with the path it wrote it to', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		await service.apply(await service.preview(ROOT, await inputWithAllSources()));
+		const written = vault.markdownFiles().map((file) => file.path);
+		expect(written).toHaveLength(5);
+		for (const path of written) {
+			expect(canonicalPathFor(ROOT, vault.contents.get(path)!).map((relative) => `${ROOT}/${relative}`)).toEqual([path]);
+		}
+		// Nothing without the marker is adopted, and no marker names a path the writer never uses.
+		expect(canonicalPathFor(ROOT, '# A human note\n')).toEqual([]);
+		expect(canonicalPathFor(ROOT, '<!-- tyrian-companion-inventory schema=6 marker=x position=../../escape -->')).toEqual([]);
 	});
 
 	it('writes deterministic opaque filenames and redacts capture identities and raw credentials', async () => {

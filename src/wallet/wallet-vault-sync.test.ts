@@ -8,6 +8,7 @@ import {
 	type WalletVaultPort,
 	type WalletVaultSyncInput,
 } from './wallet-vault-sync';
+import { canonicalPathFor } from '../runtime/canonical-path';
 
 const ROOT = 'Tyrian Companion';
 const CONFIG_DIR = 'vault-config';
@@ -84,6 +85,20 @@ describe('wallet Vault preview and apply', () => {
 		expect(bytes).not.toContain('account-private');
 		expect(bytes).not.toContain('token-private');
 		expect(bytes).not.toContain('payload');
+	});
+
+	it('R1a: canonicalPathFor answers every note the writer wrote with the path it wrote it to', async () => {
+		const vault = new MemoryWalletVault();
+		const service = new WalletVaultSyncService(vault, CONFIG_DIR);
+		await service.apply(await service.preview(ROOT, threeCurrencyInput()));
+		const written = vault.markdownFiles().map((file) => file.path);
+		expect(written).toHaveLength(3);
+		for (const path of written) {
+			expect(canonicalPathFor(ROOT, vault.contents.get(path)!).map((relative) => `${ROOT}/${relative}`)).toEqual([path]);
+		}
+		expect(canonicalPathFor(ROOT, '<!-- tyrian-companion-wallet schema=1 marker=x currency=-4 -->')).toEqual([]);
+		// A root no writer would write under answers nothing, whatever the note says.
+		expect(canonicalPathFor('../outside', vault.contents.get(written[0]!)!)).toEqual([]);
 	});
 
 	it('deactivates a currency dropped from the catalog while preserving its last known balance, not zeroing it', async () => {

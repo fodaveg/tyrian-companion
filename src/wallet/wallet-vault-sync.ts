@@ -98,6 +98,27 @@ interface OwnedWalletNote {
 const WALLET_FOLDER = 'Wallet/Currencies';
 const MARKER_PREFIX = '<!-- tyrian-companion-wallet';
 const CURRENCY_CATALOG_PATH = 'currencies?ids=all';
+/** The marker line of every currency note; `classifyWalletNote` and `walletNoteCurrencyId` read the same one. */
+const WALLET_MARKER_PATTERN = /<!-- tyrian-companion-wallet schema=(\d+) marker=([^\s]+) currency=(-?\d+)(?: hash=([a-f0-9]{64}))? -->/u;
+
+/**
+ * Where the note of one currency lives, relative to the output folder. The writer builds every
+ * path with it, and R1a's `canonicalPathFor` answers with it, so the two cannot drift apart.
+ */
+export function walletNoteRelativePath(currencyId: number): string {
+	return `${WALLET_FOLDER}/${String(currencyId)}.md`;
+}
+
+/**
+ * The currency a note's wallet marker names, when it is one the writer writes (a positive safe
+ * integer); null for a note without the marker or with any other value.
+ */
+export function walletNoteCurrencyId(content: string): number | null {
+	const raw = WALLET_MARKER_PATTERN.exec(content)?.[3];
+	if (raw === undefined) return null;
+	const currencyId = Number(raw);
+	return positive(currencyId) ? currencyId : null;
+}
 
 /**
  * Captures the account wallet together with the public currency catalog. It never touches
@@ -151,7 +172,7 @@ export class WalletVaultSyncService {
 		const folder = walletFolder(normalizedRoot);
 		const desired = new Map<number, { position: WalletVaultPosition; path: string; content: string }>();
 		for (const position of input.positions) {
-			const path = `${folder}/${String(position.currencyId)}.md`;
+			const path = `${normalizedRoot}/${walletNoteRelativePath(position.currencyId)}`;
 			const content = await renderWalletNote(position, input.capturedAt, input.locale, true);
 			desired.set(position.currencyId, { position, path, content });
 		}
@@ -170,7 +191,7 @@ export class WalletVaultSyncService {
 				continue;
 			}
 			const owned = classified.note;
-			const expectedPath = `${folder}/${String(owned.fields.tc_currency_id)}.md`;
+			const expectedPath = `${normalizedRoot}/${walletNoteRelativePath(owned.fields.tc_currency_id)}`;
 			if (file.path !== expectedPath || seenOwned.has(owned.fields.tc_currency_id)) {
 				steps.push(step(owned.fields.tc_currency_id, file.path, 'conflict', content, null));
 				continue;
@@ -359,7 +380,7 @@ async function classifyWalletNote(content: string): Promise<
 	| { status: 'foreign' }
 	| { status: 'conflict'; currencyId: number | null }
 > {
-	const marker = content.match(/<!-- tyrian-companion-wallet schema=(\d+) marker=([^\s]+) currency=(-?\d+)(?: hash=([a-f0-9]{64}))? -->/u);
+	const marker = content.match(WALLET_MARKER_PATTERN);
 	if (!marker) return content.includes(MARKER_PREFIX) ? { status: 'conflict', currencyId: null } : { status: 'foreign' };
 	const currencyId = marker[3] ? Number(marker[3]) : null;
 	if (marker[1] !== String(WALLET_NOTE_SCHEMA_VERSION) || marker[2] !== WALLET_NOTE_MARKER || currencyId === null || !marker[4]) {
