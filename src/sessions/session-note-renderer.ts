@@ -174,15 +174,23 @@ export function sessionNoteRelativePaths(baselineCompletedAt: string, sessionRef
  * and `tc_started_at`. A valid runtime record always has `tc_started_at` equal to the baseline's
  * `completedAt` (the delta window opens there, and `session-runtime-store.ts` rejects a record
  * whose delta or baseline reference disagree), so it rebuilds the writer's path exactly. Null
- * for anything that is not a `gw2_farming_session` note carrying both values.
+ * for anything that is not a `gw2_farming_session` note carrying both values, including one whose
+ * `tc_started_at` merely parses as a date but is not the exact ISO string `createFrontmatter`
+ * always writes with `toISOString()`: a note that only quotes a Tyrian-looking date, for instance
+ * inside a code block, never rebuilds the writer's path.
  */
 export function sessionNotePathIdentity(content: string): { sessionRef: string; baselineCompletedAt: string } | null {
 	const parsed = parseFrontmatter(content);
 	if (!parsed || parsed.frontmatter.tc_kind !== 'gw2_farming_session') return null;
 	const startedAt = parsed.frontmatter.tc_started_at;
 	if (parsed.sessionRef === null || !/^[a-f0-9]{64}$/u.test(parsed.sessionRef)) return null;
-	if (typeof startedAt !== 'string' || !Number.isFinite(Date.parse(startedAt))) return null;
+	if (!iso(startedAt)) return null;
 	return { sessionRef: parsed.sessionRef, baselineCompletedAt: startedAt };
+}
+
+/** Exactly the ISO string `toISOString()` produces for the instant `value` names. */
+function iso(value: unknown): value is string {
+	return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 }
 
 export async function mergeRenderedSessionNote(
