@@ -1,5 +1,23 @@
 # Changelog
 
+## Release beta 0.2.8 - el bloque de precios y la Venta en modo consulta llegan siempre a un estado final
+
+- El bloque de nota `tyrian-price-history` ya no borra las clases que le pone el host a su
+  contenedor (`classList.add` en vez de `className =`): con esas clases llegan las variables de
+  estilo y, sin ellas, el gráfico salía sin línea.
+- Sin conexión, el bloque dice «Sin conexión: datawars2 no responde en este dispositivo ahora
+  mismo.» en vez de «datawars2 no tiene histórico».
+- Si el bloque se pinta antes de que termine el arranque, espera una vez a que termine y se pinta;
+  antes se quedaba en «Cargando…». Si el arranque falla, no reintenta en bucle.
+- En modo consulta, la pestaña Venta ya no se queda en «Leyendo precios del bazar…»: si el
+  dispositivo no ha capturado nada, dice «Este dispositivo está en modo consulta: la venta se
+  calcula en el recolector.», sin botón de actualizar. En modo recolector no cambia nada.
+
+Límites: gate local (`check` 8/8, 3.372 tests; `check:guardrails` 25/25) sobre `c2cf2dc`; sin QA en
+Obsidian real antes de publicar. La instalación y la carga por BRAT quedan pendientes. Pendiente
+aparte: el refresco masivo de semillas guarda un fallo de red como «sin semilla»
+(`price-seed-bulk-refresh.ts`), con el mismo reintento espaciado que una respuesta vacía.
+
 ## Release beta 0.2.7 - el historial carga solo y se ve cuánto tarda el inventario
 
 - El historial del Acompañante ya no se queda en «No se pudo cargar el historial» cuando la vista
