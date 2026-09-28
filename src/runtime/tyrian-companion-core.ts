@@ -970,7 +970,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// The same read-only store lookup the H13.2 sell-signal detector already uses
 			// after every compaction (src/runtime/assemble-price-history.ts); a second,
 			// independent reader that never touches the panel's own selected series.
-			readDaily: async (itemId, fromDayUtc) => await this.priceHistory?.readDaily(itemId, fromDayUtc) ?? [],
+			readDaily: async (itemId, fromDayUtc) => {
+				try {
+					return await this.priceHistory?.readDaily(itemId, fromDayUtc) ?? [];
+				} catch (error) {
+					// The analysis carries on without daily history; the failure stays recorded here.
+					startLocalDebugAction(this.localDebugActions ?? undefined, {
+						component: 'price_history', action: 'price_history_load_series', state: 'analysis_daily_read',
+					}).failure(error, 'storage_failure', 'store_unavailable', { itemId });
+					throw error;
+				}
+			},
 			// Same cache `priceSeedBulkRefresh` (below) writes into, read-only: the analysis
 			// merges this with `readDaily` above (decision 4) so a seed a prior "Sincronizar
 			// inventario" already cached — or one this very sync's `refreshPriceSeeds` just

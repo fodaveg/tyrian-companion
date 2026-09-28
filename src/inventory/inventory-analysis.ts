@@ -236,9 +236,14 @@ export class InventoryAnalysisService {
 		const itemIds = [...new Set(cores.map((core) => core.itemId))];
 		// No point reading a store nothing writes to: price history is opt-in, and the moment stage
 		// short-circuits before it ever looks at a percentile when it is off.
-		const dailyByItem = priceHistoryEnabled
-			? await this.readDailyByItem(itemIds, capturedAtMs, windowDays)
-			: new Map<number, readonly PriceHistoryDailyV1[]>();
+		let dailyByItem = new Map<number, readonly PriceHistoryDailyV1[]>();
+		if (priceHistoryEnabled) {
+			// One catch for the whole read: an IndexedDB failure is store-level, so every item would
+			// fail alike. The result is the same empty map the opt-out path uses ("no history"), and
+			// nothing is invented. The port implementation records the failure locally.
+			try { dailyByItem = await this.readDailyByItem(itemIds, capturedAtMs, windowDays); }
+			catch { /* recorded by the port; never invalidates the analysis */ }
+		}
 
 		const explanations = new Map(report.explanations.map((entry) => [entry.ref, entry.reasonCodes]));
 		const positionIdByKey = new Map(cores.map((core) => [positionKey(core.itemId, core.source, core.character), core.positionId]));

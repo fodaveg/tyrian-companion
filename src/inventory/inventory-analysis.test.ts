@@ -260,6 +260,16 @@ describe('inventory analysis: the moment stage inside the one result', () => {
 		expect(rowFor(rows, 42, 'sell')).toBeDefined();
 	});
 
+	it('finishes the analysis without daily history when the daily read rejects (IndexedDB unavailable)', async () => {
+		const readDaily = vi.fn(async () => { throw new Error('idb_read_failed'); });
+		const port = recommendationPort({ priceHistoryEnabled: () => true, readDaily });
+
+		const { rows } = await analyse([bank(42, 5, 0)], { port });
+
+		expect(readDaily).toHaveBeenCalled();
+		expect(rowFor(rows, 42, 'sell')).toBeDefined();
+	});
+
 	/**
 	 * Review fix (26 sep 2026): David's real note for the Saco de Halloween (#36038, one unit,
 	 * 321 copper total sell value) read `tc_recommendation: review` /
