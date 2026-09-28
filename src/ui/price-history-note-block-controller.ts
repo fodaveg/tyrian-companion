@@ -22,6 +22,14 @@ export interface PriceHistoryNoteBlockPorts {
 	ensure: (itemId: number) => Promise<PriceHistoryPanelSeedState>;
 	/** The note's own `tc_item_name`, when the caller can read it (e.g. from `ctx.frontmatter`). */
 	itemName?: (itemId: number) => string | null;
+	/**
+	 * Resolves once, the first time `ready()` would go from `false` to `true` after this call.
+	 * Optional so every existing fake keeps compiling; a real host always provides it. Read only
+	 * from inside the `!ready()` branch below, and awaited at most once per paint: if the runtime
+	 * never finishes starting (or fails to), this never resolves and the block is left on its
+	 * loading state, same as before this port existed.
+	 */
+	whenReady?: () => Promise<void>;
 }
 
 /**
@@ -37,6 +45,10 @@ export interface PriceHistoryNoteBlockPorts {
  *    same note inside that window costs this function nothing extra to prove.
  * 3. `ensure` failing outright (not just answering `no_seed`) is still caught:
  *    the note keeps whatever it already painted and nothing throws out of here.
+ * 4. A block painted before the runtime finished starting is retried exactly once, the moment
+ *    `whenReady` resolves (same idea as `companion-view.ts`'s `not_ready` retry for
+ *    `session-history-panel.ts`, H18 28 sep): no poll loop, and no second retry if the runtime is
+ *    still not ready by then (a real, terminal startup failure never gets stuck repainting).
  */
 export async function paintPriceHistoryNoteBlock(
 	container: HTMLElement,
@@ -58,7 +70,9 @@ export async function paintPriceHistoryNoteBlock(
 	}
 	if (!ports.ready()) {
 		renderPriceHistoryNoteBlock(container, ports.translator, { itemId, itemName, piloted: true, seed: undefined });
-		return;
+		if (ports.whenReady === undefined) return;
+		await ports.whenReady();
+		if (!ports.ready()) return;
 	}
 	renderPriceHistoryNoteBlock(container, ports.translator, { itemId, itemName, piloted: true, seed: ports.getState(itemId) });
 	let state: PriceHistoryPanelSeedState;
