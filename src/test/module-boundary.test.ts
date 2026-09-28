@@ -36,6 +36,19 @@ const NEGATIVE_FRONTIERS: readonly ModuleBoundary[] = [
 			'placeOrder', 'buyOrder', 'sellOrder', 'executeOrder',
 		],
 	})),
+	// R1a's `priceHistory` port (`tyrian-host-storage.ts`): these three receive an already-open
+	// `TyrianPriceHistoryPort`/store from the host, so opening IndexedDB again themselves would
+	// silently drop the host's own database naming, `vaultId` scoping and error handling
+	// (`ObsidianHost`'s `indexedDbPriceHistoryPort`). Neither the global nor the concrete adapter
+	// classes it wraps may be named here again.
+	...['price-history-runtime', 'price-seed-panel-service', 'price-seed-bulk-refresh'].map((part): ModuleBoundary => ({
+		path: `src/economy/${part}.ts`,
+		forbiddenImports: [],
+		forbiddenNames: [
+			'indexedDB', 'IDBFactory',
+			'IndexedDbPriceHistoryStore', 'IndexedDbPriceSeedCacheStore', 'IndexedDbPriceSeedNoSeedStore',
+		],
+	})),
 ];
 
 describe('negative module frontiers', () => {
@@ -58,6 +71,19 @@ describe('negative module frontiers', () => {
 			{ path: boundary.path, kind: 'import', value: 'obsidian' },
 			{ path: boundary.path, kind: 'name', value: 'Authorization' },
 			{ path: boundary.path, kind: 'name', value: 'fetch' },
+		]);
+	});
+
+	it('turns red for indexedDB opened directly in one of the priceHistory port consumers', () => {
+		const boundary = NEGATIVE_FRONTIERS.find((entry) => entry.path === 'src/economy/price-history-runtime.ts')!;
+		const sabotaged = `
+			export async function reopen(): Promise<void> {
+				const request = indexedDB.open('tyrian-companion-price-history');
+				void request;
+			}
+		`;
+		expect(forbiddenBoundaryUses(sabotaged, boundary)).toEqual([
+			{ path: boundary.path, kind: 'name', value: 'indexedDB' },
 		]);
 	});
 
