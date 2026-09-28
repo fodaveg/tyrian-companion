@@ -1,5 +1,33 @@
 # Changelog
 
+## Release beta 0.2.6 - el plugin se separa de Obsidian para poder correr también en Hebra
+
+El comportamiento en Obsidian debería ser el mismo que en 0.2.5, salvo lo que se lista abajo. Por
+dentro cambia casi todo: el núcleo sale de `main.ts` a `src/runtime/` y habla con el host por
+`TyrianHost`; Obsidian es un host más (`src/host/obsidian/`). Esta beta existe para comprobar en
+Obsidian real que las tres vistas, los modales y los ajustes se ven y funcionan igual.
+
+- **Modo por dispositivo: recolector o consulta** (Ajustes). La primera vez se decide solo: con clave
+  API, recolector; sin clave, consulta. Después se guarda en local y no se sincroniza. En consulta no
+  hay llamadas a la API de GW2, ni escrituras de notas, Bases o exportaciones, ni puerto 47823, ni
+  avisos; el historial de precios solo se lee. Pasar a consulta se rechaza con una sesión abierta.
+- **Nota `Collector status.md`** en la carpeta de salida, con un latido cada 15 minutos. Si otro
+  recolector tiene un latido reciente (45 minutos), sale UN aviso y se sigue recolectando. Si usas
+  el plugin en dos equipos con la misma clave, los dos arrancan como recolectores: pon en consulta
+  el que no deba recolectar.
+- La barra de pestañas (Sesión · Inventario · Venta · Ajustes) cabe en paneles de 288 px: el botón de
+  Ajustes ya no queda oculto tras el desplazamiento. En paneles de 599 px o menos el relleno baja de
+  16 a 8 px.
+- El panel de historial ya no falla con «No se pudo cargar el historial» si la vista se abre antes de
+  que termine el arranque.
+- Los textos de vistas, modales y ajustes ya no nombran Obsidian.
+- Una respuesta HTTP demasiado grande se rechaza antes de decodificarla entera.
+- Cambios deliberados: los eventos de carpetas ya no refrescan el backfill de Halloween, y un cuerpo
+  HTTP que no sea UTF-8 se mide después de decodificarlo.
+
+Límites: gate local y CI verdes sobre `6b7c69a`; sin QA en Obsidian real antes de publicar. La
+instalación y la carga por BRAT quedan pendientes.
+
 ## Release beta 0.2.5 - coherencia de Venta e Inventario
 
 - «Actualizar» en Venta completa el histórico de los objetos de calendario con el consentimiento
