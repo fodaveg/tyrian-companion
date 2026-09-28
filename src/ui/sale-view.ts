@@ -39,6 +39,13 @@ export function renderSaleView(
 	container.empty();
 	container.addClass('tyrian-sale-page');
 	container.append(renderStatusLine(model, translator, ui));
+	// R1b: a consult device with nothing captured this session (`TyrianCompanionCore.getSaleViewModel`)
+	// reaches this final state instead of an ordinary `empty` — no refresh button, since a refresh
+	// here is an action only the collector may take (`refusedInConsult`).
+	if (model.consultOnly === true) {
+		container.append(renderConsultOnly(translator));
+		return;
+	}
 	if (model.status === 'loading') {
 		const surface = renderLoading(translator);
 		// H18.38: a stuck "Leyendo…" with nothing behind it (David, 0.2.3): the auto-triggered
@@ -103,6 +110,14 @@ function renderStatusLine(model: SaleViewModel, translator: Translator, ui: Icon
 		}));
 	}
 	return status;
+}
+
+function renderConsultOnly(translator: Translator): HTMLElement {
+	const surface = createDiv({ cls: 'tyrian-sale' });
+	const notice = surface.createEl('p');
+	notice.setAttribute('role', 'status');
+	notice.textContent = translator.t('sale.view.consultEmpty');
+	return surface;
 }
 
 function renderLoading(translator: Translator): HTMLElement {
