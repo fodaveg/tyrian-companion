@@ -2621,9 +2621,17 @@
 }
 
 .tyrian-companion-settings__diagnostic-status[role="alert"] {
+	/* `--text-warning` on `--background-modifier-error` measured 1.42:1 (light) /
+	1.47:1 (dark) with the Obsidian 1.14.2 hex in docs/HEBRA-CSS-VARIABLES.md#3 (both
+	are mid-tone reds/oranges, not a light fill vs. dark text). No text-role variable
+	from that table clears 4.5:1 against a solid `--background-modifier-error` or
+	`--color-orange` fill in both themes at once, so the alert drops the solid fill
+	and signals its state the same way `.tyrian-companion-halloween__notice` already
+	does: border color only, body text at `--text-normal`. `--text-normal` on
+	`--background-primary` (this block's ambient surface, same as the non-alert
+	variant) measures 15.91:1 light / 12.19:1 dark. */
 	border-color: var(--color-orange);
-	background: var(--background-modifier-error);
-	color: var(--text-warning);
+	color: var(--text-normal);
 }
 
 .tyrian-companion-settings__diagnostic-status span {
