@@ -57,7 +57,6 @@ try {
 		"import 'net' from src/host/obsidian/obsidian-tcp-server.ts",
 		"import 'obsidian' from src/host/obsidian/obsidian-ui.ts",
 		"import 'obsidian' from src/host/obsidian/obsidian-vault.ts",
-		"import 'obsidian' from src/ui/vault-folder-suggest.ts",
 	]);
 	await probe('node-builtins', {
 		'entry.ts': "import { readFileSync } from 'node:fs';\nimport { join } from 'path';\nexport const read = [readFileSync, join];\n",
