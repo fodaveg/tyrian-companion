@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
 import type { HttpRequest, HttpResponse, HttpTransport } from '../core/http';
+import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryPanelSeedService } from '../economy/price-seed-panel-service';
 import { priceHistoryNoteBlockMarkdown } from '../inventory/price-history-note-block';
 import { paintPriceHistoryNoteBlock, type PriceHistoryNoteBlockPorts } from './price-history-note-block-controller';
@@ -21,7 +22,8 @@ describe('price history note block controller', () => {
 		const factory = new IDBFactory();
 		// Constructing the service is exactly what the plugin does at load: no request yet.
 		const service = new PriceHistoryPanelSeedService({
-			factory, vaultId: 'vault', transport: transportOf(requests), now: () => Date.parse('2026-09-04T00:00:00.000Z'),
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault',
+			transport: transportOf(requests), now: () => Date.parse('2026-09-04T00:00:00.000Z'),
 		});
 		expect(requests).toHaveLength(0);
 
@@ -35,7 +37,8 @@ describe('price history note block controller', () => {
 		const requests: HttpRequest[] = [];
 		const factory = new IDBFactory();
 		const service = new PriceHistoryPanelSeedService({
-			factory, vaultId: 'vault', transport: transportOf(requests), now: () => Date.parse('2026-09-04T00:00:00.000Z'),
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault',
+			transport: transportOf(requests), now: () => Date.parse('2026-09-04T00:00:00.000Z'),
 		});
 		const mount = createMount();
 		const { source } = piloto36038();
@@ -47,7 +50,7 @@ describe('price history note block controller', () => {
 	it('paints a no-history state and never throws when datawars2 is down', async () => {
 		const factory = new IDBFactory();
 		const service = new PriceHistoryPanelSeedService({
-			factory, vaultId: 'vault',
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault',
 			transport: { send: async () => ({ status: 503, headers: {}, body: null }) },
 			now: () => Date.parse('2026-09-04T00:00:00.000Z'),
 		});

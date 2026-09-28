@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { LocalDebugActionPort, LocalDebugEventContext } from '../core/local-debug-action-runner';
+import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryRuntime } from '../economy/price-history-runtime';
 import type { PriceHistorySettings } from '../economy/price-history-model';
 import { readModuleSource } from '../test/module-boundary';
@@ -37,7 +38,7 @@ describe('session debug semantics', () => {
 		vi.stubGlobal('window', { setTimeout: setTimer, clearTimeout: clearTimer });
 		const settings: PriceHistorySettings = { enabled: true, intervalMinutes: 15, rawRetentionDays: 7, dailyRetentionDays: 180 };
 		const runtime = new PriceHistoryRuntime({
-			factory: new IDBFactory(),
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }),
 			vaultId: `vault-${crypto.randomUUID()}`,
 			gateway: { requestDetailed: async (path: string) => response(path) },
 			rateLimit: new RateLimitCoordinator({}),

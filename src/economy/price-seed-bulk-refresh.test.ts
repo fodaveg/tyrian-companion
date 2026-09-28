@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
+import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import {
 	PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN,
 	PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS,
@@ -28,7 +29,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		let maxInFlight = 0;
 		const calls: number[] = [];
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => NOW_MS,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
 			fetchSeed: async (itemId) => {
 				inFlight += 1;
 				maxInFlight = Math.max(maxInFlight, inFlight);
@@ -52,7 +53,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		let active = 0;
 		let maximum = 0;
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'overlap', now: () => NOW_MS,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'overlap', now: () => NOW_MS,
 			fetchSeed: async (itemId) => {
 				requests.push(itemId); active += 1; maximum = Math.max(maximum, active);
 				await sleep(5); active -= 1;
@@ -69,7 +70,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 	it('never exceeds the named per-run cap, leaving the rest for the next sync', async () => {
 		const requested: number[] = [];
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => NOW_MS,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
 			fetchSeed: async (itemId) => { requested.push(itemId); return seeded(itemId); },
 		});
 		const itemIds = Array.from({ length: PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN + 10 }, (_unused, index) => index + 1);
@@ -87,7 +88,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		const requested: number[] = [];
 		let now = NOW_MS;
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => now,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => now,
 			fetchSeed: async (itemId) => { requested.push(itemId); return seeded(itemId); },
 		});
 		const first = await service.run([1]);
@@ -103,7 +104,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		const requested: number[] = [];
 		let now = NOW_MS;
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => now,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => now,
 			fetchSeed: async (itemId) => { requested.push(itemId); return seeded(itemId); },
 		});
 		await service.run([1]);
@@ -116,7 +117,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 	it('a thrown failure on item k never stops item k+1 from being attempted', async () => {
 		const requested: number[] = [];
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => NOW_MS,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
 			fetchSeed: async (itemId) => {
 				requested.push(itemId);
 				if (itemId === 2) throw new Error('datawars2 unreachable');
@@ -133,7 +134,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 	it('a no_seed answer on item k also never stops item k+1, and is no longer counted as a failure', async () => {
 		const requested: number[] = [];
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => NOW_MS,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
 			fetchSeed: async (itemId) => {
 				requested.push(itemId);
 				return itemId === 2 ? { status: 'no_seed', reason: 'unreachable' } : seeded(itemId);
@@ -155,7 +156,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 	it('items with no_seed at the start of the list no longer block the rest of the watch list on the next sync', async () => {
 		const requested: number[] = [];
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => NOW_MS,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
 			fetchSeed: async (itemId) => {
 				requested.push(itemId);
 				return itemId <= PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN
@@ -180,7 +181,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		const requested: number[] = [];
 		let now = NOW_MS;
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => now,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => now,
 			fetchSeed: async (itemId) => { requested.push(itemId); return { status: 'no_seed', reason: 'empty' }; },
 		});
 		await service.run([1]);
@@ -199,7 +200,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 
 	it('reports queue coverage across the whole watch list, not just the items this run reached', async () => {
 		const service = new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => NOW_MS,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
 			fetchSeed: async (itemId) => (itemId === 2 ? { status: 'no_seed', reason: 'empty' } : seeded(itemId)),
 		});
 		const outcome = await service.run([1, 2, 3]);
@@ -209,7 +210,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 	it('never touches fetchSeed before run is called', () => {
 		let calls = 0;
 		new PriceSeedBulkRefreshService({
-			factory: new IDBFactory(), vaultId: 'vault', now: () => NOW_MS,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
 			fetchSeed: async (itemId) => { calls += 1; return seeded(itemId); },
 		});
 		expect(calls).toBe(0);

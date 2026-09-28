@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ApiPollOutcome, ApiPollSchedulerState } from '../sessions/api-poll-scheduler';
 import type { ApiPollScheduler } from '../sessions/api-poll-scheduler';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
+import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryRuntime } from './price-history-runtime';
 import { PRICE_HISTORY_DB_NAME, type PriceHistoryDailyV1, type PriceHistorySettings } from './price-history-model';
 import { IndexedDbPriceHistoryStore } from './price-history-store';
@@ -232,7 +233,7 @@ function createRuntime(
 	afterCompaction?: ConstructorParameters<typeof PriceHistoryRuntime>[0]['afterCompaction'],
 ): PriceHistoryRuntime {
 	return new PriceHistoryRuntime({
-		factory, vaultId, afterCompaction,
+		priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId, afterCompaction,
 		gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now }), now, onStateChange,
 		scheduler: (poll, onStateChange) => {
 			scheduler.poll = poll; scheduler.onStateChange = onStateChange;

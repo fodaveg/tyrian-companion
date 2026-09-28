@@ -5,6 +5,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import TyrianCompanionPlugin from './main';
 import type { PositionRecommendationV1 } from './advisor/inventory-position-recommendation';
+import { indexedDbPriceHistoryPort } from './host/indexed-db-price-history';
 import { PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
 import type { IndexedDbPriceSeedCacheStore } from './economy/price-seed-cache-store';
 import type { PriceSeedDayV1 } from './economy/price-seed-model';
@@ -30,7 +31,7 @@ describe('Sale refresh: explicit action to real cache, merge and hero recommenda
 		vi.spyOn(Date, 'now').mockReturnValue(NOW_MS);
 		const fetched: number[] = [];
 		const service = new PriceSeedBulkRefreshService({
-			factory, vaultId: 'sale-refresh-test', now: () => NOW_MS,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'sale-refresh-test', now: () => NOW_MS,
 			fetchSeed: async (itemId) => {
 				fetched.push(itemId);
 				const days = daysById.get(itemId)?.();

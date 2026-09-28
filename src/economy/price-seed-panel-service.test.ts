@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
 import type { HttpRequest, HttpResponse, HttpTransport } from '../core/http';
+import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryPanelSeedService } from './price-seed-panel-service';
 
 const RECORDS = [
@@ -22,7 +23,7 @@ function harness(
 		},
 	};
 	const service = new PriceHistoryPanelSeedService({
-		factory,
+		priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }),
 		vaultId: 'vault',
 		transport,
 		now: () => Date.parse('2026-09-03T00:00:00.000Z'),
@@ -89,7 +90,7 @@ describe('PriceHistoryPanelSeedService', () => {
 		// A fresh service instance sharing the same database, but with a zero TTL so the cached
 		// entry above is immediately treated as due for a refresh; that refresh then fails.
 		const stale = new PriceHistoryPanelSeedService({
-			factory,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }),
 			vaultId: 'vault',
 			transport: { send: async (request) => { requests.push(request); return { status: 503, headers: {}, body: null }; } },
 			now: () => Date.parse('2026-09-04T00:00:00.000Z'),
