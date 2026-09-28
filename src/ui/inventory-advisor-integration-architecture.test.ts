@@ -10,6 +10,7 @@ import {
 	inventoryAdvisorWorkflowReceipt,
 } from '../runtime/assemble-advisor';
 import { classMethodBody, forbiddenBoundaryUses, type ModuleBoundary, readModuleSource } from '../test/module-boundary';
+import { withObsidianHost } from '../test/obsidian-host-harness';
 
 describe('H5.11 Inventory Advisor runtime integration', () => {
 	it('registers separate open and explicit refresh commands without polling or on-load capture', () => {
@@ -42,7 +43,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 
 	it('wires the exact built-in review-only provider instead of an unavailable production stub', () => {
 		const source = readModuleSource('src/main.ts');
-		expect(source).toMatch(/const inventoryTransport = new ObsidianRequestTransport\(\{[\s\S]*?timeoutMs: 30_000,[\s\S]*?diagnostics: this\.localDebugActions \?\? undefined,[\s\S]*?\}\);/u);
+		expect(source).toMatch(/const inventoryTransport = new HostRequestTransport\(host\.http, \{[\s\S]*?timeoutMs: 30_000,[\s\S]*?diagnostics: this\.localDebugActions \?\? undefined,[\s\S]*?\}\);/u);
 		expect(source.match(/operationPolicies: GW2_CHARACTER_OPERATION_POLICIES/gu)).toHaveLength(2);
 		// The advisor stack gets the inventory-scoped client, catalog and snapshots, never the
 		// session ones: its 30 s timeout and its own rate-limit share are the reason they exist.
@@ -86,12 +87,13 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 
 	it('overwrites one local sanitized capture receipt without using plugin settings storage', async () => {
 		const writes: Array<{ path: string; data: string }> = [];
-		const harness: CaptureReceiptHarness = {
+		// The receipt goes through the real `ObsidianHost` (vault adapter, plugin id) over these fakes.
+		const harness: CaptureReceiptHarness = withObsidianHost({
 			app: { vault: { configDir: 'test-config-dir', adapter: {
-				write: async (path, data) => { writes.push({ path, data }); },
+				write: async (path: string, data: string) => { writes.push({ path, data }); },
 			} } },
 			manifest: { id: 'tyrian-companion' },
-		};
+		});
 		const receipt: InventoryAdvisorCaptureReceiptV1 = {
 			version: 1,
 			recordedAt: '2026-08-15T07:00:00.000Z',

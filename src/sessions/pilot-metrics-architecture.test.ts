@@ -81,8 +81,10 @@ describe('pilot metrics architecture', () => {
 
 	it('scopes the journal by the already-derived vault id and exposes atomic opt-out', () => {
 		const main = readModuleSource('src/main.ts');
-		expect(classMethodBody(main, 'TyrianCompanionPlugin', 'initializeRuntime'))
-			.toMatch(/assembleSessions\(\{\s*\n\s*factory: window\.indexedDB,\s*\n\s*vaultId,/u);
+		// R1a: the factory is the host's (`TyrianHost.kv.indexedDB`, `window.indexedDB` in Obsidian).
+		const initializeRuntime = classMethodBody(main, 'TyrianCompanionPlugin', 'initializeRuntime');
+		expect(initializeRuntime).toContain('const indexedDB = host.kv.indexedDB;');
+		expect(initializeRuntime).toMatch(/assembleSessions\(\{\s*\n\s*factory: indexedDB,\s*\n\s*vaultId,/u);
 		expect(readModuleSource('src/runtime/assemble-sessions.ts'))
 			.toContain('new IndexedDbPilotMetricsStore(input.factory, input.vaultId)');
 		const store = readModuleSource('src/sessions/pilot-metrics-store.ts');

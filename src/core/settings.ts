@@ -1,5 +1,3 @@
-import { getLanguage } from 'obsidian';
-
 import { DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER } from '../alerts/alert-contract';
 import { normalizeVaultRelativePath } from './vault-path';
 import type {
@@ -177,7 +175,7 @@ export interface TyrianSettings {
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	schemaVersion: SETTINGS_SCHEMA_VERSION,
 	apiKeySecret: '',
-	// Reserve locale only. A fresh install adopts Obsidian's app language, see `hostLanguage`.
+	// Reserve locale only. A fresh install adopts the host's app language, see `hostLanguage`.
 	language: 'en',
 	outputFolder: 'Tyrian Companion',
 	preferredCharacter: '',
@@ -237,17 +235,22 @@ export const MATERIAL_STORAGE_CAPACITIES: readonly MaterialStorageCapacity[] = [
 ];
 const MATERIAL_STORAGE_CAPACITY_SET: ReadonlySet<number> = new Set(MATERIAL_STORAGE_CAPACITIES);
 
-/** Migrates persisted settings to the current schema without retaining unknown values. */
-export function migrateSettings(data: unknown, configDir?: string): TyrianSettings {
+/**
+ * Migrates persisted settings to the current schema without retaining unknown values.
+ *
+ * `hostLocale` is the host's ISO app language (`TyrianHost.locale()`), consulted only when the
+ * data carries no supported `language` of its own; absent, a first run starts in English.
+ */
+export function migrateSettings(data: unknown, configDir?: string, hostLocale?: string): TyrianSettings {
 	if (!isRecord(data)) {
-		return cloneDefaultSettings();
+		return cloneDefaultSettings(hostLocale);
 	}
 
 	return {
 		schemaVersion: SETTINGS_SCHEMA_VERSION,
 		apiKeySecret: stringOrDefault(data.apiKeySecret, DEFAULT_SETTINGS.apiKeySecret),
 		// An explicit choice always wins; only an absent or unsupported value asks the host.
-		language: data.language === 'en' || data.language === 'es' ? data.language : hostLanguage(),
+		language: data.language === 'en' || data.language === 'es' ? data.language : hostLanguage(hostLocale),
 		outputFolder: normalizeVaultFolder(data.outputFolder, configDir),
 		preferredCharacter: stringOrDefault(
 			data.preferredCharacter,
@@ -333,24 +336,24 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 }
 
 /** Returns an independent mutable settings instance without sharing the frozen nested defaults. */
-function cloneDefaultSettings(): TyrianSettings {
+function cloneDefaultSettings(hostLocale: string | undefined): TyrianSettings {
 	return {
 		...DEFAULT_SETTINGS,
-		language: hostLanguage(),
+		language: hostLanguage(hostLocale),
 		halloweenPersonalValuation: { version: 1, values: [] },
 	};
 }
 
 /**
- * Resolves the interface language a first run starts with from Obsidian's app language.
- * `getLanguage` exists since Obsidian 1.8.7, well below the manifest's `minAppVersion`.
+ * Resolves the interface language a first run starts with from the host's app language
+ * (Obsidian's `getLanguage`, through `TyrianHost.locale()`).
  */
-function hostLanguage(): Language {
-	return resolveHostLanguage(getLanguage());
+function hostLanguage(hostLocale: string | undefined): Language {
+	return resolveHostLanguage(hostLocale);
 }
 
 /**
- * Narrows an Obsidian ISO app language to a shipped locale. Obsidian returns codes such as
+ * Narrows a host ISO app language to a shipped locale. Obsidian returns codes such as
  * `es` or `zh-TW`, so only the primary subtag decides; anything the plugin does not translate
  * falls back to `DEFAULT_SETTINGS.language`.
  */
@@ -490,6 +493,7 @@ export function mergeSettingsUpdate(
 	current: TyrianSettings,
 	update: Partial<TyrianSettings>,
 	configDir?: string,
+	hostLocale?: string,
 ): TyrianSettings {
 	const { legacyManagedAssetsRoot: _legacyManagedAssetsRoot, legacyOutputFolder: _legacyOutputFolder, ...safeUpdate } = update;
 	const personalValuation = safeUpdate.halloweenPersonalValuation === undefined
@@ -522,7 +526,7 @@ export function mergeSettingsUpdate(
 		salvageOpportunityCostCopperPerHour: nextOpportunityCost,
 		legacyOutputFolder: safeUpdate.outputFolder === undefined ? current.legacyOutputFolder : null,
 		legacyManagedAssetsRoot: safeUpdate.managedAssetsRoot === undefined ? current.legacyManagedAssetsRoot : null,
-	}, configDir);
+	}, configDir, hostLocale);
 }
 
 /** Resolves the optional setting without claiming that Guild Wars 2 exposes this account upgrade. */

@@ -5,7 +5,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { GuildWars2Client, OFFICIAL_GW2_API_URL } from './account/guild-wars-2-client';
 import { ResilientHttpTransport, type HttpRequest } from './core/http';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
-import { ObsidianApiKeyProvider } from './core/secret-provider';
+import { HostApiKeyProvider } from './core/secret-provider';
 import TyrianCompanionPlugin from './main';
 import {
 	censusNetworkAndCredentialCapabilities,
@@ -40,14 +40,16 @@ const REVIEWED_FUTURE_OUTBOUND_FILES = [
 	'src/ui/wallet-vault-sync-controller.ts',
 	'src/wallet/wallet-vault-sync.ts',
 ];
-const REVIEWED_REQUEST_URL_FILES = ['src/core/obsidian-http.ts'];
+// R1a: Obsidian's request API moved, unchanged, from `src/core/obsidian-http.ts` into the host
+// adapter; the core's `HostRequestTransport` (`src/core/http.ts`) reaches it through `TyrianHost.http`.
+const REVIEWED_REQUEST_URL_FILES = ['src/host/obsidian/obsidian-http.ts'];
 const REVIEWED_FETCH_FILES: readonly string[] = [];
 const REVIEWED_WEB_SOCKET_FILES: readonly string[] = [];
-// H13.9/H13.15. The only module allowed to open `node:net`: a loopback-only TCP
-// server for the in-game alert bridge. Reviewed: it binds `127.0.0.1` exclusively,
-// reads at most one line from a client before refusing further input, and never
-// imports `src/platform/` (H8/Mumble).
-const REVIEWED_NET_IMPORT_FILES = ['src/alerts/alert-ingame-server.ts'];
+// H13.9/H13.15. The only module allowed to open `node:net`: the host's loopback TCP port for
+// the in-game alert bridge. Reviewed: `src/alerts/alert-ingame-server.ts` (host-neutral since R1a)
+// asks it for `127.0.0.1` only and refuses any other bound address, reads at most one line from a
+// client before refusing further input, and neither imports `src/platform/` (H8/Mumble).
+const REVIEWED_NET_IMPORT_FILES = ['src/host/obsidian/obsidian-tcp-server.ts'];
 const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/account/account-service.ts',
 	'src/account/guild-wars-2-client.ts',
@@ -60,7 +62,6 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	// H15.2. Imports only the `HttpTransportError` class for an `instanceof` check and its closed
 	// `kind`/`status` fields; it opens no transport and makes no call of its own.
 	'src/core/local-debug-error-details.ts',
-	'src/core/obsidian-http.ts',
 	'src/economy/commerce-listings-capture.ts',
 	'src/economy/price-history-capture.ts',
 	// H9.1 panel overlay, approved 2026-09-03. Owns `fetchPriceSeed`'s lifecycle for
@@ -79,6 +80,9 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/economy/sell-signal-runtime.ts',
 	'src/halloween/halloween-evidence-service.ts',
 	'src/halloween/halloween-unlocks.ts',
+	// R1a. Composition only: `ObsidianHost` hands `createObsidianHttpPort()` to the core as
+	// `TyrianHost.http`; it opens no call itself.
+	'src/host/obsidian/obsidian-host.ts',
 	'src/main.ts',
 	// H13.10. Composition only: it names the transport type so it can hand the
 	// one the plugin already built to the sell signal. It opens no call itself.
@@ -95,6 +99,8 @@ const REVIEWED_SECRET_PROVIDER_IMPORT_FILES = [
 const REVIEWED_SECRET_CAPABILITY_FILES = [
 	'src/account/guild-wars-2-client.ts',
 	'src/core/secret-provider.ts',
+	// R1a. `TyrianHost.secrets` over Obsidian's `SecretStorage`: list, get and set, nothing else.
+	'src/host/obsidian/obsidian-host.ts',
 	'src/main.ts',
 ];
 const PRODUCTION_FILES = productionSourceFiles(process.cwd());
@@ -102,12 +108,10 @@ const PRODUCTION_FILES = productionSourceFiles(process.cwd());
 describe('H6.7 credential boundary', () => {
 	it('sends one ephemeral SecretStorage value only to the exact official HTTPS endpoint', async () => {
 		const settings = { ...DEFAULT_SETTINGS, apiKeySecret: 'gw2-primary' };
-		const provider = new ObsidianApiKeyProvider(
+		const provider = new HostApiKeyProvider(
 			{
-				secretStorage: {
-					listSecrets: () => [settings.apiKeySecret],
-					getSecret: (name) => name === settings.apiKeySecret ? TOKEN_SENTINEL : null,
-				},
+				list: () => [settings.apiKeySecret],
+				get: (name) => name === settings.apiKeySecret ? TOKEN_SENTINEL : null,
 			},
 			() => settings.apiKeySecret,
 		);
@@ -143,11 +147,17 @@ describe('H6.7 credential boundary', () => {
 			apiKey: TOKEN_SENTINEL,
 		};
 		const saved: unknown[] = [];
+		// The production load path reads and writes `data.json` only through the host's settings port.
 		const harness: SettingsLoadHarness = {
-			app: { vault: { configDir: 'test-config-dir' } },
+			host: {
+				vault: { configDir: 'test-config-dir' },
+				locale: () => 'en',
+				settings: {
+					load: async () => persisted,
+					save: async (value) => { saved.push(structuredClone(value)); },
+				},
+			},
 			settings: { ...DEFAULT_SETTINGS },
-			loadData: async () => persisted,
-			saveData: async (value) => { saved.push(structuredClone(value)); },
 		};
 		const loadSettings = (TyrianCompanionPlugin.prototype as unknown as {
 			loadSettings(this: SettingsLoadHarness): Promise<void>;
@@ -233,10 +243,12 @@ describe('H6.7 credential boundary', () => {
 const CREDENTIAL_CAPABILITY_PATTERN = /from\s+['"][^'"]*secret-provider['"]|\b(?:Authorization|Bearer|SecretStorage|readSelectedApiKey|ApiKeyProvider|apiKey|accessToken|refreshToken|bearerToken|credential|token)\b/u;
 
 interface SettingsLoadHarness {
-	app: { vault: { configDir: string } };
+	host: {
+		vault: { configDir: string };
+		locale(): string;
+		settings: { load(): Promise<unknown>; save(value: unknown): Promise<void> };
+	};
 	settings: TyrianSettings;
-	loadData(): Promise<unknown>;
-	saveData(value: unknown): Promise<void>;
 }
 
 // These guards exercise the real authenticated client and production load method, then discover

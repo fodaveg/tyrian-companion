@@ -17,11 +17,13 @@ const publicApi = vi.hoisted(() => ({
 
 vi.mock('obsidian', async (importOriginal) => ({
 	...await importOriginal<Record<string, unknown>>(),
+	// Like the real `requestUrl`: the body as `text`, and `json` its parse.
 	requestUrl: async ({ url }: { url: string }) => {
 		const ids = itemIdsFromUrl(url);
-		if (ids === null) return { status: 404, headers: {}, json: [] };
+		if (ids === null) return { status: 404, headers: {}, json: [], text: '[]' };
 		publicApi.requestedItemIds.push(ids);
-		return { status: 200, headers: {}, json: ids.flatMap((id) => publicApi.items.get(id) ?? []) };
+		const json = ids.flatMap((id) => publicApi.items.get(id) ?? []);
+		return { status: 200, headers: {}, json, text: JSON.stringify(json) };
 	},
 }));
 

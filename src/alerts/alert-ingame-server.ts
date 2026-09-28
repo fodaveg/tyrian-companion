@@ -1,8 +1,4 @@
-// Bare specifier, not `node:net`: esbuild.config.mjs externalizes every Node builtin by its bare
-// name (`node:module`'s `builtinModules`, which does not include the prefixed form), and this is
-// the only module in `src/` that reaches for one, so the bundle step is what catches a mismatch.
-import { createServer, type Server, type Socket } from 'net';
-
+import type { TyrianTcpConnection, TyrianTcpListenError, TyrianTcpServer, TyrianTcpServerPort } from '../host/tyrian-host';
 import { ALERT_INGAME_MAX_MESSAGE_BYTES } from './alert-ingame';
 import type { IngameConnectionEvent } from './alert-ingame-presence';
 import {
@@ -24,7 +20,12 @@ import {
 export { ALERT_INGAME_MAX_MESSAGE_BYTES };
 
 /**
- * The one module allowed to open `node:net`. `src/security-boundary.test.ts` censuses it by name.
+ * The in-game bridge's protocol, over whichever loopback socket the host hands it.
+ *
+ * It opens no socket itself: the host's `TyrianTcpServerPort` does (`node:net` in
+ * `src/host/obsidian/obsidian-tcp-server.ts`, a Rust listener in Hebra), and
+ * `src/security-boundary.test.ts` censuses that host module by name. This module only moves
+ * bytes it is given, so it runs unchanged in a webview without Node.
  *
  * `docs/SPEC-puente-ingame.md` fixes the shape: one TCP server, loopback only, N clients, a line
  * framer on `\n`, protocol v2 (`alert-ingame-protocol.ts`). Since H18.23 the channel carries data
@@ -83,32 +84,12 @@ export interface AlertIngameBridgeOptions {
 	readonly livenessTimeoutMs?: number;
 }
 
-/**
- * Starts the loopback server used in production, injecting the real `node:net`.
- *
- * `timer` has no default here, the same way `postAlertWebhook`'s does not: the caller (`main.ts`)
- * owns the one place a real `setTimeout` is reached for, through `window.setTimeout`, for popout
- * window compatibility. Tests reach for `createAlertIngameServer` instead.
- */
-export async function startAlertIngameServer(
-	port: number,
-	timer: AlertIngameServerTimer,
-	bridge: AlertIngameBridgeOptions,
-	retryDelaysMs: readonly number[] = ALERT_INGAME_PORT_RETRY_DELAYS_MS,
-): Promise<AlertIngameServerHandle> {
-	return await createAlertIngameServer({ createServer }, port, timer, bridge, retryDelaysMs);
-}
-
-export interface AlertIngameNetModule {
-	createServer(connectionListener: (socket: Socket) => void): Server;
-}
-
 type ConnectionPhase = 'awaiting_hello' | 'authenticated' | 'closed';
 
 interface BridgeConnection {
-	readonly socket: Socket;
+	readonly socket: TyrianTcpConnection;
 	phase: ConnectionPhase;
-	buffered: Buffer;
+	buffered: Uint8Array;
 	nonce: string | null;
 	nextSeq: number;
 	lastSeenAtMs: number;
@@ -124,13 +105,20 @@ interface BridgeRuntime {
 	readonly authenticated: Set<BridgeConnection>;
 }
 
+const EMPTY_BYTES = new Uint8Array(0);
+const UTF8 = new TextEncoder();
+
 /**
- * Builds and binds the server. `net`, `timer` and `bridge` are injected so a unit test can exercise
- * the port-occupied retry, the loopback-only guarantee and every handshake deadline without a real
- * clock; the sockets themselves stay real in the tests.
+ * Binds the loopback server through the host and hands back its handle.
+ *
+ * `timer` has no default here, the same way `postAlertWebhook`'s does not: the caller (`main.ts`)
+ * owns the one place a real `setTimeout` is reached for, through `window.setTimeout`, for popout
+ * window compatibility. `tcp`, `timer` and `bridge` are injected so a unit test can exercise the
+ * port-occupied retry, the loopback-only guarantee and every handshake deadline without a real
+ * clock; the sockets themselves stay real in the tests (`createNodeTcpServerPort`).
  */
-export async function createAlertIngameServer(
-	net: AlertIngameNetModule,
+export async function startAlertIngameServer(
+	tcp: TyrianTcpServerPort,
 	port: number,
 	timer: AlertIngameServerTimer,
 	bridge: AlertIngameBridgeOptions,
@@ -141,71 +129,62 @@ export async function createAlertIngameServer(
 		serverInstance: createIngameBridgeNonce((bytes) => { bridge.fillRandom(bytes); }),
 		pending: new Set(), authenticated: new Set(),
 	};
-	const server = net.createServer((socket) => { attachClient(socket, runtime); });
+	const server = await listenWithRetry(
+		tcp, port, (connection) => { attachClient(connection, runtime); }, timer, retryDelaysMs,
+	);
 
-	try {
-		await listenWithRetry(server, port, timer, retryDelaysMs);
-	} catch (error) {
-		server.close();
-		throw error;
-	}
-
-	// Fails closed: a `net` implementation that silently bound somewhere other than
-	// loopback (a broken host, a future refactor that adds a host parameter) does
-	// not get to hand back a working server. This is the check that turns "we only
-	// ever call `.listen(port, '127.0.0.1')`" into something a test can break.
-	const address = server.address();
-	if (address === null || typeof address === 'string' || address.address !== BIND_HOST) {
-		server.close();
+	// Fails closed: a host that silently bound somewhere other than loopback (a broken host, a
+	// future refactor that adds a host parameter) does not get to hand back a working server. This
+	// is the check that turns "we only ever ask for `127.0.0.1`" into something a test can break.
+	if (server.address !== BIND_HOST) {
 		for (const connection of [...runtime.pending, ...runtime.authenticated]) connection.socket.destroy();
+		await server.close();
 		throw new Error('The in-game alert server refused to bind to loopback only.');
 	}
 
 	return {
-		port: address.port,
+		port: server.port,
 		clientCount: () => runtime.authenticated.size,
 		broadcast: (line) => { broadcastLine(runtime.authenticated, line); },
-		close: () => new Promise((resolve) => {
+		close: async () => {
 			for (const connection of [...runtime.pending, ...runtime.authenticated]) connection.socket.destroy();
-			server.close(() => resolve());
-		}),
+			await server.close();
+		},
 	};
 }
 
 /**
- * Binds `port` on loopback, retrying on `EADDRINUSE` with the given backoff. A server can be
- * `.listen()`ed again on the same instance after such an error; every other error rejects at once.
+ * Binds `port` on loopback, retrying on `EADDRINUSE` with the given backoff. Every attempt is a
+ * fresh `listen` (the host disposes of the server that failed); every other error rejects at once.
  */
 function listenWithRetry(
-	server: Server, port: number, timer: AlertIngameServerTimer, retryDelaysMs: readonly number[],
-): Promise<void> {
+	tcp: TyrianTcpServerPort,
+	port: number,
+	onConnection: (connection: TyrianTcpConnection) => void,
+	timer: AlertIngameServerTimer,
+	retryDelaysMs: readonly number[],
+): Promise<TyrianTcpServer> {
 	return new Promise((resolve, reject) => {
 		let attempt = 0;
+		const onFailure = (error: TyrianTcpListenError): void => {
+			if (error.code === 'EADDRINUSE' && attempt < retryDelaysMs.length) {
+				const delayMs = retryDelaysMs[attempt];
+				attempt += 1;
+				timer.schedule(tryListen, delayMs ?? 0);
+				return;
+			}
+			reject(error);
+		};
 		const tryListen = (): void => {
-			const onError = (error: NodeJS.ErrnoException): void => {
-				server.removeListener('listening', onListening);
-				if (error.code === 'EADDRINUSE' && attempt < retryDelaysMs.length) {
-					const delayMs = retryDelaysMs[attempt];
-					attempt += 1;
-					timer.schedule(tryListen, delayMs ?? 0);
-					return;
-				}
-				reject(error);
-			};
-			const onListening = (): void => {
-				server.removeListener('error', onError);
-				resolve();
-			};
-			server.once('error', onError);
-			server.once('listening', onListening);
-			server.listen(port, BIND_HOST);
+			tcp.listen(port, BIND_HOST, onConnection).then(resolve, onFailure);
 		};
 		tryListen();
 	});
 }
 
 function broadcastLine(clients: ReadonlySet<BridgeConnection>, line: string): void {
-	if (Buffer.byteLength(line, 'utf8') > ALERT_INGAME_MAX_MESSAGE_BYTES) {
+	// Measured in UTF-8 bytes, the unit of the wire contract, not in UTF-16 code units.
+	if (UTF8.encode(line).byteLength > ALERT_INGAME_MAX_MESSAGE_BYTES) {
 		throw new Error(`In-game alert line exceeds the ${String(ALERT_INGAME_MAX_MESSAGE_BYTES)}-byte wire limit.`);
 	}
 	const frame = `${line}\n`;
@@ -216,18 +195,26 @@ function broadcastLine(clients: ReadonlySet<BridgeConnection>, line: string): vo
  * Registers a fresh connection as pending and arms its hello deadline. Over the pending cap it is
  * dropped at once, without an answer: a local process opening sockets in a loop gets nothing back.
  */
-function attachClient(socket: Socket, runtime: BridgeRuntime): void {
+function attachClient(socket: TyrianTcpConnection, runtime: BridgeRuntime): void {
 	if (runtime.pending.size >= INGAME_BRIDGE_MAX_PENDING_CONNECTIONS) { socket.destroy(); return; }
 	const connection: BridgeConnection = {
-		socket, phase: 'awaiting_hello', buffered: Buffer.alloc(0), nonce: null, nextSeq: 0,
+		socket, phase: 'awaiting_hello', buffered: EMPTY_BYTES, nonce: null, nextSeq: 0,
 		lastSeenAtMs: runtime.bridge.now(), deadline: null, endReason: 'lost',
 	};
 	runtime.pending.add(connection);
 	armDeadline(connection, runtime, runtime.bridge.helloTimeoutMs ?? INGAME_BRIDGE_HELLO_TIMEOUT_MS, 'hello_timeout');
 
-	socket.on('data', (chunk: Buffer) => { receive(connection, runtime, chunk); });
-	socket.on('close', () => { settleClosed(connection, runtime); });
-	socket.on('error', () => { settleClosed(connection, runtime); });
+	socket.onData((chunk) => { receive(connection, runtime, chunk); });
+	socket.onClose(() => { settleClosed(connection, runtime); });
+	socket.onError(() => { settleClosed(connection, runtime); });
+}
+
+/** A fresh buffer holding `head` followed by `tail`; neither input is kept or mutated. */
+function concatBytes(head: Uint8Array, tail: Uint8Array): Uint8Array {
+	const joined = new Uint8Array(head.byteLength + tail.byteLength);
+	joined.set(head, 0);
+	joined.set(tail, head.byteLength);
+	return joined;
 }
 
 /**
@@ -235,9 +222,9 @@ function attachClient(socket: Socket, runtime: BridgeRuntime): void {
  * than the cap, complete or still growing, rejects the connection, so a client cannot hold the
  * buffer open by never sending a newline.
  */
-function receive(connection: BridgeConnection, runtime: BridgeRuntime, chunk: Buffer): void {
+function receive(connection: BridgeConnection, runtime: BridgeRuntime, chunk: Uint8Array): void {
 	if (isClosed(connection)) return;
-	connection.buffered = Buffer.concat([connection.buffered, chunk]);
+	connection.buffered = concatBytes(connection.buffered, chunk);
 	// Re-read on every turn: handling one frame may reject, or accept a `bye`, and close it.
 	while (!isClosed(connection)) {
 		const newline = connection.buffered.indexOf(0x0a);
@@ -252,7 +239,7 @@ function receive(connection: BridgeConnection, runtime: BridgeRuntime, chunk: Bu
 	}
 }
 
-function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame: Buffer): void {
+function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame: Uint8Array): void {
 	const decoded = decodeIngameFrame(frame);
 	if (!decoded.ok) { reject(connection, runtime, decoded.code); return; }
 	if (connection.phase === 'awaiting_hello') { handleHello(connection, runtime, decoded.value); return; }
@@ -319,7 +306,7 @@ function reject(connection: BridgeConnection, runtime: BridgeRuntime, code: Inga
 	cancelDeadline(connection, runtime);
 	runtime.pending.delete(connection);
 	runtime.authenticated.delete(connection);
-	connection.buffered = Buffer.alloc(0);
+	connection.buffered = EMPTY_BYTES;
 	connection.socket.end(`${ingameErrorLine(code)}\n`);
 	connection.socket.destroySoon();
 	if (wasAuthenticated) emitClosed(connection, runtime);

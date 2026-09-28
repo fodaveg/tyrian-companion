@@ -1,10 +1,11 @@
 import {
-	apiVersion, Menu, Notice, Platform, Plugin, TFile,
+	Menu, Notice, Plugin,
 	type App, type MarkdownPostProcessorContext, type ViewCreator,
 } from 'obsidian';
-// @ts-expect-error Electron is provided by Obsidian desktop and externalized by the bundle.
-import { shell } from 'electron';
 
+import { createObsidianHost } from './host/obsidian/obsidian-host';
+import type { TyrianHost, TyrianPriceSeedCache, TyrianVaultChange } from './host/tyrian-host';
+import { labelledVault, sessionHistoryVault } from './runtime/vault-ports';
 import { GuildWars2AccountGateway } from './account/account-service';
 import {
 	ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS,
@@ -15,11 +16,6 @@ import {
 import { AlertEmitter, type AlertDeliveryReport } from './alerts/alert-emitter';
 import type { EmittedAlertRecordV1 } from './alerts/alert-queue-record';
 import { EmittedAlertQueue } from './alerts/emitted-alert-queue';
-import { browserAlertAudioContextFactory, playAlertSound } from './alerts/alert-sound';
-import {
-	hostSystemNotificationConstructor,
-	showSystemNotification,
-} from './alerts/alert-system-notification';
 import { ALERT_WEBHOOK_TIMEOUT_MS, postAlertWebhook } from './alerts/alert-webhook';
 import { alertIngamePayload } from './alerts/alert-ingame';
 import { startAlertIngameServer, type AlertIngameServerHandle } from './alerts/alert-ingame-server';
@@ -58,12 +54,11 @@ import {
 } from './assets/managed-assets-model';
 import type { ManagedAssetsMessageCode, ManagedAssetsView } from './assets/managed-assets-ui';
 import { IndexedDbManagedAssetsPointerStore } from './assets/managed-assets-pointer';
-import { ObsidianRequestTransport } from './core/obsidian-http';
+import { HostRequestTransport } from './core/http';
 import { RateLimitCoordinator } from './core/rate-limit-coordinator';
-import { ObsidianApiKeyProvider } from './core/secret-provider';
+import { HostApiKeyProvider } from './core/secret-provider';
 import { createTranslator, type Locale } from './core/i18n';
 import {
-	localDebugDirectory,
 	type LocalDebugAction,
 	type LocalDebugComponent,
 	type LocalDebugStatus,
@@ -82,7 +77,7 @@ import {
 	createLocalDebugPersistenceSink,
 	LocalDebugPersistenceProbe,
 } from './core/local-debug-persistence';
-import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
+import { LocalDebugJsonlWriter } from './core/local-debug-writer';
 import { translateRuntime, type RuntimeTranslationKey } from './core/i18n-runtime-catalog';
 import type { PriceHistoryRuntime, PriceHistoryRuntimeState } from './economy/price-history-runtime';
 import { halloweenObservationActive } from './halloween/halloween-activation';
@@ -107,7 +102,6 @@ import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
 import { PriceSeedBulkRefreshService, type PriceSeedQueueCoverage } from './economy/price-seed-bulk-refresh';
-import { IndexedDbPriceSeedCacheStore } from './economy/price-seed-cache-store';
 import { fetchPriceSeed } from './economy/price-seed-source';
 import { sellOrWaitSeedMaxDays } from './economy/sell-or-wait';
 import type { PriceSeedV1 } from './economy/price-seed-model';
@@ -373,6 +367,17 @@ export type AlertIngameSecretCopyOutcome = 'copied' | 'generated' | 'shown';
 
 export default class TyrianCompanionPlugin extends Plugin {
 	settings: TyrianSettings = migrateSettings(null);
+	/**
+	 * R1a: every non-UI capability this plugin reaches for (vault, HTTP, secrets, settings,
+	 * IndexedDB, the loopback bridge, notifications, clipboard, shell, locale, diagnostics and
+	 * environment) goes through the `TyrianHost` Obsidian gives it. Built on first use rather than
+	 * in the constructor, so it reads the `app` and `manifest` the plugin holds by then.
+	 */
+	private obsidianHost: TyrianHost | null = null;
+	private get host(): TyrianHost {
+		this.obsidianHost ??= createObsidianHost(this);
+		return this.obsidianHost;
+	}
 	private connection!: ConnectionService;
 	private sessions!: ManualSessionStartService;
 	private assistedDetection!: AssistedDetectionService;
@@ -452,8 +457,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * (decision 4, M2). Opened lazily on first read, same pattern as `priceHistoryPanelSeed`'s own
 	 * `ensureStore`; never opened from `onload`, and never used to write.
 	 */
-	private priceSeedCacheReader: IndexedDbPriceSeedCacheStore | null = null;
-	private priceSeedCacheReaderOpening: Promise<IndexedDbPriceSeedCacheStore | null> | null = null;
+	private priceSeedCacheReader: TyrianPriceSeedCache | null = null;
+	private priceSeedCacheReaderOpening: Promise<TyrianPriceSeedCache | null> | null = null;
 	private halloween: HalloweenRuntime | null = null;
 	private halloweenPriceAlert: HalloweenPriceAlertRuntime | null = null;
 	/** H13.2. Null when the curated pack is unavailable: the rule is the pack's, not the code's. */
@@ -531,7 +536,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		let settingsLoadFailure: unknown = null;
 		try { await this.loadSettings(); }
 		catch (error) {
-			this.settings = migrateSettings(null, this.app.vault.configDir);
+			this.settings = migrateSettings(null, this.host.vault.configDir, this.host.locale());
 			settingsLoadFailure = error;
 		}
 		const localDebugInitialization = this.initializeLocalDebug(settingsLoadFailure === null);
@@ -577,51 +582,25 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// `message` (`local-debug-sanitizer.ts`), so by the time either handler runs there is no
 		// path left pointing at which module actually threw; `details.origin` keeps the one fact
 		// that survives, which listener caught it, without implying more than that.
-		this.registerDomEvent(window, 'error', (event) => {
-			let failure: unknown = event;
-			if (typeof ErrorEvent !== 'undefined' && event instanceof ErrorEvent) {
-				const errorEvent = event as unknown as { readonly error: unknown; readonly message: string };
-				failure = errorEvent.error ?? errorEvent.message;
-			}
+		// The host extracts the failure from the browser event (`error` or `reason`); `origin` is
+		// the one fact about which listener caught it that survives the sanitizer.
+		this.host.environment.onUncaughtError((failure, origin) => {
 			this.localDebugActions?.event({
 				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
 				code: 'unknown_failure', state: 'unattributed_origin', message: failure,
-				details: { origin: 'window_error' },
+				details: { origin },
 			});
 		});
-		this.registerDomEvent(window, 'unhandledrejection', (event) => {
-			let failure: unknown = event;
-			if (typeof PromiseRejectionEvent !== 'undefined' && event instanceof PromiseRejectionEvent) {
-				failure = (event as unknown as { readonly reason: unknown }).reason;
-			}
-			this.localDebugActions?.event({
-				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
-				code: 'unknown_failure', state: 'unattributed_origin', message: failure,
-				details: { origin: 'unhandled_rejection' },
-			});
-		});
-		this.registerDomEvent(window, 'online', () => {
+		this.host.environment.onConnectivityChange((online) => {
 			const handle = () => {
-				if (!this.runtimeReady) return { phase: 'skip' as const, code: 'skipped' as const, state: 'online' };
-				this.runRuntimeMutation(() => this.assistedDetection.setOnline(true));
+				const state = online ? 'online' : 'offline';
+				if (!this.runtimeReady) return { phase: 'skip' as const, code: 'skipped' as const, state };
+				this.runRuntimeMutation(() => this.assistedDetection.setOnline(online));
 				// A final capture that failed while offline retries now, not after its backoff (H18.7).
-				this.sessions.notifyWake();
-				this.priceHistory?.setOnline(true);
-				this.halloween?.setOnline(true);
-				return { state: 'online' };
-			};
-			if (this.localDebugActions) this.localDebugActions.runSync(
-				{ component: 'detection', action: 'detection_poll', state: 'connectivity_change' }, handle,
-			);
-			else handle();
-		});
-		this.registerDomEvent(window, 'offline', () => {
-			const handle = () => {
-				if (!this.runtimeReady) return { phase: 'skip' as const, code: 'skipped' as const, state: 'offline' };
-				this.runRuntimeMutation(() => this.assistedDetection.setOnline(false));
-				this.priceHistory?.setOnline(false);
-				this.halloween?.setOnline(false);
-				return { state: 'offline' };
+				if (online) this.sessions.notifyWake();
+				this.priceHistory?.setOnline(online);
+				this.halloween?.setOnline(online);
+				return { state };
 			};
 			if (this.localDebugActions) this.localDebugActions.runSync(
 				{ component: 'detection', action: 'detection_poll', state: 'connectivity_change' }, handle,
@@ -655,27 +634,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Composes the writer only after persisted settings and the configured vault directory are known. */
 	private async initializeLocalDebug(settingsLoaded: boolean): Promise<void> {
-		const adapter = this.app.vault.adapter;
-		const storage: LocalDebugStoragePort = {
-			exists: async (path) => await adapter.exists(path),
-			read: async (path) => await adapter.read(path),
-			write: async (path, data) => { await adapter.write(path, data); },
-			append: async (path, data) => { await adapter.append(path, data); },
-			mkdir: async (path) => { await adapter.mkdir(path); },
-			remove: async (path) => { await adapter.remove(path); },
-			rename: async (path, destination) => { await adapter.rename(path, destination); },
-		};
+		const host = this.host;
 		this.localDebug = new LocalDebugLogger({
 			enabled: this.settings.debugLoggingEnabled,
 			minimumLevel: this.settings.debugLoggingLevel,
-			pluginVersion: this.manifest.version,
-			// H14.21: a desktop-only optional method (mobile's adapter has no filesystem base
-			// path), read lazily so it always reflects the vault actually open, not one cached
-			// at construction.
-			vaultBasePath: () => (adapter as unknown as { getBasePath?: () => string }).getBasePath?.() ?? null,
+			pluginVersion: host.environment.pluginVersion,
+			// H14.21: a desktop-only value (mobile's adapter has no filesystem base path), read
+			// lazily so it always reflects the vault actually open, not one cached at construction.
+			vaultBasePath: () => host.vault.basePath(),
 			writer: new LocalDebugJsonlWriter({
-				storage,
-				directory: localDebugDirectory(this.app.vault.configDir),
+				storage: host.diagnostics.storage,
+				directory: host.diagnostics.directory,
 			}),
 		});
 		this.localDebugActions = new LocalDebugActionRunner({ diagnostics: this.localDebug });
@@ -713,37 +682,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * neutral value instead of touching an unassigned service.
 	 */
 	private async initializeRuntime(): Promise<void> {
+		const host = this.host;
+		const indexedDB = host.kv.indexedDB;
 		this.managedAssets = new ManagedAssetsManager(
-			{
-				file: (path) => this.app.vault.getAbstractFileByPath(path),
-				listFiles: () => this.app.vault.getFiles().map((file) => ({ path: file.path })),
-				read: async (file) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Managed asset is not a file.');
-					return await this.app.vault.read(target);
-				},
-				createFolder: async (path) => { await this.app.vault.createFolder(path); },
-				create: async (path, content) => await this.app.vault.create(path, content),
-				process: async (file, update) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Managed asset is not a file.');
-					return await this.app.vault.process(target, update);
-				},
-				trashFile: async (file) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Managed asset is not a file.');
-					await this.app.fileManager.trashFile(target);
-				},
-			},
-			this.app.vault.configDir,
+			labelledVault(host.vault, 'Managed asset'),
+			host.vault.configDir,
 			{ bundleVersion: 6, locale: this.settings.language, assets: await managedAssetsBundle() },
 		);
-		const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-		const canonicalVaultIdentity = adapter.getBasePath?.() ?? `${this.app.vault.getName()}\0${this.app.vault.configDir}`;
-		const vaultId = await sha256Text(canonicalVaultIdentity.normalize('NFC'));
+		const vaultId = await sha256Text(host.vault.canonicalIdentity().normalize('NFC'));
 		this.vaultId = vaultId;
 		this.managedAssetsPointer = new IndexedDbManagedAssetsPointerStore(
-			window.indexedDB,
+			indexedDB,
 			vaultId,
 			undefined,
 			this.persistenceDiagnostics('assets', 'managed_assets_apply'),
@@ -754,11 +703,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.localDebugActions ?? undefined,
 		);
 
-		const apiKeyProvider = new ObsidianApiKeyProvider(
-			this.app,
+		const apiKeyProvider = new HostApiKeyProvider(
+			host.secrets,
 			() => this.settings.apiKeySecret,
 		);
-		const transport = new ObsidianRequestTransport({
+		const transport = new HostRequestTransport(host.http, {
 			operationPolicies: GW2_CHARACTER_OPERATION_POLICIES,
 			diagnostics: this.localDebugActions ?? undefined,
 		});
@@ -767,7 +716,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.alertQueue = new EmittedAlertQueue({
 			vaultId,
 			open: async () => await IndexedDbHalloweenStore.open(
-				window.indexedDB, undefined, undefined, this.persistenceDiagnostics('halloween', 'halloween_alert'),
+				indexedDB, undefined, undefined, this.persistenceDiagnostics('halloween', 'halloween_alert'),
 			),
 			accountRef: () => this.resolveAlertAccountRef(),
 		});
@@ -783,7 +732,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			onStateChange: () => this.renderViews(),
 			onAlert: (alert) => { this.dispatchAlert(alert); },
 		});
-		const inventoryTransport = new ObsidianRequestTransport({
+		const inventoryTransport = new HostRequestTransport(host.http, {
 			timeoutMs: 30_000,
 			operationPolicies: GW2_CHARACTER_OPERATION_POLICIES,
 			diagnostics: this.localDebugActions ?? undefined,
@@ -793,7 +742,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
 		// H18.12: IndexedDB is shared by every vault window, so the saved session and its lease are
 		// scoped to this vault; both read the same decision, taken lazily on first use.
-		const sessionStorage = new SessionStorageScope(window.indexedDB, vaultId);
+		const sessionStorage = new SessionStorageScope(indexedDB, vaultId);
 		const coordinator = new ActiveSessionLeaseCoordinator({
 			databaseName: async () => await sessionStorage.coordinationDatabaseName(),
 			diagnostics: this.persistenceDiagnostics('session', 'session_lease'),
@@ -857,8 +806,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// already-owned baseline: it needs `client` and `rateLimitCoordinator`, both
 		// already constructed, and nothing built between here and `assembleHalloween`.
 		const snapshots = new RateLimitedStorageSnapshotService(new StorageSnapshotService(client), rateLimitCoordinator);
+		const halloweenNotes = labelledVault(host.vault, 'Halloween backfill note');
 		const halloweenServices = assembleHalloween({
-			factory: window.indexedDB, vaultId,
+			factory: indexedDB, vaultId,
 			diagnostics: this.localDebugActions ?? undefined,
 			priceAlertPersistence: this.persistenceDiagnostics('halloween', 'halloween_alert'),
 			refreshPersistence: this.persistenceDiagnostics('halloween', 'halloween_refresh'),
@@ -875,14 +825,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 				// Only the session notes the plugin itself writes are a candidate source of
 				// evidence: a vault with thousands of unrelated notes must not pay a `vault.read`
 				// for every one of them just to notice none of them are ours.
-				markdownFiles: () => this.app.vault.getMarkdownFiles()
-					.filter((file) => file.path.startsWith(`${this.settings.outputFolder}/sessions/`))
-					.map((file) => ({ path: file.path, mtime: file.stat?.mtime })),
-				read: async (file) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Halloween backfill note is not a file.');
-					return await this.app.vault.read(target);
-				},
+				markdownFiles: () => host.vault.markdownFiles()
+					.filter((file) => file.path.startsWith(`${this.settings.outputFolder}/sessions/`)),
+				read: async (file) => await halloweenNotes.read(file),
 			},
 			// Same holdings the storage snapshot already captures for session boundaries;
 			// no separate call, no extra assets valued, no gains invented.
@@ -896,7 +841,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.halloweenPriceAlert = halloweenServices.priceAlert;
 		this.halloween = halloweenServices.runtime;
 		const priceServices = assemblePriceHistory({
-			factory: window.indexedDB,
+			factory: indexedDB,
 			vaultId,
 			diagnostics: this.localDebugActions ?? undefined,
 			capturePersistence: this.persistenceDiagnostics('price_history', 'price_history_capture'),
@@ -922,7 +867,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.priceHistory = priceServices.priceHistory;
 		// Construction opens no I/O; the datawars2 download only ever starts from `loadPriceHistorySeries`.
 		this.priceHistoryPanelSeed = new PriceHistoryPanelSeedService({
-			factory: window.indexedDB,
+			factory: indexedDB,
 			vaultId,
 			transport,
 			now: () => Date.now(),
@@ -931,7 +876,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// Construction opens no I/O; decision 4 (SPEC-recomendacion-por-objeto.md §7) only ever
 		// runs from inside `capture()`'s own post-sync pass, itself gated on `priceHistoryEnabled`.
 		this.priceSeedBulkRefresh = new PriceSeedBulkRefreshService({
-			factory: window.indexedDB,
+			factory: indexedDB,
 			vaultId,
 			now: () => Date.now(),
 			// H18.19: a festival-calendar item keeps its whole published history, not the sell rule's
@@ -946,45 +891,27 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 			diagnostics: this.localDebugActions ?? undefined,
 		});
-		const refreshHalloweenBackfill = (file: unknown, oldPath?: string): void => {
+		const refreshHalloweenBackfill = (change: TyrianVaultChange): void => {
+			// Read on every event, not at registration: the output folder can move without a reload.
 			const sessionRoot = `${this.settings.outputFolder}/sessions/`;
-			const currentSessionNote = file instanceof TFile && file.extension === 'md' && file.path.startsWith(sessionRoot);
-			const renamedSessionNote = typeof oldPath === 'string' && oldPath.endsWith('.md') && oldPath.startsWith(sessionRoot);
+			const currentSessionNote = change.path.endsWith('.md') && change.path.startsWith(sessionRoot);
+			const renamedSessionNote = typeof change.oldPath === 'string' && change.oldPath.endsWith('.md')
+				&& change.oldPath.startsWith(sessionRoot);
 			if (this.halloweenObservationActive() && (currentSessionNote || renamedSessionNote)) {
 				fireAndForgetLocal(this.localDebugActions,
 					{ component: 'halloween', action: 'halloween_backfill' },
 					async () => { await this.halloween?.refreshBackfill(); });
 			}
 		};
-		this.registerEvent(this.app.vault.on('create', refreshHalloweenBackfill));
-		this.registerEvent(this.app.vault.on('modify', refreshHalloweenBackfill));
-		this.registerEvent(this.app.vault.on('delete', refreshHalloweenBackfill));
-		this.registerEvent(this.app.vault.on('rename', refreshHalloweenBackfill));
+		// `''`: every note the host reports; the listener filters by the CURRENT output folder above.
+		host.vault.onChange('', refreshHalloweenBackfill);
 		const inventorySnapshots = new RateLimitedStorageSnapshotService(
 			new StorageSnapshotService(inventoryClient),
 			rateLimitCoordinator,
 		);
-		const inventoryVaultWriter = new InventoryVaultSyncService({
-			file: (path) => this.app.vault.getAbstractFileByPath(path),
-			markdownFiles: () => this.app.vault.getMarkdownFiles(),
-			read: async (file) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Inventory note is not a file.');
-				return await this.app.vault.read(target);
-			},
-			createFolder: async (path) => { await this.app.vault.createFolder(path); },
-			create: async (path, content) => await this.app.vault.create(path, content),
-			process: async (file, update) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Inventory note is not a file.');
-				return await this.app.vault.process(target, update);
-			},
-			trashFile: async (file) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Inventory note is not a file.');
-				await this.app.fileManager.trashFile(target);
-			},
-		}, this.app.vault.configDir);
+		const inventoryVaultWriter = new InventoryVaultSyncService(
+			labelledVault(host.vault, 'Inventory note'), host.vault.configDir,
+		);
 		// H18.14/H18.16: the timing stage of every advisor analysis. It captures nothing: the notes
 		// and the view both stand on the advisor's own capture.
 		const inventoryAnalysis = new InventoryAnalysisService({
@@ -1076,22 +1003,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 				{ component: 'settings', action: 'settings_save', state: 'inventory_sync_outcome' },
 				() => this.recordInventorySyncOutcome(outcome)); },
 		);
-		const walletVaultWriter = new WalletVaultSyncService({
-			file: (path) => this.app.vault.getAbstractFileByPath(path),
-			markdownFiles: () => this.app.vault.getMarkdownFiles(),
-			read: async (file) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Wallet note is not a file.');
-				return await this.app.vault.read(target);
-			},
-			createFolder: async (path) => { await this.app.vault.createFolder(path); },
-			create: async (path, content) => await this.app.vault.create(path, content),
-			process: async (file, update) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Wallet note is not a file.');
-				return await this.app.vault.process(target, update);
-			},
-		}, this.app.vault.configDir);
+		const walletVaultWriter = new WalletVaultSyncService(
+			labelledVault(host.vault, 'Wallet note'), host.vault.configDir,
+		);
 		const walletVaultCapture = new WalletVaultCaptureService(client, publicClient);
 		this.walletVaultSync = new WalletVaultSyncController({
 			disabledReason: () => {
@@ -1106,7 +1020,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			apply: async (plan) => await walletVaultWriter.apply(plan),
 		});
 		const advisorServices = assembleAdvisor({
-			factory: window.indexedDB,
+			factory: indexedDB,
 			vaultId,
 			client: inventoryClient,
 			publicClient: inventoryPublicClient,
@@ -1133,7 +1047,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.inventoryPreferences = advisorServices.preferences;
 		this.inventoryAdvisor = advisorServices.controller;
 		const sessionServices = assembleSessions({
-			factory: window.indexedDB,
+			factory: indexedDB,
 			vaultId,
 			sessionStorage,
 			client,
@@ -1141,54 +1055,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			snapshots,
 			coordinator,
 			instanceId: crypto.randomUUID(),
-			sessionNoteVault: {
-				file: (path) => this.app.vault.getAbstractFileByPath(path),
-				read: async (file) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Session note is not a file.');
-					return await this.app.vault.read(target);
-				},
-				createFolder: async (path) => { await this.app.vault.createFolder(path); },
-				create: async (path, content) => await this.app.vault.create(path, content),
-				process: async (file, update) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Session note is not a file.');
-					return await this.app.vault.process(target, update);
-				},
-			},
-			sessionHistoryVault: {
-				markdownFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path })),
-				exists: (path) => this.app.vault.getAbstractFileByPath(path) !== null,
-				file: (path) => {
-					const target = this.app.vault.getAbstractFileByPath(path);
-					return target instanceof TFile ? { path: target.path } : null;
-				},
-				read: async (file) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Session history note is not a file.');
-					return await this.app.vault.read(target);
-				},
-				process: async (file, update) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Session history note is not a file.');
-					await this.app.vault.process(target, update);
-				},
-				createFolder: async (path) => { await this.app.vault.createFolder(path); },
-				create: async (path, content) => {
-					const file = await this.app.vault.create(path, content);
-					return { path: file.path };
-				},
-			},
-			pilotMetricsVault: {
-				file: (path) => this.app.vault.getAbstractFileByPath(path),
-				read: async (file) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Pilot metrics export is not a file.');
-					return await this.app.vault.read(target);
-				},
-				createFolder: async (path) => { await this.app.vault.createFolder(path); },
-				create: async (path, content) => await this.app.vault.create(path, content),
-			},
+			sessionNoteVault: labelledVault(host.vault, 'Session note'),
+			sessionHistoryVault: sessionHistoryVault(host.vault),
+			pilotMetricsVault: labelledVault(host.vault, 'Pilot metrics export'),
 			setInterval: (callback, intervalMs) => window.setInterval(callback, intervalMs),
 			clearInterval: (handle) => { window.clearInterval(handle); },
 			sessionState: () => this.sessions.getState(),
@@ -1274,7 +1143,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{ component: 'detection', action: 'detection_proposal', state: 'queue_initialize' },
 			async () => { await this.pendingProposals.initialize(); await this.reconcilePendingProposals(); });
 		this.assistedDetection = sessionServices.assistedDetection;
-		this.assistedDetection.setOnline(navigator.onLine);
+		this.assistedDetection.setOnline(this.host.environment.isOnline());
 		// `initialize()` above already classified and finalized, on its own, any `provisional` record
 		// it found already stopped (David, 2026-09-09: nobody reviews a session again just because it
 		// was not saved cleanly). It never writes the note or runs pilot metrics/Halloween bookkeeping
@@ -1294,11 +1163,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.startIngameSessionMarking();
 		if (this.settings.priceHistoryEnabled) {
 			await this.priceHistory.activate(priceHistorySettingsFrom(this.settings));
-			this.priceHistory.setOnline(navigator.onLine);
+			this.priceHistory.setOnline(this.host.environment.isOnline());
 		}
 		if (this.halloweenObservationActive()) {
 			await this.halloween.activate();
-			this.halloween.setOnline(navigator.onLine);
+			this.halloween.setOnline(this.host.environment.isOnline());
 		}
 		await this.halloweenPriceAlert.configure(halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled);
 		this.renderViews();
@@ -1474,7 +1343,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			enabled: this.settings.debugLoggingEnabled,
 			minimumLevel: this.settings.debugLoggingLevel,
 			state: this.settings.debugLoggingEnabled ? 'degraded' : 'disabled',
-			path: `${localDebugDirectory(this.app.vault.configDir)}/`,
+			path: `${this.host.diagnostics.directory}/`,
 			bytes: 0,
 			fileCount: 0,
 			lastEventAt: null,
@@ -1508,14 +1377,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		else open();
 	}
 
-	/** Opens the resolved desktop directory through Electron without exposing it to diagnostic records. */
+	/** Opens the resolved desktop directory through the host shell without exposing it to diagnostic records. */
 	async openLocalDebugFolder(): Promise<boolean> {
 		const run = async (): Promise<boolean> => {
-			const adapter = this.app.vault.adapter as unknown as { getFullPath?: (path: string) => string };
-			const fullPath = adapter.getFullPath?.(this.getLocalDebugStatus().path.replace(/\/$/u, ''));
+			const fullPath = this.host.vault.fullPath(this.getLocalDebugStatus().path.replace(/\/$/u, ''));
 			if (!fullPath) return false;
-			const desktopShell = shell as unknown as { openPath(path: string): Promise<string> };
-			return (await desktopShell.openPath(fullPath)) === '';
+			return await this.host.shell.openPath(fullPath);
 		};
 		return await (this.localDebugActions?.run(
 			{ component: 'support', action: 'command_execute', state: 'open_debug_folder' }, run,
@@ -1527,7 +1394,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const run = async (): Promise<number> => {
 			const jsonl = safeLocalDebugJsonl(await this.localDebug?.exportSanitized() ?? '', limit);
 			if (jsonl.length === 0) return 0;
-			await navigator.clipboard.writeText(jsonl);
+			await this.host.clipboard.writeText(jsonl);
 			return jsonl.trimEnd().split('\n').length;
 		};
 		return await (this.localDebugActions?.run(
@@ -1552,8 +1419,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			const directory = `${this.settings.outputFolder}/diagnostics`;
 			const supportPackage = {
 				schemaVersion: 1,
-				pluginVersion: this.manifest.version,
-				platform: diagnosticPlatform(),
+				pluginVersion: this.host.environment.pluginVersion,
+				platform: this.host.environment.platform,
 				settings: {
 					schemaVersion: this.settings.schemaVersion,
 					language: this.settings.language,
@@ -1563,14 +1430,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 				},
 				logsJsonl,
 			};
-			await ensureAdapterDirectory(this.app.vault.adapter, directory);
+			const adapter = this.host.vault.adapter;
+			await ensureAdapterDirectory(adapter, directory);
 			let suffix = 0;
 			let path = `${directory}/${baseName}.json`;
-			while (await this.app.vault.adapter.exists(path)) {
+			while (await adapter.exists(path)) {
 				suffix += 1;
 				path = `${directory}/${baseName}-${String(suffix)}.json`;
 			}
-			await this.app.vault.adapter.write(path, `${JSON.stringify(supportPackage, null, '\t')}\n`);
+			await adapter.write(path, `${JSON.stringify(supportPackage, null, '\t')}\n`);
 			return path;
 		};
 		return await (this.localDebugActions?.run(
@@ -1855,7 +1723,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (!this.halloweenObservationActive() || this.halloween === null) return accountRef;
 		this.halloween.disable(parent);
 		await this.halloween.activate(parent);
-		this.halloween.setOnline(navigator.onLine);
+		this.halloween.setOnline(this.host.environment.isOnline());
 		return accountRef;
 	}
 
@@ -1865,12 +1733,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Whether the advisor shows the price-history opt-in offer. Reads settings only; starts no I/O. */
 	isPriceHistoryOptInOffered(): boolean {
-		return priceHistoryOptInOffered(this.settings, this.manifest.version);
+		return priceHistoryOptInOffered(this.settings, this.host.environment.pluginVersion);
 	}
 
 	/** «Ahora no» on that offer: records the installed version, so the next release offers it again. */
 	async dismissPriceHistoryOptIn(): Promise<void> {
-		await this.updateSettings({ priceHistoryNoticeDismissedVersion: this.manifest.version });
+		await this.updateSettings({ priceHistoryNoticeDismissedVersion: this.host.environment.pluginVersion });
 	}
 
 	async loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
@@ -2099,7 +1967,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private async recordInventorySyncOutcome(outcome: InventoryVaultSyncLastRun): Promise<void> {
 		this.settings = { ...this.settings, inventorySyncLastRun: outcome };
-		await this.saveData(this.settings);
+		await this.host.settings.save(this.settings);
 	}
 
 	async previewInventoryVaultSync(openView = false): Promise<void> {
@@ -2183,8 +2051,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private async writeInventoryAdvisorCaptureReceipt(
 		receipt: InventoryAdvisorCaptureReceiptV1,
 	): Promise<void> {
-		const path = `${this.app.vault.configDir}/plugins/${this.manifest.id}/inventory-advisor-capture-receipt.json`;
-		await this.app.vault.adapter.write(path, `${JSON.stringify(receipt, null, '\t')}\n`);
+		const path = `${this.host.vault.configDir}/plugins/${this.host.environment.pluginId}/inventory-advisor-capture-receipt.json`;
+		await this.host.vault.adapter.write(path, `${JSON.stringify(receipt, null, '\t')}\n`);
 	}
 
 	async loadInventoryPreferences(): Promise<void> {
@@ -2260,8 +2128,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const saved = await this.pilotMetrics.configure({
 			platform,
 			platformVersion,
-			obsidianVersion: apiVersion,
-			tyrianVersion: this.manifest.version,
+			obsidianVersion: this.host.environment.hostVersion,
+			tyrianVersion: this.host.environment.pluginVersion,
 		});
 		if (saved) this.pilotMetricsExportPlan = null;
 		return saved;
@@ -2636,7 +2504,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 */
 	async copyLastErrorDetail(detail: string): Promise<void> {
 		try {
-			await navigator.clipboard.writeText(detail);
+			await this.host.clipboard.writeText(detail);
 		} catch {
 			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'sessionCard.copyTechnicalDetailFailed'), 'session_error_copy');
 		}
@@ -2855,15 +2723,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 	}
 
-	private async ensurePriceSeedCacheReader(): Promise<IndexedDbPriceSeedCacheStore | null> {
+	private async ensurePriceSeedCacheReader(): Promise<TyrianPriceSeedCache | null> {
 		if (this.priceSeedCacheReader !== null) return this.priceSeedCacheReader;
 		if (this.priceSeedCacheReaderOpening === null) this.priceSeedCacheReaderOpening = this.openPriceSeedCacheReader();
 		return await this.priceSeedCacheReaderOpening;
 	}
 
-	private async openPriceSeedCacheReader(): Promise<IndexedDbPriceSeedCacheStore | null> {
+	private async openPriceSeedCacheReader(): Promise<TyrianPriceSeedCache | null> {
 		try {
-			const store = await IndexedDbPriceSeedCacheStore.open(window.indexedDB);
+			const store = await this.host.priceHistory.openSeedCache();
 			this.priceSeedCacheReader = store;
 			return store;
 		} catch {
@@ -2917,10 +2785,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 */
 	private buildAlertEmitter(queue: EmittedAlertQueue): AlertEmitter {
 		// The reviewed outbound boundary stays at exactly one module, so the webhook rides the
-		// same transport every other call uses instead of reaching for Obsidian's request API
+		// same transport every other call uses instead of reaching for the host's HTTP call
 		// here. Configured never to retry: a webhook host that is down is not worth a second
 		// attempt in the middle of a run.
-		const webhookTransport = new ObsidianRequestTransport({
+		const webhookTransport = new HostRequestTransport(this.host.http, {
 			maxRetries: 0, timeoutMs: ALERT_WEBHOOK_TIMEOUT_MS, diagnostics: this.localDebugActions ?? undefined,
 		});
 		return new AlertEmitter([
@@ -2932,12 +2800,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 				id: 'system_notification',
 				deliver: (alert) => {
 					const translator = createTranslator(this.settings.language);
-					const outcome = showSystemNotification(hostSystemNotificationConstructor(window), {
+					// The host picks the urgency from its own platform (Linux asks for `critical`).
+					const outcome = this.host.notify.system({
 						title: translateRuntime(translator, alertTitleKey(alert.kind)),
 						body: this.alertBodyText(alert),
-						// Optional chaining for the same reason `diagnosticPlatform` uses it: an
-						// embedding host without `Platform` must degrade, not throw.
-						platform: Platform?.isLinux ? 'linux' : 'other',
 					});
 					if (outcome !== 'shown') throw new Error(`System notification ${outcome}.`);
 				},
@@ -2945,7 +2811,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{
 				id: 'sound',
 				deliver: () => {
-					if (playAlertSound(browserAlertAudioContextFactory(window)) !== 'played') {
+					if (this.host.notify.sound() !== 'played') {
 						throw new Error('No audio output was available.');
 					}
 				},
@@ -3035,6 +2901,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
 		const flight = startAlertIngameServer(
+			this.host.tcpServer,
 			port,
 			{
 				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
@@ -3112,8 +2979,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 */
 	private readAlertIngameSecret(): string | null {
 		const name = this.settings.alertIngameSecret;
-		if (name.length === 0 || !this.app.secretStorage.listSecrets().includes(name)) return null;
-		return this.app.secretStorage.getSecret(name);
+		if (name.length === 0 || !this.host.secrets.list().includes(name)) return null;
+		return this.host.secrets.get(name);
 	}
 
 	/**
@@ -3132,7 +2999,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	async copyAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome> {
 		const deliver = async (secret: string, outcome: 'copied' | 'generated'): Promise<AlertIngameSecretCopyOutcome> => {
 			try {
-				await navigator.clipboard.writeText(secret);
+				await this.host.clipboard.writeText(secret);
 				return outcome;
 			} catch (error) {
 				this.localDebugActions?.event({
@@ -3151,11 +3018,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const run = async (): Promise<AlertIngameSecretCopyOutcome> => {
 			const current = this.readAlertIngameSecret();
 			if (isUsableIngameBridgeSecret(current)) return await deliver(current, 'copied');
-			const stored = this.app.secretStorage.listSecrets().includes(ALERT_INGAME_SECRET_ID)
-				? this.app.secretStorage.getSecret(ALERT_INGAME_SECRET_ID) : null;
+			const stored = this.host.secrets.list().includes(ALERT_INGAME_SECRET_ID)
+				? this.host.secrets.get(ALERT_INGAME_SECRET_ID) : null;
 			const secret = isUsableIngameBridgeSecret(stored)
 				? stored : createIngameBridgeSecret((bytes) => { crypto.getRandomValues(bytes); });
-			if (secret !== stored) this.app.secretStorage.setSecret(ALERT_INGAME_SECRET_ID, secret);
+			if (secret !== stored) this.host.secrets.set(ALERT_INGAME_SECRET_ID, secret);
 			// Unsaved (`blocked` while the runtime starts) means the entry is not selected and the
 			// bridge would reject this token: fail instead of handing it out. The value stays in
 			// SecretStorage, so the next attempt reuses it rather than minting another.
@@ -4078,11 +3945,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousSalvagePreferences = JSON.stringify(resolveEquipmentSalvagePreferences(this.settings));
 		const previousAlertIngameEnabled = this.settings.alertIngameEnabled;
 		const previousAlertIngamePort = this.settings.alertIngamePort;
-		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir);
+		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.host.vault.configDir, this.host.locale());
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		// Publish the new runtime view only after its durable write succeeds. A rejected
 		// save therefore leaves every subsequent Refresh on the last persisted overlay.
-		await this.saveData(nextSettings);
+		await this.host.settings.save(nextSettings);
 		this.settings = nextSettings;
 		// Flips the loopback listener the instant the toggle (or the port, while it stays on)
 		// changes, rather than waiting for the next alert to reach for `ensureAlertIngameServer`.
@@ -4134,7 +4001,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const nextPriceHistory = priceHistorySettingsFrom(this.settings);
 		if (this.priceHistory !== null && JSON.stringify(previousPriceHistory) !== JSON.stringify(nextPriceHistory)) {
 			await this.priceHistory.configure(nextPriceHistory, context);
-			this.priceHistory.setOnline(navigator.onLine);
+			this.priceHistory.setOnline(this.host.environment.isOnline());
 			this.settingTab.refreshForSettingsChange();
 			this.renderInventoryAdvisorViews();
 		}
@@ -4143,13 +4010,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 			// surface running because the calendar, not the setting, is what turned it on.
 			if (this.halloweenObservationActive()) {
 				await this.halloween.activate(context);
-				this.halloween.setOnline(navigator.onLine);
+				this.halloween.setOnline(this.host.environment.isOnline());
 			} else this.halloween.disable(context);
 			this.settingTab.refreshForSettingsChange();
 		}
 		if (this.halloween !== null && secretChanged && this.halloweenObservationActive()) {
 			await this.halloween.activate(context);
-			this.halloween.setOnline(navigator.onLine);
+			this.halloween.setOnline(this.host.environment.isOnline());
 		}
 		await this.halloweenPriceAlert?.configure(
 			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled, context,
@@ -4193,10 +4060,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async loadSettings(): Promise<void> {
-		const persisted = (await this.loadData()) as unknown;
-		this.settings = migrateSettings(persisted, this.app.vault.configDir);
+		const persisted = await this.host.settings.load();
+		this.settings = migrateSettings(persisted, this.host.vault.configDir, this.host.locale());
 		if (shouldPersistSettingsOnLoad(persisted, this.settings)) {
-			await this.saveData(this.settings);
+			await this.host.settings.save(this.settings);
 		}
 	}
 
@@ -5279,14 +5146,6 @@ async function ensureAdapterDirectory(
 		current = current.length === 0 ? segment : `${current}/${segment}`;
 		if (!await adapter.exists(current)) await adapter.mkdir(current);
 	}
-}
-
-/** Keeps export metadata intentionally coarse and stable across host versions. */
-function diagnosticPlatform(): 'linux' | 'macos' | 'windows' | 'unknown' {
-	if (Platform?.isLinux) return 'linux';
-	if (Platform?.isMacOS) return 'macos';
-	if (Platform?.isWin) return 'windows';
-	return 'unknown';
 }
 
 /** Captures detached host callbacks without allowing diagnostics to alter their void contract. */

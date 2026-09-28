@@ -62,8 +62,12 @@ describe('H11-A architecture and UI contract', () => {
 		// shared step both a live `stop()` and an auto-finalized `provisional` record go through),
 		// which takes the id as its own `sessionId` parameter instead of reading `result.state.sessionId`.
 		expect(main).toContain("`session:${sessionId}`");
-		expect(main).toMatch(/vault\.on\('modify',[\s\S]*refreshHalloweenBackfill/u);
-		expect(main).toMatch(/vault\.on\('rename',[\s\S]*refreshHalloweenBackfill/u);
+		// R1a: the plugin subscribes through the host's vault port, and `ObsidianHost` is what turns
+		// that one subscription into Obsidian's `modify` and `rename` (plus create/delete) events.
+		expect(main).toContain("host.vault.onChange('', refreshHalloweenBackfill)");
+		const obsidianVault = readModuleSource('src/host/obsidian/obsidian-vault.ts');
+		expect(obsidianVault).toMatch(/vault\.on\('modify',[\s\S]*listener\(/u);
+		expect(obsidianVault).toMatch(/vault\.on\('rename',[\s\S]*listener\(/u);
 		const store = readModuleSource('src/halloween/halloween-store.ts');
 		expect(store).toContain('HALLOWEEN_DB_VERSION = 7');
 		expect(store).toContain("HALLOWEEN_EPISODE_META_STORE = 'episode-meta-v1'");

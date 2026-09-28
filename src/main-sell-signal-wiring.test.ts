@@ -11,7 +11,7 @@ import TyrianCompanionPlugin from './main';
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import type { LocalDebugLogger } from './core/local-debug-logger';
-import { ObsidianRequestTransport } from './core/obsidian-http';
+import { HostRequestTransport } from './core/http';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import { storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
@@ -71,7 +71,7 @@ describe('H13.2 sell signal cabling', () => {
 	});
 
 	it('seeds from datawars2 through the reviewed transport, with no key and no account id', async () => {
-		const send = vi.spyOn(ObsidianRequestTransport.prototype, 'send')
+		const send = vi.spyOn(HostRequestTransport.prototype, 'send')
 			.mockResolvedValue({ status: 200, headers: {}, body: trickOrTreatBagHistoryRecords() });
 		const plugin = sellSignalPlugin(new IDBFactory());
 		await plugin.initializeRuntime();
@@ -91,7 +91,7 @@ describe('H13.2 sell signal cabling', () => {
 	});
 
 	it('a sell decision reaches emitAlert and lands in the durable queue', async () => {
-		vi.spyOn(ObsidianRequestTransport.prototype, 'send')
+		vi.spyOn(HostRequestTransport.prototype, 'send')
 			.mockResolvedValue({ status: 200, headers: {}, body: trickOrTreatBagHistoryRecords() });
 		const plugin = sellSignalPlugin(new IDBFactory());
 		await plugin.initializeRuntime();
@@ -117,7 +117,7 @@ describe('H13.2 sell signal cabling', () => {
 	});
 
 	it('emits nothing on a day the rule does not fire, so the cabling is not a pass-through', async () => {
-		vi.spyOn(ObsidianRequestTransport.prototype, 'send')
+		vi.spyOn(HostRequestTransport.prototype, 'send')
 			.mockResolvedValue({ status: 200, headers: {}, body: trickOrTreatBagHistoryRecords() });
 		const plugin = sellSignalPlugin(new IDBFactory());
 		await plugin.initializeRuntime();
@@ -130,7 +130,7 @@ describe('H13.2 sell signal cabling', () => {
 	});
 
 	it('declares "no seed" and stays up when datawars2 is unreachable', async () => {
-		vi.spyOn(ObsidianRequestTransport.prototype, 'send')
+		vi.spyOn(HostRequestTransport.prototype, 'send')
 			.mockRejectedValue(new Error('network down'));
 		const plugin = sellSignalPlugin(new IDBFactory());
 		await plugin.initializeRuntime();
@@ -147,7 +147,7 @@ describe('H13.2 sell signal cabling', () => {
 	// only precondition that still holds is the one the first test in this file covers: the
 	// runtime must have composed a detector at all (`plugin.sellSignal` non-null).
 	it('seeds even while no session is active (H18.17 freed it from a live session)', async () => {
-		const send = vi.spyOn(ObsidianRequestTransport.prototype, 'send')
+		const send = vi.spyOn(HostRequestTransport.prototype, 'send')
 			.mockResolvedValue({ status: 200, headers: {}, body: trickOrTreatBagHistoryRecords() });
 		const plugin = sellSignalPlugin(new IDBFactory());
 		await plugin.initializeRuntime();

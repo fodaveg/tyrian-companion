@@ -4,20 +4,21 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	ALERT_INGAME_MAX_MESSAGE_BYTES,
-	createAlertIngameServer,
+	startAlertIngameServer,
 	type AlertIngameBridgeOptions,
-	type AlertIngameNetModule,
 	type AlertIngameServerHandle,
 	type AlertIngameServerTimer,
 } from './alert-ingame-server';
+import { createNodeTcpServerPort, type NodeTcpServerModule } from '../host/obsidian/obsidian-tcp-server';
 import { IngamePresenceTracker, type IngameConnectionEvent, type IngamePresenceEvent } from './alert-ingame-presence';
 import { createIngameBridgeNonce, createIngameBridgeSecret, ingameBridgeSecretMatches } from './alert-ingame-protocol';
 
 /**
  * Real loopback sockets throughout: this is the module the whole plugin trusts to authenticate
  * addons and keep a connection that never said hello from counting, and a fake `net` would only
- * prove the fake behaves. `createAlertIngameServer` is used so the hello and liveness deadlines
- * can be driven by short real timers, and the port-retry tests by a controlled one.
+ * prove the fake behaves. The bridge runs over the same `node:net` port Obsidian gets
+ * (`createNodeTcpServerPort`), with the timer injected so the hello and liveness deadlines can be
+ * driven by short real timers, and the port-retry tests by a controlled one.
  */
 
 const SECRET = createIngameBridgeSecret((bytes) => { randomFillSync(bytes); });
@@ -35,7 +36,7 @@ interface Harness {
 
 async function startBridge(options: Partial<AlertIngameBridgeOptions> = {}): Promise<Harness> {
 	const events: IngameConnectionEvent[] = [];
-	const handle = await createAlertIngameServer({ createServer }, 0, REAL_TIMER, {
+	const handle = await startAlertIngameServer(createNodeTcpServerPort({ createServer }), 0, REAL_TIMER, {
 		authenticate: (candidate) => ingameBridgeSecretMatches(candidate, SECRET),
 		now: () => Date.now(),
 		fillRandom: (bytes) => { randomFillSync(bytes); },
@@ -223,6 +224,20 @@ describe('H13.9/H13.15 in-game bridge, plugin to addon', () => {
 		} finally { await handle.close(); }
 	});
 
+	it('measures the wire limit in UTF-8 bytes, not in string length', async () => {
+		const { handle } = await startBridge();
+		try {
+			const addon = await AuthenticatedAddon.open(handle.port);
+			// 'ñ' is two UTF-8 bytes: this line is 257 characters long but 514 bytes on the wire.
+			const multibyte = 'ñ'.repeat(ALERT_INGAME_MAX_MESSAGE_BYTES / 2 + 1);
+			expect(() => { handle.broadcast(multibyte); }).toThrow();
+			// Exactly at the cap in bytes is still one complete line.
+			const atCap = 'ñ'.repeat(ALERT_INGAME_MAX_MESSAGE_BYTES / 2);
+			handle.broadcast(atCap);
+			expect(await addon.client.nextLine()).toBe(atCap);
+		} finally { await handle.close(); }
+	});
+
 	it('closes every client socket, reports each authenticated one lost, and stops accepting on close', async () => {
 		const { handle, events } = await startBridge();
 		const addon = await AuthenticatedAddon.open(handle.port);
@@ -386,7 +401,7 @@ describe('H13.9/H13.15 in-game alert server binding', () => {
 		const parked: { retry: (() => void) | null } = { retry: null };
 		const controlledTimer = { schedule: (callback: () => void) => { parked.retry = callback; }, cancel: () => undefined };
 
-		const flight = createAlertIngameServer({ createServer }, occupiedPort, controlledTimer, bridgeOptions(), [1, 1, 1]);
+		const flight = startAlertIngameServer(createNodeTcpServerPort({ createServer }), occupiedPort, controlledTimer, bridgeOptions(), [1, 1, 1]);
 		await waitFor(() => parked.retry !== null);
 		await new Promise<void>((resolve) => occupant.close(() => resolve()));
 		const retry = parked.retry;
@@ -404,7 +419,7 @@ describe('H13.9/H13.15 in-game alert server binding', () => {
 		const occupiedPort = await listenOnFreePort(occupant);
 		try {
 			const fastTimer = { schedule: (callback: () => void) => { setTimeout(callback, 0); }, cancel: () => undefined };
-			await expect(createAlertIngameServer({ createServer }, occupiedPort, fastTimer, bridgeOptions(), [1]))
+			await expect(startAlertIngameServer(createNodeTcpServerPort({ createServer }), occupiedPort, fastTimer, bridgeOptions(), [1]))
 				.rejects.toMatchObject({ code: 'EADDRINUSE' });
 		} finally { await new Promise<void>((resolve) => occupant.close(() => resolve())); }
 	});
@@ -414,7 +429,7 @@ describe('H13.9/H13.15 in-game alert server binding', () => {
 	 * somewhere other than loopback must never hand back a usable server.
 	 */
 	it('refuses to hand back a server that did not actually bind loopback', async () => {
-		const wrongHost: AlertIngameNetModule = {
+		const wrongHost: NodeTcpServerModule = {
 			createServer: (listener) => {
 				const server = createServer(listener);
 				const originalListen = server.listen.bind(server);
@@ -425,7 +440,9 @@ describe('H13.9/H13.15 in-game alert server binding', () => {
 			},
 		};
 		let handle: AlertIngameServerHandle | undefined;
-		await expect((async () => { handle = await createAlertIngameServer(wrongHost, 0, REAL_TIMER, bridgeOptions()); })())
+		await expect((async () => {
+			handle = await startAlertIngameServer(createNodeTcpServerPort(wrongHost), 0, REAL_TIMER, bridgeOptions());
+		})())
 			.rejects.toThrow(/loopback/);
 		expect(handle).toBeUndefined();
 	});

@@ -25,6 +25,7 @@ import { LocalDebugActionRunner, type LocalDebugActionPort } from './core/local-
 import { LocalDebugLogger } from './core/local-debug-logger';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
+import { withObsidianHost } from './test/obsidian-host-harness';
 import { COMPANION_VIEW_TYPE, ConfirmAbandonSessionModal } from './ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from './ui/sale-item-view';
@@ -125,14 +126,14 @@ describe('Halloween backfill wiring (H14.11)', () => {
 		const activate = vi.fn(async () => undefined);
 		const disable = vi.fn();
 		const setOnline = vi.fn();
-		const harness = {
+		const harness = withObsidianHost({
 			alertAccountRef: null as string | null,
 			halloweenAccountRef: null as string | null,
 			halloweenObservationActive: () => true,
 			halloween: { activate, disable, setOnline },
 			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
 			settings: DEFAULT_SETTINGS,
-		};
+		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const switchHalloweenAccount = (TyrianCompanionPlugin.prototype as unknown as {
 			switchHalloweenAccount(this: typeof harness, accountId: string): Promise<string>;
@@ -160,7 +161,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			checkConnection(this: unknown): Promise<ConnectionState>;
 			switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
 		};
-		const harness = {
+		const harness = withObsidianHost({
 			runtimeReady: true,
 			connection: { check: async () => ({
 				status: 'connected' as const, details: { account: { id: 'account-1' } },
@@ -182,7 +183,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			// Detection is always armed with a connected account now (Lote S, 2026-09-09):
 			// `checkConnection` also calls `this.armAssistedDetection`.
 			armAssistedDetection: vi.fn(async () => 'unavailable'),
-		};
+		});
 
 		await prototype.checkConnection.call(harness);
 		expect(activate).toHaveBeenCalledTimes(1);
@@ -290,14 +291,14 @@ describe('atomic settings persistence', () => {
 			},
 			event: vi.fn((context: { state?: string }) => { events.push(`event:${context.state ?? ''}`); }),
 		};
-		const harness = {
+		const harness = withObsidianHost({
 			runtimeReady: true, settings, localDebug, localDebugActions,
 			app: { vault: { configDir: 'test-config-dir' } },
 			saveData: vi.fn(async () => { events.push('persist'); }),
 			priceHistory: null, halloween: null, halloweenPriceAlert: null,
 			renderViews: vi.fn(() => { events.push('render'); }),
 			renderInventoryAdvisorViews: vi.fn(),
-		};
+		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const updateSettings = (TyrianCompanionPlugin.prototype as unknown as {
 			updateSettings(this: typeof harness, update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
@@ -321,13 +322,13 @@ describe('atomic settings persistence', () => {
 		};
 		const saveData = vi.fn(async () => { throw new Error('persistence unavailable'); });
 		const reclassify = vi.fn();
-		const harness = {
+		const harness = withObsidianHost({
 			runtimeReady: true,
 			settings,
 			app: { vault: { configDir: 'test-config-dir' } },
 			saveData,
 			inventoryAdvisor: { reclassify },
-		};
+		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
 		const updateSettings = (TyrianCompanionPlugin.prototype as unknown as {
 			updateSettings(
@@ -366,7 +367,7 @@ describe('atomic settings persistence', () => {
 				{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
 			] },
 		};
-		const harness = {
+		const harness = withObsidianHost({
 			runtimeReady: true,
 			settings,
 			app: { vault: { configDir: 'test-config-dir' } },
@@ -383,7 +384,7 @@ describe('atomic settings persistence', () => {
 			priceHistory: null,
 			renderInventoryAdvisorViews: vi.fn(),
 			renderViews: vi.fn(),
-		};
+		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
 		const updateSettings = (TyrianCompanionPlugin.prototype as unknown as {
 			updateSettings(
@@ -999,10 +1000,10 @@ describe('inventory analysis-only action', () => {
 describe('one-click inventory sync outcome persistence', () => {
 	it('merges the fresh outcome into settings and saves the whole object, leaving unrelated fields untouched', async () => {
 		const saved: unknown[] = [];
-		const plugin = {
+		const plugin = withObsidianHost({
 			settings: { apiKeySecret: 'gw2-primary', language: 'es', inventorySyncLastRun: null },
 			saveData: async (data: unknown) => { saved.push(data); },
-		};
+		});
 		const outcome = {
 			status: 'success' as const, finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 86694,
 			summary: { positions: 2909, create: 1616, update: 1167, unchanged: 79, deactivate: 0, conflicts: 0 }, error: null,
@@ -1036,8 +1037,9 @@ describe('price-history opt-in offer (David, 24 sep 2026)', () => {
 	/** Only `settings`, `manifest` and the Settings tab's own `updateSettings`: any other member would be undefined. */
 	function harness(): OptInHarness & { updates: Partial<TyrianSettings>[] } {
 		const updates: Partial<TyrianSettings>[] = [];
-		const plugin = {
-			settings: { ...DEFAULT_SETTINGS } as TyrianSettings,
+		const settings: TyrianSettings = { ...DEFAULT_SETTINGS };
+		const plugin = withObsidianHost({
+			settings,
 			manifest: { version: '0.1.35' },
 			updates,
 			updateSettings: async (update: Partial<TyrianSettings>): Promise<SettingsUpdateResult> => {
@@ -1045,7 +1047,7 @@ describe('price-history opt-in offer (David, 24 sep 2026)', () => {
 				plugin.settings = { ...plugin.settings, ...update };
 				return { status: 'saved', inventoryAdvisor: 'unchanged' };
 			},
-		};
+		});
 		return plugin;
 	}
 
@@ -1826,7 +1828,7 @@ describe('in-game alert server start diagnostics', () => {
 		);
 		const record = vi.fn((_input: LocalDebugRecordInput) => true);
 		const diagnostics = { record } as unknown as LocalDebugLogger;
-		const harness = {
+		const harness = withObsidianHost({
 			settings: { alertIngamePort: 47_823 },
 			alertIngameServer: null,
 			alertIngameServerPort: null,
@@ -1834,7 +1836,7 @@ describe('in-game alert server start diagnostics', () => {
 			alertIngameServerErrorCode: null as string | null,
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'ingame-server-start' }),
 			settingTab: { refreshAlertIngameServerRow: vi.fn() },
-		};
+		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const ensure = (TyrianCompanionPlugin.prototype as unknown as {
 			ensureAlertIngameServer(this: typeof harness): Promise<unknown>;
@@ -1948,7 +1950,7 @@ describe('local diagnostics composition', () => {
 			exportSanitized: vi.fn(async () => `${record}\n`),
 			clear: vi.fn(async () => true),
 		};
-		const harness = {
+		const harness = withObsidianHost({
 			settings: { ...DEFAULT_SETTINGS, apiKeySecret: 'private-secret-name', preferredCharacter: 'Astra' },
 			manifest: { id: 'tyrian-companion', version: '0.1.14' },
 			localDebug,
@@ -1958,7 +1960,7 @@ describe('local diagnostics composition', () => {
 				mkdir: async (path: string) => { folders.add(path); },
 				write: async (path: string, value: string) => { writes.set(path, value); },
 			} } },
-		};
+		});
 		const proto = TyrianCompanionPlugin.prototype as unknown as {
 			copyLocalDebugEntries(this: typeof harness, limit?: number): Promise<number>;
 			exportLocalDebugPackage(this: typeof harness): Promise<string | null>;
@@ -1991,11 +1993,11 @@ describe('local diagnostics composition', () => {
 	it('opens only the desktop-resolved diagnostics folder through Electron shell', async () => {
 		electronMocks.openPath.mockResolvedValueOnce('');
 		const status = { path: 'test-config-dir/plugins/tyrian-companion/logs/' };
-		const harness = {
+		const harness = withObsidianHost({
 			localDebugActions: null,
 			getLocalDebugStatus: () => status,
 			app: { vault: { adapter: { getFullPath: (path: string) => `/vault/${path}` } } },
-		};
+		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const open = (TyrianCompanionPlugin.prototype as unknown as {
 			openLocalDebugFolder(this: typeof harness): Promise<boolean>;
@@ -2124,7 +2126,7 @@ function buildManagedAssetsRootHarness(
 		ensureManagedAssetsAuthority(this: ManagedAssetsRootHarness): Promise<boolean>;
 		runManagedAssetsLifecycle(this: ManagedAssetsRootHarness, operation: () => Promise<unknown>): Promise<unknown>;
 	};
-	const harness: ManagedAssetsRootHarness = {
+	const harness: ManagedAssetsRootHarness = withObsidianHost({
 		runtimeReady: true,
 		settings: initialSettings,
 		app: { vault: { configDir: 'test-config-dir' } },
@@ -2145,7 +2147,7 @@ function buildManagedAssetsRootHarness(
 		reconcileManagedAssetsRoot: () => proto.reconcileManagedAssetsRoot.call(harness),
 		ensureManagedAssetsAuthority: () => proto.ensureManagedAssetsAuthority.call(harness),
 		runManagedAssetsLifecycle: (operation) => proto.runManagedAssetsLifecycle.call(harness, operation),
-	};
+	} satisfies ManagedAssetsRootHarness);
 	return harness;
 }
 

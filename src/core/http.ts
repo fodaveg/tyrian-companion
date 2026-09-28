@@ -1,3 +1,4 @@
+import type { TyrianHttpPort } from '../host/tyrian-host';
 import type {
 	LocalDebugActionPort,
 	LocalDebugEventContext,
@@ -343,6 +344,74 @@ export class ResilientHttpTransport implements HttpTransport {
 interface HttpDiagnosticFlight {
 	context: ResolvedLocalDebugActionContext;
 	startedAt: number;
+}
+
+type HostTransportOptions = Omit<TransportOptions, 'request'>;
+
+/**
+ * Wires the resilient transport policy to the host's one HTTP call (`TyrianHost.http`):
+ * Obsidian's CORS-free request API today, a Rust command with a closed host list in Hebra.
+ *
+ * The port answers every status with its body as text and rejects only on a transport failure,
+ * exactly like Obsidian's call with `throw: false`. The body is decoded here the way Obsidian's own
+ * `json` getter decodes it (`JSON.parse` of the text, throwing on a body that is not JSON), so a
+ * non-JSON answer is the same `network` failure it has always been.
+ */
+export class HostRequestTransport extends ResilientHttpTransport {
+	constructor(http: TyrianHttpPort, options: HostTransportOptions = {}) {
+		super({
+			...options,
+			request: async (request) => {
+				const response = await http.request({
+					url: request.url,
+					method: request.method,
+					...(request.headers === undefined ? {} : { headers: request.headers }),
+					...(request.body === undefined ? {} : { body: request.body }),
+				});
+				refuseOversizedBody(response.text, request.maxResponseBytes);
+				return {
+					status: response.status,
+					headers: { ...response.headers },
+					json: JSON.parse(response.text) as unknown,
+				};
+			},
+		});
+	}
+}
+
+const UTF8 = new TextEncoder();
+
+/**
+ * Refuses to DECODE a body larger than the caller declared, before it is parsed.
+ *
+ * What this cannot do is stop the download: the host has already buffered the whole response by
+ * the time it resolves and exposes no abort handle, so a host that answers with gigabytes still
+ * costs the transfer. What it does stop is the amplification that follows, and that is where the
+ * renderer dies: parsing turns megabytes of text into an object graph several times their size,
+ * which the parser then walks. So the check goes here, ahead of the parse, and the caller gets
+ * the same transport failure it already handles rather than a new outcome to route.
+ *
+ * The cap is in BYTES of the body as it came over the wire, measured as the UTF-8 encoding of the
+ * text the port returned (Obsidian decodes the body as UTF-8, so for a UTF-8 body the two agree).
+ *
+ * `network` and not a status: no server said anything about the size. It is the plugin refusing
+ * to read what arrived, and the diagnostic should say so instead of inventing a 413 nobody sent.
+ * It is thrown rather than retried for the same reason a timeout is not retried by size:
+ * downloading it twice is the worse answer.
+ *
+ * The body is only MEASURED when a cap was declared: encoding the text for the many callers that
+ * declared none would be work nobody asked for.
+ */
+function refuseOversizedBody(text: string, maxResponseBytes: number | undefined): void {
+	if (maxResponseBytes === undefined) return;
+	const byteLength = UTF8.encode(text).byteLength;
+	if (byteLength <= maxResponseBytes) return;
+	throw new HttpTransportError(
+		'network',
+		null,
+		null,
+		`Response body of ${String(byteLength)} bytes exceeds the ${String(maxResponseBytes)} byte cap declared for this request.`,
+	);
 }
 
 /** Accepts only reviewed endpoint identifiers; no URL segment is ever promoted to diagnostics. */

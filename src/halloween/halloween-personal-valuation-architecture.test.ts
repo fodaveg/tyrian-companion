@@ -41,7 +41,8 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		expect(readModuleSource('src/runtime/assemble-advisor.ts'))
 			.toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');
 		expect(main).toContain('personalValuation: () => this.settings.halloweenPersonalValuation');
-		expect(main).toMatch(/previousPersonalValuation[\s\S]*saveData\(nextSettings\)[\s\S]*this\.settings = nextSettings[\s\S]*inventoryAdvisor\.reclassify\([^)]*\)/u);
+		// R1a: `saveData` is reached through the host's settings port (`ObsidianHost.settings.save`).
+		expect(main).toMatch(/previousPersonalValuation[\s\S]*settings\.save\(nextSettings\)[\s\S]*this\.settings = nextSettings[\s\S]*inventoryAdvisor\.reclassify\([^)]*\)/u);
 	});
 
 	it('covers the seven UI axes and makes no asset or contrast claim', () => {

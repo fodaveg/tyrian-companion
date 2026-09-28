@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 vi.mock('obsidian', async (importOriginal) => ({
 	...await importOriginal<Record<string, unknown>>(),
-	requestUrl: async () => ({ status: 404, headers: {}, json: [] }),
+	requestUrl: async () => ({ status: 404, headers: {}, json: [], text: '[]' }),
 }));
 
 import TyrianCompanionPlugin from './main';

@@ -121,7 +121,9 @@ const HTTP_IMPORT_PATTERN = /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s
 // never covered: it only casts a net as wide as https(s), axios and undici.
 const NET_IMPORT_PATTERN = /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s*)['"](?:node:)?net['"]/mu;
 const SECRET_PROVIDER_IMPORT_PATTERN = /from\s+['"][^'"]*(?:^|\/)secret-provider['"]/u;
-const SECRET_CAPABILITY_PATTERN = /\b(?:ApiKeyProvider|ObsidianApiKeyProvider|readSelectedApiKey|secretStorage)\b/u;
+// R1a: the provider reads `TyrianHost.secrets` now (`HostApiKeyProvider`), and a module that reads
+// or writes a secret through that port (`host.secrets.get/set/list`) is the same capability.
+const SECRET_CAPABILITY_PATTERN = /\b(?:ApiKeyProvider|HostApiKeyProvider|readSelectedApiKey|secretStorage|secrets\.(?:get|set|list))\b/u;
 const CREDENTIAL_CAPABILITY_PATTERN = /from\s+['"][^'"]*secret-provider['"]|\b(?:Authorization|Bearer|SecretStorage|readSelectedApiKey|ApiKeyProvider|apiKey|accessToken|refreshToken|bearerToken|credential|token)\b/u;
 const FUTURE_OUTBOUND_TOKEN_PATTERN = /(?:^|[-_.])(?:analytics|backup|diagnostic|export|mumble|report|share|support|sync|telemetry|uploader)[a-z]*(?=[-_.]|$)/iu;
 const FUTURE_OUTBOUND_CAMEL_PATTERN = /(?:Analytics|Backup|Diagnostic|Export|Mumble|Report|Share|Support|Sync|Telemetry|Uploader)/u;

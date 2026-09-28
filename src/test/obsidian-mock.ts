@@ -52,27 +52,34 @@ export class Setting {}
 export class TFile {}
 
 /**
- * The shape `requestUrl` resolves to, `json` included as a PROPERTY.
+ * The shape `requestUrl` resolves to.
  *
- * The real one exposes it as a getter that parses `arrayBuffer` on first read.
- * A responder that wants to prove nobody parsed the body defines it as a getter
- * too; the type is the same either way, which is the point.
+ * The real one decodes `arrayBuffer` as UTF-8 into `text`, and `json` is a getter that parses
+ * that text. Since R1a the plugin reads only `text` (`ObsidianHost`'s HTTP port) and parses it
+ * itself, so a responder may give `text` directly or leave it out and give `json`: the mock then
+ * serializes `json` into `text`, the body a real server would have sent for that value.
  */
 export interface MockRequestUrlResponse {
 	status: number;
 	headers: Record<string, string>;
 	arrayBuffer: ArrayBuffer;
 	json: unknown;
+	text?: string;
 }
 
 export type MockRequestUrlResponder = (request: unknown) => MockRequestUrlResponse;
 
 let requestUrlResponder: MockRequestUrlResponder | null = null;
 
-export async function requestUrl(request?: unknown): Promise<MockRequestUrlResponse> {
-	if (requestUrlResponder !== null) return requestUrlResponder(request);
-	return { status: 200, headers: {}, arrayBuffer: new ArrayBuffer(0), json: {} };
+export async function requestUrl(request?: unknown): Promise<MockRequestUrlResponse & { text: string }> {
+	const response = requestUrlResponder !== null
+		? requestUrlResponder(request)
+		: { status: 200, headers: {}, arrayBuffer: new ArrayBuffer(0), json: {} };
+	return { ...response, text: response.text ?? JSON.stringify(response.json) };
 }
+
+/** No real tooltip in the node test environment; records nothing. */
+export function setTooltip(): void {}
 
 /**
  * Test-only companion to `requestUrl`; the real Obsidian API exposes no setter.
