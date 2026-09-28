@@ -172,7 +172,7 @@ describe('R1a host boundary', () => {
 				&& !NODE_TEST_FIXTURES.includes(path))
 			.flatMap((path) => webviewViolations(path));
 		expect(offenders).toEqual([]);
-	});
+	}, 30_000); // parses every src/ module: 1.9 s here, 6.3 s on the GitHub runner, past the 5 s default (CI run 36391764610)
 
 	it('lets the listed UI files and fixtures reach Obsidian or Node, and nothing else', () => {
 		// The exceptions are for exactly what they are listed for: the UI may still import
