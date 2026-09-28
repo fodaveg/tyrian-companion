@@ -201,11 +201,15 @@ describe('settings information architecture', () => {
 	// row, another "Advanced" row, to 29/33. H18.23 adds the in-game bridge secret, an "Advanced"
 	// row shown only while the bridge is on, to 30/34. H18.15 adds the low-storage-space threshold,
 	// another "Advanced" row, to 31/35. 0.2.1 moves the bridge secret to "Essentials", still shown
-	// only while the bridge is on: 5 assigned there, 30 under "Advanced".
-	it('assigns all 35 existing rows to explicit intent categories', () => {
-		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, settingsPlugin() as never);
+	// only while the bridge is on: 5 assigned there, 30 under "Advanced". R1b adds the
+	// collector/consult row, to 36: under "Advanced" for a collector (next test for consult).
+	it('assigns all 36 existing rows to explicit intent categories', () => {
+		// An upgraded installation with a key is the collector: its first tab is unchanged by R1b.
+		const plugin = settingsPlugin();
+		plugin.settings.collectorMode = 'collector';
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const assignments = tab.getSettingCategoryAssignments();
-		expect(assignments).toHaveLength(35);
+		expect(assignments).toHaveLength(36);
 		// H14.20: the first screen of a new install is exactly the four rows it needs; the fifth
 		// "Essentials" row, the bridge token, only mounts once the bridge is on (next test). Every
 		// other row (30) lives under the single "Advanced" tab.
@@ -217,8 +221,32 @@ describe('settings information architecture', () => {
 		expect(tab.getMountedSettingNames('essentials').sort()).toEqual(
 			['API key', 'Alert me about a drop from', 'Default character', 'Output folder'].sort(),
 		);
-		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(30);
+		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(31);
+		expect(tab.getMountedSettingNames('advanced')).toContain('This installation\'s mode');
 		expect(assignments.every(({ category }) => SETTINGS_CATEGORIES.includes(category))).toBe(true);
+	});
+
+	// R1b: a consult installation (every new one) must find the switch that makes it the collector
+	// on the tab the settings open to, and the row stays put while the player flips it.
+	it('mounts the mode row first on the first tab of a consult installation, and keeps it there on a switch', async () => {
+		const plugin = settingsPlugin();
+		expect(plugin.settings.collectorMode).toBe('consult');
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		expect(tab.getMountedSettingNames('essentials')).toEqual([
+			'This installation\'s mode', 'API key', 'Output folder', 'Default character', 'Alert me about a drop from',
+		]);
+		expect(tab.getMountedSettingNames('advanced')).not.toContain('This installation\'s mode');
+
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'This installation\'s mode');
+		if (definition === undefined) throw new Error('Expected the collector mode setting.');
+		const control = renderControl(definition, 'dropdown');
+		expect(control.options).toEqual(['collector', 'consult']);
+		expect(control.value).toBe('consult');
+		await control.change('collector');
+
+		expect(plugin.settings.collectorMode).toBe('collector');
+		expect(tab.getMountedSettingNames('essentials')[0]).toBe('This installation\'s mode');
 	});
 
 	// 0.2.1: with the bridge on, the token row sat at the bottom of "Advanced" and could not be

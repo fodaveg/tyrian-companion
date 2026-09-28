@@ -132,6 +132,12 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private readonly settingsWrites = new SettingsWriteQueue();
 	/** M4: `null` until the "Cargar lista" button succeeds once; `'loading'`/`'error'` are transient render states. */
 	private legendaryArmoryOptions: readonly LegendaryArmoryOptionV1[] | null | 'loading' | 'error' = null;
+	/**
+	 * R1b: whether the mode row sits on the first tab, decided when the tab opens (`display`) and
+	 * kept across the rerenders a save triggers, so switching the mode never whisks the row away
+	 * from under the pointer. Null until first read: the mode at that moment decides.
+	 */
+	private collectorModeOnFirstTab: boolean | null = null;
 
 	constructor(
 		app: App,
@@ -158,6 +164,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
+		this.collectorModeOnFirstTab = this.plugin.settings.collectorMode === 'consult';
 		this.renderSettings();
 	}
 
@@ -310,7 +317,26 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	}
 
 	private definitions(): CategorizedSettingDefinition[] {
+		this.collectorModeOnFirstTab ??= this.plugin.settings.collectorMode === 'consult';
 		return [
+			{
+				// R1b: a consult installation (every new one) finds the switch on the first tab; the
+				// collector an upgraded installation became keeps its four first-tab rows unchanged.
+				category: this.collectorModeOnFirstTab ? 'essentials' : 'advanced',
+				name: this.t('settings.collectorMode.name'), desc: this.t('settings.collectorMode.desc'),
+				tooltip: this.t('settings.collectorMode.tooltip'),
+				render: (setting, save) => {
+					setting.addDropdown((dropdown) =>
+						dropdown
+							.addOption('collector', this.t('settings.collectorMode.collector'))
+							.addOption('consult', this.t('settings.collectorMode.consult'))
+							.setValue(this.plugin.settings.collectorMode)
+							.onChange(async (collectorMode) => {
+								await save({ collectorMode: collectorMode === 'collector' ? 'collector' : 'consult' });
+							}),
+					);
+				},
+			},
 			{
 				category: 'essentials',
 				name: this.t('settings.apiKey.name'), desc: this.t('settings.apiKey.desc'),
