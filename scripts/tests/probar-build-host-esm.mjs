@@ -68,6 +68,29 @@ try {
 	await probe('globals', {
 		'entry.ts': "export const bytes = Buffer.from('x');\nexport const env = process.env.NODE_ENV;\nexport const again = process.platform;\n",
 	}, ['global Buffer referenced 1 time(s)', 'global process referenced 2 time(s)']);
+	await probe('global-object-members', {
+		'entry.ts': [
+			"export const bytes = (globalThis as any).Buffer.from('x');",
+			'export const env = (globalThis as any).process.env.NODE_ENV;',
+			"export const socket = (window as any).require('net');",
+			"export const bracket = (self as any)['process'];",
+			'',
+		].join('\n'),
+	}, [
+		'global object member globalThis.Buffer referenced 1 time(s)',
+		'global object member globalThis.process referenced 1 time(s)',
+		'global object member window.require referenced 1 time(s)',
+		'global object member self.process referenced 1 time(s)',
+	]);
+	await probe('computed-require', {
+		'entry.ts': "const name = ['n', 'et'].join('');\ndeclare const require: (id: string) => unknown;\nexport const socket = require(name);\n",
+	}, ['unresolved __require() call 1 time(s)']);
+	await probe('typeof-feature-test', {
+		'entry.ts': "export const hasProcess = typeof process !== 'undefined';\nexport const hasBuffer = typeof Buffer === 'function';\n",
+	}, []);
+	await probe('typeof-guarded-use', {
+		'entry.ts': "export const env = typeof process !== 'undefined' ? process.env : null;\n",
+	}, ['global process referenced 1 time(s)']);
 	await probe('look-alikes', {
 		'net.ts': 'export const net = 1;\n',
 		'entry.ts': [

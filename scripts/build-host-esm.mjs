@@ -6,7 +6,10 @@
 // - an import of `obsidian`, `electron`, `net` or any Node builtin (bare or `node:`-prefixed);
 // - a free reference to the `Buffer` or `process` globals (a member such as `vault.process` or a
 //   local binding of that name is not one: esbuild's `define` only rewrites global references,
-//   so each one is replaced by a marker this script then looks for);
+//   so each one is replaced by a marker this script then looks for). A bare `typeof process`
+//   feature test is allowed; the guarded use behind it is not;
+// - `Buffer`, `process` or `require` read off `globalThis`/`window`/`self`/`global`, and any
+//   `require`/`__require` call left in the output (a require esbuild could not resolve);
 // - a CSS import, or a package that is not declared in package.json.
 //
 // Run: `npm run build:host-esm` (exit 0 and a one-line summary when clean; exit 1 listing every
@@ -18,6 +21,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import esbuild from 'esbuild';
+import ts from 'typescript';
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const HOST_ESM_ENTRY = 'src/runtime/index.ts';
@@ -27,6 +31,8 @@ const FORBIDDEN_PACKAGES = new Set(['obsidian', 'electron', 'net']);
 const NODE_BUILTINS = new Set(builtinModules.map((name) => name.replace(/^node:/u, '')));
 const FORBIDDEN_GLOBALS = ['Buffer', 'process'];
 const GLOBAL_MARKER = '__TYRIAN_HOST_ESM_FORBIDDEN_GLOBAL_';
+const GLOBAL_OBJECTS = new Set(['globalThis', 'window', 'self', 'global']);
+const GLOBAL_MEMBERS = new Set(['Buffer', 'process', 'require']);
 
 /** True for `obsidian`, `electron`, `net` and every Node builtin, with or without `node:` and subpaths. */
 export function isForbiddenSpecifier(specifier) {
@@ -68,10 +74,7 @@ export async function buildHostEsm({ root = REPOSITORY_ROOT, entry = HOST_ESM_EN
 
 	const violations = forbiddenImports.map(({ specifier, importer }) => `import '${specifier}' from ${importer}`);
 	const text = result.outputFiles?.[0]?.text ?? readFileSync(resolve(root, outfile), 'utf8');
-	for (const name of FORBIDDEN_GLOBALS) {
-		const count = text.split(`${GLOBAL_MARKER}${name}`).length - 1;
-		if (count > 0) violations.push(`global ${name} referenced ${String(count)} time(s)`);
-	}
+	violations.push(...outputViolations(text));
 	const inputs = Object.keys(result.metafile.inputs);
 	for (const input of inputs.filter((path) => path.endsWith('.css'))) violations.push(`CSS import ${input}`);
 	const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
@@ -80,6 +83,48 @@ export async function buildHostEsm({ root = REPOSITORY_ROOT, entry = HOST_ESM_EN
 	for (const name of packages.filter((name) => !declared.has(name))) violations.push(`package ${name} is not declared in package.json`);
 	const bytes = text.length;
 	return { violations, inputs: inputs.length, packages, bytes, outfile };
+}
+
+/**
+ * What the bundled OUTPUT still asks of a Node or Electron host, read from its AST (so a string
+ * or a comment that merely names one of these never counts):
+ *
+ * - a global `Buffer`/`process` (esbuild's define turned each free reference into a marker); one
+ *   under `typeof` is only a feature test and is allowed, the use it guards is not;
+ * - `Buffer`, `process` or `require` read off `globalThis`, `window`, `self` or `global`, with a
+ *   dot or a bracket (`(globalThis as any).Buffer`, `window.require('net')`), which `define` and
+ *   the import check cannot see;
+ * - a call to `require` or esbuild's `__require` shim: what is left of a `require` it could not
+ *   resolve at bundle time, such as `require(name)` with a computed name.
+ */
+export function outputViolations(text) {
+	const file = ts.createSourceFile('host-esm-output.js', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+	const counts = new Map();
+	const count = (label) => { counts.set(label, (counts.get(label) ?? 0) + 1); };
+	const memberName = (node) => {
+		if (ts.isPropertyAccessExpression(node)) return node.name.text;
+		if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)) return node.argumentExpression.text;
+		return null;
+	};
+	const visit = (node) => {
+		if (ts.isIdentifier(node) && node.text.startsWith(GLOBAL_MARKER) && !ts.isTypeOfExpression(node.parent)) {
+			count(`global ${node.text.slice(GLOBAL_MARKER.length)} referenced`);
+		}
+		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+			const owner = node.expression;
+			const name = memberName(node);
+			if (ts.isIdentifier(owner) && GLOBAL_OBJECTS.has(owner.text) && name !== null && GLOBAL_MEMBERS.has(name)) {
+				count(`global object member ${owner.text}.${name} referenced`);
+			}
+		}
+		if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)
+			&& (node.expression.text === 'require' || node.expression.text === '__require')) {
+			count(`unresolved ${node.expression.text}() call`);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return [...counts].map(([label, total]) => `${label} ${String(total)} time(s)`);
 }
 
 /** The npm package a bundled input file belongs to, or null for a repository source file. */
