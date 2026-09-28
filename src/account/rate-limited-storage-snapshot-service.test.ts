@@ -66,7 +66,7 @@ describe('RateLimitedStorageSnapshotService', () => {
 
 		await gated.captureInventoryWithOperation(operation, onProgress);
 
-		expect(inner.captureInventoryWithOperation).toHaveBeenCalledWith(operation, onProgress);
+		expect(inner.captureInventoryWithOperation).toHaveBeenCalledWith(operation, onProgress, undefined);
 		expect(onProgress).toHaveBeenCalledWith(progress);
 	});
 
