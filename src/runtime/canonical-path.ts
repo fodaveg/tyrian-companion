@@ -9,7 +9,9 @@
  *   two candidates, the preferred path (16-character ref) and the collision path (full ref), in
  *   the order the writer tries them (`session-note-writer.ts`);
  * - inventory: the `position=` marker, `Inventory/Positions/<position>.md`;
- * - wallet: the `currency=` marker, `Wallet/Currencies/<currency>.md`.
+ * - wallet: the `currency=` marker, `Wallet/Currencies/<currency>.md`;
+ * - collector status (R1b): frontmatter `tc_kind: gw2_collector_status`, the one fixed path
+ *   `Collector status.md`. A second collector has to find it by path to see the first one.
  *
  * Not families: Halloween writes no notes (its vault port only reads session notes); the notes a
  * `tyrian-price-history` block lives in are the inventory notes above, or the user's own; the
@@ -20,6 +22,7 @@
 import type { CanonicalPathFor } from '../host/tyrian-host';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 import { inventoryNotePositionId, inventoryNoteRelativePath } from '../inventory/inventory-vault-sync';
+import { COLLECTOR_STATUS_NOTE_RELATIVE_PATH, parseCollectorStatusNote } from './collector-status';
 import { sessionNotePathIdentity, sessionNoteRelativePaths } from '../sessions/session-note-renderer';
 import { walletNoteCurrencyId, walletNoteRelativePath } from '../wallet/wallet-vault-sync';
 
@@ -41,5 +44,6 @@ export const canonicalPathFor: CanonicalPathFor = (root, noteText) => {
 	if (positionId !== null) return [inventoryNoteRelativePath(positionId)];
 	const currencyId = walletNoteCurrencyId(text);
 	if (currencyId !== null) return [walletNoteRelativePath(currencyId)];
+	if (parseCollectorStatusNote(text) !== null) return [COLLECTOR_STATUS_NOTE_RELATIVE_PATH];
 	return [];
 };

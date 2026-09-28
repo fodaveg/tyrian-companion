@@ -5,7 +5,7 @@
 		"catch_clause": 466,
 		"promise_catch": 40,
 		"void_expression": 103,
-		"callback_registration": 177
+		"callback_registration": 178
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -7879,6 +7879,34 @@
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
+		},
+		"src/runtime/collector-instance.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/runtime/collector-status.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "a1e16e67fa286752a1caceefc6d5cf48b70d3f35",
+					"kind": "callback_registration",
+					"line": 163,
+					"column": 17,
+					"endLine": 163,
+					"endColumn": 122,
+					"registration": "setInterval",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "setInterval",
+						"scope": "start",
+						"justification": "The \"start\" owner registers \"setInterval\" only to hand each heartbeat beat to the host's run port, which owns the beat's diagnostics and any rejection; the callback itself cannot throw."
+					},
+					"reason": "Allowlisted callback_registration: The \"start\" owner registers \"setInterval\" only to hand each heartbeat beat to the host's run port, which owns the beat's diagnostics and any rejection; the callback itself cannot throw. Verified registration: \"setInterval\" in \"start\"."
+				}
+			]
 		},
 		"src/runtime/index.ts": {
 			"classification": "production_source",

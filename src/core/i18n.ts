@@ -28,6 +28,11 @@ const ES = {
 	'settings.apiKey.desc': 'Selecciona o crea un secreto de Obsidian. El plugin solo guarda su nombre.',
 	'settings.language.name': 'Idioma',
 	'settings.language.desc': 'Idioma de la interfaz y del contenido generado.',
+	'settings.collectorMode.name': 'Modo de esta instalación',
+	'settings.collectorMode.desc': 'Solo el recolector consulta Guild Wars 2, escribe notas y avisa. Uno por cuenta.',
+	'settings.collectorMode.tooltip': 'En consulta, Tyrian Companion lee las notas y vistas que ya hay: no llama a la API, no escribe notas ni Bases, no abre el puerto del puente con el juego y no avisa.',
+	'settings.collectorMode.collector': 'Recolector',
+	'settings.collectorMode.consult': 'Consulta',
 	'settings.output.name': 'Carpeta de salida',
 	'settings.output.desc': 'Carpeta relativa al vault reservada para la salida futura.',
 	'settings.output.legacyDesc': 'Se conserva una carpeta previa sin escribir en ella. Elige un reemplazo seguro.',
@@ -216,6 +221,7 @@ const ES = {
 	'settings.remove.desc': 'Solo van a la papelera los archivos intactos del plugin; los modificados se conservan.',
 	'common.cancel': 'Cancelar',
 	'settings.language.spanish': 'Español', 'settings.language.english': 'Inglés',
+	'collector.statusNote.body': 'Tyrian Companion anota aquí qué instalación recoge los datos de la cuenta y cuándo lo hizo por última vez. La reescribe el recolector: no la edites.',
 } as const;
 
 const EN: { [K in keyof typeof ES]: string } = {
@@ -245,6 +251,11 @@ const EN: { [K in keyof typeof ES]: string } = {
 	'settings.apiKey.desc': 'Select or create an Obsidian secret. The plugin stores only its name.',
 	'settings.language.name': 'Language',
 	'settings.language.desc': 'Language for the interface and generated content.',
+	'settings.collectorMode.name': 'This installation\'s mode',
+	'settings.collectorMode.desc': 'Only the collector queries Guild Wars 2, writes notes and alerts. One per account.',
+	'settings.collectorMode.tooltip': 'In consult mode, Tyrian Companion reads the notes and views already there: no API calls, no notes or Bases written, no in-game bridge port and no alerts.',
+	'settings.collectorMode.collector': 'Collector',
+	'settings.collectorMode.consult': 'Consult',
 	'settings.output.name': 'Output folder',
 	'settings.output.desc': 'Vault-relative folder reserved for future output.',
 	'settings.output.legacyDesc': 'A pre-portability folder is kept without writing to it. Choose a safe replacement.',
@@ -433,6 +444,7 @@ const EN: { [K in keyof typeof ES]: string } = {
 	'settings.remove.desc': 'Only intact plugin files go to the system trash; modified files are preserved.',
 	'common.cancel': 'Cancel',
 	'settings.language.spanish': 'Spanish', 'settings.language.english': 'English',
+	'collector.statusNote.body': 'Tyrian Companion records here which installation collects the account data and when it last did. The collector rewrites it: do not edit it.',
 };
 
 type BaseTranslationKey = keyof typeof ES;
