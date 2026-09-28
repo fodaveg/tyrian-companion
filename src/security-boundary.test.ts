@@ -4,9 +4,10 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { GuildWars2Client, OFFICIAL_GW2_API_URL } from './account/guild-wars-2-client';
 import { ResilientHttpTransport, type HttpRequest } from './core/http';
-import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
+import { DEFAULT_SETTINGS } from './core/settings';
 import { HostApiKeyProvider } from './core/secret-provider';
-import TyrianCompanionPlugin from './main';
+import { loadTyrianSettings } from './runtime/tyrian-runtime';
+import { withObsidianHost } from './test/obsidian-host-harness';
 import {
 	censusNetworkAndCredentialCapabilities,
 	isFutureOutboundFile,
@@ -147,26 +148,19 @@ describe('H6.7 credential boundary', () => {
 			apiKey: TOKEN_SENTINEL,
 		};
 		const saved: unknown[] = [];
-		// The production load path reads and writes `data.json` only through the host's settings port.
-		const harness: SettingsLoadHarness = {
-			host: {
-				vault: { configDir: 'test-config-dir' },
-				locale: () => 'en',
-				settings: {
-					load: async () => persisted,
-					save: async (value) => { saved.push(structuredClone(value)); },
-				},
-			},
-			settings: { ...DEFAULT_SETTINGS },
-		};
-		const loadSettings = (TyrianCompanionPlugin.prototype as unknown as {
-			loadSettings(this: SettingsLoadHarness): Promise<void>;
-		}).loadSettings.bind(harness);
+		// The production load path is `loadTyrianSettings`, the one `onload` boots through (R1a):
+		// it reads and writes `data.json` only through the host's settings port, here the real
+		// `ObsidianHost` over `loadData`/`saveData`.
+		const { host } = withObsidianHost({
+			app: { vault: { configDir: 'test-config-dir' } },
+			loadData: async () => persisted,
+			saveData: async (value: unknown) => { saved.push(structuredClone(value)); },
+		});
 
-		await loadSettings();
+		const settings = await loadTyrianSettings(host);
 
 		expect(saved).toHaveLength(1);
-		expect(JSON.stringify(harness.settings)).not.toContain(TOKEN_SENTINEL);
+		expect(JSON.stringify(settings)).not.toContain(TOKEN_SENTINEL);
 		expect(JSON.stringify(saved)).not.toContain(TOKEN_SENTINEL);
 		expect(saved[0]).not.toHaveProperty('apiKey');
 		expect(saved[0]).toHaveProperty('legacyOutputFolder', persisted.outputFolder);
@@ -241,15 +235,6 @@ describe('H6.7 credential boundary', () => {
 // stay in sync with `scripts/security-scan.mjs`, which owns the walk and the exact regex source;
 // this suite only carries the reviewed allowlists, which are data, not a text-match on a module.
 const CREDENTIAL_CAPABILITY_PATTERN = /from\s+['"][^'"]*secret-provider['"]|\b(?:Authorization|Bearer|SecretStorage|readSelectedApiKey|ApiKeyProvider|apiKey|accessToken|refreshToken|bearerToken|credential|token)\b/u;
-
-interface SettingsLoadHarness {
-	host: {
-		vault: { configDir: string };
-		locale(): string;
-		settings: { load(): Promise<unknown>; save(value: unknown): Promise<void> };
-	};
-	settings: TyrianSettings;
-}
 
 // These guards exercise the real authenticated client and production load method, then discover
 // persistence and future outbound module names. Computed imports or deliberately obfuscated names

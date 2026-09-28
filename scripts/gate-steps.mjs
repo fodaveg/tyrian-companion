@@ -63,6 +63,10 @@ export const GATE_STEPS = Object.freeze([
 	step('i18n-copy-length', 'Longitud de copy settings.*/view.* sobre el arbol', ['node', 'scripts/i18n-copy-length.mjs'], ['test', 'check:guardrails']),
 	step('changelog-entry-suite', 'Suite del extractor de notas de release desde el changelog', ['node', 'scripts/tests/probar-changelog-entry.mjs'], ['test', 'check:guardrails']),
 	step('bundle', 'Bundle de produccion con esbuild', ['node', 'esbuild.config.mjs', 'production'], ['check']),
+	// R1a: the host-neutral entry Hebra loads must bundle without obsidian, electron, net, Node
+	// builtins or the Buffer/process globals. The suite proves the check catches each of them.
+	step('host-esm', 'Bundle ESM del runtime para Hebra (sin obsidian/electron/net/node)', ['node', 'scripts/build-host-esm.mjs'], ['check']),
+	step('host-esm-suite', 'Suite del guardarrail del bundle ESM para Hebra', ['node', 'scripts/tests/probar-build-host-esm.mjs'], ['test', 'check:guardrails']),
 ]);
 
 function step(id, label, command, groups) {

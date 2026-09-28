@@ -10,6 +10,8 @@ main.js
 coverage/
 .release/
 .beta-artifact/
+# R1a: `npm run build:host-esm` output (the Hebra runtime bundle) and its probe entries.
+.host-esm/
 /native/mumble-helper/target/
 /native/mumble-helper/UNSIGNED-NOT-FOR-RELEASE.txt
 .env

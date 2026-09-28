@@ -4,9 +4,26 @@
  * they stay here instead of being copied into every architecture suite.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 
 import ts from 'typescript';
+
+/**
+ * Every `.ts` module under `src/`, repository-relative and sorted; `*.test.ts` and `*.d.ts`
+ * excluded. The census a whole-tree frontier (R1a's host boundary) is decided over.
+ */
+export function sourceModulePaths(root = process.cwd()): string[] {
+	const paths: string[] = [];
+	const visit = (directory: string): void => {
+		for (const name of readdirSync(`${root}/${directory}`).sort((left, right) => left.localeCompare(right))) {
+			const path = `${directory}/${name}`;
+			if (statSync(`${root}/${path}`).isDirectory()) visit(path);
+			else if (name.endsWith('.ts') && !name.endsWith('.test.ts') && !name.endsWith('.d.ts')) paths.push(path);
+		}
+	};
+	visit('src');
+	return paths;
+}
 
 /**
  * Reads one module's source for a static (import-graph or capability-name) boundary check.

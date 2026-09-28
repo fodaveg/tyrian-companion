@@ -8,6 +8,8 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+		"build:host-esm": "node scripts/build-host-esm.mjs",
+		"test:host-esm": "node scripts/tests/probar-build-host-esm.mjs",
 		"lint": "eslint . --cache --cache-location node_modules/.cache/eslint",
 		"test": "node scripts/run-gate.mjs test",
 		"test:h8-crossover-spike": "bash scripts/tests/probar-h8-crossover-spike.sh",

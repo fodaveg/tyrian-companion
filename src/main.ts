@@ -6,6 +6,7 @@ import {
 import { createObsidianHost } from './host/obsidian/obsidian-host';
 import type { TyrianHost, TyrianPriceSeedCache, TyrianVaultChange } from './host/tyrian-host';
 import { labelledVault, sessionHistoryVault } from './runtime/vault-ports';
+import { createTyrianCoreRuntime, flushTyrianLocalDebug } from './runtime/tyrian-runtime';
 import { GuildWars2AccountGateway } from './account/account-service';
 import {
 	ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS,
@@ -77,7 +78,6 @@ import {
 	createLocalDebugPersistenceSink,
 	LocalDebugPersistenceProbe,
 } from './core/local-debug-persistence';
-import { LocalDebugJsonlWriter } from './core/local-debug-writer';
 import { translateRuntime, type RuntimeTranslationKey } from './core/i18n-runtime-catalog';
 import type { PriceHistoryRuntime, PriceHistoryRuntimeState } from './economy/price-history-runtime';
 import { halloweenObservationActive } from './halloween/halloween-activation';
@@ -142,7 +142,6 @@ import {
 	priceHistoryOptInOffered,
 	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
-	shouldPersistSettingsOnLoad,
 	type InventoryVaultSyncLastRun,
 	type TyrianSettings,
 } from './core/settings';
@@ -533,29 +532,27 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * afterwards, off `workspace.onLayoutReady`, in `initializeRuntime`.
 	 */
 	async onload(): Promise<void> {
-		let settingsLoadFailure: unknown = null;
-		try { await this.loadSettings(); }
-		catch (error) {
-			this.settings = migrateSettings(null, this.host.vault.configDir, this.host.locale());
-			settingsLoadFailure = error;
-		}
-		const localDebugInitialization = this.initializeLocalDebug(settingsLoadFailure === null);
-		if (settingsLoadFailure !== null) {
-			await localDebugInitialization;
-			this.localDebugActions?.event({
-				component: 'settings', action: 'settings_load', level: 'error', phase: 'failure', code: 'storage_failure',
-				message: settingsLoadFailure,
-			});
-			await this.localDebug?.flush();
-			throw settingsLoadFailure instanceof Error ? settingsLoadFailure : new Error('Settings load failed.');
-		}
+		// R1a: the host-neutral part of the boot (settings through the host, the diagnostics log)
+		// is `createTyrianRuntime`'s, the same code Hebra runs. Its diagnostics finish initializing
+		// while the views and commands below register; `start()` at the end waits for them.
+		const runtime = createTyrianCoreRuntime(this.host);
+		const boot = await runtime.boot();
+		this.settings = boot.settings;
+		this.localDebug = boot.localDebug;
+		this.localDebugActions = boot.localDebugActions;
+		this.lootPresentation = new LootPresentationCache(
+			() => this.renderViews(),
+			this.persistenceDiagnostics('session', 'session_projection'),
+		);
+		// A settings load that failed is recorded, flushed and rethrown by `start()`: nothing registers.
+		if (boot.settingsLoadFailure !== null) await runtime.start();
 		// One source for both the registration loop and the journal count, so they cannot drift apart.
 		const viewFactories: Record<string, ViewCreator> = {
 			[COMPANION_VIEW_TYPE]: (leaf) => new TyrianCompanionView(leaf, this),
 			[INVENTORY_ADVISOR_VIEW_TYPE]: (leaf) => new InventoryAdvisorItemView(leaf, this),
 			[SALE_VIEW_TYPE]: (leaf) => new SaleItemView(leaf, this),
 		};
-		await this.localDebugActions!.run({
+		await this.localDebugActions.run({
 			component: 'plugin', action: 'plugin_load',
 			details: {
 				commandCount: PRODUCT_ACTION_IDS.length + STANDALONE_COMMAND_IDS.length,
@@ -629,37 +626,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			);
 		});
 		});
-		await localDebugInitialization;
-	}
-
-	/** Composes the writer only after persisted settings and the configured vault directory are known. */
-	private async initializeLocalDebug(settingsLoaded: boolean): Promise<void> {
-		const host = this.host;
-		this.localDebug = new LocalDebugLogger({
-			enabled: this.settings.debugLoggingEnabled,
-			minimumLevel: this.settings.debugLoggingLevel,
-			pluginVersion: host.environment.pluginVersion,
-			// H14.21: a desktop-only value (mobile's adapter has no filesystem base path), read
-			// lazily so it always reflects the vault actually open, not one cached at construction.
-			vaultBasePath: () => host.vault.basePath(),
-			writer: new LocalDebugJsonlWriter({
-				storage: host.diagnostics.storage,
-				directory: host.diagnostics.directory,
-			}),
-		});
-		this.localDebugActions = new LocalDebugActionRunner({ diagnostics: this.localDebug });
-		this.lootPresentation = new LootPresentationCache(
-			() => this.renderViews(),
-			this.persistenceDiagnostics('session', 'session_projection'),
-		);
-		await this.localDebugActions.run(
-			{ component: 'local_debug', action: 'debug_initialize' },
-			async () => await this.localDebug!.initialize(),
-		);
-		if (settingsLoaded) this.localDebugActions.event({
-			component: 'settings', action: 'settings_load', level: 'info', phase: 'success', code: 'ok',
-			details: { schemaVersion: this.settings.schemaVersion },
-		});
+		await runtime.start();
 	}
 
 	/** Creates one data-free persistence bridge; an unavailable logger leaves a true no-op probe. */
@@ -1258,16 +1225,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{ component: 'plugin', action: 'plugin_unload' }, dispose,
 		);
 		else await dispose();
-		const diagnostics = this.localDebug;
-		if (diagnostics && this.localDebugActions) {
-			await this.localDebugActions.run(
-				{ component: 'local_debug', action: 'debug_flush' }, async () => { await diagnostics.flush(); },
-			);
-			// The runner's terminal record is queued after its callback resolves.
-			await diagnostics.flush();
-		} else if (diagnostics) {
-			await diagnostics.flush();
-		}
+		// The same drain the runtime's `stop()` runs, over whatever log this plugin holds.
+		await flushTyrianLocalDebug(this.localDebug, this.localDebugActions);
 	}
 
 	getConnectionState(): ConnectionState {
@@ -4057,14 +4016,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}
 		}
 		return result!;
-	}
-
-	private async loadSettings(): Promise<void> {
-		const persisted = await this.host.settings.load();
-		this.settings = migrateSettings(persisted, this.host.vault.configDir, this.host.locale());
-		if (shouldPersistSettingsOnLoad(persisted, this.settings)) {
-			await this.host.settings.save(this.settings);
-		}
 	}
 
 	/** Set the instant a caller marks a repaint due; cleared once `flushRenderViews` has run. */

@@ -9,6 +9,7 @@ import {
 	moduleSpecifiers,
 	propertyCallChains,
 	referencedNames,
+	sourceModulePaths,
 	type ModuleBoundary,
 } from './module-boundary';
 
@@ -66,6 +67,67 @@ describe('negative module frontiers', () => {
 		expect(names.has('kept')).toBe(true);
 		expect(names.has('fetch')).toBe(false);
 		expect(names.has('Authorization')).toBe(false);
+	});
+});
+
+/**
+ * R1a (SPEC-TYRIAN-EN-HEBRA.md section 1): the core runs inside Hebra, a webview with no Obsidian,
+ * no Electron and no Node. `obsidian`, `electron` and `net` are reachable only from the Obsidian
+ * host adapter, the plugin entry and the UI files R1c has not migrated yet. Type-only imports
+ * count too: Hebra type-checks the submodule without the `obsidian` package.
+ */
+const HOST_ONLY_SPECIFIERS = ['obsidian', 'electron', 'net', 'node:net'];
+const OBSIDIAN_HOST_DIRECTORY = 'src/host/obsidian/';
+const OBSIDIAN_PLUGIN_ENTRY = 'src/main.ts';
+/**
+ * The UI that still talks to Obsidian directly. An EXPLICIT list, never a pattern: R1c moves each
+ * file onto `TyrianHost.ui` and deletes its line here, and the ratchet below fails any line left
+ * behind once its file no longer needs it.
+ */
+const OBSIDIAN_UI_AWAITING_R1C: readonly string[] = [
+	'src/ui/alert-ingame-secret-modal.ts',
+	'src/ui/companion-view.ts',
+	'src/ui/inventory-advisor-item-view.ts',
+	'src/ui/inventory-advisor-view.ts',
+	'src/ui/manual-session-start-modal.ts',
+	'src/ui/product-shell.ts',
+	'src/ui/receipt.ts',
+	'src/ui/sale-item-view.ts',
+	'src/ui/sale-view.ts',
+	'src/ui/settings-tab.ts',
+	'src/ui/vault-folder-suggest.ts',
+];
+/** Vitest infrastructure (the Obsidian mock and the harnesses that drive the plugin); never bundled. */
+const TEST_INFRASTRUCTURE_DIRECTORY = 'src/test/';
+
+function hostOnlySpecifiers(path: string): string[] {
+	return moduleBoundaryFacts(path).specifiers.filter((specifier) => HOST_ONLY_SPECIFIERS
+		.some((forbidden) => specifier === forbidden || specifier.startsWith(`${forbidden}/`)));
+}
+
+describe('R1a host boundary', () => {
+	it('keeps obsidian, electron and net inside the Obsidian host, main.ts and the listed UI files', () => {
+		const offenders = sourceModulePaths()
+			.filter((path) => !path.startsWith(OBSIDIAN_HOST_DIRECTORY) && path !== OBSIDIAN_PLUGIN_ENTRY
+				&& !OBSIDIAN_UI_AWAITING_R1C.includes(path) && !path.startsWith(TEST_INFRASTRUCTURE_DIRECTORY))
+			.flatMap((path) => hostOnlySpecifiers(path).map((specifier) => `${path} -> ${specifier}`));
+		expect(offenders).toEqual([]);
+	});
+
+	it('drops a UI file from the exception list as soon as it no longer needs it', () => {
+		const stale = OBSIDIAN_UI_AWAITING_R1C.filter((path) => hostOnlySpecifiers(path).length === 0);
+		expect(stale).toEqual([]);
+	});
+
+	it('turns red for a core module that reaches Obsidian, Electron or node:net, even for types', () => {
+		const boundary: ModuleBoundary = { path: 'src/core/example.ts', forbiddenImports: HOST_ONLY_SPECIFIERS, forbiddenNames: [] };
+		expect(forbiddenBoundaryUses(`
+			import type { App } from 'obsidian';
+			import { shell } from 'electron';
+			import { createServer } from 'node:net';
+			import { helper } from './net';
+			export const all = [shell, createServer, helper] as unknown as App;
+		`, boundary).map((violation) => violation.value)).toEqual(['electron', 'node:net', 'obsidian']);
 	});
 });
 
