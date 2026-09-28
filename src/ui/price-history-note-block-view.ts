@@ -29,7 +29,11 @@ export function renderPriceHistoryNoteBlock(
 	state: PriceHistoryNoteBlockState,
 ): void {
 	container.replaceChildren();
-	container.className = 'tyrian-price-history-note';
+	// `classList.add`, never `className =`: this container is handed in by the host (Obsidian's
+	// own code-block sandbox, or Hebra's), which already puts its own class(es) on it, carrying the
+	// theme's CSS variables. Assigning `className` wiped those, so the chart drew with every colour
+	// unresolved: no line at all (Hebra report, 28 sep 2026).
+	container.classList.add('tyrian-price-history-note');
 	const heading = createEl('p');
 	heading.className = 'tyrian-price-history-note__heading';
 	heading.textContent = state.itemId === null
@@ -53,6 +57,14 @@ export function renderPriceHistoryNoteBlock(
 	}
 	if (state.seed.status === 'store_unavailable') {
 		appendState(container, translator.t('priceHistoryNote.state.unavailable'), true);
+		return;
+	}
+	if (state.seed.status === 'no_seed' && state.seed.failureReason === 'unreachable') {
+		// The device never got an answer at all (offline, timeout, datawars2 down, a bad HTTP
+		// status): a *different* fact from "asked and datawars2 said nothing for this item", which
+		// stays the `noHistory` branch below. `fetchPriceSeed` (`price-seed-source.ts`) already
+		// tags this `unreachable` for exactly this reason; only this view used to collapse the two.
+		appendState(container, translator.t('priceHistoryNote.state.networkError'), true);
 		return;
 	}
 	if (state.seed.status === 'no_seed' || state.seed.days.length === 0) {

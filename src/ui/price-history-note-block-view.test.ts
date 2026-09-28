@@ -19,6 +19,17 @@ describe('price history note block view', () => {
 			.toBe('Price history: Trick-or-Treat Bag (#36038)');
 	});
 
+	it('keeps a class the host already put on the container, instead of overwriting it', () => {
+		const mount = createMount();
+		mount.container.className = 'host-render-child-markdown';
+		renderPriceHistoryNoteBlock(mount.container as unknown as HTMLElement, createTranslator('en'), block({
+			itemId: 36_038, itemName: null, piloted: true, seed: undefined,
+		}));
+		const classes = mount.container.className.split(/\s+/u);
+		expect(classes).toContain('host-render-child-markdown');
+		expect(classes).toContain('tyrian-price-history-note');
+	});
+
 	it('shows an unrecognized-block message for a null item id, in plain readable text', () => {
 		const mount = createMount();
 		renderPriceHistoryNoteBlock(mount.container as unknown as HTMLElement, createTranslator('en'), block({
@@ -50,14 +61,26 @@ describe('price history note block view', () => {
 		expect(status?.attributes.get('role')).toBeUndefined();
 	});
 
-	it('renders a no-history alert without throwing when datawars2 answered no_seed', () => {
+	it('renders a no-history alert without throwing when datawars2 answered with an empty series', () => {
+		const mount = createMount();
+		renderPriceHistoryNoteBlock(mount.container as unknown as HTMLElement, createTranslator('en'), block({
+			itemId: 36_038, itemName: null, piloted: true,
+			seed: seedState({ status: 'no_seed', failureReason: 'empty' }),
+		}));
+		const status = walk(mount.container).find((element) => element.className === 'tyrian-price-history-note__state');
+		expect(status?.textContent).toContain('no history available');
+		expect(status?.attributes.get('role')).toBe('alert');
+	});
+
+	it('renders a distinct network-error alert (not "no history") when the seed request never got an answer', () => {
 		const mount = createMount();
 		renderPriceHistoryNoteBlock(mount.container as unknown as HTMLElement, createTranslator('en'), block({
 			itemId: 36_038, itemName: null, piloted: true,
 			seed: seedState({ status: 'no_seed', failureReason: 'unreachable' }),
 		}));
 		const status = walk(mount.container).find((element) => element.className === 'tyrian-price-history-note__state');
-		expect(status?.textContent).toContain('no history available');
+		expect(status?.textContent).toContain('No connection');
+		expect(status?.textContent).not.toContain('no history available');
 		expect(status?.attributes.get('role')).toBe('alert');
 	});
 
@@ -149,10 +172,19 @@ function walk(root: FakeElement): FakeElement[] { return [root, ...root.children
 class FakeDocument {
 	createElementNS(_namespace: string, tag: string): FakeElement { return new FakeElement(tag, this); }
 }
+class FakeClassList {
+	constructor(private readonly owner: FakeElement) {}
+	add(...values: string[]): void {
+		const classes = new Set(this.owner.className.split(/\s+/u).filter(Boolean));
+		values.forEach((value) => classes.add(value));
+		this.owner.className = [...classes].join(' ');
+	}
+}
 class FakeElement {
 	readonly children: FakeElement[] = [];
 	readonly attributes = new Map<string, string>();
 	readonly listeners = new Map<string, Array<() => void>>();
+	readonly classList = new FakeClassList(this);
 	className = ''; textContent: string | null = null; type = ''; value = ''; disabled = false;
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) {}
 	append(...children: FakeElement[]): void { this.children.push(...children); }
