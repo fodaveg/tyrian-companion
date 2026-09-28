@@ -267,10 +267,10 @@ export class WalletVaultSyncService {
 				const file = this.vault.file(entry.path);
 				if (!file || entry.before === null) return { status: 'conflict', message: 'A wallet note disappeared during apply.' };
 				let applied = false;
+				// Decided on every run: a host may re-run the update on a fresh read.
 				await this.vault.process(file, (current) => {
-					if (normalizeLf(current) !== entry.before) return current;
-					applied = true;
-					return entry.after!;
+					applied = normalizeLf(current) === entry.before;
+					return applied ? entry.after! : current;
 				});
 				const verified = this.vault.file(entry.path);
 				if (!applied || !verified || normalizeLf(await this.vault.read(verified)) !== entry.after) {

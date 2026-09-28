@@ -106,6 +106,22 @@ describe('durable session history', () => {
 		await expect(history.scrub(preview.token, authority)).resolves.toMatchObject({ status: 'stale' });
 	});
 
+	it('does not count an erasure the host discarded when it re-runs the update after a stale base', async () => {
+		const vault = new MemoryVault();
+		const source = await note();
+		vault.contents.set('Sessions/one.md', source);
+		const history = new SessionHistoryService(vault);
+		const authority = idleAuthority();
+		const preview = await history.previewScrub(authority);
+		if (preview.status !== 'ready') throw new Error('Expected scrub preview.');
+		const edited = source.replace('Human body must stay private', 'edited between the two runs');
+		vault.staleOnce = (path) => { vault.contents.set(path, edited); };
+
+		// A latched `erased` from the discarded first run reported an erasure that never happened.
+		await expect(history.scrub(preview.token, authority)).resolves.toMatchObject({ status: 'conflict', erased: 0 });
+		expect(vault.contents.get('Sessions/one.md')).toBe(edited);
+	});
+
 	it('rejects an unknown or expired preview capability as stale without vault mutation', async () => {
 		const vault = new MemoryVault();
 		vault.contents.set('Sessions/one.md', await note());
@@ -570,10 +586,21 @@ class MemoryVault implements SessionHistoryVault {
 		if (content === undefined) throw new Error('not_file');
 		return content;
 	}
+	/**
+	 * Hebra's `process` (R1a): the update runs, the write comes back `stale` because the note
+	 * changed, and the update runs AGAIN on a fresh read; only that last result is written.
+	 */
+	staleOnce: ((path: string) => void) | null = null;
 	async process(file: SessionHistoryFile, update: (current: string) => string): Promise<void> {
 		this.processes += 1;
 		const before = this.beforeProcess;
 		if (before) await before(file.path);
+		if (this.staleOnce) {
+			const first = this.contents.get(file.path);
+			if (first !== undefined) update(first);
+			this.staleOnce(file.path);
+			this.staleOnce = null;
+		}
 		const current = this.contents.get(file.path);
 		if (current === undefined) throw new Error('not_file');
 		this.contents.set(file.path, update(current));

@@ -413,6 +413,23 @@ describe('SessionNoteWriter', () => {
 		expect(vault.contents.get(created.path)).toContain('## Summary');
 	});
 
+	it('counts only the update run the host wrote when it re-runs the update after a stale base', async () => {
+		const vault = new MemoryVault();
+		const writer = new SessionNoteWriter(vault);
+		const created = await writer.write(sessionInput());
+		if (created.status !== 'written') throw new Error('Fixture note was not written.');
+		vault.staleOnce = (path) => {
+			vault.contents.set(path, `${vault.contents.get(path)!}\nEdited between the two runs.\n`);
+		};
+
+		await expect(writer.write(sessionInput('exact', 'en'))).resolves.toMatchObject({ status: 'written' });
+
+		// A latched `applied` from the discarded first run reported `written` for a note that still
+		// held the old managed blocks; the writer must re-merge onto the edit and write the update.
+		expect(vault.contents.get(created.path)).toContain('Edited between the two runs.');
+		expect(vault.contents.get(created.path)).toContain('## Summary');
+	});
+
 	it('verifies byte-identical output through process and preserves a concurrent human edit', async () => {
 		const vault = new MemoryVault();
 		const writer = new SessionNoteWriter(vault);
@@ -482,10 +499,23 @@ class MemoryVault implements SessionNoteVault {
 		this.contents.set(path, content);
 		return { path };
 	}
+	/**
+	 * Hebra's `process` (R1a): the update runs on a read, the write comes back `stale` because the
+	 * note changed in between, and the update runs AGAIN on a fresh read; only that last run's
+	 * result is written. Set, this runs the update once and discards it, applies the concurrent
+	 * edit, then runs it for real.
+	 */
+	staleOnce: ((path: string) => void) | null = null;
 	async process(file: SessionNoteFile, update: (content: string) => string): Promise<string> {
 		this.processCalls += 1;
 		this.beforeProcess?.(file.path);
 		this.beforeProcess = null;
+		if (this.staleOnce) {
+			const first = this.contents.get(file.path);
+			if (first !== undefined) update(first);
+			this.staleOnce(file.path);
+			this.staleOnce = null;
+		}
 		const current = this.contents.get(file.path);
 		if (current === undefined) throw new Error('not a file');
 		const next = update(current);

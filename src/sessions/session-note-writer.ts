@@ -119,10 +119,11 @@ export class SessionNoteWriter {
 			}
 			const unchanged = merged.content === existing;
 			let applied = false;
+			// Decided on every run, not latched: a host may re-run the update on a fresh read (Hebra
+			// retries after `stale`), and only the run whose result it wrote may count.
 			const observed = await this.vault.process(file, (current) => {
-				if (current !== existing) return current;
-				applied = true;
-				return merged.content;
+				applied = current === existing;
+				return applied ? merged.content : current;
 			});
 			if (applied) return { status: unchanged ? 'unchanged' : 'written', path: file.path };
 			existing = observed;

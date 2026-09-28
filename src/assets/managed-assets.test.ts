@@ -46,6 +46,27 @@ describe('managed asset paths and planning', () => {
 	});
 });
 
+describe('manifest compare-and-swap under a host that re-runs the update (R1a)', () => {
+	it('reports the swap as not applied when the run the host wrote found another manifest', async () => {
+		const vault = new MemoryAssetVault();
+		const assets = await manager(vault, 1);
+		await assets.apply('Tyrian Companion');
+		const path = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const before = JSON.parse(vault.contents.get(path)!) as { generation: number };
+		const after = { ...before, generation: before.generation + 1 };
+		const concurrent = { ...before, generation: before.generation + 2 };
+		vault.staleOnce = () => { vault.contents.set(path, `${JSON.stringify(concurrent, null, 2)}\n`); };
+		const casManifest = (assets as unknown as {
+			casManifest(before: unknown, after: unknown): Promise<unknown>;
+		}).casManifest.bind(assets);
+
+		// A latched `applied` from the discarded first run handed back the concurrent manifest as if
+		// this swap had landed; the caller must see that it did not.
+		await expect(casManifest(before, after)).resolves.toBeNull();
+		expect(JSON.parse(vault.contents.get(path)!)).toMatchObject({ generation: before.generation + 2 });
+	});
+});
+
 describe('automatic Base update behind the inventory sync (H18.18)', () => {
 	const ROOT = 'Tyrian Companion';
 	const PATH = 'Tyrian Companion/Bases/Sessions.base';
@@ -825,8 +846,19 @@ class MemoryAssetVault implements ManagedAssetsVault {
 		if (this.file(path)) throw new Error('exists');
 		this.writeCount += 1; this.contents.set(path, content); return { path };
 	}
+	/**
+	 * Hebra's `process` (R1a): the update runs, the write comes back `stale` because the file
+	 * changed, and the update runs AGAIN on a fresh read; only that last result is written.
+	 */
+	staleOnce: ((path: string) => void) | null = null;
 	async process(file: ManagedAssetFile, update: (content: string) => string): Promise<string> {
 		this.fail();
+		if (this.staleOnce) {
+			const first = this.contents.get(file.path);
+			if (first !== undefined) update(first);
+			this.staleOnce(file.path);
+			this.staleOnce = null;
+		}
 		const current = this.contents.get(file.path); if (current === undefined) throw new Error('not_file');
 		const next = update(current); if (next !== current) { this.writeCount += 1; this.contents.set(file.path, next); } return next;
 	}

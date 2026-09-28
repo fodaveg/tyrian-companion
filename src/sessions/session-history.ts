@@ -365,11 +365,12 @@ export class SessionHistoryService {
 				let current = '';
 				if (!lease.isLive()) return { status: 'blocked', ...progress, message: 'Session runtime, recovery, or detector is not idle.' };
 				try {
+					// Decided on every run, not latched: a host may re-run the update on a fresh read, and
+					// only the run whose result it wrote may count as an erasure.
 					await this.vault.process(file, (value) => {
 						current = value;
-						if (value !== item.expectedContent) return value;
-						outcome.value = 'erased';
-						return item.scrubbedContent;
+						outcome.value = value === item.expectedContent ? 'erased' : 'changed';
+						return outcome.value === 'erased' ? item.scrubbedContent : value;
 					});
 				} catch (error) {
 					if (this.vault.file(item.path) === null) {

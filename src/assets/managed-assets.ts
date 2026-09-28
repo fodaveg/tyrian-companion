@@ -347,10 +347,10 @@ export class ManagedAssetsManager {
 		}
 		const expected = serializeManifest(inspection.manifest);
 		let applied = false;
+		// Every `process` update below decides `applied` on each run: a host may re-run it on a fresh read.
 		await this.vault.process(file, (current) => {
-			if (normalizeLf(current) !== expected) return current;
-			applied = true;
-			return serialized;
+			applied = normalizeLf(current) === expected;
+			return applied ? serialized : current;
 		});
 		return applied ? await this.exactManifest(inspection.manifestPath, operation.operationId) : null;
 	}
@@ -382,8 +382,8 @@ export class ManagedAssetsManager {
 		if (currentHash !== step.beforeHash && (!registered || !await this.matchesInstalledContent(expectedContent, currentHash, registered, asset))) return false;
 		let applied = false;
 		await this.vault.process(file, (current) => {
-			if (normalizeLf(current) === expectedContent) { applied = true; return asset.bytes; }
-			return current;
+			applied = normalizeLf(current) === expectedContent;
+			return applied ? asset.bytes : current;
 		});
 		return applied && await this.hashAt(step.path) === step.afterHash;
 	}
@@ -502,7 +502,7 @@ export class ManagedAssetsManager {
 						const target = this.bundle.assets.find((asset) => asset.id === entry.id && asset.kind === entry.kind && asset.locale === entry.locale);
 						if (!await this.matchesInstalledContent(content, currentHash, entry, target)) return { status: 'conflict', message: 'A managed asset changed before removal.' };
 						let applied = false;
-						await this.vault.process(file, (current) => { if (normalizeLf(current) === content) { applied = true; return tombstone; } return current; });
+						await this.vault.process(file, (current) => { applied = normalizeLf(current) === content; return applied ? tombstone : current; });
 						if (!applied || normalizeLf(await this.vault.read(file)) !== tombstone) return { status: 'conflict', message: 'A managed asset changed during removal.' };
 					}
 					await this.vault.trashFile(file);
@@ -529,7 +529,7 @@ export class ManagedAssetsManager {
 		if (!file) return null;
 		const expected = serializeManifest(before);
 		let applied = false;
-		await this.vault.process(file, (current) => { if (normalizeLf(current) === expected) { applied = true; return serializeManifest(after); } return current; });
+		await this.vault.process(file, (current) => { applied = normalizeLf(current) === expected; return applied ? serializeManifest(after) : current; });
 		return applied ? await this.exactManifest(path, after.pendingOperation?.operationId) : null;
 	}
 
