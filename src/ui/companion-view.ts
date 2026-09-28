@@ -492,7 +492,12 @@ export class TyrianCompanionView {
 			this.actions.getLocale(),
 			this.sessionHistoryController,
 		);
-		if (forceReload || this.sessionHistoryController.current().status === 'idle') void this.sessionHistoryController.load();
+		const historyState = this.sessionHistoryController.current();
+		// A mount that landed before `runtimeReady` leaves the panel `unavailable` with reason
+		// `not_ready` (H18.36 bug, 28 sep): the next render (the core's own post-startup
+		// `renderViews()`) retries it once here, since core state is otherwise never re-read.
+		const coreJustBecameReady = historyState.status === 'unavailable' && historyState.reason === 'not_ready';
+		if (forceReload || historyState.status === 'idle' || coreJustBecameReady) void this.sessionHistoryController.load();
 	}
 
 	/**
