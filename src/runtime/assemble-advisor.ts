@@ -223,6 +223,7 @@ function emptyInventoryAdvisorCaptureReceipt(): InventoryAdvisorCaptureReceiptV1
 		evidenceDetails: null,
 		containerPrices: 'not_requested',
 		workflow: null,
+		timings: null,
 		snapshot: null,
 	};
 }

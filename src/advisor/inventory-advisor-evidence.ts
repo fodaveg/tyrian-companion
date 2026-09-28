@@ -1,5 +1,5 @@
 import { inventoryAdvisorStorageSnapshotFailure } from '../account/storage-delta';
-import type { StorageSnapshotCaptureProgress, StorageSnapshotService } from '../account/storage-snapshot-service';
+import type { StorageSnapshotCaptureProgress, StorageSnapshotPassTelemetry, StorageSnapshotService } from '../account/storage-snapshot-service';
 import { allowsEndpoint } from '../account/storage-snapshot-service';
 import { HttpTransportError } from '../core/http';
 import {
@@ -81,7 +81,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		if (ids === null) {
 			return this.finishCapture(
 				{ status: 'invalid', evidence: null, containerPrices: null },
-				null,
+				null, { snapshotPasses: [], catalogMs: null, pricesMs: null, marketDepthMs: null },
 			);
 		}
 		const key = `${locale}:${ids.join(',')}`;
@@ -113,41 +113,63 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 			reportProgress();
 		};
 		const reportCatalogOrPrice = (): void => { catalogAndPricesCompleted += 1; reportProgress(); };
+		// H18.39: real per-phase timing for one refresh, read back into the local capture receipt
+		// (never a name, an id or a key). `timings` is filled in as each leg finishes and always
+		// reaches `finishCapture` below, even on an early return: partial timing beats none.
+		const timings: InventoryAdvisorCaptureTimingsBuilder = { snapshotPasses: [], catalogMs: null, pricesMs: null, marketDepthMs: null };
 		try {
 			operation = this.client.beginOperation(actionContext);
 		} catch (error) {
 			return await this.finishCapture(error instanceof MissingApiKeyError
 				? { status: 'unavailable', evidence: null, failure: 'missing_key' }
-				: { status: 'unavailable', evidence: null }, snapshot);
+				: { status: 'unavailable', evidence: null }, snapshot, timings);
 		}
 		try {
-			snapshot = await this.snapshots.captureInventoryWithOperation(operation, onStorageProgress);
+			snapshot = await this.snapshots.captureInventoryWithOperation(
+				operation, onStorageProgress, (passTelemetry) => timings.snapshotPasses.push(passTelemetry),
+			);
 			const snapshotFailure = inventoryAdvisorStorageSnapshotFailure(snapshot);
 			if (snapshotFailure !== null) {
 				return await this.finishCapture(
 					{ status: 'invalid', evidence: null, failure: snapshotFailure },
-					snapshot,
+					snapshot, timings,
 				);
 			}
 			const context = await verifiedContext(operation, snapshot.accountId);
 			if (context.status === 'unavailable') {
-				return await this.finishCapture({ status: 'unavailable', evidence: null }, snapshot);
+				return await this.finishCapture({ status: 'unavailable', evidence: null }, snapshot, timings);
 			}
 			if (context.status === 'identity_mismatch') {
 				return await this.finishCapture(
 					{ status: 'invalid', evidence: null, failure: 'identity_mismatch' },
-					snapshot,
+					snapshot, timings,
 				);
 			}
+			const capturedSnapshot = snapshot;
+			const timedCatalog = async (): Promise<CatalogResolution> => {
+				const startedAt = this.now();
+				const resolved = await this.captureCatalog(capturedSnapshot, locale, this.now());
+				timings.catalogMs = this.now() - startedAt;
+				return resolved;
+			};
+			const timedPrices = async (): Promise<InventoryPriceSnapshotV1> => {
+				const startedAt = this.now();
+				const resolved = await captureInventoryPrices(capturedSnapshot, this.publicGateway, this.now(), actionContext);
+				timings.pricesMs = this.now() - startedAt;
+				return resolved;
+			};
+			const timedMarketDepth = async () => {
+				const startedAt = this.now();
+				const resolved = await captureInventoryMarketDepth(
+					uniqueIds([...ids(capturedSnapshot.availableByItem), ...containerPriceItemIds]),
+					this.publicGateway, this.now(), this.rateLimit, actionContext,
+				);
+				timings.marketDepthMs = this.now() - startedAt;
+				return resolved;
+			};
 			const [catalog, market, accountContext, containerPrices] = await Promise.all([
-				this.captureCatalog(snapshot, locale, this.now()).finally(reportCatalogOrPrice),
-				Promise.all([
-					captureInventoryPrices(snapshot, this.publicGateway, this.now(), actionContext),
-					captureInventoryMarketDepth(
-						uniqueIds([...ids(snapshot.availableByItem), ...containerPriceItemIds]),
-						this.publicGateway, this.now(), this.rateLimit, actionContext,
-					),
-				]).finally(reportCatalogOrPrice),
+				timedCatalog().finally(reportCatalogOrPrice),
+				Promise.all([timedPrices(), timedMarketDepth()]).finally(reportCatalogOrPrice),
 				captureAccountContext(operation, snapshot.accountId, context.token, context.access, this.now).finally(reportCatalogOrPrice),
 				(containerPriceItemIds.length === 0 ? Promise.resolve(null)
 					: captureContainerPrices(snapshot, containerPriceItemIds, this.publicGateway, this.now(), actionContext)).finally(reportCatalogOrPrice),
@@ -172,7 +194,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 			if (validationFailure !== null) {
 				return await this.finishCapture(
 					{ status: 'invalid', evidence: null, failure: validationFailure },
-					snapshot,
+					snapshot, timings,
 				);
 			}
 			const result: InventoryAdvisorEvidenceCaptureResultV1 =
@@ -184,21 +206,22 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 					&& marketDepth.status === 'complete'
 					&& (containerPrices === null || containerPrices.status === 'complete')
 					? 'complete' : 'partial', evidence, containerPrices, activeOrders, marketDepth };
-			return await this.finishCapture(result, snapshot);
+			return await this.finishCapture(result, snapshot, timings);
 		} catch (error) {
 			if (error instanceof HttpTransportError && error.status === 429) {
-				return await this.finishCapture({ status: 'unavailable', evidence: null, failure: 'rate_limited' }, snapshot);
+				return await this.finishCapture({ status: 'unavailable', evidence: null, failure: 'rate_limited' }, snapshot, timings);
 			}
-			return await this.finishCapture({ status: 'unavailable', evidence: null }, snapshot);
+			return await this.finishCapture({ status: 'unavailable', evidence: null }, snapshot, timings);
 		}
 	}
 
 	private async finishCapture(
 		result: InventoryAdvisorEvidenceCaptureResultV1,
 		snapshot: StorageSnapshot | null,
+		timings: InventoryAdvisorCaptureTimingsBuilder,
 	): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
 		try {
-			await this.captureReceipt(captureReceiptFor(result, snapshot, this.now()));
+			await this.captureReceipt(captureReceiptFor(result, snapshot, this.now(), timings));
 		} catch {
 			// A local diagnostic receipt must never become an advisor dependency.
 		}
@@ -211,10 +234,19 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 	}
 }
 
+/** H18.39: the legs `captureInternal` times outside the storage snapshot (never a name, id or key). */
+interface InventoryAdvisorCaptureTimingsBuilder {
+	snapshotPasses: StorageSnapshotPassTelemetry[];
+	catalogMs: number | null;
+	pricesMs: number | null;
+	marketDepthMs: number | null;
+}
+
 function captureReceiptFor(
 	result: InventoryAdvisorEvidenceCaptureResultV1,
 	snapshot: StorageSnapshot | null,
 	recordedAt: number,
+	timings: InventoryAdvisorCaptureTimingsBuilder,
 ): InventoryAdvisorCaptureReceiptV1 {
 	return {
 		version: 1,
@@ -232,6 +264,13 @@ function captureReceiptFor(
 			sells: result.activeOrders.endpointCoverage.sell.status,
 		},
 		workflow: null,
+		timings: timings.snapshotPasses.length === 0 && timings.catalogMs === null
+			&& timings.pricesMs === null && timings.marketDepthMs === null ? null : {
+			snapshotPasses: timings.snapshotPasses.map((pass) => structuredClone(pass)),
+			catalogMs: timings.catalogMs,
+			pricesMs: timings.pricesMs,
+			marketDepthMs: timings.marketDepthMs,
+		},
 		snapshot: snapshot === null ? null : {
 			quality: snapshot.quality,
 			passes: snapshot.passes,

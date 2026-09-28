@@ -103,6 +103,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 			evidenceDetails: null,
 			containerPrices: 'not_requested',
 			workflow: null,
+			timings: null,
 			snapshot: null,
 		};
 		const writeReceipt = (TyrianCompanionCore.prototype as unknown as {

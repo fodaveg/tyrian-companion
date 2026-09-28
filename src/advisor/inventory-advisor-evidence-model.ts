@@ -1,5 +1,5 @@
 import type { SourceCoverage, StorageSnapshot } from '../account/storage-snapshot-model';
-import type { StorageSnapshotCaptureProgress } from '../account/storage-snapshot-service';
+import type { StorageSnapshotCaptureProgress, StorageSnapshotPassTelemetry } from '../account/storage-snapshot-service';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
 import type { InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
@@ -105,6 +105,18 @@ export interface InventoryAdvisorCaptureReceiptV1 {
 		defaultVisibleDecisionCount: number;
 		actionCounts: Array<{ action: string; count: number }>;
 		reasonCounts: Array<{ reason: string; count: number }>;
+	} | null;
+	/**
+	 * H18.39 (David, 26 sep 2026: "¿por qué tarda tanto en preparar el inventario? ¿mejorará en
+	 * Hebra?"): real, measured durations for the legs this receipt otherwise only reports coverage
+	 * for. `null` while nothing timed ran (a capture that failed before the snapshot, for instance).
+	 * Same privacy bar as the rest of this receipt: counts and indices, never a name, an id or a key.
+	 */
+	timings: {
+		snapshotPasses: StorageSnapshotPassTelemetry[];
+		catalogMs: number | null;
+		pricesMs: number | null;
+		marketDepthMs: number | null;
 	} | null;
 	snapshot: {
 		quality: StorageSnapshot['quality'];

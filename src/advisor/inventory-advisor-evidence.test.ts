@@ -242,6 +242,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 			containerPrices: 'not_requested',
 			activeOrders: null,
 			workflow: null,
+			timings: null,
 			snapshot: {
 				quality: 'partial',
 				passes: 2,
