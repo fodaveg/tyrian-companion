@@ -4,7 +4,7 @@ import {
 	type LocalDebugActionPort,
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
-import { IndexedDbPriceSeedCacheStore } from './price-seed-cache-store';
+import type { TyrianPriceHistoryPort, TyrianPriceSeedCache } from '../host/tyrian-host-storage';
 import { fetchPriceSeed } from './price-seed-source';
 import { PRICE_SEED_CHART_MAX_DAYS, type PriceSeedDayV1, type PriceSeedFailureReason } from './price-seed-model';
 
@@ -38,7 +38,7 @@ export interface PriceHistoryPanelSeedState {
 export const PRICE_SEED_PANEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface PriceHistoryPanelSeedOptions {
-	factory: IDBFactory;
+	priceHistory: Pick<TyrianPriceHistoryPort, 'openSeedCache'>;
 	vaultId: string;
 	transport: HttpTransport;
 	now: () => number;
@@ -52,8 +52,8 @@ const IDLE_STATE: Omit<PriceHistoryPanelSeedState, 'itemId'> = {
 
 export class PriceHistoryPanelSeedService {
 	private readonly cacheTtlMs: number;
-	private store: IndexedDbPriceSeedCacheStore | null = null;
-	private opening: Promise<IndexedDbPriceSeedCacheStore | null> | null = null;
+	private store: TyrianPriceSeedCache | null = null;
+	private opening: Promise<TyrianPriceSeedCache | null> | null = null;
 	private readonly states = new Map<number, PriceHistoryPanelSeedState>();
 	private readonly inFlight = new Map<number, Promise<void>>();
 	private disposed = false;
@@ -98,7 +98,7 @@ export class PriceHistoryPanelSeedService {
 			span.failure(new Error('price_seed_cache_unavailable'), 'storage_failure', 'store_unavailable');
 			return;
 		}
-		let cached: Awaited<ReturnType<IndexedDbPriceSeedCacheStore['get']>> = null;
+		let cached: Awaited<ReturnType<TyrianPriceSeedCache['get']>> = null;
 		try {
 			cached = await store.get(this.options.vaultId, itemId);
 		} catch (error) {
@@ -154,15 +154,15 @@ export class PriceHistoryPanelSeedService {
 		span.success('seeded', { source: 'network' });
 	}
 
-	private async ensureStore(): Promise<IndexedDbPriceSeedCacheStore | null> {
+	private async ensureStore(): Promise<TyrianPriceSeedCache | null> {
 		if (this.store !== null) return this.store;
 		if (this.opening === null) this.opening = this.openStore();
 		return await this.opening;
 	}
 
-	private async openStore(): Promise<IndexedDbPriceSeedCacheStore | null> {
+	private async openStore(): Promise<TyrianPriceSeedCache | null> {
 		try {
-			const store = await IndexedDbPriceSeedCacheStore.open(this.options.factory);
+			const store = await this.options.priceHistory.openSeedCache();
 			this.store = store;
 			return store;
 		} catch {

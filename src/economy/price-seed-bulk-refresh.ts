@@ -3,7 +3,7 @@ import {
 	type LocalDebugActionPort,
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
-import { IndexedDbPriceSeedCacheStore, IndexedDbPriceSeedNoSeedStore } from './price-seed-cache-store';
+import type { TyrianPriceHistoryPort, TyrianPriceSeedCache, TyrianPriceSeedNoSeedCache } from '../host/tyrian-host-storage';
 import type { PriceSeedResult, PriceSeedQueueCoverage } from './price-seed-model';
 
 /** Re-exported for existing callers (`main.ts`, this module's own tests); the type itself now lives in `./price-seed-model`. */
@@ -47,7 +47,7 @@ export interface PriceSeedBulkRefreshOutcome {
 }
 
 export interface PriceSeedBulkRefreshOptions {
-	factory: IDBFactory;
+	priceHistory: Pick<TyrianPriceHistoryPort, 'openSeedCache' | 'openNoSeedCache'>;
 	vaultId: string;
 	now: () => number;
 	/**
@@ -69,8 +69,8 @@ export interface PriceSeedBulkRefreshOptions {
 export class PriceSeedBulkRefreshService {
 	private readonly maxItemsPerRun: number;
 	private readonly noSeedRetryMs: number;
-	private store: IndexedDbPriceSeedCacheStore | null = null;
-	private noSeedStore: IndexedDbPriceSeedNoSeedStore | null = null;
+	private store: TyrianPriceSeedCache | null = null;
+	private noSeedStore: TyrianPriceSeedNoSeedCache | null = null;
 	private opening: Promise<Stores | null> | null = null;
 	private disposed = false;
 	private pending: Promise<unknown> = Promise.resolve();
@@ -128,7 +128,7 @@ export class PriceSeedBulkRefreshService {
 			details: { bulkRefreshItemId: itemId },
 		}, this.options.now);
 		const nowMs = this.options.now();
-		let cached: Awaited<ReturnType<IndexedDbPriceSeedCacheStore['get']>>;
+		let cached: Awaited<ReturnType<TyrianPriceSeedCache['get']>>;
 		try {
 			cached = await store.get(this.options.vaultId, itemId);
 		} catch (error) {
@@ -141,7 +141,7 @@ export class PriceSeedBulkRefreshService {
 			span.skip('skipped', 'cached');
 			return;
 		}
-		let recentNoSeed: Awaited<ReturnType<IndexedDbPriceSeedNoSeedStore['get']>>;
+		let recentNoSeed: Awaited<ReturnType<TyrianPriceSeedNoSeedCache['get']>>;
 		try {
 			recentNoSeed = await noSeedStore.get(this.options.vaultId, itemId);
 		} catch (error) {
@@ -211,12 +211,12 @@ export class PriceSeedBulkRefreshService {
 		return coverage;
 	}
 
-	private async hasSeed(store: IndexedDbPriceSeedCacheStore, itemId: number): Promise<boolean> {
+	private async hasSeed(store: TyrianPriceSeedCache, itemId: number): Promise<boolean> {
 		try { return (await store.get(this.options.vaultId, itemId)) !== null; }
 		catch { return false; }
 	}
 
-	private async hasNoSeed(noSeedStore: IndexedDbPriceSeedNoSeedStore, itemId: number): Promise<boolean> {
+	private async hasNoSeed(noSeedStore: TyrianPriceSeedNoSeedCache, itemId: number): Promise<boolean> {
 		try { return (await noSeedStore.get(this.options.vaultId, itemId)) !== null; }
 		catch { return false; }
 	}
@@ -228,10 +228,10 @@ export class PriceSeedBulkRefreshService {
 	}
 
 	private async openStores(): Promise<Stores | null> {
-		let store: IndexedDbPriceSeedCacheStore | null = null;
+		let store: TyrianPriceSeedCache | null = null;
 		try {
-			store = await IndexedDbPriceSeedCacheStore.open(this.options.factory);
-			const noSeedStore = await IndexedDbPriceSeedNoSeedStore.open(this.options.factory);
+			store = await this.options.priceHistory.openSeedCache();
+			const noSeedStore = await this.options.priceHistory.openNoSeedCache();
 			this.store = store;
 			this.noSeedStore = noSeedStore;
 			return { store, noSeedStore };
@@ -246,6 +246,6 @@ export class PriceSeedBulkRefreshService {
 }
 
 interface Stores {
-	store: IndexedDbPriceSeedCacheStore;
-	noSeedStore: IndexedDbPriceSeedNoSeedStore;
+	store: TyrianPriceSeedCache;
+	noSeedStore: TyrianPriceSeedNoSeedCache;
 }
