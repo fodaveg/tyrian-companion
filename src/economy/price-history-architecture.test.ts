@@ -9,14 +9,17 @@ const PRICE_HISTORY_FILES = readdirSync('src/economy')
 	.map((file) => ({ path: `src/economy/${file}`, source: readModuleSource(`src/economy/${file}`) }));
 
 const IMPORTS = new Map<string, string[]>([
+	// `../host/tyrian-host-storage` is `import type` only in both entries below (erased at
+	// compile time, so it widens no runtime capability); reviewed against this boundary's own
+	// forbidden lists in the R1a price-history-port lot and holds neither.
 	['src/economy/price-history-capture.ts', [
 		'../catalog/public-catalog-client', '../core/http', '../core/local-debug-action-runner', '../core/rate-limit-coordinator',
-		'./price-history-model', './price-history-store', './session-price-snapshot',
+		'../host/tyrian-host-storage', './price-history-model', './price-history-store', './session-price-snapshot',
 	]],
 	['src/economy/price-history-model.ts', []],
 	['src/economy/price-history-runtime.ts', [
 		'../catalog/public-catalog-client', '../core/local-debug-action-runner', '../core/local-debug-persistence',
-		'../core/rate-limit-coordinator', '../sessions/api-poll-scheduler',
+		'../core/rate-limit-coordinator', '../host/tyrian-host-storage', '../sessions/api-poll-scheduler',
 		'./price-history-capture', './price-history-model', './price-history-store',
 	]],
 	['src/economy/price-history-statistics.ts', ['./price-history-model']],
