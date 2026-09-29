@@ -1,6 +1,7 @@
 import { MissingApiKeyError } from '../account/guild-wars-2-client';
 import type { InventoryVaultSyncLastRun } from '../core/settings';
 import { errorClassName } from '../core/local-debug-error-details';
+import { safeErrorCode } from '../core/safe-error-code';
 import type {
 	InventoryVaultSyncPlan,
 	InventoryVaultSyncResult,
@@ -155,13 +156,15 @@ export class InventoryVaultOneClickSyncController {
 				'error',
 				error instanceof MissingApiKeyError ? 'credential_unavailable' : 'capture_unavailable',
 				startedAt, generation, null, errorClassName(error),
+				undefined, undefined, safeErrorCode(error),
 			);
 			return this.current();
 		}
 		try {
 			await this.afterPreview(plan, startedAt, generation);
 		} catch (error) {
-			this.settle('error', 'unexpected_failure', startedAt, generation, null, errorClassName(error));
+			this.settle('error', 'unexpected_failure', startedAt, generation, null, errorClassName(error),
+				undefined, undefined, safeErrorCode(error));
 		}
 		return this.current();
 	}
@@ -176,7 +179,8 @@ export class InventoryVaultOneClickSyncController {
 		try {
 			await this.applyPlan(plan, summary, startedAt, generation);
 		} catch (error) {
-			this.settle('error', 'unexpected_failure', startedAt, generation, null, errorClassName(error));
+			this.settle('error', 'unexpected_failure', startedAt, generation, null, errorClassName(error),
+				undefined, undefined, safeErrorCode(error));
 		}
 		return this.current();
 	}
@@ -262,6 +266,7 @@ export class InventoryVaultOneClickSyncController {
 		errorName?: string,
 		written?: number,
 		total?: number,
+		cause?: string,
 	): void {
 		if (this.disposed || generation !== this.generation) return;
 		const disabledBeforePersist = this.ports.disabledReason();
@@ -276,6 +281,7 @@ export class InventoryVaultOneClickSyncController {
 			...(errorName === undefined ? {} : { errorName }),
 			...(written === undefined ? {} : { written }),
 			...(total === undefined ? {} : { total }),
+			...(cause === undefined ? {} : { cause }),
 			phasesMs: this.phasesMsSnapshot(),
 		};
 		this.lastRun = outcome;

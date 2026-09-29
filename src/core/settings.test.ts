@@ -453,6 +453,27 @@ describe('migrateSettings', () => {
 		}).inventorySyncLastRun).toEqual({ ...outcome, summary: null });
 	});
 
+	it('keeps a snake_case cause on a failed run and drops one with a free format', () => {
+		const failed = {
+			status: 'error' as const, finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 40, summary: null,
+			error: 'capture_unavailable' as const,
+		};
+		const causeOf = (cause: unknown): unknown =>
+			migrateSettings({ inventorySyncLastRun: { ...failed, cause } }).inventorySyncLastRun?.cause;
+		expect(causeOf('snapshot_incomplete:bank')).toBe('snapshot_incomplete:bank');
+		expect(causeOf('analysis_null:invalid:presentation_source_shape')).toBe('analysis_null:invalid:presentation_source_shape');
+		for (const free of ['Bad item 12345 for Alfa', 'Snapshot_Incomplete', '1_starts_with_digit', 'has space', '', 42, null, {},
+			`a${'b'.repeat(120)}`]) {
+			expect(causeOf(free), JSON.stringify(free)).toBeUndefined();
+		}
+		// The run itself survives with the cause dropped; a success never carries one.
+		expect(migrateSettings({ inventorySyncLastRun: { ...failed, cause: 'has space' } }).inventorySyncLastRun)
+			.toEqual(failed);
+		expect(migrateSettings({
+			inventorySyncLastRun: { ...failed, status: 'success', error: null, cause: 'snapshot_incomplete:bank' },
+		}).inventorySyncLastRun).not.toHaveProperty('cause');
+	});
+
 	it('preserves legacy paths through unrelated saves and clears each only after its explicit replacement', () => {
 		const legacy = migrateSettings({
 			schemaVersion: 3,

@@ -1486,9 +1486,13 @@ function stateLabel(model: InventoryAdvisorViewModel, translator: Translator): s
 	if (model.refreshWarning !== undefined) return translator.t('advisor.view.refreshWarning', {
 		reason: translator.t(`advisor.view.blockedReason.${model.refreshWarning}`),
 	});
-	return model.blockedReason === undefined
+	const message = model.blockedReason === undefined
 		? translator.t(`advisor.view.state.${model.status}`)
 		: translator.t(`advisor.view.blockedReason.${model.blockedReason}`);
+	// The stable code of why the analysis is invalid (a closed list, never an account value).
+	return model.status === 'invalid' && model.invalidCause !== undefined
+		? translator.t('advisor.cause.line', { message, cause: model.invalidCause })
+		: message;
 }
 
 function scopeRow(row: InventoryAdvisorViewRow, filters: InventoryAdvisorViewFilters): InventoryAdvisorViewRow | null {

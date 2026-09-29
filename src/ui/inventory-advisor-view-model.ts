@@ -44,6 +44,12 @@ export interface InventoryAdvisorViewModel {
 	detail: string;
 	/** Safe, closed diagnostic enum. It never contains account-bound values. */
 	blockedReason?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
+	/**
+	 * Only on `invalid`: the stable snake_case code of the exit that rejected the analysis (a closed
+	 * list, or `refresh_rejected:<code>`); never an account value. It names the cause, it does not
+	 * decide the state.
+	 */
+	invalidCause?: string;
 	/** A failed refresh did not replace the last valid in-memory result. */
 	refreshWarning?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
 	/** Redacted availability of opt-in stores; null until a trusted capture exists. */
@@ -72,6 +78,7 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 		status: presentation.status,
 		title: 'Inventory advisor',
 		detail: detailFor(presentation.status),
+		...(presentation.invalidCause === undefined ? {} : { invalidCause: presentation.invalidCause }),
 		optionalSources: presentation.optionalSources === undefined ? null : structuredClone(presentation.optionalSources),
 		...(presentation.storageSpace === undefined ? {} : {
 			storageSpace: presentation.storageSpace === null ? null : structuredClone(presentation.storageSpace),

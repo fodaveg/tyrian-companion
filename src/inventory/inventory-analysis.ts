@@ -400,11 +400,55 @@ export function inventoryAnalysisReadyForNotes(
 	objects: InventoryObjectResultsV1 | null,
 	nowMs: number,
 ): boolean {
+	return inventoryAnalysisNotReadyCause(source, objects, nowMs) === null;
+}
+
+/**
+ * The first condition of `inventoryAnalysisReadyForNotes` that fails, as a stable snake_case code
+ * (`objects_null`, `snapshot_id_mismatch`, `report_null`, `snapshot_incomplete:<store>`,
+ * `catalog_unavailable`, `completed_at_invalid`, `snapshot_stale`), or null when the analysis is
+ * ready. Each condition is evaluated on its own, in the order the readiness check states them; the
+ * store in `snapshot_incomplete:` is a store name (`quality`, `shared_inventory`, `bank`,
+ * `materials`, `characters`), never a character name or any content of the account.
+ */
+export function inventoryAnalysisNotReadyCause(
+	source: InventoryAdvisorContextualPresentationSource,
+	objects: InventoryObjectResultsV1 | null,
+	nowMs: number,
+): string | null {
 	const snapshot = source.input.snapshot;
+	if (objects === null) return 'objects_null';
+	if (objects.snapshotId !== snapshot.snapshotId) return 'snapshot_id_mismatch';
+	if (source.result.report === null) return 'report_null';
+	if (!inventorySnapshotComplete(snapshot)) return `snapshot_incomplete:${incompleteStore(snapshot)}`;
+	if (catalogUnavailable(source)) return 'catalog_unavailable';
 	const completedAtMs = Date.parse(snapshot.completedAt);
-	return objects !== null && objects.snapshotId === snapshot.snapshotId && source.result.report !== null
-		&& inventorySnapshotComplete(snapshot) && !catalogUnavailable(source) && Number.isFinite(completedAtMs)
-		&& nowMs - completedAtMs <= source.input.policy.maxSnapshotAgeMs;
+	if (!Number.isFinite(completedAtMs)) return 'completed_at_invalid';
+	return nowMs - completedAtMs <= source.input.policy.maxSnapshotAgeMs ? null : 'snapshot_stale';
+}
+
+/**
+ * Why the advisor holds no analysis to write notes from, as a stable snake_case code naming what
+ * its view shows instead: `analysis_null:invalid:<cause>`, `analysis_null:blocked:<reason>`, or
+ * `analysis_null:view_<status>`. Closed enums only; nothing of the account.
+ */
+export function inventoryAnalysisMissingCause(
+	view: { status: string; invalidCause?: string; blockedReason?: string },
+): string {
+	if (view.status === 'invalid') return `analysis_null:invalid:${view.invalidCause ?? 'unknown'}`;
+	if (view.status === 'blocked') return `analysis_null:blocked:${view.blockedReason ?? 'unknown'}`;
+	return `analysis_null:view_${view.status}`;
+}
+
+/** The first store `inventorySnapshotComplete` rejects, by store name (never a character's name). */
+function incompleteStore(snapshot: InventoryAdvisorContextualPresentationSource['input']['snapshot']): string {
+	if (snapshot.quality !== 'stable') return 'quality';
+	for (const store of ['shared_inventory', 'bank', 'materials'] as const) {
+		if (snapshot.coverage.sources[store].status !== 'complete') return store;
+	}
+	if (snapshot.coverage.sources.characters.status !== 'complete'
+		|| Object.values(snapshot.coverage.characters).some((coverage) => coverage.status !== 'complete')) return 'characters';
+	return 'unknown';
 }
 
 /**

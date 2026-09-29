@@ -81,13 +81,16 @@ export function inventorySyncPanel(
 		summaryLine: null, lastRunNote: null, finishedAtLine: null,
 	};
 	const percent = lastRun.status === 'success' ? 100 : 0;
+	const errorMessage = lastRun.error === 'storage_failure' && lastRun.written !== undefined && lastRun.total !== undefined
+		? translator.t('advisor.sync.state.error.storage_failure', { written: lastRun.written, total: lastRun.total })
+		: translator.t(`advisor.sync.state.error.${lastRun.error ?? 'unexpected_failure'}`);
 	return {
 		tone: lastRun.status, statusWord: translator.t(`advisor.sync.status.${lastRun.status}`),
 		message: lastRun.status === 'success'
 			? translator.t('advisor.sync.lastRun.success', inventorySyncSummaryParams(lastRun.summary ?? EMPTY_SYNC_SUMMARY))
-			: lastRun.error === 'storage_failure' && lastRun.written !== undefined && lastRun.total !== undefined
-				? translator.t('advisor.sync.state.error.storage_failure', { written: lastRun.written, total: lastRun.total })
-				: translator.t(`advisor.sync.state.error.${lastRun.error ?? 'unexpected_failure'}`),
+			// The stable code of why the run failed (a closed list, never an account value).
+			: lastRun.cause === undefined ? errorMessage
+				: translator.t('advisor.cause.line', { message: errorMessage, cause: lastRun.cause }),
 		percent, progressLabel: progressLabel(percent, null, null, null),
 		summaryLine: lastRun.summary === null ? null : translator.t('advisor.sync.summaryLine', inventorySyncSummaryParams(lastRun.summary)),
 		lastRunNote: translator.t('advisor.sync.lastRunNote'),

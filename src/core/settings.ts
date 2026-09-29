@@ -1,4 +1,5 @@
 import { DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER } from '../alerts/alert-contract';
+import { isSafeCause } from './safe-error-code';
 import { normalizeVaultRelativePath } from './vault-path';
 import type {
 	PriceHistoryDailyRetentionDays,
@@ -86,6 +87,12 @@ export interface InventoryVaultSyncLastRun {
 	total?: number;
 	/** The underlying rejection's class only (H15.11), never its message or stack. */
 	errorName?: string;
+	/**
+	 * Why the run failed, as a stable snake_case code (`snapshot_incomplete:bank`,
+	 * `refresh_rejected:type_error`): a closed list of our own exits, or the class of a foreign
+	 * rejection. Never a free message and never a value of the account. Absent before this field.
+	 */
+	cause?: string;
 	/**
 	 * H18.39 (David, 26 sep 2026: "¿por qué tarda tanto en preparar el inventario?"): how long each
 	 * of the run's own fixed phases (`INVENTORY_VAULT_SYNC_RUN_PHASES`) actually took, measured with
@@ -495,6 +502,7 @@ function inventoryVaultSyncLastRun(value: unknown): InventoryVaultSyncLastRun | 
 	const total = typeof value.total === 'number' && Number.isInteger(value.total) && value.total >= 0 ? value.total : undefined;
 	const errorName = typeof value.errorName === 'string' && value.errorName.length > 0 && value.errorName.length <= 128
 		? value.errorName : undefined;
+	const cause = isSafeCause(value.cause) ? value.cause : undefined;
 	const phasesMs = inventoryVaultSyncPhasesMs(value.phasesMs);
 	return {
 		status: value.status as InventoryVaultSyncRunStatus,
@@ -505,6 +513,7 @@ function inventoryVaultSyncLastRun(value: unknown): InventoryVaultSyncLastRun | 
 		...(written === undefined ? {} : { written }),
 		...(total === undefined ? {} : { total }),
 		...(errorName === undefined ? {} : { errorName }),
+		...(cause === undefined || value.status === 'success' ? {} : { cause }),
 		...(phasesMs === undefined ? {} : { phasesMs }),
 	};
 }

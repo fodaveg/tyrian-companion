@@ -25,6 +25,23 @@ describe('inventory sync panel projection', () => {
 		});
 	});
 
+	it('shows the stable cause after the translated error line, in both languages', () => {
+		const translator = createTranslator('es');
+		const lastRun = {
+			status: 'error' as const, finishedAt: '2026-08-29T04:00:00.000Z', durationMs: 1,
+			summary: null, error: 'capture_unavailable' as const, cause: 'snapshot_incomplete:bank',
+		};
+		expect(inventorySyncPanel({ status: 'idle', lastRun }, translator)).toMatchObject({
+			message: 'No se pudo preparar una captura completa del inventario. (causa: snapshot_incomplete:bank)',
+		});
+		expect(inventorySyncPanel({ status: 'idle', lastRun }, createTranslator('en'))).toMatchObject({
+			message: 'A complete inventory capture could not be prepared. (cause: snapshot_incomplete:bank)',
+		});
+		expect(inventorySyncPanel({ status: 'idle', lastRun: { ...lastRun, cause: undefined } }, translator)).toMatchObject({
+			message: 'No se pudo preparar una captura completa del inventario.',
+		});
+	});
+
 	it('keeps summary interpolation redacted and structurally complete', () => {
 		expect(inventorySyncSummaryParams({
 			positions: 5, create: 1, update: 2, unchanged: 1, deactivate: 1, conflicts: 0,

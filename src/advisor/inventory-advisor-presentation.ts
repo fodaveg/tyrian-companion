@@ -1,6 +1,6 @@
 import { createCatalogVendorValue, createTradingPostValueWithPolicy } from '../economy/gw2-fees';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
-import { isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
+import { inventoryAdvisorContextualInvalidCause, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
 import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
 import type { InventoryDiscardAllowlistResultV1 } from './inventory-advisor-discard-model';
 import type { InventoryAdvisorInputV1, InventoryAdvisorResultV1 } from './inventory-advisor-model';
@@ -60,17 +60,22 @@ export function buildInventoryAdvisorPresentation(
 	objects: InventoryObjectResultsV1 | null = null,
 ): InventoryAdvisorPresentation {
 	try {
-		if (!isPlainData(source) || !isPlainData(options) || !isPlainData(objects)
-			|| !isPresentationSource(source) || !isPresentationOptions(options)) {
-			return invalidInventoryAdvisorPresentation();
-		}
+		if (!isPlainData(source)) return invalidInventoryAdvisorPresentation('presentation_source_not_plain');
+		if (!isPlainData(options)) return invalidInventoryAdvisorPresentation('presentation_options_not_plain');
+		if (!isPlainData(objects)) return invalidInventoryAdvisorPresentation('presentation_objects_not_plain');
+		if (!isPresentationSource(source)) return invalidInventoryAdvisorPresentation(presentationSourceCause(source));
+		if (!isPresentationOptions(options)) return invalidInventoryAdvisorPresentation('presentation_options_shape');
 		const decisionByRef = objects !== null && objects.snapshotId === source.input.snapshot.snapshotId
 			? objects.decisions : null;
 		// H18.15: same snapshot guard as the decisions; another capture's space is never shown.
 		const storageSpace = decisionByRef === null ? null : objects?.storageSpace ?? null;
 		const valuationByDecision = decisionByRef === null ? undefined : objects?.valuationByDecision;
 		const result = source.result;
-		if (result.status === 'invalid' || result.report === null) return invalidInventoryAdvisorPresentation();
+		if (result.status === 'invalid' || result.report === null) {
+			return invalidInventoryAdvisorPresentation('discardContext' in source
+				? inventoryAdvisorContextualInvalidCause(source.discardContext, source.result) ?? 'presentation_result_invalid'
+				: 'presentation_result_invalid');
+		}
 		const contextual = 'discardContext' in source;
 		const proofByRef = new Map(contextual ? source.result.proofs.map((proof) => [proof.explanationRef, proof]) : []);
 		const explanationByRef = new Map(result.report.explanations.map((entry) => [entry.ref, entry]));
@@ -78,7 +83,7 @@ export function buildInventoryAdvisorPresentation(
 		const balance = buildInventoryAdvisorReservationBalance(source.input.snapshot);
 		const reservationPlan = balance.status === 'ok'
 			? createReservationPlan({ goals: source.input.goals, balance: balance.balance }) : { status: 'invalid' as const };
-		if (reservationPlan.status !== 'ok') throw new Error('Reservation context is invalid.');
+		if (reservationPlan.status !== 'ok') throw new PresentationFailure('presentation_reservation_invalid');
 		const reservationByItemId = new Map(reservationPlan.plan.assets
 			.filter((asset) => asset.key.startsWith('item:')).map((asset) => [asset.id, asset]));
 		const rows = result.report.lines.flatMap((line) => {
@@ -90,16 +95,16 @@ export function buildInventoryAdvisorPresentation(
 			);
 			return line.decisions.map((decision) => {
 			const presentationAction = decision.action === 'discard_candidate' ? 'discard_review' : decision.action;
-			if (!isPresentationAction(presentationAction)) throw new Error('Unsupported presentation action.');
+			if (!isPresentationAction(presentationAction)) throw new PresentationFailure('presentation_action_unsupported');
 			const reasonCodes = explanationByRef.get(decision.explanationRef)?.reasonCodes;
-			if (reasonCodes === undefined) throw new Error('Decision explanation is missing.');
+			if (reasonCodes === undefined) throw new PresentationFailure('presentation_explanation_missing');
 			const discardProof = presentationAction === 'discard_review' ? proofByRef.get(decision.explanationRef) ?? null : null;
 			if (presentationAction === 'discard_review' && (discardProof === null || discardProof.itemId !== decision.itemId
 				|| decision.safety !== 'irreversible_review_only' || decision.discardProof === null)) {
-				throw new Error('Discard review proof is missing.');
+				throw new PresentationFailure('presentation_discard_proof_missing');
 			}
 			const allocations = allocationsForDecision(source.input, decision.itemId, decision.quantity, decision.allocations);
-			if (allocations === null) throw new Error('Decision allocations do not resolve to current holdings.');
+			if (allocations === null) throw new PresentationFailure('presentation_allocations_unresolved');
 			const containerOutcome = containerEconomyFor(source, line, decision);
 			return {
 				id: decision.explanationRef,
@@ -161,7 +166,32 @@ export function buildInventoryAdvisorPresentation(
 				: { status: 'unavailable' },
 			...(storageSpace === null ? {} : { storageSpace: storageSpaceWithoutIndex(storageSpace) }),
 		};
-	} catch { return invalidInventoryAdvisorPresentation(); }
+	} catch (error) {
+		return invalidInventoryAdvisorPresentation(
+			error instanceof PresentationFailure ? error.cause : 'presentation_row_build_threw',
+		);
+	}
+}
+
+/** A named exit of the row build; its code is the safe cause the invalid presentation carries. */
+class PresentationFailure extends Error {
+	constructor(readonly cause: string) { super(cause); }
+}
+
+/**
+ * Names why a source failed `isPresentationSource`. Runs only on that already-invalid path;
+ * a contextual source that fails on its discard result gets the discard/classifier code.
+ */
+function presentationSourceCause(source: unknown): string {
+	try {
+		if (!isRecord(source)) return 'presentation_source_shape';
+		if (exactKeys(source, ['input', 'result'])) return 'presentation_result_contract_invalid';
+		if (!exactKeys(source, ['discardContext', 'input', 'result']) || !isRecord(source.discardContext)
+			|| !exactKeys(source.discardContext, ['engineInput', 'producerResult'])) return 'presentation_source_shape';
+		const context = source.discardContext;
+		if (!isRecord(context.engineInput) || context.engineInput.input !== source.input) return 'presentation_context_identity';
+		return inventoryAdvisorContextualInvalidCause(context, source.result) ?? 'presentation_source_contract_invalid';
+	} catch { return 'presentation_source_diagnosis_threw'; }
 }
 
 /** A detached copy of the analysis's storage space; each row already carries its own slots freed. */
@@ -625,8 +655,11 @@ function isPresentationAction(action: unknown): action is InventoryAdvisorPresen
 }
 
 /** Returns the fail-closed presentation used when an integration source cannot be trusted. */
-export function invalidInventoryAdvisorPresentation(): InventoryAdvisorPresentation {
-	return { version: INVENTORY_ADVISOR_PRESENTATION_VERSION, status: 'invalid', groups: [], discardReview: { status: 'unavailable' } };
+export function invalidInventoryAdvisorPresentation(cause?: string): InventoryAdvisorPresentation {
+	return {
+		version: INVENTORY_ADVISOR_PRESENTATION_VERSION, status: 'invalid', groups: [], discardReview: { status: 'unavailable' },
+		...(cause === undefined ? {} : { invalidCause: cause }),
+	};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

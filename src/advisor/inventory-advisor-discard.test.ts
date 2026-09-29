@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { isInventoryAdvisorInput, sha256InventoryRulePack } from './inventory-advisor-contract';
-import { classifyInventoryAdvisor, sha256InventoryKnowledgePack } from './inventory-advisor-classifier';
+import { classifyInventoryAdvisor, classifyInventoryAdvisorDiagnosed, sha256InventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
-import { applyInventoryDiscardAllowlist, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
+import { applyInventoryDiscardAllowlist, inventoryAdvisorContextualInvalidCause, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import type { InventoryAdvisorRulePackV1, InventoryAdvisorRuleV1 } from './inventory-advisor-model';
 
@@ -84,6 +84,36 @@ describe('inventory discard allowlist H4.16', () => {
 		expect(applyInventoryDiscardAllowlist({ engineInput: badSources, producerResult: classifyInventoryAdvisor(badSources) }).status).toBe('invalid');
 		const hostile = new Proxy({}, { get() { throw new Error('trap'); }, ownKeys() { throw new Error('trap'); } });
 		expect(applyInventoryDiscardAllowlist(hostile).status).toBe('invalid');
+	});
+});
+
+describe('inventory advisor invalid causes', () => {
+	it('names the exit that rejects a contextual source with a stable code, and is silent when nothing is wrong', () => {
+		const engineInput = fixture();
+		const producerResult = classifyInventoryAdvisor(engineInput);
+		const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });
+		expect(inventoryAdvisorContextualInvalidCause({ engineInput, producerResult }, result)).toBeNull();
+		expect(inventoryAdvisorContextualInvalidCause({}, result)).toBe('discard_input_shape');
+		expect(inventoryAdvisorContextualInvalidCause({ engineInput, producerResult }, { ...result, version: 99 }))
+			.toBe('discard_result_version');
+		expect(inventoryAdvisorContextualInvalidCause({ engineInput, producerResult }, { ...result, proofs: [] }))
+			.toBe('discard_result_differs');
+		const foreign = structuredClone(producerResult);
+		if (foreign.status === 'invalid') throw new Error('Expected a valid producer fixture.');
+		foreign.report.accountId = 'other-account';
+		expect(inventoryAdvisorContextualInvalidCause({ engineInput, producerResult: foreign }, result))
+			.toBe('discard_producer_contract_invalid');
+		// A producer that is itself invalid is reported by the classifier stage that rejected the input.
+		const badInput = structuredClone(engineInput);
+		badInput.input.goals = [{ ...goal(), goalId: 'a', title: 'Same' }, { ...goal(), goalId: 'b', title: 'Same' }];
+		const invalidProducer = classifyInventoryAdvisor(badInput);
+		expect(invalidProducer.status).toBe('invalid');
+		const invalidResult = applyInventoryDiscardAllowlist({ engineInput: badInput, producerResult: invalidProducer });
+		expect(invalidResult.status).toBe('invalid');
+		expect(inventoryAdvisorContextualInvalidCause({ engineInput: badInput, producerResult: invalidProducer }, invalidResult))
+			.toBe('classifier_plan_invalid');
+		expect(classifyInventoryAdvisorDiagnosed(engineInput).cause).toBeNull();
+		expect(classifyInventoryAdvisorDiagnosed({}).cause).toBe('classifier_input_shape');
 	});
 });
 

@@ -295,6 +295,21 @@ describe('inventory Vault one-click sync controller', () => {
 		expect(JSON.stringify(finished)).not.toMatch(/secret|403/u);
 	});
 
+	it('persists the stable cause code of a failed run, and never a free-text message', async () => {
+		const coded = portsFor({ previewSync: vi.fn(async () => { throw new Error('snapshot_incomplete:bank'); }) });
+		const finished: InventoryVaultSyncLastRun[] = [];
+		const { controller } = harness(coded, null, (outcome) => finished.push(outcome));
+		await controller.run();
+		expect(finished[0]).toMatchObject({ status: 'error', error: 'capture_unavailable', cause: 'snapshot_incomplete:bank' });
+
+		// A message that is not a snake_case code is not shown: only the class, in snake_case.
+		const free = portsFor({ refreshAdvisor: vi.fn(async () => { throw new TypeError('Bad item 12345 for Alfa: 403 secret'); }) });
+		const freeFinished: InventoryVaultSyncLastRun[] = [];
+		await harness(free, null, (outcome) => freeFinished.push(outcome)).controller.run();
+		expect(freeFinished[0]).toMatchObject({ status: 'error', cause: 'type_error' });
+		expect(JSON.stringify(freeFinished)).not.toMatch(/12345|Alfa|secret|403/u);
+	});
+
 	/**
 	 * H16.5 (11 sep incident): a reload can leave the selected key unread by Obsidian's own secret
 	 * storage, which surfaced as the SAME `capture_unavailable` a genuinely broken capture gets,

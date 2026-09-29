@@ -2,7 +2,7 @@ import { canonicalJson as canonical } from '../core/canonical-sha256';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { createInventoryRecommendationEnvelope, isInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
 import { isApprovedApplicableCapability, isEnabledApplicableRule, isInventoryAdvisorReport, sha256CanonicalValue, sha256InventoryAdvisorReport } from './inventory-advisor-contract';
-import { classifyInventoryAdvisor, isInventoryKnowledgePack } from './inventory-advisor-classifier';
+import { classifyInventoryAdvisorDiagnosed, isInventoryKnowledgePack } from './inventory-advisor-classifier';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import { isInventoryContainerEconomyPack, isInventoryContainerPriceEvidence } from './inventory-container-economy';
 import type { InventoryAdvisorLineV1, InventoryAdvisorReportV1, InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
@@ -21,14 +21,29 @@ import {
  * It is deliberately a sibling result: no inventory capture, network access, persistence, or execution occurs here.
  */
 export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscardAllowlistResultV1 {
+	return applyInventoryDiscardAllowlistDiagnosed(value).result;
+}
+
+/**
+ * The same allowlist plus, when it comes out `invalid`, a stable snake_case code for the exit taken
+ * (a closed list, never a value of the account). It changes neither what is invalid nor the result.
+ */
+function applyInventoryDiscardAllowlistDiagnosed(
+	value: unknown,
+): { result: InventoryDiscardAllowlistResultV1; cause: string | null } {
+	const failed = (cause: string): { result: InventoryDiscardAllowlistResultV1; cause: string } => ({ result: invalid(), cause });
 	try {
-		if (!isInput(value)) return invalid();
-		const reproduced = classifyInventoryAdvisor(value.engineInput);
+		if (!isInput(value)) return failed('discard_input_shape');
+		const reproduced = classifyInventoryAdvisorDiagnosed(value.engineInput).result;
 		if (!isInventoryAdvisorResultForInput(value.producerResult, value.engineInput.input, value.engineInput.knowledgePack,
 			value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
-			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)
-			|| canonical(reproduced) !== canonical(value.producerResult)) return invalid();
-		if (value.producerResult.status === 'invalid' || value.producerResult.report === null || value.producerResult.envelope === null) return invalid();
+			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)) {
+			return failed('discard_producer_contract_invalid');
+		}
+		if (canonical(reproduced) !== canonical(value.producerResult)) return failed('discard_producer_not_reproduced');
+		if (value.producerResult.status === 'invalid' || value.producerResult.report === null || value.producerResult.envelope === null) {
+			return failed('discard_producer_invalid');
+		}
 		const producerResultSha256 = sha256CanonicalValue(value.producerResult);
 		const report = clone(value.producerResult.report);
 		const proofs: InventoryDiscardAllowlistProofV1[] = [];
@@ -76,7 +91,7 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 			report.reasons = uniqueReasons(report.lines.flatMap((line) => line.reasons)).sort(reasonOrder);
 		}
 		const envelope = createInventoryRecommendationEnvelope(report);
-		if (envelope === null) return invalid();
+		if (envelope === null) return failed('discard_envelope_invalid');
 		const result: InventoryDiscardAllowlistResultV1 = {
 			version: INVENTORY_DISCARD_ALLOWLIST_VERSION, status: value.producerResult.status,
 			producerResultSha256, report, envelope, proofs: proofs.sort((left, right) => left.itemId - right.itemId || left.explanationRef.localeCompare(right.explanationRef)),
@@ -85,8 +100,30 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 		return isInventoryAdvisorResultForInput(publicResult, value.engineInput.input, value.engineInput.knowledgePack,
 			value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
 			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)
-			&& isInventoryDiscardAllowlistResultShape(result) ? result : invalid();
-	} catch { return invalid(); }
+			&& isInventoryDiscardAllowlistResultShape(result) ? { result, cause: null } : failed('discard_result_contract_invalid');
+	} catch { return failed('discard_threw'); }
+}
+
+/**
+ * Why a contextual advisor source (the producer's engine input and result plus the discard sibling
+ * result) fails to be shown, as one stable snake_case code; null when nothing in it is wrong. The
+ * presentation calls it only on an already-invalid path, so its extra reproduction costs nothing on
+ * the normal one.
+ */
+export function inventoryAdvisorContextualInvalidCause(
+	context: unknown,
+	result: unknown,
+): string | null {
+	try {
+		if (!isInput(context)) return 'discard_input_shape';
+		if (!record(result) || result.version !== INVENTORY_DISCARD_ALLOWLIST_VERSION) return 'discard_result_version';
+		const expected = applyInventoryDiscardAllowlistDiagnosed(context);
+		if (expected.cause === 'discard_producer_invalid') {
+			return classifyInventoryAdvisorDiagnosed(context.engineInput).cause ?? 'classifier_invalid_not_reproduced';
+		}
+		if (expected.cause !== null) return expected.cause;
+		return canonical(result) === canonical(expected.result) ? null : 'discard_result_differs';
+	} catch { return 'discard_diagnosis_threw'; }
 }
 
 /** Validates the persisted sibling result against the exact reproduced producer result. */

@@ -34,6 +34,8 @@ import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-
 import type { InventoryAdvisorViewRow } from '../ui/inventory-advisor-view-model';
 import {
 	InventoryAnalysisService,
+	inventoryAnalysisMissingCause,
+	inventoryAnalysisNotReadyCause,
 	inventoryAnalysisReadyForNotes,
 	inventoryVaultSyncInputFromAnalysis,
 	type InventoryPositionRecommendationPort,
@@ -156,10 +158,13 @@ describe('one result per object: the advisor view, the notes and the Base agree 
 		await controller.refresh();
 		expect(controller.current()).toMatchObject({ status: 'invalid' });
 		expect(controller.current().blockedReason).toBeUndefined();
+		// The view says why: the reservation plan (two goals with one title) rejected the classification.
+		expect(controller.current().invalidCause).toBe('classifier_plan_invalid');
 		const analysis = controller.analysis();
 		if (analysis === null || analysis.objects === null) throw new Error('Expected the invalid analysis to be retained.');
 		expect(analysis.objects.decisions).toEqual({});
 		expect(inventoryAnalysisReadyForNotes(analysis.source, analysis.objects, AS_OF_MS)).toBe(false);
+		expect(inventoryAnalysisNotReadyCause(analysis.source, analysis.objects, AS_OF_MS)).toBe('report_null');
 		await expect(inventoryVaultSyncInputFromAnalysis(analysis.source, analysis.objects)).rejects.toThrow('inventory_analysis_invalid');
 	});
 
@@ -176,6 +181,41 @@ describe('one result per object: the advisor view, the notes and the Base agree 
 		await expect(inventoryVaultSyncInputFromAnalysis(unstable, objects)).rejects.toThrow('inventory_capture_incomplete');
 		const foreign: InventoryObjectResultsV1 = { ...objects, snapshotId: 'another-snapshot' };
 		await expect(inventoryVaultSyncInputFromAnalysis(source, foreign)).rejects.toThrow('inventory_capture_identity_mismatch');
+	});
+
+	it('names the first readiness condition that fails, one by one, with a code that holds no account data', async () => {
+		const { source, objects } = await analyse([bank(23, 5, 0)]);
+		const cause = (s = source, o: InventoryObjectResultsV1 | null = objects, now = AS_OF_MS): string | null =>
+			inventoryAnalysisNotReadyCause(s, o, now);
+		expect(cause()).toBeNull();
+		expect(cause(source, null)).toBe('objects_null');
+		expect(cause(source, { ...objects, snapshotId: 'another-snapshot' })).toBe('snapshot_id_mismatch');
+		const noReport = structuredClone(source);
+		(noReport.result as { report: unknown }).report = null;
+		expect(cause(noReport)).toBe('report_null');
+		const unstable = structuredClone(source);
+		unstable.input.snapshot.quality = 'unstable';
+		expect(cause(unstable)).toBe('snapshot_incomplete:quality');
+		for (const store of ['shared_inventory', 'bank', 'materials', 'characters'] as const) {
+			const partial = structuredClone(source);
+			(partial.input.snapshot.coverage.sources[store] as { status: string }).status = 'unavailable';
+			expect(cause(partial), store).toBe(`snapshot_incomplete:${store}`);
+		}
+		const noCatalog = structuredClone(source);
+		for (const entry of Object.values(noCatalog.input.catalog.coverage.items)) (entry as { status: string }).status = 'unavailable';
+		expect(cause(noCatalog)).toBe('catalog_unavailable');
+		const badDate = structuredClone(source);
+		badDate.input.snapshot.completedAt = 'not-a-date';
+		expect(cause(badDate)).toBe('completed_at_invalid');
+		expect(cause(source, objects, AS_OF_MS + 16 * 60_000)).toBe('snapshot_stale');
+		// With no analysis at all, the code says what the view showed instead.
+		expect(inventoryAnalysisMissingCause({ status: 'invalid', invalidCause: 'presentation_source_shape' }))
+			.toBe('analysis_null:invalid:presentation_source_shape');
+		expect(inventoryAnalysisMissingCause({ status: 'blocked', blockedReason: 'capture_invalid' }))
+			.toBe('analysis_null:blocked:capture_invalid');
+		expect(inventoryAnalysisMissingCause({ status: 'loading' })).toBe('analysis_null:view_loading');
+		// The boolean readiness is exactly "no cause".
+		expect(inventoryAnalysisReadyForNotes(unstable, objects, AS_OF_MS)).toBe(false);
 	});
 });
 

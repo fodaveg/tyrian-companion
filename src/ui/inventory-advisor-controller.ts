@@ -7,6 +7,7 @@ import type { InventoryAdvisorPresentationOptions } from '../advisor/inventory-a
 import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
 import type { InventoryObjectResultsV1 } from '../advisor/inventory-object-result';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
+import { safeErrorCode } from '../core/safe-error-code';
 import { buildInventoryAdvisorViewModel, type InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 
 export interface InventoryAdvisorControllerPorts {
@@ -25,6 +26,8 @@ export class InventoryAdvisorPresentationController {
 	private cached: InventoryAdvisorWorkflowResult | null = null;
 	private flight: { generation: number; kind: 'refresh' | 'reclassify'; promise: Promise<void> } | null = null;
 	private failed = false;
+	/** Safe code of the rejection behind `failed` (`refresh_rejected:<code>`); never a message. */
+	private failureCause: string | undefined;
 	private refreshWarning: InventoryAdvisorViewModel['refreshWarning'];
 	private generation = 0;
 	private disposed = false;
@@ -79,7 +82,7 @@ export class InventoryAdvisorPresentationController {
 	}
 
 	private buildCurrent(options: InventoryAdvisorPresentationOptions): InventoryAdvisorViewModel {
-		if (this.disposed) return buildInventoryAdvisorViewModel(invalidInventoryAdvisorPresentation());
+		if (this.disposed) return buildInventoryAdvisorViewModel(invalidInventoryAdvisorPresentation('controller_disposed'));
 		if (this.cached !== null) {
 			if (this.cached.status === 'blocked') return {
 				...buildInventoryAdvisorViewModel({
@@ -94,7 +97,7 @@ export class InventoryAdvisorPresentationController {
 				...(this.refreshWarning === undefined ? {} : { refreshWarning: this.refreshWarning }),
 			};
 		}
-		const model = buildInventoryAdvisorViewModel(this.failed ? invalidInventoryAdvisorPresentation() : null);
+		const model = buildInventoryAdvisorViewModel(this.failed ? invalidInventoryAdvisorPresentation(this.failureCause) : null);
 		return this.failed ? { ...model, blockedReason: 'unexpected_failure' } : model;
 	}
 
@@ -193,12 +196,14 @@ export class InventoryAdvisorPresentationController {
 			this.cached = safe;
 			this.refreshWarning = undefined;
 			this.failed = false;
+			this.failureCause = undefined;
 			this.contentVersion += 1;
-		}).catch(() => {
+		}).catch((error: unknown) => {
 			if (this.generation !== generation) return;
 			this.cached = null;
 			this.refreshWarning = undefined;
 			this.failed = true;
+			this.failureCause = `refresh_rejected:${safeErrorCode(error)}`;
 			this.contentVersion += 1;
 		}).finally(() => {
 			if (this.flight?.promise === promise) this.flight = null;

@@ -232,6 +232,18 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		expect(JSON.stringify(failed)).not.toContain('secret account detail');
 	});
 
+	it('carries a stable cause for a rejected refresh, never the free-text message', async () => {
+		const coded = new InventoryAdvisorPresentationController({ load: vi.fn(async () => { throw new Error('inventory_advisor_input_invalid'); }) });
+		expect(await coded.refresh()).toMatchObject({ status: 'invalid', invalidCause: 'refresh_rejected:inventory_advisor_input_invalid' });
+		const free = new InventoryAdvisorPresentationController({
+			load: vi.fn(async () => { throw new DOMException('Item 12345 of Alfa: quota exceeded', 'QuotaExceededError'); }),
+		});
+		const model = await free.refresh();
+		expect(model).toMatchObject({ status: 'invalid', blockedReason: 'unexpected_failure' });
+		expect(model.invalidCause).toMatch(/^refresh_rejected:[a-z_]+$/u);
+		expect(JSON.stringify(model)).not.toMatch(/12345|Alfa|quota exceeded/u);
+	});
+
 	it('makes New win when Old completes after the newer explicit refresh', async () => {
 		const a = deferred<InventoryAdvisorWorkflowResult>();
 		const b = deferred<InventoryAdvisorWorkflowResult>();

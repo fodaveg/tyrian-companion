@@ -171,6 +171,11 @@ export interface InventoryAdvisorPresentation {
 		| { status: 'review_only'; proofs: InventoryDiscardAllowlistProofV1[] };
 	/** H18.15: the analysis's storage space (free slots, low-space state, material capacity). */
 	storageSpace?: InventoryAdvisorStorageSpace | null;
+	/**
+	 * Set only on an `invalid` presentation: the stable snake_case code of the exit that rejected the
+	 * source (a closed list, no account data). It never changes what is invalid.
+	 */
+	invalidCause?: string;
 }
 
 /** The analysis's storage space without its per-decision index, which the rows already carry. */

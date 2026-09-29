@@ -302,7 +302,8 @@ import {
 } from '../inventory/inventory-vault-sync';
 import {
 	InventoryAnalysisService,
-	inventoryAnalysisReadyForNotes,
+	inventoryAnalysisMissingCause,
+	inventoryAnalysisNotReadyCause,
 	inventoryVaultSyncInputFromAnalysis,
 } from '../inventory/inventory-analysis';
 import type { InventoryAdvisorContextualPresentationSource } from '../advisor/inventory-advisor-presentation';
@@ -2089,20 +2090,26 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		source: InventoryAdvisorContextualPresentationSource;
 		objects: InventoryObjectResultsV1;
 	}> {
-		const ready = (): { source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 } | null => {
+		const check = (): {
+			ready: { source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 } | null;
+			cause: string | null;
+		} => {
 			const analysis = this.inventoryAdvisor.analysis();
-			if (analysis === null || analysis.objects === null) return null;
-			return inventoryAnalysisReadyForNotes(analysis.source, analysis.objects, Date.now())
-				? { source: analysis.source, objects: analysis.objects } : null;
+			if (analysis === null) return { ready: null, cause: inventoryAnalysisMissingCause(this.inventoryAdvisor.current()) };
+			const cause = inventoryAnalysisNotReadyCause(analysis.source, analysis.objects, Date.now());
+			return cause === null && analysis.objects !== null
+				? { ready: { source: analysis.source, objects: analysis.objects }, cause: null }
+				: { ready: null, cause: cause ?? 'objects_null' };
 		};
-		const current = ready();
-		if (current !== null) return current;
+		const current = check();
+		if (current.ready !== null) return current.ready;
 		this.inventoryAnalysisForSync = true;
 		try { await this.refreshInventoryAdvisor(); }
 		finally { this.inventoryAnalysisForSync = false; }
-		const recovered = ready();
-		if (recovered === null) throw new Error('inventory_capture_incomplete');
-		return recovered;
+		const recovered = check();
+		// The code names the condition that failed after the recovery read (safe: a closed list).
+		if (recovered.ready === null) throw new Error(recovered.cause ?? 'inventory_capture_incomplete');
+		return recovered.ready;
 	}
 
 	/** Live/persisted state of the single-button view sync. It never starts work by itself. */

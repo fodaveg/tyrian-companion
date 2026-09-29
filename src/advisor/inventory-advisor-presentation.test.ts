@@ -358,6 +358,35 @@ describe('H5.11 inventory advisor presentation', () => {
 		expect(optionGetterRead).toBe(0);
 	});
 
+	it('names the exit that made the presentation invalid with a stable code and nothing of the account', () => {
+		const valid = source();
+		const result = classifyInventoryAdvisor(valid);
+		const cause = (built: ReturnType<typeof buildInventoryAdvisorPresentation>): string | undefined => {
+			expect(built).toMatchObject({ status: 'invalid', groups: [] });
+			return built.invalidCause;
+		};
+		const capability = { input: valid.input, result } as Record<string, unknown>;
+		Object.defineProperty(capability, 'executor', { enumerable: true, get() { return () => undefined; } });
+		expect(cause(buildInventoryAdvisorPresentation(capability as never))).toBe('presentation_source_not_plain');
+		expect(cause(buildInventoryAdvisorPresentation({ input: valid.input, result }, new Map() as never)))
+			.toBe('presentation_options_not_plain');
+		expect(cause(buildInventoryAdvisorPresentation({ input: valid.input, result }, {}, new Map() as never)))
+			.toBe('presentation_objects_not_plain');
+		expect(cause(buildInventoryAdvisorPresentation(
+			{ input: valid.input, result }, { filters: { actions: ['destroy'] } } as never,
+		))).toBe('presentation_options_shape');
+		expect(cause(buildInventoryAdvisorPresentation({ input: valid.input, result, extra: 1 } as never)))
+			.toBe('presentation_source_shape');
+		const identityMismatch = structuredClone(result);
+		if (identityMismatch.status === 'invalid') throw new Error('Expected fixture result.');
+		identityMismatch.report.accountId = 'other-account';
+		const mismatched = buildInventoryAdvisorPresentation({ input: valid.input, result: identityMismatch });
+		expect(cause(mismatched)).toBe('presentation_result_contract_invalid');
+		// A closed code: no account value can travel in it.
+		expect(mismatched.invalidCause).toMatch(/^[a-z][a-z0-9_:]{0,79}$/);
+		expect(JSON.stringify(mismatched)).not.toContain('other-account');
+	});
+
 	it('classifies and projects a whole report without reaching for any ambient capability', async () => {
 		const projected: string[] = [];
 		const used = await ambientCapabilityUse(() => {

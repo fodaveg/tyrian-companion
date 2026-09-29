@@ -996,6 +996,18 @@ describe('Inventory Advisor view', () => {
 		expect(state.textContent).not.toContain('account-');
 	});
 
+	it('paints the invalid view with its stable cause, in both languages, and only on invalid', () => {
+		const invalid = { ...readyModel(), status: 'invalid' as const, groups: [], invalidCause: 'evidence_snapshot_shape' };
+		const es = only(byClass(render(invalid, 'es').elements(), 'tyrian-inventory-advisor__state'));
+		expect(es.textContent).toBe('La revisión de inventario no es válida y no se muestra ninguna acción. (causa: evidence_snapshot_shape)');
+		const en = only(byClass(render(invalid, 'en').elements(), 'tyrian-inventory-advisor__state'));
+		expect(en.textContent).toBe('Inventory review is invalid and no action is shown. (cause: evidence_snapshot_shape)');
+		const withoutCause = only(byClass(render({ ...invalid, invalidCause: undefined }).elements(), 'tyrian-inventory-advisor__state'));
+		expect(withoutCause.textContent).toBe('La revisión de inventario no es válida y no se muestra ninguna acción.');
+		const notInvalid = only(byClass(render({ ...readyModel(), status: 'ready', invalidCause: 'stray_code' }).elements(), 'tyrian-inventory-advisor__state'));
+		expect(notInvalid.textContent).not.toContain('stray_code');
+	});
+
 	it('renders independent instances into disjoint nodes and reads a fixture port without changing it', () => {
 		const model = deepFreeze(readyModel());
 		const left = render(model, 'es');

@@ -38,14 +38,29 @@ import { evaluateInventoryEquipmentEconomy } from './inventory-equipment-economy
 
 /** Pure H4.15 classifier producing the public H4.13 report and manual envelope. */
 export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResultV1 {
+	return classifyInventoryAdvisorDiagnosed(value).result;
+}
+
+/**
+ * The same classification plus, when it comes out `invalid`, a stable snake_case code for the stage
+ * that rejected it (a closed list, never a value of the account). It only names the exit taken; it
+ * neither changes what is invalid nor adds a field to the public result.
+ */
+export function classifyInventoryAdvisorDiagnosed(
+	value: unknown,
+): { result: InventoryAdvisorResultV1; cause: string | null } {
+	const failed = (cause: string): { result: InventoryAdvisorResultV1; cause: string } => ({ result: publicInvalid(), cause });
 	try {
-		if (!isEngineInput(value)) return publicInvalid();
-		const engine = classifyInventoryAdvisorEngine(value);
-		if (engine.status === 'invalid' || engine.report === null) return publicInvalid();
+		if (!isEngineInput(value)) return failed('classifier_input_shape');
 		const { input } = value;
 		const balance = buildInventoryAdvisorReservationBalance(input.snapshot);
 		const plan = balance.status === 'ok' ? createReservationPlan({ goals: input.goals, balance: balance.balance }) : { status: 'invalid' as const };
-		if (plan.status !== 'ok') return publicInvalid();
+		const engine = classifyInventoryAdvisorEngine(value);
+		if (engine.status === 'invalid' || engine.report === null) {
+			return failed(balance.status !== 'ok' ? 'classifier_balance_invalid'
+				: plan.status !== 'ok' ? 'classifier_plan_invalid' : 'classifier_engine_invalid');
+		}
+		if (plan.status !== 'ok') return failed('classifier_plan_invalid');
 		const publicLines = engine.report.lines.map((line) => publicLine(
 			line, input, plan.plan, value.equipmentSalvage,
 		));
@@ -61,14 +76,14 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 				.sort((left, right) => left.ref.localeCompare(right.ref)), rulePack: input.rulePack,
 		};
 		const envelope = createInventoryRecommendationEnvelope(report);
-		if (envelope === null) return publicInvalid();
+		if (envelope === null) return failed('classifier_envelope_invalid');
 		const result: InventoryAdvisorResultV1 = { status: coverage === 'complete' ? 'ready' : 'limited', report, envelope };
 		return isInventoryAdvisorResultForInput(
 			result, input, value.knowledgePack, value.containerEconomy, value.personalValuation,
 			value.activeOrders, value.materialStorageCapacity, value.marketDepth,
 			value.equipmentSalvage,
-		) ? result : publicInvalid();
-	} catch { return publicInvalid(); }
+		) ? { result, cause: null } : failed('classifier_result_contract_invalid');
+	} catch { return failed('classifier_threw'); }
 }
 
 /** Internal classification representation preserves route provenance while the public report is assembled. */
