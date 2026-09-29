@@ -1,5 +1,29 @@
 # Changelog
 
+## Release beta 0.2.9 - la revisión de inventario deja de ser «no válida» en cuentas con más de 1000 posiciones
+
+- Con más de 1000 posiciones en la cuenta, una recomendación de mercado que mezclaba posiciones por
+  debajo y por encima del índice 1000 salía ordenada como número, pero se validaba como texto
+  («…/969» detrás de «…/1505»). Eso invalidaba la revisión entera
+  (`classifier_envelope_invalid`) y la sincronización fallaba con `report_null`. Ahora se valida por
+  índice numérico. Además, una recomendación de venta ya no incluye una posición vinculada a la
+  cuenta junto a otra vendible del mismo objeto: esa posición sale como revisión (`220e901`).
+- Si IndexedDB falla al leer las preferencias, el asesor devuelve `preferences_unavailable` y ya no
+  invalida el análisis. Si falla la precarga de precios, el fallo queda registrado y el análisis
+  sigue (`e5fd62a`, `7aa1fbb`).
+- Una lectura rechazada del histórico diario de precios ya no invalida el análisis (`23a0236`).
+- La petición del roster de personajes (`characters?ids=all`, unos 306 KB y entre 3,5 y 4,3 s en una
+  cuenta real) pasa de 10 s a 30 s de timeout, igual que los endpoints por personaje; con 10 s se
+  cortaba y la captura quedaba incompleta (`606c3f7`).
+- La revisión de inventario «no válida» y el error de «Sincronizar inventario» muestran un código de
+  causa estable, de una lista cerrada y sin datos de la cuenta. Ese código también se guarda en el
+  último resultado de la sincronización (`255a80c`).
+
+Límites: sin QA en Obsidian real antes de publicar. La instalación y la carga por BRAT quedan
+pendientes. Con la revisión ya válida, el análisis de una cuenta grande puede tardar varios
+minutos. Si supera la edad máxima de la captura, la sincronización a notas se detiene con
+`snapshot_stale`. Está pendiente de medir en el cliente real.
+
 ## Release beta 0.2.8 - el bloque de precios y la Venta en modo consulta llegan siempre a un estado final
 
 - El bloque de nota `tyrian-price-history` ya no borra las clases que le pone el host a su
