@@ -738,7 +738,7 @@ const ES = {
 		'advisor.view.copyTechnicalDetail': 'Copiar detalle técnico',
 		// H18.37: cabecera de la columna «por qué y datos» de la lista única con subgrid.
 		'advisor.view.list.headExplanation': 'Por qué y datos',
-		'advisor.view.list.detailsSummary': 'En propiedad, ubicación y evidencia',
+		'advisor.view.list.detailsSummary': 'Detalles',
 		'advisor.view.list.viewInSale': 'Ver en Venta',
 		'advisor.containerEconomy.title': 'Economía del Saco de Halloween',
 		'advisor.containerEconomy.liquidEv': 'EV líquido por bolsa',
@@ -1911,7 +1911,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'advisor.view.copyTechnicalDetail': 'Copy technical detail',
 	// H18.37: the "why and data" column header of the single subgrid list.
 	'advisor.view.list.headExplanation': 'Why and data',
-	'advisor.view.list.detailsSummary': 'Owned, location and evidence',
+	'advisor.view.list.detailsSummary': 'Details',
 	'advisor.view.list.viewInSale': 'View in Sale',
 	'advisor.containerEconomy.title': 'Trick-or-Treat Bag economics',
 	'advisor.containerEconomy.liquidEv': 'Liquid EV per bag',

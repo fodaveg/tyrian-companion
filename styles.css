@@ -2311,12 +2311,30 @@
 	font-size: var(--font-ui-smaller);
 }
 
-.tyrian-inventory__more summary {
+.tyrian-inventory__more > summary {
 	display: flex;
 	align-items: center;
+	gap: var(--size-4-2);
 	min-height: 44px;
+	list-style: none;
 	color: var(--text-muted);
 	cursor: pointer;
+}
+
+.tyrian-inventory__more > summary::-webkit-details-marker {
+	display: none;
+}
+
+.tyrian-inventory__more > summary::before {
+	flex: 0 0 auto;
+	width: .6em;
+	color: var(--text-muted);
+	content: "\25B8";
+	transition: transform .12s ease-in-out;
+}
+
+.tyrian-inventory__more[open] > summary::before {
+	transform: rotate(90deg);
 }
 
 .tyrian-inventory__more dl {
