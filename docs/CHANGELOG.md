@@ -1,5 +1,24 @@
 # Changelog
 
+## Release beta 0.2.10 - las vistas vuelven a abrir en Obsidian 1.14 y el análisis de inventario baja de minutos a segundos
+
+- En Obsidian 1.14, las tres vistas (Acompañante, Asesor de inventario y Venta de Halloween)
+  mostraban «Complemento no activo». El constructor de `View` de Obsidian llama a `getViewType()`
+  durante `super()`, y `HostItemView` leía el tipo de un campo que todavía no existía. Ahora cada
+  registro crea su clase con el tipo capturado por cierre. Además, el icono reconstruye una pestaña
+  que se quedó rota en vez de reutilizarla (`1bb6503`).
+- La fase de clasificación de «Sincronizar inventario» validaba otra vez el input entero, de varios
+  MB, una vez por cada decisión. Con unas 1600 decisiones, bloqueaba Obsidian unos 453 s. Ahora el
+  input se valida una sola vez. El orden de claves del hash canónico reutiliza un único
+  `Intl.Collator` y los hashes no cambian. El análisis cede el event loop entre fases para que la
+  vista se repinte. Con la cuenta real, la clasificación pasó de 453 s a 11 s en Obsidian y la
+  sincronización completa de 694 s a 76 s (`dbb411c`).
+- El desplegable de cada fila del inventario se llama «Detalles» y vuelve a mostrar la flecha ▸
+  (`e5a8150`).
+
+Límites: medido en el Obsidian real de David antes de publicar, instalando el `main.js` a mano. La
+instalación por BRAT queda pendiente de comprobar en el cliente.
+
 ## Release beta 0.2.9 - la revisión de inventario deja de ser «no válida» en cuentas con más de 1000 posiciones
 
 - Con más de 1000 posiciones en la cuenta, una recomendación de mercado que mezclaba posiciones por
