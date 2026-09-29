@@ -131,8 +131,14 @@ describe('GuildWars2Client', () => {
 		expect(guildWars2LogicalEndpoint('private/Secret Name?token=secret')).toBe('unknown');
 	});
 
-	it('defines patient single-attempt policies only for the three character operations', () => {
+	it('routes the heavy roster request (`characters?...&ids=all`) to the patient policy', () => {
+		expect(guildWars2LogicalEndpoint('characters?v=latest&ids=all')).toBe('characters');
+		expect(GW2_CHARACTER_OPERATION_POLICIES.characters).toEqual({ timeoutMs: 30_000, maxRetries: 0 });
+	});
+
+	it('defines patient single-attempt policies only for the roster and the three per-character operations', () => {
 		expect(GW2_CHARACTER_OPERATION_POLICIES).toEqual({
+			characters: { timeoutMs: 30_000, maxRetries: 0 },
 			character_inventory: { timeoutMs: 30_000, maxRetries: 0 },
 			character_build: { timeoutMs: 30_000, maxRetries: 0 },
 			character_equipmenttabs: { timeoutMs: 30_000, maxRetries: 0 },

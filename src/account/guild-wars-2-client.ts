@@ -10,8 +10,13 @@ import type { ApiKeyProvider } from '../core/secret-provider';
 
 export const OFFICIAL_GW2_API_URL = 'https://api.guildwars2.com/v2';
 
-/** Slow per-character fan-out gets one patient attempt; capture/scheduler own recovery. */
+/**
+ * Slow per-character fan-out gets one patient attempt; capture/scheduler own recovery.
+ * `characters` is the full roster (`ids=all`, ~306 KB, 3.5-4.3 s on a real account); the
+ * storage snapshot is its only caller, so the 10 s default cut it off mid-flight.
+ */
 export const GW2_CHARACTER_OPERATION_POLICIES = Object.freeze({
+	characters: Object.freeze({ timeoutMs: 30_000, maxRetries: 0 }),
 	character_inventory: Object.freeze({ timeoutMs: 30_000, maxRetries: 0 }),
 	character_build: Object.freeze({ timeoutMs: 30_000, maxRetries: 0 }),
 	character_equipmenttabs: Object.freeze({ timeoutMs: 30_000, maxRetries: 0 }),
