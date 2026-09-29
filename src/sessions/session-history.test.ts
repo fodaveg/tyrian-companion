@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { stringify as stringifyYaml } from 'yaml';
 
 import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import type { LocalDebugLogger } from '../core/local-debug-logger';
@@ -7,6 +8,8 @@ import { SESSION_NOTE_BLOCK_IDS } from './session-note-model';
 import { renderAbandonedSessionNote, sha256Text } from './session-note-renderer';
 import { buildSessionHistoryAggregate } from './session-history-summary';
 import type { AbandonedSessionState } from './session';
+import { renderCollectorStatusNote } from '../runtime/collector-status';
+import { WalletVaultSyncService, type WalletVaultPort } from '../wallet/wallet-vault-sync';
 import {
 	SESSION_HISTORY_CSV_FILE,
 	SESSION_HISTORY_JSON_FILE,
@@ -551,6 +554,44 @@ describe('durable session history', () => {
 		await expect(new SessionHistoryService(hinted).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 	});
 
+	// 29 sep 2026, David's vault: the scan reads the whole vault, so the 1353 inventory position
+	// notes and the collector status note the plugin itself writes counted as corrupt sessions and
+	// the history view refused to show anything. They are the plugin's own notes of another kind.
+	it('ignores the notes the plugin writes for inventory, wallet and collector status', async () => {
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note());
+		vault.contents.set('Sessions/two.md', await note({ tc_session_ref: 'c'.repeat(64) }));
+		vault.contents.set('Tyrian Companion/Inventory/Positions/19687-m-account.md', inventoryNote());
+		vault.contents.set('Tyrian Companion/Collector status.md', renderCollectorStatusNote({
+			instanceId: 'collector-instance-1', platform: 'macos', hostVersion: '1.14.0', pluginVersion: '0.2.10',
+			heartbeatAt: '2026-09-29T08:00:00.000Z',
+		}, 'es'));
+		const wallet = (await new WalletVaultSyncService(emptyWalletVault(), 'vault-config').preview('Tyrian Companion', {
+			schemaVersion: 1, capturedAt: '2026-09-29T08:00:01.000Z', locale: 'es',
+			positions: [{ currencyId: 1, quantity: 100, order: 1, name: 'Moneda', icon: null }],
+		})).steps[0];
+		if (!wallet || wallet.after === null) throw new Error('Expected a rendered wallet note.');
+		vault.contents.set(wallet.path, wallet.after);
+		const history = new SessionHistoryService(vault);
+		const scan = await history.scan();
+		expect(scan).toMatchObject({ status: 'ok', ignored: 3 });
+		if (scan.status !== 'ok') throw new Error('Expected an ok scan.');
+		expect(scan.sessions.map((session) => session.sessionRef)).toEqual(['a'.repeat(64), 'c'.repeat(64)]);
+		await expect(history.readSession('c'.repeat(64))).resolves.toMatchObject({ status: 'found', path: 'Sessions/two.md' });
+		await expect(history.previewScrub(idleAuthority())).resolves.toMatchObject({ status: 'ready', sessions: 2 });
+	});
+
+	it('keeps failing closed on an unknown tc_kind or a foreign kind that carries a session identity', async () => {
+		const unknown = new MemoryVault();
+		unknown.contents.set('Sessions/one.md', await note());
+		unknown.contents.set('Notes/unknown.md', '---\ntc_kind: gw2_farming_sesion\ntc_schema: 2\n---\n');
+		await expect(new SessionHistoryService(unknown).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		const relabelled = new MemoryVault();
+		relabelled.contents.set('Notes/relabelled.md', (await note()).replace('tc_kind: "gw2_farming_session"', 'tc_kind: gw2_inventory_position'));
+		expect(relabelled.contents.get('Notes/relabelled.md')).toContain('tc_kind: gw2_inventory_position');
+		await expect(new SessionHistoryService(relabelled).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+	});
+
 	it('recognizes existing folders without attempting to read them as export files', async () => {
 		const vault = new MemoryVault();
 		vault.contents.set('Sessions/one.md', await note());
@@ -678,4 +719,27 @@ async function note(overrides: Record<string, string | number | null> = {}): Pro
 		return `<!-- tyrian-companion:managed:start:${id} sha256=${await sha256Text(content)} -->\n${content}\n<!-- tyrian-companion:managed:end:${id} -->`;
 	}));
 	return `---\n${Object.entries(frontmatter).map(([key, value]) => `${key}: ${value === null ? 'null' : typeof value === 'string' ? JSON.stringify(value) : String(value)}`).join('\n')}\n---\n# Session\n\n${blocks.join('\n\n')}\n\nHuman body must stay private\n`;
+}
+
+/**
+ * An inventory position note as `renderInventoryNote` lays it out: YAML-stringified managed keys
+ * (so `tc_kind` is unquoted), the position marker and the managed block. Its writer is not
+ * reachable without a whole snapshot, so this keeps its shape rather than calling it.
+ */
+function inventoryNote(): string {
+	const frontmatter = stringifyYaml({
+		tc_schema: 1, tc_kind: 'gw2_inventory_position', tc_marker: 'tyrian_companion_inventory_position',
+		tc_position_id: '19687-m-account', tc_item_id: 19687, tc_source: 'material', tc_character: null, tc_quantity: 250,
+		tc_unit_sell_copper: 12, tc_total_sell_copper: 3000, tc_active: true, tc_item_name: 'Cadena de hierro',
+		descripcion: 'Existencia de inventario gestionada por Tyrian Companion.',
+	}, { lineWidth: 0 }).trimEnd();
+	return `---\n${frontmatter}\n---\n<!-- tyrian-companion-inventory schema=1 marker=tyrian_companion_inventory_position position=19687-m-account hash=${'d'.repeat(64)} -->\nbloque\n<!-- /tyrian-companion-inventory -->\n`;
+}
+
+function emptyWalletVault(): WalletVaultPort {
+	return {
+		file: () => null, markdownFiles: () => [], read: async () => { throw new Error('not_file'); },
+		createFolder: async () => { throw new Error('read_only'); }, create: async () => { throw new Error('read_only'); },
+		process: async () => { throw new Error('read_only'); },
+	};
 }

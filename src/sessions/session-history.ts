@@ -1,5 +1,8 @@
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
+import { INVENTORY_NOTE_KIND } from '../inventory/inventory-vault-sync';
+import { COLLECTOR_STATUS_NOTE_KIND } from '../runtime/collector-status';
+import { WALLET_NOTE_KIND } from '../wallet/wallet-vault-sync';
 import { normalizeSessionOutputFolder } from './session-note-model';
 import { SESSION_ABANDON_REASONS } from './session';
 import {
@@ -470,6 +473,7 @@ export class SessionHistoryService {
 
 /** Canonical durable-note inspector shared by history and opt-in feature backfills. */
 export async function inspectDurableSessionNote(content: string): Promise<DurableSessionNoteInspection> {
+	if (declaresOtherTyrianNoteKind(content)) return { status: 'non_candidate' };
 	const note = await inspectStoredSessionNote(content);
 	if (note === null) return { status: hasTcHint(content) ? 'invalid' : 'non_candidate' };
 	const fm = note.frontmatter;
@@ -708,6 +712,38 @@ export function serializeCsvCell(value: string | number | null): string {
 }
 function compareSessions(a: DurableSessionHistoryRecord, b: DurableSessionHistoryRecord): number {
 	return a.startedAt.localeCompare(b.startedAt) || a.endedAt.localeCompare(b.endedAt) || a.sessionRef.localeCompare(b.sessionRef);
+}
+/**
+ * The history scan reads the whole vault, so it also meets the notes the plugin's other writers
+ * leave there (inventory positions, wallet currencies, the collector status note). Those are not
+ * sessions and must not read as corrupt ones: that blocked the whole history on any account that
+ * had synced its inventory. Only a closed list of the kinds this plugin writes is exempt; an
+ * unknown `tc_kind` keeps failing closed, because it can be a session note whose kind was damaged
+ * and skipping it would drop it from both the history and the privacy scrub. For the same reason a
+ * note that declares one of these kinds but carries a session's identity keys is not exempt.
+ */
+const OTHER_TYRIAN_NOTE_KINDS: ReadonlySet<string> = new Set([
+	INVENTORY_NOTE_KIND, WALLET_NOTE_KIND, COLLECTOR_STATUS_NOTE_KIND,
+]);
+const SESSION_IDENTITY_KEYS: ReadonlySet<string> = new Set(['tc_session_ref', 'tc_account_ref']);
+
+function declaresOtherTyrianNoteKind(content: string): boolean {
+	if (!content.startsWith('---\n')) return false;
+	const end = content.indexOf('\n---\n', 4);
+	if (end < 0) return false;
+	const kinds: string[] = [];
+	for (const line of content.slice(4, end).split('\n')) {
+		const match = /^(tc_[A-Za-z0-9_-]*):(?:\s*(.*))?$/u.exec(line);
+		if (!match) continue;
+		if (SESSION_IDENTITY_KEYS.has(match[1]!)) return false;
+		if (match[1] === 'tc_kind') kinds.push(unquotedScalar(match[2] ?? ''));
+	}
+	return kinds.length === 1 && OTHER_TYRIAN_NOTE_KINDS.has(kinds[0]!);
+}
+function unquotedScalar(value: string): string {
+	const trimmed = value.trim();
+	const quoted = /^"([^"\\]*)"$|^'([^']*)'$/u.exec(trimmed);
+	return quoted ? quoted[1] ?? quoted[2] ?? '' : trimmed;
 }
 function hasTcHint(content: string): boolean {
 	if (content.startsWith('---\n')) {
