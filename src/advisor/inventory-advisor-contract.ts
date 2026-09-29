@@ -100,8 +100,18 @@ export function isInventoryAdvisorReason(value: unknown): value is InventoryAdvi
 
 /** Economic decisions require a fresh, resolved catalog record for their item. */
 export function validDecisionAgainstInput(input: unknown, decision: unknown): boolean {
+	return safeGuard(() => isInventoryAdvisorInputUnsafe(input) && validDecisionAgainstValidatedInput(input, decision));
+}
+
+/**
+ * The same check for a caller that has ALREADY validated `input` with `isInventoryAdvisorInput`
+ * and loops over many decisions. Validating the whole input (catalog, signals, a canonical JSON
+ * round trip of several MB) once per decision was O(decisions × input size): on a real account
+ * with ~1600 decisions it cost 461 s of the 484 s the classification phase took (29 sep 2026).
+ */
+export function validDecisionAgainstValidatedInput(input: InventoryAdvisorInputV1, decision: unknown): boolean {
 	return safeGuard(() => {
-		if (!isInventoryAdvisorInputUnsafe(input) || !isDecision(decision)) return false;
+		if (!isDecision(decision)) return false;
 		if (!['sell', 'list', 'vendor', 'salvage', 'use', 'open'].includes(decision.action)) return true;
 		const coverage = input.catalog.coverage.items[String(decision.itemId)];
 		if (coverage?.status !== 'resolved' || (coverage.source !== 'network' && coverage.source !== 'cache_fresh')) return false;

@@ -81,6 +81,11 @@ export interface AdvisorAssemblyInput {
 	 * view, the inventory notes and the Base all read. Omitted, the advisor classifies as before.
 	 */
 	objects?: InventoryObjectAnalysisPort;
+	/**
+	 * Hands the event loop back between the long synchronous steps of the classification phase so
+	 * the host paints and its sync counters advance; the workflow itself owns no timer.
+	 */
+	yieldToEventLoop?: () => Promise<void>;
 }
 
 export interface AdvisorAssembly {
@@ -176,6 +181,7 @@ function createInventoryAdvisorRuntime(
 			equipmentSalvagePreferences,
 		),
 		...(input.objects === undefined ? {} : { objects: input.objects }),
+		...(input.yieldToEventLoop === undefined ? {} : { yieldToEventLoop: input.yieldToEventLoop }),
 	});
 	return new InventoryAdvisorPresentationController({
 		load: async (parent) => {

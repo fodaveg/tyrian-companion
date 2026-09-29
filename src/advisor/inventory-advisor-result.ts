@@ -10,7 +10,7 @@ import {
 	isApprovedApplicableCapability,
 	isEnabledApplicableRule,
 	sha256InventoryAdvisorReport,
-	validDecisionAgainstInput as validPublicDecisionAgainstInput,
+	validDecisionAgainstValidatedInput as validPublicDecisionAgainstInput,
 } from './inventory-advisor-contract';
 import type {
 	InventoryAdvisorInputV1,

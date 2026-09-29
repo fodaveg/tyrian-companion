@@ -16,10 +16,19 @@
  */
 export function canonicalJson(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-	if (isPlainRecord(value)) return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
+	if (isPlainRecord(value)) return `{${Object.entries(value).sort(([left], [right]) => compareKeys(left, right))
 		.map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(',')}}`;
 	return JSON.stringify(value) ?? 'undefined';
 }
+
+/**
+ * The same order `left.localeCompare(right)` gives (ECMA-402 defines `localeCompare` without
+ * arguments as `new Intl.Collator().compare`), so no fingerprint already written changes. One
+ * collator is reused because `localeCompare` builds one per call: canonicalising the advisor's
+ * multi-MB input repeatedly spent whole seconds inside that comparator (measured 29 sep 2026).
+ */
+const KEY_COLLATOR = new Intl.Collator();
+function compareKeys(left: string, right: string): number { return KEY_COLLATOR.compare(left, right); }
 
 /** Synchronous SHA-256 for validated in-memory contracts; no Node runtime dependency. */
 export function sha256Utf8(message: string): string {

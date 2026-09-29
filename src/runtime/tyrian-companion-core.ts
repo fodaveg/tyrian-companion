@@ -1105,6 +1105,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 					source, uncertainItemIds, { refreshSeeds: this.inventoryAnalysisForSync },
 				),
 			},
+			// One macrotask between the classifier and the discard allowlist (each a whole-account
+			// synchronous pass) so the renderer paints and the sync counter advances between them.
+			yieldToEventLoop: () => new Promise((resolve) => { window.setTimeout(resolve, 0); }),
 		});
 		this.inventoryPreferences = advisorServices.preferences;
 		this.inventoryAdvisor = advisorServices.controller;

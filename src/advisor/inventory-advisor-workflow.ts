@@ -49,6 +49,13 @@ export interface InventoryAdvisorWorkflowPorts {
 	 * ready result carries `objects: null`.
 	 */
 	objects?: InventoryObjectAnalysisPort;
+	/**
+	 * Hands the event loop back between the long synchronous steps of the classification phase
+	 * (classifier, then discard allowlist) so the host can paint and its counters advance. The
+	 * runtime injects a macrotask (`window.setTimeout` 0); absent, the steps run back to back, since
+	 * this module owns no timer of its own.
+	 */
+	yieldToEventLoop?: () => Promise<void>;
 }
 
 /** Goals the plugin derives on its own (the legendary targets in settings), never persisted. */
@@ -198,8 +205,11 @@ export class InventoryAdvisorWorkflow {
 	): Promise<{ source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 | null }> {
 		if (capture.evidence === null) throw new Error(`inventory_advisor_capture_${capture.status}`);
 		const merged = mergeDerivedReservationGoals(capture.evidence.snapshot, preferences.goals, derived);
-		const source = composeInventoryAdvisorRefresh(
-			capture, { goals: merged.goals, keepExceptions: preferences.keepExceptions }, rules, asOf,
+		const yieldNow = this.ports.yieldToEventLoop ?? NO_YIELD;
+		// The 'classification' phase was just announced; let the host paint it before the first block.
+		await yieldNow();
+		const source = await composeInventoryAdvisorRefresh(
+			capture, { goals: merged.goals, keepExceptions: preferences.keepExceptions }, rules, asOf, yieldNow,
 		);
 		const objects = this.ports.objects === undefined ? null
 			: await this.ports.objects.evaluate(source, merged.uncertainItemIds);
@@ -285,12 +295,19 @@ export function createInventoryAdvisorBuiltinRulesProvider(
 	});
 }
 
-export function composeInventoryAdvisorRefresh(
+/**
+ * Composes the engine input, classifies it and applies the discard allowlist. The two long
+ * synchronous steps (each reproduces the whole account: ~0.8 s and ~1.5 s on 1230 lines, measured
+ * 29 sep 2026) are separated by `yieldNow`, so a host UI gets one paint between them; the value
+ * returned is exactly the one the same steps produce back to back.
+ */
+export async function composeInventoryAdvisorRefresh(
 	capture: InventoryAdvisorEvidenceCaptureResultV1,
 	preferences: InventoryAdvisorPreferencesSnapshot,
 	rules: InventoryAdvisorRules,
 	asOf: string,
-): InventoryAdvisorContextualPresentationSource {
+	yieldNow: () => Promise<void> = async () => undefined,
+): Promise<InventoryAdvisorContextualPresentationSource> {
 	if (capture.evidence === null) throw new Error(`inventory_advisor_capture_${capture.status}`);
 	const input = createInventoryAdvisorInputFromEvidence({
 		asOf, evidence: capture.evidence,
@@ -335,9 +352,13 @@ export function composeInventoryAdvisorRefresh(
 		}),
 	};
 	const producerResult = classifyInventoryAdvisor(engineInput);
+	await yieldNow();
 	const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });
 	return { input, result, discardContext: { engineInput, producerResult } };
 }
+
+/** Review-only module: no timer of its own. Without an injected port the steps run back to back. */
+const NO_YIELD = async (): Promise<void> => undefined;
 
 function selectSupplementalMarketDepth(
 	marketDepth: InventoryMarketDepthEvidenceV1,
