@@ -90,7 +90,7 @@ function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 
 		.includes(String(value.action)) || !positive(value.itemId) || !positive(value.quantity)
 		|| !Array.isArray(value.allocations) || value.allocations.length === 0
 		|| !value.allocations.every(isAllocation)
-		|| !sortedUnique(value.allocations.map((allocation) => allocation.positionRef))
+		|| !strictlyAscendingHoldings(value.allocations.map((allocation) => allocation.positionRef))
 		|| safeSum(value.allocations.map((allocation) => allocation.quantity)) !== value.quantity
 		|| !internalRef(value.explanationRef)
 		|| (value.ruleId !== null && !identifier(value.ruleId))) return false;
@@ -184,8 +184,13 @@ function nonNegative(value: unknown): value is number {
 	return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
-function sortedUnique(values: string[]): boolean {
-	return unique(values) && values.every((value, index) => index === 0 || values[index - 1]! < value);
+/** Allocation refs (`#/positions/<itemId>/<holdingIndex>`) must ascend by NUMERIC holdingIndex: as text `.../1505` sorts before `.../969`. */
+function strictlyAscendingHoldings(refs: string[]): boolean {
+	const indexes = refs.map((ref) => {
+		const match = /^#\/positions\/\d+\/(\d+)$/.exec(ref);
+		return match === null ? Number.NaN : Number(match[1]);
+	});
+	return indexes.every((index, position) => Number.isSafeInteger(index) && (position === 0 || indexes[position - 1]! < index));
 }
 
 function safeSum(values: number[]): number {

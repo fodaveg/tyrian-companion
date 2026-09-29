@@ -406,6 +406,57 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(isInventoryAdvisorEngineResult(hostile)).toBe(false);
 	});
 
+	it('keeps a market decision valid when its positions straddle holding index 1000 (numeric order, not text order)', () => {
+		const spread = sparseHoldingsFixture([969, 1505]);
+		const result = classifyInventoryAdvisor(spread);
+		expect(result.status).not.toBe('invalid');
+		const decision = result.report?.lines[0]?.decisions[0];
+		expect(decision).toMatchObject({ action: 'sell', quantity: 2, allocations: [
+			{ positionRef: '#/positions/10/969', quantity: 1 }, { positionRef: '#/positions/10/1505', quantity: 1 },
+		] });
+		expect(result.envelope).not.toBeNull();
+		expect(isInventoryAdvisorReport(result.report)).toBe(true);
+		expect(isInventoryRecommendationEnvelope(result.envelope)).toBe(true);
+		expect(isInventoryAdvisorResultForInput(result, spread.input)).toBe(true);
+	}, 120_000);
+
+	it('still accepts allocations in ascending numeric order that the text order already accepted', () => {
+		for (const indexes of [[0, 1, 2, 3], [10, 11, 12]]) {
+			const ordered = sparseHoldingsFixture(indexes);
+			const result = classifyInventoryAdvisor(ordered);
+			expect(result.envelope, indexes.join()).not.toBeNull();
+			expect(result.report?.lines[0]?.decisions[0]?.allocations, indexes.join()).toHaveLength(indexes.length);
+			expect(isInventoryAdvisorReport(result.report), indexes.join()).toBe(true);
+			expect(isInventoryRecommendationEnvelope(result.envelope), indexes.join()).toBe(true);
+		}
+	});
+
+	it('rejects descending, repeated and unparseable allocation refs in a decision', () => {
+		const result = classifyInventoryAdvisor(sparseHoldingsFixture([9, 10, 100]));
+		const decision = result.report!.lines[0]!.decisions[0]!;
+		for (const bad of [[...decision.allocations].reverse(), [decision.allocations[0]!, decision.allocations[0]!]]) {
+			const line = { ...result.report!.lines[0]!, decisions: [{ ...decision, allocations: bad }] };
+			expect(isInventoryAdvisorReport({ ...result.report!, lines: [line] })).toBe(false);
+		}
+		const unparseable = [{ positionRef: '#/positions/10/x', quantity: 1 }];
+		const line = { ...result.report!.lines[0]!, decisions: [{ ...decision, quantity: 1, allocations: unparseable }] };
+		expect(isInventoryAdvisorReport({ ...result.report!, lines: [line] })).toBe(false);
+	}, 120_000);
+
+	it('keeps an account-bound position out of the sell/list decision of its unbound sibling', () => {
+		const mixed = sparseHoldingsFixture([1, 4], (index) => index === 4 ? 'AccountBound' : undefined);
+		const result = classifyInventoryAdvisor(mixed);
+		expect(result.status).not.toBe('invalid');
+		const decisions = result.report!.lines[0]!.decisions;
+		const market = decisions.find((decision) => decision.action === 'sell' || decision.action === 'list');
+		expect(market).toMatchObject({ quantity: 1, allocations: [{ positionRef: '#/positions/10/1', quantity: 1 }] });
+		expect(decisions.find((decision) => decision.action === 'review')).toMatchObject({
+			quantity: 1, allocations: [{ positionRef: '#/positions/10/4', quantity: 1 }],
+		});
+		expect(result.report!.lines[0]!.reasons).toContainEqual(expect.objectContaining({ code: 'position_not_actionable' }));
+		expect(isInventoryAdvisorResultForInput(result, mixed.input)).toBe(true);
+	});
+
 	it('blocks TP on bound holdings and a curated salvage route on NoSalvage evidence', () => {
 		for (const binding of ['AccountBound', 'Soulbind']) {
 			const bound = fixture();
@@ -699,6 +750,36 @@ describe('H4.15 inventory advisor classifier', () => {
  * ectoplasm evidence whose listings top level is 1,697 and whose prices bid is
  * the given value, so only the agreement between both readings varies.
  */
+/** Item 10 as one loose unit at each given holding index, the rest of the snapshot padded with loose unit of an unrelated item 11. */
+function sparseHoldingsFixture(indexes: number[], binding: (index: number) => string | undefined = () => undefined): InventoryAdvisorEngineInputV1 {
+	const value = fixture();
+	const holdings: StorageSnapshot['holdings'] = [];
+	for (let index = 0; index <= Math.max(...indexes); index += 1) {
+		holdings.push(indexes.includes(index)
+			? { kind: 'item', itemId: 10, quantity: 1, state: 'loose', location: { source: 'bank', slot: index },
+				metadata: binding(index) === undefined ? {} : { binding: binding(index) } }
+			: { kind: 'item', itemId: 11, quantity: 1, state: 'loose', location: { source: 'bank', slot: index }, metadata: {} });
+	}
+	value.input.snapshot.holdings = holdings;
+	const padding = holdings.length - indexes.length;
+	const quantities: Array<[number, number]> = padding === 0 ? [[10, indexes.length]] : [[10, indexes.length], [11, padding]];
+	value.input.snapshot.availableByItem = Object.fromEntries(quantities.map(([id, quantity]) => [String(id), quantity]));
+	value.input.snapshot.ownedByItem = { ...value.input.snapshot.availableByItem };
+	if (padding > 0) {
+		value.input.catalog.items['11'] = { ...value.input.catalog.items['10']!, id: 11, name: 'Padding' };
+		value.input.catalog.coverage.items['11'] = { status: 'resolved', source: 'network' };
+	}
+	value.marketDepth = { version: 1, capturedAt: '2026-08-14T12:00:00.000Z', source: 'gw2-commerce-listings',
+		requestedItemIds: quantities.map(([id]) => id), status: 'complete', items: quantities.map(([itemId, quantity]) => ({
+			itemId, coverage: 'complete' as const, buys: [{ unitCopper: 20, quantity }], sells: [{ unitCopper: 21, quantity }],
+		})) };
+	value.input.prices.requestedItemIds = quantities.map(([id]) => id);
+	value.input.prices.items = quantities.map(([itemId, quantity]) => ({
+		itemId, whitelisted: true, bid: { unitCopper: 20, quantity }, ask: { unitCopper: 21, quantity },
+	}));
+	return value;
+}
+
 function measuredEctoplasmFixture(ectoplasmBid: number): InventoryAdvisorEngineInputV1 {
 	const value = equipmentSalvageFixture('Rare');
 	const items = [

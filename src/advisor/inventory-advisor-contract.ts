@@ -432,7 +432,7 @@ function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 
 	], ['materialStorage', 'salvageProof']) || !ACTIONS.includes(value.action as InventoryRecommendationAction) || !positive(value.itemId)
 		|| !positive(value.quantity) || !Array.isArray(value.allocations) || value.allocations.length === 0
 		|| !value.allocations.every(isDecisionAllocation)
-		|| !strictlySorted(value.allocations, (left, right) => left.positionRef.localeCompare(right.positionRef))
+		|| !strictlySorted(value.allocations, (left, right) => allocationHoldingIndex(left.positionRef) - allocationHoldingIndex(right.positionRef))
 		|| !internalRef(value.explanationRef) || (value.ruleId !== null && !identifier(value.ruleId))) return false;
 	const curated = ['salvage', 'use', 'open', 'discard_candidate'].includes(String(value.action));
 	if (value.action === 'deposit_material' ? !isMaterialStorageContext(value.materialStorage)
@@ -477,6 +477,13 @@ function isMaterialStorageContext(value: unknown): boolean {
 		&& isMaterialStorageCapacity(value.capacity, value.capacitySource) && bounded(value.capacity, 250, 3000)
 		&& nonNegative(value.storedQuantity) && nonNegative(value.spaceBefore)
 		&& value.spaceBefore === Math.max(0, value.capacity - value.storedQuantity);
+}
+
+/** Holding index a decision allocation refers to (`#/positions/<itemId>/<holdingIndex>`), NaN when the ref carries none. */
+function allocationHoldingIndex(ref: string): number {
+	const match = /^#\/positions\/\d+\/(\d+)$/.exec(ref);
+	const index = match === null ? Number.NaN : Number(match[1]);
+	return Number.isSafeInteger(index) ? index : Number.NaN;
 }
 
 function isDecisionAllocation(value: unknown): value is InventoryDecisionAllocationV1 {

@@ -274,21 +274,37 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
 			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
 	}
+	// A sell/list decision may only carry positions the Trading Post accepts (the result contract requires it).
+	// When some loose positions of the item are eligible and others are not (e.g. an account-bound stack next to
+	// an unbound one), the market decision covers the eligible ones and the rest leave through the conservative
+	// exit. When none is eligible the route keeps deciding over all of them (vendor or keep, never sell/list).
+	const catalogItem = input.catalog.items[String(itemId)];
+	const eligiblePositions = freePositions.filter((position) => {
+		const holding = input.snapshot.holdings[position.holdingIndex];
+		if (catalogItem === undefined || holding?.kind !== 'item') return true;
+		const liquidity = classifyItemLiquidity(holding, catalogItem, 'available');
+		return liquidity.status === 'ok' && liquidity.classification.tradingPost.status === 'eligible';
+	});
+	const marketPositions = eligiblePositions.length === 0 ? freePositions : eligiblePositions;
+	for (const position of freePositions) if (!marketPositions.includes(position)) {
+		add('review', position, remaining.get(position.ref) ?? 0, 'position_not_actionable');
+	}
+	const marketQuantity = marketPositions.reduce((total, position) => total + (remaining.get(position.ref) ?? 0), 0);
 	const itemMarketDepth = marketDepth?.items.find((entry) => entry.itemId === itemId);
 	if (itemMarketDepth?.coverage === 'complete') {
-		const market = marketAction(input, freePositions[0]!, freeQuantity, itemId, true, evidenceReady,
+		const market = marketAction(input, marketPositions[0]!, marketQuantity, itemId, true, evidenceReady,
 			itemMarketDepth);
-		const allocations = freePositions.map((position) => ({
+		const allocations = marketPositions.map((position) => ({
 			positionRef: position.ref, quantity: remaining.get(position.ref) ?? 0,
 		}));
 		for (const allocation of allocations) remaining.set(allocation.positionRef, 0);
-		decisions.push({ action: market.action, itemId, quantity: freeQuantity, allocations,
+		decisions.push({ action: market.action, itemId, quantity: marketQuantity, allocations,
 			reason: market.reason, ruleId: null });
 		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
 			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
 	}
 	let bidRemaining = input.prices.items.find((entry) => entry.itemId === itemId)?.bid?.quantity ?? 0;
-	for (const position of freePositions) {
+	for (const position of marketPositions) {
 		const quantity = remaining.get(position.ref) ?? 0; if (quantity === 0) continue;
 		const sellable = Math.min(quantity, bidRemaining);
 		if (sellable > 0) {
