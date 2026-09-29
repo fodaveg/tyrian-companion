@@ -1,5 +1,18 @@
 # Changelog
 
+## Release beta 0.2.11 - el historial de sesiones vuelve a mostrarse tras sincronizar el inventario
+
+- El historial de sesiones recorre todo el vault. Cualquier nota con un `tc_kind` distinto de sesión
+  contaba como sesión corrupta. Con las notas de «Sincronizar inventario» presentes, eso eran 1354
+  notas «no válidas» y el historial quedaba bloqueado en «El historial necesita revisión». Ahora las
+  notas de inventario, cartera y estado del recolector, una lista cerrada de los tipos que escribe el
+  plugin, se ignoran. Un `tc_kind` desconocido sigue bloqueando, porque puede ser una sesión dañada
+  y saltarla la sacaría también del borrado de privacidad (`471d9f3`).
+
+Límites: medido en el Obsidian real de David antes de publicar, instalando el `main.js` a mano: el
+historial muestra sus 8 sesiones. La instalación por BRAT queda pendiente de comprobar en el
+cliente.
+
 ## Release beta 0.2.10 - las vistas vuelven a abrir en Obsidian 1.14 y el análisis de inventario baja de minutos a segundos
 
 - En Obsidian 1.14, las tres vistas (Acompañante, Asesor de inventario y Venta de Halloween)
