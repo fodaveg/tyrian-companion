@@ -45,7 +45,14 @@ vi.mock('obsidian', () => {
 		setValue(value: string): void { this.value = value; }
 		close(): void { this.closes += 1; }
 	}
-	return { Setting, SecretComponent, PluginSettingTab, AbstractInputSuggest, ItemView: class {}, Menu: class {}, Modal: class {}, Notice: class {}, setIcon: () => undefined, setTooltip: () => undefined };
+	// Like Obsidian 1.14: the `View` constructor calls `getViewType()` before subclass fields exist.
+	class ItemView {
+		readonly contentEl = { role: 'content' };
+		readonly viewType: string;
+		constructor(readonly leaf: unknown) { this.viewType = this.getViewType(); }
+		getViewType(): string { return ''; }
+	}
+	return { Setting, SecretComponent, PluginSettingTab, AbstractInputSuggest, ItemView, Menu: class {}, Modal: class {}, Notice: class {}, setIcon: () => undefined, setTooltip: () => undefined };
 });
 
 import { createObsidianUi, ObsidianSettingTab, type ObsidianSettingsPanel } from './obsidian-ui';
@@ -197,5 +204,34 @@ describe('ObsidianHost ui.pickFolder', () => {
 		expect([suggest.value, suggest.closes, chosen]).toEqual(['Notas', 1, ['Notas']]);
 		dispose();
 		expect(suggest.closes).toBe(2);
+	});
+});
+
+describe('ObsidianHost ui.registerView', () => {
+	const registration = { type: 'tyrian-companion-view', title: () => 'Tyrian', icon: 'sword', mount: () => undefined, unmount: () => undefined };
+
+	it('builds the view although the View constructor calls getViewType() during super()', () => {
+		const registerView = vi.fn();
+		createObsidianUi({ app: {}, registerView } as unknown as Plugin).registerView(registration);
+		const [type, creator] = registerView.mock.calls[0] as [string, (leaf: unknown) => { viewType: string; getViewType(): string; getIcon(): string; getDisplayText(): string }];
+		const view = creator({});
+		expect(type).toBe('tyrian-companion-view');
+		expect([view.viewType, view.getViewType(), view.getIcon(), view.getDisplayText()]).toEqual(['tyrian-companion-view', 'tyrian-companion-view', 'sword', 'Tyrian']);
+	});
+
+	it('rebuilds a reused leaf whose view is not ours, and leaves our own view alone', async () => {
+		const registerView = vi.fn();
+		const rebuildView = vi.fn(async () => undefined);
+		const leaf: { view: unknown; setViewState: () => Promise<void>; rebuildView: typeof rebuildView } = {
+			view: {}, setViewState: async () => undefined, rebuildView,
+		};
+		const workspace = { getLeavesOfType: () => [leaf], getLeaf: () => leaf, revealLeaf: async () => undefined };
+		const ui = createObsidianUi({ app: { workspace }, registerView } as unknown as Plugin);
+		ui.registerView(registration);
+		await ui.revealView(registration.type);
+		expect(rebuildView).toHaveBeenCalledTimes(1);
+		leaf.view = (registerView.mock.calls[0] as [string, (leaf: unknown) => unknown])[1]({});
+		await ui.revealView(registration.type);
+		expect(rebuildView).toHaveBeenCalledTimes(1);
 	});
 });

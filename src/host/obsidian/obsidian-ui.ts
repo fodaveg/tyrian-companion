@@ -42,12 +42,17 @@ export function createObsidianUi(plugin: Plugin): TyrianUiPort {
 	const app = () => plugin.app;
 	return {
 		registerView: (view) => {
-			plugin.registerView(view.type, (leaf) => new HostItemView(leaf, view));
+			const ViewClass = hostItemViewClass(view);
+			plugin.registerView(view.type, (leaf) => new ViewClass(leaf));
 			return () => { app().workspace.detachLeavesOfType(view.type); };
 		},
 		// Same as `main.ts`'s `activateView`: reuse the open leaf of that type, or open one.
 		revealView: async (type) => {
 			const leaf = app().workspace.getLeavesOfType(type)[0] ?? app().workspace.getLeaf(true);
+			// A leaf of this type that is not ours is the placeholder Obsidian leaves when creating the
+			// view failed (its `getViewType()` is the same type, so `setViewState` would be a no-op):
+			// rebuild it so a broken leaf saved in workspace.json heals on the next click.
+			if (!(leaf.view instanceof ItemView && ownViews.has(leaf.view))) await (leaf as WorkspaceLeaf & { rebuildView(): Promise<void> }).rebuildView(); // not in the public typings
 			await leaf.setViewState({ type, active: true });
 			await app().workspace.revealLeaf(leaf);
 		},
@@ -141,21 +146,32 @@ export function createObsidianUi(plugin: Plugin): TyrianUiPort {
 	};
 }
 
-/** An `ItemView` that owns nothing: the registration mounts into, and unmounts from, its content. */
-class HostItemView extends ItemView {
-	constructor(leaf: WorkspaceLeaf, private readonly view: TyrianViewRegistration) {
-		super(leaf);
-	}
+/** Views built by `hostItemViewClass`, to tell them from the placeholder Obsidian leaves in a leaf whose view failed to build. */
+const ownViews = new WeakSet<object>();
 
-	getViewType(): string { return this.view.type; }
+/**
+ * An `ItemView` class that owns nothing: the registration mounts into, and unmounts from, its content.
+ *
+ * The registration is captured by closure, not stored in an instance field: Obsidian's `View`
+ * constructor calls `getViewType()` during `super(leaf)`, before any subclass field is assigned.
+ */
+function hostItemViewClass(view: TyrianViewRegistration): new (leaf: WorkspaceLeaf) => ItemView {
+	return class HostItemView extends ItemView {
+		constructor(leaf: WorkspaceLeaf) {
+			super(leaf);
+			ownViews.add(this);
+		}
 
-	getDisplayText(): string { return this.view.title(); }
+		getViewType(): string { return view.type; }
 
-	getIcon(): string { return this.view.icon; }
+		getDisplayText(): string { return view.title(); }
 
-	async onOpen(): Promise<void> { await this.view.mount(this.contentEl); }
+		getIcon(): string { return view.icon; }
 
-	async onClose(): Promise<void> { await this.view.unmount(this.contentEl); }
+		async onOpen(): Promise<void> { await view.mount(this.contentEl); }
+
+		async onClose(): Promise<void> { await view.unmount(this.contentEl); }
+	};
 }
 
 class HostModal extends Modal {
