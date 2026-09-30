@@ -265,7 +265,7 @@ describe('H18.38 in-game bridge, alert acknowledgement (protocol v3)', () => {
 			const delivery = handle.broadcastAlert(1, alertFor(1));
 			expect(await old.nextLine()).toBe('{"v":2,"type":"alert","seq":1}');
 			expect(await modern.nextLine()).toBe('{"v":3,"type":"alert","seq":1}');
-			expect(delivery).toEqual({ v2Connections: 1, v3Clients: ['nexus'] });
+			expect(delivery).toEqual({ v2Clients: ['nexus'], v3Clients: ['nexus'] });
 		} finally { await handle.close(); }
 	});
 

@@ -28,13 +28,16 @@ import {
 	isEmittedAlertRecord,
 	type EmittedAlertRecordV1,
 } from '../alerts/alert-queue-record';
+import { isAlertDeliveryRecord, type AlertDeliveryRecordV1 } from '../alerts/alert-delivery-record';
 
 export const HALLOWEEN_DB_NAME = 'tyrian-companion-halloween';
 /**
  * v7 adds the already-owned baseline seed (`seed-meta-v1`), keyed the same way as
  * `meta-v1`. Purely additive: no existing store is read or rewritten.
+ * v8 adds `alert-deliveries-v1` (H18.38: what became of each alert on its way to the game), keyed
+ * like `emitted-alerts-v1`. Same rule: purely additive, no existing row is read or rewritten.
  */
-export const HALLOWEEN_DB_VERSION = 7;
+export const HALLOWEEN_DB_VERSION = 8;
 export const HALLOWEEN_OBSERVATION_STORE = 'observations-v1';
 export const HALLOWEEN_SEEN_STORE = 'seen-items-v1';
 export const HALLOWEEN_NOTICE_STORE = 'notices-v1';
@@ -46,6 +49,7 @@ export const HALLOWEEN_COMPARISON_STORE = 'loot-comparisons-v1';
 export const HALLOWEEN_PRICE_ALERT_STORE = 'price-alert-state-v1';
 export const HALLOWEEN_PRICE_NOTICE_STORE = 'price-notices-v1';
 export const HALLOWEEN_EMITTED_ALERT_STORE = 'emitted-alerts-v1';
+export const HALLOWEEN_ALERT_DELIVERY_STORE = 'alert-deliveries-v1';
 
 export type HalloweenStoreFailure = 'unavailable' | 'blocked' | 'future_schema' | 'corrupt' | 'quota';
 
@@ -123,6 +127,11 @@ export class IndexedDbHalloweenStore {
 				},
 				{
 					name: HALLOWEEN_EMITTED_ALERT_STORE,
+					keyPath: ['vaultId', 'accountRef', 'alertId'],
+					indexes: [{ name: 'by-scope-emitted', keyPath: ['vaultId', 'accountRef', 'emittedAt'] }],
+				},
+				{
+					name: HALLOWEEN_ALERT_DELIVERY_STORE,
 					keyPath: ['vaultId', 'accountRef', 'alertId'],
 					indexes: [{ name: 'by-scope-emitted', keyPath: ['vaultId', 'accountRef', 'emittedAt'] }],
 				},
@@ -600,6 +609,47 @@ export class IndexedDbHalloweenStore {
 					const excess = request.result.length - EMITTED_ALERT_RETENTION;
 					for (let index = 0; index < excess; index += 1) store.delete(request.result[index]!);
 					tx.oncomplete = () => resolve(structuredClone(record));
+				} catch (error) { reject(error); tx.abort(); }
+			};
+		});
+	}
+
+	/**
+	 * Upserts the delivery record of one alert (it changes as the ack arrives or times out) and
+	 * trims the store to the alerts' retention, oldest `emittedAt` first, in the same transaction.
+	 */
+	putAlertDelivery(record: AlertDeliveryRecordV1): Promise<AlertDeliveryRecordV1> {
+		if (!isAlertDeliveryRecord(record)) return Promise.reject(new HalloweenStoreError('corrupt'));
+		return this.run([HALLOWEEN_ALERT_DELIVERY_STORE], 'readwrite', (tx, resolve, reject) => {
+			const store = tx.objectStore(HALLOWEEN_ALERT_DELIVERY_STORE);
+			store.put(structuredClone(record));
+			const scope = IDBKeyRange.bound(
+				[record.vaultId, record.accountRef, ''], [record.vaultId, record.accountRef, String.fromCharCode(0xff_ff)],
+			);
+			const request = store.index('by-scope-emitted').getAllKeys(scope);
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					const excess = request.result.length - EMITTED_ALERT_RETENTION;
+					for (let index = 0; index < excess; index += 1) store.delete(request.result[index]!);
+					tx.oncomplete = () => resolve(structuredClone(record));
+				} catch (error) { reject(error); tx.abort(); }
+			};
+		});
+	}
+
+	readAlertDeliveries(vaultId: string, accountRef: string): Promise<AlertDeliveryRecordV1[]> {
+		return this.run([HALLOWEEN_ALERT_DELIVERY_STORE], 'readonly', (tx, resolve, reject) => {
+			const request = tx.objectStore(HALLOWEEN_ALERT_DELIVERY_STORE).index('by-scope-emitted')
+				.getAll(IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, String.fromCharCode(0xff_ff)]));
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					const records = request.result.map((value: unknown) => {
+						if (!isAlertDeliveryRecord(value)) throw new HalloweenStoreError('corrupt');
+						return structuredClone(value);
+					});
+					tx.oncomplete = () => resolve(records);
 				} catch (error) { reject(error); tx.abort(); }
 			};
 		});

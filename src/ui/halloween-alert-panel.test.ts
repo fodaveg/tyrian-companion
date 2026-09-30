@@ -257,6 +257,45 @@ function halloweenLayoutAt(styles: string, width: number): 'narrow-card' | 'card
 	return 'table';
 }
 
+describe('H18.38 aviso recorrido in the panel rows', () => {
+	const emittedAt = '2026-10-15T09:00:00.000Z';
+	const render = (deliveries: ReadonlyMap<string, never> | undefined, withUi: boolean) => {
+		const mount = new FakeElement('div');
+		const icons: string[] = [];
+		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
+			getHalloweenState: () => ({ status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null }),
+			getHalloweenPriceAlertState: disabledPriceState,
+			getEmittedAlerts: () => [valuableAlert(emittedAt)],
+			...(deliveries === undefined ? {} : { getAlertDeliveries: () => deliveries }),
+			getHalloweenPanelContext: () => inSeasonContext(),
+		}, translator('es'), 'es', Date.parse('2026-10-15T10:00:00.000Z'), {
+			chrome: false, ...(withUi ? { ui: { setIcon: (_element: HTMLElement, icon: string) => { icons.push(icon); } } } : {}),
+		});
+		return { all: walk(mount), icons };
+	};
+
+	it('draws a receipt per row with the steps of its delivery record', () => {
+		const delivery = {
+			version: 1, vaultId: 'vault', accountRef: 'account', alertId: `alert-${emittedAt}`, emittedAt, sentTo: ['nexus'],
+			state: 'received', cause: null, receivedBy: 'nexus', receivedAt: '2026-10-15T09:00:04.000Z',
+		};
+		const { all, icons } = render(new Map([[`alert-${emittedAt}`, delivery]]) as never, true);
+		expect(all.filter(({ tag }) => tag === 'ol')).toHaveLength(1);
+		expect(all.map(({ text }) => text)).toEqual(expect.arrayContaining(['Visto', 'Enviado', 'Recibido en el juego (Nexus)']));
+		expect(icons).toEqual(['eye', 'send', 'gamepad-2']);
+	});
+
+	it('an aviso without a delivery record shows «visto» and «sin datos de entrega»', () => {
+		const { all } = render(new Map() as never, true);
+		expect(all.map(({ text }) => text)).toEqual(expect.arrayContaining(['Visto', 'sin datos de entrega']));
+		expect(all.map(({ text }) => text)).not.toContain('Enviado');
+	});
+
+	it('without an icon port the rows stay exactly as before', () => {
+		expect(render(undefined, false).all.some(({ tag }) => tag === 'ol')).toBe(false);
+	});
+});
+
 function translator(locale: 'es' | 'en'): (key: string, params?: Record<string, string | number>) => string {
 	const t = createTranslator(locale);
 	return (key, params) => t.t(key as TranslationKey, params);

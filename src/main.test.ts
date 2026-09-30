@@ -2021,6 +2021,7 @@ describe('local diagnostics composition', () => {
 				return result;
 			} },
 			sessions: { dispose: vi.fn(async () => { events.push('sessions:dispose'); }) },
+			ingameReceipts: { dispose: vi.fn() },
 		}) as unknown as TyrianCompanionCore;
 		harness.onunload();
 		await harness.awaitLocalDebugShutdown();

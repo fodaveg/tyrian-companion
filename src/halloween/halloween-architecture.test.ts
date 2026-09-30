@@ -77,7 +77,7 @@ describe('H11-A architecture and UI contract', () => {
 		expect(obsidianVault).toMatch(/vault\.on\('modify',[\s\S]*listener\(/u);
 		expect(obsidianVault).toMatch(/vault\.on\('rename',[\s\S]*listener\(/u);
 		const store = readModuleSource('src/halloween/halloween-store.ts');
-		expect(store).toContain('HALLOWEEN_DB_VERSION = 7');
+		expect(store).toContain('HALLOWEEN_DB_VERSION = 8');
 		expect(store).toContain("HALLOWEEN_EPISODE_META_STORE = 'episode-meta-v1'");
 		expect(store).toContain("HALLOWEEN_META_STORE = 'meta-v1'");
 	});

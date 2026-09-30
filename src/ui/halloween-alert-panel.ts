@@ -3,7 +3,11 @@ import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { HALLOWEEN_SEASONAL_WINDOW } from '../economy/models/halloween-season';
 import { seasonalWindowStatusAtMs } from '../economy/seasonal-window';
 import type { Locale } from '../core/i18n';
+import type { AlertDeliveryRecordV1 } from '../alerts/alert-delivery-record';
+import type { TyrianUiPort } from '../host/tyrian-host';
+import { alertReceiptView } from './alert-delivery-steps';
 import { formatRelativeDay } from './format-time';
+import { renderReceipt } from './receipt';
 import type { HalloweenAlertReason, HalloweenNoticeV1 } from '../halloween/halloween-model';
 import type { HalloweenRuntimeState } from '../halloween/halloween-runtime';
 import type { HalloweenPriceAlertRuntimeState } from '../halloween/halloween-price-alert-runtime';
@@ -31,6 +35,11 @@ export interface HalloweenAlertPanelActions {
 	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState;
 	/** Durable copy of every alert emitted for this account, newest first. */
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
+	/**
+	 * H18.38: what became of each alert on its way to the game, by `alertId`. Absent (or an alert
+	 * missing from it) means no delivery data: the row then shows only «visto» and says so.
+	 */
+	getAlertDeliveries?(): ReadonlyMap<string, AlertDeliveryRecordV1>;
 	/** Absent defaults to the wall clock, no Labyrinth and no running session. */
 	getHalloweenPanelContext?(): HalloweenPanelContext;
 }
@@ -45,6 +54,8 @@ export interface HalloweenAlertPanelOptions {
 	 * caller (this file's own tests), unchanged.
 	 */
 	chrome?: boolean;
+	/** Icons for the per-aviso recorrido; without it the rows stay as they were (no recorrido). */
+	ui?: Pick<TyrianUiPort, 'setIcon'>;
 }
 
 /** Data-only DOM renderer. Obsidian Notice belongs to the plugin adapter, never this panel. */
@@ -97,7 +108,7 @@ export function renderHalloweenAlertPanel(
 			status.setText(t(`halloween.state.${state.status}`));
 		}
 	}
-	renderEmittedAlerts(body, visibleAlerts, t, locale, now);
+	renderEmittedAlerts(body, visibleAlerts, t, locale, now, options.ui, actions.getAlertDeliveries?.());
 	renderComparison(body, state, t);
 	renderPriceAlerts(body, priceState, t, locale, now);
 	for (const notice of state.notices) renderNotice(body, notice, t, locale, now);
@@ -137,6 +148,8 @@ function renderEmittedAlerts(
 	t: Translate,
 	locale: Locale,
 	now: number,
+	ui?: Pick<TyrianUiPort, 'setIcon'>,
+	deliveries?: ReadonlyMap<string, AlertDeliveryRecordV1>,
 ): void {
 	const section = container.createEl('section', { cls: 'tyrian-companion-halloween__alerts' });
 	section.createEl('h3', { text: t('alerts.queue.title') });
@@ -162,6 +175,10 @@ function renderEmittedAlerts(
 		}) });
 		row.createEl('time', { text: relativeDayLabel(alert.emittedAt, locale, now, t) })
 			.setAttr('datetime', alert.emittedAt);
+		if (ui === undefined) continue;
+		const view = alertReceiptView(alert, deliveries?.get(alert.alertId), t, locale);
+		renderReceipt(row, ui, t('alerts.step.aria'), view.steps);
+		if (view.note !== undefined) row.createEl('small', { text: view.note, cls: 'tyrian-companion-session__context' });
 	}
 }
 

@@ -16,6 +16,9 @@ import { ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS, type AlertV1 } from './alerts/al
 import type { AlertDeliveryReport } from './alerts/alert-emitter';
 import type { AlertIngameServerHandle } from './alerts/alert-ingame-server';
 import type { EmittedAlertRecordV1 } from './alerts/alert-queue-record';
+import type { AlertDeliveryRecordV1 } from './alerts/alert-delivery-record';
+import { alertReceiptView } from './ui/alert-delivery-steps';
+import { createTranslator } from './core/i18n';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { AssistedDetectionService } from './sessions/assisted-detection-service';
@@ -39,6 +42,7 @@ interface AlertWiringHarness {
 	startManualSession(input: unknown): Promise<void>;
 	emitAlert(alert: AlertV1): Promise<AlertDeliveryReport>;
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
+	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1>;
 	getLiveSessionLoot(): LiveSessionLootState;
 	getAssistedDetectionState(): { status: string };
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
@@ -341,6 +345,102 @@ describe('H13.4 alert channel cabling', () => {
 		}
 	});
 
+	describe('H18.38 recorrido of an aviso: real bridge, ack, persisted record, view model', () => {
+		async function withBridge(
+			body: (plugin: AlertWiringHarness, port: number) => Promise<void>,
+		): Promise<void> {
+			const record = activeSessionRecord();
+			vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+			vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+			const plugin = alertWiringPlugin(new IDBFactory());
+			const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+			await plugin.initializeRuntime();
+			const port = await freeLoopbackPort();
+			try {
+				await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: port });
+				await vi.waitFor(() => { expect(server()).not.toBeNull(); });
+				await body(plugin, port);
+			} finally {
+				await server()?.close();
+			}
+		}
+
+		async function connectAddon(plugin: AlertWiringHarness, port: number, version: 2 | 3) {
+			const socket = await connectLoopback(port);
+			socket.setEncoding('utf8');
+			const lines: string[] = [];
+			let buffer = '';
+			socket.on('data', (chunk: string) => {
+				buffer += chunk;
+				for (let newline = buffer.indexOf('\n'); newline !== -1; newline = buffer.indexOf('\n')) {
+					lines.push(buffer.slice(0, newline));
+					buffer = buffer.slice(newline + 1);
+				}
+			});
+			socket.write(ingameHello(await pluginBridgeSecret(plugin), version));
+			await vi.waitFor(() => { expect(lines).toHaveLength(1); });
+			const { nonce } = JSON.parse(lines[0] ?? '{}') as { nonce: string };
+			return { socket, lines, nonce };
+		}
+
+		const t = createTranslator('es');
+		const tr = (key: string, params?: Record<string, string | number>) => t.t(key as never, params);
+
+		it('a v3 addon that acks makes the record received by Nexus, and the view says so', async () => {
+			await withBridge(async (plugin, port) => {
+				const addon = await connectAddon(plugin, port, 3);
+				await plugin.emitAlert(VALUABLE);
+				await vi.waitFor(() => { expect(addon.lines).toHaveLength(2); });
+				const alert = JSON.parse(addon.lines[1] ?? '{}') as { v: number; seq: number };
+				expect(alert.v).toBe(3);
+				await vi.waitFor(() => {
+					expect([...plugin.getAlertDeliveries().values()]).toMatchObject([{ state: 'pending', sentTo: ['nexus'] }]);
+				});
+
+				addon.socket.write(`${JSON.stringify({ v: 3, type: 'alert_ack', nonce: addon.nonce, seq: 0, alertSeq: alert.seq })}\n`);
+				await vi.waitFor(() => {
+					expect([...plugin.getAlertDeliveries().values()]).toMatchObject([{ state: 'received', receivedBy: 'nexus' }]);
+				});
+				const stored = plugin.getEmittedAlerts()[0]!;
+				const view = alertReceiptView(stored, plugin.getAlertDeliveries().get(stored.alertId), tr, 'es');
+				expect(view.steps.map((step) => step.label)).toEqual(['Visto', 'Enviado', 'Recibido en el juego (Nexus)']);
+				expect(view.steps.map((step) => step.status)).toEqual(['done', 'done', 'done']);
+				addon.socket.destroy();
+			});
+		});
+
+		it('a v2 addon gets a v2 alert and the record says the addon does not confirm', async () => {
+			await withBridge(async (plugin, port) => {
+				const addon = await connectAddon(plugin, port, 2);
+				await plugin.emitAlert(VALUABLE);
+				await vi.waitFor(() => { expect(addon.lines).toHaveLength(2); });
+				expect(JSON.parse(addon.lines[1] ?? '{}')).toMatchObject({ v: 2, type: 'alert' });
+				await vi.waitFor(() => {
+					expect([...plugin.getAlertDeliveries().values()])
+						.toMatchObject([{ state: 'unconfirmed', cause: 'old_addon', sentTo: ['nexus'] }]);
+				});
+				const stored = plugin.getEmittedAlerts()[0]!;
+				const view = alertReceiptView(stored, plugin.getAlertDeliveries().get(stored.alertId), tr, 'es');
+				expect(view.steps[2]).toMatchObject({ label: 'Sin confirmar', detail: { text: 'el addon no confirma: actualízalo' } });
+				addon.socket.destroy();
+			});
+		});
+
+		it('with the bridge on and no addon connected, the record says nobody was there', async () => {
+			await withBridge(async (plugin) => {
+				const report = await plugin.emitAlert(VALUABLE);
+				expect(report.failed.map((entry) => entry.id)).toContain('ingame');
+				await vi.waitFor(() => {
+					expect([...plugin.getAlertDeliveries().values()])
+						.toMatchObject([{ state: 'unconfirmed', cause: 'no_addon', sentTo: [] }]);
+				});
+				const stored = plugin.getEmittedAlerts()[0]!;
+				const view = alertReceiptView(stored, plugin.getAlertDeliveries().get(stored.alertId), tr, 'es');
+				expect(view.steps[1]).toMatchObject({ status: 'skip', detail: { text: 'sin addon conectado' } });
+			});
+		});
+	});
+
 	it('refuses to build an alert that is not the signed contract', async () => {
 		const plugin = alertWiringPlugin(new IDBFactory());
 		await plugin.initializeRuntime();
@@ -447,9 +547,9 @@ function connectLoopback(port: number): Promise<Socket> {
 }
 
 /** A v2 hello as a Nexus addon sends it, carrying whatever secret the test hands in. */
-function ingameHello(secret: string): string {
+function ingameHello(secret: string, version: 2 | 3 = 2): string {
 	return `${JSON.stringify({
-		v: 2, type: 'hello', client: 'nexus', clientVersion: '0.2.0', instance: 'AAAAAAAAAAAAAAAAAAAAAA', token: secret,
+		v: version, type: 'hello', client: 'nexus', clientVersion: '0.2.0', instance: 'AAAAAAAAAAAAAAAAAAAAAA', token: secret,
 	})}\n`;
 }
 

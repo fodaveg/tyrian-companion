@@ -18,9 +18,17 @@ import { isAlert, type AlertV1 } from './alert-contract';
 export const ALERT_CHANNEL_IDS = ['toast', 'system_notification', 'sound', 'webhook', 'ingame', 'queue'] as const;
 export type AlertChannelId = typeof ALERT_CHANNEL_IDS[number];
 
+/**
+ * What every channel is told about the emission it is part of. `emittedAtMs` is stamped once per
+ * alert, so the durable queue and the in-game channel derive the same `alertId` from it (H18.38).
+ */
+export interface AlertDeliveryContext {
+	readonly emittedAtMs: number;
+}
+
 export interface AlertChannel {
 	readonly id: AlertChannelId;
-	deliver(alert: AlertV1): unknown;
+	deliver(alert: AlertV1, context: AlertDeliveryContext): unknown;
 }
 
 /** A channel that failed, with the rejection's class only (H15.16): never its message. */
@@ -37,11 +45,15 @@ export interface AlertDeliveryReport {
 }
 
 export class AlertEmitter {
-	constructor(private readonly channels: readonly AlertChannel[]) {}
+	constructor(
+		private readonly channels: readonly AlertChannel[],
+		private readonly now: () => number = Date.now,
+	) {}
 
 	async emit(alert: AlertV1): Promise<AlertDeliveryReport> {
 		if (!isAlert(alert)) return { delivered: [], failed: [], rejected: true };
-		const settled = await Promise.all(this.channels.map((channel) => startChannel(channel, alert)));
+		const context: AlertDeliveryContext = { emittedAtMs: this.now() };
+		const settled = await Promise.all(this.channels.map((channel) => startChannel(channel, alert, context)));
 		return {
 			delivered: settled.filter((entry) => entry.ok).map((entry) => entry.id),
 			failed: settled.filter((entry) => !entry.ok).map((entry) => ({ id: entry.id, reason: entry.reason })),
@@ -62,11 +74,11 @@ interface ChannelOutcome { readonly id: AlertChannelId; readonly ok: boolean; re
  * it was discarded entirely, and `AlertDeliveryReport` could only say a channel failed,
  * never which one or why.
  */
-function startChannel(channel: AlertChannel, alert: AlertV1): Promise<ChannelOutcome> {
+function startChannel(channel: AlertChannel, alert: AlertV1, context: AlertDeliveryContext): Promise<ChannelOutcome> {
 	const id = channel.id;
 	let result: unknown;
 	try {
-		result = channel.deliver(alert);
+		result = channel.deliver(alert, context);
 	} catch (error) {
 		return Promise.resolve({ id, ok: false, reason: errorClassName(error) });
 	}

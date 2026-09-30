@@ -25,6 +25,17 @@ describe('H13.4 alert fan-out', () => {
 		expect(seen).toEqual(['toast', 'system_notification', 'sound', 'webhook', 'queue']);
 	});
 
+	it('H18.38: stamps one emission instant and hands the same context to every channel', async () => {
+		const contexts: unknown[] = [];
+		const emitter = new AlertEmitter([
+			channel('toast', (_alert, context) => { contexts.push(context); }),
+			channel('queue', (_alert, context) => { contexts.push(context); }),
+		], () => 1_234);
+
+		await emitter.emit(ALERT);
+		expect(contexts).toEqual([{ emittedAtMs: 1_234 }, { emittedAtMs: 1_234 }]);
+	});
+
 	it('keeps the other channels running when one throws synchronously', async () => {
 		const toast = vi.fn();
 		const queue = vi.fn();
@@ -37,8 +48,8 @@ describe('H13.4 alert fan-out', () => {
 		await expect(emitter.emit(ALERT)).resolves.toEqual({
 			delivered: ['toast', 'queue'], failed: [{ id: 'system_notification', reason: 'Error' }], rejected: false,
 		});
-		expect(toast).toHaveBeenCalledWith(ALERT);
-		expect(queue).toHaveBeenCalledWith(ALERT);
+		expect(toast).toHaveBeenCalledWith(ALERT, expect.objectContaining({ emittedAtMs: expect.any(Number) as number }));
+		expect(queue).toHaveBeenCalledWith(ALERT, expect.objectContaining({ emittedAtMs: expect.any(Number) as number }));
 	});
 
 	it('keeps the other channels running when one rejects asynchronously', async () => {
@@ -90,6 +101,6 @@ describe('H13.4 alert fan-out', () => {
 	});
 });
 
-function channel(id: AlertChannel['id'], deliver: (alert: AlertV1) => unknown): AlertChannel {
+function channel(id: AlertChannel['id'], deliver: AlertChannel['deliver']): AlertChannel {
 	return { id, deliver };
 }

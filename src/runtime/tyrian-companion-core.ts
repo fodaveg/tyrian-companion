@@ -35,6 +35,9 @@ import {
 import { AlertEmitter, type AlertDeliveryReport } from '../alerts/alert-emitter';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { EmittedAlertQueue } from '../alerts/emitted-alert-queue';
+import { readAlertDelivery, type AlertDeliveryRecordV1 } from '../alerts/alert-delivery-record';
+import { IngameAlertReceiptTracker, type IngameAlertReceipt } from '../alerts/alert-ingame-receipt';
+import type { IngameAlertBroadcast } from '../alerts/alert-ingame-server';
 import { ALERT_WEBHOOK_TIMEOUT_MS, postAlertWebhook } from '../alerts/alert-webhook';
 import { alertIngamePayload } from '../alerts/alert-ingame';
 import { startAlertIngameServer, type AlertIngameServerHandle } from '../alerts/alert-ingame-server';
@@ -47,6 +50,7 @@ import {
 	createIngameBridgeNonce,
 	createIngameBridgeSecret,
 	ingameBridgeSecretMatches,
+	type IngameBridgeClient,
 	isUsableIngameBridgeSecret,
 } from '../alerts/alert-ingame-protocol';
 import { alwaysAlertReasonsOf, decideLootAlert, policyAlertPriceOf } from '../alerts/loot-alert-criteria';
@@ -502,6 +506,25 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private alertScopeFlight: Promise<string | null> | null = null;
 	private alertQueue: EmittedAlertQueue | null = null;
 	private emittedAlerts: readonly EmittedAlertRecordV1[] = [];
+	/** H18.38: delivery record per `alertId`, already read as it stands now (a stale `pending` reads `restart`). */
+	private alertDeliveries: ReadonlyMap<string, AlertDeliveryRecordV1> = new Map();
+	/**
+	 * H18.38: the ack state of each alert sent through the in-game bridge, and the alert each `seq`
+	 * belongs to. Its `onChange` is what writes the delivery record, so the record follows the
+	 * ack, the 15 s timeout and a late ack without another code path.
+	 */
+	private readonly ingameReceipts = new IngameAlertReceiptTracker(
+		{
+			schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
+			cancel: (handle) => { window.clearTimeout(handle as number); },
+		},
+		(alertSeq, receipt) => { this.persistIngameReceipt(alertSeq, receipt); },
+	);
+	private readonly ingameTracked = new Map<number, {
+		alert: AlertV1; emittedAtMs: number; alertId: string; sentTo: readonly IngameBridgeClient[];
+	}>();
+	/** `alertId`s whose ack this process is still waiting for. */
+	private readonly ingameAwaitingAck = new Set<string>();
 	/** In-game bridge (H13.9/H13.15). Null until an alert actually needs it, or after it fails to bind. */
 	private alertIngameServer: AlertIngameServerHandle | null = null;
 	private alertIngameServerPort: number | null = null;
@@ -1419,6 +1442,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.halloween?.dispose();
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
+		this.ingameReceipts.dispose();
 		this.alertQueue?.dispose();
 		this.sessionCatalog?.dispose();
 		this.sessionCatalog = null;
@@ -3074,7 +3098,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			},
 			{
 				id: 'ingame',
-				deliver: async (alert) => {
+				deliver: async (alert, context) => {
 					// Off ships as a silent success, exactly like the webhook's empty URL: a
 					// fresh install pays nothing for a channel it never enabled. Enabled but
 					// unreachable is different, and must NOT look like success: the addon
@@ -3082,17 +3106,21 @@ export class TyrianCompanionCore implements TyrianRuntime {
 					// the player never gets shown, with nothing in the emitter report to say why.
 					if (!this.settings.alertIngameEnabled) return;
 					const server = await this.ensureAlertIngameServer();
-					if (server === null) throw new Error('The in-game alert server is not available.');
-					if (server.clientCount() === 0) throw new Error('No in-game addon is connected.');
+					if (server === null || server.clientCount() === 0) {
+						// The step "Recibido en el juego" still needs to say the alert reached nobody.
+						this.trackIngameAlert(alert, context.emittedAtMs, this.nextAlertIngameSeq(), { v2Clients: [], v3Clients: [] });
+						throw new Error(server === null ? 'The in-game alert server is not available.' : 'No in-game addon is connected.');
+					}
 					// Each connection gets the version its `hello` asked for (v3 adds `alert_ack`).
 					const alertSeq = this.nextAlertIngameSeq();
-					server.broadcastAlert(alertSeq, (version) => JSON.stringify(alertIngamePayload(alert, alertSeq, version)));
+					const delivery = server.broadcastAlert(alertSeq, (version) => JSON.stringify(alertIngamePayload(alert, alertSeq, version)));
+					this.trackIngameAlert(alert, context.emittedAtMs, alertSeq, delivery);
 				},
 			},
 			{
 				id: 'queue',
-				deliver: async (alert) => {
-					if (!await queue.enqueue(alert)) throw new Error('The durable alert queue is unavailable.');
+				deliver: async (alert, context) => {
+					if (!await queue.enqueue(alert, context.emittedAtMs)) throw new Error('The durable alert queue is unavailable.');
 					this.refreshEmittedAlerts();
 				},
 			},
@@ -3158,6 +3186,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				now: () => Date.now(),
 				fillRandom: (bytes) => { crypto.getRandomValues(bytes); },
 				onConnectionEvent: (event) => { this.ingamePresenceTracker().apply(event); },
+				onAlertAck: (ack) => { this.ingameReceipts.acked(ack.alertSeq, ack.client, ack.atMs); },
 			},
 		)
 			.then((server) => {
@@ -3189,6 +3218,35 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Null once a start has succeeded; the last rejection's machine-readable `.code` otherwise. */
 	getAlertIngameServerErrorCode(): string | null {
 		return this.alertIngameServerErrorCode;
+	}
+
+	/** Starts the ack bookkeeping of one alert written to the bridge; `sent` reports it through `onChange`. */
+	private trackIngameAlert(alert: AlertV1, emittedAtMs: number, alertSeq: number, delivery: IngameAlertBroadcast): void {
+		const alertId = this.alertQueue?.alertIdFor(alert, emittedAtMs) ?? null;
+		if (alertId === null) return;
+		const sentTo = [...new Set([...delivery.v3Clients, ...delivery.v2Clients])];
+		this.ingameTracked.set(alertSeq, { alert, emittedAtMs, alertId, sentTo });
+		// Bounded like the server's own per-connection memory: a late ack only makes sense soon after.
+		const stale = alertSeq - 256;
+		this.ingameReceipts.forget(stale);
+		this.ingameTracked.delete(stale);
+		if (delivery.v3Clients.length > 0) this.ingameAwaitingAck.add(alertId);
+		this.ingameReceipts.sent(alertSeq, delivery);
+	}
+
+	private persistIngameReceipt(alertSeq: number, receipt: IngameAlertReceipt): void {
+		const tracked = this.ingameTracked.get(alertSeq);
+		const queue = this.alertQueue;
+		if (tracked === undefined || queue === null) return;
+		if (receipt.state !== 'pending') this.ingameAwaitingAck.delete(tracked.alertId);
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'halloween', action: 'halloween_alert', state: 'alert_delivery_write' },
+			async () => {
+				const saved = await queue.saveDelivery({
+					alert: tracked.alert, emittedAtMs: tracked.emittedAtMs, sentTo: tracked.sentTo, receipt,
+				});
+				if (saved) this.refreshEmittedAlerts();
+			});
 	}
 
 	private nextAlertIngameSeq(): number {
@@ -3449,6 +3507,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return flight;
 	}
 
+	/** H18.38: what became of each alert on its way to the game, by `alertId`. An alert with none has no delivery data. */
+	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1> {
+		return this.alertDeliveries;
+	}
+
 	/** Newest first. Read by the panel so a dropped banner is still recoverable. */
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[] {
 		return this.emittedAlerts;
@@ -3467,7 +3530,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'halloween', action: 'halloween_alert', state: 'alert_queue_read' },
 			async () => {
-				this.emittedAlerts = await queue.read();
+				const [alerts, deliveries] = await Promise.all([queue.read(), queue.readDeliveries()]);
+				this.emittedAlerts = alerts;
+				this.alertDeliveries = new Map(deliveries.map((record) => [
+					record.alertId, readAlertDelivery(record, this.ingameAwaitingAck.has(record.alertId)),
+				]));
 				this.renderViews();
 			});
 	}

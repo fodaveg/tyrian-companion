@@ -34,7 +34,7 @@ function harness() {
 describe('H18.38 in-game alert receipt', () => {
 	it('is pending after a send to a v3 connection and received when the ack comes, cancelling the timer', () => {
 		const { tracker, changes, advance, pendingTimers } = harness();
-		expect(tracker.sent(1, { v2Connections: 0, v3Clients: ['nexus'] })).toEqual({ state: 'pending' });
+		expect(tracker.sent(1, { v2Clients: [], v3Clients: ['nexus'] })).toEqual({ state: 'pending' });
 		advance(4_000);
 		tracker.acked(1, 'nexus', 4_000);
 		expect(tracker.get(1)).toEqual({ state: 'received', client: 'nexus', atMs: 4_000 });
@@ -46,7 +46,7 @@ describe('H18.38 in-game alert receipt', () => {
 
 	it('becomes unconfirmed by timeout exactly at 15 s without an ack', () => {
 		const { tracker, advance } = harness();
-		tracker.sent(1, { v2Connections: 0, v3Clients: ['blish'] });
+		tracker.sent(1, { v2Clients: [], v3Clients: ['blish'] });
 		advance(INGAME_ALERT_ACK_TIMEOUT_MS - 1);
 		expect(tracker.get(1)).toEqual({ state: 'pending' });
 		advance(1);
@@ -55,7 +55,7 @@ describe('H18.38 in-game alert receipt', () => {
 
 	it('takes a late ack after the timeout as the truth, and ignores a repeated one', () => {
 		const { tracker, changes, advance } = harness();
-		tracker.sent(1, { v2Connections: 0, v3Clients: ['nexus'] });
+		tracker.sent(1, { v2Clients: [], v3Clients: ['nexus'] });
 		advance(INGAME_ALERT_ACK_TIMEOUT_MS);
 		tracker.acked(1, 'nexus', 20_000);
 		tracker.acked(1, 'blish', 21_000);
@@ -65,8 +65,8 @@ describe('H18.38 in-game alert receipt', () => {
 
 	it('is unconfirmed at once when only v2 connections got it, or nobody, and no ack can change that', () => {
 		const { tracker, pendingTimers } = harness();
-		expect(tracker.sent(1, { v2Connections: 2, v3Clients: [] })).toEqual({ state: 'unconfirmed', cause: 'old_addon' });
-		expect(tracker.sent(2, { v2Connections: 0, v3Clients: [] })).toEqual({ state: 'unconfirmed', cause: 'no_addon' });
+		expect(tracker.sent(1, { v2Clients: ['nexus', 'blish'], v3Clients: [] })).toEqual({ state: 'unconfirmed', cause: 'old_addon' });
+		expect(tracker.sent(2, { v2Clients: [], v3Clients: [] })).toEqual({ state: 'unconfirmed', cause: 'no_addon' });
 		tracker.acked(1, 'nexus', 1);
 		expect(tracker.get(1)).toEqual({ state: 'unconfirmed', cause: 'old_addon' });
 		expect(pendingTimers()).toBe(0);
@@ -87,7 +87,7 @@ describe('H18.38 in-game alert receipt', () => {
 
 	it('cancels its timers on dispose', () => {
 		const { tracker, pendingTimers } = harness();
-		tracker.sent(1, { v2Connections: 0, v3Clients: ['nexus'] });
+		tracker.sent(1, { v2Clients: [], v3Clients: ['nexus'] });
 		tracker.dispose();
 		expect(pendingTimers()).toBe(0);
 	});

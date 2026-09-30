@@ -27,6 +27,7 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		}));
 		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			sessionCatalog: { dispose: sessionCatalogDispose },
+			ingameReceipts: { dispose: vi.fn() },
 			productActions: { dispose: productActionsDispose },
 			alertIngameServer: { close: alertIngameServerClose },
 		});

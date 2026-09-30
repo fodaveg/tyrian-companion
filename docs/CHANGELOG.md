@@ -8,9 +8,19 @@
   `unexpected_message`. Un ack de un aviso que no se envió a esa conexión se ignora sin cerrar.
 - Máquina de estados del paso «Recibido en el juego» (`pending`, `received`, `unconfirmed` a los
   15 s, o de inmediato si solo hay addons v2 o ninguno). Contrato en `docs/SPEC-puente-ingame.md`.
+- Cada aviso del cajón Avisos muestra su recorrido (boceto H18.31, lámina 2.1): Visto · Enviado (a
+  Nexus, a Blish o «sin addon conectado») · Recibido en el juego (Nexus) / Esperando al juego / Sin
+  confirmar, con la causa («el addon no confirma: actualízalo», «sin respuesta en 15 s», «Obsidian
+  se cerró antes»). El resultado se guarda en un almacén nuevo `alert-deliveries-v1` (IndexedDB de
+  Halloween pasa a versión 8, aditiva: ningún registro existente se lee ni se reescribe) y sobrevive
+  a reabrir la vista y a reiniciar Obsidian. Un aviso anterior sin datos de entrega enseña solo
+  «Visto» y «sin datos de entrega». El emisor sella una hora de emisión que comparten la cola y el
+  canal del juego, para que ambos deriven el mismo `alertId`.
 
-Límites: solo el lado del plugin. Falta persistir el estado por aviso y pintar el paso en el
-recorrido del aviso; los addons de Nexus y Blish siguen enviando v2 hasta que se publiquen con v3.
+Límites: el paso «en la nota» no se pinta: un aviso no se escribe en ninguna nota de sesión, no hay
+dato por aviso. Los addons de Nexus y Blish siguen enviando v2 hasta que se publiquen con v3; hasta
+entonces todos los avisos salen como «Sin confirmar: el addon no confirma». El addon de Blish envía
+el ack al encolar la notificación, no al pintarla.
 
 ## Release beta 0.2.11 - el historial de sesiones vuelve a mostrarse tras sincronizar el inventario
 

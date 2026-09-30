@@ -48,6 +48,30 @@ describe('H13.4 durable alert queue', () => {
 		store.close();
 	});
 
+	it('H18.38: the alert id an emitter stamp yields is the id the alert is stored under, and its delivery follows it', async () => {
+		const { queue, store } = await openQueue();
+		const stamp = Date.parse('2026-10-05T10:00:00.000Z');
+		const alertId = queue.alertIdFor(ALERT, stamp);
+		await expect(queue.enqueue(ALERT, stamp)).resolves.toBe(true);
+		expect((await queue.read()).map((record) => record.alertId)).toEqual([alertId]);
+
+		// Written in quick succession, in order: the last write wins, as the ack follows the send.
+		const first = queue.saveDelivery({ alert: ALERT, emittedAtMs: stamp, sentTo: ['nexus'], receipt: { state: 'pending' } });
+		const second = queue.saveDelivery({
+			alert: ALERT, emittedAtMs: stamp, sentTo: ['nexus'], receipt: { state: 'received', client: 'nexus', atMs: stamp + 2_000 },
+		});
+		await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+		expect(await queue.readDeliveries()).toMatchObject([{ alertId, state: 'received', receivedBy: 'nexus' }]);
+		store.close();
+	});
+
+	it('H18.38: a delivery for an alert that was never enqueued still stores, and reads none while no account is known', async () => {
+		const closed = new EmittedAlertQueue({ vaultId: 'vault', open: vi.fn(), accountRef: async () => null });
+		await expect(closed.saveDelivery({ alert: ALERT, emittedAtMs: 1, sentTo: [], receipt: { state: 'unconfirmed', cause: 'no_addon' } }))
+			.resolves.toBe(false);
+		await expect(closed.readDeliveries()).resolves.toEqual([]);
+	});
+
 	it('writes nothing and opens no database while no account is known', async () => {
 		const open = vi.fn();
 		const queue = new EmittedAlertQueue({ vaultId: 'vault', open, accountRef: async () => null });

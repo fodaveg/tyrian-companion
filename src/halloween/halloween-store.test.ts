@@ -302,6 +302,66 @@ describe('IndexedDbHalloweenStore', () => {
 	});
 });
 
+describe('H18.38 alert deliveries store (schema v8)', () => {
+	const alertRow = {
+		version: 1, vaultId: 'vault', accountRef: 'account', alertId: 'alert:valuable_loot:36038:2026-09-20T10:00:00.000Z',
+		kind: 'valuable_loot', itemId: 36_038, name: 'Saco de Halloween', quantity: 3, totalCopper: 120_000,
+		reason: 'valuable', emittedAt: '2026-09-20T10:00:00.000Z',
+	};
+	const delivery = (id: number, state: 'pending' | 'received' = 'pending') => {
+		const emittedAt = new Date(Date.parse('2026-10-05T10:00:00.000Z') + id * 1000).toISOString();
+		return {
+			version: 1 as const, vaultId: 'vault', accountRef: 'account', alertId: `alert:valuable_loot:1:${emittedAt}`, emittedAt,
+			sentTo: ['nexus' as const], state, cause: null,
+			receivedBy: state === 'received' ? 'nexus' as const : null, receivedAt: state === 'received' ? emittedAt : null,
+		};
+	};
+
+	it('upgrades a v7 database without losing or rewriting an existing emitted alert', async () => {
+		const factory = new IDBFactory();
+		const name = dbName('migrate-v8');
+		// A real v7 database as an installed plugin left it: only what v7 knew, one real v1 alert row.
+		const raw = await new Promise<IDBDatabase>((resolve, reject) => {
+			const request = factory.open(name, 7);
+			request.onupgradeneeded = () => {
+				const emitted = request.result.createObjectStore('emitted-alerts-v1', { keyPath: ['vaultId', 'accountRef', 'alertId'] });
+				emitted.createIndex('by-scope-emitted', ['vaultId', 'accountRef', 'emittedAt']);
+			};
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error ?? new Error('open failed'));
+		});
+		const tx = raw.transaction('emitted-alerts-v1', 'readwrite');
+		tx.objectStore('emitted-alerts-v1').put(alertRow);
+		await transactionDone(tx);
+		raw.close();
+
+		const store = await IndexedDbHalloweenStore.open(factory, name);
+		expect(await store.readEmittedAlerts('vault', 'account')).toEqual([alertRow]);
+		expect(await store.readAlertDeliveries('vault', 'account')).toEqual([]);
+		store.close();
+	});
+
+	it('upserts one record per alert as its ack arrives, and isolates scopes', async () => {
+		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('deliveries'));
+		await store.putAlertDelivery(delivery(1));
+		await store.putAlertDelivery(delivery(1, 'received'));
+		await store.putAlertDelivery({ ...delivery(2), accountRef: 'other' });
+		expect(await store.readAlertDeliveries('vault', 'account')).toEqual([delivery(1, 'received')]);
+		await expect(store.putAlertDelivery({ ...delivery(3), state: 'received' })).rejects.toMatchObject({ failure: 'corrupt' });
+		store.close();
+	});
+
+	it('trims the deliveries to the alerts retention, keeping the newest', async () => {
+		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('deliveries-trim'));
+		for (let id = 0; id < 105; id += 1) await store.putAlertDelivery(delivery(id));
+		const kept = await store.readAlertDeliveries('vault', 'account');
+		expect(kept).toHaveLength(100);
+		expect(kept.map(({ emittedAt }) => emittedAt)).not.toContain(delivery(0).emittedAt);
+		expect(kept.map(({ emittedAt }) => emittedAt)).toContain(delivery(104).emittedAt);
+		store.close();
+	});
+});
+
 function observation(id: string, ids: number[]): HalloweenObservationV1 {
 	return { version: 1, vaultId: 'vault', accountRef: 'account', observationId: id, episodeId: 'episode',
 		observedAt: '2026-08-29T12:00:00.000Z', source: 'assisted_poll', coverage: 'complete',

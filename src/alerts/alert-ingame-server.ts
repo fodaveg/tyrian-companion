@@ -74,9 +74,9 @@ export interface AlertIngameServerHandle {
 	close(): Promise<void>;
 }
 
-/** Who an alert reached: how many v2 connections (no ack possible) and which hosts speak v3. */
+/** Who an alert reached: which hosts got it over v2 (no ack possible) and over v3. */
 export interface IngameAlertBroadcast {
-	readonly v2Connections: number;
+	readonly v2Clients: readonly IngameBridgeClient[];
 	readonly v3Clients: readonly IngameBridgeClient[];
 }
 
@@ -236,7 +236,7 @@ function broadcastAlertLines(
 		}
 		lines.set(connection.version, `${line}\n`);
 	}
-	let v2Connections = 0;
+	const v2Clients: IngameBridgeClient[] = [];
 	const v3Clients: IngameBridgeClient[] = [];
 	for (const connection of clients) {
 		connection.socket.write(lines.get(connection.version) ?? '');
@@ -247,9 +247,9 @@ function broadcastAlertLines(
 				if (oldest !== undefined) connection.sentAlertSeqs.delete(oldest);
 			}
 			v3Clients.push(connection.client);
-		} else v2Connections += 1;
+		} else if (connection.client !== null) v2Clients.push(connection.client);
 	}
-	return { v2Connections, v3Clients };
+	return { v2Clients, v3Clients };
 }
 
 /**

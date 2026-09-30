@@ -38,7 +38,7 @@ export class IngameAlertReceiptTracker {
 	/** Registers a broadcast alert; returns its initial receipt. */
 	sent(alertSeq: number, delivery: IngameAlertBroadcast): IngameAlertReceipt {
 		if (delivery.v3Clients.length === 0) {
-			return this.settle(alertSeq, { state: 'unconfirmed', cause: delivery.v2Connections > 0 ? 'old_addon' : 'no_addon' });
+			return this.settle(alertSeq, { state: 'unconfirmed', cause: delivery.v2Clients.length > 0 ? 'old_addon' : 'no_addon' });
 		}
 		return this.settle(alertSeq, { state: 'pending' }, () => {
 			this.timers.set(alertSeq, this.timer.schedule(() => {
@@ -60,6 +60,13 @@ export class IngameAlertReceiptTracker {
 		const handle = this.timers.get(alertSeq);
 		if (handle !== undefined) { this.timer.cancel(handle); this.timers.delete(alertSeq); }
 		this.settle(alertSeq, { state: 'received', client, atMs });
+	}
+
+	/** Drops what is kept for an old alert, and its timer if it somehow still runs. */
+	forget(alertSeq: number): void {
+		const handle = this.timers.get(alertSeq);
+		if (handle !== undefined) { this.timer.cancel(handle); this.timers.delete(alertSeq); }
+		this.receipts.delete(alertSeq);
 	}
 
 	get(alertSeq: number): IngameAlertReceipt | undefined {

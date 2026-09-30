@@ -472,7 +472,7 @@ export class TyrianCompanionView {
 			(key, params) => this.t(key as RuntimeTranslationKey, params),
 			this.actions.getLocale(),
 			Date.now(),
-			{ chrome: false },
+			{ chrome: false, ui: this.ui },
 		);
 	}
 
