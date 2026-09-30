@@ -1,3 +1,5 @@
+import { ALERT_CHANNEL_PENDING } from './alert-emitter';
+
 /**
  * The channel that survives a full-screen game.
  *
@@ -14,7 +16,14 @@
  * a denied permission or a constructor that throws returns a status, never an
  * exception, because a missing banner must not take the toast down with it.
  */
-export type SystemNotificationOutcome = 'shown' | 'denied' | 'unavailable';
+export type SystemNotificationOutcome = 'shown' | 'denied' | 'unavailable' | 'pending';
+
+/**
+ * `pending` is for hosts whose notification permission is asynchronous (Hebra/Tauri): the banner
+ * has not been shown yet but will be as soon as the user grants it. It is neither a success nor a
+ * failure, so the channel must not be counted as failed and must not be retried. The Obsidian
+ * port is synchronous and never returns it.
+ */
 
 export interface SystemNotificationInput {
 	readonly title: string;
@@ -44,6 +53,13 @@ export function systemNotificationOptions(input: SystemNotificationInput): Syste
 	return input.platform === 'linux'
 		? { body: input.body, silent: true, urgency: 'critical' }
 		: { body: input.body, silent: true };
+}
+
+/** Channel verdict for an outcome: `pending` is accepted (not failed), anything but `shown` throws. */
+export function systemNotificationChannelResult(outcome: SystemNotificationOutcome): typeof ALERT_CHANNEL_PENDING | undefined {
+	if (outcome === 'pending') return ALERT_CHANNEL_PENDING;
+	if (outcome !== 'shown') throw new Error(`System notification ${outcome}.`);
+	return undefined;
 }
 
 /** Delivers one desktop notification, reporting why it could not instead of throwing. */

@@ -1512,9 +1512,9 @@
 				{
 					"id": "98a82eca434ef37916d00f587f864ff4a366b45a",
 					"kind": "catch_clause",
-					"line": 70,
+					"line": 94,
 					"column": 4,
-					"endLine": 72,
+					"endLine": 96,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1526,11 +1526,11 @@
 					"reason": "Allowlisted catch_clause: The \"startChannel\" owner is the isolation boundary itself: it exists to turn a synchronous channel throw into \"fallback_return\" of a closed outcome so one broken channel never stops the four that still work, and the caller reports it as a failed channel. Verified recovery: \"fallback_return\" in \"startChannel\"."
 				},
 				{
-					"id": "3622f047dd10191a55f8c39d2ca3677b6345ffdc",
+					"id": "541d0e2c640504807c9253d69da9a739a1d91ab8",
 					"kind": "callback_registration",
-					"line": 74,
+					"line": 98,
 					"column": 9,
-					"endLine": 77,
+					"endLine": 101,
 					"endColumn": 3,
 					"registration": "then",
 					"classification": "allowlisted",

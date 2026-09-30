@@ -33,6 +33,7 @@ import {
 	type AlertV1,
 } from '../alerts/alert-contract';
 import { AlertEmitter, type AlertDeliveryReport } from '../alerts/alert-emitter';
+import { systemNotificationChannelResult } from '../alerts/alert-system-notification';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { EmittedAlertQueue } from '../alerts/emitted-alert-queue';
 import { readAlertDelivery, type AlertDeliveryRecordV1 } from '../alerts/alert-delivery-record';
@@ -3072,7 +3073,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 						title: translateRuntime(translator, alertTitleKey(alert.kind)),
 						body: this.alertBodyText(alert),
 					});
-					if (outcome !== 'shown') throw new Error(`System notification ${outcome}.`);
+					return systemNotificationChannelResult(outcome);
 				},
 			},
 			{

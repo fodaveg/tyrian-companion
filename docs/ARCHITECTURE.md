@@ -4,6 +4,8 @@
 
 `src/runtime/tyrian-companion-core.ts` es la composición de Tyrian, sin Obsidian: `createTyrianRuntime(host)` construye los servicios y registra las vistas, los comandos, el ribbon con su menú, el bloque de código, el panel de ajustes y los avisos, todo por `TyrianHost` (`src/host/tyrian-host.ts`). `src/main.ts` es solo el adaptador de Obsidian: crea el `ObsidianHost` (`src/host/obsidian/`), le pasa ese host a la misma composición y reenvía `onload`/`onunload`. Hebra arranca la misma composición con su propio host (`src/runtime/index.ts`). Las capacidades opcionales del host viven en `TyrianHost.capabilities`; omitida una, vale «soportada»: `managedAssets: false` (Hebra, sin Bases en su primera versión) oculta la sección de assets de Ajustes y desactiva su instalación, mudanza, reparación, borrado y el auto-update tras el sync de inventario.
 
+`TyrianHost.notify.system` devuelve `'shown' | 'denied' | 'unavailable' | 'pending'`. `pending` (para Hebra, cuyo permiso de notificaciones es asíncrono) significa «aceptado, el aviso sale al conceder el permiso»: el canal `system_notification` no cuenta como fallido ni se reintenta, y el informe del emisor lo lista en `delivered` y en `pending`. El puerto de Obsidian es síncrono y nunca lo devuelve.
+
 - `core`: transporte HTTP resiliente, configuración versionada, acceso diferido a secretos, limitación FIFO de concurrencia y diagnóstico local seguro.
 - `account`: cliente de Guild Wars 2, validación runtime, conexión, estado efímero y snapshots de almacenamiento.
 - `catalog`: cliente público, parsers de metadatos, resolución por snapshot y contrato de caché.

@@ -26,6 +26,12 @@ export interface AlertDeliveryContext {
 	readonly emittedAtMs: number;
 }
 
+/**
+ * What a channel returns (directly or resolved) to say "accepted, delivery completes later".
+ * The emitter counts it as delivered, lists it in `pending` and never marks it failed.
+ */
+export const ALERT_CHANNEL_PENDING = 'pending' as const;
+
 export interface AlertChannel {
 	readonly id: AlertChannelId;
 	deliver(alert: AlertV1, context: AlertDeliveryContext): unknown;
@@ -40,6 +46,8 @@ export interface AlertFailedChannel {
 export interface AlertDeliveryReport {
 	readonly delivered: readonly AlertChannelId[];
 	readonly failed: readonly AlertFailedChannel[];
+	/** Channels that returned `ALERT_CHANNEL_PENDING`: also in `delivered`. Omitted when none. */
+	readonly pending?: readonly AlertChannelId[];
 	/** True when the input was not a valid alert, in which case no channel ran. */
 	readonly rejected: boolean;
 }
@@ -54,15 +62,19 @@ export class AlertEmitter {
 		if (!isAlert(alert)) return { delivered: [], failed: [], rejected: true };
 		const context: AlertDeliveryContext = { emittedAtMs: this.now() };
 		const settled = await Promise.all(this.channels.map((channel) => startChannel(channel, alert, context)));
+		const pending = settled.filter((entry) => entry.ok && entry.pending).map((entry) => entry.id);
 		return {
 			delivered: settled.filter((entry) => entry.ok).map((entry) => entry.id),
 			failed: settled.filter((entry) => !entry.ok).map((entry) => ({ id: entry.id, reason: entry.reason })),
+			...(pending.length > 0 ? { pending } : {}),
 			rejected: false,
 		};
 	}
 }
 
-interface ChannelOutcome { readonly id: AlertChannelId; readonly ok: boolean; readonly reason: string }
+interface ChannelOutcome {
+	readonly id: AlertChannelId; readonly ok: boolean; readonly reason: string; readonly pending?: boolean;
+}
 
 /**
  * Runs one channel and reduces every way it can go wrong to `{ok: false, reason}`.
@@ -82,9 +94,9 @@ function startChannel(channel: AlertChannel, alert: AlertV1, context: AlertDeliv
 	} catch (error) {
 		return Promise.resolve({ id, ok: false, reason: errorClassName(error) });
 	}
-	if (!isThenable(result)) return Promise.resolve({ id, ok: true, reason: '' });
+	if (!isThenable(result)) return Promise.resolve({ id, ok: true, reason: '', pending: result === ALERT_CHANNEL_PENDING });
 	return result.then(
-		(): ChannelOutcome => ({ id, ok: true, reason: '' }),
+		(value): ChannelOutcome => ({ id, ok: true, reason: '', pending: value === ALERT_CHANNEL_PENDING }),
 		(error: unknown): ChannelOutcome => ({ id, ok: false, reason: errorClassName(error) }),
 	);
 }

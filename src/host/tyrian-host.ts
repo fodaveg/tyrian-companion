@@ -132,7 +132,11 @@ export interface TyrianTcpServerPort {
 // ---------------------------------------------------------------------------------------------
 
 export interface TyrianNotifyPort {
-	/** main.ts:2935 via alerts/alert-system-notification.ts (urgency comes from `environment.platform`). */
+	/**
+	 * Returns `'shown' | 'denied' | 'unavailable' | 'pending'`. `pending` (added for Hebra, whose
+	 * permission prompt is asynchronous) means "accepted, the banner appears once the permission
+	 * is granted": the channel is not failed and not retried. Obsidian never returns it.
+	 * main.ts:2935 via alerts/alert-system-notification.ts (urgency comes from `environment.platform`). */
 	system(input: Omit<SystemNotificationInput, 'platform'>): SystemNotificationOutcome;
 	/** main.ts:2948 via alerts/alert-sound.ts (WebAudio two-tone chime). */
 	sound(): AlertSoundOutcome;

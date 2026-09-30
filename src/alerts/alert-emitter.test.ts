@@ -1,12 +1,39 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AlertV1 } from './alert-contract';
-import { AlertEmitter, type AlertChannel } from './alert-emitter';
+import { ALERT_CHANNEL_PENDING, AlertEmitter, type AlertChannel } from './alert-emitter';
+import { systemNotificationChannelResult } from './alert-system-notification';
 
 const ALERT: AlertV1 = {
 	kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa', quantity: 2, totalCopper: 90_000,
 	priceStatus: 'known', reason: 'valuable',
 };
+
+describe('system notification pending outcome', () => {
+	const run = async (outcome: 'shown' | 'denied' | 'unavailable' | 'pending') => await new AlertEmitter([
+		channel('toast', () => undefined),
+		channel('system_notification', () => systemNotificationChannelResult(outcome)),
+	]).emit(ALERT);
+
+	it('counts pending as delivered-pending, not failed', async () => {
+		await expect(run('pending')).resolves.toEqual({
+			delivered: ['toast', 'system_notification'], failed: [], pending: ['system_notification'], rejected: false,
+		});
+	});
+
+	it('keeps unavailable and denied as failures and shown as plain delivery', async () => {
+		await expect(run('unavailable')).resolves.toMatchObject({ delivered: ['toast'], failed: [{ id: 'system_notification' }] });
+		await expect(run('denied')).resolves.toMatchObject({ failed: [{ id: 'system_notification' }] });
+		const shown = await run('shown');
+		expect(shown).toEqual({ delivered: ['toast', 'system_notification'], failed: [], rejected: false });
+		expect(shown.pending).toBeUndefined();
+	});
+
+	it('honours a pending marker resolved asynchronously', async () => {
+		const report = await new AlertEmitter([channel('webhook', async () => await Promise.resolve(ALERT_CHANNEL_PENDING))]).emit(ALERT);
+		expect(report.pending).toEqual(['webhook']);
+	});
+});
 
 describe('H13.4 alert fan-out', () => {
 	it('delivers one alert to every channel', async () => {
