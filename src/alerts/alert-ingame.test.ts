@@ -31,6 +31,13 @@ describe('H13.9/H13.15 in-game alert payload', () => {
 		expect(alertIngamePayload(ALERT)).toMatchObject({ v: 2, type: 'alert' });
 	});
 
+	it('H18.38: a v3 line differs from the v2 one only in v, with no extra key', () => {
+		const v2 = alertIngamePayload(ALERT, 4);
+		const v3 = alertIngamePayload(ALERT, 4, 3);
+		expect(v3).toEqual({ ...v2, v: 3 });
+		expect(Object.keys(v3)).toEqual(Object.keys(v2));
+	});
+
 	/**
 	 * Asserts over the SERIALIZED body, not over the intention of the builder: a
 	 * field added to `AlertV1` later would ride along silently otherwise.

@@ -3084,7 +3084,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 					const server = await this.ensureAlertIngameServer();
 					if (server === null) throw new Error('The in-game alert server is not available.');
 					if (server.clientCount() === 0) throw new Error('No in-game addon is connected.');
-					server.broadcast(JSON.stringify(alertIngamePayload(alert, this.nextAlertIngameSeq())));
+					// Each connection gets the version its `hello` asked for (v3 adds `alert_ack`).
+					const alertSeq = this.nextAlertIngameSeq();
+					server.broadcastAlert(alertSeq, (version) => JSON.stringify(alertIngamePayload(alert, alertSeq, version)));
 				},
 			},
 			{

@@ -13,7 +13,9 @@ import {
 	ingameWelcomeLine,
 	parseIngameHello,
 	parseIngameSequenced,
+	type IngameBridgeClient,
 	type IngameBridgeErrorCode,
+	type IngameBridgeVersion,
 	type IngameByeReason,
 } from './alert-ingame-protocol';
 
@@ -62,7 +64,27 @@ export interface AlertIngameServerHandle {
 	 * out a line no addon parser was built to receive.
 	 */
 	broadcast(line: string): void;
+	/**
+	 * H18.38: sends alert `alertSeq` to every authenticated client, each in the version it said in
+	 * its `hello` (`lineFor` composes the line for that version), and remembers the sequence per
+	 * connection so a later `alert_ack` for it can be told from one for an alert never sent there.
+	 * Same 512-byte guard as `broadcast`. Reports who got it: v2 connections cannot confirm.
+	 */
+	broadcastAlert(alertSeq: number, lineFor: (version: IngameBridgeVersion) => string): IngameAlertBroadcast;
 	close(): Promise<void>;
+}
+
+/** Who an alert reached: how many v2 connections (no ack possible) and which hosts speak v3. */
+export interface IngameAlertBroadcast {
+	readonly v2Connections: number;
+	readonly v3Clients: readonly IngameBridgeClient[];
+}
+
+/** An addon says it showed alert `alertSeq`, which was in fact sent to that connection. */
+export interface IngameAlertAck {
+	readonly alertSeq: number;
+	readonly client: IngameBridgeClient;
+	readonly atMs: number;
 }
 
 export interface AlertIngameServerTimer {
@@ -80,6 +102,8 @@ export interface AlertIngameBridgeOptions {
 	now(): number;
 	fillRandom(bytes: Uint8Array): void;
 	onConnectionEvent(event: IngameConnectionEvent): void;
+	/** H18.38: a v3 `alert_ack` for an alert sent to that same connection. Others are ignored. */
+	onAlertAck?(ack: IngameAlertAck): void;
 	readonly helloTimeoutMs?: number;
 	readonly livenessTimeoutMs?: number;
 }
@@ -91,6 +115,11 @@ interface BridgeConnection {
 	phase: ConnectionPhase;
 	buffered: Uint8Array;
 	nonce: string | null;
+	/** What the `hello` said; 2 until one is accepted, so every early error line is v2 as before. */
+	version: IngameBridgeVersion;
+	client: IngameBridgeClient | null;
+	/** Alert sequences written to this connection, oldest first, bounded. */
+	readonly sentAlertSeqs: Set<number>;
 	nextSeq: number;
 	lastSeenAtMs: number;
 	deadline: unknown;
@@ -146,6 +175,7 @@ export async function startAlertIngameServer(
 		port: server.port,
 		clientCount: () => runtime.authenticated.size,
 		broadcast: (line) => { broadcastLine(runtime.authenticated, line); },
+		broadcastAlert: (alertSeq, lineFor) => broadcastAlertLines(runtime.authenticated, alertSeq, lineFor),
 		close: async () => {
 			for (const connection of [...runtime.pending, ...runtime.authenticated]) connection.socket.destroy();
 			await server.close();
@@ -191,6 +221,37 @@ function broadcastLine(clients: ReadonlySet<BridgeConnection>, line: string): vo
 	for (const connection of clients) connection.socket.write(frame);
 }
 
+/** Enough for any ack that can still be in flight: alerts are rare and the ack follows the paint. */
+const SENT_ALERT_SEQS_KEPT = 256;
+
+function broadcastAlertLines(
+	clients: ReadonlySet<BridgeConnection>, alertSeq: number, lineFor: (version: IngameBridgeVersion) => string,
+): IngameAlertBroadcast {
+	const lines = new Map<IngameBridgeVersion, string>();
+	for (const connection of clients) {
+		if (lines.has(connection.version)) continue;
+		const line = lineFor(connection.version);
+		if (UTF8.encode(line).byteLength > ALERT_INGAME_MAX_MESSAGE_BYTES) {
+			throw new Error(`In-game alert line exceeds the ${String(ALERT_INGAME_MAX_MESSAGE_BYTES)}-byte wire limit.`);
+		}
+		lines.set(connection.version, `${line}\n`);
+	}
+	let v2Connections = 0;
+	const v3Clients: IngameBridgeClient[] = [];
+	for (const connection of clients) {
+		connection.socket.write(lines.get(connection.version) ?? '');
+		if (connection.version === 3 && connection.client !== null) {
+			connection.sentAlertSeqs.add(alertSeq);
+			if (connection.sentAlertSeqs.size > SENT_ALERT_SEQS_KEPT) {
+				const oldest = connection.sentAlertSeqs.values().next().value;
+				if (oldest !== undefined) connection.sentAlertSeqs.delete(oldest);
+			}
+			v3Clients.push(connection.client);
+		} else v2Connections += 1;
+	}
+	return { v2Connections, v3Clients };
+}
+
 /**
  * Registers a fresh connection as pending and arms its hello deadline. Over the pending cap it is
  * dropped at once, without an answer: a local process opening sockets in a loop gets nothing back.
@@ -198,7 +259,8 @@ function broadcastLine(clients: ReadonlySet<BridgeConnection>, line: string): vo
 function attachClient(socket: TyrianTcpConnection, runtime: BridgeRuntime): void {
 	if (runtime.pending.size >= INGAME_BRIDGE_MAX_PENDING_CONNECTIONS) { socket.destroy(); return; }
 	const connection: BridgeConnection = {
-		socket, phase: 'awaiting_hello', buffered: EMPTY_BYTES, nonce: null, nextSeq: 0,
+		socket, phase: 'awaiting_hello', buffered: EMPTY_BYTES, nonce: null, version: 2, client: null,
+		sentAlertSeqs: new Set(), nextSeq: 0,
 		lastSeenAtMs: runtime.bridge.now(), deadline: null, endReason: 'lost',
 	};
 	runtime.pending.add(connection);
@@ -245,7 +307,7 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 	if (connection.phase === 'awaiting_hello') { handleHello(connection, runtime, decoded.value); return; }
 	const nonce = connection.nonce;
 	if (nonce === null) { reject(connection, runtime, 'unexpected_message'); return; }
-	const message = parseIngameSequenced(decoded.value, { nonce, seq: connection.nextSeq });
+	const message = parseIngameSequenced(decoded.value, { nonce, seq: connection.nextSeq }, connection.version);
 	if (!message.ok) { reject(connection, runtime, message.code); return; }
 	connection.nextSeq += 1;
 	connection.lastSeenAtMs = runtime.bridge.now();
@@ -255,6 +317,14 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 		runtime.bridge.onConnectionEvent({
 			kind: 'context', connectionId: nonce, context: { state, mapId, character }, atMs: connection.lastSeenAtMs,
 		});
+		return;
+	}
+	if (message.value.type === 'alert_ack') {
+		// An ack for an alert this connection was never sent proves nothing: ignored, not fatal.
+		const { alertSeq } = message.value;
+		if (connection.client !== null && connection.sentAlertSeqs.has(alertSeq)) {
+			runtime.bridge.onAlertAck?.({ alertSeq, client: connection.client, atMs: connection.lastSeenAtMs });
+		}
 		return;
 	}
 	if (message.value.type === 'bye') {
@@ -277,6 +347,8 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, record: Record<string, unknown>): void {
 	const hello = parseIngameHello(record);
 	if (!hello.ok) { reject(connection, runtime, hello.code); return; }
+	// From here on the connection is answered in the version it asked for, errors included.
+	connection.version = hello.value.v;
 	if (!runtime.bridge.authenticate(hello.value.token)) { reject(connection, runtime, 'auth_rejected'); return; }
 	if (runtime.authenticated.size >= INGAME_BRIDGE_MAX_AUTHENTICATED_CONNECTIONS) { reject(connection, runtime, 'capacity'); return; }
 
@@ -285,9 +357,10 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 	runtime.authenticated.add(connection);
 	connection.phase = 'authenticated';
 	connection.nonce = nonce;
+	connection.client = hello.value.client;
 	connection.nextSeq = 0;
 	connection.lastSeenAtMs = runtime.bridge.now();
-	connection.socket.write(`${ingameWelcomeLine(runtime.serverInstance, nonce)}\n`);
+	connection.socket.write(`${ingameWelcomeLine(runtime.serverInstance, nonce, connection.version)}\n`);
 	armDeadline(connection, runtime, runtime.bridge.livenessTimeoutMs ?? INGAME_BRIDGE_LIVENESS_TIMEOUT_MS, 'liveness_timeout');
 	runtime.bridge.onConnectionEvent({
 		kind: 'authenticated', connectionId: nonce, client: hello.value.client,
@@ -307,7 +380,7 @@ function reject(connection: BridgeConnection, runtime: BridgeRuntime, code: Inga
 	runtime.pending.delete(connection);
 	runtime.authenticated.delete(connection);
 	connection.buffered = EMPTY_BYTES;
-	connection.socket.end(`${ingameErrorLine(code)}\n`);
+	connection.socket.end(`${ingameErrorLine(code, connection.version)}\n`);
 	connection.socket.destroySoon();
 	if (wasAuthenticated) emitClosed(connection, runtime);
 }

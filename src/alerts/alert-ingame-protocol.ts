@@ -18,6 +18,14 @@
 
 export const INGAME_BRIDGE_PROTOCOL_VERSION = 2 as const;
 
+/**
+ * H18.38: v3 is v2 plus one addon → plugin message, `alert_ack`. The plugin accepts a `hello` of
+ * either version, remembers it per connection and speaks exactly that version back: a v2 addon
+ * discards a known message with extra keys, so nothing is added to `welcome` or `alert`.
+ */
+export const INGAME_BRIDGE_PROTOCOL_VERSION_V3 = 3 as const;
+export type IngameBridgeVersion = typeof INGAME_BRIDGE_PROTOCOL_VERSION | typeof INGAME_BRIDGE_PROTOCOL_VERSION_V3;
+
 /** Hard cap on one frame, excluding its `\n` terminator, in either direction. Same number as H8.4. */
 export const INGAME_BRIDGE_MAX_LINE_BYTES = 512;
 
@@ -82,7 +90,7 @@ export interface IngameGameContext {
 }
 
 export interface IngameHelloV2 {
-	readonly v: typeof INGAME_BRIDGE_PROTOCOL_VERSION;
+	readonly v: IngameBridgeVersion;
 	readonly type: 'hello';
 	readonly client: IngameBridgeClient;
 	readonly clientVersion: string;
@@ -92,9 +100,11 @@ export interface IngameHelloV2 {
 }
 
 export type IngameSequencedMessageV2 =
-	| { readonly v: 2; readonly type: 'context'; readonly nonce: string; readonly seq: number } & IngameGameContext
-	| { readonly v: 2; readonly type: 'heartbeat'; readonly nonce: string; readonly seq: number }
-	| { readonly v: 2; readonly type: 'bye'; readonly nonce: string; readonly seq: number; readonly reason: IngameByeReason };
+	| { readonly v: IngameBridgeVersion; readonly type: 'context'; readonly nonce: string; readonly seq: number } & IngameGameContext
+	| { readonly v: IngameBridgeVersion; readonly type: 'heartbeat'; readonly nonce: string; readonly seq: number }
+	| { readonly v: IngameBridgeVersion; readonly type: 'bye'; readonly nonce: string; readonly seq: number; readonly reason: IngameByeReason }
+	/** v3 only: the addon shows the alert the plugin sent with sequence `alertSeq`. */
+	| { readonly v: 3; readonly type: 'alert_ack'; readonly nonce: string; readonly seq: number; readonly alertSeq: number };
 
 export type IngameParseResult<T> =
 	| { readonly ok: true; readonly value: T }
@@ -105,6 +115,7 @@ const SEQUENCED_KEYS = {
 	context: ['v', 'type', 'nonce', 'seq', 'state', 'mapId', 'character'],
 	heartbeat: ['v', 'type', 'nonce', 'seq'],
 	bye: ['v', 'type', 'nonce', 'seq', 'reason'],
+	alert_ack: ['v', 'type', 'nonce', 'seq', 'alertSeq'],
 } as const;
 const MAP_ID_MAXIMUM = 2_147_483_647;
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -136,13 +147,16 @@ export function decodeIngameFrame(frame: Uint8Array): IngameParseResult<Record<s
 }
 
 /**
- * Validates the first frame of a connection. A `v` other than 2 answers `version_unsupported`,
+ * Validates the first frame of a connection. A `v` other than 2 or 3 answers `version_unsupported`,
  * which is exactly what a v1 addon (`{"v":1,"client":…}`) receives: its own contract already tells
  * it to show "update the addon" on a version it does not know.
  */
 export function parseIngameHello(record: Record<string, unknown>): IngameParseResult<IngameHelloV2> {
-	if (typeof record.v === 'number' && record.v !== INGAME_BRIDGE_PROTOCOL_VERSION) return { ok: false, code: 'version_unsupported' };
-	if (record.v !== INGAME_BRIDGE_PROTOCOL_VERSION) return { ok: false, code: 'frame_schema' };
+	if (typeof record.v === 'number' && record.v !== INGAME_BRIDGE_PROTOCOL_VERSION && record.v !== INGAME_BRIDGE_PROTOCOL_VERSION_V3) {
+		return { ok: false, code: 'version_unsupported' };
+	}
+	const version = record.v;
+	if (version !== INGAME_BRIDGE_PROTOCOL_VERSION && version !== INGAME_BRIDGE_PROTOCOL_VERSION_V3) return { ok: false, code: 'frame_schema' };
 	if (record.type !== 'hello') return { ok: false, code: 'unexpected_message' };
 	if (!exactKeys(record, HELLO_KEYS)) return { ok: false, code: 'frame_schema' };
 	const { client, clientVersion, instance, token } = record;
@@ -150,7 +164,7 @@ export function parseIngameHello(record: Record<string, unknown>): IngameParseRe
 		|| typeof token !== 'string') {
 		return { ok: false, code: 'frame_schema' };
 	}
-	return { ok: true, value: { v: INGAME_BRIDGE_PROTOCOL_VERSION, type: 'hello', client, clientVersion, instance, token } };
+	return { ok: true, value: { v: version, type: 'hello', client, clientVersion, instance, token } };
 }
 
 /**
@@ -161,17 +175,25 @@ export function parseIngameHello(record: Record<string, unknown>): IngameParseRe
 export function parseIngameSequenced(
 	record: Record<string, unknown>,
 	expected: { readonly nonce: string; readonly seq: number },
+	version: IngameBridgeVersion = INGAME_BRIDGE_PROTOCOL_VERSION,
 ): IngameParseResult<IngameSequencedMessageV2> {
-	if (record.v !== INGAME_BRIDGE_PROTOCOL_VERSION) return { ok: false, code: 'frame_schema' };
+	if (record.v !== version) return { ok: false, code: 'frame_schema' };
 	const type = record.type;
-	if (type !== 'context' && type !== 'heartbeat' && type !== 'bye') return { ok: false, code: 'unexpected_message' };
+	// `alert_ack` exists only from v3 on: to a v2 connection it is a type like any unknown one.
+	const known = type === 'context' || type === 'heartbeat' || type === 'bye' || (type === 'alert_ack' && version === INGAME_BRIDGE_PROTOCOL_VERSION_V3);
+	if (!known) return { ok: false, code: 'unexpected_message' };
 	if (!exactKeys(record, SEQUENCED_KEYS[type])) return { ok: false, code: 'frame_schema' };
 	if (typeof record.nonce !== 'string' || typeof record.seq !== 'number' || !Number.isSafeInteger(record.seq)) {
 		return { ok: false, code: 'frame_schema' };
 	}
 	if (record.nonce !== expected.nonce) return { ok: false, code: 'nonce_mismatch' };
 	if (record.seq !== expected.seq) return { ok: false, code: 'sequence_mismatch' };
-	const base = { v: INGAME_BRIDGE_PROTOCOL_VERSION, nonce: record.nonce, seq: record.seq } as const;
+	const base = { v: version, nonce: record.nonce, seq: record.seq } as const;
+	if (type === 'alert_ack') {
+		const alertSeq = record.alertSeq;
+		if (typeof alertSeq !== 'number' || !Number.isSafeInteger(alertSeq) || alertSeq < 1) return { ok: false, code: 'frame_schema' };
+		return { ok: true, value: { v: INGAME_BRIDGE_PROTOCOL_VERSION_V3, type, nonce: record.nonce, seq: record.seq, alertSeq } };
+	}
 	if (type === 'heartbeat') return { ok: true, value: { ...base, type } };
 	if (type === 'bye') {
 		const reason = record.reason;
@@ -184,16 +206,16 @@ export function parseIngameSequenced(
 }
 
 /** The server's answer to an accepted `hello`. `server` changes every time the plugin's server starts. */
-export function ingameWelcomeLine(server: string, nonce: string): string {
+export function ingameWelcomeLine(server: string, nonce: string, version: IngameBridgeVersion = INGAME_BRIDGE_PROTOCOL_VERSION): string {
 	return JSON.stringify({
-		v: INGAME_BRIDGE_PROTOCOL_VERSION, type: 'welcome', server, nonce,
+		v: version, type: 'welcome', server, nonce,
 		heartbeatIntervalMs: INGAME_BRIDGE_HEARTBEAT_INTERVAL_MS,
 	});
 }
 
 /** The last line a rejected connection receives before the plugin closes it. It carries a code, never input. */
-export function ingameErrorLine(code: IngameBridgeErrorCode): string {
-	return JSON.stringify({ v: INGAME_BRIDGE_PROTOCOL_VERSION, type: 'error', code });
+export function ingameErrorLine(code: IngameBridgeErrorCode, version: IngameBridgeVersion = INGAME_BRIDGE_PROTOCOL_VERSION): string {
+	return JSON.stringify({ v: version, type: 'error', code });
 }
 
 /** 32 CSPRNG bytes as 43 base64url characters: what "Copy token" generates when none is usable. */

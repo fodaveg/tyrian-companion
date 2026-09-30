@@ -1,4 +1,4 @@
-# SPEC: puente con los addons del juego (Nexus y Blish HUD), protocolo v2
+# SPEC: puente con los addons del juego (Nexus y Blish HUD), protocolo v2 y v3
 
 Escrito el 2026-09-03 para H13.9 (addon de Nexus) y H13.15 (módulo de Blish HUD); reescrito el
 2026-09-24 para H18.22 (validar el saludo) y H18.23 (protocolo bidireccional y autenticado). Esta es
@@ -6,6 +6,9 @@ la especificación que lee quien implementa un cliente: con este documento se pu
 de Nexus (Rust) o el módulo de Blish HUD (C#) sin leer el plugin. El lado del plugin vive en
 `src/alerts/alert-ingame-protocol.ts` (contrato ejecutable), `alert-ingame-server.ts` (sockets) y
 `alert-ingame-presence.ts` (presencia).
+
+Ampliado el 2026-09-30 para H18.38: el protocolo **v3** es v2 más un mensaje, `alert_ack` (ver
+«Versión 3: el acuse de un aviso»). Todo lo que sigue vale para las dos versiones salvo donde se diga.
 
 ## Lo que David pidió y decidió, con sus palabras
 
@@ -146,7 +149,7 @@ Por qué este y no otro, contra [`THREAT-MODEL.md`](THREAT-MODEL.md):
 
 ## Mensajes del addon al plugin
 
-Toda línea lleva `"v": 2` y un `type`. Las claves de cada tipo son **exactas**: ni una más ni una
+Toda línea lleva `"v"` (2, o 3 en una conexión v3) y un `type`. Las claves de cada tipo son **exactas**: ni una más ni una
 menos, o el plugin cierra la conexión.
 
 ### `hello`: la primera línea, en menos de 5 s
@@ -207,6 +210,55 @@ Si en `heartbeatIntervalMs` (5000, llega en el `welcome`) no se ha enviado ningu
 Tras un `bye` el addon cierra la conexión. Si no puede enviarlo (cuelgue, crash), no pasa nada: el
 plugin lo trata como una pérdida con gracia.
 
+### `alert_ack` (solo v3): lo enseñé
+
+```json
+{"v":3,"type":"alert_ack","nonce":"Zk3m1Qw9Lr0aT7yUc2Vb5g","seq":6,"alertSeq":17}
+```
+
+El addon lo envía justo después de pintar el `alert` cuyo `seq` es `alertSeq`. Mismas reglas que
+`context`, `heartbeat` y `bye`: `nonce` de esta conexión, `seq` propio consecutivo y claves exactas.
+`alertSeq` es un entero ≥ 1. Un ack de un `alertSeq` que no se envió a **esa** conexión se ignora
+sin cerrarla (avanza el `seq` y cuenta como línea válida para el `liveness_timeout`). Sobre una
+conexión v2, `alert_ack` es `unexpected_message`, como cualquier tipo desconocido.
+
+## Versión 3: el acuse de un aviso
+
+Hasta v2 el addon no decía si había enseñado un aviso, y el plugin no podía distinguir «enviado» de
+«visto en el juego». v3 añade solo `alert_ack`.
+
+| | v2 | v3 |
+|---|---|---|
+| `"v"` del `hello` | 2 | 3 |
+| `"v"` que escribe el plugin (`welcome`, `alert`, `error`) | 2 | 3 |
+| `"v"` que debe llevar cada línea del addon | 2 | 3 |
+| `alert_ack` | `unexpected_message` | aceptado |
+
+Compatibilidad:
+
+- El plugin acepta `hello` con `v` 2 o 3 y **recuerda la versión por conexión**. A una conexión v2 le
+  escribe exactamente como hasta ahora. A una v3 le escribe `"v":3`.
+- `hello` con `v` > 3 (o 1) sigue siendo `version_unsupported`, y esa línea de error lleva `"v":2`.
+  Un `hello` v3 rechazado por otro motivo (`auth_rejected`, `capacity`) recibe su error con `"v":3`.
+- **Cada mensaje del addon lleva la versión negociada en su `hello`**: tras un `hello` v3, `context`,
+  `heartbeat`, `bye` y `alert_ack` llevan `"v":3`; tras uno v2, todos `"v":2`. Otro valor es
+  `frame_schema` y cierra la conexión. (El módulo de Blish envía el ack al encolar la notificación,
+  no al terminar de pintarla; el paso sigue llamándose «Recibido en el juego».)
+- **No se añade ninguna clave** a `welcome` ni a `alert`: un addon v2 descarta un mensaje conocido
+  con claves de más. La única diferencia entre las líneas de las dos versiones es el valor de `v`.
+- Un addon v3 que reciba `"v"` mayor que 3 muestra «actualiza el addon».
+
+Estado del paso «Recibido en el juego» por aviso (lo lleva el plugin, no el addon):
+
+| Estado | Cuándo |
+|---|---|
+| `pending` | El aviso se envió al menos a una conexión v3 y aún no llegó ningún ack |
+| `received` | Llegó un ack de cualquier conexión; se guarda qué anfitrión (`nexus` o `blish`) y la hora |
+| `unconfirmed` | Pasaron **15 s** sin ack; o el aviso solo se envió a conexiones v2 (el addon no confirma: actualizarlo); o a ninguna. Un `pending` que quedó así al cerrar Obsidian se lee como `unconfirmed` |
+
+Un ack tardío, posterior a los 15 s, sigue siendo verdad y pasa `unconfirmed` por timeout a
+`received`. Un ack de un aviso que no se envió a esa conexión no cambia nada.
+
 ## Mensajes del plugin al addon
 
 ### `welcome`
@@ -253,7 +305,7 @@ Es la última línea antes de que el plugin cierre. Lleva solo el código, nunca
 ### Tolerancia del addon
 
 El addon **ignora** líneas del plugin con un `type` que no conozca y descarta las de `type`
-conocido con claves de más o de menos, **sin cerrar**. Si recibe `"v"` mayor que 2, muestra
+conocido con claves de más o de menos, **sin cerrar**. Si recibe `"v"` mayor que el suyo, muestra
 «actualiza el addon».
 
 ## Ejemplo completo
@@ -268,6 +320,17 @@ addon  → {"v":2,"type":"heartbeat","nonce":"Zk3m1Qw9Lr0aT7yUc2Vb5g","seq":3}
 addon  → {"v":2,"type":"context","nonce":"Zk3m1Qw9Lr0aT7yUc2Vb5g","seq":4,"state":"gameplay","mapId":866,"character":"Astra Uno"}
 plugin → {"v":2,"type":"alert","seq":1,"kind":"valuable_loot","name":"Mystic Coin","quantity":3,"totalCopper":123456,"content":"Mystic Coin ×3 · 12g 34s 56c"}
 addon  → {"v":2,"type":"bye","nonce":"Zk3m1Qw9Lr0aT7yUc2Vb5g","seq":5,"reason":"game_exit"}
+```
+
+El mismo recorrido con un addon v3, con el acuse del aviso:
+
+```text
+addon  → {"v":3,"type":"hello","client":"nexus","clientVersion":"0.3.0","instance":"q8Hq3n2t0dQyYf0nJ1p0Aw","token":"<token>"}
+plugin → {"v":3,"type":"welcome","server":"Pq0v4c3Wm9Xs1Ya7Tb2NeQ","nonce":"Zk3m1Qw9Lr0aT7yUc2Vb5g","heartbeatIntervalMs":5000}
+addon  → {"v":3,"type":"context","nonce":"Zk3m1Qw9Lr0aT7yUc2Vb5g","seq":0,"state":"gameplay","mapId":866,"character":"Astra Uno"}
+plugin → {"v":3,"type":"alert","seq":17,"kind":"valuable_loot","name":"Mystic Coin","quantity":3,"totalCopper":123456,"content":"Mystic Coin ×3 · 12g 34s 56c"}
+addon  → {"v":3,"type":"alert_ack","nonce":"Zk3m1Qw9Lr0aT7yUc2Vb5g","seq":1,"alertSeq":17}
+addon  → {"v":3,"type":"bye","nonce":"Zk3m1Qw9Lr0aT7yUc2Vb5g","seq":2,"reason":"game_exit"}
 ```
 
 ## Presencia: qué hace el plugin con el contexto

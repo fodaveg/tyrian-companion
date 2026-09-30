@@ -250,6 +250,101 @@ describe('H13.9/H13.15 in-game bridge, plugin to addon', () => {
 	});
 });
 
+describe('H18.38 in-game bridge, alert acknowledgement (protocol v3)', () => {
+	const alertFor = (alertSeq: number) => (version: 2 | 3): string => `{"v":${String(version)},"type":"alert","seq":${String(alertSeq)}}`;
+
+	it('welcomes a v3 hello in v3, a v2 hello exactly as before, and speaks each its own version', async () => {
+		const { handle } = await startBridge();
+		try {
+			const old = await LineClient.connect(handle.port);
+			old.write(helloLine());
+			const modern = await LineClient.connect(handle.port);
+			modern.write(helloLine({ v: 3 }));
+			expect(await old.nextLine()).toMatch(/^\{"v":2,"type":"welcome",/u);
+			expect(await modern.nextLine()).toMatch(/^\{"v":3,"type":"welcome",/u);
+			const delivery = handle.broadcastAlert(1, alertFor(1));
+			expect(await old.nextLine()).toBe('{"v":2,"type":"alert","seq":1}');
+			expect(await modern.nextLine()).toBe('{"v":3,"type":"alert","seq":1}');
+			expect(delivery).toEqual({ v2Connections: 1, v3Clients: ['nexus'] });
+		} finally { await handle.close(); }
+	});
+
+	it('answers a v3 addon with the wrong secret with a v3 error, and a v4 hello with the v2 version_unsupported', async () => {
+		const { handle } = await startBridge();
+		try {
+			const wrong = await LineClient.connect(handle.port);
+			wrong.write(helloLine({ v: 3, token: 'x'.repeat(40) }));
+			await wrong.closed;
+			expect(wrong.lines).toEqual(['{"v":3,"type":"error","code":"auth_rejected"}']);
+			const future = await LineClient.connect(handle.port);
+			future.write(helloLine({ v: 4 }));
+			await future.closed;
+			expect(future.lines).toEqual(['{"v":2,"type":"error","code":"version_unsupported"}']);
+		} finally { await handle.close(); }
+	});
+
+	it('reports an ack for an alert sent to that connection, with the host that sent it', async () => {
+		const acks: { alertSeq: number; client: string }[] = [];
+		const { handle } = await startBridge({ onAlertAck: (ack) => { acks.push({ alertSeq: ack.alertSeq, client: ack.client }); } });
+		try {
+			const addon = await AuthenticatedAddon.open(handle.port, 'blish', 3);
+			handle.broadcastAlert(7, alertFor(7));
+			addon.send({ type: 'alert_ack', alertSeq: 7 });
+			await waitFor(() => acks.length === 1);
+			expect(acks).toEqual([{ alertSeq: 7, client: 'blish' }]);
+			expect(handle.clientCount()).toBe(1);
+		} finally { await handle.close(); }
+	});
+
+	it('ignores, without closing, an ack for an alert that was not sent to that connection', async () => {
+		const acks: number[] = [];
+		const { handle } = await startBridge({ onAlertAck: (ack) => { acks.push(ack.alertSeq); } });
+		try {
+			const addon = await AuthenticatedAddon.open(handle.port, 'nexus', 3);
+			handle.broadcastAlert(1, alertFor(1));
+			addon.send({ type: 'alert_ack', alertSeq: 99 });
+			// The following frame proves the connection stayed open and the sequence advanced.
+			addon.send({ type: 'alert_ack', alertSeq: 1 });
+			await waitFor(() => acks.length === 1);
+			expect(acks).toEqual([1]);
+			expect(handle.clientCount()).toBe(1);
+		} finally { await handle.close(); }
+	});
+
+	it('rejects an alert_ack on a v2 connection as unexpected_message, like any unknown type', async () => {
+		const { handle } = await startBridge({ onAlertAck: () => { throw new Error('a v2 ack must not be reported'); } });
+		try {
+			const addon = await AuthenticatedAddon.open(handle.port, 'nexus', 2);
+			handle.broadcastAlert(1, alertFor(1));
+			addon.send({ type: 'alert_ack', alertSeq: 1 });
+			await addon.client.closed;
+			expect(addon.client.lines.at(-1)).toBe('{"v":2,"type":"error","code":"unexpected_message"}');
+		} finally { await handle.close(); }
+	});
+
+	it('closes a connection whose frames carry another version than its hello negotiated', async () => {
+		const { handle } = await startBridge();
+		try {
+			const v3 = await AuthenticatedAddon.open(handle.port, 'nexus', 3);
+			v3.sendRaw({ v: 2, type: 'heartbeat', nonce: v3.nonce, seq: 0 });
+			await v3.client.closed;
+			expect(v3.client.lines.at(-1)).toBe('{"v":3,"type":"error","code":"frame_schema"}');
+			const v2 = await AuthenticatedAddon.open(handle.port, 'blish', 2);
+			v2.sendRaw({ v: 3, type: 'heartbeat', nonce: v2.nonce, seq: 0 });
+			await v2.client.closed;
+			expect(v2.client.lines.at(-1)).toBe('{"v":2,"type":"error","code":"frame_schema"}');
+		} finally { await handle.close(); }
+	});
+
+	it('applies the 512-byte wire limit to each version line', async () => {
+		const { handle } = await startBridge();
+		try {
+			await AuthenticatedAddon.open(handle.port, 'nexus', 3);
+			expect(() => handle.broadcastAlert(1, () => 'x'.repeat(513))).toThrow(/512/u);
+		} finally { await handle.close(); }
+	});
+});
+
 describe('H18.23 presence through real sockets', () => {
 	it('two addons of the same game produce one presence, and losing one of them changes only the source', async () => {
 		const { handle, tracker, presence } = await startTrackedBridge();
@@ -313,17 +408,17 @@ async function startTrackedBridge(): Promise<{
 class AuthenticatedAddon {
 	private seq = 0;
 
-	private constructor(readonly client: LineClient, readonly nonce: string) {}
+	private constructor(readonly client: LineClient, readonly nonce: string, private readonly version: 2 | 3) {}
 
-	static async open(port: number, client: 'nexus' | 'blish' = 'nexus'): Promise<AuthenticatedAddon> {
+	static async open(port: number, client: 'nexus' | 'blish' = 'nexus', version: 2 | 3 = 2): Promise<AuthenticatedAddon> {
 		const socket = await LineClient.connect(port);
-		socket.write(helloLine({ client }));
+		socket.write(helloLine({ client, v: version }));
 		const welcome = JSON.parse(await socket.nextLine()) as { nonce: string };
-		return new AuthenticatedAddon(socket, welcome.nonce);
+		return new AuthenticatedAddon(socket, welcome.nonce, version);
 	}
 
 	send(fields: Record<string, unknown>): void {
-		this.sendRaw({ v: 2, nonce: this.nonce, seq: this.seq, ...fields });
+		this.sendRaw({ v: this.version, nonce: this.nonce, seq: this.seq, ...fields });
 		this.seq += 1;
 	}
 

@@ -1,6 +1,6 @@
 import { formatCopperVisual } from '../core/copper-format';
 import type { AlertKind, AlertV1 } from './alert-contract';
-import { INGAME_BRIDGE_MAX_LINE_BYTES, INGAME_BRIDGE_PROTOCOL_VERSION } from './alert-ingame-protocol';
+import { INGAME_BRIDGE_MAX_LINE_BYTES, INGAME_BRIDGE_PROTOCOL_VERSION, type IngameBridgeVersion } from './alert-ingame-protocol';
 
 /**
  * The sixth channel, and the only one that leaves the machine over a socket instead of HTTPS.
@@ -32,7 +32,8 @@ export const ALERT_INGAME_MAX_MESSAGE_BYTES = INGAME_BRIDGE_MAX_LINE_BYTES;
  * also carries `welcome` and `error`. The alert fields themselves are unchanged from v1.
  */
 export interface AlertIngamePayload {
-	readonly v: typeof ALERT_INGAME_PAYLOAD_VERSION;
+	/** 2 by default; 3 only for a connection whose `hello` said 3 (H18.38). No other key changes. */
+	readonly v: IngameBridgeVersion;
 	readonly type: 'alert';
 	/** A per-process counter the wiring layer assigns at broadcast time, not part of `AlertV1`. */
 	readonly seq?: number;
@@ -79,9 +80,9 @@ export function alertIngameContent(alert: AlertV1): string {
  * composed prose. A per-process sequence counter carries no such risk, so it is spread in only when
  * given, keeping `Object.keys` exact for a channel that has not yet been told its sequence.
  */
-export function alertIngamePayload(alert: AlertV1, seq?: number): AlertIngamePayload {
+export function alertIngamePayload(alert: AlertV1, seq?: number, version: IngameBridgeVersion = ALERT_INGAME_PAYLOAD_VERSION): AlertIngamePayload {
 	return {
-		v: ALERT_INGAME_PAYLOAD_VERSION,
+		v: version,
 		type: 'alert',
 		...(seq === undefined ? {} : { seq }),
 		kind: alert.kind,

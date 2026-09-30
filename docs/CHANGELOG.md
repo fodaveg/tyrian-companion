@@ -1,5 +1,17 @@
 # Changelog
 
+## Sin publicar - acuse del addon en el puente con el juego (H18.38, protocolo v3)
+
+- El puente pasa a protocolo v3 = v2 más un mensaje del addon, `alert_ack`, que confirma que pintó
+  un aviso. El plugin acepta `hello` con `v` 2 o 3 y habla a cada conexión en su versión: una
+  conexión v2 recibe exactamente los mismos bytes que antes y un `alert_ack` en v2 es
+  `unexpected_message`. Un ack de un aviso que no se envió a esa conexión se ignora sin cerrar.
+- Máquina de estados del paso «Recibido en el juego» (`pending`, `received`, `unconfirmed` a los
+  15 s, o de inmediato si solo hay addons v2 o ninguno). Contrato en `docs/SPEC-puente-ingame.md`.
+
+Límites: solo el lado del plugin. Falta persistir el estado por aviso y pintar el paso en el
+recorrido del aviso; los addons de Nexus y Blish siguen enviando v2 hasta que se publiquen con v3.
+
 ## Release beta 0.2.11 - el historial de sesiones vuelve a mostrarse tras sincronizar el inventario
 
 - El historial de sesiones recorre todo el vault. Cualquier nota con un `tc_kind` distinto de sesión
