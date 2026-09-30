@@ -1,7 +1,16 @@
 # Changelog
 
-## Sin publicar - acuse del addon en el puente con el juego (H18.38, protocolo v3)
+## Release beta 0.2.12 - las Bases vuelven a actualizarse solas y cada aviso dice si llegó al juego
 
+- **Bases sin marcador.** Obsidian borra el comentario de la primera línea de un `.base` al guardarlo,
+  y sin él ni manifiesto el plugin trataba sus propias Bases como ajenas: la vista previa de Ajustes
+  bloqueaba y la auto-actualización no hacía nada. Ahora una Base sin marcador cuyo hash semántico
+  coincide con una Base publicada (tabla `src/assets/published-base-hashes.ts`, generada desde los
+  tags 0.1.5 a 0.2.11) se reconoce como del plugin: si es la versión actual queda igual, si es una
+  anterior se actualiza. Una Base que no coincide con ninguna, por ejemplo una editada a mano, no se
+  toca, se lista en Ajustes como «Tuya, no se toca» y ya no bloquea a las demás; el manifiesto la
+  guarda en un campo nuevo `excluded`. Tras el siguiente sync de inventario, una carpeta sin
+  manifiesto con al menos una Base reconocida se repara sola (`4a92ae8`, `d2c202d`).
 - El puente pasa a protocolo v3 = v2 más un mensaje del addon, `alert_ack`, que confirma que pintó
   un aviso. El plugin acepta `hello` con `v` 2 o 3 y habla a cada conexión en su versión: una
   conexión v2 recibe exactamente los mismos bytes que antes y un `alert_ack` en v2 es
@@ -10,17 +19,28 @@
   15 s, o de inmediato si solo hay addons v2 o ninguno). Contrato en `docs/SPEC-puente-ingame.md`.
 - Cada aviso del cajón Avisos muestra su recorrido (boceto H18.31, lámina 2.1): Visto · Enviado (a
   Nexus, a Blish o «sin addon conectado») · Recibido en el juego (Nexus) / Esperando al juego / Sin
-  confirmar, con la causa («el addon no confirma: actualízalo», «sin respuesta en 15 s», «Obsidian
+  confirmar, con la causa («el addon no confirma: actualízalo», «sin respuesta en 15 s», «la aplicación
   se cerró antes»). El resultado se guarda en un almacén nuevo `alert-deliveries-v1` (IndexedDB de
   Halloween pasa a versión 8, aditiva: ningún registro existente se lee ni se reescribe) y sobrevive
   a reabrir la vista y a reiniciar Obsidian. Un aviso anterior sin datos de entrega enseña solo
   «Visto» y «sin datos de entrega». El emisor sella una hora de emisión que comparten la cola y el
   canal del juego, para que ambos deriven el mismo `alertId`.
+- En pantallas estrechas el detalle de cada paso va debajo de su etiqueta, y la fila del aviso separa
+  texto y hora con « · » (`76545ea`).
+- **Hebra.** Un `title` igual al id de la posición en una nota de inventario (lo escribió la
+  importación de Hebra) ya no cuenta como frontmatter del usuario: la nota va a la papelera cuando la
+  posición desaparece y pierde ese `title` al reescribirse (`f757acd`). El host puede declarar
+  `capabilities: { managedAssets: false }` para no tener assets gestionados; omitido, todo sigue
+  igual (`e4a9d12`). `notify.system` puede devolver `pending` (permiso de notificaciones aún sin
+  conceder) y el canal de notificación del sistema lo cuenta como entregado pendiente, no como
+  fallido (`b894d80`).
 
 Límites: el paso «en la nota» no se pinta: un aviso no se escribe en ninguna nota de sesión, no hay
 dato por aviso. Los addons de Nexus y Blish siguen enviando v2 hasta que se publiquen con v3; hasta
 entonces todos los avisos salen como «Sin confirmar: el addon no confirma». El addon de Blish envía
-el ack al encolar la notificación, no al pintarla.
+el ack al encolar la notificación, no al pintarla. Las Bases se probaron sobre una copia de la
+carpeta 42.31 de David, no en su Obsidian. La instalación por BRAT queda pendiente de comprobar en
+el cliente.
 
 ## Release beta 0.2.11 - el historial de sesiones vuelve a mostrarse tras sincronizar el inventario
 
