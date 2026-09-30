@@ -3,7 +3,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import { genericManagedAssets, managedAssetsBundle, sha256Text } from './generic-assets';
 import { halloweenManagedAssets } from './halloween-base';
-import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
+import { baseSemanticHash, ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { ManagedAssetsLifecycle } from './managed-assets-lifecycle';
 import {
 	decideManagedAssetsAutoUpdate,
@@ -26,7 +26,7 @@ describe('managed asset paths and planning', () => {
 		expect(normalizeManagedAssetPath('A/e\u0301.base', CONFIG_DIR)).toBe('A/\u00e9.base');
 	});
 
-	it('allows only managed extensions and blocks unowned occupations in a pure preview', () => {
+	it('allows only managed extensions and lists unowned occupations without blocking the rest in a pure preview', () => {
 		expect(normalizeManagedAssetPath('Tyrian Companion/Bases/Sessions.base', CONFIG_DIR)).toBeTruthy();
 		expect(normalizeManagedAssetPath(`Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`, CONFIG_DIR)).toBeTruthy();
 		expect(normalizeManagedAssetPath('Tyrian Companion/Bases/Sessions.css', CONFIG_DIR)).toBeNull();
@@ -36,7 +36,9 @@ describe('managed asset paths and planning', () => {
 			assets: [{ asset: fixtureAsset(), path: 'Tyrian Companion/Bases/Sessions.base', status: 'occupied_unowned' as const,
 				currentHash: 'a'.repeat(64), currentSemanticHash: null, installedHash: null }],
 		};
-		expect(planManagedAssets(inspection, 'install')).toMatchObject({ canApply: false, reasons: ['occupied_unowned'] });
+		expect(planManagedAssets(inspection, 'install')).toMatchObject({
+			canApply: true, reasons: [], steps: [{ path: 'Tyrian Companion/Bases/Sessions.base', status: 'occupied_unowned' }],
+		});
 	});
 
 	it('keeps Sessions.base scoped to the durable session schema and kind', async () => {
@@ -124,8 +126,12 @@ describe('ManagedAssetsManager', () => {
 		const assets = await genericManagedAssets();
 		vault.contents.set('Tyrian Companion/Bases/Sessions.base', `${assets[0]!.bytes}\nhuman edit`);
 		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 1, locale: 'es', assets });
-		expect(await instance.preview('Tyrian Companion')).toMatchObject({ canApply: false, reasons: ['occupied_unowned'] });
+		expect(await instance.preview('Tyrian Companion')).toMatchObject({
+			canApply: true, reasons: [], steps: [{ status: 'occupied_unowned' }],
+		});
+		// Nothing of ours to create or adopt: the folder must not become "managed" over the user's file.
 		expect((await instance.apply('Tyrian Companion')).status).toBe('conflict');
+		expect(vault.contents.has(`Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`)).toBe(false);
 		expect(vault.contents.get('Tyrian Companion/Bases/Sessions.base')).toContain('human edit');
 	});
 
@@ -449,14 +455,14 @@ describe('ManagedAssetsManager', () => {
 		expect(destinationManifest.assets).toHaveLength(5);
 	});
 
-	it('keeps ordinary install unable to adopt the same markerless semantic Bases', async () => {
+	it('adopts the same markerless Bases on ordinary install by their published semantic hash, but relocation inspection stays strict', async () => {
 		const vault = new MemoryAssetVault();
 		const { instance } = await stageReserializedRelocation(vault);
-		const before = new Map(vault.contents);
 
-		expect(await instance.apply('Configured output', 'install')).toMatchObject({ status: 'conflict' });
-		expect(vault.contents).toEqual(before);
-		expect(vault.contents.has(`Configured output/${MANAGED_ASSETS_MANIFEST}`)).toBe(false);
+		expect((await instance.inspect('Configured output', { adoptPublished: false })).assets.map((entry) => entry.status))
+			.toEqual(Array(5).fill('occupied_unowned'));
+		expect(await instance.apply('Configured output', 'install')).toMatchObject({ status: 'applied' });
+		expect(vault.contents.has(`Configured output/${MANAGED_ASSETS_MANIFEST}`)).toBe(true);
 	});
 
 	it.each(['missing', 'extra', 'changed'] as const)(
@@ -738,6 +744,164 @@ describe('H14.8 · upgrading a vault a real prior release (0.1.30) left behind',
  * real content drift between that tag and HEAD (verified against
  * `git show 0.1.30:src/assets/inventory-bases.ts`).
  */
+describe('markerless vault: adoption by published semantic hash and files the user owns', () => {
+	const ROOT = 'Tyrian Companion';
+	const MANIFEST = `${ROOT}/${MANAGED_ASSETS_MANIFEST}`;
+	const pathOf = (asset: PackagedAsset) => `${ROOT}/Bases/${asset.relativePath}`;
+	/** What Obsidian leaves behind: same meaning, first-line marker gone. */
+	const markerless = (bytes: string) => stringifyYaml(parseYaml(bytes));
+	const statuses = (inspection: Awaited<ReturnType<ManagedAssetsManager['inspect']>>) =>
+		Object.fromEntries(inspection.assets.map((entry) => [entry.asset.id, entry.status]));
+
+	async function stage(mutate: (bundle: PackagedAsset[], vault: MemoryAssetVault) => void = () => undefined) {
+		const bundle = (await managedAssetsBundle()).filter((asset) => asset.locale === 'neutral' || asset.locale === 'es');
+		const vault = new MemoryAssetVault();
+		for (const asset of bundle) vault.contents.set(pathOf(asset), markerless(asset.bytes));
+		mutate(bundle, vault);
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets: bundle });
+		return { bundle, vault, instance };
+	}
+
+	it('recovers every markerless Base of the current bundle, writes manifest and markers, then is idempotent', async () => {
+		const { vault, instance, bundle } = await stage();
+		expect(Object.values(statuses(await instance.inspect(ROOT)))).toEqual(Array(5).fill('recoverable'));
+		expect(await instance.preview(ROOT, 'install')).toMatchObject({ canApply: true, reasons: [] });
+		expect(decideManagedAssetsAutoUpdate(await instance.inspect(ROOT))).toEqual({ action: 'apply' });
+
+		expect((await instance.apply(ROOT, 'install')).status).toBe('applied');
+		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
+		expect(manifest).toMatchObject({ state: 'ready' });
+		expect(manifest.assets).toHaveLength(5);
+		expect(manifest.excluded).toBeUndefined();
+		for (const asset of bundle) expect(vault.contents.get(pathOf(asset))).toBe(asset.bytes);
+
+		const writes = vault.writeCount;
+		expect((await instance.apply(ROOT, 'upgrade')).status).toBe('unchanged');
+		expect(vault.writeCount).toBe(writes);
+	});
+
+	it('registers a Base equal to an older publication at that contentVersion and reads it as an update', async () => {
+		const older = await stage();
+		const current = older.bundle.find((asset) => asset.id === 'materials-base')!;
+		const oldPath = pathOf(current);
+		const newBytes = `${current.bytes.replace(`version=${String(current.contentVersion)}`, `version=${String(current.contentVersion + 1)}`)}tcTestExtra: 1\n`;
+		const newer: PackagedAsset = { ...current, contentVersion: current.contentVersion + 1, bytes: newBytes, contentHash: await sha256Text(newBytes) };
+		const published = [{ assetId: current.id, locale: current.locale, contentVersion: current.contentVersion,
+			semanticHash: (await baseSemanticHash(current.bytes))! }];
+		const assets = older.bundle.map((asset) => asset.id === current.id ? newer : asset);
+		const instance = new ManagedAssetsManager(older.vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets }, published);
+
+		expect(statuses(await instance.inspect(ROOT))['materials-base']).toBe('update');
+		expect(await instance.preview(ROOT, 'install')).toMatchObject({ canApply: true });
+		expect((await instance.apply(ROOT, 'install')).status).toBe('applied');
+		expect(older.vault.contents.get(oldPath)).toBe(newBytes);
+		const manifest = JSON.parse(older.vault.contents.get(MANIFEST)!) as MutableJournal;
+		expect(manifest.assets.find((entry) => entry.id === 'materials-base')?.contentVersion).toBe(newer.contentVersion);
+	});
+
+	it('leaves a Base that matches no publication alone: excluded from the journal and the manifest, everything else applied', async () => {
+		const { vault, instance, bundle } = await stage((assets, memory) => {
+			const inventory = assets.find((asset) => asset.id === 'inventory-base')!;
+			memory.contents.set(pathOf(inventory), markerless(inventory.bytes).replace(/^views:/mu, 'tcUser: true\nviews:'));
+		});
+		const inventory = bundle.find((asset) => asset.id === 'inventory-base')!;
+		const mine = vault.contents.get(pathOf(inventory))!;
+		expect(statuses(await instance.inspect(ROOT))['inventory-base']).toBe('occupied_unowned');
+		const plan = await instance.preview(ROOT, 'install');
+		expect(plan.canApply).toBe(true);
+		expect(plan.steps.find((step) => step.id === 'inventory-base')?.status).toBe('occupied_unowned');
+		// A manifest-less folder with one foreign file is never touched on its own.
+		expect(decideManagedAssetsAutoUpdate(await instance.inspect(ROOT))).toEqual({ action: 'none' });
+
+		expect((await instance.apply(ROOT, 'install')).status).toBe('applied');
+		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
+		expect(manifest.assets.map((entry) => entry.id)).not.toContain('inventory-base');
+		expect(manifest.assets).toHaveLength(4);
+		expect(manifest.excluded).toEqual(['inventory-base']);
+		expect(vault.contents.get(pathOf(inventory))).toBe(mine);
+
+		const after = await instance.inspect(ROOT);
+		expect(after.manifestStatus).toBe('ready');
+		expect(statuses(after)['inventory-base']).toBe('occupied_unowned');
+		const writes = vault.writeCount;
+		expect((await instance.apply(ROOT, 'upgrade')).status).toBe('unchanged');
+		expect((await instance.apply(ROOT, 'repair')).status).toBe('unchanged');
+		expect(vault.writeCount).toBe(writes);
+		expect(decideManagedAssetsAutoUpdate(after)).toEqual({ action: 'none' });
+	});
+
+	it('registers the excluded Base once the user deletes their file, and uninstall never touches an excluded file', async () => {
+		const stageForeign = async () => await stage((assets, memory) => {
+			const inventory = assets.find((asset) => asset.id === 'inventory-base')!;
+			memory.contents.set(pathOf(inventory), markerless(inventory.bytes).replace(/^views:/mu, 'tcUser: true\nviews:'));
+		});
+		const restored = await stageForeign();
+		const inventoryPath = pathOf(restored.bundle.find((asset) => asset.id === 'inventory-base')!);
+		await restored.instance.apply(ROOT, 'install');
+		restored.vault.contents.delete(inventoryPath);
+		expect(statuses(await restored.instance.inspect(ROOT))['inventory-base']).toBe('create');
+		expect((await restored.instance.apply(ROOT, 'upgrade')).status).toBe('applied');
+		const manifest = JSON.parse(restored.vault.contents.get(MANIFEST)!) as MutableJournal;
+		expect(manifest.assets).toHaveLength(5);
+		expect(manifest.excluded).toBeUndefined();
+
+		const removed = await stageForeign();
+		await removed.instance.apply(ROOT, 'install');
+		const mine = removed.vault.contents.get(inventoryPath)!;
+		expect((await removed.instance.uninstall(ROOT)).status).toBe('detached');
+		expect(removed.vault.contents.get(inventoryPath)).toBe(mine);
+		expect(removed.vault.trashed).toHaveLength(4);
+		expect((await removed.instance.inspect(ROOT)).manifestStatus).toBe('detached');
+	});
+
+	it('keeps failing closed when a ready manifest omits an asset without declaring it excluded', async () => {
+		const { vault, instance } = await stage();
+		await instance.apply(ROOT, 'install');
+		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
+		manifest.assets = manifest.assets.filter((entry) => entry.id !== 'inventory-base');
+		vault.contents.set(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+		expect((await instance.inspect(ROOT)).manifestStatus).toBe('conflict');
+		manifest.excluded = ['inventory-base'];
+		vault.contents.set(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+		expect((await instance.inspect(ROOT)).manifestStatus).toBe('ready');
+		manifest.excluded = ['inventory-base', 'sessions-base'];
+		vault.contents.set(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+		expect((await instance.inspect(ROOT)).manifestStatus).toBe('conflict');
+	});
+
+	it('resumes a crashed adoption journal without unowned files and finalizes it', async () => {
+		const { vault, instance, bundle } = await stage((assets, memory) => {
+			const inventory = assets.find((asset) => asset.id === 'inventory-base')!;
+			memory.contents.set(pathOf(inventory), markerless(inventory.bytes).replace(/^views:/mu, 'tcUser: true\nviews:'));
+		});
+		vault.failAfterWrites = 2;
+		expect((await instance.apply(ROOT, 'install')).status).toBe('unavailable');
+		vault.failAfterWrites = null;
+		expect((await instance.inspect(ROOT)).manifestStatus).toBe('applying');
+		expect((await instance.apply(ROOT, 'install')).status).toBe('applied');
+		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
+		expect(manifest).toMatchObject({ state: 'ready', excluded: ['inventory-base'] });
+		expect(manifest.assets).toHaveLength(4);
+		expect(vault.contents.get(pathOf(bundle.find((asset) => asset.id === 'sessions-base')!))).toBe(bundle.find((asset) => asset.id === 'sessions-base')!.bytes);
+	});
+
+	it('only auto-applies without a manifest when every existing file is adoptable and none is foreign', async () => {
+		const partial = await stage((assets, memory) => memory.contents.delete(pathOf(assets.find((asset) => asset.id === 'wallet-base')!)));
+		const inspection = await partial.instance.inspect(ROOT);
+		expect(statuses(inspection)['wallet-base']).toBe('create');
+		expect(decideManagedAssetsAutoUpdate(inspection)).toEqual({ action: 'apply' });
+
+		const empty = await stage((assets, memory) => { for (const asset of assets) memory.contents.delete(pathOf(asset)); });
+		expect(decideManagedAssetsAutoUpdate(await empty.instance.inspect(ROOT))).toEqual({ action: 'none' });
+	});
+
+	it('does not adopt by hash when the caller asks for strict evidence (relocation)', async () => {
+		const { instance } = await stage();
+		expect(Object.values(statuses(await instance.inspect(ROOT, { adoptPublished: false }))))
+			.toEqual(Array(5).fill('occupied_unowned'));
+	});
+});
+
 async function release0130Bundle(): Promise<PackagedAsset[]> {
 	const current = await managedAssetsBundle();
 	return await Promise.all(current.map(async (asset) => {

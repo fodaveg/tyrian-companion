@@ -60,6 +60,11 @@ export interface ManagedAssetsManifest {
 	locale: 'es' | 'en';
 	state: 'ready' | 'applying' | 'detached';
 	assets: ManagedAssetEntry[];
+	/**
+	 * Ids of bundle assets whose path holds a file the plugin cannot prove it owns: not registered,
+	 * never written. Absent when empty, so a manifest without exclusions keeps its historical shape.
+	 */
+	excluded?: string[];
 	pendingOperation?: PendingManagedOperation;
 }
 
@@ -70,6 +75,8 @@ export interface InspectedAsset {
 	currentHash: string | null;
 	currentSemanticHash: string | null;
 	installedHash: string | null;
+	/** Set when an unregistered Base was recognised by semantic hash as a published version (see `inspect`). */
+	adopted?: ManagedAssetEntry;
 }
 
 export interface ManagedAssetsInspection {
@@ -117,9 +124,13 @@ export function manifestPath(root: string): string {
 	return `${root}/${MANAGED_ASSETS_MANIFEST}`;
 }
 
-/** Pure preview: modified/unowned/future/conflicting evidence always blocks writes. */
+/**
+ * Pure preview: modified/future/conflicting evidence blocks writes. A file at a managed path that
+ * the plugin cannot prove it owns (`occupied_unowned`) does not: it stays listed as a step, but the
+ * apply skips it (no write, no manifest entry) and carries out the rest.
+ */
 export function planManagedAssets(inspection: ManagedAssetsInspection, kind: ManagedOperationKind): ManagedAssetsPlan {
-	const blockers = new Set<ManagedAssetStatus>(['modified', 'occupied_unowned', 'newer_than_plugin', 'unsupported_manifest', 'conflict']);
+	const blockers = new Set<ManagedAssetStatus>(['modified', 'newer_than_plugin', 'unsupported_manifest', 'conflict']);
 	const reasons: ManagedAssetsBlockerReason[] = inspection.assets
 		.filter((entry) => blockers.has(entry.status))
 		.map((entry) => entry.status as ManagedAssetsBlockerReason);
@@ -154,7 +165,16 @@ export type ManagedAssetsAutoUpdateDecision =
  * already current is not "pending", so a user who customised a Base is not warned on every sync.
  */
 export function decideManagedAssetsAutoUpdate(inspection: ManagedAssetsInspection): ManagedAssetsAutoUpdateDecision {
-	if (inspection.manifestStatus === 'missing' || inspection.manifestStatus === 'applying') return { action: 'none' };
+	if (inspection.manifestStatus === 'applying') return { action: 'none' };
+	if (inspection.manifestStatus === 'missing') {
+		// Manifest lost (Obsidian stripped the markers, or it was deleted): recover on our own only when
+		// every existing file is provably ours (recoverable, or an older publication that reads `update`)
+		// and nothing is foreign; a folder with nothing of ours in it is never installed by itself.
+		const statuses = inspection.assets.map((entry) => entry.status);
+		const adoptable = statuses.some((status) => status === 'recoverable' || status === 'update');
+		return adoptable && statuses.every((status) => status === 'create' || status === 'recoverable' || status === 'update')
+			? { action: 'apply' } : { action: 'none' };
+	}
 	const installedVersion = new Map((inspection.manifest?.assets ?? []).map((entry) => [entry.id, entry.contentVersion]));
 	const pending = inspection.assets.some((entry) => entry.status === 'update' || entry.status === 'create'
 		|| entry.status === 'recoverable'
@@ -169,7 +189,9 @@ export function decideManagedAssetsAutoUpdate(inspection: ManagedAssetsInspectio
 export function isManagedAssetsManifest(value: unknown): value is ManagedAssetsManifest {
 	if (!record(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2) || value.pluginId !== 'tyrian-companion') return false;
 	const schemaVersion = value.schemaVersion;
-	if (!exactKeys(value, ['schemaVersion', 'pluginId', 'root', 'bundleVersion', 'generation', 'locale', 'state', 'assets'], ['pendingOperation'])) return false;
+	if (!exactKeys(value, ['schemaVersion', 'pluginId', 'root', 'bundleVersion', 'generation', 'locale', 'state', 'assets'], ['pendingOperation', 'excluded'])) return false;
+	if (value.excluded !== undefined && (schemaVersion !== 2 || !Array.isArray(value.excluded) || value.excluded.length === 0 ||
+		!value.excluded.every((id) => typeof id === 'string' && id.length > 0))) return false;
 	if (typeof value.root !== 'string' || !positiveInt(value.bundleVersion) || !nonNegativeInt(value.generation)) return false;
 	if ((value.locale !== 'es' && value.locale !== 'en') || !['ready', 'applying', 'detached'].includes(String(value.state)) || !Array.isArray(value.assets)) return false;
 	if (!value.assets.every((entry) => isAssetEntry(entry, schemaVersion))) return false;

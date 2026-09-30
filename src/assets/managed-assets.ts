@@ -1,6 +1,7 @@
 import { parseDocument } from 'yaml';
 
 import { sha256Text } from './managed-asset-hash';
+import { PUBLISHED_BASE_FINGERPRINTS, type PublishedBaseFingerprint } from './published-base-hashes';
 import { legacyVaultFolder } from '../core/settings';
 import {
 	hasCompatibleMarker,
@@ -49,6 +50,8 @@ export class ManagedAssetsManager {
 		private readonly vault: ManagedAssetsVault,
 		private readonly configDir: string,
 		private bundle: ManagedAssetsBundle,
+		/** Injectable so tests can publish a synthetic older version; production always uses the generated table. */
+		private readonly published: readonly PublishedBaseFingerprint[] = PUBLISHED_BASE_FINGERPRINTS,
 	) {}
 
 	/** Replaces packaged evidence only between explicit operations; it performs no Vault I/O. */
@@ -57,7 +60,12 @@ export class ManagedAssetsManager {
 		this.bundle = bundle;
 	}
 
-	async inspect(root: string): Promise<ManagedAssetsInspection> {
+	/**
+	 * `adoptPublished: false` keeps the strict ownership evidence (marker or manifest only). Relocation
+	 * passes it so its own origin-manifest adoption stays the only way to take over a destination.
+	 */
+	async inspect(root: string, options: { adoptPublished?: boolean } = {}): Promise<ManagedAssetsInspection> {
+		const adoptPublished = options.adoptPublished ?? true;
 		const validatedRoot = validateRoot(root, this.configDir);
 		if (!validatedRoot) throw new Error('invalid_root');
 		validateBundle(this.bundle, validatedRoot, this.configDir);
@@ -73,7 +81,7 @@ export class ManagedAssetsManager {
 			const path = managedAssetPath(validatedRoot, asset);
 			if (!normalizeManagedAssetPath(path, this.configDir)) throw new Error('invalid_asset_path');
 			const file = this.vault.file(path);
-			const registered = manifest?.assets.find((entry) => entry.id === asset.id) ?? null;
+			let registered = manifest?.assets.find((entry) => entry.id === asset.id) ?? null;
 			if (!file) {
 				assets.push({ asset, path, status: registered ? 'missing' : 'create', currentHash: null, currentSemanticHash: null, installedHash: registered?.installedHash ?? null });
 				continue;
@@ -81,14 +89,31 @@ export class ManagedAssetsManager {
 			const content = normalizeLf(await this.vault.read(file));
 			const currentHash = await sha256Text(content);
 			const currentSemanticHash = asset.kind === 'base' ? await baseSemanticHash(content) : null;
-			let status: InspectedAsset['status'];
-			if (!registered) status = currentHash === asset.contentHash && hasCompatibleMarker(content, asset) ? 'recoverable' : 'occupied_unowned';
-			else if (registered.contentVersion > asset.contentVersion || manifest!.bundleVersion > this.bundle.bundleVersion) status = 'newer_than_plugin';
+			let status: InspectedAsset['status'] = 'occupied_unowned';
+			let adopted: ManagedAssetEntry | undefined;
+			if (!registered) {
+				status = currentHash === asset.contentHash && hasCompatibleMarker(content, asset) ? 'recoverable' : 'occupied_unowned';
+				// Obsidian rewrites a .base without its first-line marker, so a Base that MEANS exactly what
+				// this plugin published is adopted by semantic hash: the current bundle is `recoverable`, an
+				// older publication is registered at ITS contentVersion and reads `update`.
+				if (status === 'occupied_unowned' && adoptPublished && currentSemanticHash !== null) {
+					const current = currentSemanticHash === targetSemanticHash;
+					const version = current ? asset.contentVersion : publishedVersionOf(this.published, asset, currentSemanticHash);
+					if (version !== null) {
+						adopted = { id: asset.id, kind: asset.kind, contentVersion: version, locale: asset.locale, path,
+							installedHash: currentHash, installedSemanticHash: currentSemanticHash };
+						if (current) status = 'recoverable';
+						else registered = adopted;
+					}
+				}
+			}
+			if (!registered) { /* `status` is already recoverable or occupied_unowned */ }
+			else if (registered.contentVersion > asset.contentVersion || (manifest !== null && manifest.bundleVersion > this.bundle.bundleVersion)) status = 'newer_than_plugin';
 			else if (!await this.matchesInstalledContent(content, currentHash, registered, asset, targetSemanticHash)) status = 'modified';
 			else status = currentHash === asset.contentHash ||
 				(asset.kind === 'base' && registered.contentVersion === asset.contentVersion && currentSemanticHash === targetSemanticHash)
 				? 'unchanged' : 'update';
-			assets.push({ asset, path, status, currentHash, currentSemanticHash, installedHash: registered?.installedHash ?? null });
+			assets.push({ asset, path, status, currentHash, currentSemanticHash, installedHash: registered?.installedHash ?? null, ...(adopted ? { adopted } : {}) });
 		}
 		const manifestStatus = manifestRead.status === 'missing' ? 'missing'
 			: manifestRead.status === 'unsupported' ? 'unsupported_manifest'
@@ -163,7 +188,7 @@ export class ManagedAssetsManager {
 	private async relocateInternal(from: string, to: string): Promise<ManagedAssetsResult> {
 		try {
 			if (from === to) return { status: 'invalid', message: 'Managed-assets relocation roots must differ.' };
-			let destination = await this.inspect(to);
+			let destination = await this.inspect(to, { adoptPublished: false });
 			if (destination.manifest?.state === 'applying') {
 				if (destination.manifest.pendingOperation?.kind !== 'relocate') {
 					return { status: 'busy', message: 'Another managed-assets operation is active.' };
@@ -266,7 +291,7 @@ export class ManagedAssetsManager {
 					const updated = await this.markDone(journal, index);
 					if (!updated) {
 						const raced = await this.inspect(root);
-						if (raced.manifestStatus === 'ready' && raced.assets.every((entry) => entry.status === 'unchanged')) return { status: 'unchanged', inspection: raced, ownership: 'existing' };
+						if (raced.manifestStatus === 'ready' && raced.assets.every((entry) => isSettled(entry.status))) return { status: 'unchanged', inspection: raced, ownership: 'existing' };
 						return { status: 'conflict', message: 'The recovery journal changed.' };
 					}
 					journal = updated;
@@ -277,12 +302,14 @@ export class ManagedAssetsManager {
 			}
 			const plan = planManagedAssets(inspection, kind);
 			if (!plan.canApply) return { status: inspection.manifestStatus === 'applying' ? 'busy' : 'conflict', message: plan.reasons.join(', ') };
-			if (plan.steps.every((step) => step.status === 'unchanged')) {
+			if (plan.steps.every((step) => isSettled(step.status))) {
+				// Nothing to adopt or create and no manifest: an all-foreign folder must not become "managed".
+				if (inspection.manifestStatus === 'missing') return { status: 'conflict', message: 'No managed asset can be created or adopted.' };
 				if (inspection.manifest?.schemaVersion === 1) {
 					const migrated = await this.migrateReadyManifest(inspection);
 					if (!migrated) return { status: 'conflict', message: 'The legacy managed-assets manifest changed.' };
 					inspection = await this.inspect(root);
-					if (inspection.assets.some((entry) => entry.status !== 'unchanged')) return { status: 'conflict', message: 'A managed asset changed during manifest migration.' };
+					if (inspection.assets.some((entry) => !isSettled(entry.status))) return { status: 'conflict', message: 'A managed asset changed during manifest migration.' };
 					return { status: 'applied', inspection, ownership: 'existing' };
 				}
 				return { status: 'unchanged', inspection, ownership: 'existing' };
@@ -291,7 +318,7 @@ export class ManagedAssetsManager {
 			let journal = await this.begin(inspection, operation);
 			if (!journal) {
 				const raced = await this.inspect(root);
-				if (raced.manifestStatus === 'ready' && raced.assets.every((asset) => asset.status === 'unchanged')) return { status: 'unchanged', inspection: raced, ownership: 'existing' };
+				if (raced.manifestStatus === 'ready' && raced.assets.every((asset) => isSettled(asset.status))) return { status: 'unchanged', inspection: raced, ownership: 'existing' };
 				return { status: raced.manifestStatus === 'applying' ? 'busy' : 'conflict', message: 'The managed-assets manifest changed.' };
 			}
 			for (let index = 0; index < journal.pendingOperation!.steps.length; index += 1) {
@@ -303,7 +330,7 @@ export class ManagedAssetsManager {
 				journal = await this.markDone(journal, index);
 				if (!journal) {
 					const raced = await this.inspect(root);
-					if (raced.manifestStatus === 'ready' && raced.assets.every((entry) => entry.status === 'unchanged')) return { status: 'unchanged', inspection: raced, ownership: 'existing' };
+					if (raced.manifestStatus === 'ready' && raced.assets.every((entry) => isSettled(entry.status))) return { status: 'unchanged', inspection: raced, ownership: 'existing' };
 					return { status: 'conflict', message: 'The operation journal changed.' };
 				}
 			}
@@ -332,8 +359,9 @@ export class ManagedAssetsManager {
 			generation: inspection.manifest?.generation ?? 0,
 			locale: operation.kind === 'uninstall' ? inspection.manifest?.locale ?? this.bundle.locale : this.bundle.locale,
 			state: 'applying',
-			assets: inspection.manifest?.assets ?? initialAssets, pendingOperation: operation,
+			assets: this.withAdopted(inspection, operation.kind, inspection.manifest?.assets ?? initialAssets), pendingOperation: operation,
 		};
+		if (inspection.manifest?.excluded) manifest.excluded = inspection.manifest.excluded;
 		await ensureFolders(this.vault, inspection.root);
 		const file = this.vault.file(inspection.manifestPath);
 		const serialized = serializeManifest(manifest);
@@ -355,8 +383,19 @@ export class ManagedAssetsManager {
 		return applied ? await this.exactManifest(inspection.manifestPath, operation.operationId) : null;
 	}
 
+	/**
+	 * A Base adopted by semantic hash is registered in the journal manifest at the version it was
+	 * recognised as, so its `beforeHash` (the file as Obsidian left it) is legitimate evidence.
+	 */
+	private withAdopted(inspection: ManagedAssetsInspection, kind: ManagedOperationKind, entries: ManagedAssetEntry[]): ManagedAssetEntry[] {
+		if (kind === 'uninstall') return entries;
+		const adopted = inspection.assets.flatMap((entry) => entry.adopted && !entries.some((known) => known.id === entry.asset.id) ? [entry.adopted] : []);
+		return adopted.length === 0 ? entries : [...entries, ...adopted];
+	}
+
+	/** `occupied_unowned` files are the user's: they get no step, no manifest entry and no write. */
 	private async operation(inspection: ManagedAssetsInspection, kind: 'install' | 'upgrade' | 'repair') {
-		const steps: ManagedOperationStep[] = inspection.assets.map((entry) => ({
+		const steps: ManagedOperationStep[] = inspection.assets.filter((entry) => entry.status !== 'occupied_unowned').map((entry) => ({
 			id: entry.asset.id, path: entry.path,
 			beforeHash: entry.currentHash === null ? null
 				: entry.installedHash !== null && entry.currentHash !== entry.installedHash ? entry.installedHash : entry.currentHash,
@@ -402,6 +441,7 @@ export class ManagedAssetsManager {
 		if (!manifest || manifest.schemaVersion !== 1 || manifest.state !== 'ready') return null;
 		const installed: ManagedAssetEntry[] = [];
 		for (const inspected of inspection.assets) {
+			if (inspected.status === 'occupied_unowned') continue;
 			if (inspected.status !== 'unchanged' || inspected.currentHash === null) return null;
 			if (await this.hashAt(inspected.path) !== inspected.currentHash) return null;
 			const entry: ManagedAssetEntry = {
@@ -430,7 +470,10 @@ export class ManagedAssetsManager {
 	 */
 	private async finalize(manifest: ManagedAssetsManifest, adopted: ManagedAssetEntry[] = []): Promise<{ manifest: ManagedAssetsManifest; changed: boolean } | null> {
 		const installed: ManagedAssetEntry[] = [];
+		// Only what the journal touched is registered: a file left out as the user's stays out.
+		const journaled = manifest.pendingOperation ? new Set(manifest.pendingOperation.steps.map((step) => step.id)) : null;
 		for (const asset of selectedAssets(this.bundle)) {
+			if (journaled && !journaled.has(asset.id)) continue;
 			const path = managedAssetPath(manifest.root, asset);
 			const file = this.vault.file(path);
 			if (!file) return null;
@@ -454,6 +497,8 @@ export class ManagedAssetsManager {
 			bundleVersion: this.bundle.bundleVersion,
 			generation: manifest.generation + 1, locale: this.bundle.locale, state: 'ready', assets: installed };
 		delete next.pendingOperation;
+		const excluded = journaled ? selectedAssets(this.bundle).filter((asset) => !journaled.has(asset.id)).map((asset) => asset.id) : [];
+		if (excluded.length > 0) next.excluded = excluded; else delete next.excluded;
 		const applied = await this.casManifest(manifest, next);
 		if (applied) return { manifest: applied, changed: true };
 		const raced = await this.exactManifest(manifestPath(manifest.root));
@@ -568,10 +613,15 @@ export class ManagedAssetsManager {
 				entry.installedSemanticHash !== await baseSemanticHash(asset.bytes)) return false;
 			assetIds.add(entry.id); assetPaths.add(folded);
 		}
+		// The set stays exact, but a file the user owns at an asset's path may be declared `excluded`
+		// instead of registered: it is in exactly one of the two lists, never in neither.
+		const excluded = manifest.excluded ?? [];
+		if (new Set(excluded).size !== excluded.length || excluded.some((id) => manifest.assets.some((entry) => entry.id === id) ||
+			!assetsForManifestLocale.some((asset) => asset.id === id))) return false;
 		if (finalState && manifest.bundleVersion === this.bundle.bundleVersion) {
-			if (manifest.assets.length !== assetsForManifestLocale.length ||
-				assetsForManifestLocale.some((asset) => !manifest.assets.some((entry) => entry.id === asset.id && entry.kind === asset.kind &&
-					entry.locale === asset.locale && entry.path === managedAssetPath(root, asset)))) return false;
+			if (manifest.assets.length + excluded.length !== assetsForManifestLocale.length ||
+				assetsForManifestLocale.some((asset) => !excluded.includes(asset.id) && !manifest.assets.some((entry) => entry.id === asset.id &&
+					entry.kind === asset.kind && entry.locale === asset.locale && entry.path === managedAssetPath(root, asset)))) return false;
 		}
 		if (manifest.state !== 'applying') return true;
 		const operation = manifest.pendingOperation!;
@@ -579,7 +629,9 @@ export class ManagedAssetsManager {
 		const expectedEntries = operation.kind === 'uninstall'
 			? manifest.assets.map((entry) => ({ id: entry.id, path: entry.path, beforeHash: entry.installedHash, afterHash: null }))
 			: selectedAssets(this.bundle).map((asset) => ({ id: asset.id, path: managedAssetPath(root, asset), beforeHash: undefined, afterHash: asset.contentHash }));
-		if (operation.steps.length !== expectedEntries.length) return false;
+		// Uninstall walks the registered set exactly; the others may omit files the user owns.
+		if (operation.kind === 'uninstall' ? operation.steps.length !== expectedEntries.length
+			: operation.steps.length === 0 || operation.steps.length > expectedEntries.length) return false;
 		const stepIds = new Set<string>();
 		const stepPaths = new Set<string>();
 		for (const step of operation.steps) {
@@ -661,6 +713,16 @@ function validateBundle(bundle: ManagedAssetsBundle, root: string, configDir: st
 		ids.add(asset.id); paths.add(folded);
 	}
 }
+/** Highest published contentVersion (never above the bundle's) of this Base whose meaning is `semanticHash`. */
+function publishedVersionOf(published: readonly PublishedBaseFingerprint[], asset: PackagedAsset, semanticHash: string): number | null {
+	const versions = published
+		.filter((row) => row.assetId === asset.id && row.locale === asset.locale && row.semanticHash === semanticHash &&
+			row.contentVersion <= asset.contentVersion)
+		.map((row) => row.contentVersion);
+	return versions.length === 0 ? null : Math.max(...versions);
+}
+/** An unchanged asset needs no write, and an unowned one is left alone: neither is work for the journal. */
+function isSettled(status: InspectedAsset['status']): boolean { return status === 'unchanged' || status === 'occupied_unowned'; }
 function normalizeLf(value: string): string { return value.replace(/\r\n?/gu, '\n'); }
 async function operationId(root: string, generation: number, targetBundleVersion: number, locale: string, kind: ManagedOperationKind, steps: ManagedOperationStep[]): Promise<string> {
 	return await sha256Text(JSON.stringify([root, generation, targetBundleVersion, locale, kind,
@@ -696,7 +758,7 @@ function serializeManifest(value: ManagedAssetsManifest): string { return `${JSO
  * would also move the hash itself, and every installed asset would read as
  * drifted on the next check.
  */
-async function baseSemanticHash(content: string): Promise<string | null> {
+export async function baseSemanticHash(content: string): Promise<string | null> {
 	try {
 		const document = parseDocument(normalizeLf(content), { prettyErrors: false, uniqueKeys: true });
 		if (document.errors.length > 0 || document.warnings.length > 0) return null;
