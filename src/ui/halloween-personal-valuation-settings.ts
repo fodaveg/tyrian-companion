@@ -113,7 +113,7 @@ export class HalloweenPersonalValuationSettings {
 				input.removeAttribute('aria-invalid');
 				void this.apply(outcome.key, parsed.value, { input, message });
 			});
-			remove?.addEventListener('click', () => { void this.apply(outcome.key, null); });
+			if (remove !== null) remove.addEventListener('click', () => { void this.apply(outcome.key, null); });
 		}
 
 		const warning = container.createEl('p');
