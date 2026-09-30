@@ -77,13 +77,16 @@ export class HalloweenPersonalValuationSettings {
 			input.disabled = this.busyKey !== null;
 			this.inputs.set(outcome.key, input);
 
-			const remove = row.createEl('button');
-			remove.type = 'button';
-			remove.textContent = translator.t('settings.halloween.personal.remove');
-			remove.setAttribute('aria-label', translator.t('settings.halloween.personal.removeLabel', {
-				outcome: outcome.label,
-			}));
-			remove.disabled = this.busyKey !== null || !values.has(outcome.key);
+			// The button exists only for a row that holds a value; an empty row has nothing to remove.
+			const remove = values.has(outcome.key) ? row.createEl('button') : null;
+			if (remove !== null) {
+				remove.type = 'button';
+				remove.textContent = translator.t('settings.halloween.personal.remove');
+				remove.setAttribute('aria-label', translator.t('settings.halloween.personal.removeLabel', {
+					outcome: outcome.label,
+				}));
+				remove.disabled = this.busyKey !== null;
+			}
 
 			const message = row.createSpan();
 			message.id = errorId;
@@ -110,7 +113,7 @@ export class HalloweenPersonalValuationSettings {
 				input.removeAttribute('aria-invalid');
 				void this.apply(outcome.key, parsed.value, { input, message });
 			});
-			remove.addEventListener('click', () => { void this.apply(outcome.key, null); });
+			remove?.addEventListener('click', () => { void this.apply(outcome.key, null); });
 		}
 
 		const warning = container.createEl('p');

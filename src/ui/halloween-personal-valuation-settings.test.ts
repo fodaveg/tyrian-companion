@@ -153,7 +153,39 @@ describe('Halloween personal valuation Settings DOM', () => {
 	it('pins the responsive and accessible control rules at 760, 480 and 320 px', () => {
 		const styles = readFileSync('styles.css', 'utf8');
 		for (const width of [760, 480, 320]) expect(styles).toContain(`@container (max-width: ${String(width)}px)`);
-		expect(styles).toMatch(/\.tyrian-personal-valuation__row input,[\s\S]*min-block-size: 44px/u);
+		expect(styles).toMatch(/@media \(pointer: coarse\) \{\s*\.tyrian-personal-valuation__row input,\s*\.tyrian-personal-valuation__row button \{\s*min-block-size: 44px;/u);
+		expect(styles).not.toMatch(/^\.tyrian-personal-valuation__row input,/mu);
+	});
+
+	it('renders the remove button only in rows that hold a value, disabled while saving', async () => {
+		const harness = mount('en', { version: 1, values: [
+			{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
+		] });
+		expect(harness.buttons()).toHaveLength(1);
+		expect(mount('en').buttons()).toHaveLength(0);
+		expect(harness.buttons()[0]!.disabled).toBe(false);
+		harness.inputs()[1]!.value = '7';
+		harness.inputs()[1]!.dispatch('change');
+		expect(harness.buttons()).toHaveLength(1);
+		expect(harness.buttons()[0]!.disabled).toBe(true);
+		await flush();
+		expect(harness.buttons()).toHaveLength(2);
+	});
+
+	it('moves focus to the row input after remove drops its own button', async () => {
+		const harness = mount('en', { version: 1, values: [
+			{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
+		] });
+		const before = harness.inputs()[0]!;
+		const remove = harness.buttons()[0]!;
+		remove.focus();
+		remove.dispatch('click');
+		await flush();
+		expect(harness.buttons()).toHaveLength(0);
+		const after = harness.inputs()[0]!;
+		expect(after.id).toBe(before.id);
+		expect(after.focused).toBe(true);
+		expect(after.value).toBe('');
 	});
 });
 
@@ -181,6 +213,7 @@ function mount(
 		save,
 		elements: () => walk(container),
 		inputs: () => walk(container).filter((element) => element.tagName === 'INPUT'),
+		buttons: () => walk(container).filter((element) => element.tagName === 'BUTTON'),
 		text: () => walk(container).map((element) => element.textContent).join(' '),
 	};
 }
