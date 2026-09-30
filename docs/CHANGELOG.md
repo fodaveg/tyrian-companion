@@ -1,5 +1,22 @@
 # Changelog
 
+## Release beta 0.2.13 - las Bases se reparan aunque el plugin recuerde otra carpeta de Bases
+
+- **Bases de una carpeta sin manifiesto, con otra raíz recordada.** El plugin guarda en IndexedDB
+  qué carpeta de Bases es la activa. Si esa referencia nombraba otra carpeta (por ejemplo una raíz
+  antigua que los ajustes ya no nombran pero que sigue teniendo su manifiesto), el arreglo de la
+  0.2.12 no llegaba a ejecutarse: tras cada sync de inventario la actualización fallaba con «Another
+  managed-assets root is active.» y la carpeta configurada seguía sin manifiesto. Ahora la carpeta
+  que nombran los ajustes pasa a ser la activa cuando no tiene manifiesto y al menos una de sus Bases
+  coincide con una publicada; las Bases se adoptan como en la 0.2.12 y la carpeta antigua no se lee
+  ni se toca. Si la carpeta configurada no tiene nada reconocible, sigue el conflicto de antes
+  (`b735cfb`).
+- Ajustes: el botón de quitar una valoración personal solo aparece en filas con valor, y los
+  objetivos de 44 px se aplican solo con puntero grueso (`78c8d9c`). El título de categoría queda en
+  el DOM pero oculto a la vista, porque la pestaña de arriba ya la nombra (`c852257`).
+- Diagnóstico: el log local guarda cuántas notas llegó a escribir un sync de inventario o de cartera
+  que falla (`b11662c`).
+
 ## Release beta 0.2.12 - las Bases vuelven a actualizarse solas y cada aviso dice si llegó al juego
 
 - **Bases sin marcador.** Obsidian borra el comentario de la primera línea de un `.base` al guardarlo,
