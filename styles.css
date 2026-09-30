@@ -3144,6 +3144,17 @@
 	.tyrian-receipt li > time, .tyrian-receipt li > small { grid-column: 3; text-align: end; }
 }
 
+/*
+ * Recorrido de un aviso emitido (H18.38): en estrecho el detalle va DEBAJO de su etiqueta, alineado
+ * con ella. La columna de la derecha del recorrido de cierre partiría «Sin confirmar» en dos líneas.
+ */
+@container (max-width: 520px) {
+	.tyrian-companion-halloween__alerts .tyrian-receipt li { grid-template-columns: 16px minmax(0, 1fr); }
+	.tyrian-companion-halloween__alerts .tyrian-receipt li > .svg-icon { grid-row: span 2; }
+	.tyrian-companion-halloween__alerts .tyrian-receipt li > time,
+	.tyrian-companion-halloween__alerts .tyrian-receipt li > small { grid-column: 2; text-align: start; }
+}
+
 /* Sale amounts must wrap within their own cell, including unusually large stacks. */
 .tyrian-sale .tc-money {
 	white-space: normal;

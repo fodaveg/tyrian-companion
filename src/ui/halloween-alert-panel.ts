@@ -173,6 +173,8 @@ function renderEmittedAlerts(
 			quantity: alert.quantity,
 			reason: t(`alerts.reason.${alert.reason}`),
 		}) });
+		// The same " · " the entry itself puts between name and reason; without it the day glued to the reason.
+		row.createSpan({ text: ' · ' }).setAttr('aria-hidden', 'true');
 		row.createEl('time', { text: relativeDayLabel(alert.emittedAt, locale, now, t) })
 			.setAttr('datetime', alert.emittedAt);
 		if (ui === undefined) continue;
