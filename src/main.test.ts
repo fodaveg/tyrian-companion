@@ -24,6 +24,7 @@ import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { LocalDebugActionRunner, type LocalDebugActionPort } from './core/local-debug-action-runner';
 import { LocalDebugLogger } from './core/local-debug-logger';
+import { sanitizeLocalDebugRecord } from './core/local-debug-sanitizer';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import { withObsidianHost } from './test/obsidian-host-harness';
@@ -942,6 +943,11 @@ describe('durable inventory Vault commands', () => {
 		expect(failure).toMatchObject({
 			code: 'storage_failure', details: { reason: 'storage_failure', errorName: 'EACCES', written: 2 },
 		});
+		// What actually reaches the log is the sanitized record, not the input to `record()`.
+		const written = sanitizeLocalDebugRecord(failure as LocalDebugRecordInput, {
+			timestampMs: Date.parse('2026-09-30T10:00:00.000Z'), sequence: 1, pluginVersion: '0.0.0',
+		});
+		expect(written.details).toEqual({ reason: 'storage_failure', written: 2 });
 	});
 });
 

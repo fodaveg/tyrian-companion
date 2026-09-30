@@ -31,6 +31,30 @@ describe('local debug sanitizer: commerce_prices item ids', () => {
 	});
 });
 
+/** A failed vault sync must leave its progress (`written`) in the final record; `errorName` stays blocked by name. */
+describe('local debug sanitizer: failed vault sync details', () => {
+	it.each(['inventory', 'wallet'] as const)('keeps written, and drops errorName, on a %s failure', (component) => {
+		const record = sanitizeLocalDebugRecord({
+			level: 'error', component, action: 'inventory_sync', phase: 'failure', code: 'storage_failure',
+			actionId: 'a1', correlationId: 'c1',
+			details: { reason: 'storage_failure', errorName: 'EACCES', written: 2 },
+		}, CONTEXT);
+
+		expect(record.details).toEqual({ reason: 'storage_failure', written: 2 });
+	});
+
+	it('drops errorName and written for a component that has not reviewed them', () => {
+		const record = sanitizeLocalDebugRecord({
+			level: 'error', component: 'session', action: 'session_start', phase: 'failure', code: 'internal_failure',
+			actionId: 'a1', correlationId: 'c1',
+			details: { phase: 'observing', errorName: 'EACCES', written: 2 },
+		}, CONTEXT);
+
+		expect(record.details).not.toHaveProperty('errorName');
+		expect(record.details).not.toHaveProperty('written');
+	});
+});
+
 /**
  * H14.9. `finishLifecycleSpan` (`managed-assets-lifecycle.ts`) already put the specific conflict
  * text in `details.message`; the allowlist dropping the whole (now-empty) object is what made
