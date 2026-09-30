@@ -167,12 +167,10 @@ export type ManagedAssetsAutoUpdateDecision =
 export function decideManagedAssetsAutoUpdate(inspection: ManagedAssetsInspection): ManagedAssetsAutoUpdateDecision {
 	if (inspection.manifestStatus === 'applying') return { action: 'none' };
 	if (inspection.manifestStatus === 'missing') {
-		// Manifest lost (Obsidian stripped the markers, or it was deleted): recover on our own only when
-		// every existing file is provably ours (recoverable, or an older publication that reads `update`)
-		// and nothing is foreign; a folder with nothing of ours in it is never installed by itself.
-		const statuses = inspection.assets.map((entry) => entry.status);
-		const adoptable = statuses.some((status) => status === 'recoverable' || status === 'update');
-		return adoptable && statuses.every((status) => status === 'create' || status === 'recoverable' || status === 'update')
+		// Manifest lost (Obsidian stripped the markers, or it was deleted): recover on our own when at least
+		// one file matches a published hash exactly (proof the folder is the plugin's); foreign files stay
+		// untouched, as in the manual action. Nothing adoptable: never installed by itself.
+		return inspection.assets.some((entry) => entry.status === 'recoverable' || entry.status === 'update')
 			? { action: 'apply' } : { action: 'none' };
 	}
 	const installedVersion = new Map((inspection.manifest?.assets ?? []).map((entry) => [entry.id, entry.contentVersion]));

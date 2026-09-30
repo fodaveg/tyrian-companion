@@ -810,8 +810,8 @@ describe('markerless vault: adoption by published semantic hash and files the us
 		const plan = await instance.preview(ROOT, 'install');
 		expect(plan.canApply).toBe(true);
 		expect(plan.steps.find((step) => step.id === 'inventory-base')?.status).toBe('occupied_unowned');
-		// A manifest-less folder with one foreign file is never touched on its own.
-		expect(decideManagedAssetsAutoUpdate(await instance.inspect(ROOT))).toEqual({ action: 'none' });
+		// Adoptable files prove the folder is ours: recover by itself, the foreign one stays untouched.
+		expect(decideManagedAssetsAutoUpdate(await instance.inspect(ROOT))).toEqual({ action: 'apply' });
 
 		expect((await instance.apply(ROOT, 'install')).status).toBe('applied');
 		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
@@ -885,11 +885,17 @@ describe('markerless vault: adoption by published semantic hash and files the us
 		expect(vault.contents.get(pathOf(bundle.find((asset) => asset.id === 'sessions-base')!))).toBe(bundle.find((asset) => asset.id === 'sessions-base')!.bytes);
 	});
 
-	it('only auto-applies without a manifest when every existing file is adoptable and none is foreign', async () => {
+	it('auto-applies without a manifest only when some file is adoptable; create and foreign files do not matter', async () => {
 		const partial = await stage((assets, memory) => memory.contents.delete(pathOf(assets.find((asset) => asset.id === 'wallet-base')!)));
 		const inspection = await partial.instance.inspect(ROOT);
 		expect(statuses(inspection)['wallet-base']).toBe('create');
 		expect(decideManagedAssetsAutoUpdate(inspection)).toEqual({ action: 'apply' });
+
+		const onlyForeign = await stage((assets, memory) => {
+			for (const asset of assets) memory.contents.set(pathOf(asset), `tcUser: ${asset.id}\n`);
+		});
+		expect(Object.values(statuses(await onlyForeign.instance.inspect(ROOT)))).toEqual(Array(5).fill('occupied_unowned'));
+		expect(decideManagedAssetsAutoUpdate(await onlyForeign.instance.inspect(ROOT))).toEqual({ action: 'none' });
 
 		const empty = await stage((assets, memory) => { for (const asset of assets) memory.contents.delete(pathOf(asset)); });
 		expect(decideManagedAssetsAutoUpdate(await empty.instance.inspect(ROOT))).toEqual({ action: 'none' });
