@@ -908,6 +908,78 @@ describe('markerless vault: adoption by published semantic hash and files the us
 	});
 });
 
+/**
+ * Measured 30 sep 2026: the durable pointer names an old root that still owns a manifest and files,
+ * while the root the settings name has no manifest (Obsidian stripped the markers) but holds Bases
+ * that match published hashes. The settings root wins; the old root is never touched.
+ */
+describe('a settings root with adoptable Bases takes over a pointer that names another live root', () => {
+	const OLD = 'Old root';
+	const NEW = 'Configured root';
+	const NEW_MANIFEST = `${NEW}/${MANAGED_ASSETS_MANIFEST}`;
+	const markerless = (bytes: string) => stringifyYaml(parseYaml(bytes));
+
+	async function stage(adoptable: boolean) {
+		const base = (await managedAssetsBundle()).filter((asset) => asset.locale === 'neutral' || asset.locale === 'es');
+		const materials = base.find((asset) => asset.id === 'materials-base')!;
+		const newBytes = `${materials.bytes.replace(`version=${String(materials.contentVersion)}`, `version=${String(materials.contentVersion + 1)}`)}tcTestExtra: 1\n`;
+		const newer: PackagedAsset = { ...materials, contentVersion: materials.contentVersion + 1, bytes: newBytes, contentHash: await sha256Text(newBytes) };
+		const published = [{ assetId: materials.id, locale: materials.locale, contentVersion: materials.contentVersion,
+			semanticHash: (await baseSemanticHash(materials.bytes))! }];
+		const bundle = base.map((asset) => asset.id === materials.id ? newer : asset);
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets: bundle }, published);
+		const lifecycle = new ManagedAssetsLifecycle(instance, pointer);
+		expect(await lifecycle.install(OLD)).toMatchObject({ status: 'applied', root: OLD });
+		const oldRoot = new Map([...vault.contents].filter(([path]) => path.startsWith(`${OLD}/`)));
+		const pathOf = (id: string) => `${NEW}/Bases/${bundle.find((asset) => asset.id === id)!.relativePath}`;
+		if (adoptable) {
+			for (const asset of base) vault.contents.set(pathOf(asset.id), markerless(asset.bytes));
+			vault.contents.set(pathOf('inventory-base'), markerless(base.find((asset) => asset.id === 'inventory-base')!.bytes).replace(/^views:/mu, 'tcUser: true\nviews:'));
+		} else {
+			for (const asset of base) vault.contents.set(pathOf(asset.id), `tcUser: ${asset.id}\n`);
+		}
+		return { vault, pointer, lifecycle, bundle, oldRoot, pathOf, newer };
+	}
+
+	it('adopts the configured root, leaves the old root byte for byte and points the pointer at the new one', async () => {
+		const { vault, pointer, lifecycle, bundle, oldRoot, pathOf, newer } = await stage(true);
+		const inventoryBefore = vault.contents.get(pathOf('inventory-base'))!;
+
+		const result = await lifecycle.install(NEW);
+
+		expect(result).toMatchObject({ status: 'applied', root: NEW });
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: NEW, targetRoot: null });
+		const manifest = JSON.parse(vault.contents.get(NEW_MANIFEST)!) as MutableJournal;
+		expect(manifest).toMatchObject({ state: 'ready', excluded: ['inventory-base'] });
+		expect(manifest.assets.map((entry) => entry.id).sort()).toEqual(['halloween-base', 'materials-base', 'sessions-base', 'wallet-base']);
+		for (const id of ['halloween-base', 'sessions-base', 'wallet-base']) {
+			expect(vault.contents.get(pathOf(id))).toBe(bundle.find((asset) => asset.id === id)!.bytes);
+		}
+		expect(vault.contents.get(pathOf('materials-base'))).toBe(newer.bytes);
+		expect(vault.contents.get(pathOf('inventory-base'))).toBe(inventoryBefore);
+		for (const [path, bytes] of oldRoot) expect(vault.contents.get(path)).toBe(bytes);
+		expect([...vault.contents.keys()].filter((path) => path.startsWith(`${OLD}/`)).sort()).toEqual([...oldRoot.keys()].sort());
+		expect(vault.trashed).toEqual([]);
+
+		const writes = vault.writeCount;
+		expect(await lifecycle.install(NEW)).toMatchObject({ status: 'unchanged', root: NEW });
+		expect(vault.writeCount).toBe(writes);
+	});
+
+	it('keeps the conflict and writes nothing when the configured root holds nothing adoptable', async () => {
+		const { vault, pointer, lifecycle } = await stage(false);
+		const before = new Map(vault.contents);
+		const pointerBefore = await pointer.read();
+
+		expect(await lifecycle.install(NEW)).toMatchObject({ status: 'conflict', message: 'Another managed-assets root is active.' });
+
+		expect(vault.contents).toEqual(before);
+		expect(await pointer.read()).toEqual(pointerBefore);
+	});
+});
+
 async function release0130Bundle(): Promise<PackagedAsset[]> {
 	const current = await managedAssetsBundle();
 	return await Promise.all(current.map(async (asset) => {

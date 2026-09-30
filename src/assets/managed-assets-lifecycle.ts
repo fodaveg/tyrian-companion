@@ -39,7 +39,8 @@ export class ManagedAssetsLifecycle {
 		if (current.status === 'ready' && current.root !== null) {
 			const reclaimed = await this.reclaimStalePointer(current, current.root, root);
 			if (!reclaimed) return { status: 'conflict', message: 'Another managed-assets root is active.' };
-			return await this.installOverExistingAuthority(root, reclaimed);
+			if (reclaimed.adopt) return await this.installAdoptedRoot(current.root, root, reclaimed.state);
+			return await this.installOverExistingAuthority(root, reclaimed.state);
 		}
 		const claim = current.status === 'installing' ? current : await this.pointer.compareAndSet(current, { status: 'installing', root: null, targetRoot: root });
 		if (!claim) return { status: 'busy', message: 'Another managed-assets lifecycle operation won the race.' };
@@ -87,23 +88,49 @@ export class ManagedAssetsLifecycle {
 	}
 
 	/**
-	 * A `ready` pointer naming a different root than the one this install targets is reclaimed
-	 * only when that named root has decayed to nothing — no manifest and not a single managed
-	 * file under it, i.e. `inspect()` reports every asset as `create` — while the requested root
-	 * already carries its own `ready` manifest. Anything short of that (a live install, a root
-	 * still mid-operation, a root that still owns files) leaves this returning `null`, and
-	 * `installInternal` still answers `conflict`, so a genuinely active window's root is never
-	 * stepped on. The reclaim itself is a `compareAndSet` keyed on the exact pointer already
-	 * read: a concurrent window that moves the pointer in between always beats this one back to
-	 * `null`, the same optimistic-concurrency guarantee every other transition in this class uses.
+	 * A `ready` pointer naming a different root than the one this install targets is reclaimed in
+	 * exactly two cases, both through a `compareAndSet` keyed on the exact pointer already read (a
+	 * concurrent window that moves the pointer in between always beats this one back to `null`).
+	 *
+	 * 1. Stale: the named root has decayed to nothing (no manifest and every asset `create`) while
+	 * the requested root already carries its own `ready` manifest. A live install, a root still
+	 * mid-operation or one that still owns files never qualifies, so an active window's root is
+	 * never stepped on.
+	 * 2. Adopt: the requested root is the one the settings name, has no manifest (Obsidian stripped
+	 * the markers, or it was deleted) and at least one Base matches a published hash (`recoverable`
+	 * or `update`, the same proof `decideManagedAssetsAutoUpdate` uses). The old root may still be
+	 * alive; it is neither read for this decision nor touched afterwards (what to do with it is the
+	 * user's call). A requested root with nothing adoptable never qualifies, so pointing the
+	 * settings at a foreign folder cannot make it managed.
+	 *
+	 * Anything else leaves this returning `null` and `installInternal` answers `conflict`.
 	 */
-	private async reclaimStalePointer(current: ManagedAssetsPointerState, staleRoot: string, root: string): Promise<ManagedAssetsPointerState | null> {
+	private async reclaimStalePointer(current: ManagedAssetsPointerState, staleRoot: string, root: string): Promise<{ state: ManagedAssetsPointerState; adopt: boolean } | null> {
+		let adopt = false;
 		try {
-			const [stale, requested] = await Promise.all([this.manager.inspect(staleRoot), this.manager.inspect(root)]);
-			const abandoned = stale.manifestStatus === 'missing' && stale.assets.every((entry) => entry.status === 'create');
-			if (!abandoned || requested.manifestStatus !== 'ready') return null;
+			const requested = await this.manager.inspect(root);
+			adopt = requested.manifestStatus === 'missing' && requested.assets.some((entry) => entry.status === 'recoverable' || entry.status === 'update');
+			if (!adopt) {
+				const stale = await this.manager.inspect(staleRoot);
+				const abandoned = stale.manifestStatus === 'missing' && stale.assets.every((entry) => entry.status === 'create');
+				if (!abandoned || requested.manifestStatus !== 'ready') return null;
+			}
 		} catch { return null; }
-		return await this.pointer.compareAndSet(current, { status: 'ready', root, targetRoot: null });
+		const state = await this.pointer.compareAndSet(current, { status: 'ready', root, targetRoot: null });
+		return state ? { state, adopt } : null;
+	}
+
+	/**
+	 * Installs over a root that has just been adopted from a pointer that named another root. The
+	 * ordinary `install` adopts by published hash and writes the manifest. If it fails before any
+	 * manifest exists, the pointer goes back to the previous root so that authority is not lost.
+	 */
+	private async installAdoptedRoot(previousRoot: string, root: string, claim: ManagedAssetsPointerState): Promise<ManagedAssetsLifecycleResult> {
+		const installed = await this.manager.apply(root, 'install');
+		if (isSuccess(installed)) return successResult(installed, 'applied', claim);
+		const inspection = await this.manager.inspect(root);
+		if (inspection.manifestStatus === 'missing') await this.pointer.compareAndSet(claim, { status: 'ready', root: previousRoot, targetRoot: null });
+		return failure(installed);
 	}
 
 	async remove(
