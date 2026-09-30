@@ -2169,6 +2169,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * update keeps today's manual preview, ready in Settings, and warns once per plugin load.
 	 */
 	private async updateManagedAssetsAfterInventorySync(): Promise<void> {
+		if (!hostSupportsManagedAssets(this.host)) return;
 		const state = this.inventoryVaultSyncRun.current();
 		if (!this.runtimeReady || state.status !== 'idle' || state.lastRun?.status !== 'success') return;
 		const root = this.settings.managedAssetsRoot;
@@ -3601,11 +3602,20 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return lease;
 	}
 
-	hasManagedAssetsRoot(): boolean {
-		return this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null;
+	/**
+	 * False when the host declared `capabilities.managedAssets: false` (Hebra's first version has no
+	 * Bases): Settings shows no assets row and nothing here installs, moves, repairs or removes them.
+	 * An omitted capability means true, so Obsidian is unchanged.
+	 */
+	managedAssetsSupported(): boolean {
+		return hostSupportsManagedAssets(this.host);
+	}
+
+	hasManagedAssetsRoot(): boolean {		return this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null;
 	}
 
 	async previewManagedAssets(): Promise<void> {
+		if (!hostSupportsManagedAssets(this.host)) return;
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_root_retained', plan: null };
@@ -3634,6 +3644,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	async applyManagedAssets(): Promise<void> {
+		if (!hostSupportsManagedAssets(this.host)) return;
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (refusedInConsult(this)) return;
 		if (this.settings.legacyManagedAssetsRoot !== null) {
@@ -3646,6 +3657,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	async repairManagedAssets(): Promise<void> {
+		if (!hostSupportsManagedAssets(this.host)) return;
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (refusedInConsult(this)) return;
 		if (this.settings.legacyManagedAssetsRoot !== null) {
@@ -3660,6 +3672,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable
 	 * pointer could not be confirmed to match the retained root first). */
 	async relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
+		if (!hostSupportsManagedAssets(this.host)) return null;
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return null; }
 		if (refusedInConsult(this)) return null;
 		const destination = this.settings.outputFolder;
@@ -3675,6 +3688,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	async removeManagedAssets(): Promise<void> {
+		if (!hostSupportsManagedAssets(this.host)) return;
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (refusedInConsult(this)) return;
 		const legacyRoot = this.settings.legacyManagedAssetsRoot;
@@ -3703,6 +3717,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * that into something that fires on its own the next time Obsidian starts.
 	 */
 	private async reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
+		if (!hostSupportsManagedAssets(this.host)) return;
 		// R1b: moving the Bases is a collector write; a consult installation leaves them where they are.
 		if (consulting(this) || this.settings.legacyManagedAssetsRoot !== null) return;
 		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
@@ -5461,6 +5476,15 @@ function fireAndForgetLocal(
  */
 function consulting(plugin: { readonly collectorMode?: CollectorMode }): boolean {
 	return plugin.collectorMode === 'consult';
+}
+
+/**
+ * Whether the host keeps managed assets (Bases): true unless it declared
+ * `capabilities.managedAssets: false`. Tolerates an absent host, like `consulting` does for the
+ * isolated `this` objects the tests drive.
+ */
+function hostSupportsManagedAssets(host: TyrianHost | undefined): boolean {
+	return host?.capabilities?.managedAssets !== false;
 }
 
 /**

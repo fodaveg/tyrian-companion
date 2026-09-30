@@ -1533,6 +1533,33 @@ describe('automatic Base update behind the inventory sync (H18.18)', () => {
 		expect(notices).toEqual([]);
 	});
 
+	it('a host that declares no managed assets neither creates nor updates them, by any path', async () => {
+		const { vault, manager, plugin, notices, update } = await installed();
+		manager.setBundle(await newerBundle());
+		Object.defineProperty(plugin, 'host', { value: { ...(plugin as unknown as { host: object }).host, capabilities: { managedAssets: false } } });
+		const before = vault.writeCount;
+		await update();
+		await plugin.applyManagedAssets();
+		await plugin.relocateManagedAssets();
+		await plugin.reconcileManagedAssetsRoot();
+		expect(vault.writeCount).toBe(before);
+		expect(vault.contents.get(BASE)).not.toContain('version=99');
+		expect(notices).toEqual([]);
+		const fresh = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Fresh' });
+		Object.defineProperty(fresh, 'host', { value: { ...(fresh as unknown as { host: object }).host, capabilities: { managedAssets: false } } });
+		await fresh.applyManagedAssets();
+		expect(fresh.settings.managedAssetsRoot).toBeNull();
+		expect(vault.writeCount).toBe(before);
+	});
+
+	it('a host with capabilities present but managedAssets omitted keeps today\'s behaviour', async () => {
+		const { vault, manager, plugin, update } = await installed();
+		manager.setBundle(await newerBundle());
+		Object.defineProperty(plugin, 'host', { value: { ...(plugin as unknown as { host: object }).host, capabilities: {} } });
+		await update();
+		expect(vault.contents.get(BASE)).toContain('version=99');
+	});
+
 	async function newerBundle() {
 		const [asset] = await genericManagedAssets();
 		if (!asset) throw new Error('missing generic-assets fixture');

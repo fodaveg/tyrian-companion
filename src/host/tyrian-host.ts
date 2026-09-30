@@ -362,7 +362,23 @@ export interface TyrianUiPort {
 // host and runtime
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * What this host can do beyond the mandatory ports. Every flag is optional and an omitted one
+ * means "supported", so a host written before the flag existed (Obsidian) behaves as always.
+ */
+export interface TyrianHostCapabilities {
+	/**
+	 * Managed assets (the Bases and templates Tyrian installs in the Vault). Default true. With
+	 * false, Settings shows no assets section and neither the automatic update after an inventory
+	 * sync nor any command creates, moves, repairs or removes them. Hebra's first version declares
+	 * false (SPEC-TYRIAN-EN-HEBRA §3). Do NOT infer this from `managedAssetsRoot === null`: on a
+	 * fresh Obsidian install it is also null and the user needs the Apply button.
+	 */
+	readonly managedAssets?: boolean;
+}
+
 export interface TyrianHost {
+	readonly capabilities?: TyrianHostCapabilities;
 	readonly vault: TyrianVault;
 	readonly http: TyrianHttpPort;
 	readonly secrets: TyrianSecretsPort;

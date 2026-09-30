@@ -69,6 +69,8 @@ export interface SettingsPanelActions {
 	copyAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome>;
 	getAlertIngameServerErrorCode(): string | null;
 	getManagedAssetsView(): ManagedAssetsView;
+	/** Optional: absent means true. False hides the managed-assets row (host without Bases). */
+	managedAssetsSupported?(): boolean;
 	hasManagedAssetsRoot(): boolean;
 	previewManagedAssets(): Promise<void>;
 	applyManagedAssets(): Promise<void>;

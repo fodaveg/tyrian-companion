@@ -2,7 +2,7 @@
 
 ## Capas
 
-`src/runtime/tyrian-companion-core.ts` es la composición de Tyrian, sin Obsidian: `createTyrianRuntime(host)` construye los servicios y registra las vistas, los comandos, el ribbon con su menú, el bloque de código, el panel de ajustes y los avisos, todo por `TyrianHost` (`src/host/tyrian-host.ts`). `src/main.ts` es solo el adaptador de Obsidian: crea el `ObsidianHost` (`src/host/obsidian/`), le pasa ese host a la misma composición y reenvía `onload`/`onunload`. Hebra arranca la misma composición con su propio host (`src/runtime/index.ts`).
+`src/runtime/tyrian-companion-core.ts` es la composición de Tyrian, sin Obsidian: `createTyrianRuntime(host)` construye los servicios y registra las vistas, los comandos, el ribbon con su menú, el bloque de código, el panel de ajustes y los avisos, todo por `TyrianHost` (`src/host/tyrian-host.ts`). `src/main.ts` es solo el adaptador de Obsidian: crea el `ObsidianHost` (`src/host/obsidian/`), le pasa ese host a la misma composición y reenvía `onload`/`onunload`. Hebra arranca la misma composición con su propio host (`src/runtime/index.ts`). Las capacidades opcionales del host viven en `TyrianHost.capabilities`; omitida una, vale «soportada»: `managedAssets: false` (Hebra, sin Bases en su primera versión) oculta la sección de assets de Ajustes y desactiva su instalación, mudanza, reparación, borrado y el auto-update tras el sync de inventario.
 
 - `core`: transporte HTTP resiliente, configuración versionada, acceso diferido a secretos, limitación FIFO de concurrencia y diagnóstico local seguro.
 - `account`: cliente de Guild Wars 2, validación runtime, conexión, estado efímero y snapshots de almacenamiento.

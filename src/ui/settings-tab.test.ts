@@ -53,6 +53,21 @@ describe('essential alert threshold', () => {
 	});
 });
 
+describe('managed assets section and the host capability', () => {
+	const names = (plugin: ReturnType<typeof settingsPlugin>) =>
+		(new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never)
+			.getSettingDefinitions() as unknown as RenderableSettingDefinition[]).map((definition) => definition.name);
+
+	it('shows the assets row by default and when the host does not say', () => {
+		expect(names(settingsPlugin())).toContain('Managed assets');
+		expect(names(Object.assign(settingsPlugin(), { managedAssetsSupported: () => true }))).toContain('Managed assets');
+	});
+
+	it('hides it when the host declares managedAssets: false', () => {
+		expect(names(Object.assign(settingsPlugin(), { managedAssetsSupported: () => false }))).not.toContain('Managed assets');
+	});
+});
+
 describe('percentage-to-basis-points conversion for the price-alert margin', () => {
 	it('round-trips a one-decimal percentage through whole basis points', () => {
 		expect(bpsToPercentDisplay(0)).toBe('0.0');

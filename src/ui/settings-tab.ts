@@ -1024,28 +1024,8 @@ export class TyrianCompanionSettingTab {
 			...this.debugDefinitions(),
 			...this.inventoryTimingDefinitions(),
 			...this.pilotDefinitions(),
-			{
-				category: 'advanced',
-				name: this.t('settings.assets.name'),
-				desc: projectManagedAssetsDescription(
-					this.plugin.getManagedAssetsView(), createTranslator(this.plugin.settings.language), this.rootDivergence(),
-				),
-				render: (setting) => {
-					this.managedAssetsSetting = setting;
-					setting.addButton((button) => { this.managedAssetButtons.set('preview', button); button.setButtonText(this.t('settings.assets.preview')).onClick(async () => { await this.plugin.previewManagedAssets(); }); });
-					setting.addButton((button) => { this.managedAssetButtons.set('apply', button); button.setButtonText(this.t('settings.assets.apply')).setCta().onClick(async () => { await this.plugin.applyManagedAssets(); }); });
-					setting.addButton((button) => { this.managedAssetButtons.set('repair', button); button.setButtonText(this.t('settings.assets.repair')).onClick(async () => { await this.plugin.repairManagedAssets(); }); });
-					setting.addButton((button) => { this.managedAssetButtons.set('move', button); button.setButtonText(this.t('settings.assets.move')).onClick(async () => { await this.plugin.relocateManagedAssets(); }); });
-					setting.addButton((button) => {
-						this.managedAssetButtons.set('remove', button);
-						button.buttonEl.addClass('mod-warning');
-						button.setButtonText(this.t('settings.assets.remove')).onClick(async () => {
-							await runConfirmedManagedAssetsRemoval(() => confirmManagedAssetsRemoval(this.host.ui, this.t.bind(this)), () => this.plugin.removeManagedAssets());
-						});
-					});
-					this.refreshManagedAssetsRow();
-				},
-			},
+			// A host without managed assets (`capabilities.managedAssets: false`) has no such section.
+			...this.managedAssetsDefinitions(),
 			{
 				category: 'advanced',
 				name: this.t('settings.history.name'),
@@ -1066,6 +1046,35 @@ export class TyrianCompanionSettingTab {
 						});
 					});
 					this.refreshSessionHistoryRow();
+				},
+			},
+		];
+	}
+
+	/** The managed-assets row; none for a host that declared `capabilities.managedAssets: false`. */
+	private managedAssetsDefinitions(): CategorizedSettingDefinition[] {
+		if (this.plugin.managedAssetsSupported?.() === false) return [];
+		return [
+			{
+				category: 'advanced',
+				name: this.t('settings.assets.name'),
+				desc: projectManagedAssetsDescription(
+					this.plugin.getManagedAssetsView(), createTranslator(this.plugin.settings.language), this.rootDivergence(),
+				),
+				render: (setting) => {
+					this.managedAssetsSetting = setting;
+					setting.addButton((button) => { this.managedAssetButtons.set('preview', button); button.setButtonText(this.t('settings.assets.preview')).onClick(async () => { await this.plugin.previewManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('apply', button); button.setButtonText(this.t('settings.assets.apply')).setCta().onClick(async () => { await this.plugin.applyManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('repair', button); button.setButtonText(this.t('settings.assets.repair')).onClick(async () => { await this.plugin.repairManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('move', button); button.setButtonText(this.t('settings.assets.move')).onClick(async () => { await this.plugin.relocateManagedAssets(); }); });
+					setting.addButton((button) => {
+						this.managedAssetButtons.set('remove', button);
+						button.buttonEl.addClass('mod-warning');
+						button.setButtonText(this.t('settings.assets.remove')).onClick(async () => {
+							await runConfirmedManagedAssetsRemoval(() => confirmManagedAssetsRemoval(this.host.ui, this.t.bind(this)), () => this.plugin.removeManagedAssets());
+						});
+					});
+					this.refreshManagedAssetsRow();
 				},
 			},
 		];
