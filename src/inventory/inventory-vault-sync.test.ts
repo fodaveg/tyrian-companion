@@ -1117,6 +1117,66 @@ describe('resync: no rewrite by the clock, managed fields only, the user\'s text
 		// Already inactive: the next sync neither rewrites it nor asks to deactivate it again.
 		expect((await service.preview(ROOT, reduced)).steps.find((entry) => entry.path === bankPath)).toMatchObject({ status: 'unchanged' });
 	});
+
+	/** What a host importer does: stamps `title:` on the note's frontmatter. */
+	function withTitle(content: string, title: string): string {
+		return content.replace('\n---\n', `\ntitle: ${JSON.stringify(title)}\n---\n`);
+	}
+
+	async function bankNoteWithTitle(title: (positionId: string) => string) {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const current = await inputWithAllSources();
+		await service.apply(await service.preview(ROOT, current));
+		const bank = (await service.preview(ROOT, current)).steps.find((entry) => entry.positionId.includes('-b-'))!;
+		vault.contents.set(bank.path, withTitle(vault.contents.get(bank.path)!, title(bank.positionId)));
+		return { vault, service, current, bank };
+	}
+
+	it.each([
+		['the position id', (id: string) => id],
+		['the file name without extension', (id: string) => `${id}.md`.replace(/\.md$/u, '')],
+	])('a title equal to %s is not the user\'s: the note goes to the trash when its position leaves', async (_label, title) => {
+		const { vault, service, current, bank } = await bankNoteWithTitle(title);
+		const reduced = { ...current, positions: current.positions.filter((position) => position.source !== 'bank') };
+		const plan = await service.preview(ROOT, reduced);
+		expect(plan.steps.find((entry) => entry.path === bank.path)).toMatchObject({ status: 'deactivate', after: null });
+		expect(await service.apply(plan)).toMatchObject({ status: 'applied', deactivated: 1 });
+		expect(vault.contents.has(bank.path)).toBe(false);
+	});
+
+	it('a title equal to the position id is dropped when the note is rewritten, and the rewrite keeps the rest of the user\'s keys', async () => {
+		const { vault, service, current, bank } = await bankNoteWithTitle((id) => id);
+		const moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+		expect(await service.apply(await service.preview(ROOT, moved))).toMatchObject({ status: 'applied', updated: 5 });
+		expect(frontmatter(vault.contents.get(bank.path)!)).not.toHaveProperty('title');
+		// With other user keys beside it, only the stray title goes.
+		const withTags = vault.contents.get(bank.path)!.replace('\n---\n', `\ntitle: ${bank.positionId}\ntags:\n  - gw2\n---\n`);
+		vault.contents.set(bank.path, withTags);
+		const again = { ...moved, positions: moved.positions.map((position) => ({ ...position, unitSellCopper: 12 })) };
+		await service.apply(await service.preview(ROOT, again));
+		expect(frontmatter(vault.contents.get(bank.path)!)).toMatchObject({ tags: ['gw2'], tc_unit_sell_copper: 12 });
+		expect(frontmatter(vault.contents.get(bank.path)!)).not.toHaveProperty('title');
+	});
+
+	it('a note that differs only by that title costs no write of its own', async () => {
+		const { vault, service, current } = await bankNoteWithTitle((id) => id);
+		const mutations = vault.mutations;
+		const plan = await service.preview(ROOT, current);
+		expect(plan.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+		expect(await service.apply(plan)).toMatchObject({ status: 'unchanged' });
+		expect(vault.mutations).toBe(mutations);
+	});
+
+	it('any other title is the user\'s: kept on rewrite, and the note is deactivated instead of trashed', async () => {
+		const { vault, service, current, bank } = await bankNoteWithTitle(() => 'Mi título');
+		const reduced = { ...current, positions: current.positions.filter((position) => position.source !== 'bank') };
+		const plan = await service.preview(ROOT, reduced);
+		expect(plan.steps.find((entry) => entry.path === bank.path)).toMatchObject({ status: 'deactivate' });
+		expect(plan.steps.find((entry) => entry.path === bank.path)?.after).not.toBeNull();
+		await service.apply(plan);
+		expect(frontmatter(vault.contents.get(bank.path)!)).toMatchObject({ title: 'Mi título', tc_active: false });
+	});
 });
 
 function snapshotWith(

@@ -1143,7 +1143,7 @@ function validateInventoryNoteMarker(content: string): InventoryMarkerValidation
 		return { status: 'conflict', positionId };
 	}
 	let parsed: { managed: Record<string, unknown>; userFrontmatter: string | null } | null;
-	try { parsed = splitInventoryFrontmatter(frontmatter[1]!); }
+	try { parsed = splitInventoryFrontmatter(frontmatter[1]!, positionId); }
 	catch { return { status: 'conflict', positionId }; }
 	if (parsed === null) return { status: 'conflict', positionId };
 	const fields = migrateInventoryNoteFields(parsed.managed);
@@ -1220,19 +1220,25 @@ function endMarkerAt(text: string): number {
  * YAML that round-trips the user's own formatting as far as the parser allows. Null when the
  * frontmatter is not a valid YAML mapping.
  */
-function splitInventoryFrontmatter(text: string): { managed: Record<string, unknown>; userFrontmatter: string | null } | null {
+function splitInventoryFrontmatter(text: string, positionId: string): { managed: Record<string, unknown>; userFrontmatter: string | null } | null {
 	const document = parseDocument(text);
 	if (document.errors.length > 0) return null;
 	const value: unknown = document.toJS();
 	if (!record(value)) return null;
 	const managed: Record<string, unknown> = {};
 	let userKeys = 0;
+	// A `title` equal to the position id (the note's file name without extension) is what a host
+	// importer stamps on the note, not something the user wrote: it is not user frontmatter, so it
+	// neither keeps a note out of the trash nor survives a rewrite. Any other `title` is the user's.
+	const strayTitle = value.title === positionId;
 	for (const [key, entry] of Object.entries(value)) {
 		if (MANAGED_OR_RETIRED_KEYS.has(key)) managed[key] = entry;
+		else if (key === 'title' && strayTitle) continue;
 		else userKeys += 1;
 	}
 	if (userKeys === 0) return { managed, userFrontmatter: null };
 	for (const key of MANAGED_OR_RETIRED_KEYS) document.delete(key);
+	if (strayTitle) document.delete('title');
 	return { managed, userFrontmatter: document.toString({ lineWidth: 0 }).trimEnd() };
 }
 
