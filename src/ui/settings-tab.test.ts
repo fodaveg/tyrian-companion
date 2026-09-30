@@ -14,6 +14,7 @@ import {
 } from './settings-i18n';
 import {
 	TyrianCompanionSettingTab,
+	createSettingsSections,
 	bpsToPercentDisplay,
 	goldThresholdToCopper,
 	isActiveSettingsCategory,
@@ -295,6 +296,23 @@ describe('settings information architecture', () => {
 		expect(nextSettingsCategory('advanced', 'Home')).toBe('essentials');
 		expect(nextSettingsCategory('essentials', 'End')).toBe('advanced');
 		expect(nextSettingsCategory('essentials', 'Enter')).toBeNull();
+	});
+
+	it('keeps the category h2 in the DOM but visually hidden, and the intro visible', () => {
+		const styles = readModuleSource('styles.css');
+		expect(styles).toMatch(/\.tyrian-visually-hidden\s*\{[\s\S]*position:\s*absolute;[\s\S]*clip-path:\s*inset\(50%\);[\s\S]*white-space:\s*nowrap;/u);
+		const created: Array<{ tag: string; text?: string; cls?: string }> = [];
+		const fake = (): Record<string, unknown> => ({
+			createEl: (tag: string, options?: { text?: string; cls?: string }) => {
+				created.push({ tag, ...options });
+				return fake();
+			},
+			setAttr: () => undefined,
+			addEventListener: () => undefined,
+		});
+		createSettingsSections(fake() as unknown as HTMLElement, 'essentials', (key) => key, () => undefined);
+		expect(created.find((entry) => entry.tag === 'h2')?.cls).toBe('tyrian-visually-hidden');
+		expect(created.find((entry) => entry.tag === 'p')?.cls).toBeUndefined();
 	});
 
 	it('renders a flat horizontal tablist with no nested advanced disclosure or forced touch sizing', () => {

@@ -1364,7 +1364,7 @@ export class TyrianCompanionSettingTab {
 }
 
 /** Renders the horizontal tablist and the single mounted tabpanel for the active category. */
-function createSettingsSections(
+export function createSettingsSections(
 	container: HTMLElement,
 	active: SettingsCategory,
 	t: (key: TranslationKey) => string,
@@ -1398,7 +1398,8 @@ function createSettingsSections(
 	section.setAttr('role', 'tabpanel');
 	section.setAttr('aria-labelledby', `tyrian-settings-tab-${active}`);
 	const header = section.createEl('header');
-	header.createEl('h2', { text: labels[active] });
+	// The tab above already shows the name; the heading stays for screen-reader navigation.
+	header.createEl('h2', { text: labels[active], cls: 'tyrian-visually-hidden' });
 	header.createEl('p', { text: t(`settings.category.${active}.intro`) });
 	return section;
 }
