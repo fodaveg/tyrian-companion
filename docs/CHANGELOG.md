@@ -1,5 +1,34 @@
 # Changelog
 
+## Release beta 0.2.18 - las descargas de precios van de una en una en todo el plugin
+
+- **Nunca hay dos descargas de datawars2 a la vez, en ningún sitio del plugin.** Hasta ahora eso solo
+  lo cumplían las pasadas de «Sincronizar inventario» y de «Actualizar» en Venta: el panel de precios,
+  los bloques `tyrian-price-history` de las notas y la semilla de la regla de venta descargaban por su
+  cuenta, así que cargar el panel durante una sincronización eran dos peticiones a la vez, y una nota
+  con varios bloques de objetos distintos, una por bloque. Ahora todas pasan por un mismo turno. Lo que
+  estás mirando (el panel y los bloques de nota) pasa por delante de las descargas pendientes de una
+  pasada y espera solo a la que está en curso. Una descarga de pasada vuelve a comprobar, cuando le
+  llega el turno, que el historial sigue activado y que el dispositivo no está en modo consulta. Al
+  descargar el plugin, lo que esperaba turno termina sin pedirse (de `7349212` a `02c707d`).
+- **Una descarga de semilla se pide una vez y no se reintenta.** Antes se reintentaba hasta dos veces
+  ante un 429 o un 5xx, esperando lo que dijera el servidor, sin tope; con un solo turno para todo,
+  esa espera habría parado el panel y las pasadas. Ahora esa respuesta es «sin semilla» en esa ocasión
+  y una petición dura como mucho 10 segundos (`446bc5c`, `02c707d`).
+- Para que una sincronización no se quede parada detrás de cargas del panel que no dejan de llegar,
+  tras cuatro cargas del panel o de bloques de nota seguidas pasa una descarga de la pasada
+  (`d0722db`).
+- Sin cambio visible: el bucle que crea las carpetas de las notas de sesión usa el auxiliar común de
+  `src/core/vault-folders.ts` (`43f2d0e`).
+
+Límites: una carga del panel o de un bloque de nota espera a la petición que esté en curso, así que
+puede tardar un poco más que antes cuando coincide con una pasada. Mientras llegan cargas del panel o
+de bloques de nota, la pasada avanza más despacio; si una sincronización está esperando las semillas
+de objetos nuevos, tarda más en terminar. En una pasada, un 429 o un 5xx deja ese objeto sin reintento
+durante 24 horas, también cuando antes se habría recuperado al reintentar; el panel lo vuelve a pedir
+si lo abres. No comprobado en Obsidian real; los bloques de nota se probaron llamando al mismo
+servicio que usan, sin pintar el bloque.
+
 ## Release beta 0.2.17 - sincronizar ya no espera a refrescar los precios que ya tenía, el asesor deja de vender por nada y el panel de precios conserva el foco
 
 - **«Sincronizar inventario» y «Actualizar» en Venta ya no esperan a refrescar las semillas de
