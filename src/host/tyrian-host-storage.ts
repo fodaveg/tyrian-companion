@@ -41,17 +41,17 @@ export interface TyrianVaultChange {
 
 /** Every vault operation the seven path-based ports below use, addressed by vault-relative path. */
 export interface TyrianVault {
-	/** session-history.ts:229/256/392 (whole vault), halloween-note-backfill.ts:59, inventory-vault-sync.ts:882, wallet-vault-sync.ts:294. */
+	/** session-history.ts:229/256/392 (whole vault), halloween-note-backfill.ts:59, inventory-vault-sync.ts:1025, wallet-vault-sync.ts:294. */
 	markdownFiles(): readonly TyrianVaultFile[];
 	/** managed-assets.ts:217 (every file, not only markdown). */
 	listFiles(): TyrianVaultFile[];
 	/** session-history.ts:438/446 (true for folders too). */
 	exists(path: string): boolean;
-	/** All seven ports; ALSO non-null for folders: inventory-vault-sync.ts:1357, wallet-vault-sync.ts:435, session-note-writer.ts:137, managed-assets.ts:740. */
+	/** All seven ports; ALSO non-null for folders: inventory-vault-sync.ts:1556, wallet-vault-sync.ts:435, session-note-writer.ts:137, managed-assets.ts:740. */
 	file(path: string): TyrianVaultFile | null;
 	/** All seven ports. */
 	read(file: TyrianVaultFile): Promise<string>;
-	/** session-note-writer.ts:122, session-history.ts:368, inventory-vault-sync.ts:856, wallet-vault-sync.ts:270, managed-assets.ts:350/384/505/532. */
+	/** session-note-writer.ts:122, session-history.ts:368, inventory-vault-sync.ts:972, wallet-vault-sync.ts:270, managed-assets.ts:350/384/505/532. */
 	process(file: TyrianVaultFile, update: (current: string) => string): Promise<string>;
 	/** Every writing port (folders are created one segment at a time by the caller). */
 	createFolder(path: string): Promise<void>;
@@ -69,6 +69,19 @@ export interface TyrianVault {
 	trashIfUnchanged(file: TyrianVaultFile, expectedContent: string): Promise<TyrianVaultTrashResult>;
 	/** main.ts:959-962 (Halloween backfill refresh, filtered to `<outputFolder>/sessions/*.md`). */
 	onChange(root: string, listener: (change: TyrianVaultChange) => void): TyrianDisposer;
+	/**
+	 * `true` only on a host whose `onChange` reports EVERY create, modify, delete and rename of a
+	 * file while the runtime runs, whoever made the change (the host's own editor, its sync, an
+	 * edit from outside it). Only then may a caller keep what it read from a note until an event
+	 * names it: the session-history index (session-history.ts) is built on this and nothing else.
+	 * Absent or `false`, `onChange` is a hint, and nothing read may be reused without reading again.
+	 *
+	 * The promise is about `onChange('')`, the whole vault, which is how that index subscribes. A
+	 * host whose `onChange('')` delivers nothing, or only part of the vault, or leaves out some
+	 * kind of change (one made by its sync, a note it does not track), must not declare it: the
+	 * index would never be invalidated and would keep answering from what it read first.
+	 */
+	readonly reportsEveryChange?: boolean;
 	/** core/settings.ts:241/608 (forbidden output prefix), local-debug-contract.ts:122, main.ts:2186. */
 	readonly configDir: string;
 	/** main.ts:742 (hashed into the `vaultId` every IndexedDB record is keyed by). */

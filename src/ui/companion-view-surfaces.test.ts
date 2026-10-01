@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 // The audit 2.2 case below boots the real runtime, whose Obsidian host imports Electron's shell.
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
+import { TFile } from 'obsidian';
+
 import { TyrianCompanionView, type CompanionActions } from './companion-view';
 import { SESSION_NOTE_BLOCK_IDS } from '../sessions/session-note-model';
 import { sha256Text } from '../sessions/session-note-renderer';
@@ -233,7 +235,8 @@ describe('Companion durable history surface', () => {
  * Audit 2.2: how many notes the durable history reads, measured on the path the player takes. The
  * real view calls the real `loadSessionHistory` of a core booted by `initializeRuntime`, whose
  * history service reads through the real session-history port over the real Obsidian vault
- * adapter; only the session status the view observes is driven by hand. The vault holds 3,000
+ * adapter; only the session status the view observes is driven by hand, and a vault change is
+ * delivered through the callbacks that adapter registered with `vault.on`. The vault holds 3,000
  * notes that are not sessions and 30 that are.
  */
 describe('Companion durable history: vault reads per action (audit 2.2)', () => {
@@ -246,27 +249,29 @@ describe('Companion durable history: vault reads per action (audit 2.2)', () => 
 		harness = null;
 	});
 
-	async function mountOverRealCore() {
+	async function mountOverRealCore(foreignNotes: number = FOREIGN_NOTES, sessionNotes: number = SESSION_NOTES) {
 		const runtime = createRuntimeHarness();
 		harness = runtime;
 		const notes = runtime.vaultNotes as Map<string, string>;
-		for (let index = 0; index < FOREIGN_NOTES; index += 1) {
+		for (let index = 0; index < foreignNotes; index += 1) {
 			notes.set(`Notes/${String(index)}.md`, `# Note ${String(index)}\n\nNothing about a session.\n`);
 		}
-		for (let index = 0; index < SESSION_NOTES; index += 1) {
+		for (let index = 0; index < sessionNotes; index += 1) {
 			notes.set(`Tyrian Companion/sessions/${String(index)}.md`, await durableSessionNote(index));
 		}
 		// The harness's recording diagnostics port predates `fireAndForget`, which the boot now
 		// calls; without a port the boot runs those actions directly, as the `main-*.test.ts` do.
 		(runtime.core as unknown as { localDebugActions: null }).localDebugActions = null;
 		await runtime.initializeRuntime();
-		const read =(runtime.plugin.app.vault as unknown as { read: Mock }).read;
+		const vault = runtime.plugin.app.vault as unknown as { read: Mock; on: Mock };
+		const read = vault.read;
 		const core = runtime.core as unknown as Pick<CompanionActions, 'loadSessionHistory'>;
 		const loads: Promise<SessionHistoryLoadResult>[] = [];
 		let status: 'active' | 'idle' = 'idle';
-		const mounted = mountCompanion({
-			loadSessionHistory: () => {
-				const load = core.loadSessionHistory();
+		/** One Companion view over the booted core; a second call is the player opening it again. */
+		const open = () => mountCompanion({
+			loadSessionHistory: (source) => {
+				const load = core.loadSessionHistory(source);
 				loads.push(load);
 				return load;
 			},
@@ -281,29 +286,88 @@ describe('Companion durable history: vault reads per action (audit 2.2)', () => 
 			await Promise.resolve();
 			return read.mock.calls.length - before;
 		};
+		/**
+		 * Changes the vault the way Obsidian does: the text lands, then every callback the plugin
+		 * registered through `vault.on(name, …)` is called with the file. `event: null` is a change
+		 * Obsidian never reports.
+		 */
+		const change = (path: string, content: string, event: 'create' | 'modify' | null): void => {
+			notes.set(path, content);
+			if (event === null) return;
+			const file = Object.assign(new TFile(), { path });
+			for (const [name, callback] of vault.on.mock.calls as [string, (file: TFile) => void][]) {
+				if (name === event) callback(file);
+			}
+		};
 		return {
-			...mounted, readsDuring, onBoot: read.mock.calls.length,
+			open, readsDuring, change, onBoot: read.mock.calls.length, runtime, vault,
 			setStatus: (next: 'active' | 'idle') => { status = next; },
 		};
 	}
 
-	it('reads every Markdown note of the vault on open, after a session ends and on "Actualizar historial", and none on a plain repaint', async () => {
-		const { contentEl, render, readsDuring, setStatus, onBoot } = await mountOverRealCore();
+	// The index is the first thing in the core that stops listening to the vault before Obsidian
+	// unloads the plugin: its four listeners go through `vault.offref` on the real shutdown.
+	it('releases the four vault listeners of the history index when the runtime shuts down', async () => {
+		const { open, readsDuring, runtime, vault } = await mountOverRealCore(2, 1);
+		const offref = vi.fn();
+		Object.assign(vault, { offref });
+		const listenersOnBoot = vault.on.mock.calls.length;
+
+		expect(await readsDuring(open().render)).toBe(3);
+		const indexListeners = vault.on.mock.results.slice(listenersOnBoot).map((result) => result.value as unknown);
+		expect(indexListeners).toHaveLength(4);
+		expect(offref).not.toHaveBeenCalled();
+
+		await runtime.shutdown();
+
+		expect(offref.mock.calls.map(([ref]) => ref as unknown)).toEqual(indexListeners);
+	});
+
+	it('reads every Markdown note once on the first open and on "Actualizar historial", and afterwards only the notes Obsidian reported', async () => {
+		const { open, readsDuring, change, setStatus, onBoot } = await mountOverRealCore();
 		const everyNote = FOREIGN_NOTES + SESSION_NOTES;
+		const { contentEl, render } = open();
+		const endSession = async (): Promise<number> => {
+			setStatus('active');
+			const whileActive = await readsDuring(render);
+			setStatus('idle');
+			return whileActive + await readsDuring(render);
+		};
 
 		const onOpen = await readsDuring(render);
 		expect(texts(contentEl)).toContain(`${String(SESSION_NOTES)} sesiones`);
 		const onRepaint = await readsDuring(render);
+		const second = open();
+		const onSecondOpen = await readsDuring(second.render);
+		expect(texts(second.contentEl)).toContain(`${String(SESSION_NOTES)} sesiones`);
+
+		// A session ends and leaves its note: one new path in the listing.
 		setStatus('active');
 		const whileActive = await readsDuring(render);
+		change(`Tyrian Companion/sessions/${String(SESSION_NOTES)}.md`, await durableSessionNote(SESSION_NOTES), 'create');
 		setStatus('idle');
 		const onSessionEnd = await readsDuring(render);
+		expect(texts(contentEl)).toContain(`${String(SESSION_NOTES + 1)} sesiones`);
+
+		// A note rewritten in place, reported by Obsidian: the same listing, one read.
+		change('Tyrian Companion/sessions/0.md', '# Rewritten by hand, no longer a session\n', 'modify');
+		const onReportedEdit = await endSession();
+		expect(texts(contentEl)).toContain(`${String(SESSION_NOTES)} sesiones`);
+
+		// The limit: an edit Obsidian never reports is not read until the player asks for a refresh.
+		change('Tyrian Companion/sessions/1.md', '# Rewritten by hand, no longer a session\n', null);
+		const onUnreportedEdit = await endSession();
+		expect(texts(contentEl)).toContain(`${String(SESSION_NOTES)} sesiones`);
 		const onRefresh = await readsDuring(() => {
 			find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Actualizar historial')!.click();
 		});
+		expect(texts(contentEl)).toContain(`${String(SESSION_NOTES - 1)} sesiones`);
 
-		expect({ onBoot, onOpen, onRepaint, whileActive, onSessionEnd, onRefresh }).toEqual({
-			onBoot: 0, onOpen: everyNote, onRepaint: 0, whileActive: 0, onSessionEnd: everyNote, onRefresh: everyNote,
+		expect({
+			onBoot, onOpen, onRepaint, onSecondOpen, whileActive, onSessionEnd, onReportedEdit, onUnreportedEdit, onRefresh,
+		}).toEqual({
+			onBoot: 0, onOpen: everyNote, onRepaint: 0, onSecondOpen: 0, whileActive: 0, onSessionEnd: 1,
+			onReportedEdit: 1, onUnreportedEdit: 0, onRefresh: everyNote + 1,
 		});
 	}, 60_000);
 });

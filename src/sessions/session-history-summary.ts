@@ -3,6 +3,12 @@ import type { DurableSessionHistoryRecord, DurableSessionLootLine, SessionHistor
 /** Result exposed to the UI after one explicit load request. */
 export type SessionHistoryLoadResult = SessionHistoryScan | { status: 'unavailable' };
 
+/**
+ * How a load reaches the notes: `index` reuses what was already inspected (the view's own loads),
+ * `rebuild` reads every note again (the explicit refresh). See `SessionHistoryScanSource`.
+ */
+export type SessionHistoryLoadSource = 'index' | 'rebuild';
+
 /** Two sessions are the smallest honest personal baseline; one observation is not a comparison. */
 export const SESSION_HISTORY_PERFORMANCE_MINIMUM = 2 as const;
 

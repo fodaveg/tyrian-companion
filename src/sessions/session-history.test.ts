@@ -18,6 +18,7 @@ import {
 	canScrubSessionHistory,
 	serializeCsvCell,
 	type SessionHistoryFile,
+	type SessionHistoryNoteChange,
 	type SessionHistoryVault,
 } from './session-history';
 
@@ -605,6 +606,245 @@ describe('durable session history', () => {
 	});
 });
 
+/**
+ * Audit 2.2: on a host that reports every note change, an `index` scan keeps each note's
+ * inspection and reads again only what the host named or the listing no longer explains. Every
+ * case compares it with what a scan that reads the whole vault answers for the same vault.
+ */
+describe('durable session history index', () => {
+	const REF_B = 'c'.repeat(64);
+
+	async function seeded(): Promise<{ vault: WatchedVault; history: SessionHistoryService }> {
+		const vault = new WatchedVault();
+		vault.contents.set('Sessions/one.md', await note());
+		vault.contents.set('Sessions/two.md', await note({ tc_session_ref: REF_B, tc_sacks: 7 }));
+		vault.contents.set('Notes/human.md', '# Human note');
+		vault.contents.set('Notes/other.md', '# Another human note');
+		return { vault, history: new SessionHistoryService(vault) };
+	}
+
+	/** One `index` scan: what it answered, which notes it read, and that a full read answers the same. */
+	async function indexed(history: SessionHistoryService, vault: WatchedVault, source: 'index' | 'rebuild' = 'index') {
+		vault.takeReads();
+		const scan = await history.scan(source);
+		const reads = vault.takeReads();
+		expect(scan).toEqual(await new SessionHistoryService(vault).scan());
+		vault.takeReads();
+		return { scan, reads };
+	}
+
+	it('reads every note once, then none while nothing changes, and all of them again on a rebuild', async () => {
+		const { vault, history } = await seeded();
+		const everyNote = ['Notes/human.md', 'Notes/other.md', 'Sessions/one.md', 'Sessions/two.md'];
+
+		expect(vault.listeners.size).toBe(0);
+		const first = await indexed(history, vault);
+		expect(first.reads).toEqual(everyNote);
+		expect(first.scan).toMatchObject({ status: 'ok', ignored: 2, sessions: [{ sacks: 1 }, { sacks: 7 }] });
+		expect((await indexed(history, vault)).reads).toEqual([]);
+		expect((await indexed(history, vault)).reads).toEqual([]);
+		expect((await indexed(history, vault, 'rebuild')).reads).toEqual(everyNote);
+		expect((await indexed(history, vault)).reads).toEqual([]);
+	});
+
+	it('keeps reading the whole vault for a scan that does not ask for the index, and remembers nothing from it', async () => {
+		const { vault, history } = await seeded();
+
+		await history.scan();
+		await history.scan();
+		expect(vault.takeReads()).toHaveLength(8);
+		await expect(history.export('Tyrian Companion')).resolves.toEqual({ status: 'written', sessions: 2 });
+		expect(vault.takeReads().filter((path) => path.endsWith('.md'))).toHaveLength(4);
+		expect((await indexed(history, vault)).reads).toHaveLength(4);
+	});
+
+	it('reads the whole vault on every scan when the host does not promise to report changes', async () => {
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note());
+		vault.contents.set('Notes/human.md', '# Human note');
+		const history = new SessionHistoryService(vault);
+
+		await expect(history.scan('index')).resolves.toMatchObject({ status: 'ok', ignored: 1 });
+		await expect(history.scan('index')).resolves.toMatchObject({ status: 'ok', ignored: 1 });
+		expect(vault.reads).toBe(4);
+	});
+
+	it('still counts a session note moved to another folder, reading only its new path', async () => {
+		const { vault, history } = await seeded();
+		await indexed(history, vault);
+
+		vault.rename('Sessions/one.md', 'Archive/2026/one.md');
+
+		const moved = await indexed(history, vault);
+		expect(moved.reads).toEqual(['Archive/2026/one.md']);
+		expect(moved.scan).toMatchObject({ status: 'ok', ignored: 2, sessions: [{ sacks: 1 }, { sacks: 7 }] });
+	});
+
+	it('still counts a renamed session note, reading only its new name', async () => {
+		const { vault, history } = await seeded();
+		await indexed(history, vault);
+
+		vault.rename('Sessions/two.md', 'Sessions/renamed.md');
+
+		const renamed = await indexed(history, vault);
+		expect(renamed.reads).toEqual(['Sessions/renamed.md']);
+		expect(renamed.scan).toMatchObject({ status: 'ok', sessions: [{ sacks: 1 }, { sacks: 7 }] });
+	});
+
+	it('keeps detecting the same session in two notes, from the index and when the copy appears later', async () => {
+		const { vault, history } = await seeded();
+		await indexed(history, vault);
+
+		vault.write('Copies/one copy.md', await note());
+		const duplicated = await indexed(history, vault);
+		expect(duplicated.reads).toEqual(['Copies/one copy.md']);
+		expect(duplicated.scan).toEqual({ status: 'conflict', invalid: 0, duplicates: 1 });
+		const again = await indexed(history, vault);
+		expect(again.reads).toEqual([]);
+		expect(again.scan).toEqual({ status: 'conflict', invalid: 0, duplicates: 1 });
+
+		vault.remove('Copies/one copy.md');
+		const resolved = await indexed(history, vault);
+		expect(resolved.reads).toEqual([]);
+		expect(resolved.scan).toMatchObject({ status: 'ok', sessions: [{ sacks: 1 }, { sacks: 7 }] });
+	});
+
+	it('keeps detecting a corrupt session note, from the index and when a note is corrupted later', async () => {
+		const { vault, history } = await seeded();
+		await indexed(history, vault);
+
+		vault.write('Sessions/two.md', (await note({ tc_session_ref: REF_B })).replace('summary content', 'edited summary'));
+		const corrupt = await indexed(history, vault);
+		expect(corrupt.reads).toEqual(['Sessions/two.md']);
+		expect(corrupt.scan).toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		const again = await indexed(history, vault);
+		expect(again.reads).toEqual([]);
+		expect(again.scan).toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+	});
+
+	// The port carries no modification date at all, so an index scan has none to compare: the
+	// listing of an edited note is identical before and after, and only the host's event says it
+	// changed. That is the "edited with the same modification date" case, by construction.
+	it('reads again a note edited in place, with nothing in the listing changing', async () => {
+		const { vault, history } = await seeded();
+		await indexed(history, vault);
+		const listing = JSON.stringify(vault.markdownFiles());
+
+		vault.write('Sessions/two.md', await note({ tc_session_ref: REF_B, tc_sacks: 9 }));
+
+		expect(JSON.stringify(vault.markdownFiles())).toBe(listing);
+		const edited = await indexed(history, vault);
+		expect(edited.reads).toEqual(['Sessions/two.md']);
+		expect(edited.scan).toMatchObject({ status: 'ok', sessions: [{ sacks: 1 }, { sacks: 9 }] });
+	});
+
+	it('reads again a note deleted and recreated at the same path between two scans', async () => {
+		const { vault, history } = await seeded();
+		await indexed(history, vault);
+
+		vault.remove('Sessions/two.md');
+		vault.write('Sessions/two.md', await note({ tc_session_ref: 'd'.repeat(64), tc_sacks: 3 }));
+
+		const recreated = await indexed(history, vault);
+		expect(recreated.reads).toEqual(['Sessions/two.md']);
+		expect(recreated.scan).toMatchObject({ status: 'ok', sessions: [{ sacks: 1 }, { sacks: 3 }] });
+	});
+
+	it('drops a deleted session note without reading anything', async () => {
+		const { vault, history } = await seeded();
+		await indexed(history, vault);
+
+		vault.remove('Sessions/two.md');
+
+		const deleted = await indexed(history, vault);
+		expect(deleted.reads).toEqual([]);
+		expect(deleted.scan).toMatchObject({ status: 'ok', ignored: 2, sessions: [{ sacks: 1 }] });
+	});
+
+	it('follows a note that becomes a session note and a session note that stops being one', async () => {
+		const { vault, history } = await seeded();
+		await indexed(history, vault);
+
+		vault.write('Notes/human.md', await note({ tc_session_ref: 'd'.repeat(64), tc_sacks: 5 }));
+		const promoted = await indexed(history, vault);
+		expect(promoted.reads).toEqual(['Notes/human.md']);
+		expect(promoted.scan).toMatchObject({ status: 'ok', ignored: 1, sessions: [{ sacks: 1 }, { sacks: 7 }, { sacks: 5 }] });
+
+		vault.write('Sessions/one.md', '# Rewritten by hand, no longer a session');
+		const demoted = await indexed(history, vault);
+		expect(demoted.reads).toEqual(['Sessions/one.md']);
+		expect(demoted.scan).toMatchObject({ status: 'ok', ignored: 2, sessions: [{ sacks: 7 }, { sacks: 5 }] });
+	});
+
+	// What a failed read does today, fixed: the note counts as invalid, the scan is a conflict and
+	// nothing reaches the debug log. The index adds only that the failure is never remembered.
+	it('counts a note that cannot be read as invalid, and reads it again on every scan until it can be read', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const actions = new LocalDebugActionRunner({ diagnostics: { record } as unknown as LocalDebugLogger, createId: () => 'history-index' });
+		const { vault } = await seeded();
+		const history = new SessionHistoryService(vault, actions);
+		vault.unreadable.add('Sessions/two.md');
+
+		const failed = await indexed(history, vault);
+		expect(failed.reads).toHaveLength(4);
+		expect(failed.scan).toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		const failedAgain = await indexed(history, vault);
+		expect(failedAgain.reads).toEqual(['Sessions/two.md']);
+		expect(failedAgain.scan).toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		expect(record).not.toHaveBeenCalled();
+
+		vault.unreadable.clear();
+		const recovered = await indexed(history, vault);
+		expect(recovered.reads).toEqual(['Sessions/two.md']);
+		expect(recovered.scan).toMatchObject({ status: 'ok', sessions: [{ sacks: 1 }, { sacks: 7 }] });
+		expect((await indexed(history, vault)).reads).toEqual([]);
+	});
+
+	it('does not remember a note that changed while it was being read', async () => {
+		const { vault, history } = await seeded();
+		const edited = await note({ tc_session_ref: REF_B, tc_sacks: 9 });
+		vault.whileReading = (path) => {
+			if (path !== 'Sessions/two.md') return;
+			vault.whileReading = null;
+			vault.write(path, edited);
+		};
+
+		// The read that was already under way answers the text from before the edit.
+		await expect(history.scan('index')).resolves.toMatchObject({ status: 'ok', sessions: [{ sacks: 1 }, { sacks: 7 }] });
+
+		const after = await indexed(history, vault);
+		expect(after.reads).toEqual(['Sessions/two.md']);
+		expect(after.scan).toMatchObject({ status: 'ok', sessions: [{ sacks: 1 }, { sacks: 9 }] });
+	});
+
+	// The limit of the index, fixed on purpose: it trusts the host's events. An edit the host never
+	// reports stays unseen by an `index` scan, and the explicit rebuild is what reads it.
+	it('serves the remembered inspection for an edit the host never reported, until a rebuild', async () => {
+		const { vault, history } = await seeded();
+		await history.scan('index');
+
+		vault.contents.set('Sessions/two.md', await note({ tc_session_ref: REF_B, tc_sacks: 9 }));
+
+		await expect(history.scan('index')).resolves.toMatchObject({ status: 'ok', sessions: [{ sacks: 1 }, { sacks: 7 }] });
+		await expect(history.scan('rebuild')).resolves.toMatchObject({ status: 'ok', sessions: [{ sacks: 1 }, { sacks: 9 }] });
+	});
+
+	it('listens only from its first index scan, and stops and forgets on dispose', async () => {
+		const { vault, history } = await seeded();
+		expect(vault.listeners.size).toBe(0);
+		await history.scan();
+		expect(vault.listeners.size).toBe(0);
+		await history.scan('index');
+		await history.scan('index');
+		expect(vault.listeners.size).toBe(1);
+
+		history.dispose();
+
+		expect(vault.listeners.size).toBe(0);
+		expect((await indexed(history, vault)).reads).toHaveLength(4);
+	});
+});
+
 class MemoryVault implements SessionHistoryVault {
 	readonly contents = new Map<string, string>();
 	readonly folders = new Set<string>();
@@ -742,4 +982,44 @@ function emptyWalletVault(): WalletVaultPort {
 		createFolder: async () => { throw new Error('read_only'); }, create: async () => { throw new Error('read_only'); },
 		process: async () => { throw new Error('read_only'); },
 	};
+}
+
+/** A host that reports every note change: each mutation below lands, then its event is delivered. */
+class WatchedVault extends MemoryVault {
+	readonly listeners = new Set<(change: SessionHistoryNoteChange) => void>();
+	readonly unreadable = new Set<string>();
+	whileReading: ((path: string) => void) | null = null;
+	private readonly readPaths: string[] = [];
+
+	onNoteChange(listener: (change: SessionHistoryNoteChange) => void): () => void {
+		this.listeners.add(listener);
+		return () => { this.listeners.delete(listener); };
+	}
+	override async read(file: SessionHistoryFile): Promise<string> {
+		this.readPaths.push(file.path);
+		if (this.unreadable.has(file.path)) throw new Error('disk unavailable');
+		const content = await super.read(file);
+		this.whileReading?.(file.path);
+		return content;
+	}
+	/** The paths read since the last call, sorted. */
+	takeReads(): string[] { return this.readPaths.splice(0).sort(); }
+	write(path: string, content: string): void {
+		this.contents.set(path, content);
+		this.emit({ path });
+	}
+	remove(path: string): void {
+		this.contents.delete(path);
+		this.emit({ path });
+	}
+	rename(from: string, to: string): void {
+		const content = this.contents.get(from);
+		if (content === undefined) throw new Error('not_file');
+		this.contents.delete(from);
+		this.contents.set(to, content);
+		this.emit({ path: to, oldPath: from });
+	}
+	private emit(change: SessionHistoryNoteChange): void {
+		for (const listener of [...this.listeners]) listener(change);
+	}
 }

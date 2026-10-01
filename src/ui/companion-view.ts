@@ -43,7 +43,7 @@ import {
 	observedRateBand,
 	unavailableRateBand,
 } from '../sessions/observed-rate-band';
-import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
+import type { SessionHistoryLoadResult, SessionHistoryLoadSource } from '../sessions/session-history-summary';
 import type { StoredSessionLootSummary } from '../sessions/session-note-renderer';
 import {
 	buildCompanionStatus,
@@ -137,7 +137,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	rotateToNewSession?(): Promise<void>;
 	recoverSession(): Promise<void>;
 	confirmDiscardRecoveredSession(): void;
-	loadSessionHistory(): Promise<SessionHistoryLoadResult>;
+	/** `rebuild` is the explicit refresh: every note is read again instead of trusting the index. */
+	loadSessionHistory(source?: SessionHistoryLoadSource): Promise<SessionHistoryLoadResult>;
 	getLocalDebugStatus?(): LocalDebugStatus;
 	localDebugViewEvent?(phase: 'open' | 'close'): void;
 	openLocalDebugSettings?(): void;
@@ -484,7 +485,7 @@ export class TyrianCompanionView {
 	 */
 	private renderSessionHistoryPanel(container: HTMLElement, forceReload: boolean): void {
 		this.sessionHistoryController ??= new SessionHistoryPanelController(
-			() => this.actions.loadSessionHistory(),
+			(source) => this.actions.loadSessionHistory(source),
 		);
 		this.sessionHistoryMount?.dispose();
 		this.sessionHistoryMount = mountSessionHistoryPanel(

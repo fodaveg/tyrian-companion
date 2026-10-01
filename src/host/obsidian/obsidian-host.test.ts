@@ -6,6 +6,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import type { TyrianVaultChange } from '../tyrian-host';
 import { labelledVault, sessionHistoryVault } from '../../runtime/vault-ports';
 import { loadTyrianSettings } from '../../runtime/tyrian-runtime';
+import { SessionHistoryService, type SessionHistoryNoteChange } from '../../sessions/session-history';
 import { setMockLanguage } from '../../test/obsidian-mock';
 import { createObsidianHost } from './obsidian-host';
 
@@ -266,5 +267,76 @@ describe('host-neutral vault ports', () => {
 		expect(history.file('Root/sessions/a.md')).toEqual({ path: 'Root/sessions/a.md' });
 		await expect(history.process({ path: 'Root/sessions/a.md' }, (value) => `${value}+`)).resolves.toBeUndefined();
 		await expect(history.read({ path: 'Root' })).rejects.toThrow('Session history note is not a file.');
+	});
+
+	it('hands the session history every note change of the whole vault on Obsidian, and stops through offref', () => {
+		const { plugin, listeners, offref } = fakePlugin();
+		const history = sessionHistoryVault(createObsidianHost(plugin).vault);
+		const changes: SessionHistoryNoteChange[] = [];
+		const file = (path: string) => Object.assign(new TFile(), { path });
+
+		const stop = history.onNoteChange?.((change) => { changes.push(change); });
+		listeners.get('modify')?.(file('Other/b.md'));
+		listeners.get('create')?.(file('new.md'));
+		listeners.get('rename')?.(file('Other/moved.md'), 'Root/sessions/a.md');
+		listeners.get('delete')?.(file('Other/b.md'));
+
+		expect(changes).toEqual([
+			{ kind: 'modify', path: 'Other/b.md' },
+			{ kind: 'create', path: 'new.md' },
+			{ kind: 'rename', path: 'Other/moved.md', oldPath: 'Root/sessions/a.md' },
+			{ kind: 'delete', path: 'Other/b.md' },
+		]);
+		expect(offref).not.toHaveBeenCalled();
+		stop?.();
+		expect(offref).toHaveBeenCalledTimes(4);
+	});
+
+	// Audit 2.2: a host that does not declare `reportsEveryChange` (Hebra) gets the history it had
+	// before the index existed. Its `onChange` is never subscribed to, and an `index` scan reads
+	// every note every time, so nothing it failed to report can be served from memory.
+	it.each([
+		['does not declare reportsEveryChange', undefined],
+		['declares reportsEveryChange false', false],
+	])('keeps no session-history index over a host that %s', async (_label, declared) => {
+		const { plugin, files } = fakePlugin();
+		const { reportsEveryChange: _obsidian, ...undeclared } = createObsidianHost(plugin).vault;
+		const onChange = vi.fn(() => () => undefined);
+		const read = vi.spyOn(plugin.app.vault, 'read');
+		const port = sessionHistoryVault({
+			...undeclared, onChange, ...(declared === undefined ? {} : { reportsEveryChange: declared }),
+		});
+		const history = new SessionHistoryService(port);
+
+		expect('onNoteChange' in port).toBe(false);
+		const first = await history.scan('index');
+		// An edit in place that no event reports: the second scan still reads it.
+		files.set('Other/b.md', '---\ntc_kind: gw2_farming_session\n---\nno longer a plain note');
+		const second = await history.scan('index');
+		const rebuilt = await history.scan('rebuild');
+
+		expect(first).toEqual({ status: 'ok', sessions: [], ignored: 2 });
+		expect(second).toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		expect(rebuilt).toEqual(await history.scan());
+		expect(read).toHaveBeenCalledTimes(8);
+		expect(onChange).not.toHaveBeenCalled();
+		history.dispose();
+	});
+
+	it('keeps the index over Obsidian, and its dispose releases the four vault listeners', async () => {
+		const { plugin, files, listeners, offref } = fakePlugin();
+		const read = vi.spyOn(plugin.app.vault, 'read');
+		const history = new SessionHistoryService(sessionHistoryVault(createObsidianHost(plugin).vault));
+
+		await history.scan('index');
+		await history.scan('index');
+		expect(read).toHaveBeenCalledTimes(2);
+		files.set('Other/b.md', '---\ntc_kind: gw2_farming_session\n---\nno longer a plain note');
+		listeners.get('modify')?.(Object.assign(new TFile(), { path: 'Other/b.md' }));
+		await expect(history.scan('index')).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		expect(read).toHaveBeenCalledTimes(3);
+
+		history.dispose();
+		expect(offref).toHaveBeenCalledTimes(4);
 	});
 });
