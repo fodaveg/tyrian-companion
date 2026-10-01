@@ -4,7 +4,7 @@ import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { InventoryPreferencesEditorSession, InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorViewModel } from './inventory-advisor-view-model';
-import { keepExceptionForItem, renderInventoryAdvisorView } from './inventory-advisor-view';
+import { disposeInventoryAdvisorView, keepExceptionForItem, renderInventoryAdvisorView } from './inventory-advisor-view';
 import type { PriceHistoryPanelInteractions } from './price-history-panel-view';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import type { PriceSeedQueueCoverage } from '../economy/price-seed-model';
@@ -90,6 +90,8 @@ export class InventoryAdvisorItemView {
 	private priceHistoryCatalogKey: string | null = null;
 	/** The frame a progress report is waiting for, with the window that owns it (a popout has its own). */
 	private progressFrame: { readonly win: Window; readonly handle: number } | null = null;
+	/** The element the advisor view is mounted in: the shell's content, or `contentEl` without a shell. */
+	private advisorSurface: HTMLElement | null = null;
 
 	constructor(
 		readonly contentEl: HTMLElement,
@@ -102,6 +104,7 @@ export class InventoryAdvisorItemView {
 	async onClose(): Promise<void> {
 		this.closed = true;
 		this.cancelProgressRender();
+		this.releaseAdvisorSurface(null);
 		this.actions.getProductActionController?.().setInventorySurfaceBusy(this, false);
 		this.productShell?.dispose();
 		this.productShell = null;
@@ -129,6 +132,12 @@ export class InventoryAdvisorItemView {
 		if (this.progressFrame === null) return;
 		this.progressFrame.win.cancelAnimationFrame(this.progressFrame.handle);
 		this.progressFrame = null;
+	}
+
+	/** Disposes the advisor view of the surface this tab is leaving (a rebuilt shell, or the close). */
+	private releaseAdvisorSurface(next: HTMLElement | null): void {
+		if (this.advisorSurface !== null && this.advisorSurface !== next) disposeInventoryAdvisorView(this.advisorSurface);
+		this.advisorSurface = next;
 	}
 
 	render(): void {
@@ -184,6 +193,7 @@ export class InventoryAdvisorItemView {
 			this.productShellKey = shellKey;
 		}
 		const surface = this.productShell?.content ?? this.contentEl;
+		this.releaseAdvisorSurface(surface);
 		this.productShell?.update();
 		renderInventoryAdvisorView(
 			surface,

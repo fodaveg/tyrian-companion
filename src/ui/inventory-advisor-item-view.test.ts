@@ -601,6 +601,9 @@ class FakeElement {
 		listeners.push(listener);
 		this.listeners.set(type, listeners);
 	}
+	removeEventListener(type: string, listener: () => void): void {
+		this.listeners.set(type, (this.listeners.get(type) ?? []).filter((candidate) => candidate !== listener));
+	}
 	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener(); }
 	focus(): void { this.ownerDocument.activeElement = this; }
 }

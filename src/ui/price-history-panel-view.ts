@@ -35,11 +35,76 @@ export function priceHistoryPanelLayout(width: number): 'stacked' | 'two-column'
 	return width >= 760 ? 'wide' : width >= 480 ? 'two-column' : 'stacked';
 }
 
-/** Mounts only prepared local state. Network and IndexedDB remain behind explicit callbacks. */
+/** A price panel kept across the repaints of the surface that hosts it. */
+export interface PriceHistoryPanelMount {
+	/** Repaints the panel from prepared state; the chart and the table only while the disclosure is open. */
+	update(translator: Translator, interactions: PriceHistoryPanelInteractions | undefined): void;
+	/** Drops the disclosure subscription and the kept chart container; later updates paint nothing. */
+	dispose(): void;
+}
+
+/**
+ * Where the chart of one repaint is drawn. `null` means the panel is not on screen (its
+ * disclosure is closed): the figure and the daily table are not built at all.
+ */
+type PriceHistoryChartHost = ((seriesKey: string) => HTMLElement) | null;
+
+/**
+ * Mounts the panel under a `<details>` that starts closed. The controls and status lines are
+ * painted on every update, as before; the chart and the daily table (one row per day of history)
+ * exist only while `disclosure` is open, built when it opens and dropped when it closes.
+ *
+ * The chart's own container outlives a repaint, so the zoom the reader chose
+ * (`price-history-chart-view.ts` keys it by that element) is still there after one. It is kept per
+ * item AND side: the other side of the same item is another series, and starts its own zoom.
+ */
+export function mountPriceHistoryPanel(container: HTMLElement, disclosure: HTMLDetailsElement): PriceHistoryPanelMount {
+	let last: { translator: Translator; interactions: PriceHistoryPanelInteractions | undefined } | null = null;
+	let chart: { readonly seriesKey: string; readonly element: HTMLElement } | null = null;
+	let disposed = false;
+	const chartFor = (seriesKey: string): HTMLElement => {
+		if (chart === null || chart.seriesKey !== seriesKey) chart = { seriesKey, element: freshChartContainer() };
+		return chart.element;
+	};
+	const paint = (): void => {
+		if (disposed || last === null) return;
+		// A closed disclosure keeps the container (and so the zoom) but none of the chart's nodes.
+		if (!disclosure.open) chart?.element.replaceChildren();
+		renderPriceHistoryPanel(container, last.translator, last.interactions, disclosure.open ? chartFor : null);
+	};
+	disclosure.addEventListener('toggle', paint);
+	return {
+		update: (translator, interactions) => {
+			last = { translator, interactions };
+			paint();
+		},
+		dispose: () => {
+			disposed = true;
+			disclosure.removeEventListener('toggle', paint);
+			chart = null;
+			last = null;
+		},
+	};
+}
+
+/** A chart container of its own for every paint: what a one-shot render of the whole panel uses. */
+function freshChartContainer(): HTMLElement {
+	const chart = createDiv();
+	chart.className = 'tyrian-price-history__chart';
+	return chart;
+}
+
+/**
+ * Mounts only prepared local state. Network and IndexedDB remain behind explicit callbacks.
+ *
+ * A one-shot paint of the whole panel, chart and table included. `mountPriceHistoryPanel` passes
+ * its own `chartHost` to keep the chart container across repaints, or `null` to leave both out.
+ */
 export function renderPriceHistoryPanel(
 	container: HTMLElement,
 	translator: Translator,
 	interactions: PriceHistoryPanelInteractions | undefined,
+	chartHost: PriceHistoryChartHost = freshChartContainer,
 ): void {
 	container.replaceChildren();
 	container.className = 'tyrian-price-history';
@@ -146,11 +211,11 @@ export function renderPriceHistoryPanel(
 		container.append(seedNote);
 	}
 	if (state.daily.length === 0 && chartSeedDays.length === 0) return;
+	if (chartHost === null) return;
 	const figure = createEl('figure');
 	const caption = createEl('figcaption');
 	caption.textContent = selectedItemId === null ? '' : captionText(selectedItemId, interactions.itemLabels, state, translator);
-	const chart = createDiv();
-	chart.className = 'tyrian-price-history__chart';
+	const chart = chartHost(`${String(selectedItemId)}:${state.selectedSide}`);
 	mountPriceHistoryChart(chart, translator, { daily: state.daily, side: state.selectedSide, seedDays: chartSeedDays });
 	const legend = createEl('p');
 	legend.className = 'tyrian-price-history__legend';
