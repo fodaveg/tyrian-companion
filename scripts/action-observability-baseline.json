@@ -3148,9 +3148,9 @@
 				{
 					"id": "82b14f1838ee1395605a5529a3768a609812bc78",
 					"kind": "callback_registration",
-					"line": 49,
+					"line": 64,
 					"column": 14,
-					"endLine": 49,
+					"endLine": 64,
 					"endColumn": 64,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -3165,9 +3165,9 @@
 				{
 					"id": "9b3ffa93494796b049260081115abfb26d2030f0",
 					"kind": "callback_registration",
-					"line": 50,
+					"line": 65,
 					"column": 12,
-					"endLine": 50,
+					"endLine": 65,
 					"endColumn": 57,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -3182,9 +3182,9 @@
 				{
 					"id": "3d42ca773e3a2d03490c4120e6c00b32ba1c5268",
 					"kind": "void_expression",
-					"line": 54,
+					"line": 69,
 					"column": 4,
-					"endLine": 54,
+					"endLine": 69,
 					"endColumn": 21,
 					"classification": "allowlisted",
 					"evidence": {

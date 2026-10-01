@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { SerialTaskQueue, runSerialTaskUnqueued, type SerialTaskTurn } from './serial-task-queue';
+import {
+	SERIAL_TASK_INTERACTIVE_RUN_BEFORE_BACKGROUND,
+	SerialTaskQueue,
+	runSerialTaskUnqueued,
+	type SerialTaskTurn,
+} from './serial-task-queue';
 
 /** A task the test finishes by hand, so nothing here depends on a timer. */
 function heldTask<T>(log: string[], name: string) {
@@ -93,6 +98,57 @@ describe('SerialTaskQueue', () => {
 		expect(log.filter((line) => line.startsWith('start'))).toEqual([
 			'start background-1', 'start interactive-1', 'start interactive-2', 'start background-2', 'start background-3',
 		]);
+	});
+
+	/** Queues instant tasks behind one held task and returns the order they ran in once it ends. */
+	async function orderBehindOneInFlight(queued: ReadonlyArray<readonly [name: string, priority: 'interactive' | 'background']>): Promise<string[]> {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		const inFlight = heldTask<void>(log, 'first');
+		const turns = [queue.run('background', inFlight.task)];
+		for (const [name, priority] of queued) turns.push(queue.run(priority, async () => { log.push(name); }));
+		inFlight.finish();
+		await Promise.all(turns);
+		return log.slice(2);
+	}
+
+	it('with a background task waiting, one of them runs after every four interactive tasks in a row', async () => {
+		expect(SERIAL_TASK_INTERACTIVE_RUN_BEFORE_BACKGROUND).toBe(4);
+		const interactive = Array.from({ length: 10 }, (_unused, index) => [`I${String(index + 1)}`, 'interactive'] as const);
+
+		const order = await orderBehindOneInFlight([['B1', 'background'], ['B2', 'background'], ['B3', 'background'], ...interactive]);
+
+		expect(order).toEqual(['I1', 'I2', 'I3', 'I4', 'B1', 'I5', 'I6', 'I7', 'I8', 'B2', 'I9', 'I10', 'B3']);
+	});
+
+	it('with no background task waiting, interactive tasks run in a row without limit, and none of them counts later', async () => {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		const inFlight = heldTask<void>(log, 'first');
+		const turns = [queue.run('interactive', inFlight.task)];
+		for (let index = 1; index <= 6; index += 1) turns.push(queue.run('interactive', async () => { log.push(`I${String(index)}`); }));
+		inFlight.finish();
+		await Promise.all(turns);
+		expect(log.slice(2)).toEqual(['I1', 'I2', 'I3', 'I4', 'I5', 'I6']);
+
+		// Six ran in a row with nothing behind them. A background task that arrives now still
+		// lets four interactive ones pass: only the ones that went AHEAD of a waiting one count.
+		const later = heldTask<void>(log, 'later');
+		const more = [queue.run('interactive', later.task), queue.run('background', async () => { log.push('B'); })];
+		for (let index = 7; index <= 11; index += 1) more.push(queue.run('interactive', async () => { log.push(`I${String(index)}`); }));
+		later.finish();
+		await Promise.all(more);
+		expect(log.slice(10)).toEqual(['I7', 'I8', 'I9', 'I10', 'B', 'I11']);
+	});
+
+	it('the count starts again once a background task has run', async () => {
+		const order = await orderBehindOneInFlight([
+			['B1', 'background'], ['I1', 'interactive'], ['I2', 'interactive'], ['I3', 'interactive'], ['I4', 'interactive'],
+			['I5', 'interactive'], ['I6', 'interactive'], ['B2', 'background'], ['I7', 'interactive'], ['I8', 'interactive'], ['I9', 'interactive'],
+		]);
+
+		// B1 after four; then I5 and I6 are only two, so B2 waits for I7 and I8 as well.
+		expect(order).toEqual(['I1', 'I2', 'I3', 'I4', 'B1', 'I5', 'I6', 'I7', 'I8', 'B2', 'I9']);
 	});
 
 	it('a task that throws rejects its own turn and the queue goes on with the next one', async () => {
