@@ -1,4 +1,5 @@
 import { errorClassName } from '../core/local-debug-error-details';
+import { ensureFoldersBySegments } from '../core/vault-folders';
 import { prepareSessionNote, type SessionNoteInput } from './session-note-model';
 import {
 	frontmatterSessionRef,
@@ -132,14 +133,7 @@ export class SessionNoteWriter {
 	}
 
 	private async ensureFolder(folder: string): Promise<void> {
-		let current = '';
-		for (const segment of folder.split('/')) {
-			current = current ? `${current}/${segment}` : segment;
-			if (!this.vault.file(current)) {
-				try { await this.vault.createFolder(current); }
-				catch { if (!this.vault.file(current)) throw new Error('Folder creation failed.'); }
-			}
-		}
+		await ensureFoldersBySegments(this.vault, folder, 'Folder creation failed.');
 	}
 }
 
