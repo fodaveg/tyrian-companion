@@ -1495,17 +1495,33 @@ class RetainedFakeElement {
 		for (const [name, value] of Object.entries(options.attr ?? {})) this.attributes.set(name, value);
 	}
 
-	empty(): void { this.children.splice(0); this.textContent = ''; }
-	append(...children: RetainedFakeElement[]): void { this.children.push(...children); }
-	prepend(...children: RetainedFakeElement[]): void { this.children.unshift(...children); }
+	/** Kept only so a retained panel can leave the tree on its own (`parentElement?.removeChild`). */
+	parentElement: RetainedFakeElement | null = null;
+	empty(): void { for (const child of this.children.splice(0)) child.parentElement = null; this.textContent = ''; }
+	append(...children: RetainedFakeElement[]): void { for (const child of children) this.insertBefore(child, null); }
+	prepend(...children: RetainedFakeElement[]): void {
+		const first = this.children[0] ?? null;
+		for (const child of children) this.insertBefore(child, first);
+	}
+	insertBefore(node: RetainedFakeElement, reference: RetainedFakeElement | null): RetainedFakeElement {
+		node.parentElement?.removeChild(node);
+		this.children.splice(reference === null ? this.children.length : this.children.indexOf(reference), 0, node);
+		node.parentElement = this;
+		return node;
+	}
+	removeChild(node: RetainedFakeElement): RetainedFakeElement {
+		this.children.splice(this.children.indexOf(node), 1);
+		node.parentElement = null;
+		return node;
+	}
 	createEl(tag: string, options?: RetainedFakeOptions): RetainedFakeElement {
-		const child = new RetainedFakeElement(tag, this.ownerDocument, options); this.children.push(child); return child;
+		return this.insertBefore(new RetainedFakeElement(tag, this.ownerDocument, options), null);
 	}
 	createDiv(options?: RetainedFakeOptions): RetainedFakeElement {
-		const child = new RetainedFakeElement('div', this.ownerDocument, options); this.children.push(child); return child;
+		return this.insertBefore(new RetainedFakeElement('div', this.ownerDocument, options), null);
 	}
 	createSpan(options?: RetainedFakeOptions): RetainedFakeElement {
-		const child = new RetainedFakeElement('span', this.ownerDocument, options); this.children.push(child); return child;
+		return this.insertBefore(new RetainedFakeElement('span', this.ownerDocument, options), null);
 	}
 	setAttr(name: string, value: string): void { this.attributes.set(name, value); }
 	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }

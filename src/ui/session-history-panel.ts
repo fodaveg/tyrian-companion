@@ -11,6 +11,7 @@ import {
 	type SessionHistorySummaryRow,
 } from '../sessions/session-history-summary';
 import { renderStoredSessionLoot } from './loot-presentation-view';
+import { reconcileChildren } from './reconcile-children';
 
 /** Complete visible state machine for the manually loaded history panel. */
 export type SessionHistoryPanelState =
@@ -28,8 +29,22 @@ export type SessionHistoryPanelState =
 	 *  read, not when this repaints — a full `render()` remounts the panel on every card refresh. */
 	| { readonly status: 'ready'; readonly aggregate: SessionHistoryAggregate; readonly loadedAt: string };
 
-/** Subscription handle retained by the parent view across rerenders. */
-export interface SessionHistoryPanelMount { dispose(): void }
+/**
+ * The mounted panel, retained by the parent view across its repaints (audit 3.6): the parent keeps
+ * `element` in the tree instead of mounting a second panel, so a repaint with the same history
+ * builds nothing and the "Actualizar historial" button keeps the focus it had.
+ */
+export interface SessionHistoryPanelMount {
+	/** The panel's own root. */
+	readonly element: HTMLElement;
+	/**
+	 * Refreshes the only text that depends on the clock and not on the state: "hoy"/"ayer" in the
+	 * ended column and in the comparison window. A no-op until the local calendar day changes.
+	 */
+	update(): void;
+	/** Stops listening to the controller, takes the section out of the tree and releases the rows. */
+	dispose(): void;
+}
 
 type StateListener = (state: SessionHistoryPanelState) => void;
 
@@ -104,6 +119,11 @@ export function mountSessionHistoryPanel(
 	stateRegion.setAttr('aria-live', 'polite');
 	stateRegion.setAttr('aria-atomic', 'true');
 
+	// What the ready state leaves behind for the next one: the ledger survives the "loading" copy
+	// that replaces it on screen, so the read that follows a finished session builds one row.
+	let ready: ReadyPaint | null = null;
+	let disposed = false;
+
 	const render = (state: SessionHistoryPanelState): void => {
 		button.disabled = state.status === 'loading';
 		button.setText(state.status === 'loading' ? t.t('sessionHistory.loadingAction') : t.t('sessionHistory.refresh'));
@@ -112,13 +132,63 @@ export function mountSessionHistoryPanel(
 		stateRegion.setAttr('aria-busy', state.status === 'loading' ? 'true' : 'false');
 		stateRegion.setAttr('role', state.status === 'conflict' || state.status === 'unavailable' ? 'alert' : 'status');
 		stateRegion.setAttr('aria-live', state.status === 'conflict' || state.status === 'unavailable' ? 'assertive' : 'polite');
+		if (state.status === 'ready') {
+			ready = renderReady(stateRegion, locale, state.aggregate, state.loadedAt, ready);
+			return;
+		}
+		if (state.status !== 'loading') ready = null;
 		renderState(stateRegion, locale, state);
 	};
 	// The one place that does not trust the index: the player asked for the notes to be read.
 	button.addEventListener('click', () => { void controller.load('rebuild'); });
 	const unsubscribe = controller.subscribe(render);
 	render(controller.current());
-	return { dispose: unsubscribe };
+	return {
+		element: section,
+		update: () => {
+			if (disposed || ready === null || controller.current().status !== 'ready') return;
+			const day = localDay(Date.now());
+			if (day === ready.day) return;
+			ready.day = day;
+			ready.refreshClock();
+		},
+		dispose: () => {
+			if (disposed) return;
+			disposed = true;
+			unsubscribe();
+			ready = null;
+			section.parentElement?.removeChild(section);
+		},
+	};
+}
+
+/** The ready state as it stands on screen: what a later paint reuses and what the clock moves. */
+interface ReadyPaint {
+	readonly ledger: Ledger;
+	/** Local calendar day the relative timestamps were written against. */
+	day: number;
+	/** Rewrites every "hoy"/"ayer" against the current clock, on the nodes that already show them. */
+	readonly refreshClock: () => void;
+}
+
+/** One session of the ledger: its row and, when the note kept its gains, the detail row under it. */
+interface LedgerEntry {
+	readonly row: SessionHistorySummaryRow;
+	readonly nodes: readonly HTMLElement[];
+	readonly ended: HTMLElement;
+}
+
+/** The per-session table, kept across paints. The rows carry no identity, so their key is the period. */
+interface Ledger {
+	readonly root: HTMLElement;
+	readonly body: HTMLElement;
+	entries: Map<string, LedgerEntry>;
+}
+
+function localDay(now: number): number {
+	const date = new Date(now);
+	date.setHours(0, 0, 0, 0);
+	return date.getTime();
 }
 
 /** Mirrors the drawer `<summary>`'s closed-state suffix (`historyDrawerSuffix` in companion-view.ts). */
@@ -169,10 +239,16 @@ function renderState(container: HTMLElement, locale: Locale, state: SessionHisto
 		container.createEl('p', { text: t.t('sessionHistory.unavailableBody') });
 		return;
 	}
-	if (state.status === 'ready') renderReady(container, locale, state.aggregate, state.loadedAt);
 }
 
-function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate, loadedAt: string): void {
+/**
+ * Paints the ready state. Everything above and below the ledger is small and rebuilt from the
+ * aggregate, which is always computed over every session; the ledger itself is `previous`'s when
+ * there is one, and only the sessions it does not already show get a row built.
+ */
+function renderReady(
+	container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate, loadedAt: string, previous: ReadyPaint | null,
+): ReadyPaint {
 	const t = createTranslator(locale);
 	// H18.36: dropped the obsolete second sentence ("Los totales solo aparecen cuando todas las
 	// sesiones aportan ese dato") — the summary below already shows a partial subtotal (H18.10's
@@ -193,15 +269,17 @@ function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionH
 
 	const comparison = container.createEl('section', { cls: 'tyrian-session-history__comparison' });
 	comparison.createEl('h4', { text: t.t('sessionHistory.comparison') });
+	let refreshWindow: (() => void) | null = null;
 	if (aggregate.comparison === null) {
 		comparison.createEl('p', { text: t.t('sessionHistory.comparisonBaseline') });
 	} else {
-		comparison.createEl('p', {
-			text: t.t('sessionHistory.comparisonWindow', {
-				latest: formatTimestamp(aggregate.comparison.latestEndedAt, locale),
-				previous: formatTimestamp(aggregate.comparison.previousEndedAt, locale),
-			}),
+		const { latestEndedAt, previousEndedAt } = aggregate.comparison;
+		const windowText = (): string => t.t('sessionHistory.comparisonWindow', {
+			latest: formatTimestamp(latestEndedAt, locale),
+			previous: formatTimestamp(previousEndedAt, locale),
 		});
+		const windowLine = comparison.createEl('p', { text: windowText() });
+		refreshWindow = () => { windowLine.setText(windowText()); };
 		const details = comparison.createEl('dl');
 		appendDetail(details, t.t('sessionHistory.duration'), signedDuration(aggregate.comparison.durationDeltaMs, locale));
 		appendDetail(details, t.t('sessionHistory.sacksPerHour'), signedRate(aggregate.comparison.sacksPerHourMilliDelta, locale));
@@ -210,13 +288,22 @@ function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionH
 	}
 	renderPerformance(container, locale, aggregate);
 
-	renderTable(container, locale, aggregate.sessions);
+	const day = localDay(Date.now());
+	const ledger = previous?.ledger ?? createLedger(container, locale);
+	if (previous !== null) container.append(ledger.root);
+	syncLedger(ledger, locale, aggregate.sessions);
+	const refreshEnded = (): void => {
+		for (const entry of ledger.entries.values()) entry.ended.setText(formatTimestamp(entry.row.endedAt, locale));
+	};
+	// A row kept from an earlier day still says what was true then.
+	if (previous !== null && previous.day !== day) refreshEnded();
 
 	const footerKey = aggregate.sessionCount === 1 ? 'sessionHistory.readAt' : 'sessionHistory.readAtPlural';
 	container.createEl('small', {
 		text: t.t(footerKey, { count: aggregate.sessionCount, time: formatClock(Date.parse(loadedAt), locale) }),
 		cls: 'tyrian-session-history__footer',
 	});
+	return { ledger, day, refreshClock: () => { refreshWindow?.(); refreshEnded(); } };
 }
 
 function renderPerformance(container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate): void {
@@ -321,7 +408,7 @@ function renderPerformanceRow(body: HTMLElement, locale: Locale, group: SessionH
  * loot list (H18.10) now renders as a detail row right under it, since there is no card left to
  * hold it.
  */
-function renderTable(container: HTMLElement, locale: Locale, rows: readonly SessionHistorySummaryRow[]): void {
+function createLedger(container: HTMLElement, locale: Locale): Ledger {
 	const t = createTranslator(locale);
 	const overflow = container.createDiv({ cls: 'tyrian-session-history__table-overflow' });
 	const table = overflow.createEl('table');
@@ -333,22 +420,61 @@ function renderTable(container: HTMLElement, locale: Locale, rows: readonly Sess
 	appendHeaderCell(head, t.t('sessionHistory.sacks'), 'is-num is-wide');
 	appendHeaderCell(head, t.t('sessionHistory.immediateValue'), 'is-num');
 	appendHeaderCell(head, t.t('sessionHistory.listingValue'), 'is-num is-wide');
-	const body = table.createEl('tbody');
+	return { root: overflow, body: table.createEl('tbody'), entries: new Map() };
+}
+
+/**
+ * Brings the ledger to `rows`, newest first as the aggregate orders them. A session the ledger
+ * already shows with the same facts keeps its nodes; one that is new, or whose facts changed, gets
+ * its rows built; one that is gone loses them.
+ */
+function syncLedger(ledger: Ledger, locale: Locale, rows: readonly SessionHistorySummaryRow[]): void {
+	const entries = new Map<string, LedgerEntry>();
+	const nodes: HTMLElement[] = [];
 	for (const row of rows) {
-		const tr = body.createEl('tr');
-		const ended = tr.createEl('th', { text: formatTimestamp(row.endedAt, locale) });
-		ended.setAttr('scope', 'row');
-		appendCell(tr, formatSessionHistoryDuration(row.durationMs, locale), 'is-num is-wide');
-		appendCell(tr, `${qualityLabel(row.classification, t)} · ${confidenceLabel(row.confidence, t)}`);
-		appendCell(tr, row.sacks === null ? t.t('sessionHistory.unknown') : formatNumber(row.sacks, locale), 'is-num is-wide');
-		appendCell(tr, money(row.immediateCopper, locale), 'is-num');
-		appendCell(tr, money(row.listingCopper, locale), 'is-num is-wide');
-		if (row.lootRows.length === 0) continue;
-		const lootRow = body.createEl('tr', { cls: 'tyrian-session-history__loot-row' });
-		const lootCell = lootRow.createEl('td', { attr: { colspan: '6' } });
-		lootCell.createEl('small', { text: t.t('loot.regionLabel') });
-		renderStoredSessionLoot(lootCell, row.lootRows);
+		// The summary is identity-free by contract, so the period is the key; two sessions cannot
+		// share one unless the notes overlap, and then the ordinal keeps them apart.
+		const period = `${row.startedAt}|${row.endedAt}`;
+		let key = period;
+		for (let ordinal = 1; entries.has(key); ordinal += 1) key = `${period}|${String(ordinal)}`;
+		const known = ledger.entries.get(key);
+		const entry = known !== undefined && sameSummaryRow(known.row, row) ? known : buildLedgerEntry(ledger.body, locale, row);
+		entries.set(key, entry);
+		nodes.push(...entry.nodes);
 	}
+	ledger.entries = entries;
+	reconcileChildren(ledger.body, nodes);
+}
+
+function buildLedgerEntry(body: HTMLElement, locale: Locale, row: SessionHistorySummaryRow): LedgerEntry {
+	const t = createTranslator(locale);
+	const tr = body.createEl('tr');
+	const ended = tr.createEl('th', { text: formatTimestamp(row.endedAt, locale) });
+	ended.setAttr('scope', 'row');
+	appendCell(tr, formatSessionHistoryDuration(row.durationMs, locale), 'is-num is-wide');
+	appendCell(tr, `${qualityLabel(row.classification, t)} · ${confidenceLabel(row.confidence, t)}`);
+	appendCell(tr, row.sacks === null ? t.t('sessionHistory.unknown') : formatNumber(row.sacks, locale), 'is-num is-wide');
+	appendCell(tr, money(row.immediateCopper, locale), 'is-num');
+	appendCell(tr, money(row.listingCopper, locale), 'is-num is-wide');
+	if (row.lootRows.length === 0) return { row, nodes: [tr], ended };
+	const lootRow = body.createEl('tr', { cls: 'tyrian-session-history__loot-row' });
+	const lootCell = lootRow.createEl('td', { attr: { colspan: '6' } });
+	lootCell.createEl('small', { text: t.t('loot.regionLabel') });
+	renderStoredSessionLoot(lootCell, row.lootRows);
+	return { row, nodes: [tr, lootRow], ended };
+}
+
+/** Whether two summary rows would paint the same cells: every fact, and every gains line in order. */
+function sameSummaryRow(left: SessionHistorySummaryRow, right: SessionHistorySummaryRow): boolean {
+	const facts = Object.keys(left) as Array<keyof SessionHistorySummaryRow>;
+	if (facts.length !== Object.keys(right).length) return false;
+	return facts.every((fact) => fact === 'lootRows'
+		? left.lootRows.length === right.lootRows.length && left.lootRows.every((line, index) => {
+			const other = right.lootRows[index];
+			return other !== undefined && line.name === other.name && line.netQuantity === other.netQuantity
+				&& line.immediateLabel === other.immediateLabel;
+		})
+		: left[fact] === right[fact]);
 }
 
 function appendMetric(container: HTMLElement, label: string, value: string): void {
