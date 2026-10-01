@@ -1,4 +1,5 @@
 import { canonicalJson as canonical } from '../core/canonical-sha256';
+import { jsonRoundTrip as json } from '../core/json-round-trip';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { createInventoryRecommendationEnvelope, isInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
 import { isApprovedApplicableCapability, isEnabledApplicableRule, isInventoryAdvisorReport, sha256CanonicalValue, sha256InventoryAdvisorReport } from './inventory-advisor-contract';
@@ -316,5 +317,4 @@ function ref(value: unknown): value is string { return typeof value === 'string'
 function sha(value: unknown): value is string { return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value); }
 function positive(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) > 0; }
 function sortedNonEmpty(value: unknown): value is string[] { return Array.isArray(value) && value.length > 0 && value.every(identifier) && value.every((entry, index) => index === 0 || value[index - 1]! < entry); }
-function json(value: unknown): boolean { try { return canonical(JSON.parse(JSON.stringify(value))) === canonical(value); } catch { return false; } }
 function clone<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }

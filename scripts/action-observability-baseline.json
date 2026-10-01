@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 479,
+		"catch_clause": 478,
 		"promise_catch": 40,
 		"void_expression": 102,
 		"callback_registration": 177
@@ -606,22 +606,6 @@
 					"reason": "Allowlisted catch_clause: The \"record\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"record\"."
 				},
 				{
-					"id": "25572c6bd31203649978fb83d656365603542e9b",
-					"kind": "catch_clause",
-					"line": 791,
-					"column": 84,
-					"endLine": 791,
-					"endColumn": 107,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "jsonRoundTrip",
-						"justification": "The \"jsonRoundTrip\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"jsonRoundTrip\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"jsonRoundTrip\"."
-				},
-				{
 					"id": "7c6406a0b41158cb853e5425b0cc1538bc479391",
 					"kind": "catch_clause",
 					"line": 794,
@@ -711,22 +695,6 @@
 						"justification": "The \"isInventoryDiscardAllowlistResultShape\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"isInventoryDiscardAllowlistResultShape\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"isInventoryDiscardAllowlistResultShape\"."
-				},
-				{
-					"id": "70a55ff33156345afb43e9ba2ff8af7311732c0a",
-					"kind": "catch_clause",
-					"line": 300,
-					"column": 124,
-					"endLine": 300,
-					"endColumn": 147,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "json",
-						"justification": "The \"json\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"json\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"json\"."
 				}
 			]
 		},
@@ -2686,6 +2654,44 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/core/json-round-trip.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "ba0b9327779cf2b28dc2443a5d0ec19e1bd2884b",
+					"kind": "catch_clause",
+					"line": 46,
+					"column": 92,
+					"endLine": 46,
+					"endColumn": 115,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "canonicalRoundTrip",
+						"justification": "The \"canonicalRoundTrip\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"canonicalRoundTrip\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"canonicalRoundTrip\"."
+				},
+				{
+					"id": "c39c64adee02440ca1ef73987913a3072d153eff",
+					"kind": "catch_clause",
+					"line": 51,
+					"column": 45,
+					"endLine": 51,
+					"endColumn": 68,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "isSimpleJsonTreeGuarded",
+						"justification": "The \"isSimpleJsonTreeGuarded\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"isSimpleJsonTreeGuarded\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"isSimpleJsonTreeGuarded\"."
+				}
+			]
+		},
 		"src/core/local-debug-action-runner.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -3480,22 +3486,6 @@
 						"justification": "The \"isInventoryRecommendationEnvelope\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"isInventoryRecommendationEnvelope\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"isInventoryRecommendationEnvelope\"."
-				},
-				{
-					"id": "a85b23a3e389289f2a29681bbdf60a0bbd078f91",
-					"kind": "catch_clause",
-					"line": 222,
-					"column": 84,
-					"endLine": 222,
-					"endColumn": 107,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "jsonRoundTrip",
-						"justification": "The \"jsonRoundTrip\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"jsonRoundTrip\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"jsonRoundTrip\"."
 				}
 			]
 		},
