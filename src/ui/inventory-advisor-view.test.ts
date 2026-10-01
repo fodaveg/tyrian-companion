@@ -1494,7 +1494,21 @@ function render(model: InventoryAdvisorViewModel, locale: 'es' | 'en' = 'es', in
 	renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, model, createTranslator(locale), undefined, interactions);
 	const section = mount.container.children[0];
 	if (!section) throw new Error('Expected a rendered Inventory Advisor section.');
-	return { ...mount, section, elements: () => walk(mount.container) };
+	return { ...mount, section, elements: () => { openRowDetails(mount.container); return walk(mount.container); } };
+}
+
+/**
+ * A row's detail has a body only while it is open (audit V2, 3.4), and these tests read what the
+ * details say: reading the elements opens every row's detail first, as the browser does once it
+ * has changed `open`. The closed state and the mounting itself are pinned in
+ * `inventory-advisor-view-list-reuse.test.ts`.
+ */
+function openRowDetails(root: FakeElement): void {
+	for (const details of byClass(walk(root), 'tyrian-inventory__more')) {
+		if (details.open) continue;
+		details.open = true;
+		details.dispatch('toggle');
+	}
 }
 
 function createMount(): { container: FakeElement; document: FakeDocument } {
@@ -1836,6 +1850,7 @@ class FakeElement {
 	}
 	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener({ preventDefault() {} }); }
 	focus(): void { this.ownerDocument.activeElement = this; }
+	contains(other: FakeElement): boolean { return walk(this).includes(other); }
 }
 
 function preferenceGoal(goalId: string) {
