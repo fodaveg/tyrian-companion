@@ -6,7 +6,7 @@ import {
 	registerProductActionPalette,
 	type ProductActionControllerPorts,
 } from './product-action-controller';
-import { mountActionPanel, renderProductShell } from './product-shell';
+import { renderProductShell } from './product-shell';
 import type { SessionCommandId } from './session-command-model';
 
 /** The host's `setIcon`, recording the Lucide id on the element as the Obsidian test double does. */
@@ -48,66 +48,34 @@ describe('product action surface', () => {
 		expect(execute).toHaveBeenCalledWith('open-companion');
 	});
 
-	it('renders every action, a visible disabled reason, live feedback, and routes clicks to controller.run', () => {
-		installFakeDocument();
-		const controller = createController();
-		const run = vi.spyOn(controller, 'run').mockResolvedValue('completed');
-		const panelMount = mountActionPanel(controller, 'es');
-		const panel = panelMount.element as unknown as FakeElement;
-		expect(panel.tag).toBe('aside');
-		expect(panel.className).toBe('tyrian-action-panel');
-		const elements = walk(panel);
-		const actions = elements.filter((element) => element.className.includes('tyrian-action-panel__action'));
-		expect(actions).toHaveLength(17);
-		const refresh = actions.find((element) => element.attributes.get('data-command-id') === 'refresh-inventory-advisor')!;
-		const refreshButton = walk(refresh).find((element) => element.tag === 'button')!;
-		expect(refreshButton.disabled).toBe(true);
-		expect(walk(refresh).map((element) => element.textContent).join(' ')).toContain('Vincula una clave API');
-		const feedback = elements.find((element) => element.className.includes('tyrian-action-panel__feedback'))!;
-		expect(feedback.attributes.get('aria-live')).toBe('polite');
-		const open = actions.find((element) => element.attributes.get('data-command-id') === 'open-companion')!;
-		walk(open).find((element) => element.tag === 'button')!.dispatch('click');
-		expect(run).toHaveBeenCalledWith('open-companion');
-	});
+	// The controller-level guarantees of the removed panel tests: the disabled reason, the live
+	// feedback while running and after success, and a sanitized failure message.
+	it('projects a disabled reason, running and completed feedback, and a sanitized failure from the controller', async () => {
+		const missingKey = createController();
+		const refresh = missingKey.describe('refresh-inventory-advisor');
+		expect(refresh.available).toBe(false);
+		expect(refresh.disabledReason).toContain('Vincula una clave API');
 
-	it('updates feedback and button state in place for success and sanitized failure', async () => {
-		installFakeDocument();
 		let finish!: () => void;
 		const pending = new Promise<void>((resolve) => { finish = resolve; });
 		const controller = createController({ execute: async () => { await pending; return 'completed' as const; }, hasKey: true, locale: 'en' });
-		const mount = mountActionPanel(controller, 'en');
-		const panel = mount.element as unknown as FakeElement;
-		const action = walk(panel).find((element) => element.attributes.get('data-command-id') === 'open-companion')!;
-		const button = walk(action).find((element) => element.tag === 'button')!;
-		const feedback = walk(panel).find((element) => element.className.includes('tyrian-action-panel__feedback'))!;
-		button.focus();
-		button.dispatch('click');
+		const run = controller.run('open-companion');
 		await Promise.resolve();
-		expect(feedback.textContent).toContain('Action running');
-		expect(button.disabled).toBe(true);
-		expect(walk(panel).find((element) => element.attributes.get('data-command-id') === 'open-companion')).toBe(action);
-		expect(button.ownerDocument.activeElement).toBe(button);
+		expect(controller.currentFeedback()?.message).toContain('Action running');
+		expect(controller.describe('open-companion').available).toBe(false);
 		finish();
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(feedback.textContent).toContain('Action completed');
-		expect(button.disabled).toBe(false);
+		await run;
+		expect(controller.currentFeedback()?.message).toContain('Action completed');
+		expect(controller.describe('open-companion').available).toBe(true);
 
 		const failing = createController({
 			execute: async () => { throw new Error('private raw transport detail'); }, hasKey: true, locale: 'en',
 		});
-		const failedMount = mountActionPanel(failing, 'en');
-		const failedPanel = failedMount.element as unknown as FakeElement;
-		const failedButton = walk(failedPanel).find((element) => element.attributes.get('data-command-id') === 'open-companion')!
-			.children.find((element) => element.tag === 'button') ?? walk(failedPanel).find((element) => element.tag === 'button')!;
-		failedButton.dispatch('click');
-		await Promise.resolve();
-		await Promise.resolve();
-		const failedFeedback = walk(failedPanel).find((element) => element.className.includes('tyrian-action-panel__feedback'))!;
-		expect(failedFeedback.textContent).toContain('previous state is preserved');
-		expect(failedFeedback.textContent).not.toContain('private raw transport detail');
-		expect(failedFeedback.attributes.get('role')).toBe('alert');
-		expect(failedButton.disabled).toBe(false);
+		await expect(failing.run('open-companion')).rejects.toThrow();
+		expect(failing.currentFeedback()).toMatchObject({ kind: 'error' });
+		expect(failing.currentFeedback()?.message).toContain('previous state is preserved');
+		expect(failing.currentFeedback()?.message).not.toContain('private raw transport detail');
+		expect(failing.describe('open-companion').available).toBe(true);
 	});
 
 	it.each(['cancelled', 'unavailable'] as const)('never reports %s session outcomes as success', async (outcome) => {
@@ -134,32 +102,28 @@ describe('product action surface', () => {
 		});
 		const clearTimer = vi.fn();
 		vi.stubGlobal('window', { setTimeout: setTimer, clearTimeout: clearTimer });
-		installFakeDocument();
 		let retryAt = now + 60_000;
 		const controller = createController({
 			hasKey: true,
 			connection: () => ({ status: 'error', code: 'rate_limited', message: 'wait', retryAt }),
 		});
-		const mount = mountActionPanel(controller, 'es');
-		const panel = mount.element as unknown as FakeElement;
-		const action = walk(panel).find((element) => element.attributes.get('data-command-id') === 'refresh-inventory-advisor')!;
-		const button = walk(action).find((element) => element.tag === 'button')!;
-		expect(action.attributes.get('data-state')).toBe('cooldown');
-		expect(button.disabled).toBe(true);
+		const unsubscribe = controller.subscribe(() => undefined);
+		expect(controller.describe('refresh-inventory-advisor').state).toBe('cooldown');
+		expect(controller.describe('refresh-inventory-advisor').available).toBe(false);
 		expect(setTimer).toHaveBeenCalledTimes(1);
 		expect(setTimer).toHaveBeenLastCalledWith(expect.any(Function), 60_000);
 
 		now += 60_000;
 		scheduled.callback?.();
-		expect(action.attributes.get('data-state')).toBe('idle');
-		expect(button.disabled).toBe(false);
+		expect(controller.describe('refresh-inventory-advisor').state).toBe('idle');
+		expect(controller.describe('refresh-inventory-advisor').available).toBe(true);
 		expect(setTimer).toHaveBeenCalledTimes(1);
 
 		retryAt = now + 30_000;
 		controller.refresh();
-		expect(action.attributes.get('data-state')).toBe('cooldown');
+		expect(controller.describe('refresh-inventory-advisor').state).toBe('cooldown');
 		expect(setTimer).toHaveBeenCalledTimes(2);
-		mount.dispose();
+		unsubscribe();
 		expect(clearTimer).toHaveBeenLastCalledWith(2);
 	});
 

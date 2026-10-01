@@ -35,9 +35,8 @@ muestras; «Preferencias de inventario» duplica Ajustes; la lista de objetos de
 línea, `role="tablist"`, sin eyebrow, h1, subtítulo ni compás. El aviso «Falta vincular la clave
 API» se queda como una fila compacta con su botón, solo cuando falte la clave. Del CSS salen
 `.tyrian-product-shell__masthead`, `__compass`, `__eyebrow`, `__subtitle` y el grid `__workspace`
-de dos columnas (la columna `actions` de 23 rem la ocupa un aside que nadie monta:
-`mountActionPanel` no tiene consumidores fuera de tests; si ningún test lo importa, se retira con
-su CSS).
+de dos columnas (la columna `actions` de 23 rem la ocupaba un aside que nadie montaba:
+`mountActionPanel` se retiró del código; su CSS `.tyrian-action-panel*` sigue pendiente de retirar).
 
 ## Vista de sesión (`companion-view.ts`)
 
