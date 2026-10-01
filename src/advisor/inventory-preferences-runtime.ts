@@ -51,6 +51,8 @@ export class InventoryPreferencesRuntime {
 	private scope: InventoryPreferenceScope | null = null;
 	private record: InventoryPreferencesV1 | null = null;
 	private loaded = false;
+	/** Generation of the record the analysis in force classified with; null when no analysis consumed one. */
+	private analysedGeneration: number | null = null;
 	private epoch = 0;
 	private writeFlight: Promise<void> | null = null;
 	private state: InventoryPreferencesEditorState = { status: 'not_loaded', goals: [], keepExceptions: [] };
@@ -62,6 +64,16 @@ export class InventoryPreferencesRuntime {
 	) {}
 
 	current(): InventoryPreferencesEditorState { return clone(this.state); }
+
+	/**
+	 * True unless the loaded record is the revision (CAS generation) the analysis in force already
+	 * used, so a plain editor load can skip a reclassification that could not change anything.
+	 */
+	differsFromAnalysis(): boolean {
+		return this.analysedGeneration === null || !this.loaded || this.recordGeneration() !== this.analysedGeneration;
+	}
+
+	private recordGeneration(): number { return this.record?.generation ?? 0; }
 
 	/** Creates an isolated UI revision so two leaves cannot last-write-wins each other. */
 	createEditorSession(parent?: ResolvedLocalDebugActionContext): InventoryPreferencesEditorSession {
@@ -124,6 +136,7 @@ export class InventoryPreferencesRuntime {
 			this.scope = null;
 			this.record = null;
 			this.loaded = false;
+			this.analysedGeneration = null;
 			this.state = { status: 'blocked', code: 'unavailable', goals: [], keepExceptions: [] };
 			const result = { status: 'blocked', reason: 'preferences_unavailable' } as const;
 			finishPreferencesLoadSpan(span, result);
@@ -131,6 +144,7 @@ export class InventoryPreferencesRuntime {
 		}
 		this.capture = structuredClone(capture);
 		this.scope = scope;
+		this.analysedGeneration = null;
 		this.epoch += 1;
 		this.record = null;
 		this.loaded = false;
@@ -155,6 +169,7 @@ export class InventoryPreferencesRuntime {
 			return stale;
 		}
 		const applied = this.applyRead(result);
+		this.analysedGeneration = applied.status === 'ready' ? this.recordGeneration() : null;
 		finishPreferencesLoadSpan(span, applied);
 		return applied;
 	}
@@ -211,6 +226,7 @@ export class InventoryPreferencesRuntime {
 		this.scope = null;
 		this.record = null;
 		this.loaded = false;
+		this.analysedGeneration = null;
 		this.state = { status: 'not_loaded', goals: [], keepExceptions: [] };
 	}
 
