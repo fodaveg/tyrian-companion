@@ -719,15 +719,11 @@ const PREVIEW_READ_CONCURRENCY = 8;
 
 /**
  * The most note text, in UTF-16 code units, the classification cache keeps (see
- * `InventoryVaultSyncService.preview`). A position note is around 1,500 characters, so this holds
- * several thousand of them; whatever does not fit is classified again on every preview.
+ * `InventoryVaultSyncService.preview`). The account this was measured on holds 1,371 position
+ * notes and 1,986,006 characters of note text (about 2 MB), so this is twice that account; a note
+ * that does not fit in what is left is classified again on every preview.
  */
-const CLASSIFICATION_CACHE_MAX_CHARS = 16_000_000;
-
-export interface InventoryVaultSyncServiceOptions {
-	/** Overrides `CLASSIFICATION_CACHE_MAX_CHARS`; 0 remembers nothing. */
-	classificationCacheMaxChars?: number;
-}
+export const CLASSIFICATION_CACHE_MAX_CHARS = 4_000_000;
 
 /** Plans and applies only versioned Tyrian inventory notes below one portable Vault root. */
 export class InventoryVaultSyncService {
@@ -738,15 +734,11 @@ export class InventoryVaultSyncService {
 	 * read there. See `preview` for what it saves and what it never does.
 	 */
 	private classificationCache: ReadonlyMap<string, { content: string; classified: InventoryNoteClassification }> = new Map();
-	private readonly classificationCacheMaxChars: number;
 
 	constructor(
 		private readonly vault: InventoryVaultPort,
 		private readonly configDir: string,
-		options: InventoryVaultSyncServiceOptions = {},
-	) {
-		this.classificationCacheMaxChars = options.classificationCacheMaxChars ?? CLASSIFICATION_CACHE_MAX_CHARS;
-	}
+	) {}
 
 	/**
 	 * H18.16 (audit 2026-09-24 §3.E, prueba 9):
@@ -767,7 +759,7 @@ export class InventoryVaultSyncService {
 	 * the one the previous preview read at that path. That memory is this instance's own, holds
 	 * position notes only (never a note without the marker), is rebuilt from the notes each preview
 	 * reads (a note that is gone, or outside the folder previewed, is dropped) and stops growing at
-	 * `classificationCacheMaxChars`. What it holds is frozen, so one preview cannot change what the
+	 * `CLASSIFICATION_CACHE_MAX_CHARS`. What it holds is frozen, so one preview cannot change what the
 	 * next one is given.
 	 */
 	async preview(root: string, input: InventoryVaultSyncInput): Promise<InventoryVaultSyncPlan> {
@@ -799,7 +791,7 @@ export class InventoryVaultSyncService {
 				? known.classified
 				: freezeClassification(await classifyInventoryNote(content));
 			if (classified.status !== 'foreign' && !classifications.has(file.path)
-				&& rememberedChars + content.length <= this.classificationCacheMaxChars) {
+				&& rememberedChars + content.length <= CLASSIFICATION_CACHE_MAX_CHARS) {
 				classifications.set(file.path, { content, classified });
 				rememberedChars += content.length;
 			}
@@ -1327,8 +1319,9 @@ async function classifyInventoryNote(content: string): Promise<InventoryNoteClas
 
 /**
  * Freezes a classification before `InventoryVaultSyncService` remembers it across previews. Every
- * value of `OwnedInventoryNote.fields` is a primitive, so freezing the note and its fields leaves
- * nothing a later preview could change; code that tried would throw instead of corrupting it.
+ * value of `OwnedInventoryNote.fields` is a primitive, and the rest of the note is a boolean
+ * (`currentKeys`) and strings, so freezing the note and its fields leaves nothing a later preview
+ * could change; code that tried would throw instead of corrupting it.
  */
 function freezeClassification(classified: InventoryNoteClassification): InventoryNoteClassification {
 	if (classified.status === 'owned') {

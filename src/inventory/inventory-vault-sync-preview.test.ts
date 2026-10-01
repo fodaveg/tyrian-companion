@@ -5,6 +5,7 @@ import { sha256Text } from '../assets/managed-asset-hash';
 import type { InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import {
+	CLASSIFICATION_CACHE_MAX_CHARS,
 	InventoryVaultSyncService,
 	prepareInventoryVaultSyncInput,
 	type InventoryVaultFile,
@@ -301,21 +302,44 @@ describe('inventory Vault preview: bounded concurrent reads and a classification
 	it('remembers only as much text as its budget allows and parses the rest every time', async () => {
 		const { vault, input } = await seededVault(10);
 		const paths = sortedPaths(vault);
-		// Room for the first four notes, in path order, and not for a fifth.
-		const budget = paths.slice(0, 4).reduce((sum, path) => sum + vault.contents.get(path)!.length, 0) + 1;
-		const service = new InventoryVaultSyncService(vault, CONFIG_DIR, { classificationCacheMaxChars: budget });
+		// Every note grows to a quarter of the budget with the user's own text after the managed block,
+		// which costs no parse and no hash: the first four notes in path order fill the budget exactly.
+		const quarter = CLASSIFICATION_CACHE_MAX_CHARS / 4;
+		const grownTo = (path: string, length: number): string => {
+			const content = vault.contents.get(path)!;
+			return `${content}${'x'.repeat(length - content.length - 1)}\n`;
+		};
+		for (const path of paths) vault.contents.set(path, grownTo(path, quarter));
+		expect(paths.every((path) => vault.contents.get(path)!.length === quarter)).toBe(true);
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
 		const first = await service.preview(ROOT, input);
+		expect(first.steps.map((entry) => entry.status)).toEqual(Array.from({ length: 10 }, () => 'unchanged'));
 		for (let pass = 0; pass < 3; pass += 1) {
 			work.yamlParses = 0;
 			expect(await service.preview(ROOT, input)).toEqual(first);
 			expect(work.yamlParses).toBe(6);
 		}
 
-		const none = new InventoryVaultSyncService(vault, CONFIG_DIR, { classificationCacheMaxChars: 0 });
-		await none.preview(ROOT, input);
+		// One character more in the first note and the fourth no longer fits: three remembered, seven parsed.
+		vault.contents.set(paths[0]!, `${vault.contents.get(paths[0]!)!}x`);
+		expect(vault.contents.get(paths[0]!)).toHaveLength(quarter + 1);
+		const longer = await service.preview(ROOT, input);
+		for (let pass = 0; pass < 3; pass += 1) {
+			work.yamlParses = 0;
+			expect(await service.preview(ROOT, input)).toEqual(longer);
+			expect(work.yamlParses).toBe(7);
+		}
+		expect(longer).toEqual(await new InventoryVaultSyncService(vault, CONFIG_DIR).preview(ROOT, input));
+
+		// A note larger than the whole budget is never remembered, and the notes after it still are.
+		const huge = await seededVault(3);
+		const [hugePath] = sortedPaths(huge.vault) as [string, string, string];
+		huge.vault.contents.set(hugePath, `${huge.vault.contents.get(hugePath)!}${'x'.repeat(CLASSIFICATION_CACHE_MAX_CHARS)}\n`);
+		const hugeService = new InventoryVaultSyncService(huge.vault, CONFIG_DIR);
+		const hugePlan = await hugeService.preview(ROOT, huge.input);
 		work.yamlParses = 0;
-		expect(await none.preview(ROOT, input)).toEqual(first);
-		expect(work.yamlParses).toBe(10);
+		expect(await hugeService.preview(ROOT, huge.input)).toEqual(hugePlan);
+		expect(work.yamlParses).toBe(1);
 	});
 });
 
