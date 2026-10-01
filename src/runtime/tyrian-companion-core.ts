@@ -2057,14 +2057,22 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const after = async (
 			state: InventoryPreferencesEditorState, reclassifyReady = true,
 		): Promise<InventoryPreferencesEditorState> => {
-			if (state.status === 'ready' && reclassifyReady) await this.inventoryAdvisor.reclassify();
-			if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
+			let settled = state;
+			if (state.status === 'ready' && reclassifyReady) {
+				await this.inventoryAdvisor.reclassify();
+				// That reclassification reloads the preferences, which expires every editor session, this
+				// one included. Only the session that caused it is read again here (a plain read: it never
+				// reclassifies); another leaf's session stays expired and must reload before it may write.
+				if (session.current().status !== 'ready') settled = await session.load();
+			}
+			if (settled.status === 'blocked' || settled.status === 'conflict') this.inventoryAdvisor.block();
 			this.renderInventoryAdvisorViews();
-			return state;
+			return settled;
 		};
 		return Object.freeze({
 			// A load changes nothing by itself: it reclassifies only when the loaded revision is not the one
 			// the analysis in force used (another window or device wrote since). Writes always reclassify.
+			// Either way the session that asked ends ready on the revision in force (see `after`).
 			current: () => session.current(),
 			load: async () => await after(await session.load(), this.inventoryPreferences.differsFromAnalysis()),
 			upsertGoal: async (goal: ReservationGoal) => await after(await session.upsertGoal(goal)),
