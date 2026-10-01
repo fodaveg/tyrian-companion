@@ -1,5 +1,23 @@
 # Changelog
 
+## Sin publicar - el asesor lee hasta cuatro inventarios de personaje a la vez
+
+- **Captura del inventario para el asesor.** Hasta ahora el asesor pedía los inventarios de
+  personaje de uno en uno; ahora pide hasta cuatro a la vez, el mismo límite que ya usaba la captura
+  de sesión, y sigue bajo el tope de seis peticiones simultáneas. No cambian la segunda pasada, los
+  reintentos ni el tiempo de espera de 30 s por petición.
+- Medido dentro de Obsidian en un Mac con la 0.2.13 y una cuenta de 10 personajes: de uno en uno la
+  captura tardó 63,7 s (32,0 s y 31,6 s por pasada) y el refresco completo del asesor 84,8 s; con
+  cuatro a la vez, 14,5 s y 12,8 s de captura (7,4 s + 7,0 s y 6,3 s + 6,5 s) y 29,2 s y 34,1 s de
+  refresco, en dos corridas. Ningún inventario pasó de 6,2 s, las seis fuentes salieron completas en
+  las dos pasadas y la calidad fue `stable` en las tres mediciones.
+- El recibo local de captura contaba en cada personaje también los objetos de las peticiones que
+  seguían en vuelo (inventario compartido, banco, materiales); ahora cada personaje lleva solo los
+  suyos.
+
+Límites: una corrida de uno en uno y dos de cuatro a la vez, en un solo Mac y una sola cuenta; sin
+medir en Linux ni en Hebra, ni con más de 10 personajes.
+
 ## Release beta 0.2.13 - las Bases se reparan aunque el plugin recuerde otra carpeta de Bases
 
 - **Bases de una carpeta sin manifiesto, con otra raíz recordada.** El plugin guarda en IndexedDB
