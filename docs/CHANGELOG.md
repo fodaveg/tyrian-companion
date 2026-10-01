@@ -1,7 +1,36 @@
 # Changelog
 
-## Sin publicar - el asesor lee hasta cuatro inventarios de personaje a la vez
+## Release beta 0.2.14 - el asesor ya no queda en «no válido» por una pila mayor que la oferta ni por dos «Conservar», y captura cuatro inventarios a la vez
 
+- **Una pila mayor que la oferta de compra ya no invalida el análisis.** Sin profundidad de mercado
+  completa, un objeto con más unidades que la oferta de compra y hasta el doble (por ejemplo 15
+  unidades con una oferta de 10) dejaba el análisis entero en «no válido»: el verificador del
+  resultado repasaba «listar» antes que «vender» y exigía vender el sobrante. Pasaba también con
+  varias pilas del mismo objeto y con una orden de compra activa. El clasificador no cambia; el
+  verificador ahora descuenta primero lo vendido y rechaza además dos cosas que antes aceptaba:
+  listar la pila entera cuando la oferta absorbe parte y vender menos de lo que la oferta absorbe
+  (`7cc6266`).
+- **Dos o más objetos en «Conservar» ya no dejan el asesor en fallo permanente.** Las preferencias
+  guardan las excepciones ordenadas por su identificador y el clasificador las exige ordenadas por
+  objeto; con dos excepciones el análisis fallaba más o menos una de cada dos veces con «La
+  actualización del inventario falló de forma inesperada» (`inventory_advisor_input_invalid`) y
+  seguía fallando mientras estuvieran guardadas. Ahora se ordenan al componer la entrada del
+  clasificador; las preferencias ya guardadas funcionan sin migración (`9d36800`).
+- **«Conservar» y el editor de preferencias dicen la verdad sobre si guardaron.** «Conservar»
+  mostraba «No se pudo guardar» aunque había guardado, y el editor quedaba bloqueado tras cada
+  guardado hasta volver a cargar. Ahora la sesión que escribe sigue utilizable, una escritura que
+  llega con la sesión atrasada recarga y reintenta una vez, y si de verdad no se guardó el editor lo
+  dice (`191ba71`). Cargar las preferencias ya no reclasifica el inventario si no cambiaron desde el
+  análisis (`79328b8`).
+- Borrado de notas de posición: una nota editada después de la comprobación previa se conserva en
+  vez de ir a la papelera (`88c0252`). El recibo de la sincronización cuenta las notas realmente
+  escritas (`8741742`). Un objeto observado en la sesión sigue en la lista de seguimiento de precios
+  aunque salga de la selección derivada del capital (`83bd53f`).
+- Rendimiento del asesor, sin cambio de resultado (los hashes del informe de prueba de 1.371
+  objetos son idénticos): cada análisis construye el plan de reservas 3 veces en vez de 14 y recorre
+  el inventario una vez por punto de entrada (`f225718`); la comprobación de ida y vuelta por JSON
+  de los contratos reconoce un árbol simple en una pasada, de unos 60 ms a unos 7 ms por llamada
+  sobre ese informe, medido en Linux con Node 22 (`c05d952`, `daa2956`).
 - **Captura del inventario para el asesor.** Hasta ahora el asesor pedía los inventarios de
   personaje de uno en uno; ahora pide hasta cuatro a la vez, el mismo límite que ya usaba la captura
   de sesión, y sigue bajo el tope de seis peticiones simultáneas. No cambian la segunda pasada, los
@@ -16,7 +45,9 @@
   suyos.
 
 Límites: una corrida de uno en uno y dos de cuatro a la vez, en un solo Mac y una sola cuenta; sin
-medir en Linux ni en Hebra, ni con más de 10 personajes.
+medir en Linux ni en Hebra, ni con más de 10 personajes. Los dos fallos del asesor están
+reproducidos en tests, no en Obsidian real; los tiempos del asesor en milisegundos no se pudieron
+comparar con la máquina libre.
 
 ## Release beta 0.2.13 - las Bases se reparan aunque el plugin recuerde otra carpeta de Bases
 
