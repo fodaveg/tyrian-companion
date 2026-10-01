@@ -5,7 +5,7 @@
 		"catch_clause": 478,
 		"promise_catch": 40,
 		"void_expression": 102,
-		"callback_registration": 177
+		"callback_registration": 178
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -12271,6 +12271,23 @@
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
+				{
+					"id": "91af02366687317de720396c0cc9b778901f0aac",
+					"kind": "callback_registration",
+					"line": 123,
+					"column": 18,
+					"endLine": 126,
+					"endColumn": 5,
+					"registration": "requestAnimationFrame",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "requestAnimationFrame",
+						"scope": "renderProgress",
+						"justification": "The \"renderProgress\" owner registers \"requestAnimationFrame\" only to repaint the tab from its in-memory snapshot on the next frame; the callback starts no action and the run whose progress it shows owns its own diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderProgress\" owner registers \"requestAnimationFrame\" only to repaint the tab from its in-memory snapshot on the next frame; the callback starts no action and the run whose progress it shows owns its own diagnostics. Verified registration: \"requestAnimationFrame\" in \"renderProgress\"."
+				},
 				{
 					"id": "46543cdab6b4d9c8108378aa4254f6ebcf012a30",
 					"kind": "void_expression",

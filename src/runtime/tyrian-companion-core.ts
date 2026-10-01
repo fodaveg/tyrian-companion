@@ -1084,7 +1084,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				applySync: async (plan, onStep) => await inventoryVaultWriter.apply(plan, onStep),
 			},
 			this.settings.inventorySyncLastRun,
-			() => this.renderInventoryAdvisorViews(),
+			(state) => this.renderInventorySyncRunChange(state),
 			(outcome) => { fireAndForgetLocal(this.localDebugActions,
 				{ component: 'settings', action: 'settings_save', state: 'inventory_sync_outcome' },
 				() => this.recordInventorySyncOutcome(outcome)); },
@@ -1433,6 +1433,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.inventoryAdvisor?.dispose();
 		this.inventoryVaultSync?.dispose();
 		this.inventoryVaultSyncRun?.dispose();
+		// A progress report still waiting for its frame must not repaint a tab after the unload.
+		for (const view of this.viewControllers?.inventoryAdvisor.current() ?? []) view.cancelProgressRender();
 		this.walletVaultSync?.dispose();
 		this.inventoryPreferences?.dispose();
 		this.priceHistory?.dispose();
@@ -4447,6 +4449,29 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// The Sale tab reads the SAME advisor model, so every refresh that moves it also
 		// moves the Sale tab's own hero card, calendar and grouped list.
 		for (const view of this.mountedViews.sale.current()) view.render();
+	}
+
+	/** True while the one-click sync's last reported state was `running`. */
+	private inventorySyncRunInFlight = false;
+
+	/**
+	 * Every state the one-click sync reports. A run in flight reports once per note written, each an
+	 * `await` apart, and none of those reports changes what the Sale tab shows: only the Inventory
+	 * tab carries the progress, and it repaints on its own next frame (`renderProgress`). Any other
+	 * state (the outcome, a conflict, a disabled reason) is content and repaints both tabs at once.
+	 */
+	private renderInventorySyncRunChange(state: InventoryVaultSyncRunState): void {
+		if (state.status !== 'running') {
+			this.inventorySyncRunInFlight = false;
+			this.renderInventoryAdvisorViews();
+			return;
+		}
+		// The shared actions only read whether a run is in flight, not how far along it is.
+		if (!this.inventorySyncRunInFlight) {
+			this.inventorySyncRunInFlight = true;
+			this.productActions?.refresh();
+		}
+		for (const view of this.mountedViews.inventoryAdvisor.current()) view.renderProgress();
 	}
 
 	private invalidateInventoryAdvisor(): void {
