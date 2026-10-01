@@ -1,7 +1,7 @@
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale } from '../core/i18n';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
-import type { InventoryPreferencesEditorSession } from '../advisor/inventory-preferences-runtime';
+import type { InventoryPreferencesEditorSession, InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 import { keepExceptionForItem, renderInventoryAdvisorView } from './inventory-advisor-view';
@@ -76,6 +76,8 @@ export function inventoryAdvisorView(actions: Pick<InventoryAdvisorViewActions, 
  */
 export class InventoryAdvisorItemView {
 	private preferencesBusy = false;
+	/** The last preference write of this view did not save; cleared by the next write or load. */
+	private preferenceWriteFailed = false;
 	private analysisBusy = false;
 	private syncBusy = false;
 	private priceHistoryBusy = false;
@@ -164,12 +166,13 @@ export class InventoryAdvisorItemView {
 			{
 				preferencesBusy: this.preferencesBusy,
 				preferences: this.preferenceSession?.current(),
-				onLoadPreferences: this.preferenceSession === undefined ? undefined : () => this.runPreferenceAction(async () => { await this.preferenceSession!.load(); }),
-				onUpsertGoal: this.preferenceSession === undefined ? undefined : (goal) => this.runPreferenceAction(async () => { await this.preferenceSession!.upsertGoal(goal); }),
-				onRemoveGoal: this.preferenceSession === undefined ? undefined : (goalId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeGoal(goalId); }),
-				onUpsertKeepException: this.preferenceSession === undefined ? undefined : (keepException) => this.runPreferenceAction(async () => { await this.preferenceSession!.upsertKeepException(keepException); }),
-				onRemoveKeepException: this.preferenceSession === undefined ? undefined : (exceptionId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeKeepException(exceptionId); }),
-				onKeepItem: this.preferenceSession === undefined ? undefined : (itemId) => this.runPreferenceAction(async () => { await this.keepItem(itemId); }),
+				preferenceWriteFailed: this.preferenceWriteFailed,
+				onLoadPreferences: this.preferenceSession === undefined ? undefined : () => this.runPreferenceAction(async () => { this.preferenceWriteFailed = false; await this.preferenceSession!.load(); }),
+				onUpsertGoal: this.preferenceSession === undefined ? undefined : (goal) => this.runPreferenceWrite(async () => await this.preferenceSession!.upsertGoal(goal)),
+				onRemoveGoal: this.preferenceSession === undefined ? undefined : (goalId) => this.runPreferenceWrite(async () => await this.preferenceSession!.removeGoal(goalId)),
+				onUpsertKeepException: this.preferenceSession === undefined ? undefined : (keepException) => this.runPreferenceWrite(async () => await this.preferenceSession!.upsertKeepException(keepException)),
+				onRemoveKeepException: this.preferenceSession === undefined ? undefined : (exceptionId) => this.runPreferenceWrite(async () => await this.preferenceSession!.removeKeepException(exceptionId)),
+				onKeepItem: this.preferenceSession === undefined ? undefined : (itemId) => this.runPreferenceWrite(async () => await this.keepItem(itemId)),
 				inventorySync: sync,
 				priceHistory,
 				priceHistoryOptIn,
@@ -262,13 +265,32 @@ export class InventoryAdvisorItemView {
 	 * the id: the preferences are loaded first when the view never opened them (the write needs
 	 * their CAS revision), and an item already kept whole is left as it is.
 	 */
-	private async keepItem(itemId: number): Promise<void> {
-		const session = this.preferenceSession;
-		if (session === undefined) return;
+	private async keepItem(itemId: number): Promise<InventoryPreferencesEditorState> {
+		const session = this.preferenceSession!;
 		const state = session.current().status === 'ready' ? session.current() : await session.load();
-		if (state.status !== 'ready') return;
+		if (state.status !== 'ready') return state;
 		const keepException = keepExceptionForItem(itemId, state.keepExceptions);
-		if (keepException !== null) await session.upsertKeepException(keepException);
+		return keepException === null ? state : await session.upsertKeepException(keepException);
+	}
+
+	/**
+	 * One preference write of the user. It ends either saved or visibly refused: a session that fell
+	 * behind (`needs_refresh`: another leaf wrote, or a new analysis replaced the revision) is reloaded
+	 * and the same intention is applied once more on top of the revision in force, and anything that
+	 * still did not save is kept as `preferenceWriteFailed` for the view to say so. The retry cannot
+	 * overwrite a revision this view never read: the write is still a CAS on the reloaded generation.
+	 */
+	private async runPreferenceWrite(write: () => Promise<InventoryPreferencesEditorState>): Promise<void> {
+		await this.runPreferenceAction(async () => {
+			this.preferenceWriteFailed = false;
+			let saved = false;
+			try {
+				let state = await write();
+				if (state.status === 'needs_refresh' && (await this.preferenceSession!.load()).status === 'ready') state = await write();
+				saved = state.status === 'ready';
+			}
+			finally { this.preferenceWriteFailed = !saved; }
+		});
 	}
 
 	private async runPreferenceAction(action: () => void | Promise<void> | undefined): Promise<void> {

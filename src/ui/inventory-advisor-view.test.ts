@@ -1431,6 +1431,26 @@ describe('Inventory Advisor view', () => {
 		expect(onRemoveKeepException).toHaveBeenCalledWith('exception-100');
 	});
 
+	it('does not read the emptied list of a refused "stop keeping" as done', () => {
+		let preferences: InventoryPreferencesEditorState = { status: 'ready', goals: [], keepExceptions: [
+			{ version: 1, exceptionId: 'exception-100', itemId: 100, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' },
+		] };
+		let preferenceWriteFailed = false;
+		const interactions: InventoryAdvisorViewInteractions = {
+			get preferences() { return preferences; }, get preferenceWriteFailed() { return preferenceWriteFailed; },
+			onKeepItem: vi.fn(), onRemoveKeepException: vi.fn(),
+		};
+		const mount = render(readyModel(), 'es', interactions);
+		only(find(mount.elements(), 'button')
+			.filter((candidate) => candidate.attributes.get('aria-label') === 'Conservado. Clic para dejar de conservar Material seguro')).dispatch('click');
+		// The store stopped answering: the write was refused and a blocked state lists nothing.
+		preferences = { status: 'blocked', code: 'unavailable', goals: [], keepExceptions: [] };
+		preferenceWriteFailed = true;
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator('es'), undefined, interactions);
+		const status = only(byClass(mount.elements(), 'tyrian-inventory-advisor__keep-status'));
+		expect(status.textContent).toBe('No se pudo quitar «Material seguro» de conservar. Revisa «Preferencias de inventario».');
+	});
+
 	it('shows the verdict and its lateral mark before the meter and the free-slot line, in Inventory (H18.31, decidido)', () => {
 		const mount = render({
 			...readyModel(),

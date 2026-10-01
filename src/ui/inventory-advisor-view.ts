@@ -49,6 +49,12 @@ export interface InventoryAdvisorViewPort {
 export interface InventoryAdvisorViewInteractions {
 	preferences?: InventoryPreferencesEditorState;
 	preferencesBusy?: boolean;
+	/**
+	 * The host's last preference write ended without saving (refused, conflicting or blocked). The
+	 * editor's status line says the change was not saved, and a row's "stop keeping" does not read
+	 * the emptied list of a blocked state as done.
+	 */
+	preferenceWriteFailed?: boolean;
 	onLoadPreferences?: () => void | Promise<void>;
 	onUpsertGoal?: (goal: ReservationGoal) => void | Promise<void>;
 	onRemoveGoal?: (goalId: string) => void | Promise<void>;
@@ -564,7 +570,7 @@ function mountInventoryAdvisorView(
 		if (pendingKeep === null) { keepStatus.hidden = true; return; }
 		keepStatus.hidden = false;
 		const stillKept = keptExceptionsByItemId(interactions.preferences).has(pendingKeep.itemId);
-		const settled = pendingKeep.mode === 'keep' ? stillKept : !stillKept;
+		const settled = pendingKeep.mode === 'keep' ? stillKept : !stillKept && interactions.preferenceWriteFailed !== true;
 		const outcome = settled ? (pendingKeep.mode === 'keep' ? 'done' : 'unsaved')
 			: interactions.preferencesBusy === true ? (pendingKeep.mode === 'keep' ? 'saving' : 'unsaving')
 				: (pendingKeep.mode === 'keep' ? 'failed' : 'unsaveFailed');
@@ -2313,7 +2319,9 @@ function mountPreferencesEditor(
 		summary.textContent = translator.t('advisor.preferences.title');
 		goalsHeading.textContent = translator.t('advisor.preferences.goals');
 		exceptionsHeading.textContent = translator.t('advisor.preferences.exceptions');
-		status.textContent = translator.t(`advisor.preferences.state.${state.status}`);
+		const stateText = translator.t(`advisor.preferences.state.${state.status}`);
+		status.textContent = interactions.preferenceWriteFailed === true && interactions.preferencesBusy !== true
+			? translator.t('advisor.preferences.notSaved', { state: stateText }) : stateText;
 		load.textContent = translator.t('advisor.preferences.load');
 		load.disabled = interactions.onLoadPreferences === undefined || interactions.preferencesBusy === true;
 		goalForm.title.placeholder = translator.t('advisor.preferences.goalTitle');
