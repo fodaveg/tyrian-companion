@@ -15,6 +15,7 @@ import {
 } from '../advisor/inventory-position-recommendation';
 import { sha256Text } from '../assets/managed-asset-hash';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
+import { createLimiter } from '../core/concurrency';
 import { errorClassName } from '../core/local-debug-error-details';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 import {
@@ -338,6 +339,12 @@ interface OwnedInventoryNote {
 	prefix: string;
 	suffix: string;
 }
+
+/** What `classifyInventoryNote` makes of one note's text. */
+type InventoryNoteClassification =
+	| { status: 'owned'; note: OwnedInventoryNote }
+	| { status: 'foreign' }
+	| { status: 'conflict'; positionId: string | null };
 
 /** The parts of a note that belong to the user; empty for a note the plugin creates. */
 interface InventoryNoteUserParts {
@@ -702,10 +709,31 @@ export async function prepareInventoryVaultSyncInput(
 	};
 }
 
+/**
+ * How many notes a preview reads at once. The reads are the vault's own (a local file on desktop,
+ * a bridge call on mobile, a port on another host), so the ceiling stays small: eight turns a
+ * preview of 1,371 notes into about 172 rounds of reads without ever asking the host for more than
+ * a handful of files at a time.
+ */
+const PREVIEW_READ_CONCURRENCY = 8;
+
+/**
+ * The most note text, in UTF-16 code units, the classification cache keeps (see
+ * `InventoryVaultSyncService.preview`). The account this was measured on holds 1,371 position
+ * notes and 1,986,006 characters of note text (about 2 MB), so this is twice that account; a note
+ * that does not fit in what is left is classified again on every preview.
+ */
+export const CLASSIFICATION_CACHE_MAX_CHARS = 4_000_000;
+
 /** Plans and applies only versioned Tyrian inventory notes below one portable Vault root. */
 export class InventoryVaultSyncService {
 	private flight: Promise<InventoryVaultSyncResult> | null = null;
 	private flightPlanKey: string | null = null;
+	/**
+	 * What the last preview made of each position note it read, by path, next to the exact text it
+	 * read there. See `preview` for what it saves and what it never does.
+	 */
+	private classificationCache: ReadonlyMap<string, { content: string; classified: InventoryNoteClassification }> = new Map();
 
 	constructor(
 		private readonly vault: InventoryVaultPort,
@@ -723,6 +751,17 @@ export class InventoryVaultSyncService {
 	 * - A note the plugin cannot safely rewrite (edited inside its managed block, a foreign note in
 	 *   the folder, a duplicate identity) is a `conflict` step for THAT note alone; the rest of the
 	 *   plan still applies (`canApply` stays true).
+	 *
+	 * Every preview reads every note of the folder, up to `PREVIEW_READ_CONCURRENCY` at a time, and
+	 * walks them in path order whatever order the reads answered in. No read is ever skipped on a
+	 * hint (a modification time, a host revision): the text read is the only evidence. What a
+	 * preview does save is the classification (YAML parse and hash) of a note whose text is exactly
+	 * the one the previous preview read at that path. That memory is this instance's own, holds
+	 * position notes only (never a note without the marker), is rebuilt from the notes each preview
+	 * reads (a note that is gone, or outside the folder previewed, is dropped) and never holds more
+	 * than `CLASSIFICATION_CACHE_MAX_CHARS`: a note that does not fit in what is left is skipped, and
+	 * a smaller one later in path order may still enter. What it holds is frozen, so one preview
+	 * cannot change what the next one is given.
 	 */
 	async preview(root: string, input: InventoryVaultSyncInput): Promise<InventoryVaultSyncPlan> {
 		const normalizedRoot = normalizeInventoryRoot(root, this.configDir);
@@ -741,9 +780,22 @@ export class InventoryVaultSyncService {
 		const steps: InventoryVaultSyncStep[] = [];
 		const seenOwned = new Set<string>();
 		const conflictPaths = new Set<string>();
-		for (const file of this.inventoryFiles(folder)) {
-			const content = normalizeLf(await this.vault.read(file));
-			const classified = await classifyInventoryNote(content);
+		const files = this.inventoryFiles(folder);
+		const contents = await this.readAll(files);
+		const remembered = this.classificationCache;
+		const classifications = new Map<string, { content: string; classified: InventoryNoteClassification }>();
+		let rememberedChars = 0;
+		for (const [index, file] of files.entries()) {
+			const content = normalizeLf(contents[index]!);
+			const known = remembered.get(file.path);
+			const classified = known !== undefined && known.content === content
+				? known.classified
+				: freezeClassification(await classifyInventoryNote(content));
+			if (classified.status !== 'foreign' && !classifications.has(file.path)
+				&& rememberedChars + content.length <= CLASSIFICATION_CACHE_MAX_CHARS) {
+				classifications.set(file.path, { content, classified });
+				rememberedChars += content.length;
+			}
 			if (classified.status === 'foreign') {
 				steps.push(step(file.path, file.path, 'conflict', content, null));
 				conflictPaths.add(file.path);
@@ -786,6 +838,7 @@ export class InventoryVaultSyncService {
 				: step(owned.fields.tc_position_id, file.path, 'deactivate', content,
 					await renderInventoryNote(inactive, owned.block, owned)));
 		}
+		this.classificationCache = classifications;
 
 		for (const target of desired.values()) {
 			// A path the loop above already reported as a conflict is one note, counted once.
@@ -937,6 +990,34 @@ export class InventoryVaultSyncService {
 				written: created + updated + deactivated, errorName: errorClassName(error),
 			};
 		}
+	}
+
+	/**
+	 * Reads every file, at most `PREVIEW_READ_CONCURRENCY` at a time, and answers with their texts
+	 * in the order of `files`. When a read rejects, no further read is started, the ones in flight
+	 * are awaited, and the rejection of the earliest file in `files` is thrown as it came: what a
+	 * preview reading one note after another would have thrown.
+	 */
+	private async readAll(files: readonly InventoryVaultFile[]): Promise<string[]> {
+		const limit = createLimiter(PREVIEW_READ_CONCURRENCY);
+		let failed = false;
+		const settled = await Promise.allSettled(files.map((file) => limit(async () => {
+			if (failed) return '';
+			let read = false;
+			try {
+				const content = await this.vault.read(file);
+				read = true;
+				return content;
+			} finally {
+				if (!read) failed = true;
+			}
+		})));
+		const contents: string[] = [];
+		for (const outcome of settled) {
+			if (outcome.status === 'rejected') throw outcome.reason;
+			contents.push(outcome.value);
+		}
+		return contents;
 	}
 
 	private inventoryFiles(folder: string): InventoryVaultFile[] {
@@ -1212,11 +1293,7 @@ function validateInventoryNoteMarker(content: string): InventoryMarkerValidation
  * values followed by whatever the user appended. It stays in that older shape until its data
  * changes; the next rewrite adds the end marker.
  */
-async function classifyInventoryNote(content: string): Promise<
-	| { status: 'owned'; note: OwnedInventoryNote }
-	| { status: 'foreign' }
-	| { status: 'conflict'; positionId: string | null }
-> {
+async function classifyInventoryNote(content: string): Promise<InventoryNoteClassification> {
 	const validation = validateInventoryNoteMarker(content);
 	if (validation.status !== 'valid') return validation;
 	const { positionId, hash, markerText, fields, managed, userFrontmatter, prefix, afterMarker } = validation;
@@ -1239,6 +1316,20 @@ async function classifyInventoryNote(content: string): Promise<
 	const currentKeys = INVENTORY_NOTE_KEYS.every((key) => key in managed)
 		&& RETIRED_INVENTORY_NOTE_KEYS.every((key) => !(key in managed));
 	return { status: 'owned', note: { fields, currentKeys, block, userFrontmatter, prefix, suffix } };
+}
+
+/**
+ * Freezes a classification before `InventoryVaultSyncService` remembers it across previews. Every
+ * value of `OwnedInventoryNote.fields` is a primitive, and the rest of the note is a boolean
+ * (`currentKeys`) and strings, so freezing the note and its fields leaves nothing a later preview
+ * could change; code that tried would throw instead of corrupting it.
+ */
+function freezeClassification(classified: InventoryNoteClassification): InventoryNoteClassification {
+	if (classified.status === 'owned') {
+		Object.freeze(classified.note.fields);
+		Object.freeze(classified.note);
+	}
+	return Object.freeze(classified);
 }
 
 /** Where `END_MARKER` starts as a whole line of `text`, or -1. */
