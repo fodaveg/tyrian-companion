@@ -301,9 +301,15 @@ function isInventoryAdvisorResultForInputUnsafe(
 			? depthItem.buys.reduce((total, level) => total + level.quantity, 0)
 			: price?.bid?.quantity ?? 0;
 		if (!Number.isSafeInteger(demonstratedBid) || sold > demonstratedBid) return false;
-		let remainingBid = demonstratedBid;
-		for (const decision of line.decisions) {
-			const explanation = report.explanations.find((entry) => entry.ref === decision.explanationRef);
+		// One figure for the whole line, taken before any decision is checked. The public order puts
+		// `list` ahead of `sell`, so a count that ran along the decisions met the surplus of a stack while
+		// the sale of that same stack had not been discounted yet, and demanded `sell` for it.
+		const unsoldBid = demonstratedBid - sold;
+		const lineExplanations = line.decisions
+			.map((decision) => report.explanations.find((entry) => entry.ref === decision.explanationRef));
+		let priceRouteCuts: Map<string, PriceRouteCut[]> | undefined;
+		for (const [decisionIndex, decision] of line.decisions.entries()) {
+			const explanation = lineExplanations[decisionIndex];
 			const withheld = withheldEconomicReason(input, knowledgePack as InventoryKnowledgePackV1 | undefined, decision, line.itemId);
 			const explained = explanation?.reasonCodes.length === 1
 				&& ['economic_comparison_missing', 'economic_activation_pending'].includes(explanation.reasonCodes[0]!)
@@ -316,13 +322,109 @@ function isInventoryAdvisorResultForInputUnsafe(
 				if (!validEconomicDecisionAgainstInput(decision, line, input,
 					knowledgePack as InventoryKnowledgePackV1 | undefined, containerEconomy,
 					personalValuation, report.explanations)) return false;
-			} else if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException,
-				remainingBid, explanation?.reasonCodes ?? [], materialStorageCapacity, depthItem,
-				knowledgePack as InventoryKnowledgePackV1 | undefined, equipmentSalvage, expectedPositions)) return false;
-			if (decision.action === 'sell') remainingBid -= decision.quantity;
+				continue;
+			}
+			const validWith = (allowSell: boolean): boolean => validDecisionAgainstInput(decision, line, input, reserved,
+				expectedException, allowSell, explanation?.reasonCodes ?? [], materialStorageCapacity, depthItem,
+				knowledgePack as InventoryKnowledgePackV1 | undefined, equipmentSalvage, expectedPositions);
+			// A sale is the instant route by definition; anything else had it open only if the unsold bid
+			// still absorbs all of it.
+			const allowSell = decision.action === 'sell' || unsoldBid >= decision.quantity;
+			if (depthItem?.coverage === 'complete'
+				|| (decision.action !== 'sell' && decision.action !== 'list' && decision.action !== 'vendor')) {
+				if (!validWith(allowSell)) return false;
+				continue;
+			}
+			// Prices route. A decision that is one of the cuts the classifier makes of its position is
+			// reproduced with the instant sale as that cut had it, and each cut answers for one decision.
+			priceRouteCuts ??= priceRouteCutsOfLine(line, lineExplanations, input, price, depthItem, demonstratedBid);
+			const cut = decision.allocations.length !== 1 ? undefined
+				: priceRouteCuts.get(decision.allocations[0]!.positionRef)?.find((candidate) => !candidate.claimed
+					&& candidate.quantity === decision.quantity && validWith(candidate.allowSell));
+			if (cut !== undefined) {
+				cut.claimed = true;
+				continue;
+			}
+			// Any other shape (one decision over several positions, a result classified with complete depth
+			// and verified without it) answers to the unsold bid of the line, and is refused when it was
+			// routed without a bid that the route would have sold: the classifier offers the bid first.
+			if (!allowSell && unsoldBid > 0 && instantRouteSells(decision, line.itemId, input, price, depthItem, unsoldBid)) return false;
+			if (!validWith(allowSell)) return false;
 		}
 	}
 	return true;
+}
+
+/** One slice of a position as the classifier cuts it on the prices route. */
+interface PriceRouteCut {
+	quantity: number;
+	/** Whether the instant sale was open to this slice: only to the part the bid still absorbed. */
+	allowSell: boolean;
+	claimed: boolean;
+}
+
+/**
+ * The cuts the classifier makes of one line on the prices route (no complete depth for the object),
+ * by position ref. It walks the positions in inventory order with one bid for the whole object: of
+ * what a position has left for the market, the part the remaining bid absorbs is one slice routed
+ * with the instant sale open, the rest a second slice routed without it, and only a slice the route
+ * actually sells spends bid (also when an active buy order then withholds that sale for review).
+ * What a position has left is its quantity minus what the line set aside before the market route:
+ * reservations, keep exceptions, material deposits and positions it cannot act on.
+ */
+function priceRouteCutsOfLine(
+	line: InventoryAdvisorLineV1,
+	explanations: ReadonlyArray<InventoryAdvisorExplanationV1 | undefined>,
+	input: InventoryAdvisorInputV1,
+	price: InventoryAdvisorInputV1['prices']['items'][number] | undefined,
+	marketDepth: InventoryMarketDepthEvidenceV1['items'][number] | undefined,
+	demonstratedBid: number,
+): Map<string, PriceRouteCut[]> {
+	const cuts = new Map<string, PriceRouteCut[]>();
+	const item = input.catalog.items[String(line.itemId)];
+	if (!item) return cuts;
+	const setAside = new Map<string, number>();
+	line.decisions.forEach((decision, index) => {
+		if (decision.action !== 'deposit_material' && explanations[index]?.reasonCodes.some((code) => code === 'reserved_for_goal'
+			|| code === 'user_keep_exception' || code === 'position_not_actionable') !== true) return;
+		for (const allocation of decision.allocations) {
+			setAside.set(allocation.positionRef, (setAside.get(allocation.positionRef) ?? 0) + allocation.quantity);
+		}
+	});
+	let remainingBid = demonstratedBid;
+	for (const position of line.positions) {
+		const holding = input.snapshot.holdings[position.holdingIndex];
+		const quantity = position.quantity - (setAside.get(position.ref) ?? 0);
+		if (position.state !== 'loose' || holding?.kind !== 'item' || quantity <= 0) continue;
+		const absorbed = Math.min(quantity, remainingBid);
+		const positionCuts: PriceRouteCut[] = [];
+		if (absorbed > 0) {
+			positionCuts.push({ quantity: absorbed, allowSell: true, claimed: false });
+			if (selectInventoryMarketRoute({ holding, item, price, marketDepth,
+				tradingPostAccess: input.accountSignals.tradingPostAccess, quantity: absorbed, allowSell: true,
+				listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps }).action === 'sell') remainingBid -= absorbed;
+		}
+		if (quantity > absorbed) positionCuts.push({ quantity: quantity - absorbed, allowSell: false, claimed: false });
+		cuts.set(position.ref, positionCuts);
+	}
+	return cuts;
+}
+
+/** Whether the prices route, with the instant sale open, sells `quantity` units of the decision's first position. */
+function instantRouteSells(
+	decision: InventoryRecommendationDecisionV1,
+	itemId: number,
+	input: InventoryAdvisorInputV1,
+	price: InventoryAdvisorInputV1['prices']['items'][number] | undefined,
+	marketDepth: InventoryMarketDepthEvidenceV1['items'][number] | undefined,
+	quantity: number,
+): boolean {
+	const item = input.catalog.items[String(itemId)];
+	const first = decision.allocations[0];
+	const holding = first === undefined ? undefined : input.snapshot.holdings[allocationPositionIndex(first.positionRef)];
+	return item !== undefined && holding?.kind === 'item' && selectInventoryMarketRoute({ holding, item, price, marketDepth,
+		tradingPostAccess: input.accountSignals.tradingPostAccess, quantity, allowSell: true,
+		listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps }).action === 'sell';
 }
 
 function requiresContainerEconomyReproduction(
@@ -441,7 +543,7 @@ function validDecisionAgainstInput(
 	input: InventoryAdvisorInputV1,
 	reserved: number,
 	exceptionQuantity: number,
-	remainingBid: number,
+	allowSell: boolean,
 	reasonCodes: InventoryAdvisorReasonCode[],
 	materialStorageCapacity: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
 	marketDepth: InventoryMarketDepthEvidenceV1['items'][number] | undefined,
@@ -479,7 +581,7 @@ function validDecisionAgainstInput(
 		if (!holding || holding.kind !== 'item') return false;
 		const selection = selectInventoryMarketRoute({ holding, item, price, marketDepth,
 			tradingPostAccess: input.accountSignals.tradingPostAccess, quantity: decision.quantity,
-			allowSell: remainingBid >= decision.quantity, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
+			allowSell, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
 		return selection.action === decision.action && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;
 	}
 	if (decision.action === 'vendor') {
@@ -495,7 +597,7 @@ function validDecisionAgainstInput(
 		if (!holding || holding.kind !== 'item') return false;
 		const selection = selectInventoryMarketRoute({ holding, item, price, marketDepth,
 			tradingPostAccess: input.accountSignals.tradingPostAccess, quantity: decision.quantity,
-			allowSell: remainingBid >= decision.quantity, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
+			allowSell, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
 		return selection.action === 'vendor' && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;
 	}
 	if (decision.action === 'salvage' && equipmentSalvage !== undefined && knowledgePack !== undefined) {
