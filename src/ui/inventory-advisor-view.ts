@@ -460,6 +460,8 @@ interface MountedInventoryAdvisorView {
 
 /** The rows of one mounted list: scoped once per data and scope, ordered once per order. */
 interface InventoryListProjection {
+	/** The `model.groups` it was computed from: an update that brings other groups makes it stale. */
+	readonly groups: InventoryAdvisorViewModel['groups'];
 	readonly scopeKey: string;
 	readonly scoped: ScopedInventoryAdvisorRows;
 	orderKey: string;
@@ -784,8 +786,10 @@ function mountInventoryAdvisorView(
 		const scopeKey = JSON.stringify([
 			filters.character ?? ALL_CHARACTERS, filters.includeBank === true, filters.includeMaterials === true, filters.includeDelivery === true,
 		]);
-		if (dataChanged || projection === null || projection.scopeKey !== scopeKey) {
-			projection = { scopeKey, scoped: scopeInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), filters), orderKey: '', ordered: [] };
+		// By identity: an update can bring other groups under the same `contentVersion`, and a key
+		// of the search must not filter and order the rows the previous groups left.
+		if (dataChanged || projection === null || projection.groups !== model.groups || projection.scopeKey !== scopeKey) {
+			projection = { groups: model.groups, scopeKey, scoped: scopeInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), filters), orderKey: '', ordered: [] };
 			rowElements.clear();
 		}
 		const order = filters.sort ?? 'value_desc';
@@ -855,6 +859,8 @@ function mountInventoryAdvisorView(
 			concentration: (row) => (shownConcentration ??= inventoryAdvisorValueConcentration(shownRows)).get(row.id) ?? null,
 			mountedDetails,
 		};
+		// Whatever `renderInventoryListRow` reads besides the row itself must enter this key, or a
+		// kept row element shows a stale value after that input changes.
 		const nextRowElementsKey = JSON.stringify([rowContext.showSlotsFreed, keep === null ? null : [keep.busy, [...keep.kept]]]);
 		if (nextRowElementsKey !== rowElementsKey) {
 			rowElementsKey = nextRowElementsKey;
@@ -1472,7 +1478,10 @@ function rowDetailDisclosure(
 		details.replaceChildren(summary);
 	}
 	// The click comes before the browser opens the detail, so the body is there when it shows;
-	// `toggle` covers an opening that is not a click (find-in-page) and every closing.
+	// `toggle` covers an opening that is not a click (an assistive tool, a script) and every closing.
+	// Deliberate: page search in a browser does not find the text of a closed row, so it does not
+	// open it either. Keeping the bodies mounted would keep half of the nodes this removes, and
+	// Obsidian's own views have no page search; only the web build of Hebra is affected.
 	summary.addEventListener('click', () => { if (!details.open) mountBody(); });
 	details.addEventListener('toggle', () => {
 		if (details.open) mountBody();
