@@ -554,6 +554,41 @@ describe('inventory Vault preview and apply', () => {
 		expect(vault.markdownFiles()).toHaveLength(2);
 	});
 
+	it('counts only the notes it wrote in a storage_failure, never the steps that needed no write', async () => {
+		const vault = new FlakyCreateInventoryVault(4);
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const all = await inputWithAllSources();
+		const initial = { ...all, positions: all.positions.filter((position) => position.source !== 'materials') };
+		await service.apply(await service.preview(ROOT, initial));
+		const plan = await service.preview(ROOT, all);
+		expect(plan.steps.map((entry) => entry.status).sort()).toEqual(['create', 'unchanged', 'unchanged', 'unchanged', 'unchanged']);
+		const ticks: Array<[number, number]> = [];
+		await expect(service.apply(plan, (completed, total) => ticks.push([completed, total]))).resolves.toEqual({
+			status: 'storage_failure', message: 'An inventory note could not be created.', written: 0, errorName: 'EACCES',
+		});
+		// Progress still counts the four settled steps; it is not what `written` reports.
+		expect(ticks).toEqual([[4, 5]]);
+	});
+
+	it('counts only the notes it wrote in a storage_failure, never the ones that ended in conflict', async () => {
+		const vault = new FlakyCreateInventoryVault(4);
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const all = await inputWithAllSources();
+		const initial = { ...all, positions: all.positions.filter((position) => position.source !== 'materials') };
+		await service.apply(await service.preview(ROOT, initial));
+		const repriced = { ...all, positions: all.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+		const plan = await service.preview(ROOT, repriced);
+		expect(plan.steps.map((entry) => entry.status).sort()).toEqual(['create', 'update', 'update', 'update', 'update']);
+		// The bank note sorts first and changes after the preview: a conflict, not a write.
+		const raced = plan.steps[0]!;
+		expect(raced.status).toBe('update');
+		vault.contents.set(raced.path, `${raced.before!}\nraced\n`);
+		// The fifth create of this vault is denied. Before it, in path order: one conflict and two updates.
+		await expect(service.apply(plan)).resolves.toEqual({
+			status: 'storage_failure', message: 'An inventory note could not be created.', written: 2, errorName: 'EACCES',
+		});
+	});
+
 	it('R1a: canonicalPathFor answers every note the writer wrote with the path it wrote it to', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);

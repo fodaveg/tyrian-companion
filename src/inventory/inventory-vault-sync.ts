@@ -193,8 +193,10 @@ export type InventoryVaultSyncResult =
 	 * A real storage rejection (e.g. `EACCES`) hit mid-apply, distinct from `conflict` (another
 	 * writer's note occupies the path) and from `unavailable` (H15.11, 2026-09-10 incident: the
 	 * apply is not atomic, so `written` carries how many of the plan's writes already landed
-	 * instead of implying nothing did). `errorName` is the rejection's class only, never its
-	 * message or stack.
+	 * instead of implying nothing did). `written` counts persisted operations only (notes created,
+	 * updated or deactivated before the rejection): a step that needed no write, or that ended in
+	 * conflict, is progress and never a write. `errorName` is the rejection's class only, never
+	 * its message or stack.
 	 */
 	| { status: 'storage_failure'; message: string; written: number; errorName: string };
 
@@ -839,11 +841,16 @@ export class InventoryVaultSyncService {
 			return { status: 'invalid', message: 'The inventory preview is invalid or blocked.' };
 		}
 		const total = plan.steps.length;
+		// Progress only: the steps already walked, including the ones that needed no write and the
+		// ones that ended in conflict. What was persisted is `created`, `updated` and `deactivated`.
 		let completed = 0;
 		// H18.16: a conflict belongs to its own note. A step the preview already marked as one, or a
 		// note that changed between preview and write (the user typing in it), is skipped and
 		// counted; every other planned write still lands.
 		let conflicts = 0;
+		let created = 0;
+		let updated = 0;
+		let deactivated = 0;
 		try {
 			const skipped = new Set<InventoryVaultSyncStep>();
 			for (const entry of plan.steps) {
@@ -867,9 +874,6 @@ export class InventoryVaultSyncService {
 			onStep?.(completed, total);
 			if (writes.length === 0) return { status: 'unchanged', created: 0, updated: 0, deactivated: 0, conflicts };
 			await ensureFolders(this.vault, inventoryFolder(plan.root));
-			let created = 0;
-			let updated = 0;
-			let deactivated = 0;
 			for (const entry of writes) {
 				if (entry.status === 'create') {
 					if (entry.after === null) return { status: 'invalid', message: 'The inventory plan contains an empty write.' };
@@ -882,7 +886,7 @@ export class InventoryVaultSyncService {
 						if (!raced) {
 							return {
 								status: 'storage_failure', message: 'An inventory note could not be created.',
-								written: completed, errorName: errorClassName(error),
+								written: created + updated + deactivated, errorName: errorClassName(error),
 							};
 						}
 						landed = normalizeLf(await this.vault.read(raced)) === entry.after;
@@ -930,7 +934,7 @@ export class InventoryVaultSyncService {
 		} catch (error) {
 			return {
 				status: 'storage_failure', message: 'Inventory notes could not be written safely.',
-				written: completed, errorName: errorClassName(error),
+				written: created + updated + deactivated, errorName: errorClassName(error),
 			};
 		}
 	}

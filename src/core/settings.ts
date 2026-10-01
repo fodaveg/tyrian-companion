@@ -76,12 +76,19 @@ export interface InventoryVaultSyncLastRun {
 	status: InventoryVaultSyncRunStatus;
 	finishedAt: string;
 	durationMs: number;
+	/**
+	 * On `success`, what the writer persisted: `create`, `update` and `deactivate` are the notes it
+	 * really created, updated and deactivated, and `conflicts` every note it skipped. On `error`,
+	 * what the plan foresaw. A receipt saved by an earlier build carries the plan's counts in both cases;
+	 * the shape is the same and it is read as it was saved.
+	 */
 	summary: InventoryVaultSyncPlanSummarySnapshot | null;
 	error: InventoryVaultSyncRunErrorReason | null;
 	/**
 	 * Set only for a partial `storage_failure` (H15.11, 2026-09-10 incident): how many of the
-	 * plan's writes already landed before the rejection, and how many the plan had in total, so
-	 * the panel can say "wrote N of M" instead of implying nothing was written.
+	 * plan's writes already landed before the rejection, and how many writes the plan had, so
+	 * the panel can say "wrote N of M" instead of implying nothing was written. Neither counts a
+	 * step that needed no write. A receipt saved by an earlier build counted those steps in both.
 	 */
 	written?: number;
 	total?: number;

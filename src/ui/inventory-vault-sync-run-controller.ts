@@ -246,11 +246,14 @@ export class InventoryVaultOneClickSyncController {
 			return;
 		}
 		if (result.status === 'applied' || result.status === 'unchanged') {
-			this.settle('success', null, startedAt, generation, summary);
+			this.settle('success', null, startedAt, generation, persistedSummary(summary, result));
 		} else if (result.status === 'conflict' || result.status === 'invalid') {
 			this.enter({ status: 'conflict', summary }, generation);
 		} else if (result.status === 'storage_failure') {
-			this.settle('error', 'storage_failure', startedAt, generation, summary, result.errorName, result.written, plan.steps.length);
+			// `summary` stays the plan here: what was foreseen. What landed is `written`, out of the
+			// writes the plan had; a step that needed no write or was already a conflict is neither.
+			this.settle('error', 'storage_failure', startedAt, generation, summary, result.errorName, result.written,
+				summary.create + summary.update + summary.deactivate);
 		} else {
 			this.settle('error', 'write_unavailable', startedAt, generation, summary);
 		}
@@ -373,6 +376,29 @@ export class InventoryVaultOneClickSyncController {
 		this.maxPercent = clamped;
 		return clamped;
 	}
+}
+
+/**
+ * The receipt of a settled apply: what the writer persisted, never what the plan foresaw. `create`,
+ * `update` and `deactivate` are the writer's own `created`, `updated` and `deactivated`, and
+ * `conflicts` is every note it skipped, the ones the preview already marked included. `positions`
+ * and `unchanged` describe the plan and are not writes. A stubbed result without `conflicts`
+ * counts as a conflict every planned write that the writer does not report as persisted.
+ */
+function persistedSummary(
+	planned: InventoryVaultSyncPlanSummary,
+	result: Extract<InventoryVaultSyncResult, { status: 'applied' | 'unchanged' }>,
+): InventoryVaultSyncPlanSummary {
+	const plannedWrites = planned.create + planned.update + planned.deactivate;
+	const persisted = result.created + result.updated + result.deactivated;
+	return {
+		positions: planned.positions,
+		create: result.created,
+		update: result.updated,
+		unchanged: planned.unchanged,
+		deactivate: result.deactivated,
+		conflicts: result.conflicts ?? planned.conflicts + Math.max(0, plannedWrites - persisted),
+	};
 }
 
 /** Characters first (the long leg), then the account stores, then catalog/prices, then roster itself. */
