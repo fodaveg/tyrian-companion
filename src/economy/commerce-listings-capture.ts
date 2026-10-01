@@ -2,6 +2,7 @@ import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { createLimiter } from '../core/concurrency';
 import { HttpTransportError } from '../core/http';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
+import { chunks } from '../core/chunks';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import {
 	isCommerceListingLevels,
@@ -105,7 +106,6 @@ function unavailable(itemId: number): InventoryItemMarketDepthV1 { return { item
 function missing(itemId: number): InventoryItemMarketDepthV1 { return { itemId, coverage: 'missing', buys: [], sells: [] }; }
 function invalid(itemId: number): InventoryItemMarketDepthV1 { return { itemId, coverage: 'invalid', buys: [], sells: [] }; }
 function normalizeIds(values: readonly number[]): number[] { return [...new Set(values.filter(positive))].sort((a, b) => a - b); }
-function chunks<T>(values: readonly T[], size: number): T[][] { const result: T[][] = []; for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size)); return result; }
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
 function nonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0; }
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }

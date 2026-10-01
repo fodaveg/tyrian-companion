@@ -716,9 +716,9 @@
 				{
 					"id": "ae95394bdc90ce9344c6e5436aa65a00d872929d",
 					"kind": "callback_registration",
-					"line": 90,
+					"line": 91,
 					"column": 19,
-					"endLine": 90,
+					"endLine": 91,
 					"endColumn": 165,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -733,9 +733,9 @@
 				{
 					"id": "5a7c0d42695901f992fb15e15691a79e135ec5b0",
 					"kind": "catch_clause",
-					"line": 122,
+					"line": 123,
 					"column": 5,
-					"endLine": 126,
+					"endLine": 127,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -749,9 +749,9 @@
 				{
 					"id": "c9c5f100bf7ac55436d9763cf71453750e3ea71e",
 					"kind": "catch_clause",
-					"line": 210,
+					"line": 211,
 					"column": 5,
-					"endLine": 215,
+					"endLine": 216,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -765,9 +765,9 @@
 				{
 					"id": "fb07df20c1acab17e9d4a938dc644c2c3c3b6f99",
 					"kind": "catch_clause",
-					"line": 225,
+					"line": 226,
 					"column": 5,
-					"endLine": 227,
+					"endLine": 228,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -781,9 +781,9 @@
 				{
 					"id": "cfc02c478f94b779d9ee54eb627d6d6da880060e",
 					"kind": "catch_clause",
-					"line": 233,
+					"line": 234,
 					"column": 3,
-					"endLine": 233,
+					"endLine": 234,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -797,9 +797,9 @@
 				{
 					"id": "bf5c52b661ea56712002ecf3f4eac65ea2dcf240",
 					"kind": "catch_clause",
-					"line": 348,
+					"line": 349,
 					"column": 4,
-					"endLine": 348,
+					"endLine": 349,
 					"endColumn": 47,
 					"classification": "allowlisted",
 					"evidence": {
@@ -813,9 +813,9 @@
 				{
 					"id": "bc703a0c50dd2460dff391e06394f32d3e974705",
 					"kind": "catch_clause",
-					"line": 410,
+					"line": 411,
 					"column": 5,
-					"endLine": 410,
+					"endLine": 411,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -829,9 +829,9 @@
 				{
 					"id": "eb7fc5eae8241421f79ba2465951ff14de6cfa50",
 					"kind": "catch_clause",
-					"line": 465,
+					"line": 466,
 					"column": 4,
-					"endLine": 465,
+					"endLine": 466,
 					"endColumn": 129,
 					"classification": "allowlisted",
 					"evidence": {
@@ -845,9 +845,9 @@
 				{
 					"id": "64c34bc724f0a9e2d6982a0e8b92ae9d3acc391c",
 					"kind": "catch_clause",
-					"line": 489,
+					"line": 490,
 					"column": 4,
-					"endLine": 489,
+					"endLine": 490,
 					"endColumn": 144,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2439,9 +2439,9 @@
 				{
 					"id": "8ed75409e1e35e75f436e3812c70f5e2a50771f2",
 					"kind": "callback_registration",
-					"line": 77,
+					"line": 78,
 					"column": 19,
-					"endLine": 79,
+					"endLine": 80,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -2456,9 +2456,9 @@
 				{
 					"id": "8f3a2d9a8e9d708089eef7c9d9825bfb52a53e03",
 					"kind": "catch_clause",
-					"line": 233,
+					"line": 234,
 					"column": 5,
-					"endLine": 246,
+					"endLine": 247,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2472,9 +2472,9 @@
 				{
 					"id": "de72e077145521bcd9b92a25cc1f83dcfeb02dbf",
 					"kind": "catch_clause",
-					"line": 285,
+					"line": 286,
 					"column": 6,
-					"endLine": 290,
+					"endLine": 291,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2493,6 +2493,11 @@
 			"boundaries": []
 		},
 		"src/core/canonical-sha256.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/core/chunks.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
@@ -3221,9 +3226,9 @@
 				{
 					"id": "83ee77749c998da2a79968d0425592566fa0e95a",
 					"kind": "catch_clause",
-					"line": 43,
+					"line": 44,
 					"column": 5,
-					"endLine": 48,
+					"endLine": 49,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4665,9 +4670,9 @@
 				{
 					"id": "15ec304b0f78b7048196390c160e16e73ce063fd",
 					"kind": "catch_clause",
-					"line": 83,
+					"line": 84,
 					"column": 5,
-					"endLine": 85,
+					"endLine": 86,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4697,9 +4702,9 @@
 				{
 					"id": "ec962583445131a862c3eb62f6c3fda0734ac6bb",
 					"kind": "catch_clause",
-					"line": 60,
+					"line": 61,
 					"column": 5,
-					"endLine": 63,
+					"endLine": 64,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4711,9 +4716,9 @@
 				{
 					"id": "184c3f06ae60570798cbfceff8b3af33b705d289",
 					"kind": "catch_clause",
-					"line": 108,
+					"line": 109,
 					"column": 6,
-					"endLine": 111,
+					"endLine": 112,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4727,9 +4732,9 @@
 				{
 					"id": "d3961fdeab7c7b323f3a54915fd15c07a5311d45",
 					"kind": "catch_clause",
-					"line": 129,
+					"line": 130,
 					"column": 6,
-					"endLine": 132,
+					"endLine": 133,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4743,9 +4748,9 @@
 				{
 					"id": "ee94dfadfa7befbe37d35c5004df221a68c969f8",
 					"kind": "catch_clause",
-					"line": 141,
+					"line": 142,
 					"column": 3,
-					"endLine": 144,
+					"endLine": 145,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4759,9 +4764,9 @@
 				{
 					"id": "e3cb7ffc533f6343fbdcf44add6fb778cf51e6f8",
 					"kind": "catch_clause",
-					"line": 152,
+					"line": 153,
 					"column": 44,
-					"endLine": 152,
+					"endLine": 153,
 					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10466,9 +10471,9 @@
 				{
 					"id": "b3c44186e9addba271306dd7a79126be4e79f399",
 					"kind": "catch_clause",
-					"line": 35,
+					"line": 36,
 					"column": 6,
-					"endLine": 37,
+					"endLine": 38,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {

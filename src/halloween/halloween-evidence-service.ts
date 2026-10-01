@@ -9,6 +9,7 @@ import {
 	type LocalDebugActionPort,
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
+import { chunks } from '../core/chunks';
 import { parsePublicTradingPostPriceBatch, type PublicTradingPostItemPrice } from '../economy/session-price-snapshot';
 import type { HalloweenItemEvidence } from './halloween-model';
 import type { HalloweenUnlockService } from './halloween-unlocks';
@@ -204,11 +205,6 @@ function safePercent(value: number, percent: number): number | null {
 }
 function maximum(left: number | null, right: number | null): number | null {
 	return left === null ? right : right === null ? left : Math.max(left, right);
-}
-function chunks<T>(values: T[], size: number): T[][] {
-	const result: T[][] = [];
-	for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
-	return result;
 }
 
 function positiveInteger(value: unknown): value is number {

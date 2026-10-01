@@ -1,6 +1,7 @@
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
+import { chunks } from '../core/chunks';
 import {
 	isInventoryMarketDepthEvidence,
 	type InventoryMarketDepthEvidenceV1,
@@ -251,12 +252,6 @@ function isSessionItemPrice(value: unknown): value is SessionItemPrice {
 function isQuoteSide(value: unknown): value is TradingPostQuoteSide {
 	return isRecord(value) && exactKeys(value, ['unitCopper', 'quantity'])
 		&& positiveInteger(value.unitCopper) && positiveInteger(value.quantity);
-}
-
-function chunks<T>(values: T[], size: number): T[][] {
-	const result: T[][] = [];
-	for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
-	return result;
 }
 
 function strictlyAscending(values: number[]): boolean {

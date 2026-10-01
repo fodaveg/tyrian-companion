@@ -1,5 +1,6 @@
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
+import { chunks } from '../core/chunks';
 
 const MAX_BATCH_SIZE = 200;
 
@@ -63,8 +64,3 @@ function uniqueSorted(values: readonly number[]): number[] {
 		.sort((left, right) => left - right);
 }
 
-function chunks<T>(values: T[], size: number): T[][] {
-	const result: T[][] = [];
-	for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
-	return result;
-}

@@ -24,6 +24,7 @@ import {
 	readCatalogEntryId,
 } from './public-catalog-parsers';
 import { canonicalJson as canonical } from '../core/canonical-sha256';
+import { chunks } from '../core/chunks';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const NEGATIVE_TTL_MS = 60 * 60 * 1_000;
@@ -206,7 +207,7 @@ export class PublicCatalogService {
 			unresolved.push(id);
 		}
 
-		const batches = chunk(uniqueSorted(unresolved), BATCH_SIZE);
+		const batches = chunks(uniqueSorted(unresolved), BATCH_SIZE);
 		await Promise.all(
 			batches.map((batch) =>
 				this.requestLimit(() => this.fetchBatch(kind, batch, locale, parse, now, stale, result)),
@@ -429,14 +430,6 @@ function buildPath(kind: CatalogKind, ids: number[], locale: CatalogLocale): str
 
 function uniqueSorted(values: number[]): number[] {
 	return [...new Set(values)].sort((left, right) => left - right);
-}
-
-function chunk(values: number[], size: number): number[][] {
-	const chunks: number[][] = [];
-	for (let index = 0; index < values.length; index += size) {
-		chunks.push(values.slice(index, index + size));
-	}
-	return chunks;
 }
 
 function mapEntities<T>(values: Map<number, T>): Record<string, T> {
