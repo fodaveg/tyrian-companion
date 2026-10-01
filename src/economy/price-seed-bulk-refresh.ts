@@ -65,8 +65,8 @@ export interface PriceSeedBulkRefreshOutcome {
  *   per-run cap. An item with no seed is left for the next action's `missing` phase.
  */
 export type PriceSeedBulkRefreshPhase =
-	| { scope: 'missing' }
-	| { scope: 'stale'; budget: number };
+	| { scope: 'missing'; budget?: number; allowed?: () => boolean }
+	| { scope: 'stale'; budget: number; allowed?: () => boolean };
 
 export interface PriceSeedBulkRefreshOptions {
 	priceHistory: Pick<TyrianPriceHistoryPort, 'openSeedCache' | 'openNoSeedCache'>;

@@ -586,8 +586,9 @@ describe('inventory value and character scope', () => {
 /**
  * 1 oct 2026. The core's own port closure is built inside `initializeRuntime` and no test reaches
  * it with a real capture, so this is a COMPOSITION: the real analysis, workflow, controller and
- * seed service, joined by the two core methods that closure calls (`refreshPriceSeedsForSync` as
- * the analysis port's `refreshPriceSeeds`, and `refreshInventoryAdvisor` as the action).
+ * seed service, joined by the core methods that closure calls (`refreshPriceSeedsForSync` as the
+ * analysis port's `refreshPriceSeeds`, `refreshInventoryAdvisor` as the analysis, and
+ * `runInventoryVaultSync` as the action whose end starts the stale copies).
  */
 describe('seed phases of an inventory sync, by composition of the real analysis, workflow, controller and seed service (not through the core\'s own port closure)', () => {
 	const VAULT = 'vault-phases';
@@ -620,10 +621,18 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 			},
 		});
 		const harness = {
-			runtimeReady: true, unloaded: false, settings: { language: 'es' },
+			runtimeReady: true, unloaded: false, settings: { language: 'es', priceHistoryEnabled: true },
 			priceSeedBulkRefresh: service, priceSeedQueueCoverage: null as unknown,
+			priceSeedDeferredRequest: null as unknown,
 			priceSeedDeferredPass: null as Promise<void> | null,
+			priceSeedSyncAction: null as unknown,
+			priceSeedSyncGeneration: 0,
 			inventoryAdvisor: null as InventoryAdvisorPresentationController | null,
+			// The one-click controller's place: the whole action is this one analysis.
+			inventoryVaultSyncRun: {
+				run: async () => { await coreMethods.refreshInventoryAdvisor.call(harness); return { status: 'idle', lastRun: null }; },
+				current: () => ({ status: 'idle', lastRun: null }),
+			},
 			renderInventoryAdvisorViews: vi.fn(),
 			// The Sale hero card is not part of this composition.
 			refreshSaleHeroTiming: async () => undefined,
@@ -649,7 +658,7 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 		});
 		const controller = new InventoryAdvisorPresentationController({ load: async () => await workflow.refresh('es') });
 		harness.inventoryAdvisor = controller;
-		const refresh = coreMethods.refreshInventoryAdvisor.call(harness);
+		const refresh = coreMethods.runInventoryVaultSync.call(harness);
 		return {
 			harness, calls, started, refresh,
 			maxInFlight: () => maxInFlight,
@@ -706,6 +715,7 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 const coreMethods = TyrianCompanionCore.prototype as unknown as {
 	refreshInventoryAdvisor(this: object): Promise<void>;
 	refreshPriceSeedsForSync(this: object, itemIds: readonly number[]): Promise<void>;
+	runInventoryVaultSync(this: object): Promise<void>;
 };
 
 function pick(value: { tc_recommendation: string; tc_recommendation_reason: string }): Pick<InventoryVaultPosition, 'recommendation' | 'recommendationReason'> {

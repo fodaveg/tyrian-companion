@@ -289,6 +289,31 @@ describe('PriceSeedBulkRefreshService phases: missing seeds first, stale copies 
 		service.dispose();
 	});
 
+	it('the missing phase of a later analysis of the same action spends only the budget it is given', async () => {
+		const { requested, service } = await withStaleSeeds([1]);
+		const outcome = await service.run([1, 2, 3, 4], undefined, { scope: 'missing', budget: 2 });
+		expect(requested).toEqual([2, 3]);
+		expect(outcome).toMatchObject({ attempted: 2, staleSkipped: 1, deferredBudget: 0 });
+		service.dispose();
+	});
+
+	it('the stale phase stops at the next item once the caller no longer allows it', async () => {
+		const { requested, service } = await withStaleSeeds([1, 2, 3]);
+		// Allowed until the first download has been made, as when the opt-in is switched off mid-pass.
+		const outcome = await service.run([1, 2, 3], undefined, { scope: 'stale', budget: 3, allowed: () => requested.length === 0 });
+		expect(requested).toEqual([1]);
+		expect(outcome).toMatchObject({ attempted: 1, seeded: 1 });
+		service.dispose();
+	});
+
+	it('the missing phase stops at the next item once the caller no longer allows it', async () => {
+		const { requested, service } = await withStaleSeeds([]);
+		const outcome = await service.run([5, 6, 7], undefined, { scope: 'missing', allowed: () => requested.length === 0 });
+		expect(requested).toEqual([5]);
+		expect(outcome).toMatchObject({ attempted: 1, seeded: 1 });
+		service.dispose();
+	});
+
 	it('writes nothing once disposed: a download that answers after dispose is dropped, not stored', async () => {
 		const factory = new IDBFactory();
 		let started!: () => void;
