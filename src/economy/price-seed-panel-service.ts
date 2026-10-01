@@ -4,7 +4,7 @@ import {
 	type LocalDebugActionPort,
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
-import { runSerialTaskUnqueued, type SerialTaskRunner } from '../core/serial-task-queue';
+import type { SerialTaskRunner } from '../core/serial-task-queue';
 import type { TyrianPriceHistoryPort, TyrianPriceSeedCache } from '../host/tyrian-host-storage';
 import { fetchPriceSeed } from './price-seed-source';
 import { PRICE_SEED_CHART_MAX_DAYS, type PriceSeedDayV1, type PriceSeedFailureReason } from './price-seed-model';
@@ -48,8 +48,10 @@ export interface PriceHistoryPanelSeedOptions {
 	 * the queue it shares with the other seed downloads of the plugin. The flight map below only
 	 * joins callers of the SAME item; two different items, the panel's and a note block's or two
 	 * note blocks', are two downloads, and without this they are two requests in flight.
+	 * Required: a service built without a queue must not compile. A caller with nothing to share
+	 * says so with `runSerialTaskUnqueued`.
 	 */
-	serialize?: SerialTaskRunner;
+	serialize: SerialTaskRunner;
 	cacheTtlMs?: number;
 	diagnostics?: LocalDebugActionPort;
 }
@@ -69,7 +71,7 @@ export class PriceHistoryPanelSeedService {
 
 	constructor(private readonly options: PriceHistoryPanelSeedOptions) {
 		this.cacheTtlMs = options.cacheTtlMs ?? PRICE_SEED_PANEL_CACHE_TTL_MS;
-		this.serialize = options.serialize ?? runSerialTaskUnqueued;
+		this.serialize = options.serialize;
 	}
 
 	/** Last known state for the item, without triggering any work. */

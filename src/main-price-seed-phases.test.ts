@@ -5,6 +5,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import { withObsidianHost } from './test/obsidian-host-harness';
+import { runSerialTaskUnqueued } from './core/serial-task-queue';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import { indexedDbPriceHistoryPort } from './host/indexed-db-price-history';
@@ -45,6 +46,8 @@ describe('price seed phases through the core: missing seeds before the result, s
 		const service = new PriceSeedBulkRefreshService({
 			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: VAULT, now: () => NOW_MS,
 			fetchSeed: probe.fetchSeed,
+			// No queue shared with a panel here: these tests are about the passes among themselves.
+			serialize: runSerialTaskUnqueued,
 		});
 		/** The derived watch list of each analysis a sync runs, in order; an analysis past the last one seeds nothing. */
 		const syncLists: Array<readonly number[]> = [];

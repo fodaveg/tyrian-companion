@@ -24,6 +24,7 @@ import {
 } from '../advisor/inventory-advisor-workflow';
 import type { InventoryObjectResultsV1 } from '../advisor/inventory-object-result';
 import { inventoryManagedAssets } from '../assets/inventory-bases';
+import { runSerialTaskUnqueued } from '../core/serial-task-queue';
 import type { CatalogItem, CatalogResolution } from '../catalog/public-catalog-model';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 import type { LegendaryMaterialsTableV1 } from '../economy/legendary-materials';
@@ -610,6 +611,7 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 		const started = () => new Promise<void>((resolve) => { waitingForACall.push(resolve); });
 		const service = new PriceSeedBulkRefreshService({
 			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: VAULT, now: () => AS_OF_MS,
+			serialize: runSerialTaskUnqueued,
 			fetchSeed: async (itemId) => {
 				calls.push(itemId);
 				inFlight += 1;

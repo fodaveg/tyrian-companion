@@ -32,7 +32,10 @@ export type SerialTaskTurn<T> = { status: 'ran'; value: T } | { status: 'dropped
 /** A queue already bound to one priority, which is all a consumer needs to be handed. */
 export type SerialTaskRunner = <T>(task: () => Promise<T>) => Promise<SerialTaskTurn<T>>;
 
-/** The runner of a consumer that was handed no queue: the task runs at once, on its own. */
+/**
+ * The runner a caller hands over when it has no queue to share: the task runs at once, on its
+ * own. Consumers take their runner as a required option, so choosing this one is explicit.
+ */
 export const runSerialTaskUnqueued: SerialTaskRunner = async (task) => ({ status: 'ran', value: await task() });
 
 interface WaitingTask {

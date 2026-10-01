@@ -46,7 +46,7 @@ export interface PriceHistoryAssemblyInput {
 	/** The reviewed outbound boundary the seed rides; the detector never opens its own. */
 	transport: HttpTransport;
 	/** The turn the seed download takes among the plugin's other datawars2 downloads; see `SellSignalRuntimeOptions.serialize`. */
-	serializeSeedDownload?: SerialTaskRunner;
+	serializeSeedDownload: SerialTaskRunner;
 	onStateChange: () => void;
 	/** Runs first after every compaction, exactly as the inline composition did. */
 	evaluatePriceAlert: (port: PriceHistoryCompactionPort) => Promise<void>;

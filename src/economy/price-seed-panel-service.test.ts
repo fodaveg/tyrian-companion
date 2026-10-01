@@ -3,7 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { HttpRequest, HttpResponse, HttpTransport } from '../core/http';
-import { SerialTaskQueue, type SerialTaskRunner } from '../core/serial-task-queue';
+import { SerialTaskQueue, runSerialTaskUnqueued, type SerialTaskRunner } from '../core/serial-task-queue';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryPanelSeedService } from './price-seed-panel-service';
 
@@ -28,6 +28,7 @@ function harness(
 		vaultId: 'vault',
 		transport,
 		now: () => Date.parse('2026-09-03T00:00:00.000Z'),
+		serialize: runSerialTaskUnqueued,
 	});
 	return { service, requests, factory };
 }
@@ -95,6 +96,7 @@ describe('PriceHistoryPanelSeedService', () => {
 			vaultId: 'vault',
 			transport: { send: async (request) => { requests.push(request); return { status: 503, headers: {}, body: null }; } },
 			now: () => Date.parse('2026-09-04T00:00:00.000Z'),
+			serialize: runSerialTaskUnqueued,
 			cacheTtlMs: 0,
 		});
 		const refreshed = await stale.ensure(36_038);

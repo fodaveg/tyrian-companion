@@ -3,7 +3,7 @@ import {
 	type LocalDebugActionPort,
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
-import { runSerialTaskUnqueued, type SerialTaskRunner, type SerialTaskTurn } from '../core/serial-task-queue';
+import type { SerialTaskRunner, SerialTaskTurn } from '../core/serial-task-queue';
 import type { TyrianPriceHistoryPort, TyrianPriceSeedCache, TyrianPriceSeedNoSeedCache } from '../host/tyrian-host-storage';
 import type { PriceSeedResult, PriceSeedQueueCoverage } from './price-seed-model';
 
@@ -86,10 +86,11 @@ export interface PriceSeedBulkRefreshOptions {
 	/**
 	 * The turn every request of a pass takes before it is sent (1 oct 2026, task 0812d53e): the
 	 * caller hands the queue it shares with the other seed downloads of the plugin, so a pass and
-	 * a panel load are never two requests in flight. Without it a request is sent at once, as
-	 * before, and only the passes of this service are serial among themselves.
+	 * a panel load are never two requests in flight. Required: a service built without a queue
+	 * must not compile. A caller with nothing to share says so with `runSerialTaskUnqueued`, and
+	 * then only the passes of this service are serial among themselves.
 	 */
-	serialize?: SerialTaskRunner;
+	serialize: SerialTaskRunner;
 	maxItemsPerRun?: number;
 	noSeedRetryMs?: number;
 	diagnostics?: LocalDebugActionPort;
@@ -115,7 +116,7 @@ export class PriceSeedBulkRefreshService {
 	constructor(private readonly options: PriceSeedBulkRefreshOptions) {
 		this.maxItemsPerRun = options.maxItemsPerRun ?? PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN;
 		this.noSeedRetryMs = options.noSeedRetryMs ?? PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS;
-		this.serialize = options.serialize ?? runSerialTaskUnqueued;
+		this.serialize = options.serialize;
 	}
 
 	dispose(): void {

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AlertV1 } from '../alerts/alert-contract';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { HttpTransportError, type HttpRequest, type HttpResponse, type HttpTransport } from '../core/http';
-import { SerialTaskQueue } from '../core/serial-task-queue';
+import { SerialTaskQueue, runSerialTaskUnqueued } from '../core/serial-task-queue';
 import { SellSignalRuntime, type SellSignalRuntimeOptions } from './sell-signal-runtime';
 import { SELL_SIGNAL_MINIMUM_REFERENCE_DAYS, SELL_SIGNAL_REFERENCE_DAYS } from './sell-signal';
 import { HALLOWEEN_SEASONAL_WINDOW } from './models/halloween-season';
@@ -50,6 +50,7 @@ function harness(overrides: Partial<SellSignalRuntimeOptions> = {}, response?: (
 		heldQuantity: () => 500,
 		itemName: () => 'Trick-or-Treat Bag',
 		emit: (alert) => { emitted.push(alert); },
+		serialize: runSerialTaskUnqueued,
 		...overrides,
 	});
 	return { runtime, emitted, requests, queue };
