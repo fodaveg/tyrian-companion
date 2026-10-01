@@ -1,4 +1,4 @@
-import { canonicalJson as canonical } from '../core/canonical-sha256';
+import { jsonRoundTrip as isJsonRoundTrip } from '../core/json-round-trip';
 
 export const RECOMMENDATION_ENVELOPE_VERSION = 1 as const;
 
@@ -83,14 +83,6 @@ function isRecommendationDecision(value: unknown): value is RecommendationDecisi
 
 function internalReference(value: unknown): value is string {
 	return typeof value === 'string' && value.length <= 256 && /^#(?:\/[A-Za-z0-9._~-]+)+$/u.test(value);
-}
-
-function isJsonRoundTrip(value: unknown): boolean {
-	try {
-		return canonical(JSON.parse(JSON.stringify(value))) === canonical(value);
-	} catch {
-		return false;
-	}
 }
 
 function jsonClone<T>(value: T): T {
