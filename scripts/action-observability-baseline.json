@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 471,
 		"promise_catch": 39,
-		"void_expression": 101,
-		"callback_registration": 178
+		"void_expression": 102,
+		"callback_registration": 180
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -3140,6 +3140,62 @@
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
+		},
+		"src/core/serial-task-queue.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "82b14f1838ee1395605a5529a3768a609812bc78",
+					"kind": "callback_registration",
+					"line": 49,
+					"column": 14,
+					"endLine": 49,
+					"endColumn": 64,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "start",
+						"justification": "The \"then\" callback in \"start\" turns the task's value into the turn the caller of run awaits; the task's rejection passes through it to that same caller, who owns its diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"then\" callback in \"start\" turns the task's value into the turn the caller of run awaits; the task's rejection passes through it to that same caller, who owns its diagnostics. Verified registration: \"then\" in \"start\"."
+				},
+				{
+					"id": "9b3ffa93494796b049260081115abfb26d2030f0",
+					"kind": "callback_registration",
+					"line": 50,
+					"column": 12,
+					"endLine": 50,
+					"endColumn": 57,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "start",
+						"justification": "The \"then\" callbacks in \"start\" only tell the drain loop that the task ended, either way; the task's rejection is already delivered to the caller of run through the turn resolved one line above."
+					},
+					"reason": "Allowlisted callback_registration: The \"then\" callbacks in \"start\" only tell the drain loop that the task ended, either way; the task's rejection is already delivered to the caller of run through the turn resolved one line above. Verified registration: \"then\" in \"start\"."
+				},
+				{
+					"id": "3d42ca773e3a2d03490c4120e6c00b32ba1c5268",
+					"kind": "void_expression",
+					"line": 54,
+					"column": 4,
+					"endLine": 54,
+					"endColumn": 21,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.drain",
+						"scope": "run",
+						"justification": "The \"run\" owner detaches \"this.drain\" because the drain loop outlives the call that started it; every task's value and rejection reach its own caller through the turn promise, and drain itself cannot reject."
+					},
+					"reason": "Allowlisted void_expression: The \"run\" owner detaches \"this.drain\" because the drain loop outlives the call that started it; every task's value and rejection reach its own caller through the turn promise, and drain itself cannot reject. Verified target: \"this.drain\" in \"run\"."
+				}
+			]
 		},
 		"src/core/settings.ts": {
 			"classification": "production_source",

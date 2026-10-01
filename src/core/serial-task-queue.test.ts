@@ -1,0 +1,187 @@
+import { describe, expect, it } from 'vitest';
+
+import { SerialTaskQueue, runSerialTaskUnqueued, type SerialTaskTurn } from './serial-task-queue';
+
+/** A task the test finishes by hand, so nothing here depends on a timer. */
+function heldTask<T>(log: string[], name: string) {
+	let settle: { resolve: (value: T) => void; reject: (error: unknown) => void } | null = null;
+	const task = (): Promise<T> => {
+		log.push(`start ${name}`);
+		return new Promise<T>((resolve, reject) => { settle = { resolve, reject }; });
+	};
+	const settled = (): { resolve: (value: T) => void; reject: (error: unknown) => void } => {
+		if (settle === null) throw new Error(`Task ${name} has not started.`);
+		return settle;
+	};
+	return {
+		task,
+		started: () => settle !== null,
+		finish: (value: T) => { log.push(`end ${name}`); settled().resolve(value); },
+		fail: (error: unknown) => { log.push(`fail ${name}`); settled().reject(error); },
+	};
+}
+
+/** Lets every continuation already queued run; the queue itself uses no timers. */
+async function settleMicrotasks(): Promise<void> {
+	for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+}
+
+describe('SerialTaskQueue', () => {
+	it('runs one task at a time, in arrival order within one priority', async () => {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		const a = heldTask<string>(log, 'a');
+		const b = heldTask<string>(log, 'b');
+		const c = heldTask<string>(log, 'c');
+
+		const turns = [queue.run('background', a.task), queue.run('background', b.task), queue.run('background', c.task)];
+		await settleMicrotasks();
+		expect(log).toEqual(['start a']);
+
+		a.finish('A');
+		await settleMicrotasks();
+		expect(log).toEqual(['start a', 'end a', 'start b']);
+
+		b.finish('B');
+		await settleMicrotasks();
+		c.finish('C');
+
+		expect(await Promise.all(turns)).toEqual([
+			{ status: 'ran', value: 'A' }, { status: 'ran', value: 'B' }, { status: 'ran', value: 'C' },
+		]);
+		expect(log).toEqual(['start a', 'end a', 'start b', 'end b', 'start c', 'end c']);
+	});
+
+	it('starts an idle queue\'s task at once, without waiting for a later turn', () => {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		void queue.run('background', heldTask<void>(log, 'a').task);
+		expect(log).toEqual(['start a']);
+	});
+
+	it('an interactive task passes every background task that has not started, and waits only for the one in flight', async () => {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		const inFlight = heldTask<void>(log, 'background-1');
+		const waiting = heldTask<void>(log, 'background-2');
+		const alsoWaiting = heldTask<void>(log, 'background-3');
+		const interactive = heldTask<void>(log, 'interactive-1');
+		const laterInteractive = heldTask<void>(log, 'interactive-2');
+
+		const turns = [
+			queue.run('background', inFlight.task),
+			queue.run('background', waiting.task),
+			queue.run('background', alsoWaiting.task),
+			queue.run('interactive', interactive.task),
+			queue.run('interactive', laterInteractive.task),
+		];
+		await settleMicrotasks();
+		// It does not cut in on the task under way.
+		expect(log).toEqual(['start background-1']);
+
+		inFlight.finish();
+		await settleMicrotasks();
+		interactive.finish();
+		await settleMicrotasks();
+		laterInteractive.finish();
+		await settleMicrotasks();
+		waiting.finish();
+		await settleMicrotasks();
+		alsoWaiting.finish();
+		await Promise.all(turns);
+
+		expect(log.filter((line) => line.startsWith('start'))).toEqual([
+			'start background-1', 'start interactive-1', 'start interactive-2', 'start background-2', 'start background-3',
+		]);
+	});
+
+	it('a task that throws rejects its own turn and the queue goes on with the next one', async () => {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		const failing = heldTask<string>(log, 'a');
+		const next = heldTask<string>(log, 'b');
+
+		const failed = queue.run('background', failing.task);
+		const ran = queue.run('background', next.task);
+		failing.fail(new Error('boom'));
+		await expect(failed).rejects.toThrow('boom');
+		await settleMicrotasks();
+		next.finish('B');
+
+		expect(await ran).toEqual({ status: 'ran', value: 'B' });
+	});
+
+	it('a task that throws before returning a promise is a rejected turn too, not a broken queue', async () => {
+		const queue = new SerialTaskQueue();
+		const failed = queue.run('background', () => { throw new Error('sync boom'); });
+		const ran = queue.run('background', async () => 'after');
+
+		await expect(failed).rejects.toThrow('sync boom');
+		expect(await ran).toEqual({ status: 'ran', value: 'after' });
+	});
+
+	it('a task that queues another one does not deadlock: the new one runs after it, by its priority', async () => {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		const nested: Array<Promise<SerialTaskTurn<string>>> = [];
+
+		const outer = queue.run('background', async () => {
+			log.push('start outer');
+			nested.push(queue.run('background', async () => { log.push('nested background'); return 'nb'; }));
+			nested.push(queue.run('interactive', async () => { log.push('nested interactive'); return 'ni'; }));
+			await Promise.resolve();
+			log.push('end outer');
+			return 'outer';
+		});
+
+		expect(await outer).toEqual({ status: 'ran', value: 'outer' });
+		expect(await Promise.all(nested)).toEqual([{ status: 'ran', value: 'nb' }, { status: 'ran', value: 'ni' }]);
+		expect(log).toEqual(['start outer', 'end outer', 'nested interactive', 'nested background']);
+	});
+
+	it('dispose drops what has not started, resolves every turn, and lets the task in flight end as it would', async () => {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		const inFlight = heldTask<string>(log, 'a');
+		const waitingBackground = heldTask<string>(log, 'b');
+		const waitingInteractive = heldTask<string>(log, 'c');
+
+		const first = queue.run('background', inFlight.task);
+		const second = queue.run('background', waitingBackground.task);
+		const third = queue.run('interactive', waitingInteractive.task);
+		queue.dispose();
+
+		expect(await second).toEqual({ status: 'dropped' });
+		expect(await third).toEqual({ status: 'dropped' });
+		inFlight.finish('A');
+		expect(await first).toEqual({ status: 'ran', value: 'A' });
+		await settleMicrotasks();
+		expect(waitingBackground.started()).toBe(false);
+		expect(waitingInteractive.started()).toBe(false);
+		expect(log).toEqual(['start a', 'end a']);
+	});
+
+	it('after dispose a new task is dropped without being started', async () => {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		queue.dispose();
+		const late = heldTask<string>(log, 'late');
+
+		expect(await queue.run('interactive', late.task)).toEqual({ status: 'dropped' });
+		expect(late.started()).toBe(false);
+	});
+
+	it('runner binds one priority, and the unqueued runner just runs the task', async () => {
+		const log: string[] = [];
+		const queue = new SerialTaskQueue();
+		const inFlight = heldTask<void>(log, 'a');
+		void queue.run('background', inFlight.task);
+		const background = queue.runner('background')(async () => { log.push('background'); });
+		const interactive = queue.runner('interactive')(async () => { log.push('interactive'); });
+		inFlight.finish();
+		await Promise.all([background, interactive]);
+
+		expect(log).toEqual(['start a', 'end a', 'interactive', 'background']);
+		expect(await runSerialTaskUnqueued(async () => 7)).toEqual({ status: 'ran', value: 7 });
+	});
+});
