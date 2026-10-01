@@ -8,7 +8,7 @@ import {
 	type PriceSeedResult,
 } from './price-seed-model';
 
-/**
+/*
  * The one outbound call that is not to ArenaNet.
  *
  * It is deliberately small and deliberately rare: a single unauthenticated GET,
@@ -23,12 +23,11 @@ import {
  * throw here would take the whole activation down for a service the plugin
  * does not depend on.
  */
-export const PRICE_SEED_TIMEOUT_MS = 10_000;
 
 /**
  * Bytes of response body the plugin agrees to decode from this one host.
  *
- * The deadline above does not bound the size: it abandons the promise without
+ * The transport's deadline does not bound the size: it abandons the promise without
  * cancelling the transfer, so a host that answers slowly AND hugely is answered
  * by neither. This is the bound that is enforced, and the transport applies it
  * before the body is parsed at all.

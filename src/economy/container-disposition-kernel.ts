@@ -43,14 +43,6 @@ export interface ContainerDispositionKernelPolicy {
 	saleBasis: ContainerSaleBasisPolicy;
 }
 
-export const DEFAULT_CONTAINER_DISPOSITION_KERNEL_POLICY: ContainerDispositionKernelPolicy = {
-	version: 1,
-	openAdvantageBps: 1_000,
-	maxPriceAgeMs: 15 * 60_000,
-	maxFutureSkewMs: 60_000,
-	saleBasis: 'immediate_and_listing',
-};
-
 export interface ContainerDispositionMarketBatch {
 	version: 1;
 	batchId: string;

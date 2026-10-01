@@ -1,4 +1,4 @@
-import type { Locale, TranslationParams, Translator } from './i18n';
+import type { TranslationParams, Translator } from './i18n';
 
 /**
  * Runtime copy owned by the Companion surface. `i18n.ts` folds this fragment
@@ -2410,5 +2410,3 @@ export function translateRuntime(
 ): string {
 	return translator.t(key, params);
 }
-
-export function runtimeLocale(locale: Locale): Locale { return locale; }
