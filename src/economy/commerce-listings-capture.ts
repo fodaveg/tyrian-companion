@@ -1,4 +1,5 @@
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
+import { createLimiter } from '../core/concurrency';
 import { HttpTransportError } from '../core/http';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
@@ -10,10 +11,19 @@ import {
 } from './commerce-listings';
 
 export const COMMERCE_LISTINGS_BATCH_SIZE = 200;
+/** How many `commerce/listings` batches one capture keeps in flight at once. */
+export const COMMERCE_LISTINGS_MAX_IN_FLIGHT = 3;
 
 type RateLimitGate = Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>;
 
-/** Captures bounded public order-book depth; it never accepts or sends an API key. */
+/**
+ * Captures bounded public order-book depth; it never accepts or sends an API key.
+ *
+ * The batches of one capture go out up to `COMMERCE_LISTINGS_MAX_IN_FLIGHT` at a time. Each batch
+ * owns its outcome: a failed one leaves only its own ids without depth. A 429 arms the shared
+ * cooldown before the slot it held is handed on, so a batch still waiting is never requested;
+ * the ones already in flight end as their own answer says.
+ */
 export async function captureInventoryMarketDepth(
 	requestedItemIds: readonly number[],
 	gateway: PublicCatalogGateway,
@@ -22,26 +32,22 @@ export async function captureInventoryMarketDepth(
 	actionContext?: ResolvedLocalDebugActionContext,
 ): Promise<InventoryMarketDepthEvidenceV1> {
 	const requested = normalizeIds(requestedItemIds);
-	const items: InventoryItemMarketDepthV1[] = [];
-	for (const batch of chunks(requested, COMMERCE_LISTINGS_BATCH_SIZE)) {
-		if (rateLimit?.status().active === true) {
-			items.push(...batch.map((itemId) => unavailable(itemId)));
-			continue;
-		}
+	const limit = createLimiter(COMMERCE_LISTINGS_MAX_IN_FLIGHT);
+	const captured = await Promise.all(chunks(requested, COMMERCE_LISTINGS_BATCH_SIZE).map((batch) => limit(async () => {
+		// Read when the batch gets its slot, not when it was queued.
+		if (rateLimit?.status().active === true) return batch.map((itemId) => unavailable(itemId));
 		try {
 			const response = await gateway.requestDetailed(`commerce/listings?ids=${batch.join(',')}`, actionContext);
-			if (response.status !== 200 && response.status !== 206) {
-				items.push(...batch.map((itemId) => unavailable(itemId)));
-				continue;
-			}
-			items.push(...parseBatch(response.body, batch));
+			if (response.status !== 200 && response.status !== 206) return batch.map((itemId) => unavailable(itemId));
+			return parseBatch(response.body, batch);
 		} catch (error) {
 			if (error instanceof HttpTransportError && error.status === 429) {
 				rateLimit?.recordRateLimited(error.retryAfterMs);
 			}
-			items.push(...batch.map((itemId) => unavailable(itemId)));
+			return batch.map((itemId) => unavailable(itemId));
 		}
-	}
+	})));
+	const items = captured.flat();
 	items.sort((left, right) => left.itemId - right.itemId);
 	const complete = items.filter((item) => item.coverage === 'complete').length;
 	return {

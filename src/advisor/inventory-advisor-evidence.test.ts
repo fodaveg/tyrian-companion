@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { MissingApiKeyError } from '../account/guild-wars-2-client';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
+import { MemoryCatalogCache } from '../catalog/public-catalog-cache';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
+import { PublicCatalogService } from '../catalog/public-catalog-service';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import { InventoryAdvisorEvidenceService } from './inventory-advisor-evidence';
 import { createInventoryAdvisorInputFromEvidence, isInventoryAdvisorEvidence } from './inventory-advisor-evidence-contract';
 import type { InventoryAdvisorCaptureReceiptV1 } from './inventory-advisor-evidence-model';
@@ -505,6 +508,97 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(result.evidence?.prices.missingItemIds).toEqual([1]);
 	});
 
+	it('times the whole market-depth capture and hands its action context to every listings batch', async () => {
+		const snapshot = snapshotFixture(Array.from({ length: 601 }, (_, index) => index + 1));
+		const context: ResolvedLocalDebugActionContext = {
+			component: 'advisor', action: 'inventory_advisor_refresh', actionId: 'refresh', correlationId: 'command',
+		};
+		let clock = NOW;
+		const listingContexts: unknown[] = [];
+		const gateway: PublicCatalogGateway = { requestDetailed: async (path, actionContext) => {
+			const ids = idsFrom(path);
+			if (!path.startsWith('commerce/listings?')) return { status: 200, headers: {}, body: ids.map((id) => pricePayload(id)) };
+			listingContexts.push(actionContext);
+			await Promise.resolve();
+			// Each of the four batches costs 100 ms of the injected clock when its answer arrives.
+			clock += 100;
+			return { status: 200, headers: {}, body: ids.map((id) => listingPayload(id)) };
+		} };
+		const receipts: InventoryAdvisorCaptureReceiptV1[] = [];
+		const service = new InventoryAdvisorEvidenceService(
+			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			snapshotCapture(snapshot), { resolve: async () => catalogFor(snapshot) }, gateway, () => clock,
+			async (receipt) => { receipts.push(receipt); },
+		);
+
+		const result = await service.capture('es', [], undefined, context);
+
+		expect(result.marketDepth?.status).toBe('complete');
+		expect(listingContexts).toHaveLength(4);
+		for (const seen of listingContexts) expect(seen).toBe(context);
+		expect(receipts).toHaveLength(1);
+		expect(receipts[0]?.timings?.marketDepthMs).toBe(400);
+	});
+
+	it('keeps three listings batches in flight while the rest of the capture runs', async () => {
+		const snapshot = snapshotFixture(Array.from({ length: 1_201 }, (_, index) => index + 1));
+		let inFlight = 0;
+		let maxInFlight = 0;
+		const gateway: PublicCatalogGateway = { requestDetailed: async (path) => {
+			const ids = idsFrom(path);
+			if (!path.startsWith('commerce/listings?')) return { status: 200, headers: {}, body: ids.map((id) => pricePayload(id)) };
+			inFlight += 1;
+			maxInFlight = Math.max(maxInFlight, inFlight);
+			await new Promise<void>((resolve) => { setImmediate(resolve); });
+			inFlight -= 1;
+			return { status: 200, headers: {}, body: ids.map((id) => listingPayload(id)) };
+		} };
+
+		const result = await serviceFor(snapshot, catalogFor(snapshot), gateway).capture('es');
+
+		expect(result.marketDepth?.status).toBe('complete');
+		expect(result.marketDepth?.items).toHaveLength(1_201);
+		expect(maxInFlight).toBe(3);
+	});
+
+	it('peaks at eight public and six keyed requests in flight with a cold catalog and container prices', async () => {
+		// The real catalog service over an empty cache, so its own limiter is the one being counted.
+		const snapshot = snapshotFixture(Array.from({ length: 601 }, (_, index) => index + 1));
+		const inFlight = { catalog: 0, prices: 0, listings: 0, keyed: 0 };
+		const peak = { catalog: 0, prices: 0, listings: 0, keyed: 0, public: 0, total: 0 };
+		const held = async <T>(family: 'catalog' | 'prices' | 'listings' | 'keyed', answer: () => T | Promise<T>): Promise<T> => {
+			inFlight[family] += 1;
+			const open = inFlight.catalog + inFlight.prices + inFlight.listings;
+			peak[family] = Math.max(peak[family], inFlight[family]);
+			peak.public = Math.max(peak.public, open);
+			peak.total = Math.max(peak.total, open + inFlight.keyed);
+			await new Promise<void>((resolve) => { setImmediate(resolve); });
+			inFlight[family] -= 1;
+			return await answer();
+		};
+		const gateway: PublicCatalogGateway = { requestDetailed: async (path) => {
+			const ids = idsFrom(path);
+			if (path.startsWith('commerce/listings?')) return await held('listings', () => ({ status: 200, headers: {}, body: ids.map((id) => listingPayload(id)) }));
+			if (path.startsWith('commerce/prices?')) return await held('prices', () => ({ status: 200, headers: {}, body: ids.map((id) => pricePayload(id)) }));
+			return await held('catalog', () => ({ status: 200, headers: {}, body: ids.map((id) => ({
+				id, name: `Item ${id}`, type: 'Trophy', rarity: 'Basic', level: 0, vendor_value: 1, flags: [], game_types: [], restrictions: [],
+			})) }));
+		} };
+		const keyed = clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined });
+		const client = { beginOperation: () => {
+			const operation = keyed.beginOperation();
+			return { ...operation, requestDetailed: async (path: string) => await held('keyed', () => operation.requestDetailed(path)) };
+		} };
+		const service = new InventoryAdvisorEvidenceService(
+			client, snapshotCapture(snapshot), new PublicCatalogService(gateway, new MemoryCatalogCache(), () => NOW), gateway, () => NOW,
+		);
+
+		const result = await service.capture('es', [36_038, 36_041]);
+
+		expect(result.status).toBe('complete');
+		expect(peak).toEqual({ catalog: 3, prices: 2, listings: 3, keyed: 6, public: 8, total: 14 });
+	});
+
 	it('does no public capture for an invalid or hostile snapshot', async () => {
 		const beginOperation = vi.fn();
 		const catalog = { resolve: vi.fn() };
@@ -547,9 +641,12 @@ function clientFor(options: { permissions: string[]; urls: string[] | undefined;
 
 function publicGateway(response: (ids: number[]) => unknown[]): PublicCatalogGateway {
 	return { requestDetailed: async (path) => ({ status: 200, headers: {}, body: path.startsWith('commerce/listings?')
-		? idsFrom(path).map((id) => ({ id, buys: [{ listings: 1, unit_price: id + 10, quantity: 1 }],
-			sells: [{ listings: 1, unit_price: id + 11, quantity: 1 }] }))
+		? idsFrom(path).map((id) => listingPayload(id))
 		: response(idsFrom(path)) }) };
+}
+function listingPayload(id: number): Record<string, unknown> {
+	return { id, buys: [{ listings: 1, unit_price: id + 10, quantity: 1 }],
+		sells: [{ listings: 1, unit_price: id + 11, quantity: 1 }] };
 }
 function idsFrom(path: string): number[] { return new URLSearchParams(path.split('?')[1]).get('ids')!.split(',').map(Number); }
 function pricePayload(id: number, nullSides = false): Record<string, unknown> {
