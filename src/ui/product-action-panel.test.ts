@@ -158,8 +158,7 @@ describe('product action surface', () => {
 			locale: 'en', active: 'inventory', actions: createController({ execute }), missingApiKey: true, openSettings, ui: icons,
 		});
 		const elements = walk(root);
-		expect((mount.panel as unknown as FakeElement).tag).toBe('aside');
-		expect((mount.panel as unknown as FakeElement).hidden).toBe(true);
+		expect(elements.some((element) => element.tag === 'aside')).toBe(false);
 		const workspace = elements.find((element) => element.className.includes('tyrian-product-shell__workspace'))!;
 		expect(workspace.children).toEqual([mount.content]);
 		expect(elements.filter((element) => element.className.includes('tyrian-action-panel__action'))).toHaveLength(0);
@@ -191,7 +190,7 @@ describe('product action surface', () => {
 			locale: 'es', active: 'companion', actions: createController(), missingApiKey: false, openSettings: vi.fn(), ui: icons,
 		});
 		expect(walk(root).some((element) => element.className.includes('tyrian-action-panel'))).toBe(false);
-		expect((mount.panel as unknown as FakeElement).hidden).toBe(true);
+		expect(walk(root).some((element) => element.tag === 'aside')).toBe(false);
 		expect(PRODUCT_ACTION_IDS).toHaveLength(17);
 		mount.dispose();
 	});

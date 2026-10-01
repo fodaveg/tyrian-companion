@@ -17,7 +17,6 @@ export interface ProductShellOptions {
 
 export interface ProductShellMount {
 	readonly content: HTMLElement;
-	readonly panel: HTMLElement;
 	update(): void;
 	dispose(): void;
 }
@@ -58,12 +57,9 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 	const workspace = shell.createDiv({ cls: 'tyrian-product-shell__workspace' });
 	// Command-palette actions remain available as expert shortcuts, but no longer compete
 	// with the one primary action on each product surface.
-	const legacyPanel = createEl('aside');
-	legacyPanel.hidden = true;
 	const main = workspace.createEl('main', { cls: 'tyrian-product-shell__content' });
 	return {
 		content: main,
-		panel: legacyPanel,
 		update: () => options.actions.refresh(),
 		dispose: () => undefined,
 	};
