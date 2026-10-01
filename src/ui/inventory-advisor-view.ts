@@ -4,7 +4,7 @@ import type { TyrianUiPort } from '../host/tyrian-host';
 import type { Locale, Translator } from '../core/i18n';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import { inventorySyncPanel } from './inventory-sync-panel-view';
-import { renderPriceHistoryPanel, type PriceHistoryPanelInteractions } from './price-history-panel-view';
+import { mountPriceHistoryPanel, type PriceHistoryPanelInteractions } from './price-history-panel-view';
 import { renderSellSignalLine } from './sell-signal-line';
 import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
@@ -456,6 +456,7 @@ export function groupInventoryAdvisorRows(
 
 interface MountedInventoryAdvisorView {
 	update(model: InventoryAdvisorViewModel, translator: Translator, interactions: InventoryAdvisorViewInteractions): void;
+	dispose(): void;
 }
 
 /** The rows of one mounted list: scoped once per data and scope, ordered once per order. */
@@ -503,6 +504,12 @@ export function renderInventoryAdvisorView(
 		return;
 	}
 	mountedViews.set(container, mountInventoryAdvisorView(container, ui, model, translator, initialFilters, interactions));
+}
+
+/** Releases what the view mounted in `container` subscribed to; the next render mounts a new one. */
+export function disposeInventoryAdvisorView(container: HTMLElement): void {
+	mountedViews.get(container)?.dispose();
+	mountedViews.delete(container);
 }
 
 function mountInventoryAdvisorView(
@@ -913,6 +920,7 @@ function mountInventoryAdvisorView(
 	priceHistoryDisclosure.className = 'tyrian-inventory-advisor__price-history';
 	const priceHistorySummary = createEl('summary');
 	priceHistoryDisclosure.append(priceHistorySummary, priceHistory);
+	const priceHistoryPanel = mountPriceHistoryPanel(priceHistory, priceHistoryDisclosure);
 	container.replaceChildren(section);
 	let arranged = false;
 
@@ -1018,7 +1026,7 @@ function mountInventoryAdvisorView(
 			} else syncStatusPanel.removeAttribute('role');
 		}
 		priceHistorySummary.textContent = translator.t('priceHistory.title');
-		renderPriceHistoryPanel(priceHistory, translator, interactions.priceHistory);
+		priceHistoryPanel.update(translator, interactions.priceHistory);
 		searchLabelText.textContent = translator.t('advisor.view.search');
 		search.placeholder = translator.t('advisor.view.searchPlaceholder');
 		search.setAttribute('aria-label', translator.t('advisor.view.search'));
@@ -1067,7 +1075,7 @@ function mountInventoryAdvisorView(
 		}
 	};
 	update(model, translator, interactions);
-	return { update };
+	return { update, dispose: () => priceHistoryPanel.dispose() };
 }
 
 function optionalSourceCoverageLabel(

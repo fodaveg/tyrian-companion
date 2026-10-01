@@ -236,6 +236,18 @@ describe('inventory sync progress and the open product tabs', () => {
 		await sync.finish();
 	});
 
+	it('drops the price disclosure subscription when the Inventory tab closes', async () => {
+		const sync = await syncInFlight();
+		const disclosure = only(walk(sync.advisorContent).filter((element) => element.className === 'tyrian-inventory-advisor__price-history'));
+		expect(disclosure.listeners.get('toggle')).toHaveLength(1);
+
+		await sync.unmountAdvisor();
+
+		expect(disclosure.listeners.get('toggle')).toHaveLength(0);
+
+		await sync.finish();
+	});
+
 	it('cancels the pending frame when the plugin unloads', async () => {
 		const sync = await syncInFlight();
 		expect(sync.advisorContent.win.pendingFrames()).toBe(1);
