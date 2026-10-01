@@ -607,15 +607,18 @@ las pilas pequeñas. Cambia `SETTINGS_SCHEMA_VERSION` (hoy 12, `src/core/setting
    análisis siguiente, y al terminar no se recalcula ni el análisis ni el veredicto de Venta. El
    tope de 25 es por acción visible y suma las dos fases: primero las que faltan y, con el cupo que
    sobre, las vencidas; si la sincronización analiza dos veces (la lectura de recuperación de las
-   notas), el segundo análisis gasta lo que dejó el primero y no estrena cupo. El refresco diferido
-   solo lo arranca la acción que lo dejó: no hay ninguna petición sin una acción previa. No arranca
-   si en ese momento el histórico está desactivado o el dispositivo está en modo consulta; cualquier
-   siembra, la de las que faltan también, se detiene en el ítem siguiente si a mitad se desactiva el
-   histórico o el dispositivo pasa a modo consulta; y el que aún no había arrancado se descarta al desactivar el histórico, al descargar el
-   plugin o cuando el refresco del asesor de esa acción se rechaza por modo consulta. Solo hay uno
-   a la vez: una acción que llega con uno pendiente o en curso no deja otro, y de dos acciones que
-   se solapan solo conserva el suyo la primera que lo deja; las semillas que faltan esperan su
-   turno en la misma cola, y nunca hay dos peticiones en vuelo. El refresco diferido de una lista
+   notas), el segundo análisis gasta lo que dejó el primero y no estrena cupo, y se refrescan las
+   vencidas de su lista; si esa lista no tiene ninguna, se conservan las que dejó el primero, con el
+   cupo que quede en ese momento. El refresco diferido solo lo arranca la acción que lo dejó: no hay
+   ninguna petición sin una acción previa. No arranca si en ese momento el histórico está
+   desactivado o el dispositivo está en modo consulta; cualquier siembra, la de las que faltan
+   también, se detiene en el ítem siguiente si a mitad se desactiva el histórico o el dispositivo
+   pasa a modo consulta; y el que aún no había arrancado se descarta al desactivar el histórico, al
+   descargar el plugin o cuando el refresco del asesor de esa acción se rechaza por modo consulta.
+   Solo hay uno a la vez: una acción que llega con uno pendiente o en curso no deja otro, y de dos
+   acciones que se solapan solo conserva el suyo la primera que lo deja; las semillas que faltan
+   esperan su turno en la misma cola (detrás del refresco diferido en curso de la acción anterior,
+   hasta 25 peticiones), y nunca hay dos peticiones en vuelo. El refresco diferido de una lista
    anterior no reescribe la cobertura de la cola ni repinta si una sincronización más nueva ya ha
    empezado su siembra. La vista previa manual de las notas, si lanza su propio análisis, pide solo
    las que faltan y no deja refresco diferido. «Analizar» sigue sin descargar nada.

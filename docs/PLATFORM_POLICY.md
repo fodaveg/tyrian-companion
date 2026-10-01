@@ -101,7 +101,10 @@ dejado del mismo tope de 25: en Venta, después de entregar y pintar el resultad
 «Sincronizar inventario», después de escribir las notas y no entre sus análisis. El tope de 25 es de
 la acción: si una sincronización analiza dos veces (la lectura de recuperación de las notas), el
 segundo análisis gasta lo que dejó el primero y no estrena cupo, y las vencidas salen de lo que
-quede. Por tanto puede haber peticiones a datawars2 en curso con la acción ya terminada en pantalla:
+quede. Las vencidas que se refrescan son las de la lista del último análisis; si esa lista no tiene
+ninguna, se conservan las que dejó el primero, con el cupo que quede en ese momento, y sin cupo no
+se refresca ninguna. Por tanto puede haber peticiones a datawars2 en curso con la acción ya
+terminada en pantalla:
 siguen siendo consecuencia de esa acción explícita, siguen yendo en serie por la misma cola y no hay
 ninguna sin una acción previa de la persona, porque el refresco diferido solo lo arranca la acción
 que lo dejó, al terminar: «Analizar», un comando o un refresco automático no arrancan el de otra
@@ -113,7 +116,10 @@ había arrancado se descarta al desactivar el histórico (volver a activarlo no 
 el refresco del asesor de esa acción se rechaza por estar el dispositivo en modo consulta. Lo que
 descargan lo lee el análisis siguiente; no se relanza ningún análisis al terminar. Solo hay un
 refresco diferido a la vez: una acción que llega con uno pendiente o en curso no añade otro, y de
-dos acciones que se solapan solo conserva el suyo la primera que lo deja. Cuando una sincronización
+dos acciones que se solapan solo conserva el suyo la primera que lo deja. Las semillas que faltan de
+una acción nueva van por la misma cola: si el refresco diferido de la acción anterior sigue en
+curso, la fase de ausentes de la nueva espera detrás de él, hasta 25 peticiones, antes de entregar
+su resultado. Cuando una sincronización
 más nueva ya ha empezado su siembra, el refresco diferido de una lista anterior no reescribe la
 línea de progreso de la cola ni repinta. La vista previa manual de las notas, si tiene que lanzar su
 propio análisis, pide solo las semillas que faltan y no deja refresco diferido. Al descargar el

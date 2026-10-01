@@ -1903,7 +1903,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * The copies past their 24 h are left for the end of the sync action (`runPriceSeedSyncAction`).
 	 *
 	 * A sync can analyse twice (`inventoryAnalysisForNotes`). The second pass spends what the first
-	 * left of the action's cap, and its list replaces the first one's as the action's stale copies.
+	 * left of the action's cap, and its list replaces the first one's as the action's stale copies;
+	 * if it leaves none of its own, the first one's are kept, within what is left of the cap.
 	 * Outside a sync action (the manual preview's recovery read) there is nobody to start a deferred
 	 * pass, so none is left: only the missing seeds are requested, with a cap of their own.
 	 */
@@ -1930,10 +1931,20 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				// pass recomputes it over the same list and can only confirm it or move it forward.
 				this.priceSeedQueueCoverage = outcome.queueCoverage;
 				if (action !== null && action === this.priceSeedSyncAction) {
-					action.remaining = outcome.deferredBudget ?? 0;
+					const remaining = outcome.deferredBudget ?? 0;
+					action.remaining = remaining;
+					// What an earlier analysis of this action left, if it is still waiting in the slot.
+					const earlier = action.request !== null && this.priceSeedDeferredRequest === action.request ? action.request : null;
+					if (earlier !== null) this.priceSeedDeferredRequest = null;
 					// This analysis's list is the action's now: what an earlier analysis left gives way to it.
-					if (action.request !== null && this.priceSeedDeferredRequest === action.request) this.priceSeedDeferredRequest = null;
-					action.request = aliveOnArrival ? null : this.leavePriceSeedDeferredRequest(itemIds, outcome, generation);
+					let request = aliveOnArrival ? null : this.leavePriceSeedDeferredRequest(itemIds, outcome, generation);
+					if (request === null && earlier !== null && remaining > 0) {
+						// It left none of its own, so the earlier one stays, with what the action has left
+						// of its cap NOW. Its generation is the older one: it does not rewrite the coverage.
+						request = { ...earlier, budget: Math.min(earlier.budget, remaining) };
+						this.priceSeedDeferredRequest = request;
+					}
+					action.request = request;
 				}
 			}
 			span.success('refreshed', { itemCount: itemIds.length });
