@@ -1,6 +1,7 @@
 import { isInventoryAdvisorStorageSnapshot } from '../account/storage-delta';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { canonicalJson as canonical, sha256CanonicalValue as standardSha256CanonicalValue } from '../core/canonical-sha256';
+import { jsonRoundTrip } from '../core/json-round-trip';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import {
 	isNormalizedCatalogCurrency,
@@ -803,9 +804,6 @@ function optionalKeys(value: Record<string, unknown>, required: string[], option
 	const actual = Object.keys(value);
 	return required.every((key) => actual.includes(key))
 		&& actual.every((key) => required.includes(key) || optional.includes(key));
-}
-function jsonRoundTrip(value: unknown): boolean {
-	try { return canonical(JSON.parse(JSON.stringify(value))) === canonical(value); } catch { return false; }
 }
 function safeGuard(check: () => boolean): boolean {
 	try { return check(); } catch { return false; }

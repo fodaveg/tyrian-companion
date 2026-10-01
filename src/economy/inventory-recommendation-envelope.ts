@@ -1,7 +1,7 @@
 import type {
 	InventoryRecommendationDecisionV1,
 } from '../advisor/inventory-advisor-model';
-import { canonicalJson as canonical } from '../core/canonical-sha256';
+import { jsonRoundTrip } from '../core/json-round-trip';
 import {
 	isInventoryAdvisorReport,
 	sha256InventoryAdvisorReport,
@@ -221,10 +221,6 @@ function optionalKeys(value: Record<string, unknown>, required: string[], option
 	const actual = Object.keys(value);
 	return required.every((key) => actual.includes(key))
 		&& actual.every((key) => required.includes(key) || optional.includes(key));
-}
-
-function jsonRoundTrip(value: unknown): boolean {
-	try { return canonical(JSON.parse(JSON.stringify(value))) === canonical(value); } catch { return false; }
 }
 
 function clone<T>(value: T): T {
