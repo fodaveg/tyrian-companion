@@ -1,5 +1,36 @@
 # Changelog
 
+## Release beta 0.2.15 - el asesor clasifica una vez por análisis y la sincronización lee menos
+
+- **El asesor clasifica la cuenta una vez por análisis.** El flujo propio (análisis, descarte y
+  presentación) volvía a clasificar y a verificar lo que él mismo acababa de calcular: tres
+  clasificaciones por análisis y una más cada vez que la vista se releía con otro orden o filtro.
+  Ahora clasifica una vez una copia propia y congelada de la entrada y la reconoce por identidad;
+  reordenar o filtrar ya no reclasifica. Lo que llega de fuera (una copia, un clon, un resultado
+  guardado) se sigue reclasificando y verificando entero, como antes (`bd386d3`, `3ccd810`).
+- El contexto de un análisis ya no se puede alterar una vez creado: se entrega congelado, con su
+  plan de reservas y sus listas de posiciones. Cierra un hueco de la 0.2.14 que no era alcanzable
+  desde los datos de la cuenta (`1035992`).
+- **La profundidad de mercado se pide de dos lotes en dos.** Los lotes de 200 objetos de
+  `commerce/listings` iban de uno en uno; ahora van hasta dos a la vez. Un lote que falla solo deja
+  sin profundidad sus propios objetos, y tras un 429 no se piden los lotes que aún no han empezado,
+  igual que antes (`cddec7c`).
+- **La vista previa de la sincronización lee las notas de ocho en ocho** y no vuelve a interpretar
+  una nota cuyo texto es idéntico al de la vista previa anterior. Se siguen leyendo todas las notas
+  en cada vista previa, y la escritura no cambia: relee cada nota justo antes de tocarla (`11f9ab1`).
+- **El historial de sesiones deja de leer todo el vault en cada carga.** En Obsidian recuerda en
+  memoria lo que leyó de cada nota y solo relee las que Obsidian le dice que han cambiado;
+  «Actualizar historial» lo relee todo. La exportación y el borrado de privacidad siguen leyendo
+  todas las notas siempre. Un host que no garantiza avisar de cada cambio (Hebra hoy) sigue releyendo
+  todo, como antes: el puerto `TyrianVault` gana el campo opcional `reportsEveryChange` (`cfecb9b`).
+- Los hashes de las Bases empaquetadas se calculan una vez por bundle en lugar de en cada inspección
+  (`40dda59`).
+
+Límites: los recuentos y tiempos de este lote se midieron en Linux con Node 22 y datos sintéticos de
+1.371 objetos o notas, no en Obsidian real. Si otro programa edita una nota de sesión y Obsidian no
+lo detecta, el historial muestra datos viejos hasta pulsar «Actualizar historial». La lista de
+seguimiento de precios no cambia: reescribir sus 400 filas cuesta unos 16 ms.
+
 ## Release beta 0.2.14 - el asesor ya no queda en «no válido» por una pila mayor que la oferta ni por dos «Conservar», y captura cuatro inventarios a la vez
 
 - **Una pila mayor que la oferta de compra ya no invalida el análisis.** Sin profundidad de mercado
