@@ -1,4 +1,5 @@
 import type { InventoryAdvisorEvidenceCapture, InventoryAdvisorEvidenceCaptureResultV1, InventoryAdvisorEvidenceV1 } from './inventory-advisor-evidence-model';
+import { sortKeepExceptionsForInput } from './inventory-advisor-contract';
 import { createInventoryAdvisorInputFromEvidence } from './inventory-advisor-evidence-contract';
 import { classifyInventoryAdvisor } from './inventory-advisor-classifier';
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
@@ -312,7 +313,9 @@ export async function composeInventoryAdvisorRefresh(
 	const input = createInventoryAdvisorInputFromEvidence({
 		asOf, evidence: capture.evidence,
 		goals: structuredClone(preferences.goals),
-		keepExceptions: structuredClone(preferences.keepExceptions),
+		// The stored record orders its exceptions by id (a random UUID) and the input contract by item
+		// first. Both the fresh analysis and the reclassification compose here, so this is the one sort.
+		keepExceptions: sortKeepExceptionsForInput(preferences.keepExceptions),
 		rulePack: structuredClone(rules.rulePack), policy: structuredClone(rules.policy),
 	});
 	if (input === null) throw new Error('inventory_advisor_input_invalid');

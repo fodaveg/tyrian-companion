@@ -721,6 +721,15 @@ function reasonCode(value: unknown): value is InventoryAdvisorReasonCode {
 	return REASONS.includes(value as InventoryAdvisorReasonCode);
 }
 
+/**
+ * A copy of the exceptions in the sequence the input contract demands: by item, then by exception
+ * id. The preferences record keeps them by exception id alone, so whoever composes an input from a
+ * record passes them through here; the contract itself keeps refusing any other sequence.
+ */
+export function sortKeepExceptionsForInput(exceptions: readonly KeepExceptionV1[]): KeepExceptionV1[] {
+	return structuredClone([...exceptions]).sort(keepExceptionOrder);
+}
+
 function keepExceptionOrder(left: KeepExceptionV1, right: KeepExceptionV1): number {
 	return left.itemId - right.itemId || left.exceptionId.localeCompare(right.exceptionId);
 }

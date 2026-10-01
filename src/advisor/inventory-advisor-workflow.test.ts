@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
-import { sha256CanonicalValue, sha256InventoryRulePack } from './inventory-advisor-contract';
+import { isInventoryAdvisorInput, sha256CanonicalValue, sha256InventoryRulePack } from './inventory-advisor-contract';
+import { createInventoryAdvisorInputFromEvidence } from './inventory-advisor-evidence-contract';
+import { createInventoryPreferences } from './inventory-preferences-contract';
 import { sha256InventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import type { InventoryAdvisorEvidenceV1 } from './inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './inventory-advisor-builtin-bundle';
-import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
+import type { AccountSignalsV1, InventoryPriceSnapshotV1, KeepExceptionV1 } from './inventory-advisor-model';
 import { INVENTORY_CONTAINER_PRICE_EVIDENCE_VERSION } from './inventory-container-economy';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
@@ -19,6 +21,7 @@ import type {
 	ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
 import {
+	composeInventoryAdvisorRefresh,
 	createInventoryAdvisorBuiltinRulesProvider,
 	EMPTY_INVENTORY_ADVISOR_PREFERENCES,
 	InventoryAdvisorWorkflow,
@@ -351,6 +354,84 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(statuses).toEqual(['ready', 'ready', 'blocked']);
 	});
 });
+
+describe('inventory advisor workflow: keep exceptions reach the classifier in its own order', () => {
+	const ASOF = '2026-08-14T12:00:00.000Z';
+	const IDS = ['a', 'b', 'c'];
+	const ITEM_IDS = [10, 11, 12];
+	const ORDERS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+
+	/** The exceptions as a stored record hands them over: ordered by `exceptionId`, whatever the item. */
+	function stored(exceptions: KeepExceptionV1[]): KeepExceptionV1[] {
+		const record = createInventoryPreferences({ vaultId: 'vault-hash', accountId: 'account-1' }, 0, ASOF, [], exceptions);
+		if (record === null) throw new Error('The fixture preferences are not a valid record.');
+		return record.keepExceptions;
+	}
+
+	async function compose(keepExceptions: KeepExceptionV1[]) {
+		const fixture = reviewedDiscardFixture();
+		return await composeInventoryAdvisorRefresh(
+			{ status: 'complete', evidence: fixture.evidence }, { goals: [], keepExceptions }, fixture.rules, ASOF,
+		);
+	}
+
+	it('classifies three exceptions in each of the six ways their ids can order the items', async () => {
+		const outcomes: Array<{ status: string; kept: number[]; report: string }> = [];
+		for (const order of ORDERS) {
+			// order[index] is the id the item at `index` gets, so the stored order by id visits the items as `order` says.
+			const record = stored(ITEM_IDS.map((itemId, index) => keep(IDS[order[index]!]!, itemId)));
+			const source = await compose(record);
+			outcomes.push({
+				status: source.result.status,
+				kept: source.input.keepExceptions.map((entry) => entry.itemId),
+				report: sha256CanonicalValue(source.discardContext.producerResult),
+			});
+		}
+		expect(outcomes.map((outcome) => outcome.status)).toEqual(ORDERS.map(() => 'ready'));
+		expect(outcomes.map((outcome) => outcome.kept)).toEqual(ORDERS.map(() => ITEM_IDS));
+		expect(new Set(outcomes.map((outcome) => outcome.report)).size).toBe(1);
+	});
+
+	it('gives the same report whatever order the same three exceptions arrive in', async () => {
+		const exceptions = [keep('c', 10), keep('a', 11), keep('b', 12)];
+		const reports: string[] = [];
+		for (const order of ORDERS) {
+			const source = await compose(order.map((index) => exceptions[index]!));
+			reports.push(sha256CanonicalValue(source.result));
+		}
+		expect(new Set(reports).size).toBe(1);
+	});
+
+	it('keeps two exceptions on the same item ordered by their id', async () => {
+		const record = stored([keep('z', 10), keep('m', 11), { ...keep('b', 11), status: 'paused' }]);
+		expect(record.map((entry) => entry.exceptionId)).toEqual(['b', 'm', 'z']);
+		const source = await compose(record);
+		expect(source.result.status).toBe('ready');
+		expect(source.input.keepExceptions.map((entry) => [entry.itemId, entry.exceptionId])).toEqual([[10, 'z'], [11, 'b'], [11, 'm']]);
+	});
+
+	it('still refuses an input whose exceptions are out of order when it is built directly', async () => {
+		const fixture = reviewedDiscardFixture();
+		const unsorted = [keep('a', 11), keep('b', 10)];
+		expect(createInventoryAdvisorInputFromEvidence({
+			asOf: ASOF, evidence: fixture.evidence, goals: [], keepExceptions: unsorted,
+			rulePack: fixture.rules.rulePack, policy: fixture.rules.policy,
+		})).toBeNull();
+		const source = await compose(unsorted);
+		expect(isInventoryAdvisorInput(source.input)).toBe(true);
+		expect(isInventoryAdvisorInput({ ...source.input, keepExceptions: [...source.input.keepExceptions].reverse() })).toBe(false);
+	});
+
+	it('does not reorder the caller\'s preferences', async () => {
+		const record = stored([keep('a', 11), keep('b', 10)]);
+		await compose(record);
+		expect(record.map((entry) => entry.exceptionId)).toEqual(['a', 'b']);
+	});
+});
+
+function keep(exceptionId: string, itemId: number): KeepExceptionV1 {
+	return { version: 1, exceptionId, itemId, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' };
+}
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
