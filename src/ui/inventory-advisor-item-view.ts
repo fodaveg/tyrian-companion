@@ -88,6 +88,8 @@ export class InventoryAdvisorItemView {
 	/** Public catalog name/icon for the price-history watch list. Resolved once per distinct id set. */
 	private priceHistoryCatalog: Record<number, { name: string; icon: string | null }> = {};
 	private priceHistoryCatalogKey: string | null = null;
+	/** The frame a progress report is waiting for, with the window that owns it (a popout has its own). */
+	private progressFrame: { readonly win: Window; readonly handle: number } | null = null;
 
 	constructor(
 		readonly contentEl: HTMLElement,
@@ -99,14 +101,40 @@ export class InventoryAdvisorItemView {
 	async onOpen(): Promise<void> { this.closed = false; this.render(); }
 	async onClose(): Promise<void> {
 		this.closed = true;
+		this.cancelProgressRender();
 		this.actions.getProductActionController?.().setInventorySurfaceBusy(this, false);
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;
 	}
 
+	/**
+	 * A progress report of a run in flight: repaints on the next frame of this tab's own window, so
+	 * a burst of reports (one per note written, each an `await` apart) costs one repaint per frame
+	 * and none while the window is not being drawn. The frame reads the state when it runs, never
+	 * the one that asked for it, so the last report is always the one shown.
+	 */
+	renderProgress(): void {
+		if (this.closed || this.progressFrame !== null) return;
+		const win = this.contentEl.win;
+		const handle = win.requestAnimationFrame(() => {
+			this.progressFrame = null;
+			this.render();
+		});
+		this.progressFrame = { win, handle };
+	}
+
+	/** Drops the frame a progress report is waiting for; closing the tab and unloading both call it. */
+	cancelProgressRender(): void {
+		if (this.progressFrame === null) return;
+		this.progressFrame.win.cancelAnimationFrame(this.progressFrame.handle);
+		this.progressFrame = null;
+	}
+
 	render(): void {
 		if (this.closed) return;
+		// A full repaint already shows whatever a waiting progress frame was going to show.
+		this.cancelProgressRender();
 		const model = this.actions.getInventoryAdvisorViewModel();
 		const sync = this.actions.getInventoryVaultSyncRunState === undefined
 			|| this.actions.runInventoryVaultSync === undefined
