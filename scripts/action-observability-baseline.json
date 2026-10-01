@@ -6106,11 +6106,11 @@
 					"reason": "Allowlisted callback_registration: The \"apply\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"apply\"."
 				},
 				{
-					"id": "a78d61b9118d4baa957488b228e9eca8520e566c",
+					"id": "2549205a600492fe4df67e2758dacaca7e7a7088",
 					"kind": "catch_clause",
-					"line": 847,
+					"line": 882,
 					"column": 6,
-					"endLine": 858,
+					"endLine": 893,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6122,11 +6122,11 @@
 					"reason": "Allowlisted catch_clause: The \"applyInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"applyInternal\"."
 				},
 				{
-					"id": "a0b4ce29b6c1afd4bf36c3ab095bee38e9448d22",
+					"id": "db15be2d26535001b9fc9f31e64f18ff9ad60838",
 					"kind": "catch_clause",
-					"line": 896,
+					"line": 934,
 					"column": 5,
-					"endLine": 901,
+					"endLine": 939,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {

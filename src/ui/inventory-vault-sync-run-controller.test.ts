@@ -286,6 +286,50 @@ describe('inventory Vault one-click sync controller', () => {
 		expect(final).toEqual({ status: 'idle', lastRun: finished[0] });
 	});
 
+	it('a plan whose every write ends in conflict leaves a receipt that says nothing was saved', async () => {
+		const ports = portsFor({
+			previewSync: vi.fn(async () => planWith(['update', 'update', 'unchanged'])),
+			applySync: vi.fn(async () => ({ status: 'unchanged', created: 0, updated: 0, deactivated: 0, conflicts: 2 } as const)),
+		});
+		const { controller } = harness(ports);
+		const final = await controller.run();
+		expect(final).toMatchObject({
+			status: 'idle',
+			lastRun: { status: 'success', summary: { positions: 3, create: 0, update: 0, unchanged: 1, deactivate: 0, conflicts: 2 } },
+		});
+	});
+
+	it('the receipt counts what the writer returned, not what the plan foresaw, when writes and conflicts mix', async () => {
+		const written: InventoryVaultSyncResult = { status: 'applied', created: 1, updated: 1, deactivated: 0, conflicts: 3 };
+		const ports = portsFor({
+			// One planned conflict; one update and the deactivation turn into conflicts while writing.
+			previewSync: vi.fn(async () => planWith(['create', 'update', 'update', 'deactivate', 'unchanged', 'conflict'], true)),
+			applySync: vi.fn(async () => written),
+		});
+		const { controller } = harness(ports);
+		const final = await controller.run();
+		expect(final).toMatchObject({
+			status: 'idle',
+			lastRun: { status: 'success', summary: { positions: 6, create: 1, update: 1, unchanged: 1, deactivate: 0, conflicts: 3 } },
+		});
+	});
+
+	it('a storage failure after steps that needed no write says how many notes were written out of the planned writes', async () => {
+		const failure: InventoryVaultSyncResult = {
+			status: 'storage_failure', message: 'An inventory note could not be created.', written: 1, errorName: 'EACCES',
+		};
+		const ports = portsFor({
+			previewSync: vi.fn(async () => planWith(['unchanged', 'unchanged', 'unchanged', 'create', 'update', 'conflict'], true)),
+			applySync: vi.fn(async () => failure),
+		});
+		const { controller } = harness(ports);
+		const final = await controller.run();
+		expect(final).toMatchObject({
+			status: 'idle',
+			lastRun: { status: 'error', error: 'storage_failure', errorName: 'EACCES', written: 1, total: 2 },
+		});
+	});
+
 	it('redacts a thrown capture failure into a stable, safe error reason', async () => {
 		const ports = portsFor({ refreshAdvisor: vi.fn(async () => { throw new Error('403 secret token'); }) });
 		const finished: InventoryVaultSyncLastRun[] = [];
