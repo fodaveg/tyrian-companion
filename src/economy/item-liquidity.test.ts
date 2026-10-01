@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ItemHolding } from '../account/storage-snapshot-model';
 import type { CatalogItem } from '../catalog/public-catalog-model';
-import { classifyItemLiquidity, isItemLiquidityClassification } from './item-liquidity';
+import { classifyItemLiquidity } from './item-liquidity';
 
 describe('item liquidity classification', () => {
 	it('allows both routes for an available unbound priced stack', () => {
@@ -204,29 +204,6 @@ describe('item liquidity classification', () => {
 		}), item(), 'available')).toEqual({ status: 'invalid', reason: 'invalid_holding' });
 	});
 
-	it('strictly validates the derived route and arithmetic invariants', () => {
-		const result = classifyItemLiquidity(holding({ quantity: 3 }), item({ vendorValue: 7 }), 'available');
-		if (result.status !== 'ok') throw new Error('Expected a valid classification fixture.');
-		expect(isItemLiquidityClassification(result.classification)).toBe(true);
-		expect(isItemLiquidityClassification({
-			...result.classification,
-			liquidGold: { ...result.classification.liquidGold, routes: ['vendor', 'trading_post'] },
-		})).toBe(false);
-		expect(isItemLiquidityClassification({
-			...result.classification,
-			vendor: {
-				status: 'eligible',
-				value: { ...(result.classification.vendor as { status: 'eligible'; value: object }).value, netCopper: 22 },
-			},
-		})).toBe(false);
-		expect(isItemLiquidityClassification({ ...result.classification, extra: true })).toBe(false);
-		expect(isItemLiquidityClassification({
-			...result.classification,
-			access: 'available',
-			vendor: { status: 'excluded', reason: 'current_state_unavailable' },
-			liquidGold: { status: 'eligible', routes: ['trading_post'], vendorFloor: null },
-		})).toBe(false);
-	});
 });
 
 function holding(overrides: Partial<ItemHolding> = {}): ItemHolding {

@@ -4,7 +4,6 @@ import { isNormalizedCatalogItem } from '../catalog/public-catalog-validators';
 import { createCatalogVendorValue } from './gw2-fees';
 import {
 	createNonLiquidCopperValue,
-	isCopperValue,
 	type NonLiquidCopperValue,
 	type VendorCopperValue,
 } from './monetary';
@@ -143,72 +142,6 @@ export function isTradingPostAccessible(
 ): boolean {
 	return tradingPost.status === 'eligible'
 		&& (tradingPostAccess === 'full' || (tradingPostAccess === 'free_to_play' && whitelisted));
-}
-
-export function isItemLiquidityClassification(value: unknown): value is ItemLiquidityClassification {
-	if (!isRecord(value)
-		|| !exactKeys(value, [
-			'version', 'itemId', 'quantity', 'access', 'binding', 'tradingPost', 'vendor', 'liquidGold',
-		])
-		|| value.version !== ITEM_LIQUIDITY_CLASSIFICATION_VERSION
-		|| !isPositiveInteger(value.itemId)
-		|| !isPositiveInteger(value.quantity)
-		|| !isAccess(value.access)
-		|| !isBindingClassification(value.binding)
-		|| !isTradingPostEligibility(value.tradingPost)
-		|| !isVendorEligibility(value.vendor)
-		|| !isLiquidGoldClassification(value.liquidGold)) return false;
-	if (value.access === 'current_state_unavailable') {
-		if (value.tradingPost.status !== 'excluded'
-			|| value.tradingPost.reason !== 'current_state_unavailable'
-			|| value.vendor.status !== 'excluded'
-			|| value.vendor.reason !== 'current_state_unavailable') return false;
-	} else {
-		if ((value.tradingPost.status === 'excluded' && value.tradingPost.reason === 'current_state_unavailable')
-			|| (value.vendor.status === 'excluded' && value.vendor.reason === 'current_state_unavailable')) return false;
-		if (!bindingMatchesTradingPost(value.binding, value.tradingPost)) return false;
-	}
-	if (value.binding.source === 'catalog_missing') {
-		if (value.tradingPost.status !== 'excluded'
-			|| value.tradingPost.reason !== 'binding_unknown'
-			|| value.vendor.status !== 'excluded'
-			|| value.vendor.reason !== 'catalog_missing') return false;
-	}
-	if (value.vendor.status === 'eligible' && value.vendor.value.quantity !== value.quantity) return false;
-	const expectedRoutes: LiquidGoldRoute[] = [];
-	if (value.tradingPost.status === 'eligible') expectedRoutes.push('trading_post');
-	if (value.vendor.status === 'eligible') expectedRoutes.push('vendor');
-	if (value.liquidGold.status === 'excluded') {
-		return expectedRoutes.length === 0
-			&& value.liquidGold.value.quantity === value.quantity
-			&& value.liquidGold.value.reason === expectedNonLiquidReason(value.tradingPost, value.vendor);
-	}
-	return sameRoutes(value.liquidGold.routes, expectedRoutes)
-		&& (value.vendor.status === 'eligible'
-			? sameVendorValue(value.liquidGold.vendorFloor, value.vendor.value)
-			: value.liquidGold.vendorFloor === null);
-}
-
-function bindingMatchesTradingPost(
-	binding: BindingClassification,
-	tradingPost: TradingPostEligibility,
-): boolean {
-	if (binding.kind === 'account_bound') {
-		return tradingPost.status === 'excluded' && tradingPost.reason === 'account_bound';
-	}
-	if (binding.kind === 'character_bound') {
-		return tradingPost.status === 'excluded' && tradingPost.reason === 'character_bound';
-	}
-	if (binding.kind === 'unknown') {
-		return tradingPost.status === 'excluded' && tradingPost.reason === 'binding_unknown';
-	}
-	return tradingPost.status === 'eligible'
-		|| (tradingPost.status === 'excluded' && [
-			'catalog_missing',
-			'price_missing',
-			'price_invalid',
-			'price_unavailable',
-		].includes(tradingPost.reason));
 }
 
 function classifyAccess(state: ItemHolding['state']): ItemLiquidityClassification['access'] {
@@ -352,102 +285,8 @@ function isStatsAttributes(value: unknown): value is Record<string, number> {
 		&& Object.entries(value).every(([key, amount]) => key.length > 0 && Number.isFinite(amount));
 }
 
-function isBindingClassification(value: unknown): value is BindingClassification {
-	if (!isRecord(value) || !exactKeys(value, ['kind', 'source'])) return false;
-	if (value.kind === 'unbound') return value.source === 'holding';
-	if (value.kind === 'account_bound' || value.kind === 'character_bound') {
-		return value.source === 'holding' || value.source === 'catalog';
-	}
-	return value.kind === 'unknown'
-		&& (value.source === 'holding' || value.source === 'catalog_missing');
-}
-
-function isTradingPostEligibility(value: unknown): value is TradingPostEligibility {
-	if (!isRecord(value)) return false;
-	return value.status === 'eligible'
-		? exactKeys(value, ['status'])
-		: value.status === 'excluded'
-			&& exactKeys(value, ['status', 'reason'])
-			&& isTradingPostExclusionReason(value.reason);
-}
-
-function isVendorEligibility(value: unknown): value is VendorEligibility {
-	if (!isRecord(value)) return false;
-	return value.status === 'eligible'
-		? exactKeys(value, ['status', 'value']) && isVendorValue(value.value)
-		: value.status === 'excluded'
-			&& exactKeys(value, ['status', 'reason'])
-			&& isVendorExclusionReason(value.reason);
-}
-
-function isLiquidGoldClassification(value: unknown): value is LiquidGoldClassification {
-	if (!isRecord(value) || !Array.isArray(value.routes)) return false;
-	if (value.status === 'eligible') {
-		return exactKeys(value, ['status', 'routes', 'vendorFloor'])
-			&& value.routes.length > 0
-			&& value.routes.every(isLiquidGoldRoute)
-			&& (value.vendorFloor === null || isVendorValue(value.vendorFloor));
-	}
-	return value.status === 'excluded'
-		&& exactKeys(value, ['status', 'routes', 'value'])
-		&& value.routes.length === 0
-		&& isNonLiquidValue(value.value);
-}
-
-function isVendorValue(value: unknown): value is VendorCopperValue {
-	return isCopperValue(value) && value.kind === 'vendor';
-}
-
-function isNonLiquidValue(value: unknown): value is NonLiquidCopperValue {
-	return isCopperValue(value)
-		&& value.kind === 'non_liquid'
-		&& (value.reason === 'no_eligible_route' || value.reason === 'missing_required_data');
-}
-
-function sameRoutes(actual: LiquidGoldRoute[], expected: LiquidGoldRoute[]): boolean {
-	return actual.length === expected.length && actual.every((route, index) => route === expected[index]);
-}
-
-function sameVendorValue(a: VendorCopperValue | null, b: VendorCopperValue): boolean {
-	return a !== null
-		&& a.version === b.version
-		&& a.kind === b.kind
-		&& a.priceSource === b.priceSource
-		&& a.liquidity === b.liquidity
-		&& a.quantity === b.quantity
-		&& a.unitCopper === b.unitCopper
-		&& a.grossCopper === b.grossCopper
-		&& a.netCopper === b.netCopper;
-}
-
 function isTradingPostPriceStatus(value: unknown): value is TradingPostPriceStatus {
 	return value === 'available' || value === 'missing' || value === 'invalid' || value === 'unavailable';
-}
-
-function isTradingPostExclusionReason(value: unknown): value is TradingPostExclusionReason {
-	return value === 'current_state_unavailable'
-		|| value === 'account_bound'
-		|| value === 'character_bound'
-		|| value === 'binding_unknown'
-		|| value === 'catalog_missing'
-		|| value === 'price_missing'
-		|| value === 'price_invalid'
-		|| value === 'price_unavailable';
-}
-
-function isVendorExclusionReason(value: unknown): value is VendorExclusionReason {
-	return value === 'current_state_unavailable'
-		|| value === 'catalog_missing'
-		|| value === 'vendor_sale_forbidden'
-		|| value === 'no_vendor_value';
-}
-
-function isLiquidGoldRoute(value: unknown): value is LiquidGoldRoute {
-	return value === 'trading_post' || value === 'vendor';
-}
-
-function isAccess(value: unknown): value is ItemLiquidityClassification['access'] {
-	return value === 'available' || value === 'claim_required' || value === 'current_state_unavailable';
 }
 
 function isItemState(value: unknown): value is ItemHolding['state'] {
