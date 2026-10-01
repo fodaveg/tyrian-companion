@@ -3283,20 +3283,20 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "84ea35751f9b4d98161388dd2e48a88520cb8af5",
+					"id": "83ee77749c998da2a79968d0425592566fa0e95a",
 					"kind": "catch_clause",
-					"line": 38,
+					"line": 43,
 					"column": 5,
-					"endLine": 43,
+					"endLine": 48,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
+						"behavior": "fallback_return",
 						"scope": "captureInventoryMarketDepth",
-						"justification": "The \"captureInventoryMarketDepth\" boundary handles \"local_recovery\" as deterministic fail-closed validation or local recovery; it neither starts an independent user action nor suppresses an unowned terminal diagnostic."
+						"justification": "The \"captureInventoryMarketDepth\" boundary handles \"fallback_return\" as deterministic fail-closed validation or local recovery; it neither starts an independent user action nor suppresses an unowned terminal diagnostic."
 					},
-					"reason": "Allowlisted catch_clause: The \"captureInventoryMarketDepth\" boundary handles \"local_recovery\" as deterministic fail-closed validation or local recovery; it neither starts an independent user action nor suppresses an unowned terminal diagnostic. Verified recovery: \"local_recovery\" in \"captureInventoryMarketDepth\"."
+					"reason": "Allowlisted catch_clause: The \"captureInventoryMarketDepth\" boundary handles \"fallback_return\" as deterministic fail-closed validation or local recovery; it neither starts an independent user action nor suppresses an unowned terminal diagnostic. Verified recovery: \"fallback_return\" in \"captureInventoryMarketDepth\"."
 				}
 			]
 		},
