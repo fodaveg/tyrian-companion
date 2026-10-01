@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
 import type { ReservationGoal } from '../economy/reservation-model';
+import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-controller';
 import { classifyInventoryAdvisor, sha256InventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import { sha256CanonicalValue, sha256InventoryRulePack } from './inventory-advisor-contract';
@@ -538,3 +539,181 @@ function coverage(roster: string[]): SnapshotCoverage {
 	}, characters: Object.fromEntries(roster.map((character) => [character, { status: 'complete' as const }])) };
 }
 function evidence() { return { status: 'complete' as const, capturedAt: '2026-08-14T12:00:00.000Z', reason: null }; }
+
+/** A market depth the classifier reads as incomplete: with it on the engine input the analysis is `limited`. */
+function unavailableDepth(value: InventoryAdvisorEngineInputV1): NonNullable<InventoryAdvisorEngineInputV1['marketDepth']> {
+	const itemIds = value.input.prices.requestedItemIds;
+	return {
+		version: 1, capturedAt: value.input.asOf, source: 'gw2-commerce-listings', requestedItemIds: [...itemIds],
+		status: 'unavailable', items: itemIds.map((itemId) => ({ itemId, coverage: 'missing' as const, buys: [], sells: [] })),
+	};
+}
+
+/** Redefines an own property as non-enumerable: every read still finds it, a structured clone leaves it behind. */
+function hide(target: object, key: string, value: unknown): void {
+	Object.defineProperty(target, key, { value, enumerable: false, configurable: true, writable: true });
+}
+
+/**
+ * Three hardenings a security review of the verified analysis asked for. None of them is a way to
+ * pass something off as verified; each closes a place where the internal route could part from the
+ * public one, throw where it answers, or keep something it did not check.
+ */
+describe('inventory advisor verified analysis: a property a structured clone would leave behind', () => {
+	const hidden = [
+		['a market depth on the engine input', (value: InventoryAdvisorEngineInputV1) => {
+			hide(value, 'marketDepth', unavailableDepth(value));
+		}],
+		['the goals inside the input', (value: InventoryAdvisorEngineInputV1) => {
+			hide(value.input, 'goals', value.input.goals);
+		}],
+		['the holdings inside the snapshot', (value: InventoryAdvisorEngineInputV1) => {
+			hide(value.input.snapshot, 'holdings', value.input.snapshot.holdings);
+		}],
+		['the quantity of a holding', (value: InventoryAdvisorEngineInputV1) => {
+			const holding = value.input.snapshot.holdings[0]!;
+			hide(holding, 'quantity', holding.quantity);
+		}],
+		// The length of an array is the one non-enumerable own property a plain tree has; nothing else on it is.
+		['an extra property on the holdings array', (value: InventoryAdvisorEngineInputV1) => {
+			hide(value.input.snapshot.holdings, 'extra', 1);
+		}],
+	] as const;
+
+	it.each(hidden)('answers what the public route answers for an engine input with a non-enumerable property: %s', (_name, change) => {
+		const engineInput = multiLocationFixture();
+		change(engineInput);
+		const producerResult = classifyInventoryAdvisor(engineInput);
+		const classified = classifyInventoryAdvisorVerified(engineInput);
+		expect({ status: classified.producerResult.status, coverage: classified.producerResult.report?.coverage ?? null })
+			.toEqual({ status: producerResult.status, coverage: producerResult.report?.coverage ?? null });
+		expect(classified.producerResult).toEqual(producerResult);
+		expect(applyInventoryDiscardAllowlistVerified(classified).result)
+			.toEqual(applyInventoryDiscardAllowlist({ engineInput, producerResult }));
+	});
+
+	it.each(hidden)('does not copy nor record an engine input with a non-enumerable property: %s', (_name, change) => {
+		const engineInput = multiLocationFixture();
+		change(engineInput);
+		const classified = classifyInventoryAdvisorVerified(engineInput);
+		expect(classified.engineInput).toBe(engineInput);
+		expect(inventoryAdvisorVerifiedAnalysisContext(applyInventoryDiscardAllowlistVerified(classified))).toBeUndefined();
+	});
+
+	it('sends an array with an extra non-enumerable property through the public route: three classifications, the public answer', () => {
+		const engineInput = multiLocationFixture();
+		hide(engineInput.input.snapshot.holdings, 'extra', 1);
+		const publicRoute = analysePublic(engineInput);
+		expect(publicRoute.presentation.status).not.toBe('invalid');
+		const before = counted.classifications;
+		const internal = analyseInternal(engineInput);
+		expect(counted.classifications - before).toBe(3);
+		expect(internal.source.discardContext.engineInput).toBe(engineInput);
+		expect(inventoryAdvisorVerifiedAnalysisContext(internal.source)).toBeUndefined();
+		expect(digests(internal)).toEqual(digests(publicRoute));
+		expect(internal.presentation).toEqual(publicRoute.presentation);
+	});
+
+	it('still copies and records an engine input made of arrays and plain objects only, and classifies it once', () => {
+		const engineInput = { ...multiLocationFixture(), materialStorageCapacity: { quantity: 250, source: 'minimum_guaranteed' as const } };
+		const before = counted.classifications;
+		const classified = classifyInventoryAdvisorVerified(engineInput);
+		expect(classified.engineInput).not.toBe(engineInput);
+		const source = applyInventoryDiscardAllowlistVerified(classified);
+		expect(inventoryAdvisorVerifiedAnalysisContext(source)).toBeDefined();
+		expect(buildInventoryAdvisorPresentation(source).status).not.toBe('invalid');
+		expect(counted.classifications - before).toBe(1);
+	});
+});
+
+describe('inventory advisor verified analysis: a value that is not an engine input, nor a pair', () => {
+	const values: Array<[string, unknown]> = [
+		['null', null], ['undefined', undefined], ['an empty object', {}], ['a number', 5], ['a string', 'engine'], ['an array', []],
+	];
+
+	it.each(values)('classifies %s as the public route does, without throwing', (_name, value) => {
+		const expected = classifyInventoryAdvisor(value);
+		expect(expected.status).toBe('invalid');
+		const classified = classifyInventoryAdvisorVerified(value as InventoryAdvisorEngineInputV1);
+		expect(classified.producerResult).toEqual(expected);
+		expect(classified.engineInput).toEqual(value);
+	});
+
+	it.each(values)('applies the allowlist to %s as the public route does, without throwing', (_name, value) => {
+		const expected = applyInventoryDiscardAllowlist(value);
+		expect(expected.status).toBe('invalid');
+		const source = applyInventoryDiscardAllowlistVerified(value as InventoryAdvisorVerifiedAnalysis['discardContext']);
+		expect(source.result).toEqual(expected);
+		expect(source.discardContext).toBe(value);
+		// There is no engine input to take an input from.
+		expect(source.input).toBeUndefined();
+		expect(inventoryAdvisorVerifiedAnalysisContext(source)).toBeUndefined();
+		expect(buildInventoryAdvisorPresentation(source)).toEqual(buildInventoryAdvisorPresentation(
+			{ input: undefined, result: expected, discardContext: value } as unknown as InventoryAdvisorContextualPresentationSource,
+		));
+	});
+
+	it.each(values)('runs both stages on %s as the public route does, without throwing', (_name, value) => {
+		const producerResult = classifyInventoryAdvisor(value);
+		const expected = applyInventoryDiscardAllowlist({ engineInput: value, producerResult });
+		expect(expected.status).toBe('invalid');
+		const source = applyInventoryDiscardAllowlistVerified(classifyInventoryAdvisorVerified(value as InventoryAdvisorEngineInputV1));
+		expect(source.discardContext.producerResult).toEqual(producerResult);
+		expect(source.result).toEqual(expected);
+		expect(inventoryAdvisorVerifiedAnalysisContext(source)).toBeUndefined();
+	});
+});
+
+describe('inventory advisor verified analysis: the controller keeps the source it checked', () => {
+	it('reads the source of a workflow result once: a second, different answer cannot be kept in place of the recorded one', async () => {
+		const { source } = analyseInternal(multiLocationFixture());
+		// Equal to the recorded source, not recorded, and still the caller's to change.
+		const lookAlike = structuredClone(source);
+		const reads = { source: 0, status: 0 };
+		const result = {
+			get status() { reads.status += 1; return 'ready' as const; },
+			get source() { reads.source += 1; return reads.source === 1 ? source : lookAlike; },
+		};
+		const controller = new InventoryAdvisorPresentationController({ load: () => Promise.resolve(result) });
+		expect((await controller.refresh()).status).toBe('ready');
+		expect(reads).toEqual({ source: 1, status: 1 });
+		// What the cache keeps is out of reach of whoever returned it: emptying the look-alike's goals,
+		// which then no longer match its result, changes no later read.
+		lookAlike.input.goals.length = 0;
+		const before = counted.classifications;
+		expect(controller.current({ sort: 'name_asc' }).status).toBe('ready');
+		expect(counted.classifications - before).toBe(0);
+		expect(controller.analysis()?.source.input.goals).toHaveLength(1);
+	});
+
+	it('detaches a source that is not the recorded one, read once as well', async () => {
+		const { source } = analyseInternal(multiLocationFixture());
+		const lookAlike = structuredClone(source);
+		const reads = { source: 0, status: 0 };
+		const result = {
+			get status() { reads.status += 1; return 'ready' as const; },
+			get source() { reads.source += 1; return reads.source === 1 ? lookAlike : source; },
+		};
+		const controller = new InventoryAdvisorPresentationController({ load: () => Promise.resolve(result) });
+		expect((await controller.refresh()).status).toBe('ready');
+		expect(reads).toEqual({ source: 1, status: 1 });
+		lookAlike.input.goals.length = 0;
+		// The look-alike it read is what it keeps, as a copy of its own, and a copy is reproduced on each read.
+		const before = counted.classifications;
+		expect(controller.current({ sort: 'name_asc' }).status).toBe('ready');
+		expect(counted.classifications - before).toBe(1);
+		expect(controller.analysis()?.source.input.goals).toHaveLength(1);
+	});
+
+	it('does not take a result for ready on one reading of its status and for something else on the next', async () => {
+		const { source } = analyseInternal(multiLocationFixture());
+		let reads = 0;
+		const result = {
+			get status() { reads += 1; return reads === 1 ? 'ready' as const : 'blocked' as const; },
+			source,
+		} as unknown as { status: 'ready'; source: typeof source };
+		const controller = new InventoryAdvisorPresentationController({ load: () => Promise.resolve(result) });
+		expect((await controller.refresh()).status).toBe('ready');
+		expect(reads).toBe(1);
+	});
+});

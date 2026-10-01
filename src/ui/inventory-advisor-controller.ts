@@ -230,10 +230,14 @@ function immutableSource(source: unknown): boolean {
  * The workflow result as the cache keeps it, out of reach of whoever returned it. Everything is
  * cloned except a source the advisor's own flow completed, kept as the same object: a clone of it
  * would be equal but no longer that analysis, and every read would reproduce the whole account.
+ *
+ * Every field of `result` is read once, into `read`: the source kept as that analysis is the one
+ * that was checked, whatever `result` would answer if it were asked again.
  */
 function detached(result: InventoryAdvisorWorkflowResult): InventoryAdvisorWorkflowResult {
-	if (result.status !== 'ready' || !immutableSource(result.source)) return clone(result);
-	const { source, ...rest } = result;
+	const read = { ...result };
+	if (read.status !== 'ready' || !immutableSource(read.source)) return clone(read);
+	const { source, ...rest } = read;
 	return { ...clone(rest), source };
 }
 

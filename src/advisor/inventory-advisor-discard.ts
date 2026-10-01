@@ -156,7 +156,10 @@ const VERIFIED_ANALYSES = new WeakMap<object, InventoryAdvisorAnalysisContext>()
  */
 export function classifyInventoryAdvisorVerified(value: InventoryAdvisorEngineInputV1): InventoryDiscardAllowlistInputV1 {
 	const engineInput = frozenCopy(value);
-	if (engineInput === undefined) return { engineInput: value, producerResult: classifyInventoryAdvisorDiagnosed(value).result };
+	// Nothing to copy either in a value that is no object at all (`null` copies to `null`): the public answer, not recorded.
+	if (typeof engineInput !== 'object' || engineInput === null) {
+		return { engineInput: value, producerResult: classifyInventoryAdvisorDiagnosed(value).result };
+	}
 	const analysis = createInventoryAdvisorAnalysisContext(engineInput.input);
 	// Its own copy as well: whatever the classifier put in its result, nothing outside this pair is frozen with it.
 	const producerResult = freezeDeep(structuredClone(classifyInventoryAdvisorDiagnosed(engineInput, analysis).result));
@@ -176,13 +179,25 @@ export function applyInventoryDiscardAllowlistVerified(classified: InventoryDisc
 	const analysis = CLASSIFIED_ANALYSES.get(classified);
 	const outcome = applyInventoryDiscardAllowlistDiagnosed(classified);
 	if (analysis === undefined || outcome.result.status === 'invalid') {
-		return { input: classified.engineInput.input, result: outcome.result, discardContext: classified };
+		return { input: engineInputInput(classified), result: outcome.result, discardContext: classified };
 	}
 	const source = Object.freeze({
 		input: classified.engineInput.input, result: freezeDeep(structuredClone(outcome.result)), discardContext: classified,
 	});
 	VERIFIED_ANALYSES.set(source, analysis);
 	return source;
+}
+
+/**
+ * `classified.engineInput.input` for a value the second stage does not record, which may be anything
+ * a caller passed: a value with no engine input to read it from (not an object, or without one) has
+ * none, and the source built from it says so instead of throwing where the public allowlist answers.
+ */
+function engineInputInput(classified: unknown): InventoryAdvisorEngineInputV1['input'] {
+	const engineInput: unknown = typeof classified === 'object' && classified !== null
+		? (classified as { engineInput?: unknown }).engineInput : undefined;
+	return (typeof engineInput === 'object' && engineInput !== null
+		? (engineInput as { input?: unknown }).input : undefined) as InventoryAdvisorEngineInputV1['input'];
 }
 
 /**
@@ -196,9 +211,10 @@ export function inventoryAdvisorVerifiedAnalysisContext(source: unknown): Invent
 
 /**
  * A private copy of `value`, frozen in depth, or undefined when `value` is not a tree of plain data
- * (primitives, arrays and plain objects with data properties only). Only such a tree is copied
- * faithfully: a class instance would lose its prototype and a getter would become a value, and the
- * copy could then pass a contract the original does not.
+ * (primitives, arrays and plain objects with enumerable data properties only). Only such a tree is
+ * copied faithfully: a class instance would lose its prototype, a getter would become a value and a
+ * non-enumerable property would be gone, and the copy could then pass a contract the original does
+ * not, or the other way round.
  */
 function frozenCopy<T>(value: T): T | undefined {
 	try { return plainTree(value, new Set()) ? freezeDeep(structuredClone(value)) : undefined; } catch { return undefined; }
@@ -212,8 +228,12 @@ function plainTree(value: unknown, ancestors: Set<object>): boolean {
 	if (Array.isArray(value) ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) return false;
 	if (Object.getOwnPropertySymbols(value).length !== 0) return false;
 	ancestors.add(value);
-	for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
-		if (!('value' in descriptor) || !plainTree(descriptor.value, ancestors)) return false;
+	for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+		// The length of an array is its own and never enumerable; a structured clone rebuilds it.
+		if (key === 'length' && Array.isArray(value)) continue;
+		// A property that is not enumerable is read by whoever asks for it and left behind by a
+		// structured clone: the copy would not be the input the public route classifies.
+		if (!('value' in descriptor) || descriptor.enumerable !== true || !plainTree(descriptor.value, ancestors)) return false;
 	}
 	ancestors.delete(value);
 	return true;
