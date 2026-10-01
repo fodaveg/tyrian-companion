@@ -75,6 +75,11 @@ export interface TyrianVault {
 	 * edit from outside it). Only then may a caller keep what it read from a note until an event
 	 * names it: the session-history index (session-history.ts) is built on this and nothing else.
 	 * Absent or `false`, `onChange` is a hint, and nothing read may be reused without reading again.
+	 *
+	 * The promise is about `onChange('')`, the whole vault, which is how that index subscribes. A
+	 * host whose `onChange('')` delivers nothing, or only part of the vault, or leaves out some
+	 * kind of change (one made by its sync, a note it does not track), must not declare it: the
+	 * index would never be invalidated and would keep answering from what it read first.
 	 */
 	readonly reportsEveryChange?: boolean;
 	/** core/settings.ts:241/608 (forbidden output prefix), local-debug-contract.ts:122, main.ts:2186. */

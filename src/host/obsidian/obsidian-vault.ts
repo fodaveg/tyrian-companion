@@ -62,8 +62,10 @@ export function createObsidianVault(plugin: Plugin): TyrianVault {
 		onChange: (root, listener) => watchVault(plugin, root, listener),
 		// Obsidian triggers `create`, `modify`, `delete` and `rename` on the vault for its own
 		// writes (the editor, `Vault.process`, Sync) and for the changes its file watcher sees made
-		// from outside. The one it cannot report is an outside edit its watcher misses; the
-		// session-history index, the only reader of this flag, is rebuilt on its explicit refresh.
+		// from outside. For Sync and for the watcher that is what is observed, not something the
+		// Obsidian API documents: its types say only "Called when a file is modified". The one it
+		// cannot report is an outside edit its watcher misses; the session-history index, the only
+		// reader of this flag, is rebuilt on its explicit refresh.
 		reportsEveryChange: true,
 		get configDir() { return vault().configDir; },
 		canonicalIdentity: () => adapter().getBasePath?.() ?? `${vault().getName()}\0${vault().configDir}`,
