@@ -193,6 +193,25 @@ describe('mountPriceHistoryPanel, repainted with the disclosure open', () => {
 		expect(after.map((select) => select.value)).toEqual(['36038', 'bid', '90']);
 	});
 
+	it('calls the onLoad of the LAST paint from the kept selectors and button, never an earlier one', () => {
+		const mounted = openPanel();
+		const first = vi.fn();
+		const second = vi.fn();
+		mounted.panel.update(createTranslator('en'), { ...interactions(), onLoad: first });
+		mounted.panel.update(createTranslator('en'), { ...interactions(), onLoad: second });
+		const controls = walk(mounted.container).filter((element) => element.className === 'tyrian-price-history__controls')[0]!;
+		const selects = walk(controls).filter((element) => element.tag === 'select');
+		const load = walk(controls).find((element) => element.tag === 'button')!;
+
+		selects[2]!.value = '90';
+		selects[2]!.dispatch('change');
+		load.dispatch('click');
+
+		expect(first).not.toHaveBeenCalled();
+		expect(second).toHaveBeenCalledTimes(2);
+		expect(second).toHaveBeenLastCalledWith(36_038, 'ask', 90);
+	});
+
 	it('shows the new data, not the old, when the same controls are repainted for another item and history', () => {
 		const mounted = openPanel();
 		mounted.panel.update(createTranslator('en'), interactions());

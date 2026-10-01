@@ -63,7 +63,7 @@ export function mountPriceHistoryPanel(container: HTMLElement, disclosure: HTMLD
 	let chart: { readonly seriesKey: string; readonly element: HTMLElement } | null = null;
 	let disposed = false;
 	const kept: PriceHistoryKept = { controls: null, tableDetails: null };
-	const chartFor =(seriesKey: string): HTMLElement => {
+	const chartFor = (seriesKey: string): HTMLElement => {
 		if (chart === null || chart.seriesKey !== seriesKey) chart = { seriesKey, element: freshChartContainer() };
 		return chart.element;
 	};
@@ -99,6 +99,12 @@ interface PriceHistoryControls {
 	readonly window: LabelledSelect;
 	readonly load: HTMLButtonElement;
 	icon: HTMLElement | null;
+	/**
+	 * A load the reader asked for through these selectors and that has not finished. The repaint that
+	 * announces it (`busy`) still carries the OLD selection, because the runtime only adopts the new
+	 * one once the load starts, so while it is pending the selectors keep what the reader chose.
+	 */
+	pending: boolean;
 	/** What the listeners read: always the interactions of the latest paint. */
 	interactions: PriceHistoryPanelInteractions;
 }
@@ -122,6 +128,11 @@ function freshChartContainer(): HTMLElement {
  *
  * A one-shot paint of the whole panel, chart and table included. `mountPriceHistoryPanel` passes
  * its own `chartHost` to keep the chart container across repaints, or `null` to leave both out.
+ *
+ * `kept` is what a mounted panel carries from one paint to the next: the selector row (so a
+ * focused selector keeps its focus and value) and the accessible table of the last paint (read
+ * only for whether it was open). It is filled in by this call. The default, a new
+ * `PriceHistoryKept`, means everything is painted from scratch.
  */
 export function renderPriceHistoryPanel(
 	container: HTMLElement,
@@ -177,16 +188,19 @@ export function renderPriceHistoryPanel(
 		}
 		controls.icon.setAttribute('src', iconUrl);
 	}
+	// The first paint without a load in flight shows the state again, whatever the load did.
+	if (interactions.busy !== true) controls.pending = false;
+	const keepChosen = controls.pending;
 	syncSelect(controls.item, translator.t('priceHistory.item'), state.watchItemIds.map((itemId) => ({
 		value: String(itemId), label: itemDisplayLabel(itemId, interactions.itemLabels, translator),
-	})), String(selectedItemId ?? ''));
+	})), String(selectedItemId ?? ''), keepChosen);
 	syncSelect(controls.side, translator.t('priceHistory.side'), [
 		{ value: 'bid', label: translator.t('priceHistory.side.bid') },
 		{ value: 'ask', label: translator.t('priceHistory.side.ask') },
-	], state.selectedSide);
+	], state.selectedSide, keepChosen);
 	syncSelect(controls.window, translator.t('priceHistory.window'), [42, 90, 180].map((days) => ({
 		value: String(days), label: translator.t('priceHistory.days', { days }),
-	})), String(state.windowDays));
+	})), String(state.windowDays), keepChosen);
 	controls.load.textContent = interactions.busy ? translator.t('priceHistory.loading') : translator.t('priceHistory.load');
 	controls.load.disabled = interactions.busy === true || state.watchItemIds.length === 0;
 	if (kept.controls === null) {
@@ -266,13 +280,15 @@ function buildControls(first: PriceHistoryPanelInteractions): PriceHistoryContro
 	const side = labelledSelect();
 	const window = labelledSelect();
 	const load = button('');
-	const controls: PriceHistoryControls = { element, itemGroup, item, side, window, load, icon: null, interactions: first };
+	const controls: PriceHistoryControls = { element, itemGroup, item, side, window, load, icon: null, pending: false, interactions: first };
 	const run = (): void => {
 		const itemId = Number(item.select.value);
 		const selectedSide = side.select.value === 'bid' ? 'bid' : 'ask';
 		const windowDays = Number(window.select.value) as PriceHistoryWindowDays;
 		const { interactions } = controls;
-		if (Number.isSafeInteger(itemId) && itemId > 0) void interactions.onLoad(itemId, selectedSide, windowDays);
+		if (!Number.isSafeInteger(itemId) || itemId <= 0) return;
+		controls.pending = true;
+		void interactions.onLoad(itemId, selectedSide, windowDays);
 	};
 	load.addEventListener('click', run);
 	item.select.addEventListener('change', run);
@@ -360,9 +376,10 @@ function labelledSelect(): LabelledSelect {
 
 /**
  * Brings a kept selector up to date in place: its text, its options (replaced only when they
- * changed) and its value. The `<select>` itself is never rebuilt, so it keeps the focus.
+ * changed) and its value, unless `keepChosen` says the reader's pending choice stands. The
+ * `<select>` itself is never rebuilt, so it keeps the focus.
  */
-function syncSelect(target: LabelledSelect, text: string, options: Array<{ value: string; label: string }>, selected: string): void {
+function syncSelect(target: LabelledSelect, text: string, options: Array<{ value: string; label: string }>, selected: string, keepChosen: boolean): void {
 	target.span.textContent = text;
 	const current = Array.from(target.select.children) as HTMLOptionElement[];
 	const same = current.length === options.length
@@ -372,7 +389,7 @@ function syncSelect(target: LabelledSelect, text: string, options: Array<{ value
 			const element = createEl('option'); element.value = option.value; element.textContent = option.label; return element;
 		}));
 	}
-	target.select.value = selected;
+	if (!keepChosen) target.select.value = selected;
 }
 
 function button(text: string): HTMLButtonElement { const result = createEl('button'); result.type = 'button'; result.textContent = text; return result; }

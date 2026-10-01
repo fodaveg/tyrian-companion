@@ -261,10 +261,18 @@ class FakeElement {
 	className = ''; textContent: string | null = null; type = ''; value = ''; disabled = false; scope = '';
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) {}
 	parent: FakeElement | null = null;
-	append(...children: FakeElement[]): void { for (const child of children) child.parent = this; this.children.push(...children); }
+	append(...children: FakeElement[]): void { for (const child of children) { child.parent = this; this.children.push(child); } }
 	insertBefore(child: FakeElement, anchor: FakeElement): void { child.parent = this; this.children.splice(this.children.indexOf(anchor), 0, child); }
-	remove(): void { this.parent?.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; }
-	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
+	/** Like `Node.remove()`: a node with no parent, or one not among its parent's children, is left alone. */
+	remove(): void {
+		const index = this.parent?.children.indexOf(this) ?? -1;
+		if (index >= 0) this.parent!.children.splice(index, 1);
+		this.parent = null;
+	}
+	replaceChildren(...children: FakeElement[]): void {
+		for (const removed of this.children.splice(0, this.children.length)) removed.parent = null;
+		this.append(...children);
+	}
 	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
 	addEventListener(type: string, listener: () => void): void { const entries = this.listeners.get(type) ?? []; entries.push(listener); this.listeners.set(type, entries); }
 	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener(); }

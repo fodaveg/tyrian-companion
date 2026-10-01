@@ -296,6 +296,53 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(resolveCatalog).toHaveBeenCalledTimes(1);
 	});
 
+	/**
+	 * The real caller: `runPriceHistoryAction` repaints with `busy` BEFORE the action runs, and the
+	 * runtime only moves `selectedItemId`/`selectedSide`/`windowDays` once `loadSeries` starts. That
+	 * first repaint still reads the old state, and must not put the focused selector back on it.
+	 */
+	it('keeps the selector the user changed through the busy repaint, the load and its end; a load that changes nothing shows the state again', async () => {
+		installDom();
+		let state = priceHistoryState({ watchItemIds: [36_038, 19_721], selectedItemId: 36_038, status: 'ready' });
+		let finish: () => void = () => undefined;
+		let moveState = true;
+		const loadSeries = vi.fn(async (itemId: number): Promise<void> => {
+			if (moveState) state = { ...state, selectedItemId: itemId };
+			await new Promise<void>((resolve) => { finish = resolve; });
+		});
+		const viewActions = actions(() => 'en', { priceHistory: { state, getState: () => state, loadSeries } });
+		const view = new InventoryAdvisorItemView(content(), icons, viewActions.value);
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		const panel = (): FakeElement => walk(root).find((element) => element.className === 'tyrian-price-history__controls')!;
+		const itemSelect = (): FakeElement => find(panel(), 'select')[0]!;
+		const selectElement = itemSelect();
+		selectElement.focus();
+		selectElement.value = '19721';
+
+		selectElement.dispatch('change');
+		// The busy repaint has run; the state still said 36038 when it did.
+		expect(loadSeries).toHaveBeenCalledWith(19_721, 'ask', 42);
+		expect(itemSelect()).toBe(selectElement);
+		expect(selectElement.value).toBe('19721');
+		expect(activeDocument.activeElement).toBe(selectElement);
+
+		finish();
+		await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+		expect(itemSelect()).toBe(selectElement);
+		expect(selectElement.value).toBe('19721');
+
+		// A load that settles without moving the state: the selector shows the state again.
+		moveState = false;
+		selectElement.value = '36038';
+		selectElement.dispatch('change');
+		expect(selectElement.value).toBe('36038');
+		state = { ...state, selectedItemId: 19_721 };
+		finish();
+		await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+		expect(selectElement.value).toBe('19721');
+	});
+
 	it('renders the seed state text and keeps working when datawars2 reports no_seed', async () => {
 		installDom();
 		const getSeedState = vi.fn((itemId: number): PriceHistoryPanelSeedState =>
@@ -451,6 +498,9 @@ function actions(
 		productActions?: ProductActionController;
 		priceHistory?: {
 			state: PriceHistoryRuntimeState;
+			/** When present it is read on every paint instead of `state`, so a test can move the state mid-load. */
+			getState?: () => PriceHistoryRuntimeState;
+			loadSeries?: (itemId: number, side: 'bid' | 'ask', windowDays: 42 | 90 | 180) => Promise<void>;
 			resolveCatalog?: (itemIds: number[]) => Promise<Record<number, { name: string; icon: string | null }>>;
 			getSeedState?: (itemId: number) => PriceHistoryPanelSeedState;
 		};
@@ -466,9 +516,9 @@ function actions(
 			openProductSettings: () => undefined,
 		}),
 		...(sync?.priceHistory === undefined ? {} : {
-			getPriceHistoryState: () => sync.priceHistory!.state,
+			getPriceHistoryState: () => sync.priceHistory!.getState?.() ?? sync.priceHistory!.state,
 			enablePriceHistory: async () => undefined,
-			loadPriceHistorySeries: async () => undefined,
+			loadPriceHistorySeries: sync.priceHistory.loadSeries ?? (async () => undefined),
 			resolvePriceHistoryItemCatalog: sync.priceHistory.resolveCatalog,
 			getPriceHistorySeedState: sync.priceHistory.getSeedState,
 		}),
@@ -584,16 +634,24 @@ class FakeElement {
 		this.textContent = options.text ?? null;
 		for (const [name, value] of Object.entries(options.attr ?? {})) this.attributes.set(name, value);
 	}
-	empty(): void { this.children.splice(0); this.textContent = null; }
 	parent: FakeElement | null = null;
-	append(...children: FakeElement[]): void { for (const child of children) child.parent = this; this.children.push(...children); }
+	empty(): void { this.replaceChildren(); this.textContent = null; }
+	append(...children: FakeElement[]): void { for (const child of children) { child.parent = this; this.children.push(child); } }
 	insertBefore(child: FakeElement, anchor: FakeElement): void { child.parent = this; this.children.splice(this.children.indexOf(anchor), 0, child); }
-	remove(): void { this.parent?.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; }
-	prepend(...children: FakeElement[]): void { this.children.unshift(...children); }
-	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
-	createEl(tag: string, options?: FakeOptions): FakeElement { const child = new FakeElement(tag, this.ownerDocument, options); this.children.push(child); return child; }
-	createDiv(options?: FakeOptions): FakeElement { const child = new FakeElement('div', this.ownerDocument, options); this.children.push(child); return child; }
-	createSpan(options?: FakeOptions): FakeElement { const child = new FakeElement('span', this.ownerDocument, options); this.children.push(child); return child; }
+	/** Like `Node.remove()`: a node with no parent, or one not among its parent's children, is left alone. */
+	remove(): void {
+		const index = this.parent?.children.indexOf(this) ?? -1;
+		if (index >= 0) this.parent!.children.splice(index, 1);
+		this.parent = null;
+	}
+	prepend(...children: FakeElement[]): void { for (const child of children) child.parent = this; this.children.unshift(...children); }
+	replaceChildren(...children: FakeElement[]): void {
+		for (const removed of this.children.splice(0, this.children.length)) removed.parent = null;
+		this.append(...children);
+	}
+	createEl(tag: string, options?: FakeOptions): FakeElement { const child = new FakeElement(tag, this.ownerDocument, options); this.append(child); return child; }
+	createDiv(options?: FakeOptions): FakeElement { const child = new FakeElement('div', this.ownerDocument, options); this.append(child); return child; }
+	createSpan(options?: FakeOptions): FakeElement { const child = new FakeElement('span', this.ownerDocument, options); this.append(child); return child; }
 	setAttr(name: string, value: string): void { this.attributes.set(name, value); }
 	setText(value: string): void { this.textContent = value; }
 	addClass(value: string): void { this.className = `${this.className} ${value}`.trim(); }
