@@ -198,6 +198,69 @@ describe('LiveSessionLootTracker', () => {
 
 		expect(tracker.getState()).toMatchObject({ status: 'complete', sackQuantity: 9 });
 	});
+
+	/**
+	 * The Botín list of the Companion tab keeps one line per `itemId` across repaints (audit 3.5),
+	 * so two rows with the same id would share a line. The tracker never produces them: every gain
+	 * of an item lands on the one row its id keys, on every path that writes or reads a row.
+	 */
+	it('keeps one row per item id, with the quantity added up, on every path that touches a row', async () => {
+		const alerted: Array<[number, number]> = [];
+		const onAlert = (alert: { itemId: number; quantity: number }): void => { alerted.push([alert.itemId, alert.quantity]); };
+		let available = false;
+		const gateway = {
+			requestDetailed: vi.fn(async (path: string) => {
+				if (!available) throw new Error('temporary outage');
+				const ids = new URLSearchParams(path.slice(path.indexOf('?') + 1)).get('ids')?.split(',').map(Number) ?? [];
+				return path.startsWith('items?')
+					? { status: 200, headers: {}, body: ids.map((id) => ({ id, name: `Objeto ${String(id)}` })) }
+					: { status: 200, headers: {}, body: ids.map((id) => ({ id, whitelisted: true,
+						buys: { quantity: 1, unit_price: 1_000 * id }, sells: { quantity: 1, unit_price: 1_100 * id } })) };
+			}),
+		};
+		const tracker = new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 1, onAlert });
+		const quantities = (): Array<[number, number]> => {
+			const state = tracker.getState();
+			if (state.status === 'idle') throw new Error('Expected a tracker with a session.');
+			return state.rows.map((row): [number, number] => [row.itemId, row.quantity]).sort(([left], [right]) => left - right);
+		};
+
+		// A restored session, the public catalog down: every gain waits unresolved, none alerts.
+		tracker.begin('session', true);
+		await tracker.observe('session', delta(7, 2));
+		await tracker.observe('session', delta(9, 1));
+		await tracker.observe('session', delta(7, 3));
+		// The same id twice inside one poll still lands on its one row.
+		await tracker.observe('session', { ...delta(7, 0), itemChanges: [
+			{ id: 9, before: 1, after: 2, delta: 1 }, { id: 9, before: 2, after: 6, delta: 4 },
+		] });
+		expect(quantities()).toEqual([[7, 5], [9, 6]]);
+		expect(tracker.getState()).toMatchObject({ restored: true });
+		expect(alerted).toEqual([]);
+
+		// The catalog answers: the pending gains resolve into alerts against the rows that exist,
+		// and the gains of this poll are added to them.
+		available = true;
+		await tracker.observe('session', { ...delta(7, 0), itemChanges: [
+			{ id: 7, before: 5, after: 6, delta: 1 }, { id: 11, before: 0, after: 4, delta: 4 },
+		] });
+		expect(quantities()).toEqual([[7, 6], [9, 6], [11, 4]]);
+		expect(alerted.sort(([leftId, leftQuantity], [rightId, rightQuantity]) => leftId - rightId || leftQuantity - rightQuantity))
+			.toEqual([[7, 1], [7, 2], [7, 3], [9, 1], [9, 1], [9, 4], [11, 4]]);
+		expect(Object.keys(tracker.displayNames()).sort()).toEqual(['item:11', 'item:7', 'item:9']);
+
+		// The final net restates the rows; it does not append to them.
+		await tracker.reconcile('session', { ...delta(7, 0), itemChanges: [
+			{ id: 7, before: 0, after: 6, delta: 6 }, { id: 11, before: 0, after: 3, delta: 3 },
+		] });
+		expect(quantities()).toEqual([[7, 6], [11, 3]]);
+
+		// Even a net that named one id twice would leave a single row for it.
+		await tracker.reconcile('session', { ...delta(7, 0), itemChanges: [
+			{ id: 7, before: 0, after: 2, delta: 2 }, { id: 11, before: 0, after: 3, delta: 3 }, { id: 7, before: 2, after: 6, delta: 4 },
+		] });
+		expect(quantities().map(([itemId]) => itemId)).toEqual([7, 11]);
+	});
 });
 
 function delta(itemId: number, quantity: number): StorageDelta {
