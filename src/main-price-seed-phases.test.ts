@@ -118,12 +118,13 @@ describe('price seed phases through the core: missing seeds before the result, s
 		 */
 		const sync = (
 			lists: ReadonlyArray<readonly number[]>,
-			options: { recoveryRead?: boolean; analysisHold?: Gate; notesHold?: Gate } = {},
+			options: { recoveryRead?: boolean; analysisHold?: Gate; notesHold?: Gate; failAfterAnalysis?: boolean } = {},
 		): Promise<void> => {
 			syncLists.splice(0, syncLists.length, ...lists);
 			analysisHolds.splice(0, analysisHolds.length, ...(options.analysisHold ? [options.analysisHold] : []));
 			syncSteps = async () => {
 				await core.refreshInventoryAdvisorForSync.call(harness, () => undefined, () => undefined);
+				if (options.failAfterAnalysis) throw new Error('The sync run rejected after its analysis.');
 				// The recovery read cannot be written from either in this harness; the run settles on it
 				// as the controller does, with an error it records and does not rethrow.
 				if (options.recoveryRead) await core.inventoryAnalysisForNotes.call(harness).catch(() => undefined);
@@ -332,6 +333,64 @@ describe('price seed phases through the core: missing seeds before the result, s
 			// 20 missing seeds in the first analysis, the 5 left of the cap in the second, and no stale copy.
 			expect(probe.calls).toEqual([...missing, ...later.slice(0, 5)]);
 			expect(probe.calls).toHaveLength(PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN);
+		});
+
+		it('sync with a second analysis that leaves no stale copies of its own: the first analysis\'s are kept and refreshed out of what the action has left of its cap', async () => {
+			const stale = Array.from({ length: 10 }, (_unused, index) => index + 1);
+			const missing = Array.from({ length: PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN - 5 }, (_unused, index) => index + 11);
+			const later = [41, 42, 43];
+			const { probe, sync, drain } = await setup(stale);
+			probe.open();
+
+			// The second analysis's list has no copy past its 24 h: three missing seeds and nothing else.
+			await sync([[...stale, ...missing], later], { recoveryRead: true });
+			await drain();
+
+			// 20 + 3 missing seeds leave 2 of the cap: two stale copies of the first list, not the 5 it had left.
+			expect(probe.calls).toEqual([...missing, ...later, 1, 2]);
+			expect(probe.calls).toHaveLength(PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN);
+			expect(probe.maxInFlight()).toBe(1);
+		});
+
+		it('sync with a second analysis that spends the rest of the cap and leaves no stale copies of its own: nothing is kept and no deferred pass starts', async () => {
+			const stale = Array.from({ length: 10 }, (_unused, index) => index + 1);
+			const missing = Array.from({ length: PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN - 5 }, (_unused, index) => index + 11);
+			const later = Array.from({ length: 10 }, (_unused, index) => index + 41);
+			const { harness, probe, sync, drain } = await setup(stale);
+			probe.open();
+
+			await sync([[...stale, ...missing], later], { recoveryRead: true });
+
+			expect(harness.priceSeedDeferredPass).toBeNull();
+			expect(harness.priceSeedDeferredRequest).toBeNull();
+			await drain();
+			expect(probe.calls).toEqual([...missing, ...later.slice(0, 5)]);
+		});
+
+		it('sync that rejects after its analysis: the stale copies it left are started by that same action, and nothing stays in the slot', async () => {
+			const { harness, probe, sync, drain } = await setup([1, 2, 3]);
+			probe.open();
+
+			await expect(sync([[1, 2, 3]], { failAfterAnalysis: true })).rejects.toThrow('The sync run rejected after its analysis.');
+
+			expect(harness.priceSeedDeferredRequest).toBeNull();
+			expect(harness.priceSeedSyncAction).toBeNull();
+			await drain();
+			expect(probe.calls).toEqual([1, 2, 3]);
+		});
+
+		it('sync, the device turned to consult between two missing seeds: the downloads stop after the one in flight', async () => {
+			const { harness, probe, sync, drain } = await setup([]);
+
+			const action = sync([[11, 12, 13]]);
+			await probe.started();
+			expect(probe.calls).toEqual([11]);
+			harness.collectorMode = 'consult';
+			probe.open();
+			await action;
+			await drain();
+
+			expect(probe.calls).toEqual([11]);
 		});
 
 		it('the opt-in switched off before the action ends: no deferred pass starts', async () => {
