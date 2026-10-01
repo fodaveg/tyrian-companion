@@ -7,9 +7,10 @@ import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import { withObsidianHost } from './test/obsidian-host-harness';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import type { HttpRequest, HttpResponse, HttpTransport } from './core/http';
+import { SerialTaskQueue } from './core/serial-task-queue';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import { indexedDbPriceHistoryPort } from './host/indexed-db-price-history';
-import { PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
+import { PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN, PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
 import { PriceHistoryPanelSeedService } from './economy/price-seed-panel-service';
 import { fetchPriceSeed } from './economy/price-seed-source';
 import type { PriceSeedV1 } from './economy/price-seed-model';
@@ -21,21 +22,19 @@ const VAULT = 'two-in-flight-test';
 const PANEL_ITEM_ID = 999_001;
 
 /**
- * KNOWN NON-COMPLIANCE, characterised and not endorsed (task 0812d53e). `docs/PLATFORM_POLICY.md`
- * says the datawars2 seed requests are "en serie, nunca en paralelo" and that the deferred pass goes
- * "en serie por la misma cola". `PriceSeedBulkRefreshService` keeps that promise for its own passes
- * (one queue, `pending`), but the panel downloads through `PriceHistoryPanelSeedService`, which has
- * its own flight map and no knowledge of that queue, over the SAME transport. So a panel load made
- * while a sync, a Sale refresh or a deferred pass has a request in flight is a second request in
- * flight. These tests pin the CURRENT behaviour (2); when the two services share one queue, the
- * expected value becomes 1 and the comments here go with it.
+ * `docs/PLATFORM_POLICY.md`: the datawars2 seed requests go one at a time, never two in flight, for
+ * the whole plugin (task 0812d53e). A seed pass (`PriceSeedBulkRefreshService`) and a panel load
+ * (`PriceHistoryPanelSeedService`) send through the same transport, so they take turns in one
+ * `SerialTaskQueue`: the panel's request, which somebody is looking at, goes right after the request
+ * in flight, ahead of the pass's items that have not started, and the pass goes on afterwards.
  *
  * Real core methods (`refreshSale`, `loadPriceHistorySeries`, the deferred pass), the two real
- * services, a real IndexedDB, and one transport instrumented once for both paths. The services are
- * built the way `initializeRuntime` builds them (same transport, `fetchPriceSeed` for the bulk
- * service); `initializeRuntime` itself is not driven, so that wiring is copied here, not observed.
+ * services, a real IndexedDB, and one transport instrumented once for both paths, every request
+ * held until the test releases it. The services are built the way `initializeRuntime` builds them
+ * (same transport, one queue, `fetchPriceSeed` for the bulk service); that wiring is copied here,
+ * and observed over the real `initializeRuntime` in `main-price-seed-serial-wiring.test.ts`.
  */
-describe('price seed downloads: a panel load next to a seed pass (known break of "never two in flight")', () => {
+describe('price seed downloads: a panel load next to a seed pass is never a second request in flight', () => {
 	const open: Array<() => void> = [];
 
 	afterEach(() => {
@@ -53,11 +52,16 @@ describe('price seed downloads: a panel load next to a seed pass (known break of
 		cache.close();
 		const transport = transportProbe();
 		const priceHistory = indexedDbPriceHistoryPort({ indexedDB: factory });
+		const downloads = new SerialTaskQueue();
+		let passItemsQueued = 0;
 		const bulk = new PriceSeedBulkRefreshService({
 			priceHistory, vaultId: VAULT, now: () => NOW_MS,
 			fetchSeed: async (itemId, actionContext) => await fetchPriceSeed(itemId, { transport, now: () => NOW_MS, actionContext }),
+			serialize: async (task) => { passItemsQueued += 1; return await downloads.run('background', task); },
 		});
-		const panel = new PriceHistoryPanelSeedService({ priceHistory, vaultId: VAULT, transport, now: () => NOW_MS });
+		const panel = new PriceHistoryPanelSeedService({
+			priceHistory, vaultId: VAULT, transport, now: () => NOW_MS, serialize: downloads.runner('interactive'),
+		});
 		const harness = {
 			runtimeReady: true, vaultId: VAULT, unloaded: false,
 			collectorMode: 'collector' as 'collector' | 'consult',
@@ -85,47 +89,96 @@ describe('price seed downloads: a panel load next to a seed pass (known break of
 			harness, transport,
 			refreshSale: async () => await core.refreshSale.call(harness),
 			panelLoad: async () => await core.loadPriceHistorySeries.call(harness, PANEL_ITEM_ID, 'bid', 30),
+			/**
+			 * Resolves once the panel has read its cache and reached its download: the service marks the
+			 * item `loading` right before it asks for it, queued or not.
+			 */
+			panelReachedItsDownload: async () => {
+				await vi.waitFor(() => { expect(panel.getState(PANEL_ITEM_ID).status).toBe('loading'); });
+			},
+			/** Resolves once a pass has an item waiting in the queue, or has already sent a second request. */
+			passReachedItsDownload: async () => {
+				await vi.waitFor(() => { expect(passItemsQueued + transport.requestedItemIds().length).toBeGreaterThan(1); });
+			},
 		};
 	}
 
-	it('panel load during the missing phase of a Sale refresh: two requests are in flight together', async () => {
-		const { transport, refreshSale, panelLoad } = await setup([]);
+	it('panel load during the missing phase of a Sale refresh: the panel request waits for the one in flight', async () => {
+		const { transport, refreshSale, panelLoad, panelReachedItsDownload } = await setup([]);
 
 		const sale = refreshSale();
 		await transport.started();
 		const panelLoading = panelLoad();
-		await transport.started();
+		await panelReachedItsDownload();
 
-		expect(transport.maxInFlight()).toBe(2);
+		expect(transport.inFlight()).toBe(1);
 		transport.open();
 		await Promise.all([sale, panelLoading]);
+		expect(transport.maxInFlight()).toBe(1);
+		expect(transport.requestedItemIds()).toContain(PANEL_ITEM_ID);
 	});
 
-	it('panel load during the deferred pass of a Sale refresh: two requests are in flight together', async () => {
+	it('panel load during the deferred pass of a Sale refresh: the panel request waits for the one in flight', async () => {
 		const calendar = calendarItemIds();
-		const { harness, transport, refreshSale, panelLoad } = await setup(calendar);
+		const { harness, transport, refreshSale, panelLoad, panelReachedItsDownload } = await setup(calendar);
 
+		const deferredStarted = transport.started();
 		await refreshSale();
-		await transport.started();
+		await deferredStarted;
 		const panelLoading = panelLoad();
-		await transport.started();
+		await panelReachedItsDownload();
 
-		expect(transport.maxInFlight()).toBe(2);
+		expect(transport.inFlight()).toBe(1);
 		transport.open();
 		await Promise.all([harness.priceSeedDeferredPass, panelLoading]);
+		expect(transport.maxInFlight()).toBe(1);
+		expect(transport.requestedItemIds()).toContain(PANEL_ITEM_ID);
 	});
 
-	it('the panel request is for the panel item and the seed pass one is for a calendar item, over the same transport', async () => {
-		const { transport, refreshSale, panelLoad } = await setup([]);
+	it('the panel request goes right after the one in flight, and the pass then goes on in order, each item once, within its cap', async () => {
+		const calendar = calendarItemIds();
+		const { transport, refreshSale, panelLoad, panelReachedItsDownload } = await setup([]);
+		// More than one item still to come in the pass, or "ahead of the pass" would prove nothing.
+		expect(calendar.length).toBeGreaterThan(2);
 
 		const sale = refreshSale();
 		await transport.started();
 		const panelLoading = panelLoad();
-		await transport.started();
+		await panelReachedItsDownload();
+		expect(transport.requestedItemIds()).toEqual([calendar[0]]);
 
-		expect(transport.requestedItemIds().map((itemId) => itemId === PANEL_ITEM_ID)).toEqual([false, true]);
+		const next = transport.started();
+		transport.releaseOldest();
+		await next;
+		expect(transport.requestedItemIds()).toEqual([calendar[0], PANEL_ITEM_ID]);
+		expect(transport.inFlight()).toBe(1);
+
 		transport.open();
 		await Promise.all([sale, panelLoading]);
+		const passItems = calendar.slice(0, PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN);
+		expect(transport.requestedItemIds()).toEqual([passItems[0], PANEL_ITEM_ID, ...passItems.slice(1)]);
+		expect(transport.maxInFlight()).toBe(1);
+	});
+
+	it.each([
+		['the price history opt-in switched off', (harness: { settings: TyrianSettings }) => { harness.settings = { ...harness.settings, priceHistoryEnabled: false }; }],
+		['the device turned to consult', (harness: { collectorMode: 'collector' | 'consult' }) => { harness.collectorMode = 'consult'; }],
+	] as const)('%s while a pass item waits behind the panel request: that item is not requested', async (_name, withdraw) => {
+		const { harness, transport, refreshSale, panelLoad, passReachedItsDownload } = await setup([]);
+
+		const panelStarted = transport.started();
+		const panelLoading = panelLoad();
+		await panelStarted;
+		const sale = refreshSale();
+		await passReachedItsDownload();
+		withdraw(harness);
+		transport.releaseOldest();
+		// The pass item's turn comes the moment the panel request ends, before the panel load returns.
+		await panelLoading;
+		expect(transport.requestedItemIds()).toEqual([PANEL_ITEM_ID]);
+
+		await sale;
+		expect(transport.requestedItemIds()).toEqual([PANEL_ITEM_ID]);
 	});
 });
 
@@ -146,8 +199,8 @@ function seedOf(itemId: number): PriceSeedV1 {
 
 /**
  * The one transport both services send through, instrumented: a single in-flight counter that the
- * seed pass and the panel share, each request held until the test opens it. It answers 404 (a
- * `no_seed`), which is all these tests need: they count requests, not seeds.
+ * seed pass and the panel share, each request held until the test releases it. It answers 404 (a
+ * `no_seed`), which is all these tests need: they count and order requests, not seeds.
  */
 function transportProbe() {
 	const requested: number[] = [];
@@ -169,10 +222,17 @@ function transportProbe() {
 	};
 	return {
 		...transport,
+		inFlight: () => inFlight,
 		maxInFlight: () => maxInFlight,
 		requestedItemIds: () => [...requested],
 		/** Resolves when the next request starts. */
 		started: () => new Promise<void>((resolve) => { waitingForACall.push(resolve); }),
+		/** Answers the request that has been held the longest, and only that one. */
+		releaseOldest: () => {
+			const release = held.shift();
+			if (release === undefined) throw new Error('No request is held.');
+			release();
+		},
 		/** Releases every held request and lets the later ones answer at once. */
 		open: () => { opened = true; for (const release of held.splice(0)) release(); },
 	};

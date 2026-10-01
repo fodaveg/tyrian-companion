@@ -1,7 +1,8 @@
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { SerialTaskQueue, type SerialTaskRunner } from '../core/serial-task-queue';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import {
 	PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN,
@@ -336,5 +337,103 @@ describe('PriceSeedBulkRefreshService phases: missing seeds first, stale copies 
 		const reader = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
 		expect(await reader.get('vault', 1)).toBeNull();
 		reader.close();
+	});
+});
+
+/**
+ * Task 0812d53e. The pass keeps its own order, cap and phases; each of its requests takes a turn in
+ * the queue it shares with the other seed downloads of the plugin, where it may wait behind them.
+ */
+describe('PriceSeedBulkRefreshService requests through the queue it was handed', () => {
+	/** A queue whose turn is taken by something else until the test ends it. */
+	function busyQueue() {
+		const queue = new SerialTaskQueue();
+		let endOther!: () => void;
+		const other = queue.run('interactive', () => new Promise<void>((resolve) => { endOther = resolve; }));
+		let waiting = 0;
+		return {
+			queue,
+			serialize: (async (task) => { waiting += 1; return await queue.run('background', task); }) as SerialTaskRunner,
+			/** Resolves once the pass has an item waiting for its turn, or has requested one without waiting. */
+			itemReachedItsRequest: async (calls: readonly number[]) => {
+				await vi.waitFor(() => { expect(waiting + calls.length).toBeGreaterThan(0); });
+			},
+			endOther: async () => { endOther(); await other; },
+		};
+	}
+
+	it('an item whose permission is withdrawn while it waits for its turn is not requested, and the pass ends there', async () => {
+		const calls: number[] = [];
+		let allowed = true;
+		const { serialize, itemReachedItsRequest, endOther } = busyQueue();
+		const service = new PriceSeedBulkRefreshService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async (itemId) => { calls.push(itemId); return seeded(itemId); },
+			serialize,
+		});
+
+		const run = service.run([1, 2, 3], undefined, { scope: 'missing', allowed: () => allowed });
+		await itemReachedItsRequest(calls);
+		expect(calls).toEqual([]);
+		allowed = false;
+		await endOther();
+		const outcome = await run;
+
+		expect(calls).toEqual([]);
+		expect(outcome).toMatchObject({ attempted: 0, seeded: 0, noSeed: 0, failed: 0, deferredBudget: PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN });
+		service.dispose();
+	});
+
+	it('an item still allowed when its turn comes is requested then, and the pass goes on in order', async () => {
+		const calls: number[] = [];
+		const { serialize, itemReachedItsRequest, endOther } = busyQueue();
+		const service = new PriceSeedBulkRefreshService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async (itemId) => { calls.push(itemId); return seeded(itemId); },
+			serialize,
+		});
+
+		const run = service.run([1, 2, 3], undefined, { scope: 'missing', allowed: () => true });
+		await itemReachedItsRequest(calls);
+		expect(calls).toEqual([]);
+		await endOther();
+		const outcome = await run;
+
+		expect(calls).toEqual([1, 2, 3]);
+		expect(outcome).toMatchObject({ attempted: 3, seeded: 3 });
+		service.dispose();
+	});
+
+	it('a turn the queue dropped is an item not attempted: no request, no failure, no cache and no no_seed cooldown', async () => {
+		const calls: number[] = [];
+		const factory = new IDBFactory();
+		const { queue, serialize, itemReachedItsRequest, endOther } = busyQueue();
+		const service = new PriceSeedBulkRefreshService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async (itemId) => { calls.push(itemId); return { status: 'no_seed', reason: 'unreachable' }; },
+			serialize,
+		});
+
+		const run = service.run([1, 2]);
+		await itemReachedItsRequest(calls);
+		expect(calls).toEqual([]);
+		queue.dispose();
+		const outcome = await run;
+		await endOther();
+
+		expect(calls).toEqual([]);
+		expect(outcome).toMatchObject({
+			attempted: 0, seeded: 0, noSeed: 0, failed: 0, skippedNoSeedCooldown: 0,
+			queueCoverage: { total: 2, seeded: 0, noData: 0, pending: 2 },
+		});
+		service.dispose();
+		const port = indexedDbPriceHistoryPort({ indexedDB: factory });
+		const seeds = await port.openSeedCache();
+		const noSeeds = await port.openNoSeedCache();
+		expect(await seeds.get('vault', 1)).toBeNull();
+		expect(await noSeeds.get('vault', 1)).toBeNull();
+		expect(await noSeeds.get('vault', 2)).toBeNull();
+		seeds.close();
+		noSeeds.close();
 	});
 });

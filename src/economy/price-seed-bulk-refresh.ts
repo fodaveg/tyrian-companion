@@ -3,6 +3,7 @@ import {
 	type LocalDebugActionPort,
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
+import { runSerialTaskUnqueued, type SerialTaskRunner, type SerialTaskTurn } from '../core/serial-task-queue';
 import type { TyrianPriceHistoryPort, TyrianPriceSeedCache, TyrianPriceSeedNoSeedCache } from '../host/tyrian-host-storage';
 import type { PriceSeedResult, PriceSeedQueueCoverage } from './price-seed-model';
 
@@ -82,6 +83,13 @@ export interface PriceSeedBulkRefreshOptions {
 	 * a security review has not already seen on the caller's side.
 	 */
 	fetchSeed: (itemId: number, actionContext?: ResolvedLocalDebugActionContext) => Promise<PriceSeedResult>;
+	/**
+	 * The turn every request of a pass takes before it is sent (1 oct 2026, task 0812d53e): the
+	 * caller hands the queue it shares with the other seed downloads of the plugin, so a pass and
+	 * a panel load are never two requests in flight. Without it a request is sent at once, as
+	 * before, and only the passes of this service are serial among themselves.
+	 */
+	serialize?: SerialTaskRunner;
 	maxItemsPerRun?: number;
 	noSeedRetryMs?: number;
 	diagnostics?: LocalDebugActionPort;
@@ -90,11 +98,14 @@ export interface PriceSeedBulkRefreshOptions {
 /**
  * Owns one cache-store connection for repeated bulk passes. Construction performs no I/O, and
  * every request lives behind an explicit inventory sync or Sale refresh (decision 4, amended
- * 2026-09-26). Concurrent actions share one queue, so they cannot duplicate or overlap downloads.
+ * 2026-09-26). Concurrent actions share one queue, so they cannot duplicate or overlap downloads;
+ * that queue (`pending`) orders the passes among themselves, and `options.serialize` orders each
+ * request among every seed download of the plugin.
  */
 export class PriceSeedBulkRefreshService {
 	private readonly maxItemsPerRun: number;
 	private readonly noSeedRetryMs: number;
+	private readonly serialize: SerialTaskRunner;
 	private store: TyrianPriceSeedCache | null = null;
 	private noSeedStore: TyrianPriceSeedNoSeedCache | null = null;
 	private opening: Promise<Stores | null> | null = null;
@@ -104,6 +115,7 @@ export class PriceSeedBulkRefreshService {
 	constructor(private readonly options: PriceSeedBulkRefreshOptions) {
 		this.maxItemsPerRun = options.maxItemsPerRun ?? PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN;
 		this.noSeedRetryMs = options.noSeedRetryMs ?? PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS;
+		this.serialize = options.serialize ?? runSerialTaskUnqueued;
 	}
 
 	dispose(): void {
@@ -116,9 +128,11 @@ export class PriceSeedBulkRefreshService {
 
 	/**
 	 * Serial by construction: the loop `await`s every step before starting the next one, so no two
-	 * `fetchSeed` calls are ever in flight together. One item's failure is recorded and the loop
-	 * moves on to the next id; it stops early only at the cap, on `dispose`, or when the phase's
-	 * `allowed` answers false.
+	 * `fetchSeed` calls of this service are ever in flight together, and each of them takes its turn
+	 * in `options.serialize`, behind whatever else the plugin is downloading. One item's failure is
+	 * recorded and the loop moves on to the next id; it stops early only at the cap, on `dispose`,
+	 * or when the phase's `allowed` answers false, which is asked before every item and once more
+	 * when the item's turn comes.
 	 */
 	async run(
 		itemIds: readonly number[],
@@ -209,16 +223,28 @@ export class PriceSeedBulkRefreshService {
 			span.skip('skipped', 'missing_not_deferred');
 			return;
 		}
-		outcome.attempted += 1;
-		let result: PriceSeedResult;
+		let turn: SerialTaskTurn<PriceSeedResult | null>;
 		try {
-			result = await this.options.fetchSeed(itemId, span.context);
+			turn = await this.serialize(async () => {
+				// Asked again now that the turn has come: the item may have waited behind other
+				// downloads, and the person may have withdrawn the permission meanwhile.
+				if (this.disposed || (phase?.allowed !== undefined && !phase.allowed())) return null;
+				outcome.attempted += 1;
+				return await this.options.fetchSeed(itemId, span.context);
+			});
 		} catch (error) {
 			// The download itself throwing (rather than answering `no_seed`) never stops item k+1.
 			outcome.failed += 1;
 			span.failure(error, 'unknown_failure', 'no_seed');
 			return;
 		}
+		if (turn.status === 'dropped' || turn.value === null) {
+			// Never asked for: the queue was let go, or the turn came too late. Nothing is counted
+			// and nothing is written, so the item is as missing or as stale as it was.
+			span.skip('skipped', turn.status === 'dropped' || this.disposed ? 'disposed' : 'not_allowed');
+			return;
+		}
+		const result = turn.value;
 		if (this.disposed) {
 			// `dispose` closed both stores while this request was in flight: its answer has nowhere to
 			// go, and writing it would only record a storage failure nobody can act on.

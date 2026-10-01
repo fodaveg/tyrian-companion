@@ -7,6 +7,7 @@ import {
 	type LocalDebugActionPort,
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
+import { runSerialTaskUnqueued, type SerialTaskRunner } from '../core/serial-task-queue';
 import type { PriceHistoryDailyV1 } from './price-history-model';
 import { fetchPriceSeed } from './price-seed-source';
 import type { PriceSeedFailureReason, PriceSeedV1 } from './price-seed-model';
@@ -68,6 +69,12 @@ export interface SellSignalRuntimeOptions {
 	heldQuantity: () => number;
 	itemName: () => string;
 	emit: (alert: AlertV1) => void;
+	/**
+	 * The turn the seed download takes before it is sent (1 oct 2026, task 0812d53e): the caller
+	 * hands the queue it shares with the other datawars2 downloads of the plugin, so this one is
+	 * never a second request in flight next to a seed pass or a panel load.
+	 */
+	serialize?: SerialTaskRunner;
 	diagnostics?: LocalDebugActionPort;
 }
 
@@ -129,11 +136,19 @@ export class SellSignalRuntime {
 			component: 'price_history', action: 'price_history_capture',
 			...(parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } }),
 		}, this.options.now);
-		const result = await fetchPriceSeed(this.options.itemId, {
+		const turn = await (this.options.serialize ?? runSerialTaskUnqueued)(async () => await fetchPriceSeed(this.options.itemId, {
 			transport: this.options.transport,
 			now: this.options.now,
 			actionContext: span.context,
-		});
+		}));
+		if (turn.status === 'dropped') {
+			// Never asked for: the queue was let go before this seed's turn. That is not the one
+			// attempt this runtime is allowed, so it does not spend it.
+			this.attempted = false;
+			span.cancel('disposed');
+			return;
+		}
+		const result = turn.value;
 		if (this.disposed) { span.cancel('disposed'); return; }
 		if (result.status === 'no_seed') {
 			// Declared, not silent, and not filled in. The series stays whatever

@@ -23,6 +23,7 @@ import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
+import type { SerialTaskRunner } from '../core/serial-task-queue';
 import type { TyrianPriceHistoryPort } from '../host/tyrian-host-storage';
 import { PriceHistoryRuntime } from '../economy/price-history-runtime';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
@@ -44,6 +45,8 @@ export interface PriceHistoryAssemblyInput {
 	rateLimit: RateLimitCoordinator;
 	/** The reviewed outbound boundary the seed rides; the detector never opens its own. */
 	transport: HttpTransport;
+	/** The turn the seed download takes among the plugin's other datawars2 downloads; see `SellSignalRuntimeOptions.serialize`. */
+	serializeSeedDownload?: SerialTaskRunner;
 	onStateChange: () => void;
 	/** Runs first after every compaction, exactly as the inline composition did. */
 	evaluatePriceAlert: (port: PriceHistoryCompactionPort) => Promise<void>;
@@ -109,6 +112,7 @@ export function assembleSellSignal(input: PriceHistoryAssemblyInput): SellSignal
 		heldQuantity: input.heldQuantity,
 		itemName: input.itemName,
 		emit: input.emitAlert,
+		serialize: input.serializeSeedDownload,
 		diagnostics: input.diagnostics,
 	});
 }

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { AlertV1 } from '../alerts/alert-contract';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { HttpTransportError, type HttpRequest, type HttpResponse, type HttpTransport } from '../core/http';
+import { SerialTaskQueue } from '../core/serial-task-queue';
 import { SellSignalRuntime, type SellSignalRuntimeOptions } from './sell-signal-runtime';
 import { SELL_SIGNAL_MINIMUM_REFERENCE_DAYS, SELL_SIGNAL_REFERENCE_DAYS } from './sell-signal';
 import { HALLOWEEN_SEASONAL_WINDOW } from './models/halloween-season';
@@ -284,6 +285,50 @@ describe('M3 seasonal window plumbing', () => {
 		const projection = runtime.evaluate([...referenceDays, today], OCT_20_MS);
 
 		expect(projection).toMatchObject({ status: 'decided', signal: 'none', inSeason: false });
+	});
+});
+
+/**
+ * Task 0812d53e. The sell rule's seed is the same datawars2 endpoint as the panel's and the
+ * passes', so it takes its turn in the same queue instead of going out next to their requests.
+ */
+describe('SellSignalRuntime downloads its seed through the queue it was handed', () => {
+	it('waits for the task in flight, and asks only when its turn comes', async () => {
+		const queue = new SerialTaskQueue();
+		let endOther!: () => void;
+		const other = queue.run('background', () => new Promise<void>((resolve) => { endOther = resolve; }));
+		let queued = 0;
+		const { runtime, requests } = harness({
+			serialize: async (task) => { queued += 1; return await queue.run('background', task); },
+		});
+
+		const seeding = runtime.ensureSeed();
+		await vi.waitFor(() => { expect(queued + requests.length).toBeGreaterThan(0); });
+		expect(requests).toHaveLength(0);
+		endOther();
+		await Promise.all([other, seeding]);
+
+		expect(requests).toHaveLength(1);
+		expect(runtime.getState().seedStatus).toBe('seeded');
+	});
+
+	it('a turn the queue dropped is a seed not attempted: no request, still unseeded, and a later call may ask', async () => {
+		let turns = 0;
+		const { runtime, requests } = harness({
+			// The first turn is dropped, as a disposed queue would; the second one runs.
+			serialize: async (task) => {
+				turns += 1;
+				return turns === 1 ? { status: 'dropped' } : { status: 'ran', value: await task() };
+			},
+		});
+
+		await runtime.ensureSeed();
+		expect(requests).toHaveLength(0);
+		expect(runtime.getState()).toMatchObject({ seedStatus: 'unseeded', seedFailure: null });
+
+		await runtime.ensureSeed();
+		expect(requests).toHaveLength(1);
+		expect(runtime.getState().seedStatus).toBe('seeded');
 	});
 });
 
