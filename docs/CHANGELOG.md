@@ -1,5 +1,19 @@
 # Changelog
 
+## Release beta 0.2.19 - el asesor ya no manda todo a «revisar» cuando hay monedas por recoger en el bazar
+
+- **Con monedas pendientes de recoger en la entrega del bazar, el asesor mandaba casi todo el
+  inventario a «revisar» con motivo «precio parcial».** El asesor no pide la cartera, pero la entrega
+  del bazar sí se captura; con monedas en ella aparecía una moneda de saldo desconocido, eso dejaba el
+  plan de reservas entero como bloqueado, y el asesor exigía el plan entero completo para recomendar
+  cualquier objeto. Ahora la evidencia de cada objeto mira la cobertura de ese objeto, no la del plan
+  entero: una moneda que el asesor no reserva ya no apaga vender, listar, vender al mercader ni
+  conservar. El fallo estaba desde agosto y no dependía de la versión, solo de tener ventas por
+  cobrar (`d3f5773`, `76aabe8`).
+
+Límites: un objeto cuya propia cobertura no es completa sigue saliendo como «revisar». No comprobado
+en Obsidian real antes de publicar.
+
 ## Release beta 0.2.18 - las descargas de precios van de una en una en todo el plugin
 
 - **Nunca hay dos descargas de datawars2 a la vez, en ningún sitio del plugin.** Hasta ahora eso solo
