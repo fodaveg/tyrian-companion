@@ -13,7 +13,7 @@ import { canonicalJson } from './canonical-sha256';
  * pass and accepted without serialising anything; every other value, including everything this
  * pass is not sure about, goes through the comparison untouched.
  *
- * Why the short cut cannot change an answer: it only ever says "accept", and only for a tree made
+ * Why the short cut cannot change an answer (two exceptions below): it only ever says "accept", and only for a tree made
  * of strings, booleans, `null`, finite numbers, dense arrays straight off `Array.prototype` and
  * records straight off `Object.prototype` whose own properties are all enumerable string-keyed
  * data, with no `toJSON` in reach and at most `SIMPLE_TREE_MAX_DEPTH` levels. For such a tree
@@ -23,8 +23,17 @@ import { canonicalJson } from './canonical-sha256';
  * looks at descriptors before it reads, so a getter or a `toJSON` is never called before the
  * comparison calls it.
  *
- * One limit, by construction of the language: a `Proxy` cannot be told from its target without a
- * host API, so the pass does run its traps. It uses the very operations the comparison uses
+ * `toJSON` is looked for on every record and array, where a patched `Object.prototype` or
+ * `Array.prototype` shows too, and NOT on the leaves: `JSON.stringify` asks only an object or a
+ * `BigInt` for it, never a string, a number or a boolean, so a `toJSON` patched onto
+ * `String.prototype`, `Number.prototype` or `Boolean.prototype` is not called for them and does
+ * not change what the comparison answers (pinned in `json-round-trip.test.ts`).
+ *
+ * Two exceptions to "cannot change an answer" are known. One is reasoned, not measured: asked
+ * with the stack almost spent, the comparison may overflow and reject where the pass, which needs
+ * far less of it, accepts. The other is by construction of the language and pinned in the tests:
+ * a `Proxy` cannot be told from its target without a host API, so the pass does run its traps. It
+ * uses the very operations the comparison uses
  * (prototype, own keys, descriptors, `[[Get]]`), which keeps the answer for any proxy whose traps
  * answer the same each time; a proxy whose traps COUNT their calls is read once here and twice
  * there, and may be accepted here where the comparison would have caught it changing. That proxy
@@ -41,7 +50,7 @@ export function jsonRoundTrip(value: unknown): boolean {
  */
 const SIMPLE_TREE_MAX_DEPTH = 64;
 
-/** The comparison itself, kept as it was in the three modules that used to carry a copy each. */
+/** The comparison itself, kept as it was in the four modules that used to carry a copy each. */
 function canonicalRoundTrip(value: unknown): boolean {
 	try { return canonicalJson(JSON.parse(JSON.stringify(value))) === canonicalJson(value); } catch { return false; }
 }

@@ -94,6 +94,49 @@ describe('jsonRoundTrip against the comparison it replaced', () => {
 		expect(jsonRoundTrip(value)).toBe(true);
 	});
 
+	/**
+	 * `JSON.stringify` looks `toJSON` up on objects and on `BigInt` only (ECMA-262,
+	 * SerializeJSONProperty), never on a string, a number or a boolean, so a `toJSON` patched onto
+	 * their prototypes is not called for the leaves of a tree and the comparison accepts as before.
+	 * Observed on 1 oct 2026 (Node 22), not derived: this is why the short cut does not look there.
+	 */
+	it.each([
+		['String.prototype', String.prototype as object],
+		['Number.prototype', Number.prototype as object],
+		['Boolean.prototype', Boolean.prototype as object],
+	])('a toJSON patched onto %s is never called for a primitive, so both still accept', (_name, prototype) => {
+		const values: unknown[] = ['text', 42, true, { text: 'a', count: 1, flag: false, list: ['x', 2, true, { deep: 'y' }] }];
+		let calls = 0;
+		const answers = [
+			function other(): unknown { calls += 1; return 'patched'; },
+			function same(this: unknown): unknown { calls += 1; return (this as { valueOf(): unknown }).valueOf(); },
+		];
+		for (const answer of answers) {
+			const observed: (readonly [boolean, boolean])[] = [];
+			Object.defineProperty(prototype, 'toJSON', { configurable: true, writable: true, enumerable: false, value: answer });
+			try {
+				for (const value of values) observed.push([jsonRoundTrip(value), legacyJsonRoundTrip(value)]);
+			} finally { delete (prototype as { toJSON?: unknown }).toJSON; }
+			expect(observed).toEqual(values.map(() => [true, true]));
+		}
+		expect(calls).toBe(0);
+		expect('toJSON' in prototype).toBe(false);
+	});
+
+	it('a toJSON patched onto a primitive prototype does reach a BOXED primitive, which the short cut never vouches for', () => {
+		// The positive control of the test above: the same patch IS called once the string is an object.
+		let calls = 0;
+		Object.defineProperty(String.prototype, 'toJSON', { configurable: true, writable: true, enumerable: false, value: () => { calls += 1; return 'patched'; } });
+		let shared: boolean; let legacy: boolean;
+		try {
+			shared = jsonRoundTrip({ text: Object('a') as unknown });
+			legacy = legacyJsonRoundTrip({ text: Object('a') as unknown });
+		} finally { delete (String.prototype as { toJSON?: unknown }).toJSON; }
+		expect(calls).toBeGreaterThan(0);
+		expect(shared).toBe(legacy);
+		expect('toJSON' in String.prototype).toBe(false);
+	});
+
 	it('agrees on every decorated artifact of the advisor', () => {
 		const engineInput = largeMarketFixture(3);
 		const producerResult = classifyInventoryAdvisor(engineInput);
