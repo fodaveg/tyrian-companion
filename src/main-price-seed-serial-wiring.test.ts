@@ -134,8 +134,15 @@ describe('price seed downloads over the real runtime: one request in flight for 
 		const calendar = calendarItemIds();
 		expect(datawars2.requested).toEqual([calendar[0]]);
 
+		// Collected as they settle, so a promise left unresolved is a failed assertion and not a hang.
+		let settled = 0;
+		for (const promise of pending) void promise.then(() => { settled += 1; });
 		const shutdown = runtime.shutdown();
-		// The request in flight ends as it would; nothing that waited behind it is asked for.
+		// What waited for a turn is resolved by the shutdown alone, with the first request still held.
+		await vi.waitFor(() => { expect(settled).toBe(pending.length - 1); });
+		// The request in flight ends as it would, and anything asked for from here on would be
+		// answered at once (and counted): nothing that waited behind it is asked for.
+		datawars2.opened = true;
 		for (const release of datawars2.held.splice(0)) release();
 		await Promise.all([...pending, shutdown]);
 

@@ -146,16 +146,18 @@ describe('SerialTaskQueue', () => {
 		const waitingBackground = heldTask<string>(log, 'b');
 		const waitingInteractive = heldTask<string>(log, 'c');
 
-		const first = queue.run('background', inFlight.task);
-		const second = queue.run('background', waitingBackground.task);
-		const third = queue.run('interactive', waitingInteractive.task);
+		// Collected as they settle, so a turn left unresolved is a failed assertion and not a hang.
+		const turns: Array<SerialTaskTurn<string> | null> = [null, null, null];
+		void queue.run('background', inFlight.task).then((turn) => { turns[0] = turn; });
+		void queue.run('background', waitingBackground.task).then((turn) => { turns[1] = turn; });
+		void queue.run('interactive', waitingInteractive.task).then((turn) => { turns[2] = turn; });
 		queue.dispose();
-
-		expect(await second).toEqual({ status: 'dropped' });
-		expect(await third).toEqual({ status: 'dropped' });
-		inFlight.finish('A');
-		expect(await first).toEqual({ status: 'ran', value: 'A' });
 		await settleMicrotasks();
+
+		expect(turns).toEqual([null, { status: 'dropped' }, { status: 'dropped' }]);
+		inFlight.finish('A');
+		await settleMicrotasks();
+		expect(turns).toEqual([{ status: 'ran', value: 'A' }, { status: 'dropped' }, { status: 'dropped' }]);
 		expect(waitingBackground.started()).toBe(false);
 		expect(waitingInteractive.started()).toBe(false);
 		expect(log).toEqual(['start a', 'end a']);
