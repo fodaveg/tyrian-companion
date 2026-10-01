@@ -144,6 +144,23 @@ describe('Inventory Advisor list: equivalence of what is visible', () => {
 		expect(pressedAndDisabled().filter((state) => state === 'true:true')).toHaveLength(1);
 	});
 
+	it('filters the new data on the next key when an update brings other groups under the same content version', () => {
+		const labels = (mount: Mount): Array<string | undefined> => listRows(mount.results).map((row) => row.attributes.get('aria-label'));
+		const mount = render({ ...fixtureModel(60), contentVersion: 1 });
+		renderInventoryAdvisorView(
+			mount.container as unknown as HTMLElement, icons, { ...fixtureModel(45), contentVersion: 1 }, createTranslator('es'), undefined, {},
+		);
+		const controls = filterControls(mount);
+		controls.search.value = 'seda';
+		controls.search.dispatch('input');
+		const expected = render({ ...fixtureModel(45), contentVersion: 1 });
+		const expectedControls = filterControls(expected);
+		expectedControls.search.value = 'seda';
+		expectedControls.search.dispatch('input');
+		expect(labels(mount)).toEqual(labels(expected));
+		expect(labels(mount).length).toBeGreaterThan(0);
+	});
+
 	it('closes every open detail, and the folded group without value, when a filter or the data change', () => {
 		const mount = render(fixtureModel(60));
 		const controls = filterControls(mount);
@@ -262,6 +279,9 @@ describe('Inventory Advisor list: counts at account size', () => {
 		expect(bodies()).toBe(0);
 		const details = find(listRows(mount.results)[0]!, 'details')[0]!;
 		const summary = details.children[0]!;
+		// Deliberate renunciation: a closed row has none of its detail text in the document, so a
+		// browser's page search does not find it and does not open the row.
+		expect(walk(details).map((element) => element.textContent ?? '').filter((text) => text !== '')).toEqual(['Detalles']);
 		// The click arrives before the browser opens it: the body is already there when it shows.
 		summary.dispatch('click');
 		expect(bodies()).toBe(1);
@@ -271,7 +291,8 @@ describe('Inventory Advisor list: counts at account size', () => {
 		close(details);
 		expect(bodies()).toBe(0);
 		expect(sameElements(details.children, [summary])).toBe(true);
-		// Opened by something that is not a click (find-in-page, an assistive tool): `toggle` mounts it.
+		// Opened by something that is not a click (an assistive tool, a script): `toggle` mounts it.
+		// Page search is not such a case: it never sees a closed row, which is deliberate.
 		open(details);
 		expect(bodies()).toBe(1);
 		controls.search.value = 's';
