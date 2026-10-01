@@ -69,6 +69,14 @@ export interface TyrianVault {
 	trashIfUnchanged(file: TyrianVaultFile, expectedContent: string): Promise<TyrianVaultTrashResult>;
 	/** main.ts:959-962 (Halloween backfill refresh, filtered to `<outputFolder>/sessions/*.md`). */
 	onChange(root: string, listener: (change: TyrianVaultChange) => void): TyrianDisposer;
+	/**
+	 * `true` only on a host whose `onChange` reports EVERY create, modify, delete and rename of a
+	 * file while the runtime runs, whoever made the change (the host's own editor, its sync, an
+	 * edit from outside it). Only then may a caller keep what it read from a note until an event
+	 * names it: the session-history index (session-history.ts) is built on this and nothing else.
+	 * Absent or `false`, `onChange` is a hint, and nothing read may be reused without reading again.
+	 */
+	readonly reportsEveryChange?: boolean;
 	/** core/settings.ts:241/608 (forbidden output prefix), local-debug-contract.ts:122, main.ts:2186. */
 	readonly configDir: string;
 	/** main.ts:742 (hashed into the `vaultId` every IndexedDB record is keyed by). */

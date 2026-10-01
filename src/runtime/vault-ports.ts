@@ -8,13 +8,14 @@
  * - a read, write or trash of something that is not a file rejects with that port's own message
  *   (`Inventory note is not a file.`, …), which is what reaches its caller and its diagnostics;
  * - the session-history port answers `file()` with `null` for a folder (its `exists()` is what
- *   reports folders), and resolves `process` to nothing.
+ *   reports folders), and resolves `process` to nothing. It also carries the host's change
+ *   events, only where the host says they are complete (`TyrianVault.reportsEveryChange`).
  *
  * A file carries `mtime` and a folder does not (`TyrianVaultFile`): that is the only file/folder
  * test a host-neutral caller has.
  */
 
-import type { SessionHistoryVault } from '../sessions/session-history';
+import type { SessionHistoryNoteChange, SessionHistoryVault } from '../sessions/session-history';
 import type { TyrianVault, TyrianVaultFile } from '../host/tyrian-host';
 
 function isFile(entry: TyrianVaultFile | null): entry is TyrianVaultFile {
@@ -66,5 +67,11 @@ export function sessionHistoryVault(vault: TyrianVault): SessionHistoryVault {
 			const file = await notes.create(path, content);
 			return { path: file.path };
 		},
+		// Offered only where the host promises to report every change: it is what lets the history
+		// keep an inspection instead of reading the note again. `''` is the whole vault, because a
+		// session note moved out of the output folder still counts.
+		...(vault.reportsEveryChange === true
+			? { onNoteChange: (listener: (change: SessionHistoryNoteChange) => void) => vault.onChange('', listener) }
+			: {}),
 	};
 }

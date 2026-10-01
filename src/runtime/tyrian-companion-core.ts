@@ -2807,10 +2807,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	getSessionHistoryView() { return { ...this.sessionHistoryView }; }
 
-	/** Reads durable session notes only after the visible history action is activated. */
-	async loadSessionHistory(): Promise<SessionHistoryLoadResult> {
+	/**
+	 * Reads durable session notes only after the visible history action is activated. The view's
+	 * own loads take the index (a note already inspected is read again only once the host reports
+	 * it changed); its explicit refresh asks for `rebuild`, which reads every note again.
+	 */
+	async loadSessionHistory(source: 'index' | 'rebuild' = 'index'): Promise<SessionHistoryLoadResult> {
 		if (!this.runtimeReady) return { status: 'unavailable' };
-		return await this.sessionHistory.scan();
+		return await this.sessionHistory.scan(source);
 	}
 
 	async exportSessionHistory(): Promise<void> {

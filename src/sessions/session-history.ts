@@ -19,9 +19,29 @@ export const SESSION_HISTORY_CSV_FILE = 'tyrian-companion-sessions-v1.csv';
 
 export interface SessionHistoryFile { path: string }
 
+/** One note the host says was created, modified, deleted or renamed (`oldPath` only on a rename). */
+export interface SessionHistoryNoteChange { readonly path: string; readonly oldPath?: string }
+
+/**
+ * Where a scan takes each note's inspection from.
+ *
+ * - `vault`: every Markdown note is read, and nothing is remembered. The export uses it.
+ * - `index`: a note inspected before is not read again until the host names it in a change.
+ *   Without `SessionHistoryVault.onNoteChange` it is the same as `vault`.
+ * - `rebuild`: forgets every remembered inspection first, then scans as `index`.
+ */
+export type SessionHistoryScanSource = 'vault' | 'index' | 'rebuild';
+
 /** Minimal Vault port. Listing happens only after an explicit history action. */
 export interface SessionHistoryVault {
 	markdownFiles(): readonly SessionHistoryFile[];
+	/**
+	 * Present ONLY on a host that reports every create, modify, delete and rename of a note while
+	 * the runtime runs, whoever made the change. It is what lets a scan keep an inspection instead
+	 * of reading the note again; a host that cannot promise it leaves this out, and every scan
+	 * reads the whole vault as before.
+	 */
+	onNoteChange?(listener: (change: SessionHistoryNoteChange) => void): () => void;
 	/** True for either a file or folder; reads remain restricted to TFile-like values. */
 	exists(path: string): boolean;
 	file(path: string): SessionHistoryFile | null;
@@ -206,6 +226,28 @@ export class SessionHistoryService {
 	private exportFlight: Promise<SessionHistoryExportResult> | null = null;
 	private scrubFlight: Promise<SessionHistoryScrubResult> | null = null;
 	private readonly scrubPlans = new Map<string, readonly ScrubPlanItem[]>();
+	/**
+	 * What the last read of each note decoded to, by path (audit 2.2). It covers the whole vault,
+	 * never one folder: a moved session note still counts, and corrupt and duplicated ones are
+	 * still found. Only what `decodeDurableSession` answered is kept, never the note's text.
+	 *
+	 * Nothing here is trusted by date. An entry is reused for one reason only: the host promised
+	 * to name every note it changes (`onNoteChange`), and it has not named this one since it was
+	 * read. A modification date is not even carried by the port, so a note edited without its date
+	 * moving cannot be taken for unchanged. The index lives in memory and dies with the runtime, so
+	 * an edit made while the host was closed is read on the next start; an edit a running host
+	 * fails to report is the one case it cannot see, and `rebuild` (the explicit "refresh history")
+	 * reads past it.
+	 */
+	private readonly index = new Map<string, DurableSessionNoteInspection>();
+	private stopListening: (() => void) | null = null;
+	/** Counts every change the host has reported; an index scan compares it around each read. */
+	private noteChanges = 0;
+	/** The count at which each note last changed, kept only while an index scan is reading. */
+	private readonly changedDuringScan = new Map<string, number>();
+	private indexScans = 0;
+	/** Moves on every `dispose`, so a scan still reading across one remembers nothing. */
+	private indexLifetime = 0;
 
 	constructor(
 		private readonly vault: SessionHistoryVault,
@@ -224,15 +266,40 @@ export class SessionHistoryService {
 		});
 	}
 
-	async scan(): Promise<SessionHistoryScan> {
+	/**
+	 * Validates every durable note of the vault. `source` only decides how many are READ to do it
+	 * (`SessionHistoryScanSource`); the answer is the one a scan that reads them all gives.
+	 */
+	async scan(source: SessionHistoryScanSource = 'vault'): Promise<SessionHistoryScan> {
+		let index: Map<string, DurableSessionNoteInspection> | null = null;
+		const lifetime = this.indexLifetime;
 		try {
+			index = source === 'vault' ? null : this.openIndex();
+			if (index !== null) this.indexScans += 1;
+			if (source === 'rebuild') index?.clear();
 			const sessions: DurableSessionHistoryRecord[] = [];
 			let ignored = 0;
 			let invalid = 0;
-			for (const file of this.vault.markdownFiles()) {
-				let content: string;
-				try { content = await this.vault.read(file); } catch { invalid += 1; continue; }
-				const decoded = await decodeDurableSession(content);
+			const files = this.vault.markdownFiles();
+			if (index !== null) {
+				// Create, delete and rename are settled from the listing itself, with or without their
+				// event: a path the host no longer lists is forgotten, and one never seen is read below.
+				const listed = new Set(files.map((file) => file.path));
+				for (const path of index.keys()) if (!listed.has(path)) index.delete(path);
+			}
+			for (const file of files) {
+				let decoded = index?.get(file.path);
+				if (decoded === undefined) {
+					const startedAt = this.noteChanges;
+					let content: string;
+					try { content = await this.vault.read(file); } catch { invalid += 1; continue; }
+					decoded = await decodeDurableSession(content);
+					// A note named in a change while it was being read is not remembered: the text
+					// just inspected may already be the old one. Neither is a read that failed, nor one
+					// that outlived a `dispose`, after which nobody was listening.
+					if (index !== null && lifetime === this.indexLifetime
+						&& (this.changedDuringScan.get(file.path) ?? 0) <= startedAt) index.set(file.path, decoded);
+				}
 				if (decoded.status === 'ok') sessions.push(decoded.session);
 				else if (decoded.status === 'non_candidate') ignored += 1;
 				else invalid += 1;
@@ -248,6 +315,30 @@ export class SessionHistoryService {
 		} catch (error) {
 			this.logFailure('vault_read', 'scan', error);
 			return { status: 'conflict', invalid: 1, duplicates: 0 };
+		} finally {
+			if (index !== null) {
+				this.indexScans -= 1;
+				if (this.indexScans === 0) this.changedDuringScan.clear();
+			}
+		}
+	}
+
+	/**
+	 * The index, listening for changes from its first use; `null` on a host that does not promise
+	 * to report them (`SessionHistoryVault.onNoteChange`), where nothing may be kept between scans.
+	 */
+	private openIndex(): Map<string, DurableSessionNoteInspection> | null {
+		if (this.vault.onNoteChange === undefined) return null;
+		this.stopListening ??= this.vault.onNoteChange((change) => { this.forgetNote(change); });
+		return this.index;
+	}
+
+	/** Drops what is remembered about a changed note. It reads nothing: the next index scan does. */
+	private forgetNote(change: SessionHistoryNoteChange): void {
+		this.noteChanges += 1;
+		for (const path of change.oldPath === undefined ? [change.path] : [change.path, change.oldPath]) {
+			this.index.delete(path);
+			if (this.indexScans > 0) this.changedDuringScan.set(path, this.noteChanges);
 		}
 	}
 
@@ -324,7 +415,13 @@ export class SessionHistoryService {
 
 	revokeScrub(token: string): void { this.scrubPlans.delete(token); }
 
-	dispose(): void { this.scrubPlans.clear(); }
+	dispose(): void {
+		this.scrubPlans.clear();
+		this.stopListening?.();
+		this.stopListening = null;
+		this.index.clear();
+		this.indexLifetime += 1;
+	}
 
 	/** Uses only process-local, byte-bound preview capabilities. */
 	scrub(token: string, authority: SessionHistoryRuntimeAuthority): Promise<SessionHistoryScrubResult> {

@@ -6,6 +6,7 @@ import {
 	SESSION_HISTORY_PERFORMANCE_MINIMUM,
 	type SessionHistoryAggregate,
 	type SessionHistoryLoadResult,
+	type SessionHistoryLoadSource,
 	type SessionHistoryPerformanceGroup,
 	type SessionHistorySummaryRow,
 } from '../sessions/session-history-summary';
@@ -38,7 +39,7 @@ export class SessionHistoryPanelController {
 	private flight: Promise<void> | null = null;
 	private readonly listeners = new Set<StateListener>();
 
-	constructor(private readonly loadHistory: () => Promise<SessionHistoryLoadResult>) {}
+	constructor(private readonly loadHistory: (source: SessionHistoryLoadSource) => Promise<SessionHistoryLoadResult>) {}
 
 	current(): SessionHistoryPanelState { return this.state; }
 
@@ -47,11 +48,14 @@ export class SessionHistoryPanelController {
 		return () => this.listeners.delete(listener);
 	}
 
-	/** Performs the only load transition and coalesces repeated explicit activations. */
-	load(): Promise<void> {
+	/**
+	 * Performs the only load transition and coalesces repeated explicit activations. The view's own
+	 * loads take the default; only the refresh button asks for `rebuild`.
+	 */
+	load(source: SessionHistoryLoadSource = 'index'): Promise<void> {
 		if (this.flight !== null) return this.flight;
 		this.setState({ status: 'loading' });
-		const flight = this.loadHistory().then(
+		const flight = this.loadHistory(source).then(
 			(result) => this.setState(projectLoadResult(result, new Date().toISOString())),
 			() => this.setState({ status: 'unavailable', reason: 'failed' }),
 		).finally(() => { if (this.flight === flight) this.flight = null; });
@@ -110,7 +114,8 @@ export function mountSessionHistoryPanel(
 		stateRegion.setAttr('aria-live', state.status === 'conflict' || state.status === 'unavailable' ? 'assertive' : 'polite');
 		renderState(stateRegion, locale, state);
 	};
-	button.addEventListener('click', () => { void controller.load(); });
+	// The one place that does not trust the index: the player asked for the notes to be read.
+	button.addEventListener('click', () => { void controller.load('rebuild'); });
 	const unsubscribe = controller.subscribe(render);
 	render(controller.current());
 	return { dispose: unsubscribe };
