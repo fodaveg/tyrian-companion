@@ -3,10 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { classMethodBody, classMethodCallChains, calleeChains, readModuleSource } from '../test/module-boundary';
 
 describe('product action architecture', () => {
-	// Route 1: the panel's click-to-`controller.run` wiring and its `<aside class="tyrian-action-
-	// panel">` mount shape are exercised for real by `product-action-panel.test.ts` ("renders every
-	// action, a visible disabled reason, live feedback, and routes clicks to controller.run").
-
 	it('registers the palette exactly once, wired to the plugin\'s own session commands and executor', () => {
 		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		expect(calleeChains(main).filter((chain) => chain === 'registerProductActionPalette')).toHaveLength(1);
@@ -48,9 +44,8 @@ describe('product action architecture', () => {
 		expect(styles).toContain('@container (max-width: 599px)');
 		expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
 		expect(styles).toContain('grid-template-areas: "actions" "content"');
-		expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-		expect(styles).toMatch(/@container \(max-width: 599px\)[\s\S]*?tyrian-action-panel__list[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/u);
-		expect(styles).toMatch(/tyrian-action-panel__action button[\s\S]*?min-height:\s*44px/u);
+		// The action panel was retired (nothing mounts it), so none of its rules may linger.
+		expect(styles).not.toContain('tyrian-action-panel');
 		expect(styles).toContain('.tyrian-product-shell button:focus-visible');
 	});
 
