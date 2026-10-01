@@ -1,5 +1,31 @@
 # Changelog
 
+## Release beta 0.2.16 - las vistas dejan de reconstruirse enteras al teclear, al sincronizar y al repintar
+
+- **El buscador del asesor de inventario ya no reconstruye la lista en cada tecla.** Calcula el
+  alcance y el orden una vez por cambio de datos, de alcance o de orden; una tecla solo filtra y
+  mueve los elementos de fila ya construidos, y el cuerpo de «Detalles» de una fila se monta al
+  abrirla y se quita al cerrarla. Con 1.371 filas en un DOM simulado: 18.110 elementos al montar en
+  lugar de 36.144, y por tecla 0 ordenaciones y 0 filas creadas en lugar de 3 ordenaciones y todas las
+  filas visibles. Lo que se ve no cambia (`3505153`). Si llegan otros grupos con la misma versión de
+  contenido, la siguiente tecla ya filtra los datos nuevos (`e947fb4`).
+- **Los avisos de progreso de una sincronización de inventario ya no vacían y reconstruyen la pestaña
+  de Venta**, y la pestaña de Inventario repinta una vez por fotograma de su propia ventana en lugar
+  de una vez por nota escrita. Con 40 notas, la pestaña de Venta se reconstruía 43 veces durante la
+  ejecución y 44 al terminar; ahora 0 y 1 (`6d286ac`).
+- **El panel de precios construye su gráfico y su tabla diaria solo mientras está desplegado.** Con
+  120 días de historial, un panel cerrado conservaba 1020 nodos tras cada repintado; ahora 0. El zoom
+  del gráfico se conserva al repintar (`8173abf`).
+- **La pestaña Companion mantiene montados el historial de sesiones y la lista de botín en vivo entre
+  repintados.** Un repintado con el mismo historial no construye ninguno de sus nodos, y una sesión
+  nueva o un objeto nuevo construyen solo sus propias filas (`3193166`, `c3c5e56`, `148c028`).
+
+Límites: la búsqueda de página del navegador no encuentra el texto de «Detalles» de una fila cerrada
+ni la abre; es una renuncia deliberada, porque mantener esos cuerpos montados conservaría la mitad de
+los nodos que se quitan. Las vistas de Obsidian no tienen búsqueda de página, así que solo afecta a la
+versión web de Hebra. El historial de sesiones sigue sin paginar. Los recuentos de nodos se midieron
+en tests con un DOM simulado y datos sintéticos, no en Obsidian real.
+
 ## Release beta 0.2.15 - el asesor clasifica una vez por análisis y la sincronización lee menos
 
 - **El asesor clasifica la cuenta una vez por análisis.** El flujo propio (análisis, descarte y
