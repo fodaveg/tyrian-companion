@@ -496,8 +496,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * action ends and starts them (`startPriceSeedDeferredPass`). One slot: an action that finds a
 	 * deferred pass waiting here or already running (`priceSeedDeferredPass`) leaves none of its own.
 	 * Only the action that left a request holds it, so nothing else can start it; it is dropped,
-	 * unstarted, when the opt-in is switched off, when an advisor refresh is refused in consult, and
-	 * on unload.
+	 * unstarted, when the opt-in is switched off, when an advisor refresh is refused in consult, when
+	 * its action ends on a device that has turned to consult, and on unload.
 	 */
 	private priceSeedDeferredRequest: PriceSeedDeferredRequest | null = null;
 	/** The deferred pass in flight, owned by the core and detached from the action that left it. */
@@ -1943,9 +1943,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 	}
 
-	/** The opt-in every seed download stands on, asked again before each item of a pass. */
+	/**
+	 * What every seed download stands on, asked again when a deferred pass starts and before each
+	 * item of any pass: the opt-in, and a device that still collects (the same test `refusedInConsult`
+	 * makes). A device turned to consult under an action stops that action's downloads at the next item.
+	 */
 	private priceSeedDownloadsAllowed(): boolean {
-		return this.settings.priceHistoryEnabled;
+		return this.settings.priceHistoryEnabled && !consulting(this);
 	}
 
 	/**

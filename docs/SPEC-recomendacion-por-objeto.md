@@ -609,8 +609,9 @@ las pilas pequeñas. Cambia `SETTINGS_SCHEMA_VERSION` (hoy 12, `src/core/setting
    sobre, las vencidas; si la sincronización analiza dos veces (la lectura de recuperación de las
    notas), el segundo análisis gasta lo que dejó el primero y no estrena cupo. El refresco diferido
    solo lo arranca la acción que lo dejó: no hay ninguna petición sin una acción previa. No arranca
-   si el histórico está desactivado en ese momento, se detiene en el ítem siguiente si se desactiva
-   a mitad, y el que aún no había arrancado se descarta al desactivar el histórico, al descargar el
+   si en ese momento el histórico está desactivado o el dispositivo está en modo consulta; cualquier
+   siembra, la de las que faltan también, se detiene en el ítem siguiente si a mitad se desactiva el
+   histórico o el dispositivo pasa a modo consulta; y el que aún no había arrancado se descarta al desactivar el histórico, al descargar el
    plugin o cuando el refresco del asesor de esa acción se rechaza por modo consulta. Solo hay uno
    a la vez: una acción que llega con uno pendiente o en curso no deja otro, y de dos acciones que
    se solapan solo conserva el suyo la primera que lo deja; las semillas que faltan esperan su

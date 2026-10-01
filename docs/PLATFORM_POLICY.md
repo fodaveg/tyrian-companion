@@ -105,8 +105,10 @@ quede. Por tanto puede haber peticiones a datawars2 en curso con la acción ya t
 siguen siendo consecuencia de esa acción explícita, siguen yendo en serie por la misma cola y no hay
 ninguna sin una acción previa de la persona, porque el refresco diferido solo lo arranca la acción
 que lo dejó, al terminar: «Analizar», un comando o un refresco automático no arrancan el de otra
-acción. El permiso se vuelve a comprobar: el refresco diferido no arranca si el histórico está
-desactivado en ese momento, se detiene en el ítem siguiente si se desactiva a mitad, y el que aún no
+acción. El permiso se vuelve a comprobar, y con él que el dispositivo siga recolectando: el refresco
+diferido no arranca si en ese momento el histórico está desactivado o el dispositivo está en modo
+consulta, y cualquier siembra (la de las que faltan también) se detiene en el ítem siguiente si a
+mitad se desactiva el histórico o el dispositivo pasa a modo consulta; el refresco que aún no
 había arrancado se descarta al desactivar el histórico (volver a activarlo no lo recupera) o cuando
 el refresco del asesor de esa acción se rechaza por estar el dispositivo en modo consulta. Lo que
 descargan lo lee el análisis siguiente; no se relanza ningún análisis al terminar. Solo hay un
