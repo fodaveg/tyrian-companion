@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 475,
+		"catch_clause": 474,
 		"promise_catch": 39,
 		"void_expression": 101,
 		"callback_registration": 178
@@ -811,27 +811,11 @@
 					"reason": "Allowlisted catch_clause: The \"verifiedContext\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"verifiedContext\"."
 				},
 				{
-					"id": "8d09cd4342374b5f9ce10c4dd24d59bc1511447a",
-					"kind": "catch_clause",
-					"line": 387,
-					"column": 2,
-					"endLine": 387,
-					"endColumn": 73,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "captureInventoryTradingPostAccess",
-						"justification": "The \"captureInventoryTradingPostAccess\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"captureInventoryTradingPostAccess\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"captureInventoryTradingPostAccess\"."
-				},
-				{
 					"id": "bc703a0c50dd2460dff391e06394f32d3e974705",
 					"kind": "catch_clause",
-					"line": 435,
+					"line": 410,
 					"column": 5,
-					"endLine": 435,
+					"endLine": 410,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -845,9 +829,9 @@
 				{
 					"id": "eb7fc5eae8241421f79ba2465951ff14de6cfa50",
 					"kind": "catch_clause",
-					"line": 490,
+					"line": 465,
 					"column": 4,
-					"endLine": 490,
+					"endLine": 465,
 					"endColumn": 129,
 					"classification": "allowlisted",
 					"evidence": {
@@ -861,9 +845,9 @@
 				{
 					"id": "64c34bc724f0a9e2d6982a0e8b92ae9d3acc391c",
 					"kind": "catch_clause",
-					"line": 514,
+					"line": 489,
 					"column": 4,
-					"endLine": 514,
+					"endLine": 489,
 					"endColumn": 144,
 					"classification": "allowlisted",
 					"evidence": {
