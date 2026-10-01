@@ -37,7 +37,19 @@ async function legacySegmentsPilotExport(vault: FolderCreatingVault, path: strin
 	}
 }
 
-type Behavior = 'creates' | 'rejects_but_appears' | 'rejects';
+// Body of the session note writer's copy, verbatim except for the error message.
+async function legacySegmentsSessionNoteWriter(vault: FolderCreatingVault, folder: string, message: string): Promise<void> {
+	let current = '';
+	for (const segment of folder.split('/')) {
+		current = current ? `${current}/${segment}` : segment;
+		if (!vault.file(current)) {
+			try { await vault.createFolder(current); }
+			catch { if (!vault.file(current)) throw new Error(message); }
+		}
+	}
+}
+
+type Behavior ='creates' | 'rejects_but_appears' | 'rejects';
 
 interface Trace { calls: string[]; error: string | null }
 
@@ -105,12 +117,13 @@ describe('ensureFoldersBySegments', () => {
 		expect((await trace(ensureFoldersBySegments, 'a/b', [], 'rejects')).error).toBe('unavailable');
 	});
 
-	it('behaves exactly like both legacy bodies for every path, vault state and failure mode', async () => {
+	it('behaves exactly like the three legacy bodies for every path, vault state and failure mode', async () => {
 		for (const path of PATHS) for (const existing of EXISTING) for (const behavior of BEHAVIORS) {
 			const actual = await trace(ensureFoldersBySegments, path, existing, behavior);
 			const label = `${path} ${existing.join(',')} ${behavior}`;
 			expect(actual, label).toEqual(await trace(legacySegmentsManagedAssets, path, existing, behavior));
 			expect(actual, label).toEqual(await trace(legacySegmentsPilotExport, path, existing, behavior));
+			expect(actual, label).toEqual(await trace(legacySegmentsSessionNoteWriter, path, existing, behavior));
 		}
 	});
 });
