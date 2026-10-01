@@ -311,7 +311,9 @@ independiente y conservaba fail-closed las fuentes básicas; banco/materiales/de
 ni podían bloquearlo. Una única pasada completa se conservaba como `unstable/limited`, mostraba rutas
 líquidas manuales y retenía usar/abrir/reciclar. Cada intento consultaba una vez roster, inventario
 compartido y personajes serializados con timeout de 30 segundos; solo una pasada parcial transitoria
-repetía el conjunto. El clasificador evalúa catálogo/precio por objeto: un batch TP parcial no oculta las filas
+repetía el conjunto. Los personajes ya no van serializados: el asesor lee hasta cuatro inventarios a
+la vez, el mismo límite que la captura de sesión (entrada «Sin publicar» de `docs/CHANGELOG.md`, con
+su medición: un Mac, 10 personajes, dos corridas). El clasificador evalúa catálogo/precio por objeto: un batch TP parcial no oculta las filas
 con precio presente ni las rutas de mercader con omisión demostrada; en esa QA, el pack todavía pendiente
 retenía sus capacidades curadas. La vista prioriza ahora una cola directa «Qué hacer ahora» y relega
 `keep|review|discard_review` a controles de contexto. Gate: 106 ficheros/1481 tests en
