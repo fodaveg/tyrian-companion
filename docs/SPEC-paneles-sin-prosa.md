@@ -36,7 +36,7 @@ línea, `role="tablist"`, sin eyebrow, h1, subtítulo ni compás. El aviso «Fal
 API» se queda como una fila compacta con su botón, solo cuando falte la clave. Del CSS salen
 `.tyrian-product-shell__masthead`, `__compass`, `__eyebrow`, `__subtitle` y el grid `__workspace`
 de dos columnas (la columna `actions` de 23 rem la ocupaba un aside que nadie montaba:
-`mountActionPanel` se retiró del código; su CSS `.tyrian-action-panel*` sigue pendiente de retirar).
+`mountActionPanel` se retiró del código y su CSS `.tyrian-action-panel*` se retiró en `de77a1f`).
 
 ## Vista de sesión (`companion-view.ts`)
 
