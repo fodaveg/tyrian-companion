@@ -1,5 +1,9 @@
 import { createCatalogVendorValue, createTradingPostValueWithPolicy } from '../economy/gw2-fees';
-import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+import {
+	createInventoryAdvisorAnalysisContext,
+	isInventoryAdvisorResultForAnalysis,
+	type InventoryAdvisorAnalysisContext,
+} from './inventory-advisor-result';
 import { inventoryAdvisorContextualInvalidCause, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
 import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
 import type { InventoryDiscardAllowlistResultV1 } from './inventory-advisor-discard-model';
@@ -12,7 +16,6 @@ import type {
 } from './inventory-advisor-model';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { valueCompetitiveListing, valueInstantSellDepth } from '../economy/commerce-listings';
-import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import type { ReservationReason } from '../economy/reservation-model';
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 import { evaluateInventoryEquipmentEconomy } from './inventory-equipment-economy';
@@ -63,7 +66,9 @@ export function buildInventoryAdvisorPresentation(
 		if (!isPlainData(source)) return invalidInventoryAdvisorPresentation('presentation_source_not_plain');
 		if (!isPlainData(options)) return invalidInventoryAdvisorPresentation('presentation_options_not_plain');
 		if (!isPlainData(objects)) return invalidInventoryAdvisorPresentation('presentation_objects_not_plain');
-		if (!isPresentationSource(source)) return invalidInventoryAdvisorPresentation(presentationSourceCause(source));
+		// One context for the source check and the rows below: both read the plan of this same input.
+		const analysis = createInventoryAdvisorAnalysisContext(isRecord(source) ? source.input : undefined);
+		if (!isPresentationSource(source, analysis)) return invalidInventoryAdvisorPresentation(presentationSourceCause(source));
 		if (!isPresentationOptions(options)) return invalidInventoryAdvisorPresentation('presentation_options_shape');
 		const decisionByRef = objects !== null && objects.snapshotId === source.input.snapshot.snapshotId
 			? objects.decisions : null;
@@ -80,9 +85,7 @@ export function buildInventoryAdvisorPresentation(
 		const proofByRef = new Map(contextual ? source.result.proofs.map((proof) => [proof.explanationRef, proof]) : []);
 		const explanationByRef = new Map(result.report.explanations.map((entry) => [entry.ref, entry]));
 		const priceByItemId = new Map(source.input.prices.items.map((entry) => [entry.itemId, entry]));
-		const balance = buildInventoryAdvisorReservationBalance(source.input.snapshot);
-		const reservationPlan = balance.status === 'ok'
-			? createReservationPlan({ goals: source.input.goals, balance: balance.balance }) : { status: 'invalid' as const };
+		const { plan: reservationPlan } = analysis.reservation();
 		if (reservationPlan.status !== 'ok') throw new PresentationFailure('presentation_reservation_invalid');
 		const reservationByItemId = new Map(reservationPlan.plan.assets
 			.filter((asset) => asset.key.startsWith('item:')).map((asset) => [asset.id, asset]));
@@ -535,17 +538,22 @@ function equipmentSalvageFor(
 	};
 }
 
-function isPresentationSource(value: unknown): value is InventoryAdvisorPresentationSource {
+/** `analysis` is the context of `value.input`; a context of anything else makes the source invalid. */
+function isPresentationSource(
+	value: unknown,
+	analysis: InventoryAdvisorAnalysisContext,
+): value is InventoryAdvisorPresentationSource {
 	if (!isRecord(value)) return false;
 	try {
-		if (exactKeys(value, ['input', 'result'])) return isInventoryAdvisorResultForInput(value.result, value.input);
+		if (analysis.input !== value.input) return false;
+		if (exactKeys(value, ['input', 'result'])) return isInventoryAdvisorResultForAnalysis(value.result, analysis);
 		if (!exactKeys(value, ['discardContext', 'input', 'result']) || !isRecord(value.discardContext)
 			|| !exactKeys(value.discardContext, ['engineInput', 'producerResult'])) return false;
 		const context = value.discardContext;
 		return isRecord(context.engineInput) && context.engineInput.input === value.input
 			&& isInventoryDiscardAllowlistResultForInput(value.result, {
 				engineInput: context.engineInput, producerResult: context.producerResult,
-			});
+			}, analysis);
 	} catch { return false; }
 }
 

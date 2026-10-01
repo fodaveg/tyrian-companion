@@ -20,7 +20,13 @@ import type {
 	InventoryAdvisorResultV1,
 	InventoryRecommendationDecisionV1,
 } from './inventory-advisor-model';
-import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
+import {
+	buildInventoryAdvisorReservationBalance,
+	createReservationPlan,
+	type ReservationBalanceResult,
+	type ReservationPlanResult,
+} from '../economy/reservation';
+import type { ReservationPlanAsset } from '../economy/reservation-model';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { selectInventoryMarketRoute } from './inventory-advisor-market';
 import { isInventoryKnowledgePack } from './inventory-advisor-classifier';
@@ -37,6 +43,78 @@ import {
 	observedMaterialStorageMinimumMatches,
 } from '../economy/material-storage-deposit-validation';
 import { isEquipmentSalvagePolicy, isEquipmentSalvagePreferences } from '../economy/equipment-salvage-economy';
+
+/** One holding of an object together with its index in `snapshot.holdings`, which its position ref carries. */
+export interface InventoryAdvisorHoldingPosition {
+	holding: InventoryAdvisorInputV1['snapshot']['holdings'][number];
+	holdingIndex: number;
+}
+
+/**
+ * What one analysis derives from its input and every stage of it needs again: the reservation
+ * balance and plan, and where each object sits in the inventory.
+ *
+ * It belongs to the exact `input` object it was created with and lives as long as the entry point
+ * that created it. Nothing is keyed by snapshot and nothing outlives the call, so a change of goals
+ * between two analyses of the same snapshot can never meet the plan of the first. Each derivation
+ * is built on first use, at the point its consumer used to build it, and its consumers ask only
+ * after they have validated `input` themselves.
+ */
+export interface InventoryAdvisorAnalysisContext {
+	readonly input: unknown;
+	/** The balance and, when the balance is valid, the plan of `input.goals` over it. */
+	reservation(): { balance: ReservationBalanceResult; plan: ReservationPlanResult | { status: 'invalid' } };
+	/** The plan asset under `key`; undefined when there is none or the plan is not valid. */
+	planAsset(key: string): ReservationPlanAsset | undefined;
+	/** Every holding of `itemId`, in inventory order: one pass over the inventory serves all objects. */
+	positions(itemId: number): readonly InventoryAdvisorHoldingPosition[];
+}
+
+/** Contexts this module created: a verifier never takes a plan or an index it did not derive here. */
+const ANALYSIS_CONTEXTS = new WeakSet<InventoryAdvisorAnalysisContext>();
+
+/** Creates the context of one analysis of `input`. It derives nothing until a stage asks. */
+export function createInventoryAdvisorAnalysisContext(input: unknown): InventoryAdvisorAnalysisContext {
+	const validated = input as InventoryAdvisorInputV1;
+	let reservation: ReturnType<InventoryAdvisorAnalysisContext['reservation']> | undefined;
+	let planAssets: Map<string, ReservationPlanAsset> | undefined;
+	let positionsByItemId: Map<number, InventoryAdvisorHoldingPosition[]> | undefined;
+	const context: InventoryAdvisorAnalysisContext = {
+		input,
+		reservation: () => {
+			if (reservation === undefined) {
+				const balance = buildInventoryAdvisorReservationBalance(validated.snapshot);
+				const plan = balance.status === 'ok'
+					? createReservationPlan({ goals: validated.goals, balance: balance.balance })
+					: { status: 'invalid' as const };
+				reservation = { balance, plan };
+			}
+			return reservation;
+		},
+		planAsset: (key) => {
+			if (planAssets === undefined) {
+				const { plan } = context.reservation();
+				planAssets = new Map(plan.status === 'ok' ? plan.plan.assets.map((asset) => [asset.key, asset]) : []);
+			}
+			return planAssets.get(key);
+		},
+		positions: (itemId) => {
+			if (positionsByItemId === undefined) {
+				const index = new Map<number, InventoryAdvisorHoldingPosition[]>();
+				validated.snapshot.holdings.forEach((holding, holdingIndex) => {
+					if (holding.kind !== 'item') return;
+					const entries = index.get(holding.itemId);
+					if (entries === undefined) index.set(holding.itemId, [{ holding, holdingIndex }]);
+					else entries.push({ holding, holdingIndex });
+				});
+				positionsByItemId = index;
+			}
+			return positionsByItemId.get(itemId) ?? [];
+		},
+	};
+	ANALYSIS_CONTEXTS.add(context);
+	return context;
+}
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
 	try { return isInventoryAdvisorResultUnsafe(value); } catch { return false; }
@@ -79,15 +157,41 @@ export function isInventoryAdvisorResultForInput(
 ): value is InventoryAdvisorResultV1 {
 	try {
 		return isInventoryAdvisorResultForInputUnsafe(
-			value, input, knowledgePack, containerEconomy, personalValuation, activeOrders, materialStorageCapacity, marketDepth,
-			equipmentSalvage,
+			value, createInventoryAdvisorAnalysisContext(input), knowledgePack, containerEconomy, personalValuation,
+			activeOrders, materialStorageCapacity, marketDepth, equipmentSalvage,
+		);
+	} catch { return false; }
+}
+
+/**
+ * The same verification as `isInventoryAdvisorResultForInput`, against `context.input`, for a stage
+ * that already holds the context of its analysis: it checks everything the public verifier checks
+ * and only shares the reservation plan and the position index instead of deriving them again.
+ * A context this module did not create is refused.
+ */
+export function isInventoryAdvisorResultForAnalysis(
+	value: unknown,
+	context: InventoryAdvisorAnalysisContext,
+	knowledgePack?: unknown,
+	containerEconomy?: InventoryAdvisorEngineInputV1['containerEconomy'],
+	personalValuation?: ContainerPersonalValuationV1,
+	activeOrders?: ActiveTradingPostOrdersEvidenceV1,
+	materialStorageCapacity?: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
+	marketDepth?: InventoryMarketDepthEvidenceV1,
+	equipmentSalvage?: InventoryAdvisorEngineInputV1['equipmentSalvage'],
+): value is InventoryAdvisorResultV1 {
+	try {
+		if (!ANALYSIS_CONTEXTS.has(context)) return false;
+		return isInventoryAdvisorResultForInputUnsafe(
+			value, context, knowledgePack, containerEconomy, personalValuation, activeOrders, materialStorageCapacity,
+			marketDepth, equipmentSalvage,
 		);
 	} catch { return false; }
 }
 
 function isInventoryAdvisorResultForInputUnsafe(
 	value: unknown,
-	input: unknown,
+	context: InventoryAdvisorAnalysisContext,
 	knowledgePack: unknown,
 	containerEconomy: InventoryAdvisorEngineInputV1['containerEconomy'],
 	personalValuation: ContainerPersonalValuationV1 | undefined,
@@ -96,6 +200,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 	marketDepth: InventoryMarketDepthEvidenceV1 | undefined,
 	equipmentSalvage: InventoryAdvisorEngineInputV1['equipmentSalvage'],
 ): value is InventoryAdvisorResultV1 {
+	const input = context.input;
 	if (!isInventoryAdvisorInput(input) || !isInventoryAdvisorResult(value)) return false;
 	if (activeOrders !== undefined && (!isActiveTradingPostOrdersEvidence(activeOrders)
 		|| activeOrders.accountId !== input.snapshot.accountId
@@ -116,11 +221,9 @@ function isInventoryAdvisorResultForInputUnsafe(
 		|| report.asOf !== input.asOf || canonical(report.rulePack) !== canonical(input.rulePack)) return false;
 	if (marketDepth !== undefined && marketDepth.status !== 'complete'
 		&& (value.status !== 'limited' || report.coverage !== 'limited')) return false;
-	const balanceResult = buildInventoryAdvisorReservationBalance(input.snapshot);
+	const { balance: balanceResult, plan: planResult } = context.reservation();
 	if (balanceResult.status !== 'ok') return false;
-	const planResult = createReservationPlan({ goals: input.goals, balance: balanceResult.balance });
 	if (planResult.status !== 'ok') return false;
-	const planAssets = new Map(planResult.plan.assets.map((asset) => [asset.key, asset]));
 	const expectedIds = Object.entries(input.snapshot.ownedByItem)
 		.filter(([, quantity]) => quantity > 0).map(([id]) => Number(id)).sort((left, right) => left - right);
 	if (report.lines.length !== expectedIds.length
@@ -136,9 +239,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 		}
 		if (line.ownedQuantity !== input.snapshot.ownedByItem[String(line.itemId)]
 			|| line.availableQuantity !== (input.snapshot.availableByItem[String(line.itemId)] ?? 0)) return false;
-		const expectedPositions = input.snapshot.holdings
-			.map((holding, holdingIndex) => ({ holding, holdingIndex }))
-			.filter(({ holding }) => holding.kind === 'item' && holding.itemId === line.itemId);
+		const expectedPositions = context.positions(line.itemId);
 		if (line.positions.length !== expectedPositions.length) return false;
 		for (let index = 0; index < line.positions.length; index += 1) {
 			const position = line.positions[index]!;
@@ -149,8 +250,8 @@ function isInventoryAdvisorResultForInputUnsafe(
 				|| position.source !== expected.holding.location.source
 				|| position.state !== expected.holding.state) return false;
 		}
-		const reserved = planAssets.get(`item:${line.itemId}`)?.protectedAvailable ?? 0;
-		const planAsset = planAssets.get(`item:${line.itemId}`);
+		const reserved = context.planAsset(`item:${line.itemId}`)?.protectedAvailable ?? 0;
+		const planAsset = context.planAsset(`item:${line.itemId}`);
 		if (line.reservedQuantity !== reserved) return false;
 		let remaining = line.availableQuantity - reserved;
 		let expectedException = 0;
@@ -217,7 +318,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 					personalValuation, report.explanations)) return false;
 			} else if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException,
 				remainingBid, explanation?.reasonCodes ?? [], materialStorageCapacity, depthItem,
-				knowledgePack as InventoryKnowledgePackV1 | undefined, equipmentSalvage)) return false;
+				knowledgePack as InventoryKnowledgePackV1 | undefined, equipmentSalvage, expectedPositions)) return false;
 			if (decision.action === 'sell') remainingBid -= decision.quantity;
 		}
 	}
@@ -346,6 +447,7 @@ function validDecisionAgainstInput(
 	marketDepth: InventoryMarketDepthEvidenceV1['items'][number] | undefined,
 	knowledgePack: InventoryKnowledgePackV1 | undefined,
 	equipmentSalvage: InventoryAdvisorEngineInputV1['equipmentSalvage'],
+	itemPositions: readonly InventoryAdvisorHoldingPosition[],
 ): boolean {
 	if (decision.action === 'keep' || decision.action === 'review') return true;
 	if (!validPublicDecisionAgainstInput(input, decision)) return false;
@@ -358,7 +460,7 @@ function validDecisionAgainstInput(
 	const holdings = decision.allocations.map((allocation) => input.snapshot.holdings[allocationPositionIndex(allocation.positionRef)]);
 	if (holdings.some((holding) => holding?.kind !== 'item')) return false;
 	if (decision.action === 'deposit_material') {
-		return validMaterialDeposit(decision, line, input, holdings, reasonCodes, materialStorageCapacity);
+		return validMaterialDeposit(decision, line, input, holdings, reasonCodes, materialStorageCapacity, itemPositions);
 	}
 	if (decision.action === 'discard_candidate') {
 		return validDiscardAgainstInput(decision, line, input, reserved, exceptionQuantity);
@@ -429,6 +531,7 @@ function validMaterialDeposit(
 	holdings: Array<InventoryAdvisorInputV1['snapshot']['holdings'][number] | undefined>,
 	reasonCodes: InventoryAdvisorReasonCode[],
 	capacity: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
+	itemPositions: readonly InventoryAdvisorHoldingPosition[],
 ): boolean {
 	if (capacity === undefined || decision.materialStorage === undefined
 		|| decision.materialStorage.capacity !== capacity.quantity
@@ -441,9 +544,8 @@ function validMaterialDeposit(
 	if (categories.length !== 1) return false;
 	const categoryCoverage = input.catalog.coverage.materials[String(categories[0]!.id)];
 	if (categoryCoverage?.status !== 'resolved' || !['network', 'cache_fresh'].includes(categoryCoverage.source)) return false;
-	const storedQuantity = input.snapshot.holdings.filter((holding) => holding.kind === 'item'
-		&& holding.itemId === line.itemId && holding.location.source === 'materials')
-		.reduce((total, holding) => total + holding.quantity, 0);
+	const storedQuantity = itemPositions.filter(({ holding }) => holding.location.source === 'materials')
+		.reduce((total, { holding }) => total + holding.quantity, 0);
 	const space = Math.max(0, capacity.quantity - storedQuantity);
 	const totalDeposited = line.decisions.filter((candidate) => candidate.action === 'deposit_material')
 		.reduce((total, candidate) => total + candidate.quantity, 0);
