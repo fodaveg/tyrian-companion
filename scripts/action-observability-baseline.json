@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 476,
+		"catch_clause": 475,
 		"promise_catch": 39,
 		"void_expression": 101,
 		"callback_registration": 178
@@ -442,9 +442,9 @@
 				{
 					"id": "32f6e139cc0f5836cc7f4e56bf8512da4a62416e",
 					"kind": "catch_clause",
-					"line": 86,
+					"line": 93,
 					"column": 4,
-					"endLine": 86,
+					"endLine": 93,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -458,9 +458,9 @@
 				{
 					"id": "4662614092f1afe3757072089c5040798d0fec02",
 					"kind": "catch_clause",
-					"line": 117,
+					"line": 123,
 					"column": 4,
-					"endLine": 117,
+					"endLine": 123,
 					"endColumn": 31,
 					"classification": "allowlisted",
 					"evidence": {
@@ -474,9 +474,9 @@
 				{
 					"id": "f0f1e7ec117c7712ff9e5516c9652f2a3d5d3bff",
 					"kind": "catch_clause",
-					"line": 140,
+					"line": 146,
 					"column": 4,
-					"endLine": 140,
+					"endLine": 146,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -488,27 +488,11 @@
 					"reason": "Allowlisted catch_clause: The \"isInventoryKnowledgePack\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"isInventoryKnowledgePack\"."
 				},
 				{
-					"id": "6214042d08a368c9b2c78df8d0b8968da1c139b0",
-					"kind": "catch_clause",
-					"line": 155,
-					"column": 4,
-					"endLine": 155,
-					"endColumn": 27,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "isInventoryAdvisorEngineResult",
-						"justification": "The \"isInventoryAdvisorEngineResult\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"isInventoryAdvisorEngineResult\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"isInventoryAdvisorEngineResult\"."
-				},
-				{
 					"id": "e20a0b99394ac1d0e8298b6634a8985d289b3ee5",
 					"kind": "catch_clause",
-					"line": 760,
+					"line": 746,
 					"column": 250,
-					"endLine": 760,
+					"endLine": 746,
 					"endColumn": 273,
 					"classification": "allowlisted",
 					"evidence": {
@@ -522,9 +506,9 @@
 				{
 					"id": "e48064ae5b71c83738b9be41025ef89d2372ebe4",
 					"kind": "catch_clause",
-					"line": 780,
+					"line": 757,
 					"column": 94,
-					"endLine": 780,
+					"endLine": 757,
 					"endColumn": 117,
 					"classification": "allowlisted",
 					"evidence": {

@@ -27,7 +27,6 @@ import { isContainerPersonalValuation, resolveContainerPersonalValuation } from 
 import { isActiveTradingPostOrdersEvidence } from '../account/trading-post-orders-model';
 import {
 	isMaterialStorageCapacity,
-	materialStorageDepositsFit,
 	observedMaterialStorageMinimumMatches,
 } from '../economy/material-storage-deposit-validation';
 import { isInventoryMarketDepthEvidence } from '../economy/commerce-listings';
@@ -144,21 +143,6 @@ export function isInventoryKnowledgePack(value: unknown): value is InventoryKnow
 			&& pack.entries.every(distinctNotApplicableAssertions)
 			&& pack.sources.every((entry) => Date.parse(entry.retrievedAt) <= Date.parse(pack.reviewedAt))
 			&& pack.sha256 === sha256InventoryKnowledgePack(pack) && json(pack);
-	} catch { return false; }
-}
-
-export function isInventoryAdvisorEngineResult(value: unknown): value is InventoryAdvisorEngineResultV1 {
-	try {
-		if (!record(value) || !['ready', 'limited', 'blocked', 'invalid'].includes(String(value.status))) return false;
-		if (value.status === 'invalid') return keys(value, ['status', 'report', 'envelope']) && value.report === null && value.envelope === null;
-		if (!keys(value, ['status', 'report', 'envelope']) || !record(value.report) || !record(value.envelope)
-			|| value.envelope.execution !== 'manual_in_game' || value.envelope.sideEffects !== 'none' || value.envelope.requiresUserAction !== true) return false;
-		const report = value.report;
-		if (!keys(report, ['version', 'scope', 'accountId', 'snapshotId', 'asOf', 'knowledgePack', 'lines']) || report.version !== 1 || report.scope !== 'supported_storage_v1'
-			|| !Array.isArray(report.lines) || !report.lines.every(line) || !sorted(report.lines, (a, b) => a.itemId - b.itemId)) return false;
-		return materialStorageDepositsFit(report.lines.flatMap((item) => item.decisions))
-			&& report.lines.every((item) => item.decisions.flatMap((decision) => decision.allocations)
-				.reduce((sum, allocation) => sum + allocation.quantity, 0) === item.ownedQuantity);
 	} catch { return false; }
 }
 
@@ -758,28 +742,6 @@ function claim(value: unknown, action: 'use' | 'open' | 'salvage'): value is Inv
 function claimsReferenceSources(entry: InventoryKnowledgeEntryV1, sources: string[]): boolean { return [entry.use, entry.open, entry.salvage].every((claim) => claim === null || claim.sourceIds.every((sourceId) => sources.includes(sourceId))); }
 function distinctNotApplicableAssertions(entry: InventoryKnowledgeEntryV1): boolean { const claims = [entry.use, entry.open, entry.salvage].filter((claim): claim is Extract<InventoryRouteClaimV1, { status: 'not_applicable' }> => claim?.status === 'not_applicable'); return new Set(claims.map((claim) => claim.assertionId)).size === claims.length; }
 function target(value: unknown): boolean { return record(value) && ((value.kind === 'generic_consumable' && keys(value, ['kind'])) || ((value.kind === 'recipe' || value.kind === 'skin' || value.kind === 'mini') && keys(value, ['kind', 'id']) && positive(value.id)) || (value.kind === 'achievement' && keys(value, ['kind', 'achievementId', 'bit']) && positive(value.achievementId) && (value.bit === null || nonNegative(value.bit)))); }
-function line(value: unknown): value is InventoryAdvisorEngineLineV1 {
-	if (!record(value) || !keys(value, ['itemId', 'name', 'ownedQuantity', 'positions', 'decisions']) || !positive(value.itemId) || typeof value.name !== 'string' || !positive(value.ownedQuantity) || !Array.isArray(value.positions) || !Array.isArray(value.decisions) || !value.decisions.every(decision)) return false;
-	const positions = value.positions as InventoryAdvisorPositionV1[];
-	const decisions = value.decisions;
-	if (!positions.every(position) || !sorted(positions, (left, right) => left.holdingIndex - right.holdingIndex)) return false;
-	const totals = new Map(positions.map((position) => [position.ref, 0]));
-	for (const item of decisions) for (const allocation of item.allocations) {
-		if (!totals.has(allocation.positionRef)) return false;
-		totals.set(allocation.positionRef, totals.get(allocation.positionRef)! + allocation.quantity);
-	}
-	return positions.every((position) => totals.get(position.ref) === position.quantity) && positions.reduce((sum, position) => sum + position.quantity, 0) === value.ownedQuantity;
-}
-function position(value: unknown): value is InventoryAdvisorPositionV1 { return record(value) && keys(value, ['ref', 'holdingIndex', 'itemId', 'quantity', 'source', 'state']) && typeof value.ref === 'string' && nonNegative(value.holdingIndex) && positive(value.itemId) && positive(value.quantity) && value.ref === `#/positions/${value.itemId}/${value.holdingIndex}` && ['character', 'shared_inventory', 'bank', 'materials', 'commerce_delivery'].includes(String(value.source)) && ['loose', 'equipped_container', 'embedded_upgrade', 'embedded_infusion', 'pending_claim'].includes(String(value.state)); }
-function decision(value: unknown): value is InventoryAdvisorEngineDecisionV1 {
-	if (!record(value) || !optionalKeys(value, ['action', 'itemId', 'quantity', 'allocations', 'reason', 'ruleId'], ['materialStorage'])
-		|| !['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'deposit_material', 'keep', 'review'].includes(String(value.action))
-		|| !positive(value.itemId) || !positive(value.quantity) || !Array.isArray(value.allocations)
-		|| !value.allocations.every((allocation) => record(allocation) && keys(allocation, ['positionRef', 'quantity'])
-			&& typeof allocation.positionRef === 'string' && positive(allocation.quantity))
-		|| typeof value.reason !== 'string' || (value.ruleId !== null && !id(value.ruleId))) return false;
-	return value.action === 'deposit_material' ? materialStorageContext(value.materialStorage) : value.materialStorage === undefined;
-}
 function source(value: unknown): boolean { return record(value) && keys(value, ['id', 'url', 'retrievedAt']) && id(value.id) && typeof value.url === 'string' && value.url.startsWith('https://') && iso(value.retrievedAt); }
 function record(value: unknown): value is Record<string, unknown> { try { return typeof value === 'object' && value !== null && !Array.isArray(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null); } catch { return false; } }
 function keys(value: Record<string, unknown>, expected: string[]): boolean { const actual = Object.keys(value).sort(); const sortedExpected = [...expected].sort(); return actual.length === sortedExpected.length && actual.every((key, index) => key === sortedExpected[index]); }
@@ -787,15 +749,6 @@ function optionalKeys(value: Record<string, unknown>, required: string[], option
 function id(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value); }
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
 function nonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0; }
-function materialCapacity(value: unknown): value is number {
-	return positive(value) && value >= 250 && value <= 3000 && value % 250 === 0;
-}
-function materialStorageContext(value: unknown): boolean {
-	return record(value) && keys(value, ['capacity', 'capacitySource', 'storedQuantity', 'spaceBefore'])
-		&& materialCapacity(value.capacity) && isMaterialStorageCapacity(value.capacity, value.capacitySource)
-		&& nonNegative(value.storedQuantity) && nonNegative(value.spaceBefore)
-		&& value.spaceBefore === Math.max(0, value.capacity - value.storedQuantity);
-}
 function sha(value: unknown): value is string { return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value); }
 function iso(value: unknown): value is string { return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(Date.parse(value)).toISOString() === value; }
 function fresh(capturedAt: string, asOf: string, maxAge: number, maxFutureSkew: number): boolean { const delta = Date.parse(asOf) - Date.parse(capturedAt); return Number.isSafeInteger(delta) && delta <= maxAge && delta >= -maxFutureSkew; }

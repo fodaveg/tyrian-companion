@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
 import {
-	classifyInventoryAdvisor, isInventoryAdvisorEngineResult,
+	classifyInventoryAdvisor,
 	isInventoryKnowledgePack, sha256InventoryKnowledgePack,
 } from './inventory-advisor-classifier';
+import { isMaterialStorageCapacity, materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
 import type {
 	InventoryAdvisorEngineInputV1,
 	InventoryAdvisorEngineResultV1,
@@ -403,7 +404,7 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(result.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'review' });
 		const hostile = new Proxy({}, { get() { throw new Error('trap'); }, ownKeys() { throw new Error('trap'); } });
 		expect(isInventoryKnowledgePack(hostile)).toBe(false);
-		expect(isInventoryAdvisorEngineResult(hostile)).toBe(false);
+		expect(classifyInventoryAdvisor(hostile)).toMatchObject({ status: 'invalid', report: null });
 	});
 
 	it('keeps a market decision valid when its positions straddle holding index 1000 (numeric order, not text order)', () => {
@@ -533,7 +534,8 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(isInventoryAdvisorResultForInput(
 			result, input.input, input.knowledgePack, undefined, undefined, undefined, input.materialStorageCapacity,
 		)).toBe(true);
-		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(25, {
+		expect(isMaterialStorageCapacity(500, 'observed_minimum')).toBe(true);
+		expect(materialDepositsFit(materialDepositEngineResult(25, {
 			capacity: 500, capacitySource: 'observed_minimum', storedQuantity: 450, spaceBefore: 50,
 		}))).toBe(true);
 
@@ -550,14 +552,14 @@ describe('H4.15 inventory advisor classifier', () => {
 				result, input.input, input.knowledgePack, undefined, undefined, undefined, invented,
 			)).toBe(false);
 		}
-		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(25, {
-			capacity: 250, capacitySource: 'observed_minimum', storedQuantity: 200, spaceBefore: 50,
-		}))).toBe(false);
+		// The context of an engine decision is only as good as its capacity: nothing above the
+		// guaranteed 250 was observed, so `observed_minimum` cannot sit on it.
+		expect(isMaterialStorageCapacity(250, 'observed_minimum')).toBe(false);
 	});
 
 	it('validates the aggregate material-deposit budget across multiple engine decisions', () => {
-		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(25))).toBe(true);
-		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(30))).toBe(false);
+		expect(materialDepositsFit(materialDepositEngineResult(25))).toBe(true);
+		expect(materialDepositsFit(materialDepositEngineResult(30))).toBe(false);
 	});
 
 	it.each([
@@ -958,6 +960,10 @@ function materialDepositEngineResult(
 		},
 		envelope: { execution: 'manual_in_game', sideEffects: 'none', requiresUserAction: true },
 	};
+}
+/** Whether every deposit slice of `result` stays inside the one capacity budget its item shares. */
+function materialDepositsFit(result: InventoryAdvisorEngineResultV1): boolean {
+	return materialStorageDepositsFit(result.report!.lines.flatMap((item) => item.decisions));
 }
 function scopedInventoryFixture(quality: 'stable' | 'unstable'): InventoryAdvisorEngineInputV1 {
 	const value = fixture();
