@@ -1064,10 +1064,24 @@ class FakeElement {
 		for (const [name, value] of Object.entries(options.attr ?? {})) this.attributes.set(name, value);
 	}
 
-	empty(): void { this.children.splice(0); this.textContent = ''; }
+	/** Kept only so a retained panel can leave the tree on its own (`parentElement?.removeChild`). */
+	parentElement: FakeElement | null = null;
+	empty(): void { for (const child of this.children.splice(0)) child.parentElement = null; this.textContent = ''; }
 	createEl(tag: string, options?: FakeOptions): FakeElement { return this.appendChild(tag, options); }
 	private appendChild(tag: string, options?: FakeOptions): FakeElement {
-		const child = new FakeElement(tag, this.ownerDocument, options); this.children.push(child); return child;
+		return this.insertBefore(new FakeElement(tag, this.ownerDocument, options), null);
+	}
+	append(...nodes: FakeElement[]): void { for (const node of nodes) this.insertBefore(node, null); }
+	insertBefore(node: FakeElement, reference: FakeElement | null): FakeElement {
+		node.parentElement?.removeChild(node);
+		this.children.splice(reference === null ? this.children.length : this.children.indexOf(reference), 0, node);
+		node.parentElement = this;
+		return node;
+	}
+	removeChild(node: FakeElement): FakeElement {
+		this.children.splice(this.children.indexOf(node), 1);
+		node.parentElement = null;
+		return node;
 	}
 	createDiv(options?: FakeOptions): FakeElement { return this.appendChild('div', options); }
 	createSpan(options?: FakeOptions): FakeElement { return this.appendChild('span', options); }

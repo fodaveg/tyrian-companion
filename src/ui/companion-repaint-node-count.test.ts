@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TyrianCompanionView, type CompanionActions } from './companion-view';
-import { mountSessionHistoryPanel, SessionHistoryPanelController } from './session-history-panel';
+import { ProductActionController } from './product-action-controller';
+import { mountSessionHistoryPanel, SessionHistoryPanelController, type SessionHistoryPanelMount } from './session-history-panel';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { LiveSessionLootRow, LiveSessionLootState } from '../sessions/live-session-loot';
 import type { SessionState } from '../sessions/session';
@@ -35,19 +36,183 @@ describe('Durable history: nodes built per paint (audit 3.6)', () => {
 			.toBe(HISTORY_FIXED_NODES + (NODES_PER_SESSION_WITH_LOOT * count));
 	});
 
-	it.each(HISTORY_SIZES)('builds the whole panel again on a repaint of the Companion tab with %i unchanged sessions', async (count) => {
+	it.each(HISTORY_SIZES)('builds no history node on a repaint of the Companion tab with %i unchanged sessions', async (count) => {
 		const companion = await idleCompanion(sessionRecords(count, LOOT_LINES_PER_SESSION));
 		const section = historySection(companion.contentEl);
 		const nodesInPanel = walk(section).length;
 		expect(nodesInPanel).toBe(HISTORY_SHELL_NODES + HISTORY_FIXED_NODES + (NODES_PER_SESSION_WITH_LOOT * count));
+		const textBefore = allText(section);
 
 		const mark = companion.document.created;
 		companion.view.render();
 
 		const repainted = historySection(companion.contentEl);
-		expect(repainted).not.toBe(section);
-		expect(walk(repainted).filter((node) => node.serial > mark)).toHaveLength(nodesInPanel);
+		expect(id(repainted)).toBe(id(section));
+		expect(walk(repainted).filter((node) => node.serial > mark)).toHaveLength(0);
+		expect(walk(repainted)).toHaveLength(nodesInPanel);
+		expect(allText(repainted)).toBe(textBefore);
 		expect(companion.loadSessionHistory).toHaveBeenCalledOnce();
+	});
+
+	it('keeps the totals over every session: 300 sessions add up to 300 hours and 3,000 sacks, before and after a repaint', async () => {
+		const companion = await idleCompanion(sessionRecords(300, LOOT_LINES_PER_SESSION));
+		const metrics = (): string[] => walk(historySection(companion.contentEl))
+			.filter((node) => node.className === 'tyrian-session-history__metric')
+			.map((node) => node.children.map((child) => child.textContent).join(' = '));
+		const expected = ['Sesiones = 300', 'Duración total = 300 h', 'Sacos = 3000'];
+		expect(metrics().slice(0, 3)).toEqual(expected);
+		expect(metrics()).toHaveLength(4);
+		expect(historyRows(companion.contentEl)).toHaveLength(300);
+
+		companion.view.render();
+
+		expect(metrics().slice(0, 3)).toEqual(expected);
+		expect(historyRows(companion.contentEl)).toHaveLength(300);
+		expect(allText(historySection(companion.contentEl))).toContain('300 sesiones · leídas a las');
+	});
+
+	it('keeps every row it already had when a session is added, and builds only the new one at the top', async () => {
+		const sessions = sessionRecords(30, LOOT_LINES_PER_SESSION);
+		const history = await mountedHistory(sessions);
+		const rowsBefore = historyRows(history.container);
+		const ledger = rowsBefore[0]!.parentElement!;
+		const table = ledger.parentElement!;
+
+		sessions.push(sessionRecords(31, LOOT_LINES_PER_SESSION)[30]!);
+		const mark = history.document.created;
+		await history.controller.load();
+
+		const rowsAfter = historyRows(history.container);
+		expect(rowsAfter).toHaveLength(31);
+		expect(ids(rowsAfter.slice(1))).toEqual(ids(rowsBefore));
+		expect(rowsAfter[0]!.serial).toBeGreaterThan(mark);
+		expect(id(rowsAfter[0]!.parentElement)).toBe(id(ledger));
+		expect(id(ledger.parentElement)).toBe(id(table));
+		expect(walk(ledger).filter((node) => node.serial > mark)).toHaveLength(NODES_PER_SESSION_WITH_LOOT);
+		expect(ledger.children).toHaveLength(2 * 31);
+		expect(allText(history.container)).toContain('31 sesiones · leídas a las');
+	});
+
+	it('drops the row of a session that is gone and rebuilds the one whose figures changed', async () => {
+		const sessions = sessionRecords(4, 0);
+		const history = await mountedHistory(sessions);
+		// Newest first: the row at index 0 is `sessions[3]`.
+		const [newest, second, third, oldest] = ids(historyRows(history.container));
+
+		sessions[2] = { ...sessions[2]!, sacks: 99 };
+		sessions.shift();
+		await history.controller.load();
+
+		const rowsAfter = historyRows(history.container);
+		expect(rowsAfter).toHaveLength(3);
+		expect(id(rowsAfter[0])).toBe(newest);
+		expect(id(rowsAfter[1])).not.toBe(second);
+		expect(rowsAfter[1]!.children[3]!.textContent).toBe('99');
+		expect(id(rowsAfter[2])).toBe(third);
+		expect(ids(walk(history.container))).not.toContain(oldest);
+	});
+
+	it('moves "hoy" to "ayer" on the same row when a repaint finds the calendar day has changed', async () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date(2026, 8, 10, 12, 0, 0));
+		const startedAt = new Date(2026, 8, 10, 9, 0, 0).toISOString();
+		const history = await mountedHistory([{ ...sessionRecords(1, 0)[0]!, startedAt, endedAt: new Date(2026, 8, 10, 10, 0, 0).toISOString() }]);
+		const ended = historyRows(history.container)[0]!.children[0]!;
+		expect(ended.textContent).toMatch(/^hoy /u);
+
+		const mark = history.document.created;
+		history.mount.update();
+		expect(ended.textContent).toMatch(/^hoy /u);
+
+		vi.setSystemTime(new Date(2026, 8, 11, 0, 5, 0));
+		history.mount.update();
+
+		expect(id(historyRows(history.container)[0]!.children[0])).toBe(id(ended));
+		expect(ended.textContent).toMatch(/^ayer /u);
+		expect(history.document.created).toBe(mark);
+
+		// A read that lands on a later day keeps the row and still moves its text.
+		vi.setSystemTime(new Date(2026, 8, 12, 0, 5, 0));
+		await history.controller.load();
+		expect(id(historyRows(history.container)[0]!.children[0])).toBe(id(ended));
+		expect(ended.textContent).not.toMatch(/^(hoy|ayer) /u);
+	});
+});
+
+describe('Durable history: accessibility across a repaint', () => {
+	// Once bare and once under the product shell: the shell is what the plugin really mounts, and
+	// there the repainted surface is the shell's `<main>`, not the view's own `contentEl`.
+	it.each([
+		{ name: 'without the product shell', shell: false, nav: [] },
+		{ name: 'under the product shell', shell: true, nav: ['button:Sesión', 'button:Inventario', 'button:Venta', 'button:'] },
+	])('keeps the focus on "Actualizar historial", and the same roles, scopes and tab order, $name', async ({ shell, nav }) => {
+		const actionController = shellController();
+		const companion = await idleCompanion(
+			sessionRecords(30, LOOT_LINES_PER_SESSION), shell ? { getProductActionController: () => actionController } : {},
+		);
+		const refresh = walk(historySection(companion.contentEl)).find((node) => node.tag === 'button')!;
+		expect(refresh.textContent).toBe('Actualizar historial');
+		const accessibility = (): unknown => {
+			const section = historySection(companion.contentEl);
+			const region = walk(section).find((node) => node.className === 'tyrian-session-history__state')!;
+			return {
+				label: section.attributes.get('aria-label'),
+				region: ['role', 'aria-live', 'aria-atomic', 'aria-busy', 'id'].map((name) => region.attributes.get(name)),
+				controls: refresh.attributes.get('aria-controls'),
+				scopes: walk(section).filter((node) => node.tag === 'th').map((node) => node.attributes.get('scope')),
+				tabOrder: walk(companion.contentEl)
+					.filter((node) => node.tag === 'button' || node.tag === 'summary')
+					.map((node) => `${node.tag}:${node.textContent}`),
+				surfaceOrder: surface(companion.contentEl).children.map((node) => node.className || node.tag),
+			};
+		};
+		const before = accessibility();
+		expect(before).toMatchObject({
+			region: ['status', 'polite', 'true', 'false', refresh.attributes.get('aria-controls')],
+			tabOrder: [...nav, 'button:Iniciar sesión', 'summary:Botín', 'summary:Avisos', 'summary:Detalle', 'button:Actualizar historial'],
+		});
+		expect(surface(companion.contentEl).tag).toBe(shell ? 'main' : 'div');
+
+		refresh.focus();
+		companion.view.render();
+
+		expect(id(companion.document.activeElement)).toBe(id(refresh));
+		expect(accessibility()).toEqual(before);
+	});
+});
+
+describe('Durable history: what leaves with the mount', () => {
+	it('takes its section out of the tree and stops listening to the controller on dispose', async () => {
+		const history = await mountedHistory(sessionRecords(30, 0));
+		const section = historySection(history.container);
+
+		history.mount.dispose();
+
+		expect(history.container.children).toHaveLength(0);
+		expect(id(section.parentElement)).toBeNull();
+		const mark = history.document.created;
+		await history.controller.load('rebuild');
+		expect(history.document.created).toBe(mark);
+		// The rows were released with the section: nothing the mount still holds can be painted again.
+		history.mount.update();
+		expect(history.document.created).toBe(mark);
+	});
+
+	it('leaves no history section behind when the tab closes or a session starts', async () => {
+		const closing = await idleCompanion(sessionRecords(30, 0));
+		await closing.view.onClose();
+		expect(walk(closing.contentEl).some((node) => node.className === 'tyrian-session-history')).toBe(false);
+
+		let session: SessionState = { version: 1, status: 'idle' };
+		const sessions = sessionRecords(30, 0);
+		const starting = mountCompanion({
+			getSessionState: () => session,
+			loadSessionHistory: async () => ({ status: 'ok', sessions, ignored: 0 }),
+		});
+		await vi.waitFor(() => expect(walk(starting.contentEl).some((node) => node.tag === 'caption')).toBe(true));
+		session = ACTIVE_SESSION;
+		starting.view.render();
+		expect(walk(starting.contentEl).some((node) => node.className === 'tyrian-session-history')).toBe(false);
 	});
 });
 
@@ -55,21 +220,78 @@ describe('Live loot list: nodes built per paint (audit 3.5)', () => {
 	it.each(LOOT_SIZES)('holds 3 nodes per distinct item plus the list itself at %i items', (count) => {
 		const companion = activeCompanion(lootRows(count));
 		expect(walk(lootList(companion.contentEl))).toHaveLength(1 + (NODES_PER_LOOT_ITEM * count));
+		expect(drawerSuffix(companion.contentEl, 'Botín')).toBe(`${String(count)} objetos`);
 	});
 
-	it.each(LOOT_SIZES)('builds the whole list again when one of %i items gains a unit', (count) => {
+	it.each(LOOT_SIZES)('builds no loot node when one of %i items gains a unit, and 3 when a new item appears', (count) => {
 		const rows = lootRows(count);
 		const companion = activeCompanion(rows);
 		const list = lootList(companion.contentEl);
+		const items = ids(list.children);
 
-		const mark = companion.document.created;
+		let mark = companion.document.created;
 		rows[0] = { ...rows[0]!, quantity: rows[0]!.quantity + 1, totalCopper: 2 * (rows[0]!.totalCopper ?? 0) };
 		companion.view.render();
 
 		const afterGain = lootList(companion.contentEl);
-		expect(afterGain).not.toBe(list);
-		expect(walk(afterGain).filter((node) => node.serial > mark)).toHaveLength(1 + (NODES_PER_LOOT_ITEM * count));
-		expect(afterGain.children[0]!.children[0]!.textContent).toBe('Objeto 1 ×2');
+		expect(id(afterGain)).toBe(id(list));
+		expect(ids(afterGain.children)).toEqual(items);
+		expect(walk(afterGain).filter((node) => node.serial > mark)).toHaveLength(0);
+		expect(afterGain.children[0]!.children.map((node) => node.textContent)).toEqual(['Objeto 1 ×2', '0g 2s 0c']);
+		expect(companion.document.created - mark).toBe(TAB_NODES_AROUND_THE_LOOT);
+
+		mark = companion.document.created;
+		rows.push(lootRow(count + 1));
+		companion.view.render();
+
+		const afterNewItem = lootList(companion.contentEl);
+		expect(ids(afterNewItem.children.slice(0, count))).toEqual(items);
+		expect(walk(afterNewItem).filter((node) => node.serial > mark)).toHaveLength(NODES_PER_LOOT_ITEM);
+		expect(afterNewItem.children).toHaveLength(count + 1);
+		expect(drawerSuffix(companion.contentEl, 'Botín')).toBe(`${String(count + 1)} objetos`);
+	});
+
+	it('follows the tracker when an item leaves, the order changes or the price is unknown', () => {
+		const rows = lootRows(3);
+		const companion = activeCompanion(rows);
+		const [first, second, third] = ids(lootList(companion.contentEl).children);
+
+		rows.splice(0, 3, { ...rows[2]!, priceStatus: 'unavailable', totalCopper: null, unitCopper: null }, rows[0]!);
+		companion.view.render();
+
+		const list = lootList(companion.contentEl);
+		expect(ids(list.children)).toEqual([third, first]);
+		expect(ids(walk(companion.contentEl))).not.toContain(second);
+		expect(list.children.map((item) => item.children.map((node) => node.textContent))).toEqual([
+			['Objeto 3 ×1', 'sin precio'], ['Objeto 1 ×1', '0g 1s 0c'],
+		]);
+		expect(drawerSuffix(companion.contentEl, 'Botín')).toBe('2 objetos · 1 sin precio');
+	});
+
+	it('goes back to "Sin botín" with no list when the tracker empties, and to a fresh list afterwards', () => {
+		const rows = lootRows(3);
+		const companion = activeCompanion(rows);
+		const list = lootList(companion.contentEl);
+
+		rows.splice(0);
+		companion.view.render();
+		expect(walk(companion.contentEl).some((node) => node.className === 'tyrian-companion-session__list')).toBe(false);
+		expect(allText(companion.contentEl)).toContain('Sin botín');
+
+		rows.push(lootRow(7));
+		companion.view.render();
+		const fresh = lootList(companion.contentEl);
+		expect(id(fresh)).not.toBe(id(list));
+		expect(fresh.children).toHaveLength(1);
+	});
+
+	it('releases the list when the tab closes', async () => {
+		const rows = lootRows(3);
+		const companion = activeCompanion(rows);
+		const list = lootList(companion.contentEl);
+		await companion.view.onClose();
+		companion.view.render();
+		expect(id(lootList(companion.contentEl))).not.toBe(id(list));
 	});
 });
 
@@ -78,9 +300,16 @@ describe('The rest of the Companion tab: the yardstick for both lists', () => {
 		const companion = activeCompanion([]);
 		const mark = companion.document.created;
 		companion.view.render();
-		expect(companion.document.created - mark).toBe(66);
+		expect(companion.document.created - mark).toBe(TAB_NODES_AROUND_THE_LOOT + 1);
 	});
 });
+
+/** What a repaint builds around the Botín body during an active session; "Sin botín" is one more. */
+const TAB_NODES_AROUND_THE_LOOT = 65;
+const ACTIVE_SESSION = {
+	version: 1, status: 'active', sessionId: 'session',
+	baseline: { completedAt: '2026-08-31T09:00:00.000Z' }, startContext: { characterName: 'Rinopopo' },
+} as unknown as SessionState;
 
 /** Everything the ready state builds that does not grow with the session count. */
 const HISTORY_FIXED_NODES = 44;
@@ -93,18 +322,20 @@ const NODES_PER_LOOT_ITEM = 3;
 /** The section, its header line and the state region: built once per mount. */
 const HISTORY_SHELL_NODES = 7;
 
+/** The panel alone, reading `sessions` again (the same array, as the caller left it) on every load. */
 async function mountedHistory(sessions: DurableSessionHistoryRecord[]): Promise<{
 	document: CountingDocument; container: CountingElement; createdBeforeReady: number;
+	controller: SessionHistoryPanelController; mount: SessionHistoryPanelMount;
 }> {
 	const document = new CountingDocument();
 	const container = new CountingElement('div', document);
-	const controller = new SessionHistoryPanelController(async () => ({ status: 'ok', sessions, ignored: 0 }));
-	mountSessionHistoryPanel(container as unknown as HTMLElement, 'es', controller);
+	const controller = new SessionHistoryPanelController(async () => ({ status: 'ok', sessions: [...sessions], ignored: 0 }));
+	const mount = mountSessionHistoryPanel(container as unknown as HTMLElement, 'es', controller);
 	const flight = controller.load();
 	// The loading copy is two nodes of its own; the figure pinned above is the ready paint alone.
 	const createdBeforeReady = document.created;
 	await flight;
-	return { document, container, createdBeforeReady };
+	return { document, container, createdBeforeReady, controller, mount };
 }
 
 interface MountedCompanion {
@@ -114,9 +345,11 @@ interface MountedCompanion {
 	loadSessionHistory: ReturnType<typeof vi.fn>;
 }
 
-async function idleCompanion(sessions: DurableSessionHistoryRecord[]): Promise<MountedCompanion> {
+async function idleCompanion(
+	sessions: DurableSessionHistoryRecord[], overrides: Partial<CompanionActions> = {},
+): Promise<MountedCompanion> {
 	const loadSessionHistory = vi.fn(async () => ({ status: 'ok' as const, sessions, ignored: 0 }));
-	const companion = mountCompanion({ loadSessionHistory });
+	const companion = mountCompanion({ ...overrides, loadSessionHistory });
 	await vi.waitFor(() => expect(walk(companion.contentEl).some((node) => node.tag === 'caption')).toBe(true));
 	return { ...companion, loadSessionHistory };
 }
@@ -126,10 +359,7 @@ function activeCompanion(rows: LiveSessionLootRow[]): MountedCompanion {
 	return {
 		...mountCompanion({
 			loadSessionHistory,
-			getSessionState: () => ({
-				version: 1, status: 'active', sessionId: 'session',
-				baseline: { completedAt: '2026-08-31T09:00:00.000Z' }, startContext: { characterName: 'Rinopopo' },
-			}) as unknown as SessionState,
+			getSessionState: () => ACTIVE_SESSION,
 			getLiveSessionLoot: (): LiveSessionLootState => ({
 				status: 'observing', sessionId: 'session', restored: false, rows,
 				knownTotalCopper: rows.reduce((total, row) => total + (row.totalCopper ?? 0), 0), sackQuantity: 0,
@@ -201,6 +431,23 @@ function baseActions(): CompanionActions {
 	};
 }
 
+/** The controller whose presence makes the view mount the product shell around its page. */
+function shellController(): ProductActionController {
+	return new ProductActionController({
+		getLocale: () => 'es', isRuntimeReady: () => true, hasApiKey: () => true,
+		getConnectionState: () => ({ status: 'idle' }),
+		getPendingProposals: () => ({ status: 'ready', pendingCount: 0, next: null }),
+		getDetectionState: () => ({ status: 'disarmed', reason: 'initial', scheduler: {}, lastSnapshotAt: null } as never),
+		canArmDetection: () => true, canApplyInventory: () => false, canApplyWallet: () => false,
+		isInventoryBusy: () => false,
+		sessionCommands: {
+			describe: (id) => ({ id, name: id, available: true, icon: 'test', destructive: false, targetKey: 'test' }),
+			runWithOutcome: async () => 'completed',
+		},
+		execute: async () => 'completed' as const,
+	});
+}
+
 function sessionRecords(count: number, lootLines: number): DurableSessionHistoryRecord[] {
 	const first = Date.parse('2026-01-01T10:00:00.000Z');
 	return Array.from({ length: count }, (_unused, index) => {
@@ -240,6 +487,32 @@ function historyRows(root: CountingElement): CountingElement[] {
 
 function lootList(root: CountingElement): CountingElement {
 	return walk(root).find((node) => node.className === 'tyrian-companion-session__list')!;
+}
+
+/** The page the view repaints: `contentEl` itself here, since no product shell is wired. */
+function surface(root: CountingElement): CountingElement {
+	return historySection(root).parentElement!;
+}
+
+/** The closed-state text a gaveto shows next to its name. */
+function drawerSuffix(root: CountingElement, name: string): string {
+	return walk(root).find((node) => node.tag === 'summary' && node.textContent === name)!.children[0]!.textContent;
+}
+
+/**
+ * Identity by the order of creation. Two elements are never handed to `toBe` or `toEqual`
+ * themselves: on a mismatch the reporter would print two trees of tens of thousands of nodes.
+ */
+function id(node: CountingElement | null | undefined): number | null {
+	return node?.serial ?? null;
+}
+
+function ids(nodes: readonly CountingElement[]): number[] {
+	return nodes.map((node) => node.serial);
+}
+
+function allText(root: CountingElement): string {
+	return walk(root).map((node) => node.textContent).join(' | ');
 }
 
 function walk(root: CountingElement): CountingElement[] {

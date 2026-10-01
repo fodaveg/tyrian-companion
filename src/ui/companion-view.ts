@@ -59,6 +59,7 @@ import {
 } from './halloween-alert-panel';
 import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
+import { emptyExcept, reconcileChildren, settleLast } from './reconcile-children';
 import {
 	mountSessionHistoryPanel,
 	SessionHistoryPanelController,
@@ -165,6 +166,15 @@ export function companionView(actions: Pick<CompanionActions, 'getLocale'>): Tyr
 	};
 }
 
+/** One line of the Botín gaveto, kept by item id, with the two texts it shows right now. */
+interface LiveLootItem {
+	readonly li: HTMLElement;
+	readonly label: HTMLElement;
+	readonly value: HTMLElement;
+	labelText: string;
+	valueText: string;
+}
+
 /**
  * The Companion tab's controller, mounted by the host into `contentEl` (an `ItemView`'s content in
  * Obsidian). Its modals open through the host (`ui.openModal`).
@@ -196,7 +206,18 @@ export class TyrianCompanionView {
 	private productShellKey: string | null = null;
 	/** Retained across rerenders so a loaded history survives a repaint without rescanning the Vault. */
 	private sessionHistoryController: SessionHistoryPanelController | null = null;
+	/**
+	 * The mounted history panel, kept in the tree across `render()` (audit 3.6): a repaint with the
+	 * same history builds none of its rows again and leaves the focus where the player had it.
+	 */
 	private sessionHistoryMount: SessionHistoryPanelMount | null = null;
+	/** The locale `sessionHistoryMount` was built in; a different one is the only reason to remount. */
+	private sessionHistoryLocale: Locale | null = null;
+	/**
+	 * The Botín gaveto's list, kept across `render()` (audit 3.5) and moved into each new card: a
+	 * poll that changes one quantity rewrites one line instead of building every item again.
+	 */
+	private liveLoot: { readonly list: HTMLElement; readonly items: Map<number, LiveLootItem> } | null = null;
 	/** H18.36: null until the first render; used only to detect the transition INTO idle (a session
 	 *  that just ended), which forces a fresh historial read even if one already succeeded before. */
 	private lastObservedSessionStatus: SessionStatus | null = null;
@@ -217,6 +238,8 @@ export class TyrianCompanionView {
 		this.actions.localDebugViewEvent?.('close');
 		this.sessionHistoryMount?.dispose();
 		this.sessionHistoryMount = null;
+		this.sessionHistoryLocale = null;
+		this.liveLoot = null;
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;
@@ -269,10 +292,13 @@ export class TyrianCompanionView {
 		const missingApiKey = !(this.actions.hasConfiguredApiKey?.() ?? true);
 		const shellKey = `${locale}:${String(missingApiKey)}`;
 		if (actionController === undefined) {
-			this.productShell?.dispose();
+			// Without a shell `contentEl` is the surface itself, emptied a few lines below; only a
+			// shell that is going away has anything of its own to clear here.
+			const leavingShell = this.productShell ?? null;
+			leavingShell?.dispose();
 			this.productShell = null;
 			this.productShellKey = null;
-			contentEl.empty();
+			if (leavingShell !== null) contentEl.empty();
 		} else if (this.productShell === null || this.productShellKey !== shellKey) {
 			this.productShell?.dispose();
 			this.productShell = renderProductShell(contentEl, {
@@ -287,7 +313,9 @@ export class TyrianCompanionView {
 		}
 		this.productShell?.update();
 		const surface = this.productShell?.content ?? contentEl;
-		surface.empty();
+		// Everything is rebuilt except the history panel, which stays attached: taking it out of the
+		// tree, even to put it back, would drop the focus and the scroll offset it holds.
+		emptyExcept(surface, this.sessionHistoryMount?.element ?? null);
 		surface.addClass('tyrian-companion-view__page');
 		this.renderStatusLine(surface);
 		this.renderSimpleSession(surface, connectionState, sessionState, projection, now);
@@ -487,18 +515,30 @@ export class TyrianCompanionView {
 		this.sessionHistoryController ??= new SessionHistoryPanelController(
 			(source) => this.actions.loadSessionHistory(source),
 		);
-		this.sessionHistoryMount?.dispose();
-		this.sessionHistoryMount = mountSessionHistoryPanel(
-			container,
-			this.actions.getLocale(),
-			this.sessionHistoryController,
-		);
+		const locale = this.actions.getLocale();
+		if (this.sessionHistoryLocale !== locale) this.releaseSessionHistoryMount();
+		const mounted = this.sessionHistoryMount ?? null;
+		if (mounted === null) {
+			this.sessionHistoryMount = mountSessionHistoryPanel(container, locale, this.sessionHistoryController);
+			this.sessionHistoryLocale = locale;
+		} else {
+			// The card was just appended after the retained panel: it moves, the panel does not.
+			settleLast(container, mounted.element);
+			mounted.update();
+		}
 		const historyState = this.sessionHistoryController.current();
 		// A mount that landed before `runtimeReady` leaves the panel `unavailable` with reason
 		// `not_ready` (H18.36 bug, 28 sep): the next render (the core's own post-startup
 		// `renderViews()`) retries it once here, since core state is otherwise never re-read.
 		const coreJustBecameReady = historyState.status === 'unavailable' && historyState.reason === 'not_ready';
 		if (forceReload || historyState.status === 'idle' || coreJustBecameReady) void this.sessionHistoryController.load();
+	}
+
+	/** Unsubscribes the history panel and takes it out of the tree; its controller keeps the loaded state. */
+	private releaseSessionHistoryMount(): void {
+		this.sessionHistoryMount?.dispose();
+		this.sessionHistoryMount = null;
+		this.sessionHistoryLocale = null;
 	}
 
 	/**
@@ -519,19 +559,38 @@ export class TyrianCompanionView {
 	private renderLoot(container: HTMLElement): void {
 		const loot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' as const };
 		if (loot.status === 'idle' || loot.rows.length === 0) {
+			this.liveLoot = null;
 			container.createEl('p', { text: this.t('sessionCard.loot.empty'), cls: 'tyrian-companion-session__context' });
 			return;
 		}
 		const locale = this.actions.getLocale();
-		const list = container.createEl('ul', { cls: 'tyrian-companion-session__list' });
+		// The card around it is new on every render; the list is the same one, moved into it. It
+		// holds nothing focusable, so leaving the tree for a statement costs it nothing.
+		const kept = this.liveLoot ?? null;
+		const mount = kept ?? { list: container.createEl('ul', { cls: 'tyrian-companion-session__list' }), items: new Map<number, LiveLootItem>() };
+		if (kept !== null) container.append(kept.list);
+		this.liveLoot = mount;
+		const nodes: HTMLElement[] = [];
+		const seen = new Set<number>();
 		for (const row of loot.rows) {
-			const li = list.createEl('li');
-			li.createEl('strong', { text: `${row.name} ×${String(row.quantity)}` });
-			li.createSpan({
-				text: row.priceStatus === 'known' && row.totalCopper !== null
-					? simpleMoney(row.totalCopper, locale) : this.t('sessionCard.loot.unpriced'),
-			});
+			const label = `${row.name} ×${String(row.quantity)}`;
+			const value = row.priceStatus === 'known' && row.totalCopper !== null
+				? simpleMoney(row.totalCopper, locale) : this.t('sessionCard.loot.unpriced');
+			let item = mount.items.get(row.itemId);
+			if (item === undefined) {
+				const li = mount.list.createEl('li');
+				item = { li, label: li.createEl('strong', { text: label }), value: li.createSpan({ text: value }), labelText: label, valueText: value };
+				mount.items.set(row.itemId, item);
+			}
+			if (item.labelText !== label) { item.label.setText(label); item.labelText = label; }
+			if (item.valueText !== value) { item.value.setText(value); item.valueText = value; }
+			seen.add(row.itemId);
+			nodes.push(item.li);
 		}
+		for (const itemId of mount.items.keys()) {
+			if (!seen.has(itemId)) mount.items.delete(itemId);
+		}
+		reconcileChildren(mount.list, nodes);
 	}
 
 	/** `sin avisos` / `N avisos`: avisos of the session on screen, or of the last 24h with none running. */
@@ -649,8 +708,7 @@ export class TyrianCompanionView {
 			const justFinished = this.lastObservedSessionStatus !== null && this.lastObservedSessionStatus !== 'idle';
 			this.renderSessionHistoryPanel(container, justFinished);
 		} else {
-			this.sessionHistoryMount?.dispose();
-			this.sessionHistoryMount = null;
+			this.releaseSessionHistoryMount();
 		}
 		this.lastObservedSessionStatus = observed.status;
 	}
