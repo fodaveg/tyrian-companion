@@ -68,7 +68,10 @@ describe('price seed downloads over the real runtime: one request in flight for 
 		// A failed test must not leave a pass running into the next one's counters.
 		datawars2.opened = true;
 		for (const release of datawars2.held.splice(0)) release();
-		await Promise.allSettled(started);
+		// Bounded: a failed test may have left one of them unresolved, and the cleanup must not hang on it.
+		let settled = false;
+		void Promise.allSettled(started).then(() => { settled = true; });
+		await vi.waitFor(() => { expect(settled).toBe(true); }, { timeout: 250 }).catch(() => undefined);
 		started = [];
 		harness?.dispose();
 		harness = null;
