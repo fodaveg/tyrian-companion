@@ -48,6 +48,25 @@ describe('inventory advisor: a stack larger than the bid', () => {
 		expect(analysed(stacks([owned]))).toEqual({ status: 'ready', cause: null, decisions: expected });
 	});
 
+	// A bid of 2 units at 1 copper grosses 2, which the fees (1 + 1 copper minimum) leave at net 0, and the object has no
+	// vendor value: the listing, netting 2, beats it, so the slice the bid would absorb is listed and the bid is not spent.
+	it.each<[string, number[], Decision[]]>([
+		['3', [3], [['list', 2, '#/positions/10/0'], ['list', 1, '#/positions/10/0']]],
+		['2 + 2', [2, 2], [['list', 2, '#/positions/10/0'], ['list', 2, '#/positions/10/1']]],
+		['5 + 1', [5, 1], [['list', 2, '#/positions/10/0'], ['list', 3, '#/positions/10/0'], ['list', 1, '#/positions/10/1']]],
+	])('lists a slice whose instant sale nets 0 against a listing that nets more, and the verifier accepts the cuts: %s', (_name, quantities, expected) => {
+		const zero = { vendorValue: 0, bid: { unitCopper: 1, quantity: 2 }, ask: { unitCopper: 2, quantity: 1 } };
+		expect(analysed(stacks(quantities, zero))).toEqual({ status: 'ready', cause: null, decisions: expected });
+	});
+
+	it('lists on complete market depth when the instant sale grosses 2 and nets 0 and the listing nets more', () => {
+		const value = stacks([2], { vendorValue: 0 });
+		value.marketDepth = { version: 1, capturedAt: AT, source: 'gw2-commerce-listings', requestedItemIds: [10],
+			status: 'complete', items: [{ itemId: 10, coverage: 'complete',
+				buys: [{ unitCopper: 1, quantity: 2 }], sells: [{ unitCopper: 2, quantity: 5 }] }] };
+		expect(analysed(value)).toEqual({ status: 'ready', cause: null, decisions: [['list', 2, '#/positions/10/0']] });
+	});
+
 	it('routes the whole stack without the instant sale when there is no bid', () => {
 		expect(analysed(stacks([15], { bid: null }))).toEqual({
 			status: 'ready', cause: null, decisions: [['list', 15, '#/positions/10/0']],
