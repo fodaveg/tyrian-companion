@@ -1,3 +1,4 @@
+import { ensureFoldersBySegments } from '../core/vault-folders';
 import { aggregatePilotMetrics, type PilotAggregationV1 } from './pilot-metrics-statistics';
 import { DETECTION_CORRECTION_CAUSES } from './session-detection-quality';
 import type { PilotJournalHealth, PilotJournalSnapshotV1, PilotObservationV1 } from './pilot-metrics-model';
@@ -242,12 +243,5 @@ function sortValue(value: unknown): unknown {
 }
 
 async function ensureFolders(vault: PilotMetricsExportVault, path: string): Promise<void> {
-	let current = '';
-	for (const segment of path.split('/')) {
-		current = current.length === 0 ? segment : `${current}/${segment}`;
-		if (!vault.file(current)) {
-			try { await vault.createFolder(current); }
-			catch { if (!vault.file(current)) throw new Error('Pilot export folder is unavailable.'); }
-		}
-	}
+	await ensureFoldersBySegments(vault, path, 'Pilot export folder is unavailable.');
 }

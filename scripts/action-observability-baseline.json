@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 474,
+		"catch_clause": 472,
 		"promise_catch": 39,
 		"void_expression": 101,
 		"callback_registration": 178
@@ -2053,9 +2053,9 @@
 				{
 					"id": "ce48ce6c7c1ae4fe42cf04bea651796c81dd8202",
 					"kind": "callback_registration",
-					"line": 131,
+					"line": 182,
 					"column": 19,
-					"endLine": 131,
+					"endLine": 182,
 					"endColumn": 126,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -2070,9 +2070,9 @@
 				{
 					"id": "6ab6f9c3e81cc39a967903f3c1224049de3216df",
 					"kind": "callback_registration",
-					"line": 139,
+					"line": 190,
 					"column": 19,
-					"endLine": 139,
+					"endLine": 190,
 					"endColumn": 127,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -2087,9 +2087,9 @@
 				{
 					"id": "c576b66a4e0b3fd14b537b9e8243339c86b9ede0",
 					"kind": "callback_registration",
-					"line": 147,
+					"line": 198,
 					"column": 19,
-					"endLine": 147,
+					"endLine": 198,
 					"endColumn": 124,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -2104,9 +2104,9 @@
 				{
 					"id": "eaad247bf1a1a893b640bd37aa808bcd6fe334d0",
 					"kind": "catch_clause",
-					"line": 202,
+					"line": 253,
 					"column": 5,
-					"endLine": 204,
+					"endLine": 255,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2120,9 +2120,9 @@
 				{
 					"id": "8b6c067a375ffa2c7f3f2747d6bfa5a6fa91d2ee",
 					"kind": "catch_clause",
-					"line": 314,
+					"line": 367,
 					"column": 5,
-					"endLine": 316,
+					"endLine": 369,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2136,9 +2136,9 @@
 				{
 					"id": "7f2f1074086d30d822021edc395e259b18f933f5",
 					"kind": "catch_clause",
-					"line": 342,
+					"line": 396,
 					"column": 4,
-					"endLine": 342,
+					"endLine": 396,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2152,9 +2152,9 @@
 				{
 					"id": "4ec4baaad8623d24006a88dde88698875a76257d",
 					"kind": "catch_clause",
-					"line": 376,
+					"line": 441,
 					"column": 4,
-					"endLine": 376,
+					"endLine": 441,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2168,9 +2168,9 @@
 				{
 					"id": "0eac2c0bc8888b50d9d93f670c8b86da0b7315b2",
 					"kind": "catch_clause",
-					"line": 523,
+					"line": 593,
 					"column": 5,
-					"endLine": 523,
+					"endLine": 593,
 					"endColumn": 104,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2184,9 +2184,9 @@
 				{
 					"id": "10085e00964f7ca98817a9bcc1679ab11928d600",
 					"kind": "catch_clause",
-					"line": 550,
+					"line": 620,
 					"column": 5,
-					"endLine": 550,
+					"endLine": 620,
 					"endColumn": 45,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2200,9 +2200,9 @@
 				{
 					"id": "047ac8add61b5552758ddd6dae6803bda6f63fa1",
 					"kind": "catch_clause",
-					"line": 705,
+					"line": 792,
 					"column": 4,
-					"endLine": 707,
+					"endLine": 794,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2212,22 +2212,6 @@
 						"justification": "The \"baseSemanticHash\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"baseSemanticHash\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"baseSemanticHash\"."
-				},
-				{
-					"id": "8240ab7b1a275e09724d1e30f5896f97c2655c67",
-					"kind": "catch_clause",
-					"line": 742,
-					"column": 4,
-					"endLine": 742,
-					"endColumn": 80,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "ensureFolders",
-						"justification": "The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
 				}
 			]
 		},
@@ -3171,6 +3155,44 @@
 						"justification": "The \"alertWebhookDestination\" owner treats an unparseable destination as \"fallback_return\" to the empty string, which means the webhook is off; a malformed URL persisted by a hand edit must disable the channel, never abort settings migration."
 					},
 					"reason": "Allowlisted catch_clause: The \"alertWebhookDestination\" owner treats an unparseable destination as \"fallback_return\" to the empty string, which means the webhook is off; a malformed URL persisted by a hand edit must disable the channel, never abort settings migration. Verified recovery: \"fallback_return\" in \"alertWebhookDestination\"."
+				}
+			]
+		},
+		"src/core/vault-folders.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "82424b2a3396634e538d4c047e6b11f95ac04842",
+					"kind": "catch_clause",
+					"line": 24,
+					"column": 3,
+					"endLine": 24,
+					"endColumn": 74,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "ensureFoldersFromPrefixes",
+						"justification": "The \"ensureFoldersFromPrefixes\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"ensureFoldersFromPrefixes\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFoldersFromPrefixes\"."
+				},
+				{
+					"id": "08d5fa9fee55ed49c82966d54af9ffce36c40147",
+					"kind": "catch_clause",
+					"line": 43,
+					"column": 4,
+					"endLine": 43,
+					"endColumn": 76,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "ensureFoldersBySegments",
+						"justification": "The \"ensureFoldersBySegments\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"ensureFoldersBySegments\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFoldersBySegments\"."
 				}
 			]
 		},
@@ -6038,9 +6060,9 @@
 				{
 					"id": "141d4c2e4aa3307cf767fe38a424572aa0097641",
 					"kind": "callback_registration",
-					"line": 792,
+					"line": 879,
 					"column": 18,
-					"endLine": 797,
+					"endLine": 884,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -6055,9 +6077,9 @@
 				{
 					"id": "2549205a600492fe4df67e2758dacaca7e7a7088",
 					"kind": "catch_clause",
-					"line": 882,
+					"line": 936,
 					"column": 6,
-					"endLine": 893,
+					"endLine": 947,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6071,9 +6093,9 @@
 				{
 					"id": "db15be2d26535001b9fc9f31e64f18ff9ad60838",
 					"kind": "catch_clause",
-					"line": 934,
+					"line": 988,
 					"column": 5,
-					"endLine": 939,
+					"endLine": 993,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6087,9 +6109,9 @@
 				{
 					"id": "d7963c7e5fb68b49242374e7f244c20807086816",
 					"kind": "catch_clause",
-					"line": 1147,
+					"line": 1267,
 					"column": 2,
-					"endLine": 1147,
+					"endLine": 1267,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6099,22 +6121,6 @@
 						"justification": "The \"validateInventoryNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"validateInventoryNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"validateInventoryNoteMarker\"."
-				},
-				{
-					"id": "032f7ed343a7a1bc32067cb8eb4600aa80853a58",
-					"kind": "catch_clause",
-					"line": 1423,
-					"column": 3,
-					"endLine": 1423,
-					"endColumn": 86,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "ensureFolders",
-						"justification": "The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
 				}
 			]
 		},
@@ -9584,9 +9590,9 @@
 				{
 					"id": "dc580ebeda3fa89703e9fa4a526cfda4d74eb85e",
 					"kind": "catch_clause",
-					"line": 79,
+					"line": 80,
 					"column": 5,
-					"endLine": 79,
+					"endLine": 80,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9596,22 +9602,6 @@
 						"justification": "The \"export\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"export\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"export\"."
-				},
-				{
-					"id": "21accc221c0e34c4e1b6db24596629970aacf8d7",
-					"kind": "catch_clause",
-					"line": 250,
-					"column": 4,
-					"endLine": 250,
-					"endColumn": 95,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "ensureFolders",
-						"justification": "The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
 				}
 			]
 		},
@@ -14271,9 +14261,9 @@
 				{
 					"id": "3506c7bc5ee1223fa20b6a5c51f91ce24b4e2561",
 					"kind": "callback_registration",
-					"line": 238,
+					"line": 239,
 					"column": 18,
-					"endLine": 240,
+					"endLine": 241,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -14288,9 +14278,9 @@
 				{
 					"id": "06e7884dfc8ec76e4f4144cabb4ab8e340825518",
 					"kind": "catch_clause",
-					"line": 271,
+					"line": 272,
 					"column": 6,
-					"endLine": 284,
+					"endLine": 285,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14304,9 +14294,9 @@
 				{
 					"id": "546c662a5e510b9559779c7030003a9e333e549d",
 					"kind": "catch_clause",
-					"line": 306,
+					"line": 307,
 					"column": 5,
-					"endLine": 311,
+					"endLine": 312,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14320,9 +14310,9 @@
 				{
 					"id": "cfb3a078df9c07465b06a945f071e84629ee8293",
 					"kind": "catch_clause",
-					"line": 404,
+					"line": 405,
 					"column": 2,
-					"endLine": 404,
+					"endLine": 405,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14332,22 +14322,6 @@
 						"justification": "The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"validateWalletNoteMarker\"."
-				},
-				{
-					"id": "46c48179e65474f23e34a573d93113ba087cfc50",
-					"kind": "catch_clause",
-					"line": 479,
-					"column": 3,
-					"endLine": 479,
-					"endColumn": 83,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "ensureFolders",
-						"justification": "The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
 				}
 			]
 		},

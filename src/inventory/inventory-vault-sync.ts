@@ -17,6 +17,7 @@ import { sha256Text } from '../assets/managed-asset-hash';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import { createLimiter } from '../core/concurrency';
 import { errorClassName } from '../core/local-debug-error-details';
+import { ensureFoldersFromPrefixes } from '../core/vault-folders';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 import {
 	isInventoryMarketDepthEvidence,
@@ -1550,13 +1551,7 @@ function isInventoryVaultSyncPlan(value: unknown, configDir: string): value is I
 }
 
 async function ensureFolders(vault: InventoryVaultPort, path: string): Promise<void> {
-	const segments = path.split('/');
-	for (let index = 1; index <= segments.length; index += 1) {
-		const folder = segments.slice(0, index).join('/');
-		if (vault.file(folder)) continue;
-		try { await vault.createFolder(folder); }
-		catch { if (!vault.file(folder)) throw new Error('inventory_folder_unavailable'); }
-	}
+	await ensureFoldersFromPrefixes(vault, path, 'inventory_folder_unavailable');
 }
 
 function safeAdd(left: number, right: number): number {

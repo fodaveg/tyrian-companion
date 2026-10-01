@@ -3,6 +3,7 @@ import { parseDocument } from 'yaml';
 import { sha256Text } from './managed-asset-hash';
 import { PUBLISHED_BASE_FINGERPRINTS, type PublishedBaseFingerprint } from './published-base-hashes';
 import { legacyVaultFolder } from '../core/settings';
+import { ensureFoldersBySegments } from '../core/vault-folders';
 import {
 	hasCompatibleMarker,
 	isManagedAssetsManifest,
@@ -820,12 +821,5 @@ function canonicalYamlValue(value: unknown, ancestors: Set<object>): string {
 }
 
 async function ensureFolders(vault: ManagedAssetsVault, folder: string): Promise<void> {
-	let current = '';
-	for (const segment of folder.split('/')) {
-		current = current ? `${current}/${segment}` : segment;
-		if (!vault.file(current)) {
-			try { await vault.createFolder(current); }
-			catch { if (!vault.file(current)) throw new Error('folder_create_failed'); }
-		}
-	}
+	await ensureFoldersBySegments(vault, folder, 'folder_create_failed');
 }

@@ -7,6 +7,7 @@ import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogLocale } from '../catalog/public-catalog-model';
 import { parseCatalogCurrencies } from '../catalog/public-catalog-parsers';
 import { errorClassName } from '../core/local-debug-error-details';
+import { ensureFoldersFromPrefixes } from '../core/vault-folders';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 
 export const WALLET_NOTE_SCHEMA_VERSION = 1 as const;
@@ -471,13 +472,7 @@ function isWalletVaultSyncPlan(value: unknown, configDir: string): value is Wall
 }
 
 async function ensureFolders(vault: WalletVaultPort, path: string): Promise<void> {
-	const segments = path.split('/');
-	for (let index = 1; index <= segments.length; index += 1) {
-		const folder = segments.slice(0, index).join('/');
-		if (vault.file(folder)) continue;
-		try { await vault.createFolder(folder); }
-		catch { if (!vault.file(folder)) throw new Error('wallet_folder_unavailable'); }
-	}
+	await ensureFoldersFromPrefixes(vault, path, 'wallet_folder_unavailable');
 }
 
 function cleanText(value: string): string {
