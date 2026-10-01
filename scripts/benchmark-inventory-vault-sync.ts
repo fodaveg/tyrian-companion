@@ -185,10 +185,11 @@ class BenchInventoryVault implements InventoryVaultPort {
 		this.timings.process += performance.now() - startedAt;
 		return next;
 	}
-	async trashFile(file: InventoryVaultFile): Promise<void> {
+	async trashIfUnchanged(file: InventoryVaultFile, expectedContent: string): ReturnType<InventoryVaultPort["trashIfUnchanged"]> {
 		this.writesStarted = true;
-		if (!this.contents.has(file.path)) throw new Error("not_file");
+		if (this.contents.get(file.path) !== expectedContent) return { status: "conflict" };
 		this.contents.delete(file.path);
+		return { status: "trashed", guarantee: "atomic" };
 	}
 }
 

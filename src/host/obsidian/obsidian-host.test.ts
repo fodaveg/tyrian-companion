@@ -49,7 +49,7 @@ function fakePlugin() {
 				},
 				offref: vi.fn(),
 			},
-			fileManager: { trashFile: vi.fn(async () => undefined) },
+			fileManager: { trashFile: vi.fn(async (_file: unknown) => undefined) },
 			secretStorage: {
 				listSecrets: () => [...secrets.keys()],
 				getSecret: (id: string) => secrets.get(id) ?? null,
@@ -67,6 +67,7 @@ function fakePlugin() {
 	return {
 		plugin: plugin as unknown as Plugin, listeners, files, secrets, domEvents, saved,
 		registerEvent: plugin.registerEvent, offref: plugin.app.vault.offref,
+		trashFile: plugin.app.fileManager.trashFile,
 	};
 }
 
@@ -130,6 +131,38 @@ describe('ObsidianHost vault', () => {
 		expect(registerEvent).toHaveBeenCalledTimes(4);
 		dispose();
 		expect(offref).toHaveBeenCalledTimes(4);
+	});
+
+	it('trashes a note that still reads as expected and reports the checked guarantee, never the atomic one', async () => {
+		const { plugin, files, trashFile } = fakePlugin();
+		files.set('Root/sessions/a.md', 'one\r\ntwo\r\n');
+		const { vault } = createObsidianHost(plugin);
+		await expect(vault.trashIfUnchanged({ path: 'Root/sessions/a.md' }, 'one\ntwo\n'))
+			.resolves.toEqual({ status: 'trashed', guarantee: 'checked' });
+		expect(trashFile).toHaveBeenCalledTimes(1);
+		expect(trashFile.mock.calls[0]?.[0]).toMatchObject({ path: 'Root/sessions/a.md' });
+	});
+
+	it('answers conflict, without trashing, for a note whose text changed, a folder and a missing path', async () => {
+		const { plugin, trashFile } = fakePlugin();
+		const { vault } = createObsidianHost(plugin);
+		await expect(vault.trashIfUnchanged({ path: 'Root/sessions/a.md' }, 'not what the note says')).resolves.toEqual({ status: 'conflict' });
+		await expect(vault.trashIfUnchanged({ path: 'Root/sessions' }, 'A')).resolves.toEqual({ status: 'conflict' });
+		await expect(vault.trashIfUnchanged({ path: 'missing.md' }, 'A')).resolves.toEqual({ status: 'conflict' });
+		expect(trashFile).not.toHaveBeenCalled();
+	});
+
+	it('answers conflict, without trashing, for a note that was removed while it was being read again', async () => {
+		const { plugin, files, trashFile } = fakePlugin();
+		const read = plugin.app.vault.read.bind(plugin.app.vault);
+		plugin.app.vault.read = async (file) => {
+			const content = await read(file);
+			files.delete(file.path);
+			return content;
+		};
+		const { vault } = createObsidianHost(plugin);
+		await expect(vault.trashIfUnchanged({ path: 'Root/sessions/a.md' }, 'A')).resolves.toEqual({ status: 'conflict' });
+		expect(trashFile).not.toHaveBeenCalled();
 	});
 });
 

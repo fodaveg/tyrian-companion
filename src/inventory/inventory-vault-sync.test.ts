@@ -16,6 +16,7 @@ import {
 	type InventoryPositionRecommendationInputs,
 	type InventoryVaultFile,
 	type InventoryVaultPort,
+	type InventoryVaultTrashResult,
 	type InventoryVaultPositionCore,
 } from './inventory-vault-sync';
 import { canonicalPathFor } from '../runtime/canonical-path';
@@ -741,6 +742,50 @@ describe('inventory Vault preview and apply', () => {
 		for (const entry of plan.steps.slice(0, -1)) expect(vault.contents.get(entry.path)).toBe(entry.after);
 	});
 
+	/**
+	 * A vault holding every source but material storage, and the plan that follows once the shared
+	 * inventory position leaves and the material storage one arrives: one `create`, written first
+	 * (its path sorts first), and one note bound for the trash.
+	 */
+	async function planCreatingOneNoteAndTrashingAnother(vault: MemoryInventoryVault) {
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const all = await inputWithAllSources();
+		const initial = { ...all, positions: all.positions.filter((position) => position.source !== 'materials') };
+		await service.apply(await service.preview(ROOT, initial));
+		const next = { ...all, positions: all.positions.filter((position) => position.source !== 'shared_inventory') };
+		const plan = await service.preview(ROOT, next);
+		const writes = plan.steps.filter((entry) => entry.status !== 'unchanged');
+		expect(writes.map((entry) => [entry.status, entry.after === null])).toEqual([['create', false], ['deactivate', true]]);
+		return { service, plan, leavingPath: writes[1]!.path };
+	}
+
+	it('keeps a note edited after the pre-write check, while another note was being written, out of the trash', async () => {
+		const vault = new EditingOnCreateInventoryVault();
+		const { service, plan, leavingPath } = await planCreatingOneNoteAndTrashingAnother(vault);
+		const edited = `${vault.contents.get(leavingPath)!}\nTyped while the sync was writing.\n`;
+		vault.editOnNextCreate = { path: leavingPath, content: edited };
+		const result = await service.apply(plan);
+		expect(vault.editOnNextCreate).toBeNull();
+		expect(vault.contents.get(leavingPath)).toBe(edited);
+		expect(result).toEqual({ status: 'applied', created: 1, updated: 0, deactivated: 0, conflicts: 1 });
+	});
+
+	it('keeps the note and counts a conflict when the host cannot trash conditionally', async () => {
+		const vault = new UnsupportedTrashInventoryVault();
+		const { service, plan, leavingPath } = await planCreatingOneNoteAndTrashingAnother(vault);
+		const before = vault.contents.get(leavingPath)!;
+		const result = await service.apply(plan);
+		expect(vault.contents.get(leavingPath)).toBe(before);
+		expect(result).toEqual({ status: 'applied', created: 1, updated: 0, deactivated: 0, conflicts: 1 });
+	});
+
+	it.each(['checked', 'atomic'] as const)('counts a note the host trashed with the %s guarantee as deactivated', async (guarantee) => {
+		const vault = new MemoryInventoryVault([], guarantee);
+		const { service, plan, leavingPath } = await planCreatingOneNoteAndTrashingAnother(vault);
+		expect(await service.apply(plan)).toEqual({ status: 'applied', created: 1, updated: 0, deactivated: 1, conflicts: 0 });
+		expect(vault.contents.has(leavingPath)).toBe(false);
+	});
+
 	it('leaves legacy gw2 notes untouched and creates separate owned notes', async () => {
 		const legacyPath = '02 - Areas/Guild Wars 2/Wiki/Existencias/legacy.md';
 		const legacy = '---\ngw2_managed_type: inventory_holding_v1\ngw2_id: 42\ngw2_amount: 7\n---\n# Legacy\n';
@@ -1357,7 +1402,11 @@ class MemoryInventoryVault implements InventoryVaultPort {
 	readonly folders = new Set<string>();
 	mutations = 0;
 
-	constructor(entries: Iterable<readonly [string, string]> = []) { this.contents = new Map(entries); }
+	constructor(
+		entries: Iterable<readonly [string, string]> = [],
+		/** The guarantee this double reports; it compares and deletes in one synchronous step either way. */
+		private readonly trashGuarantee: 'checked' | 'atomic' = 'atomic',
+	) { this.contents = new Map(entries); }
 	file(path: string): InventoryVaultFile | null {
 		return this.contents.has(path) || this.folders.has(path) ? { path } : null;
 	}
@@ -1389,11 +1438,32 @@ class MemoryInventoryVault implements InventoryVaultPort {
 		}
 		return next;
 	}
-	async trashFile(file: InventoryVaultFile): Promise<void> {
-		if (!this.contents.has(file.path)) throw new Error('not_file');
+	async trashIfUnchanged(file: InventoryVaultFile, expectedContent: string): Promise<InventoryVaultTrashResult> {
+		// Compared and deleted with no `await` in between: nothing can edit the note in the gap.
+		const current = this.contents.get(file.path);
+		if (current === undefined || current.replace(/\r\n?/gu, '\n') !== expectedContent) return { status: 'conflict' };
 		this.mutations += 1;
 		this.contents.delete(file.path);
+		return { status: 'trashed', guarantee: this.trashGuarantee };
 	}
+}
+
+/** Edits one note from inside the next `create`, that is, after the writer's pre-write check. */
+class EditingOnCreateInventoryVault extends MemoryInventoryVault {
+	editOnNextCreate: { path: string; content: string } | null = null;
+	override async create(path: string, content: string): Promise<InventoryVaultFile> {
+		const created = await super.create(path, content);
+		if (this.editOnNextCreate !== null) {
+			this.contents.set(this.editOnNextCreate.path, this.editOnNextCreate.content);
+			this.editOnNextCreate = null;
+		}
+		return created;
+	}
+}
+
+/** A host that cannot guarantee the note still reads as expected when it trashes it. */
+class UnsupportedTrashInventoryVault extends MemoryInventoryVault {
+	override async trashIfUnchanged(): Promise<InventoryVaultTrashResult> { return { status: 'unsupported' }; }
 }
 
 /** Succeeds the first `okCount` creates, then rejects every further one with a permission error. */

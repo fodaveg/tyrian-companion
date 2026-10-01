@@ -57,6 +57,11 @@ function neutralHost() {
 		createFolder: async (path) => { folders.add(path); },
 		create: async (path, content) => { notes.set(path, content); return { path, mtime: 1 }; },
 		trashFile: async (file) => { notes.delete(file.path); },
+		trashIfUnchanged: async (file, expectedContent) => {
+			if (notes.get(file.path) !== expectedContent) return { status: 'conflict' };
+			notes.delete(file.path);
+			return { status: 'trashed', guarantee: 'atomic' };
+		},
 		onChange: () => () => undefined,
 		configDir: 'host-config',
 		canonicalIdentity: () => 'hebra-library:test',

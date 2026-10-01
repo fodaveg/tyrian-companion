@@ -37,6 +37,9 @@ export function labelledVault(vault: TyrianVault, label: string): TyrianVault {
 		createFolder: async (path) => { await vault.createFolder(path); },
 		create: async (path, content) => await vault.create(path, content),
 		trashFile: async (file) => { await vault.trashFile(requireFile(file)); },
+		// Passed through as the host answers it: a missing note or a folder is the host's own
+		// `conflict`, and the guarantee it reports is never upgraded here.
+		trashIfUnchanged: async (file, expectedContent) => await vault.trashIfUnchanged(file, expectedContent),
 		onChange: (root, listener) => vault.onChange(root, listener),
 		get configDir() { return vault.configDir; },
 		canonicalIdentity: () => vault.canonicalIdentity(),
