@@ -18,6 +18,7 @@ import {
 	type StorageDeltaWarning,
 } from './storage-delta-model';
 import { canonicalJson as canonical } from '../core/canonical-sha256';
+import { safeAddOrThrow } from '../core/safe-add';
 
 const CORE_SOURCES = ['characters', 'shared_inventory', 'bank', 'materials'] as const;
 const INVENTORY_ADVISOR_SOURCES = ['characters', 'shared_inventory'] as const;
@@ -662,9 +663,7 @@ function add(target: Map<number, number>, id: number, quantity: number): void {
 }
 
 function safeAdd(left: number, right: number): number {
-	const result = left + right;
-	if (!Number.isSafeInteger(result)) throw new Error('Aggregate exceeds the safe integer range.');
-	return result;
+	return safeAddOrThrow(left, right, 'Aggregate exceeds the safe integer range.');
 }
 
 function push<T>(target: Map<number, T[]>, id: number, value: T): void {

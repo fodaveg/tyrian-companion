@@ -17,6 +17,7 @@ import {
 	type UserDeclaration,
 } from './contamination-model';
 import { canonicalJson as canonical } from '../core/canonical-sha256';
+import { safeAddOrThrow } from '../core/safe-add';
 
 const DECLARED_ACTIVITIES: ReadonlySet<DeclaredActivity> = new Set([
 	'open',
@@ -919,9 +920,7 @@ function add(target: Map<number, number>, id: number, quantity: number): void {
 }
 
 function safeAdd(left: number, right: number): number {
-	const value = left + right;
-	if (!Number.isSafeInteger(value)) throw new Error('Unsafe boundary aggregate.');
-	return value;
+	return safeAddOrThrow(left, right, 'Unsafe boundary aggregate.');
 }
 
 function safeSubtract(right: number, left: number): number {

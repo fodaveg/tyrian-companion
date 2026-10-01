@@ -1,5 +1,6 @@
 import type { ContainerMarketQuote } from './container-expected-value';
 import { canonicalJson as canonical } from '../core/canonical-sha256';
+import { safeAddOrThrow } from '../core/safe-add';
 import { createTradingPostValueWithPolicy } from './gw2-fees';
 
 export const HOLD_INTENT_VERSION = 1 as const;
@@ -326,9 +327,7 @@ function compareText(left: string, right: string): number {
 }
 
 function safeAdd(left: number, right: number): number {
-	const result = left + right;
-	if (!Number.isSafeInteger(result)) throw new Error('Unsafe hold sum.');
-	return result;
+	return safeAddOrThrow(left, right, 'Unsafe hold sum.');
 }
 
 function safeSubtract(left: number, right: number): number {

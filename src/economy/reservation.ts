@@ -20,6 +20,7 @@ import {
 	type SessionValuationReservationOverlay,
 } from './reservation-model';
 import { canonicalJson as canonical } from '../core/canonical-sha256';
+import { safeAddOrThrow } from '../core/safe-add';
 
 export type ReservationPlanResult = { status: 'ok'; plan: ReservationPlan } | { status: 'invalid'; reason: string };
 export type ReservationBalanceResult = { status: 'ok'; balance: ReservationBalance } | { status: 'invalid'; reason: string };
@@ -402,7 +403,7 @@ function trimmed(value: unknown, maximum: number): value is string {
 
 function positive(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) > 0; }
 function safeNonNegative(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 0; }
-function safeAdd(left: number, right: number): number { const value = left + right; if (!Number.isSafeInteger(value)) throw new Error('overflow'); return value; }
+function safeAdd(left: number, right: number): number { return safeAddOrThrow(left, right, 'overflow'); }
 function safeSubtract(left: number, right: number): number { const value = left - right; if (!Number.isSafeInteger(value) || value < 0) throw new Error('invalid subtraction'); return value; }
 function sortedAssets(values: ReservationAssetBalance[] | ReservationPlanAsset[]): boolean { return values.every((asset, index) => index === 0 || compareText(values[index - 1]!.key, asset.key) < 0); }
 function unique<T>(values: T[]): boolean { return new Set(values).size === values.length; }

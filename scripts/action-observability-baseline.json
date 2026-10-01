@@ -116,9 +116,9 @@
 				{
 					"id": "49faddc223bdc78bc5c8d419b7e2627d4ab8b6d1",
 					"kind": "catch_clause",
-					"line": 118,
+					"line": 119,
 					"column": 4,
-					"endLine": 120,
+					"endLine": 121,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -132,9 +132,9 @@
 				{
 					"id": "5d1f598cca525d283360c94aeecadef21130d0f6",
 					"kind": "catch_clause",
-					"line": 135,
+					"line": 136,
 					"column": 4,
-					"endLine": 137,
+					"endLine": 138,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -230,9 +230,9 @@
 				{
 					"id": "b806c54f92b16ddb170a2c35f1e6803c2d329b16",
 					"kind": "catch_clause",
-					"line": 113,
+					"line": 114,
 					"column": 4,
-					"endLine": 122,
+					"endLine": 123,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -246,9 +246,9 @@
 				{
 					"id": "4512c8554020b0255587a56b556fb7b8fe1e56f5",
 					"kind": "catch_clause",
-					"line": 263,
+					"line": 264,
 					"column": 4,
-					"endLine": 270,
+					"endLine": 271,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3126,6 +3126,11 @@
 				}
 			]
 		},
+		"src/core/safe-add.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/core/safe-error-code.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -3399,9 +3404,9 @@
 				{
 					"id": "520be09246f94bd74272e0b23e28e66e99e3513c",
 					"kind": "catch_clause",
-					"line": 171,
+					"line": 172,
 					"column": 4,
-					"endLine": 173,
+					"endLine": 174,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3415,9 +3420,9 @@
 				{
 					"id": "502a2709ed7dfdeaffe4b2117589ecc09ecf43ad",
 					"kind": "catch_clause",
-					"line": 210,
+					"line": 211,
 					"column": 4,
-					"endLine": 212,
+					"endLine": 213,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4594,9 +4599,9 @@
 				{
 					"id": "2ede40b72b222bc0be2238e6873ff2ba91ddf521",
 					"kind": "catch_clause",
-					"line": 96,
+					"line": 97,
 					"column": 4,
-					"endLine": 98,
+					"endLine": 99,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4610,9 +4615,9 @@
 				{
 					"id": "e7caed10efc91593fd2f1039d9b8f134b614ecae",
 					"kind": "catch_clause",
-					"line": 307,
+					"line": 308,
 					"column": 4,
-					"endLine": 307,
+					"endLine": 308,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
