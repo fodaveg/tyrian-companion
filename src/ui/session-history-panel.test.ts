@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { DurableSessionHistoryRecord } from '../sessions/session-history';
-import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
+import type { SessionHistoryLoadResult, SessionHistoryLoadSource } from '../sessions/session-history-summary';
 import {
 	formatSessionHistoryDuration,
 	mountSessionHistoryPanel,
@@ -82,6 +82,23 @@ describe('mountSessionHistoryPanel', () => {
 		expect(descendants(container).some((element) => element.tag === 'h3')).toBe(false);
 		expect(descendants(container).find((element) => element.tag === 'small')?.textContent).toBe('1 session');
 		expect(allText(container)).toContain('1 session · read at');
+	});
+
+	// Audit 2.2: the button is the player asking for the notes to be read, so it is the one load
+	// that may not be answered from the index. Every load the view starts on its own takes it.
+	it('asks for a rebuild from the refresh button, and for the index from a load nobody pressed', async () => {
+		const container = new FakeElement('div', new FakeDocument());
+		const load = vi.fn(async (_source: SessionHistoryLoadSource): Promise<SessionHistoryLoadResult> => (
+			{ status: 'ok', ignored: 0, sessions: [] }));
+		const controller = new SessionHistoryPanelController(load);
+		mountSessionHistoryPanel(container as unknown as HTMLElement, 'en', controller);
+
+		await controller.load();
+		expect(load.mock.calls).toEqual([['index']]);
+
+		descendants(container).find((element) => element.tag === 'button')!.click();
+		await vi.waitFor(() => expect(controller.current().status).toBe('empty'));
+		expect(load.mock.calls).toEqual([['index'], ['rebuild']]);
 	});
 
 	it.each([
