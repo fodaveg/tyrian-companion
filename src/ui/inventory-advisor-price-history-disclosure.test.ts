@@ -174,6 +174,48 @@ describe('the price panel inside the Inventory tab disclosure', () => {
 	});
 });
 
+describe('mountPriceHistoryPanel, repainted with the disclosure open', () => {
+	it('keeps the open accessible table and the very same selectors, focus and chosen values across a repaint', () => {
+		const mounted = openPanel();
+		mounted.panel.update(createTranslator('en'), interactions({ selectedSide: 'bid', windowDays: 90 }));
+		const selects = walk(mounted.container).filter((element) => element.tag === 'select');
+		const tableDetails = tableDisclosure(mounted.container);
+		tableDetails.open = true;
+		selects[1]!.focus();
+
+		mounted.panel.update(createTranslator('en'), interactions({ selectedSide: 'bid', windowDays: 90 }));
+
+		expect(tableDisclosure(mounted.container).open).toBe(true);
+		const after = walk(mounted.container).filter((element) => element.tag === 'select');
+		expect(after).toHaveLength(3);
+		after.forEach((select, index) => expect(select).toBe(selects[index]));
+		expect(mounted.document.activeElement).toBe(selects[1]);
+		expect(after.map((select) => select.value)).toEqual(['36038', 'bid', '90']);
+	});
+
+	it('shows the new data, not the old, when the same controls are repainted for another item and history', () => {
+		const mounted = openPanel();
+		mounted.panel.update(createTranslator('en'), interactions());
+		const selects = walk(mounted.container).filter((element) => element.tag === 'select');
+		tableDisclosure(mounted.container).open = true;
+		const rowsBefore = walk(tableDisclosure(mounted.container)).filter((element) => element.tag === 'tr').length;
+		expect(rowsBefore).toBe(DAYS + 1);
+
+		mounted.panel.update(createTranslator('en'), interactions({
+			selectedItemId: 19_721, watchItemIds: [36_038, 19_721], selectedSide: 'bid',
+			daily: Array.from({ length: 3 }, (_unused, index) => daily(index)).map((entry) => ({ ...entry, itemId: 19_721 })),
+		}));
+
+		const table = tableDisclosure(mounted.container);
+		expect(table.open).toBe(true);
+		expect(walk(table).filter((element) => element.tag === 'tr')).toHaveLength(4);
+		const after = walk(mounted.container).filter((element) => element.tag === 'select');
+		expect(after[0]).toBe(selects[0]);
+		expect(after.map((select) => select.value)).toEqual(['19721', 'bid', '42']);
+		expect(after[0]!.children.map((option) => option.value)).toEqual(['36038', '19721']);
+	});
+});
+
 describe('mountPriceHistoryPanel', () => {
 	it('paints nothing more after dispose, on update or on toggle, and holds no listener', () => {
 		const document = installDom();
@@ -206,6 +248,22 @@ describe('mountPriceHistoryPanel', () => {
 		expect(walk(container).filter((element) => element.className === 'tyrian-price-chart__plot')).toHaveLength(1);
 	});
 });
+
+function openPanel() {
+	const document = installDom();
+	const disclosure = new FakeElement('details', document);
+	const container = new FakeElement('div', document);
+	disclosure.open = true;
+	disclosure.append(new FakeElement('summary', document), container);
+	const panel = mountPriceHistoryPanel(container as unknown as HTMLElement, disclosure as unknown as HTMLDetailsElement);
+	return { document, container, panel };
+}
+
+function tableDisclosure(root: FakeElement): FakeElement {
+	const found = walk(root).filter((element) => element.className === 'tyrian-price-history__table-details');
+	if (found.length !== 1) throw new Error(`Expected one table disclosure, found ${String(found.length)}.`);
+	return found[0]!;
+}
 
 function interactions(overrides: Partial<PriceHistoryRuntimeState> = {}): PriceHistoryPanelInteractions {
 	return {
@@ -337,8 +395,27 @@ class FakeElement {
 	hidden = false;
 
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) { FakeElement.onCreate?.(this); }
-	append(...children: FakeElement[]): void { this.children.push(...children); }
-	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
+	parent: FakeElement | null = null;
+	append(...children: FakeElement[]): void { for (const child of children) { child.parent = this; this.children.push(child); } }
+	/** Like the browser, dropping a node from the tree blurs it when it, or something inside it, had the focus. */
+	replaceChildren(...children: FakeElement[]): void {
+		for (const removed of this.children.splice(0, this.children.length)) removed.detached();
+		this.append(...children);
+	}
+	insertBefore(child: FakeElement, anchor: FakeElement): void {
+		child.parent = this;
+		this.children.splice(this.children.indexOf(anchor), 0, child);
+	}
+	remove(): void {
+		if (this.parent === null) return;
+		this.parent.children.splice(this.parent.children.indexOf(this), 1);
+		this.detached();
+	}
+	private detached(): void {
+		this.parent = null;
+		const active = this.ownerDocument.activeElement;
+		if (active !== null && walk(this).includes(active)) this.ownerDocument.activeElement = null;
+	}
 	setAttribute(name: string, value: string): void {
 		if (name === 'class') this.className = value; else this.attributes.set(name, value);
 	}

@@ -62,7 +62,8 @@ export function mountPriceHistoryPanel(container: HTMLElement, disclosure: HTMLD
 	let last: { translator: Translator; interactions: PriceHistoryPanelInteractions | undefined } | null = null;
 	let chart: { readonly seriesKey: string; readonly element: HTMLElement } | null = null;
 	let disposed = false;
-	const chartFor = (seriesKey: string): HTMLElement => {
+	const kept: PriceHistoryKept = { controls: null, tableDetails: null };
+	const chartFor =(seriesKey: string): HTMLElement => {
 		if (chart === null || chart.seriesKey !== seriesKey) chart = { seriesKey, element: freshChartContainer() };
 		return chart.element;
 	};
@@ -70,7 +71,7 @@ export function mountPriceHistoryPanel(container: HTMLElement, disclosure: HTMLD
 		if (disposed || last === null) return;
 		// A closed disclosure keeps the container (and so the zoom) but none of the chart's nodes.
 		if (!disclosure.open) chart?.element.replaceChildren();
-		renderPriceHistoryPanel(container, last.translator, last.interactions, disclosure.open ? chartFor : null);
+		renderPriceHistoryPanel(container, last.translator, last.interactions, disclosure.open ? chartFor : null, kept);
 	};
 	disclosure.addEventListener('toggle', paint);
 	return {
@@ -82,9 +83,31 @@ export function mountPriceHistoryPanel(container: HTMLElement, disclosure: HTMLD
 			disposed = true;
 			disclosure.removeEventListener('toggle', paint);
 			chart = null;
+			kept.controls = null;
+			kept.tableDetails = null;
 			last = null;
 		},
 	};
+}
+
+/** The selector row of the panel, built once and kept (focus, chosen value) across repaints. */
+interface PriceHistoryControls {
+	readonly element: HTMLElement;
+	readonly itemGroup: HTMLElement;
+	readonly item: LabelledSelect;
+	readonly side: LabelledSelect;
+	readonly window: LabelledSelect;
+	readonly load: HTMLButtonElement;
+	icon: HTMLElement | null;
+	/** What the listeners read: always the interactions of the latest paint. */
+	interactions: PriceHistoryPanelInteractions;
+}
+
+/** What a mounted panel keeps between its paints; a one-shot render starts from an empty one. */
+interface PriceHistoryKept {
+	controls: PriceHistoryControls | null;
+	/** The accessible table of the last paint, read only for whether the reader had it open. */
+	tableDetails: HTMLDetailsElement | null;
 }
 
 /** A chart container of its own for every paint: what a one-shot render of the whole panel uses. */
@@ -105,8 +128,17 @@ export function renderPriceHistoryPanel(
 	translator: Translator,
 	interactions: PriceHistoryPanelInteractions | undefined,
 	chartHost: PriceHistoryChartHost = freshChartContainer,
+	kept: PriceHistoryKept = { controls: null, tableDetails: null },
 ): void {
-	container.replaceChildren();
+	const tableWasOpen = kept.tableDetails?.open === true;
+	kept.tableDetails = null;
+	if (interactions === undefined || interactions.state.status === 'disabled') kept.controls = null;
+	if (kept.controls === null) {
+		container.replaceChildren();
+	} else {
+		// The selector row stays in the tree, so a focused selector keeps its focus: only what follows it goes.
+		for (const child of Array.from(container.children)) if (child !== kept.controls.element) child.remove();
+	}
 	container.className = 'tyrian-price-history';
 	// The disclosure that hosts this panel already carries its title; the intro is a tooltip.
 	container.setAttribute('title', translator.t('priceHistory.intro'));
@@ -124,48 +156,43 @@ export function renderPriceHistoryPanel(
 		return;
 	}
 	const selectedItemId = state.selectedItemId ?? state.watchItemIds[0] ?? null;
-	const controls = createDiv();
-	controls.className = 'tyrian-price-history__controls';
-	const itemGroup = createDiv();
-	itemGroup.className = 'tyrian-price-history__item-group';
+	const controls = kept.controls ?? buildControls(interactions);
+	controls.interactions = interactions;
 	const iconUrl = selectedItemId === null ? null : safePublicRenderIconUrl(interactions.itemIcons?.[selectedItemId]);
-	if (iconUrl !== null) {
-		const icon = createEl('img');
-		icon.className = 'tyrian-price-history__item-icon';
-		icon.setAttribute('src', iconUrl);
-		icon.setAttribute('alt', '');
-		icon.setAttribute('width', '32');
-		icon.setAttribute('height', '32');
-		icon.setAttribute('loading', 'lazy');
-		icon.setAttribute('decoding', 'async');
-		icon.setAttribute('referrerpolicy', 'no-referrer');
-		itemGroup.append(icon);
+	if (iconUrl === null) {
+		controls.icon?.remove();
+		controls.icon = null;
+	} else {
+		if (controls.icon === null) {
+			const icon = createEl('img');
+			icon.className = 'tyrian-price-history__item-icon';
+			icon.setAttribute('alt', '');
+			icon.setAttribute('width', '32');
+			icon.setAttribute('height', '32');
+			icon.setAttribute('loading', 'lazy');
+			icon.setAttribute('decoding', 'async');
+			icon.setAttribute('referrerpolicy', 'no-referrer');
+			controls.itemGroup.insertBefore(icon, controls.item.label);
+			controls.icon = icon;
+		}
+		controls.icon.setAttribute('src', iconUrl);
 	}
-	const item = labelledSelect(translator.t('priceHistory.item'), state.watchItemIds.map((itemId) => ({
+	syncSelect(controls.item, translator.t('priceHistory.item'), state.watchItemIds.map((itemId) => ({
 		value: String(itemId), label: itemDisplayLabel(itemId, interactions.itemLabels, translator),
 	})), String(selectedItemId ?? ''));
-	itemGroup.append(item.label);
-	const side = labelledSelect(translator.t('priceHistory.side'), [
+	syncSelect(controls.side, translator.t('priceHistory.side'), [
 		{ value: 'bid', label: translator.t('priceHistory.side.bid') },
 		{ value: 'ask', label: translator.t('priceHistory.side.ask') },
 	], state.selectedSide);
-	const window = labelledSelect(translator.t('priceHistory.window'), [42, 90, 180].map((days) => ({
+	syncSelect(controls.window, translator.t('priceHistory.window'), [42, 90, 180].map((days) => ({
 		value: String(days), label: translator.t('priceHistory.days', { days }),
 	})), String(state.windowDays));
-	const load = button(interactions.busy ? translator.t('priceHistory.loading') : translator.t('priceHistory.load'));
-	load.disabled = interactions.busy === true || state.watchItemIds.length === 0;
-	const run = (): void => {
-		const itemId = Number(item.select.value);
-		const selectedSide = side.select.value === 'bid' ? 'bid' : 'ask';
-		const windowDays = Number(window.select.value) as PriceHistoryWindowDays;
-		if (Number.isSafeInteger(itemId) && itemId > 0) void interactions.onLoad(itemId, selectedSide, windowDays);
-	};
-	load.addEventListener('click', run);
-	item.select.addEventListener('change', run);
-	side.select.addEventListener('change', run);
-	window.select.addEventListener('change', run);
-	controls.append(itemGroup, side.label, window.label, load);
-	container.append(controls);
+	controls.load.textContent = interactions.busy ? translator.t('priceHistory.loading') : translator.t('priceHistory.load');
+	controls.load.disabled = interactions.busy === true || state.watchItemIds.length === 0;
+	if (kept.controls === null) {
+		kept.controls = controls;
+		container.append(controls.element);
+	}
 	appendState(container, stateText(state, translator), errorState(state.status));
 	const timing = createEl('p');
 	timing.className = 'tyrian-price-history__timing';
@@ -221,7 +248,38 @@ export function renderPriceHistoryPanel(
 	legend.className = 'tyrian-price-history__legend';
 	legend.textContent = translator.t(chartSeedDays.length > 0 ? 'priceHistory.legendWithSeed' : 'priceHistory.legend');
 	figure.append(caption, chart, legend);
-	container.append(figure, provenanceTable(state.daily, state.selectedSide, chartSeedDays, translator, state.provisionalDayUtc));
+	const table = provenanceTable(state.daily, state.selectedSide, chartSeedDays, translator, state.provisionalDayUtc);
+	// A new table every paint (its rows are the data), but one the reader had open stays open.
+	table.open = tableWasOpen;
+	kept.tableDetails = table;
+	container.append(figure, table);
+}
+
+/** The selector row, with its listeners attached once; they read the interactions of the latest paint. */
+function buildControls(first: PriceHistoryPanelInteractions): PriceHistoryControls {
+	const element = createDiv();
+	element.className = 'tyrian-price-history__controls';
+	const itemGroup = createDiv();
+	itemGroup.className = 'tyrian-price-history__item-group';
+	const item = labelledSelect();
+	itemGroup.append(item.label);
+	const side = labelledSelect();
+	const window = labelledSelect();
+	const load = button('');
+	const controls: PriceHistoryControls = { element, itemGroup, item, side, window, load, icon: null, interactions: first };
+	const run = (): void => {
+		const itemId = Number(item.select.value);
+		const selectedSide = side.select.value === 'bid' ? 'bid' : 'ask';
+		const windowDays = Number(window.select.value) as PriceHistoryWindowDays;
+		const { interactions } = controls;
+		if (Number.isSafeInteger(itemId) && itemId > 0) void interactions.onLoad(itemId, selectedSide, windowDays);
+	};
+	load.addEventListener('click', run);
+	item.select.addEventListener('change', run);
+	side.select.addEventListener('change', run);
+	window.select.addEventListener('change', run);
+	element.append(itemGroup, side.label, window.label, load);
+	return controls;
 }
 
 interface ProvenanceRow {
@@ -260,7 +318,7 @@ function provenanceTable(
 	seedDays: readonly PriceSeedDayV1[],
 	translator: Translator,
 	provisional: string | null,
-): HTMLElement {
+): HTMLDetailsElement {
 	const rows = provenanceRows(daily, side, seedDays);
 	const details = createEl('details');
 	details.className = 'tyrian-price-history__table-details';
@@ -290,12 +348,31 @@ function provenanceTable(
 	table.append(caption, thead, tbody); overflow.append(table); details.append(summary, overflow); return details;
 }
 
-function labelledSelect(text: string, options: Array<{ value: string; label: string }>, selected: string): { label: HTMLLabelElement; select: HTMLSelectElement } {
+interface LabelledSelect { label: HTMLLabelElement; span: HTMLElement; select: HTMLSelectElement }
+
+function labelledSelect(): LabelledSelect {
 	const label = createEl('label');
-	const span = createSpan(); span.textContent = text;
+	const span = createSpan();
 	const select = createEl('select');
-	for (const option of options) { const element = createEl('option'); element.value = option.value; element.textContent = option.label; select.append(element); }
-	select.value = selected; label.append(span, select); return { label, select };
+	label.append(span, select);
+	return { label, span, select };
+}
+
+/**
+ * Brings a kept selector up to date in place: its text, its options (replaced only when they
+ * changed) and its value. The `<select>` itself is never rebuilt, so it keeps the focus.
+ */
+function syncSelect(target: LabelledSelect, text: string, options: Array<{ value: string; label: string }>, selected: string): void {
+	target.span.textContent = text;
+	const current = Array.from(target.select.children) as HTMLOptionElement[];
+	const same = current.length === options.length
+		&& options.every((option, index) => current[index]!.value === option.value && current[index]!.textContent === option.label);
+	if (!same) {
+		target.select.replaceChildren(...options.map((option) => {
+			const element = createEl('option'); element.value = option.value; element.textContent = option.label; return element;
+		}));
+	}
+	target.select.value = selected;
 }
 
 function button(text: string): HTMLButtonElement { const result = createEl('button'); result.type = 'button'; result.textContent = text; return result; }

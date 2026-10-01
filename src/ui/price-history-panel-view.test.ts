@@ -260,7 +260,10 @@ class FakeElement {
 	readonly listeners = new Map<string, Array<() => void>>();
 	className = ''; textContent: string | null = null; type = ''; value = ''; disabled = false; scope = '';
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) {}
-	append(...children: FakeElement[]): void { this.children.push(...children); }
+	parent: FakeElement | null = null;
+	append(...children: FakeElement[]): void { for (const child of children) child.parent = this; this.children.push(...children); }
+	insertBefore(child: FakeElement, anchor: FakeElement): void { child.parent = this; this.children.splice(this.children.indexOf(anchor), 0, child); }
+	remove(): void { this.parent?.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; }
 	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
 	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
 	addEventListener(type: string, listener: () => void): void { const entries = this.listeners.get(type) ?? []; entries.push(listener); this.listeners.set(type, entries); }

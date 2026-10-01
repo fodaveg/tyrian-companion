@@ -12967,9 +12967,9 @@
 				{
 					"id": "e9c77c5855190c5cc9626740b7d81fb1cd06a813",
 					"kind": "callback_registration",
-					"line": 57,
+					"line": 154,
 					"column": 3,
-					"endLine": 57,
+					"endLine": 154,
 					"endColumn": 76,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -12984,9 +12984,9 @@
 				{
 					"id": "f8cf311d9182b087a353d5c7ab1d710f6d501ee0",
 					"kind": "void_expression",
-					"line": 57,
+					"line": 154,
 					"column": 44,
-					"endLine": 57,
+					"endLine": 154,
 					"endColumn": 72,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12998,11 +12998,11 @@
 					"reason": "Allowlisted void_expression: The \"renderPriceHistoryPanel\" owner deliberately detaches \"interactions.onEnable\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onEnable\" in \"renderPriceHistoryPanel\"."
 				},
 				{
-					"id": "f87cb9a062c9d5574f6e057bd52370759fb52184",
+					"id": "05b3c54e1f3dac0ae068136b92a9bf438cd13922",
 					"kind": "void_expression",
-					"line": 96,
+					"line": 275,
 					"column": 51,
-					"endLine": 96,
+					"endLine": 275,
 					"endColumn": 109,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13016,9 +13016,9 @@
 				{
 					"id": "976e457ebd4bf6971e957c9130427e6ebd8547e2",
 					"kind": "catch_clause",
-					"line": 290,
+					"line": 432,
 					"column": 4,
-					"endLine": 292,
+					"endLine": 434,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {

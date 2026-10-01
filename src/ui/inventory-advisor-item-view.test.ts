@@ -585,7 +585,10 @@ class FakeElement {
 		for (const [name, value] of Object.entries(options.attr ?? {})) this.attributes.set(name, value);
 	}
 	empty(): void { this.children.splice(0); this.textContent = null; }
-	append(...children: FakeElement[]): void { this.children.push(...children); }
+	parent: FakeElement | null = null;
+	append(...children: FakeElement[]): void { for (const child of children) child.parent = this; this.children.push(...children); }
+	insertBefore(child: FakeElement, anchor: FakeElement): void { child.parent = this; this.children.splice(this.children.indexOf(anchor), 0, child); }
+	remove(): void { this.parent?.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; }
 	prepend(...children: FakeElement[]): void { this.children.unshift(...children); }
 	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
 	createEl(tag: string, options?: FakeOptions): FakeElement { const child = new FakeElement(tag, this.ownerDocument, options); this.children.push(child); return child; }
