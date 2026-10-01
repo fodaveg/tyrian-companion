@@ -2054,14 +2054,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	createInventoryPreferencesEditorSession(): InventoryPreferencesEditorSession {
 		if (!this.runtimeReady) return idleInventoryPreferencesEditorSession(() => this.notifyRuntimeStarting());
 		const session = this.inventoryPreferences.createEditorSession();
-		const after = async (state: InventoryPreferencesEditorState): Promise<InventoryPreferencesEditorState> => {
-			if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
+		const after = async (
+			state: InventoryPreferencesEditorState, reclassifyReady = true,
+		): Promise<InventoryPreferencesEditorState> => {
+			if (state.status === 'ready' && reclassifyReady) await this.inventoryAdvisor.reclassify();
 			if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
 			this.renderInventoryAdvisorViews();
 			return state;
 		};
 		return Object.freeze({
-			current: () => session.current(), load: async () => await after(await session.load()),
+			// A load changes nothing by itself: it reclassifies only when the loaded revision is not the one
+			// the analysis in force used (another window or device wrote since). Writes always reclassify.
+			current: () => session.current(),
+			load: async () => await after(await session.load(), this.inventoryPreferences.differsFromAnalysis()),
 			upsertGoal: async (goal: ReservationGoal) => await after(await session.upsertGoal(goal)),
 			removeGoal: async (goalId: string) => await after(await session.removeGoal(goalId)),
 			upsertKeepException: async (keepException: KeepExceptionV1) => await after(await session.upsertKeepException(keepException)),
