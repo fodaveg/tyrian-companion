@@ -1,5 +1,19 @@
 # Changelog
 
+## Release beta 0.2.20 - unas monedas que ninguna meta pide ya no marcan el plan de reservas como bloqueado
+
+- **Una moneda de saldo desconocido o limitado que ninguna meta pide ya no bloquea el plan de
+  reservas entero.** Es el caso de las monedas por recoger en la entrega del bazar cuando no se lee la
+  cartera. La cobertura del plan cuenta todos los objetos y solo las monedas que alguna meta pide; la
+  moneda que nadie pide conserva su propia cobertura, su aviso y sus asignaciones nulas
+  (`cb61de4`, `dc53e08`).
+- **Efecto visible en la nota de sesión.** Con la cartera sin leer completa y monedas en la entrega
+  del bazar, `tc_reservation_status` deja de decir `blocked` y empieza por `complete`; un objeto de
+  saldo desconocido sigue dando `blocked` (`e0d9264`).
+
+Límites: las recomendaciones del asesor no cambian, ya iban por objeto desde la 0.2.19. No comprobado
+en Obsidian real antes de publicar.
+
 ## Release beta 0.2.19 - el asesor ya no manda todo a «revisar» cuando hay monedas por recoger en el bazar
 
 - **Con monedas pendientes de recoger en la entrega del bazar, el asesor mandaba casi todo el
