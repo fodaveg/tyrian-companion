@@ -59,61 +59,89 @@ export interface InventoryAdvisorHoldingPosition {
  * between two analyses of the same snapshot can never meet the plan of the first. Each derivation
  * is built on first use, at the point its consumer used to build it, and its consumers ask only
  * after they have validated `input` themselves.
+ *
+ * A context cannot be altered by whoever holds it: it is frozen, its methods answer from state
+ * only this module reaches, and the plan, the assets and the position lists they return are
+ * frozen, so the same answer is served again. The holdings inside a position entry are the
+ * caller's own objects and stay as mutable as the rest of `input`.
+ *
+ * Known limit: a derivation is made once and not made again. A caller that changes `input` after
+ * the context derived its plan or its index gets the plan and the index of the input as it was,
+ * checked against the input as it is. A context is good for one synchronous analysis of an input
+ * nobody changes meanwhile, which is how every stage of this module's own flow uses it; closing
+ * this would take a private copy of the input per context and a comparison with it on every use.
  */
 export interface InventoryAdvisorAnalysisContext {
 	readonly input: unknown;
-	/** The balance and, when the balance is valid, the plan of `input.goals` over it. */
+	/** The balance and, when the balance is valid, the plan of `input.goals` over it. Frozen. */
 	reservation(): { balance: ReservationBalanceResult; plan: ReservationPlanResult | { status: 'invalid' } };
-	/** The plan asset under `key`; undefined when there is none or the plan is not valid. */
+	/** The plan asset under `key`; undefined when there is none or the plan is not valid. Frozen. */
 	planAsset(key: string): ReservationPlanAsset | undefined;
-	/** Every holding of `itemId`, in inventory order: one pass over the inventory serves all objects. */
+	/** Every holding of `itemId`, in inventory order: one pass over the inventory serves all objects. Frozen list. */
 	positions(itemId: number): readonly InventoryAdvisorHoldingPosition[];
 }
 
-/** Contexts this module created: a verifier never takes a plan or an index it did not derive here. */
+/**
+ * Contexts this module created: a verifier never takes a plan or an index it did not derive here.
+ * Membership is by identity, so a copy, a proxy or an object that inherits from a context is not one.
+ */
 const ANALYSIS_CONTEXTS = new WeakSet<InventoryAdvisorAnalysisContext>();
+
+const NO_POSITIONS: readonly InventoryAdvisorHoldingPosition[] = Object.freeze([]);
 
 /** Creates the context of one analysis of `input`. It derives nothing until a stage asks. */
 export function createInventoryAdvisorAnalysisContext(input: unknown): InventoryAdvisorAnalysisContext {
 	const validated = input as InventoryAdvisorInputV1;
 	let reservation: ReturnType<InventoryAdvisorAnalysisContext['reservation']> | undefined;
 	let planAssets: Map<string, ReservationPlanAsset> | undefined;
-	let positionsByItemId: Map<number, InventoryAdvisorHoldingPosition[]> | undefined;
-	const context: InventoryAdvisorAnalysisContext = {
-		input,
-		reservation: () => {
-			if (reservation === undefined) {
-				const balance = buildInventoryAdvisorReservationBalance(validated.snapshot);
-				const plan = balance.status === 'ok'
-					? createReservationPlan({ goals: validated.goals, balance: balance.balance })
-					: { status: 'invalid' as const };
-				reservation = { balance, plan };
-			}
-			return reservation;
-		},
-		planAsset: (key) => {
-			if (planAssets === undefined) {
-				const { plan } = context.reservation();
-				planAssets = new Map(plan.status === 'ok' ? plan.plan.assets.map((asset) => [asset.key, asset]) : []);
-			}
-			return planAssets.get(key);
-		},
-		positions: (itemId) => {
-			if (positionsByItemId === undefined) {
-				const index = new Map<number, InventoryAdvisorHoldingPosition[]>();
-				validated.snapshot.holdings.forEach((holding, holdingIndex) => {
-					if (holding.kind !== 'item') return;
-					const entries = index.get(holding.itemId);
-					if (entries === undefined) index.set(holding.itemId, [{ holding, holdingIndex }]);
-					else entries.push({ holding, holdingIndex });
-				});
-				positionsByItemId = index;
-			}
-			return positionsByItemId.get(itemId) ?? [];
-		},
+	let positionsByItemId: Map<number, readonly InventoryAdvisorHoldingPosition[]> | undefined;
+	// The three derivations call each other here, never through the object handed out below.
+	const reservationOf: InventoryAdvisorAnalysisContext['reservation'] = () => {
+		if (reservation === undefined) {
+			const balance = buildInventoryAdvisorReservationBalance(validated.snapshot);
+			const plan = balance.status === 'ok'
+				? createReservationPlan({ goals: validated.goals, balance: balance.balance })
+				: { status: 'invalid' as const };
+			reservation = freezeDeep({ balance, plan });
+		}
+		return reservation;
 	};
+	const planAssetOf: InventoryAdvisorAnalysisContext['planAsset'] = (key) => {
+		if (planAssets === undefined) {
+			const { plan } = reservationOf();
+			planAssets = new Map(plan.status === 'ok' ? plan.plan.assets.map((asset) => [asset.key, asset]) : []);
+		}
+		return planAssets.get(key);
+	};
+	const positionsOf: InventoryAdvisorAnalysisContext['positions'] = (itemId) => {
+		if (positionsByItemId === undefined) {
+			const index = new Map<number, InventoryAdvisorHoldingPosition[]>();
+			validated.snapshot.holdings.forEach((holding, holdingIndex) => {
+				if (holding.kind !== 'item') return;
+				// The entry is frozen, the holding is not: it belongs to the caller's input.
+				const entry = Object.freeze({ holding, holdingIndex });
+				const entries = index.get(holding.itemId);
+				if (entries === undefined) index.set(holding.itemId, [entry]);
+				else entries.push(entry);
+			});
+			for (const entries of index.values()) Object.freeze(entries);
+			positionsByItemId = index;
+		}
+		return positionsByItemId.get(itemId) ?? NO_POSITIONS;
+	};
+	const context: InventoryAdvisorAnalysisContext = Object.freeze({
+		input, reservation: reservationOf, planAsset: planAssetOf, positions: positionsOf,
+	});
 	ANALYSIS_CONTEXTS.add(context);
 	return context;
+}
+
+/** Freezes a value this module has just built, and everything it holds, so that it can be handed out and served again. */
+function freezeDeep<T>(value: T): T {
+	if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
+	Object.freeze(value);
+	for (const key of Object.keys(value)) freezeDeep((value as Record<string, unknown>)[key]);
+	return value;
 }
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
