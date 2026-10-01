@@ -216,3 +216,99 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		expect(calls).toBe(0);
 	});
 });
+
+/**
+ * 1 oct 2026: an action waits only for the items that have NO seed at all; a copy past its 24 h is
+ * still read by the analysis and is refreshed after the result, out of what the action's cap left.
+ */
+describe('PriceSeedBulkRefreshService phases: missing seeds first, stale copies afterwards', () => {
+	const DAY_AND_AN_HOUR_MS = 25 * 60 * 60 * 1000;
+
+	/** A service whose cache already holds a seed past its TTL for every one of `staleItemIds`. */
+	async function withStaleSeeds(staleItemIds: readonly number[]) {
+		const requested: number[] = [];
+		let now = NOW_MS - DAY_AND_AN_HOUR_MS;
+		const factory = new IDBFactory();
+		const service = new PriceSeedBulkRefreshService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault', now: () => now,
+			fetchSeed: async (itemId) => { requested.push(itemId); return seeded(itemId); },
+			// Wider than any list below, so the preload is never the thing the cap cuts.
+			maxItemsPerRun: 100,
+		});
+		await service.run(staleItemIds);
+		service.dispose();
+		requested.length = 0;
+		now = NOW_MS;
+		const phased = new PriceSeedBulkRefreshService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault', now: () => now,
+			fetchSeed: async (itemId) => { requested.push(itemId); return seeded(itemId); },
+		});
+		return { requested, service: phased };
+	}
+
+	it('the missing phase requests only the items without any seed and counts the stale copies it left', async () => {
+		const { requested, service } = await withStaleSeeds([1, 3]);
+		const outcome = await service.run([1, 2, 3, 4], undefined, { scope: 'missing' });
+		expect(requested).toEqual([2, 4]);
+		expect(outcome).toMatchObject({ attempted: 2, seeded: 2, staleSkipped: 2 });
+		expect(outcome.deferredBudget).toBe(PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN - 2);
+		// A stale copy is still a seed: the coverage of the whole list is already complete.
+		expect(outcome.queueCoverage).toEqual({ total: 4, seeded: 4, noData: 0, pending: 0 });
+		service.dispose();
+	});
+
+	it('the stale phase requests only the stale copies, never an item without a seed, within its budget', async () => {
+		const { requested, service } = await withStaleSeeds([1, 3, 5]);
+		const outcome = await service.run([1, 2, 3, 4, 5], undefined, { scope: 'stale', budget: 2 });
+		expect(requested).toEqual([1, 3]);
+		expect(outcome).toMatchObject({ attempted: 2, seeded: 2 });
+		service.dispose();
+	});
+
+	it('shares one cap between the two phases: the missing items first, the stale copies out of what is left', async () => {
+		const stale = Array.from({ length: 10 }, (_unused, index) => index + 1);
+		const missing = Array.from({ length: PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN - 5 }, (_unused, index) => index + 11);
+		const { requested, service } = await withStaleSeeds(stale);
+		const first = await service.run([...stale, ...missing], undefined, { scope: 'missing' });
+		expect(requested).toEqual(missing);
+		expect(first.deferredBudget).toBe(5);
+		const second = await service.run([...stale, ...missing], undefined, { scope: 'stale', budget: first.deferredBudget ?? 0 });
+		expect(second.attempted).toBe(5);
+		expect(requested).toEqual([...missing, ...stale.slice(0, 5)]);
+		expect(requested).toHaveLength(PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN);
+		service.dispose();
+	});
+
+	it('leaves no budget for the stale copies when the missing items alone reach the cap', async () => {
+		const stale = [1, 2, 3];
+		const missing = Array.from({ length: PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN + 4 }, (_unused, index) => index + 11);
+		const { requested, service } = await withStaleSeeds(stale);
+		const outcome = await service.run([...stale, ...missing], undefined, { scope: 'missing' });
+		expect(requested).toEqual(missing.slice(0, PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN));
+		expect(outcome.deferredBudget).toBe(0);
+		service.dispose();
+	});
+
+	it('writes nothing once disposed: a download that answers after dispose is dropped, not stored', async () => {
+		const factory = new IDBFactory();
+		let started!: () => void;
+		const inFlight = new Promise<void>((resolve) => { started = resolve; });
+		let answer!: () => void;
+		const gate = new Promise<void>((resolve) => { answer = resolve; });
+		const service = new PriceSeedBulkRefreshService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async (itemId) => { started(); await gate; return seeded(itemId); },
+		});
+		const run = service.run([1, 2]);
+		await inFlight;
+		service.dispose();
+		answer();
+		const outcome = await run;
+		// Before the guard the answer was written to the store `dispose` had just closed, and that
+		// write's own failure was recorded as a `storage_failure` nobody could act on.
+		expect(outcome).toMatchObject({ attempted: 1, seeded: 0, failed: 0 });
+		const reader = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+		expect(await reader.get('vault', 1)).toBeNull();
+		reader.close();
+	});
+});

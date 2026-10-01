@@ -3,6 +3,8 @@ import { IDBFactory } from 'fake-indexeddb';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
+
 import {
 	PINNED_SCHEMA,
 	type ItemHolding,
@@ -26,10 +28,13 @@ import type { CatalogItem, CatalogResolution } from '../catalog/public-catalog-m
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 import type { LegendaryMaterialsTableV1 } from '../economy/legendary-materials';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { PriceSeedBulkRefreshService } from '../economy/price-seed-bulk-refresh';
 import { IndexedDbPriceSeedCacheStore } from '../economy/price-seed-cache-store';
-import type { PriceSeedDayV1 } from '../economy/price-seed-model';
+import type { PriceSeedDayV1, PriceSeedV1 } from '../economy/price-seed-model';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { SeasonalWindowV1 } from '../economy/seasonal-window';
+import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
+import { TyrianCompanionCore } from '../runtime/tyrian-companion-core';
 import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-controller';
 import type { InventoryAdvisorViewRow } from '../ui/inventory-advisor-view-model';
 import {
@@ -577,6 +582,131 @@ describe('inventory value and character scope', () => {
 		expect(known.objects.storageSpace).toMatchObject({ bags: { total: 20, free: 2 }, lowSpace: { freeSlots: 6, totalSlots: 40 } });
 	});
 });
+
+/**
+ * 1 oct 2026. The core's own port closure is built inside `initializeRuntime` and no test reaches
+ * it with a real capture, so this is a COMPOSITION: the real analysis, workflow, controller and
+ * seed service, joined by the two core methods that closure calls (`refreshPriceSeedsForSync` as
+ * the analysis port's `refreshPriceSeeds`, and `refreshInventoryAdvisor` as the action).
+ */
+describe('seed phases of an inventory sync, by composition of the real analysis, workflow, controller and seed service (not through the core\'s own port closure)', () => {
+	const VAULT = 'vault-phases';
+	const STALE_AT_MS = AS_OF_MS - 25 * 60 * 60 * 1000;
+	const seedOf = (itemId: number): PriceSeedV1 => ({ version: 1, itemId, source: 'datawars2', retrievedAt: AS_OF, days: seedDays(60, 100, 1, AS_OF_MS) });
+
+	async function syncByComposition(staleItemIds: readonly number[]) {
+		const factory = new IDBFactory();
+		const writeStore = await IndexedDbPriceSeedCacheStore.open(factory);
+		for (const itemId of staleItemIds) await writeStore.put(VAULT, itemId, seedOf(itemId), STALE_AT_MS);
+		writeStore.close();
+		const readStore = await IndexedDbPriceSeedCacheStore.open(factory);
+		const calls: number[] = [];
+		const held: Array<() => void> = [];
+		const waitingForACall: Array<() => void> = [];
+		let inFlight = 0;
+		let maxInFlight = 0;
+		let opened = false;
+		const started = () => new Promise<void>((resolve) => { waitingForACall.push(resolve); });
+		const service = new PriceSeedBulkRefreshService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: VAULT, now: () => AS_OF_MS,
+			fetchSeed: async (itemId) => {
+				calls.push(itemId);
+				inFlight += 1;
+				maxInFlight = Math.max(maxInFlight, inFlight);
+				for (const notify of waitingForACall.splice(0)) notify();
+				if (!opened) await new Promise<void>((resolve) => { held.push(resolve); });
+				inFlight -= 1;
+				return { status: 'seeded', seed: seedOf(itemId) };
+			},
+		});
+		const harness = {
+			runtimeReady: true, unloaded: false, settings: { language: 'es' },
+			priceSeedBulkRefresh: service, priceSeedQueueCoverage: null as unknown,
+			priceSeedDeferredPass: null as Promise<void> | null,
+			inventoryAdvisor: null as InventoryAdvisorPresentationController | null,
+			renderInventoryAdvisorViews: vi.fn(),
+			// The Sale hero card is not part of this composition.
+			refreshSaleHeroTiming: async () => undefined,
+		};
+		Object.setPrototypeOf(harness, TyrianCompanionCore.prototype);
+		const analysis = new InventoryAnalysisService(recommendationPort({
+			readCachedSeed: async (itemId) => (await readStore.get(VAULT, itemId))?.seed ?? null,
+			refreshPriceSeeds: async (itemIds) => { await coreMethods.refreshPriceSeedsForSync.call(harness, itemIds); },
+		}));
+		const snapshot = snapshotOf([bank(42, 5, 0), bank(43, 5, 1)]);
+		const evidence = evidenceOf(snapshot, { 42: { bid: 200, ask: 210 }, 43: { bid: 200, ask: 210 } });
+		const marketDepth = marketDepthOf(evidence.prices);
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture: (async () => ({ status: 'complete' as const, evidence: structuredClone(evidence), marketDepth: structuredClone(marketDepth) })) as never },
+			preferences: { load: async () => ({ status: 'ready', value: { goals: [], keepExceptions: [] } }) },
+			rules: { current: () => ({ status: 'available', value: rulesFixture() }) },
+			now: () => AS_OF_MS,
+			objects: {
+				derivedGoals: async () => await analysis.derivedGoals(),
+				// What the core passes while the analysis runs on behalf of "Sincronizar inventario".
+				evaluate: async (source, uncertainItemIds) => await analysis.evaluate(source, uncertainItemIds, { refreshSeeds: true }),
+			},
+		});
+		const controller = new InventoryAdvisorPresentationController({ load: async () => await workflow.refresh('es') });
+		harness.inventoryAdvisor = controller;
+		const refresh = coreMethods.refreshInventoryAdvisor.call(harness);
+		return {
+			harness, calls, started, refresh,
+			maxInFlight: () => maxInFlight,
+			releaseOne: () => { held.shift()?.(); },
+			open: () => { opened = true; for (const release of held.splice(0)) release(); },
+			/** Which happens first: the sync's analysis resolves, or a download starts while it is pending. */
+			first: async () => await Promise.race([
+				refresh.then(() => 'resolved' as const), started().then(() => 'fetch_started' as const),
+			]),
+			reasonOf: (itemId: number) => rowFor(controller.current().groups.flatMap((group) => group.rows), itemId, 'sell').decision?.reason,
+			close: () => { service.dispose(); readStore.close(); },
+		};
+	}
+
+	it('only stale copies: the analysis resolves on the copies it has with no download made, and they follow one at a time', async () => {
+		const sync = await syncByComposition([42, 43]);
+		try {
+			expect(await sync.first()).toBe('resolved');
+			expect(sync.calls).toEqual([]);
+			// The verdict stands on the stale copy: 60 seed days, today's bid on top of them.
+			expect(sync.reasonOf(42)).toBe('bid_above_reference');
+			expect(sync.reasonOf(43)).toBe('bid_above_reference');
+
+			await sync.started();
+			expect(sync.calls).toHaveLength(1);
+			sync.open();
+			await sync.harness.priceSeedDeferredPass;
+
+			expect([...sync.calls].sort((left, right) => left - right)).toEqual([42, 43]);
+			expect(sync.maxInFlight()).toBe(1);
+		} finally { sync.open(); sync.close(); }
+	});
+
+	it('a missing seed and a stale copy: the analysis waits for the missing one only, and reads it in that same pass', async () => {
+		const sync = await syncByComposition([43]);
+		try {
+			expect(await sync.first()).toBe('fetch_started');
+			expect(sync.calls).toEqual([42]);
+			sync.releaseOne();
+			expect(await sync.first()).toBe('resolved');
+			expect(sync.calls).toEqual([42]);
+			// Decision 4 still holds: a new object does not read "not enough history" on the sync that seeds it.
+			expect(sync.reasonOf(42)).toBe('bid_above_reference');
+
+			sync.open();
+			await sync.harness.priceSeedDeferredPass;
+
+			expect(sync.calls).toEqual([42, 43]);
+			expect(sync.maxInFlight()).toBe(1);
+		} finally { sync.open(); sync.close(); }
+	});
+});
+
+const coreMethods = TyrianCompanionCore.prototype as unknown as {
+	refreshInventoryAdvisor(this: object): Promise<void>;
+	refreshPriceSeedsForSync(this: object, itemIds: readonly number[]): Promise<void>;
+};
 
 function pick(value: { tc_recommendation: string; tc_recommendation_reason: string }): Pick<InventoryVaultPosition, 'recommendation' | 'recommendationReason'> {
 	return {
