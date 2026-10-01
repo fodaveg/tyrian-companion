@@ -442,13 +442,6 @@
 	outline-offset: 2px;
 }
 
-@container (max-width: 1049px) {
-	.tyrian-product-shell__workspace {
-		grid-template-columns: minmax(0, 1fr);
-		grid-template-areas: "actions" "content";
-	}
-}
-
 @container (max-width: 599px) {
 	.tyrian-product-shell {
 		padding: var(--size-4-2);

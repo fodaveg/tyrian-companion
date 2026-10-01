@@ -40,10 +40,13 @@ describe('product action architecture', () => {
 
 	it('keeps responsive, focus, reduced-motion, and 44px contracts in the product stylesheet', () => {
 		const styles = readModuleSource('styles.css');
-		expect(styles).toContain('@container (max-width: 1049px)');
 		expect(styles).toContain('@container (max-width: 599px)');
 		expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
-		expect(styles).toContain('grid-template-areas: "actions" "content"');
+		// The workspace holds only the content area now: no `actions` area, and no narrow-width
+		// override of a template that is the same single column at every width.
+		expect(styles).toContain('grid-template-areas: "content"');
+		expect(styles).not.toContain('"actions"');
+		expect(styles).not.toContain('@container (max-width: 1049px)');
 		// The action panel was retired (nothing mounts it), so none of its rules may linger.
 		expect(styles).not.toContain('tyrian-action-panel');
 		expect(styles).toContain('.tyrian-product-shell button:focus-visible');
