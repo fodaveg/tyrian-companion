@@ -14,6 +14,8 @@ const datawars2 = vi.hoisted(() => ({
 	inFlight: 0,
 	maxInFlight: 0,
 	opened: false,
+	/** Items the host answers at once with a 429 and an hour of `Retry-After`. */
+	rateLimited: new Set<number>(),
 }));
 
 vi.mock('obsidian', async (importOriginal) => ({
@@ -21,7 +23,11 @@ vi.mock('obsidian', async (importOriginal) => ({
 	requestUrl: async ({ url }: { url: string }) => {
 		const target = new URL(url);
 		if (target.hostname !== 'api.datawars2.ie') return { status: 200, headers: {}, json: {}, text: '{}', arrayBuffer: new ArrayBuffer(0) };
-		datawars2.requested.push(Number(target.searchParams.get('itemID')));
+		const itemId = Number(target.searchParams.get('itemID'));
+		datawars2.requested.push(itemId);
+		if (datawars2.rateLimited.has(itemId)) {
+			return { status: 429, headers: { 'Retry-After': '3600' }, json: null, text: 'null', arrayBuffer: new ArrayBuffer(0) };
+		}
 		datawars2.inFlight += 1;
 		datawars2.maxInFlight = Math.max(datawars2.maxInFlight, datawars2.inFlight);
 		if (!datawars2.opened) await new Promise<void>((resolve) => { datawars2.held.push(resolve); });
@@ -79,9 +85,11 @@ describe('price seed downloads over the real runtime: one request in flight for 
 		datawars2.inFlight = 0;
 		datawars2.maxInFlight = 0;
 		datawars2.opened = false;
+		datawars2.rateLimited.clear();
 	});
 
-	async function everySeedPathStarted() {
+	/** The real core after its real `initializeRuntime`, on a collector device with price history on. */
+	async function bootedCore() {
 		const runtime = createRuntimeHarness();
 		harness = runtime;
 		const core = runtime.core as unknown as SeedWiring & { localDebugActions: null };
@@ -93,6 +101,27 @@ describe('price seed downloads over the real runtime: one request in flight for 
 		await runtime.initializeRuntime();
 		// The boot itself asks datawars2 for nothing: every request counted below is one of these paths'.
 		expect(datawars2.requested).toEqual([]);
+		return { runtime, core };
+	}
+
+	it('a 429 with an hour of Retry-After is "no seed" at once: one request for that item, and the next download does not wait', async () => {
+		const { core } = await bootedCore();
+		datawars2.rateLimited.add(PANEL_ITEM_ID);
+		datawars2.opened = true;
+
+		const limited = core.priceHistoryPanelSeed.ensure(PANEL_ITEM_ID);
+		const next = core.priceHistoryPanelSeed.ensure(NOTE_BLOCK_ITEM_IDS[0]);
+		started = [limited, next];
+		// The harness's clock never fires on its own: a retry that slept would never get here.
+		await vi.waitFor(() => { expect(datawars2.requested).toEqual([PANEL_ITEM_ID, NOTE_BLOCK_ITEM_IDS[0]]); });
+		const [limitedState] = await Promise.all([limited, next]);
+
+		expect(limitedState).toMatchObject({ status: 'no_seed', failureReason: 'unreachable' });
+		expect(datawars2.requested.filter((itemId) => itemId === PANEL_ITEM_ID)).toHaveLength(1);
+	});
+
+	async function everySeedPathStarted() {
+		const { runtime, core } = await bootedCore();
 
 		const sale = core.refreshSale();
 		await vi.waitFor(() => { expect(datawars2.requested).toHaveLength(1); });

@@ -132,7 +132,7 @@ import {
 	type PriceSeedBulkRefreshOutcome,
 	type PriceSeedQueueCoverage,
 } from '../economy/price-seed-bulk-refresh';
-import { fetchPriceSeed } from '../economy/price-seed-source';
+import { fetchPriceSeed, PRICE_SEED_OPERATION_POLICIES } from '../economy/price-seed-source';
 import { sellOrWaitSeedMaxDays } from '../economy/sell-or-wait';
 import type { PriceSeedV1 } from '../economy/price-seed-model';
 import { safePublicRenderIconUrl } from '../ui/price-history-panel-view';
@@ -807,7 +807,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			() => this.settings.apiKeySecret,
 		);
 		const transport = new HostRequestTransport(host.http, {
-			operationPolicies: GW2_CHARACTER_OPERATION_POLICIES,
+			// This is the transport every datawars2 seed download rides: one attempt each, so a
+			// rate-limited download never sleeps in the one queue they all share.
+			operationPolicies: { ...GW2_CHARACTER_OPERATION_POLICIES, ...PRICE_SEED_OPERATION_POLICIES },
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		const client = new GuildWars2Client(transport, apiKeyProvider);
