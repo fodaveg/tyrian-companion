@@ -1018,19 +1018,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// Decision 4: bulk datawars2 seeding for that same list, one request at a time.
 			// H18.17: the outcome used to be discarded here, so neither a `no_seed` retry
 			// schedule nor the queue's coverage ever reached anything past this call.
-			refreshPriceSeeds: async (itemIds) => {
-				const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
-					component: 'price_history', action: 'price_history_load_series', state: 'price_seed_bulk_refresh',
-				});
-				try {
-					const outcome = await this.priceSeedBulkRefresh?.run(itemIds);
-					if (outcome !== undefined) this.priceSeedQueueCoverage = outcome.queueCoverage;
-					span.success('refreshed', { itemCount: itemIds.length });
-				} catch (error) {
-					span.failure(error, 'storage_failure', 'store_unavailable', { itemCount: itemIds.length });
-					throw error;
-				}
-			},
+			refreshPriceSeeds: async (itemIds) => { await this.refreshPriceSeedsForSync(itemIds); },
 			// Rule (b), M3: the item's calendar window plus the pack's shared sellSignal
 			// parameters, or null (rule (c)) when it has no entry or the pack is unavailable.
 			seasonalInputFor: (itemId) => resolveSaleSeasonalInputFor(itemId, Date.now()),
@@ -1877,6 +1865,24 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			todayBidCopper,
 			untradeable: false,
 		});
+	}
+
+	/**
+	 * The inventory sync's own seed pass (decision 4), behind the analysis port's `refreshPriceSeeds`.
+	 * A method rather than a closure of `initializeRuntime` so the pass can be driven on its own.
+	 */
+	private async refreshPriceSeedsForSync(itemIds: readonly number[]): Promise<void> {
+		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
+			component: 'price_history', action: 'price_history_load_series', state: 'price_seed_bulk_refresh',
+		});
+		try {
+			const outcome = await this.priceSeedBulkRefresh?.run(itemIds);
+			if (outcome !== undefined) this.priceSeedQueueCoverage = outcome.queueCoverage;
+			span.success('refreshed', { itemCount: itemIds.length });
+		} catch (error) {
+			span.failure(error, 'storage_failure', 'store_unavailable', { itemCount: itemIds.length });
+			throw error;
+		}
 	}
 
 	/** Explicit Sale refresh may fill the calendar's history, using the existing opt-in and cache. */
