@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 478,
+		"catch_clause": 479,
 		"promise_catch": 40,
 		"void_expression": 102,
 		"callback_registration": 177
@@ -1044,6 +1044,22 @@
 						"justification": "The \"isInventoryAdvisorResultForInput\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"isInventoryAdvisorResultForInput\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"isInventoryAdvisorResultForInput\"."
+				},
+				{
+					"id": "70256e1a2b120c5f4228c337daa5e92f11cf5a7b",
+					"kind": "catch_clause",
+					"line": 189,
+					"column": 4,
+					"endLine": 189,
+					"endColumn": 27,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "isInventoryAdvisorResultForAnalysis",
+						"justification": "The \"isInventoryAdvisorResultForAnalysis\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"isInventoryAdvisorResultForAnalysis\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"isInventoryAdvisorResultForAnalysis\"."
 				},
 				{
 					"id": "8d2edef588321c3b892817dbf3344f2ac9f03ef9",

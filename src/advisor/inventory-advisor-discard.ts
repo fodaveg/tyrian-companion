@@ -3,7 +3,11 @@ import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { createInventoryRecommendationEnvelope, isInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
 import { isApprovedApplicableCapability, isEnabledApplicableRule, isInventoryAdvisorReport, sha256CanonicalValue, sha256InventoryAdvisorReport } from './inventory-advisor-contract';
 import { classifyInventoryAdvisorDiagnosed, isInventoryKnowledgePack } from './inventory-advisor-classifier';
-import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+import {
+	createInventoryAdvisorAnalysisContext,
+	isInventoryAdvisorResultForAnalysis,
+	type InventoryAdvisorAnalysisContext,
+} from './inventory-advisor-result';
 import { isInventoryContainerEconomyPack, isInventoryContainerPriceEvidence } from './inventory-container-economy';
 import type { InventoryAdvisorLineV1, InventoryAdvisorReportV1, InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
 import type { InventoryRouteClaimV1 } from './inventory-advisor-classifier-model';
@@ -27,15 +31,22 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 /**
  * The same allowlist plus, when it comes out `invalid`, a stable snake_case code for the exit taken
  * (a closed list, never a value of the account). It changes neither what is invalid nor the result.
+ *
+ * The reproduction of the producer and the two contract checks below all work on the same input
+ * object, so they share one analysis context: `shared` when the caller already holds the context
+ * of that very object, a new one otherwise.
  */
 function applyInventoryDiscardAllowlistDiagnosed(
 	value: unknown,
+	shared?: InventoryAdvisorAnalysisContext,
 ): { result: InventoryDiscardAllowlistResultV1; cause: string | null } {
 	const failed = (cause: string): { result: InventoryDiscardAllowlistResultV1; cause: string } => ({ result: invalid(), cause });
 	try {
 		if (!isInput(value)) return failed('discard_input_shape');
-		const reproduced = classifyInventoryAdvisorDiagnosed(value.engineInput).result;
-		if (!isInventoryAdvisorResultForInput(value.producerResult, value.engineInput.input, value.engineInput.knowledgePack,
+		const analysis = shared !== undefined && shared.input === value.engineInput.input
+			? shared : createInventoryAdvisorAnalysisContext(value.engineInput.input);
+		const reproduced = classifyInventoryAdvisorDiagnosed(value.engineInput, analysis).result;
+		if (!isInventoryAdvisorResultForAnalysis(value.producerResult, analysis, value.engineInput.knowledgePack,
 			value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
 			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)) {
 			return failed('discard_producer_contract_invalid');
@@ -97,7 +108,7 @@ function applyInventoryDiscardAllowlistDiagnosed(
 			producerResultSha256, report, envelope, proofs: proofs.sort((left, right) => left.itemId - right.itemId || left.explanationRef.localeCompare(right.explanationRef)),
 		};
 		const publicResult = { status: result.status, report: result.report, envelope: result.envelope };
-		return isInventoryAdvisorResultForInput(publicResult, value.engineInput.input, value.engineInput.knowledgePack,
+		return isInventoryAdvisorResultForAnalysis(publicResult, analysis, value.engineInput.knowledgePack,
 			value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
 			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)
 			&& isInventoryDiscardAllowlistResultShape(result) ? { result, cause: null } : failed('discard_result_contract_invalid');
@@ -126,11 +137,19 @@ export function inventoryAdvisorContextualInvalidCause(
 	} catch { return 'discard_diagnosis_threw'; }
 }
 
-/** Validates the persisted sibling result against the exact reproduced producer result. */
-export function isInventoryDiscardAllowlistResultForInput(value: unknown, input: unknown): value is InventoryDiscardAllowlistResultV1 {
+/**
+ * Validates the persisted sibling result against the exact reproduced producer result.
+ * `shared` only spares deriving the plan and the position index again when the caller already
+ * holds the analysis context of `input.engineInput.input`; the reproduction itself is complete.
+ */
+export function isInventoryDiscardAllowlistResultForInput(
+	value: unknown,
+	input: unknown,
+	shared?: InventoryAdvisorAnalysisContext,
+): value is InventoryDiscardAllowlistResultV1 {
 	try {
 		if (!isInput(input) || !record(value) || value.version !== INVENTORY_DISCARD_ALLOWLIST_VERSION) return false;
-		const expected = applyInventoryDiscardAllowlist(input);
+		const expected = applyInventoryDiscardAllowlistDiagnosed(input, shared).result;
 		return canonical(value) === canonical(expected);
 	} catch { return false; }
 }

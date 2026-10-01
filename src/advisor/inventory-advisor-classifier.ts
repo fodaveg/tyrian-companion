@@ -1,7 +1,10 @@
-import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
 import { isApprovedApplicableCapability, isEnabledApplicableRule, isInventoryAdvisorInput, sha256CanonicalValue } from './inventory-advisor-contract';
-import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+import {
+	createInventoryAdvisorAnalysisContext,
+	isInventoryAdvisorResultForAnalysis,
+	type InventoryAdvisorAnalysisContext,
+} from './inventory-advisor-result';
 import type {
 	InventoryAdvisorCoverageV1, InventoryAdvisorInputV1, InventoryAdvisorReasonCode,
 	InventoryAdvisorResultV1, InventoryAdvisorPositionV1,
@@ -45,24 +48,29 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
  * The same classification plus, when it comes out `invalid`, a stable snake_case code for the stage
  * that rejected it (a closed list, never a value of the account). It only names the exit taken; it
  * neither changes what is invalid nor adds a field to the public result.
+ *
+ * `shared` is the analysis context of a caller that is working on this very input object (the
+ * discard allowlist reproducing the producer): its reservation plan and position index are reused
+ * instead of derived again. A context of any other input is ignored.
  */
 export function classifyInventoryAdvisorDiagnosed(
 	value: unknown,
+	shared?: InventoryAdvisorAnalysisContext,
 ): { result: InventoryAdvisorResultV1; cause: string | null } {
 	const failed = (cause: string): { result: InventoryAdvisorResultV1; cause: string } => ({ result: publicInvalid(), cause });
 	try {
 		if (!isEngineInput(value)) return failed('classifier_input_shape');
 		const { input } = value;
-		const balance = buildInventoryAdvisorReservationBalance(input.snapshot);
-		const plan = balance.status === 'ok' ? createReservationPlan({ goals: input.goals, balance: balance.balance }) : { status: 'invalid' as const };
-		const engine = classifyInventoryAdvisorEngine(value);
+		const analysis = shared !== undefined && shared.input === input ? shared : createInventoryAdvisorAnalysisContext(input);
+		const { balance, plan } = analysis.reservation();
+		const engine = classifyInventoryAdvisorEngine(value, analysis);
 		if (engine.status === 'invalid' || engine.report === null) {
 			return failed(balance.status !== 'ok' ? 'classifier_balance_invalid'
 				: plan.status !== 'ok' ? 'classifier_plan_invalid' : 'classifier_engine_invalid');
 		}
 		if (plan.status !== 'ok') return failed('classifier_plan_invalid');
 		const publicLines = engine.report.lines.map((line) => publicLine(
-			line, input, plan.plan, value.equipmentSalvage,
+			line, input, analysis, value.equipmentSalvage,
 		));
 		const lines = publicLines.map((entry) => entry.line);
 		const depthComplete = value.marketDepth === undefined || value.marketDepth.status === 'complete';
@@ -78,8 +86,8 @@ export function classifyInventoryAdvisorDiagnosed(
 		const envelope = createInventoryRecommendationEnvelope(report);
 		if (envelope === null) return failed('classifier_envelope_invalid');
 		const result: InventoryAdvisorResultV1 = { status: coverage === 'complete' ? 'ready' : 'limited', report, envelope };
-		return isInventoryAdvisorResultForInput(
-			result, input, value.knowledgePack, value.containerEconomy, value.personalValuation,
+		return isInventoryAdvisorResultForAnalysis(
+			result, analysis, value.knowledgePack, value.containerEconomy, value.personalValuation,
 			value.activeOrders, value.materialStorageCapacity, value.marketDepth,
 			value.equipmentSalvage,
 		) ? { result, cause: null } : failed('classifier_result_contract_invalid');
@@ -87,12 +95,11 @@ export function classifyInventoryAdvisorDiagnosed(
 }
 
 /** Internal classification representation preserves route provenance while the public report is assembled. */
-function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineResultV1 {
+function classifyInventoryAdvisorEngine(value: unknown, analysis: InventoryAdvisorAnalysisContext): InventoryAdvisorEngineResultV1 {
 	try {
-		if (!isEngineInput(value)) return invalid();
+		if (!isEngineInput(value) || analysis.input !== value.input) return invalid();
 		const { input, knowledgePack } = value;
-		const balance = buildInventoryAdvisorReservationBalance(input.snapshot);
-		const plan = balance.status === 'ok' ? createReservationPlan({ goals: input.goals, balance: balance.balance }) : { status: 'invalid' as const };
+		const { plan } = analysis.reservation();
 		if (plan.status !== 'ok') return invalid();
 		const itemIds = ids(input);
 		const inputRulesFresh = rulePackFresh(input);
@@ -106,9 +113,9 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 			&& itemIds.every((itemId) => itemEvidence.get(itemId) === true)
 			&& knowledgeReady && input.snapshot.quality === 'stable' && inputRulesFresh;
 		const lines = itemIds.map((itemId) => classifyLine(input, knowledgePack, itemId,
-			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0,
+			analysis.planAsset(`item:${itemId}`)?.protectedAvailable ?? 0,
 			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy, value.personalValuation,
-			value.materialStorageCapacity, value.marketDepth, value.equipmentSalvage))
+			value.materialStorageCapacity, value.marketDepth, value.equipmentSalvage, analysis))
 			.map((line) => applyActiveOrderPolicy(line, value.activeOrders));
 		const report = { version: INVENTORY_ADVISOR_ENGINE_VERSION, scope: 'supported_storage_v1' as const,
 			accountId: input.snapshot.accountId, snapshotId: input.snapshot.snapshotId, asOf: input.asOf,
@@ -160,8 +167,9 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 	personalValuation: EngineInput['personalValuation'],
 	materialStorageCapacity: EngineInput['materialStorageCapacity'],
 	marketDepth: EngineInput['marketDepth'],
-	equipmentSalvage: EngineInput['equipmentSalvage']): InventoryAdvisorEngineLineV1 {
-	const positions = input.snapshot.holdings.map((holding, holdingIndex) => ({ holding, holdingIndex })).filter((entry) => entry.holding.kind === 'item' && entry.holding.itemId === itemId)
+	equipmentSalvage: EngineInput['equipmentSalvage'],
+	analysis: InventoryAdvisorAnalysisContext): InventoryAdvisorEngineLineV1 {
+	const positions = analysis.positions(itemId)
 		.map(({ holding, holdingIndex }) => ({ ref: `#/positions/${itemId}/${holdingIndex}`, holdingIndex, itemId, quantity: holding.quantity, source: holding.location.source, state: holding.state }));
 	const remaining = new Map(positions.map((position) => [position.ref, position.quantity]));
 	const decisions: InventoryAdvisorEngineDecisionV1[] = [];
@@ -321,10 +329,10 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 function publicLine(
 	engine: InventoryAdvisorEngineLineV1,
 	input: InventoryAdvisorInputV1,
-	plan: { assets: Array<{ key: string; coverage: string }> },
+	analysis: InventoryAdvisorAnalysisContext,
 	equipmentSalvage: EngineInput['equipmentSalvage'],
 ) {
-	const asset = plan.assets.find((entry) => entry.key === `item:${engine.itemId}`);
+	const asset = analysis.planAsset(`item:${engine.itemId}`);
 	const coverage = publicCoverage(input, engine.itemId, asset?.coverage ?? 'unknown');
 	const sources = engine.decisions.map((source, index) => ({ source, decision: {
 		action: source.action, itemId: source.itemId, quantity: source.quantity,
