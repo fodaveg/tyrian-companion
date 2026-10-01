@@ -11,7 +11,7 @@ import {
 } from './inventory-advisor-result';
 import { isInventoryContainerEconomyPack, isInventoryContainerPriceEvidence } from './inventory-container-economy';
 import type { InventoryAdvisorLineV1, InventoryAdvisorReportV1, InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
-import type { InventoryRouteClaimV1 } from './inventory-advisor-classifier-model';
+import type { InventoryAdvisorEngineInputV1, InventoryRouteClaimV1 } from './inventory-advisor-classifier-model';
 import { isContainerPersonalValuation, resolveContainerPersonalValuation } from '../economy/container-personal-valuation';
 import { isInventoryMarketDepthEvidence } from '../economy/commerce-listings';
 import {
@@ -44,15 +44,21 @@ function applyInventoryDiscardAllowlistDiagnosed(
 	const failed = (cause: string): { result: InventoryDiscardAllowlistResultV1; cause: string } => ({ result: invalid(), cause });
 	try {
 		if (!isInput(value)) return failed('discard_input_shape');
-		const analysis = shared !== undefined && shared.input === value.engineInput.input
-			? shared : createInventoryAdvisorAnalysisContext(value.engineInput.input);
-		const reproduced = classifyInventoryAdvisorDiagnosed(value.engineInput, analysis).result;
-		if (!isInventoryAdvisorResultForAnalysis(value.producerResult, analysis, value.engineInput.knowledgePack,
-			value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
-			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)) {
-			return failed('discard_producer_contract_invalid');
+		// A pair this module classified itself (see `classifyInventoryAdvisorVerified`) is not reproduced:
+		// the producer result in it is the classifier's own answer to the frozen engine input beside it,
+		// already checked against the result contract with this same context.
+		const classified = CLASSIFIED_ANALYSES.get(value);
+		const analysis = classified ?? (shared !== undefined && shared.input === value.engineInput.input
+			? shared : createInventoryAdvisorAnalysisContext(value.engineInput.input));
+		if (classified === undefined) {
+			const reproduced = classifyInventoryAdvisorDiagnosed(value.engineInput, analysis).result;
+			if (!isInventoryAdvisorResultForAnalysis(value.producerResult, analysis, value.engineInput.knowledgePack,
+				value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
+				value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)) {
+				return failed('discard_producer_contract_invalid');
+			}
+			if (canonical(reproduced) !== canonical(value.producerResult)) return failed('discard_producer_not_reproduced');
 		}
-		if (canonical(reproduced) !== canonical(value.producerResult)) return failed('discard_producer_not_reproduced');
 		if (value.producerResult.status === 'invalid' || value.producerResult.report === null || value.producerResult.envelope === null) {
 			return failed('discard_producer_invalid');
 		}
@@ -114,6 +120,110 @@ function applyInventoryDiscardAllowlistDiagnosed(
 			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)
 			&& isInventoryDiscardAllowlistResultShape(result) ? { result, cause: null } : failed('discard_result_contract_invalid');
 	} catch { return failed('discard_threw'); }
+}
+
+/**
+ * One analysis this module's own flow produced, and so does not reproduce to believe: the engine
+ * input, the producer result, the discard result and, through its analysis context, the reservation
+ * plan and the position index.
+ *
+ * What proves it is the identity of the object in the two registries below and nothing else: not a
+ * field, not a type, not a hash a caller can recompute. Nothing exported records an object it was
+ * given. `classifyInventoryAdvisorVerified` records the pair it builds from its OWN copy of the
+ * engine input, frozen in depth before the classifier reads it, with the result the classifier
+ * returned for that copy; `applyInventoryDiscardAllowlistVerified` records the source it builds from
+ * such a pair. Both are frozen in depth, so what was recorded cannot be altered afterwards, and the
+ * caller's own objects are never frozen nor read again: changing them later changes nothing here.
+ * An object that merely looks like one of these (a copy, a clone, a proxy) is in neither registry
+ * and goes through the public route, which reproduces everything as before.
+ */
+export interface InventoryAdvisorVerifiedAnalysis {
+	readonly input: InventoryAdvisorEngineInputV1['input'];
+	readonly result: InventoryDiscardAllowlistResultV1;
+	readonly discardContext: InventoryDiscardAllowlistInputV1;
+}
+
+/** Pairs `{ engineInput, producerResult }` classified here, with the context of their frozen input. */
+const CLASSIFIED_ANALYSES = new WeakMap<object, InventoryAdvisorAnalysisContext>();
+/** Sources `{ input, result, discardContext }` completed here from one of those pairs. */
+const VERIFIED_ANALYSES = new WeakMap<object, InventoryAdvisorAnalysisContext>();
+
+/**
+ * First stage of the internal flow: classifies a private frozen copy of `value` once and returns the
+ * pair the discard stage consumes without classifying again. The answer is the one
+ * `classifyInventoryAdvisor` gives for the same value. A value that is not a plain data tree is not
+ * copied: it gets the public classification and a pair that is not recorded.
+ */
+export function classifyInventoryAdvisorVerified(value: InventoryAdvisorEngineInputV1): InventoryDiscardAllowlistInputV1 {
+	const engineInput = frozenCopy(value);
+	if (engineInput === undefined) return { engineInput: value, producerResult: classifyInventoryAdvisorDiagnosed(value).result };
+	const analysis = createInventoryAdvisorAnalysisContext(engineInput.input);
+	// Its own copy as well: whatever the classifier put in its result, nothing outside this pair is frozen with it.
+	const producerResult = freezeDeep(structuredClone(classifyInventoryAdvisorDiagnosed(engineInput, analysis).result));
+	const classified = Object.freeze({ engineInput, producerResult });
+	// An invalid classification is not recorded: every later stage then names its cause as the public route does.
+	if (producerResult.status !== 'invalid') CLASSIFIED_ANALYSES.set(classified, analysis);
+	return classified;
+}
+
+/**
+ * Second stage of the internal flow: applies the allowlist to a pair `classifyInventoryAdvisorVerified`
+ * returned and gives back the complete source a presentation consumes without reproducing it. The
+ * result is the one `applyInventoryDiscardAllowlist` gives for the same pair. Any other value gets
+ * exactly that public allowlist, reproduction included, and a source that is not recorded.
+ */
+export function applyInventoryDiscardAllowlistVerified(classified: InventoryDiscardAllowlistInputV1): InventoryAdvisorVerifiedAnalysis {
+	const analysis = CLASSIFIED_ANALYSES.get(classified);
+	const outcome = applyInventoryDiscardAllowlistDiagnosed(classified);
+	if (analysis === undefined || outcome.result.status === 'invalid') {
+		return { input: classified.engineInput.input, result: outcome.result, discardContext: classified };
+	}
+	const source = Object.freeze({
+		input: classified.engineInput.input, result: freezeDeep(structuredClone(outcome.result)), discardContext: classified,
+	});
+	VERIFIED_ANALYSES.set(source, analysis);
+	return source;
+}
+
+/**
+ * The analysis context of `source` when `source` is the very object this module's flow completed,
+ * undefined for anything else. The context is frozen and reads the recorded copy of the input, so
+ * handing it out gives nothing to alter.
+ */
+export function inventoryAdvisorVerifiedAnalysisContext(source: unknown): InventoryAdvisorAnalysisContext | undefined {
+	return typeof source === 'object' && source !== null ? VERIFIED_ANALYSES.get(source) : undefined;
+}
+
+/**
+ * A private copy of `value`, frozen in depth, or undefined when `value` is not a tree of plain data
+ * (primitives, arrays and plain objects with data properties only). Only such a tree is copied
+ * faithfully: a class instance would lose its prototype and a getter would become a value, and the
+ * copy could then pass a contract the original does not.
+ */
+function frozenCopy<T>(value: T): T | undefined {
+	try { return plainTree(value, new Set()) ? freezeDeep(structuredClone(value)) : undefined; } catch { return undefined; }
+}
+
+function plainTree(value: unknown, ancestors: Set<object>): boolean {
+	if (value === null || value === undefined || typeof value === 'string' || typeof value === 'number'
+		|| typeof value === 'boolean') return true;
+	if (typeof value !== 'object' || ancestors.has(value)) return false;
+	const prototype: unknown = Object.getPrototypeOf(value);
+	if (Array.isArray(value) ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) return false;
+	if (Object.getOwnPropertySymbols(value).length !== 0) return false;
+	ancestors.add(value);
+	for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
+		if (!('value' in descriptor) || !plainTree(descriptor.value, ancestors)) return false;
+	}
+	ancestors.delete(value);
+	return true;
+}
+
+function freezeDeep<T>(value: T): T {
+	if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
+	Object.freeze(value);
+	for (const key of Object.keys(value)) freezeDeep((value as Record<string, unknown>)[key]);
+	return value;
 }
 
 /**

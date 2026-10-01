@@ -3,6 +3,7 @@ import {
 	invalidInventoryAdvisorPresentation,
 } from '../advisor/inventory-advisor-presentation';
 import type { InventoryAdvisorContextualPresentationSource } from '../advisor/inventory-advisor-presentation';
+import { inventoryAdvisorVerifiedAnalysisContext } from '../advisor/inventory-advisor-discard';
 import type { InventoryAdvisorPresentationOptions } from '../advisor/inventory-advisor-presentation-model';
 import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
 import type { InventoryObjectResultsV1 } from '../advisor/inventory-object-result';
@@ -91,8 +92,11 @@ export class InventoryAdvisorPresentationController {
 				blockedReason: this.cached.reason,
 			};
 			return {
+				// A source the advisor's own flow completed is immutable and presented as that very object,
+				// which is what lets the presentation take it without reproducing it; any other is detached.
 				...buildInventoryAdvisorViewModel(buildInventoryAdvisorPresentation(
-					clone(this.cached.source), options, clone(this.cached.objects ?? null),
+					immutableSource(this.cached.source) ? this.cached.source : clone(this.cached.source),
+					options, clone(this.cached.objects ?? null),
 				)),
 				...(this.refreshWarning === undefined ? {} : { refreshWarning: this.refreshWarning }),
 			};
@@ -184,7 +188,7 @@ export class InventoryAdvisorPresentationController {
 			return kind === 'reclassify' ? this.ports.reclassify!(parent) : this.ports.load(parent);
 		}).then((source) => {
 			if (source === null) return;
-			const safe = clone(source);
+			const safe = detached(source);
 			if (this.generation !== generation) return;
 			if (kind === 'refresh' && safe.status === 'blocked' && safe.reason === 'capture_unavailable'
 				&& this.cached?.status === 'ready') {
@@ -215,6 +219,22 @@ export class InventoryAdvisorPresentationController {
 
 function clone<T>(value: T): T {
 	return structuredClone(value);
+}
+
+/** Whether `source` is the frozen object the advisor's own flow completed: nobody can change it, so it needs no copy. */
+function immutableSource(source: unknown): boolean {
+	return inventoryAdvisorVerifiedAnalysisContext(source) !== undefined;
+}
+
+/**
+ * The workflow result as the cache keeps it, out of reach of whoever returned it. Everything is
+ * cloned except a source the advisor's own flow completed, kept as the same object: a clone of it
+ * would be equal but no longer that analysis, and every read would reproduce the whole account.
+ */
+function detached(result: InventoryAdvisorWorkflowResult): InventoryAdvisorWorkflowResult {
+	if (result.status !== 'ready' || !immutableSource(result.source)) return clone(result);
+	const { source, ...rest } = result;
+	return { ...clone(rest), source };
 }
 
 /** Recursively freezes an already-detached (cloned) value so the memo in `current()`

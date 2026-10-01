@@ -1,9 +1,8 @@
 import type { InventoryAdvisorEvidenceCapture, InventoryAdvisorEvidenceCaptureResultV1, InventoryAdvisorEvidenceV1 } from './inventory-advisor-evidence-model';
 import { sortKeepExceptionsForInput } from './inventory-advisor-contract';
 import { createInventoryAdvisorInputFromEvidence } from './inventory-advisor-evidence-contract';
-import { classifyInventoryAdvisor } from './inventory-advisor-classifier';
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
-import { applyInventoryDiscardAllowlist } from './inventory-advisor-discard';
+import { applyInventoryDiscardAllowlistVerified, classifyInventoryAdvisorVerified } from './inventory-advisor-discard';
 import type { InventoryAdvisorPolicyV1, InventoryAdvisorRulePack, KeepExceptionV1 } from './inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorContextualPresentationSource, InventoryAdvisorPresentationSource } from './inventory-advisor-presentation';
@@ -297,10 +296,13 @@ export function createInventoryAdvisorBuiltinRulesProvider(
 }
 
 /**
- * Composes the engine input, classifies it and applies the discard allowlist. The two long
- * synchronous steps (each reproduces the whole account: ~0.8 s and ~1.5 s on 1230 lines, measured
- * 29 sep 2026) are separated by `yieldNow`, so a host UI gets one paint between them; the value
- * returned is exactly the one the same steps produce back to back.
+ * Composes the engine input, classifies it and applies the discard allowlist. The two synchronous
+ * steps are separated by `yieldNow`, so a host UI gets one paint between them; the value returned
+ * is exactly the one the same steps produce back to back.
+ *
+ * The account is classified once. Both steps are the verified ones of the discard module: the
+ * source returned is a frozen copy of what was composed here, recorded there by identity, which the
+ * presentation consumes without reproducing it. Nothing composed here is frozen or read again.
  */
 export async function composeInventoryAdvisorRefresh(
 	capture: InventoryAdvisorEvidenceCaptureResultV1,
@@ -354,10 +356,9 @@ export async function composeInventoryAdvisorRefresh(
 			personalValuation: structuredClone(rules.personalValuation),
 		}),
 	};
-	const producerResult = classifyInventoryAdvisor(engineInput);
+	const classified = classifyInventoryAdvisorVerified(engineInput);
 	await yieldNow();
-	const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });
-	return { input, result, discardContext: { engineInput, producerResult } };
+	return applyInventoryDiscardAllowlistVerified(classified);
 }
 
 /** Review-only module: no timer of its own. Without an injected port the steps run back to back. */

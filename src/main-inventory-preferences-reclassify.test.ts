@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
-// Wraps the real classifier so each classification of the account is counted, never replaced.
+// Wraps the real classifier so each classification of the account is counted, never replaced. The
+// workflow reaches it through the diagnosed entry, and so would a stage that reproduced the analysis.
 vi.mock('./advisor/inventory-advisor-classifier', async (importOriginal) => {
 	const original = await importOriginal<typeof import('./advisor/inventory-advisor-classifier')>();
-	return { ...original, classifyInventoryAdvisor: vi.fn(original.classifyInventoryAdvisor) };
+	return { ...original, classifyInventoryAdvisorDiagnosed: vi.fn(original.classifyInventoryAdvisorDiagnosed) };
 });
 
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
-import { classifyInventoryAdvisor, sha256InventoryKnowledgePack } from './advisor/inventory-advisor-classifier';
+import { classifyInventoryAdvisorDiagnosed, sha256InventoryKnowledgePack } from './advisor/inventory-advisor-classifier';
 import { InventoryAdvisorWorkflow, type InventoryAdvisorRules } from './advisor/inventory-advisor-workflow';
 import { InventoryPreferencesRuntime } from './advisor/inventory-preferences-runtime';
 import { InventoryPreferencesService } from './advisor/inventory-preferences-service';
@@ -31,7 +32,7 @@ const NOW = '2026-08-14T12:00:00.000Z';
 /**
  * Runs the production editor-session closure of the core (`createInventoryPreferencesEditorSession`)
  * over the real preferences runtime, workflow and presentation controller. Only the account capture
- * and the IndexedDB store are fakes; `classifyInventoryAdvisor` is the real classifier, counted.
+ * and the IndexedDB store are fakes; `classifyInventoryAdvisorDiagnosed` is the real classifier, counted.
  */
 async function analysedAdvisor() {
 	const fixture = reviewedDiscardFixture();
@@ -53,7 +54,7 @@ async function analysedAdvisor() {
 		renderInventoryAdvisorViews: () => undefined, notifyRuntimeStarting: () => undefined,
 	};
 	await controller.refresh();
-	const classifications = vi.mocked(classifyInventoryAdvisor);
+	const classifications = vi.mocked(classifyInventoryAdvisorDiagnosed);
 	classifications.mockClear();
 	const newSession = () => TyrianCompanionCore.prototype.createInventoryPreferencesEditorSession.call(harness as never);
 	return { fixture, store, runtime, controller, classifications, newSession };

@@ -4,7 +4,11 @@ import {
 	isInventoryAdvisorResultForAnalysis,
 	type InventoryAdvisorAnalysisContext,
 } from './inventory-advisor-result';
-import { inventoryAdvisorContextualInvalidCause, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
+import {
+	inventoryAdvisorContextualInvalidCause,
+	inventoryAdvisorVerifiedAnalysisContext,
+	isInventoryDiscardAllowlistResultForInput,
+} from './inventory-advisor-discard';
 import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
 import type { InventoryDiscardAllowlistResultV1 } from './inventory-advisor-discard-model';
 import type { InventoryAdvisorInputV1, InventoryAdvisorResultV1 } from './inventory-advisor-model';
@@ -63,12 +67,17 @@ export function buildInventoryAdvisorPresentation(
 	objects: InventoryObjectResultsV1 | null = null,
 ): InventoryAdvisorPresentation {
 	try {
-		if (!isPlainData(source)) return invalidInventoryAdvisorPresentation('presentation_source_not_plain');
+		// A source the advisor's own flow completed is that very object, frozen, with its context: it is
+		// neither walked nor reproduced. Anything else, an equal copy included, is checked in full.
+		const verified = inventoryAdvisorVerifiedAnalysisContext(source);
+		if (verified === undefined && !isPlainData(source)) return invalidInventoryAdvisorPresentation('presentation_source_not_plain');
 		if (!isPlainData(options)) return invalidInventoryAdvisorPresentation('presentation_options_not_plain');
 		if (!isPlainData(objects)) return invalidInventoryAdvisorPresentation('presentation_objects_not_plain');
 		// One context for the source check and the rows below: both read the plan of this same input.
-		const analysis = createInventoryAdvisorAnalysisContext(isRecord(source) ? source.input : undefined);
-		if (!isPresentationSource(source, analysis)) return invalidInventoryAdvisorPresentation(presentationSourceCause(source));
+		const analysis = verified ?? createInventoryAdvisorAnalysisContext(isRecord(source) ? source.input : undefined);
+		if (verified === undefined && !isPresentationSource(source, analysis)) {
+			return invalidInventoryAdvisorPresentation(presentationSourceCause(source));
+		}
 		if (!isPresentationOptions(options)) return invalidInventoryAdvisorPresentation('presentation_options_shape');
 		const decisionByRef = objects !== null && objects.snapshotId === source.input.snapshot.snapshotId
 			? objects.decisions : null;

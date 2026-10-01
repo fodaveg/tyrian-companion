@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 477,
+		"catch_clause": 478,
 		"promise_catch": 40,
 		"void_expression": 102,
 		"callback_registration": 177
@@ -635,9 +635,9 @@
 				{
 					"id": "5c25473bccd5e071117d5375022a60ea26ecfcc3",
 					"kind": "catch_clause",
-					"line": 104,
+					"line": 122,
 					"column": 4,
-					"endLine": 104,
+					"endLine": 122,
 					"endColumn": 45,
 					"classification": "allowlisted",
 					"evidence": {
@@ -649,11 +649,27 @@
 					"reason": "Allowlisted catch_clause: The \"applyInventoryDiscardAllowlistDiagnosed\" owner explicitly handles \"fallback_return\" as local recovery; the allowlist stays fail-closed (the same invalid result as before) and now also names the exit with the code discard_threw. Verified recovery: \"fallback_return\" in \"applyInventoryDiscardAllowlistDiagnosed\"."
 				},
 				{
+					"id": "c4014c5e66947adfffeaf455adff5dac0c4fdb0f",
+					"kind": "catch_clause",
+					"line": 204,
+					"column": 95,
+					"endLine": 204,
+					"endColumn": 122,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "frozenCopy",
+						"justification": "The \"frozenCopy\" owner explicitly handles \"fallback_return\" as local recovery; a value that cannot be copied is not recorded as a verified analysis and takes the public route, which reproduces it and owns its own invalid causes."
+					},
+					"reason": "Allowlisted catch_clause: The \"frozenCopy\" owner explicitly handles \"fallback_return\" as local recovery; a value that cannot be copied is not recorded as a verified analysis and takes the public route, which reproduces it and owns its own invalid causes. Verified recovery: \"fallback_return\" in \"frozenCopy\"."
+				},
+				{
 					"id": "1faad8611625aa7a314c8707c4674762e162ae35",
 					"kind": "catch_clause",
-					"line": 126,
+					"line": 248,
 					"column": 4,
-					"endLine": 126,
+					"endLine": 248,
 					"endColumn": 47,
 					"classification": "allowlisted",
 					"evidence": {
@@ -667,9 +683,9 @@
 				{
 					"id": "14bb0326a6fa3d09f9044cd58c3c305eed1d4fbd",
 					"kind": "catch_clause",
-					"line": 135,
+					"line": 265,
 					"column": 4,
-					"endLine": 135,
+					"endLine": 265,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -683,9 +699,9 @@
 				{
 					"id": "9dd50a39464f1008e7fd72f452e3c5754040e04b",
 					"kind": "catch_clause",
-					"line": 172,
+					"line": 302,
 					"column": 4,
-					"endLine": 172,
+					"endLine": 302,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12184,9 +12200,9 @@
 				{
 					"id": "52a3a6f6f285240042ed39a6c7767cd8df466734",
 					"kind": "callback_registration",
-					"line": 182,
+					"line": 186,
 					"column": 19,
-					"endLine": 185,
+					"endLine": 189,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -12199,11 +12215,11 @@
 					"reason": "Allowlisted callback_registration: The \"runFlight\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"runFlight\"."
 				},
 				{
-					"id": "76c5b09a2a2e6f97166a24af32085b10eebccfec",
+					"id": "9d66468611bda69ab948aa4fa55adc9c8c73db22",
 					"kind": "callback_registration",
-					"line": 182,
+					"line": 186,
 					"column": 19,
-					"endLine": 201,
+					"endLine": 205,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -12216,11 +12232,11 @@
 					"reason": "Allowlisted callback_registration: The \"runFlight\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"runFlight\"."
 				},
 				{
-					"id": "7a034e4590cf1042f39b259332ac2e89409497ab",
+					"id": "25d5c525f30a545316e53071347cd02f12cae826",
 					"kind": "promise_catch",
-					"line": 182,
+					"line": 186,
 					"column": 19,
-					"endLine": 208,
+					"endLine": 212,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -12233,11 +12249,11 @@
 					"reason": "Allowlisted promise_catch: The \"runFlight\" owner explicitly handles \"intentional_noop\" as local recovery; the workflow span already recorded the failure, and the rejection becomes the failed state with the safe code refresh_rejected:<code> that the view shows. Verified recovery: \"intentional_noop\" in \"runFlight\"."
 				},
 				{
-					"id": "596259e0c8fa4da988b9893d90edc09951231e85",
+					"id": "4fb2ac3d30db147ba5446409cef464aced6334e0",
 					"kind": "callback_registration",
-					"line": 182,
+					"line": 186,
 					"column": 19,
-					"endLine": 210,
+					"endLine": 214,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
