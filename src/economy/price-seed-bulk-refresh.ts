@@ -60,9 +60,13 @@ export interface PriceSeedBulkRefreshOutcome {
  * always did.
  *
  * - `missing`: only the items with NO seed in the cache (and outside their `no_seed` cooldown). A
- *   copy past its TTL is left as it is and counted in `staleSkipped`.
+ *   copy past its TTL is left as it is and counted in `staleSkipped`. `budget` is what an earlier
+ *   `missing` phase of the SAME action left of the cap; without it the phase has the whole cap.
  * - `stale`: only the copies past their TTL, at most `budget` of them, and never more than the
  *   per-run cap. An item with no seed is left for the next action's `missing` phase.
+ *
+ * `allowed` is asked before every item: once it answers false the run requests nothing more. The
+ * caller uses it for the opt-in the person can switch off while a run is under way.
  */
 export type PriceSeedBulkRefreshPhase =
 	| { scope: 'missing'; budget?: number; allowed?: () => boolean }
@@ -113,7 +117,8 @@ export class PriceSeedBulkRefreshService {
 	/**
 	 * Serial by construction: the loop `await`s every step before starting the next one, so no two
 	 * `fetchSeed` calls are ever in flight together. One item's failure is recorded and the loop
-	 * moves on to the next id; it never stops early except at the cap.
+	 * moves on to the next id; it stops early only at the cap, on `dispose`, or when the phase's
+	 * `allowed` answers false.
 	 */
 	async run(
 		itemIds: readonly number[],
@@ -138,12 +143,13 @@ export class PriceSeedBulkRefreshService {
 		if (this.disposed) return outcome;
 		const stores = await this.ensureStores();
 		if (stores === null || this.disposed) return outcome;
-		// The `stale` phase spends what the `missing` phase of the same action left, never more than the cap.
-		const cap = phase?.scope === 'stale'
-			? Math.min(this.maxItemsPerRun, Math.max(0, Math.floor(phase.budget)))
-			: this.maxItemsPerRun;
+		// A phase with a budget spends what the earlier phases of the same action left, never more than the cap.
+		const cap = phase?.budget === undefined
+			? this.maxItemsPerRun
+			: Math.min(this.maxItemsPerRun, Math.max(0, Math.floor(phase.budget)));
 		for (const itemId of itemIds) {
 			if (this.disposed || outcome.attempted >= cap) break;
+			if (phase?.allowed !== undefined && !phase.allowed()) break;
 			await this.refreshOne(stores, itemId, outcome, parent, phase);
 		}
 		if (phase?.scope === 'missing') outcome.deferredBudget = Math.max(0, cap - outcome.attempted);

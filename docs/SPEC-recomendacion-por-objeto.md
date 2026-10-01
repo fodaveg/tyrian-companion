@@ -601,13 +601,23 @@ las pilas pequeñas. Cambia `SETTINGS_SCHEMA_VERSION` (hoy 12, `src/core/setting
    que no tienen ninguna semilla en caché (y están fuera del reintento espaciado de «sin semilla»):
    un objeto nuevo sigue sin salir en `review` por falta de semilla en la misma acción que lo siembra.
    Lo que cambia es cuándo se refresca una copia que ya existe: si la semilla tiene más de 24 horas,
-   el análisis usa esa copia y su refresco empieza después de entregar y pintar el resultado, sin
-   que la acción lo espere; esos precios entran en el análisis siguiente, y al terminar no se
-   recalcula ni el análisis ni el veredicto de Venta. El tope de 25 es por acción visible y suma las
-   dos fases: primero las que faltan y, con el cupo que sobre, las vencidas. Mientras un refresco
-   diferido está pendiente o en curso, una acción nueva no deja otro; sus semillas que faltan
-   esperan su turno en la misma cola, y nunca hay dos peticiones en vuelo. «Analizar» sigue sin
-   descargar nada.
+   el análisis usa esa copia y su refresco empieza cuando la acción entera ha terminado, sin que la
+   acción lo espere: en Venta, después de entregar y pintar el resultado; en «Sincronizar
+   inventario», después de escribir las notas, no entre sus análisis. Esos precios entran en el
+   análisis siguiente, y al terminar no se recalcula ni el análisis ni el veredicto de Venta. El
+   tope de 25 es por acción visible y suma las dos fases: primero las que faltan y, con el cupo que
+   sobre, las vencidas; si la sincronización analiza dos veces (la lectura de recuperación de las
+   notas), el segundo análisis gasta lo que dejó el primero y no estrena cupo. El refresco diferido
+   solo lo arranca la acción que lo dejó: no hay ninguna petición sin una acción previa. No arranca
+   si el histórico está desactivado en ese momento, se detiene en el ítem siguiente si se desactiva
+   a mitad, y el que aún no había arrancado se descarta al desactivar el histórico, al descargar el
+   plugin o cuando el refresco del asesor de esa acción se rechaza por modo consulta. Solo hay uno
+   a la vez: una acción que llega con uno pendiente o en curso no deja otro, y de dos acciones que
+   se solapan solo conserva el suyo la primera que lo deja; las semillas que faltan esperan su
+   turno en la misma cola, y nunca hay dos peticiones en vuelo. El refresco diferido de una lista
+   anterior no reescribe la cobertura de la cola ni repinta si una sincronización más nueva ya ha
+   empezado su siembra. La vista previa manual de las notas, si lanza su propio análisis, pide solo
+   las que faltan y no deja refresco diferido. «Analizar» sigue sin descargar nada.
 5. **Decidido el 11 sep 2026: ajuste nuevo, 10 oros (100 000 cobre).** No se reutiliza
    `valuableLootThresholdCopper`.
 

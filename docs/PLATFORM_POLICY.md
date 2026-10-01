@@ -96,14 +96,28 @@ siguiente; ninguno detiene el resto.
 
 Desde el 1 de octubre de 2026 la acción solo espera a los ítems que no tienen ninguna semilla en
 caché: esos se piden antes de calcular el veredicto, como hasta ahora. Los ítems cuya copia tiene
-más de 24 horas se piden después de que la acción haya entregado y pintado su resultado, con el cupo
-que las anteriores hayan dejado del mismo tope de 25. Por tanto puede haber peticiones a datawars2 en
-curso con la acción ya terminada en pantalla: siguen siendo consecuencia de esa acción explícita,
-siguen yendo en serie por la misma cola y no hay ninguna sin una acción previa de la persona. Lo que
-descargan lo lee el análisis siguiente; no se relanza ningún análisis al terminar. Si ya hay un
-refresco diferido pendiente o en curso, una acción nueva no añade otro. Al descargar el plugin, el
-refresco diferido se corta en el ítem siguiente y la respuesta de una petición ya en vuelo se
-descarta sin escribirse; la petición en vuelo no se puede cancelar.
+más de 24 horas se piden cuando la acción entera ha terminado, con el cupo que las anteriores hayan
+dejado del mismo tope de 25: en Venta, después de entregar y pintar el resultado de «Actualizar»; en
+«Sincronizar inventario», después de escribir las notas y no entre sus análisis. El tope de 25 es de
+la acción: si una sincronización analiza dos veces (la lectura de recuperación de las notas), el
+segundo análisis gasta lo que dejó el primero y no estrena cupo, y las vencidas salen de lo que
+quede. Por tanto puede haber peticiones a datawars2 en curso con la acción ya terminada en pantalla:
+siguen siendo consecuencia de esa acción explícita, siguen yendo en serie por la misma cola y no hay
+ninguna sin una acción previa de la persona, porque el refresco diferido solo lo arranca la acción
+que lo dejó, al terminar: «Analizar», un comando o un refresco automático no arrancan el de otra
+acción. El permiso se vuelve a comprobar: el refresco diferido no arranca si el histórico está
+desactivado en ese momento, se detiene en el ítem siguiente si se desactiva a mitad, y el que aún no
+había arrancado se descarta al desactivar el histórico (volver a activarlo no lo recupera) o cuando
+el refresco del asesor de esa acción se rechaza por estar el dispositivo en modo consulta. Lo que
+descargan lo lee el análisis siguiente; no se relanza ningún análisis al terminar. Solo hay un
+refresco diferido a la vez: una acción que llega con uno pendiente o en curso no añade otro, y de
+dos acciones que se solapan solo conserva el suyo la primera que lo deja. Cuando una sincronización
+más nueva ya ha empezado su siembra, el refresco diferido de una lista anterior no reescribe la
+línea de progreso de la cola ni repinta. La vista previa manual de las notas, si tiene que lanzar su
+propio análisis, pide solo las semillas que faltan y no deja refresco diferido. Al descargar el
+plugin, el refresco diferido pendiente se descarta, el que está en curso se corta en el ítem
+siguiente y la respuesta de una petición ya en vuelo se descarta sin escribirse; la petición en
+vuelo no se puede cancelar.
 
 Corregido el 24 de septiembre de 2026 (H18.17, auditoría §3.E): una respuesta «sin semilla» se
 recuerda aparte, en `tyrian-companion-price-seed-no-seed-cache`, con el mismo espaciado de 24 horas

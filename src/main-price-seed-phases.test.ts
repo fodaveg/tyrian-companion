@@ -18,10 +18,11 @@ const VAULT = 'seed-phases-test';
 
 /**
  * 1 oct 2026: an explicit action waits only for the seeds that are MISSING. A copy past its 24 h is
- * what the analysis reads, and its refresh starts after the result is delivered and painted.
+ * what the analysis reads, and its refresh starts once the action that left it has ended.
  *
- * Every test runs the real core methods (`refreshSale`, `refreshInventoryAdvisor`, the sync's own
- * seed pass) over the real `PriceSeedBulkRefreshService` and a real IndexedDB; only the download is
+ * Every test runs the real core methods (`refreshSale`, `runInventoryVaultSync` and the analyses it
+ * runs, the sync's own seed pass) over the real `PriceSeedBulkRefreshService` and a real IndexedDB;
+ * the one-click controller is replaced by the steps it takes, and only the download is
  * a probe whose answers the test releases by hand, so nothing here waits on a clock.
  */
 describe('price seed phases through the core: missing seeds before the result, stale copies after it', () => {
@@ -136,6 +137,11 @@ describe('price seed phases through the core: missing seeds before the result, s
 			refreshSale: () => core.refreshSale.call(harness),
 			/** One "Sincronizar inventario", start to end, whose derived watch list is `itemIds`. */
 			syncRefresh: (itemIds: readonly number[]) => sync([itemIds]),
+			/** The analysis the manual preview asks for, with no `runInventoryVaultSync` around it. */
+			recoveryReadAlone: async (itemIds: readonly number[]): Promise<void> => {
+				syncLists.splice(0, syncLists.length, itemIds);
+				await core.inventoryAnalysisForNotes.call(harness).catch(() => undefined);
+			},
 			/** Whatever is still queued in the service has run once this resolves. */
 			drain: async () => { await harness.priceSeedDeferredPass; await service.run([]); },
 		};
@@ -447,6 +453,17 @@ describe('price seed phases through the core: missing seeds before the result, s
 			probe.open();
 			await newer;
 			expect(harness.priceSeedQueueCoverage).toEqual({ total: 4, seeded: 4, noData: 0, pending: 0 });
+		});
+
+		it('a sync\'s analysis outside the sync action (the manual preview\'s recovery read): the missing seed is requested and no stale copy is left waiting', async () => {
+			const { harness, probe, recoveryReadAlone, drain } = await setup([1, 2, 3]);
+			probe.open();
+
+			await recoveryReadAlone([1, 2, 3, 4]);
+			await drain();
+
+			expect(probe.calls).toEqual([4]);
+			expect(harness.priceSeedDeferredRequest).toBeNull();
 		});
 
 		it('the real shutdownRuntime while the stale copies wait: the slot is emptied and the action\'s end starts nothing', async () => {
