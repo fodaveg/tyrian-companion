@@ -9,7 +9,7 @@ import type { LocalDebugStoragePort } from '../core/local-debug-writer';
 import type { IndexedDbPriceHistoryStore } from '../economy/price-history-store';
 import type { IndexedDbPriceSeedCacheStore, IndexedDbPriceSeedNoSeedStore } from '../economy/price-seed-cache-store';
 import type { HalloweenBackfillVault } from '../halloween/halloween-note-backfill';
-import type { InventoryVaultPort } from '../inventory/inventory-vault-sync';
+import type { InventoryVaultPort, InventoryVaultTrashResult } from '../inventory/inventory-vault-sync';
 import type { PilotMetricsExportVault } from '../sessions/pilot-metrics-export';
 import type { SessionHistoryVault } from '../sessions/session-history';
 import type { SessionNoteVault } from '../sessions/session-note-writer';
@@ -27,6 +27,9 @@ export interface TyrianVaultFile {
 	readonly path: string;
 	readonly mtime?: number;
 }
+
+/** The answer of `TyrianVault.trashIfUnchanged`; each case is documented on `InventoryVaultTrashResult`. */
+export type TyrianVaultTrashResult = InventoryVaultTrashResult;
 
 /** One `vault.on('create' | 'modify' | 'delete' | 'rename')` event, reduced to paths. */
 export interface TyrianVaultChange {
@@ -54,8 +57,16 @@ export interface TyrianVault {
 	createFolder(path: string): Promise<void>;
 	/** Every writing port; also non-markdown: pilot-metrics-export.ts:137-140 (.json/.csv), session-history.ts:419 (.csv), managed-assets.ts:375 (.base). */
 	create(path: string, content: string): Promise<TyrianVaultFile>;
-	/** inventory-vault-sync.ts:845, managed-assets.ts:508 (via `fileManager.trashFile` today). */
+	/** managed-assets.ts:553 (via `fileManager.trashFile` today). */
 	trashFile(file: TyrianVaultFile): Promise<void>;
+	/**
+	 * inventory-vault-sync.ts (a position note whose position left the account). Trashes `file`
+	 * only while its text, with line endings normalized to LF, still equals `expectedContent`.
+	 * What each answer guarantees is on `TyrianVaultTrashResult`: `guarantee: 'atomic'` belongs
+	 * only to a host that compares and removes as one operation, `'checked'` to one that reads
+	 * the note again right before trashing it, and `'unsupported'` to one that can do neither.
+	 */
+	trashIfUnchanged(file: TyrianVaultFile, expectedContent: string): Promise<TyrianVaultTrashResult>;
 	/** main.ts:959-962 (Halloween backfill refresh, filtered to `<outputFolder>/sessions/*.md`). */
 	onChange(root: string, listener: (change: TyrianVaultChange) => void): TyrianDisposer;
 	/** core/settings.ts:241/608 (forbidden output prefix), local-debug-contract.ts:122, main.ts:2186. */

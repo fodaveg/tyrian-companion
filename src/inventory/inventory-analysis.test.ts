@@ -885,5 +885,9 @@ class MemoryVault implements InventoryVaultPort {
 		this.contents.set(file.path, next);
 		return next;
 	}
-	async trashFile(file: InventoryVaultFile): Promise<void> { this.contents.delete(file.path); }
+	async trashIfUnchanged(file: InventoryVaultFile, expectedContent: string): ReturnType<InventoryVaultPort['trashIfUnchanged']> {
+		if (this.contents.get(file.path) !== expectedContent) return { status: 'conflict' };
+		this.contents.delete(file.path);
+		return { status: 'trashed', guarantee: 'atomic' };
+	}
 }

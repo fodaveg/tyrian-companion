@@ -489,7 +489,7 @@ class EmptyInventoryVault implements InventoryVaultPort {
 	async createFolder(_path: string): Promise<void> { throw new Error('write_not_expected'); }
 	async create(_path: string, _content: string): Promise<InventoryVaultFile> { throw new Error('write_not_expected'); }
 	async process(_file: InventoryVaultFile, _update: (content: string) => string): Promise<string> { throw new Error('write_not_expected'); }
-	async trashFile(_file: InventoryVaultFile): Promise<void> { throw new Error('write_not_expected'); }
+	async trashIfUnchanged(_file: InventoryVaultFile, _expectedContent: string): ReturnType<InventoryVaultPort['trashIfUnchanged']> { throw new Error('write_not_expected'); }
 }
 
 class MemoryBaseVault implements ManagedAssetsVault {

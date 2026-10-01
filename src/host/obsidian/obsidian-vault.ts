@@ -43,6 +43,22 @@ export function createObsidianVault(plugin: Plugin): TyrianVault {
 		createFolder: async (path) => { await vault().createFolder(path); },
 		create: async (path, content) => fileEntry(await vault().create(path, content)),
 		trashFile: async (file) => { await plugin.app.fileManager.trashFile(requireFile(file.path)); },
+		// Obsidian has no conditional trash (`FileManager.trashFile`, `Vault.trash` and the adapter's
+		// `trashSystem`/`trashLocal` take a path and nothing else, and `Vault.process` can only write
+		// text back), so this is the `checked` guarantee, never the `atomic` one: the note is read
+		// again and trashed as two steps. Nothing else is awaited between that read and the trash
+		// call; an edit that reaches the vault in that gap still goes to the trash with the note.
+		trashIfUnchanged: async (file, expectedContent) => {
+			const target = vault().getAbstractFileByPath(file.path);
+			if (!(target instanceof TFile)) return { status: 'conflict' };
+			// A read that rejects is a storage failure and reaches the caller as one.
+			const current = await vault().read(target);
+			if (current.replace(/\r\n?/gu, '\n') !== expectedContent) return { status: 'conflict' };
+			const live = vault().getAbstractFileByPath(file.path);
+			if (!(live instanceof TFile)) return { status: 'conflict' };
+			await plugin.app.fileManager.trashFile(live);
+			return { status: 'trashed', guarantee: 'checked' };
+		},
 		onChange: (root, listener) => watchVault(plugin, root, listener),
 		get configDir() { return vault().configDir; },
 		canonicalIdentity: () => adapter().getBasePath?.() ?? `${vault().getName()}\0${vault().configDir}`,

@@ -25,6 +25,7 @@ export type {
 	TyrianVaultChange,
 	TyrianVaultFile,
 	TyrianVaultPortConformance,
+	TyrianVaultTrashResult,
 } from './tyrian-host-storage';
 
 /**

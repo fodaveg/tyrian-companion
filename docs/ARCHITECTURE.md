@@ -654,8 +654,10 @@ gestionado y no cuenta como cambio la fecha de la cotización ni la vigencia de 
 que salen del instante de la captura: sin cambio de datos, 0 escrituras. Apply relee cada nota que va
 a escribir y usa `Vault.process` como CAS por nota. Una nota ajena, duplicada, futura, editada dentro
 de su bloque gestionado o cambiada entre preview y apply es un conflicto de esa nota: no se escribe y
-se cuenta, pero no bloquea el resto del plan. Una posición ausente se **borra** (`vault.trashFile`,
-paso `deactivate`), no se conserva con `tc_active:false` (H14.21: 24 notas así en una bóveda real, sin
+se cuenta, pero no bloquea el resto del plan. Una posición ausente se **borra** (`vault.trashIfUnchanged`,
+paso `deactivate`: el host solo manda la nota a la papelera si sigue diciendo lo que vio el preview; en
+Obsidian la relee justo antes, garantía `checked`, no atómica; una nota editada mientras tanto, o un
+host que responde `unsupported`, es un conflicto y la nota se conserva), no se conserva con `tc_active:false` (H14.21: 24 notas así en una bóveda real, sin
 volver a converger nunca solas), salvo que la nota lleve texto o propiedades del usuario: entonces se
 reescribe inactiva con ese texto intacto. Ninguna nota de posición lleva `tc_captured_at`: entraba en
 el hash del marker y reescribía las 1.402 en cada captura aunque el inventario no cambiara; la Base lee

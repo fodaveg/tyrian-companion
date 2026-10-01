@@ -45,6 +45,32 @@ type InventoryTradingPostAccess = AccountSignalsV1['tradingPostAccess'];
 
 export interface InventoryVaultFile { path: string }
 
+/**
+ * What `InventoryVaultPort.trashIfUnchanged` did with one note.
+ *
+ * - `trashed` + `guarantee: 'atomic'`: the note is in the trash, and the host compared its text
+ *   and removed it as ONE operation. No edit can have landed in between, so the text that went to
+ *   the trash is exactly the expected one.
+ * - `trashed` + `guarantee: 'checked'`: comprobado justo antes, no atómico. The note is in the
+ *   trash, and the host read it again and found the expected text immediately before trashing it,
+ *   as two separate steps. The window that remains is the time between that read and the trash
+ *   call: an edit that reaches the vault inside it goes to the trash with the note (recoverable
+ *   from the trash, but gone from the vault). It is far narrower than the writer's own pre-write
+ *   check, which sits a whole plan of writes earlier, but it is not closed.
+ * - `conflict`: the note is no longer there, is not a file, or no longer reads as expected.
+ *   Nothing was removed.
+ * - `unsupported`: this host cannot check the note's text right before trashing it at all.
+ *   Nothing was removed.
+ *
+ * A host answers `atomic` only when it really compares and removes in one operation, and never
+ * `trashed` without having seen the expected text. The writer counts both guarantees as a
+ * deactivated note, and `conflict` and `unsupported` as a conflict with the note kept.
+ */
+export type InventoryVaultTrashResult =
+	| { status: 'trashed'; guarantee: 'checked' | 'atomic' }
+	| { status: 'conflict' }
+	| { status: 'unsupported' };
+
 /** Vault-only port. It deliberately exposes neither filesystem paths nor adapter writes. */
 export interface InventoryVaultPort {
 	file(path: string): InventoryVaultFile | null;
@@ -53,7 +79,12 @@ export interface InventoryVaultPort {
 	createFolder(path: string): Promise<void>;
 	create(path: string, content: string): Promise<InventoryVaultFile>;
 	process(file: InventoryVaultFile, update: (content: string) => string): Promise<string>;
-	trashFile(file: InventoryVaultFile): Promise<void>;
+	/**
+	 * Sends `file` to the trash only while its text, with line endings normalized to LF
+	 * (`\r\n` and `\r` read as `\n`), still equals `expectedContent`, which is already LF. See
+	 * `InventoryVaultTrashResult` for what each answer guarantees. A storage rejection throws.
+	 */
+	trashIfUnchanged(file: InventoryVaultFile, expectedContent: string): Promise<InventoryVaultTrashResult>;
 }
 
 export interface InventoryVaultPosition {
@@ -866,8 +897,11 @@ export class InventoryVaultSyncService {
 					const file = this.vault.file(entry.path);
 					if (!file || entry.before === null) conflicts += 1;
 					else {
-						await this.vault.trashFile(file);
-						deactivated += 1;
+						// The pre-write check above ran before every other note of this plan was written:
+						// a note edited since then is kept, and so is one the host cannot check.
+						const trash = await this.vault.trashIfUnchanged(file, entry.before);
+						if (trash.status === 'trashed') deactivated += 1;
+						else conflicts += 1;
 					}
 					completed += 1;
 					onStep?.(completed, total);
