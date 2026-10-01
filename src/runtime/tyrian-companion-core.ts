@@ -807,9 +807,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			() => this.settings.apiKeySecret,
 		);
 		const transport = new HostRequestTransport(host.http, {
-			// This is the transport every datawars2 seed download rides: one attempt each, so a
-			// rate-limited download never sleeps in the one queue they all share.
-			operationPolicies: { ...GW2_CHARACTER_OPERATION_POLICIES, ...PRICE_SEED_OPERATION_POLICIES },
+			operationPolicies: GW2_CHARACTER_OPERATION_POLICIES,
+			diagnostics: this.localDebugActions ?? undefined,
+		});
+		// The transport every datawars2 seed download rides, and nothing else: one attempt each, so
+		// a rate-limited download never sleeps in the one queue they all share.
+		const priceSeedTransport = new HostRequestTransport(host.http, {
+			operationPolicies: PRICE_SEED_OPERATION_POLICIES,
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		const client = new GuildWars2Client(transport, apiKeyProvider);
@@ -953,7 +957,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			capturePersistence: this.persistenceDiagnostics('price_history', 'price_history_capture'),
 			gateway: publicClient,
 			rateLimit: rateLimitCoordinator,
-			transport,
+			transport: priceSeedTransport,
 			// Nobody is waiting on the sell rule's seed: it rides a compaction.
 			serializeSeedDownload: priceSeedDownloads.runner('background'),
 			onStateChange: () => this.renderInventoryAdvisorViews(),
@@ -979,7 +983,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.priceHistoryPanelSeed = new PriceHistoryPanelSeedService({
 			priceHistory: host.priceHistory,
 			vaultId,
-			transport,
+			transport: priceSeedTransport,
 			now: () => Date.now(),
 			// Both callers, the panel and a note block, are somebody looking at the chart.
 			serialize: priceSeedDownloads.runner('interactive'),
@@ -999,7 +1003,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
 				const calendar = loaded.status === 'available' ? loaded.bundle.festivalCalendar : null;
 				return await fetchPriceSeed(itemId, {
-					transport, now: () => Date.now(), actionContext, maxDays: sellOrWaitSeedMaxDays(calendar, itemId),
+					transport: priceSeedTransport, now: () => Date.now(), actionContext, maxDays: sellOrWaitSeedMaxDays(calendar, itemId),
 				});
 			},
 			// A pass item gives way to a panel or note block load that arrives before its turn.
