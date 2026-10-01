@@ -102,8 +102,7 @@ export function createReservationPlan(input: unknown): ReservationPlanResult {
 		accountId: balance.accountId,
 		snapshotId: balance.snapshotId,
 		capturedAt: balance.capturedAt,
-		coverage: assets.some((asset) => asset.coverage === 'unknown') ? 'blocked'
-			: assets.some((asset) => asset.coverage === 'limited') ? 'limited' : 'complete',
+		coverage: planCoverage(assets),
 		satisfaction: assets.some((asset) => asset.shortfall > 0) ? 'shortfall' : 'met',
 		assets,
 		warnings: warnings.sort(compareCanonical),
@@ -215,8 +214,7 @@ export function isReservationPlan(value: unknown): value is ReservationPlan {
 		!value.warnings.every(isWarning)) return false;
 	if (!sortedAssets(value.assets) || canonical(value.warnings) !== canonical([...value.warnings].sort(compareCanonical)) ||
 		!unique(value.warnings.map((warning) => `${warning.code}:${warning.key}`))) return false;
-	const expectedCoverage = value.assets.some((asset) => asset.coverage === 'unknown') ? 'blocked'
-		: value.assets.some((asset) => asset.coverage === 'limited') ? 'limited' : 'complete';
+	const expectedCoverage = planCoverage(value.assets);
 	const expectedSatisfaction = value.assets.some((asset) => asset.shortfall > 0) ? 'shortfall' : 'met';
 	return value.coverage === expectedCoverage && value.satisfaction === expectedSatisfaction &&
 		canonical(value.warnings) === canonical(expectedWarnings(value.assets));
@@ -236,6 +234,19 @@ export function isSessionValuationReservationOverlay(
 		lines.length === valuation.lines.length && lines.every((line, index) =>
 			line.itemId === valuation.lines[index]!.itemId && line.gainedQuantity === valuation.lines[index]!.quantity,
 		);
+}
+
+/**
+ * The coverage of a plan is that of what it plans over: every item, and the currencies some goal
+ * asks for. A currency no goal asks for takes no part in any reservation, so not knowing its balance
+ * says nothing about the plan; the asset keeps its own coverage, its warning and its null allowances.
+ * This is the Inventory Advisor capture with coins to collect: it leaves the wallet out and still
+ * reads the Trading Post delivery box, so those coins are a currency of unknown balance in its plan.
+ */
+function planCoverage(assets: ReservationPlanAsset[]): ReservationPlan['coverage'] {
+	const planned = assets.filter((asset) => asset.namespace !== 'currency' || asset.allocations.length > 0);
+	return planned.some((asset) => asset.coverage === 'unknown') ? 'blocked'
+		: planned.some((asset) => asset.coverage === 'limited') ? 'limited' : 'complete';
 }
 
 function allowances(balance: ReservationAssetBalance, unprotected: number, allocations: ReservationAllocation[]): ReservationAllowances {
