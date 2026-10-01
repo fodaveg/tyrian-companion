@@ -31,6 +31,19 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(isInventoryAdvisorResultForInput(result, input.input)).toBe(true);
 	});
 
+	it('lists a worthless-to-the-vendor unit whose listing nets 1 copper instead of selling it to a 2 copper bid that nets 0', () => {
+		const input = fixture();
+		input.input.snapshot.holdings[0] = { ...input.input.snapshot.holdings[0]!, quantity: 1 };
+		input.input.snapshot.availableByItem = { '10': 1 };
+		input.input.snapshot.ownedByItem = { '10': 1 };
+		input.input.catalog.items['10'] = { ...input.input.catalog.items['10']!, vendorValue: 0 };
+		input.input.prices = { ...input.input.prices, items: [{ itemId: 10, whitelisted: true, bid: { unitCopper: 2, quantity: 1 }, ask: { unitCopper: 3, quantity: 1 } }] };
+		const result = classifyInventoryAdvisor(input);
+		expect(result.status).toBe('ready');
+		expect(result.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'list', quantity: 1 });
+		expect(isInventoryAdvisorResultForInput(result, input.input)).toBe(true);
+	});
+
 	it('keeps scoped inventory recommendations visible when optional account stores are skipped', () => {
 		const stable = scopedInventoryFixture('stable');
 		const stableResult = classifyInventoryAdvisor(stable);
