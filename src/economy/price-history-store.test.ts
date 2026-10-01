@@ -63,6 +63,82 @@ describe('IndexedDbPriceHistoryStore', () => {
 		store.close();
 	});
 
+	describe('watch list reasons (seed, observed, derived)', () => {
+		const ids = async (store: IndexedDbPriceHistoryStore): Promise<number[]> =>
+			(await store.readWatchList('vault')).map((entry) => entry.itemId);
+
+		it('keeps an item observed in session when it enters and then leaves the derived selection', async () => {
+			const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('reasons-observed-first'));
+			await store.observeItems('vault', [777], 1);
+			await store.applyDerivedWatchList('vault', [777], 2);
+			await store.applyDerivedWatchList('vault', [], 3);
+			expect(await ids(store)).toContain(777);
+			store.close();
+		});
+
+		it('keeps an item derived first and observed in session afterwards when it leaves the derived selection', async () => {
+			const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('reasons-derived-first'));
+			await store.applyDerivedWatchList('vault', [777], 1);
+			await store.observeItems('vault', [777], 2);
+			await store.applyDerivedWatchList('vault', [], 3);
+			expect(await ids(store)).toContain(777);
+			store.close();
+		});
+
+		it('control: deletes an item that was only derived once it leaves the derived selection', async () => {
+			const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('reasons-derived-only'));
+			await store.applyDerivedWatchList('vault', [777, 778], 1);
+			await store.applyDerivedWatchList('vault', [778], 2);
+			expect(await ids(store)).not.toContain(777);
+			expect(await ids(store)).toContain(778);
+			store.close();
+		});
+
+		it('never deletes a seed, neither by a capital drop nor by the 400 cap', async () => {
+			const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('reasons-seed'));
+			await store.ensureSeedWatchList('vault', 1);
+			await store.applyDerivedWatchList('vault', [PRICE_HISTORY_SEED_ITEM_IDS[0]!, 5], 2);
+			await store.applyDerivedWatchList('vault', [], 3);
+			let watch = await store.readWatchList('vault');
+			expect(PRICE_HISTORY_SEED_ITEM_IDS.every((id) => watch.some((entry) => entry.itemId === id && entry.seed))).toBe(true);
+			await store.observeItems('vault', Array.from({ length: 600 }, (_, index) => index + 1), 4);
+			watch = await store.readWatchList('vault');
+			expect(watch).toHaveLength(400);
+			expect(PRICE_HISTORY_SEED_ITEM_IDS.every((id) => watch.some((entry) => entry.itemId === id && entry.seed))).toBe(true);
+			store.close();
+		});
+
+		it('evicts the oldest non-seed rows beyond 400 and keeps the newer ones', async () => {
+			const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('reasons-cap'));
+			await store.ensureSeedWatchList('vault', 1);
+			await store.observeItems('vault', [1, 2, 3], 10);
+			await store.observeItems('vault', Array.from({ length: 400 }, (_, index) => 1_000 + index), 20);
+			const watch = await ids(store);
+			expect(watch).toHaveLength(400);
+			for (const old of [1, 2, 3]) expect(watch).not.toContain(old);
+			expect(watch).toContain(1_000);
+			store.close();
+		});
+
+		it('reads a pre-reasons row with derived true as also observed, so it survives leaving the derived selection', async () => {
+			const factory = new IDBFactory();
+			const name = databaseName('reasons-migration');
+			(await IndexedDbPriceHistoryStore.open(factory, name)).close();
+			const raw = await openRaw(factory, name, 1);
+			const writing = raw.transaction([PRICE_HISTORY_WATCH_STORE], 'readwrite');
+			writing.objectStore(PRICE_HISTORY_WATCH_STORE).put({
+				version: 1, vaultId: 'vault', itemId: 4_242, seed: false, derived: true, lastObservedAtMs: 5,
+			});
+			await transactionDone(writing);
+			raw.close();
+			const store = await IndexedDbPriceHistoryStore.open(factory, name);
+			expect(await ids(store)).toContain(4_242);
+			await store.applyDerivedWatchList('vault', [], 6);
+			expect(await ids(store)).toContain(4_242);
+			store.close();
+		});
+	});
+
 	it('allows one writer per vault and slot, then returns the committed snapshot idempotently', async () => {
 		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('lease'));
 		const first = await store.claimSlot('vault-a', 900_000, 'window-a', 1_000);

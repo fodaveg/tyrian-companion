@@ -146,6 +146,7 @@ export class IndexedDbPriceHistoryStore {
 							// sync gave it (M2): observing an item this session never erases the separate
 							// reason a capital-threshold sync had for watching it.
 							derived: current?.derived ?? false,
+							observed: true,
 							lastObservedAtMs: nowMs,
 						});
 					}
@@ -167,8 +168,9 @@ export class IndexedDbPriceHistoryStore {
 	 * Replaces the "derived from inventory capital" slice of the watch list (SPEC-recomendacion-
 	 * por-objeto.md, decision 3, M2). `itemIds` is already ranked and capped by
 	 * `selectDerivedWatchListItemIds`; this only ever removes a row IT once added for that reason
-	 * (`derived: true`) and that fell out of the new set, so a fixed seed and whatever the ordinary
-	 * session-observed watch (`observeItems`) already holds are never touched by a capital drop.
+	 * (`derived: true`) and that fell out of the new set: it clears the `derived` reason and deletes
+	 * the row only when no `seed` or `observed` reason is left, so a fixed seed and whatever the
+	 * ordinary session-observed watch (`observeItems`) holds are never lost to a capital drop.
 	 */
 	applyDerivedWatchList(vaultId: string, itemIds: readonly number[], nowMs: number): Promise<void> {
 		const desired = new Set(itemIds.filter(positiveInteger));
@@ -181,7 +183,10 @@ export class IndexedDbPriceHistoryStore {
 					const existing = request.result.map(parseWatchItem);
 					const byId = new Map(existing.map((entry) => [entry.itemId, entry]));
 					for (const entry of existing) {
-						if (entry.derived && !entry.seed && !desired.has(entry.itemId)) byId.delete(entry.itemId);
+						if (!entry.derived || desired.has(entry.itemId)) continue;
+						// Only the derived reason goes; the row is deleted when no other reason is left.
+						if (entry.seed || entry.observed) byId.set(entry.itemId, { ...entry, derived: false });
+						else byId.delete(entry.itemId);
 					}
 					for (const itemId of desired) {
 						const current = byId.get(itemId);
@@ -189,6 +194,7 @@ export class IndexedDbPriceHistoryStore {
 							version: 1, vaultId, itemId,
 							seed: PRICE_HISTORY_SEED_ITEM_IDS.includes(itemId),
 							derived: true,
+							observed: current?.observed ?? false,
 							lastObservedAtMs: current?.lastObservedAtMs ?? nowMs,
 						});
 					}
@@ -621,10 +627,20 @@ function parseDaily(value: unknown): PriceHistoryDailyV1 {
 function parseWatchItem(value: unknown): PriceHistoryWatchItemV1 {
 	if (!record(value) || value.version !== 1 || !text(value.vaultId) || !positiveInteger(value.itemId)
 		|| typeof value.seed !== 'boolean' || !nonNegativeInteger(value.lastObservedAtMs)
-		|| (value.derived !== undefined && typeof value.derived !== 'boolean')) throw new PriceHistoryStoreError('corrupt');
+		|| (value.derived !== undefined && typeof value.derived !== 'boolean')
+		|| (value.observed !== undefined && typeof value.observed !== 'boolean')) throw new PriceHistoryStoreError('corrupt');
 	// A row written before M2 has no `derived` key at all: it is exactly a session-observed row,
 	// since the capital-driven slice did not exist yet to have written one, so the default is `false`.
-	return { ...structuredClone(value), derived: value.derived === true } as unknown as PriceHistoryWatchItemV1;
+	// Migration of the separate `observed` reason: a stored row without `observed` cannot say whether
+	// a session also observed it, so the policy is CONSERVATIVE. Any such row (including one with
+	// `derived: true`) reads as `observed: true`: no tracking is lost; the accepted cost is that an
+	// old purely derived row stays until the 400 cap evicts it by age. The row shape and version do
+	// not change otherwise, so old rows keep reading.
+	return {
+		...structuredClone(value),
+		derived: value.derived === true,
+		observed: value.observed === undefined ? true : value.observed,
+	} as unknown as PriceHistoryWatchItemV1;
 }
 
 function dailySide(value: unknown): boolean {

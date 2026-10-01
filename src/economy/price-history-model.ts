@@ -68,6 +68,13 @@ export interface PriceHistoryWatchItemV1 {
 	 * yet to have written it.
 	 */
 	derived: boolean;
+	/**
+	 * True while a session observation (`observeItems`) is a reason this item is watched. Reasons are
+	 * kept apart (`seed`, `observed`, `derived`) and a row is deleted only when none is left, so a
+	 * capital drop removes `derived` alone. Absent on rows written before this field, which
+	 * `parseWatchItem` reads as `true` (see there for the conservative migration).
+	 */
+	observed: boolean;
 	lastObservedAtMs: number;
 }
 
