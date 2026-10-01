@@ -18,6 +18,7 @@ import {
 	isComparableStorageSnapshot,
 	isInventoryAdvisorStorageSnapshot,
 } from './storage-delta';
+import { parseCharacterInventory } from './storage-snapshot-parsers';
 import { StorageSnapshotService, type StorageSnapshotCaptureProgress, type StorageSnapshotPassTelemetry } from './storage-snapshot-service';
 
 type PassFixture = Record<string, unknown>;
@@ -283,28 +284,194 @@ describe('StorageSnapshotService', () => {
 			.rejects.toMatchObject({ status: 401 });
 	});
 
-	it('serializes character inventory requests only for the advisor scope', async () => {
-		const secondCharacter = 'Boreal Dos';
-		const inventoryPath = `characters/${encodeURIComponent(secondCharacter)}/inventory`;
-		const inventory = { bags: [{ id: 9_001, inventory: [] }] };
-		let activeCharacters = 0;
-		let maxActiveCharacters = 0;
-		const fixture = clientFor([
-			passWith({ characters: [characterName, secondCharacter], [inventoryPath]: inventory }),
-			passWith({ characters: [characterName, secondCharacter], [inventoryPath]: inventory }),
-		], {
-			onRequest: async (path) => {
-				if (!path.startsWith('characters/') || !path.includes('/inventory')) return;
-				activeCharacters += 1;
-				maxActiveCharacters = Math.max(maxActiveCharacters, activeCharacters);
-				await Promise.resolve();
-				activeCharacters -= 1;
-			},
+	describe('advisor character concurrency', () => {
+		it('reads up to four character inventories at once for the advisor scope, under the global limit, in both passes', async () => {
+			const names = advisorRoster(8);
+			const pass = rosterPass(names);
+			let passIndex = -1;
+			let active = 0;
+			let activeCharacters = 0;
+			const maxActive: number[] = [];
+			const maxCharacters: number[] = [];
+			const fixture = clientFor([pass, pass], {
+				onRequest: async (path) => {
+					if (isRosterPath(path)) {
+						passIndex += 1;
+						maxActive[passIndex] = 0;
+						maxCharacters[passIndex] = 0;
+					}
+					const isCharacter = isCharacterInventoryPath(path);
+					active += 1;
+					maxActive[passIndex] = Math.max(maxActive[passIndex]!, active);
+					if (isCharacter) {
+						activeCharacters += 1;
+						maxCharacters[passIndex] = Math.max(maxCharacters[passIndex]!, activeCharacters);
+						// A character answers one macrotask later, after every account store already has.
+						await macrotasks(1);
+						activeCharacters -= 1;
+					} else {
+						await Promise.resolve();
+					}
+					active -= 1;
+				},
+			});
+
+			const snapshot = await new StorageSnapshotService(fixture.client)
+				.captureInventoryWithOperation(fixture.client.beginOperation());
+
+			expect(snapshot).toMatchObject({ quality: 'stable', passes: 2 });
+			expect(maxCharacters).toEqual([4, 4]);
+			expect(maxActive).toHaveLength(2);
+			for (const max of maxActive) expect(max).toBeLessThanOrEqual(6);
 		});
 
-		await new StorageSnapshotService(fixture.client)
-			.captureInventoryWithOperation(fixture.client.beginOperation());
-		expect(maxActiveCharacters).toBe(1);
+		it('reports each character its own index and item count when requests finish out of roster order around a store', async () => {
+			const names = advisorRoster(4);
+			// Character `index` carries `index + 1` items, so no two characters share a count.
+			const pass = rosterPass(names, (index) => index + 1, {
+				'account/bank': Array.from({ length: 5 }, (_value, slot) => ({ id: 7_000 + slot, count: 1 })),
+			});
+			const expected = names.map((name, index) => ({
+				index,
+				itemCount: parseCharacterInventory(pass[characterInventoryPath(name)], name).length,
+			}));
+			const finished: string[][] = [];
+			const fixture = clientFor([pass, pass], {
+				onRequest: async (path) => {
+					if (isRosterPath(path)) finished.push([]);
+					const log = finished.at(-1)!;
+					if (isCharacterInventoryPath(path)) {
+						// Reverse roster order: character 3 answers after 2 macrotasks, character 0 after 8.
+						const index = names.indexOf(characterOfPath(path));
+						await macrotasks((names.length - index) * 2);
+						log.push(`character ${index}`);
+					} else if (path.startsWith('account/bank')) {
+						// Between characters 2 (4 macrotasks) and 1 (6 macrotasks).
+						await macrotasks(5);
+						log.push('bank');
+					}
+				},
+			});
+			let clock = 0;
+			const telemetry: StorageSnapshotPassTelemetry[] = [];
+
+			await new StorageSnapshotService(fixture.client, { now: () => { clock += 1; return clock; } })
+				.captureInventoryWithOperation(fixture.client.beginOperation(), undefined, (entry) => telemetry.push(entry));
+
+			expect(telemetry.map((entry) => entry.pass)).toEqual([1, 2]);
+			for (const entry of telemetry) {
+				expect(
+					[...entry.characters]
+						.sort((left, right) => left.index - right.index)
+						.map(({ index, itemCount }) => ({ index, itemCount })),
+				).toEqual(expected);
+				expect(entry.stores.find((store) => store.source === 'bank')?.itemCount).toBe(5);
+				// The entries land in completion order, which here is the reverse of the roster.
+				expect(entry.characters.map((character) => character.index)).toEqual([3, 2, 1, 0]);
+			}
+			const reverseAroundBank = ['character 3', 'character 2', 'bank', 'character 1', 'character 0'];
+			expect(finished).toEqual([reverseAroundBank, reverseAroundBank]);
+		});
+
+		it('recovers a timeout among parallel characters with a second pass, and never repeats a 429', async () => {
+			const names = advisorRoster(8);
+			const failingPath = characterInventoryPath(names[5]!);
+			const slowCharacters = async (path: string): Promise<void> => {
+				if (isCharacterInventoryPath(path)) await macrotasks(1);
+			};
+
+			const timeoutSeen: string[] = [];
+			const timedOut = clientFor([
+				rosterPass(names, () => 1, {
+					[failingPath]: new HttpTransportError('timeout', null, null, 'Timed out.'),
+				}),
+				rosterPass(names),
+			], { seen: timeoutSeen, onRequest: slowCharacters });
+			const recovered = await new StorageSnapshotService(timedOut.client)
+				.captureInventoryWithOperation(timedOut.client.beginOperation());
+
+			expect(recovered).toMatchObject({ quality: 'unstable', passes: 2 });
+			expect(recovered.passCoverages[0]?.characters[names[5]!]).toMatchObject({
+				status: 'partial', diagnostic: { kind: 'timeout' },
+			});
+			expect(recovered.passCoverages[1]?.characters[names[5]!]).toEqual({ status: 'complete' });
+			for (const name of names) {
+				expect(timeoutSeen.filter((path) => path.startsWith(`${characterInventoryPath(name)}?`))).toHaveLength(2);
+			}
+
+			const rateLimitSeen: string[] = [];
+			const rateLimited = clientFor([
+				rosterPass(names, () => 1, {
+					[failingPath]: new HttpTransportError('http', 429, 2_000, 'Rate limited.'),
+				}),
+				rosterPass(names),
+			], { seen: rateLimitSeen, onRequest: slowCharacters });
+			const limited = await new StorageSnapshotService(rateLimited.client)
+				.captureInventoryWithOperation(rateLimited.client.beginOperation());
+
+			expect(limited).toMatchObject({ quality: 'partial', passes: 1 });
+			expect(limited.coverage.sources.characters).toMatchObject({
+				status: 'partial', diagnostic: { status: 429, retryAfterMs: 2_000 },
+			});
+			// The siblings already in flight still finish, and nobody is asked a second time.
+			for (const name of names) {
+				expect(rateLimitSeen.filter((path) => path.startsWith(`${characterInventoryPath(name)}?`))).toHaveLength(1);
+			}
+			expect(rateLimitSeen.filter(isRosterPath)).toHaveLength(1);
+		});
+
+		it('qualifies two passes with the same content as stable when their characters finish in a different order', async () => {
+			const names = advisorRoster(4);
+			const pass = rosterPass(names, (index) => index + 1);
+			let passIndex = -1;
+			const fixture = clientFor([pass, pass], {
+				onRequest: async (path) => {
+					if (isRosterPath(path)) passIndex += 1;
+					if (!isCharacterInventoryPath(path)) return;
+					const index = names.indexOf(characterOfPath(path));
+					// Pass 1 finishes in roster order, pass 2 in the reverse one.
+					await macrotasks(passIndex === 0 ? index + 1 : names.length - index);
+				},
+			});
+			const telemetry: StorageSnapshotPassTelemetry[] = [];
+
+			const snapshot = await new StorageSnapshotService(fixture.client)
+				.captureInventoryWithOperation(fixture.client.beginOperation(), undefined, (entry) => telemetry.push(entry));
+
+			expect(snapshot).toMatchObject({ quality: 'stable', passes: 2 });
+			expect(snapshot.holdings.filter(({ location }) => location.source === 'character')).toHaveLength(
+				names.reduce((total, name) => total + parseCharacterInventory(pass[characterInventoryPath(name)], name).length, 0),
+			);
+			// Without this the test would prove nothing: both passes really did push in opposite orders.
+			expect(telemetry.map((entry) => entry.characters.map((character) => character.index))).toEqual([
+				[0, 1, 2, 3],
+				[3, 2, 1, 0],
+			]);
+		});
+
+		it('never lets the completed character count go down and ends at twice the roster when characters finish out of order', async () => {
+			const names = advisorRoster(8);
+			const pass = rosterPass(names);
+			const fixture = clientFor([pass, pass], {
+				onRequest: async (path) => {
+					if (!isCharacterInventoryPath(path)) return;
+					await macrotasks(names.length - names.indexOf(characterOfPath(path)));
+				},
+			});
+			const ticks: StorageSnapshotCaptureProgress[] = [];
+
+			await new StorageSnapshotService(fixture.client).captureInventoryWithOperation(
+				fixture.client.beginOperation(),
+				(progress) => ticks.push(progress),
+			);
+
+			for (let index = 1; index < ticks.length; index += 1) {
+				expect(ticks[index]!.characters.completed).toBeGreaterThanOrEqual(ticks[index - 1]!.characters.completed);
+				expect(ticks[index]!.characters.total).toBeGreaterThanOrEqual(ticks[index - 1]!.characters.total);
+			}
+			for (const tick of ticks) expect(tick.characters.completed).toBeLessThanOrEqual(tick.characters.total);
+			expect(ticks.at(-1)!.characters).toEqual({ completed: 2 * names.length, total: 2 * names.length });
+		});
 	});
 
 	it('keeps two divergent advisor observations as limited evidence without a third pass', async () => {
@@ -1143,6 +1310,56 @@ describe('StorageSnapshotService', () => {
 		});
 	});
 });
+
+/** `count` distinct character names, in roster order. */
+function advisorRoster(count: number): string[] {
+	return Array.from({ length: count }, (_value, index) => `Roster ${index}`);
+}
+
+function characterInventoryPath(name: string): string {
+	return `characters/${encodeURIComponent(name)}/inventory`;
+}
+
+function isCharacterInventoryPath(path: string): boolean {
+	return path.startsWith('characters/') && path.includes('/inventory');
+}
+
+function isRosterPath(path: string): boolean {
+	return path.startsWith('characters?');
+}
+
+function characterOfPath(path: string): string {
+	return decodeURIComponent(path.split('/')[1] ?? '');
+}
+
+/** A complete pass whose roster is `names`; character `index` holds `itemsFor(index)` items no other character has. */
+function rosterPass(
+	names: readonly string[],
+	itemsFor: (index: number) => number = () => 1,
+	overrides: PassFixture = {},
+): PassFixture {
+	return passWith({
+		characters: [...names],
+		...Object.fromEntries(names.map((name, index) => [characterInventoryPath(name), {
+			bags: [{
+				id: 9_001,
+				size: 20,
+				inventory: Array.from({ length: itemsFor(index) }, (_value, slot) => ({ id: 8_000 + index * 100 + slot, count: 1 })),
+			}],
+		}])),
+		...overrides,
+	});
+}
+
+/**
+ * Waits `count` macrotasks. Zero-delay timers fire in the order they were queued, so requests
+ * started in the same turn finish in the order of their counts, with no wall-clock delay to tune.
+ */
+async function macrotasks(count: number): Promise<void> {
+	for (let index = 0; index < count; index += 1) {
+		await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+	}
+}
 
 type AccountItemSurface = 'character' | 'bank' | 'materials';
 
