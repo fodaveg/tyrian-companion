@@ -1,14 +1,4 @@
-import type { HttpTransport } from '../core/http';
-import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
-import {
-	parseDatawars2History,
-	PRICE_SEED_BASE_URL,
-	PRICE_SEED_FIELDS,
-	PRICE_SEED_MAX_DAYS,
-	type PriceSeedResult,
-} from './price-seed-model';
-
-/*
+/**
  * The one outbound call that is not to ArenaNet.
  *
  * It is deliberately small and deliberately rare: a single unauthenticated GET,
@@ -24,12 +14,23 @@ import {
  * does not depend on.
  */
 
+import type { HttpTransport } from '../core/http';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
+import {
+	parseDatawars2History,
+	PRICE_SEED_BASE_URL,
+	PRICE_SEED_FIELDS,
+	PRICE_SEED_MAX_DAYS,
+	type PriceSeedResult,
+} from './price-seed-model';
+
 /**
  * Bytes of response body the plugin agrees to decode from this one host.
  *
- * The transport's deadline does not bound the size: it abandons the promise without
- * cancelling the transfer, so a host that answers slowly AND hugely is answered
- * by neither. This is the bound that is enforced, and the transport applies it
+ * The request's deadline is not set here: `HostRequestTransport` (`src/core/http.ts`) applies
+ * its `timeoutMs`, 10_000 ms by default, and that deadline does not bound the size: it abandons
+ * the promise without cancelling the transfer, so a host that answers slowly AND hugely is
+ * answered by neither. This is the bound that is enforced, and the transport applies it
  * before the body is parsed at all.
  *
  * Eight mebibytes is deliberately far above the real answer and far below what
