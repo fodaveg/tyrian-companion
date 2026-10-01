@@ -49,7 +49,7 @@ async function legacySegmentsSessionNoteWriter(vault: FolderCreatingVault, folde
 	}
 }
 
-type Behavior ='creates' | 'rejects_but_appears' | 'rejects';
+type Behavior = 'creates' | 'rejects_but_appears' | 'rejects';
 
 interface Trace { calls: string[]; error: string | null }
 
