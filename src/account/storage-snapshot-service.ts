@@ -93,8 +93,12 @@ const REQUIRED_SCOPES = ['account', 'characters', 'inventories'] as const;
 export class StorageSnapshotService {
 	private readonly inFlight = new Map<string, Promise<StorageSnapshot>>();
 	private readonly globalLimit = createLimiter(6);
+	/**
+	 * Character inventories in flight at once, for every capture scope. The Inventory Advisor read
+	 * them one at a time until a real 10-character refresh showed four at once staying far from
+	 * the 30 s transport timeout (slowest inventory 6.2 s) with both passes complete.
+	 */
 	private readonly characterLimit = createLimiter(4);
-	private readonly inventoryAdvisorCharacterLimit = createLimiter(1);
 	/** Successful capture baselines are isolated by verified account, permissions and scope. */
 	private readonly previousCharacterActivity = new Map<string, readonly CharacterActivity[]>();
 	private readonly now: () => number;
@@ -476,14 +480,10 @@ export class StorageSnapshotService {
 			);
 		}
 
-		const characterLimit = scope === 'inventory_advisor'
-			? this.inventoryAdvisorCharacterLimit
-			: this.characterLimit;
 		const characterTasks = roster.map((character, characterIndex) =>
-			characterLimit(() =>
+			this.characterLimit(() =>
 				this.globalLimit(async () => {
 					const characterStartedAt = this.now();
-					const holdingsBefore = holdings.length;
 					const path = withSchema(`characters/${encodeURIComponent(character)}/inventory`);
 					// H18.15: the holdings parse runs first, so a shape it rejects never adds this
 					// character's bags to `characterBagFreeSlots` either.
@@ -507,10 +507,12 @@ export class StorageSnapshotService {
 					}
 					coverage.characters[character] = result.coverage;
 					if (result.value) holdings.push(...result.value);
-					// H18.39: an index in roster order, never the character's own name.
+					// H18.39: an index in roster order, never the character's own name. The count is
+					// this character's own parsed holdings: `holdings` is shared with every request
+					// still in flight, so its growth since this one started also counts theirs.
 					passTelemetry?.characters.push({
 						index: characterIndex, durationMs: this.now() - characterStartedAt,
-						itemCount: holdings.length - holdingsBefore,
+						itemCount: result.value?.length ?? 0,
 					});
 				}),
 			).finally(reportCharacter),
