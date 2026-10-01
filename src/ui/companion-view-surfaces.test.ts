@@ -1,6 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+
+// The audit 2.2 case below boots the real runtime, whose Obsidian host imports Electron's shell.
+vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { TyrianCompanionView, type CompanionActions } from './companion-view';
+import { SESSION_NOTE_BLOCK_IDS } from '../sessions/session-note-model';
+import { sha256Text } from '../sessions/session-note-renderer';
+import { createRuntimeHarness, type RuntimeHarness } from '../test/runtime-harness';
 import { connectionErrorKey } from './settings-i18n';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { HalloweenNoticeV1 } from '../halloween/halloween-model';
@@ -222,6 +228,110 @@ describe('Companion durable history surface', () => {
 		expect(loadSessionHistory).toHaveBeenCalledOnce();
 	});
 });
+
+/**
+ * Audit 2.2: how many notes the durable history reads, measured on the path the player takes. The
+ * real view calls the real `loadSessionHistory` of a core booted by `initializeRuntime`, whose
+ * history service reads through the real session-history port over the real Obsidian vault
+ * adapter; only the session status the view observes is driven by hand. The vault holds 3,000
+ * notes that are not sessions and 30 that are.
+ */
+describe('Companion durable history: vault reads per action (audit 2.2)', () => {
+	const FOREIGN_NOTES = 3_000;
+	const SESSION_NOTES = 30;
+	let harness: RuntimeHarness | null = null;
+
+	afterEach(() => {
+		harness?.dispose();
+		harness = null;
+	});
+
+	async function mountOverRealCore() {
+		const runtime = createRuntimeHarness();
+		harness = runtime;
+		const notes = runtime.vaultNotes as Map<string, string>;
+		for (let index = 0; index < FOREIGN_NOTES; index += 1) {
+			notes.set(`Notes/${String(index)}.md`, `# Note ${String(index)}\n\nNothing about a session.\n`);
+		}
+		for (let index = 0; index < SESSION_NOTES; index += 1) {
+			notes.set(`Tyrian Companion/sessions/${String(index)}.md`, await durableSessionNote(index));
+		}
+		// The harness's recording diagnostics port predates `fireAndForget`, which the boot now
+		// calls; without a port the boot runs those actions directly, as the `main-*.test.ts` do.
+		(runtime.core as unknown as { localDebugActions: null }).localDebugActions = null;
+		await runtime.initializeRuntime();
+		const read =(runtime.plugin.app.vault as unknown as { read: Mock }).read;
+		const core = runtime.core as unknown as Pick<CompanionActions, 'loadSessionHistory'>;
+		const loads: Promise<SessionHistoryLoadResult>[] = [];
+		let status: 'active' | 'idle' = 'idle';
+		const mounted = mountCompanion({
+			loadSessionHistory: () => {
+				const load = core.loadSessionHistory();
+				loads.push(load);
+				return load;
+			},
+			getSessionState: () => (status === 'active' ? activeSession() : { version: 1, status: 'idle' }),
+		});
+		/** Vault reads made by `action`, once every history load it started has settled. */
+		const readsDuring = async (action: () => void): Promise<number> => {
+			const before = read.mock.calls.length;
+			action();
+			while (loads.length > 0) await loads.shift();
+			await Promise.resolve();
+			await Promise.resolve();
+			return read.mock.calls.length - before;
+		};
+		return {
+			...mounted, readsDuring, onBoot: read.mock.calls.length,
+			setStatus: (next: 'active' | 'idle') => { status = next; },
+		};
+	}
+
+	it('reads every Markdown note of the vault on open, after a session ends and on "Actualizar historial", and none on a plain repaint', async () => {
+		const { contentEl, render, readsDuring, setStatus, onBoot } = await mountOverRealCore();
+		const everyNote = FOREIGN_NOTES + SESSION_NOTES;
+
+		const onOpen = await readsDuring(render);
+		expect(texts(contentEl)).toContain(`${String(SESSION_NOTES)} sesiones`);
+		const onRepaint = await readsDuring(render);
+		setStatus('active');
+		const whileActive = await readsDuring(render);
+		setStatus('idle');
+		const onSessionEnd = await readsDuring(render);
+		const onRefresh = await readsDuring(() => {
+			find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Actualizar historial')!.click();
+		});
+
+		expect({ onBoot, onOpen, onRepaint, whileActive, onSessionEnd, onRefresh }).toEqual({
+			onBoot: 0, onOpen: everyNote, onRepaint: 0, whileActive: 0, onSessionEnd: everyNote, onRefresh: everyNote,
+		});
+	}, 60_000);
+});
+
+/** A valid schema 2 session note, unique per `index`: what the history counts as one session. */
+async function durableSessionNote(index: number): Promise<string> {
+	const frontmatter: Record<string, string | number | null> = {
+		tc_schema: 2, tc_kind: 'gw2_farming_session', tc_session_ref: index.toString(16).padStart(64, '0'),
+		tc_account_ref: 'b'.repeat(64),
+		tc_started_at: '2026-08-13T08:00:00.000Z', tc_ended_at: '2026-08-13T09:00:00.000Z', tc_duration_ms: 3_600_000,
+		tc_classification: 'exact', tc_confidence: 'high', tc_scope: 'observed_storage_net', tc_valuation_coverage: 'complete',
+		tc_locale: 'en', tc_character: 'Rinopopo', tc_profession: 'Guardian', tc_build: null,
+		tc_magic_find: 0, tc_detection_mode: null, tc_price_source: 'gw2-commerce-prices', tc_price_captured_at: '2026-08-13T09:00:00.000Z',
+		tc_observed_immediate_copper: 100, tc_observed_listing_copper: 120, tc_sacks: 1,
+		tc_sacks_per_hour_milli: 1000, tc_immediate_copper_per_hour: 100, tc_listing_copper_per_hour: 120,
+		tc_reservation_status: 'not_evaluated', tc_reserved_quantity: null, tc_hold_status: 'not_evaluated', tc_held_quantity: null,
+		tc_recommendation_status: 'not_evaluated', tc_execution: 'manual_in_game', tc_side_effects: 'none',
+		tc_event: null, tc_event_source: null, tc_recommendation_action: null, tc_recommendation_quantity: null,
+		tc_recommendation_route: null,
+	};
+	const blocks = await Promise.all(SESSION_NOTE_BLOCK_IDS.map(async (id) => {
+		const content = `${id} content`;
+		return `<!-- tyrian-companion:managed:start:${id} sha256=${await sha256Text(content)} -->\n${content}\n<!-- tyrian-companion:managed:end:${id} -->`;
+	}));
+	const yaml = Object.entries(frontmatter)
+		.map(([key, value]) => `${key}: ${value === null ? 'null' : typeof value === 'string' ? JSON.stringify(value) : String(value)}`);
+	return `---\n${yaml.join('\n')}\n---\n# Session\n\n${blocks.join('\n\n')}\n`;
+}
 
 /** H18.36 (boceto lámina 2.1): Avisos primero en el Laberinto, Botín primero el resto del año. */
 describe('Companion gaveto order and Botín', () => {
