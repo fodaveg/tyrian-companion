@@ -36,6 +36,8 @@ export type ManagedAssetsResult =
 	| { status: 'applied' | 'unchanged' | 'detached'; inspection: ManagedAssetsInspection; ownership: 'created' | 'existing' }
 	| { status: 'busy' | 'conflict' | 'invalid' | 'unavailable'; message: string };
 
+interface PackagedEvidence { contentHash: string; semanticHash: string | null }
+
 export interface ManagedAssetsBundle {
 	bundleVersion: number;
 	locale: 'es' | 'en';
@@ -45,6 +47,8 @@ export interface ManagedAssetsBundle {
 /** Explicit, journaled Vault-only asset lifecycle. Construction and inspection setup have no I/O. */
 export class ManagedAssetsManager {
 	private flight: { key: string; promise: Promise<ManagedAssetsResult> } | null = null;
+	/** SHA-256 and semantic hash of each PACKAGED asset; Vault files are never cached here. */
+	private packagedEvidence = new Map<PackagedAsset, { bytes: string; evidence: Promise<PackagedEvidence> }>();
 
 	constructor(
 		private readonly vault: ManagedAssetsVault,
@@ -58,6 +62,26 @@ export class ManagedAssetsManager {
 	setBundle(bundle: ManagedAssetsBundle): void {
 		if (this.flight) throw new Error('managed_assets_busy');
 		this.bundle = bundle;
+		this.packagedEvidence = new Map();
+	}
+
+	/**
+	 * Hashes of the packaged bytes, computed once per asset until `setBundle`. `bytes` is kept so an asset
+	 * mutated in place is never answered from a stale entry.
+	 */
+	private async packaged(asset: PackagedAsset): Promise<PackagedEvidence> {
+		const cached = this.packagedEvidence.get(asset);
+		if (cached && cached.bytes === asset.bytes) return await cached.evidence;
+		const evidence = this.computePackaged(asset);
+		this.packagedEvidence.set(asset, { bytes: asset.bytes, evidence });
+		return await evidence;
+	}
+
+	private async computePackaged(asset: PackagedAsset): Promise<PackagedEvidence> {
+		return {
+			contentHash: await sha256Text(asset.bytes),
+			semanticHash: asset.kind === 'base' ? await baseSemanticHash(asset.bytes) : null,
+		};
 	}
 
 	/**
@@ -75,8 +99,9 @@ export class ManagedAssetsManager {
 		const manifest = manifestMatchesRoot ? manifestRead.manifest : null;
 		const assets: InspectedAsset[] = [];
 		for (const asset of selectedAssets(this.bundle)) {
-			if (await sha256Text(asset.bytes) !== asset.contentHash) throw new Error('invalid_bundle_hash');
-			const targetSemanticHash = asset.kind === 'base' ? await baseSemanticHash(asset.bytes) : null;
+			const packaged = await this.packaged(asset);
+			if (packaged.contentHash !== asset.contentHash) throw new Error('invalid_bundle_hash');
+			const targetSemanticHash = packaged.semanticHash;
 			if (asset.kind === 'base' && targetSemanticHash === null) throw new Error('invalid_bundle_yaml');
 			const path = managedAssetPath(validatedRoot, asset);
 			if (!normalizeManagedAssetPath(path, this.configDir)) throw new Error('invalid_asset_path');
@@ -485,9 +510,8 @@ export class ManagedAssetsManager {
 				path, installedHash,
 			};
 			if (asset.kind === 'base') {
-				const [installedSemanticHash, expectedSemanticHash] = await Promise.all([
-					baseSemanticHash(content), override ? Promise.resolve(override.installedSemanticHash ?? null) : baseSemanticHash(asset.bytes),
-				]);
+				const installedSemanticHash = await baseSemanticHash(content);
+				const expectedSemanticHash = override ? override.installedSemanticHash ?? null : (await this.packaged(asset)).semanticHash;
 				if (installedSemanticHash === null || expectedSemanticHash === null || installedSemanticHash !== expectedSemanticHash) return null;
 				entry.installedSemanticHash = installedSemanticHash;
 			} else if (override ? installedHash !== override.installedHash : (installedHash !== asset.contentHash || !hasCompatibleMarker(content, asset))) return null;
@@ -610,7 +634,7 @@ export class ManagedAssetsManager {
 				(finalState && entry.locale !== 'neutral' && entry.locale !== manifest.locale) ||
 				!validManagedPath(entry.path, this.configDir, legacy) || !entry.path.startsWith(`${root}/`)) return false;
 			if (manifest.schemaVersion === 2 && entry.kind === 'base' && entry.contentVersion === asset.contentVersion &&
-				entry.installedSemanticHash !== await baseSemanticHash(asset.bytes)) return false;
+				entry.installedSemanticHash !== (await this.packaged(asset)).semanticHash) return false;
 			assetIds.add(entry.id); assetPaths.add(folded);
 		}
 		// The set stays exact, but a file the user owns at an asset's path may be declared `excluded`
@@ -676,7 +700,7 @@ export class ManagedAssetsManager {
 		if (entry.kind !== 'base') return false;
 		const expectedSemanticHash = entry.installedSemanticHash ??
 			(target?.kind === 'base' && target.id === entry.id && target.contentVersion === entry.contentVersion && target.locale === entry.locale
-				? targetSemanticHash ?? await baseSemanticHash(target.bytes)
+				? targetSemanticHash ?? (await this.packaged(target)).semanticHash
 				: null);
 		if (expectedSemanticHash === null) return false;
 		return await baseSemanticHash(content) === expectedSemanticHash;
