@@ -158,8 +158,29 @@ export function filterInventoryAdvisorRows(
 	rows: readonly InventoryAdvisorViewRow[],
 	filters: InventoryAdvisorViewFilters,
 ): InventoryAdvisorViewRow[] {
-	const query = filters.query.trim().toLowerCase();
-	const scoped = rows.map((row) => scopeRow(row, filters)).filter((row): row is InventoryAdvisorViewRow => row !== null);
+	return scopeInventoryAdvisorRows(rows, filters).rows.filter(inventoryAdvisorRowMatcher(filters));
+}
+
+/**
+ * The half of the filter no key of the search changes: the rows left by the character and the
+ * stores chosen, each with its object totalled over them. It depends on the data and on those
+ * switches alone, so the view computes it once and only matches rows against it per key.
+ */
+interface ScopedInventoryAdvisorRows {
+	/** The rows in scope, in the order of the model. */
+	readonly rows: InventoryAdvisorViewRow[];
+	/** Every row of the model with whether it is in scope, to explain an object left with no visible row. */
+	readonly sources: ReadonlyArray<{ readonly row: InventoryAdvisorViewRow; readonly inScope: boolean }>;
+	/** The stores that keep a row out, remembered per row once asked. */
+	readonly locationReasons: Map<InventoryAdvisorViewRow, readonly InventoryAdvisorOutsideReason[]>;
+}
+
+function scopeInventoryAdvisorRows(
+	rows: readonly InventoryAdvisorViewRow[],
+	filters: InventoryAdvisorViewFilters,
+): ScopedInventoryAdvisorRows {
+	const candidates = rows.map((row) => ({ row, scoped: scopeRow(row, filters) }));
+	const scoped = candidates.map((candidate) => candidate.scoped).filter((row): row is InventoryAdvisorViewRow => row !== null);
 	const ownedByItem = scoped.reduce((totals, row) => {
 		totals.set(row.itemId, (totals.get(row.itemId) ?? 0) + row.quantity);
 		return totals;
@@ -170,14 +191,24 @@ export function filterInventoryAdvisorRows(
 		}
 		return totals;
 	}, new Map<number, number>());
-	return scoped.map((row) => ({
-		...row,
-		ownedQuantity: ownedByItem.get(row.itemId) ?? row.quantity,
-		availableQuantity: availableByItem.get(row.itemId) ?? 0,
-	})).filter((row) => (filters.action === 'all' || (row.decision?.action ?? row.action) === filters.action)
+	return {
+		rows: scoped.map((row) => ({
+			...row,
+			ownedQuantity: ownedByItem.get(row.itemId) ?? row.quantity,
+			availableQuantity: availableByItem.get(row.itemId) ?? 0,
+		})),
+		sources: candidates.map((candidate) => ({ row: candidate.row, inScope: candidate.scoped !== null })),
+		locationReasons: new Map(),
+	};
+}
+
+/** The half of the filter a key of the search does change: action, keep, review and the text typed. */
+function inventoryAdvisorRowMatcher(filters: InventoryAdvisorViewFilters): (row: InventoryAdvisorViewRow) => boolean {
+	const query = filters.query.trim().toLowerCase();
+	return (row) => (filters.action === 'all' || (row.decision?.action ?? row.action) === filters.action)
 		&& (filters.showKeep === true || row.action !== 'keep')
 		&& (filters.showReview === true || (row.action !== 'review' && row.action !== 'discard_review'))
-		&& (query.length === 0 || row.name.toLowerCase().includes(query) || String(row.itemId).includes(query)));
+		&& (query.length === 0 || row.name.toLowerCase().includes(query) || String(row.itemId).includes(query));
 }
 
 /** Why an object is left out of the visible list, in the order the scope line names them. */
@@ -207,18 +238,35 @@ export function inventoryAdvisorScopeSummary(
 	rows: readonly InventoryAdvisorViewRow[],
 	filters: InventoryAdvisorViewFilters,
 ): InventoryAdvisorScopeSummary {
+	const scoped = scopeInventoryAdvisorRows(rows, filters);
+	const visibleItemIds = new Set(scoped.rows.filter(inventoryAdvisorRowMatcher(filters)).map((row) => row.itemId));
+	return scopeSummaryOfScopedRows(scoped, visibleItemIds, filters);
+}
+
+/** The scope line over rows already scoped; `visibleItemIds` are the objects with a row in the list. */
+function scopeSummaryOfScopedRows(
+	scoped: ScopedInventoryAdvisorRows,
+	visibleItemIds: ReadonlySet<number>,
+	filters: InventoryAdvisorViewFilters,
+): InventoryAdvisorScopeSummary {
 	const character = filters.character !== undefined && filters.character !== ALL_CHARACTERS ? filters.character : null;
-	const visibleItemIds = new Set(filterInventoryAdvisorRows(rows, filters).map((row) => row.itemId));
 	const outside = new Set<number>();
 	const reasons = new Set<InventoryAdvisorOutsideReason>();
-	for (const row of rows) {
+	for (const { row, inScope: rowInScope } of scoped.sources) {
 		if (visibleItemIds.has(row.itemId)) continue;
 		outside.add(row.itemId);
-		for (const { location } of row.allocations) {
-			const reason = outsideLocationReason(location, character);
-			if (reason !== null && !inScope(location, filters, character)) reasons.add(reason);
+		let locationReasons = scoped.locationReasons.get(row);
+		if (locationReasons === undefined) {
+			const found = new Set<InventoryAdvisorOutsideReason>();
+			for (const { location } of row.allocations) {
+				const reason = outsideLocationReason(location, character);
+				if (reason !== null && !inScope(location, filters, character)) found.add(reason);
+			}
+			locationReasons = [...found];
+			scoped.locationReasons.set(row, locationReasons);
 		}
-		if (scopeRow(row, filters) === null) continue;
+		for (const reason of locationReasons) reasons.add(reason);
+		if (!rowInScope) continue;
 		if (row.action === 'keep' && filters.showKeep !== true) reasons.add('keep');
 		else if ((row.action === 'review' || row.action === 'discard_review') && filters.showReview !== true) reasons.add('review');
 		else reasons.add('filters');
@@ -408,6 +456,28 @@ export function groupInventoryAdvisorRows(
 
 interface MountedInventoryAdvisorView {
 	update(model: InventoryAdvisorViewModel, translator: Translator, interactions: InventoryAdvisorViewInteractions): void;
+}
+
+/** The rows of one mounted list: scoped once per data and scope, ordered once per order. */
+interface InventoryListProjection {
+	readonly scopeKey: string;
+	readonly scoped: ScopedInventoryAdvisorRows;
+	orderKey: string;
+	ordered: readonly InventoryAdvisorViewRow[];
+}
+
+/** The child indexes that lead from `ancestor` down to `descendant`. */
+function childPath(ancestor: Element, descendant: Element): number[] {
+	const path: number[] = [];
+	let node = ancestor;
+	while (node !== descendant) {
+		const index = Array.from(node.children).findIndex((child) => child.contains(descendant));
+		const child = node.children[index];
+		if (child === undefined) break;
+		path.push(index);
+		node = child;
+	}
+	return path;
 }
 
 /**
@@ -699,7 +769,59 @@ function mountInventoryAdvisorView(
 		}
 		return sourceSelectionChanged;
 	};
-	const refreshResults = (): void => {
+	// The list at account size (~1,400 rows). What a key of the search may cost is one pass over
+	// rows already scoped and ordered, and moving row elements already built: the scope and the
+	// order are computed once per change of data, of scope or of order, and a row element lives
+	// until the data, the scope or what its controls show (keep state, free space) change.
+	let projection: InventoryListProjection | null = null;
+	const rowElements = new Map<InventoryAdvisorViewRow, HTMLLIElement>();
+	let rowElementsKey = '';
+	const mountedDetails = new Set<RowDetailDisclosure>();
+	let shownRows: readonly InventoryAdvisorViewRow[] = [];
+	let shownConcentration: ReadonlyMap<string, InventoryAdvisorValueConcentration> | null = null;
+	/** The rows in scope, in the chosen order. `dataChanged` discards what the previous data left. */
+	const orderedRows = (dataChanged: boolean): InventoryListProjection => {
+		const scopeKey = JSON.stringify([
+			filters.character ?? ALL_CHARACTERS, filters.includeBank === true, filters.includeMaterials === true, filters.includeDelivery === true,
+		]);
+		if (dataChanged || projection === null || projection.scopeKey !== scopeKey) {
+			projection = { scopeKey, scoped: scopeInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), filters), orderKey: '', ordered: [] };
+			rowElements.clear();
+		}
+		const order = filters.sort ?? 'value_desc';
+		const orderKey = `${order}:${translator.locale}`;
+		if (projection.orderKey !== orderKey) {
+			projection.orderKey = orderKey;
+			projection.ordered = sortInventoryAdvisorRows(projection.scoped.rows, order, translator.locale);
+		}
+		return projection;
+	};
+	/** The control of a row that holds the focus: the row, and the way down from the row to it. */
+	const focusedRowControl = (): { control: HTMLElement; rowId: string; path: number[] } | null => {
+		const control = results.ownerDocument.activeElement as HTMLElement | null;
+		if (control === null || !results.contains(control)) return null;
+		for (const [row, element] of rowElements) {
+			if (element.contains(control)) return { control, rowId: row.id, path: childPath(element, control) };
+		}
+		return null;
+	};
+	/**
+	 * Moving a row takes the focus off its controls, and so does rebuilding it. The focus goes back
+	 * to the same control when its row is still listed, or to the control in its place in the row
+	 * rebuilt for the same object; a row that left the list keeps nothing.
+	 */
+	const restoreRowFocus = (held: { control: HTMLElement; rowId: string; path: number[] } | null): void => {
+		if (held === null) return;
+		let target: Element | undefined = held.control;
+		if (!results.contains(held.control)) {
+			const row = shownRows.find((candidate) => candidate.id === held.rowId);
+			target = row === undefined ? undefined : rowElements.get(row);
+			for (const index of held.path) target = target?.children[index];
+			if (target === undefined || target.tagName !== held.control.tagName) return;
+		}
+		if (results.ownerDocument.activeElement !== target) (target as HTMLElement).focus({ preventScroll: true });
+	};
+	const refreshResults = (dataChanged = true): void => {
 		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
 		const sourceSelectionChanged = syncFilterControlAvailability();
 		if (sourceSelectionChanged) filters = {
@@ -709,17 +831,38 @@ function mountInventoryAdvisorView(
 			includeDelivery: sourceControls.get('delivery')!.input.checked,
 		};
 		const visible = model.status === 'ready' || model.status === 'limited';
-		const allRows = visible ? flattenInventoryAdvisorRows(model.groups) : [];
-		const order = filters.sort ?? 'value_desc';
-		const sorted = visible ? sortInventoryAdvisorRows(filterInventoryAdvisorRows(allRows, filters), order, translator.locale) : [];
+		const heldFocus = focusedRowControl();
+		// A detail does not outlive a change of the list: it closes, as it did when every row was rebuilt.
+		for (const detail of [...mountedDetails]) detail.collapse();
+		if (!visible) {
+			projection = null;
+			rowElements.clear();
+		}
+		const ordered = visible ? orderedRows(dataChanged) : null;
 		// H18.15: only the value order yields to space; an explicit quantity or name order stands.
-		const rows = sorted;
-		const directRows = visible ? sortInventoryAdvisorRows(filterInventoryAdvisorRows(allRows, {
+		const rows = ordered === null ? [] : ordered.ordered.filter(inventoryAdvisorRowMatcher(filters));
+		const directRows = ordered === null ? [] : ordered.ordered.filter(inventoryAdvisorRowMatcher({
 			...filters, action: 'all', showKeep: false, showReview: false,
-		}), order, translator.locale) : [];
+		}));
+		shownRows = rows;
+		shownConcentration = null;
+		const keep = keepContext();
+		const rowContext: RowRenderContext = {
+			showSlotsFreed: model.storageSpace?.lowSpace?.isLow === true,
+			keep,
+			// Read at the click: a row outlives the `interactions` it was built under.
+			onOpenSale: () => interactions.onOpenSale?.(),
+			concentration: (row) => (shownConcentration ??= inventoryAdvisorValueConcentration(shownRows)).get(row.id) ?? null,
+			mountedDetails,
+		};
+		const nextRowElementsKey = JSON.stringify([rowContext.showSlotsFreed, keep === null ? null : [keep.busy, [...keep.kept]]]);
+		if (nextRowElementsKey !== rowElementsKey) {
+			rowElementsKey = nextRowElementsKey;
+			rowElements.clear();
+		}
 		const filteredEmpty = visible && rows.length === 0 && hasActiveFilter(filters);
 		results.replaceChildren();
-		if (visible) results.append(renderResults(
+		if (ordered !== null) results.append(renderResults(
 			rows, directRows, filters.groupBy, filters.action, translator, !filteredEmpty,
 			scopedToCharacter ? filters.character ?? null : null,
 			(nextAction) => {
@@ -729,12 +872,19 @@ function mountInventoryAdvisorView(
 				action.focus();
 			},
 			{
-				scope: inventoryAdvisorScopeSummary(allRows, filters),
+				scope: scopeSummaryOfScopedRows(ordered.scoped, new Set(rows.map((row) => row.itemId)), filters),
 				storageSpace: model.storageSpace ?? null,
-				keep: keepContext(),
-				onOpenSale: interactions.onOpenSale,
+				rowElement: (row) => {
+					let element = rowElements.get(row);
+					if (element === undefined) {
+						element = renderInventoryListRow(row, translator, rowContext);
+						rowElements.set(row, element);
+					}
+					return element;
+				},
 			},
 		));
+		restoreRowFocus(heldFocus);
 		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(model, translator);
 	};
 	const updateFilters = (): void => {
@@ -750,7 +900,7 @@ function mountInventoryAdvisorView(
 			showKeep: sourceControls.get('keep')!.input.checked,
 			showReview: sourceControls.get('review')!.input.checked,
 		};
-		refreshResults();
+		refreshResults(false);
 	};
 	search.addEventListener('input', updateFilters);
 	action.addEventListener('change', updateFilters);
@@ -958,19 +1108,14 @@ function renderResults(
 	context: {
 		scope: InventoryAdvisorScopeSummary;
 		storageSpace: InventoryAdvisorStorageSpaceView | null;
-		keep: RowKeepContext | null;
-		onOpenSale?: () => void;
+		/** The element of a row: the one already built for it, or a new one the first time it is listed. */
+		rowElement: (row: InventoryAdvisorViewRow) => HTMLLIElement;
 	},
 ): HTMLElement {
 	const content = createDiv();
 	content.className = 'tyrian-inventory-advisor__results-content';
 	if (context.storageSpace !== null) content.append(renderStorageSpace(context.storageSpace, translator));
 	content.append(renderScopeSummary(context.scope, translator));
-	const rowContext: RowRenderContext = {
-		showSlotsFreed: context.storageSpace?.lowSpace?.isLow === true,
-		keep: context.keep,
-		onOpenSale: context.onOpenSale,
-	};
 	if (characterScope !== null) {
 		const scopeNote = createEl('p');
 		scopeNote.className = 'tyrian-inventory-advisor__scope-note';
@@ -993,9 +1138,8 @@ function renderResults(
 	const valuedRows = rows.filter((row) => row.value.status === 'available');
 	const noValueRows = rows.filter((row) => row.value.status !== 'available');
 	const groups = groupInventoryAdvisorRows(valuedRows, groupBy);
-	const concentration = inventoryAdvisorValueConcentration(rows);
-	if (groups.length > 0) content.append(renderInventoryList(groups, groupBy, translator, concentration, rowContext));
-	if (noValueRows.length > 0) content.append(renderNoValueGroup(noValueRows, groupBy, translator, concentration, rowContext));
+	if (groups.length > 0) content.append(renderInventoryList(groups, groupBy, translator, context.rowElement));
+	if (noValueRows.length > 0) content.append(renderNoValueGroup(noValueRows, groupBy, translator, context.rowElement));
 	return content;
 }
 
@@ -1150,8 +1294,7 @@ function renderInventoryList(
 	groups: readonly InventoryAdvisorViewGroup[],
 	groupBy: InventoryAdvisorViewGroupBy,
 	translator: Translator,
-	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
-	rowContext: RowRenderContext = DEFAULT_ROW_CONTEXT,
+	rowElement: (row: InventoryAdvisorViewRow) => HTMLLIElement,
 ): HTMLElement {
 	const list = createEl('ul');
 	list.className = 'tyrian-inventory__list';
@@ -1176,9 +1319,7 @@ function renderInventoryList(
 			heading.textContent = groupLabel(group.key, groupBy, translator);
 			list.append(heading);
 		}
-		for (const row of group.rows) {
-			list.append(renderInventoryListRow(row, translator, concentration.get(row.id) ?? null, rowContext));
-		}
+		for (const row of group.rows) list.append(rowElement(row));
 		list.append(renderInventoryGroupSubtotal(group.rows, translator));
 	}
 	return list;
@@ -1193,8 +1334,7 @@ function renderNoValueGroup(
 	rows: readonly InventoryAdvisorViewRow[],
 	groupBy: InventoryAdvisorViewGroupBy,
 	translator: Translator,
-	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
-	rowContext: RowRenderContext,
+	rowElement: (row: InventoryAdvisorViewRow) => HTMLLIElement,
 ): HTMLElement {
 	const details = createEl('details');
 	details.className = 'tyrian-inventory-advisor__no-value';
@@ -1207,7 +1347,7 @@ function renderNoValueGroup(
 	// Same grouping the caller chose for the priced rows above (e.g. "Acción" still labels a
 	// discard review with its own explicit warning heading, `groupLabel`'s own `discard_review`
 	// branch), never hardcoded, so switching it groups both halves of the list consistently.
-	details.append(renderInventoryList(groupInventoryAdvisorRows(rows, groupBy), groupBy, translator, concentration, rowContext));
+	details.append(renderInventoryList(groupInventoryAdvisorRows(rows, groupBy), groupBy, translator, rowElement));
 	return details;
 }
 
@@ -1216,7 +1356,6 @@ const INVENTORY_LIST_COLUMNS = ['item', 'quantity', 'action', 'value', 'keep'] a
 function renderInventoryListRow(
 	row: InventoryAdvisorViewRow,
 	translator: Translator,
-	concentration: InventoryAdvisorValueConcentration | null,
 	rowContext: RowRenderContext,
 ): HTMLLIElement {
 	const item = createEl('li');
@@ -1276,9 +1415,15 @@ function renderInventoryListRow(
 
 	item.append(itemCell, qtyCell, actionCell, moneyCell, keepCell);
 
-	const detail = rowDetailDisclosure(row, translator, concentration, rowContext.showSlotsFreed, rowContext.onOpenSale);
-	if (detail !== null) item.append(detail);
+	item.append(rowDetailDisclosure(row, translator, rowContext).element);
 	return item;
+}
+
+/** A row's "Detalles": the element in the row, and how the list closes it when it changes. */
+interface RowDetailDisclosure {
+	readonly element: HTMLDetailsElement;
+	/** Closes it and takes its body out. */
+	collapse(): void;
 }
 
 /**
@@ -1290,26 +1435,68 @@ function renderInventoryListRow(
  * visible column each, join them here too — decision E (H18.31, lámina 3.1) wants exactly one
  * compact visible line per row (icon, name, quantity, where, what to do, net), everything else
  * on demand.
+ *
+ * Audit V2 (3.4): a closed row carries the `<details>` and its `<summary>` and nothing else. The
+ * body (some 25 nodes a row, ~1,400 rows) is built when the detail opens and taken out when it
+ * closes, so nothing a closed detail hides is ever in the document. Nothing that must be seen
+ * with the detail closed lives in the body: the "⚠ irreversible review" mark is the row's action.
  */
 function rowDetailDisclosure(
 	row: InventoryAdvisorViewRow,
 	translator: Translator,
-	concentration: InventoryAdvisorValueConcentration | null,
-	showSlotsFreed: boolean,
-	onOpenSale?: () => void,
-): HTMLElement | null {
+	rowContext: RowRenderContext,
+): RowDetailDisclosure {
 	const details = createEl('details');
 	details.className = 'tyrian-inventory__more';
 	const summary = createEl('summary');
 	summary.textContent = translator.t('advisor.view.list.detailsSummary');
 	details.append(summary);
+	let mounted = false;
+	const disclosure: RowDetailDisclosure = {
+		element: details,
+		collapse: () => {
+			details.open = false;
+			unmountBody();
+		},
+	};
+	const mountBody = (): void => {
+		if (mounted) return;
+		mounted = true;
+		rowContext.mountedDetails.add(disclosure);
+		details.append(...rowDetailBody(row, translator, rowContext.concentration(row), rowContext.showSlotsFreed, rowContext.onOpenSale));
+	};
+	function unmountBody(): void {
+		if (!mounted) return;
+		mounted = false;
+		rowContext.mountedDetails.delete(disclosure);
+		details.replaceChildren(summary);
+	}
+	// The click comes before the browser opens the detail, so the body is there when it shows;
+	// `toggle` covers an opening that is not a click (find-in-page) and every closing.
+	summary.addEventListener('click', () => { if (!details.open) mountBody(); });
+	details.addEventListener('toggle', () => {
+		if (details.open) mountBody();
+		else unmountBody();
+	});
+	return disclosure;
+}
+
+/** What a row's detail shows once open, in order. `concentration` is the row's share of the rows visible then. */
+function rowDetailBody(
+	row: InventoryAdvisorViewRow,
+	translator: Translator,
+	concentration: InventoryAdvisorValueConcentration | null,
+	showSlotsFreed: boolean,
+	onOpenSale?: () => void,
+): HTMLElement[] {
+	const body: HTMLElement[] = [];
 	if (row.containerEconomy !== undefined) {
 		const viewInSale = createEl('button');
 		viewInSale.className = 'mod-link';
 		viewInSale.type = 'button';
 		viewInSale.textContent = translator.t('advisor.view.list.viewInSale');
 		viewInSale.addEventListener('click', () => onOpenSale?.());
-		details.append(viewInSale);
+		body.push(viewInSale);
 	}
 	const list = createEl('dl');
 	const explanationAndMoment = [explanationLabel(row, translator), decisionMomentLabel(row, translator), sellOrWaitLabel(row, translator)]
@@ -1325,20 +1512,20 @@ function rowDetailDisclosure(
 	}));
 	addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
 	addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
-	details.append(list);
+	body.push(list);
 	const context = rowContextDetails(row, translator, showSlotsFreed);
-	if (context !== null) details.append(context);
+	if (context !== null) body.push(context);
 	const advanced = advancedEvidenceDetails(row.coverage, translator);
-	if (advanced !== null) details.append(advanced);
+	if (advanced !== null) body.push(advanced);
 	const season = containerSeasonNotice(row, translator);
-	if (season !== null) details.append(season);
+	if (season !== null) body.push(season);
 	const economy = containerEconomyDetails(row, translator);
-	if (economy !== null) details.append(economy);
+	if (economy !== null) body.push(economy);
 	const tail = containerTailDetails(row, translator);
-	if (tail !== null) details.append(tail);
+	if (tail !== null) body.push(tail);
 	const salvage = equipmentSalvageDetails(row, translator);
-	if (salvage !== null) details.append(salvage);
-	return details;
+	if (salvage !== null) body.push(salvage);
+	return body;
 }
 
 /** Closes each group with the exact totals of the rows above it, never an inferred value. */
@@ -1378,6 +1565,10 @@ interface RowRenderContext {
 	readonly keep: RowKeepContext | null;
 	/** "Ver en Venta" on a container row (H18.31, lámina 3.1, decision E); absent hides the button. */
 	readonly onOpenSale?: () => void;
+	/** The row's share of the value of the rows visible now; asked only when its detail opens. */
+	readonly concentration: (row: InventoryAdvisorViewRow) => InventoryAdvisorValueConcentration | null;
+	/** The details whose body is in the document, so the list can close them when it changes. */
+	readonly mountedDetails: Set<RowDetailDisclosure>;
 }
 
 interface RowKeepContext {
@@ -1393,8 +1584,6 @@ interface RowKeepContext {
 	 */
 	readonly onUnkeep: (row: InventoryAdvisorViewRow, exceptionId: string) => void;
 }
-
-const DEFAULT_ROW_CONTEXT: RowRenderContext = { showSlotsFreed: false, keep: null };
 
 /**
  * H18.18, criterion 3, widened by H18.37: "Conservar" on the row itself, without typing an item

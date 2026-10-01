@@ -547,4 +547,5 @@ class FakeElement {
 	}
 	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener({ preventDefault() {} }); }
 	focus(): void { this.ownerDocument.activeElement = this; }
+	contains(other: FakeElement): boolean { return walk(this).includes(other); }
 }
