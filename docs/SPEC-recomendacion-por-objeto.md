@@ -596,6 +596,18 @@ las pilas pequeñas. Cambia `SETTINGS_SCHEMA_VERSION` (hoy 12, `src/core/setting
    veredicto, con el mismo opt-in de histórico, caché y límites. Abrir Venta no activa esta siembra.
    La llamada de arranque en frío pasa `refreshSeeds: false`; el botón explícito pasa `true`.
    No se requiere escribir notas de inventario para disponer del histórico de Venta.
+   **Precisión del 1 oct 2026: la acción solo espera a las semillas que faltan.** «Sincronizar
+   inventario» y «Actualizar» en Venta siguen sembrando antes de calcular el veredicto los objetos
+   que no tienen ninguna semilla en caché (y están fuera del reintento espaciado de «sin semilla»):
+   un objeto nuevo sigue sin salir en `review` por falta de semilla en la misma acción que lo siembra.
+   Lo que cambia es cuándo se refresca una copia que ya existe: si la semilla tiene más de 24 horas,
+   el análisis usa esa copia y su refresco empieza después de entregar y pintar el resultado, sin
+   que la acción lo espere; esos precios entran en el análisis siguiente, y al terminar no se
+   recalcula ni el análisis ni el veredicto de Venta. El tope de 25 es por acción visible y suma las
+   dos fases: primero las que faltan y, con el cupo que sobre, las vencidas. Mientras un refresco
+   diferido está pendiente o en curso, una acción nueva no deja otro; sus semillas que faltan
+   esperan su turno en la misma cola, y nunca hay dos peticiones en vuelo. «Analizar» sigue sin
+   descargar nada.
 5. **Decidido el 11 sep 2026: ajuste nuevo, 10 oros (100 000 cobre).** No se reutiliza
    `valuableLootThresholdCopper`.
 

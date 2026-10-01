@@ -11,10 +11,15 @@ export type { PriceSeedQueueCoverage } from './price-seed-model';
 
 /**
  * Decision 4 (SPEC-recomendacion-por-objeto.md §7, approved by David 11 sep 2026): after an
- * explicit "Sincronizar inventario", and only while price history is on, the watch list's items
- * get a datawars2 seed if their cache entry is missing or stale. One request at a time, never two
- * in flight, capped per run so a vault with hundreds of eligible items never fires a burst — the
- * rest waits for the next sync. `docs/PLATFORM_POLICY.md` carries this same decision in prose.
+ * explicit "Sincronizar inventario" or Sale refresh, and only while price history is on, the list's
+ * items get a datawars2 seed if their cache entry is missing or stale. One request at a time, never
+ * two in flight, capped so a vault with hundreds of eligible items never fires a burst — the rest
+ * waits for the next action. `docs/PLATFORM_POLICY.md` carries this same decision in prose.
+ *
+ * Since 1 oct 2026 the cap is one budget per visible action, spent in two phases
+ * (`PriceSeedBulkRefreshPhase`): the items with no seed at all first, which the action waits for,
+ * and then, out of whatever is left, the copies past their TTL, refreshed after the action has
+ * delivered its result.
  */
 export const PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN = 25;
 
@@ -44,7 +49,24 @@ export interface PriceSeedBulkRefreshOutcome {
 	/** A real failure this run: a thrown download, or a storage read/write that itself failed. */
 	failed: number;
 	queueCoverage: PriceSeedQueueCoverage;
+	/** `missing` phase only: copies past their TTL this run left untouched, for the `stale` phase to refresh. */
+	staleSkipped?: number;
+	/** `missing` phase only: what this run left of the per-action cap, the most the `stale` phase may request. */
+	deferredBudget?: number;
 }
+
+/**
+ * Which part of the list one run requests (1 oct 2026). Without a phase a run requests both, as it
+ * always did.
+ *
+ * - `missing`: only the items with NO seed in the cache (and outside their `no_seed` cooldown). A
+ *   copy past its TTL is left as it is and counted in `staleSkipped`.
+ * - `stale`: only the copies past their TTL, at most `budget` of them, and never more than the
+ *   per-run cap. An item with no seed is left for the next action's `missing` phase.
+ */
+export type PriceSeedBulkRefreshPhase =
+	| { scope: 'missing' }
+	| { scope: 'stale'; budget: number };
 
 export interface PriceSeedBulkRefreshOptions {
 	priceHistory: Pick<TyrianPriceHistoryPort, 'openSeedCache' | 'openNoSeedCache'>;
@@ -93,24 +115,38 @@ export class PriceSeedBulkRefreshService {
 	 * `fetchSeed` calls are ever in flight together. One item's failure is recorded and the loop
 	 * moves on to the next id; it never stops early except at the cap.
 	 */
-	async run(itemIds: readonly number[], parent?: ResolvedLocalDebugActionContext): Promise<PriceSeedBulkRefreshOutcome> {
-		const flight = this.pending.then(() => this.runSequential(itemIds, parent));
+	async run(
+		itemIds: readonly number[],
+		parent?: ResolvedLocalDebugActionContext,
+		phase?: PriceSeedBulkRefreshPhase,
+	): Promise<PriceSeedBulkRefreshOutcome> {
+		const flight = this.pending.then(() => this.runSequential(itemIds, parent, phase));
 		this.pending = flight.catch(() => undefined);
 		return await flight;
 	}
 
-	private async runSequential(itemIds: readonly number[], parent?: ResolvedLocalDebugActionContext): Promise<PriceSeedBulkRefreshOutcome> {
+	private async runSequential(
+		itemIds: readonly number[],
+		parent?: ResolvedLocalDebugActionContext,
+		phase?: PriceSeedBulkRefreshPhase,
+	): Promise<PriceSeedBulkRefreshOutcome> {
 		const outcome: PriceSeedBulkRefreshOutcome = {
 			attempted: 0, seeded: 0, skippedCached: 0, skippedNoSeedCooldown: 0, noSeed: 0, failed: 0,
 			queueCoverage: { total: itemIds.length, seeded: 0, noData: 0, pending: itemIds.length },
 		};
+		if (phase?.scope === 'missing') { outcome.staleSkipped = 0; outcome.deferredBudget = 0; }
 		if (this.disposed) return outcome;
 		const stores = await this.ensureStores();
 		if (stores === null || this.disposed) return outcome;
+		// The `stale` phase spends what the `missing` phase of the same action left, never more than the cap.
+		const cap = phase?.scope === 'stale'
+			? Math.min(this.maxItemsPerRun, Math.max(0, Math.floor(phase.budget)))
+			: this.maxItemsPerRun;
 		for (const itemId of itemIds) {
-			if (this.disposed || outcome.attempted >= this.maxItemsPerRun) break;
-			await this.refreshOne(stores, itemId, outcome, parent);
+			if (this.disposed || outcome.attempted >= cap) break;
+			await this.refreshOne(stores, itemId, outcome, parent, phase);
 		}
+		if (phase?.scope === 'missing') outcome.deferredBudget = Math.max(0, cap - outcome.attempted);
 		if (!this.disposed) outcome.queueCoverage = await this.computeQueueCoverage(stores, itemIds);
 		return outcome;
 	}
@@ -120,6 +156,7 @@ export class PriceSeedBulkRefreshService {
 		itemId: number,
 		outcome: PriceSeedBulkRefreshOutcome,
 		parent?: ResolvedLocalDebugActionContext,
+		phase?: PriceSeedBulkRefreshPhase,
 	): Promise<void> {
 		const { store, noSeedStore } = stores;
 		const span = startLocalDebugAction(this.options.diagnostics, {
@@ -156,6 +193,16 @@ export class PriceSeedBulkRefreshService {
 			span.skip('skipped', `no_seed_cooldown_${recentNoSeed.reason}`);
 			return;
 		}
+		if (phase?.scope === 'missing' && cached !== null) {
+			// A copy past its TTL: the analysis reads it as it is, and the `stale` phase refreshes it.
+			outcome.staleSkipped = (outcome.staleSkipped ?? 0) + 1;
+			span.skip('skipped', 'stale_deferred');
+			return;
+		}
+		if (phase?.scope === 'stale' && cached === null) {
+			span.skip('skipped', 'missing_not_deferred');
+			return;
+		}
 		outcome.attempted += 1;
 		let result: PriceSeedResult;
 		try {
@@ -164,6 +211,12 @@ export class PriceSeedBulkRefreshService {
 			// The download itself throwing (rather than answering `no_seed`) never stops item k+1.
 			outcome.failed += 1;
 			span.failure(error, 'unknown_failure', 'no_seed');
+			return;
+		}
+		if (this.disposed) {
+			// `dispose` closed both stores while this request was in flight: its answer has nowhere to
+			// go, and writing it would only record a storage failure nobody can act on.
+			span.skip('skipped', 'disposed');
 			return;
 		}
 		if (result.status === 'no_seed') {

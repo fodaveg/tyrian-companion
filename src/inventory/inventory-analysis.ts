@@ -58,7 +58,8 @@ export interface InventoryPositionRecommendationPort {
 	 * for it yet. Never triggers a download itself: `refreshPriceSeeds` below is the only member of
 	 * this port that reaches the network. Read AFTER `refreshPriceSeeds` runs: a seed this same
 	 * analysis just cached for a newly-derived item must be visible to this read, or decision 4's
-	 * whole point (never wait 42 days per item) fails on exactly the sync that downloaded it.
+	 * whole point (never wait 42 days per item) fails on exactly the sync that downloaded it. A copy
+	 * past its 24 h is returned as it is: its refresh comes after this analysis (1 oct 2026).
 	 */
 	readCachedSeed(itemId: number): Promise<PriceSeedV1 | null>;
 	/**
@@ -69,10 +70,12 @@ export interface InventoryPositionRecommendationPort {
 	 */
 	updateDerivedWatchList(itemIds: readonly number[]): Promise<void>;
 	/**
-	 * Seeds datawars2 history, one item at a time, for whichever of `itemIds` lacks a fresh cache
-	 * entry, capped per call. Decision 4, M2: called once per inventory sync right after the watch
-	 * list update above, and only while price history is on, matching decision 4's "solo detrás del
-	 * botón «Sincronizar»".
+	 * Seeds datawars2 history, one item at a time, for whichever of `itemIds` has NO cache entry,
+	 * and resolves once those are stored. Decision 4, M2: called once per inventory sync right after
+	 * the watch list update above, and only while price history is on, matching decision 4's "solo
+	 * detrás del botón «Sincronizar»". Since 1 oct 2026 an entry past its 24 h is not waited for: the
+	 * implementation refreshes it after the analysis has been delivered, out of the same cap per
+	 * action, and the next analysis reads it.
 	 */
 	refreshPriceSeeds(itemIds: readonly number[]): Promise<void>;
 	/**
@@ -193,7 +196,8 @@ export class InventoryAnalysisService {
 	 *    the note, the Base and the view row say the same thing.
 	 *
 	 * `refreshSeeds` is on only for an inventory sync (decision 4: datawars2 seeding "solo detrás
-	 * del botón «Sincronizar»"); it runs before any history is read, so a seed just downloaded counts.
+	 * del botón «Sincronizar»"); it runs before any history is read, so a seed just downloaded for an
+	 * item that had none counts. An item whose copy is merely past its 24 h is read from that copy.
 	 */
 	async evaluate(
 		source: InventoryAdvisorContextualPresentationSource,
@@ -229,7 +233,8 @@ export class InventoryAnalysisService {
 			const watchListItemIds = normalizePriceHistoryItemIds([...derivedItemIds, ...seasonalItemIds]);
 			await this.recommendation.updateDerivedWatchList(watchListItemIds);
 			// The seed preload is auxiliary: if it rejects (e.g. IndexedDB unavailable) the analysis
-			// still runs on what is cached. The port implementation records the failure locally.
+			// still runs on what is cached. The port implementation records the failure locally. It
+			// waits for the items with no seed only; stale copies are refreshed after this analysis.
 			try { await this.recommendation.refreshPriceSeeds(watchListItemIds); }
 			catch { /* recorded by the port; never invalidates the analysis */ }
 		}

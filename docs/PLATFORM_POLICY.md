@@ -88,10 +88,23 @@ la lista de vigilancia derivada del inventario (decisión 3 de la misma spec); V
 calendario. Ambas piden semilla para los ítems cuya entrada de caché falta o tiene más de 24 horas, la
 misma caché de 24 horas por `(vaultId, itemId)` en `tyrian-companion-price-seed-cache` que ya usan H9.1
 y H9.2. Las peticiones son **en serie, nunca en paralelo**: la siguiente no empieza hasta que la
-anterior termina. Un tope por ejecución (`PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN`, 25 ítems,
+anterior termina. Un tope por acción visible (`PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN`, 25 ítems,
 `src/economy/price-seed-bulk-refresh.ts`) limita cuántas peticiones nuevas dispara una sola
-sincronización; lo que queda fuera del tope se siembra en la sincronización siguiente. Un fallo de
-datawars2 en un ítem se registra y la siembra continúa con el siguiente; ninguno detiene el resto.
+sincronización o una sola actualización de Venta; lo que queda fuera del tope se siembra en la
+acción siguiente. Un fallo de datawars2 en un ítem se registra y la siembra continúa con el
+siguiente; ninguno detiene el resto.
+
+Desde el 1 de octubre de 2026 la acción solo espera a los ítems que no tienen ninguna semilla en
+caché: esos se piden antes de calcular el veredicto, como hasta ahora. Los ítems cuya copia tiene
+más de 24 horas se piden después de que la acción haya entregado y pintado su resultado, con el cupo
+que las anteriores hayan dejado del mismo tope de 25. Por tanto puede haber peticiones a datawars2 en
+curso con la acción ya terminada en pantalla: siguen siendo consecuencia de esa acción explícita,
+siguen yendo en serie por la misma cola y no hay ninguna sin una acción previa de la persona. Lo que
+descargan lo lee el análisis siguiente; no se relanza ningún análisis al terminar. Si ya hay un
+refresco diferido pendiente o en curso, una acción nueva no añade otro. Al descargar el plugin, el
+refresco diferido se corta en el ítem siguiente y la respuesta de una petición ya en vuelo se
+descarta sin escribirse; la petición en vuelo no se puede cancelar.
+
 Corregido el 24 de septiembre de 2026 (H18.17, auditoría §3.E): una respuesta «sin semilla» se
 recuerda aparte, en `tyrian-companion-price-seed-no-seed-cache`, con el mismo espaciado de 24 horas
 antes de volver a intentarla (`PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS`); antes de esto, un ítem sin

@@ -637,7 +637,7 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 		const evidence = evidenceOf(snapshot, { 42: { bid: 200, ask: 210 }, 43: { bid: 200, ask: 210 } });
 		const marketDepth = marketDepthOf(evidence.prices);
 		const workflow = new InventoryAdvisorWorkflow({
-			capture: { capture: (async () => ({ status: 'complete' as const, evidence: structuredClone(evidence), marketDepth: structuredClone(marketDepth) })) as never },
+			capture: { capture: async () => ({ status: 'complete' as const, evidence: structuredClone(evidence), marketDepth: structuredClone(marketDepth) }) },
 			preferences: { load: async () => ({ status: 'ready', value: { goals: [], keepExceptions: [] } }) },
 			rules: { current: () => ({ status: 'available', value: rulesFixture() }) },
 			now: () => AS_OF_MS,

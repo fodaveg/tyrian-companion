@@ -306,7 +306,8 @@ describe('PriceSeedBulkRefreshService phases: missing seeds first, stale copies 
 		const outcome = await run;
 		// Before the guard the answer was written to the store `dispose` had just closed, and that
 		// write's own failure was recorded as a `storage_failure` nobody could act on.
-		expect(outcome).toMatchObject({ attempted: 1, seeded: 0, failed: 0 });
+		expect(outcome.failed).toBe(0);
+		expect(outcome).toMatchObject({ attempted: 1, seeded: 0 });
 		const reader = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
 		expect(await reader.get('vault', 1)).toBeNull();
 		reader.close();

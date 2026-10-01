@@ -126,7 +126,11 @@ import { assemblePriceHistory } from './assemble-price-history';
 import { CollectorHeartbeat } from './collector-status';
 import { loadCollectorInstanceId, loadCollectorMode, saveCollectorMode } from './collector-instance';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
-import { PriceSeedBulkRefreshService, type PriceSeedQueueCoverage } from '../economy/price-seed-bulk-refresh';
+import {
+	PriceSeedBulkRefreshService,
+	type PriceSeedBulkRefreshOutcome,
+	type PriceSeedQueueCoverage,
+} from '../economy/price-seed-bulk-refresh';
 import { fetchPriceSeed } from '../economy/price-seed-source';
 import { sellOrWaitSeedMaxDays } from '../economy/sell-or-wait';
 import type { PriceSeedV1 } from '../economy/price-seed-model';
@@ -487,6 +491,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * Read-only, in-memory; `getPriceSeedQueueCoverage` is the only thing that reads it.
 	 */
 	private priceSeedQueueCoverage: PriceSeedQueueCoverage | null = null;
+	/**
+	 * 1 oct 2026: the stale copies one explicit action left for after its result, until
+	 * `refreshInventoryAdvisor` ends and starts them. One slot: an action that finds a deferred pass
+	 * waiting here or already running (`priceSeedDeferredPass`) leaves none of its own.
+	 */
+	private priceSeedDeferredRequest: PriceSeedDeferredRequest | null = null;
+	/** The deferred pass in flight, owned by the core and detached from the action that left it. */
+	private priceSeedDeferredPass: Promise<void> | null = null;
 	/**
 	 * Read-only connection to the same `tyrian-companion-price-seed-cache` database
 	 * `priceSeedBulkRefresh` writes into, for `previewInventorySync`'s recommendation port
@@ -940,8 +952,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			now: () => Date.now(),
 			diagnostics: this.localDebugActions ?? undefined,
 		});
-		// Construction opens no I/O; decision 4 (SPEC-recomendacion-por-objeto.md §7) only ever
-		// runs from inside `capture()`'s own post-sync pass, itself gated on `priceHistoryEnabled`.
+		// Construction opens no I/O; decision 4 (SPEC-recomendacion-por-objeto.md §7) only ever runs
+		// behind an explicit inventory sync or Sale refresh, itself gated on `priceHistoryEnabled`:
+		// the missing seeds inside that action, the stale copies right after its result.
 		this.priceSeedBulkRefresh = new PriceSeedBulkRefreshService({
 			priceHistory: host.priceHistory,
 			vaultId,
@@ -1009,8 +1022,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// Same cache `priceSeedBulkRefresh` (below) writes into, read-only: the analysis
 			// merges this with `readDaily` above (decision 4) so a seed a prior "Sincronizar
 			// inventario" already cached — or one this very sync's `refreshPriceSeeds` just
-			// downloaded — reaches `recommendPosition` without waiting on the plugin's own
-			// 42-day capture.
+			// downloaded for an item that had none — reaches `recommendPosition` without waiting
+			// on the plugin's own 42-day capture. No TTL here: a copy past its 24 h is still read.
 			readCachedSeed: async (itemId) => await this.readCachedPriceSeed(vaultId, itemId),
 			// Decision 3 (SPEC-recomendacion-por-objeto.md §7): capital-derived watch list,
 			// recomputed on every sync so an item that drops below the threshold leaves it.
@@ -1427,6 +1440,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.inventoryPreferences?.dispose();
 		this.priceHistory?.dispose();
 		this.priceHistoryPanelSeed?.dispose();
+		// Cuts a deferred pass in flight at its next item, and drops one that had not started yet.
+		this.priceSeedDeferredRequest = null;
 		this.priceSeedBulkRefresh?.dispose();
 		this.priceSeedCacheReader?.close();
 		this.priceSeedCacheReader = null;
@@ -1870,14 +1885,25 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/**
 	 * The inventory sync's own seed pass (decision 4), behind the analysis port's `refreshPriceSeeds`.
 	 * A method rather than a closure of `initializeRuntime` so the pass can be driven on its own.
+	 *
+	 * 1 oct 2026: it waits only for the items with NO seed, so the analysis that follows reads them.
+	 * The copies past their 24 h are left for `startPriceSeedDeferredPass`, after the result.
 	 */
 	private async refreshPriceSeedsForSync(itemIds: readonly number[]): Promise<void> {
 		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
 			component: 'price_history', action: 'price_history_load_series', state: 'price_seed_bulk_refresh',
 		});
+		// Read before waiting: the missing seeds queue behind a deferred pass that is alive now, and
+		// by the time they are served that pass is over.
+		const deferredAlive = this.priceSeedDeferredAlive();
 		try {
-			const outcome = await this.priceSeedBulkRefresh?.run(itemIds);
-			if (outcome !== undefined) this.priceSeedQueueCoverage = outcome.queueCoverage;
+			const outcome = await this.priceSeedBulkRefresh?.run(itemIds, undefined, { scope: 'missing' });
+			if (outcome !== undefined && !this.unloaded) {
+				// A stale copy is a seed too, so this coverage is already the whole list's: the deferred
+				// pass recomputes it over the same list and can only confirm it or move it forward.
+				this.priceSeedQueueCoverage = outcome.queueCoverage;
+				if (!deferredAlive) this.requestPriceSeedDeferredPass(itemIds, outcome, true);
+			}
 			span.success('refreshed', { itemCount: itemIds.length });
 		} catch (error) {
 			span.failure(error, 'storage_failure', 'store_unavailable', { itemCount: itemIds.length });
@@ -1885,14 +1911,70 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 	}
 
-	/** Explicit Sale refresh may fill the calendar's history, using the existing opt-in and cache. */
+	/** Whether a deferred pass is waiting for its action to finish, or already downloading. */
+	private priceSeedDeferredAlive(): boolean {
+		return Boolean(this.priceSeedDeferredRequest) || Boolean(this.priceSeedDeferredPass);
+	}
+
+	/**
+	 * Leaves the stale copies of one action for after its result: nothing is requested here. Only
+	 * when the `missing` phase left both stale copies and part of the action's cap of 25.
+	 */
+	private requestPriceSeedDeferredPass(
+		itemIds: readonly number[],
+		outcome: PriceSeedBulkRefreshOutcome,
+		coverage: boolean,
+	): void {
+		const budget = outcome.deferredBudget ?? 0;
+		if ((outcome.staleSkipped ?? 0) === 0 || budget <= 0) return;
+		this.priceSeedDeferredRequest = { itemIds: [...itemIds], budget, coverage };
+	}
+
+	/**
+	 * Starts the deferred pass an action left, once that action has delivered and painted its result
+	 * (the end of `refreshInventoryAdvisor`). Detached: the action never waits for it, its rejection
+	 * goes to the diagnostic log, and what it downloads is read by the NEXT analysis.
+	 */
+	private startPriceSeedDeferredPass(): void {
+		const request = this.priceSeedDeferredRequest;
+		if (!request) return;
+		this.priceSeedDeferredRequest = null;
+		if (this.unloaded || this.priceSeedDeferredPass) return;
+		const pass = this.runPriceSeedDeferredPass(request);
+		this.priceSeedDeferredPass = pass;
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'price_history', action: 'price_history_load_series', state: 'price_seed_deferred_refresh' },
+			() => pass);
+	}
+
+	private async runPriceSeedDeferredPass(request: PriceSeedDeferredRequest): Promise<void> {
+		try {
+			const outcome = await this.priceSeedBulkRefresh?.run(request.itemIds, undefined, { scope: 'stale', budget: request.budget });
+			// An unload in the middle leaves an outcome that never measured its coverage, and no view to paint.
+			if (outcome === undefined || this.unloaded || !request.coverage) return;
+			this.priceSeedQueueCoverage = outcome.queueCoverage;
+			// The coverage line only: no analysis and no Sale verdict is recomputed here.
+			this.renderInventoryAdvisorViews();
+		} finally {
+			this.priceSeedDeferredPass = null;
+		}
+	}
+
+	/**
+	 * Explicit Sale refresh may fill the calendar's history, using the existing opt-in and cache. It
+	 * waits for the calendar items with no seed, so the verdict that follows reads them; the copies
+	 * past their 24 h are refreshed after the result (1 oct 2026).
+	 */
 	async refreshSale(options: { refreshSeeds: boolean } = { refreshSeeds: true }): Promise<void> {
 		if (refusedInConsult(this)) return;
 		if (this.runtimeReady && options.refreshSeeds && this.settings.priceHistoryEnabled) {
 			const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
 			if (loaded.status === 'available') {
+				const itemIds = loaded.bundle.festivalCalendar.entries.map((entry) => entry.itemId);
+				const deferredAlive = this.priceSeedDeferredAlive();
+				const outcome = await this.priceSeedBulkRefresh?.run(itemIds, undefined, { scope: 'missing' });
 				// This is a calendar-only pass; its coverage must not replace the whole sync watch list.
-				await this.priceSeedBulkRefresh?.run(loaded.bundle.festivalCalendar.entries.map((entry) => entry.itemId));
+				if (outcome !== undefined && !deferredAlive && !this.unloaded) this.requestPriceSeedDeferredPass(itemIds, outcome, false);
 			}
 		}
 		await this.refreshInventoryAdvisor();
@@ -2102,9 +2184,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.refreshSaleHeroTiming();
 		this.renderInventoryAdvisorViews();
 		};
-		await (this.localDebugActions?.run(
-			{ component: 'inventory', action: 'inventory_refresh' }, perform,
-		) ?? perform());
+		try {
+			await (this.localDebugActions?.run(
+				{ component: 'inventory', action: 'inventory_refresh' }, perform,
+			) ?? perform());
+		} finally {
+			// After the result is delivered and painted, never before: see `startPriceSeedDeferredPass`.
+			if (this.priceSeedDeferredRequest) this.startPriceSeedDeferredPass();
+		}
 	}
 
 	/**
@@ -5505,6 +5592,16 @@ async function ensureAdapterDirectory(
 		current = current.length === 0 ? segment : `${current}/${segment}`;
 		if (!await adapter.exists(current)) await adapter.mkdir(current);
 	}
+}
+
+/** The stale seed copies one explicit action left to refresh after its result (1 oct 2026). */
+interface PriceSeedDeferredRequest {
+	/** The action's whole list; the pass itself requests only the copies past their TTL. */
+	readonly itemIds: readonly number[];
+	/** What the action's `missing` phase left of the cap of 25. */
+	readonly budget: number;
+	/** True for an inventory sync, whose list is the one the coverage line describes; false for Sale's calendar. */
+	readonly coverage: boolean;
 }
 
 /** Captures detached host callbacks without allowing diagnostics to alter their void contract. */

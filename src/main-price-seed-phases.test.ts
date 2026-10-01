@@ -46,6 +46,11 @@ describe('price seed phases through the core: missing seeds before the result, s
 		});
 		const syncItemIds: { current: readonly number[] } = { current: [] };
 		const renderInventoryAdvisorViews = vi.fn();
+		// What the workflow does inside a sync's analysis: the analysis port's seed pass, then the result.
+		const analyse = vi.fn(async () => {
+			if (syncItemIds.current.length > 0) await core.refreshPriceSeedsForSync.call(harness, syncItemIds.current);
+			return { status: 'ready' };
+		});
 		const harness = {
 			runtimeReady: true, vaultId: VAULT, unloaded: false,
 			settings: { priceHistoryEnabled: true, priceHistoryDailyRetentionDays: 400, recommendationCapitalThresholdCopper: 100_000 },
@@ -57,11 +62,7 @@ describe('price seed phases through the core: missing seeds before the result, s
 			priceHistory: { readDaily: async () => [] },
 			getInventoryAdvisorViewModel: () => ({ status: 'ready', groups: [{ rows: [{ itemId: 36038, ownedQuantity: 1 }] }] }),
 			inventoryAdvisor: {
-				// What the workflow does inside a sync's analysis: the analysis port's seed pass, then the result.
-				refresh: async () => {
-					if (syncItemIds.current.length > 0) await core.refreshPriceSeedsForSync.call(harness, syncItemIds.current);
-					return { status: 'ready' };
-				},
+				refresh: () => analyse(),
 				analysis: () => ({ source: { input: { prices: { items: [{ itemId: 36038, bid: { unitCopper: 374 } }] } } } }),
 			},
 			renderInventoryAdvisorViews,
@@ -73,8 +74,12 @@ describe('price seed phases through the core: missing seeds before the result, s
 			try { return (await reader.get(VAULT, itemId))?.cachedAtMs ?? null; } finally { reader.close(); }
 		};
 		return {
-			harness, probe, service, renderInventoryAdvisorViews, readCachedAt,
-			refreshSale: () => core.refreshSale.call(harness),
+			harness, probe, service, renderInventoryAdvisorViews, readCachedAt, analyse,
+			/** One explicit Sale refresh: the calendar's seed pass, then an analysis that is not a sync's. */
+			refreshSale: () => {
+				syncItemIds.current = [];
+				return core.refreshSale.call(harness);
+			},
 			/** One "Sincronizar inventario" analysis whose derived watch list is `itemIds`. */
 			syncRefresh: (itemIds: readonly number[]) => {
 				syncItemIds.current = itemIds;
@@ -109,7 +114,7 @@ describe('price seed phases through the core: missing seeds before the result, s
 		const { harness, probe, refreshSale } = await setup(stale);
 
 		const refresh = refreshSale();
-		for (const _itemId of missing) {
+		for (let answered = 0; answered < missing.length; answered += 1) {
 			await probe.started();
 			probe.releaseOne();
 		}
@@ -150,7 +155,7 @@ describe('price seed phases through the core: missing seeds before the result, s
 	});
 
 	it('sync, one missing seed and stale copies: the coverage comes with the result and the deferred pass repaints it once', async () => {
-		const { harness, probe, syncRefresh, renderInventoryAdvisorViews } = await setup([1, 2, 3]);
+		const { harness, probe, syncRefresh, renderInventoryAdvisorViews, analyse } = await setup([1, 2, 3]);
 
 		// Item 4 has no seed: the action waits for it, and for nothing else.
 		const refresh = syncRefresh([1, 2, 3, 4]);
@@ -169,6 +174,8 @@ describe('price seed phases through the core: missing seeds before the result, s
 		expect(probe.calls).toEqual([4, 1, 2, 3]);
 		expect(harness.priceSeedQueueCoverage).toEqual({ total: 4, seeded: 4, noData: 0, pending: 0 });
 		expect(renderInventoryAdvisorViews.mock.calls.length).toBe(rendersWithTheResult + 1);
+		// What the deferred pass downloaded is for the next analysis: it starts none itself.
+		expect(analyse).toHaveBeenCalledTimes(1);
 	});
 
 	it('unload in the middle of the deferred pass: it stops, stores nothing more, and repaints nothing', async () => {
@@ -206,6 +213,22 @@ describe('price seed phases through the core: missing seeds before the result, s
 		await drain();
 
 		expect(probe.calls).toEqual([1, 2, 3, 9, 10]);
+		expect(probe.maxInFlight()).toBe(1);
+	});
+
+	it('a Sale refresh while a sync\'s deferred pass is alive: the calendar\'s stale copies are not queued behind it', async () => {
+		const calendar = calendarItemIds();
+		const { probe, syncRefresh, refreshSale, drain } = await setup([1, 2, 3, ...calendar]);
+
+		expect(await firstOf(syncRefresh([1, 2, 3]), probe)).toBe('resolved');
+		await probe.started();
+
+		const sale = refreshSale();
+		probe.open();
+		await sale;
+		await drain();
+
+		expect(probe.calls).toEqual([1, 2, 3]);
 		expect(probe.maxInFlight()).toBe(1);
 	});
 });
