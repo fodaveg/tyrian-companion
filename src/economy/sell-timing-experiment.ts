@@ -401,35 +401,3 @@ export function runSellTimingExperiment(
 
 	return { itemId, recommendedStrategy, trainEvaluations, testEvaluations, losingTestYears, outOfSample };
 }
-
-/** Renders the per-year, per-strategy ratio table the acceptance criteria ask to see, losing years marked, plus the out-of-sample verdict (section 3.D: "sin ventaja demostrada para esperar", with net advantage, range and N seasons). */
-export function formatSellTimingReport(result: SellTimingExperimentResult): string {
-	const lines: string[] = [];
-	lines.push(`item ${String(result.itemId)}: recommended = ${result.recommendedStrategy}`);
-	lines.push('year\tsell_now\twait_pre_festival\twait_next_may\tlosing');
-	for (const evaluation of result.testEvaluations) {
-		const losing = result.losingTestYears.includes(evaluation.year) ? 'LOSING' : '';
-		if (evaluation.status === 'no_decision_price') {
-			lines.push(`${String(evaluation.year)}\tno decision price\t\t\t${losing}`);
-			continue;
-		}
-		const pre = evaluation.ratios.wait_pre_festival;
-		const may = evaluation.ratios.wait_next_may;
-		lines.push([
-			String(evaluation.year), '1.000',
-			pre === undefined ? 'n/a' : pre.toFixed(3),
-			may === undefined ? 'n/a' : may.toFixed(3),
-			losing,
-		].join('\t'));
-	}
-	const outOfSample = result.outOfSample;
-	const fmt = (value: number | undefined): string => (value === undefined ? 'n/a' : value.toFixed(3));
-	lines.push('');
-	lines.push(`out-of-sample verdict for ${outOfSample.strategy}: ${outOfSample.verdict}`);
-	lines.push(
-		`N=${String(outOfSample.yearsWithData)} test years with data, ` +
-			`won ${String(outOfSample.yearsWon)}, lost ${String(outOfSample.yearsLost)}, ` +
-			`median ${fmt(outOfSample.medianRatio)}, range [${fmt(outOfSample.minRatio)}, ${fmt(outOfSample.maxRatio)}]`,
-	);
-	return lines.join('\n');
-}

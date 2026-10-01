@@ -9,7 +9,6 @@ import {
 	chooseRecommendedStrategy,
 	decisionDayFor,
 	evaluateFestivalYear,
-	formatSellTimingReport,
 	lookupDecisionDayPrice,
 	nextMayWindowFor,
 	preFestivalWindowFor,
@@ -146,10 +145,10 @@ describe('sell-timing-experiment: run against the frozen bag (36038) and corn (4
 		expect(mayLosses).toHaveLength(5);
 	});
 
-	it('publishes a report with all seven test years and their losing markers, never trimmed to make a rule look better', () => {
-		const report = formatSellTimingReport(runSellTimingExperiment(36_038, sellTimingHistoryBagDays()));
-		for (const year of SELL_TIMING_TEST_YEARS) expect(report).toContain(String(year));
-		expect(report).toMatch(/LOSING/);
+	it('keeps all seven test years and their losing years in the result, never trimmed to make a rule look better', () => {
+		const result = runSellTimingExperiment(36_038, sellTimingHistoryBagDays());
+		expect(result.testEvaluations.map((evaluation) => evaluation.year)).toEqual([...SELL_TIMING_TEST_YEARS]);
+		expect(result.losingTestYears.length).toBeGreaterThan(0);
 	});
 });
 
@@ -256,10 +255,12 @@ describe('summarizeOutOfSampleAdvantage: does the training-chosen edge survive o
 		expect(result.verdict).toBe('no_demonstrated_advantage');
 	});
 
-	it('the report shows the verdict, the sample size and the range, not just the recommendation', () => {
-		const report = formatSellTimingReport(runSellTimingExperiment(36_038, sellTimingHistoryBagDays()));
-		expect(report).toContain('out-of-sample verdict for wait_pre_festival: no_demonstrated_advantage');
-		expect(report).toContain('N=7 test years with data');
-		expect(report).toMatch(/range \[0\.906, 1\.056\]/);
+	it('the result carries the verdict, the sample size and the range, not just the recommendation', () => {
+		const { outOfSample } = runSellTimingExperiment(36_038, sellTimingHistoryBagDays());
+		expect(outOfSample.strategy).toBe('wait_pre_festival');
+		expect(outOfSample.verdict).toBe('no_demonstrated_advantage');
+		expect(outOfSample.yearsWithData).toBe(7);
+		expect(outOfSample.minRatio?.toFixed(3)).toBe('0.906');
+		expect(outOfSample.maxRatio?.toFixed(3)).toBe('1.056');
 	});
 });
