@@ -61,7 +61,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			// H18.14: pure goal merge plus the object-result types; the analysis itself is a port.
 			'./inventory-object-result',
 			// H18.15: the pure observed-minimum rule the classifier validates the capacity against.
-			'../economy/material-storage-deposit-validation'],
+			'../economy/material-storage-deposit-validation',
+			// The pure sort that puts the record's keep exceptions in the sequence the input contract demands.
+			'./inventory-advisor-contract'],
 		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load',
 			'ports.objects.derivedGoals', 'ports.objects.evaluate'],
 	}],

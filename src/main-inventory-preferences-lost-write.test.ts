@@ -23,6 +23,7 @@ import type { InventoryKnowledgePackV1 } from './advisor/inventory-advisor-class
 import type { ReservationGoal } from './economy/reservation-model';
 import { InventoryAdvisorPresentationController } from './ui/inventory-advisor-controller';
 import { InventoryAdvisorItemView } from './ui/inventory-advisor-item-view';
+import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 import type { StorageSnapshot } from './account/storage-snapshot-model';
 import { PINNED_SCHEMA } from './account/storage-snapshot-model';
 import type { CatalogResolution } from './catalog/public-catalog-model';
@@ -57,9 +58,12 @@ afterEach(() => { randomUuid.mockRestore(); vi.unstubAllGlobals(); });
  * presentation controller. Only the account capture and the IndexedDB store are fakes, and
  * `classifyInventoryAdvisor` is the real classifier, counted.
  */
-async function analysedAdvisor() {
+async function analysedAdvisor(alreadyStored: KeepExceptionV1[] = []) {
 	const fixture = twoDiscardCandidatesFixture();
 	const store = new MemoryPreferencesStore();
+	// What an earlier session of the user left in the store, written through the same service.
+	const earlier = new InventoryPreferencesService(store, () => NOW);
+	for (const [generation, exception] of alreadyStored.entries()) await earlier.upsertKeepException(SCOPE, generation, exception);
 	const runtime = new InventoryPreferencesRuntime(new InventoryPreferencesService(store, () => NOW), SCOPE.vaultId);
 	const workflow = new InventoryAdvisorWorkflow({
 		capture: { capture: async () => ({ status: 'complete' as const, evidence: fixture.evidence }) },
@@ -110,7 +114,13 @@ async function analysedAdvisor() {
 			keeps: (read.record?.keepExceptions ?? []).map((entry) => entry.itemId).sort(),
 		};
 	};
-	return { store, runtime, controller, classifications, newSession, openView, otherWindow, stored };
+	/** The stored exceptions in the order the record keeps them, which is the order the workflow receives. */
+	const storedKeepOrder = async (): Promise<Array<[number, string]>> => {
+		const read = await store.read(SCOPE);
+		if (read.status !== 'ok') throw new Error(`store read failed: ${read.code}`);
+		return (read.record?.keepExceptions ?? []).map((entry) => [entry.itemId, entry.exceptionId]);
+	};
+	return { store, runtime, controller, classifications, newSession, openView, otherWindow, stored, storedKeepOrder };
 }
 
 /**
@@ -301,6 +311,44 @@ describe('inventory preferences: a write of the user is either in the store or v
 	});
 });
 
+describe('inventory preferences: keep exceptions whose ids order the items backwards still classify', () => {
+	/** The advisor's rows as the view model has them, to tell a ready analysis from a failed one. */
+	function analysis(model: InventoryAdvisorViewModel): { status: string; rows: string[] } {
+		return { status: model.status, rows: model.groups.flatMap((group) => group.rows.map((row) => `${row.name}:${row.action}`)).sort() };
+	}
+	const BOTH_KEPT = { status: 'ready', rows: ['Baratija:keep', 'Trofeo:keep'] };
+
+	it('"Conservar" item 11 and then item 10 leaves the analysis ready, and so does the next one', async () => {
+		const env = await analysedAdvisor();
+		const { root } = await env.openView();
+		// The ids grow with each call, so the stored order by id is item 11, then item 10.
+		await click(root, 'Conservar Baratija');
+		await click(root, 'Conservar Trofeo');
+		expect(await env.storedKeepOrder()).toEqual([[11, '00000000-0000-4000-8000-000000000001'], [10, '00000000-0000-4000-8000-000000000002']]);
+		expect(analysis(env.controller.open())).toEqual(BOTH_KEPT);
+		expect(analysis(await env.controller.refresh())).toEqual(BOTH_KEPT);
+	});
+
+	it('a store already holding the exceptions in that order analyses without a migration', async () => {
+		const env = await analysedAdvisor([keep(11, 'a'), keep(10, 'b')]);
+		expect(await env.storedKeepOrder()).toEqual([[11, 'a'], [10, 'b']]);
+		expect(analysis(env.controller.open())).toEqual(BOTH_KEPT);
+		// The stored record is read, never rewritten: same order, same generation.
+		expect((await env.store.read(SCOPE))).toMatchObject({ status: 'ok', record: { generation: 2 } });
+	});
+
+	it('two goals whose ids order the items backwards classify too: goals carry no order of their own', async () => {
+		const env = await analysedAdvisor();
+		const { root } = await env.openView();
+		await click(root, 'Cargar preferencias locales');
+		await submitGoal(root, 'Primero', 11);
+		await submitGoal(root, 'Segundo', 10);
+		expect((await env.stored()).goalTitles).toEqual(['Primero', 'Segundo']);
+		expect(env.controller.open().status).toBe('ready');
+		expect((await env.controller.refresh()).status).toBe('ready');
+	});
+});
+
 describe('inventory preferences: the account is classified once per write, never for a reload', () => {
 	it('three writes from one view (a goal, a keep exception and a "Conservar") classify three times', async () => {
 		const env = await analysedAdvisor();
@@ -344,8 +392,8 @@ describe('inventory preferences: the account is classified once per write, never
 	});
 });
 
-function keep(itemId: number): KeepExceptionV1 {
-	return { version: 1, exceptionId: `keep-${String(itemId)}`, itemId, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' };
+function keep(itemId: number, exceptionId = `keep-${String(itemId)}`): KeepExceptionV1 {
+	return { version: 1, exceptionId, itemId, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' };
 }
 
 function goal(goalId: string, itemId: number): ReservationGoal {
