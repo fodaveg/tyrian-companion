@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 478,
+		"catch_clause": 476,
 		"promise_catch": 39,
 		"void_expression": 101,
 		"callback_registration": 178
@@ -370,43 +370,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "5b2600863fe20d16b0dda72f3e0ce966e77580ea",
-					"kind": "catch_clause",
-					"line": 113,
-					"column": 3,
-					"endLine": 116,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "capture",
-						"justification": "The \"capture\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"capture\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"capture\"."
-				},
-				{
-					"id": "7dc893ec1705cb3ec35debdab08cad682680f070",
-					"kind": "catch_clause",
-					"line": 127,
-					"column": 5,
-					"endLine": 129,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "capture",
-						"justification": "The \"capture\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"capture\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"capture\"."
-				},
-				{
 					"id": "d4c5513a2799f029b9ad47776a58a5480a8fcbbc",
 					"kind": "catch_clause",
-					"line": 175,
+					"line": 77,
 					"column": 5,
-					"endLine": 177,
+					"endLine": 79,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {

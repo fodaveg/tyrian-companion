@@ -4,12 +4,9 @@ import type { GuildWars2Operation } from './guild-wars-2-client';
 import {
 	captureActiveTradingPostOrders,
 	isActiveTradingPostOrdersEvidence,
-	isTradingPostHistoryEvidence,
-	TradingPostHistoryEvidenceService,
 } from './trading-post-evidence';
 
 const NOW = Date.parse('2026-08-29T12:00:00.000Z');
-const WINDOW = { from: '2026-08-29T10:00:00.000Z', to: '2026-08-29T11:00:00.000Z' };
 
 describe('trading post evidence', () => {
 	it('captures current buys and sells without retaining raw transaction identifiers', async () => {
@@ -89,68 +86,21 @@ describe('trading post evidence', () => {
 		expect(requestDetailed).toHaveBeenCalledTimes(20);
 	});
 
-	it('captures complete in-window history as a proposal-safe projection', async () => {
-		const requestDetailed = vi.fn(async (path: string) => {
-			if (path === 'tokeninfo') return response(token());
-			if (path === 'account') return response(account());
-			if (path.includes('/history/buys')) return response([
-				transaction(true, 10, 2, '2026-08-29T10:30:00.000Z'),
-				transaction(true, 12, 1, '2026-08-29T09:30:00.000Z'),
-			]);
-			return response([transaction(false, 11, 3, '2026-08-29T10:45:00.000Z')]);
-		});
-		const service = new TradingPostHistoryEvidenceService(client(requestDetailed), () => NOW);
-		const evidence = await service.capture('account-1', WINDOW);
+	it('treats a current order that carries a purchase date as an invalid payload', async () => {
+		const requestDetailed = vi.fn(async (path: string) => response([
+			{ ...transaction(path.includes('/buys'), 10, 1), purchased: '2026-08-29T10:30:00.000Z' },
+		]));
+		const evidence = await captureActiveTradingPostOrders(operation(requestDetailed), 'account-1', token(), () => NOW);
 
-		expect(evidence).toMatchObject({
-			status: 'complete',
-			events: [
-				{ kind: 'buy', itemId: 10, quantity: 2, coins: 200, occurredAt: '2026-08-29T10:30:00.000Z' },
-				{ kind: 'sell', itemId: 11, quantity: 3, coins: 300, occurredAt: '2026-08-29T10:45:00.000Z' },
-			],
-		});
-		expect(isTradingPostHistoryEvidence(evidence)).toBe(true);
-		expect(JSON.stringify(evidence)).not.toMatch(/"id"|created/u);
-	});
-
-	it('fails closed on truncated history and keeps account identity exact', async () => {
-		const requestDetailed = vi.fn(async (path: string) => {
-			if (path === 'tokeninfo') return response(token());
-			if (path === 'account') return response(account());
-			return response(Array.from({ length: 200 }, (_, index) => transaction(
-				path.includes('/buys'), page(path) * 200 + index + 1, 1, '2026-08-29T10:30:00.000Z',
-			)), { 'x-page-total': '11' });
-		});
-		const service = new TradingPostHistoryEvidenceService(client(requestDetailed), () => NOW);
-		const evidence = await service.capture('account-1', WINDOW);
-
-		expect(evidence).toMatchObject({ status: 'partial', endpointCoverage: {
-			buy: { status: 'partial', reason: 'page_limit' },
-			sell: { status: 'partial', reason: 'page_limit' },
+		expect(evidence).toMatchObject({ status: 'unavailable', orders: [], endpointCoverage: {
+			buy: { status: 'invalid', reason: 'invalid_payload' },
+			sell: { status: 'invalid', reason: 'invalid_payload' },
 		} });
-		expect((await service.capture('other-account', WINDOW)).status).toBe('invalid');
-	});
-
-	it.each([
-		[{ from: '2026-05-30T11:59:59.999Z', to: '2026-08-29T11:00:00.000Z' }, 'over 90 days'],
-		[{ from: '2026-08-29T10:00:00.000Z', to: '2026-08-29T12:00:00.001Z' }, 'future end'],
-		[{ from: '2026-05-31T11:59:59.999Z', to: '2026-06-01T12:00:00.000Z' }, 'older than the recoverable horizon'],
-	] as const)('rejects a %s history window before any API request', async (window, _label) => {
-		const requestDetailed = vi.fn();
-		const evidence = await new TradingPostHistoryEvidenceService(client(requestDetailed), () => NOW)
-			.capture('account-1', window);
-
-		expect(evidence.status).toBe('invalid');
-		expect(evidence.events).toEqual([]);
-		expect(requestDetailed).not.toHaveBeenCalled();
 	});
 });
 
 function operation(requestDetailed: (path: string) => Promise<{ status: number; headers: Record<string, string>; body: unknown }>): GuildWars2Operation {
 	return { request: async (path) => (await requestDetailed(path)).body, requestDetailed };
-}
-function client(requestDetailed: (path: string) => Promise<{ status: number; headers: Record<string, string>; body: unknown }>) {
-	return { beginOperation: () => operation(requestDetailed) };
 }
 function response(body: unknown, headers: Record<string, string> = {}) {
 	return { status: 200, headers, body };
@@ -159,11 +109,8 @@ function token(overrides: { permissions?: string[]; urls?: string[] } = {}) {
 	return { id: 'token-secret-id', name: 'test', permissions: overrides.permissions ?? ['account', 'tradingpost'],
 		...(overrides.urls === undefined ? {} : { urls: overrides.urls }) };
 }
-function account() {
-	return { id: 'account-1', name: 'Account.1234', world: 1, created: '2020-01-01T00:00:00.000Z', access: ['GuildWars2'], commander: false };
-}
-function transaction(buy: boolean, itemId: number, quantity: number, purchased?: string) {
+function transaction(buy: boolean, itemId: number, quantity: number) {
 	return { id: (buy ? 1_000_000 : 2_000_000) + itemId, item_id: itemId, price: 100, quantity,
-		created: '2026-08-29T09:00:00.000Z', ...(purchased === undefined ? {} : { purchased }) };
+		created: '2026-08-29T09:00:00.000Z' };
 }
 function page(path: string): number { return Number(new URLSearchParams(path.split('?')[1]).get('page')); }
