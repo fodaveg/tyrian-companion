@@ -44,7 +44,8 @@ export function selectInventoryMarketRoute(input: InventoryMarketSelectionInputV
 		: depthList?.status === 'complete' ? depthList.netCopper
 			: list?.status === 'ok' ? list.value.netCopper : null;
 	const baseline = Math.max(vendor ?? 0, sellNet ?? 0);
-	if (listNet !== null && baseline > 0 && listNet * 10_000 >= baseline * (10_000 + input.listingMinimumAdvantageBps)) return { action: 'list', reason: 'alternative_route_exists' };
+	// With no vendor and no instant-sale value to measure the advantage against, any positive listing net beats it.
+	if (listNet !== null && (baseline > 0 ? listNet * 10_000 >= baseline * (10_000 + input.listingMinimumAdvantageBps) : listNet > 0)) return { action: 'list', reason: 'alternative_route_exists' };
 	if (vendor !== null && (sellNet === null || vendor >= sellNet)) return { action: 'vendor', reason: 'alternative_route_exists' };
 	if (sellNet !== null) return { action: 'sell', reason: 'alternative_route_exists' };
 	if (listNet !== null) return { action: 'list', reason: 'alternative_route_exists' };
