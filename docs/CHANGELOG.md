@@ -1,5 +1,32 @@
 # Changelog
 
+## Release beta 0.2.17 - sincronizar ya no espera a refrescar los precios que ya tenía, el asesor deja de vender por nada y el panel de precios conserva el foco
+
+- **«Sincronizar inventario» y «Actualizar» en Venta ya no esperan a refrescar las semillas de
+  precios que ya tenían.** Esperan solo a las de los objetos que no tienen ninguna, para que un objeto
+  nuevo siga saliendo con veredicto; las copias con más de 24 horas se usan tal cual y se refrescan al
+  terminar la acción, de una en una, dentro del mismo tope de 25 descargas por acción. Nunca hay dos
+  descargas a la vez. No descarga nada con el historial de precios desactivado ni en modo consulta, y
+  solo tras una de esas dos acciones. «Analizar» sigue sin descargar (de `8bf3cfe` a `300080a`).
+- **El asesor ya no recomienda «vender ya» por 0 cobre cuando listar deja algo.** Con mercader 0 y una
+  oferta de compra que tras la comisión deja 0, ahora lista si listando se gana algo; en el resto de
+  casos la regla del 10 % no cambia (`e7f2514`, `6d81ce6`).
+- **El panel de precios conserva el foco y el valor de sus selectores, y la tabla accesible abierta,
+  al repintar**; y un selector recién cambiado mantiene lo elegido mientras carga (`ea5bd97`,
+  `cfbfd31`).
+- Limpieza sin cambio visible: se retiran nueve exports sin uso en producción, el CSS y las 14 claves
+  de traducción del panel de acciones retirado, el área de rejilla y el nodo oculto que quedaban de
+  él; `chunks`, la creación de carpetas y la suma comprobada pasan de copias privadas a `src/core/`
+  (de `cbfb64c` a `a7835df`).
+
+Límites: con semillas vencidas, el análisis de esa acción usa los precios del refresco anterior; los
+nuevos entran en el siguiente análisis. La primera sincronización con muchos objetos nuevos tarda como
+antes, porque sus semillas sí se esperan. Si una acción empieza mientras la pasada de refresco de la
+anterior sigue en curso, sus descargas esperan detrás (hasta 25 peticiones) y esa acción no deja pasada
+propia. En el panel de precios, si el foco está dentro de la tabla accesible, un repintado lo pierde;
+se conserva que esté abierta. Nada de este lote se ha comprobado en Obsidian real; el foco se verificó
+con un DOM simulado.
+
 ## Release beta 0.2.16 - las vistas dejan de reconstruirse enteras al teclear, al sincronizar y al repintar
 
 - **El buscador del asesor de inventario ya no reconstruye la lista en cada tecla.** Calcula el
