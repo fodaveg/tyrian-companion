@@ -407,6 +407,72 @@ describe('price seed phases through the core: missing seeds before the result, s
 			expect(probe.calls).toEqual(missing);
 		});
 
+		it('sync, the device turned to consult while the notes are written, with no refresh refused: no deferred pass starts and the slot is left empty', async () => {
+			const { harness, probe, sync, drain } = await setup([1, 2, 3]);
+			probe.open();
+			const notes = gate();
+
+			const action = sync([[1, 2, 3]], { notesHold: notes });
+			await notes.reached;
+			expect(harness.priceSeedDeferredRequest).not.toBeNull();
+			// Nothing asks for an advisor refresh from here on, so nothing is refused in consult.
+			harness.collectorMode = 'consult';
+			notes.open();
+			await action;
+
+			expect(harness.priceSeedDeferredPass).toBeNull();
+			expect(harness.priceSeedDeferredRequest).toBeNull();
+			await drain();
+			expect(probe.calls).toEqual([]);
+		});
+
+		it('sync, a refresh refused in consult while the notes are written, and the device back to collector before the end: the stale copies stay dropped', async () => {
+			const { harness, probe, sync, drain } = await setup([1, 2, 3]);
+			probe.open();
+			const notes = gate();
+
+			const action = sync([[1, 2, 3]], { notesHold: notes });
+			await notes.reached;
+			harness.collectorMode = 'consult';
+			// "Analizar" pressed in consult: refused, and what waited in the slot goes with it.
+			await core.refreshInventoryAdvisor.call(harness);
+			expect(harness.priceSeedDeferredRequest).toBeNull();
+			harness.collectorMode = 'collector';
+			notes.open();
+			await action;
+			await drain();
+
+			expect(probe.calls).toEqual([]);
+		});
+
+		it('sync, the opt-in switched off between two missing seeds: the downloads stop after the one in flight', async () => {
+			const { harness, probe, sync, drain } = await setup([]);
+
+			const action = sync([[11, 12, 13]]);
+			await probe.started();
+			expect(probe.calls).toEqual([11]);
+			harness.settings.priceHistoryEnabled = false;
+			probe.open();
+			await action;
+			await drain();
+
+			expect(probe.calls).toEqual([11]);
+		});
+
+		it('Sale, the opt-in switched off between two missing seeds: the downloads stop after the one in flight', async () => {
+			const calendar = calendarItemIds();
+			const { harness, probe, refreshSale, drain } = await setup([]);
+
+			const refresh = refreshSale();
+			await probe.started();
+			harness.settings.priceHistoryEnabled = false;
+			probe.open();
+			await refresh;
+			await drain();
+
+			expect(probe.calls).toEqual(calendar.slice(0, 1));
+		});
+
 		it('a sync and a Sale refresh overlapping, neither with a deferred pass alive when it arrived: the first to leave its stale copies keeps the slot', async () => {
 			const calendar = calendarItemIds();
 			const { probe, sync, refreshSale, drain } = await setup([1, 2, 3, ...calendar]);
