@@ -14,13 +14,13 @@ import { COMMERCE_LISTINGS_BATCH_SIZE, captureInventoryMarketDepth } from './com
 
 const NOW = Date.parse('2026-10-01T12:00:00.000Z');
 /** Written out, not imported from the capture: the cap is a decision this file pins. */
-const MAX_IN_FLIGHT = 3;
+const MAX_IN_FLIGHT = 2;
 
 type RateLimitGate = Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>;
 type Capture = typeof captureInventoryMarketDepth;
 type Outcome =
 	| { kind: 'response'; status: number; body: unknown }
-	| { kind: 'throw'; error: unknown };
+	| { kind: 'throw'; error: Error };
 
 interface Flight {
 	/** Position of the batch among the batches of 200, derived from its first id. */
@@ -54,7 +54,7 @@ class ControlledGateway implements PublicCatalogGateway {
 				startedAtEvent: this.events.next++,
 				settle: (outcome) => {
 					this.pending.splice(this.pending.indexOf(flight), 1);
-					if (outcome.kind === 'throw') reject(outcome.error as Error);
+					if (outcome.kind === 'throw') reject(outcome.error);
 					else resolve({ status: outcome.status, headers: {}, body: outcome.body });
 				},
 			};
@@ -187,9 +187,9 @@ describe('commerce listings capture: one failed batch stays its own', () => {
 	});
 });
 
-describe('commerce listings capture: three batches in flight', () => {
-	it.each([[1, 1], [2, 2], [3, 3], [7, 3]])(
-		'with %i batches has %i requests in flight at once and never more than three',
+describe('commerce listings capture: two batches in flight', () => {
+	it.each([[1, 1], [2, 2], [3, 2], [7, 2]])(
+		'with %i batches has %i requests in flight at once and never more than two',
 		async (batches, expected) => {
 			for (const pick of [
 				(pending: readonly Flight[]) => pending[0]!,
@@ -212,30 +212,28 @@ describe('commerce listings capture: three batches in flight', () => {
 		},
 	);
 
-	it('stops starting batches at a 429 that lands with two more in flight and four not started', async () => {
+	it('stops starting batches at a 429 that lands with one more in flight and five not started', async () => {
 		const gateway = new ControlledGateway();
 		const gate = recordingGate();
 		const run = captureInventoryMarketDepth(idsOfBatches(7), gateway, NOW, gate);
 		await settled();
-		expect(gateway.started.map((flight) => flight.index)).toEqual([0, 1, 2]);
+		expect(gateway.started.map((flight) => flight.index)).toEqual([0, 1]);
 
 		gateway.started[0]!.settle(rateLimited(5_000));
 		await settled();
 		// The slot the 429 freed is not reused: the cooldown is armed before the next batch starts.
 		expect(gate.recorded).toEqual([5_000]);
-		expect(gateway.started.map((flight) => flight.index)).toEqual([0, 1, 2]);
-		expect(gateway.pending.map((flight) => flight.index)).toEqual([1, 2]);
+		expect(gateway.started.map((flight) => flight.index)).toEqual([0, 1]);
+		expect(gateway.pending.map((flight) => flight.index)).toEqual([1]);
 
-		// The two already in flight end as their own answer says: a full book and a 206.
+		// The one already in flight ends as its own answer says: a 206.
 		const partial = gateway.started[1]!;
-		gateway.started[2]!.settle(ok(gateway.started[2]!.ids));
-		await settled();
 		partial.settle({ kind: 'response', status: 206, body: partial.ids.filter((id) => id % 2 === 0).map(book) });
 		const evidence = await run;
 
-		expect(gateway.started).toHaveLength(3);
+		expect(gateway.started).toHaveLength(2);
 		expect(coverageByBatch(evidence)).toEqual([
-			'unavailable', 'missing+complete', 'complete', 'unavailable', 'unavailable', 'unavailable', 'unavailable',
+			'unavailable', 'missing+complete', 'unavailable', 'unavailable', 'unavailable', 'unavailable', 'unavailable',
 		]);
 		expect(evidence.status).toBe('partial');
 		expect(gate.recorded).toEqual([5_000]);

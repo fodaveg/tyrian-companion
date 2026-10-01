@@ -533,6 +533,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 
 		const result = await service.capture('es', [], undefined, context);
 
+		if (result.status !== 'complete' && result.status !== 'partial') throw new Error('Expected captured evidence.');
 		expect(result.marketDepth?.status).toBe('complete');
 		expect(listingContexts).toHaveLength(4);
 		for (const seen of listingContexts) expect(seen).toBe(context);
@@ -540,7 +541,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(receipts[0]?.timings?.marketDepthMs).toBe(400);
 	});
 
-	it('keeps three listings batches in flight while the rest of the capture runs', async () => {
+	it('keeps two listings batches in flight while the rest of the capture runs', async () => {
 		const snapshot = snapshotFixture(Array.from({ length: 1_201 }, (_, index) => index + 1));
 		let inFlight = 0;
 		let maxInFlight = 0;
@@ -556,12 +557,13 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 
 		const result = await serviceFor(snapshot, catalogFor(snapshot), gateway).capture('es');
 
+		if (result.status !== 'complete' && result.status !== 'partial') throw new Error('Expected captured evidence.');
 		expect(result.marketDepth?.status).toBe('complete');
 		expect(result.marketDepth?.items).toHaveLength(1_201);
-		expect(maxInFlight).toBe(3);
+		expect(maxInFlight).toBe(2);
 	});
 
-	it('peaks at eight public and six keyed requests in flight with a cold catalog and container prices', async () => {
+	it('peaks at seven public and six keyed requests in flight with a cold catalog and container prices', async () => {
 		// The real catalog service over an empty cache, so its own limiter is the one being counted.
 		const snapshot = snapshotFixture(Array.from({ length: 601 }, (_, index) => index + 1));
 		const inFlight = { catalog: 0, prices: 0, listings: 0, keyed: 0 };
@@ -596,7 +598,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		const result = await service.capture('es', [36_038, 36_041]);
 
 		expect(result.status).toBe('complete');
-		expect(peak).toEqual({ catalog: 3, prices: 2, listings: 3, keyed: 6, public: 8, total: 14 });
+		expect(peak).toEqual({ catalog: 3, prices: 2, listings: 2, keyed: 6, public: 7, total: 13 });
 	});
 
 	it('does no public capture for an invalid or hostile snapshot', async () => {
