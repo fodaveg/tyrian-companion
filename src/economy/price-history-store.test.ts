@@ -120,6 +120,32 @@ describe('IndexedDbPriceHistoryStore', () => {
 			store.close();
 		});
 
+		const rows = async (store: IndexedDbPriceHistoryStore): Promise<unknown[]> => await store.readWatchList('vault');
+
+		it('leaves every row byte-identical when the same derived set is applied again', async () => {
+			const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('reasons-repeat'));
+			await store.observeItems('vault', [11, 12, 13], 1);
+			await store.applyDerivedWatchList('vault', [12, 13, 14], 2);
+			const before = await rows(store);
+			await store.applyDerivedWatchList('vault', [12, 13, 14], 3);
+			expect(await rows(store)).toEqual(before);
+			store.close();
+		});
+
+		it('observing an item refreshes only its own date', async () => {
+			const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('reasons-observe-date'));
+			await store.observeItems('vault', [11, 12, 13], 1);
+			const before = await store.readWatchList('vault');
+			await store.observeItems('vault', [12], 9);
+			const after = await store.readWatchList('vault');
+			for (const entry of after) {
+				const was = before.find(({ itemId }) => itemId === entry.itemId)!;
+				const refreshed = entry.itemId === 12 || entry.seed;
+				expect(entry.lastObservedAtMs, `item ${String(entry.itemId)}`).toBe(refreshed ? 9 : was.lastObservedAtMs);
+			}
+			store.close();
+		});
+
 		it('reads a pre-reasons row with derived true as also observed, so it survives leaving the derived selection', async () => {
 			const factory = new IDBFactory();
 			const name = databaseName('reasons-migration');
