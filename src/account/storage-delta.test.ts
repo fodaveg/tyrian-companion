@@ -84,6 +84,22 @@ describe('compareStorageSnapshots net algebra', () => {
 		expect(result.compositionChanges).toMatchObject([{ kind: 'item', id: 100 }]);
 	});
 
+	it('emits one item change per id, summed, when the same item gains in several locations', () => {
+		const result = compareStorageSnapshots(
+			storageDeltaSnapshot({ holdings: [looseHolding(100, 2, { source: 'bank', slot: 0 })] }),
+			afterSnapshot({
+				holdings: [
+					looseHolding(100, 3, { source: 'bank', slot: 0 }),
+					looseHolding(100, 4, { source: 'bank', slot: 1 }),
+					looseHolding(100, 5, { source: 'shared_inventory', slot: 2 }),
+				],
+			}),
+		);
+
+		expect(result.itemChanges).toEqual([{ id: 100, before: 2, after: 12, delta: 10 }]);
+		expect(new Set(result.itemChanges.map(({ id }) => id)).size).toBe(result.itemChanges.length);
+	});
+
 	it('reports state changes as availability and composition with neutral ownership', () => {
 		const location = { source: 'bank', slot: 0 } as const;
 		const result = compareStorageSnapshots(
