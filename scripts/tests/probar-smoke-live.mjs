@@ -1,6 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 import {
 	SmokeLiveError,
@@ -28,7 +30,10 @@ try {
 	testArgumentParsing();
 	testVersionMismatchIsDetected();
 	testMatchingVersionsAreNotAMismatch();
-	testMissingManifestIsNotAMismatch();
+	testMissingManifestFailsClosed();
+	testMissingRuntimeFailsClosed();
+	testReadsLoadedCoreState();
+	testCliExitFailsWithoutRuntime();
 	testReadInstalledManifestVersionReadsTheFile();
 } finally {
 	rmSync(testRoot, { recursive: true, force: true });
@@ -53,10 +58,11 @@ function testErrorAfterReloadCounts() {
 	writeMarker(pluginDir, '2026-01-01T00:00:00.000Z');
 	writeLog(pluginDir, [
 		record({ level: 'info', timestampUtc: '2026-01-01T00:00:01.000Z' }),
+		record({ level: 'error', timestampUtc: '2026-01-01T00:00:00.000Z' }),
 		record({ level: 'error', timestampUtc: '2026-01-01T00:00:02.000Z' }),
 	]);
 	const errors = readErrorsSinceReload(pluginDir);
-	assert(errors.length === 1, `expected exactly 1 new error, got ${String(errors.length)}`);
+	assert(errors.length === 2, `expected exactly 2 errors from reload start inclusive, got ${String(errors.length)}`);
 }
 
 function testErrorBeforeReloadDoesNotCount() {
@@ -172,12 +178,51 @@ function testMatchingVersionsAreNotAMismatch() {
 	assert(result.versionMismatch === false, 'matching manifest and loaded versions were flagged as a mismatch');
 }
 
-/** No manifest on disk (or a CLI that could not read `loadedVersion`) fails open: nothing to compare against. */
-function testMissingManifestIsNotAMismatch() {
+/** Without the installed manifest, smoke cannot verify the loaded plugin and must reject. */
+function testMissingManifestFailsClosed() {
 	const pluginDir = freshPluginDir('version-no-manifest');
-	const result = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.35' }) });
-	assert(result.manifestVersion === null, 'a missing manifest.json reported a version');
-	assert(result.versionMismatch === false, 'a missing manifest.json was treated as a version mismatch');
+	rmSync(resolve(pluginDir, 'manifest.json'));
+	assertThrowsCode(() => runSmokeLive({ pluginDir, runCli: fakeCli({}) }), 'manifest-invalid', 'missing disk manifest passed smoke');
+}
+
+function testMissingRuntimeFailsClosed() {
+	const cases = [
+		[{ loadedVersion: null }, 'plugin-not-loaded'],
+		[{ enabled: false }, 'plugin-not-enabled'],
+		[{ registeredVersion: null }, 'plugin-not-registered'],
+		[{ runtimeReady: null }, 'runtime-not-ready'],
+		[{ runtimeReady: false }, 'runtime-not-ready'],
+		[{ connection: null }, 'runtime-state-unavailable'],
+		[{ vaultPath: testRoot }, 'runtime-vault-mismatch'],
+	];
+	for (const [evidence, code] of cases) {
+		const pluginDir = freshPluginDir(`missing-${code}-${String(evidence.runtimeReady)}`);
+		assertThrowsCode(() => runSmokeLive({ pluginDir, runCli: fakeCli(evidence) }), code, `missing effective ${code} passed smoke`);
+	}
+}
+
+function testReadsLoadedCoreState() {
+	const pluginDir = freshPluginDir('core-state');
+	const core = { runtimeReady: true, getConnectionState: () => ({ status: 'idle' }), alertIngameServerPort: 12345 };
+	const app = { vault: { adapter: { getBasePath: () => resolve(pluginDir, '..', '..', '..') } }, plugins: {
+		enabledPlugins: new Set(['tyrian-companion']), manifests: { 'tyrian-companion': { version: '0.1.30' } },
+		plugins: { 'tyrian-companion': { manifest: { version: '0.1.30' }, core } },
+	} };
+	const result = runSmokeLive({ pluginDir, runCli: ({ args }) => ({ status: 0,
+		stdout: runInNewContext(args[1].slice('code='.length), { app }) }) });
+	assert(result.runtimeReady === true && result.connection?.status === 'idle' && result.ingamePort === 12345,
+		'smoke did not read readiness, connection and port from the loaded wrapper core');
+}
+
+function testCliExitFailsWithoutRuntime() {
+	const pluginDir = freshPluginDir('cli-runtime-missing');
+	const cliPath = resolve(testRoot, 'fake-obsidian.mjs');
+	writeFileSync(cliPath, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(fakeCli({ runtimeReady: null })({ cwd: resolve(pluginDir, '..', '..', '..') }).stdout)});\n`);
+	chmodSync(cliPath, 0o755);
+	const result = spawnSync(process.execPath, [resolve('scripts/smoke-live.mjs'), '--plugin-dir', pluginDir,
+		'--obsidian-cli', cliPath], { encoding: 'utf8' });
+	assert(result.status === 1 && result.stderr.includes('runtime-not-ready'),
+		`smoke CLI did not report the missing runtime (exit=${String(result.status)}; stdout=${String(result.stdout)}; stderr=${String(result.stderr)}; error=${String(result.error?.code)})`);
 }
 
 function testReadInstalledManifestVersionReadsTheFile() {
@@ -192,13 +237,16 @@ function writeManifest(pluginDir, version) {
 }
 
 function fakeCli(evidenceOverrides) {
-	return () => ({
+	return ({ cwd }) => ({
 		status: 0,
 		stdout: `TYRIAN_SMOKE_V1\t${JSON.stringify({
 			schema: 1,
-			loadedVersion: null,
-			runtimeReady: null,
-			connection: null,
+			vaultPath: cwd,
+			enabled: true,
+			registeredVersion: evidenceOverrides.loadedVersion ?? '0.1.30',
+			loadedVersion: '0.1.30',
+			runtimeReady: true,
+			connection: { status: 'idle' },
 			ingamePort: null,
 			...evidenceOverrides,
 		})}`,
@@ -208,6 +256,7 @@ function fakeCli(evidenceOverrides) {
 function freshPluginDir(name) {
 	const pluginDir = join(testRoot, name);
 	mkdirSync(pluginDir, { recursive: true });
+	writeManifest(pluginDir, '0.1.30');
 	return pluginDir;
 }
 

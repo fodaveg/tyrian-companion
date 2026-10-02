@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -12,20 +12,24 @@ const EVIDENCE_PREFIX = 'TYRIAN_SMOKE_V1\t';
 const RELOAD_MARKER = '.tyrian-dev-reload-at';
 /**
  * `runtimeReady`, `getConnectionState()` and `alertIngameServerPort` are read
- * straight off the loaded plugin instance. The first two are TypeScript
+ * off the loaded plugin's `core` (R1c moved them out of the wrapper). They are TypeScript
  * `private` (not `#private`): the compiler forgets, the runtime object does
  * not, and `verify-beta-runtime.mjs` already leans on the same fact for
  * `registeredVersion`/`runtimeVersion`. There is no public accessor for the
- * in-game port yet (`src/main.ts`'s `alertIngameServerPort` field); if that
+ * in-game port yet (`TyrianCompanionCore.alertIngameServerPort`); if that
  * field gets renamed, this expression needs the same rename.
  */
-const SMOKE_EVIDENCE_EXPRESSION = `"${EVIDENCE_PREFIX}" + JSON.stringify({` +
+const SMOKE_EVIDENCE_EXPRESSION = `(()=>{const plugin=app.plugins.plugins["${PLUGIN_ID}"];const core=plugin?.core;` +
+	`return ${JSON.stringify(EVIDENCE_PREFIX)} + JSON.stringify({` +
 	'schema:1,' +
-	`loadedVersion:app.plugins.plugins["${PLUGIN_ID}"]?.manifest.version??null,` +
-	`runtimeReady:app.plugins.plugins["${PLUGIN_ID}"]?.runtimeReady??null,` +
-	`connection:app.plugins.plugins["${PLUGIN_ID}"]?.getConnectionState?.()??null,` +
-	`ingamePort:app.plugins.plugins["${PLUGIN_ID}"]?.alertIngameServerPort??null` +
-	'})';
+	'vaultPath:app.vault.adapter.getBasePath(),' +
+	`enabled:app.plugins.enabledPlugins.has("${PLUGIN_ID}"),` +
+	`registeredVersion:app.plugins.manifests["${PLUGIN_ID}"]?.version??null,` +
+	'loadedVersion:plugin?.manifest.version??null,' +
+	'runtimeReady:core?.runtimeReady??null,' +
+	'connection:core?.getConnectionState?.()??null,' +
+	'ingamePort:core?.alertIngameServerPort??null' +
+	'});})()';
 
 export class SmokeLiveError extends Error {
 	constructor(code) {
@@ -93,9 +97,19 @@ export function runSmokeLive({
 	const result = runCli({ args: ['eval', `code=${SMOKE_EVIDENCE_EXPRESSION}`], cliCommand, cwd: vaultRoot });
 	if (!isRecord(result) || result.status !== 0 || typeof result.stdout !== 'string') fail('cli-unavailable');
 	const evidence = parseEvidence(result.stdout);
+	let actualVault;
+	try { actualVault = realpathSync(evidence.vaultPath); } catch { fail('runtime-vault-mismatch'); }
+	const expectedVault = realpathSync(vaultRoot);
+	if ((process.platform === 'win32' ? actualVault.toLowerCase() !== expectedVault.toLowerCase() : actualVault !== expectedVault)) fail('runtime-vault-mismatch');
+	if (evidence.enabled !== true) fail('plugin-not-enabled');
+	if (evidence.loadedVersion === null) fail('plugin-not-loaded');
+	if (evidence.registeredVersion === null) fail('plugin-not-registered');
+	if (evidence.runtimeReady !== true) fail('runtime-not-ready');
+	if (!isRecord(evidence.connection) || typeof evidence.connection.status !== 'string') fail('runtime-state-unavailable');
 	const newErrors = readNewErrors(pluginDir);
 	const manifestVersion = readManifestVersion(pluginDir);
-	const versionMismatch = manifestVersion !== null && evidence.loadedVersion !== null && manifestVersion !== evidence.loadedVersion;
+	if (typeof manifestVersion !== 'string' || manifestVersion.length === 0) fail('manifest-invalid');
+	const versionMismatch = manifestVersion !== evidence.loadedVersion || manifestVersion !== evidence.registeredVersion;
 	return Object.freeze({
 		...evidence,
 		manifestVersion,
@@ -121,13 +135,13 @@ export function readErrorsSinceReload(pluginDir) {
 			continue;
 		}
 		if (!isRecord(record) || record.level !== 'error') continue;
-		if (sinceIso !== null && typeof record.timestampUtc === 'string' && record.timestampUtc <= sinceIso) continue;
+		if (sinceIso !== null && typeof record.timestampUtc === 'string' && record.timestampUtc < sinceIso) continue;
 		errors.push(record);
 	}
 	return errors;
 }
 
-/** Reads the version `dev-install.mjs` actually copied to disk; `null` if unreadable so a missing manifest fails open into "no evidence" rather than a false mismatch. */
+/** Reads the installed version; a missing or invalid manifest leaves smoke without required evidence. */
 export function readInstalledManifestVersion(pluginDir) {
 	const manifestPath = resolve(pluginDir, 'manifest.json');
 	if (!existsSync(manifestPath)) return null;
@@ -137,7 +151,7 @@ export function readInstalledManifestVersion(pluginDir) {
 	} catch {
 		return null;
 	}
-	return isRecord(manifest) && typeof manifest.version === 'string' ? manifest.version : null;
+	return isRecord(manifest) && manifest.id === PLUGIN_ID && typeof manifest.version === 'string' && manifest.version.length > 0 ? manifest.version : null;
 }
 
 function runObsidianCli({ args, cliCommand, cwd }) {
@@ -145,7 +159,8 @@ function runObsidianCli({ args, cliCommand, cwd }) {
 }
 
 function parseEvidence(stdout) {
-	const source = stdout.trim();
+	let source = stdout.trim();
+	try { const decoded = JSON.parse(source); if (typeof decoded === 'string') source = decoded; } catch { /* CLI also prints strings directly. */ }
 	const start = source.lastIndexOf(EVIDENCE_PREFIX);
 	if (start < 0) fail('evidence-invalid');
 	let evidence;
@@ -154,9 +169,13 @@ function parseEvidence(stdout) {
 	} catch {
 		fail('evidence-invalid');
 	}
-	if (!isRecord(evidence) || evidence.schema !== 1) fail('evidence-invalid');
+	if (!isRecord(evidence) || evidence.schema !== 1 || typeof evidence.vaultPath !== 'string' ||
+		typeof evidence.enabled !== 'boolean') fail('evidence-invalid');
 	return {
-		loadedVersion: typeof evidence.loadedVersion === 'string' ? evidence.loadedVersion : null,
+		vaultPath: evidence.vaultPath,
+		enabled: evidence.enabled,
+		registeredVersion: typeof evidence.registeredVersion === 'string' && evidence.registeredVersion.length > 0 ? evidence.registeredVersion : null,
+		loadedVersion: typeof evidence.loadedVersion === 'string' && evidence.loadedVersion.length > 0 ? evidence.loadedVersion : null,
 		runtimeReady: typeof evidence.runtimeReady === 'boolean' ? evidence.runtimeReady : null,
 		connection: evidence.connection ?? null,
 		ingamePort: typeof evidence.ingamePort === 'number' ? evidence.ingamePort : null,

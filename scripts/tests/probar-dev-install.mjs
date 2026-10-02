@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 import { DevInstallError, defaultPluginDir, installDevBuild, parseDevInstallArguments } from '../dev-install.mjs';
 
@@ -13,7 +14,8 @@ try {
 	testMissingSourceFile();
 	testCorruptedCopyIsCaught();
 	testCreatesMissingPluginDirectory();
-	testReloadCyclesLoadManifestsThenDisableThenEnable();
+	await testReloadCyclesLoadManifestsThenDisableThenEnable();
+	testExitZeroWithoutEffectiveReloadFailsClosed();
 	testReloadFailureStopsBeforeMarker();
 	testLoadManifestsFailureStopsBeforeDisable();
 	testNoReloadWritesNoMarker();
@@ -85,9 +87,10 @@ function testCreatesMissingPluginDirectory() {
  * keeps reporting the version it loaded at startup. `loadManifests()` must run first, in the same
  * sequence, so the reload actually picks up the version just copied to disk.
  */
-function testReloadCyclesLoadManifestsThenDisableThenEnable() {
+async function testReloadCyclesLoadManifestsThenDisableThenEnable() {
 	const { sourceDir, pluginDir } = freshFixture('reload-cycle');
 	const calls = [];
+	const startedAt = Date.now();
 	const result = installDevBuild({
 		pluginDir,
 		sourceDir,
@@ -95,23 +98,70 @@ function testReloadCyclesLoadManifestsThenDisableThenEnable() {
 		buildProduction: () => undefined,
 		runCli: (invocation) => {
 			calls.push(invocation);
-			return { status: 0, stdout: '' };
+			return reloadReceipt(invocation, sourceDir);
 		},
 	});
 	assert(result.reloaded, 'a reload:true run did not report reloaded');
-	assert(calls.length === 3, `expected exactly 3 CLI invocations, got ${String(calls.length)}`);
-	assert(calls[0].args.join(' ').includes('loadManifests'), 'the first CLI call did not reload the manifests (H15.27)');
-	assert(calls[1].args.join(' ').includes('disablePlugin'), 'the second CLI call did not disable the plugin');
-	assert(calls[2].args.join(' ').includes('enablePlugin'), 'the third CLI call did not enable the plugin');
-	assert(
-		[calls[1], calls[2]].every((call) => call.args.join(' ').includes('tyrian-companion')),
-		'a disable/enable CLI call did not target tyrian-companion',
-	);
+	assert(calls.length === 1, `expected one awaited reload CLI invocation, got ${String(calls.length)}`);
+	const completed = [];
+	const app = { vault: { adapter: { getBasePath: () => calls[0].cwd } }, plugins: {
+		manifests: {}, plugins: {}, enabledPlugins: new Set(), isEnabled: () => true,
+		async loadManifests() { await Promise.resolve(); completed.push('manifests'); this.manifests['tyrian-companion'] = { version: `0.0.0-reload-cycle` }; },
+		async disablePlugin(id) { await Promise.resolve(); completed.push('disable'); this.enabledPlugins.delete(id); },
+		async enablePlugin(id) { await Promise.resolve(); completed.push('enable'); this.enabledPlugins.add(id); this.plugins[id] = { manifest: this.manifests[id] }; },
+	} };
+	try {
+		const receipt = await runInNewContext(calls[0].args[1].slice('code='.length), { app });
+		assert(completed.join(',') === 'manifests,disable,enable', 'reload did not await manifest/disable/enable completion in order');
+		assert(typeof receipt === 'string' && receipt.includes('0.0.0-reload-cycle'), 'reload expression did not return effective loaded-version evidence');
+		completed.length = 0;
+		app.plugins.loadManifests = async () => { throw new Error('controlled rejection'); };
+		let rejected = false;
+		try { await runInNewContext(calls[0].args[1].slice('code='.length), { app }); } catch { rejected = true; }
+		assert(rejected && completed.length === 0, 'rejected manifest load still reached disable/enable or produced success');
+		app.plugins.isEnabled = () => false;
+		await runInNewContext(calls[0].args[1].slice('code='.length), { app });
+		assert(completed.length === 0, 'restricted mode still tried the plugin cycle');
+		app.plugins.isEnabled = () => true;
+		app.vault.adapter.getBasePath = () => sourceDir;
+		await runInNewContext(calls[0].args[1].slice('code='.length), { app });
+		assert(completed.length === 0, 'a different live vault still tried the plugin cycle');
+	} catch (error) { failures.push(`reload expression failed in eval: ${error.message}`); }
 	const expectedVaultRoot = resolve(pluginDir, '..', '..', '..');
 	assert(calls.every((call) => call.cwd === expectedVaultRoot), 'the CLI was not invoked from the vault root');
 	const markerPath = resolve(pluginDir, '.tyrian-dev-reload-at');
 	assert(existsSync(markerPath), 'a successful reload did not write the reload marker');
 	assert(!Number.isNaN(Date.parse(readFileSync(markerPath, 'utf8').trim())), 'the reload marker is not a parseable timestamp');
+	assert(Date.parse(readFileSync(markerPath, 'utf8').trim()) >= startedAt, 'reload marker predates this installation');
+}
+
+function reloadReceipt(invocation, sourceDir, overrides = {}) {
+	const version = JSON.parse(readFileSync(resolve(sourceDir, 'manifest.json'), 'utf8')).version;
+	return { status: 0, stdout: `TYRIAN_DEV_RELOAD_V1\t${JSON.stringify({ schema: 1, vaultPath: invocation.cwd,
+		communityPluginsEnabled: true, enabled: true, registeredVersion: version, loadedVersion: version, ...overrides })}` };
+}
+
+function testExitZeroWithoutEffectiveReloadFailsClosed() {
+	const cases = [
+		['eval-error', () => ({ status: 0, stdout: 'Error: await is only valid in async functions and the top level bodies of modules' })],
+		['empty', () => ({ status: 0, stdout: '' })],
+		['missing-plugin', (invocation, sourceDir) => reloadReceipt(invocation, sourceDir, { loadedVersion: null })],
+		['disabled-plugin', (invocation, sourceDir) => reloadReceipt(invocation, sourceDir, { enabled: false })],
+		['stale-manifest', (invocation, sourceDir) => reloadReceipt(invocation, sourceDir, { registeredVersion: 'old' })],
+		['stale-plugin', (invocation, sourceDir) => reloadReceipt(invocation, sourceDir, { loadedVersion: 'old' })],
+		['wrong-vault', (invocation, sourceDir) => reloadReceipt(invocation, sourceDir, { vaultPath: sourceDir })],
+	];
+	for (const [name, response] of cases) {
+		const { sourceDir, pluginDir } = freshFixture(`reload-zero-${name}`);
+		assertThrowsCode(() => installDevBuild({ pluginDir, sourceDir, buildProduction: () => undefined,
+			runCli: (invocation) => response(invocation, sourceDir) }), 'reload-failed', `exit-zero ${name} reported a reload`);
+		assert(!existsSync(resolve(pluginDir, '.tyrian-dev-reload-at')), `exit-zero ${name} wrote a success marker`);
+	}
+	const { sourceDir, pluginDir } = freshFixture('reload-restricted-mode');
+	assertThrowsCode(() => installDevBuild({ pluginDir, sourceDir, buildProduction: () => undefined,
+		runCli: (invocation) => reloadReceipt(invocation, sourceDir, { communityPluginsEnabled: false, loadedVersion: null }) }),
+		'plugins-disabled', 'restricted mode reported an effective reload');
+	assert(!existsSync(resolve(pluginDir, '.tyrian-dev-reload-at')), 'restricted mode wrote a success marker');
 }
 
 function testReloadFailureStopsBeforeMarker() {
