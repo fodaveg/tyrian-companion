@@ -1,0 +1,14 @@
+{
+  "candidate": "381fc62e020b679ecdb4f4b09c15b89802515c37",
+  "version": "0.2.20",
+  "installationState": "Local combined candidate; no UI or client installation observed by this verification",
+  "command": "NODE_PATH=/home/fodaveg/code/tyrian-companion/node_modules node /tmp/tyrian-h18-29-fixed-probe/probe.mjs /home/fodaveg/code/tyrian-companion/.claude/worktrees/h18-29-evidence-20261002 381fc62e020b679ecdb4f4b09c15b89802515c37 > /tmp/tyrian-h18-29-fixed-probe/candidate-381fc62/probe.log 2>&1",
+  "executor": "Root session, outside sandbox due previously established spawnSync git EPERM",
+  "terminalSession": 43122,
+  "exitCode": 0,
+  "evidence": "/tmp/tyrian-h18-29-fixed-probe/candidate-381fc62/evidence.json",
+  "log": "/tmp/tyrian-h18-29-fixed-probe/candidate-381fc62/probe.log",
+  "checks": "29 notes passed with zero ignored; all 29 source hashes unchanged before/after; zero write attempts; signed loss and monetary subtotals correct; qualities separated; null metrics preserved; negative-duration control rejected.",
+  "previousEvidence": "/tmp/tyrian-h18-29-fixed-probe/history-7012e5e149/",
+  "limitations": ["Canonical 29-note subtree only, not whole vault", "No Obsidian/BRAT UI observed", "No live account/pricing fetched", "No additional suites executed by verification agent", "Temporary local artifacts need root preservation"]
+}

@@ -1,0 +1,205 @@
+
+> tyrian-companion@0.2.20 check:guardrails
+> node scripts/run-gate.mjs check:guardrails
+
+
+=== GATE 'check:guardrails': 25 pasos, todos se ejecutan ===
+
+--- [1/25] unit-guardrails: Suite unitaria de vitest sobre src/platform y los tests de texto fuente congelados
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion/.claude/worktrees/h18-29-evidence-20261002
+
+ ✓ src/platform/mumble-v2-protocol-adr.test.ts (5 tests) 49ms
+ ✓ src/platform/mumble-v2-protocol-reference.test.ts (41 tests) 31ms
+ ✓ src/platform/mumble-v2-presence-policy.test.ts (12 tests) 12ms
+ ✓ src/platform/mumble-v2-helper-supply-chain.test.ts (3 tests) 33ms
+ ✓ src/platform/mumble-v2-codec.test.ts (9 tests) 41ms
+ ✓ src/platform/mumble-v2-client.test.ts (18 tests) 33ms
+ ✓ src/platform/mumble-v2-process-adapter.test.ts (7 tests) 23ms
+ ✓ src/halloween/halloween-architecture.test.ts (5 tests) 21ms
+ ✓ src/platform/mumble-v2-launch-plan.test.ts (5 tests) 11ms
+ ✓ src/platform/mumble-v2-contract-architecture.test.ts (5 tests) 63ms
+ ✓ src/platform/mumble-v2-launch-contract.test.ts (4 tests) 7ms
+ ✓ src/platform/mumble-v2-contract.test.ts (7 tests) 10ms
+ ✓ src/economy/price-history-architecture.test.ts (7 tests) 177ms
+ ✓ src/platform/mumble-v2-observation.test.ts (3 tests) 7ms
+ ✓ src/platform/mumble-v2-launch-architecture.test.ts (4 tests) 278ms
+ ✓ src/platform/mumble-v2-health.test.ts (3 tests) 5ms
+ ✓ src/ui/session-history-panel-architecture.test.ts (3 tests) 493ms
+   ✓ H9.7 durable session history boundary > keeps history off the core surface, with global scans explicit and archival checks exact  432ms
+ ✓ src/halloween/halloween-comparison-price-architecture.test.ts (5 tests) 12ms
+ ✓ src/ui/companion-status-model.test.ts (50 tests) 189ms
+ ✓ src/ui/product-action-architecture.test.ts (5 tests) 541ms
+   ✓ product action architecture > registers the palette exactly once, wired to the plugin's own session commands and executor  375ms
+ ✓ src/ui/runtime-i18n-architecture.test.ts (27 tests) 587ms
+ ✓ src/sessions/pending-proposal-architecture.test.ts (6 tests) 685ms
+ ✓ src/economy/recommendation-envelope-architecture.test.ts (6 tests) 86ms
+ ✓ src/platform/mumble-v2-spike-architecture.test.ts (10 tests) 421ms
+ ✓ src/sessions/session-debug-semantics-architecture.test.ts (2 tests) 22ms
+ ✓ src/sessions/pilot-metrics-architecture.test.ts (7 tests) 589ms
+ ✓ src/halloween/halloween-personal-valuation-architecture.test.ts (5 tests) 31ms
+ ✓ src/ui/settings-tab.test.ts (39 tests) 188ms
+ ✓ src/ui/inventory-advisor-integration-architecture.test.ts (14 tests) 308ms
+
+ Test Files  29 passed (29)
+      Tests  317 passed (317)
+   Start at  11:32:44
+   Duration  3.25s (transform 6.28s, setup 0ms, collect 20.90s, tests 4.95s, environment 6ms, prepare 2.96s)
+
+--- [1/25] unit-guardrails: OK (exit=0, 3558 ms)
+
+--- [2/25] h8-crossover-spike: Spike H8 de crossover
+h8 crossover spike core: PASS
+h8 crossover spike core: PASS
+h8 crossover spike ASan/UBSan: PASS
+h8 crossover spike Windows wrapper syntax: PASS
+h8 preprocessed wrapper: PASS
+h8 crossover spike sabotage map-offset: PASS
+h8 crossover spike sabotage view-bytes: PASS
+h8 crossover spike sabotage frame-bytes: PASS
+h8 crossover spike sabotage pair-attempts: PASS
+h8 crossover spike sabotage sequence-maximum: PASS
+--- [2/25] h8-crossover-spike: OK (exit=0, 484 ms)
+
+--- [3/25] release-preflight: Preflight de release
+PASS: unborn repository turned red: release preflight: fail (untracked=0 unstaged=0 staged=0; HEAD missing)
+PASS: sabotage turned red: release preflight: fail (untracked=1 unstaged=0 staged=0; HEAD attached)
+PASS: explicit restore turned green: release preflight: pass (untracked=0 unstaged=0 staged=0; HEAD attached)
+PASS: negative control turned red with an always-green preflight
+release preflight suite: PASS
+--- [3/25] release-preflight: OK (exit=0, 406 ms)
+
+--- [4/25] brat-release-contract: Suite del contrato BRAT
+PASS: release title sabotage turned red: release-name-mismatch
+PASS: sabotage restored exact bytes, mode and Git state
+PASS: tag with v prefix turned red: tag-manifest-mismatch
+PASS: draft release turned red: release-not-published
+PASS: missing BRAT asset turned red: release-asset-set
+PASS: extra release asset turned red: release-asset-set
+PASS: incomplete release asset turned red: release-asset-incomplete
+PASS: empty release asset turned red: release-asset-empty
+PASS: negative control turned red with an always-green guardrail
+BRAT release contract suite: PASS
+--- [4/25] brat-release-contract: OK (exit=0, 496 ms)
+
+--- [5/25] brat-release-plan: Suite del plan de release BRAT (puerta previa a publicar)
+brat release plan suite: PASS
+--- [5/25] brat-release-plan: OK (exit=0, 29 ms)
+
+--- [6/25] release-workflow-contract: Contrato del workflow de publicacion
+release workflow suite: PASS
+--- [6/25] release-workflow-contract: OK (exit=0, 96 ms)
+
+--- [7/25] security-scan-suite: Suite del escaner de seguridad
+security scanner suite: PASS
+--- [7/25] security-scan-suite: OK (exit=0, 2175 ms)
+
+--- [8/25] action-observability-suite: Suite del censo de observabilidad
+action observability census suite: PASS
+--- [8/25] action-observability-suite: OK (exit=0, 294 ms)
+
+--- [9/25] run-gate-suite: Suite del propio corredor del gate
+run gate suite: PASS
+--- [9/25] run-gate-suite: OK (exit=0, 28 ms)
+
+--- [10/25] source-text-assertion-suite: Suite del contrato de asercion sobre codigo fuente
+source text assertion suite: PASS
+--- [10/25] source-text-assertion-suite: OK (exit=0, 1264 ms)
+
+--- [11/25] source-text-assertion-contract: Contrato de asercion sobre codigo fuente
+source text assertion contract: PASS (frozen=17; scanned=297)
+--- [11/25] source-text-assertion-contract: OK (exit=0, 857 ms)
+
+--- [12/25] release-package: Suite del paquete de release
+PASS: reproducible package restored green with 3 explicit files
+PASS: no-op build sabotage turned red before staging
+PASS: build-input mutation sabotage turned red before staging
+PASS: built-artifact credential sabotage turned red with redacted output
+PASS: persisted archive bytes are reread before validation and hashing
+PASS: archive-byte sabotage turned red through CRC/content validation
+PASS: 20 ZIP structure sabotages each turned red
+release package suite: PASS
+--- [12/25] release-package: OK (exit=0, 290 ms)
+
+--- [13/25] release-identity-contract: Suite del contrato de identidad
+release identity contract suite: PASS
+--- [13/25] release-identity-contract: OK (exit=0, 45 ms)
+
+--- [14/25] beta-channel: Suite del canal beta
+beta channel suite: PASS
+--- [14/25] beta-channel: OK (exit=0, 461 ms)
+
+--- [15/25] beta-runtime: Suite del runtime beta
+beta runtime cases: PASS
+beta runtime negative control: RED as expected
+beta runtime suite: PASS
+--- [15/25] beta-runtime: OK (exit=0, 57 ms)
+
+--- [16/25] support-contract: Suite del contrato de soporte
+support contract suite: PASS
+--- [16/25] support-contract: OK (exit=0, 155 ms)
+
+--- [17/25] h8-helper-decision-contract: Suite del contrato de decision del helper H8
+H8.3 helper decision contract suite: PASS
+--- [17/25] h8-helper-decision-contract: OK (exit=0, 1402 ms)
+
+--- [18/25] dev-install-suite: Suite de dev:install (copia + sha256 sobre un directorio temporal)
+dev install suite: PASS
+--- [18/25] dev-install-suite: OK (exit=0, 130 ms)
+
+--- [19/25] smoke-live-suite: Suite de smoke:live (log falso con una linea error)
+smoke live suite: PASS
+--- [19/25] smoke-live-suite: OK (exit=0, 80 ms)
+
+--- [20/25] record-api-fixtures-suite: Suite de record-api-fixtures (sin red; fetch inyectado)
+record api fixtures suite: PASS
+--- [20/25] record-api-fixtures-suite: OK (exit=0, 23 ms)
+
+--- [21/25] i18n-unused-suite: Suite del detector de claves i18n sin consumidor
+i18n-unused suite: PASS
+--- [21/25] i18n-unused-suite: OK (exit=0, 26 ms)
+
+--- [22/25] i18n-copy-length-suite: Suite del limite de longitud de copy settings.*/view.*
+i18n-copy-length suite: PASS
+--- [22/25] i18n-copy-length-suite: OK (exit=0, 25 ms)
+
+--- [23/25] i18n-copy-length: Longitud de copy settings.*/view.* sobre el arbol
+--- [23/25] i18n-copy-length: OK (exit=0, 24 ms)
+
+--- [24/25] changelog-entry-suite: Suite del extractor de notas de release desde el changelog
+changelog-entry suite: PASS
+--- [24/25] changelog-entry-suite: OK (exit=0, 20 ms)
+
+--- [25/25] host-esm-suite: Suite del guardarrail del bundle ESM para Hebra
+host ESM bundle suite: PASS
+--- [25/25] host-esm-suite: OK (exit=0, 1252 ms)
+
+=== RESUMEN DEL GATE 'check:guardrails' ===
+  OK           unit-guardrails                    exit=0, 3558 ms
+  OK           h8-crossover-spike                 exit=0, 484 ms
+  OK           release-preflight                  exit=0, 406 ms
+  OK           brat-release-contract              exit=0, 496 ms
+  OK           brat-release-plan                  exit=0, 29 ms
+  OK           release-workflow-contract          exit=0, 96 ms
+  OK           security-scan-suite                exit=0, 2175 ms
+  OK           action-observability-suite         exit=0, 294 ms
+  OK           run-gate-suite                     exit=0, 28 ms
+  OK           source-text-assertion-suite        exit=0, 1264 ms
+  OK           source-text-assertion-contract     exit=0, 857 ms
+  OK           release-package                    exit=0, 290 ms
+  OK           release-identity-contract          exit=0, 45 ms
+  OK           beta-channel                       exit=0, 461 ms
+  OK           beta-runtime                       exit=0, 57 ms
+  OK           support-contract                   exit=0, 155 ms
+  OK           h8-helper-decision-contract        exit=0, 1402 ms
+  OK           dev-install-suite                  exit=0, 130 ms
+  OK           smoke-live-suite                   exit=0, 80 ms
+  OK           record-api-fixtures-suite          exit=0, 23 ms
+  OK           i18n-unused-suite                  exit=0, 26 ms
+  OK           i18n-copy-length-suite             exit=0, 25 ms
+  OK           i18n-copy-length                   exit=0, 24 ms
+  OK           changelog-entry-suite              exit=0, 20 ms
+  OK           host-esm-suite                     exit=0, 1252 ms
+
+  declarados: 25   OK: 25   FALLO: 0   NO EJECUTADO: 0
+  VEREDICTO: VERDE (25/25)

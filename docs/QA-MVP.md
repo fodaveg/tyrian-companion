@@ -9,7 +9,7 @@ Este protocolo cubre H6.8/H6.9 y recoge las dieciséis pruebas de aceptación de
 **Estado: ejecución humana pendiente.** Una guía preparada no acredita una prueba superada. Estas
 pruebas aún no se han ejecutado.
 
-**Candidato local revisado:** `7289fa9` (2026-10-02). Las pruebas automáticas citadas abajo
+**Candidato local revisado:** `e370775` (2026-10-02). Las pruebas automáticas citadas abajo
 acreditan casos concretos de ese árbol; no sustituyen esta ejecución humana. Anotar el commit exacto
 del candidato instalado en cada prueba y repetir la comprobación si cambia.
 

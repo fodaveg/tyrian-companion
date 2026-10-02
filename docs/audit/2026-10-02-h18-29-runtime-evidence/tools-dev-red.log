@@ -1,0 +1,17 @@
+FAIL: expected one awaited reload CLI invocation, got 3
+FAIL: reload expression failed in eval: await is only valid in async functions and the top level bodies of modules
+FAIL: exit-zero eval-error reported a reload
+FAIL: exit-zero eval-error wrote a success marker
+FAIL: exit-zero empty reported a reload
+FAIL: exit-zero empty wrote a success marker
+FAIL: exit-zero missing-plugin reported a reload
+FAIL: exit-zero missing-plugin wrote a success marker
+FAIL: exit-zero disabled-plugin reported a reload
+FAIL: exit-zero disabled-plugin wrote a success marker
+FAIL: exit-zero stale-manifest reported a reload
+FAIL: exit-zero stale-manifest wrote a success marker
+FAIL: exit-zero stale-plugin reported a reload
+FAIL: exit-zero stale-plugin wrote a success marker
+FAIL: exit-zero wrong-vault reported a reload
+FAIL: exit-zero wrong-vault wrote a success marker
+dev install suite: FAIL (16)

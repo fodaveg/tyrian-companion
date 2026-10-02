@@ -1,0 +1,18 @@
+{
+  "productCandidate": "7012e5e149d1bbbd38f15dc7267cbdd963150b72",
+  "sourceProductUnchangedThrough": "f4dd330",
+  "files": {
+    "manifest.json": {
+      "source": "8a8b3bb63e297f8ba3f67b3791cd03bde13fec4247c20445ca53a476938437cd",
+      "installed": "8a8b3bb63e297f8ba3f67b3791cd03bde13fec4247c20445ca53a476938437cd"
+    },
+    "main.js": {
+      "source": "4fbd4e412874ce0a12647a2838666239af2de83c102ddad199ecddd6518bf373",
+      "installed": "4fbd4e412874ce0a12647a2838666239af2de83c102ddad199ecddd6518bf373"
+    },
+    "styles.css": {
+      "source": "113e7aed573f2b6755363d8c696751b53e50eb9d4fcede6e0ab6f174d9699ac9",
+      "installed": "113e7aed573f2b6755363d8c696751b53e50eb9d4fcede6e0ab6f174d9699ac9"
+    }
+  }
+}

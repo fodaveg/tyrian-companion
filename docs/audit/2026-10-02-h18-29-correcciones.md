@@ -1,8 +1,10 @@
 # H18.29 — correcciones de historial y arranque, 2 oct 2026
 
 Este lote continúa el [diagnóstico con sesiones reales](2026-10-02-h18-29-sesiones-reales.md).
-Corrige los dos fallos reproducidos; no sustituye la QA restante de las pruebas 1–10 ni
-acredita instalación, carga en Obsidian o funcionamiento dentro del juego.
+Corrige los dos fallos reproducidos. Este informe conserva la evidencia del primer candidato;
+la continuación de H8, herramientas e instalación se recoge en
+[el informe de preparación y runtime](2026-10-02-h18-29-runtime.md).
+Ninguno de los dos informes sustituye la matriz completa de pruebas 1–10 dentro del juego.
 
 ## Cambios de producto
 
@@ -65,7 +67,7 @@ El control negativo en memoria (duración −1) sigue siendo rechazado.
 Los hashes de las 29 notas coinciden antes y después de la lectura y con la evidencia del
 diagnóstico. Cero intentos de escritura, sin peticiones de cuenta ni precios nuevos.
 
-## Verificación final y límite del gate
+## Verificación del candidato inicial y límite encontrado
 
 Candidato de producto: `7012e5e149d1bbbd38f15dc7267cbdd963150b72`, árbol
 `4e0212230a7424f07c84ded633af474925acc649`. La documentación de este informe
@@ -81,8 +83,9 @@ se añade después; no cambia las fuentes verificadas.
   `h8-helper-decision-contract`, con diagnóstico `platform-document-hash`.
   `node scripts/h8-native-decision-contract.mjs` reproduce el mismo diagnóstico
   y exit 1 tanto en este candidato como en el checkout principal limpio
-  `875eb05869799d5cbc939e1c3b183a3e8260ceef`. Es un fallo previo, no resuelto
-  por este lote. El gate completo de infraestructura permanece rojo.
+  `875eb05869799d5cbc939e1c3b183a3e8260ceef`. Es un fallo previo: en
+  este punto del trabajo el gate de infraestructura quedó rojo; su corrección posterior
+  se documenta en el informe de continuación.
 
 Evidencia canónica en [el directorio del lote](2026-10-02-h18-29-fix-evidence/):
 [gate principal](2026-10-02-h18-29-fix-evidence/check-final.log),
@@ -95,7 +98,8 @@ se archiva como texto, para que ESLint no lo trate como fuente mantenida del pro
 
 ## Alcance pendiente
 
-El candidato es local. No se ha instalado ni publicado y no se ha observado Obsidian/BRAT,
-Nexus, Windows/Blish o una sesión de juego nueva. H18.29 sigue pendiente de su matriz real;
+En esta primera verificación el candidato era local y no estaba instalado ni publicado.
+La instalación posterior en Obsidian desechable se acredita en el informe de continuación.
+No se ha observado BRAT, Nexus, Windows/Blish o una sesión de juego nueva. H18.29 sigue pendiente de su matriz real;
 H18.30 no forma parte de esta corrección. La evidencia histórica no se transforma en QA
 de una instalación nueva por el hecho de que el consumidor actual la acepte.

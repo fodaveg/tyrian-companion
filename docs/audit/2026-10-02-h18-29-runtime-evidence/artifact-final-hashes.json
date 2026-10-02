@@ -1,0 +1,18 @@
+{
+  "candidate": "e370775daef16ddcaa90abbcbe416bdb227be5b9",
+  "version": "0.2.20",
+  "files": {
+    "manifest.json": {
+      "source": "16cdf77f498f7498b81c130546a9c72b5725668ea54c06196a0d4319306a0c62",
+      "installed": "16cdf77f498f7498b81c130546a9c72b5725668ea54c06196a0d4319306a0c62"
+    },
+    "main.js": {
+      "source": "4754f9257460dd04ef0047ca9640a54793a9e7a0bd3175dd246ab196cd93c99c",
+      "installed": "4754f9257460dd04ef0047ca9640a54793a9e7a0bd3175dd246ab196cd93c99c"
+    },
+    "styles.css": {
+      "source": "113e7aed573f2b6755363d8c696751b53e50eb9d4fcede6e0ab6f174d9699ac9",
+      "installed": "113e7aed573f2b6755363d8c696751b53e50eb9d4fcede6e0ab6f174d9699ac9"
+    }
+  }
+}

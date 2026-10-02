@@ -1,0 +1,9 @@
+FAIL: missing disk manifest passed smoke
+FAIL: missing effective plugin-not-loaded passed smoke
+FAIL: missing effective plugin-not-enabled passed smoke
+FAIL: missing effective plugin-not-registered passed smoke
+FAIL: missing effective runtime-not-ready passed smoke
+FAIL: missing effective runtime-not-ready passed smoke
+FAIL: missing effective runtime-vault-mismatch passed smoke
+FAIL: smoke did not read readiness, connection and port from the loaded wrapper core
+smoke live suite: FAIL (8)

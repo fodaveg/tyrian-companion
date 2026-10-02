@@ -1,0 +1,14 @@
+
+> tyrian-companion@0.2.20 release:package
+> npm run release:identity-contract && node scripts/release-package.mjs
+
+
+> tyrian-companion@0.2.20 release:identity-contract
+> node scripts/release-identity-contract.mjs
+
+release identity contract v1: PASS
+
+> tyrian-companion@0.2.20 build
+> tsc --noEmit --skipLibCheck && node esbuild.config.mjs production
+
+release package: PASS (tyrian-companion-0.2.20.zip sha256=d26d474f702b74b0a4f9fc2baa9059f5821f6e60f0a7ff6b1e4b59e20fa8138b; files=manifest.json,main.js,styles.css)

@@ -1,0 +1,18 @@
+{
+  "baseline": "63a67a78589ef9b07d17c87d946feb881928e311",
+  "candidate": "91441c3b581a8c3ac4c679d2e936abb8852745be",
+  "pinned_digest_matches_baseline": true,
+  "old_platform_document_sha256": "8934b290769f6beeca6ff3048ad749a9e0db4c7f60eba780354b6e84e2a048af",
+  "new_platform_document_sha256": "1c3af27c3a5517198728daecb368748a44257acde6387cdfe340730e937ec110",
+  "only_changed_section": "## Semilla de datawars2 por lote tras una actualizaci\u00f3n expl\u00edcita",
+  "h8_authority_byte_identical": true,
+  "h8_authority_sha256": "761564594340cf5984f4ccecaa2bc3a10a0b59b11c52e4fc50c2dcb456858e1b",
+  "validator_byte_identical": true,
+  "protected_native_adr_h8_product_files_unchanged": true,
+  "originating_policy_commits": [
+    "2fbd717",
+    "9763a80",
+    "b6aac61",
+    "300080a"
+  ]
+}

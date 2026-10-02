@@ -1,0 +1,53 @@
+diff --git a/docs/PLATFORM_POLICY.md b/docs/PLATFORM_POLICY.md
+index 11653e4..8d155fd 100644
+--- a/docs/PLATFORM_POLICY.md
++++ b/docs/PLATFORM_POLICY.md
+@@ -88,10 +88,45 @@ la lista de vigilancia derivada del inventario (decisión 3 de la misma spec); V
+ calendario. Ambas piden semilla para los ítems cuya entrada de caché falta o tiene más de 24 horas, la
+ misma caché de 24 horas por `(vaultId, itemId)` en `tyrian-companion-price-seed-cache` que ya usan H9.1
+ y H9.2. Las peticiones son **en serie, nunca en paralelo**: la siguiente no empieza hasta que la
+-anterior termina. Un tope por ejecución (`PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN`, 25 ítems,
++anterior termina. Un tope por acción visible (`PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN`, 25 ítems,
+ `src/economy/price-seed-bulk-refresh.ts`) limita cuántas peticiones nuevas dispara una sola
+-sincronización; lo que queda fuera del tope se siembra en la sincronización siguiente. Un fallo de
+-datawars2 en un ítem se registra y la siembra continúa con el siguiente; ninguno detiene el resto.
++sincronización o una sola actualización de Venta; lo que queda fuera del tope se siembra en la
++acción siguiente. Un fallo de datawars2 en un ítem se registra y la siembra continúa con el
++siguiente; ninguno detiene el resto.
++
++Desde el 1 de octubre de 2026 la acción solo espera a los ítems que no tienen ninguna semilla en
++caché: esos se piden antes de calcular el veredicto, como hasta ahora. Los ítems cuya copia tiene
++más de 24 horas se piden cuando la acción entera ha terminado, con el cupo que las anteriores hayan
++dejado del mismo tope de 25: en Venta, después de entregar y pintar el resultado de «Actualizar»; en
++«Sincronizar inventario», después de escribir las notas y no entre sus análisis. El tope de 25 es de
++la acción: si una sincronización analiza dos veces (la lectura de recuperación de las notas), el
++segundo análisis gasta lo que dejó el primero y no estrena cupo, y las vencidas salen de lo que
++quede. Las vencidas que se refrescan son las de la lista del último análisis; si esa lista no tiene
++ninguna, se conservan las que dejó el primero, con el cupo que quede en ese momento, y sin cupo no
++se refresca ninguna. Por tanto puede haber peticiones a datawars2 en curso con la acción ya
++terminada en pantalla:
++siguen siendo consecuencia de esa acción explícita, siguen yendo en serie por la misma cola y no hay
++ninguna sin una acción previa de la persona, porque el refresco diferido solo lo arranca la acción
++que lo dejó, al terminar: «Analizar», un comando o un refresco automático no arrancan el de otra
++acción. El permiso se vuelve a comprobar, y con él que el dispositivo siga recolectando: el refresco
++diferido no arranca si en ese momento el histórico está desactivado o el dispositivo está en modo
++consulta, y cualquier siembra (la de las que faltan también) se detiene en el ítem siguiente si a
++mitad se desactiva el histórico o el dispositivo pasa a modo consulta; el refresco que aún no
++había arrancado se descarta al desactivar el histórico (volver a activarlo no lo recupera) o cuando
++el refresco del asesor de esa acción se rechaza por estar el dispositivo en modo consulta. Lo que
++descargan lo lee el análisis siguiente; no se relanza ningún análisis al terminar. Solo hay un
++refresco diferido a la vez: una acción que llega con uno pendiente o en curso no añade otro, y de
++dos acciones que se solapan solo conserva el suyo la primera que lo deja. Las semillas que faltan de
++una acción nueva van por la misma cola: si el refresco diferido de la acción anterior sigue en
++curso, la fase de ausentes de la nueva espera detrás de él, hasta 25 peticiones, antes de entregar
++su resultado. Cuando una sincronización
++más nueva ya ha empezado su siembra, el refresco diferido de una lista anterior no reescribe la
++línea de progreso de la cola ni repinta. La vista previa manual de las notas, si tiene que lanzar su
++propio análisis, pide solo las semillas que faltan y no deja refresco diferido. Al descargar el
++plugin, el refresco diferido pendiente se descarta, el que está en curso se corta en el ítem
++siguiente y la respuesta de una petición ya en vuelo se descarta sin escribirse; la petición en
++vuelo no se puede cancelar.
++
+ Corregido el 24 de septiembre de 2026 (H18.17, auditoría §3.E): una respuesta «sin semilla» se
+ recuerda aparte, en `tyrian-companion-price-seed-no-seed-cache`, con el mismo espaciado de 24 horas
+ antes de volver a intentarla (`PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS`); antes de esto, un ítem sin

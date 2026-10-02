@@ -1,0 +1,10 @@
+
+> tyrian-companion@0.2.17 smoke:live
+> node scripts/smoke-live.mjs --plugin-dir /tmp/tyrian-h18-29-runtime-20261002/vault/.obsidian/plugins/tyrian-companion
+
+version cargada: desconocida
+version instalada (manifest.json): 0.2.17
+runtimeReady: null
+conexion: null
+puerto in-game: cerrado
+errores nuevos en el log: 0

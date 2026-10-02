@@ -1,0 +1,5 @@
+
+> tyrian-companion@0.2.20 dev:install
+> node scripts/dev-install.mjs --plugin-dir /tmp/tyrian-h18-29-runtime-20261002/vault/.obsidian/plugins/tyrian-companion
+
+dev install v1: PASS (files=manifest.json,main.js,styles.css; reloaded=true; loaded-version=0.2.20; plugin-dir=/tmp/tyrian-h18-29-runtime-20261002/vault/.obsidian/plugins/tyrian-companion; 208 ms)
