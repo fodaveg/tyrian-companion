@@ -422,6 +422,7 @@ describe('durable session history', () => {
 			await note(),
 			await note(estimated),
 			await note({ ...estimated, tc_confidence: 'low' }),
+			await note({ tc_observed_immediate_copper: -1 }),
 			await note(contaminated),
 		]) {
 			const vault = new MemoryVault();
@@ -432,13 +433,76 @@ describe('durable session history', () => {
 			await note({ tc_confidence: 'medium' }),
 			await note({ ...estimated, tc_confidence: 'high' }),
 			await note({ ...contaminated, tc_confidence: 'low' }),
-			await note({ tc_observed_immediate_copper: -1 }),
 			await note({ ...estimated, tc_sacks: -1 }),
 			await note({ ...estimated, tc_immediate_copper_per_hour: 1 }),
 			await note({ ...contaminated, tc_observed_listing_copper: 1 }),
 		]) {
 			const vault = new MemoryVault();
 			vault.contents.set('Sessions/invalid.md', content);
+			await expect(new SessionHistoryService(vault).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		}
+	});
+
+	it.each([1, 2, 3, 4, 5, 6])('keeps signed observed net values and exact rates readable in schema %i', async (schema) => {
+		for (const estimated of [false, true]) {
+			const vault = new MemoryVault();
+			const source = await note({
+				tc_schema: schema, tc_classification: estimated ? 'estimated' : 'exact',
+				tc_confidence: estimated ? 'medium' : 'high', tc_valuation_coverage: estimated ? 'partial' : 'complete',
+				tc_observed_immediate_copper: -42_201, tc_observed_listing_copper: -4_713,
+				tc_sacks_per_hour_milli: estimated ? null : 1000,
+				tc_immediate_copper_per_hour: estimated ? null : -42_201,
+				tc_listing_copper_per_hour: estimated ? null : -4_713,
+			});
+			vault.contents.set('Sessions/loss.md', source);
+			const history = new SessionHistoryService(vault);
+			for (const scanSource of ['rebuild', 'index'] as const) {
+				await expect(history.scan(scanSource)).resolves.toMatchObject({ status: 'ok', sessions: [{
+					observedImmediateCopper: -42_201, observedListingCopper: -4_713,
+					immediateCopperPerHour: estimated ? null : -42_201,
+					listingCopperPerHour: estimated ? null : -4_713,
+				}] });
+			}
+			await expect(history.readSession('a'.repeat(64))).resolves.toMatchObject({ status: 'found' });
+			expect(vault.contents.get('Sessions/loss.md')).toBe(source);
+			expect(vault.processes).toBe(0);
+		}
+	});
+
+	it('exports a partial estimated loss with its signed numbers while preserving the original note', async () => {
+		const vault = new MemoryVault();
+		const source = await note({ tc_schema: 3, tc_classification: 'estimated', tc_confidence: 'medium',
+			tc_valuation_coverage: 'partial', tc_observed_immediate_copper: -42_201, tc_observed_listing_copper: -4_713,
+			tc_sacks_per_hour_milli: null, tc_immediate_copper_per_hour: null, tc_listing_copper_per_hour: null });
+		vault.contents.set('Sessions/loss.md', source);
+		await expect(new SessionHistoryService(vault).export('Tyrian Companion')).resolves.toEqual({ status: 'written', sessions: 1 });
+		const json: unknown = JSON.parse(vault.contents.get(`Tyrian Companion/exports/${SESSION_HISTORY_JSON_FILE}`)!);
+		expect(json).toMatchObject({ sessions: [{ observedImmediateCopper: -42_201, observedListingCopper: -4_713 }] });
+		const csv = vault.contents.get(`Tyrian Companion/exports/${SESSION_HISTORY_CSV_FILE}`)!;
+		// Numeric losses retain the existing CSV spreadsheet-formula protection.
+		expect(csv).toContain('"\'-42201","\'-4713"');
+		expect(vault.contents.get('Sessions/loss.md')).toBe(source);
+		expect(vault.processes).toBe(0);
+	});
+
+	it('rejects malformed signed money and retains nonnegative quantity and duration guards', async () => {
+		const invalid: Record<string, string | number | null>[] = [];
+		for (const key of ['tc_observed_immediate_copper', 'tc_observed_listing_copper',
+			'tc_immediate_copper_per_hour', 'tc_listing_copper_per_hour']) {
+			for (const value of [-1.5, Number.MIN_SAFE_INTEGER - 1, Number.MAX_SAFE_INTEGER + 1, '-1', null]) {
+				invalid.push({ [key]: value });
+			}
+		}
+		for (const key of ['tc_sacks', 'tc_sacks_per_hour_milli', 'tc_magic_find', 'tc_duration_ms']) {
+			invalid.push({ [key]: -1 });
+		}
+		invalid.push({ tc_reservation_status: 'complete:met', tc_reserved_quantity: -1 },
+			{ tc_hold_status: 'active', tc_held_quantity: -1 },
+			{ tc_recommendation_status: 'ready', tc_recommendation_action: 'sell', tc_recommendation_route: 'instant_sell',
+				tc_recommendation_quantity: -1 });
+		for (const overrides of invalid) {
+			const vault = new MemoryVault();
+			vault.contents.set('Sessions/invalid.md', await note(overrides));
 			await expect(new SessionHistoryService(vault).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 		}
 	});

@@ -4,6 +4,46 @@ import type { DurableSessionHistoryRecord } from './session-history';
 import { buildSessionHistoryAggregate } from './session-history-summary';
 
 describe('buildSessionHistoryAggregate', () => {
+	it('retains net losses in totals, partial known subtotals, rows and comparisons', () => {
+		const sessions = [
+			record('2026-08-20T10:00:00.000Z'),
+			record('2026-08-21T10:00:00.000Z', { observedImmediateCopper: -42_201, observedListingCopper: -4_713,
+				immediateCopperPerHour: -42_201, listingCopperPerHour: -4_713 }),
+		];
+		expect(buildSessionHistoryAggregate(sessions)).toMatchObject({
+			totalImmediateCopper: -32_201, totalListingCopper: 7_287,
+			comparison: { immediateCopperPerHourDelta: -52_201, listingCopperPerHourDelta: -16_713 },
+			sessions: [{ immediateCopper: -42_201, listingCopper: -4_713 }, { immediateCopper: 10_000, listingCopper: 12_000 }],
+		});
+		const partial = buildSessionHistoryAggregate([...sessions, record('2026-08-22T10:00:00.000Z', {
+			observedImmediateCopper: null, observedListingCopper: null,
+		})]);
+		expect(partial).toMatchObject({ totalImmediateCopper: null, immediateValueKnown: 2, immediateValueKnownSubtotal: -32_201,
+			totalListingCopper: null, listingValueKnown: 2, listingValueKnownSubtotal: 7_287 });
+	});
+
+	it.each([
+		[-42_201, 3_600_000, -42_201],
+		[-3, 7_200_000, -1], // -1.5: Math.round ties toward positive infinity, as session valuation does.
+		[-151, 360_000_000, -2],
+		[-149, 360_000_000, -1],
+		[-1, 7_200_000, 0],
+	])('rounds duration-weighted signed net %i over %i ms to %i per hour', (copper, durationMs, expected) => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-08-20T10:00:00.000Z', { build: 'Deadeye', durationMs, observedImmediateCopper: copper }),
+			record('2026-08-21T10:00:00.000Z', { build: 'Deadeye', durationMs, observedImmediateCopper: copper }),
+		]);
+		expect(aggregate.performance.groups[0]).toMatchObject({ status: 'ready', immediateCopperPerHour: expected });
+	});
+
+	it.each([Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER])('withholds a weighted net rate outside either safe integer bound (%i)', (copper) => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-08-20T10:00:00.000Z', { build: 'Deadeye', durationMs: 1000, observedImmediateCopper: copper }),
+			record('2026-08-21T10:00:00.000Z', { build: 'Deadeye', durationMs: 1000, observedImmediateCopper: copper }),
+		]);
+		expect(aggregate.performance.groups[0]).toMatchObject({ status: 'unavailable', immediateCopperPerHour: null });
+	});
+
 	it('projects newest-first rows without durable identity fields and compares the latest pair', () => {
 		const aggregate = buildSessionHistoryAggregate([
 			record('2026-08-20T10:00:00.000Z', { durationMs: 3_600_000, sacks: 10, sacksPerHourMilli: 10_000,

@@ -251,8 +251,14 @@ function sumBigInt(values: readonly number[]): bigint {
 
 function safeRoundedRate(total: bigint, durationMs: bigint, scale: bigint): number | null {
 	if (durationMs <= 0n) return null;
-	const rounded = (total * scale + durationMs / 2n) / durationMs;
-	return rounded <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(rounded) : null;
+	const scaled = total * scale;
+	let rounded = scaled / durationMs;
+	const remainder = scaled % durationMs;
+	// Match session valuation's Math.round, including negative nets and ties toward +infinity.
+	if (remainder * 2n >= durationMs) rounded += 1n;
+	else if (remainder * 2n < -durationMs) rounded -= 1n;
+	return rounded >= BigInt(Number.MIN_SAFE_INTEGER) && rounded <= BigInt(Number.MAX_SAFE_INTEGER)
+		? Number(rounded) : null;
 }
 
 function summaryRow(session: DurableSessionHistoryRecord): SessionHistorySummaryRow {

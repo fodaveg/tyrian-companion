@@ -701,12 +701,14 @@ function validValuationMetadata(fm: Readonly<Record<string, string | number | nu
 	if ((coverage !== 'complete' && coverage !== 'partial') || fm.tc_price_source !== 'gw2-commerce-prices' ||
 		!iso(fm.tc_price_captured_at)) return false;
 	if (fm.tc_classification === 'contaminated') return evidence.every((value) => value === null);
-	const observed = evidence.slice(0, 3);
 	const hourly = evidence.slice(3);
-	if (!observed.every(safeNonNegative)) return false;
+	// Net copper includes observed spending; quantities remain nonnegative.
+	if (![fm.tc_observed_immediate_copper, fm.tc_observed_listing_copper].every(safeInteger) ||
+		!safeNonNegative(fm.tc_sacks)) return false;
 	return fm.tc_classification === 'estimated'
 		? hourly.every((value) => value === null)
-		: hourly.every(safeNonNegative);
+		: safeNonNegative(fm.tc_sacks_per_hour_milli) &&
+			[fm.tc_immediate_copper_per_hour, fm.tc_listing_copper_per_hour].every(safeInteger);
 }
 
 function validReservationMetadata(fm: Readonly<Record<string, string | number | null>>): boolean {
@@ -868,6 +870,7 @@ function enumValue(value: unknown, allowed: readonly string[]): value is string 
 function iso(value: unknown): value is string { return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(Date.parse(value)).toISOString() === value; }
 function isRef(value: unknown): value is string { return typeof value === 'string' && REF.test(value); }
 function safePositive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
+function safeInteger(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value); }
 function safeNonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0; }
 function numberOrNull(value: unknown): number | null { return typeof value === 'number' && Number.isSafeInteger(value) ? value : null; }
 function nullableString(value: unknown): string | null { return typeof value === 'string' ? value : null; }
