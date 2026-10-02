@@ -1,0 +1,67 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion/.claude/worktrees/h18-29-history-fix-20261002
+
+ ❯ src/sessions/session-history-summary.test.ts (22 tests | 2 failed) 21ms
+   × buildSessionHistoryAggregate > keeps totals and known subtotals exact when signed nets cancel around -9007199254740991 14ms
+     → expected { sessionCount: 3, …(13) } to match object { …(4) }
+(21 matching properties omitted from actual)
+   × buildSessionHistoryAggregate > keeps totals and known subtotals exact when signed nets cancel around 9007199254740991 1ms
+     → expected { sessionCount: 3, …(13) } to match object { …(4) }
+(21 matching properties omitted from actual)
+   ✓ buildSessionHistoryAggregate > withholds totals and known subtotals when the final signed sum exceeds -9007199254740991 0ms
+   ✓ buildSessionHistoryAggregate > withholds totals and known subtotals when the final signed sum exceeds 9007199254740991 0ms
+   ✓ buildSessionHistoryAggregate > retains net losses in totals, partial known subtotals, rows and comparisons 0ms
+   ✓ buildSessionHistoryAggregate > rounds duration-weighted signed net -42201 over 3600000 ms to -42201 per hour 0ms
+   ✓ buildSessionHistoryAggregate > rounds duration-weighted signed net -3 over 7200000 ms to -1 per hour 0ms
+   ✓ buildSessionHistoryAggregate > rounds duration-weighted signed net -151 over 360000000 ms to -2 per hour 0ms
+   ✓ buildSessionHistoryAggregate > rounds duration-weighted signed net -149 over 360000000 ms to -1 per hour 0ms
+   ✓ buildSessionHistoryAggregate > rounds duration-weighted signed net -1 over 7200000 ms to 0 per hour 0ms
+   ✓ buildSessionHistoryAggregate > withholds a weighted net rate outside either safe integer bound (-9007199254740991) 0ms
+   ✓ buildSessionHistoryAggregate > withholds a weighted net rate outside either safe integer bound (9007199254740991) 0ms
+   ✓ buildSessionHistoryAggregate > projects newest-first rows without durable identity fields and compares the latest pair 0ms
+   ✓ buildSessionHistoryAggregate > withholds aggregate sacks and values when any session is unknown instead of treating it as zero 0ms
+   ✓ buildSessionHistoryAggregate > carries each session’s already-rendered gains lines through to its row, with no identity attached 0ms
+   ✓ buildSessionHistoryAggregate > orders overlapping sessions by completion and compares the two latest completions 0ms
+   ✓ buildSessionHistoryAggregate > handles zero and one session without inventing a comparison 0ms
+   ✓ buildSessionHistoryAggregate > compares only a minimum sample from the same declared activity, build, and quality using duration-weighted rates 0ms
+   ✓ buildSessionHistoryAggregate > forms a comparable `estimated` group from two sessions of the same build 0ms
+   ✓ buildSessionHistoryAggregate > never averages an exact session with an estimated one, even for the same build 0ms
+   ✓ buildSessionHistoryAggregate > excludes a contaminated session from every quality bucket, with its own visible count 0ms
+   ✓ buildSessionHistoryAggregate > groups a session outside the Labyrinth under its own activity instead of dropping it silently 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/sessions/session-history-summary.test.ts > buildSessionHistoryAggregate > keeps totals and known subtotals exact when signed nets cancel around -9007199254740991
+ FAIL  src/sessions/session-history-summary.test.ts > buildSessionHistoryAggregate > keeps totals and known subtotals exact when signed nets cancel around 9007199254740991
+AssertionError: expected { sessionCount: 3, …(13) } to match object { …(4) }
+(21 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "immediateValueKnownSubtotal": -9007199254740991,
+-   "listingValueKnownSubtotal": -9007199254740991,
+-   "totalImmediateCopper": -9007199254740991,
+-   "totalListingCopper": -9007199254740991,
++   "immediateValueKnownSubtotal": null,
++   "listingValueKnownSubtotal": null,
++   "totalImmediateCopper": null,
++   "totalListingCopper": null,
+  }
+
+ ❯ src/sessions/session-history-summary.test.ts:19:51
+     17|    }));
+     18|    const expected = values.length === 4 ? 0 : bound;
+     19|    expect(buildSessionHistoryAggregate(sessions)).toMatchObject({
+       |                                                   ^
+     20|     totalImmediateCopper: expected, immediateValueKnownSubtotal: expec…
+     21|     totalListingCopper: expected, listingValueKnownSubtotal: expected,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 20 passed (22)
+   Start at  10:30:45
+   Duration  279ms (transform 38ms, setup 0ms, collect 40ms, tests 21ms, environment 0ms, prepare 80ms)

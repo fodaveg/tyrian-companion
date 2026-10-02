@@ -1,0 +1,251 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion/.claude/worktrees/h18-29-history-fix-20261002
+
+ ❯ src/sessions/session-history-summary.test.ts (18 tests | 4 failed) 22ms
+   ✓ buildSessionHistoryAggregate > retains net losses in totals, partial known subtotals, rows and comparisons 8ms
+   × buildSessionHistoryAggregate > rounds duration-weighted signed net -42201 over 3600000 ms to -42201 per hour 7ms
+     → expected { activity: 'general', …(8) } to match object { status: 'ready', …(1) }
+(7 matching properties omitted from actual)
+   ✓ buildSessionHistoryAggregate > rounds duration-weighted signed net -3 over 7200000 ms to -1 per hour 0ms
+   × buildSessionHistoryAggregate > rounds duration-weighted signed net -151 over 360000000 ms to -2 per hour 1ms
+     → expected { activity: 'general', …(8) } to match object { status: 'ready', …(1) }
+(7 matching properties omitted from actual)
+   × buildSessionHistoryAggregate > rounds duration-weighted signed net -149 over 360000000 ms to -1 per hour 1ms
+     → expected { activity: 'general', …(8) } to match object { status: 'ready', …(1) }
+(7 matching properties omitted from actual)
+   ✓ buildSessionHistoryAggregate > rounds duration-weighted signed net -1 over 7200000 ms to 0 per hour 0ms
+   × buildSessionHistoryAggregate > withholds a weighted net rate outside either safe integer bound (-9007199254740991) 1ms
+     → expected { activity: 'general', …(8) } to match object { status: 'unavailable', …(1) }
+(7 matching properties omitted from actual)
+   ✓ buildSessionHistoryAggregate > withholds a weighted net rate outside either safe integer bound (9007199254740991) 0ms
+   ✓ buildSessionHistoryAggregate > projects newest-first rows without durable identity fields and compares the latest pair 1ms
+   ✓ buildSessionHistoryAggregate > withholds aggregate sacks and values when any session is unknown instead of treating it as zero 0ms
+   ✓ buildSessionHistoryAggregate > carries each session’s already-rendered gains lines through to its row, with no identity attached 0ms
+   ✓ buildSessionHistoryAggregate > orders overlapping sessions by completion and compares the two latest completions 0ms
+   ✓ buildSessionHistoryAggregate > handles zero and one session without inventing a comparison 0ms
+   ✓ buildSessionHistoryAggregate > compares only a minimum sample from the same declared activity, build, and quality using duration-weighted rates 0ms
+   ✓ buildSessionHistoryAggregate > forms a comparable `estimated` group from two sessions of the same build 0ms
+   ✓ buildSessionHistoryAggregate > never averages an exact session with an estimated one, even for the same build 0ms
+   ✓ buildSessionHistoryAggregate > excludes a contaminated session from every quality bucket, with its own visible count 0ms
+   ✓ buildSessionHistoryAggregate > groups a session outside the Labyrinth under its own activity instead of dropping it silently 0ms
+ ❯ src/sessions/session-history.test.ts (63 tests | 8 failed) 261ms
+   ✓ durable session history > keeps the future scrub gate closed around every runtime, recovery, detector, and completed state 1ms
+   ✓ durable session history > shares mutual exclusion between runtime transitions and a scrub lease 0ms
+   ✓ durable session history > registers a vault_read failure when a markdown file cannot be read 2ms
+   ✓ durable session history > uses an opaque preview token to scrub only tc metadata and six validated blocks 14ms
+   ✓ durable session history > does not count an erasure the host discarded when it re-runs the update after a stale base 2ms
+   ✓ durable session history > rejects an unknown or expired preview capability as stale without vault mutation 0ms
+   ✓ durable session history > revokes preview capabilities on cancel, replacement, success, and dispose 8ms
+   ✓ durable session history > treats a deleted target after preview as conflict, never already_absent 2ms
+   ✓ durable session history > treats a renamed target after preview as conflict, never already_absent 2ms
+   ✓ durable session history > holds shared runtime exclusion during Vault.process and revalidates live state before every following write 4ms
+   ✓ durable session history > fails closed on CAS edits and tampered managed blocks without overwriting either 3ms
+   ✓ durable session history > is partial-safe and retries a preserved preview plan without physical deletion 6ms
+   ✓ durable session history > does no vault I/O on construction, then scans only valid H5.4/H5.7 notes 3ms
+   ✓ durable session history > scans schema v3 notes with canonical positive item evidence 2ms
+   ✓ durable session history > H18.11: reads a schema 5 note whose duration is the active time, and still reads every older one 5ms
+   ✓ durable session history > keeps an abandoned session in the ledger and out of performance and totals 7ms
+   ✓ durable session history > H18.26: scans a Labyrinth note tagged by the in-game presence 2ms
+   ✓ durable session history > scans schema v4 notes carrying the magic find source and its manual consumables part 2ms
+   ✓ durable session history > keeps reading the schema v3 notes already written to the vault after the v4 bump 7ms
+   ✓ durable session history > rejects a v4 note whose magic find provenance is missing or contradicts the total 4ms
+   ✓ durable session history > fails closed for corrupt blocks, future schemas, and duplicate session refs 5ms
+   ✓ durable session history > keeps schema 1 absence compatible but treats any tc hint, enum, optional field, or duration mismatch as corruption 4ms
+   ✓ durable session history > enforces renderer-compatible valuation, reservation, hold, recommendation, and YAML scalar invariants 11ms
+   × durable session history > accepts only the renderer classification-confidence and valuation-evidence matrix 12ms
+     → expected { Object (status, invalid, ...) } to match object { Object (status, sessions) }
+(2 matching properties omitted from actual)
+   × durable session history > keeps signed observed net values and exact rates readable in schema 1 2ms
+     → expected { Object (status, invalid, ...) } to match object { Object (status, sessions) }
+(2 matching properties omitted from actual)
+   × durable session history > keeps signed observed net values and exact rates readable in schema 2 2ms
+     → expected { Object (status, invalid, ...) } to match object { Object (status, sessions) }
+(2 matching properties omitted from actual)
+   × durable session history > keeps signed observed net values and exact rates readable in schema 3 1ms
+     → expected { Object (status, invalid, ...) } to match object { Object (status, sessions) }
+(2 matching properties omitted from actual)
+   × durable session history > keeps signed observed net values and exact rates readable in schema 4 1ms
+     → expected { Object (status, invalid, ...) } to match object { Object (status, sessions) }
+(2 matching properties omitted from actual)
+   × durable session history > keeps signed observed net values and exact rates readable in schema 5 1ms
+     → expected { Object (status, invalid, ...) } to match object { Object (status, sessions) }
+(2 matching properties omitted from actual)
+   × durable session history > keeps signed observed net values and exact rates readable in schema 6 1ms
+     → expected { Object (status, invalid, ...) } to match object { Object (status, sessions) }
+(2 matching properties omitted from actual)
+   × durable session history > exports a partial estimated loss with its signed numbers while preserving the original note 2ms
+     → expected { status: 'conflict', …(1) } to deeply equal { status: 'written', sessions: 1 }
+   ✓ durable session history > rejects malformed signed money and retains nonnegative quantity and duration guards 23ms
+   ✓ durable session history > creates deterministic create-only JSON and CRLF CSV without human data or formula injection 4ms
+   ✓ durable session history > serializes every CSV header cell and emits no empty data row for zero sessions 0ms
+   ✓ durable session history > neutralizes CSV formula prefixes after invisible characters: "=1+1" 0ms
+   ✓ durable session history > neutralizes CSV formula prefixes after invisible characters: " =1+1" 0ms
+   ✓ durable session history > neutralizes CSV formula prefixes after invisible characters: "\t=1+1" 0ms
+   ✓ durable session history > neutralizes CSV formula prefixes after invisible characters: "\r=1+1" 0ms
+   ✓ durable session history > neutralizes CSV formula prefixes after invisible characters: "\u0001@cmd" 0ms
+   ✓ durable session history > retries a partial create without overwriting the already-created JSON 2ms
+   ✓ durable session history > preflights both create-only outputs before writing either sibling 2ms
+   ✓ durable session history > does not mix JSON and CSV siblings when two windows export different snapshots 3ms
+   ✓ durable session history > returns immediately when JSON loses a create-only race and leaves CSV untouched 1ms
+   ✓ durable session history > does not treat tc-like human body text or code blocks as a candidate 0ms
+   ✓ durable session history > ignores an unfinished frontmatter unless its remaining text carries a tc hint or managed marker 0ms
+   ✓ durable session history > ignores the notes the plugin writes for inventory, wallet and collector status 9ms
+   ✓ durable session history > keeps failing closed on an unknown tc_kind or a foreign kind that carries a session identity 1ms
+   ✓ durable session history > recognizes existing folders without attempting to read them as export files 2ms
+   ✓ durable session history index > reads every note once, then none while nothing changes, and all of them again on a rebuild 12ms
+   ✓ durable session history index > keeps reading the whole vault for a scan that does not ask for the index, and remembers nothing from it 8ms
+   ✓ durable session history index > reads the whole vault on every scan when the host does not promise to report changes 2ms
+   ✓ durable session history index > still counts a session note moved to another folder, reading only its new path 6ms
+   ✓ durable session history index > still counts a renamed session note, reading only its new name 6ms
+   ✓ durable session history index > keeps detecting the same session in two notes, from the index and when the copy appears later 10ms
+   ✓ durable session history index > keeps detecting a corrupt session note, from the index and when a note is corrupted later 6ms
+   ✓ durable session history index > reads again a note edited in place, with nothing in the listing changing 6ms
+   ✓ durable session history index > reads again a note deleted and recreated at the same path between two scans 5ms
+   ✓ durable session history index > drops a deleted session note without reading anything 4ms
+   ✓ durable session history index > follows a note that becomes a session note and a session note that stops being one 8ms
+   ✓ durable session history index > counts a note that cannot be read as invalid, and reads it again on every scan until it can be read 7ms
+   ✓ durable session history index > does not remember a note that changed while it was being read 4ms
+   ✓ durable session history index > serves the remembered inspection for an edit the host never reported, until a rebuild 3ms
+   ✓ durable session history index > listens only from its first index scan, and stops and forgets on dispose 6ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 12 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/sessions/session-history-summary.test.ts > buildSessionHistoryAggregate > rounds duration-weighted signed net -42201 over 3600000 ms to -42201 per hour
+ FAIL  src/sessions/session-history-summary.test.ts > buildSessionHistoryAggregate > rounds duration-weighted signed net -151 over 360000000 ms to -2 per hour
+ FAIL  src/sessions/session-history-summary.test.ts > buildSessionHistoryAggregate > rounds duration-weighted signed net -149 over 360000000 ms to -1 per hour
+AssertionError: expected { activity: 'general', …(8) } to match object { status: 'ready', …(1) }
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "immediateCopperPerHour": -42201,
++   "immediateCopperPerHour": -42200,
+    "status": "ready",
+  }
+
+ ❯ src/sessions/session-history-summary.test.ts:36:43
+     34|    record('2026-08-21T10:00:00.000Z', { build: 'Deadeye', durationMs, …
+     35|   ]);
+     36|   expect(aggregate.performance.groups[0]).toMatchObject({ status: 'rea…
+       |                                           ^
+     37|  });
+     38|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+ FAIL  src/sessions/session-history-summary.test.ts > buildSessionHistoryAggregate > withholds a weighted net rate outside either safe integer bound (-9007199254740991)
+AssertionError: expected { activity: 'general', …(8) } to match object { status: 'unavailable', …(1) }
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "immediateCopperPerHour": null,
+-   "status": "unavailable",
++   "immediateCopperPerHour": -32425917317067567000,
++   "status": "ready",
+  }
+
+ ❯ src/sessions/session-history-summary.test.ts:44:43
+     42|    record('2026-08-21T10:00:00.000Z', { build: 'Deadeye', durationMs: …
+     43|   ]);
+     44|   expect(aggregate.performance.groups[0]).toMatchObject({ status: 'una…
+       |                                           ^
+     45|  });
+     46|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯
+
+ FAIL  src/sessions/session-history.test.ts > durable session history > accepts only the renderer classification-confidence and valuation-evidence matrix
+AssertionError: expected { Object (status, invalid, ...) } to match object { Object (status, sessions) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "sessions": [
+-     {
+-       "sessionRef": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+-     },
+-   ],
+-   "status": "ok",
++   "status": "conflict",
+  }
+
+ ❯ src/sessions/session-history.test.ts:430:4
+    428|    const vault = new MemoryVault();
+    429|    vault.contents.set('Sessions/valid.md', content);
+    430|    await expect(new SessionHistoryService(vault).scan()).resolves.toMa…
+       |    ^
+    431|   }
+    432|   for (const content of [
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/12]⎯
+
+ FAIL  src/sessions/session-history.test.ts > durable session history > keeps signed observed net values and exact rates readable in schema 1
+ FAIL  src/sessions/session-history.test.ts > durable session history > keeps signed observed net values and exact rates readable in schema 2
+ FAIL  src/sessions/session-history.test.ts > durable session history > keeps signed observed net values and exact rates readable in schema 3
+ FAIL  src/sessions/session-history.test.ts > durable session history > keeps signed observed net values and exact rates readable in schema 4
+ FAIL  src/sessions/session-history.test.ts > durable session history > keeps signed observed net values and exact rates readable in schema 5
+ FAIL  src/sessions/session-history.test.ts > durable session history > keeps signed observed net values and exact rates readable in schema 6
+AssertionError: expected { Object (status, invalid, ...) } to match object { Object (status, sessions) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "sessions": [
+-     {
+-       "immediateCopperPerHour": -42201,
+-       "listingCopperPerHour": -4713,
+-       "observedImmediateCopper": -42201,
+-       "observedListingCopper": -4713,
+-     },
+-   ],
+-   "status": "ok",
++   "status": "conflict",
+  }
+
+ ❯ src/sessions/session-history.test.ts:460:5
+    458|    const history = new SessionHistoryService(vault);
+    459|    for (const scanSource of ['rebuild', 'index'] as const) {
+    460|     await expect(history.scan(scanSource)).resolves.toMatchObject({ st…
+       |     ^
+    461|      observedImmediateCopper: -42_201, observedListingCopper: -4_713,
+    462|      immediateCopperPerHour: estimated ? null : -42_201,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/12]⎯
+
+ FAIL  src/sessions/session-history.test.ts > durable session history > exports a partial estimated loss with its signed numbers while preserving the original note
+AssertionError: expected { status: 'conflict', …(1) } to deeply equal { status: 'written', sessions: 1 }
+
+- Expected
++ Received
+
+  {
+-   "sessions": 1,
+-   "status": "written",
++   "message": "Durable session notes are corrupt, unsupported, or duplicated.",
++   "status": "conflict",
+  }
+
+ ❯ src/sessions/session-history.test.ts:478:3
+    476|    tc_sacks_per_hour_milli: null, tc_immediate_copper_per_hour: null, …
+    477|   vault.contents.set('Sessions/loss.md', source);
+    478|   await expect(new SessionHistoryService(vault).export('Tyrian Compani…
+       |   ^
+    479|   const json = JSON.parse(vault.contents.get(`Tyrian Companion/exports…
+    480|   expect(json.sessions).toMatchObject([{ observedImmediateCopper: -42_…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/12]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  12 failed | 69 passed (81)
+   Start at  10:21:49
+   Duration  1.12s (transform 487ms, setup 0ms, collect 687ms, tests 283ms, environment 0ms, prepare 160ms)

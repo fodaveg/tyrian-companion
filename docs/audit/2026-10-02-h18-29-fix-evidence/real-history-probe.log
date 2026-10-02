@@ -1,0 +1,84 @@
+{
+  "candidate": "7012e5e149d1bbbd38f15dc7267cbdd963150b72",
+  "scan": {
+    "status": "ok",
+    "sessionCount": 29,
+    "ignored": 0
+  },
+  "signedLoss": {
+    "immediateCopper": -42201,
+    "listingCopper": -4713
+  },
+  "aggregate": {
+    "sessionCount": 29,
+    "totalDurationMs": 114544392,
+    "totalSacks": null,
+    "sacksKnown": 22,
+    "sacksKnownSubtotal": 0,
+    "totalImmediateCopper": null,
+    "immediateValueKnown": 22,
+    "immediateValueKnownSubtotal": 1344805,
+    "totalListingCopper": null,
+    "listingValueKnown": 22,
+    "listingValueKnownSubtotal": 1539796,
+    "comparison": {
+      "latestEndedAt": "2026-09-29T07:53:00.095Z",
+      "previousEndedAt": "2026-09-28T13:59:35.189Z",
+      "durationDeltaMs": -7386587,
+      "sacksPerHourMilliDelta": null,
+      "immediateCopperPerHourDelta": null,
+      "listingCopperPerHourDelta": null
+    },
+    "performance": {
+      "minimumSessions": 2,
+      "missingContextSessions": 0,
+      "qualityExcludedSessions": 4,
+      "abandonedSessions": 0,
+      "groups": [
+        {
+          "activity": "general",
+          "build": "Power Willbender OK",
+          "quality": "estimated",
+          "sessionCount": 20,
+          "eligibleSessions": 1,
+          "status": "insufficient_sample",
+          "sacksPerHourMilli": null,
+          "immediateCopperPerHour": null,
+          "exclusions": [
+            "valuation",
+            "metrics"
+          ]
+        },
+        {
+          "activity": "general",
+          "build": "Power Willbender OK",
+          "quality": "exact",
+          "sessionCount": 5,
+          "eligibleSessions": 0,
+          "status": "insufficient_sample",
+          "sacksPerHourMilli": null,
+          "immediateCopperPerHour": null,
+          "exclusions": [
+            "valuation",
+            "metrics"
+          ]
+        }
+      ]
+    }
+  },
+  "longSessions": 8,
+  "negativeControl": {
+    "status": "conflict",
+    "invalid": 1,
+    "duplicates": 0
+  },
+  "invariants": {
+    "all29SourceHashesMatchBeforeAndAfter": true,
+    "zeroWriteAttempts": true,
+    "signedNetLossIncluded": true,
+    "monetarySubtotalsIncludeLossExactly": true,
+    "qualitiesStaySeparate": true,
+    "unavailableHourlyMetricsStayNull": true
+  },
+  "evidence": "/tmp/tyrian-h18-29-fixed-probe/evidence.json"
+}

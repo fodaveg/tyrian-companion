@@ -1,0 +1,62 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion/.claude/worktrees/h18-29-start-fix-20261002
+
+ ❯ src/main-alert-wiring.test.ts (13 tests | 1 failed | 12 skipped) 1088ms
+   ↓ H13.3 loot poll cabling > arms the loot poll at five minutes on a manual start before assisted detection has armed
+   ↓ H13.4 alert channel cabling > reaches the toast, the desktop banner, the speakers and the durable queue
+   ↓ H13.4 alert channel cabling > still delivers the toast and the queue when the desktop and the speakers are gone
+   ↓ H13.4 alert channel cabling > fails the in-game channel when it is enabled but no addon is connected
+   ↓ H13.4 alert channel cabling > opens the in-game server the moment the setting turns on, with no alert in between
+   ↓ H13.4 alert channel cabling > H18.22: a connected addon that never said hello does not make the in-game channel delivered
+   ↓ H13.4 alert channel cabling > H18.23: an authenticated addon context reaches the plugin presence store
+   × H13.4 alert channel cabling > H18.26: an addon entering gameplay starts the session through the start pipeline, once 1088ms
+     → expected "start" to be called once, but got 0 times
+   ↓ H13.4 alert channel cabling > H18.26: without an API key the addon presence starts nothing
+   ↓ H13.4 alert channel cabling > H18.38 recorrido of an aviso: real bridge, ack, persisted record, view model > a v3 addon that acks makes the record received by Nexus, and the view says so
+   ↓ H13.4 alert channel cabling > H18.38 recorrido of an aviso: real bridge, ack, persisted record, view model > a v2 addon gets a v2 alert and the record says the addon does not confirm
+   ↓ H13.4 alert channel cabling > H18.38 recorrido of an aviso: real bridge, ack, persisted record, view model > with the bridge on and no addon connected, the record says nobody was there
+   ↓ H13.4 alert channel cabling > refuses to build an alert that is not the signed contract
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/main-alert-wiring.test.ts > H13.4 alert channel cabling > H18.26: an addon entering gameplay starts the session through the start pipeline, once
+AssertionError: expected "start" to be called once, but got 0 times
+ ❯ src/main-alert-wiring.test.ts:309:43
+    307|    addon.write(`${JSON.stringify({ v: 2, type: 'context', nonce, seq: …
+    308|
+    309|    await vi.waitFor(() => { expect(start).toHaveBeenCalledOnce(); });
+       |                                           ^
+    310|    expect(start).toHaveBeenCalledWith({ characterName: 'Astra Uno', ma…
+    311|    addon.destroy();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+ReferenceError: window is not defined
+ ❯ Object.cancel src/runtime/tyrian-companion-core.ts:3403:27
+    3401|    {
+    3402|     schedule: (callback, milliseconds) => window.setTimeout(callback, …
+    3403|     cancel: (handle) => { window.clearTimeout(handle as number); },
+       |                           ^
+    3404|    },
+    3405|    {
+ ❯ cancelDeadline src/alerts/alert-ingame-server.ts:421:16
+ ❯ settleClosed src/alerts/alert-ingame-server.ts:390:2
+ ❯ Socket.<anonymous> src/alerts/alert-ingame-server.ts:270:25
+ ❯ Socket.emit node:events:519:28
+ ❯ TCP.<anonymous> node:net:347:12
+
+This error originated in "src/main-alert-wiring.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 12 skipped (13)
+     Errors  1 error
+   Start at  10:38:59
+   Duration  2.99s (transform 1.24s, setup 0ms, collect 1.65s, tests 1.09s, environment 0ms, prepare 66ms)

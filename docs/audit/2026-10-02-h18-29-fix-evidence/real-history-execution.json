@@ -1,0 +1,21 @@
+{
+  "candidate": "7012e5e149d1bbbd38f15dc7267cbdd963150b72",
+  "version": "0.2.17",
+  "installationState": "Local combined candidate; not installed or observed in Obsidian",
+  "command": "NODE_PATH=/home/fodaveg/code/tyrian-companion/node_modules node /tmp/tyrian-h18-29-fixed-probe/probe.mjs /home/fodaveg/code/tyrian-companion/.claude/worktrees/h18-29-evidence-20261002 7012e5e149d1bbbd38f15dc7267cbdd963150b72 > /tmp/tyrian-h18-29-fixed-probe/probe.log 2>&1",
+  "exitCode": 0,
+  "environment": "Linux, Node v22.23.1; existing shared jiti dependencies, no install or network",
+  "sandbox": "Used approved escalation from first attempt because the same probe's spawnSync git check previously failed with EPERM. This final-candidate execution completed with exit 0.",
+  "previousCandidateEvidence": "/tmp/tyrian-h18-29-fixed-probe/history-c8bfec2981/",
+  "candidateChecks": "HEAD matched the supplied SHA before and after; src/package.json/manifest.json were clean before and after.",
+  "sourceChecks": "All 29 canonical source-note SHA256 values matched the original pre-fix evidence before and after; zero attempted vault mutations.",
+  "evidence": "/tmp/tyrian-h18-29-fixed-probe/evidence.json",
+  "log": "/tmp/tyrian-h18-29-fixed-probe/probe.log",
+  "limitations": [
+    "Consumer scan covers canonical sessions/2026, not the entire Obsidian vault.",
+    "No Obsidian/BRAT installation or UI was observed.",
+    "No live GW2 account or pricing data was fetched.",
+    "No suite was rerun; root owns the candidate gate.",
+    "Temporary local evidence must be preserved by the root before cleanup."
+  ]
+}

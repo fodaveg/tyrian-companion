@@ -1,0 +1,147 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { join, basename, resolve } from 'node:path';
+import { createJiti } from '/home/fodaveg/code/tyrian-companion/node_modules/jiti/lib/jiti.mjs';
+
+// No account identifiers, raw note bodies, character names or loot labels leave memory.
+const [repoArgument, expectedSha, sourceArgument] = process.argv.slice(2);
+assert(repoArgument && /^[a-f0-9]{40}$/u.test(expectedSha ?? ''), 'Usage: node probe.mjs REPO_PATH EXPECTED_SHA [SESSION_SOURCE]');
+const repo = resolve(repoArgument);
+const source = sourceArgument ?? '/home/fodaveg/Documentos/fodaveg/40-49 Aficiones y creación/42 Guild Wars 2/42.31 Datos de cuenta de Guild Wars 2/sessions/2026';
+const out = '/tmp/tyrian-h18-29-fixed-probe';
+const git = (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
+const candidate = git('rev-parse', 'HEAD');
+assert.equal(candidate, expectedSha, 'Candidate must match the explicitly supplied SHA');
+assert.equal(git('status', '--porcelain=v1', '--', 'src', 'package.json', 'manifest.json'), '', 'Consumer source must match the candidate commit');
+const baseline = JSON.parse(await readFile('/tmp/tyrian-h18-29-probe/evidence.json', 'utf8'));
+const baselineHashes = new Map([...baseline.notes, ...baseline.invalidNotes].map((note) => [note.noteName, note.contentSha256]));
+assert.equal(baselineHashes.size, 29);
+const packageInfo = JSON.parse(await readFile(join(repo, 'package.json'), 'utf8'));
+const jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
+const { SessionHistoryService, inspectDurableSessionNote } = await jiti.import(join(repo, 'src/sessions/session-history.ts'));
+const { buildSessionHistoryAggregate } = await jiti.import(join(repo, 'src/sessions/session-history-summary.ts'));
+const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+const files = [];
+async function discover(folder) {
+  for (const item of await readdir(folder, { withFileTypes: true })) {
+    const path = join(folder, item.name);
+    if (item.isDirectory()) await discover(path);
+    else if (item.isFile() && item.name.endsWith('.md')) files.push({ path });
+  }
+}
+await discover(source);
+files.sort((a, b) => a.path.localeCompare(b.path));
+assert.equal(files.length, 29);
+const contents = new Map();
+for (const file of files) {
+  const content = await readFile(file.path, 'utf8');
+  assert.equal(sha256(content), baselineHashes.get(basename(file.path)), 'All 29 source notes must match the pre-fix evidence hashes');
+  contents.set(file.path, content);
+}
+let writes = 0;
+const deny = async () => { writes += 1; throw new Error('Read-only verification port prohibits mutation'); };
+const port = {
+  markdownFiles: () => files,
+  exists: (path) => contents.has(path),
+  file: (path) => contents.has(path) ? { path } : null,
+  read: async (file) => { assert(contents.has(file.path)); return contents.get(file.path); },
+  process: deny, createFolder: deny, create: deny,
+};
+const scan = await new SessionHistoryService(port).scan();
+await writeFile(join(out, 'scan-status.json'), JSON.stringify({ candidate, scan: scan.status === 'ok' ? { status: 'ok', count: scan.sessions.length, ignored: scan.ignored } : scan }, null, 2) + '\n');
+assert.equal(scan.status, 'ok', 'All 29 unchanged real notes must now pass the consumer scan');
+assert.equal(scan.sessions.length, 29);
+assert.equal(scan.ignored, 0);
+const notes = [];
+for (const file of files) {
+  const inspection = await inspectDurableSessionNote(contents.get(file.path));
+  assert.equal(inspection.status, 'ok');
+  const session = inspection.session;
+  notes.push({ noteName: basename(file.path), contentSha256: sha256(contents.get(file.path)), schema: inspection.evidence.schema,
+    startedAt: session.startedAt, endedAt: session.endedAt, durationMs: session.durationMs,
+    classification: session.classification, confidence: session.confidence, valuationCoverage: session.valuationCoverage,
+    outcome: session.outcome, sacks: session.sacks, immediateCopper: session.observedImmediateCopper,
+    listingCopper: session.observedListingCopper, sacksPerHourMilli: session.sacksPerHourMilli,
+    immediateCopperPerHour: session.immediateCopperPerHour, listingCopperPerHour: session.listingCopperPerHour,
+    lootRowCount: session.lootRows.length });
+}
+const loss = notes.find((note) => note.noteName === '2026-09-18 153400Z - c5a5935232c30c6f.md');
+assert(loss);
+assert.equal(loss.immediateCopper, -42201, 'Stored net losses must remain signed and unclamped');
+assert.equal(loss.listingCopper, -4713);
+assert.equal(loss.classification, 'estimated');
+assert.equal(loss.immediateCopperPerHour, null);
+assert.equal(loss.listingCopperPerHour, null);
+const aggregate = buildSessionHistoryAggregate(scan.sessions);
+assert.equal(aggregate.sessionCount, 29);
+const measured = scan.sessions.filter((session) => session.outcome !== 'abandoned');
+const sum = (values) => {
+  const total = values.reduce((subtotal, value) => subtotal + BigInt(value), 0n);
+  assert(total >= BigInt(Number.MIN_SAFE_INTEGER) && total <= BigInt(Number.MAX_SAFE_INTEGER));
+  return Number(total);
+};
+for (const [sourceField, totalField, knownField, subtotalField] of [
+  ['sacks', 'totalSacks', 'sacksKnown', 'sacksKnownSubtotal'],
+  ['observedImmediateCopper', 'totalImmediateCopper', 'immediateValueKnown', 'immediateValueKnownSubtotal'],
+  ['observedListingCopper', 'totalListingCopper', 'listingValueKnown', 'listingValueKnownSubtotal'],
+]) {
+  const values = measured.map((session) => session[sourceField]);
+  const known = values.filter((value) => value !== null);
+  assert.equal(aggregate[knownField], known.length);
+  assert.equal(aggregate[subtotalField], known.length === 0 ? null : sum(known));
+  assert.equal(aggregate[totalField], known.length === values.length ? sum(known) : null);
+}
+assert.equal(aggregate.immediateValueKnownSubtotal, baseline.aggregate.immediateValueKnownSubtotal - 42201);
+assert.equal(aggregate.listingValueKnownSubtotal, baseline.aggregate.listingValueKnownSubtotal - 4713);
+assert.equal(aggregate.totalDurationMs, baseline.aggregate.totalDurationMs + loss.durationMs);
+assert.deepEqual(aggregate.comparison, baseline.aggregate.comparison, 'Latest two and unavailable hourly deltas must remain unchanged');
+assert.equal(aggregate.performance.qualityExcludedSessions, 4);
+assert.equal(aggregate.performance.missingContextSessions, 0);
+assert.equal(aggregate.performance.abandonedSessions, 0);
+assert.equal(aggregate.performance.groups.length, 2);
+const estimated = aggregate.performance.groups.find((group) => group.quality === 'estimated');
+const exact = aggregate.performance.groups.find((group) => group.quality === 'exact');
+assert(estimated && exact);
+assert.equal(estimated.sessionCount, 20);
+assert.equal(exact.sessionCount, 5);
+for (const group of aggregate.performance.groups) {
+  assert.equal(group.activity, 'general');
+  assert.equal(group.build, 'Power Willbender OK');
+  assert.equal(group.status, 'insufficient_sample');
+  assert.equal(group.sacksPerHourMilli, null);
+  assert.equal(group.immediateCopperPerHour, null);
+}
+assert.equal(estimated.eligibleSessions, 1);
+assert.equal(exact.eligibleSessions, 0);
+const first = files[0];
+const corrupt = contents.get(first.path).replace(/^tc_duration_ms:.*$/mu, 'tc_duration_ms: -1');
+assert.notEqual(corrupt, contents.get(first.path));
+const negative = await new SessionHistoryService({ ...port, markdownFiles: () => [first], read: async () => corrupt }).scan();
+assert.deepEqual(negative, { status: 'conflict', invalid: 1, duplicates: 0 });
+for (const file of files) assert.equal(sha256(await readFile(file.path, 'utf8')), baselineHashes.get(basename(file.path)));
+assert.equal(writes, 0);
+assert.equal(git('rev-parse', 'HEAD'), expectedSha);
+assert.equal(git('status', '--porcelain=v1', '--', 'src', 'package.json', 'manifest.json'), '');
+const countsBy = (field) => notes.reduce((counts, note) => { const key = String(note[field]); counts[key] = (counts[key] ?? 0) + 1; return counts; }, {});
+const { sessions: omittedLootRows, ...safeAggregate } = aggregate;
+const report = {
+  candidate, version: packageInfo.version, generatedAt: new Date().toISOString(), environment: { platform: process.platform, node: process.version },
+  scan: { status: scan.status, sessionCount: scan.sessions.length, ignored: scan.ignored },
+  aggregate: safeAggregate, signedLossSession: loss,
+  classifications: countsBy('classification'), confidences: countsBy('confidence'), schemas: countsBy('schema'), valuationCoverage: countsBy('valuationCoverage'),
+  missingMetrics: Object.fromEntries(['sacks', 'immediateCopper', 'listingCopper', 'sacksPerHourMilli', 'immediateCopperPerHour', 'listingCopperPerHour'].map((field) => [field, notes.filter((note) => note[field] === null).length])),
+  atLeast60Minutes: notes.filter((note) => note.durationMs >= 3600000),
+  latestTwo: [...notes].sort((a,b) => b.endedAt.localeCompare(a.endedAt) || b.startedAt.localeCompare(a.startedAt)).slice(0, 2), notes,
+  negativeControl: { mutation: 'Negative duration in memory only; source untouched', result: negative },
+  invariants: { all29SourceHashesMatchBeforeAndAfter: true, zeroWriteAttempts: writes === 0, signedNetLossIncluded: true,
+    monetarySubtotalsIncludeLossExactly: true, qualitiesStaySeparate: true, unavailableHourlyMetricsStayNull: true },
+  limitations: ['Consumer scan covers the canonical 29-note subtree, not the entire vault.', 'No real Obsidian/BRAT UI or live GW2 API was exercised.', 'Only saved metrics are aggregated; acquisition and market pricing are not recalculated.'],
+};
+const serialized = JSON.stringify(report, null, 2) + '\n';
+for (const forbidden of ['accountRef', 'sessionRef', 'tc_account_ref', 'tc_session_ref']) assert.equal(serialized.includes(forbidden), false);
+await writeFile(join(out, 'evidence.json'), serialized);
+console.log(JSON.stringify({ candidate, scan: report.scan, signedLoss: { immediateCopper: loss.immediateCopper, listingCopper: loss.listingCopper },
+  aggregate: safeAggregate, longSessions: report.atLeast60Minutes.length, negativeControl: negative, invariants: report.invariants,
+  evidence: join(out, 'evidence.json') }, null, 2));

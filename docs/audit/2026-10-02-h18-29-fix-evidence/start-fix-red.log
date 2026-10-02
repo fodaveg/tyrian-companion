@@ -1,0 +1,248 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion/.claude/worktrees/h18-29-start-fix-20261002
+
+ ❯ src/main-ingame-session-start.test.ts (5 tests | 4 failed) 23ms
+   × automatic session start with the real fenced service > waits for the selected credential with entryPresent=false, then starts on a fresh reconciliation 9ms
+     → expected "spy" to not be called at all, but actually been called 5 times
+
+Received:
+
+  1st spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  2nd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  3rd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  4th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  5th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+
+Number of calls: 5
+
+   × automatic session start with the real fenced service > waits for the selected credential with entryPresent=true, then starts on a fresh reconciliation 2ms
+     → expected "spy" to not be called at all, but actually been called 5 times
+
+Received:
+
+  1st spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  2nd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  3rd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  4th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  5th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+
+Number of calls: 5
+
+   × automatic session start with the real fenced service > does not retry a stable capture failure from the state changes its own failed start emits 3ms
+     → expected 5 to be 1 // Object.is equality
+   ✓ automatic session start with the real fenced service > keeps the game-exit boundary when the credential disappears after linking and finishes when it returns 7ms
+   × automatic session start with the real fenced service > records a synchronous credential-store failure once before attempting the fenced start 2ms
+     → expected "spy" to not be called at all, but actually been called 5 times
+
+Received:
+
+  1st spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  2nd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  3rd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  4th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  5th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+
+Number of calls: 5
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/main-ingame-session-start.test.ts > automatic session start with the real fenced service > waits for the selected credential with entryPresent=false, then starts on a fresh reconciliation
+ FAIL  src/main-ingame-session-start.test.ts > automatic session start with the real fenced service > waits for the selected credential with entryPresent=true, then starts on a fresh reconciliation
+AssertionError: expected "spy" to not be called at all, but actually been called 5 times
+
+Received:
+
+  1st spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  2nd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  3rd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  4th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  5th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+
+Number of calls: 5
+
+ ❯ src/main-ingame-session-start.test.ts:122:30
+    120|   try {
+    121|    await runtime.settled();
+    122|    expect(runtime.start).not.toHaveBeenCalled();
+       |                              ^
+    123|    expect(runtime.captures()).toBe(0);
+    124|    expect(runtime.errors).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/main-ingame-session-start.test.ts > automatic session start with the real fenced service > does not retry a stable capture failure from the state changes its own failed start emits
+AssertionError: expected 5 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 5
+
+ ❯ src/main-ingame-session-start.test.ts:137:31
+    135|   try {
+    136|    await runtime.settled();
+    137|    expect(runtime.captures()).toBe(1);
+       |                               ^
+    138|    expect(runtime.start).toHaveBeenCalledOnce();
+    139|    expect(runtime.core.recordIngameSessionFailure).toHaveBeenCalledOnc…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  src/main-ingame-session-start.test.ts > automatic session start with the real fenced service > records a synchronous credential-store failure once before attempting the fenced start
+AssertionError: expected "spy" to not be called at all, but actually been called 5 times
+
+Received:
+
+  1st spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  2nd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  3rd spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  4th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+  5th spy call:
+
+    Array [
+      "Astra Uno",
+    ]
+
+
+Number of calls: 5
+
+ ❯ src/main-ingame-session-start.test.ts:169:30
+    167|   try {
+    168|    await runtime.settled();
+    169|    expect(runtime.start).not.toHaveBeenCalled();
+       |                              ^
+    170|    expect(runtime.core.recordIngameSessionFailure).toHaveBeenCalledExa…
+    171|   } finally { await runtime.dispose(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 1 passed (5)
+   Start at  10:30:42
+   Duration  1.82s (transform 1.19s, setup 0ms, collect 1.57s, tests 23ms, environment 0ms, prepare 77ms)
+
+
+RED_TEST_EXIT_CODE=1

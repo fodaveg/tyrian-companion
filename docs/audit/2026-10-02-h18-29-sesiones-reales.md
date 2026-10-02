@@ -1,5 +1,8 @@
 # H18.29 — comprobación con sesiones existentes, 2 oct 2026
 
+Diagnóstico histórico sobre `875eb058`. Las correcciones y la comprobación posterior de
+las 29 notas están en [H18.29 — correcciones](2026-10-02-h18-29-correcciones.md).
+
 Avance parcial. No se certifican las diez pruebas de aceptación ni la instalación actual.
 Encargo: aprovechar las sesiones de juego recientes de David para evitar repetir trabajo
 ya observable. Se leen las notas originales sin modificarlas; las sondas no consultan la API
@@ -147,8 +150,11 @@ Artefactos en [2026-10-02-h18-29-evidence](2026-10-02-h18-29-evidence/):
 - Cinco logs de tests: `targeted-tests.log`, `inventory-tests.log`, `expiry-tests.log`,
   `start-focused-tests.log` y `history-tests.log`.
 
-Las sondas preservan las rutas absolutas de esta ejecución. Para repetirlas en esta máquina,
-crear `/tmp/tyrian-h18-29-probe` si no existe y ejecutar:
+Las sondas preservan las rutas absolutas de esta ejecución y esperan los fallos del
+candidato original `875eb058`. Para reproducir el diagnóstico hay que apuntar sus imports
+a un checkout de ese candidato; no ejecutarlas contra el candidato corregido esperando
+el mismo resultado. Los comandos de aquella ejecución, tras crear
+`/tmp/tyrian-h18-29-probe`, son:
 
 ```sh
 cp docs/audit/2026-10-02-h18-29-evidence/start-feedback-probe.mjs.txt /tmp/tyrian-h18-29-start-feedback-probe.mjs

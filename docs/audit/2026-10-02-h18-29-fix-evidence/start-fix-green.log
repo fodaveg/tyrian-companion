@@ -1,0 +1,13 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion/.claude/worktrees/h18-29-start-fix-20261002
+
+ ✓ src/core/secret-provider.test.ts (4 tests) 2ms
+ ✓ src/account/guild-wars-2-client.test.ts (9 tests) 6ms
+ ✓ src/sessions/ingame-session-marker.test.ts (18 tests) 12ms
+ ✓ src/sessions/manual-session-start-service.test.ts (44 tests) 360ms
+ ✓ src/main-ingame-session-start.test.ts (5 tests) 16ms
+
+ Test Files  5 passed (5)
+      Tests  80 passed (80)
+   Start at  10:29:54
+   Duration  1.79s (transform 1.50s, setup 0ms, collect 2.22s, tests 397ms, environment 1ms, prepare 446ms)

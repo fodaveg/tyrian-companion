@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion/.claude/worktrees/h18-29-history-fix-20261002
+
+ ✓ src/sessions/session-history-summary.test.ts (22 tests) 17ms
+ ✓ src/sessions/session-history.test.ts (63 tests) 341ms
+
+ Test Files  2 passed (2)
+      Tests  85 passed (85)
+   Start at  10:31:09
+   Duration  1.38s (transform 596ms, setup 0ms, collect 825ms, tests 358ms, environment 0ms, prepare 176ms)
