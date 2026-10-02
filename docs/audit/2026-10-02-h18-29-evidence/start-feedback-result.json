@@ -1,0 +1,48 @@
+{
+  "externalReconcileCalls": 1,
+  "attempts": 5,
+  "configuredNameNonempty": true,
+  "providerHasSelection": false,
+  "missingCredentialClasses": [
+    "MissingApiKeyError",
+    "MissingApiKeyError",
+    "MissingApiKeyError",
+    "MissingApiKeyError",
+    "MissingApiKeyError"
+  ],
+  "markerFailureClasses": [
+    "Error",
+    "Error",
+    "Error",
+    "Error",
+    "Error"
+  ],
+  "stateChanges": [
+    "idle",
+    "starting",
+    "error",
+    "idle",
+    "idle",
+    "idle",
+    "starting",
+    "error",
+    "idle",
+    "idle",
+    "idle",
+    "starting",
+    "error",
+    "idle",
+    "idle",
+    "idle",
+    "starting",
+    "error",
+    "idle",
+    "idle",
+    "idle",
+    "starting",
+    "error",
+    "idle",
+    "idle"
+  ],
+  "limit": "Node composition probe; no real Obsidian secret store, presence or runtime"
+}

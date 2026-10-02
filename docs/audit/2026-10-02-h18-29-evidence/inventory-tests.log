@@ -1,0 +1,9 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion
+
+ ✓ src/inventory/inventory-analysis.test.ts (26 tests) 286ms
+
+ Test Files  1 passed (1)
+      Tests  26 passed (26)
+   Start at  10:01:37
+   Duration  2.10s (transform 1.20s, setup 0ms, collect 1.59s, tests 286ms, environment 0ms, prepare 79ms)

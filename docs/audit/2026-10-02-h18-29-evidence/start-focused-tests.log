@@ -1,0 +1,11 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion
+
+ ✓ src/core/secret-provider.test.ts (4 tests) 2ms
+ ✓ src/account/guild-wars-2-client.test.ts (9 tests) 6ms
+ ✓ src/sessions/ingame-session-marker.test.ts (17 tests) 12ms
+
+ Test Files  3 passed (3)
+      Tests  30 passed (30)
+   Start at  10:01:47
+   Duration  308ms (transform 156ms, setup 0ms, collect 182ms, tests 21ms, environment 1ms, prepare 232ms)

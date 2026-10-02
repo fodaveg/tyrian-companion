@@ -1,0 +1,9 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion
+
+ ✓ src/advisor/inventory-advisor-classifier.test.ts (46 tests | 41 skipped) 62ms
+
+ Test Files  1 passed (1)
+      Tests  5 passed | 41 skipped (46)
+   Start at  10:03:34
+   Duration  609ms (transform 262ms, setup 0ms, collect 325ms, tests 62ms, environment 0ms, prepare 73ms)

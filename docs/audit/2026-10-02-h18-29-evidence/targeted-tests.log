@@ -1,0 +1,15 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion
+
+ ✓ src/sessions/retry-from-error.test.ts (6 tests) 130ms
+ ✓ src/advisor/inventory-sell-or-wait-acceptance.test.ts (9 tests) 44ms
+ ✓ src/sessions/session-played-duration.test.ts (7 tests) 46ms
+ ✓ src/sessions/session-attribution.test.ts (7 tests) 70ms
+ ✓ src/sessions/session-note-writer.test.ts (28 tests) 131ms
+ ✓ src/inventory/inventory-vault-sync.test.ts (66 tests) 229ms
+ ✓ src/sessions/session-resume-gap-end.test.ts (8 tests) 549ms
+
+ Test Files  7 passed (7)
+      Tests  131 passed (131)
+   Start at  10:00:58
+   Duration  1.35s (transform 1.19s, setup 0ms, collect 3.58s, tests 1.20s, environment 1ms, prepare 700ms)

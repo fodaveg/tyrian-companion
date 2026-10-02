@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 /home/fodaveg/code/tyrian-companion
+
+ ✓ src/sessions/session-history-summary.test.ts (10 tests) 11ms
+ ✓ src/sessions/session-history.test.ts (55 tests) 240ms
+
+ Test Files  2 passed (2)
+      Tests  65 passed (65)
+   Start at  10:06:10
+   Duration  1.10s (transform 499ms, setup 0ms, collect 698ms, tests 252ms, environment 0ms, prepare 167ms)

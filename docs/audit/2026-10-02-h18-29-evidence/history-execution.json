@@ -1,0 +1,27 @@
+{
+  "candidate": "875eb05869799d5cbc939e1c3b183a3e8260ceef",
+  "version": "0.2.17",
+  "sourceTree": "Unmodified source files in reserved worktree; another session owns untracked audit document. Shared main checkout HEAD confirmed identical before and after focused tests.",
+  "probe": {
+    "command": "NODE_PATH=/home/fodaveg/code/tyrian-companion/node_modules node /tmp/tyrian-h18-29-probe/probe.mjs > /tmp/tyrian-h18-29-probe/probe.log 2>&1",
+    "exitCode": 0,
+    "initialFinding": "Original optimistic assertion expecting all 29 valid failed with exit 1. Probe was updated to assert observed conflict and characterize it, never changing notes or product.",
+    "evidence": "/tmp/tyrian-h18-29-probe/evidence.json",
+    "log": "/tmp/tyrian-h18-29-probe/probe.log"
+  },
+  "tests": {
+    "command": "node_modules/.bin/vitest run --configLoader runner src/sessions/session-history.test.ts src/sessions/session-history-summary.test.ts > /tmp/tyrian-h18-29-probe/history-tests.log 2>&1",
+    "cwd": "/home/fodaveg/code/tyrian-companion",
+    "exitCode": 0,
+    "passed": 65,
+    "files": 2,
+    "runner": "Vitest 3.2.7",
+    "log": "/tmp/tyrian-h18-29-probe/history-tests.log"
+  },
+  "limitations": [
+    "Artifacts are temporary local evidence and must be preserved or attached by the root session before cleanup.",
+    "65 existing focused unit tests pass but miss the real negative-monetary-value case found by the probe.",
+    "No new product tests or fixes were authorized for this read-only verification task.",
+    "No Obsidian UI, BRAT install, or live account API was exercised."
+  ]
+}
