@@ -9,10 +9,9 @@ Este protocolo cubre H6.8/H6.9 y recoge las dieciséis pruebas de aceptación de
 **Estado: ejecución humana pendiente.** Una guía preparada no acredita una prueba superada. Estas
 pruebas aún no se han ejecutado.
 
-**Sobre las pruebas marcadas «depende de H18.x en desarrollo».** El código de esa parte no existe
-todavía en `main` (verificado por grep en `src/` al escribir esta guía, 24 sep 2026): ejecutarlas hoy
-debe dar el resultado ANTIGUO, no el esperado. Repetirlas cuando el lote correspondiente aterrice en
-`main` y marcar cuál commit las cerró.
+**Candidato local revisado:** `7289fa9` (2026-10-02). Las pruebas automáticas citadas abajo
+acreditan casos concretos de ese árbol; no sustituyen esta ejecución humana. Anotar el commit exacto
+del candidato instalado en cada prueba y repetir la comprobación si cambia.
 
 ## Precondiciones comunes
 
@@ -95,11 +94,11 @@ sin precio de hoy y el de un día a medias (auditoría §8.2).
   recomienda vender de todas formas, debe mostrar un motivo visible, no solo el calendario.
 - Un día con datos parciales (a medias) no se trata como un día completo ni se descarta en silencio.
 
-**Depende de H18.x en desarrollo:** hoy (`src/advisor/inventory-position-recommendation.ts:240-251`,
-`evaluateSeasonalRule`), estar dentro de la ventana de temporada produce `sell`/`seasonal_sell_window`
-incondicionalmente, sin mirar el precio — el resultado «precio hundido no obliga a vender con un
-motivo visible» todavía falla. Ejecutar igualmente y registrar el resultado ANTIGUO (vende igual, sin
-motivo de precio) hasta que la Entrega 4 (comparación cuantificada, auditoría §3.D y §7) aterrice.
+**Cobertura automática del candidato local:** `src/advisor/inventory-sell-or-wait-acceptance.test.ts`
+comprueba que un precio hundido dentro de la ventana no recibe el motivo
+`seasonal_sell_window`: puede recomendar vender si no se demuestra ventaja de esperar, con motivo
+`wait_evidence_insufficient`. También cubre la serie plana, los dos objetos reales y las fechas
+separadas de precio, análisis y ventana. Confirmar la presentación visible en esta prueba manual.
 
 **Evidencia mínima:** capturas de los cuatro casos (sin precio de hoy, día a medias, serie plana,
 precio hundido en ventana) con la recomendación y su motivo visibles.
@@ -131,12 +130,9 @@ y después de escribir la nota), el reintento, y dos ventanas compitiendo por la
 - La segunda ventana recibe un error de sesión ocupada (lease), no una segunda sesión activa.
 - No hay sobrescrituras ni corrupción del runtime en ningún punto de fallo.
 
-**Depende de H18.x en desarrollo (bug conocido, no bloqueado por decisión de producto):**
-`stopInternal` (`src/sessions/manual-session-start-service.ts:757-759`) solo acepta la sesión en
-`active` o `stopping`; si una pérdida de lease o de coordinación deja el estado en `error` durante el
-cierre, **Reintentar finalizar sesión** no reactiva el flujo (auditoría §3.B, «el reintento desde el
-estado de error no funciona nunca»). Provocar ese camino específico (paso 3 con pérdida de lease, no
-solo de red) y registrar el resultado ANTIGUO hasta que se arregle en la Entrega 1.
+**Cobertura automática del candidato local:** `src/sessions/retry-from-error.test.ts` comprueba el
+reintento tras fallos antes y después de guardar el estado interno y la exclusión entre dos ventanas.
+Provocar también el camino de `error` por pérdida de coordinación en la prueba manual.
 
 **Evidencia mínima:** ruta y SHA-256 de la nota final única; captura del error de la segunda ventana;
 captura del estado tras forzar el camino de `error`.
@@ -165,14 +161,13 @@ sesión siguiente no exige limpiar la anterior a mano (auditoría §8.4).
 - Tras reabrir Obsidian, aparece recovery si corresponde, sin borrar la sesión sola.
 - El cierre y guardado funcionan sin error tras la suspensión.
 
-**Depende de H18.x en desarrollo:** hoy, iniciar una sesión nueva mientras la anterior sigue
-`complete` sin limpiar falla con «A farming session is already in progress»
-(`src/sessions/manual-session-start-service.ts:691-693`); hace falta **Limpiar sesión completada**
-antes. La Entrega 2 (auditoría §7, «sesión siguiente sin limpiar») aún no lo cambia. Ejecutar el paso
-4 igualmente y registrar el bloqueo actual.
+**Cobertura automática del candidato local:** `src/sessions/session-auto-recovery.test.ts` comprueba
+que una sesión siguiente empieza después de guardar el resumen y que un resultado sin guardar se
+conserva; `src/main.test.ts` cubre el fallo de guardado y su reintento. Comprobar el paso 4 en la
+interfaz tras suspender y reabrir Obsidian.
 
 **Evidencia mínima:** capturas del estado tras suspender/reactivar, tras reabrir Obsidian, y del
-mensaje de bloqueo al intentar iniciar sin limpiar.
+resultado al intentar iniciar sin limpiar.
 
 **Versión probada:** ______________
 
@@ -226,14 +221,12 @@ funcionar sin tener que comprobar la conexión a mano (auditoría §8.6, hallazg
 - Tras guardar la primera sesión, la detección asistida vuelve a quedar operativa sola, sin que el
   jugador tenga que comprobar la conexión a mano.
 
-**Depende de H18.x en desarrollo:** hoy, `armAssistedDetection` solo se dispara desde
-**Comprobar conexión** (manual o el calentamiento automático de carga, `src/main.ts:1171-1173`) o
-desde el comando **Activar detección asistida**; no hay ningún rearme automático al completar una
-sesión. Ejecutar igualmente y confirmar que, sin uno de esos tres disparadores, la detección queda
-desarmada tras la primera sesión (resultado ANTIGUO) hasta que la Entrega 2 lo cierre.
+**Cobertura automática del candidato local:** `src/main.test.ts` y
+`src/sessions/assisted-detection-service.test.ts` comprueban el rearme automático. Confirmar en la
+interfaz que funciona después de guardar la primera sesión, sin usar **Comprobar conexión**.
 
-**Evidencia mínima:** captura del estado del detector inmediatamente tras completar la primera sesión,
-antes y después de pulsar **Comprobar conexión**.
+**Evidencia mínima:** captura del estado del detector inmediatamente tras completar la primera sesión
+y de la propuesta o inicio de la segunda, sin pulsar **Comprobar conexión**.
 
 **Versión probada:** ______________
 
@@ -278,8 +271,9 @@ encima de 250 se muestran con el mínimo observado, no como la capacidad exacta 
 2. Configura una capacidad explícita (250-3.000, en pasos de 250) y repite.
 
 **Resultado esperado:**
-- Sin capacidad configurada, se muestra únicamente el mínimo garantizado (250) con su procedencia
-  explícita, nunca como capacidad exacta.
+- Sin capacidad configurada, se muestra el mínimo garantizado de 250 si no hay evidencia de más. Si
+  un depósito observado supera 250, se muestra el mínimo observado redondeado al siguiente múltiplo
+  de 250, con su procedencia explícita; nunca como capacidad exacta.
 - Con capacidad configurada, la suma de depósito nunca supera el hueco demostrado.
 - Ninguna decisión se bloquea solo por desconocer la capacidad exacta; se separa lo conocido de lo
   asumido.
@@ -321,28 +315,29 @@ y después del paso 4 (deben diferir); captura de la nota con el texto propio co
 
 ### Prueba 10: Fronteras de fecha
 
-Verificar que las caducidades se declaran visiblemente (asesor hacia el 12 nov por la regla de 90
-días, conocimiento curado el 1 dic, tabla de legendarias el 10 dic) y que las sesiones alrededor de
-esas fechas siguen funcionando (auditoría §8.10 y §7 y §G).
+Verificar que las caducidades se declaran visiblemente (regla y conocimiento curado hasta el
+1 jun 2027 a las 00:00 UTC, tabla de legendarias hasta el 10 dic 2026 a las 00:00 UTC) y que las
+sesiones alrededor de esas fechas siguen funcionando (auditoría §8.10 y §7 y §G).
 
 **Plataforma:** Fedora con Proton (primaria). Esta prueba solo puede ejecutarse en o cerca de esas
 fechas de calendario, o adelantando el reloj del sistema en un entorno de pruebas desechable.
 
 **Pasos:**
-1. Con el reloj del sistema en o después del 12 nov 2026, abre el Asesor de inventario.
-2. Con el reloj en o después del 1 dic 2026, repite.
-3. Con el reloj en o después del 10 dic 2026, revisa la recomendación de legendarias.
+1. Con el reloj del sistema en el 9 dic 2026, revisa la recomendación de legendarias.
+2. Con el reloj en el 10 dic 2026 a las 00:00 UTC, repite para comprobar su caducidad.
+3. Con el reloj en el 31 may 2027, abre el Asesor de inventario; después repite el 1 jun 2027 a
+   las 00:00 UTC para comprobar el límite de la regla de 300 días y del conocimiento curado.
 4. En cualquiera de esos momentos, completa una sesión normal y comprueba que se guarda con su fecha y
    el aviso de caducidad correspondiente, sin romper el flujo.
 
 **Resultado esperado:**
-- Pasado el 12 nov, el asesor degrada su confianza y lo declara.
-- Pasado el 1 dic, el conocimiento curado se marca caducado.
-- Pasado el 10 dic, la tabla de legendarias se marca caducada.
+- El 31 may 2027, la regla de 300 días y el conocimiento curado conservan su vigencia; desde el
+  1 jun 2027 a las 00:00 UTC, el paquete curado se marca caducado.
+- Desde el 10 dic 2026 a las 00:00 UTC, la tabla de legendarias se marca caducada.
 - Ninguna caducidad bloquea el guardado de una sesión; el aviso queda visible junto al resultado.
 
-**Evidencia mínima:** capturas del aviso de caducidad en cada una de las tres fechas; nota de sesión
-guardada con su fecha visible en cualquiera de ellas.
+**Evidencia mínima:** capturas del asesor el 31 may y 1 jun 2027 y de legendarias el 9 y 10 dic
+2026, con hora UTC visible; nota de sesión guardada con su fecha visible en cualquiera de ellas.
 
 **Versión probada:** ______________
 
