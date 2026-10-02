@@ -320,10 +320,8 @@ function completeSum(values: readonly (number | null)[]): { value: number | null
 }
 
 function safeSum(values: readonly number[]): number | null {
-	let total = 0;
-	for (const value of values) {
-		total += value;
-		if (!Number.isSafeInteger(total)) return null;
-	}
-	return total;
+	// Signed nets can cross a safe bound temporarily and still cancel to an exact safe total.
+	const total = sumBigInt(values);
+	return total >= BigInt(Number.MIN_SAFE_INTEGER) && total <= BigInt(Number.MAX_SAFE_INTEGER)
+		? Number(total) : null;
 }

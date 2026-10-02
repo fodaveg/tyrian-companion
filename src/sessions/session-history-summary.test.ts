@@ -4,6 +4,41 @@ import type { DurableSessionHistoryRecord } from './session-history';
 import { buildSessionHistoryAggregate } from './session-history-summary';
 
 describe('buildSessionHistoryAggregate', () => {
+	it.each([Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER])('keeps totals and known subtotals exact when signed nets cancel around %i', (bound) => {
+		const unit = bound > 0 ? 1 : -1;
+		const orders = [
+			[bound, unit, -unit], [bound, -unit, unit], [unit, bound, -unit],
+			[unit, -unit, bound], [-unit, bound, unit], [-unit, unit, bound],
+			[bound, bound, -bound], [bound, bound, -bound, -bound],
+		];
+		for (const values of orders) {
+			const sessions = values.map((value, index) => record(new Date(Date.UTC(2026, 7, 30 - index)).toISOString(), {
+				observedImmediateCopper: value, observedListingCopper: value,
+			}));
+			const expected = values.length === 4 ? 0 : bound;
+			expect(buildSessionHistoryAggregate(sessions)).toMatchObject({
+				totalImmediateCopper: expected, immediateValueKnownSubtotal: expected,
+				totalListingCopper: expected, listingValueKnownSubtotal: expected,
+			});
+			const partial = buildSessionHistoryAggregate([...sessions, record('2026-09-01T10:00:00.000Z', {
+				observedImmediateCopper: null, observedListingCopper: null,
+			})]);
+			expect(partial).toMatchObject({ totalImmediateCopper: null, immediateValueKnown: values.length,
+				immediateValueKnownSubtotal: expected, totalListingCopper: null, listingValueKnown: values.length,
+				listingValueKnownSubtotal: expected });
+		}
+	});
+
+	it.each([Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER])('withholds totals and known subtotals when the final signed sum exceeds %i', (bound) => {
+		const sessions = [bound, bound > 0 ? 1 : -1].map((value, index) => record(new Date(Date.UTC(2026, 7, 30 - index)).toISOString(), {
+			observedImmediateCopper: value, observedListingCopper: value,
+		}));
+		expect(buildSessionHistoryAggregate(sessions)).toMatchObject({
+			totalImmediateCopper: null, immediateValueKnown: 2, immediateValueKnownSubtotal: null,
+			totalListingCopper: null, listingValueKnown: 2, listingValueKnownSubtotal: null,
+		});
+	});
+
 	it('retains net losses in totals, partial known subtotals, rows and comparisons', () => {
 		const sessions = [
 			record('2026-08-20T10:00:00.000Z'),
