@@ -11,6 +11,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { compareStorageSnapshots } from './account/storage-delta';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import { obsidianPluginCore } from './test/obsidian-host-harness';
+import type { TyrianHost } from './host/tyrian-host';
 import type { SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import { ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS, type AlertV1 } from './alerts/alert-contract';
 import type { AlertDeliveryReport } from './alerts/alert-emitter';
@@ -36,6 +37,7 @@ import type { LiveSessionLootState } from './sessions/live-session-loot';
  * such a test stays green with the function dead.
  */
 interface AlertWiringHarness {
+	readonly host: TyrianHost;
 	settings: TyrianSettings;
 	runtimeReady: boolean;
 	initializeRuntime(): Promise<void>;
@@ -291,6 +293,7 @@ describe('H13.4 alert channel cabling', () => {
 		});
 		vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot').mockReturnValue(armedState());
 		const plugin = alertWiringPlugin(new IDBFactory());
+		plugin.host.secrets.set('gw2-key', 'synthetic-gw2-key');
 		plugin.settings.apiKeySecret = 'gw2-key';
 		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
 		await plugin.initializeRuntime();
