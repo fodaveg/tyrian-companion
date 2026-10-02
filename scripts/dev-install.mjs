@@ -116,7 +116,7 @@ function reloadPlugin(runCli, cliCommand, vaultRoot, version) {
 	const expectedVault = realpathSync(vaultRoot);
 	const pathExpression = process.platform === 'win32' ? 'vaultPath.toLowerCase()' : 'vaultPath';
 	const code = '(async()=>{const vaultPath=app.vault.adapter.getBasePath();' +
-		`const evidence=()=>${JSON.stringify(RELOAD_EVIDENCE_PREFIX)}+JSON.stringify({schema:1,` +
+		`const evidence=(reloadCompleted=false)=>${JSON.stringify(RELOAD_EVIDENCE_PREFIX)}+JSON.stringify({schema:1,reloadCompleted,` +
 		'vaultPath:app.vault.adapter.getBasePath(),communityPluginsEnabled:app.plugins.isEnabled(),' +
 		`enabled:app.plugins.enabledPlugins.has("${PLUGIN_ID}"),` +
 		`registeredVersion:app.plugins.manifests["${PLUGIN_ID}"]?.version??null,` +
@@ -125,7 +125,7 @@ function reloadPlugin(runCli, cliCommand, vaultRoot, version) {
 		'await app.plugins.loadManifests();' +
 		`await app.plugins.disablePlugin("${PLUGIN_ID}");` +
 		`await app.plugins.enablePlugin("${PLUGIN_ID}");` +
-		'return evidence();})()';
+		'return evidence(true);})()';
 	const result = runCli({ args: ['eval', `code=${code}`], cliCommand, cwd: vaultRoot });
 	if (!isRecord(result) || result.status !== 0 || typeof result.stdout !== 'string') fail('reload-failed');
 	let source = result.stdout.trim();
@@ -136,7 +136,7 @@ function reloadPlugin(runCli, cliCommand, vaultRoot, version) {
 	try { evidence = JSON.parse(source.slice(start + RELOAD_EVIDENCE_PREFIX.length)); } catch { fail('reload-failed'); }
 	if (!isRecord(evidence) || evidence.schema !== 1) fail('reload-failed');
 	if (evidence.communityPluginsEnabled === false) fail('plugins-disabled');
-	if (evidence.communityPluginsEnabled !== true || evidence.enabled !== true ||
+	if (evidence.reloadCompleted !== true || evidence.communityPluginsEnabled !== true || evidence.enabled !== true ||
 		evidence.registeredVersion !== version || evidence.loadedVersion !== version ||
 		typeof evidence.vaultPath !== 'string') fail('reload-failed');
 	let actualVault;

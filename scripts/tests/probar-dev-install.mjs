@@ -114,6 +114,21 @@ async function testReloadCyclesLoadManifestsThenDisableThenEnable() {
 		const receipt = await runInNewContext(calls[0].args[1].slice('code='.length), { app });
 		assert(completed.join(',') === 'manifests,disable,enable', 'reload did not await manifest/disable/enable completion in order');
 		assert(typeof receipt === 'string' && receipt.includes('0.0.0-reload-cycle'), 'reload expression did not return effective loaded-version evidence');
+		assert(JSON.parse(receipt.slice('TYRIAN_DEV_RELOAD_V1\t'.length)).reloadCompleted === true,
+			'completed reload did not attest completion of the awaited cycle');
+		const aliasFixture = freshFixture('reload-path-alias');
+		const aliasVersion = JSON.parse(readFileSync(resolve(aliasFixture.sourceDir, 'manifest.json'), 'utf8')).version;
+		app.plugins.manifests['tyrian-companion'] = { version: aliasVersion };
+		app.plugins.plugins['tyrian-companion'] = { manifest: { version: aliasVersion } };
+		app.vault.adapter.getBasePath = () => `${calls[0].cwd}/.`;
+		completed.length = 0;
+		const aliasReceipt = await runInNewContext(calls[0].args[1].slice('code='.length), { app });
+		assert(completed.length === 0, 'a literal-path alias unexpectedly cycled the plugin');
+		assertThrowsCode(() => installDevBuild({ ...aliasFixture, buildProduction: () => undefined,
+			runCli: () => ({ status: 0, stdout: aliasReceipt }) }), 'reload-failed',
+			'a path alias with a matching preloaded version reported completion without cycling');
+		assert(!existsSync(resolve(aliasFixture.pluginDir, '.tyrian-dev-reload-at')), 'skipped alias reload wrote a success marker');
+		app.vault.adapter.getBasePath = () => calls[0].cwd;
 		completed.length = 0;
 		app.plugins.loadManifests = async () => { throw new Error('controlled rejection'); };
 		let rejected = false;
@@ -138,7 +153,8 @@ async function testReloadCyclesLoadManifestsThenDisableThenEnable() {
 function reloadReceipt(invocation, sourceDir, overrides = {}) {
 	const version = JSON.parse(readFileSync(resolve(sourceDir, 'manifest.json'), 'utf8')).version;
 	return { status: 0, stdout: `TYRIAN_DEV_RELOAD_V1\t${JSON.stringify({ schema: 1, vaultPath: invocation.cwd,
-		communityPluginsEnabled: true, enabled: true, registeredVersion: version, loadedVersion: version, ...overrides })}` };
+		reloadCompleted: true, communityPluginsEnabled: true, enabled: true,
+		registeredVersion: version, loadedVersion: version, ...overrides })}` };
 }
 
 function testExitZeroWithoutEffectiveReloadFailsClosed() {
