@@ -81,6 +81,7 @@ import { IndexedDbManagedAssetsPointerStore } from '../assets/managed-assets-poi
 import { HostRequestTransport } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { HostApiKeyProvider } from '../core/secret-provider';
+import { SerialTaskQueue } from '../core/serial-task-queue';
 import { createTranslator, type Locale } from '../core/i18n';
 import {
 	type LocalDebugAction,
@@ -131,7 +132,7 @@ import {
 	type PriceSeedBulkRefreshOutcome,
 	type PriceSeedQueueCoverage,
 } from '../economy/price-seed-bulk-refresh';
-import { fetchPriceSeed } from '../economy/price-seed-source';
+import { fetchPriceSeed, PRICE_SEED_OPERATION_POLICIES } from '../economy/price-seed-source';
 import { sellOrWaitSeedMaxDays } from '../economy/sell-or-wait';
 import type { PriceSeedV1 } from '../economy/price-seed-model';
 import { safePublicRenderIconUrl } from '../ui/price-history-panel-view';
@@ -513,6 +514,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private priceSeedSyncGeneration = 0;
 	/**
+	 * The one turn every datawars2 seed download of the plugin takes (1 oct 2026, task 0812d53e):
+	 * the panel and the note blocks (`priceHistoryPanelSeed`), the items of every seed pass
+	 * (`priceSeedBulkRefresh`) and the sell rule's own seed (`sellSignal`) all send through the
+	 * same transport, and the rule is one request at a time, never two in flight. What somebody is
+	 * looking at (panel, note blocks) goes ahead of what nobody waits for (passes, the sell rule's
+	 * seed) that has not started, and waits only for the request in flight. Let go on unload.
+	 */
+	private priceSeedDownloads: SerialTaskQueue | null = null;
+	/**
 	 * Read-only connection to the same `tyrian-companion-price-seed-cache` database
 	 * `priceSeedBulkRefresh` writes into, for `previewInventorySync`'s recommendation port
 	 * (decision 4, M2). Opened lazily on first read, same pattern as `priceHistoryPanelSeed`'s own
@@ -800,6 +810,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			operationPolicies: GW2_CHARACTER_OPERATION_POLICIES,
 			diagnostics: this.localDebugActions ?? undefined,
 		});
+		// The transport every datawars2 seed download rides, and nothing else: one attempt each, so
+		// a rate-limited download never sleeps in the one queue they all share.
+		const priceSeedTransport = new HostRequestTransport(host.http, {
+			operationPolicies: PRICE_SEED_OPERATION_POLICIES,
+			diagnostics: this.localDebugActions ?? undefined,
+		});
 		const client = new GuildWars2Client(transport, apiKeyProvider);
 		const publicClient = new GuildWars2PublicCatalogClient(transport);
 		this.alertQueue = new EmittedAlertQueue({
@@ -930,6 +946,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 		this.halloweenPriceAlert = halloweenServices.priceAlert;
 		this.halloween = halloweenServices.runtime;
+		// Construction opens no I/O. Every consumer below that downloads a datawars2 seed is handed
+		// this one queue, so no two of their requests are ever in flight together.
+		const priceSeedDownloads = new SerialTaskQueue();
+		this.priceSeedDownloads = priceSeedDownloads;
 		const priceServices = assemblePriceHistory({
 			priceHistory: host.priceHistory,
 			vaultId,
@@ -937,7 +957,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			capturePersistence: this.persistenceDiagnostics('price_history', 'price_history_capture'),
 			gateway: publicClient,
 			rateLimit: rateLimitCoordinator,
-			transport,
+			transport: priceSeedTransport,
+			// Nobody is waiting on the sell rule's seed: it rides a compaction.
+			serializeSeedDownload: priceSeedDownloads.runner('background'),
 			onStateChange: () => this.renderInventoryAdvisorViews(),
 			evaluatePriceAlert: async (port) => {
 				await this.halloweenPriceAlert?.evaluate({
@@ -961,8 +983,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.priceHistoryPanelSeed = new PriceHistoryPanelSeedService({
 			priceHistory: host.priceHistory,
 			vaultId,
-			transport,
+			transport: priceSeedTransport,
 			now: () => Date.now(),
+			// Both callers, the panel and a note block, are somebody looking at the chart.
+			serialize: priceSeedDownloads.runner('interactive'),
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		// Construction opens no I/O; decision 4 (SPEC-recomendacion-por-objeto.md §7) only ever runs
@@ -979,9 +1003,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
 				const calendar = loaded.status === 'available' ? loaded.bundle.festivalCalendar : null;
 				return await fetchPriceSeed(itemId, {
-					transport, now: () => Date.now(), actionContext, maxDays: sellOrWaitSeedMaxDays(calendar, itemId),
+					transport: priceSeedTransport, now: () => Date.now(), actionContext, maxDays: sellOrWaitSeedMaxDays(calendar, itemId),
 				});
 			},
+			// A pass item gives way to a panel or note block load that arrives before its turn.
+			serialize: priceSeedDownloads.runner('background'),
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		const refreshHalloweenBackfill = (change: TyrianVaultChange): void => {
@@ -1452,6 +1478,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.walletVaultSync?.dispose();
 		this.inventoryPreferences?.dispose();
 		this.priceHistory?.dispose();
+		// Every seed download still waiting for its turn ends here without being asked for; the
+		// request in flight ends as it would, and its consumers below drop its answer.
+		this.priceSeedDownloads?.dispose();
+		this.priceSeedDownloads = null;
 		this.priceHistoryPanelSeed?.dispose();
 		// Cuts a deferred pass in flight at its next item, and drops one that had not started yet.
 		this.priceSeedDeferredRequest = null;

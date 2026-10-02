@@ -5,6 +5,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import { withObsidianHost } from './test/obsidian-host-harness';
+import { runSerialTaskUnqueued } from './core/serial-task-queue';
 import type { PositionRecommendationV1 } from './advisor/inventory-position-recommendation';
 import { indexedDbPriceHistoryPort } from './host/indexed-db-price-history';
 import { PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
@@ -33,6 +34,7 @@ describe('Sale refresh: explicit action to real cache, merge and hero recommenda
 		const fetched: number[] = [];
 		const service = new PriceSeedBulkRefreshService({
 			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'sale-refresh-test', now: () => NOW_MS,
+			serialize: runSerialTaskUnqueued,
 			fetchSeed: async (itemId) => {
 				fetched.push(itemId);
 				const days = daysById.get(itemId)?.();

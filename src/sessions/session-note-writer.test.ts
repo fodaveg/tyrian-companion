@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { afterSnapshot, looseHolding, storageDeltaSnapshot, walletCurrency } from '../account/__fixtures__/storage-delta';
 import { compareStorageSnapshots } from '../account/storage-delta';
+import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { calculateSessionValuation, type SessionValuation } from '../economy/session-valuation';
 import { unavailableSessionPriceSnapshot } from '../economy/session-price-snapshot';
 import { scanHalloweenSessionNotes } from '../halloween/halloween-note-backfill';
@@ -286,6 +287,35 @@ describe('session note model and renderer', () => {
 		expect(prepareSessionNote(input)).toMatchObject({
 			status: 'ok', note: { reservation: { status: 'invalid' } },
 		});
+	});
+
+	it('does not mark the reservation status blocked for coins in the delivery box that no goal asks for', async () => {
+		// The wallet could not be read: the coins waiting in the Trading Post delivery box are a currency of unknown balance.
+		const input = sessionInput('estimated', 'es', {
+			holdings: [looseHolding(100, 5, { source: 'bank', slot: 0 })],
+			currencies: [{ kind: 'currency', namespace: 'delivery', currencyId: 1, quantity: 50 }],
+			coverage: { ...afterSnapshot().coverage, sources: {
+				...afterSnapshot().coverage.sources, wallet: { status: 'skipped', reason: 'missing_scope' },
+			} },
+		});
+		input.valuation = valuation(input.runtime);
+		input.reservation = reservationOf(input, buildReservationBalance(input.runtime.finalSnapshot));
+		expect(input.reservation.plan.assets.find((asset) => asset.key === 'currency:1')).toMatchObject({ coverage: 'unknown' });
+		const note = await rendered(input);
+		expect(note.frontmatter.tc_reservation_status).toMatch(/^complete:/u);
+	});
+
+	it('keeps the reservation status blocked for an item of unknown balance', async () => {
+		const input = sessionInput();
+		input.valuation = valuation(input.runtime);
+		const known = buildReservationBalance(input.runtime.finalSnapshot);
+		if (known.status !== 'ok') throw new Error('Invalid balance fixture.');
+		input.reservation = reservationOf(input, { status: 'ok', balance: {
+			...known.balance, coverage: { ...known.balance.coverage, item: 'unknown' },
+			assets: known.balance.assets.map((asset) => asset.namespace === 'item' ? { ...asset, coverage: 'unknown' as const } : asset),
+		} });
+		const note = await rendered(input);
+		expect(note.frontmatter.tc_reservation_status).toMatch(/^blocked:/u);
 	});
 
 	it('blocks identity mismatch and unsafe output paths', () => {
@@ -586,13 +616,32 @@ async function rendered(input: SessionNoteInput) {
 	return result.note;
 }
 
-function sessionInput(classification: 'exact' | 'contaminated' = 'exact', locale: 'es' | 'en' = 'es'): SessionNoteInput {
+function sessionInput(
+	classification: 'exact' | 'estimated' | 'contaminated' = 'exact',
+	locale: 'es' | 'en' = 'es',
+	finalOverrides: Partial<StorageSnapshot> = {},
+): SessionNoteInput {
 	return {
-			runtime: completeRuntime(classification), valuation: null, reservation: null, hold: null,
+			runtime: completeRuntime(classification, finalOverrides), valuation: null, reservation: null, hold: null,
 		recommendation: null, envelope: null, eventDeclaration: null, displayNames: { 'item:100': 'Objeto de prueba' },
 		firstSeenItemIds: [], rareUnpricedOrBoundItemIds: [],
 		locale, outputFolder: 'Tyrian Companion',
 	};
+}
+
+/** The reservation block of a note for `balance`, planned with no goals as the session does without any. */
+function reservationOf(
+	input: SessionNoteInput,
+	balance: ReturnType<typeof buildReservationBalance>,
+): NonNullable<SessionNoteInput['reservation']> {
+	if (balance.status !== 'ok' || !input.valuation) throw new Error('Invalid balance fixture.');
+	const plan = createReservationPlan({ goals: [], balance: balance.balance });
+	if (plan.status !== 'ok') throw new Error('Invalid plan fixture.');
+	const overlay = partitionSessionValuation({
+		valuation: input.valuation, delta: input.runtime.delta, plan: plan.plan, sackItemIds: [],
+	});
+	if (overlay.status !== 'ok') throw new Error('Invalid overlay fixture.');
+	return { plan: plan.plan, overlay: overlay.overlay };
 }
 
 function halloweenProposal(): RelevantStartProposal {
@@ -621,11 +670,15 @@ function halloweenProposal(): RelevantStartProposal {
 	};
 }
 
-function completeRuntime(classification: 'exact' | 'contaminated'): SessionRuntimeRecord {
+function completeRuntime(
+	classification: 'exact' | 'estimated' | 'contaminated',
+	finalOverrides: Partial<StorageSnapshot> = {},
+): SessionRuntimeRecord {
 	const baseline = storageDeltaSnapshot();
 	const final = afterSnapshot({
 		holdings: [looseHolding(100, 5, { source: 'bank', slot: 0 })],
 		currencies: [walletCurrency(1, 150)],
+		...finalOverrides,
 	});
 	const delta = compareStorageSnapshots(baseline, final);
 	const review = createSessionContaminationReview(baseline, final, delta, '2026-08-13T09:00:02.000Z');

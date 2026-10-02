@@ -94,6 +94,30 @@ sincronización o una sola actualización de Venta; lo que queda fuera del tope 
 acción siguiente. Un fallo de datawars2 en un ítem se registra y la siembra continúa con el
 siguiente; ninguno detiene el resto.
 
+Desde el 1 de octubre de 2026 «en serie, nunca en paralelo» vale para todo el plugin, no solo para
+la siembra por lote: toda petición a datawars2, venga de la semilla H13.2, del panel H9.1, de un
+bloque de nota H9.2 o de una siembra, espera su turno en una única cola común y nunca hay dos en
+vuelo. Hasta entonces el panel y los bloques de nota descargaban por su cuenta y podían coincidir
+con una siembra, con la semilla H13.2 o entre sí (varios bloques de objetos distintos, varias
+peticiones a la vez). En esa cola, lo que la persona está mirando (el panel y los bloques de nota)
+pasa por delante de las peticiones de siembra y de la semilla H13.2 que aún no han empezado, y
+espera solo a la que esté en vuelo, que no se interrumpe. Entre peticiones de la misma clase se
+respeta el orden de llegada. La siembra sigue donde iba cuando no queda nada de lo primero
+esperando, sin perder ni repetir ítems y sin pasar de su tope. Para que lo que la persona mira no
+pueda dejar parada una siembra o la semilla H13.2 de forma indefinida (cargas que no dejan de
+llegar, por ejemplo una nota con muchos bloques mientras datawars2 no responde), tras cuatro cargas
+de panel o de bloque seguidas que les han pasado por delante pasa una de las que esperaban, y la
+cuenta vuelve a empezar. Una descarga de semilla se pide una sola vez y no se reintenta: como la
+que está en vuelo ocupa el único turno, un reintento que esperase el `Retry-After` que indique
+datawars2, que no tiene tope, dejaría detrás al panel, a los bloques y a las siembras. Un 429 o un
+5xx es por tanto «sin semilla» en esa ocasión, igual que cualquier otra respuesta fallida, y una
+petición dura como mucho el plazo del transporte (10 segundos); en una siembra esa respuesta se
+recuerda con el mismo espaciado de 24 horas que cualquier otro «sin semilla». Como un ítem de siembra puede haber
+esperado detrás de esas peticiones, su permiso (histórico activado y dispositivo recolectando) se
+vuelve a comprobar cuando le llega el turno, y si ya no lo tiene no se pide. Al descargar el plugin,
+lo que esperaba turno se resuelve sin pedirse y sin escribir nada en la caché ni en el recuerdo de
+«sin semilla»; la petición en vuelo termina como se describe más abajo.
+
 Desde el 1 de octubre de 2026 la acción solo espera a los ítems que no tienen ninguna semilla en
 caché: esos se piden antes de calcular el veredicto, como hasta ahora. Los ítems cuya copia tiene
 más de 24 horas se piden cuando la acción entera ha terminado, con el cupo que las anteriores hayan

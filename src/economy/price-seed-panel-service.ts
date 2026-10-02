@@ -4,6 +4,7 @@ import {
 	type LocalDebugActionPort,
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
+import type { SerialTaskRunner } from '../core/serial-task-queue';
 import type { TyrianPriceHistoryPort, TyrianPriceSeedCache } from '../host/tyrian-host-storage';
 import { fetchPriceSeed } from './price-seed-source';
 import { PRICE_SEED_CHART_MAX_DAYS, type PriceSeedDayV1, type PriceSeedFailureReason } from './price-seed-model';
@@ -42,6 +43,15 @@ export interface PriceHistoryPanelSeedOptions {
 	vaultId: string;
 	transport: HttpTransport;
 	now: () => number;
+	/**
+	 * The turn every download takes before it is sent (1 oct 2026, task 0812d53e): the caller hands
+	 * the queue it shares with the other seed downloads of the plugin. The flight map below only
+	 * joins callers of the SAME item; two different items, the panel's and a note block's or two
+	 * note blocks', are two downloads, and without this they are two requests in flight.
+	 * Required: a service built without a queue must not compile. A caller with nothing to share
+	 * says so with `runSerialTaskUnqueued`.
+	 */
+	serialize: SerialTaskRunner;
 	cacheTtlMs?: number;
 	diagnostics?: LocalDebugActionPort;
 }
@@ -52,6 +62,7 @@ const IDLE_STATE: Omit<PriceHistoryPanelSeedState, 'itemId'> = {
 
 export class PriceHistoryPanelSeedService {
 	private readonly cacheTtlMs: number;
+	private readonly serialize: SerialTaskRunner;
 	private store: TyrianPriceSeedCache | null = null;
 	private opening: Promise<TyrianPriceSeedCache | null> | null = null;
 	private readonly states = new Map<number, PriceHistoryPanelSeedState>();
@@ -60,6 +71,7 @@ export class PriceHistoryPanelSeedService {
 
 	constructor(private readonly options: PriceHistoryPanelSeedOptions) {
 		this.cacheTtlMs = options.cacheTtlMs ?? PRICE_SEED_PANEL_CACHE_TTL_MS;
+		this.serialize = options.serialize;
 	}
 
 	/** Last known state for the item, without triggering any work. */
@@ -120,10 +132,21 @@ export class PriceHistoryPanelSeedService {
 		});
 		// The panel and the note chart both want the whole published history, not the sell rule's
 		// year (H13.2 keeps its own default by never overriding `maxDays` on its own call).
-		const result = await fetchPriceSeed(itemId, {
+		const turn = await this.serialize(async () => await fetchPriceSeed(itemId, {
 			transport: this.options.transport, now: this.options.now, actionContext: span.context,
 			maxDays: PRICE_SEED_CHART_MAX_DAYS,
-		});
+		}));
+		if (turn.status === 'dropped') {
+			// Never asked for: the queue was let go before this item's turn. It goes back to what
+			// it was before the load, with nothing written.
+			if (cached === null) this.states.delete(itemId);
+			else this.states.set(itemId, {
+				status: 'seeded', itemId, days: cached.seed.days, failureReason: null, retrievedAt: cached.seed.retrievedAt,
+			});
+			span.cancel('disposed');
+			return;
+		}
+		const result = turn.value;
 		if (this.disposed) { span.cancel('disposed'); return; }
 		if (result.status === 'no_seed') {
 			if (cached !== null) {

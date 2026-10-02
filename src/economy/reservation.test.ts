@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { StorageDelta } from '../account/storage-delta-model';
 import { afterSnapshot, embeddedHolding, looseHolding, walletCurrency, withoutDelivery } from '../account/__fixtures__/storage-delta';
 import {
+	buildInventoryAdvisorReservationBalance,
 	buildReservationBalance,
 	createReservationPlan,
 	isReservationBalance,
@@ -121,6 +122,64 @@ describe('createReservationPlan', () => {
 		expect(plan.coverage).toBe(global);
 		expect(plan.warnings).toContainEqual({ code: warning, key: `item:${ITEM_ID}` });
 		if (coverage === 'unknown') expect(plan.assets[0]!.allowances.liquidate).toBeNull();
+	});
+
+	it.each([
+		['unknown', 'blocked', 'unknown_balance'],
+		['limited', 'limited', 'limited_balance'],
+	] as const)('does not let a currency of %s balance that no goal asks for lower the coverage of the plan', (coverage, asked, warning) => {
+		const evidence = withCurrency(balance(20, 20), coverage);
+		const unasked = requirePlan(createReservationPlan({ goals: [goal('a', 10)], balance: evidence }));
+		expect(unasked.coverage).toBe('complete');
+		// The currency itself is reported as it is: its warning stays and, unknown, it has no allowance.
+		expect(unasked.warnings).toContainEqual({ code: warning, key: 'currency:1' });
+		expect(unasked.assets.find((asset) => asset.key === 'currency:1')).toMatchObject({ coverage, allocations: [] });
+		if (coverage === 'unknown') expect(unasked.assets.find((asset) => asset.key === 'currency:1')?.allowances.spend).toBeNull();
+		expect(isReservationPlan(unasked)).toBe(true);
+		expect(isReservationPlan({ ...unasked, coverage: asked })).toBe(false);
+
+		// The same currency lowers it as soon as one goal asks for it, credited goals and paused ones aside.
+		const spend = goal('spend', 5, { namespace: 'currency', id: 1, intendedUse: 'spend' });
+		const askedPlan = requirePlan(createReservationPlan({ goals: [goal('a', 10), spend], balance: evidence }));
+		expect(askedPlan.coverage).toBe(asked);
+		expect(isReservationPlan(askedPlan)).toBe(true);
+		expect(isReservationPlan({ ...askedPlan, coverage: 'complete' })).toBe(false);
+		const paused = requirePlan(createReservationPlan({
+			goals: [goal('a', 10), { ...spend, status: 'paused' as const }], balance: evidence,
+		}));
+		expect(paused.coverage).toBe('complete');
+		const credited = goal('credited', 5, { namespace: 'currency', id: 1, intendedUse: 'spend', creditedQuantity: 5 });
+		expect(requirePlan(createReservationPlan({ goals: [goal('a', 10), credited], balance: evidence })).coverage).toBe('complete');
+	});
+
+	it('lowers the coverage of the plan for a currency a goal asks for that the balance does not carry', () => {
+		const spend = goal('spend', 5, { namespace: 'currency', id: 2, intendedUse: 'spend' });
+		const plan = requirePlan(createReservationPlan({ goals: [spend], balance: withCurrency(balance(20, 20), 'unknown') }));
+		expect(plan.coverage).toBe('blocked');
+		expect(plan.assets.map((asset) => `${asset.key}:${asset.coverage}:${asset.allocations.length}`))
+			.toEqual(['currency:1:unknown:0', 'currency:2:unknown:1', `item:${ITEM_ID}:complete:0`]);
+	});
+
+	it('still lowers the coverage of the plan for an item of unknown balance, asked for or not', () => {
+		const plan = requirePlan(createReservationPlan({ goals: [], balance: balance(20, 20, 'unknown') }));
+		expect(plan.coverage).toBe('blocked');
+		expect(isReservationPlan(plan)).toBe(true);
+	});
+
+	it('plans the advisor capture, which leaves the wallet out, as complete when the coins of the delivery box are asked for by no goal', () => {
+		const snapshot = afterSnapshot({
+			currencies: [{ kind: 'currency', namespace: 'delivery', currencyId: 1, quantity: 50 }],
+			coverage: { ...afterSnapshot().coverage, sources: {
+				...afterSnapshot().coverage.sources, wallet: { status: 'skipped', reason: 'not_requested' },
+			} },
+		});
+		const evidence = requireBalance(buildInventoryAdvisorReservationBalance(snapshot));
+		expect(evidence.coverage).toEqual({ item: 'complete', currency: 'unknown' });
+		expect(evidence.assets.find((asset) => asset.key === 'currency:1')).toMatchObject({ ownedQuantity: 50, coverage: 'unknown' });
+		expect(requirePlan(createReservationPlan({ goals: [], balance: evidence })).coverage).toBe('complete');
+		expect(requirePlan(createReservationPlan({ goals: [goal('a', 1)], balance: evidence })).coverage).toBe('complete');
+		const spend = goal('spend', 5, { namespace: 'currency', id: 1, intendedUse: 'spend' });
+		expect(requirePlan(createReservationPlan({ goals: [spend], balance: evidence })).coverage).toBe('blocked');
 	});
 
 	it('uses namespace coverage when a required asset is absent from the balance', () => {
@@ -406,6 +465,14 @@ function balance(
 		accountId: 'account-1', snapshotId: 'after', capturedAt: '2026-08-13T09:30:00.000Z',
 		coverage: { item: coverage, currency: coverage },
 		assets: [{ key: `${namespace}:${id}`, namespace, id, ownedQuantity, availableQuantity, coverage }],
+	};
+}
+
+/** The same balance with 100 units of currency 1 next to its assets, known as `coverage` says. */
+function withCurrency(value: ReservationBalance, coverage: 'complete' | 'limited' | 'unknown'): ReservationBalance {
+	return {
+		...value, coverage: { ...value.coverage, currency: coverage },
+		assets: [{ key: 'currency:1', namespace: 'currency', id: 1, ownedQuantity: 100, availableQuantity: 100, coverage }, ...value.assets],
 	};
 }
 

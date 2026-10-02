@@ -1,5 +1,62 @@
 # Changelog
 
+## Release beta 0.2.20 - unas monedas que ninguna meta pide ya no marcan el plan de reservas como bloqueado
+
+- **Una moneda de saldo desconocido o limitado que ninguna meta pide ya no bloquea el plan de
+  reservas entero.** Es el caso de las monedas por recoger en la entrega del bazar cuando no se lee la
+  cartera. La cobertura del plan cuenta todos los objetos y solo las monedas que alguna meta pide; la
+  moneda que nadie pide conserva su propia cobertura, su aviso y sus asignaciones nulas
+  (`cb61de4`, `dc53e08`).
+- **Efecto visible en la nota de sesión.** Con la cartera sin leer completa y monedas en la entrega
+  del bazar, `tc_reservation_status` deja de decir `blocked` y empieza por `complete`; un objeto de
+  saldo desconocido sigue dando `blocked` (`e0d9264`).
+
+Límites: las recomendaciones del asesor no cambian, ya iban por objeto desde la 0.2.19. No comprobado
+en Obsidian real antes de publicar.
+
+## Release beta 0.2.19 - el asesor ya no manda todo a «revisar» cuando hay monedas por recoger en el bazar
+
+- **Con monedas pendientes de recoger en la entrega del bazar, el asesor mandaba casi todo el
+  inventario a «revisar» con motivo «precio parcial».** El asesor no pide la cartera, pero la entrega
+  del bazar sí se captura; con monedas en ella aparecía una moneda de saldo desconocido, eso dejaba el
+  plan de reservas entero como bloqueado, y el asesor exigía el plan entero completo para recomendar
+  cualquier objeto. Ahora la evidencia de cada objeto mira la cobertura de ese objeto, no la del plan
+  entero: una moneda que el asesor no reserva ya no apaga vender, listar, vender al mercader ni
+  conservar. El fallo estaba desde agosto y no dependía de la versión, solo de tener ventas por
+  cobrar (`d3f5773`, `76aabe8`).
+
+Límites: un objeto cuya propia cobertura no es completa sigue saliendo como «revisar». No comprobado
+en Obsidian real antes de publicar.
+
+## Release beta 0.2.18 - las descargas de precios van de una en una en todo el plugin
+
+- **Nunca hay dos descargas de datawars2 a la vez, en ningún sitio del plugin.** Hasta ahora eso solo
+  lo cumplían las pasadas de «Sincronizar inventario» y de «Actualizar» en Venta: el panel de precios,
+  los bloques `tyrian-price-history` de las notas y la semilla de la regla de venta descargaban por su
+  cuenta, así que cargar el panel durante una sincronización eran dos peticiones a la vez, y una nota
+  con varios bloques de objetos distintos, una por bloque. Ahora todas pasan por un mismo turno. Lo que
+  estás mirando (el panel y los bloques de nota) pasa por delante de las descargas pendientes de una
+  pasada y espera solo a la que está en curso. Una descarga de pasada vuelve a comprobar, cuando le
+  llega el turno, que el historial sigue activado y que el dispositivo no está en modo consulta. Al
+  descargar el plugin, lo que esperaba turno termina sin pedirse (de `7349212` a `02c707d`).
+- **Una descarga de semilla se pide una vez y no se reintenta.** Antes se reintentaba hasta dos veces
+  ante un 429 o un 5xx, esperando lo que dijera el servidor, sin tope; con un solo turno para todo,
+  esa espera habría parado el panel y las pasadas. Ahora esa respuesta es «sin semilla» en esa ocasión
+  y una petición dura como mucho 10 segundos (`446bc5c`, `02c707d`).
+- Para que una sincronización no se quede parada detrás de cargas del panel que no dejan de llegar,
+  tras cuatro cargas del panel o de bloques de nota seguidas pasa una descarga de la pasada
+  (`d0722db`).
+- Sin cambio visible: el bucle que crea las carpetas de las notas de sesión usa el auxiliar común de
+  `src/core/vault-folders.ts` (`43f2d0e`).
+
+Límites: una carga del panel o de un bloque de nota espera a la petición que esté en curso, así que
+puede tardar un poco más que antes cuando coincide con una pasada. Mientras llegan cargas del panel o
+de bloques de nota, la pasada avanza más despacio; si una sincronización está esperando las semillas
+de objetos nuevos, tarda más en terminar. En una pasada, un 429 o un 5xx deja ese objeto sin reintento
+durante 24 horas, también cuando antes se habría recuperado al reintentar; el panel lo vuelve a pedir
+si lo abres. No comprobado en Obsidian real; los bloques de nota se probaron llamando al mismo
+servicio que usan, sin pintar el bloque.
+
 ## Release beta 0.2.17 - sincronizar ya no espera a refrescar los precios que ya tenía, el asesor deja de vender por nada y el panel de precios conserva el foco
 
 - **«Sincronizar inventario» y «Actualizar» en Venta ya no esperan a refrescar las semillas de

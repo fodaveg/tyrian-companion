@@ -103,9 +103,10 @@ function classifyInventoryAdvisorEngine(value: unknown, analysis: InventoryAdvis
 		const itemIds = ids(input);
 		const inputRulesFresh = rulePackFresh(input);
 		const knowledgeReady = knowledgeFresh(knowledgePack, input);
+		const uncertainGoalIds = goalIdsWithUncertainAsset(plan.plan.assets);
 		const itemEvidence = new Map(itemIds.map((itemId) => [
 			itemId,
-			recommendationEvidenceReady(input, plan.plan, itemId),
+			recommendationEvidenceReady(input, analysis.planAsset(`item:${itemId}`), uncertainGoalIds, itemId),
 		]));
 		const complete = input.prices.status === 'complete'
 			&& (value.marketDepth === undefined || value.marketDepth.status === 'complete')
@@ -624,11 +625,29 @@ function unlocked(input: InventoryAdvisorInputV1, claim: Extract<InventoryRouteC
 	if (claim.target.kind === 'achievement') { const target = claim.target; const progress = input.accountSignals.achievementProgress?.find((entry) => entry.achievementId === target.achievementId); return progress?.done === true || (target.bit !== null && progress?.bits?.includes(target.bit) === true); }
 	return false;
 }
+type PlanAssetEvidence = { coverage: string; allocations: ReadonlyArray<{ goalId: string }> };
+
+/** The goals that ask for an asset whose balance the capture does not fully know. */
+function goalIdsWithUncertainAsset(assets: readonly PlanAssetEvidence[]): ReadonlySet<string> {
+	return new Set(assets.filter((asset) => asset.coverage !== 'complete')
+		.flatMap((asset) => asset.allocations.map((allocation) => allocation.goalId)));
+}
+
+/**
+ * The reservation side of an object's evidence is the object's own: its plan asset is fully known
+ * and no goal that reserves it also asks for an asset that is not. The coverage of the whole plan
+ * is not asked, because an asset no goal of this object touches says nothing about it: the advisor
+ * capture leaves the wallet out, so coins waiting in the Trading Post delivery box are a currency
+ * of unknown coverage in every plan, and they are not a reason to withhold every recommendation.
+ */
 function recommendationEvidenceReady(
 	input: InventoryAdvisorInputV1,
-	plan: { coverage: string },
+	asset: PlanAssetEvidence | undefined,
+	uncertainGoalIds: ReadonlySet<string>,
 	itemId: number,
 ): boolean {
+	const reservation = asset?.coverage === 'complete'
+		&& !asset.allocations.some((allocation) => uncertainGoalIds.has(allocation.goalId));
 	const catalogEntry = input.catalog.coverage.items[String(itemId)];
 	const catalog = catalogEntry?.status === 'resolved'
 		&& (catalogEntry.source === 'network' || catalogEntry.source === 'cache_fresh');
@@ -637,7 +656,7 @@ function recommendationEvidenceReady(
 			|| input.prices.missingItemIds.includes(itemId));
 	return priceAccounted && catalog && inventorySnapshotCoverageComplete(input)
 		&& ['stable', 'stable_owned_placement_changed', 'unstable'].includes(input.snapshot.quality)
-		&& plan.coverage === 'complete' && input.accountSignals.unlockCoverage === 'complete'
+		&& reservation && input.accountSignals.unlockCoverage === 'complete'
 		&& input.accountSignals.achievementCoverage === 'complete'
 		&& Object.values(input.accountSignals.endpointCoverage).every((entry) => entry.status === 'complete')
 		&& fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs)

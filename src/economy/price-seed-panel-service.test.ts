@@ -1,8 +1,9 @@
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { HttpRequest, HttpResponse, HttpTransport } from '../core/http';
+import { SerialTaskQueue, runSerialTaskUnqueued, type SerialTaskRunner } from '../core/serial-task-queue';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryPanelSeedService } from './price-seed-panel-service';
 
@@ -27,6 +28,7 @@ function harness(
 		vaultId: 'vault',
 		transport,
 		now: () => Date.parse('2026-09-03T00:00:00.000Z'),
+		serialize: runSerialTaskUnqueued,
 	});
 	return { service, requests, factory };
 }
@@ -94,11 +96,101 @@ describe('PriceHistoryPanelSeedService', () => {
 			vaultId: 'vault',
 			transport: { send: async (request) => { requests.push(request); return { status: 503, headers: {}, body: null }; } },
 			now: () => Date.parse('2026-09-04T00:00:00.000Z'),
+			serialize: runSerialTaskUnqueued,
 			cacheTtlMs: 0,
 		});
 		const refreshed = await stale.ensure(36_038);
 		expect(refreshed.status).toBe('seeded');
 		expect(refreshed.days).toHaveLength(2);
 		expect(refreshed.failureReason).not.toBeNull();
+	});
+});
+
+/**
+ * Task 0812d53e. The panel and every `tyrian-price-history` note block call `ensure`, each for its
+ * own item: the per-item flight map alone let N different items be N requests in flight.
+ */
+describe('PriceHistoryPanelSeedService downloads through the queue it was handed', () => {
+	/** A transport whose requests are held until the test answers them, one by one. */
+	function heldHarness(serialize: SerialTaskRunner) {
+		const requested: number[] = [];
+		const held: Array<() => void> = [];
+		let inFlight = 0;
+		let maxInFlight = 0;
+		const factory = new IDBFactory();
+		const service = new PriceHistoryPanelSeedService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }),
+			vaultId: 'vault',
+			transport: {
+				send: async (request) => {
+					requested.push(Number(new URL(request.url).searchParams.get('itemID')));
+					inFlight += 1;
+					maxInFlight = Math.max(maxInFlight, inFlight);
+					await new Promise<void>((resolve) => { held.push(resolve); });
+					inFlight -= 1;
+					return { status: 200, headers: {}, body: RECORDS };
+				},
+			},
+			now: () => Date.parse('2026-09-03T00:00:00.000Z'),
+			serialize,
+		});
+		return {
+			service, requested, factory,
+			maxInFlight: () => maxInFlight,
+			/** Every item has read its cache and reached its download, queued or sent. */
+			allLoading: async (itemIds: readonly number[]) => {
+				await vi.waitFor(() => {
+					expect(itemIds.map((itemId) => service.getState(itemId).status)).toEqual(itemIds.map(() => 'loading'));
+				});
+			},
+			/** Answers the request in flight and waits for the next one to start, if one is expected. */
+			answerOldest: async (expectedRequests: number) => {
+				const release = held.shift();
+				if (release === undefined) throw new Error('No request is held.');
+				release();
+				await vi.waitFor(() => { expect(requested).toHaveLength(expectedRequests); });
+			},
+		};
+	}
+
+	it('several items asked for at once, as several note blocks do, are requested one at a time, in arrival order', async () => {
+		const queue = new SerialTaskQueue();
+		const { service, requested, maxInFlight, allLoading, answerOldest } = heldHarness(queue.runner('interactive'));
+
+		const loads = [service.ensure(101), service.ensure(102), service.ensure(103)];
+		await allLoading([101, 102, 103]);
+		expect(requested).toEqual([101]);
+
+		await answerOldest(2);
+		expect(requested).toEqual([101, 102]);
+		await answerOldest(3);
+		expect(requested).toEqual([101, 102, 103]);
+		await answerOldest(3);
+
+		expect((await Promise.all(loads)).map((state) => state.status)).toEqual(['seeded', 'seeded', 'seeded']);
+		expect(maxInFlight()).toBe(1);
+	});
+
+	it('a turn the queue dropped requests nothing, writes no cache, and leaves the item as it was before the load', async () => {
+		const queue = new SerialTaskQueue();
+		const { service, requested, factory, allLoading } = heldHarness(queue.runner('interactive'));
+		// Something else has the queue, so the two loads below wait for a turn that never comes.
+		let endOther!: () => void;
+		const other = queue.run('interactive', () => new Promise<void>((resolve) => { endOther = resolve; }));
+
+		const loads = [service.ensure(101), service.ensure(102)];
+		await allLoading([101, 102]);
+		expect(requested).toEqual([]);
+		queue.dispose();
+		const states = await Promise.all(loads);
+		endOther();
+		await other;
+
+		expect(requested).toEqual([]);
+		expect(states.map((state) => state.status)).toEqual(['idle', 'idle']);
+		const reader = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+		expect(await reader.get('vault', 101)).toBeNull();
+		expect(await reader.get('vault', 102)).toBeNull();
+		reader.close();
 	});
 });

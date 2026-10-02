@@ -14,7 +14,7 @@
  * does not depend on.
  */
 
-import type { HttpTransport } from '../core/http';
+import type { HttpOperationPolicies, HttpTransport } from '../core/http';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import {
 	parseDatawars2History,
@@ -42,6 +42,20 @@ import {
  * never what this cap allows onto the wire in the first place.
  */
 export const PRICE_SEED_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * One attempt per download, never a retry (1 oct 2026, task 0812d53e). The transport's default
+ * is two retries, each after the host's own `Retry-After`, which has no ceiling. Every seed
+ * download of the plugin takes its turn in ONE queue, so a download sleeping through that wait
+ * would hold the panel, the note blocks and the passes behind it for as long as the host said.
+ * With this a 429 or a 5xx is "no seed" on this occasion (the answer `fetchPriceSeed` already
+ * gives to any status outside 2xx), and a request lasts at most the transport's timeout. The
+ * timeout is left as the transport has it. Whoever builds the transport the seed rides declares
+ * this next to its other operation policies.
+ */
+export const PRICE_SEED_OPERATION_POLICIES = Object.freeze({
+	price_history_seed: Object.freeze({ maxRetries: 0 }),
+}) satisfies HttpOperationPolicies;
 
 export interface PriceSeedSourceOptions {
 	transport: HttpTransport;

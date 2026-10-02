@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
 import type { HttpRequest, HttpResponse, HttpTransport } from '../core/http';
+import { runSerialTaskUnqueued } from '../core/serial-task-queue';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import { priceHistoryNoteBlockMarkdown } from '../inventory/price-history-note-block';
@@ -22,6 +23,7 @@ describe('price history note block controller', () => {
 		const factory = new IDBFactory();
 		// Constructing the service is exactly what the plugin does at load: no request yet.
 		const service = new PriceHistoryPanelSeedService({
+			serialize: runSerialTaskUnqueued,
 			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault',
 			transport: transportOf(requests), now: () => Date.parse('2026-09-04T00:00:00.000Z'),
 		});
@@ -37,6 +39,7 @@ describe('price history note block controller', () => {
 		const requests: HttpRequest[] = [];
 		const factory = new IDBFactory();
 		const service = new PriceHistoryPanelSeedService({
+			serialize: runSerialTaskUnqueued,
 			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault',
 			transport: transportOf(requests), now: () => Date.parse('2026-09-04T00:00:00.000Z'),
 		});
@@ -50,6 +53,7 @@ describe('price history note block controller', () => {
 	it('paints a network-error state (not "no history") and never throws when datawars2 is down', async () => {
 		const factory = new IDBFactory();
 		const service = new PriceHistoryPanelSeedService({
+			serialize: runSerialTaskUnqueued,
 			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault',
 			transport: { send: async () => ({ status: 503, headers: {}, body: null }) },
 			now: () => Date.parse('2026-09-04T00:00:00.000Z'),
@@ -122,6 +126,7 @@ describe('price history note block controller', () => {
 	it('paints a no-history state (never "no connection") when datawars2 answers with a genuinely empty series', async () => {
 		const factory = new IDBFactory();
 		const service = new PriceHistoryPanelSeedService({
+			serialize: runSerialTaskUnqueued,
 			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault',
 			transport: { send: async () => ({ status: 200, headers: {}, body: [] }) },
 			now: () => Date.parse('2026-09-04T00:00:00.000Z'),
