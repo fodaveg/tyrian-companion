@@ -141,7 +141,8 @@ Artefactos en [2026-10-02-h18-29-evidence](2026-10-02-h18-29-evidence/):
 
 - `history-evidence.json`: hashes, diagnóstico, siete recientes, agregación exploratoria y controles.
 - `history-execution.json`: comandos, códigos de salida y límites.
-- `history-probe.mjs` y `start-feedback-probe.mjs`: sondas exactas ejecutadas.
+- `history-probe.mjs.txt` y `start-feedback-probe.mjs.txt`: sondas exactas ejecutadas,
+  archivadas como texto; no son scripts mantenidos del producto.
 - `start-feedback-result.json`: reproducción limitada del bucle.
 - Cinco logs de tests: `targeted-tests.log`, `inventory-tests.log`, `expiry-tests.log`,
   `start-focused-tests.log` y `history-tests.log`.
@@ -150,9 +151,11 @@ Las sondas preservan las rutas absolutas de esta ejecución. Para repetirlas en 
 crear `/tmp/tyrian-h18-29-probe` si no existe y ejecutar:
 
 ```sh
-node docs/audit/2026-10-02-h18-29-evidence/start-feedback-probe.mjs
+cp docs/audit/2026-10-02-h18-29-evidence/start-feedback-probe.mjs.txt /tmp/tyrian-h18-29-start-feedback-probe.mjs
+cp docs/audit/2026-10-02-h18-29-evidence/history-probe.mjs.txt /tmp/tyrian-h18-29-probe/probe.mjs
+node /tmp/tyrian-h18-29-start-feedback-probe.mjs
 NODE_PATH=/home/fodaveg/code/tyrian-companion/node_modules \
-  node docs/audit/2026-10-02-h18-29-evidence/history-probe.mjs
+  node /tmp/tyrian-h18-29-probe/probe.mjs
 ```
 
 La sonda del historial exige exactamente este corpus de 29 notas. Otra máquina o un corpus
