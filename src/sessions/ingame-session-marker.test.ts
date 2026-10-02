@@ -297,6 +297,26 @@ describe('H18.26: the in-game presence marks the session', () => {
 		expect(game.link()).toMatchObject({ owner: 'automatic', labyrinthAt: new Date(clock).toISOString() });
 	});
 
+	it('keeps the observed game exit queued while its initial session capture is in flight', async () => {
+		const game = harness();
+		let finishStart!: (sessionId: string) => void;
+		game.port.start.mockImplementationOnce(() => new Promise<string>((resolve) => { finishStart = resolve; }));
+		game.connect('a');
+		game.report('a', OUTSIDE);
+		await new Promise<void>((resolve) => { setImmediate(resolve); });
+		const lastSeen = clock;
+		game.drop('a');
+		game.advance(INGAME_PRESENCE_GRACE_MS);
+		const reconciled = game.marker.reconcile();
+		game.setSession({ status: 'active', sessionId: 'session-1' });
+		finishStart('session-1');
+		await game.settled();
+		await reconciled;
+		expect(game.port.start).toHaveBeenCalledOnce();
+		expect(game.port.stopAt).toHaveBeenCalledOnce();
+		expect(game.port.stopAt).toHaveBeenCalledWith('session-1', lastSeen);
+	});
+
 	it('H18.11: reports the stretches the game was seen being played, open and finished', () => {
 		const game = harness();
 		expect(game.marker.observedPlayIntervals()).toEqual([]);

@@ -3596,13 +3596,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private startIngameSessionMarking(): void {
 		if (this.ingameSessionMarker !== null) return;
+		const apiKeyProvider = new HostApiKeyProvider(this.host.secrets, () => this.settings.apiKeySecret);
 		const marker = new IngameSessionMarker({
 			presence: () => this.getIngamePresence(),
 			now: () => Date.now(),
 			port: {
 				enabled: () => this.settings.alertIngameEnabled && this.hasConfiguredApiKey() && !consulting(this),
 				session: () => this.ingameSessionView(),
-				start: async (character) => await this.startIngameSession(character),
+				start: async (character) => apiKeyProvider.readSelectedApiKey() ? await this.startIngameSession(character) : null,
 				stopAt: async (_sessionId, endedAtMs) => {
 					const stop = async () => { await this.performStopManualSession(undefined, null, false, endedAtMs); };
 					await (this.localDebugActions?.run(

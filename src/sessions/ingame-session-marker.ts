@@ -70,6 +70,8 @@ export class IngameSessionMarker {
 	/** Presences already linked to a session once; none of them opens another. */
 	private readonly linkedPresences = new Set<string>();
 	private queue: Promise<void> = Promise.resolve();
+	/** Session changes from our own start are feedback, not another request to start. */
+	private startInFlight = false;
 	private disposed = false;
 	/** H18.11: when each presence still open started, to close its stretch on `ended`. */
 	private readonly playStartedAt = new Map<string, number>();
@@ -103,6 +105,7 @@ export class IngameSessionMarker {
 	 * before can do it now without waiting for the next event from the game.
 	 */
 	reconcile(): Promise<void> {
+		if (this.startInFlight) return Promise.resolve();
 		return this.enqueue(async () => {
 			const presence = this.options.presence();
 			if (presence.status !== 'present' || presence.presenceId === null) return;
@@ -195,9 +198,14 @@ export class IngameSessionMarker {
 			return;
 		}
 		if (!session.canStart) return;
-		const sessionId = await this.options.port.start(character);
-		if (sessionId === null) return;
-		this.setLink({ version: 1, presenceId, sessionId, owner: 'automatic', labyrinthAt: null });
+		this.startInFlight = true;
+		try {
+			const sessionId = await this.options.port.start(character);
+			if (sessionId === null) return;
+			this.setLink({ version: 1, presenceId, sessionId, owner: 'automatic', labyrinthAt: null });
+		} finally {
+			this.startInFlight = false;
+		}
 	}
 
 	/** Tags the linked session while it still runs; a session already stopping is left as it ended. */
