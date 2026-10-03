@@ -83,6 +83,11 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/economy/sell-signal-runtime.ts',
 	'src/halloween/halloween-evidence-service.ts',
 	'src/halloween/halloween-unlocks.ts',
+	// Tyrian as an external Hebra plugin, approved 2026-10-03 (Hebra's SPEC-PLUGINS-EXTERNOS.md).
+	// Composition only, like `ObsidianHost`: `HebraHost` hands `createTyrianHttpPort(api)` to the
+	// core as `TyrianHost.http`; it opens no call itself. `./http` reaches the network only through
+	// Hebra's `api.http`, which enforces the two hosts of `hebra.json` and asks the user for the webhook.
+	'src/host/hebra/hebra-host.ts',
 	// R1a. Composition only: `ObsidianHost` hands `createObsidianHttpPort()` to the core as
 	// `TyrianHost.http`; it opens no call itself.
 	'src/host/obsidian/obsidian-host.ts',
@@ -104,6 +109,14 @@ const REVIEWED_SECRET_PROVIDER_IMPORT_FILES = [
 const REVIEWED_SECRET_CAPABILITY_FILES = [
 	'src/account/guild-wars-2-client.ts',
 	'src/core/secret-provider.ts',
+	// Tyrian as an external Hebra plugin, approved 2026-10-03. `TyrianHost.secrets` over Hebra's
+	// keychain: ONE `api.secrets` entry (`api-key`, which Hebra aliases to the account the compiled
+	// module used) read once at start and written whole behind each `set`; memory where Hebra has no
+	// keychain. Nothing leaves it but `get` to the core.
+	'src/host/hebra/secrets.ts',
+	// Its settings row: the secret picker lists the names and saves a new one typed by the user, the
+	// same as Obsidian's `SecretComponent`; the control's value is the NAME, never the secret.
+	'src/host/hebra/setting-row.ts',
 	// R1a. `TyrianHost.secrets` over Obsidian's `SecretStorage`: list, get and set, nothing else.
 	'src/host/obsidian/obsidian-host.ts',
 	// R1c. The composition that was main.ts: the in-game bridge token through `host.secrets`.
