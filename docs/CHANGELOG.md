@@ -1,5 +1,22 @@
 # Changelog
 
+## Release beta 0.3.0 - Tyrian Companion se instala en Hebra como plugin externo desde esta release de GitHub
+
+- **Tyrian Companion se instala en Hebra como plugin externo, desde esta release de GitHub.** Se
+  añade desde el listado de Hebra o con la URL del repo, igual que se instala con BRAT en Obsidian. El
+  adaptador de Hebra vive ahora en este repo (`src/host/hebra/`), junto a `ObsidianHost`, escrito
+  contra la API pública `hebra-plugin-api` 1.0.0 y nada interno de Hebra (`6ab0c52`).
+- **La release publica 8 ficheros en vez de 5.** Además de los de Obsidian, se adjuntan `hebra.json`
+  (generado desde `manifest.json`, con el sha256 de los otros dos), `hebra-main.mjs` y
+  `hebra-styles.css` (`eb80e75`, `f95a0fb`).
+- **En Hebra conserva los ajustes, los datos locales y la clave de API del módulo compilado, sin
+  copiar nada.**
+- **En la web de Hebra va en modo consulta.** Hasta que Hebra tenga relé, no hace llamadas a la API
+  de GW2 ni descarga historial de precios, y la clave no se guarda entre recargas, porque Hebra 1.0.0
+  no ofrece HTTP de plugin ni llavero en la web; el adaptador ya se degrada sin ellos (`f9a1a82`).
+
+Límites: en Obsidian no cambia nada. No comprobado en Hebra ni en Obsidian reales antes de publicar.
+
 ## Release beta 0.2.20 - unas monedas que ninguna meta pide ya no marcan el plan de reservas como bloqueado
 
 - **Una moneda de saldo desconocido o limitado que ninguna meta pide ya no bloquea el plan de
