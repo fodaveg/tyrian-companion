@@ -1,13 +1,15 @@
-// Proves `scripts/build-host-esm.mjs` catches what it claims to catch (R1a): each probe entry is
-// written under the git-ignored `.host-esm/probe/`, bundled without writing output, and must come
-// back with exactly the violations it plants. The real entry must come back clean, and the
-// look-alikes (a `process` member or key, a relative `./net` module) must not be flagged.
+// Proves `scripts/build-host-esm.mjs` catches what it claims to catch (R1a, and the Hebra plugin
+// build since Tyrian became an external plugin): each probe entry is written under the git-ignored
+// `.host-esm/probe/`, bundled without writing output, and must come back with exactly the
+// violations it plants. The real entry (`src/host/hebra/entry.ts`) must come back clean and export
+// `activate`, and the look-alikes (a `process` member or key, a relative `./net` module) must not be
+// flagged.
 
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildHostEsm, isForbiddenSpecifier } from '../build-host-esm.mjs';
+import { buildHostEsm, HEBRA_STYLES_SOURCES, hebraStyleSheet, isForbiddenSpecifier } from '../build-host-esm.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PROBE_DIR = '.host-esm/probe';
@@ -17,13 +19,13 @@ function check(condition, message) {
 	if (!condition) failures.push(message);
 }
 
-async function probe(name, files, expected) {
+async function probe(name, files, expected, requiredExports = []) {
 	const directory = resolve(ROOT, PROBE_DIR, name);
 	mkdirSync(directory, { recursive: true });
 	for (const [file, source] of Object.entries(files)) writeFileSync(resolve(directory, file), source);
 	let outcome;
 	try {
-		outcome = await buildHostEsm({ root: ROOT, entry: `${PROBE_DIR}/${name}/entry.ts`, outfile: `${PROBE_DIR}/${name}/out.js`, write: false });
+		outcome = await buildHostEsm({ root: ROOT, entry: `${PROBE_DIR}/${name}/entry.ts`, outfile: `${PROBE_DIR}/${name}/out.js`, write: false, requiredExports });
 	} catch (error) {
 		failures.push(`${name}: esbuild failed instead of reporting: ${error instanceof Error ? error.message : String(error)}`);
 		return;
@@ -44,6 +46,14 @@ try {
 	const clean = await buildHostEsm({ root: ROOT, write: false });
 	check(clean.violations.length === 0, `the real entry has violations: ${clean.violations.join('; ')}`);
 	check(clean.packages.includes('yaml'), 'the real entry no longer bundles yaml: update the relay\'s dependency list');
+	check(JSON.stringify(clean.exports) === JSON.stringify(['activate']), `the plugin entry exports ${JSON.stringify(clean.exports)}, not exactly activate`);
+
+	await probe('plugin-entry-without-activate', {
+		'entry.ts': 'export function start(): void {}\n',
+	}, ["the bundle does not export 'activate'"], ['activate']);
+	const styles = hebraStyleSheet(ROOT);
+	const [hostCss, obsidianCss] = HEBRA_STYLES_SOURCES.map((source) => readFileSync(resolve(ROOT, source), 'utf8'));
+	check(styles === `${hostCss}\n${obsidianCss}\n`, 'hebra-styles.css is not tyrian-host.css, a newline, styles.css and a newline');
 
 	await probe('obsidian-in-entry', {
 		'entry.ts': "import 'obsidian';\nexport * from '../../../src/runtime/index';\n",
