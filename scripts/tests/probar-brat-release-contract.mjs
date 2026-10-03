@@ -55,6 +55,12 @@ try {
 	);
 	assertRed(
 		fixtureRoot,
+		releaseMetadata({ assets: releaseAssets().filter((asset) => !asset.name.startsWith('hebra')) }),
+		'release-asset-set',
+		'release with only the five Obsidian assets (no Hebra plugin files)',
+	);
+	assertRed(
+		fixtureRoot,
 		releaseMetadata({ assets: [...releaseAssets(), { name: 'versions.json', state: 'uploaded', size: 1 }] }),
 		'release-asset-set',
 		'extra release asset',
@@ -151,7 +157,7 @@ function assertGreen(root, releasePath, label) {
 	const result = runGuardrail(root, releasePath);
 	if (result.error) {
 		fail(`${label} could not execute the guardrail`);
-	} else if (result.status !== 0 || result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=5)\n') {
+	} else if (result.status !== 0 || result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8)\n') {
 		fail(`${label} was rejected`);
 	}
 }
@@ -163,7 +169,7 @@ function assertStdinGreen(root, release) {
 		input: `${JSON.stringify(release)}\n`,
 	});
 	if (result.error || result.status !== 0 ||
-		result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=5)\n') {
+		result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8)\n') {
 		fail('published-release stdin flow was rejected');
 	}
 }
@@ -198,6 +204,9 @@ function releaseAssets(sabotage = null) {
 		'styles.css',
 		'tyrian-companion-0.1.19.zip',
 		'tyrian-companion-0.1.19.zip.sha256',
+		'hebra.json',
+		'hebra-main.mjs',
+		'hebra-styles.css',
 	].map((name, index) => ({
 		name,
 		state: sabotage?.index === index && sabotage.state !== undefined ? sabotage.state : 'uploaded',

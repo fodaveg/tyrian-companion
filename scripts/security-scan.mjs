@@ -11,17 +11,23 @@ export const SECURITY_SCANNER_VERSION = 15;
 const MUMBLE_V2_SPAWN_CAPABILITY_SHA256 = 'a12bff26711472e5637bd2a8e9205ccc16a6b76e7f08b7cc7668d83dc070f77d';
 const MUMBLE_V2_PROCESS_ADAPTER_SOURCE_SHA256 = '72f4dfc5052f386a75aa321305936f1223e6e94fd6c9454ba047b0b2097775f6';
 
+// The Obsidian plugin files and, since Tyrian is also an external Hebra plugin, the three files
+// Hebra downloads from the same release (`release-package.mjs`, `HEBRA_RELEASE_FILES`).
 const RELEASE_ARTIFACT_FILES = new Set([
 	'main.js',
 	'manifest.json',
 	'styles.css',
+	'hebra.json',
+	'hebra-main.mjs',
+	'hebra-styles.css',
 ]);
 
 const FALLBACK_IGNORED_DIRECTORIES = new Set([
 	// `.claude` holds agent worktrees: a full second copy of the repo that is not this candidate.
 	'.claude', '.git', 'coverage', 'dist', 'node_modules',
 ]);
-const FALLBACK_IGNORED_FILES = new Set(['main.js']);
+// Generated bundles at the root, git-ignored like `main.js` (`npm run build:host-esm`, `release:package`).
+const FALLBACK_IGNORED_FILES = new Set(['main.js', 'hebra-main.mjs', 'hebra-styles.css', 'hebra.json']);
 const PRIVATE_KEY_PATTERN = /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/iu;
 const KNOWN_PROVIDER_PATTERNS = [
 	/\bAKIA[0-9A-Z]{16}\b/u,

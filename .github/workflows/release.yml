@@ -46,8 +46,11 @@ jobs:
 
       # From here to the publication step there is no way to reach `gh release
       # create` with a broken artefact set: the plan refuses to exist if any of
-      # the five files is missing, empty or not a regular file, and the contract
-      # then judges that plan exactly as it judges a published release.
+      # the eight files is missing, empty or not a regular file, and the contract
+      # then judges that plan exactly as it judges a published release. Eight:
+      # the three Obsidian files BRAT installs, the manual-install ZIP and its
+      # checksum, and the three files Hebra installs Tyrian from (hebra.json,
+      # hebra-main.mjs, hebra-styles.css), which `release:package` builds too.
       - name: Plan the BRAT release
         run: node scripts/brat-release-plan.mjs --from-staging > .release/planned-release.json
 
@@ -72,8 +75,8 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t assets < .release/asset-paths.txt
-          if [ "${#assets[@]}" -ne 5 ]; then
-            echo "expected 5 assets, planned ${#assets[@]}" >&2
+          if [ "${#assets[@]}" -ne 8 ]; then
+            echo "expected 8 assets, planned ${#assets[@]}" >&2
             exit 1
           fi
           # H14.18: the release body used to be a fixed sentence that repeated

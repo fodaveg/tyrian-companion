@@ -12,10 +12,16 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
+import { createHash } from 'node:crypto';
+
 import {
+	createHebraManifest,
+	hebraVersionFromTag,
 	packageRelease,
 	ReleasePackageError,
 	RELEASE_FILES,
+	STAGED_RELEASE_FILES,
+	validateHebraManifest,
 	validateReleaseArchive,
 } from '../release-package.mjs';
 
@@ -24,6 +30,9 @@ const failures = [];
 
 try {
 	testDeterministicPackage();
+	testHebraManifestIsGenerated();
+	testHebraBuildIsCausal();
+	testHebraManifestValidation();
 	testBuildIsCausal();
 	testBuildCannotMutateInputs();
 	testMetadataAndTagFailClosed();
@@ -56,11 +65,97 @@ function testDeterministicPackage() {
 	assert(readFileSync(second.archivePath).equals(firstArchive), 'same inputs did not produce the same archive bytes');
 	assert(readFileSync(second.checksumPath, 'utf8') === firstChecksum, 'same inputs did not produce the same checksum file');
 	assert(
-		JSON.stringify(readdirSync(second.stageRoot).sort()) === JSON.stringify([...RELEASE_FILES].sort()),
-		'stage did not contain exactly the three distributable files',
+		JSON.stringify(readdirSync(second.stageRoot).sort()) === JSON.stringify([...STAGED_RELEASE_FILES].sort()),
+		'stage did not contain exactly the three Obsidian files and the three Hebra files',
 	);
 	assert(!readdirSync(second.stageRoot).includes('versions.json'), 'versions.json was packaged despite not being a BRAT release asset');
+	assert(JSON.stringify(second.files) === JSON.stringify([...RELEASE_FILES]), 'the ZIP file list grew past the three Obsidian files');
 	process.stdout.write(`PASS: reproducible package restored green with ${second.files.length} explicit files\n`);
+}
+
+/** `hebra.json` comes out of the package run: the manifest identity, the tag version, the agreed
+ *  declaration and the sha256 of the two Hebra files actually staged, and Hebra's rules accept it. */
+function testHebraManifestIsGenerated() {
+	const root = fixture('hebra-manifest');
+	const result = packageFixture({ root, build: controlledBuild, environment: { GITHUB_REF_TYPE: 'tag', GITHUB_REF_NAME: '0.1.0' } });
+	const staged = JSON.parse(readFileSync(resolve(result.stageRoot, 'hebra.json'), 'utf8'));
+	const sha = (name) => `sha256:${createHash('sha256').update(readFileSync(resolve(result.stageRoot, name))).digest('hex')}`;
+	const expected = {
+		schema: 1,
+		id: 'tyrian-companion',
+		name: 'Tyrian Companion',
+		version: '0.1.0',
+		apiVersion: '^1.0.0',
+		description: 'El compañero de Guild Wars 2: sesiones, inventario y precios, dentro de Hebra.',
+		author: 'Test',
+		repo: 'fodaveg/tyrian-companion',
+		platforms: ['macos', 'ios', 'linux', 'windows', 'web'],
+		main: 'hebra-main.mjs',
+		styles: 'hebra-styles.css',
+		icon: 'sword',
+		capabilities: { required: ['vault.read', 'vault.write', 'editor', 'http', 'secrets'], optional: ['tcp', 'notify.system', 'background'] },
+		network: { hosts: ['api.guildwars2.com', 'api.datawars2.ie'], userHosts: true },
+		shared: {},
+		files: { 'hebra-main.mjs': sha('hebra-main.mjs'), 'hebra-styles.css': sha('hebra-styles.css') },
+		ageRating: '4+',
+	};
+	assert(JSON.stringify(staged) === JSON.stringify(expected), `generated hebra.json differs: ${JSON.stringify(staged)}`);
+	assert(validateHebraManifest(staged).length === 0, `Hebra's rules reject the generated hebra.json: ${validateHebraManifest(staged).join('; ')}`);
+	assert(JSON.stringify(result.hebraManifest) === JSON.stringify(expected), 'the package result does not report the hebra.json it wrote');
+	assert(readFileSync(resolve(root, 'hebra.json'), 'utf8').includes('\t"schema": 1'), 'hebra.json is not written with tabs like the repository JSON');
+	const archive = readFileSync(result.archivePath);
+	assert(archive.indexOf('hebra-main.mjs') < 0 && archive.indexOf('hebra.json') < 0, 'the manual-install ZIP carries Hebra files');
+	process.stdout.write('PASS: hebra.json is generated from manifest.json with the sha256 of the staged Hebra files\n');
+}
+
+/** A Hebra build that writes nothing, or a stale Hebra bundle from an earlier build, never reaches the stage. */
+function testHebraBuildIsCausal() {
+	const root = fixture('hebra-build-causal');
+	writeFileSync(resolve(root, 'hebra-main.mjs'), 'stale hebra bundle');
+	writeFileSync(resolve(root, 'hebra-styles.css'), '.stale {}');
+	writeFileSync(resolve(root, 'hebra.json'), '{}');
+	assertThrows(
+		() => packageFixture({ root, build: controlledBuild, buildHebra: () => undefined }),
+		'build-output-missing',
+		'no-op Hebra build did not turn red after the stale Hebra files were removed',
+	);
+	for (const name of ['hebra-main.mjs', 'hebra-styles.css', 'hebra.json']) {
+		assert(!existsSync(resolve(root, name)), `a failed Hebra build left ${name} behind`);
+	}
+	assert(!existsSync(resolve(root, '.release')), 'failed Hebra build left a release directory');
+	process.stdout.write('PASS: no-op Hebra build sabotage turned red before staging\n');
+}
+
+/** The ported rules of Hebra's `parsePluginManifest` turn red on what Hebra rejects. */
+function testHebraManifestValidation() {
+	const valid = createHebraManifest({
+		manifest: { id: 'tyrian-companion', name: 'Tyrian Companion', author: 'Test' },
+		packageJson: { repository: { type: 'git', url: 'https://github.com/fodaveg/tyrian-companion.git' } },
+		version: '1.2.3',
+		files: { 'hebra-main.mjs': Buffer.from('a'), 'hebra-styles.css': Buffer.from('b') },
+	});
+	assert(validateHebraManifest(valid).length === 0, `a valid manifest was rejected: ${validateHebraManifest(valid).join('; ')}`);
+	const cases = [
+		['schema 2', { schema: 2 }, 'schema'],
+		['reserved id', { id: 'bases' }, 'id'],
+		['loose version', { version: 'v1.2.3' }, 'version'],
+		['no api range', { apiVersion: 'latest' }, 'apiVersion'],
+		['unknown platform', { platforms: ['macos', 'amiga'] }, 'platforms'],
+		['main outside files', { main: 'other.mjs' }, 'main'],
+		['path in a file name', { files: { '../hebra-main.mjs': valid.files['hebra-main.mjs'] } }, 'files'],
+		['upper-case hash', { files: { ...valid.files, 'hebra-main.mjs': valid.files['hebra-main.mjs'].toUpperCase() } }, 'files'],
+		['wildcard host', { network: { hosts: ['*'], userHosts: true } }, 'network.hosts'],
+		['userHosts not boolean', { network: { hosts: [], userHosts: 'yes' } }, 'network.userHosts'],
+		['icon with spaces', { icon: 'a sword' }, 'icon'],
+		['age without +', { ageRating: '4' }, 'ageRating'],
+	];
+	for (const [label, patch, field] of cases) {
+		const errors = validateHebraManifest({ ...valid, ...patch });
+		assert(errors.some((error) => error.startsWith(field)), `${label} was not rejected on ${field}: [${errors.join('; ')}]`);
+	}
+	assert(hebraVersionFromTag('1.2.3', { GITHUB_REF_TYPE: 'tag', GITHUB_REF_NAME: 'v1.2.3' }) === '1.2.3', 'a v-prefixed tag kept its v');
+	assert(hebraVersionFromTag('1.2.3', { GITHUB_REF_TYPE: 'branch', GITHUB_REF_NAME: 'main' }) === '1.2.3', 'a branch build did not use the manifest version');
+	process.stdout.write(`PASS: ${String(cases.length)} invalid hebra.json cases each turned red\n`);
 }
 
 function testBuildIsCausal() {
@@ -230,7 +325,11 @@ function testArchiveStructureSabotage() {
 function fixture(name) {
 	const root = resolve(testRoot, name);
 	mkdirSync(root, { recursive: true });
-	writeJson(resolve(root, 'package.json'), { name: 'tyrian-companion', version: '0.1.0' });
+	writeJson(resolve(root, 'package.json'), {
+		name: 'tyrian-companion',
+		version: '0.1.0',
+		repository: { type: 'git', url: 'https://github.com/fodaveg/tyrian-companion.git' },
+	});
 	writeJson(resolve(root, 'manifest.json'), {
 		id: 'tyrian-companion',
 		name: 'Tyrian Companion',
@@ -249,8 +348,14 @@ function controlledBuild(root) {
 	writeFileSync(resolve(root, 'main.js'), '/* controlled production bundle */\nmodule.exports = {};\n');
 }
 
+/** What `npm run build:host-esm` leaves at the root, without running it. */
+function controlledHebraBuild(root) {
+	writeFileSync(resolve(root, 'hebra-main.mjs'), '/* controlled hebra bundle */\nexport function activate() {}\n');
+	writeFileSync(resolve(root, 'hebra-styles.css'), '.hebra-host {}\n\n.tyrian-test { color: red; }\n\n');
+}
+
 function packageFixture(options) {
-	return packageRelease({ environment: {}, ...options });
+	return packageRelease({ environment: {}, buildHebra: controlledHebraBuild, ...options });
 }
 
 function writeJson(path, value) {

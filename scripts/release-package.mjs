@@ -17,11 +17,53 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { scanReleaseArtifacts } from './security-scan.mjs';
 
+/** The Obsidian plugin files: BRAT assets and the whole content of the manual-install ZIP. */
 export const RELEASE_FILES = Object.freeze([
 	'manifest.json',
 	'main.js',
 	'styles.css',
 ]);
+
+/**
+ * The Hebra plugin files (Hebra's SPEC-PLUGINS-EXTERNOS.md section 3.1), published as assets of
+ * the same release but NOT in the ZIP, which stays the Obsidian install. `hebra-main.mjs` and
+ * `hebra-styles.css` come from `npm run build:host-esm`; `hebra.json` is generated here from
+ * `manifest.json`, never by hand.
+ */
+export const HEBRA_RELEASE_FILES = Object.freeze([
+	'hebra.json',
+	'hebra-main.mjs',
+	'hebra-styles.css',
+]);
+
+/** Everything staged under `.release/<id>/`: the BRAT assets that are not the ZIP and its checksum. */
+export const STAGED_RELEASE_FILES = Object.freeze([...RELEASE_FILES, ...HEBRA_RELEASE_FILES]);
+
+const HEBRA_MANIFEST_FILE = 'hebra.json';
+const HEBRA_MAIN_FILE = 'hebra-main.mjs';
+const HEBRA_STYLES_FILE = 'hebra-styles.css';
+const HEBRA_GENERATED_FILES = Object.freeze([HEBRA_MANIFEST_FILE, HEBRA_MAIN_FILE, HEBRA_STYLES_FILE]);
+
+/**
+ * What `hebra.json` declares beyond what `manifest.json` gives (decided 2026-10-03 with Hebra's
+ * session, "Tyrian llega a Hebra como plugin externo"): the API range, where it runs (Android is
+ * not measured), the Lucide icon of its row in Hebra (`sword`, which Hebra's own `espada` glyph is
+ * drawn from), what it uses of the API, the two fixed hosts plus the user's webhook, and nothing
+ * borrowed. The description is Hebra's own for the plugin: `manifest.json`'s speaks of Obsidian.
+ */
+export const HEBRA_PLUGIN_DECLARATION = Object.freeze({
+	apiVersion: '^1.0.0',
+	description: 'El compañero de Guild Wars 2: sesiones, inventario y precios, dentro de Hebra.',
+	platforms: Object.freeze(['macos', 'ios', 'linux', 'windows', 'web']),
+	icon: 'sword',
+	capabilities: Object.freeze({
+		required: Object.freeze(['vault.read', 'vault.write', 'editor', 'http', 'secrets']),
+		optional: Object.freeze(['tcp', 'notify.system', 'background']),
+	}),
+	network: Object.freeze({ hosts: Object.freeze(['api.guildwars2.com', 'api.datawars2.ie']), userHosts: true }),
+	shared: Object.freeze({}),
+	ageRating: '4+',
+});
 
 const RELEASE_DIRECTORY = '.release';
 const DOS_DATE_1980_01_01 = 0x0021;
@@ -44,6 +86,7 @@ export class ReleasePackageError extends Error {
 export function packageRelease({
 	root = process.cwd(),
 	build = runProductionBuild,
+	buildHebra = runHebraBuild,
 	environment = process.env,
 	scanArtifacts = scanReleaseArtifacts,
 	writeArchive = writeReleaseArchive,
@@ -65,6 +108,7 @@ export function packageRelease({
 		return packageReleaseInCleanOutput({
 			absoluteRoot,
 			build,
+			buildHebra,
 			environment,
 			releaseRoot,
 			scanArtifacts,
@@ -72,7 +116,7 @@ export function packageRelease({
 		});
 	} catch (error) {
 		rmSync(releaseRoot, { recursive: true, force: true });
-		removeFailedBundle(resolve(absoluteRoot, 'main.js'));
+		for (const path of ['main.js', ...HEBRA_GENERATED_FILES]) removeFailedBundle(resolve(absoluteRoot, path));
 		throw error;
 	}
 }
@@ -80,6 +124,7 @@ export function packageRelease({
 function packageReleaseInCleanOutput({
 	absoluteRoot,
 	build,
+	buildHebra,
 	environment,
 	releaseRoot,
 	scanArtifacts,
@@ -94,8 +139,13 @@ function packageReleaseInCleanOutput({
 
 	const bundlePath = resolve(absoluteRoot, 'main.js');
 	removePreviousBundle(bundlePath);
+	// The Hebra files are generated too: a stale one from an earlier build must never be staged.
+	for (const path of HEBRA_GENERATED_FILES) removePreviousBundle(resolve(absoluteRoot, path));
 	build(absoluteRoot);
 	assertReleaseFile(bundlePath, 'main.js');
+	buildHebra(absoluteRoot);
+	assertReleaseFile(resolve(absoluteRoot, HEBRA_MAIN_FILE), HEBRA_MAIN_FILE);
+	assertReleaseFile(resolve(absoluteRoot, HEBRA_STYLES_FILE), HEBRA_STYLES_FILE);
 	const metadataAfterBuild = readReleaseMetadata(absoluteRoot);
 	validateReleaseMetadata(metadataAfterBuild);
 	validateCiRef(metadataAfterBuild.manifest.version, environment);
@@ -109,18 +159,34 @@ function packageReleaseInCleanOutput({
 		);
 	}
 
+	const hebraManifest = createHebraManifest({
+		manifest: metadataAfterBuild.manifest,
+		packageJson: metadataAfterBuild.packageJson,
+		version: hebraVersionFromTag(metadataAfterBuild.manifest.version, environment),
+		files: {
+			[HEBRA_MAIN_FILE]: readFileSync(resolve(absoluteRoot, HEBRA_MAIN_FILE)),
+			[HEBRA_STYLES_FILE]: readFileSync(resolve(absoluteRoot, HEBRA_STYLES_FILE)),
+		},
+	});
+	const hebraManifestErrors = validateHebraManifest(hebraManifest);
+	if (hebraManifestErrors.length > 0) {
+		throw new ReleasePackageError('invalid-hebra-manifest', `release package: hebra.json is invalid (${hebraManifestErrors.join('; ')})`);
+	}
+	writeFileSync(resolve(absoluteRoot, HEBRA_MANIFEST_FILE), `${JSON.stringify(hebraManifest, null, '\t')}\n`, { mode: 0o644 });
+
 	const stageRoot = resolve(releaseRoot, metadataAfterBuild.manifest.id);
 	mkdirSync(stageRoot, { recursive: true });
-	for (const path of RELEASE_FILES) {
+	for (const path of STAGED_RELEASE_FILES) {
 		const source = resolve(absoluteRoot, path);
 		assertReleaseFile(source, path);
 		const destination = resolve(stageRoot, path);
 		copyFileSync(source, destination);
 		chmodSync(destination, 0o644);
 	}
-	assertExactDirectory(stageRoot, RELEASE_FILES);
+	assertExactDirectory(stageRoot, STAGED_RELEASE_FILES);
+	verifyHebraManifestFiles(stageRoot);
 
-	const securityFindings = scanArtifacts(stageRoot, RELEASE_FILES);
+	const securityFindings = scanArtifacts(stageRoot, STAGED_RELEASE_FILES);
 	if (securityFindings.length > 0) {
 		const finding = securityFindings[0];
 		throw new ReleasePackageError(
@@ -150,6 +216,8 @@ function packageReleaseInCleanOutput({
 		archivePath,
 		checksumPath,
 		files: [...RELEASE_FILES],
+		hebraFiles: [...HEBRA_RELEASE_FILES],
+		hebraManifest,
 		sha256,
 		stageRoot,
 		version: metadataAfterBuild.manifest.version,
@@ -157,15 +225,175 @@ function packageReleaseInCleanOutput({
 }
 
 function runProductionBuild(root) {
+	runNpmScript(root, 'build', 'build-failed', 'release package: production build failed');
+}
+
+/** `npm run build:host-esm`: `hebra-main.mjs` and `hebra-styles.css`, with the bundle guard. */
+function runHebraBuild(root) {
+	runNpmScript(root, 'build:host-esm', 'hebra-build-failed', 'release package: Hebra plugin build failed');
+}
+
+function runNpmScript(root, script, code, message) {
 	const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-	const result = spawnSync(npm, ['run', 'build'], {
+	const result = spawnSync(npm, ['run', script], {
 		cwd: root,
 		encoding: 'utf8',
 		stdio: 'inherit',
 	});
-	if (result.status !== 0) {
-		throw new ReleasePackageError('build-failed', 'release package: production build failed');
+	if (result.status !== 0) throw new ReleasePackageError(code, message);
+}
+
+/**
+ * The version `hebra.json` declares: the release tag without a leading `v`. Outside a tag build it
+ * is the manifest version, which `validateCiRef` already holds equal to the tag inside one.
+ */
+export function hebraVersionFromTag(manifestVersion, environment = {}) {
+	if (environment.GITHUB_REF_TYPE !== 'tag' || typeof environment.GITHUB_REF_NAME !== 'string') return manifestVersion;
+	return environment.GITHUB_REF_NAME.replace(/^v/u, '');
+}
+
+/** `owner/repo` of the GitHub repository `package.json` declares. */
+function githubRepoOf(packageJson) {
+	const url = isRecord(packageJson.repository) ? packageJson.repository.url : packageJson.repository;
+	const match = typeof url === 'string'
+		? /^(?:git\+)?(?:https:\/\/github\.com\/|git@github\.com:|github:)([A-Za-z0-9-]+\/[A-Za-z0-9._-]+?)(?:\.git)?$/u.exec(url.trim())
+		: null;
+	if (!match) throw new ReleasePackageError('invalid-metadata', 'release package: package.json repository is not a GitHub repository');
+	return match[1];
+}
+
+/**
+ * `hebra.json` (Hebra's SPEC-PLUGINS-EXTERNOS.md section 3.2) from `manifest.json` and
+ * `package.json`: id, name and author from the manifest, the version of the tag, the repository,
+ * `HEBRA_PLUGIN_DECLARATION`, and the sha256 of each Hebra file in `files`.
+ */
+export function createHebraManifest({ manifest, packageJson, version, files }) {
+	return {
+		schema: 1,
+		id: manifest.id,
+		name: manifest.name,
+		version,
+		apiVersion: HEBRA_PLUGIN_DECLARATION.apiVersion,
+		description: HEBRA_PLUGIN_DECLARATION.description,
+		author: manifest.author,
+		repo: githubRepoOf(packageJson),
+		platforms: [...HEBRA_PLUGIN_DECLARATION.platforms],
+		main: HEBRA_MAIN_FILE,
+		styles: HEBRA_STYLES_FILE,
+		icon: HEBRA_PLUGIN_DECLARATION.icon,
+		capabilities: {
+			required: [...HEBRA_PLUGIN_DECLARATION.capabilities.required],
+			optional: [...HEBRA_PLUGIN_DECLARATION.capabilities.optional],
+		},
+		network: {
+			hosts: [...HEBRA_PLUGIN_DECLARATION.network.hosts],
+			userHosts: HEBRA_PLUGIN_DECLARATION.network.userHosts,
+		},
+		shared: { ...HEBRA_PLUGIN_DECLARATION.shared },
+		files: Object.fromEntries(Object.entries(files).map(([name, bytes]) => [name, `sha256:${sha256Hex(bytes)}`])),
+		ageRating: HEBRA_PLUGIN_DECLARATION.ageRating,
+	};
+}
+
+const HEBRA_PLATFORMS = ['macos', 'ios', 'linux', 'windows', 'android', 'web'];
+const HEBRA_RESERVED_IDS = new Set(['bases', 'dataview', 'daily-notes', 'templates', 'homepage', 'lumbre-notes', 'dashboard', 'youtube', 'hebra']);
+const HEBRA_ID = /^[a-z0-9][a-z0-9-]{1,63}$/u;
+const HEBRA_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+const HEBRA_SHA256 = /^sha256:[0-9a-f]{64}$/u;
+const HEBRA_REPO = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/u;
+const HEBRA_CAPABILITY = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/u;
+const HEBRA_HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$/u;
+const HEBRA_AGE_RATING = /^\d{1,2}\+$/u;
+const HEBRA_ICON = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+const HEBRA_PACKAGE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u;
+const HEBRA_VERSION = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z.-]+)?$/u;
+const HEBRA_COMPARATOR = /^(?:\^|~|>=|<=|>|<|=)?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u;
+
+/** A semver range as Hebra parses it, for the comparators a plugin writes (`^1.0.0`, `>=1.2.0 <2.0.0`, `a || b`). */
+function isHebraRange(value) {
+	if (typeof value !== 'string' || value.trim() === '') return false;
+	return value.split('||').every((group) => {
+		const tokens = group.trim().replace(/(\^|~|>=|<=|>|<|=)\s+/gu, '$1').split(/\s+/u).filter((token) => token !== '');
+		return tokens.length > 0 && tokens.every((token) => HEBRA_COMPARATOR.test(token));
+	});
+}
+
+/**
+ * The checks Hebra runs on `hebra.json` before installing anything (`parsePluginManifest` in
+ * Hebra's `src/lib/plugins/manifest.ts`, read on 2026-10-03, not imported: Hebra is private and the
+ * API package does not export it). Returns every reason, empty when Hebra would accept it.
+ * Compatibility with a given Hebra (`apiVersion`, platform, capabilities) is Hebra's loader's call.
+ */
+export function validateHebraManifest(input) {
+	const errors = [];
+	if (!isRecord(input)) return ['hebra.json is not an object'];
+	if (input.schema !== 1) errors.push('schema: must be 1');
+	if (typeof input.id !== 'string' || !HEBRA_ID.test(input.id)) errors.push('id: lower case, digits and dashes, 2 to 64 characters');
+	else if (HEBRA_RESERVED_IDS.has(input.id)) errors.push(`id: «${input.id}» is a Hebra built-in module`);
+	if (typeof input.name !== 'string' || input.name.trim() === '' || input.name.length > 80) errors.push('name: 1 to 80 characters');
+	if (typeof input.version !== 'string' || !HEBRA_VERSION.test(input.version)) errors.push('version: strict semver');
+	if (!isHebraRange(input.apiVersion)) errors.push('apiVersion: semver range');
+	if (typeof (input.description ?? '') !== 'string' || (input.description ?? '').length > 300) errors.push('description: up to 300 characters');
+	if (typeof (input.author ?? '') !== 'string' || (input.author ?? '').length > 80) errors.push('author: up to 80 characters');
+	if (typeof input.repo !== 'string' || !HEBRA_REPO.test(input.repo)) errors.push('repo: GitHub owner/repo');
+	if (!Array.isArray(input.platforms) || input.platforms.length === 0 || !input.platforms.every((platform) => HEBRA_PLATFORMS.includes(platform))) {
+		errors.push(`platforms: non-empty list of ${HEBRA_PLATFORMS.join(', ')}`);
 	}
+	const files = isRecord(input.files) ? input.files : {};
+	if (!isRecord(input.files) || Object.keys(input.files).length === 0) errors.push('files: object file -> sha256:<64 hex>');
+	for (const [name, hash] of Object.entries(files)) {
+		if (!HEBRA_FILE_NAME.test(name) || name.includes('..') || name === HEBRA_MANIFEST_FILE) errors.push(`files: invalid file name «${name}»`);
+		else if (typeof hash !== 'string' || !HEBRA_SHA256.test(hash)) errors.push(`files: «${name}» needs sha256:<64 lower-case hex>`);
+	}
+	for (const key of ['main', 'styles']) {
+		const value = input[key] ?? null;
+		if (key === 'styles' && value === null) continue;
+		if (typeof value !== 'string' || !HEBRA_FILE_NAME.test(value) || value.includes('..')) errors.push(`${key}: file name without / or ..`);
+		else if (!Object.hasOwn(files, value)) errors.push(`${key}: «${value}» is not in files`);
+	}
+	if ((input.icon ?? null) !== null && (typeof input.icon !== 'string' || !HEBRA_ICON.test(input.icon) || input.icon.length > 64)) {
+		errors.push('icon: Lucide icon name');
+	}
+	if (input.capabilities !== undefined) {
+		const capabilities = isRecord(input.capabilities) ? input.capabilities : null;
+		for (const list of ['required', 'optional']) {
+			const value = capabilities?.[list] ?? [];
+			if (!Array.isArray(value) || !value.every((item) => typeof item === 'string' && HEBRA_CAPABILITY.test(item))) {
+				errors.push(`capabilities.${list}: list of capabilities`);
+			}
+		}
+	}
+	if (input.network !== undefined) {
+		const hosts = isRecord(input.network) ? input.network.hosts ?? [] : null;
+		if (!Array.isArray(hosts) || !hosts.every((host) => typeof host === 'string' && HEBRA_HOST.test(host))) {
+			errors.push('network.hosts: list of hosts (wildcard only as *.domain)');
+		}
+		if (isRecord(input.network) && input.network.userHosts !== undefined && typeof input.network.userHosts !== 'boolean') {
+			errors.push('network.userHosts: true or false');
+		}
+	}
+	if (input.shared !== undefined) {
+		if (!isRecord(input.shared)) errors.push('shared: object package -> semver range');
+		else {
+			for (const [name, range] of Object.entries(input.shared)) {
+				if (!HEBRA_PACKAGE.test(name) || !isHebraRange(range)) errors.push(`shared: «${name}» needs a semver range`);
+			}
+		}
+	}
+	if ((input.ageRating ?? null) !== null && (typeof input.ageRating !== 'string' || !HEBRA_AGE_RATING.test(input.ageRating))) {
+		errors.push('ageRating: age with + (4+, 9+, 13+…)');
+	}
+	return errors;
+}
+
+/** The staged `hebra.json` lists exactly the staged Hebra files, each with its real sha256. */
+function verifyHebraManifestFiles(stageRoot) {
+	const staged = readJson(resolve(stageRoot, HEBRA_MANIFEST_FILE), HEBRA_MANIFEST_FILE);
+	const expected = HEBRA_RELEASE_FILES.filter((name) => name !== HEBRA_MANIFEST_FILE);
+	const listed = isRecord(staged.files) ? Object.keys(staged.files).sort() : [];
+	const mismatch = JSON.stringify(listed) !== JSON.stringify([...expected].sort())
+		|| expected.some((name) => staged.files[name] !== `sha256:${sha256Hex(readFileSync(resolve(stageRoot, name)))}`);
+	if (mismatch) throw new ReleasePackageError('hebra-manifest-files', 'release package: hebra.json does not hash the staged Hebra files');
 }
 
 function writeReleaseArchive(path, bytes) {

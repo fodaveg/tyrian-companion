@@ -479,13 +479,25 @@ function testCliRedaction() {
 function testReleaseArtifactCorpus() {
 	const root = isolatedRoot('release-artifact');
 	const credential = syntheticCredential();
+	const artifacts = ['manifest.json', 'main.js', 'styles.css', 'hebra.json', 'hebra-main.mjs', 'hebra-styles.css'];
 	write(root, 'manifest.json', '{"id":"tyrian-companion"}');
 	write(root, 'main.js', `const apiKey = '${credential}';`);
 	write(root, 'styles.css', '.safe { color: red; }');
-	const findings = scanReleaseArtifacts(root, ['manifest.json', 'main.js', 'styles.css']);
+	write(root, 'hebra.json', '{"id":"tyrian-companion"}');
+	write(root, 'hebra-main.mjs', `export const token = '${credential}';`);
+	write(root, 'hebra-styles.css', '.safe { color: red; }');
+	const findings = scanReleaseArtifacts(root, artifacts);
 	assert(
 		findings.some((finding) => finding.path === 'main.js' && finding.rule === 'long-credential-assignment'),
 		'built main.js was omitted from the release artifact scanner',
+	);
+	assert(
+		findings.some((finding) => finding.path === 'hebra-main.mjs' && finding.rule === 'long-credential-assignment'),
+		'built hebra-main.mjs was omitted from the release artifact scanner',
+	);
+	assert(
+		scanReleaseArtifacts(root, ['manifest.json', 'main.js', 'styles.css']).some((finding) => finding.rule === 'release-artifact-set'),
+		'a release artifact set without the Hebra files did not turn red',
 	);
 	assert(
 		scanReleaseArtifacts(root, ['manifest.json', 'main.js']).some((finding) => finding.rule === 'release-artifact-set'),
