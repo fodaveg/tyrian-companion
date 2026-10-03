@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 471,
-		"promise_catch": 39,
-		"void_expression": 102,
-		"callback_registration": 180
+		"catch_clause": 487,
+		"promise_catch": 54,
+		"void_expression": 107,
+		"callback_registration": 198
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -14389,6 +14389,1009 @@
 						"justification": "The \"isoFromMs\" owner treats a timestamp that cannot be an ISO instant as \"fallback_return\" of null, so createAlertDeliveryRecord refuses the record instead of throwing a RangeError out of the delivery write."
 					},
 					"reason": "Allowlisted catch_clause: The \"isoFromMs\" owner treats a timestamp that cannot be an ISO instant as \"fallback_return\" of null, so createAlertDeliveryRecord refuses the record instead of throwing a RangeError out of the delivery write. Verified recovery: \"fallback_return\" in \"isoFromMs\"."
+				}
+			]
+		},
+		"src/host/hebra/entry.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/host/hebra/folder-path.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/host/hebra/folder-picker.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "cd566a1ae16b662946d9f1c2beb1df8f3b0c3695",
+					"kind": "catch_clause",
+					"line": 187,
+					"column": 5,
+					"endLine": 189,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "commit",
+						"justification": "The \"commit\" catch (\"local_recovery\") only turns a synchronous throw of onSelect into a rejected promise, which the rejection handler of the same commit reports through deps.report."
+					},
+					"reason": "Allowlisted catch_clause: The \"commit\" catch (\"local_recovery\") only turns a synchronous throw of onSelect into a rejected promise, which the rejection handler of the same commit reports through deps.report. Verified recovery: \"local_recovery\" in \"commit\"."
+				},
+				{
+					"id": "85bb7dbbc0f9530216166cf80feb24d57eda82de",
+					"kind": "callback_registration",
+					"line": 196,
+					"column": 3,
+					"endLine": 202,
+					"endColumn": 4,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "commit",
+						"justification": "The \"commit\" then (\"then\") settles the picker on success and, on rejection, calls deps.report before settling, so a failed onSelect is reported."
+					},
+					"reason": "Allowlisted callback_registration: The \"commit\" then (\"then\") settles the picker on success and, on rejection, calls deps.report before settling, so a failed onSelect is reported. Verified registration: \"then\" in \"commit\"."
+				},
+				{
+					"id": "4529ebf536cf68850dc1c8002fa97a38857b2399",
+					"kind": "callback_registration",
+					"line": 275,
+					"column": 2,
+					"endLine": 282,
+					"endColumn": 5,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "attachFolderPicker",
+						"justification": "The \"attachFolderPicker\" then (\"then\") only paints the loaded folder list; a throw in it falls into the .catch that follows and reaches deps.report."
+					},
+					"reason": "Allowlisted callback_registration: The \"attachFolderPicker\" then (\"then\") only paints the loaded folder list; a throw in it falls into the .catch that follows and reaches deps.report. Verified registration: \"then\" in \"attachFolderPicker\"."
+				},
+				{
+					"id": "d63a9e091e249568bd71f590d973487eca115109",
+					"kind": "promise_catch",
+					"line": 275,
+					"column": 2,
+					"endLine": 283,
+					"endColumn": 63,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "attachFolderPicker",
+						"justification": "The \"attachFolderPicker\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"attachFolderPicker\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"attachFolderPicker\"."
+				}
+			]
+		},
+		"src/host/hebra/hebra-host-ui.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "04cdffa8ed3862bba561c9a8c015c04cc001b7b7",
+					"kind": "promise_catch",
+					"line": 63,
+					"column": 11,
+					"endLine": 63,
+					"endColumn": 31,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "createLane",
+						"justification": "The \"createLane\" boundary (\"intentional_noop\") hands the failure to the lane report callback, which the view wires to deps.report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"createLane\" boundary (\"intentional_noop\") hands the failure to the lane report callback, which the view wires to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"createLane\"."
+				},
+				{
+					"id": "496e279d8d98145ee6c6b179df47e23a4f2a303f",
+					"kind": "promise_catch",
+					"line": 67,
+					"column": 10,
+					"endLine": 67,
+					"endColumn": 39,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "createLane",
+						"justification": "The \"createLane\" boundary (\"intentional_noop\") hands the failure to the lane report callback, which the view wires to deps.report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"createLane\" boundary (\"intentional_noop\") hands the failure to the lane report callback, which the view wires to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"createLane\"."
+				},
+				{
+					"id": "eec0fb0475b93bc4c3b46b988a485a56e704d89e",
+					"kind": "promise_catch",
+					"line": 143,
+					"column": 4,
+					"endLine": 144,
+					"endColumn": 72,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "registerCodeBlock",
+						"justification": "The \"registerCodeBlock\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"registerCodeBlock\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"registerCodeBlock\"."
+				},
+				{
+					"id": "72d7fe716f25b3937284c22516785174d0628e0f",
+					"kind": "promise_catch",
+					"line": 198,
+					"column": 4,
+					"endLine": 198,
+					"endColumn": 86,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "openExternal",
+						"justification": "The \"openExternal\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"openExternal\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"openExternal\"."
+				}
+			]
+		},
+		"src/host/hebra/hebra-host.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "05b57f9b355a3611ea9d25611397ce9888465581",
+					"kind": "catch_clause",
+					"line": 168,
+					"column": 5,
+					"endLine": 171,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "hasManagedAssetsFootprint",
+						"justification": "The \"hasManagedAssetsFootprint\" catch (\"fallback_return\") treats an unreadable managed-assets manifest as still Tyrian's, so the core shows it as a conflict in its settings instead of failing the check."
+					},
+					"reason": "Allowlisted catch_clause: The \"hasManagedAssetsFootprint\" catch (\"fallback_return\") treats an unreadable managed-assets manifest as still Tyrian's, so the core shows it as a conflict in its settings instead of failing the check. Verified recovery: \"fallback_return\" in \"hasManagedAssetsFootprint\"."
+				},
+				{
+					"id": "e987e64e1e161b77bca09ce99e9c5c400fc13978",
+					"kind": "promise_catch",
+					"line": 284,
+					"column": 3,
+					"endLine": 284,
+					"endColumn": 87,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "release",
+						"justification": "The \"release\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"release\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"release\"."
+				},
+				{
+					"id": "b4a317fd9993047215263c4714a78dd3beb19a70",
+					"kind": "promise_catch",
+					"line": 291,
+					"column": 20,
+					"endLine": 291,
+					"endColumn": 101,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "hold",
+						"justification": "The \"hold\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"hold\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"hold\"."
+				},
+				{
+					"id": "26167d028a748946c7dd7b09fca0c5d03bbe52cc",
+					"kind": "catch_clause",
+					"line": 348,
+					"column": 5,
+					"endLine": 350,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "fireRestart",
+						"justification": "The \"fireRestart\" catch (\"local_recovery\") calls deps.report with the restart failure and then shows the restart-failed notice to the user, so the failure is not silent."
+					},
+					"reason": "Allowlisted catch_clause: The \"fireRestart\" catch (\"local_recovery\") calls deps.report with the restart failure and then shows the restart-failed notice to the user, so the failure is not silent. Verified recovery: \"local_recovery\" in \"fireRestart\"."
+				},
+				{
+					"id": "86fd7e673733cade917a654af064c10d3aa8e6e6",
+					"kind": "callback_registration",
+					"line": 368,
+					"column": 19,
+					"endLine": 368,
+					"endColumn": 123,
+					"registration": "setTimeout",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "setTimeout",
+						"scope": "save",
+						"justification": "The \"save\" timer callback (\"setTimeout\") only starts fireRestart, which reports its own failures through deps.report and then notifies the user."
+					},
+					"reason": "Allowlisted callback_registration: The \"save\" timer callback (\"setTimeout\") only starts fireRestart, which reports its own failures through deps.report and then notifies the user. Verified registration: \"setTimeout\" in \"save\"."
+				},
+				{
+					"id": "5c398aeff80e78e985ff8d4e832744cb1fe39e9b",
+					"kind": "void_expression",
+					"line": 368,
+					"column": 43,
+					"endLine": 368,
+					"endColumn": 61,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "fireRestart",
+						"scope": "save",
+						"justification": "The detached \"fireRestart\" call in \"save\" cannot reject silently: it reports restart failures through deps.report and its only other call is the user notice."
+					},
+					"reason": "Allowlisted void_expression: The detached \"fireRestart\" call in \"save\" cannot reject silently: it reports restart failures through deps.report and its only other call is the user notice. Verified target: \"fireRestart\" in \"save\"."
+				},
+				{
+					"id": "1216249a9c2527c038b64c98b6f5ba6cbc7a0424",
+					"kind": "callback_registration",
+					"line": 434,
+					"column": 5,
+					"endLine": 435,
+					"endColumn": 88,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "createHebraHost",
+						"justification": "The \"createHebraHost\" then (\"then\") drops the index entry of a note no longer live; a failure of it falls into the .catch that follows and reaches deps.report."
+					},
+					"reason": "Allowlisted callback_registration: The \"createHebraHost\" then (\"then\") drops the index entry of a note no longer live; a failure of it falls into the .catch that follows and reaches deps.report. Verified registration: \"then\" in \"createHebraHost\"."
+				},
+				{
+					"id": "97455f6dbdd2afd9589e380a4d26765a03a1aa79",
+					"kind": "promise_catch",
+					"line": 434,
+					"column": 5,
+					"endLine": 436,
+					"endColumn": 66,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "createHebraHost",
+						"justification": "The \"createHebraHost\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"createHebraHost\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"createHebraHost\"."
+				},
+				{
+					"id": "ad564ce1275e5bad9641b146e8159dd770695e6a",
+					"kind": "callback_registration",
+					"line": 489,
+					"column": 23,
+					"endLine": 489,
+					"endColumn": 69,
+					"registration": "setTimeout",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "setTimeout",
+						"scope": "onFolderSettled",
+						"justification": "The \"onFolderSettled\" timer callback (\"setTimeout\") only starts fireRestart, which reports its own failures through deps.report and then notifies the user."
+					},
+					"reason": "Allowlisted callback_registration: The \"onFolderSettled\" timer callback (\"setTimeout\") only starts fireRestart, which reports its own failures through deps.report and then notifies the user. Verified registration: \"setTimeout\" in \"onFolderSettled\"."
+				},
+				{
+					"id": "fceb459ed603de5e1120026f1341e35ac3900cb5",
+					"kind": "void_expression",
+					"line": 489,
+					"column": 47,
+					"endLine": 489,
+					"endColumn": 65,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "fireRestart",
+						"scope": "onFolderSettled",
+						"justification": "The detached \"fireRestart\" call in \"onFolderSettled\" cannot reject silently: it reports restart failures through deps.report and its only other call is the user notice."
+					},
+					"reason": "Allowlisted void_expression: The detached \"fireRestart\" call in \"onFolderSettled\" cannot reject silently: it reports restart failures through deps.report and its only other call is the user notice. Verified target: \"fireRestart\" in \"onFolderSettled\"."
+				}
+			]
+		},
+		"src/host/hebra/hebra-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "dbeb68b4bcd0b6e59a4eba9b885cdfc0e1238e9d",
+					"kind": "catch_clause",
+					"line": 78,
+					"column": 4,
+					"endLine": 82,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "activateTyrian",
+						"justification": "The \"activateTyrian\" catch (\"rethrow\") undoes the half-done activation (dispose, mobile class) and rethrows the original start failure to the caller, so it is not swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"activateTyrian\" catch (\"rethrow\") undoes the half-done activation (dispose, mobile class) and rethrows the original start failure to the caller, so it is not swallowed. Verified recovery: \"rethrow\" in \"activateTyrian\"."
+				},
+				{
+					"id": "7d6e66e8d19222967ab9c6e499823526951c7a9e",
+					"kind": "callback_registration",
+					"line": 94,
+					"column": 10,
+					"endLine": 95,
+					"endColumn": 31,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "activateTyrian",
+						"justification": "The \"activateTyrian\" then (\"then\") only flushes the handle after stop; a failure of either falls into the .catch that follows and reaches report."
+					},
+					"reason": "Allowlisted callback_registration: The \"activateTyrian\" then (\"then\") only flushes the handle after stop; a failure of either falls into the .catch that follows and reaches report. Verified registration: \"then\" in \"activateTyrian\"."
+				},
+				{
+					"id": "05239e2c338b4923ff47b4ffa0cdde3cfaa895b2",
+					"kind": "promise_catch",
+					"line": 94,
+					"column": 10,
+					"endLine": 96,
+					"endColumn": 53,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "activateTyrian",
+						"justification": "The \"activateTyrian\" boundary (\"intentional_noop\") hands the failure to report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"activateTyrian\" boundary (\"intentional_noop\") hands the failure to report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"activateTyrian\"."
+				}
+			]
+		},
+		"src/host/hebra/http.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "29d4a589bf1fecd27eaca77ffe303b5cf6371260",
+					"kind": "catch_clause",
+					"line": 35,
+					"column": 4,
+					"endLine": 37,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "isFixedHost",
+						"justification": "The \"isFixedHost\" catch (\"fallback_return\") treats an unparsable URL as not a Tyrian fixed host, a pure predicate whose false answer is the correct result, with no action lost."
+					},
+					"reason": "Allowlisted catch_clause: The \"isFixedHost\" catch (\"fallback_return\") treats an unparsable URL as not a Tyrian fixed host, a pure predicate whose false answer is the correct result, with no action lost. Verified recovery: \"fallback_return\" in \"isFixedHost\"."
+				}
+			]
+		},
+		"src/host/hebra/local-storage.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/host/hebra/mobile-class.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/host/hebra/path-index-kv.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/host/hebra/path-index.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "8d4539f42d33a00f34290429ee00336337b75afa",
+					"kind": "catch_clause",
+					"line": 92,
+					"column": 5,
+					"endLine": 96,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "load",
+						"justification": "The \"load\" catch (\"fallback_return\") treats a corrupt or half-written path index as empty; seedTyrianPathIndex rebuilds it, so the data is regenerated and nothing is lost."
+					},
+					"reason": "Allowlisted catch_clause: The \"load\" catch (\"fallback_return\") treats a corrupt or half-written path index as empty; seedTyrianPathIndex rebuilds it, so the data is regenerated and nothing is lost. Verified recovery: \"fallback_return\" in \"load\"."
+				}
+			]
+		},
+		"src/host/hebra/secrets.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "7aa9fedc852e99e412ad7cdada4c462b336517f4",
+					"kind": "catch_clause",
+					"line": 51,
+					"column": 4,
+					"endLine": 53,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "parseSecretsDocument",
+						"justification": "The \"parseSecretsDocument\" catch (\"intentional_noop\") means the stored value is not JSON, so it is a bare key saved before the format and is adopted as a legacy secret just below; no data is lost."
+					},
+					"reason": "Allowlisted catch_clause: The \"parseSecretsDocument\" catch (\"intentional_noop\") means the stored value is not JSON, so it is a bare key saved before the format and is adopted as a legacy secret just below; no data is lost. Verified recovery: \"intentional_noop\" in \"parseSecretsDocument\"."
+				},
+				{
+					"id": "02368ec5c5721154ce8baa4e6053525209ab0bc2",
+					"kind": "callback_registration",
+					"line": 74,
+					"column": 13,
+					"endLine": 75,
+					"endColumn": 56,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "set",
+						"justification": "The \"set\" then (\"then\") only chains the keychain write; a failure of it falls into the .catch that follows and reaches onWriteError."
+					},
+					"reason": "Allowlisted callback_registration: The \"set\" then (\"then\") only chains the keychain write; a failure of it falls into the .catch that follows and reaches onWriteError. Verified registration: \"then\" in \"set\"."
+				},
+				{
+					"id": "714dc143b19b48c8672b9e7fd8a6464d4bf46f92",
+					"kind": "promise_catch",
+					"line": 74,
+					"column": 13,
+					"endLine": 76,
+					"endColumn": 52,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "set",
+						"justification": "The \"set\" catch (\"intentional_noop\") forwards the keychain write failure to onWriteError, which createHebraHost wires to deps.report as keychain.write, and the next writes keep running."
+					},
+					"reason": "Allowlisted promise_catch: The \"set\" catch (\"intentional_noop\") forwards the keychain write failure to onWriteError, which createHebraHost wires to deps.report as keychain.write, and the next writes keep running. Verified recovery: \"intentional_noop\" in \"set\"."
+				},
+				{
+					"id": "8fa02cb4a130dd61ecd69076ee4ae645e0f1425d",
+					"kind": "catch_clause",
+					"line": 105,
+					"column": 4,
+					"endLine": 108,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "hebraSecretsBackend",
+						"justification": "The \"hebraSecretsBackend\" catch (\"fallback_return\") calls report with secrets.load and falls back to an in-memory backend, so the keychain read failure is logged, not hidden."
+					},
+					"reason": "Allowlisted catch_clause: The \"hebraSecretsBackend\" catch (\"fallback_return\") calls report with secrets.load and falls back to an in-memory backend, so the keychain read failure is logged, not hidden. Verified recovery: \"fallback_return\" in \"hebraSecretsBackend\"."
+				}
+			]
+		},
+		"src/host/hebra/seed.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/host/hebra/setting-row.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "7d818ee3fab70120b3301dc79a27ea4277450378",
+					"kind": "void_expression",
+					"line": 43,
+					"column": 2,
+					"endLine": 45,
+					"endColumn": 44,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "Promise.resolve().then().catch",
+						"scope": "fire",
+						"justification": "The detached \"Promise.resolve().then().catch\" chain in \"fire\" ends in a .catch that calls the report callback, so a failing change handler is reported instead of becoming an unhandled rejection."
+					},
+					"reason": "Allowlisted void_expression: The detached \"Promise.resolve().then().catch\" chain in \"fire\" ends in a .catch that calls the report callback, so a failing change handler is reported instead of becoming an unhandled rejection. Verified target: \"Promise.resolve().then().catch\" in \"fire\"."
+				},
+				{
+					"id": "64357523be0544e06091fcefe1066a46058a516e",
+					"kind": "callback_registration",
+					"line": 43,
+					"column": 7,
+					"endLine": 44,
+					"endColumn": 31,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "fire",
+						"justification": "The \"fire\" then (\"then\") runs the user callback inside a chain whose .catch calls report, so a throwing callback is reported."
+					},
+					"reason": "Allowlisted callback_registration: The \"fire\" then (\"then\") runs the user callback inside a chain whose .catch calls report, so a throwing callback is reported. Verified registration: \"then\" in \"fire\"."
+				},
+				{
+					"id": "39b71c6c24aa8493947187c3f1a1993814449a2e",
+					"kind": "promise_catch",
+					"line": 43,
+					"column": 7,
+					"endLine": 45,
+					"endColumn": 44,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "fire",
+						"justification": "The \"fire\" boundary (\"intentional_noop\") hands the failure to report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"fire\" boundary (\"intentional_noop\") hands the failure to report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"fire\"."
+				},
+				{
+					"id": "4bc82fedc97efa4019701a9e7f1774013fd90e9b",
+					"kind": "callback_registration",
+					"line": 125,
+					"column": 2,
+					"endLine": 125,
+					"endColumn": 80,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "createTextControl",
+						"justification": "The \"createTextControl\" listener (\"addEventListener\") only calls fire, which runs the user callback and reports any failure through report, so the listener itself cannot fail silently."
+					},
+					"reason": "Allowlisted callback_registration: The \"createTextControl\" listener (\"addEventListener\") only calls fire, which runs the user callback and reports any failure through report, so the listener itself cannot fail silently. Verified registration: \"addEventListener\" in \"createTextControl\"."
+				},
+				{
+					"id": "4ea9520089389d50e829d9270a23a957d551aae2",
+					"kind": "callback_registration",
+					"line": 152,
+					"column": 2,
+					"endLine": 152,
+					"endColumn": 83,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "createDropdownControl",
+						"justification": "The \"createDropdownControl\" listener (\"addEventListener\") only calls fire, which runs the user callback and reports any failure through report, so the listener itself cannot fail silently."
+					},
+					"reason": "Allowlisted callback_registration: The \"createDropdownControl\" listener (\"addEventListener\") only calls fire, which runs the user callback and reports any failure through report, so the listener itself cannot fail silently. Verified registration: \"addEventListener\" in \"createDropdownControl\"."
+				},
+				{
+					"id": "459fe5a7e75851e6dce9ab7c813db3772ea236a4",
+					"kind": "callback_registration",
+					"line": 192,
+					"column": 2,
+					"endLine": 197,
+					"endColumn": 4,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "createToggleControl",
+						"justification": "The \"createToggleControl\" listener (\"addEventListener\") toggles the local state, repaints and calls fire, which reports a failing user callback through report."
+					},
+					"reason": "Allowlisted callback_registration: The \"createToggleControl\" listener (\"addEventListener\") toggles the local state, repaints and calls fire, which reports a failing user callback through report. Verified registration: \"addEventListener\" in \"createToggleControl\"."
+				},
+				{
+					"id": "f544c7e7d20683e5e2c19b2bbb616b8ffbdc4fc0",
+					"kind": "callback_registration",
+					"line": 240,
+					"column": 4,
+					"endLine": 240,
+					"endColumn": 80,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onClick",
+						"justification": "The \"onClick\" listener (\"addEventListener\") only calls fire, which runs the user callback and reports any failure through report, so the listener itself cannot fail silently."
+					},
+					"reason": "Allowlisted callback_registration: The \"onClick\" listener (\"addEventListener\") only calls fire, which runs the user callback and reports any failure through report, so the listener itself cannot fail silently. Verified registration: \"addEventListener\" in \"onClick\"."
+				},
+				{
+					"id": "5706f038d6f5b8244f7f57d76d1aa0429a9baebc",
+					"kind": "callback_registration",
+					"line": 291,
+					"column": 2,
+					"endLine": 294,
+					"endColumn": 4,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "createSecretControl",
+						"justification": "The \"createSecretControl\" listener (\"addEventListener\") stores the selected value and calls fire, which reports a failing user callback through report."
+					},
+					"reason": "Allowlisted callback_registration: The \"createSecretControl\" listener (\"addEventListener\") stores the selected value and calls fire, which reports a failing user callback through report. Verified registration: \"addEventListener\" in \"createSecretControl\"."
+				},
+				{
+					"id": "071b1c63362089729455bb61b38e86daf1ef818c",
+					"kind": "callback_registration",
+					"line": 295,
+					"column": 2,
+					"endLine": 301,
+					"endColumn": 4,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "createSecretControl",
+						"justification": "The \"createSecretControl\" listener (\"addEventListener\") only opens the new-secret dialog; the saved name goes through fire, which reports a failing user callback through report."
+					},
+					"reason": "Allowlisted callback_registration: The \"createSecretControl\" listener (\"addEventListener\") only opens the new-secret dialog; the saved name goes through fire, which reports a failing user callback through report. Verified registration: \"addEventListener\" in \"createSecretControl\"."
+				},
+				{
+					"id": "1da8f28ceab13b6f0b1fd52aa486783ec6fd4390",
+					"kind": "callback_registration",
+					"line": 341,
+					"column": 3,
+					"endLine": 341,
+					"endColumn": 57,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "openNewSecretDialog",
+						"justification": "The \"openNewSecretDialog\" listener (\"addEventListener\") only closes the dialog handle, a synchronous UI action with no work that can fail or be lost."
+					},
+					"reason": "Allowlisted callback_registration: The \"openNewSecretDialog\" listener (\"addEventListener\") only closes the dialog handle, a synchronous UI action with no work that can fail or be lost. Verified registration: \"addEventListener\" in \"openNewSecretDialog\"."
+				},
+				{
+					"id": "45bfcb8e220482675e221665d8b48a4f70b0b9c6",
+					"kind": "callback_registration",
+					"line": 348,
+					"column": 3,
+					"endLine": 356,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "openNewSecretDialog",
+						"justification": "The \"openNewSecretDialog\" listener (\"addEventListener\") validates the form, saves through deps.secrets.set, whose keychain failures are reported on deps.report as keychain.write, and then closes the dialog."
+					},
+					"reason": "Allowlisted callback_registration: The \"openNewSecretDialog\" listener (\"addEventListener\") validates the form, saves through deps.secrets.set, whose keychain failures are reported on deps.report as keychain.write, and then closes the dialog. Verified registration: \"addEventListener\" in \"openNewSecretDialog\"."
+				}
+			]
+		},
+		"src/host/hebra/tcp-port.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "17b650d831c240726cef61ee7c8718aa4dd846be",
+					"kind": "promise_catch",
+					"line": 82,
+					"column": 3,
+					"endLine": 84,
+					"endColumn": 5,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "destroy",
+						"justification": "The \"destroy\" catch (\"intentional_noop\") ignores a failed destroy of a connection that was already gone: Hebra emitted or will emit close, so it is not a failure and nothing is lost."
+					},
+					"reason": "Allowlisted promise_catch: The \"destroy\" catch (\"intentional_noop\") ignores a failed destroy of a connection that was already gone: Hebra emitted or will emit close, so it is not a failure and nothing is lost. Verified recovery: \"intentional_noop\" in \"destroy\"."
+				},
+				{
+					"id": "cb3d46f79aedf6bfb75a1956673b8c5efb7224e8",
+					"kind": "promise_catch",
+					"line": 110,
+					"column": 17,
+					"endLine": 114,
+					"endColumn": 5,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "<computed>",
+						"justification": "The \"<computed>\" catch (\"intentional_noop\") calls this.#report for the write failure (tcp.connection) and notifies the error listeners, so the failed write is reported."
+					},
+					"reason": "Allowlisted promise_catch: The \"<computed>\" catch (\"intentional_noop\") calls this.#report for the write failure (tcp.connection) and notifies the error listeners, so the failed write is reported. Verified recovery: \"intentional_noop\" in \"<computed>\"."
+				},
+				{
+					"id": "7fc7e6052a3792e361208fb4e521b3d569119d6e",
+					"kind": "catch_clause",
+					"line": 136,
+					"column": 6,
+					"endLine": 138,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "listen",
+						"justification": "The \"listen\" catch (\"rethrow\") converts the Hebra listen failure into listenError and rethrows it to the caller, so it is not swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"listen\" catch (\"rethrow\") converts the Hebra listen failure into listenError and rethrows it to the caller, so it is not swallowed. Verified recovery: \"rethrow\" in \"listen\"."
+				}
+			]
+		},
+		"src/host/hebra/unadopted-panel.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/host/hebra/vault-port.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "9ee36610529fd5db0ab8f7539728ca3f4b0855fa",
+					"kind": "catch_clause",
+					"line": 159,
+					"column": 6,
+					"endLine": 162,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "processFile",
+						"justification": "The \"processFile\" catch (\"rethrow\") rethrows every error except file_stale, where it re-reads and retries the write; a stale file is a normal race, not a failure."
+					},
+					"reason": "Allowlisted catch_clause: The \"processFile\" catch (\"rethrow\") rethrows every error except file_stale, where it re-reads and retries the write; a stale file is a normal race, not a failure. Verified recovery: \"rethrow\" in \"processFile\"."
+				},
+				{
+					"id": "dda25176e58416fac8844dba396d483049cf5dfe",
+					"kind": "promise_catch",
+					"line": 201,
+					"column": 11,
+					"endLine": 201,
+					"endColumn": 81,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "create",
+						"justification": "The \"create\" catch (\"intentional_noop\") sends the failed trash of a duplicate note to onError, wired to deps.report as vault.sync, and then throws the entry-exists error to the caller."
+					},
+					"reason": "Allowlisted promise_catch: The \"create\" catch (\"intentional_noop\") sends the failed trash of a duplicate note to onError, wired to deps.report as vault.sync, and then throws the entry-exists error to the caller. Verified recovery: \"intentional_noop\" in \"create\"."
+				},
+				{
+					"id": "6bab480631c85af954c3e8a3d67acde9c4b91056",
+					"kind": "callback_registration",
+					"line": 266,
+					"column": 12,
+					"endLine": 266,
+					"endColumn": 142,
+					"registration": "setTimeout",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "setTimeout",
+						"scope": "readNote",
+						"justification": "The \"readNote\" timer callback (\"setTimeout\") rejects the read promise with an explicit timeout error, which the awaiting reader receives and propagates."
+					},
+					"reason": "Allowlisted callback_registration: The \"readNote\" timer callback (\"setTimeout\") rejects the read promise with an explicit timeout error, which the awaiting reader receives and propagates. Verified registration: \"setTimeout\" in \"readNote\"."
+				},
+				{
+					"id": "bd4b6cdc02d6918135eba25ac1f0ff5dc326f455",
+					"kind": "catch_clause",
+					"line": 351,
+					"column": 5,
+					"endLine": 353,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "report",
+						"justification": "The \"report\" catch (\"intentional_noop\") only ignores an onError that itself throws, since the original failure was already handed to onError and the queue must not break."
+					},
+					"reason": "Allowlisted catch_clause: The \"report\" catch (\"intentional_noop\") only ignores an onError that itself throws, since the original failure was already handed to onError and the queue must not break. Verified recovery: \"intentional_noop\" in \"report\"."
+				},
+				{
+					"id": "29519416d9f5cc1dd6de0189d73d6020ce7c88b1",
+					"kind": "callback_registration",
+					"line": 365,
+					"column": 4,
+					"endLine": 365,
+					"endColumn": 38,
+					"registration": "queueMicrotask",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "queueMicrotask",
+						"scope": "enqueue",
+						"justification": "The \"enqueue\" microtask (\"queueMicrotask\") only starts drain, which catches and reports each round failure through report and always resets its draining flag."
+					},
+					"reason": "Allowlisted callback_registration: The \"enqueue\" microtask (\"queueMicrotask\") only starts drain, which catches and reports each round failure through report and always resets its draining flag. Verified registration: \"queueMicrotask\" in \"enqueue\"."
+				},
+				{
+					"id": "a9ee06595b53f2f1220f333cf969146c0dfd29b3",
+					"kind": "void_expression",
+					"line": 365,
+					"column": 25,
+					"endLine": 365,
+					"endColumn": 37,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "drain",
+						"scope": "enqueue",
+						"justification": "The detached \"drain\" call in \"enqueue\" cannot reject silently: drain wraps its rounds in try/catch/finally and reports failures through report."
+					},
+					"reason": "Allowlisted void_expression: The detached \"drain\" call in \"enqueue\" cannot reject silently: drain wraps its rounds in try/catch/finally and reports failures through report. Verified target: \"drain\" in \"enqueue\"."
+				},
+				{
+					"id": "2d5f46ad12e61a90f421f2dc43ca3dc109ac9cb0",
+					"kind": "catch_clause",
+					"line": 387,
+					"column": 10,
+					"endLine": 389,
+					"endColumn": 9,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "drain",
+						"justification": "The \"drain\" catch (\"local_recovery\") calls report with the failure of one queued event, so the queue continues and the failure goes to onError."
+					},
+					"reason": "Allowlisted catch_clause: The \"drain\" catch (\"local_recovery\") calls report with the failure of one queued event, so the queue continues and the failure goes to onError. Verified recovery: \"local_recovery\" in \"drain\"."
+				},
+				{
+					"id": "793434d5a2940f380e5c44162af1c3cecf398cb7",
+					"kind": "catch_clause",
+					"line": 392,
+					"column": 7,
+					"endLine": 394,
+					"endColumn": 6,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "drain",
+						"justification": "The \"drain\" catch (\"local_recovery\") calls report with the failure of a whole round, so the loop continues and the failure goes to onError."
+					},
+					"reason": "Allowlisted catch_clause: The \"drain\" catch (\"local_recovery\") calls report with the failure of a whole round, so the loop continues and the failure goes to onError. Verified recovery: \"local_recovery\" in \"drain\"."
+				},
+				{
+					"id": "36502c312480717c4bdc5530a78b91ae34c99676",
+					"kind": "catch_clause",
+					"line": 422,
+					"column": 6,
+					"endLine": 424,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "call",
+						"justification": "The \"call\" catch (\"local_recovery\") calls report with the failure of a subscriber listener, so one throwing listener neither breaks the others nor is hidden."
+					},
+					"reason": "Allowlisted catch_clause: The \"call\" catch (\"local_recovery\") calls report with the failure of a subscriber listener, so one throwing listener neither breaks the others nor is hidden. Verified recovery: \"local_recovery\" in \"call\"."
+				},
+				{
+					"id": "f7a3dcf6db5428a034d3e1652fe2518b1a58e204",
+					"kind": "void_expression",
+					"line": 471,
+					"column": 5,
+					"endLine": 471,
+					"endColumn": 29,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "handle",
+						"scope": "onLibraryChange",
+						"justification": "The detached \"handle\" call in \"onLibraryChange\" handles a synced change synchronously: for saved it only delivers to subscribers, whose throws are caught and reported by call."
+					},
+					"reason": "Allowlisted void_expression: The detached \"handle\" call in \"onLibraryChange\" handles a synced change synchronously: for saved it only delivers to subscribers, whose throws are caught and reported by call. Verified target: \"handle\" in \"onLibraryChange\"."
+				},
+				{
+					"id": "5d2cf33799484710af150c515fd3c2ddc9844851",
+					"kind": "promise_catch",
+					"line": 483,
+					"column": 16,
+					"endLine": 483,
+					"endColumn": 36,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "onLibraryChange",
+						"justification": "The \"onLibraryChange\" boundary (\"intentional_noop\") hands the failure to report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted promise_catch: The \"onLibraryChange\" boundary (\"intentional_noop\") hands the failure to report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"onLibraryChange\"."
+				},
+				{
+					"id": "93710686f0b3e2cbb5c57baf0f9f2eea4c446d02",
+					"kind": "catch_clause",
+					"line": 484,
+					"column": 5,
+					"endLine": 486,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "onLibraryChange",
+						"justification": "The \"onLibraryChange\" catch (\"local_recovery\") calls report with a synchronous failure of handle, so the failure goes to onError and the event is dropped."
+					},
+					"reason": "Allowlisted catch_clause: The \"onLibraryChange\" catch (\"local_recovery\") calls report with a synchronous failure of handle, so the failure goes to onError and the event is dropped. Verified recovery: \"local_recovery\" in \"onLibraryChange\"."
+				}
+			]
+		},
+		"src/host/hebra/vault.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/hebra-plugin-fakes.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "c1277d1e3ccd466bea0f0ab3fdc6f12c4b61c7e7",
+					"kind": "catch_clause",
+					"line": 371,
+					"column": 4,
+					"endLine": 373,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "parseJson",
+						"justification": "The \"parseJson\" catch (\"fallback_return\") belongs to a test fake of the Hebra plugin API: invalid JSON reads as null, which is the contract of the fake and never ships in the bundle."
+					},
+					"reason": "Allowlisted catch_clause: The \"parseJson\" catch (\"fallback_return\") belongs to a test fake of the Hebra plugin API: invalid JSON reads as null, which is the contract of the fake and never ships in the bundle. Verified recovery: \"fallback_return\" in \"parseJson\"."
 				}
 			]
 		},
