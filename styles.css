@@ -27,6 +27,12 @@
 	line-height: var(--line-height-normal);
 }
 
+/* Ranuras del aviso y de la línea del saco: vacías no ocupan pista, o cada una sumaría un `gap`
+   de nada a la tarjeta en reposo (unos 45 px entre «Iniciar sesión» y «Botín», 4 oct 2026). */
+.tyrian-companion-session__slot:empty {
+	display: none;
+}
+
 /* Cabecera: identidad y acciones comparten un eje, en vez de cada botón a su altura. */
 .tyrian-companion-session__header {
 	display: grid;
@@ -2235,6 +2241,12 @@
 
 	.tyrian-inventory-advisor__sync-actions button {
 		width: 100%;
+	}
+
+	/* On a row of its own, the push to the end of the bar only indents it: take the whole row. */
+	.tyrian-inventory-advisor__sync-primary-actions {
+		flex: 1 1 100%;
+		margin-inline-start: 0;
 	}
 }
 

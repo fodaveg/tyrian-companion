@@ -156,7 +156,9 @@ export function renderSessionCard(
 		actionButtons.push(button);
 	}
 
-	const calloutSlot = root.createDiv();
+	// The two slots are grid items of the card: `__slot` takes an empty one out of the layout
+	// (styles.css), or each would add a `gap` of nothing to a resting card (Hebra's report, 4 oct 2026).
+	const calloutSlot = root.createDiv({ cls: 'tyrian-companion-session__slot' });
 	if (model.callout !== null) renderSessionCardCallout(calloutSlot, model.callout);
 
 	const figureNodes = model.figures.length > 0 ? renderFigures(root, model.figures) : [];
@@ -167,7 +169,7 @@ export function renderSessionCard(
 	}
 	if (model.receipt !== undefined) renderReceipt(root, ui, model.receipt.ariaLabel, model.receipt.steps);
 
-	const sellSignalSlot = root.createDiv();
+	const sellSignalSlot = root.createDiv({ cls: 'tyrian-companion-session__slot' });
 
 	const drawersEl = root.createDiv({ cls: 'tyrian-companion-session__drawers' });
 	type DrawerId = 'detail' | 'alerts' | 'loot';

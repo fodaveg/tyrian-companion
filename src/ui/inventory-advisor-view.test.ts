@@ -1524,6 +1524,7 @@ function formatClockFor(iso: string): string {
 /**
  * The declarations of `selector` inside every `@container <query>` block of `css`, joined; empty
  * when no such block declares it. Braces are balanced by hand: a regex cannot find a nested end.
+ * The selector must start a rule: after a closing brace, a comma, a comment's end or the block start.
  */
 function containerRule(css: string, query: string, selector: string): string {
 	const found: string[] = [];
@@ -1541,7 +1542,7 @@ function containerRule(css: string, query: string, selector: string): string {
 		}
 		const body = css.slice(open + 1, index - 1);
 		const escaped = selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-		for (const match of body.matchAll(new RegExp(`(?:^|[},])\\s*${escaped}\\s*\\{([^}]*)\\}`, 'gu'))) found.push(match[1]!);
+		for (const match of body.matchAll(new RegExp(`(?:^|[},/])\\s*${escaped}\\s*\\{([^}]*)\\}`, 'gu'))) found.push(match[1]!);
 		from = index;
 	}
 	return found.join('\n');
