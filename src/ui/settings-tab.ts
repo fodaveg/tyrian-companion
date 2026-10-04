@@ -572,17 +572,9 @@ export class TyrianCompanionSettingTab {
 					status.setAttr('role', 'status');
 					status.setAttr('aria-live', 'polite');
 					const list = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__legendary-targets' });
-					// R1b (Hebra's report, 4 oct 2026): consult always refuses the load
-					// (`refusedInConsult`), so the button is disabled and the row says where the list
-					// is loaded, as Venta does, instead of a "try again" no retry can satisfy.
-					const consult = this.plugin.getCollectorMode() === 'consult';
 					const renderList = (): void => {
 						list.empty();
 						const selected = new Set(this.plugin.settings.legendaryTargetItemIds);
-						if (consult) {
-							status.setText(this.t('settings.legendary.targets.consult'));
-							return;
-						}
 						if (this.legendaryArmoryOptions === null) {
 							status.setText(this.t('settings.legendary.targets.selectedCount', { count: selected.size }));
 							return;
@@ -634,7 +626,6 @@ export class TyrianCompanionSettingTab {
 					renderList();
 					setting.addButton((button) => button
 						.setButtonText(this.t('settings.legendary.targets.load'))
-						.setDisabled(consult)
 						.onClick(async () => {
 							this.legendaryArmoryOptions = 'loading';
 							renderList();

@@ -990,8 +990,6 @@ const ES = {
 		'settings.legendary.targets.load': 'Cargar lista',
 		'settings.legendary.targets.loading': 'Cargando la lista de legendarias…',
 		'settings.legendary.targets.loadError': 'No se pudo cargar la lista. Inténtalo de nuevo.',
-		// R1b: en consulta la carga se rechaza siempre; el botón queda desactivado con esta razón.
-		'settings.legendary.targets.consult': 'Este dispositivo está en modo consulta: la lista se carga en el recolector.',
 		'settings.legendary.targets.noTable': 'Sin tabla de materiales',
 		'settings.legendary.targets.tableStale': 'Tabla de materiales caducada: revisa los datos antes de fiarte de esta reserva.',
 		'settings.legendary.targets.selectedCount': 'Legendarias objetivo seleccionadas: {{count}}',
@@ -2176,7 +2174,6 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'settings.legendary.targets.load': 'Load list',
 	'settings.legendary.targets.loading': 'Loading the legendary list…',
 	'settings.legendary.targets.loadError': 'Could not load the list. Try again.',
-	'settings.legendary.targets.consult': 'This device is in consult mode: the list is loaded on the collector.',
 	'settings.legendary.targets.noTable': 'No materials table',
 	'settings.legendary.targets.tableStale': 'Materials table expired: review the data before trusting this reservation.',
 	'settings.legendary.targets.selectedCount': 'Legendary targets selected: {{count}}',
