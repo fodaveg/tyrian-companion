@@ -513,6 +513,8 @@ describe('legendary targets setting (M4)', () => {
 
 	it('calls loadLegendaryArmoryOptions exactly once when the load button is clicked, and renders its result', async () => {
 		const plugin = settingsPlugin();
+		// Only the collector loads the list (see the consult case below).
+		plugin.collectorMode = 'collector';
 		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
 			status: 'ok' as const,
 			options: [{ itemId: 103_815, name: 'Klobjarne Geirr', icon: null, hasTable: true, tableStale: false }],
@@ -530,6 +532,7 @@ describe('legendary targets setting (M4)', () => {
 
 	it('shows the "no materials table" warning for a legendary with no curated entry', async () => {
 		const plugin = settingsPlugin();
+		plugin.collectorMode = 'collector';
 		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
 			status: 'ok' as const,
 			options: [{ itemId: 999_999, name: 'Untabled Legendary', icon: null, hasTable: false, tableStale: false }],
@@ -544,10 +547,44 @@ describe('legendary targets setting (M4)', () => {
 		expect(fake.textContent()).toContain('No materials table');
 	});
 
+	/**
+	 * Hebra's report (4 oct 2026): in consult `loadLegendaryArmoryOptions` always refuses, and the row
+	 * answered "Could not load the list. Try again." as if a retry could help. In consult the button
+	 * is disabled and the row says the list is loaded on the collector, like Venta does.
+	 */
+	it('consult: the load button is disabled and the row says the list is loaded on the collector', async () => {
+		const plugin = settingsPlugin();
+		plugin.collectorMode = 'consult';
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Legendary targets');
+		if (definition === undefined) throw new Error('Expected the legendary targets setting.');
+		const fake = fakeLegendarySetting();
+		definition.render(fake.setting as never);
+		expect(fake.loadButtonDisabled()).toBe(true);
+		expect(fake.textContent()).toContain('consult mode');
+		expect(fake.textContent()).not.toContain('Could not load the list');
+		expect(plugin.loadLegendaryArmoryOptions).not.toHaveBeenCalled();
+	});
+
+	it('collector: the load button stays enabled', () => {
+		const plugin = settingsPlugin();
+		plugin.collectorMode = 'collector';
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Legendary targets');
+		if (definition === undefined) throw new Error('Expected the legendary targets setting.');
+		const fake = fakeLegendarySetting();
+		definition.render(fake.setting as never);
+		expect(fake.loadButtonDisabled()).toBe(false);
+		expect(fake.textContent()).not.toContain('consult mode');
+	});
+
 	/** H18.5: a curated table that HAS an entry but is past its own `validUntil` must still say so —
 	 * `hasTable: true` alone used to look identical to a freshly reviewed table. */
 	it('shows the "table expired" warning for a legendary with a stale curated entry', async () => {
 		const plugin = settingsPlugin();
+		plugin.collectorMode = 'collector';
 		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
 			status: 'ok' as const,
 			options: [{ itemId: 103_815, name: 'Klobjarne Geirr', icon: null, hasTable: true, tableStale: true }],
@@ -629,8 +666,10 @@ function fakeLegendaryElement(): FakeLegendaryEl {
 function fakeLegendarySetting() {
 	const descEl = fakeLegendaryElement();
 	let loadClick: (() => Promise<void> | void) | null = null;
+	let loadDisabled = false;
 	const buttonComponent = {
 		setButtonText: () => buttonComponent,
+		setDisabled: (disabled: boolean) => { loadDisabled = disabled; return buttonComponent; },
 		onClick: (handler: () => Promise<void> | void) => { loadClick = handler; return buttonComponent; },
 	};
 	const setting = {
@@ -640,7 +679,9 @@ function fakeLegendarySetting() {
 	return {
 		setting,
 		textContent: () => descEl.allText().join(' | '),
-		clickLoadButton: async () => { await loadClick?.(); },
+		loadButtonDisabled: () => loadDisabled,
+		// A disabled button does not fire: the fake honours it, as the DOM does.
+		clickLoadButton: async () => { if (!loadDisabled) await loadClick?.(); },
 	};
 }
 
