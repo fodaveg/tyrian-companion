@@ -1,19 +1,33 @@
 # Changelog
 
-## Sin publicar (main, 4 oct 2026) - el inventario y la cartera se actualizan a mano también en modo consulta
+## Release beta 0.3.1 - el inventario se actualiza a mano en cualquier instalación, también en modo consulta
 
 - **En modo consulta funcionan las acciones manuales de inventario**: actualizar el asesor, previsualizar
-  y aplicar la sincronización de inventario y la de cartera, desde su botón o su comando. Cada una
-  consulta la API y escribe las notas igual que en el recolector, solo en esa ejecución. Antes se
-  negaban con «modo consulta».
+  y aplicar la sincronización de inventario y la de cartera, desde su botón o su comando, y «Cargar
+  lista» de las legendarias en Ajustes. Cada una consulta la API y escribe las notas igual que en el
+  recolector, solo en esa ejecución. Antes se negaban con «modo consulta» (`908d725`, `faba5b4`).
 - **Sigue siendo solo del recolector** lo automático y lo que lo sostiene: el sondeo de la API, la
   nota `Collector status.md` y su latido, el puente del juego, los avisos, las sesiones y la detección.
   La sincronización de inventario en consulta no actualiza las Bases. La descarga de la siembra de
-  precios y el botón Analizar de Venta siguen cerrados en consulta.
+  precios y el botón Analizar de Venta siguen cerrados en consulta. En un dispositivo en consulta,
+  «Iniciar sesión» y «Activar histórico de precios» aparecen desactivados con su motivo en pantalla,
+  y el Acompañante se repinta al cambiar de modo (`ff5dbd4`, `09e32c6`).
+- **Un Asesor que nunca se ha analizado lo dice** y nombra los dos botones que lo analizan, en vez de
+  «Preparando la revisión local del inventario…» para siempre; en consulta los botones se pueden
+  pulsar aunque no haya análisis previo (`219e3a7`, `faba5b4`).
+- **El historial de sesiones acepta sesiones con ganancia neta negativa.** Un gasto observado puede
+  dejar la sesión en pérdida; antes eso bloqueaba la lectura y la exportación de todo el historial.
+  La suma de netos con signo se comprueba contra el desbordamiento (`eafee75`, `52beed0`).
+- **El inicio automático de sesión no muestra avisos mientras la clave elegida no está disponible**
+  (`c8bfec2`).
+- **Ajustes visuales en Hebra que también llegan a Obsidian**: la tarjeta de sesión en reposo deja un
+  solo hueco entre «Iniciar sesión» y «Botín», los botones de sincronía del Asesor ocupan la fila
+  entera por debajo de 480 px, y el gráfico del bloque de precio conserva todo el ancho (`a3a471b`,
+  `3031695`). En Hebra, Tyrian usa el icono de brújula (`3618455`).
 - Los textos de Ajustes, del aviso de consulta y de Venta dejan de decir que consulta no usa la API.
 
-Límites: en la web de Hebra 1.0.0, sin HTTP de plugin ni llavero, estas acciones siguen sin poder
-llamar a la API.
+Límites: en la web de Hebra 1.0.0, sin HTTP de plugin ni llavero, las acciones de consulta siguen sin
+poder llamar a la API. No comprobado en Hebra ni en Obsidian reales antes de publicar.
 
 ## Release beta 0.3.0 - Tyrian Companion se instala en Hebra como plugin externo desde esta release de GitHub
 
