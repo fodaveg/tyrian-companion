@@ -31,30 +31,50 @@ describe('arm-assisted-detection availability (H15.12)', () => {
 	});
 });
 
-/** R1b: in consult mode only navigation stays available, and nothing reaches the executor. */
+/**
+ * R1b: in consult mode navigation and the manual inventory actions (4 oct 2026, David: refreshing
+ * the inventory must work on any installation) stay available; session and detection stay the
+ * collector's and nothing of theirs reaches the executor.
+ */
 describe('consult mode (R1b)', () => {
-	it('leaves only navigation available and says why for every other action', async () => {
+	it('leaves navigation and the inventory actions available, and says why for the session and detection ones', async () => {
 		const execute = vi.fn(async () => 'completed' as const);
 		const sessionRun = vi.fn(async () => 'completed' as const);
 		const checkConnection = vi.fn(async () => ({ status: 'connected', details: {} } as never));
 		const controller = createController({
 			hasKey: true, execute, sessionRun, checkConnection, isCollector: () => false,
 			connection: () => ({ status: 'idle' }),
+			canApplyInventory: true, canApplyWallet: true,
 		});
 
+		const collectorOnlyGroups: string[] = [];
 		for (const action of controller.all()) {
-			if (action.group === 'navigation') expect(action.available, action.id).toBe(true);
-			else {
+			if (action.group === 'navigation' || action.group === 'inventory') {
+				expect(action.available, action.id).toBe(true);
+			} else {
+				collectorOnlyGroups.push(action.group);
 				expect(action.available, action.id).toBe(false);
 				expect(action.disabledReason, action.id).toBe('Esta instalación está en modo consulta. Cámbiala a recolector en Ajustes.');
 			}
 		}
+		expect(new Set(collectorOnlyGroups)).toEqual(new Set(['session', 'detection']));
 		await expect(controller.run('start-farming-session')).resolves.toBe('unavailable');
-		await expect(controller.run('refresh-inventory-advisor')).resolves.toBe('unavailable');
+		await expect(controller.run('arm-assisted-detection')).resolves.toBe('unavailable');
 		expect(checkConnection).not.toHaveBeenCalled();
 		expect(sessionRun).not.toHaveBeenCalled();
 		expect(execute).not.toHaveBeenCalled();
+		for (const id of ['refresh-inventory-advisor', 'preview-inventory-vault-sync', 'apply-inventory-vault-sync',
+			'preview-wallet-vault-sync', 'apply-wallet-vault-sync'] as const) {
+			await expect(controller.run(id), id).resolves.toBe('completed');
+			expect(execute).toHaveBeenLastCalledWith(id);
+		}
 		await expect(controller.run('open-inventory-advisor')).resolves.toBe('completed');
+	});
+
+	it('still asks for an API key on the inventory actions in consult, as the collector does', () => {
+		const controller = createController({ hasKey: false, isCollector: () => false });
+		expect(controller.describe('refresh-inventory-advisor').available).toBe(false);
+		expect(controller.describe('refresh-inventory-advisor').disabledReason).not.toContain('modo consulta');
 	});
 
 	it('keeps every action as before for the collector', () => {
@@ -193,6 +213,8 @@ function createController(overrides: {
 	readonly checkConnection?: NonNullable<ProductActionControllerPorts['checkConnection']>;
 	readonly canStartSession?: NonNullable<ProductActionControllerPorts['canStartSession']>;
 	readonly isCollector?: NonNullable<ProductActionControllerPorts['isCollector']>;
+	readonly canApplyInventory?: boolean;
+	readonly canApplyWallet?: boolean;
 	readonly diagnostics?: LocalDebugActionPort;
 } = {}): ProductActionController {
 	return new ProductActionController({
@@ -200,7 +222,7 @@ function createController(overrides: {
 		getConnectionState: overrides.connection ?? (() => ({ status: 'connected', details: {} } as never)),
 		getPendingProposals: () => ({ status: 'ready', pendingCount: 1, next: {} } as never),
 		getDetectionState: overrides.detection ?? (() => ({ status: 'disarmed', reason: 'initial', scheduler: {}, lastSnapshotAt: null } as never)),
-		canArmDetection: () => true, canApplyInventory: () => false, canApplyWallet: () => false,
+		canArmDetection: () => true, canApplyInventory: () => overrides.canApplyInventory ?? false, canApplyWallet: () => overrides.canApplyWallet ?? false,
 		isInventoryBusy: () => false,
 		sessionCommands: {
 			describe: overrides.sessionDescribe ?? ((id) => descriptorFor(id, true)),

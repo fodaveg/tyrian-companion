@@ -62,8 +62,10 @@ export interface ProductActionControllerPorts {
 	/** Whether a session could start right now if the account were connected (H15.25). */
 	canStartSession?(): boolean;
 	/**
-	 * R1b: false in consult mode, where every action but navigation is the collector's and is
-	 * shown unavailable with that reason. Absent means collector, the behaviour before R1b.
+	 * R1b: false in consult mode, where the session and detection actions are the collector's and
+	 * are shown unavailable with that reason. Navigation and the manual `inventory` actions (the
+	 * player's own button or command) work in both modes. Absent means collector, the behaviour
+	 * before R1b.
 	 */
 	isCollector?(): boolean;
 	diagnostics?: LocalDebugActionPort;
@@ -150,7 +152,7 @@ export class ProductActionController {
 		const locale = this.ports.getLocale();
 		const translator = createTranslator(locale);
 		const session = isSessionCommand(id) ? this.ports.sessionCommands.describe(id) : null;
-		const availability = GROUP_BY_ID[id] !== 'navigation' && this.ports.isCollector?.() === false
+		const availability = collectorOnly(id) && this.ports.isCollector?.() === false
 			? { available: false, reason: translator.t('productAction.reason.consult') }
 			: isSessionCommand(id)
 				? this.sessionAvailability(id, session!, translator)
@@ -364,6 +366,11 @@ export function registerProductActionPalette(
 			return available;
 		},
 	});
+}
+
+/** Whether a consult installation refuses the action: everything but navigation and the manual inventory refresh/sync. */
+function collectorOnly(id: ProductActionId): boolean {
+	return GROUP_BY_ID[id] !== 'navigation' && GROUP_BY_ID[id] !== 'inventory';
 }
 
 function isSessionCommand(id: ProductActionId): id is SessionCommandId {

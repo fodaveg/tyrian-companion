@@ -129,10 +129,10 @@ export interface SaleViewModel {
 	calendar: SaleCalendarRowViewModel[];
 	/**
 	 * R1b: true exactly when this device is in consult mode and never captured anything this
-	 * session, so `status` alone (an ordinary `empty`) cannot say WHY: `refreshInventoryAdvisor`/
-	 * `refreshSale` refuse in consult (`refusedInConsult`), so nothing here will ever fill this
-	 * tab on its own. `sale-view.ts` renders a dedicated final state for it, with no refresh
-	 * action (one only the collector could carry out).
+	 * session, so `status` alone (an ordinary `empty`) cannot say WHY: `refreshSale` refuses in
+	 * consult (`refusedInConsult`), and the advisor refresh that would fill this tab is the
+	 * player's manual action on the Inventory tab, never started from here. `sale-view.ts`
+	 * renders a dedicated final state for it, with no refresh action of its own.
 	 */
 	consultOnly?: boolean;
 }

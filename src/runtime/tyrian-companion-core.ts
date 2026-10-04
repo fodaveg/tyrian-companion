@@ -1751,11 +1751,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			});
 		}
 		const advisorModel = this.getInventoryAdvisorViewModel();
-		// R1b (Hebra's report, 28 sep 2026): `refreshInventoryAdvisor`/`refreshSale` both refuse in
-		// consult (`refusedInConsult`), so a consult device that captured nothing this session left
-		// `advisorModel.status` at `loading` forever — nothing here was ever going to move it. Venta
-		// must not sit in "Leyendo…" waiting for a refresh that will never run; it reaches a final,
-		// explained state instead, with no action that needs the API.
+		// R1b (Hebra's report, 28 sep 2026): `refreshSale` refuses in consult (`refusedInConsult`)
+		// and the advisor refresh is only ever the player's manual action on the Inventory tab, so a
+		// consult device that captured nothing this session leaves `advisorModel.status` at `loading`
+		// and nothing here is going to move it. Venta must not sit in "Leyendo…" waiting for a
+		// refresh that will not run; it reaches a final, explained state instead, which names the
+		// manual refresh that does fill it.
 		if (consulting(this) && advisorModel.status === 'loading') {
 			return buildSaleViewModel({
 				status: 'empty', consultOnly: true, nowMs, festivalStartMs: null,
@@ -2299,11 +2300,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	async refreshInventoryAdvisor(): Promise<void> {
-		if (refusedInConsult(this)) {
-			// The action that left stale copies to refresh ends here without its result: they are dropped.
-			this.priceSeedDeferredRequest = null;
-			return;
-		}
 		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<void> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const operation = this.inventoryAdvisor.refresh({}, context);
@@ -2385,7 +2381,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * its analyses left are refreshed once all of it has ended (`runPriceSeedSyncAction`).
 	 */
 	async runInventoryVaultSync(): Promise<void> {
-		if (refusedInConsult(this)) return;
 		await this.runPriceSeedSyncAction(async () => {
 			const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.run());
 			await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
@@ -2395,7 +2390,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** Writes a plan that paused for confirmation because it would deactivate rows. */
 	async confirmInventoryVaultSync(): Promise<void> {
-		if (refusedInConsult(this)) return;
 		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.confirm());
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 		await this.updateManagedAssetsAfterInventorySync();
@@ -2411,6 +2405,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private async updateManagedAssetsAfterInventorySync(): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
+		// A manual inventory sync also runs in consult, but the Bases stay the collector's to write.
+		if (consulting(this)) return;
 		const state = this.inventoryVaultSyncRun.current();
 		if (!this.runtimeReady || state.status !== 'idle' || state.lastRun?.status !== 'success') return;
 		const root = this.settings.managedAssetsRoot;
@@ -2464,7 +2460,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * copies for the next sync or Sale refresh (see `refreshPriceSeedsForSync`).
 	 */
 	async previewInventoryVaultSync(openView = false): Promise<void> {
-		if (refusedInConsult(this)) return;
 		const perform = async (): Promise<void> => {
 		if (openView) await this.activateInventoryAdvisorView();
 		const operation = this.inventoryVaultSync.preview();
@@ -2476,7 +2471,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	async applyInventoryVaultSync(): Promise<void> {
-		if (refusedInConsult(this)) return;
 		const perform = async () => {
 			const operation = this.inventoryVaultSync.apply();
 			this.renderInventoryAdvisorViews();
@@ -2501,7 +2495,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	async previewWalletVaultSync(): Promise<void> {
-		if (refusedInConsult(this)) return;
 		const perform = async (): Promise<void> => {
 		const state = await this.walletVaultSync.preview();
 		this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
@@ -2510,7 +2503,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	async applyWalletVaultSync(): Promise<void> {
-		if (refusedInConsult(this)) return;
 		const perform = async () => {
 			const state = await this.walletVaultSync.apply();
 			this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');

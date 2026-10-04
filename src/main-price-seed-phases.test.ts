@@ -488,22 +488,27 @@ describe('price seed phases through the core: missing seeds before the result, s
 			expect(probe.calls).toEqual([]);
 		});
 
-		it('sync, a refresh refused in consult while the notes are written, and the device back to collector before the end: the stale copies stay dropped', async () => {
-			const { harness, probe, sync, drain } = await setup([1, 2, 3]);
+		it('sync, an "Analizar" pressed in consult while the notes are written: it runs (a manual action) and downloads no seed, the slot keeps what the sync left', async () => {
+			const { harness, probe, sync, drain, analyse } = await setup([1, 2, 3]);
 			probe.open();
 			const notes = gate();
 
 			const action = sync([[1, 2, 3]], { notesHold: notes });
 			await notes.reached;
+			const slot = harness.priceSeedDeferredRequest;
+			expect(slot).not.toBeNull();
+			const before = analyse.mock.calls.length;
 			harness.collectorMode = 'consult';
-			// "Analizar" pressed in consult: refused, and what waited in the slot goes with it.
 			await core.refreshInventoryAdvisor.call(harness);
-			expect(harness.priceSeedDeferredRequest).toBeNull();
-			harness.collectorMode = 'collector';
+			expect(analyse.mock.calls.length).toBe(before + 1);
+			expect(harness.priceSeedDeferredRequest).toBe(slot);
+			expect(harness.notifyConsultMode).not.toHaveBeenCalled();
+			// The device is still in consult when the sync ends: its stale copies are never downloaded.
 			notes.open();
 			await action;
 			await drain();
 
+			expect(harness.priceSeedDeferredRequest).toBeNull();
 			expect(probe.calls).toEqual([]);
 		});
 

@@ -6,7 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 /** Every outbound request the composition makes, whoever makes it. */
-const outbound = vi.hoisted(() => ({ urls: [] as string[] }));
+const outbound = vi.hoisted(() => ({
+	urls: [] as string[],
+	/** What answers a request instead of the default 503, for the tests that need a real account. */
+	respond: null as null | ((url: string) => { status: number; json: unknown }),
+}));
 
 vi.mock('obsidian', async (importOriginal) => ({
 	...await importOriginal<Record<string, unknown>>(),
@@ -15,7 +19,8 @@ vi.mock('obsidian', async (importOriginal) => ({
 	Platform: { isLinux: true, isMacOS: false, isWin: false },
 	requestUrl: async ({ url }: { url: string }) => {
 		outbound.urls.push(url);
-		return { status: 503, headers: {}, json: {}, text: '{}' };
+		const answer = outbound.respond?.(url) ?? { status: 503, json: {} };
+		return { status: answer.status, headers: {}, json: answer.json, text: JSON.stringify(answer.json) };
 	},
 }));
 
@@ -48,6 +53,13 @@ interface CollectorModeHarness {
 	shutdownRuntime(): Promise<void>;
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult>;
+	previewWalletVaultSync(): Promise<void>;
+	applyWalletVaultSync(): Promise<void>;
+	refreshInventoryAdvisor(): Promise<void>;
+	armAssistedDetection(): Promise<string>;
+	openManualSessionStart(): void;
+	checkConnection(): Promise<{ status: string }>;
+	notifyConsultMode(): void;
 	getPriceHistoryState(): PriceHistoryRuntimeState;
 	readonly host: TyrianHost;
 }
@@ -59,6 +71,7 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 		outbound.urls.length = 0;
+		outbound.respond = null;
 	});
 
 	it('consult: boots with no request, no vault write, no bridge port, no poll and no compactAndPrune', async () => {
@@ -86,6 +99,77 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 		expect(halloweenActivate).not.toHaveBeenCalled();
 		expect(world.intervals()).not.toContain(COLLECTOR_HEARTBEAT_INTERVAL_MS);
 		expect(world.notes.has(STATUS_NOTE)).toBe(false);
+		await world.plugin.shutdownRuntime();
+	});
+
+	/**
+	 * 4 oct 2026 (David, option A): the manual inventory actions work in consult, because refreshing
+	 * the inventory must be possible on any installation. They run the collector's own path for that
+	 * one execution; nothing automatic starts with them.
+	 */
+	it('consult: the manual wallet sync reaches the API and writes its notes, and starts no poll, no bridge and no heartbeat', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		outbound.respond = (url) => {
+			if (url.includes('account/wallet')) return { status: 200, json: [{ id: 1, value: 12_345 }] };
+			if (url.includes('/currencies')) return { status: 200, json: [{ id: 1, name: 'Coin', description: 'd', order: 1, icon: '' }] };
+			return { status: 503, json: {} };
+		};
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main', alertIngameEnabled: true }, { mode: 'consult' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		expect(outbound.urls).toEqual([]);
+		const timersAtBoot = world.intervals().length;
+
+		await world.plugin.previewWalletVaultSync();
+		await world.plugin.applyWalletVaultSync();
+		await settle();
+
+		expect(outbound.urls.some((url) => url.includes('account/wallet'))).toBe(true);
+		expect(world.writes.some((path) => path.startsWith('Tyrian Companion/') && path !== STATUS_NOTE)).toBe(true);
+		// Only the two requests of that one execution: nothing polled, nothing refreshed afterwards.
+		expect(outbound.urls.every((url) => url.includes('account/wallet') || url.includes('/currencies'))).toBe(true);
+		expect(world.writes).not.toContain(STATUS_NOTE);
+		expect(world.notes.has(STATUS_NOTE)).toBe(false);
+		expect(world.listen).not.toHaveBeenCalled();
+		expect(world.intervals().length).toBe(timersAtBoot);
+		expect(world.intervals()).not.toContain(COLLECTOR_HEARTBEAT_INTERVAL_MS);
+		expect(world.plugin.collectorMode).toBe('consult');
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('consult: "Analizar" reaches the API instead of refusing', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		// A rejected key ends the capture at once (a 503 would wait on a retry timer this harness never fires).
+		outbound.respond = () => ({ status: 401, json: { text: 'invalid access token' } });
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'consult' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		expect(outbound.urls).toEqual([]);
+
+		await world.plugin.refreshInventoryAdvisor();
+
+		// The capture ends in an error here; what matters is that the API was asked.
+		expect(outbound.urls.some((url) => url.includes('api.guildwars2.com/v2/'))).toBe(true);
+		expect(world.listen).not.toHaveBeenCalled();
+		expect(world.intervals()).not.toContain(COLLECTOR_HEARTBEAT_INTERVAL_MS);
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('consult: the collector-only actions still refuse, with the consult notice and no request', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'consult' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		const notify = vi.spyOn(world.plugin, 'notifyConsultMode');
+
+		await expect(world.plugin.armAssistedDetection()).resolves.toBe('unavailable');
+		world.plugin.openManualSessionStart();
+		await expect(world.plugin.checkConnection()).resolves.toMatchObject({ status: 'idle' });
+		await settle();
+
+		expect(notify).toHaveBeenCalledTimes(3);
+		expect(outbound.urls).toEqual([]);
+		expect(world.writes).toEqual([]);
 		await world.plugin.shutdownRuntime();
 	});
 
