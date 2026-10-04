@@ -148,7 +148,8 @@ describe('price history note block view', () => {
 	 * it, as Hebra does not. Our stylesheet zeroes the inline margins itself.
 	 */
 	it('zeroes the figure inline margins itself, without counting on the host to reset them', () => {
-		const styles = readFileSync('styles.css', 'utf8');
+		// Comments out first: a comment above a rule would otherwise read as part of its selector.
+		const styles = readFileSync('styles.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
 		const blocks = [...styles.matchAll(/([^{}]+)\{([^}]*)\}/gu)]
 			.filter(([, selectors]) => selectors!.split(',').some((selector) => selector.trim() === '.tyrian-price-history-note figure'))
 			.map(([, , body]) => body!);

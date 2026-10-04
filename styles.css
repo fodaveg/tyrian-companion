@@ -1498,6 +1498,12 @@
 	margin-block: 0 var(--size-4-2);
 }
 
+/* A `<figure>` brings 40 px of inline margin from the browser, and not every host resets it
+   (Hebra does not): at 322 px the chart lost a quarter of its width (4 oct 2026). */
+.tyrian-price-history-note figure {
+	margin-inline: 0;
+}
+
 .tyrian-price-history-note__heading {
 	font-weight: var(--font-weight-bold, 600);
 }
