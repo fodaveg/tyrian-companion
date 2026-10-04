@@ -413,6 +413,28 @@ describe('Inventory Advisor view', () => {
 			expect(block.hidden).toBe(true);
 		});
 
+	/**
+	 * Hebra's report (4 oct 2026): with no analysis yet the Asesor read "Preparando la revisión local
+	 * del inventario…" for good. Never analyzed, it says what is missing and which buttons produce
+	 * it, and nothing on the page is busy; the analysis in flight keeps the loading copy.
+	 */
+	it.each([
+		['es', '«Sincronizar inventario» o «Analizar sin escribir»', 'Preparando la revisión local del inventario'],
+		['en', '“Sync inventory” or “Analyze without writing”', 'Preparing the local inventory review'],
+	] as const)('never analyzed: names what is missing and how to get it, never the loading copy, in %s', (locale, how, loading) => {
+		const mount = render({
+			status: 'loading', title: 'inventory_advisor.title', detail: 'loading', optionalSources: null, groups: [], notAnalyzed: true,
+		}, locale);
+		const state = only(byClass(mount.elements(), 'tyrian-inventory-advisor__state'));
+		expect(state.textContent).toContain(how);
+		expect(text(mount.elements())).not.toContain(loading);
+		expect(mount.section.attributes.get('aria-busy')).toBe('false');
+
+		const running = render({ status: 'loading', title: 'inventory_advisor.title', detail: 'loading', optionalSources: null, groups: [] }, locale);
+		expect(only(byClass(running.elements(), 'tyrian-inventory-advisor__state')).textContent).toContain(loading);
+		expect(running.section.attributes.get('aria-busy')).toBe('true');
+	});
+
 	// H14.6/H14.12: the same permanent sell/hold line the session panel shows, reused here above the list.
 	it('shows the Halloween bag sell signal in sell and hold states', () => {
 		const sellState = render(readyModel(), 'es', {

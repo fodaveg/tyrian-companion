@@ -31,6 +31,7 @@ import { AssistedDetectionService } from './sessions/assisted-detection-service'
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import type { ActiveSessionState } from './sessions/session';
+import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 
 /**
  * R1b (SPEC-TYRIAN-EN-HEBRA.md section 4) against the real `initializeRuntime`: a consult DEVICE
@@ -49,6 +50,7 @@ interface CollectorModeHarness {
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult>;
 	getPriceHistoryState(): PriceHistoryRuntimeState;
+	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
 	readonly host: TyrianHost;
 }
 
@@ -105,6 +107,24 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 		// Only the status note: nothing else is written by a quiet boot.
 		expect(world.writes).toEqual([STATUS_NOTE]);
 		await world.plugin.shutdownRuntime();
+	});
+
+	/**
+	 * Hebra's report (4 oct 2026), the iPhone case: a consult device that never analyzed its
+	 * inventory sat on "Preparando la revisión local del inventario…". The assembled runtime hands the
+	 * Asesor a model that says it was never analyzed, in either mode, instead of one that looks busy.
+	 */
+	it('the Asesor of a fresh boot says it was never analyzed, in consult and in collector', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		for (const mode of ['consult', 'collector'] as const) {
+			const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode });
+			await world.plugin.initializeRuntime();
+			await settle();
+
+			expect(world.plugin.getInventoryAdvisorViewModel()).toMatchObject({ status: 'loading', notAnalyzed: true });
+			await world.plugin.shutdownRuntime();
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it('seeds the local mode once from the spec rule: a key means collector, none means consult', async () => {

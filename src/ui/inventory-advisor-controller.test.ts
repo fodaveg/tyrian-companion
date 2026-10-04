@@ -95,6 +95,33 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		expect(buildPresentationCalls).toHaveBeenCalledTimes(3);
 	});
 
+	/**
+	 * Hebra's report (4 oct 2026): with no analysis yet the Asesor said "Preparando la revisión local
+	 * del inventario…" forever, the same `loading` it shows while an analysis runs, although nothing
+	 * was running: opening never loads, only an explicit refresh does. Before the first refresh the
+	 * model says it was never analyzed; while that refresh runs it is the ordinary `loading`; after
+	 * it, a result (or its failure) replaces both.
+	 */
+	it('tells "never analyzed" apart from "analysis in flight", and drops both once a result exists', async () => {
+		const capture = deferred<InventoryAdvisorWorkflowResult>();
+		const ports = { load: vi.fn(() => capture.promise) } satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		expect(controller.open()).toMatchObject({ status: 'loading', notAnalyzed: true });
+
+		const refresh = controller.refresh();
+		expect(controller.current().status).toBe('loading');
+		expect(controller.current().notAnalyzed).toBeUndefined();
+
+		capture.resolve(sourceNamed('First'));
+		await refresh;
+		expect(controller.current().status).not.toBe('loading');
+		expect(controller.current().notAnalyzed).toBeUndefined();
+
+		// Discarding the analysis (account or locale change) leaves nothing analyzed again.
+		controller.invalidate();
+		expect(controller.current()).toMatchObject({ status: 'loading', notAnalyzed: true });
+	});
+
 	it('shares a single loader flight across concurrent refreshes in one generation', async () => {
 		const capture = deferred<InventoryAdvisorWorkflowResult>();
 		const ports = { load: vi.fn(() => capture.promise) } satisfies InventoryAdvisorControllerPorts;
