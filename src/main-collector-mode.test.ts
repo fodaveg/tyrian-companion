@@ -166,10 +166,10 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 
 		await expect(world.plugin.armAssistedDetection()).resolves.toBe('unavailable');
 		world.plugin.openManualSessionStart();
-		await expect(world.plugin.checkConnection()).resolves.toMatchObject({ status: 'idle' });
 		await settle();
 
-		expect(notify).toHaveBeenCalledTimes(3);
+		// "Comprobar conexión" is no longer here: under rule A it is a manual action (see below).
+		expect(notify).toHaveBeenCalledTimes(2);
 		expect(outbound.urls).toEqual([]);
 		expect(world.writes).toEqual([]);
 		await world.plugin.shutdownRuntime();
@@ -367,6 +367,145 @@ describe('consult: the manual actions through the real action controller', () =>
 		await world.plugin.shutdownRuntime();
 	});
 });
+
+/** What the key and account checks, and the one-click sync, read on top of the harness. */
+interface ConsultConnectionActions {
+	settingTab: { refreshConnectionRow: ReturnType<typeof vi.fn> };
+	getConnectionState(): { status: string };
+	runInventoryVaultSync(): Promise<void>;
+	getInventoryVaultSyncRunState(): { status: string; lastRun: { status: string; error: string | null } | null };
+	reconcilePendingProposals(): Promise<void>;
+}
+
+/**
+ * Hebra's report (4 oct 2026, the Mac in consult): "Comprobar conexión" did nothing and the key
+ * row kept "Sin comprobar. No se ha realizado ninguna petición de red.". Under rule A (David, 4 oct
+ * 2026) checking the key is a manual action like the inventory ones, so consult runs it; what a
+ * connected account sets off in the collector (detection, its proposals, Halloween) stays there.
+ */
+describe('consult: the key check and the inventory sync are manual actions (rule A)', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+		outbound.urls.length = 0;
+		outbound.respond = null;
+	});
+
+	it('"Comprobar conexión" asks the key and the account and the row gets the real result, with no notice', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		outbound.respond = validAccount;
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'consult' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		const actions = world.plugin as unknown as ConsultConnectionActions;
+		expect(actions.getConnectionState()).toEqual({ status: 'idle' });
+		const notify = vi.spyOn(world.plugin, 'notifyConsultMode');
+
+		await expect(world.plugin.checkConnection()).resolves.toMatchObject({ status: 'connected' });
+
+		expect(outbound.urls.map(endpoint)).toEqual(['tokeninfo', 'account']);
+		expect(actions.getConnectionState()).toMatchObject({ status: 'connected', details: { keyName: 'main' } });
+		// The Settings row is repainted from that state, not left on "Sin comprobar".
+		expect(actions.settingTab.refreshConnectionRow).toHaveBeenCalled();
+		expect(notify).not.toHaveBeenCalled();
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('a connected check in consult starts nothing of the collector: no detection, no proposals, no Halloween, no poll, no heartbeat', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const armLive = vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot');
+		const halloweenActivate = vi.spyOn(HalloweenRuntime.prototype, 'activate');
+		outbound.respond = validAccount;
+		// Everything a collector would start is switched on.
+		const world = collectorModePlugin({
+			apiKeySecret: 'gw2-main', alertIngameEnabled: true, priceHistoryEnabled: true, halloweenEnabled: true,
+		}, { mode: 'consult' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		const arm = vi.spyOn(world.plugin, 'armAssistedDetection');
+		const reconcile = vi.spyOn(world.plugin as unknown as ConsultConnectionActions, 'reconcilePendingProposals');
+		const timersAtBoot = world.intervals().length;
+
+		await world.plugin.checkConnection();
+		await settle();
+
+		expect(arm).not.toHaveBeenCalled();
+		expect(reconcile).not.toHaveBeenCalled();
+		expect(armLive).not.toHaveBeenCalled();
+		expect(halloweenActivate).not.toHaveBeenCalled();
+		expect(world.intervals().length).toBe(timersAtBoot);
+		expect(world.intervals()).not.toContain(COLLECTOR_HEARTBEAT_INTERVAL_MS);
+		expect(world.listen).not.toHaveBeenCalled();
+		expect(world.writes).toEqual([]);
+		expect(outbound.urls.map(endpoint)).toEqual(['tokeninfo', 'account']);
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('the collector\'s check still arms detection and reconciles its proposals, as before', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		outbound.respond = validAccount;
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'collector' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		const arm = vi.spyOn(world.plugin, 'armAssistedDetection').mockResolvedValue('unavailable');
+		const reconcile = vi.spyOn(world.plugin as unknown as ConsultConnectionActions, 'reconcilePendingProposals');
+
+		await expect(world.plugin.checkConnection()).resolves.toMatchObject({ status: 'connected' });
+		await settle();
+
+		expect(arm).toHaveBeenCalledTimes(1);
+		expect(reconcile).toHaveBeenCalledTimes(1);
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('the one-click inventory sync runs with a key nobody checked, and ends in success with no poll and no heartbeat', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		outbound.respond = validAccount;
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main', alertIngameEnabled: true }, { mode: 'consult' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		// The advisor yields to the event loop between its passes (`yieldToEventLoop`), on a timer
+		// this harness never fires: they resume on the next macrotask instead (a microtask would also
+		// fire every request's timeout before its answer).
+		(window as unknown as { setTimeout: unknown }).setTimeout = (callback: () => void) => setImmediate(callback);
+		const actions = world.plugin as unknown as ConsultConnectionActions;
+		const notify = vi.spyOn(world.plugin, 'notifyConsultMode');
+		const timersAtBoot = world.intervals().length;
+
+		await actions.runInventoryVaultSync();
+		await settle();
+
+		expect(actions.getInventoryVaultSyncRunState()).toMatchObject({ status: 'idle', lastRun: { status: 'success', error: null } });
+		// The capture verifies the key itself; it never needed "Comprobar conexión" first.
+		expect(outbound.urls.map(endpoint)).toEqual(expect.arrayContaining(['tokeninfo', 'account', 'characters', 'account/inventory']));
+		expect(actions.getConnectionState()).toEqual({ status: 'idle' });
+		expect(notify).not.toHaveBeenCalled();
+		expect(world.intervals().length).toBe(timersAtBoot);
+		expect(world.notes.has(STATUS_NOTE)).toBe(false);
+		expect(world.listen).not.toHaveBeenCalled();
+		await world.plugin.shutdownRuntime();
+	});
+});
+
+/** The path of a Guild Wars 2 request without `/v2/` or its query: `account/inventory`. */
+function endpoint(url: string): string {
+	return new URL(url).pathname.replace(/^\/v2\//u, '');
+}
+
+/** A valid key on an account with one empty character: what a real check and an empty sync read. */
+function validAccount(url: string): { status: number; json: unknown } {
+	const path = endpoint(url);
+	if (path === 'tokeninfo') {
+		return { status: 200, json: { id: 'key-1', name: 'main', permissions: ['account', 'inventories', 'characters', 'wallet', 'tradingpost', 'progression', 'unlocks', 'builds'] } };
+	}
+	if (path === 'account') {
+		return { status: 200, json: { id: 'account-1', name: 'Hero.1234', world: 1001, created: '2020-01-01T00:00:00Z', access: ['GuildWars2'], commander: false } };
+	}
+	if (path === 'characters') return { status: 200, json: ['Hero'] };
+	if (path.startsWith('characters/')) return { status: 200, json: { bags: [] } };
+	if (path === 'commerce/delivery') return { status: 200, json: { coins: 0, items: [] } };
+	return { status: 200, json: [] };
+}
 
 /** Drains the fire-and-forget work the boot leaves behind (IndexedDB and the first heartbeat). */
 async function settle(): Promise<void> {
