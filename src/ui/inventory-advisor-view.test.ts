@@ -399,6 +399,24 @@ describe('Inventory Advisor view', () => {
 			expect(block.hidden).toBe(true);
 		});
 
+	/**
+	 * Hebra's report (4 oct 2026): a consult device sat on "Preparando la revisión local del
+	 * inventario…" for good. Its final state (`applyConsultInventoryAdvisorState`) names consult mode
+	 * and what is missing, never the loading copy, and leaves the filters usable (not busy).
+	 */
+	it.each([
+		['es', 'modo consulta', 'Preparando la revisión local del inventario'],
+		['en', 'consult mode', 'Preparing the local inventory review'],
+	] as const)('the consult-only final state names consult mode, never the loading copy, in %s', (locale, consult, loading) => {
+		const mount = render({
+			status: 'empty', title: 'inventory_advisor.title', detail: 'consult', optionalSources: null, groups: [], consultOnly: true,
+		}, locale);
+		const state = only(byClass(mount.elements(), 'tyrian-inventory-advisor__state'));
+		expect(state.textContent).toContain(consult);
+		expect(text(mount.elements())).not.toContain(loading);
+		expect(mount.section.attributes.get('aria-busy')).toBe('false');
+	});
+
 	// H14.6/H14.12: the same permanent sell/hold line the session panel shows, reused here above the list.
 	it('shows the Halloween bag sell signal in sell and hold states', () => {
 		const sellState = render(readyModel(), 'es', {
