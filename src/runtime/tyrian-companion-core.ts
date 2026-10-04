@@ -865,7 +865,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// load. Cached for the plugin's lifetime once it succeeds; a failure is not cached, so the
 		// next click retries instead of being stuck on a transient error forever.
 		this.loadLegendaryArmoryOptions = async (): Promise<LegendaryArmoryOptionsResult> => {
-			if (refusedInConsult(this)) return { status: 'error' };
 			if (this.legendaryArmoryOptionsCache !== null) return { status: 'ok', options: this.legendaryArmoryOptionsCache };
 			if (this.legendaryArmoryOptionsInFlight !== null) return await this.legendaryArmoryOptionsInFlight;
 			const request = (async (): Promise<LegendaryArmoryOptionsResult> => {
@@ -4797,8 +4796,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			},
 			canApplyInventory: () => this.runtimeReady && this.inventoryVaultSync.canApply(),
 			canApplyWallet: () => this.runtimeReady && this.walletVaultSync.canApply(),
+			// `loading` also means "never analysed". A collector reads that as busy (its own refresh
+			// is on the way); a consult device never gets one unless the player asks, so for it only
+			// a refresh really in flight is busy, or the button could never be pressed.
 			isInventoryBusy: () => this.runtimeReady && (
-				this.getInventoryAdvisorViewModel().status === 'loading'
+				(consulting(this) ? this.inventoryAdvisor.isRefreshing() : this.getInventoryAdvisorViewModel().status === 'loading')
 				|| this.getInventoryVaultSyncRunState().status === 'running'
 			),
 			sessionCommands: this.sessionCommands,

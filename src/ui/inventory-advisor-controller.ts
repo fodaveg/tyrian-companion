@@ -105,6 +105,11 @@ export class InventoryAdvisorPresentationController {
 		return this.failed ? { ...model, blockedReason: 'unexpected_failure' } : model;
 	}
 
+	/** Whether a capture or reclassification is actually in flight, as opposed to the model never having loaded. */
+	isRefreshing(): boolean {
+		return this.flight !== null;
+	}
+
 	/** Explicitly captures fresh evidence. Only the newest refresh may update or answer from the cache. */
 	async refresh(
 		options: InventoryAdvisorPresentationOptions = {},

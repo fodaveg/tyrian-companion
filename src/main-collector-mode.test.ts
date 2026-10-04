@@ -271,6 +271,83 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 	});
 });
 
+/** The real action controller and the Settings loader, which the harness type above does not list. */
+interface ConsultManualActions {
+	productActions: {
+		describe(id: string): { available: boolean; state: string; disabledReason: string | null };
+		run(id: string): Promise<string>;
+	};
+	loadLegendaryArmoryOptions(): Promise<{ status: string }>;
+}
+
+describe('consult: the manual actions through the real action controller', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+		outbound.urls.length = 0;
+		outbound.respond = null;
+	});
+
+	it('a consult device that never analysed can press refresh: not busy, and executing it reaches the API', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		outbound.respond = () => ({ status: 401, json: { text: 'invalid access token' } });
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'consult' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		const actions = world.plugin as unknown as ConsultManualActions & { setupSessionCommands(): void; setupProductActions(): void };
+		// `onload` builds the controller; the harness boots only the runtime, so build it as production does.
+		vi.spyOn(world.plugin.host.ui, 'registerCommand').mockImplementation(() => () => undefined);
+		vi.spyOn(world.plugin.host.ui, 'ribbon').mockImplementation(() => ({ remove: () => undefined, setIcon: () => undefined, setTitle: () => undefined, setPending: () => undefined, setActive: () => undefined, update: () => undefined }) as never);
+		actions.setupSessionCommands();
+		actions.setupProductActions();
+
+		// Nothing ever analysed: the advisor model reads `loading`, and nothing is in flight.
+		const before = actions.productActions.describe('refresh-inventory-advisor');
+		expect(before).toMatchObject({ available: true, state: 'idle' });
+		for (const id of ['preview-inventory-vault-sync', 'preview-wallet-vault-sync']) {
+			expect(actions.productActions.describe(id), id).toMatchObject({ available: true, state: 'idle' });
+		}
+
+		// The rejected key makes the action end as `failed` (it throws); that it was attempted is the point.
+		await actions.productActions.run('refresh-inventory-advisor').catch(() => undefined);
+
+		expect(outbound.urls.some((url) => url.includes('api.guildwars2.com/v2/'))).toBe(true);
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('the collector keeps reading a never-analysed advisor as busy, as before', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'collector' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		const actions = world.plugin as unknown as ConsultManualActions & { setupSessionCommands(): void; setupProductActions(): void };
+		vi.spyOn(world.plugin.host.ui, 'registerCommand').mockImplementation(() => () => undefined);
+		vi.spyOn(world.plugin.host.ui, 'ribbon').mockImplementation(() => ({ remove: () => undefined, setIcon: () => undefined, setTitle: () => undefined, setPending: () => undefined, setActive: () => undefined, update: () => undefined }) as never);
+		actions.setupSessionCommands();
+		actions.setupProductActions();
+
+		expect(actions.productActions.describe('refresh-inventory-advisor')).toMatchObject({ available: false, state: 'running' });
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('consult: "Cargar lista" of Settings asks the public legendaryarmory route instead of refusing', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		// A 404 ends the request at once (a 503 would wait on a retry timer this harness never fires).
+		outbound.respond = () => ({ status: 404, json: {} });
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'consult' });
+		await world.plugin.initializeRuntime();
+		await settle();
+		const notify = vi.spyOn(world.plugin, 'notifyConsultMode');
+
+		await expect((world.plugin as unknown as ConsultManualActions).loadLegendaryArmoryOptions())
+			.resolves.toEqual({ status: 'error' });
+
+		expect(outbound.urls.some((url) => url.includes('/legendaryarmory'))).toBe(true);
+		expect(notify).not.toHaveBeenCalled();
+		await world.plugin.shutdownRuntime();
+	});
+});
+
 /** Drains the fire-and-forget work the boot leaves behind (IndexedDB and the first heartbeat). */
 async function settle(): Promise<void> {
 	for (let round = 0; round < 5; round += 1) await new Promise((resolve) => setTimeout(resolve, 0));
