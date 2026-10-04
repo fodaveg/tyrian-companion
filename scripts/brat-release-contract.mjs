@@ -4,7 +4,12 @@ import { pathToFileURL } from 'node:url';
 
 const SEMVER = /^\d+\.\d+\.\d+$/u;
 
-/** Returns the only asset names accepted for a published BRAT release. */
+/**
+ * Returns the only asset names accepted for a published release: the three Obsidian files BRAT
+ * downloads, the manual-install ZIP and its checksum, and the three files Hebra downloads to install
+ * Tyrian as an external plugin (`hebra.json`, `hebra-main.mjs`, `hebra-styles.css`; Hebra's
+ * SPEC-PLUGINS-EXTERNOS.md section 3.1). Eight in all.
+ */
 export function expectedBratReleaseAssets(manifest) {
 	return [
 		'main.js',
@@ -12,6 +17,9 @@ export function expectedBratReleaseAssets(manifest) {
 		'styles.css',
 		`${manifest.id}-${manifest.version}.zip`,
 		`${manifest.id}-${manifest.version}.zip.sha256`,
+		'hebra.json',
+		'hebra-main.mjs',
+		'hebra-styles.css',
 	].sort();
 }
 

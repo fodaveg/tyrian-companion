@@ -34,7 +34,7 @@ function testCompleteStagingPassesTheContract() {
 	const plan = planBratRelease(root);
 	const findings = validateBratRelease({ manifest: MANIFEST, release: plan });
 	assert(findings.length === 0, `complete staging was rejected with [${findings.join(', ')}]`);
-	assert(plan.assets.length === 5, `the plan declared ${plan.assets.length} assets instead of 5`);
+	assert(plan.assets.length === 8, `the plan declared ${plan.assets.length} assets instead of 8`);
 	assert(plan.isDraft === false, 'the plan declared a draft release');
 	assert(plan.tagName === MANIFEST.version, 'the plan tag does not match the manifest version');
 }
@@ -45,7 +45,7 @@ function testCompleteStagingPassesTheContract() {
  * that is missing files.
  */
 function testMissingAssetIsCaughtBeforePublishing() {
-	for (const omitted of ['main.js', 'manifest.json', 'styles.css', 'tyrian-companion-9.9.9.zip', 'tyrian-companion-9.9.9.zip.sha256']) {
+	for (const omitted of ['main.js', 'manifest.json', 'styles.css', 'tyrian-companion-9.9.9.zip', 'tyrian-companion-9.9.9.zip.sha256', 'hebra.json', 'hebra-main.mjs', 'hebra-styles.css']) {
 		const root = stage(`missing-${omitted}`, { omit: [omitted] });
 		assertPlanRefuses(`missing ${omitted}`, root, 'asset-missing');
 	}
@@ -81,6 +81,9 @@ function testGitHubPayloadTranslation() {
 			{ name: 'styles.css', state: 'uploaded', size: 10 },
 			{ name: 'tyrian-companion-9.9.9.zip', state: 'uploaded', size: 10 },
 			{ name: 'tyrian-companion-9.9.9.zip.sha256', state: 'uploaded', size: 10 },
+			{ name: 'hebra.json', state: 'uploaded', size: 10 },
+			{ name: 'hebra-main.mjs', state: 'uploaded', size: 10 },
+			{ name: 'hebra-styles.css', state: 'uploaded', size: 10 },
 		],
 	});
 	assert(validateBratRelease({ manifest: MANIFEST, release: published }).length === 0, 'a correct GitHub payload was rejected');
@@ -127,7 +130,10 @@ function stage(name, { omit = [], empty = [] }) {
 		[join('.release', MANIFEST.id, 'manifest.json'), 'manifest.json', JSON.stringify(MANIFEST)],
 		[join('.release', MANIFEST.id, 'main.js'), 'main.js', 'console.log(1);\n'],
 		[join('.release', MANIFEST.id, 'styles.css'), 'styles.css', '.a{color:red}\n'],
-		[join('.release', archive), archive, 'PKfake-archive\n'],
+		[join('.release', MANIFEST.id, 'hebra.json'), 'hebra.json', '{"schema":1}'],
+		[join('.release', MANIFEST.id, 'hebra-main.mjs'), 'hebra-main.mjs', 'export function activate() {}'],
+		[join('.release', MANIFEST.id, 'hebra-styles.css'), 'hebra-styles.css', '.a{color:red}'],
+		[join('.release', archive), archive,'PKfake-archive\n'],
 		[join('.release', `${archive}.sha256`), `${archive}.sha256`, `${'0'.repeat(64)}  ${archive}\n`],
 	];
 	write(root, 'manifest.json', JSON.stringify(MANIFEST));

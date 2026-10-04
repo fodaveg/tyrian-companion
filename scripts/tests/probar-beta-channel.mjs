@@ -680,11 +680,15 @@ function candidateFromManifest(name, source) {
 	const manifest = JSON.parse(source);
 	const root = resolve(testRoot, `candidate-${name}`);
 	mkdirSync(root, { recursive: true });
-	writeJson(resolve(root, 'package.json'), { name: manifest.id, version: manifest.version });
+	writeJson(resolve(root, 'package.json'), {
+		name: manifest.id,
+		version: manifest.version,
+		repository: { type: 'git', url: 'https://github.com/fodaveg/tyrian-companion.git' },
+	});
 	writeFileSync(resolve(root, 'manifest.json'), source);
 	writeJson(resolve(root, 'versions.json'), { [manifest.version]: manifest.minAppVersion });
 	writeFileSync(resolve(root, 'styles.css'), `.candidate-${name} { color: red; }\n`);
-	const result = packageRelease({ root, build: controlledBuild, environment: {} });
+	const result = packageRelease({ root, build: controlledBuild, buildHebra: controlledHebraBuild, environment: {} });
 	return { ...result, archiveName: basename(result.archivePath), root };
 }
 
@@ -694,6 +698,12 @@ function releaseWithPath(release, archivePath) {
 
 function controlledBuild(root) {
 	writeFileSync(resolve(root, 'main.js'), '/* controlled beta candidate */\nmodule.exports = {};\n');
+}
+
+/** What `npm run build:host-esm` leaves at the root; the beta channel installs none of it. */
+function controlledHebraBuild(root) {
+	writeFileSync(resolve(root, 'hebra-main.mjs'), '/* controlled hebra candidate */\nexport function activate() {}\n');
+	writeFileSync(resolve(root, 'hebra-styles.css'), '.candidate { color: red; }\n');
 }
 
 function vault(name) {

@@ -11,7 +11,7 @@ version="$(node -p "require('./manifest.json').version")"
 gh release view "$version" --json tagName,name,isDraft,assets
 ```
 
-El contrato BRAT (`npm run release:brat-verify`, ver más abajo) debe dar `PASS` con los cinco assets
+El contrato BRAT (`npm run release:brat-verify`, ver más abajo) debe dar `PASS` con los ocho assets
 exactos contra esa salida. El detalle línea a línea de cada release ya cerrada —tag, commit, SHAs de
 los tres ficheros, runs de CI y gate local— vive en el [changelog](CHANGELOG.md) y, para las más
 antiguas, en [`docs/historico/ESTADO-lotes-cerrados.md`](historico/ESTADO-lotes-cerrados.md).
@@ -36,10 +36,20 @@ matriz humana ni acreditan la QA pendiente.
 - `styles.css`
 
 El comando valida la identidad y versión de `package.json`, `manifest.json` y `versions.json`, exige
-archivos regulares no vacíos, escanea los tres bytes finales contra credenciales y genera un ZIP
+archivos regulares no vacíos, escanea los bytes finales contra credenciales y genera un ZIP
 determinista con su fichero `.sha256`. Después vuelve a leer el ZIP y comprueba nombres, orden,
 metadatos fijos, CRC y contenido exacto. `versions.json` permanece en la raíz del repositorio: Obsidian
 lo consulta para resolver compatibilidad histórica, pero BRAT no lo instala como asset de una release.
+
+El mismo comando prepara también Tyrian como plugin externo de Hebra (`docs/SPEC-PLUGINS-EXTERNOS.md`
+del repo de Hebra, §3): ejecuta `npm run build:host-esm`, que genera `hebra-main.mjs` (un solo módulo ES
+que exporta `activate(api)`, con su guardarraíl: sin `obsidian`, `electron`, `node:*`, `Buffer`,
+`process` ni imports sin resolver) y `hebra-styles.css` (`src/host/hebra/tyrian-host.css` y después
+`styles.css`), y genera `hebra.json` desde `manifest.json` con la versión del tag sin `v`, el
+`sha256` de esos dos ficheros y lo que declara Tyrian para Hebra (API `^1.0.0`, capacidades, hosts y
+plataformas). Los tres van a `.release/<id>/` junto a los de Obsidian, pasan el mismo escaneo de
+credenciales y se publican como assets, pero no entran en el ZIP, que sigue siendo la instalación de
+Obsidian. Son generados: no se commitean (`.gitignore`).
 
 En CI, todo push de rama o tag ejecuta primero el gate completo, recrea un staging temporal exacto y
 después sube únicamente el ZIP, su `.sha256` e `install-beta.mjs`. El upload ocurre inmediatamente tras
@@ -50,7 +60,9 @@ Un tag solo es aceptado cuando coincide **exactamente** con `manifest.version`, 
 pipeline tiene permisos `contents: read` y no crea tags, GitHub Releases ni publicaciones.
 
 La publicación manual debe usar también `manifest.version` como nombre exacto de la GitHub Release.
-Después de publicarla, valida los metadatos que sirve GitHub y el conjunto exacto de cinco assets:
+Después de publicarla, valida los metadatos que sirve GitHub y el conjunto exacto de ocho assets
+(`manifest.json`, `main.js`, `styles.css`, el ZIP, su `.sha256`, `hebra.json`, `hebra-main.mjs` y
+`hebra-styles.css`):
 
 ```sh
 gh release view "<versión>" --json tagName,name,isDraft,assets \

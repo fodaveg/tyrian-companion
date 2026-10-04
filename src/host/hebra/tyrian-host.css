@@ -1,0 +1,616 @@
+/*
+ * Tyrian Companion en Hebra (checkpoint 16): lo que HebraHost pone para que el
+ * `styles.css` de Tyrian se vea con el diseño de Hebra. Llegó desde
+ * `src/lib/modules/tyrian/tyrian-host.css` de Hebra al pasar Tyrian a plugin externo.
+ * `npm run build:host-esm` lo pone DELANTE de `styles.css` en `hebra-styles.css`, que
+ * Hebra inyecta solo mientras el plugin está activo, y todo va acotado a los cinco
+ * huecos donde Hebra monta contenido de un plugin:
+ *
+ *   .lv1-context-module-el                pestaña del inspector (LibraryContextPanel.svelte)
+ *   .hebra-module-view-content            diálogo de vista (ModuleViewSlot.svelte)
+ *   .hebra-module-modal-content           `ui.openModal` (host-ui.ts)
+ *   .lv1-modules-panel[data-module-panel] `ui.settingsPanel`, en el modal propio del módulo
+ *                                         (LibraryModuleSettingsDialog.svelte)
+ *   .cm-hebra-module-code-block           `ui.registerCodeBlock` (module-code-blocks.ts)
+ *
+ * 1. Variables de Obsidian → tokens de Hebra: el bloque del §5 de
+ *    `docs/HEBRA-CSS-VARIABLES.md` de este repo (Tyrian `5043743`), tal cual.
+ *    La tabla y el motivo de cada fila están allí; los cinco literales son pesos e
+ *    interlineados, para los que Hebra no tiene tokens.
+ * 2. Elementos y clases de Obsidian que la UI de Tyrian usa (§6 del mismo documento),
+ *    con el patrón de Hebra que nombra cada fila. Hebra resetea `button` en `app.css`:
+ *    sin esto, los 61 botones de Tyrian se verían como texto suelto.
+ *
+ * Los huecos van dentro de `:where()` (especificidad 0): cualquier regla de Tyrian con
+ * una clase propia gana a estas, que solo ponen el aspecto que Obsidian daría por defecto.
+ */
+
+/* ---- 1. Variables (HEBRA-CSS-VARIABLES.md §5) ---------------------------------- */
+.lv1-context-module-el,
+.hebra-module-view-content,
+.hebra-module-modal-content,
+.lv1-modules-panel[data-module-panel],
+.cm-hebra-module-code-block {
+  /* superficies y bordes */
+  --background-primary: var(--panel);
+  --background-secondary: var(--paper);
+  --background-modifier-border: var(--line);
+  --background-modifier-hover: var(--state-hover);
+  --background-modifier-error: var(--danger-soft);
+  /* texto y acento */
+  --text-normal: var(--ink);
+  --text-muted: var(--muted);
+  /* Texto terciario y trazos tenues. El §5 de Tyrian lo mapea a `--quiet`, pero Hebra
+     fundió ese rol en `--muted` (tarea 6d543736, `merged-muted-quiet-contrast.test.ts`):
+     única desviación del bloque tal cual. */
+  --text-faint: var(--muted);
+  --text-accent: var(--accent-text);
+  --text-on-accent: var(--on-accent);
+  --text-error: var(--danger-ink);
+  --text-warning: var(--warning-ink);
+  --text-success: var(--success-ink);
+  --interactive-accent: var(--accent-text); /* sin equivalente directo: rol partido en Hebra */
+  /* colores con nombre */
+  --color-green: var(--success);
+  --color-orange: var(--warning-ink);
+  --color-yellow: var(--warning); /* sin equivalente directo: color de categoría */
+  --color-purple: var(--accent-text); /* sin equivalente directo: color de categoría */
+  --color-blue: var(--link); /* sin equivalente directo: color de categoría */
+  /* tipografía */
+  --font-ui-smaller: var(--type-ui-sm);
+  --font-ui-small: var(--type-ui-md);
+  --font-ui-medium: var(--type-ui-lg);
+  --font-ui-large: var(
+    --type-ui-lg
+  ); /* sin equivalente directo: la escala de interfaz acaba en 15px */
+  --font-small: var(--type-ui-sm);
+  --font-smallest: var(--type-ui-xs);
+  --font-monospace: var(--mono);
+  --font-normal: 400; /* literal: Hebra no tiene tokens de peso */
+  --font-medium: 500; /* literal */
+  --font-semibold: 600; /* literal */
+  --line-height-normal: 1.5; /* literal: Hebra no tiene tokens de interlineado */
+  --line-height-tight: 1.3; /* literal */
+  /* espacio */
+  --size-2-1: calc(var(--space-1) / 2); /* sin equivalente directo: no hay paso de 2px */
+  --size-2-2: var(--space-1);
+  --size-4-1: var(--space-1);
+  --size-4-2: var(--space-2);
+  --size-4-3: var(--space-3);
+  --size-4-4: var(--space-4);
+  --size-4-5: var(--space-5);
+  --size-4-8: var(--space-8);
+  /* radios y controles */
+  --radius-s: var(--radius-sm);
+  --radius-m: var(--radius-md);
+  --radius-l: var(--radius-md); /* sin equivalente directo: --radius-lg es de hojas flotantes */
+  --input-height: var(--hit-pointer);
+}
+
+/* Tamaño base del panel de Ajustes del módulo: `--type-ui-md`, «interfaz por defecto»
+   (el de las filas de Ajustes de Hebra). Sin él, nombres de ajuste, párrafos y notas
+   heredan el cuerpo de Hebra (17 px) dentro del modal. Solo este hueco: el inspector, el
+   diálogo y el bloque de código ya traen el suyo. */
+.lv1-modules-panel[data-module-panel] {
+  font-size: var(--type-ui-md);
+}
+
+/* Contenedor de consulta propio ENCIMA de cada hueco cuyo ancho da el padre, para que
+   las `@container` sin nombre de Tyrian midan el hueco y no el `.editor-panel`
+   (`container-name: note-column`, app.css), que es el contenedor más cercano por encima
+   del inspector y mide 1120 a 1440. Encima y no en el hueco: Tyrian pone
+   `.tyrian-product-surface` (que ya es contenedor) EN el propio hueco
+   (`product-shell.ts:43`), y una consulta nunca se mide contra su propio elemento, así
+   que su `(max-width: 599px)`, el que baja el relleno de 16 a 8 px, buscaría más arriba.
+   Padres: `.lv1-context-module` (el panel de la pestaña del inspector), el diálogo
+   `.hebra-module-view` (ancho explícito, `min(90vw, 960px)`) y el hueco del panel de
+   Ajustes, dentro del modal del módulo (54rem en escritorio: más de 480 px de hueco). El modal y el bloque de código NO lo llevan: el ancho del modal sale de su
+   contenido (la contención lo colapsaría) y el bloque vive dentro de la nota, donde
+   medir la columna es lo correcto. */
+.lv1-context-module,
+.hebra-module-view,
+.lv1-modules-panel[data-module-panel] {
+  container-type: inline-size;
+}
+
+/* Dentro de la nota el bloque va sobre la hoja (--paper), no sobre --panel. La
+   tarjeta usa la misma superficie que el bloque de código de Hebra (app.css). */
+.markdown-editor .cm-hebra-module-code-block {
+  --background-primary: var(--paper);
+  --background-secondary: color-mix(in srgb, var(--panel) 82%, var(--paper));
+}
+
+/* Único relleno de acento con texto encima (botón pulsado de la ventana de tiempo,
+   styles.css:1752-1756): aquí el acento es RELLENO, no línea. --on-accent sobre
+   --accent >= 4,77:1 en los 32 bloques; sobre --accent-text bajaría a 2,16:1. */
+.tyrian-price-chart__window-group {
+  --interactive-accent: var(--accent);
+}
+
+/* ---- 2. Elementos de Obsidian (§6, «Elementos nativos») ------------------------ */
+
+/* `button`: el de `.lv1-context-retry` del inspector (hit-pointer, radius-sm, filete
+   --line, --ink, --type-ui-sm, 600). */
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  button:where(:not(.clickable-icon, .checkbox-container)) {
+  min-height: var(--hit-pointer);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: var(--type-ui-sm);
+  font-weight: 600;
+}
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  button:where(:not(.clickable-icon, .checkbox-container, .mod-cta, .mod-warning)):where(
+    :hover:not(:disabled)
+  ) {
+  background: var(--state-hover);
+}
+
+/* `input`, `select`, `textarea`: los de Ajustes de Hebra (`.lv1-sync-replace input`:
+   `--type-ui-sm`, `--hit-pointer`, filete `--line`, radio `--radius-sm`). El selector
+   lleva UN elemento (0,0,1, como la regla de `button`) y no `:where()` a secas: el
+   `input { font: inherit }` de `app.css` (0,0,1) le ganaba a una regla de especificidad 0
+   y los campos salían al tamaño del cuerpo (17 px), medido el 30 sep 2026 en el modal. */
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  input:where(:not([type='checkbox'], [type='radio'], [type='range'])),
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  select,
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  textarea {
+  min-height: var(--hit-pointer);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--type-ui-sm);
+}
+
+/* `h2` y `header p` de la cabecera de una categoría de ajustes de Tyrian
+   (`settings-tab.ts`, `header.createEl('h2')` y `createEl('p')`): sin esto heredan el
+   cuerpo de Hebra (título enorme, párrafo a 17 px). El título, como el `h2` de una
+   sección de Ajustes de Hebra (`.lv1-settings-card h2`: `--type-ui-md`); la introducción,
+   como una nota de Ajustes (`.lv1-settings-note`: `--type-ui-sm` en `--muted`). Los
+   campos ya llevan el tamaño de los de Ajustes (`--type-ui-sm`) en la regla de `input`. */
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(h2) {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--type-ui-md);
+  font-weight: 600;
+  line-height: 1.3;
+}
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(header > p) {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--type-ui-sm);
+}
+
+/* ---- 3. Clases de Obsidian (§6, «Las que Hebra tiene que estilar») -------------- */
+
+/* `mod-cta`: la acción principal, como `.dialog-actions button.primary`. */
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(.mod-cta) {
+  border-color: var(--violet);
+  background: var(--violet);
+  color: var(--violet-ink);
+}
+
+/* `mod-warning` suelto: como `.danger-action`; en la hilera de un modal, como
+   `.dialog-actions button.primary.danger`. */
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(.mod-warning) {
+  border-color: color-mix(in srgb, var(--danger) 44%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+:where(.hebra-module-modal-content .modal-button-container .mod-warning) {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+/* `modal-button-container`: la hilera de `.dialog-actions` (a la derecha, al pie). */
+:where(.hebra-module-modal-content .modal-button-container) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+:where(.hebra-module-modal-content .modal-button-container button) {
+  min-height: var(--hit-touch);
+  border-radius: var(--radius-md);
+  font-weight: 700;
+}
+
+/* `clickable-icon`: botón sin fondo, como `.icon-button`. Solo icono casi siempre (el ⚙
+   de la barra), pero «Copiar detalle técnico» (`inventory-advisor-view.ts:549`) lleva
+   icono Y texto: con la caja fija de 32 × 32 de antes, el texto partía en tres líneas y
+   se salía (medido: contenido 56 × 80 en 32 × 32). Como en Obsidian 1.14.2
+   (`.clickable-icon`: flex centrado, `padding: var(--size-2-2) var(--size-2-3)`, alto
+   automático, sin ancho fijo) crece con su contenido; el 32 × 32 queda de MÍNIMO para
+   que el botón de solo icono siga igual. `--size-2-3` (6 px) no tiene paso en Hebra:
+   `--space-2`. El `gap` es de Hebra: en Obsidian icono y texto van pegados. */
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(.clickable-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: var(--hit-pointer);
+  min-height: var(--hit-pointer);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  white-space: nowrap;
+}
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(.clickable-icon:hover) {
+  background: var(--state-hover);
+  color: var(--ink);
+}
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(.clickable-icon:active) {
+  background: var(--state-pressed);
+}
+
+/* Con el dedo (iPhone, iPad), la diana de 44 que Hebra da a sus propios controles en la
+   misma pantalla (`@media (pointer: coarse)` de Ajustes, `app.css`, `.icon-button`).
+   Medido en R5 (checkpoint 18): en Ajustes › Módulos del iPhone el «Modo de esta
+   instalación», «Nuevo secreto…» o la carpeta de salida de Tyrian medían 32 de alto
+   junto a controles de Hebra de 44. El `--input-height` es el de los campos de Tyrian. */
+@media (pointer: coarse) {
+  .lv1-context-module-el,
+  .hebra-module-view-content,
+  .hebra-module-modal-content,
+  .lv1-modules-panel[data-module-panel],
+  .cm-hebra-module-code-block {
+    --input-height: var(--hit-touch);
+  }
+  /* `button` con la especificidad de la regla de §2 (0,0,1) para ganarle por orden; el
+     resto, a 0 como la suya. */
+  :where(
+      .lv1-context-module-el,
+      .hebra-module-view-content,
+      .hebra-module-modal-content,
+      .lv1-modules-panel[data-module-panel],
+      .cm-hebra-module-code-block
+    )
+    button:where(:not(.checkbox-container)),
+  :where(
+      .lv1-context-module-el,
+      .hebra-module-view-content,
+      .hebra-module-modal-content,
+      .lv1-modules-panel[data-module-panel],
+      .cm-hebra-module-code-block
+    )
+    input:where(:not([type='checkbox'], [type='radio'], [type='range'])),
+  :where(
+      .lv1-context-module-el,
+      .hebra-module-view-content,
+      .hebra-module-modal-content,
+      .lv1-modules-panel[data-module-panel],
+      .cm-hebra-module-code-block
+    )
+    select,
+  :where(
+      .lv1-context-module-el,
+      .hebra-module-view-content,
+      .hebra-module-modal-content,
+      .lv1-modules-panel[data-module-panel],
+      .cm-hebra-module-code-block
+    )
+    textarea {
+    min-height: var(--hit-touch);
+  }
+  :where(
+      .lv1-context-module-el,
+      .hebra-module-view-content,
+      .hebra-module-modal-content,
+      .lv1-modules-panel[data-module-panel],
+      .cm-hebra-module-code-block
+    )
+    :where(.clickable-icon) {
+    min-width: var(--hit-touch);
+  }
+}
+
+/* `svg-icon`: el `<svg>` que pone `setIcon` (HebraHost le da la clase); su tamaño sale
+   de `--icon-size`, como en Obsidian. */
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(.svg-icon) {
+  width: var(--icon-size, var(--space-4));
+  height: var(--icon-size, var(--space-4));
+  flex: none;
+}
+
+/* `callout` de Tyrian (`session-card.ts`): los tonos de los callouts de Hebra,
+   `warning` como `.cm-hebra-callout-warning` y `error` como `.cm-hebra-callout-caution`. */
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(.callout) {
+  --hebra-callout-accent: var(--accent-text);
+  --hebra-callout-surface: color-mix(in srgb, var(--accent-text) 12%, transparent);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--hebra-callout-accent) 28%, var(--line));
+  border-inline-start: 3px solid var(--hebra-callout-accent);
+  border-radius: var(--radius-sm);
+  background: var(--hebra-callout-surface);
+}
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(.callout[data-callout='warning']) {
+  --hebra-callout-accent: var(--warning);
+  --hebra-callout-surface: color-mix(in srgb, var(--warning-soft) 55%, transparent);
+}
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel],
+    .cm-hebra-module-code-block
+  )
+  :where(.callout[data-callout='error']) {
+  --hebra-callout-accent: var(--danger);
+  --hebra-callout-surface: color-mix(in srgb, var(--danger-soft) 55%, transparent);
+}
+:where(.callout) :where(.callout-title) {
+  display: flex;
+  font-weight: 600;
+}
+:where(.callout) :where(.callout-content) {
+  margin-top: var(--space-2);
+}
+:where(.callout-content) :where(p) {
+  margin: 0;
+}
+
+/* ---- 4. Filas de ajustes de `ui.setting` (`setting-row.ts`) -------------------- */
+:where(
+    .lv1-context-module-el,
+    .hebra-module-view-content,
+    .hebra-module-modal-content,
+    .lv1-modules-panel[data-module-panel]
+  )
+  :where(.setting-item) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--soft-line);
+}
+:where(.setting-item) :where(.setting-item-info) {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+:where(.setting-item) :where(.setting-item-name) {
+  color: var(--ink);
+  font-weight: 600;
+}
+:where(.setting-item) :where(.setting-item-description) {
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--type-ui-sm);
+}
+:where(.setting-item-control, .hebra-module-setting-secret, .hebra-module-setting-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+:where(.hebra-module-setting-actions) {
+  justify-content: flex-end;
+}
+:where(.hebra-module-secret-dialog form) {
+  display: grid;
+  gap: var(--space-3);
+  min-width: min(22rem, 80vw);
+}
+
+/* El interruptor (`role="switch"`, el `addToggle` de `setting-row.ts`), igual que el de
+   Hebra que queda justo encima en Ajustes › Módulos (`.lv1-modules-switch`,
+   `LibrarySettingsModules.svelte`): mismas medidas y tokens. Pista con borde `--muted`
+   (≥4,5:1 sobre papel por contrato del tema) y botón del mismo color; encendido, relleno
+   de acento con el botón en `--on-accent`. SIN `:where()`, a diferencia del resto de esta
+   hoja: el reset global `button { border: 0; background: none }` (`app.css`, 0,0,1) le
+   ganaba a la versión con especificidad 0 y el interruptor salía invisible (medido el
+   28 sep 2026 en Registros de diagnóstico: pista transparente, borde 0). */
+.hebra-module-setting-toggle {
+  position: relative;
+  flex: none;
+  width: calc(var(--space-8) + var(--space-3));
+  height: var(--space-6);
+  padding: 0;
+  border: 2px solid var(--muted);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  transition: background-color var(--motion-fade-standard) var(--motion-ease-standard);
+}
+.hebra-module-setting-toggle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--muted);
+  transform: translateY(-50%);
+  transition: transform var(--motion-duration-standard) var(--motion-ease-standard);
+}
+.hebra-module-setting-toggle:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+.hebra-module-setting-toggle.is-enabled {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.hebra-module-setting-toggle.is-enabled::after {
+  background: var(--on-accent);
+  /* Pista interior (2,75rem − 4px de borde) − botón − 2 × 2px de aire. */
+  transform: translate(calc(var(--space-6) - 4px), -50%);
+}
+/* Sin `@media (prefers-reduced-motion)` propio: el asa se desplaza con un token que vale 0
+   con reducir movimiento y el fondo funde en 100 ms como mucho (`src/app.css`). */
+
+/* ---- 5. Selector de carpeta con búsqueda (`folder-picker.ts`) ------------------- */
+/* Nunca desborda: el contenedor mide el 100 % de su hueco con `min-width: 0` (es hijo de
+   un `.setting-item-control` flexible), y las rutas largas se recortan con «…» (la ruta
+   entera va en `title`). Especificidad 0, como el resto de la hoja. */
+:where(.hebra-module-folder-picker) {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+:where(.hebra-module-folder-input) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+:where(.hebra-module-folder-list) {
+  box-sizing: border-box;
+  max-height: 14rem;
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  list-style: none;
+}
+:where(.hebra-module-folder-option),
+:where(.hebra-module-folder-empty) {
+  padding: var(--space-1) var(--space-2);
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  font-size: var(--type-ui-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:where(.hebra-module-folder-option) {
+  min-height: var(--hit-pointer);
+  color: var(--ink);
+  line-height: calc(var(--hit-pointer) - 2 * var(--space-1));
+  cursor: pointer;
+}
+:where(.hebra-module-folder-option:hover) {
+  background: var(--state-hover);
+}
+/* La resaltada con flechas (`aria-activedescendant`): fondo de acento suave y una barra
+   a la izquierda, para que no dependa solo del color. */
+:where(.hebra-module-folder-option[aria-selected='true']) {
+  background: var(--state-pressed);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+:where(.hebra-module-folder-empty) {
+  color: var(--muted);
+}
+:where(.hebra-module-folder-note) {
+  margin: 0;
+  color: var(--warning-ink);
+  font-size: var(--type-ui-sm);
+  overflow-wrap: anywhere;
+}
+@media (pointer: coarse) {
+  :where(.hebra-module-folder-option) {
+    min-height: var(--hit-touch);
+    line-height: calc(var(--hit-touch) - 2 * var(--space-1));
+  }
+}

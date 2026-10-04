@@ -1,6 +1,6 @@
 {
 	"name": "tyrian-companion",
-	"version": "0.2.20",
+	"version": "0.3.0",
 	"private": true,
 	"description": "An Obsidian desktop companion for Guild Wars 2 account context and planning.",
 	"main": "main.js",
@@ -75,6 +75,8 @@
 		"eslint-plugin-obsidianmd": "^0.4.0",
 		"fake-indexeddb": "^6.2.5",
 		"globals": "^17.6.0",
+		"happy-dom": "^20.14.5",
+		"hebra-plugin-api": "github:fodaveg/hebra-plugin-api#v1.0.0",
 		"jiti": "^2.6.1",
 		"obsidian": "1.13.1",
 		"typescript": "^5.8.3",
