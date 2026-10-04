@@ -47,15 +47,16 @@ const HEBRA_GENERATED_FILES = Object.freeze([HEBRA_MANIFEST_FILE, HEBRA_MAIN_FIL
 /**
  * What `hebra.json` declares beyond what `manifest.json` gives (decided 2026-10-03 with Hebra's
  * session, "Tyrian llega a Hebra como plugin externo"): the API range, where it runs (Android is
- * not measured), the Lucide icon of its row in Hebra (`sword`, which Hebra's own `espada` glyph is
- * drawn from), what it uses of the API, the two fixed hosts plus the user's webhook, and nothing
- * borrowed. The description is Hebra's own for the plugin: `manifest.json`'s speaks of Obsidian.
+ * not measured), the Lucide icon of its row in Hebra (`compass`, the one the Companion's tab, dialog
+ * and ribbon already use, so Tyrian has one icon in Hebra; `sword` had no glyph in Hebra's
+ * `renderModuleIcon`, 4 oct 2026), what it uses of the API, the two fixed hosts plus the user's
+ * webhook, and nothing borrowed. The description is Hebra's own for the plugin: `manifest.json`'s speaks of Obsidian.
  */
 export const HEBRA_PLUGIN_DECLARATION = Object.freeze({
 	apiVersion: '^1.0.0',
 	description: 'El compañero de Guild Wars 2: sesiones, inventario y precios, dentro de Hebra.',
 	platforms: Object.freeze(['macos', 'ios', 'linux', 'windows', 'web']),
-	icon: 'sword',
+	icon: 'compass',
 	capabilities: Object.freeze({
 		required: Object.freeze(['vault.read', 'vault.write', 'editor']),
 		optional: Object.freeze(['http', 'secrets', 'tcp', 'notify.system', 'background']),
