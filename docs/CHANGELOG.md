@@ -1,6 +1,6 @@
 # Changelog
 
-## Sin publicar (main, 4 oct 2026) - «Comprobar conexión» funciona en modo consulta
+## Release beta 0.3.3 - «Comprobar conexión» funciona en modo consulta y la paleta de Hebra dice por qué un comando no está disponible
 
 - **En modo consulta, «Comprobar conexión» consulta la clave y la cuenta** (`tokeninfo` y `account`) y
   la fila de la clave en Ajustes muestra el resultado real. Antes no hacía ninguna petición, mostraba
@@ -18,7 +18,7 @@
   petición** (una sincronización o un «Analizar» piden `tokeninfo` por su cuenta): dice «Sin
   comprobar. Pulsa Comprobar conexión para validar la clave.». En recolector el texto no cambia.
 
-Límites: no comprobado en Hebra ni en Obsidian reales.
+Límites: no comprobado en Hebra ni en Obsidian reales antes de publicar.
 
 ## Release beta 0.3.2 - en Hebra, «Abrir carpeta de registros» explica por qué no está disponible
 
