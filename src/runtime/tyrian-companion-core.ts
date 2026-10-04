@@ -1547,20 +1547,24 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		let state: ConnectionState = { status: 'idle' };
 		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<LocalDebugActionOutcome> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); state = { status: 'idle' }; return { phase: 'success', code: 'ok' }; }
-		// R1b: `tokeninfo` and `account` are Guild Wars 2 requests.
-		if (refusedInConsult(this)) { state = this.connection.getState(); return { phase: 'skip', code: 'skipped', state: 'consult_mode' }; }
+		// R1b, rule A (David, 4 oct 2026): "Comprobar conexión" is the player's manual action, so
+		// consult runs it too (`tokeninfo` and `account`) and the key row shows the real result. What
+		// a connected account sets off below is the collector's (Halloween, detection, its proposals)
+		// and stays with it: switching to collector checks again and starts them there. The mode is
+		// read once the answer is back, so a switch to consult made meanwhile starts none of them.
 		const check = this.connection.check(context);
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
 		state = await check;
-		if (state.status === 'connected' || state.status === 'warning') {
+		const collector = !consulting(this);
+		if (collector && (state.status === 'connected' || state.status === 'warning')) {
 			await this.switchHalloweenAccount(state.details.account.id, context);
 			// Assisted detection is always armed with a connected account now (David, 2026-09-09: no
 			// more `detectionMode` toggle). `armAssistedDetection` already no-ops when a session is
 			// mid-recovery or already armed/arming/proposing, so this is safe to call on every check.
 			void this.armAssistedDetection();
 		}
-		fireAndForgetLocal(this.localDebugActions,
+		if (collector) fireAndForgetLocal(this.localDebugActions,
 			{ component: 'detection', action: 'detection_proposal', state: 'connection_reconcile' },
 			() => this.reconcilePendingProposals());
 		this.settingTab.refreshConnectionRow();

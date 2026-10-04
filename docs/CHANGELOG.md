@@ -1,5 +1,19 @@
 # Changelog
 
+## Sin publicar (main, 4 oct 2026) - «Comprobar conexión» funciona en modo consulta
+
+- **En modo consulta, «Comprobar conexión» consulta la clave y la cuenta** (`tokeninfo` y `account`) y
+  la fila de la clave en Ajustes muestra el resultado real. Antes no hacía ninguna petición, mostraba
+  el aviso de consulta y la fila seguía en «Sin comprobar. No se ha realizado ninguna petición de red.».
+- **Lo que una cuenta conectada pone en marcha sigue siendo del recolector**: en consulta la
+  comprobación no arma la detección asistida, no revisa sus propuestas pendientes ni activa la
+  observación de Halloween, y no arranca ningún sondeo ni el latido de `Collector status.md`. Al pasar
+  a recolector se comprueba otra vez y todo eso arranca allí, como antes.
+- La sincronización de inventario en consulta no necesita comprobar la conexión antes: su captura
+  verifica la clave por su cuenta. No cambia.
+
+Límites: no comprobado en Hebra ni en Obsidian reales.
+
 ## Release beta 0.3.2 - en Hebra, «Abrir carpeta de registros» explica por qué no está disponible
 
 - **En Hebra, «Abrir carpeta de registros» ya no termina en «La acción de diagnóstico no se pudo
