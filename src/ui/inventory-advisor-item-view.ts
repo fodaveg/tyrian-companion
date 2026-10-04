@@ -1,5 +1,6 @@
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale } from '../core/i18n';
+import type { CollectorMode } from '../core/settings';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { InventoryPreferencesEditorSession, InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { ReservationGoal } from '../economy/reservation-model';
@@ -55,6 +56,12 @@ export interface InventoryAdvisorViewActions {
 	getPriceSeedQueueCoverage?(): PriceSeedQueueCoverage | null;
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
+	/**
+	 * R1b: this device's mode. In consult the sync, the analysis and the price-history opt-in can
+	 * do nothing (`refusedInConsult`), so their buttons are disabled with the reason on screen.
+	 * Absent reads as the collector.
+	 */
+	getCollectorMode?(): CollectorMode;
 	openProductSettings?(): void;
 	/** Same account-level Halloween bag sell/hold verdict the session panel already reads (H14.6/H14.12). */
 	getSellSignalState?(): SellSignalRuntimeState | null;
@@ -145,6 +152,7 @@ export class InventoryAdvisorItemView {
 		// A full repaint already shows whatever a waiting progress frame was going to show.
 		this.cancelProgressRender();
 		const model = this.actions.getInventoryAdvisorViewModel();
+		const consultOnly = this.actions.getCollectorMode?.() === 'consult';
 		const sync = this.actions.getInventoryVaultSyncRunState === undefined
 			|| this.actions.runInventoryVaultSync === undefined
 			|| this.actions.confirmInventoryVaultSync === undefined
@@ -155,6 +163,7 @@ export class InventoryAdvisorItemView {
 				state: this.actions.getInventoryVaultSyncRunState(),
 				assetsInstalled: this.actions.hasManagedAssetsRoot?.() ?? false,
 				analysisBusy: this.analysisBusy,
+				consultOnly,
 				onAnalyze: () => this.runInventoryAnalysisAction(() => this.actions.refreshInventoryAdvisor!()),
 				onRun: () => this.runInventorySyncAction(() => this.actions.runInventoryVaultSync!()),
 				onConfirm: () => this.runInventorySyncAction(() => this.actions.confirmInventoryVaultSync!()),
@@ -172,6 +181,7 @@ export class InventoryAdvisorItemView {
 			? undefined
 			: {
 				busy: this.priceHistoryBusy,
+				consultOnly,
 				onEnable: () => this.runPriceHistoryAction(() => this.actions.enablePriceHistory!()),
 				onDismiss: () => this.runPriceHistoryAction(() => this.actions.dismissPriceHistoryOptIn!()),
 			};

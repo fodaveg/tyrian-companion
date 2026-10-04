@@ -70,6 +70,11 @@ export interface InventoryAdvisorViewInteractions {
 		state: InventoryVaultSyncRunState;
 		assetsInstalled: boolean;
 		analysisBusy?: boolean;
+		/**
+		 * R1b: this device is in consult mode, where both runs are refused (`refusedInConsult`). Both
+		 * buttons are disabled; the reason is the consult state line right under them.
+		 */
+		consultOnly?: boolean;
 		onAnalyze?: () => void | Promise<void>;
 		onRun: () => void | Promise<void>;
 		onConfirm: () => void | Promise<void>;
@@ -85,6 +90,12 @@ export interface InventoryAdvisorViewInteractions {
 	 */
 	priceHistoryOptIn?: {
 		busy?: boolean;
+		/**
+		 * R1b: this device is in consult mode, which never collects prices. The enable button is
+		 * disabled and the offer says why instead of what turning it on would request; «Ahora no»
+		 * still works.
+		 */
+		consultOnly?: boolean;
 		onEnable: () => void | Promise<void>;
 		/** «Ahora no»: hides the offer until the next plugin version. */
 		onDismiss: () => void | Promise<void>;
@@ -965,10 +976,12 @@ function mountInventoryAdvisorView(
 		const offer = interactions.priceHistoryOptIn;
 		optIn.hidden = offer === undefined;
 		optIn.setAttribute('aria-label', translator.t('view.optIn.priceHistory.aria'));
-		optInText.textContent = `${translator.t('view.optIn.priceHistory.missing')} ${translator.t('view.optIn.priceHistory.effect')}`;
+		const offerConsult = offer?.consultOnly === true;
+		optInText.textContent = `${translator.t('view.optIn.priceHistory.missing')} ${
+			translator.t(offerConsult ? 'productAction.reason.consult' : 'view.optIn.priceHistory.effect')}`;
 		optInEnable.textContent = translator.t('view.optIn.priceHistory.enable');
 		optInDismiss.textContent = translator.t('view.optIn.dismiss');
-		optInEnable.disabled = offer?.busy === true;
+		optInEnable.disabled = offer?.busy === true || offerConsult;
 		optInDismiss.disabled = offer?.busy === true;
 		const sync = interactions.inventorySync;
 		syncPrimaryActions.hidden = sync === undefined;
@@ -992,7 +1005,7 @@ function mountInventoryAdvisorView(
 			const busy = sync.state.status === 'running';
 			syncButtonText.textContent = translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button');
 			syncButton.setAttribute('aria-label', translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button'));
-			syncButton.disabled = busy || sync.analysisBusy === true
+			syncButton.disabled = busy || sync.analysisBusy === true || sync.consultOnly === true
 				|| sync.state.status === 'confirm' || sync.state.status === 'disabled';
 			syncLastRunAgo.hidden = lastRun === null;
 			if (lastRun !== null) {
@@ -1004,7 +1017,7 @@ function mountInventoryAdvisorView(
 			syncAnalyze.hidden = sync.onAnalyze === undefined;
 			syncAnalyze.textContent = translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze');
 			syncAnalyze.setAttribute('aria-label', translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze'));
-			syncAnalyze.disabled = busy || sync.analysisBusy === true || sync.state.status === 'confirm'
+			syncAnalyze.disabled = busy || sync.analysisBusy === true || sync.consultOnly === true || sync.state.status === 'confirm'
 				|| (sync.state.status === 'disabled' && sync.state.reason === 'missing_key');
 			syncPrimaryActions.setAttribute('aria-busy', String(busy || sync.analysisBusy === true));
 

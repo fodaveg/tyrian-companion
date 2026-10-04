@@ -717,9 +717,9 @@ describe('Companion start in consult mode', () => {
 
 		const start = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Iniciar sesión');
 		expect(start?.disabled).toBe(true);
-		expect(texts(contentEl).some((text) => text.includes('modo consulta'))).toBe(true);
-		// The reason replaces the account line: a consult device never checks the account.
-		expect(texts(contentEl).some((text) => text.includes('Cuenta conectada'))).toBe(false);
+		// The reason takes the card's meta line, where the account line was: a consult device never checks it.
+		const meta = find(contentEl, (node) => node.className.includes('tyrian-companion-session__meta'));
+		expect(meta?.textContent).toContain('modo consulta');
 	});
 
 	it('collector: «Iniciar sesión» stays enabled', () => {
@@ -729,7 +729,8 @@ describe('Companion start in consult mode', () => {
 
 		const start = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Iniciar sesión');
 		expect(start?.disabled).toBe(false);
-		expect(texts(contentEl).some((text) => text.includes('modo consulta'))).toBe(false);
+		const meta = find(contentEl, (node) => node.className.includes('tyrian-companion-session__meta'));
+		expect(meta?.textContent).not.toContain('modo consulta');
 	});
 });
 
