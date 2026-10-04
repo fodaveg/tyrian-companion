@@ -703,6 +703,36 @@ describe('Companion measured quality line', () => {
 	});
 });
 
+/**
+ * Hebra's report (4 oct 2026): on a consult device «Iniciar sesión» stayed enabled with a key
+ * selected, and a tap only raised the consult notice. It is disabled there, with the reason in the
+ * card's own meta line, the same way a missing key already disables it.
+ */
+describe('Companion start in consult mode', () => {
+	it('consult: «Iniciar sesión» is disabled and the meta line says consult mode', () => {
+		const openManualSessionStart = vi.fn();
+		const { contentEl, render } = mountCompanion({ openManualSessionStart, getCollectorMode: () => 'consult' });
+
+		render();
+
+		const start = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Iniciar sesión');
+		expect(start?.disabled).toBe(true);
+		expect(texts(contentEl).some((text) => text.includes('modo consulta'))).toBe(true);
+		// The reason replaces the account line: a consult device never checks the account.
+		expect(texts(contentEl).some((text) => text.includes('Cuenta conectada'))).toBe(false);
+	});
+
+	it('collector: «Iniciar sesión» stays enabled', () => {
+		const { contentEl, render } = mountCompanion({ getCollectorMode: () => 'collector' });
+
+		render();
+
+		const start = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Iniciar sesión');
+		expect(start?.disabled).toBe(false);
+		expect(texts(contentEl).some((text) => text.includes('modo consulta'))).toBe(false);
+	});
+});
+
 describe('Companion saved-session decision', () => {
 	it('replaces the start action with recovery instead of offering a start that would be refused', async () => {
 		const recoverSession = vi.fn(async () => undefined);

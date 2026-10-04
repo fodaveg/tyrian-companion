@@ -428,6 +428,54 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(optInBlock(reopened.contentEl as unknown as FakeElement).hidden).toBe(false);
 	});
 
+	/**
+	 * Hebra's report (4 oct 2026): on a consult device «Activar histórico de precios» only made the
+	 * offer disappear, with nothing visible in return: a consult device never collects prices. The
+	 * enable button is disabled there and the offer says why; «Ahora no» still works.
+	 */
+	it('consult: the enable button is disabled, the offer says consult mode, and «Ahora no» still works', async () => {
+		installDom();
+		const host = optInHost();
+		const view = new InventoryAdvisorItemView(content(), icons, { ...host.actions, getCollectorMode: () => 'consult' });
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		const block = optInBlock(root);
+		expect(block.hidden).toBe(false);
+		expect(text(block)).toContain('modo consulta');
+		expect(text(block)).not.toContain('/v2/commerce/prices');
+		const enable = buttonWithText(root, 'Activar histórico de precios');
+		expect(enable.disabled).toBe(true);
+		expect(buttonWithText(root, 'Ahora no').disabled).toBe(false);
+	});
+
+	/** Same rule for the two sync buttons: in consult they would only answer with a notice. */
+	it('consult: «Sincronizar inventario» and «Analizar sin escribir» are disabled', async () => {
+		installDom();
+		const run = vi.fn(async () => undefined);
+		const analyze = vi.fn(async () => undefined);
+		const viewActions = actions(() => 'es', { state: { status: 'idle', lastRun: null }, run, analyze });
+		const view = new InventoryAdvisorItemView(content(), icons, { ...viewActions.value, getCollectorMode: () => 'consult' });
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		const sync = find(root, 'button')
+			.find((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario'));
+		expect(sync?.disabled).toBe(true);
+		expect(buttonWithText(root, 'Analizar sin escribir').disabled).toBe(true);
+	});
+
+	it('collector: the enable button and both sync buttons stay enabled', async () => {
+		installDom();
+		const host = optInHost();
+		const view = new InventoryAdvisorItemView(content(), icons, { ...host.actions, getCollectorMode: () => 'collector' });
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		expect(buttonWithText(root, 'Activar histórico de precios').disabled).toBe(false);
+		const viewActions = actions(() => 'es', { state: { status: 'idle', lastRun: null } });
+		const synced = new InventoryAdvisorItemView(content(), icons, { ...viewActions.value, getCollectorMode: () => 'collector' });
+		await synced.onOpen();
+		expect(buttonWithText(synced.contentEl as unknown as FakeElement, 'Analizar sin escribir').disabled).toBe(false);
+	});
+
 	it('opens with the offer on screen without a request, a timer, storage or the setting write', async () => {
 		const host = optInHost();
 		let offered = false;
