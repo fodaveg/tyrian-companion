@@ -40,9 +40,13 @@ export function projectManagedAssetsDescription(
 	})} ${base}`;
 }
 
-/** Keeps API failure messages out of Settings: codes/reasons project to known translated copy. */
-export function projectConnectionDescription(state: ConnectionState, translator: Translator, now = Date.now()): string {
-	if (state.status === 'idle') return translator.t('settings.connection.idle');
+/**
+ * Keeps API failure messages out of Settings: codes/reasons project to known translated copy.
+ * `consulting` only changes the `idle` text: a consult installation asks `tokeninfo` by itself on
+ * a manual sync or "Analizar" without moving this state, so "no network request" would be false.
+ */
+export function projectConnectionDescription(state: ConnectionState, translator: Translator, now = Date.now(), consulting = false): string {
+	if (state.status === 'idle') return translator.t(consulting ? 'settings.connection.idleConsult' : 'settings.connection.idle');
 	if (state.status === 'checking') return translator.t('settings.connection.checkingDesc');
 	if (state.status === 'error') {
 		return appendCooldown(translator.t(connectionErrorKey(state.code)), state.retryAt, translator, now);

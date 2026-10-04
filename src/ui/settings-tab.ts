@@ -1337,7 +1337,7 @@ export class TyrianCompanionSettingTab {
 	}
 
 	private connectionDescription(state: ConnectionState): string {
-		return projectConnectionDescription(state, createTranslator(this.plugin.settings.language));
+		return projectConnectionDescription(state, createTranslator(this.plugin.settings.language), Date.now(), this.plugin.getCollectorMode() === 'consult');
 	}
 
 	private startCountdown(state: ConnectionState): void {

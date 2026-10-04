@@ -189,6 +189,27 @@ describe('Settings i18n projection', () => {
 			expect(projectConnectionDescription(error, createTranslator('en'), 0)).toBe(en);
 		});
 
+	it('the idle key row of a consult installation no longer claims that no request was made, the collector keeps its text', () => {
+		const idle = { status: 'idle' } as const;
+		expect(projectConnectionDescription(idle, createTranslator('es'), 0, true)).toBe('Sin comprobar. Pulsa Comprobar conexión para validar la clave.');
+		expect(projectConnectionDescription(idle, createTranslator('en'), 0, true)).toBe('Not checked. Press Check connection to validate the key.');
+		expect(projectConnectionDescription(idle, createTranslator('es'), 0, false)).toBe('Sin comprobar. No se ha realizado ninguna petición de red.');
+		expect(projectConnectionDescription(idle, createTranslator('en'), 0)).toBe('Not checked. No network request has been made.');
+	});
+
+	it('the settings tab paints the idle text of the device\'s mode on the key row', () => {
+		const plugin = settingsPlugin();
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		let shown = '';
+		(tab as unknown as { connectionStatusEl: { setText(text: string): void } }).connectionStatusEl = { setText: (text) => { shown = text; } };
+		expect(plugin.getCollectorMode()).toBe('consult');
+		tab.refreshConnectionRow();
+		expect(shown).toBe('Not checked. Press Check connection to validate the key.');
+		plugin.collectorMode = 'collector';
+		tab.refreshConnectionRow();
+		expect(shown).toBe('Not checked. No network request has been made.');
+	});
+
 	it('uses a localized safe fallback for an unexpected legacy error code', () => {
 		const error = { status: 'error', code: 'legacy_gateway_failure', message: 'Raw transport failure.', retryAt: null } as const;
 		expect(projectConnectionDescription(error, createTranslator('es'), 0))

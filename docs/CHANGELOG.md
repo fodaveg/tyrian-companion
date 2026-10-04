@@ -11,6 +11,12 @@
   a recolector se comprueba otra vez y todo eso arranca allí, como antes.
 - La sincronización de inventario en consulta no necesita comprobar la conexión antes: su captura
   verifica la clave por su cuenta. No cambia.
+- **En Hebra, un comando de la paleta que no está disponible dice por qué** («Haz una vista previa
+  válida primero.», «Vincula una clave API en Ajustes.»…) en vez del genérico «no está disponible
+  ahora». Obsidian no cambia: oculta esos comandos.
+- **En modo consulta, la fila de la clave sin comprobar ya no afirma que no se ha hecho ninguna
+  petición** (una sincronización o un «Analizar» piden `tokeninfo` por su cuenta): dice «Sin
+  comprobar. Pulsa Comprobar conexión para validar la clave.». En recolector el texto no cambia.
 
 Límites: no comprobado en Hebra ni en Obsidian reales.
 
