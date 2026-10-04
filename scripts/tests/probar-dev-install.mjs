@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
 import { DevInstallError, defaultPluginDir, installDevBuild, parseDevInstallArguments } from '../dev-install.mjs';
 
-const testRoot = mkdtempSync(join(tmpdir(), 'tyrian-dev-install-'));
+// Resolved: on macOS tmpdir() is /var/folders, a symlink to /private/var/folders, and reloadPlugin compares
+// the vault path against realpathSync(vaultRoot), so an unresolved root never matched and the reload never ran.
+const testRoot = realpathSync(mkdtempSync(join(tmpdir(), 'tyrian-dev-install-')));
 const failures = [];
 
 try {
