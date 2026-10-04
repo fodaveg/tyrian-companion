@@ -324,6 +324,20 @@ describe('Inventory Advisor view', () => {
 		},
 	);
 
+	/**
+	 * Hebra's report (4 oct 2026, `23-asesor-dialogo.png`): at 390 px «Sincronizar inventario» and
+	 * «Analizar sin escribir» sat indented from the rest of the Asesor. Their wrapper keeps
+	 * `margin-inline-start: auto` (pushed to the end of the bar on a wide view) after it wraps onto a
+	 * row of its own, so it shrinks to its content and is pushed right. Under 480 px it takes the
+	 * whole row, flush with the controls above it.
+	 */
+	it('under 480 px the sync buttons take the whole row, flush with the controls above', () => {
+		const styles = readFileSync('styles.css', 'utf8');
+		const rule = containerRule(styles, '(max-width: 479px)', '.tyrian-inventory-advisor__sync-primary-actions');
+		expect(rule).toMatch(/margin-inline-start:\s*0/u);
+		expect(rule).toMatch(/flex:\s*1 1 100%/u);
+	});
+
 	it('keeps the list first and the sync line last, in every advisor state', () => {
 		const interactions: InventoryAdvisorViewInteractions = {
 			onLoadPreferences: vi.fn(),
@@ -1505,6 +1519,32 @@ describe('Inventory Advisor view', () => {
 
 function formatClockFor(iso: string): string {
 	return new Intl.DateTimeFormat('es', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+}
+
+/**
+ * The declarations of `selector` inside every `@container <query>` block of `css`, joined; empty
+ * when no such block declares it. Braces are balanced by hand: a regex cannot find a nested end.
+ */
+function containerRule(css: string, query: string, selector: string): string {
+	const found: string[] = [];
+	let from = 0;
+	for (;;) {
+		const start = css.indexOf(`@container ${query}`, from);
+		if (start === -1) break;
+		const open = css.indexOf('{', start);
+		let depth = 1;
+		let index = open + 1;
+		while (depth > 0 && index < css.length) {
+			if (css[index] === '{') depth += 1;
+			else if (css[index] === '}') depth -= 1;
+			index += 1;
+		}
+		const body = css.slice(open + 1, index - 1);
+		const escaped = selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+		for (const match of body.matchAll(new RegExp(`(?:^|[},])\\s*${escaped}\\s*\\{([^}]*)\\}`, 'gu'))) found.push(match[1]!);
+		from = index;
+	}
+	return found.join('\n');
 }
 
 function render(model: InventoryAdvisorViewModel, locale: 'es' | 'en' = 'es', interactions: InventoryAdvisorViewInteractions = {}) {

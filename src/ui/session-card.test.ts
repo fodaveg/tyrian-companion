@@ -233,6 +233,26 @@ describe('renderSessionCard', () => {
 	});
 });
 
+/**
+ * Hebra's report (4 oct 2026, `14-acompanante-dialogo-lista.png`): about 45 px of nothing between
+ * «Iniciar sesión» and «Botín». The card is a grid with `gap: var(--size-4-4)`, and the callout and
+ * sell-signal slots are grid items even while empty, so a resting card paid three gaps (3 × 16 px)
+ * where one belongs. An empty slot must take no track: it carries a class the stylesheet removes
+ * from the layout while it has no content.
+ */
+describe('empty callout and sell-signal slots take no grid track', () => {
+	it('marks both slots with the class the stylesheet collapses while empty', () => {
+		const root = new FakeElement('div');
+		const mount = renderSessionCard(root as unknown as HTMLElement, icons, idleModel());
+		const slots = [mount.calloutSlot, mount.sellSignalSlot] as unknown as FakeElement[];
+		for (const slot of slots) expect(slot.className.split(/\s+/u)).toContain('tyrian-companion-session__slot');
+
+		const css = readFileSync(fileURLToPath(new URL('../../styles.css', import.meta.url)), 'utf8');
+		const rule = /\.tyrian-companion-session__slot:empty\s*\{([^}]*)\}/u.exec(css);
+		expect(rule?.[1]).toMatch(/display:\s*none/u);
+	});
+});
+
 describe('styles.css container queries (no fixed pixel widths inside the component)', () => {
 	it('keeps every declaration inside the tyrian-companion-session rules unit-free of hardcoded px widths', () => {
 		const cssPath = fileURLToPath(new URL('../../styles.css', import.meta.url));
