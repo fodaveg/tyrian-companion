@@ -413,6 +413,9 @@ const ES = {
 		'advisor.view.state.limited': 'Acciones recomendadas con los precios disponibles. Comprueba el valor antes de ejecutarlas en el juego.',
 		'advisor.view.state.blocked': 'La revisión de inventario está bloqueada por evidencia incompleta.',
 		'advisor.view.state.invalid': 'La revisión de inventario no es válida y no se muestra ninguna acción.',
+		// Sin análisis y sin ninguno en curso (`InventoryAdvisorViewModel.notAnalyzed`): abrir el
+		// Asesor no analiza, así que dice qué falta y con qué botón se consigue.
+		'advisor.view.state.notAnalyzed': 'Aún no hay ningún análisis del inventario. Pulsa «{{sync}}» o «{{analyze}}» para revisarlo.',
 		'advisor.view.blockedReason.missing_rules': 'Las reglas revisadas del asesor no están disponibles.',
 		'advisor.view.blockedReason.rules_expired': 'El conocimiento curado del asesor ha caducado. Hace falta publicar una revisión.',
 		'advisor.view.blockedReason.credential_unavailable': 'La clave seleccionada ya no está disponible en el almacén seguro. Vuelve a seleccionarla en los ajustes.',
@@ -1616,6 +1619,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'advisor.view.state.limited': 'Recommended actions using available prices. Check the value before carrying them out in game.',
 	'advisor.view.state.blocked': 'Inventory review is blocked by incomplete evidence.',
 	'advisor.view.state.invalid': 'Inventory review is invalid and no action is shown.',
+	'advisor.view.state.notAnalyzed': 'No inventory analysis yet. Press “{{sync}}” or “{{analyze}}” to review it.',
 	'advisor.view.blockedReason.missing_rules': 'The advisor reviewed rules are unavailable.',
 	'advisor.view.blockedReason.rules_expired': 'The advisor curated knowledge has expired. A published review is due.',
 	'advisor.view.blockedReason.credential_unavailable': 'The selected key is no longer available in secure storage. Select it again in settings.',
