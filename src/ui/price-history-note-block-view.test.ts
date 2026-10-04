@@ -141,6 +141,21 @@ describe('price history note block view', () => {
 		expect(elements.some((element) => element.textContent?.includes('no history available'))).toBe(true);
 	});
 
+	/**
+	 * Hebra's report (4 oct 2026, `19-bloque-precio-final.png`): at 322 px the chart was squashed
+	 * (axis labels about 4 px, «Máximo:» split in two). The `<figure>` only had its block margins set,
+	 * so it kept the browser's own `margin-inline: 40px` on each side wherever the host does not reset
+	 * it, as Hebra does not. Our stylesheet zeroes the inline margins itself.
+	 */
+	it('zeroes the figure inline margins itself, without counting on the host to reset them', () => {
+		const styles = readFileSync('styles.css', 'utf8');
+		const blocks = [...styles.matchAll(/([^{}]+)\{([^}]*)\}/gu)]
+			.filter(([, selectors]) => selectors!.split(',').some((selector) => selector.trim() === '.tyrian-price-history-note figure'))
+			.map(([, , body]) => body!);
+		expect(blocks.length).toBeGreaterThan(0);
+		expect(blocks.join('\n')).toMatch(/(?:^|[\s;])margin(?:-inline)?:\s*0(?:\s|;)/u);
+	});
+
 	it('uses only semantic theme variables and matches the styled class names', () => {
 		const styles = readFileSync('styles.css', 'utf8');
 		expect(styles).toContain('.tyrian-price-history-note {');
