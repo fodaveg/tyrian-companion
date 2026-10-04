@@ -1127,7 +1127,9 @@ export class TyrianCompanionSettingTab {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status');
 					feedback.setAttr('aria-live', 'polite');
-					setting.addButton((button) => button.setButtonText(this.t('settings.debug.open')).onClick(async () => {
+					const folderAvailable = this.plugin.localDebugFolderAvailable?.() !== false;
+					if (!folderAvailable) feedback.setText(this.t('settings.debug.openUnavailable'));
+					setting.addButton((button) => button.setButtonText(this.t('settings.debug.open')).setDisabled(!folderAvailable).onClick(async () => {
 						button.setDisabled(true);
 						try {
 							feedback.setText(await this.plugin.openLocalDebugFolder()

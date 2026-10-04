@@ -1638,6 +1638,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		else open();
 	}
 
+	/**
+	 * False when the host has no filesystem folder for the logs (`vault.fullPath` is null: Hebra keeps them in
+	 * IndexedDB), so Settings disables "open folder" and says why instead of failing with the generic error.
+	 */
+	localDebugFolderAvailable(): boolean {
+		return this.host.vault.fullPath(this.getLocalDebugStatus().path.replace(/\/$/u, '')) !== null;
+	}
+
 	/** Opens the resolved desktop directory through the host shell without exposing it to diagnostic records. */
 	async openLocalDebugFolder(): Promise<boolean> {
 		const run = async (): Promise<boolean> => {

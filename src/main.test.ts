@@ -2043,6 +2043,22 @@ describe('local diagnostics composition', () => {
 		expect(electronMocks.openPath).toHaveBeenLastCalledWith('/vault/test-config-dir/plugins/tyrian-companion/logs');
 	});
 
+	it('reports the diagnostics folder as available only where the host resolves a full path', () => {
+		const available = (getFullPath: (path: string) => string | null) => {
+			const harness = withObsidianHost({
+				getLocalDebugStatus: () => ({ path: 'test-config-dir/plugins/tyrian-companion/logs/' }),
+				app: { vault: { adapter: { getFullPath } } },
+			});
+			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+			const check = (TyrianCompanionCore.prototype as unknown as {
+				localDebugFolderAvailable(this: typeof harness): boolean;
+			}).localDebugFolderAvailable;
+			return check.call(harness);
+		};
+		expect(available((path) => `/vault/${path}`)).toBe(true);
+		expect(available(() => null)).toBe(false);
+	});
+
 	it('flushes the unload terminal and then drains the flush terminal before resolving', async () => {
 		const events: string[] = [];
 		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {

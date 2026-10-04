@@ -54,6 +54,57 @@ describe('essential alert threshold', () => {
 	});
 });
 
+describe('open log folder action and a host without a filesystem folder', () => {
+	const status = { fileCount: 3 } as LocalDebugStatus;
+
+	/** Renders the diagnostics actions row with a button fake that records label, disabled state and click handler. */
+	function renderActions(plugin: object) {
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, {
+			...settingsPlugin(), getLocalDebugStatus: () => status, ...plugin,
+		} as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Diagnostic logs: actions');
+		if (definition === undefined) throw new Error('Expected the diagnostics actions row.');
+		const buttons = new Map<string, { disabled: boolean; click: () => Promise<void> | void }>();
+		let feedback = '';
+		const setting = {
+			settingEl: { addClass: () => undefined },
+			descEl: { createDiv: () => ({ setAttr: () => undefined, setText: (text: string) => { feedback = text; } }) },
+			addButton: (render: (button: unknown) => unknown) => {
+				const entry = { disabled: false, click: (): Promise<void> | void => undefined };
+				const button = {
+					buttonEl: { addClass: () => undefined },
+					setButtonText: (text: string) => { buttons.set(text, entry); return button; },
+					setDisabled: (disabled: boolean) => { entry.disabled = disabled; return button; },
+					onClick: (handler: () => Promise<void> | void) => { entry.click = handler; return button; },
+				};
+				render(button);
+				return setting;
+			},
+		};
+		definition.render(setting as never);
+		return { buttons, feedback: () => feedback };
+	}
+
+	it('disables the button and says why when the host has no log folder, so it never reaches the generic failure', () => {
+		const openLocalDebugFolder = vi.fn(async () => false);
+		const view = renderActions({ localDebugFolderAvailable: () => false, openLocalDebugFolder });
+		const translator = createTranslator('en');
+
+		expect(view.buttons.get('Open log folder')?.disabled).toBe(true);
+		expect(view.feedback()).toBe(translator.t('settings.debug.openUnavailable'));
+		expect(view.feedback()).not.toBe(translator.t('settings.debug.failed'));
+		expect(openLocalDebugFolder).not.toHaveBeenCalled();
+	});
+
+	it('keeps the button enabled where the host resolves the folder, and when the core does not say', () => {
+		const available = renderActions({ localDebugFolderAvailable: () => true });
+		expect(available.buttons.get('Open log folder')?.disabled).toBe(false);
+		expect(available.feedback()).toBe('');
+		expect(renderActions({}).buttons.get('Open log folder')?.disabled).toBe(false);
+	});
+});
+
 describe('managed assets section and the host capability', () => {
 	const names = (plugin: ReturnType<typeof settingsPlugin>) =>
 		(new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never)

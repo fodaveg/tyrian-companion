@@ -83,6 +83,8 @@ export interface SettingsPanelActions {
 	cancelSessionHistoryScrubPreview(token: string): void;
 	scrubSessionHistory(token: string): Promise<SessionHistoryScrubResult>;
 	getLocalDebugStatus(): LocalDebugStatus;
+	/** Optional: absent means true. False disables "open log folder" (host with no filesystem folder). */
+	localDebugFolderAvailable?(): boolean;
 	openLocalDebugFolder(): Promise<boolean>;
 	copyLocalDebugEntries(limit?: number): Promise<number>;
 	previewLocalDebugExport(): LocalDebugExportPreview;
