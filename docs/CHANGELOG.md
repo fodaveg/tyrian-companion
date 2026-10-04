@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.3.2 - en Hebra, «Abrir carpeta de registros» explica por qué no está disponible
+
+- **En Hebra, «Abrir carpeta de registros» ya no termina en «La acción de diagnóstico no se pudo
+  completar».** Allí los registros viven en IndexedDB y no hay carpeta que abrir, así que el botón
+  sale desactivado con su motivo: «Aquí no hay carpeta de registros. Copia un extracto o crea un
+  paquete de soporte.» (`43fa066`).
+- En Obsidian no cambia nada: la carpeta de registros se resuelve y el botón se comporta como antes.
+
+Límites: no comprobado en Hebra ni en Obsidian reales antes de publicar.
+
 ## Release beta 0.3.1 - el inventario se actualiza a mano en cualquier instalación, también en modo consulta
 
 - **En modo consulta funcionan las acciones manuales de inventario**: actualizar el asesor, previsualizar
