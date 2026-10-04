@@ -235,3 +235,16 @@ describe('ObsidianHost ui.registerView', () => {
 		expect(rebuildView).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('ObsidianHost ui.registerCommand', () => {
+	it('hands Obsidian only id, name and the check: the unavailable reason is Hebra\'s alone, and a false check still hides the command', () => {
+		const addCommand = vi.fn();
+		const checkCallback = vi.fn((checking: boolean) => !checking);
+		createObsidianUi({ app: {}, addCommand } as unknown as Plugin).registerCommand({
+			id: 'apply-inventory-vault-sync', name: 'Sync', checkCallback, unavailableReason: () => 'Haz una vista previa válida primero.',
+		});
+		const spec = addCommand.mock.calls[0]?.[0] as { id: string; name: string; checkCallback(checking: boolean): boolean };
+		expect(Object.keys(spec).sort()).toEqual(['checkCallback', 'id', 'name']);
+		expect(spec.checkCallback(true)).toBe(false);
+	});
+});

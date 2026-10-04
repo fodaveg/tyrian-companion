@@ -120,7 +120,7 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 			run: () => {
 				if (command.checkCallback) {
 					if (command.checkCallback(true)) command.checkCallback(false);
-					else ui.notice(`«${command.name}» no está disponible ahora.`);
+					else ui.notice(command.unavailableReason?.() ?? `«${command.name}» no está disponible ahora.`);
 					return;
 				}
 				command.callback?.();

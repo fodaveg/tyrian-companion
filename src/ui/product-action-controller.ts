@@ -354,7 +354,7 @@ export class ProductActionController {
 }
 
 export function registerProductActionPalette(
-	registry: { addCommand(spec: { id: ProductActionId; name: string; checkCallback(checking: boolean): boolean }): void },
+	registry: { addCommand(spec: { id: ProductActionId; name: string; checkCallback(checking: boolean): boolean; unavailableReason(): string | null }): void },
 	controller: Pick<ProductActionController, 'describe' | 'run'>,
 ): void {
 	for (const id of PRODUCT_ACTION_IDS) registry.addCommand({
@@ -365,6 +365,7 @@ export function registerProductActionPalette(
 			if (!checking && available) void controller.run(id).catch(() => undefined);
 			return available;
 		},
+		unavailableReason: () => controller.describe(id).disabledReason,
 	});
 }
 

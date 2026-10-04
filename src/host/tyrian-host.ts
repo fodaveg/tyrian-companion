@@ -205,6 +205,12 @@ export interface TyrianCommandRegistration {
 	readonly name: string;
 	callback?(): void;
 	checkCallback?(checking: boolean): boolean;
+	/**
+	 * Why `checkCallback(true)` answers false right now, in the user's language, or `null` when
+	 * there is no specific reason. HebraHost shows it in the notice of an unavailable command
+	 * (its palette lists every command); ObsidianHost ignores it, since its palette hides them.
+	 */
+	unavailableReason?(): string | null;
 }
 
 export interface TyrianRibbonRegistration {

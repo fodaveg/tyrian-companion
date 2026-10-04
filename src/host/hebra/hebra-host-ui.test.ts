@@ -102,6 +102,15 @@ describe('commands, ribbon, code block and settings panel', () => {
 		expect(callback).toHaveBeenCalledTimes(1);
 	});
 
+	it('registerCommand: an unavailable command says its reason when the registration has one, the generic text when not', async () => {
+		const { fake, ui } = await setup();
+		ui.registerCommand({ id: 'with-reason', name: 'With', checkCallback: () => false, unavailableReason: () => 'Haz una vista previa válida primero.' });
+		ui.registerCommand({ id: 'null-reason', name: 'Null', checkCallback: () => false, unavailableReason: () => null });
+		await fake.recorded.commands[0]?.run();
+		await fake.recorded.commands[1]?.run();
+		expect(fake.recorded.notices).toEqual(['Haz una vista previa válida primero.', '«Null» no está disponible ahora.']);
+	});
+
 	it('ribbon: live title and pending flag, and the click arrives with its event', async () => {
 		const { fake, ui } = await setup();
 		const onClick = vi.fn();

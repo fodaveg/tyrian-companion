@@ -57,6 +57,23 @@ describe('Tyrian in Hebra, consult mode: the manual connection check and invento
 		expect(test.fake.recorded.notices).not.toContain(CONSULT_NOTICE);
 		await cleanup();
 	}, 30_000);
+
+	it('the palette command of the inventory sync, with no valid preview, says why in the notice instead of the generic text', async () => {
+		const requests: string[] = [];
+		const test = consultHebra(requests);
+		const factory = new IDBFactory();
+		await (await activate(test, factory)).cleanup();
+		saveSettings(test, { apiKeySecret: 'gw2-main', outputFolder: 'Tyrian Companion' });
+		const { cleanup } = await activate(test, factory);
+		test.fake.recorded.notices.length = 0;
+
+		// The first start's commands stay recorded (no key, so another reason); the one that counts is the last registration.
+		const command = test.fake.recorded.commands.filter((entry) => entry.id.endsWith('apply-inventory-vault-sync')).at(-1);
+		expect(command).toBeDefined();
+		await command?.run();
+		expect(test.fake.recorded.notices).toEqual(['Haz una vista previa válida primero.']);
+		await cleanup();
+	}, 30_000);
 });
 
 /** A Hebra library with the output folder, settings without a key yet, and the key in the keychain. */
