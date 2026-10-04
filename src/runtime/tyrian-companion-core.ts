@@ -1431,7 +1431,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			{ component: 'connection', action: 'connection_check', state: 'collector_mode' },
 			() => this.checkConnection());
 		this.settingTab.refreshForSettingsChange();
-		// The Companion's start button and the Asesor's actions read the mode (disabled in consult).
+		// The Companion's start button reads the mode (disabled in consult).
 		this.renderViews();
 		this.renderInventoryAdvisorViews();
 	}

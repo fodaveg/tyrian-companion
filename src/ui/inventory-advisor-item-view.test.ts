@@ -448,8 +448,11 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(buttonWithText(root, 'Ahora no').disabled).toBe(false);
 	});
 
-	/** Same rule for the two sync buttons: in consult they would only answer with a notice. */
-	it('consult: «Sincronizar inventario» and «Analizar sin escribir» are disabled', async () => {
+	/**
+	 * The opposite for the two sync buttons: David decided on 4 oct 2026 that the manual inventory
+	 * actions run in consult too, so the mode alone never disables them.
+	 */
+	it('consult: «Sincronizar inventario» and «Analizar sin escribir» stay enabled', async () => {
 		installDom();
 		const run = vi.fn(async () => undefined);
 		const analyze = vi.fn(async () => undefined);
@@ -459,8 +462,8 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const root = view.contentEl as unknown as FakeElement;
 		const sync = find(root, 'button')
 			.find((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario'));
-		expect(sync?.disabled).toBe(true);
-		expect(buttonWithText(root, 'Analizar sin escribir').disabled).toBe(true);
+		expect(sync?.disabled).toBe(false);
+		expect(buttonWithText(root, 'Analizar sin escribir').disabled).toBe(false);
 	});
 
 	it('collector: the enable button and both sync buttons stay enabled', async () => {

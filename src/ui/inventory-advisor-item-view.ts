@@ -57,9 +57,9 @@ export interface InventoryAdvisorViewActions {
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
 	/**
-	 * R1b: this device's mode. In consult the sync, the analysis and the price-history opt-in can
-	 * do nothing (`refusedInConsult`), so their buttons are disabled with the reason on screen.
-	 * Absent reads as the collector.
+	 * R1b: this device's mode. Price history is collected only by the collector (David, 4 oct
+	 * 2026: in consult only the manual inventory actions run), so in consult the opt-in's enable
+	 * button is disabled with the reason on screen. Absent reads as the collector.
 	 */
 	getCollectorMode?(): CollectorMode;
 	openProductSettings?(): void;
@@ -163,7 +163,6 @@ export class InventoryAdvisorItemView {
 				state: this.actions.getInventoryVaultSyncRunState(),
 				assetsInstalled: this.actions.hasManagedAssetsRoot?.() ?? false,
 				analysisBusy: this.analysisBusy,
-				consultOnly,
 				onAnalyze: () => this.runInventoryAnalysisAction(() => this.actions.refreshInventoryAdvisor!()),
 				onRun: () => this.runInventorySyncAction(() => this.actions.runInventoryVaultSync!()),
 				onConfirm: () => this.runInventorySyncAction(() => this.actions.confirmInventoryVaultSync!()),

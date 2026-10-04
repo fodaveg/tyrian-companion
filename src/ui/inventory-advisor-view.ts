@@ -70,11 +70,6 @@ export interface InventoryAdvisorViewInteractions {
 		state: InventoryVaultSyncRunState;
 		assetsInstalled: boolean;
 		analysisBusy?: boolean;
-		/**
-		 * R1b: this device is in consult mode, where both runs are refused (`refusedInConsult`). Both
-		 * buttons are disabled; the reason is the consult state line right under them.
-		 */
-		consultOnly?: boolean;
 		onAnalyze?: () => void | Promise<void>;
 		onRun: () => void | Promise<void>;
 		onConfirm: () => void | Promise<void>;
@@ -1005,7 +1000,7 @@ function mountInventoryAdvisorView(
 			const busy = sync.state.status === 'running';
 			syncButtonText.textContent = translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button');
 			syncButton.setAttribute('aria-label', translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button'));
-			syncButton.disabled = busy || sync.analysisBusy === true || sync.consultOnly === true
+			syncButton.disabled = busy || sync.analysisBusy === true
 				|| sync.state.status === 'confirm' || sync.state.status === 'disabled';
 			syncLastRunAgo.hidden = lastRun === null;
 			if (lastRun !== null) {
@@ -1017,7 +1012,7 @@ function mountInventoryAdvisorView(
 			syncAnalyze.hidden = sync.onAnalyze === undefined;
 			syncAnalyze.textContent = translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze');
 			syncAnalyze.setAttribute('aria-label', translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze'));
-			syncAnalyze.disabled = busy || sync.analysisBusy === true || sync.consultOnly === true || sync.state.status === 'confirm'
+			syncAnalyze.disabled = busy || sync.analysisBusy === true || sync.state.status === 'confirm'
 				|| (sync.state.status === 'disabled' && sync.state.reason === 'missing_key');
 			syncPrimaryActions.setAttribute('aria-busy', String(busy || sync.analysisBusy === true));
 
