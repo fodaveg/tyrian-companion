@@ -64,13 +64,6 @@ export interface InventoryAdvisorViewModel {
 	 * own controller (e.g. hand-built test fixtures), where every render rebuilds.
 	 */
 	contentVersion?: number;
-	/**
-	 * R1b: true exactly when this device is in consult mode and holds no analysis, which in consult
-	 * is always: `refreshInventoryAdvisor` refuses there (`refusedInConsult`), so nothing will ever
-	 * move the model out of `loading`. The view names consult mode instead of waiting, like Venta's
-	 * own `SaleViewModel.consultOnly`. Absent everywhere else.
-	 */
-	consultOnly?: boolean;
 }
 
 export interface InventoryAdvisorViewModelGroup {
@@ -139,28 +132,6 @@ export function applyLiveInventoryAdvisorRulesExpiry(
 		optionalSources: null,
 		groups: [],
 		...(model.contentVersion === undefined ? {} : { contentVersion: model.contentVersion }),
-	};
-}
-
-/**
- * R1b (Hebra's report, 4 oct 2026): a consult device never captures the inventory, so the model it
- * opens stays at `loading` and the Asesor sat on "Preparando la revisión local del inventario…" for
- * good. `consulting` is the caller's live mode; while it holds, a `loading` model becomes the final
- * `empty` state marked `consultOnly`, with no groups. Any other model, and every collector model,
- * is returned exactly as built: a collector's `loading` is still waiting for its own refresh.
- */
-export function applyConsultInventoryAdvisorState(
-	model: InventoryAdvisorViewModel,
-	consulting: boolean,
-): InventoryAdvisorViewModel {
-	if (!consulting || model.status !== 'loading') return model;
-	return {
-		...model,
-		status: 'empty',
-		detail: 'This device is in consult mode: the inventory is analyzed on the collector.',
-		optionalSources: null,
-		groups: [],
-		consultOnly: true,
 	};
 }
 

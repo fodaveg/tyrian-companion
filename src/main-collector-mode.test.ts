@@ -31,7 +31,6 @@ import { AssistedDetectionService } from './sessions/assisted-detection-service'
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import type { ActiveSessionState } from './sessions/session';
-import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 
 /**
  * R1b (SPEC-TYRIAN-EN-HEBRA.md section 4) against the real `initializeRuntime`: a consult DEVICE
@@ -50,7 +49,6 @@ interface CollectorModeHarness {
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult>;
 	getPriceHistoryState(): PriceHistoryRuntimeState;
-	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
 	readonly host: TyrianHost;
 }
 
@@ -106,37 +104,6 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 		expect(world.intervals()).toContain(COLLECTOR_HEARTBEAT_INTERVAL_MS);
 		// Only the status note: nothing else is written by a quiet boot.
 		expect(world.writes).toEqual([STATUS_NOTE]);
-		await world.plugin.shutdownRuntime();
-	});
-
-	/**
-	 * Hebra's report (4 oct 2026): on a consult device the Asesor sat on "Preparando la revisión
-	 * local del inventario…" for good, because the analysis it waits for is refused in consult
-	 * (`refreshInventoryAdvisor` → `refusedInConsult`). It must reach a final state that says so.
-	 */
-	it('consult: the Asesor reaches a final empty state marked consultOnly, never loading', async () => {
-		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
-		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'consult' });
-		await world.plugin.initializeRuntime();
-		await settle();
-
-		const model = world.plugin.getInventoryAdvisorViewModel();
-		expect(model.status).toBe('empty');
-		expect(model.consultOnly).toBe(true);
-		expect(model.groups).toEqual([]);
-		await world.plugin.shutdownRuntime();
-	});
-
-	/** The collector path does not change: its `loading` still waits for its own refresh. */
-	it('collector: the Asesor keeps its ordinary loading state until its own refresh', async () => {
-		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
-		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'collector' });
-		await world.plugin.initializeRuntime();
-		await settle();
-
-		const model = world.plugin.getInventoryAdvisorViewModel();
-		expect(model.status).toBe('loading');
-		expect(model.consultOnly).toBeUndefined();
 		await world.plugin.shutdownRuntime();
 	});
 

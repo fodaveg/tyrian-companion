@@ -64,7 +64,6 @@ const H5_11_KEYS = [
 	'advisor.view.source.notRequested',
 	'advisor.view.state.empty', 'advisor.view.state.loading', 'advisor.view.state.ready',
 	'advisor.view.state.limited', 'advisor.view.state.blocked', 'advisor.view.state.invalid',
-	'advisor.view.consultEmpty',
 	'advisor.view.blockedReason.missing_rules', 'advisor.view.blockedReason.rules_expired',
 	'advisor.view.blockedReason.credential_unavailable',
 	'advisor.view.blockedReason.capture_unavailable', 'advisor.view.blockedReason.capture_invalid',

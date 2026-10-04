@@ -1708,8 +1708,6 @@ function flattenInventoryAdvisorRows(groups: readonly InventoryAdvisorViewModelG
 }
 
 function stateLabel(model: InventoryAdvisorViewModel, translator: Translator): string {
-	// R1b: a consult device's final state says why there is nothing, never the generic `empty`.
-	if (model.consultOnly === true) return translator.t('advisor.view.consultEmpty');
 	if (model.refreshWarning !== undefined) return translator.t('advisor.view.refreshWarning', {
 		reason: translator.t(`advisor.view.blockedReason.${model.refreshWarning}`),
 	});

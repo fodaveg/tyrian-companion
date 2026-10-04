@@ -277,7 +277,6 @@ import { refreshBackgroundStatus } from '../ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from '../ui/settings-tab';
 import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-controller';
 import {
-	applyConsultInventoryAdvisorState,
 	applyLiveInventoryAdvisorRulesExpiry,
 	buildInventoryAdvisorViewModel,
 	type InventoryAdvisorViewModel,
@@ -1726,17 +1725,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * curated builtin bundle's own `validUntil`, exactly the silent staleness H18.34 already fixed for
 	 * the Venta tab's `SaleViewModel.rulesExpiredAtMs`. Checked fresh on every read, never on the
 	 * cached model's own `status`.
-	 *
-	 * R1b (Hebra's report, 4 oct 2026): in consult the refresh this model waits for is refused
-	 * (`refusedInConsult`), so a `loading` model is turned into the final, explained consult state
-	 * (`applyConsultInventoryAdvisorState`) instead of "Preparando…" forever, as Venta already does.
 	 */
 	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel {
 		if (!this.runtimeReady) return buildInventoryAdvisorViewModel(null);
-		return applyConsultInventoryAdvisorState(
-			applyLiveInventoryAdvisorRulesExpiry(this.inventoryAdvisor.open(), liveRulesExpiredAtMs(Date.now())),
-			consulting(this),
-		);
+		return applyLiveInventoryAdvisorRulesExpiry(this.inventoryAdvisor.open(), liveRulesExpiredAtMs(Date.now()));
 	}
 
 	getSaleLocale() {
@@ -1766,9 +1758,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// `advisorModel.status` at `loading` forever — nothing here was ever going to move it. Venta
 		// must not sit in "Leyendo…" waiting for a refresh that will never run; it reaches a final,
 		// explained state instead, with no action that needs the API.
-		// The advisor model already reaches its own consult state (`consultOnly`); a bare `loading`
-		// still counts, for a caller that hands this method an unmarked model.
-		if (consulting(this) && (advisorModel.status === 'loading' || advisorModel.consultOnly === true)) {
+		if (consulting(this) && advisorModel.status === 'loading') {
 			return buildSaleViewModel({
 				status: 'empty', consultOnly: true, nowMs, festivalStartMs: null,
 				maxPriceAgeMs: FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS, hero: null, rows: [], calendar: [],
