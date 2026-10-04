@@ -614,7 +614,8 @@ las pilas pequeñas. Cambia `SETTINGS_SCHEMA_VERSION` (hoy 12, `src/core/setting
    desactivado o el dispositivo está en modo consulta; cualquier siembra, la de las que faltan
    también, se detiene en el ítem siguiente si a mitad se desactiva el histórico o el dispositivo
    pasa a modo consulta; y el que aún no había arrancado se descarta al desactivar el histórico, al
-   descargar el plugin o cuando el refresco del asesor de esa acción se rechaza por modo consulta.
+   descargar el plugin. En modo consulta el refresco manual del asesor sí se ejecuta (4 oct 2026),
+   pero no descarga ninguna siembra.
    Solo hay uno a la vez: una acción que llega con uno pendiente o en curso no deja otro, y de dos
    acciones que se solapan solo conserva el suyo la primera que lo deja; las semillas que faltan
    esperan su turno en la misma cola (detrás del refresco diferido en curso de la acción anterior,

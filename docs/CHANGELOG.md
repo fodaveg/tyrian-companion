@@ -1,5 +1,20 @@
 # Changelog
 
+## Sin publicar (main, 4 oct 2026) - el inventario y la cartera se actualizan a mano también en modo consulta
+
+- **En modo consulta funcionan las acciones manuales de inventario**: actualizar el asesor, previsualizar
+  y aplicar la sincronización de inventario y la de cartera, desde su botón o su comando. Cada una
+  consulta la API y escribe las notas igual que en el recolector, solo en esa ejecución. Antes se
+  negaban con «modo consulta».
+- **Sigue siendo solo del recolector** lo automático y lo que lo sostiene: el sondeo de la API, la
+  nota `Collector status.md` y su latido, el puente del juego, los avisos, las sesiones y la detección.
+  La sincronización de inventario en consulta no actualiza las Bases. La descarga de la siembra de
+  precios y el botón Analizar de Venta siguen cerrados en consulta.
+- Los textos de Ajustes, del aviso de consulta y de Venta dejan de decir que consulta no usa la API.
+
+Límites: en la web de Hebra 1.0.0, sin HTTP de plugin ni llavero, estas acciones siguen sin poder
+llamar a la API.
+
 ## Release beta 0.3.0 - Tyrian Companion se instala en Hebra como plugin externo desde esta release de GitHub
 
 - **Tyrian Companion se instala en Hebra como plugin externo, desde esta release de GitHub.** Se

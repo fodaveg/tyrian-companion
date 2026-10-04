@@ -136,8 +136,8 @@ acción. El permiso se vuelve a comprobar, y con él que el dispositivo siga rec
 diferido no arranca si en ese momento el histórico está desactivado o el dispositivo está en modo
 consulta, y cualquier siembra (la de las que faltan también) se detiene en el ítem siguiente si a
 mitad se desactiva el histórico o el dispositivo pasa a modo consulta; el refresco que aún no
-había arrancado se descarta al desactivar el histórico (volver a activarlo no lo recupera) o cuando
-el refresco del asesor de esa acción se rechaza por estar el dispositivo en modo consulta. Lo que
+había arrancado se descarta al desactivar el histórico (volver a activarlo no lo recupera). En modo
+consulta el refresco manual del asesor sí se ejecuta, pero no descarga ninguna siembra. Lo que
 descargan lo lee el análisis siguiente; no se relanza ningún análisis al terminar. Solo hay un
 refresco diferido a la vez: una acción que llega con uno pendiente o en curso no añade otro, y de
 dos acciones que se solapan solo conserva el suyo la primera que lo deja. Las semillas que faltan de

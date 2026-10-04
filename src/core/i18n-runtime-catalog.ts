@@ -27,7 +27,7 @@ const ES = {
 		'notices.managedAssetsAutoUpdateBlocked': 'Hay una versión nueva de las Bases, pero no se actualizaron solas porque alguna se editó o se borró a mano. Revísalo en Ajustes con la vista previa de assets gestionados.',
 		'notices.pluginStarting': 'Tyrian Companion todavía se está iniciando. Vuelve a intentarlo en un momento.',
 		'notices.collectorConflict': 'Otra instalación de Tyrian Companion ({{platform}}, {{version}}) también recoge los datos de esta cuenta. Deja un solo recolector: pon la otra en modo consulta en Ajustes.',
-		'notices.consultMode': 'Esta instalación está en modo consulta: no consulta Guild Wars 2 ni escribe notas. Cámbiala a recolector en Ajustes.',
+		'notices.consultMode': 'Esta instalación está en modo consulta: las sesiones, la detección y los avisos son del recolector. El inventario sí se actualiza a mano. Cámbiala a recolector en Ajustes.',
 		'notices.consultBlockedBySession': 'Termina la sesión de farmeo abierta antes de pasar a modo consulta: cerrarla necesita la API.',
 		'notices.pluginStartFailed': 'Tyrian Companion no pudo iniciarse. Haz clic aquí para revisar el registro de depuración.',
 		'notices.liveObservationUnavailable': 'La sesión sigue activa, pero la observación en vivo no pudo iniciarse. No habrá avisos hasta que se recupere.',
@@ -676,7 +676,7 @@ const ES = {
 		'sale.view.empty': 'No hay objetos de temporada en el inventario todavía.',
 		// R1b: el estado final de Venta en un dispositivo en consulta que no capturó nada esta
 		// sesión (`TyrianCompanionCore.getSaleViewModel`); nunca «Obsidian», host-neutro.
-		'sale.view.consultEmpty': 'Este dispositivo está en modo consulta: la venta se calcula en el recolector.',
+		'sale.view.consultEmpty': 'Este dispositivo está en modo consulta: actualiza el inventario en el asesor para calcular la venta.',
 		'sale.view.blocked': 'La venta no está disponible ahora mismo.',
 		// H18.34: distinto del genérico `advisor.view.blockedReason.rules_expired` — esta vista
 		// muestra la fecha exacta de caducidad, no solo que «hace falta publicar una revisión».
@@ -1260,7 +1260,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'notices.managedAssetsAutoUpdateBlocked': 'A new version of the Bases is available, but they were not updated on their own because one was edited or deleted by hand. Check it in Settings with the managed assets preview.',
 	'notices.pluginStarting': 'Tyrian Companion is still starting. Try again in a moment.',
 	'notices.collectorConflict': 'Another Tyrian Companion installation ({{platform}}, {{version}}) is also collecting this account\'s data. Keep a single collector: switch the other one to consult mode in Settings.',
-	'notices.consultMode': 'This installation is in consult mode: it neither queries Guild Wars 2 nor writes notes. Make it the collector in Settings.',
+	'notices.consultMode': 'This installation is in consult mode: sessions, detection and alerts belong to the collector. Inventory can still be refreshed by hand. Make it the collector in Settings.',
 	'notices.consultBlockedBySession': 'Finish the open farming session before switching to consult mode: closing it needs the API.',
 	'notices.pluginStartFailed': 'Tyrian Companion failed to start. Click here to check the debug log.',
 	'notices.liveObservationUnavailable': 'The session is still active, but live observation could not start. There will be no alerts until it recovers.',
@@ -1871,7 +1871,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sale.view.title': 'Halloween sale',
 	'sale.view.loading': 'Reading bazaar prices…',
 	'sale.view.empty': 'No seasonal items in the inventory yet.',
-	'sale.view.consultEmpty': 'This device is in consult mode: sale is calculated on the collector.',
+	'sale.view.consultEmpty': 'This device is in consult mode: refresh the inventory in the advisor to calculate the sale.',
 	'sale.view.blocked': 'The sale tab is not available right now.',
 	// H18.34: distinct from the generic `advisor.view.blockedReason.rules_expired` — this view
 	// shows the exact expiry date, not just that "a published review is due".
