@@ -324,6 +324,20 @@ describe('Inventory Advisor view', () => {
 		},
 	);
 
+	/**
+	 * Hebra's report (4 oct 2026, `23-asesor-dialogo.png`): at 390 px «Sincronizar inventario» and
+	 * «Analizar sin escribir» sat indented from the rest of the Asesor. Their wrapper keeps
+	 * `margin-inline-start: auto` (pushed to the end of the bar on a wide view) after it wraps onto a
+	 * row of its own, so it shrinks to its content and is pushed right. Under 480 px it takes the
+	 * whole row, flush with the controls above it.
+	 */
+	it('under 480 px the sync buttons take the whole row, flush with the controls above', () => {
+		const styles = readFileSync('styles.css', 'utf8');
+		const rule = containerRule(styles, '(max-width: 479px)', '.tyrian-inventory-advisor__sync-primary-actions');
+		expect(rule).toMatch(/margin-inline-start:\s*0/u);
+		expect(rule).toMatch(/flex:\s*1 1 100%/u);
+	});
+
 	it('keeps the list first and the sync line last, in every advisor state', () => {
 		const interactions: InventoryAdvisorViewInteractions = {
 			onLoadPreferences: vi.fn(),
@@ -398,6 +412,28 @@ describe('Inventory Advisor view', () => {
 			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator(locale), undefined, {});
 			expect(block.hidden).toBe(true);
 		});
+
+	/**
+	 * Hebra's report (4 oct 2026): with no analysis yet the Asesor read "Preparando la revisión local
+	 * del inventario…" for good. Never analyzed, it says what is missing and which buttons produce
+	 * it, and nothing on the page is busy; the analysis in flight keeps the loading copy.
+	 */
+	it.each([
+		['es', '«Sincronizar inventario» o «Analizar sin escribir»', 'Preparando la revisión local del inventario'],
+		['en', '“Sync inventory” or “Analyze without writing”', 'Preparing the local inventory review'],
+	] as const)('never analyzed: names what is missing and how to get it, never the loading copy, in %s', (locale, how, loading) => {
+		const mount = render({
+			status: 'loading', title: 'inventory_advisor.title', detail: 'loading', optionalSources: null, groups: [], notAnalyzed: true,
+		}, locale);
+		const state = only(byClass(mount.elements(), 'tyrian-inventory-advisor__state'));
+		expect(state.textContent).toContain(how);
+		expect(text(mount.elements())).not.toContain(loading);
+		expect(mount.section.attributes.get('aria-busy')).toBe('false');
+
+		const running = render({ status: 'loading', title: 'inventory_advisor.title', detail: 'loading', optionalSources: null, groups: [] }, locale);
+		expect(only(byClass(running.elements(), 'tyrian-inventory-advisor__state')).textContent).toContain(loading);
+		expect(running.section.attributes.get('aria-busy')).toBe('true');
+	});
 
 	// H14.6/H14.12: the same permanent sell/hold line the session panel shows, reused here above the list.
 	it('shows the Halloween bag sell signal in sell and hold states', () => {
@@ -1487,6 +1523,33 @@ describe('Inventory Advisor view', () => {
 
 function formatClockFor(iso: string): string {
 	return new Intl.DateTimeFormat('es', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+}
+
+/**
+ * The declarations of `selector` inside every `@container <query>` block of `css`, joined; empty
+ * when no such block declares it. Braces are balanced by hand: a regex cannot find a nested end.
+ * The selector must start a rule: after a closing brace, a comma, a comment's end or the block start.
+ */
+function containerRule(css: string, query: string, selector: string): string {
+	const found: string[] = [];
+	let from = 0;
+	for (;;) {
+		const start = css.indexOf(`@container ${query}`, from);
+		if (start === -1) break;
+		const open = css.indexOf('{', start);
+		let depth = 1;
+		let index = open + 1;
+		while (depth > 0 && index < css.length) {
+			if (css[index] === '{') depth += 1;
+			else if (css[index] === '}') depth -= 1;
+			index += 1;
+		}
+		const body = css.slice(open + 1, index - 1);
+		const escaped = selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+		for (const match of body.matchAll(new RegExp(`(?:^|[},/])\\s*${escaped}\\s*\\{([^}]*)\\}`, 'gu'))) found.push(match[1]!);
+		from = index;
+	}
+	return found.join('\n');
 }
 
 function render(model: InventoryAdvisorViewModel, locale: 'es' | 'en' = 'es', interactions: InventoryAdvisorViewInteractions = {}) {

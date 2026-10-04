@@ -102,7 +102,10 @@ export class InventoryAdvisorPresentationController {
 			};
 		}
 		const model = buildInventoryAdvisorViewModel(this.failed ? invalidInventoryAdvisorPresentation(this.failureCause) : null);
-		return this.failed ? { ...model, blockedReason: 'unexpected_failure' } : model;
+		if (this.failed) return { ...model, blockedReason: 'unexpected_failure' };
+		// Nothing captured and nothing running: opening never loads, so without this the view would
+		// show the in-flight "Preparando…" until somebody pressed a button it never mentions.
+		return this.flight === null ? { ...model, notAnalyzed: true } : model;
 	}
 
 	/** Whether a capture or reclassification is actually in flight, as opposed to the model never having loaded. */
@@ -218,6 +221,9 @@ export class InventoryAdvisorPresentationController {
 			if (this.flight?.promise === promise) this.flight = null;
 		});
 		this.flight = { generation, kind, promise };
+		// With nothing cached the visible state moves from "never analyzed" to "analysis running":
+		// a new version, so the memoized model is rebuilt instead of keeping `notAnalyzed`.
+		if (this.cached === null && !this.failed) this.contentVersion += 1;
 		return promise;
 	}
 }

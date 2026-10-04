@@ -85,6 +85,12 @@ export interface InventoryAdvisorViewInteractions {
 	 */
 	priceHistoryOptIn?: {
 		busy?: boolean;
+		/**
+		 * R1b: this device is in consult mode, which never collects prices. The enable button is
+		 * disabled and the offer says why instead of what turning it on would request; «Ahora no»
+		 * still works.
+		 */
+		consultOnly?: boolean;
 		onEnable: () => void | Promise<void>;
 		/** «Ahora no»: hides the offer until the next plugin version. */
 		onDismiss: () => void | Promise<void>;
@@ -754,7 +760,7 @@ function mountInventoryAdvisorView(
 	advancedFilters.append(advancedFiltersSummary, advancedFiltersContent);
 	controls.append(searchLabel, sortLabelElement, advancedFilters, syncPrimaryActions);
 	const syncFilterControlAvailability = (): boolean => {
-		const loading = model.status === 'loading';
+		const loading = analysisRunning(model);
 		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
 		search.disabled = loading;
 		action.disabled = loading;
@@ -949,7 +955,7 @@ function mountInventoryAdvisorView(
 		for (const name of characters) appendOption(character, name, name, resolved);
 		allCharactersOption.selected = resolved === ALL_CHARACTERS;
 		character.value = resolved;
-		character.disabled = model.status === 'loading' || characters.length === 0;
+		character.disabled = analysisRunning(model) || characters.length === 0;
 		if (resolved !== selected) filters = { ...filters, character: resolved };
 	}
 
@@ -959,16 +965,18 @@ function mountInventoryAdvisorView(
 		interactions = nextInteractions;
 		arrangeSections();
 		section.setAttribute('aria-label', translator.t('advisor.view.title'));
-		section.setAttribute('aria-busy', String(model.status === 'loading'));
+		section.setAttribute('aria-busy', String(analysisRunning(model)));
 		sellSignal.replaceChildren();
 		renderSellSignalLine(sellSignal, interactions.sellSignalState, translator);
 		const offer = interactions.priceHistoryOptIn;
 		optIn.hidden = offer === undefined;
 		optIn.setAttribute('aria-label', translator.t('view.optIn.priceHistory.aria'));
-		optInText.textContent = `${translator.t('view.optIn.priceHistory.missing')} ${translator.t('view.optIn.priceHistory.effect')}`;
+		const offerConsult = offer?.consultOnly === true;
+		optInText.textContent = `${translator.t('view.optIn.priceHistory.missing')} ${
+			translator.t(offerConsult ? 'productAction.reason.consult' : 'view.optIn.priceHistory.effect')}`;
 		optInEnable.textContent = translator.t('view.optIn.priceHistory.enable');
 		optInDismiss.textContent = translator.t('view.optIn.dismiss');
-		optInEnable.disabled = offer?.busy === true;
+		optInEnable.disabled = offer?.busy === true || offerConsult;
 		optInDismiss.disabled = offer?.busy === true;
 		const sync = interactions.inventorySync;
 		syncPrimaryActions.hidden = sync === undefined;
@@ -1057,7 +1065,7 @@ function mountInventoryAdvisorView(
 		for (const [candidate, control] of sourceControls) {
 			control.text.textContent = translator.t(`advisor.view.include.${candidate}`);
 		}
-		const loading = model.status === 'loading';
+		const loading = analysisRunning(model);
 		controls.setAttribute('aria-busy', String(loading));
 		if (loading) controls.setAttribute('aria-disabled', 'true');
 		else controls.removeAttribute('aria-disabled');
@@ -1694,7 +1702,19 @@ function flattenInventoryAdvisorRows(groups: readonly InventoryAdvisorViewModelG
 	return groups.flatMap((group) => group.rows);
 }
 
+/**
+ * Whether an analysis is running and the page waits for it (busy, filters off). A `loading` model
+ * that was never analyzed waits for nothing: it is a final state until a button is pressed.
+ */
+function analysisRunning(model: InventoryAdvisorViewModel): boolean {
+	return model.status === 'loading' && model.notAnalyzed !== true;
+}
+
 function stateLabel(model: InventoryAdvisorViewModel, translator: Translator): string {
+	// Hebra's report (4 oct 2026): never analyzed says what is missing and which buttons produce it.
+	if (model.status === 'loading' && model.notAnalyzed === true) return translator.t('advisor.view.state.notAnalyzed', {
+		sync: translator.t('advisor.sync.button'), analyze: translator.t('advisor.sync.analyze'),
+	});
 	if (model.refreshWarning !== undefined) return translator.t('advisor.view.refreshWarning', {
 		reason: translator.t(`advisor.view.blockedReason.${model.refreshWarning}`),
 	});

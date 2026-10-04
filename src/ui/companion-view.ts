@@ -1,6 +1,7 @@
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import { createTranslator, type Locale } from '../core/i18n';
+import type { CollectorMode } from '../core/settings';
 import { formatClock, formatRelativeDay } from './format-time';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
@@ -145,6 +146,11 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	openLocalDebugSettings?(): void;
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
+	/**
+	 * R1b: this device's mode. In consult a start is always refused (`refusedInConsult`), so the
+	 * card disables «Iniciar sesión» and says why. Absent reads as the collector.
+	 */
+	getCollectorMode?(): CollectorMode;
 	openProductSettings?(): void;
 	/** Vault path of the note written for the session currently on screen, or null when none is durable. */
 	getSavedSessionNotePath?(): string | null;
@@ -733,10 +739,14 @@ export class TyrianCompanionView {
 			const recovery = this.actions.getSessionRecoveryState();
 			if (recovery.status !== 'none') return this.buildRecoveryModel(recovery, copy, callout, drawers);
 			const missingKey = !(this.actions.hasConfiguredApiKey?.() ?? true);
+			// R1b (Hebra's report, 4 oct 2026): a consult device refuses every start, so the button is
+			// disabled with the reason in the meta line, exactly like a missing key, instead of a tap
+			// that only raises the consult notice.
+			const consult = this.actions.getCollectorMode?.() === 'consult';
 			return {
 				ariaLabel: copy.session, state: copy.ready,
-				meta: { text: missingKey ? copy.missingKey : accountSummary(connection, copy) },
-				actions: [{ text: copy.start, cta: true, disabled: missingKey, onClick: () => this.actions.openManualSessionStart() }],
+				meta: { text: consult ? this.t('productAction.reason.consult') : missingKey ? copy.missingKey : accountSummary(connection, copy) },
+				actions: [{ text: copy.start, cta: true, disabled: consult || missingKey, onClick: () => this.actions.openManualSessionStart() }],
 				callout, figures: [], ...drawers,
 			};
 		}
@@ -890,10 +900,14 @@ export class TyrianCompanionView {
 		if (observed.status === 'abandoned') {
 			// Nothing was measured, so neither a duration nor figures: only what happened and the
 			// way to the next session.
+			// R1b: the same start as the idle card, so the same consult rule; the meta line keeps what
+			// happened and adds the reason the button is disabled.
+			const consult = this.actions.getCollectorMode?.() === 'consult';
+			const abandonedDetail = this.t(`status.abandonedDetail.${observed.reason}`);
 			return {
 				ariaLabel: copy.session, state: this.t('view.sessionAbandoned'),
-				meta: { text: this.t(`status.abandonedDetail.${observed.reason}`) },
-				actions: [{ text: copy.start, cta: true, onClick: () => this.actions.openManualSessionStart() }],
+				meta: { text: consult ? `${abandonedDetail} ${this.t('productAction.reason.consult')}` : abandonedDetail },
+				actions: [{ text: copy.start, cta: true, disabled: consult, onClick: () => this.actions.openManualSessionStart() }],
 				callout, figures: [], ...drawers,
 			};
 		}

@@ -64,6 +64,13 @@ export interface InventoryAdvisorViewModel {
 	 * own controller (e.g. hand-built test fixtures), where every render rebuilds.
 	 */
 	contentVersion?: number;
+	/**
+	 * Only on `loading`: no analysis exists and none is running (Hebra's report, 4 oct 2026).
+	 * Opening the Asesor never loads, only an explicit "Sincronizar inventario" or "Analizar sin
+	 * escribir" does, so this `loading` would otherwise wait forever; the view says what is missing
+	 * instead. The status stays `loading` because callers read it as "no result yet".
+	 */
+	notAnalyzed?: boolean;
 }
 
 export interface InventoryAdvisorViewModelGroup {
