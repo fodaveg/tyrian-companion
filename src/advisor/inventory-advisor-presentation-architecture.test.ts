@@ -77,7 +77,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'../economy/price-seed-model',
 			'../economy/price-seed-panel-service', '../economy/sell-signal-runtime',
 			'./inventory-advisor-view-model', './inventory-advisor-view', './price-history-panel-view',
-			'./inventory-vault-sync-run-controller', './product-action-controller', './product-shell'],
+			'./inventory-vault-sync-run-controller', './product-action-controller', './product-shell',
+			// Type-only: the device's `CollectorMode`, to disable the price-history opt-in in consult.
+			'../core/settings'],
 			portCalls: ['actions.getInventoryAdvisorLocale', 'actions.getInventoryAdvisorViewModel',
 				'actions.createInventoryPreferencesEditorSession', 'preferenceSession.current', 'preferenceSession.load',
 				'preferenceSession.upsertGoal', 'preferenceSession.removeGoal', 'preferenceSession.upsertKeepException', 'preferenceSession.removeKeepException',
@@ -87,7 +89,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 				'actions.dismissPriceHistoryOptIn', 'actions.loadPriceHistorySeries',
 				'actions.resolvePriceHistoryItemCatalog', 'actions.getPriceHistorySeedState', 'actions.getSellSignalState',
 				'actions.getPriceSeedQueueCoverage',
-				'actions.getProductActionController', 'actions.hasConfiguredApiKey', 'actions.openProductSettings'],
+				'actions.getProductActionController', 'actions.hasConfiguredApiKey', 'actions.openProductSettings',
+				'actions.getCollectorMode'],
 	}],
 	['src/ui/inventory-advisor-view.ts', {
 		// Locale-independent integer-copper formatting only; no I/O or capability is introduced.
