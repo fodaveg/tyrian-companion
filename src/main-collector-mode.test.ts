@@ -420,11 +420,13 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		const world = collectorModePlugin({
 			apiKeySecret: 'gw2-main', alertIngameEnabled: true, priceHistoryEnabled: true, halloweenEnabled: true,
 		}, { mode: 'consult' });
-		await world.plugin.initializeRuntime();
-		await settle();
 		const arm = vi.spyOn(world.plugin, 'armAssistedDetection');
 		const reconcile = vi.spyOn(world.plugin as unknown as ConsultConnectionActions, 'reconcilePendingProposals');
-		const timersAtBoot = world.intervals().length;
+		await world.plugin.initializeRuntime();
+		// The boot reconciles the proposal queue once it is open (in either mode): only what comes
+		// after is the check's.
+		await bootReconciled(reconcile);
+		reconcile.mockClear();
 
 		await world.plugin.checkConnection();
 		await settle();
@@ -433,8 +435,8 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		expect(reconcile).not.toHaveBeenCalled();
 		expect(armLive).not.toHaveBeenCalled();
 		expect(halloweenActivate).not.toHaveBeenCalled();
-		expect(world.intervals().length).toBe(timersAtBoot);
-		expect(world.intervals()).not.toContain(COLLECTOR_HEARTBEAT_INTERVAL_MS);
+		// A consult boot arms no interval at all, so any here would be the check's.
+		expect(world.intervals()).toEqual([]);
 		expect(world.listen).not.toHaveBeenCalled();
 		expect(world.writes).toEqual([]);
 		expect(outbound.urls.map(endpoint)).toEqual(['tokeninfo', 'account']);
@@ -444,15 +446,20 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 	it('the collector\'s check still arms detection and reconciles its proposals, as before', async () => {
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
 		outbound.respond = validAccount;
-		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'collector' });
-		await world.plugin.initializeRuntime();
-		await settle();
+		// Booted without a key, so the collector's boot warm-up check (which arms detection and
+		// reconciles too, and under load could land after `settle`) never runs; the key comes after.
+		const world = collectorModePlugin({ apiKeySecret: '' }, { mode: 'collector' });
 		const arm = vi.spyOn(world.plugin, 'armAssistedDetection').mockResolvedValue('unavailable');
 		const reconcile = vi.spyOn(world.plugin as unknown as ConsultConnectionActions, 'reconcilePendingProposals');
+		await world.plugin.initializeRuntime();
+		await bootReconciled(reconcile);
+		expect(arm).not.toHaveBeenCalled();
+		world.plugin.settings.apiKeySecret = 'gw2-main';
+		reconcile.mockClear();
 
 		await expect(world.plugin.checkConnection()).resolves.toMatchObject({ status: 'connected' });
-		await settle();
 
+		// Both are started from inside the check, before it resolves.
 		expect(arm).toHaveBeenCalledTimes(1);
 		expect(reconcile).toHaveBeenCalledTimes(1);
 		await world.plugin.shutdownRuntime();
@@ -470,7 +477,6 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		(window as unknown as { setTimeout: unknown }).setTimeout = (callback: () => void) => setImmediate(callback);
 		const actions = world.plugin as unknown as ConsultConnectionActions;
 		const notify = vi.spyOn(world.plugin, 'notifyConsultMode');
-		const timersAtBoot = world.intervals().length;
 
 		await actions.runInventoryVaultSync();
 		await settle();
@@ -480,7 +486,8 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		expect(outbound.urls.map(endpoint)).toEqual(expect.arrayContaining(['tokeninfo', 'account', 'characters', 'account/inventory']));
 		expect(actions.getConnectionState()).toEqual({ status: 'idle' });
 		expect(notify).not.toHaveBeenCalled();
-		expect(world.intervals().length).toBe(timersAtBoot);
+		// A consult boot arms no interval at all, so any here would be the sync's.
+		expect(world.intervals()).toEqual([]);
 		expect(world.notes.has(STATUS_NOTE)).toBe(false);
 		expect(world.listen).not.toHaveBeenCalled();
 		await world.plugin.shutdownRuntime();
@@ -505,6 +512,16 @@ function validAccount(url: string): { status: number; json: unknown } {
 	if (path.startsWith('characters/')) return { status: 200, json: { bags: [] } };
 	if (path === 'commerce/delivery') return { status: 200, json: { coins: 0, items: [] } };
 	return { status: 200, json: [] };
+}
+
+/**
+ * Waits until the boot's own `reconcilePendingProposals` (after the proposal queue opens, a
+ * fire-and-forget job of `initializeRuntime`) has run, then drains the rest. A fixed number of
+ * `settle` rounds is not enough under load: the job can land after them, inside a count.
+ */
+async function bootReconciled(reconcile: { mock: { calls: unknown[] } }): Promise<void> {
+	await vi.waitFor(() => { expect(reconcile.mock.calls.length).toBeGreaterThan(0); }, { timeout: 10_000 });
+	await settle();
 }
 
 /** Drains the fire-and-forget work the boot leaves behind (IndexedDB and the first heartbeat). */

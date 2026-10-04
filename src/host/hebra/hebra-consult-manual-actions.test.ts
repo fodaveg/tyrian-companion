@@ -16,7 +16,6 @@ import { activateTyrian } from './hebra-runtime';
 interface ConsultCore {
 	getConnectionState(): { status: string };
 	checkConnection(): Promise<{ status: string }>;
-	updateCollectorMode(mode: 'collector' | 'consult'): Promise<{ status: string }>;
 	getCollectorMode(): string;
 	runInventoryVaultSync(): Promise<void>;
 	getInventoryVaultSyncRunState(): { status: string; lastRun: { status: string } | null };
@@ -33,16 +32,19 @@ describe('Tyrian in Hebra, consult mode: the manual connection check and invento
 		const requests: string[] = [];
 		const test = consultHebra(requests);
 		const factory = new IDBFactory();
-		// The mode lives on the device: one start sets it to consult, the next one starts in it.
+		// The mode lives on the device: a first start without a key seeds consult (and, being consult,
+		// sends nothing, so no request of it can land in what is counted below); the key comes after
+		// and the next start keeps consult.
 		const first = await activate(test, factory);
-		await first.core.updateCollectorMode('consult');
+		expect(first.core.getCollectorMode()).toBe('consult');
 		await first.cleanup();
-		requests.length = 0;
+		saveSettings(test, { apiKeySecret: 'gw2-main', outputFolder: 'Tyrian Companion' });
 		test.fake.recorded.notices.length = 0;
 
 		const { core, cleanup } = await activate(test, factory);
 		expect(core.getCollectorMode()).toBe('consult');
 		expect(core.getConnectionState()).toEqual({ status: 'idle' });
+		expect(requests).toEqual([]);
 
 		await expect(core.checkConnection()).resolves.toMatchObject({ status: 'connected' });
 		expect(requests.map(endpoint)).toEqual(['tokeninfo', 'account']);
@@ -57,7 +59,7 @@ describe('Tyrian in Hebra, consult mode: the manual connection check and invento
 	}, 30_000);
 });
 
-/** A Hebra library with the output folder, the settings of this device and its key in the keychain. */
+/** A Hebra library with the output folder, settings without a key yet, and the key in the keychain. */
 function consultHebra(requests: string[]): TyrianTestApi {
 	const keychain = new Map([[TYRIAN_KEYCHAIN_ACCOUNT, JSON.stringify({ v: 1, secrets: { 'gw2-main': 'KEY' } })]]);
 	const test = createTyrianTestApi({
@@ -68,9 +70,13 @@ function consultHebra(requests: string[]): TyrianTestApi {
 		},
 	});
 	test.library.addFolder('tc', 'root', 'Tyrian Companion');
-	test.local.set(hebraSettingsKey('tyrian-companion', test.library.libraryId()),
-		JSON.stringify({ apiKeySecret: 'gw2-main', outputFolder: 'Tyrian Companion' }));
+	saveSettings(test, { outputFolder: 'Tyrian Companion' });
 	return test;
+}
+
+/** This device's plugin settings, read on the next start. */
+function saveSettings(test: TyrianTestApi, value: unknown): void {
+	test.local.set(hebraSettingsKey('tyrian-companion', test.library.libraryId()), JSON.stringify(value));
 }
 
 async function activate(test: TyrianTestApi, factory: IDBFactory): Promise<{ core: ConsultCore; cleanup: () => Promise<void> }> {
