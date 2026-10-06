@@ -69,7 +69,7 @@ export interface SessionHistoryPerformanceGroup {
 	readonly presenceScope: 'pure_labyrinth' | 'mixed' | 'unknown';
 	readonly groupContext: 'with_bosses' | 'without_bosses' | null;
 	readonly magicFind: { readonly observable: number | null; readonly manual: number | null; readonly unobservedBuffs: true };
-	readonly sackBasis: 'observed_gains' | 'closing_net';
+	readonly sackBasis: 'observed_gains' | 'closing_net' | 'legacy_positive_net' | 'unavailable';
 	readonly sacksMetric: SessionHistoryMetricSample;
 	readonly goldMetric: SessionHistoryMetricSample;
 	readonly quality: SessionHistoryPerformanceQuality;
@@ -168,7 +168,9 @@ function buildPerformance(sessions: readonly DurableSessionHistoryRecord[]): Ses
 			buildRef: metadata?.buildRef ?? null, quality,
 			presenceScope: metadata?.presence?.scope ?? 'unknown', groupContext: metadata?.groupContext ?? null,
 			magicFind: metadata?.magicFind ?? { observable: null, manual: null, unobservedBuffs: true },
-			sackBasis: session.sackObservation?.observedGains != null ? 'observed_gains' : 'closing_net',
+			sackBasis: session.sackObservation?.observedGains != null ? 'observed_gains'
+				: session.sackObservation?.netRetained != null ? 'closing_net'
+					: session.legacyPositiveNetSacks != null ? 'legacy_positive_net' : 'unavailable',
 		};
 		// The name is a label, never part of a known configuration's identity. Old notes retain a
 		// labelled unknown-identity bucket rather than lose their basic metrics.
@@ -199,7 +201,7 @@ function performanceGroup(group: {
 }): SessionHistoryPerformanceGroup {
 	const sacksValue = (session: DurableSessionHistoryRecord): number | null =>
 		session.sackObservation?.observedGains ?? (session.sackObservation?.netRetained != null
-			? Math.max(0, session.sackObservation.netRetained) : session.sacks);
+			? Math.max(0, session.sackObservation.netRetained) : session.legacyPositiveNetSacks ?? null);
 	const sacksEligible = group.sessions.filter((session) => usableDuration(session) && sacksValue(session) !== null);
 	const goldEligible = group.sessions.filter((session) => usableDuration(session) &&
 		session.valuationCoverage === 'complete' && session.observedImmediateCopper !== null);

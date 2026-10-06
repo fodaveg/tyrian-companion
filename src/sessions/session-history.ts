@@ -68,6 +68,8 @@ export interface DurableSessionHistoryRecord {
 	farmingGoalResult?: FarmingGoalProgress;
 	comparisonMetadata?: DurableSessionComparisonMetadata;
 	sackObservation?: SessionSackObservation;
+	/** A validated legacy positive 36038 delta, never reconstructed from `tc_sacks` or absence. */
+	legacyPositiveNetSacks?: number | null;
 	sessionRef: string;
 	accountRef: string;
 	/** Declared comparison dimensions are available only to the explicit local history view. */
@@ -632,7 +634,9 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 		...(farmingGoal ? { farmingGoal } : {}),
 		...(farmingGoalResult ? { farmingGoalResult } : {}),
 		...(comparisonMetadata ? { comparisonMetadata } : {}),
-		...(sackObservation ? { sackObservation } : {}),
+		...(sackObservation ? { sackObservation } : {
+			legacyPositiveNetSacks: positiveItemDeltas?.find(({ itemId }) => itemId === 36038)?.quantity ?? null,
+		}),
 		activity: fm.tc_schema === 1 ? null : fm.tc_event as 'halloween' | null,
 		build: nullableString(fm.tc_build),
 		startedAt, endedAt, durationMs,
@@ -794,7 +798,7 @@ function serializeJson(sessions: readonly DurableSessionHistoryRecord[]): string
 }
 
 /** Export v1 is an explicit allowlist; local activity/build/loot-row dimensions never cross this boundary. */
-function exportSession(session: DurableSessionHistoryRecord): Omit<DurableSessionHistoryRecord, 'activity' | 'build' | 'lootRows' | 'comparisonMetadata' | 'sackObservation' | 'farmingGoal' | 'farmingGoalResult'> {
+function exportSession(session: DurableSessionHistoryRecord): Omit<DurableSessionHistoryRecord, 'activity' | 'build' | 'lootRows' | 'comparisonMetadata' | 'sackObservation' | 'farmingGoal' | 'farmingGoalResult' | 'legacyPositiveNetSacks'> {
 	return {
 		sessionRef: session.sessionRef,
 		accountRef: session.accountRef,
@@ -825,7 +829,7 @@ function serializeCsv(sessions: readonly DurableSessionHistoryRecord[]): string 
 	return `${rows.join('\r\n')}\r\n`;
 }
 function valueForColumn(session: DurableSessionHistoryRecord, column: typeof CSV_COLUMNS[number]): string | number | null {
-	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'lootRows' | 'outcome' | 'comparisonMetadata' | 'sackObservation' | 'farmingGoal' | 'farmingGoalResult'>;
+	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'lootRows' | 'outcome' | 'comparisonMetadata' | 'sackObservation' | 'farmingGoal' | 'farmingGoalResult' | 'legacyPositiveNetSacks'>;
 	return session[key];
 }
 /** RFC-style quoting plus spreadsheet formula protection after invisible prefixes. */

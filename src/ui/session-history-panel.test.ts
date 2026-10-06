@@ -180,7 +180,7 @@ describe('mountSessionHistoryPanel', () => {
 		expect(visible).toContain('0 sesiones · 0 min');
 		expect(visible).toContain('Rango observado:');
 		expect(visible).toContain('buffs desconocidos');
-		expect(visible).toContain('Neto conservado · 36038');
+		expect(visible).toContain('Delta positivo histórico · 36038');
 		expect(visible).toContain('no demuestran que una build cause mejor rendimiento');
 	});
 
@@ -310,6 +310,7 @@ function record(
 		endedAt: new Date(Date.parse(startedAt) + durationMs).toISOString(), durationMs,
 		classification: 'exact', confidence: 'high', scope: 'observed_storage_net', valuationCoverage: 'complete',
 		observedImmediateCopper: 10_000, observedListingCopper: 12_000, sacks: 10, sacksPerHourMilli: 10_000,
+		legacyPositiveNetSacks: (overrides.sacks === undefined ? 10 : overrides.sacks ?? 0) > 0 ? overrides.sacks ?? 10 : null,
 		immediateCopperPerHour: 10_000, listingCopperPerHour: 12_000, recommendationStatus: 'not_evaluated',
 		recommendationAction: null, recommendationQuantity: null, recommendationRoute: null, lootRows: [],
 		...overrides,

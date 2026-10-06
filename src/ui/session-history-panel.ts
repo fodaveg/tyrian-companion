@@ -426,7 +426,9 @@ function renderPerformanceRow(body: HTMLElement, locale: Locale, group: SessionH
 		: group.groupContext === 'with_bosses' ? es ? 'Con jefes (declarado)' : 'With bosses (declared)'
 			: es ? 'Sin jefes (declarado)' : 'Without bosses (declared)' });
 	sacksCell.createEl('small', { text: group.sackBasis === 'observed_gains' ? es ? 'Incrementos observados · 36038' : 'Observed increments · 36038'
-		: es ? 'Neto conservado · 36038' : 'Closing net · 36038' });
+		: group.sackBasis === 'closing_net' ? es ? 'Neto conservado · 36038' : 'Closing net · 36038'
+			: group.sackBasis === 'legacy_positive_net' ? es ? 'Delta positivo histórico · 36038' : 'Historical positive delta · 36038'
+				: es ? 'Bolsas sin evidencia específica · 36038' : 'No bag-specific evidence · 36038' });
 }
 
 /**

@@ -317,6 +317,27 @@ describe('buildSessionHistoryAggregate', () => {
 			sackBasis: 'observed_gains', sacksMetric: { eligibleSessions: 2, durationMs: 7_200_000 } });
 	});
 
+	it('never promotes an old counter without bag delta evidence to a certified closing net', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-10-01T10:00:00.000Z', { build: 'legacy', sacks: 200, legacyPositiveNetSacks: null }),
+			record('2026-10-02T10:00:00.000Z', { build: 'legacy', sacks: 0 }),
+		]);
+		expect(aggregate.performance.groups[0]).toMatchObject({ sackBasis: 'unavailable', sacksPerHourMilli: null,
+			sacksMetric: { eligibleSessions: 0, durationMs: 0 } });
+	});
+
+	it('keeps legacy positive deltas, new closing nets and observed increments in distinct source groups', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-10-01T10:00:00.000Z', { build: 'farm', legacyPositiveNetSacks: 100 }),
+			record('2026-10-02T10:00:00.000Z', { build: 'farm', sackObservation: { itemId: 36038,
+				observedGains: null, netRetained: 100, totalObtained: null } }),
+			record('2026-10-03T10:00:00.000Z', { build: 'farm', sackObservation: { itemId: 36038,
+				observedGains: 100, netRetained: 100, totalObtained: null } }),
+		]);
+		expect(aggregate.performance.groups.map(({ sackBasis }) => sackBasis).sort())
+			.toEqual(['closing_net', 'legacy_positive_net', 'observed_gains']);
+	});
+
 	it('retains unnamed build statistics and separates captured configurations sharing a name', () => {
 		const metadata = (ref: string) => ({ buildRef: ref.repeat(64),
 			magicFind: { observable: 300, manual: null, unobservedBuffs: true as const } });
@@ -362,6 +383,8 @@ function record(
 	const durationMs = overrides.durationMs ?? 3_600_000;
 	return {
 		sessionRef: 'a'.repeat(64), accountRef: 'b'.repeat(64), activity: null, build: null, startedAt,
+		// Legacy fixtures supply an explicit positive bag delta; zero or missing counters prove nothing.
+		legacyPositiveNetSacks: (overrides.sacks === undefined ? 10 : overrides.sacks ?? 0) > 0 ? overrides.sacks ?? 10 : null,
 		endedAt: new Date(Date.parse(startedAt) + durationMs).toISOString(), durationMs,
 		classification: 'exact', confidence: 'high', scope: 'observed_storage_net', valuationCoverage: 'complete',
 		observedImmediateCopper: 10_000, observedListingCopper: 12_000, sacks: 10, sacksPerHourMilli: 10_000,

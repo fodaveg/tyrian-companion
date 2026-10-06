@@ -27,6 +27,30 @@ describe('durable session history', () => {
 	const scrubGate = { sessionStatus: 'idle', recoveryStatus: 'none', detectorStatus: 'disarmed' } as const;
 	const idleAuthority = () => new SessionHistoryRuntimeAuthority(() => scrubGate);
 
+	it('derives legacy bag comparison only from explicit positive 36038 deltas, independently of prices', async () => {
+		const legacy = async (quantity: number | null, day: number, positiveDeltasJson?: string) => {
+			const inspected = await inspectDurableSessionNote(await note({ tc_schema: 6, tc_build: 'legacy farm',
+				tc_started_at: `2026-10-0${String(day)}T08:00:00.000Z`, tc_ended_at: `2026-10-0${String(day)}T09:00:00.000Z`,
+				tc_classification: 'estimated', tc_confidence: 'medium', tc_valuation_coverage: 'partial', tc_sacks: 0,
+				tc_sacks_per_hour_milli: null, tc_immediate_copper_per_hour: null, tc_listing_copper_per_hour: null,
+				tc_positive_item_deltas_json: positiveDeltasJson ?? (quantity === null ? '[]' : JSON.stringify([[36038, quantity]])),
+			}));
+			expect(inspected.status).toBe('ok');
+			if (inspected.status !== 'ok') throw new Error('Invalid legacy fixture');
+			return inspected.session;
+		};
+		const observed = buildSessionHistoryAggregate([await legacy(100, 1), await legacy(100, 2)]);
+		expect(observed.performance.groups[0]).toMatchObject({ sackBasis: 'legacy_positive_net', sacksPerHourMilli: 100_000,
+			immediateCopperPerHour: null, sacksMetric: { eligibleSessions: 2, durationMs: 7_200_000 } });
+		const absent = buildSessionHistoryAggregate([await legacy(null, 1), await legacy(null, 2)]);
+		expect(absent.performance.groups[0]).toMatchObject({ sackBasis: 'unavailable', sacksPerHourMilli: null,
+			sacksMetric: { eligibleSessions: 0 } });
+		const unrelated = buildSessionHistoryAggregate([await legacy(null, 1, '[[36041,100]]'), await legacy(null, 2, '[[36041,100]]')]);
+		expect(unrelated.performance.groups[0]?.sacksPerHourMilli).toBeNull();
+		const fiveHundred = buildSessionHistoryAggregate([await legacy(500, 1), await legacy(500, 2)]);
+		expect(fiveHundred.performance.groups[0]?.sacksPerHourMilli).toBe(500_000);
+	});
+
 	it('rejects malformed optional comparison metadata while retaining legacy schema 6 notes', async () => {
 		expect((await inspectDurableSessionNote(await note({ tc_schema: 6 }))).status).toBe('ok');
 		expect((await inspectDurableSessionNote(await note({ tc_schema: 6, tc_comparison_json: '{}' }))).status).toBe('invalid');
@@ -530,7 +554,7 @@ describe('durable session history', () => {
 		expect(`${json}\n${csv}`).not.toContain('=malicious-character');
 		expect(`${json}\n${csv}`).not.toContain('Private Power Reaper');
 		expect(`${json}\n${csv}`).not.toContain('c'.repeat(64));
-		for (const field of ['groupContext', 'magicFind', 'farmingGoal', 'sackObservation', 'without_bosses']) expect(`${json}\n${csv}`).not.toContain(field);
+		for (const field of ['groupContext', 'magicFind', 'farmingGoal', 'sackObservation', 'legacyPositiveNetSacks', 'without_bosses']) expect(`${json}\n${csv}`).not.toContain(field);
 		expect(csv).toContain('\r\n');
 		expect(csv.replace(/\r\n/gu, '')).not.toContain('\n');
 		await expect(history.export('Tyrian Companion')).resolves.toEqual({ status: 'unchanged', sessions: 1 });
