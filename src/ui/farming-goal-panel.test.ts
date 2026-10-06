@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
 import { projectFarmingGoal, type FarmingGoalV1 } from '../sessions/farming-goal';
-import { DEFAULT_FARMING_PREPARATION } from '../sessions/farming-goal-preparation';
+import {
+	DEFAULT_FARMING_PREPARATION, type FarmingManualReminder, type FarmingPreparationContext,
+} from '../sessions/farming-goal-preparation';
 import { FarmingGoalEditor, renderFarmingGoalProgress } from './farming-goal-panel';
 import { FarmingPreparationPanel, type FarmingPreparationPanelPorts } from './farming-preparation-panel';
 
@@ -64,6 +66,86 @@ describe('host-neutral farming components', () => {
 		await Promise.resolve();
 		expect(mount.querySelector('[role="alert"]')?.textContent).toContain('Could not save');
 		expect(mount.textContent).not.toContain('private path');
+	});
+
+	it.each(['resolve', 'reject'] as const)('restores the visible goal editor after a pending save and repaint (%s)', async (outcome) => {
+		const mount = container();
+		let resolve!: () => void;
+		let reject!: (reason: Error) => void;
+		const save = new Promise<void>((accept, refuse) => { resolve = accept; reject = refuse; });
+		const editor = new FarmingGoalEditor({ value: () => ({ version: 1, kind: 'bags', targetBags: 1_000 }),
+			locale: () => 'en', save: () => save });
+		editor.render(mount);
+		mount.querySelector('button')!.click();
+		editor.render(mount);
+		expect(mount.querySelector<HTMLFieldSetElement>('fieldset')!.disabled).toBe(true);
+		expect(mount.textContent).toContain('Saving…');
+		if (outcome === 'resolve') resolve(); else reject(new Error('private path'));
+		await Promise.resolve();
+		expect(mount.querySelector<HTMLFieldSetElement>('fieldset')!.disabled).toBe(false);
+		expect(mount.querySelector<HTMLInputElement>('input[type="radio"]')!.disabled).toBe(false);
+		expect(mount.querySelector<HTMLInputElement>('input[type="number"]')!.disabled).toBe(false);
+		expect(mount.querySelector('button')!.disabled).toBe(false);
+		expect(mount.textContent).toContain(outcome === 'resolve' ? 'Saved for the next session' : 'Could not save');
+	});
+
+	it.each(['resolve', 'reject'] as const)('restores the visible preparation editor after a pending save and repaint (%s)', async (outcome) => {
+		const mount = container();
+		let resolve!: () => void;
+		let reject!: (reason: Error) => void;
+		const save = new Promise<void>((accept, refuse) => { resolve = accept; reject = refuse; });
+		const editor = new FarmingPreparationPanel({ ...preparationPorts('en'), save: () => save });
+		editor.render(mount);
+		Array.from(mount.querySelectorAll('button')).find((button) => button.textContent === 'Save')!.click();
+		editor.render(mount);
+		expect(mount.querySelector<HTMLFieldSetElement>('fieldset')!.disabled).toBe(true);
+		expect(mount.textContent).toContain('Saving…');
+		if (outcome === 'resolve') resolve(); else reject(new Error('private path'));
+		await Promise.resolve();
+		expect(mount.querySelector<HTMLFieldSetElement>('fieldset')!.disabled).toBe(false);
+		expect(mount.textContent).toContain(outcome === 'resolve' ? 'Saved for the next session' : 'Could not save');
+	});
+
+	it('refreshes reminder actions, countdowns and API facts without replacing a preference draft', () => {
+		const mount = container();
+		document.body.append(mount);
+		const ports = preparationPorts('en');
+		let now = observation.now;
+		let context: FarmingPreparationContext = ports.context();
+		let reminders: FarmingManualReminder[] = [];
+		const panel = new FarmingPreparationPanel({ ...ports, now: () => now, context: () => context,
+			reminders: () => reminders,
+			startReminder: (kind, durationMinutes) => { reminders = [{ kind, durationMinutes, startedAt: now }]; },
+			clearReminder: (kind) => { reminders = reminders.filter((reminder) => reminder.kind !== kind); },
+		});
+		panel.render(mount);
+		const bonus = mount.querySelector<HTMLInputElement>('input[type="number"]')!;
+		bonus.value = '17';
+		bonus.focus();
+		const food = mount.querySelector<HTMLInputElement>('input[aria-label^="Food"]')!;
+		food.value = '30';
+		const action = Array.from(mount.querySelectorAll('button')).find((button) => button.textContent === 'Start reminder')!;
+		action.click();
+		expect(action.textContent).toBe('Clear reminder');
+		expect(mount.textContent).toContain('30:00');
+		now = '2026-10-06T10:25:00Z';
+		context = { ...context, freeBagSlots: 5, freeBagSlotsObservedAt: observation.observedAt, characterName: 'New Farmer' };
+		panel.refreshReadOnly(mount);
+		expect(mount.textContent).toContain('25:00');
+		expect(mount.textContent).toContain('New Farmer');
+		expect(mount.textContent).toContain('5:00');
+		expect(mount.querySelector('input[type="number"]')).toBe(bonus);
+		expect(bonus.value).toBe('17');
+		expect(food.value).toBe('30');
+		expect(document.activeElement).toBe(bonus);
+		now = '2026-10-06T11:00:00Z';
+		panel.refreshReadOnly(mount);
+		expect(mount.textContent).toContain('Reminder due');
+		action.click();
+		expect(action.textContent).toBe('Start reminder');
+		expect(reminders).toHaveLength(0);
+		expect(mount.textContent).not.toContain('Reminder due');
+		mount.remove();
 	});
 
 	it.each(['es', 'en'] as const)('keeps preparation off, blank unknown manual inputs and no timer on render in %s', (locale) => {

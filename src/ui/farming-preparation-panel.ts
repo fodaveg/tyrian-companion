@@ -23,6 +23,12 @@ export interface FarmingPreparationPanelPorts {
 export class FarmingPreparationPanel {
 	private busy = false;
 	private reviewed = false;
+	private rendered: { fieldset: HTMLFieldSetElement; feedback: HTMLElement } | null = null;
+	private readOnly: {
+		container: HTMLElement;
+		facts: HTMLDListElement;
+		reminders: Map<FarmingReminderKind, { status: HTMLElement; action: HTMLButtonElement }>;
+	} | null = null;
 	constructor(private readonly ports: FarmingPreparationPanelPorts) {}
 
 	render(container: HTMLElement): void {
@@ -32,7 +38,6 @@ export class FarmingPreparationPanel {
 		const document = container.ownerDocument;
 		const locale = this.ports.locale();
 		const current = this.ports.settings();
-		const context = this.ports.context();
 		const details = document.createElement('details');
 		details.open = wasOpen;
 		const summary = document.createElement('summary');
@@ -52,25 +57,6 @@ export class FarmingPreparationPanel {
 		body.className = 'tyrian-farming__preparation';
 		const facts = document.createElement('dl');
 		facts.className = 'tyrian-farming__facts';
-		const fact = (label: string, value: string): void => {
-			const term = document.createElement('dt');
-			term.textContent = label;
-			const description = document.createElement('dd');
-			description.textContent = value;
-			facts.append(term, description);
-		};
-		fact(farmingCopy(locale, 'character'), context.characterName ?? '—');
-		fact(farmingCopy(locale, 'build'), context.buildName === '' ? farmingCopy(locale, 'noBuildName') : context.buildName ?? '—');
-		fact(farmingCopy(locale, 'slots'), context.freeBagSlots === null ? '—' : new Intl.NumberFormat(locale).format(context.freeBagSlots));
-		fact(farmingCopy(locale, 'collector'), farmingCopy(locale, context.collectorMode === 'collector' ? 'collectorMode' : 'consultMode'));
-		fact(farmingCopy(locale, 'addon'), farmingCopy(locale, context.addonConnection));
-		const breakdown = context.magicFindBreakdown;
-		const observable = breakdown === null ? null : breakdown.luck + breakdown.achievements + breakdown.enrichment;
-		fact(farmingCopy(locale, 'magicFind'), observable === null ? '—' : `${new Intl.NumberFormat(locale).format(observable)}%`);
-		if (context.magicFindObservedAt !== null) {
-			const age = Date.parse(this.ports.now()) - Date.parse(context.magicFindObservedAt);
-			fact(farmingCopy(locale, 'age'), Number.isFinite(age) && age >= 0 ? formatFarmingTime(age) : '—');
-		}
 		body.append(facts);
 		const bonusLabel = document.createElement('label');
 		bonusLabel.textContent = farmingCopy(locale, 'manual');
@@ -90,6 +76,7 @@ export class FarmingPreparationPanel {
 		reviewedLabel.append(reviewed, farmingCopy(locale, 'reviewed'));
 		body.append(reviewedLabel);
 		const reminderInputs = new Map<FarmingReminderKind, HTMLInputElement>();
+		const reminderDisplays = new Map<FarmingReminderKind, { status: HTMLElement; action: HTMLButtonElement }>();
 		for (const kind of ['food', 'utility'] as const) {
 			const row = document.createElement('div');
 			row.className = 'tyrian-farming__reminder';
@@ -101,22 +88,21 @@ export class FarmingPreparationPanel {
 			label.append(interval);
 			row.append(label);
 			reminderInputs.set(kind, interval);
-			const active = this.ports.reminders().find((reminder) => reminder.kind === kind);
-			if (active !== undefined) {
-				const progress = projectFarmingManualReminder(active, this.ports.now());
-				const status = document.createElement('span');
-				status.setAttribute('role', 'status');
-				status.textContent = progress.status === 'due' ? farmingCopy(locale, 'due')
-					: progress.remainingMs === null ? '—' : formatFarmingTime(progress.remainingMs);
-				status.title = farmingCopy(locale, 'reminderLimit');
-				row.append(status);
-			}
+			const status = document.createElement('span');
+			status.setAttribute('role', 'status');
+			status.title = farmingCopy(locale, 'reminderLimit');
+			row.append(status);
 			const action = document.createElement('button');
 			action.type = 'button';
-			action.textContent = farmingCopy(locale, active === undefined ? 'startReminder' : 'clearReminder');
 			action.title = farmingCopy(locale, 'reminderLimit');
+			reminderDisplays.set(kind, { status, action });
 			action.addEventListener('click', () => {
-				if (active !== undefined) { this.ports.clearReminder(kind); return; }
+				const active = this.ports.reminders().find((reminder) => reminder.kind === kind);
+				if (active !== undefined) {
+					this.ports.clearReminder(kind);
+					this.refreshReadOnly(container);
+					return;
+				}
 				const minutes = parseNullableInteger(interval);
 				if (minutes === null || !Number.isSafeInteger(minutes) || minutes < 1 || minutes > 1_440) {
 					interval.setAttribute('aria-invalid', 'true');
@@ -127,6 +113,7 @@ export class FarmingPreparationPanel {
 				}
 				interval.removeAttribute('aria-invalid');
 				this.ports.startReminder(kind, minutes);
+				this.refreshReadOnly(container);
 			});
 			row.append(action);
 			body.append(row);
@@ -139,6 +126,8 @@ export class FarmingPreparationPanel {
 		const feedback = document.createElement('span');
 		feedback.className = 'tyrian-farming__feedback';
 		feedback.setAttribute('role', 'status');
+		feedback.textContent = this.busy ? farmingCopy(locale, 'saving') : '';
+		this.rendered = { fieldset, feedback };
 		save.addEventListener('click', () => {
 			const candidate: FarmingPreparationSettingsV1 = {
 				version: 1, enabled: enabled.checked, manualMagicFindBonus: parseNullableInteger(bonus),
@@ -155,6 +144,49 @@ export class FarmingPreparationPanel {
 		fieldset.append(save, feedback);
 		details.append(fieldset);
 		container.append(details);
+		this.readOnly = { container, facts, reminders: reminderDisplays };
+		this.refreshReadOnly(container);
+	}
+
+	/** Refreshes API facts and manual countdowns without replacing preference inputs or focus. */
+	refreshReadOnly(container: HTMLElement): void {
+		const nodes = this.readOnly;
+		if (nodes === null || nodes.container !== container) return;
+		const locale = this.ports.locale();
+		const context = this.ports.context();
+		const document = container.ownerDocument;
+		nodes.facts.replaceChildren();
+		const fact = (label: string, value: string): void => {
+			const term = document.createElement('dt');
+			term.textContent = label;
+			const description = document.createElement('dd');
+			description.textContent = value;
+			nodes.facts.append(term, description);
+		};
+		const age = (observedAt: string | null | undefined): string => {
+			const milliseconds = observedAt == null ? NaN : Date.parse(this.ports.now()) - Date.parse(observedAt);
+			return Number.isFinite(milliseconds) && milliseconds >= 0 ? formatFarmingTime(milliseconds) : '—';
+		};
+		fact(farmingCopy(locale, 'character'), context.characterName ?? '—');
+		fact(farmingCopy(locale, 'build'), context.buildName === '' ? farmingCopy(locale, 'noBuildName') : context.buildName ?? '—');
+		fact(farmingCopy(locale, 'slots'), context.freeBagSlots === null ? '—' : new Intl.NumberFormat(locale).format(context.freeBagSlots));
+		if (context.freeBagSlotsObservedAt !== undefined) {
+			fact(`${farmingCopy(locale, 'slots')} · ${farmingCopy(locale, 'age')}`, age(context.freeBagSlotsObservedAt));
+		}
+		fact(farmingCopy(locale, 'collector'), farmingCopy(locale, context.collectorMode === 'collector' ? 'collectorMode' : 'consultMode'));
+		fact(farmingCopy(locale, 'addon'), farmingCopy(locale, context.addonConnection));
+		const breakdown = context.magicFindBreakdown;
+		const observable = breakdown === null ? null : breakdown.luck + breakdown.achievements + breakdown.enrichment;
+		fact(farmingCopy(locale, 'magicFind'), observable === null ? '—' : `${new Intl.NumberFormat(locale).format(observable)}%`);
+		if (context.magicFindObservedAt !== null) fact(farmingCopy(locale, 'age'), age(context.magicFindObservedAt));
+		for (const [kind, display] of nodes.reminders) {
+			const active = this.ports.reminders().find((reminder) => reminder.kind === kind);
+			display.action.textContent = farmingCopy(locale, active === undefined ? 'startReminder' : 'clearReminder');
+			if (active === undefined) { display.status.textContent = ''; continue; }
+			const progress = projectFarmingManualReminder(active, this.ports.now());
+			display.status.textContent = progress.status === 'due' ? farmingCopy(locale, 'due')
+				: progress.remainingMs === null ? '—' : formatFarmingTime(progress.remainingMs);
+		}
 	}
 
 	private async apply(settings: FarmingPreparationSettingsV1, fieldset: HTMLFieldSetElement, feedback: HTMLElement, locale: 'es' | 'en'): Promise<void> {
@@ -165,13 +197,15 @@ export class FarmingPreparationPanel {
 		feedback.textContent = farmingCopy(locale, 'saving');
 		try {
 			await this.ports.save(settings);
-			feedback.textContent = farmingCopy(locale, 'saved');
+			(this.rendered?.feedback ?? feedback).textContent = farmingCopy(locale, 'saved');
 		} catch {
-			feedback.setAttribute('role', 'alert');
-			feedback.textContent = farmingCopy(locale, 'failed');
+			const visibleFeedback = this.rendered?.feedback ?? feedback;
+			visibleFeedback.setAttribute('role', 'alert');
+			visibleFeedback.textContent = farmingCopy(locale, 'failed');
 		} finally {
 			this.busy = false;
 			fieldset.disabled = false;
+			if (this.rendered !== null) this.rendered.fieldset.disabled = false;
 		}
 	}
 }

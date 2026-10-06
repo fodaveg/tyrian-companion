@@ -19,6 +19,7 @@ export interface FarmingPreparationContext {
 	characterName: string | null;
 	buildName: string | null;
 	freeBagSlots: number | null;
+	freeBagSlotsObservedAt?: string | null;
 	collectorMode: CollectorMode;
 	addonConnection: 'connected' | 'disconnected' | 'unknown';
 	/** API-observable components only; never a total that already includes the manual bonus. */

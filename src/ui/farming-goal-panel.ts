@@ -69,6 +69,7 @@ let nextEditorId = 0;
 /** Edits the default for the NEXT session; saving does not rewrite a captured session target. */
 export class FarmingGoalEditor {
 	private busy = false;
+	private rendered: { fieldset: HTMLFieldSetElement; feedback: HTMLElement } | null = null;
 	private readonly radioName = `tyrian-farming-goal-${++nextEditorId}`;
 	constructor(private readonly ports: FarmingGoalEditorPorts) {}
 
@@ -81,6 +82,7 @@ export class FarmingGoalEditor {
 		let kind = current.kind;
 		const fieldset = document.createElement('fieldset');
 		fieldset.className = 'tyrian-farming__editor';
+		fieldset.disabled = this.busy;
 		const legend = document.createElement('legend');
 		legend.textContent = farmingCopy(locale, 'goal');
 		fieldset.append(legend);
@@ -92,11 +94,11 @@ export class FarmingGoalEditor {
 		number.type = 'number';
 		number.min = '1';
 		number.step = '1';
-		number.disabled = current.kind === 'none' || this.busy;
+		number.disabled = current.kind === 'none';
 		number.value = String(current.kind === 'bags' ? current.targetBags
 			: current.kind === 'duration' ? current.targetDurationMs / 60_000 : DEFAULT_FARMING_TARGET_BAGS);
 		const updateNumber = (): void => {
-			number.disabled = kind === 'none' || this.busy;
+			number.disabled = kind === 'none';
 			number.max = kind === 'duration' ? '10080' : '1000000000';
 			number.setAttribute('aria-label', farmingCopy(locale, kind === 'duration' ? 'minutes' : 'bags'));
 		};
@@ -108,7 +110,6 @@ export class FarmingGoalEditor {
 			radio.name = this.radioName;
 			radio.value = choice;
 			radio.checked = choice === kind;
-			radio.disabled = this.busy;
 			radio.addEventListener('change', () => {
 				kind = choice;
 				number.value = String(choice === 'duration' ? DEFAULT_FARMING_TARGET_DURATION_MS / 60_000 : DEFAULT_FARMING_TARGET_BAGS);
@@ -123,10 +124,11 @@ export class FarmingGoalEditor {
 		const save = document.createElement('button');
 		save.type = 'button';
 		save.textContent = farmingCopy(locale, 'save');
-		save.disabled = this.busy;
 		const feedback = document.createElement('span');
 		feedback.className = 'tyrian-farming__feedback';
 		feedback.setAttribute('role', 'status');
+		feedback.textContent = this.busy ? farmingCopy(locale, 'saving') : '';
+		this.rendered = { fieldset, feedback };
 		save.addEventListener('click', () => {
 			const parsed = Number(number.value);
 			const goal: FarmingGoalV1 = kind === 'none' ? { version: 1, kind }
@@ -154,13 +156,15 @@ export class FarmingGoalEditor {
 		feedback.textContent = farmingCopy(locale, 'saving');
 		try {
 			await this.ports.save(goal);
-			feedback.textContent = farmingCopy(locale, 'saved');
+			(this.rendered?.feedback ?? feedback).textContent = farmingCopy(locale, 'saved');
 		} catch {
-			feedback.setAttribute('role', 'alert');
-			feedback.textContent = farmingCopy(locale, 'failed');
+			const visibleFeedback = this.rendered?.feedback ?? feedback;
+			visibleFeedback.setAttribute('role', 'alert');
+			visibleFeedback.textContent = farmingCopy(locale, 'failed');
 		} finally {
 			this.busy = false;
 			fieldset.disabled = false;
+			if (this.rendered !== null) this.rendered.fieldset.disabled = false;
 		}
 	}
 }
