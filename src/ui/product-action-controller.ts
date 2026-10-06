@@ -61,6 +61,8 @@ export interface ProductActionControllerPorts {
 	checkConnection?(): Promise<ConnectionState>;
 	/** Whether a session could start right now if the account were connected (H15.25). */
 	canStartSession?(): boolean;
+	/** Passive sessions never perform a private account connection check or inherit its cooldown. */
+	getSessionSource?(): 'account_api' | 'nexus_inventory';
 	/**
 	 * R1b: false in consult mode, where the session and detection actions are the collector's and
 	 * are shown unavailable with that reason. Navigation and the manual `inventory` actions (the
@@ -164,7 +166,7 @@ export class ProductActionController {
 			|| id === 'arm-assisted-detection' && this.ports.getDetectionState().status === 'arming';
 		const state = this.running.has(id) || externallyRunning ? 'running'
 			: this.failed.has(id) ? 'error'
-				: coolingDown && requiresAccountRequest(id)
+				: coolingDown && requiresAccountRequest(id) && !(isSessionCommand(id) && this.ports.getSessionSource?.() === 'nexus_inventory')
 					? 'cooldown' : 'idle';
 		const enabled = availability.available && state !== 'running' && state !== 'cooldown';
 		return {
@@ -226,7 +228,7 @@ export class ProductActionController {
 		// `start-farming-session` never disables on a merely-unchecked connection (the Detalle
 		// button doesn't either, see `sessionAvailability` below); it checks it here instead,
 		// exactly where `openManualSessionStart` does (H15.25).
-		if (id === 'start-farming-session' && this.ports.isCollector?.() !== false
+		if (id === 'start-farming-session' && this.ports.getSessionSource?.() !== 'nexus_inventory' && this.ports.isCollector?.() !== false
 			&& this.ports.getConnectionState().status === 'idle') {
 			await this.ports.checkConnection?.();
 		}
@@ -311,6 +313,7 @@ export class ProductActionController {
 		session: SessionCommandDescriptor,
 		translator: Translator,
 	): { available: boolean; reason: string | null } {
+		if (this.ports.getSessionSource?.() === 'nexus_inventory') return {available:session.available,reason:session.available ? null : translator.t('productAction.reason.state')};
 		if (id === 'discard-saved-session' && this.ports.getRecoveryState?.().status === 'busy') {
 			return { available: false, reason: translator.t('productAction.reason.state') };
 		}

@@ -11,6 +11,7 @@ import { decideLiveAlert } from './live-session-outbox';
 interface LiveEconomyOptions {
 	lifecycle: LiveSessionLifecycle; gateway: PublicCatalogGateway; rateLimit: RateLimitCoordinator;
 	now(): number; catalog(ids: readonly number[]): Promise<Record<string,CatalogItem>>;
+	canEmit?(): boolean;
 	emit(intent: LiveAlertOutboxV1): Promise<AlertDeliveryReport>; onError(error: unknown): void; onChange(): void;
 }
 /** Public, cached enrichment runs after the durable measurement ACK, never during rendering. */
@@ -58,6 +59,7 @@ export class LiveSessionEconomy {
 		if (pricedIds.length > 0) await lifecycle.updatePrices(pricedIds.map((itemId) => ({itemId,unitCopper:this.quotes.get(itemId)!.unitCopper})),
 			new Date(Math.min(...pricedIds.map((id) => this.quotes.get(id)!.capturedAt))).toISOString());
 		for (const candidate of entry.outbox) {
+			if (this.options.canEmit?.() === false) return;
 			const observation = entry.observations.find((row) => row.id === candidate.observationId); if (!observation) continue;
 			const quote = this.quotes.get(observation.idNumber);
 			if (candidate.state === 'awaiting_price' && quote) await lifecycle.updateAlert(candidate.outboxId,(prior) =>
@@ -65,6 +67,7 @@ export class LiveSessionEconomy {
 			const claimed = await lifecycle.updateAlert(candidate.outboxId,(prior) => prior.state === 'ready'
 				? {...prior,state:'dispatching',claimedAt:new Date(this.options.now()).toISOString()} : prior);
 			if (claimed?.state !== 'dispatching' || claimed.alert === null || this.disposed) continue;
+			if (this.options.canEmit?.() === false) return;
 			const report = await this.options.emit(claimed);
 			await lifecycle.updateAlert(candidate.outboxId,(prior) => ({...prior,state:'processed',deliveryReport:report}),true);
 		}

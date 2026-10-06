@@ -9,13 +9,28 @@ import { createSessionRuntimeRecord, type SessionRuntimeStore } from './sessions
 import { sessionAuthorityFromLease } from './sessions/session-state-machine';
 import { storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import type { AlertIngameServerHandle } from './alerts/alert-ingame-server';
+import type { IngamePresenceTracker } from './alerts/alert-ingame-presence';
+import type { IngameSessionMarker } from './sessions/ingame-session-marker';
+import type { ProductActionController } from './ui/product-action-controller';
+import type { SessionCommandController } from './ui/session-command-controller';
+import type { LiveSessionEconomy } from './sessions/live-session-economy';
+import type { PublicCatalogGateway } from './catalog/public-catalog-client';
+import type { CatalogItem } from './catalog/public-catalog-model';
+import { compareStorageSnapshots } from './account/storage-delta';
+import { decideLiveAlert } from './sessions/live-session-outbox';
+import { createSessionContaminationReview } from './sessions/session-contamination-review';
+import type { TyrianHost } from './host/tyrian-host';
+import type { AlertV1 } from './alerts/alert-contract';
 
-interface RuntimeAccess {liveIngamePort():LiveIngamePort;liveSessions:LiveSessionLifecycle;sessions:ManualSessionStartService;alertIngameServer:AlertIngameServerHandle|null}
+interface RuntimeAccess {host:TyrianHost;liveIngamePort():LiveIngamePort;liveSessions:LiveSessionLifecycle;sessions:ManualSessionStartService;alertIngameServer:AlertIngameServerHandle|null;
+	alertIngameServerPort:number|null;ensureAlertIngameServer():Promise<AlertIngameServerHandle|null>;ingamePresenceTracker():IngamePresenceTracker;
+	ingameSessionMarker:IngameSessionMarker;setupSessionCommands():void;setupProductActions():void;productActions:ProductActionController;
+	sessionCommands:SessionCommandController;collectorMode:'collector'|'consult';liveEconomy:LiveSessionEconomy;emitLiveSessionAlert(intent:unknown):Promise<unknown>}
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ'; const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
 let active: RuntimeHarness|null = null;
 afterEach(async () => { if (active) { await active.shutdown(); active.dispose(); active = null; } });
-async function runtime(withLegacy = false) {
+async function runtime(withLegacy: boolean|'complete' = false) {
 	let now = AT; vi.spyOn(Date,'now').mockImplementation(() => now);
 	const h = createRuntimeHarness(); active = h;
 	(h.core as unknown as {localDebugActions:null}).localDebugActions = null;
@@ -38,6 +53,16 @@ async function runtime(withLegacy = false) {
 					build:{tab:1,name:'Saved build',profession:'Revenant',specializations:[{id:3,traits:[1,2,3]},{id:52,traits:[4,5,6]},{id:63,traits:[7,8,9]}],
 						skills:{heal:1,utilities:[2,3,4],elite:5},aquaticSkills:{heal:6,utilities:[7,8,9],elite:10}},capturedAt:baseline.completedAt}},baseline,null,null,AT-1000);
 			if (record === null || (await local.runtimeStore.save(record)).status !== 'saved') throw new Error('Legacy fixture did not persist.');
+			if (withLegacy === 'complete' && record.state.status === 'active') {
+				const final=storageDeltaSnapshot({snapshotId:'final-fixture',startedAt:new Date(AT-750).toISOString(),completedAt:new Date(AT-500).toISOString()});
+				const delta=compareStorageSnapshots(baseline,final); if (delta.status !== 'comparable') throw new Error('Legacy completion fixture is incomparable.');
+				const review=createSessionContaminationReview(baseline,final,delta,new Date(AT-400).toISOString());
+				if (review === null || !['exact','estimated','contaminated'].includes(review.classification.status)) throw new Error('Legacy completion review is invalid.');
+				const complete=createSessionRuntimeRecord({...record.state,status:'complete',stopRequestedAt:final.startedAt,stoppedAt:final.startedAt,
+					finalSnapshot:{snapshotId:final.snapshotId,accountId:final.accountId,schemaVersion:final.schemaVersion,startedAt:final.startedAt,completedAt:final.completedAt,quality:'stable'},
+					finalizedAt:new Date(AT-400).toISOString(),classification:review.classification.status as 'exact'|'estimated'|'contaminated'},baseline,final,delta,AT-400,review);
+				if (complete === null || (await local.runtimeStore.save(complete)).status !== 'saved') throw new Error('Legacy complete fixture did not persist.');
+			}
 			await local.coordinator.release(acquired.handle); now = AT; await initialize.call(this);
 		});
 	}
@@ -49,8 +74,97 @@ async function runtime(withLegacy = false) {
 		unknownPositions:0,freeSlots:null,rows:[[0,36038,quantity]],observedAt:new Date(now).toISOString()});
 	return {h,access,port:access.liveIngamePort(),source,sample,setNow:(value:number) => {now=value;}};
 }
+async function presence(f:Awaited<ReturnType<typeof runtime>>,connectionId='a',source=f.source) {
+	const tracker=f.access.ingamePresenceTracker(); f.h.core.settings.alertIngameEnabled=true;
+	tracker.apply({kind:'authenticated',connectionId,client:'nexus',instance:source.sourceInstance,atMs:Date.now()});
+	tracker.apply({kind:'context',connectionId,context:source.context,atMs:Date.now()});
+	await f.access.ingameSessionMarker.reconcile(); await f.access.liveSessions.capture(); return tracker;
+}
 
 describe('real passive Nexus composition', () => {
+	it('bounds receipt tracking across alternating origins and sparse shared sequences', async () => {
+		const f=await runtime(); const local=f.h.core as unknown as {
+			liveIngameTracked:Map<number,unknown>;ingameTracked:Map<number,{alertId:string}>;ingameAwaitingAck:Set<string>;
+			trackIngameAlert(alert:AlertV1,at:number,seq:number,delivery:{v2Clients:[];v3Clients:[]}):void;
+		};
+		local.liveIngameTracked.set(1,{sessionId:'older-live',outboxId:'older-intent'});
+		local.ingameTracked.set(2,{alertId:'older-legacy'}); local.ingameAwaitingAck.add('older-legacy');
+		local.liveIngameTracked.set(299,{sessionId:'recent-live',outboxId:'recent-intent'});
+		local.trackIngameAlert({kind:'valuable_loot',itemId:36038,name:'Bag',quantity:3,totalCopper:120000,priceStatus:'known',reason:'valuable'},AT,300,{v2Clients:[],v3Clients:[]});
+		expect(local.liveIngameTracked.has(1)).toBe(false); expect(local.ingameTracked.has(2)).toBe(false);
+		expect(local.ingameAwaitingAck.has('older-legacy')).toBe(false); expect(local.liveIngameTracked.has(299)).toBe(true);
+	});
+	it('preserves a completed v3 with no note receipt before a new Nexus baseline without fabricating its missing receipt', async () => {
+		const f=await runtime('complete'); expect(f.access.sessions.getState().status).toBe('complete'); expect(f.access.sessions.getCompletedSummaryReceipt()).toBeNull();
+		await expect(f.port.open(f.source)).resolves.toBe('ready'); await expect(f.port.commit(f.sample(0,9))).resolves.toBe('stored');
+		expect(f.access.sessions.getPreservedLegacyRuntime()).toMatchObject({version:3,state:{status:'complete',sessionId:'saved-api-session',finalizedAt:new Date(AT-400).toISOString()}});
+		const saved=await f.access.sessions.readPreservedLegacyRuntime(); expect(saved?.archive.receipt).toBeNull();
+		expect(f.h.core.getLiveSessionView()).toMatchObject({phase:'active',observationCount:0,totals:[]}); expect(f.h.requests().filter((row) => /account|characters|tokeninfo/u.test(row.url))).toEqual([]);
+	});
+	it('palette and ribbon start/finish use Nexus, never connection-check or legacy recapture, and explicit restart overrides only a manual stop', async () => {
+		const f=await runtime(); vi.spyOn(f.access.host.ui,'ribbon').mockReturnValue({setTitle:vi.fn(),setPending:vi.fn()});
+		vi.spyOn(f.access.host.ui,'registerCommand').mockReturnValue(vi.fn()); f.access.setupSessionCommands(); f.access.setupProductActions();
+		const check=vi.spyOn(f.h.core,'checkConnection'); const accountStart=vi.spyOn(f.access.sessions,'start');
+		await expect(f.access.productActions.run('start-farming-session')).resolves.toBe('unavailable'); expect(check).not.toHaveBeenCalled();
+		await presence(f); await f.port.open(f.source); const id=f.h.core.getLiveSessionView().sessionId;
+		expect(f.access.sessionCommands.describe('start-farming-session').available).toBe(false); expect(f.access.sessionCommands.describe('finish-farming-session').available).toBe(true);
+		for (const action of ['recover-saved-session','discard-saved-session','clear-completed-session','abandon-farming-session'] as const) await expect(f.access.productActions.run(action)).resolves.toBe('unavailable');
+		await expect(f.access.productActions.run('finish-farming-session')).resolves.toBe('completed');
+		await expect(f.port.open({...f.source,epoch:'AwMDAwMDAwMDAwMDAwMDAw'})).resolves.toBe('source_conflict'); expect(f.h.core.getLiveSessionView().sessionId).toBe(id);
+		await expect(f.access.productActions.run('start-farming-session')).resolves.toBe('completed'); expect(f.h.core.getLiveSessionView().sessionId).not.toBe(id);
+		const restarted=f.h.core.getLiveSessionView().sessionId;
+		await f.h.core.stopManualSession(); const tracker=f.access.ingamePresenceTracker();
+		tracker.apply({kind:'closed',connectionId:'a',atMs:AT,lastSeenAtMs:AT,reason:'game_exit'}); await f.access.ingameSessionMarker.reconcile();
+		await presence(f,'new-game'); await expect(f.port.open({...f.source,epoch:'BAQEBAQEBAQEBAQEBAQEBA'})).resolves.toBe('ready');
+		expect(f.h.core.getLiveSessionView().sessionId).not.toBe(restarted);
+		expect(check).not.toHaveBeenCalled(); expect(accountStart).not.toHaveBeenCalled(); expect(f.h.requests().filter((row) => /account|characters|tokeninfo/u.test(row.url))).toEqual([]);
+	});
+	it('links source rollover inside restored presence to the new session, so game_exit closes it immediately', async () => {
+		const f=await runtime(); const tracker=await presence(f); await f.port.open(f.source); const old=f.h.core.getLiveSessionView().sessionId;
+		f.setNow(AT+1000); await f.port.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'disconnect',observedAt:new Date(AT+1000).toISOString()});
+		tracker.apply({kind:'closed',connectionId:'a',atMs:AT+1000,lastSeenAtMs:AT+1000,reason:'addon_unload'}); await f.access.ingameSessionMarker.reconcile();
+		const next={...f.source,sourceInstance:'AwMDAwMDAwMDAwMDAwMDAw',epoch:'BAQEBAQEBAQEBAQEBAQEBA'}; f.setNow(AT+2000); await presence(f,'b',next); await f.port.open(next);
+		expect(f.h.core.getLiveSessionView().sessionId).not.toBe(old);
+		f.setNow(AT+3000); tracker.apply({kind:'closed',connectionId:'b',atMs:AT+3000,lastSeenAtMs:AT+3000,reason:'game_exit'});
+		await f.access.ingameSessionMarker.reconcile(); await f.access.liveSessions.capture(); expect(f.h.core.getLiveSessionView()).toMatchObject({phase:'complete',endedAt:new Date(AT+3000).toISOString()});
+	});
+	it('blocks switching to consult while the real live connection is active', async () => {
+		const f=await runtime(); await f.port.open(f.source); await expect(f.h.core.updateCollectorMode('consult')).resolves.toMatchObject({status:'blocked',reason:'session_in_progress'});
+		expect(f.h.core.getCollectorMode()).toBe('collector');
+	});
+	it('a delayed public price cannot claim or emit after an externally applied consult mode', async () => {
+		const f=await runtime(); await f.port.open(f.source); await f.port.commit(f.sample(0,0));
+		let release:((items:Record<string,CatalogItem>) => void)|null=null;
+		const options=(f.access.liveEconomy as unknown as {options:{catalog():Promise<Record<string,CatalogItem>>;gateway:PublicCatalogGateway}}).options;
+		options.catalog=async () => await new Promise((resolve) => {release=resolve;});
+		options.gateway={requestDetailed:vi.fn(async () => ({status:200,headers:{},body:[{id:36038,whitelisted:true,buys:{unit_price:100000,quantity:100},sells:{unit_price:120000,quantity:100}}]}))};
+		const emit=vi.spyOn(f.access,'emitLiveSessionAlert'); const claim=vi.spyOn(f.access.liveSessions,'updateAlert');
+		f.setNow(AT+1000); await f.port.commit(f.sample(1,4)); await vi.waitFor(() => {expect(release).not.toBeNull();});
+		f.access.collectorMode='consult'; release!({}); await f.access.liveEconomy.drain();
+		expect(claim).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled(); expect(f.h.core.getLiveSessionAlerts()[0]?.state).toBe('awaiting_price'); expect(f.h.core.getEmittedAlerts()).toEqual([]);
+	});
+	it.each(['es','en'] as const)('live alert effects use observed-increase copy with no API/drop latency in %s', async (locale) => {
+		const f=await runtime(); f.h.core.settings.language=locale; await f.port.open(f.source); await f.port.commit(f.sample(0,0));
+		f.setNow(AT+1000); await f.port.commit(f.sample(1,4)); await f.access.liveEconomy.drain();
+		const entry=f.access.liveSessions.getJournal()[1]!; const intent=entry.outbox[0]!;
+		await f.access.liveSessions.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,100000,'Bag',new Date(AT+1000).toISOString(),false));
+		const claimed=await f.access.liveSessions.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString()}));
+		const notice=vi.spyOn(f.access.host.ui,'notice'); const system=vi.spyOn(f.access.host.notify,'system');
+		await f.access.emitLiveSessionAlert(claimed);
+		expect(notice).toHaveBeenCalledOnce(); const text=notice.mock.calls[0]?.[0];
+		expect(text).toContain('+4'); expect(text).not.toMatch(/API|5.*10|drop|found|hallazgo/iu);
+		expect(system.mock.calls[0]?.[0]).toMatchObject({title:locale==='es' ? 'Aumento observado' : 'Observed increase',body:text});
+		expect(f.h.core.getEmittedAlerts()).toEqual([]);
+	});
+	it.each(['shutdown','consult'] as const)('a bridge replacement waiting for old close cannot bind after %s', async (mode) => {
+		const f=await runtime(); let release:(() => void)|null=null; const closing=new Promise<void>((resolve) => {release=resolve;});
+		const close=vi.fn(async () => await closing); f.access.alertIngameServer={close} as unknown as AlertIngameServerHandle; f.access.alertIngameServerPort=123;
+		f.h.core.settings.alertIngameEnabled=true; f.h.core.settings.alertIngamePort=456;
+		const restarting=f.access.ensureAlertIngameServer(); await vi.waitFor(() => {expect(close).toHaveBeenCalledOnce();});
+		const stopping=mode==='shutdown' ? f.h.shutdown() : Promise.resolve(); if (mode==='consult') f.access.collectorMode='consult';
+		release!(); await expect(restarting).resolves.toBeNull(); await stopping; expect(f.access.alertIngameServer).toBeNull(); expect(close).toHaveBeenCalledOnce();
+		if (mode==='shutdown') {f.h.dispose();active=null;}
+	});
 	it('another lease already owned by this host cannot be reused or released for the API archival', async () => {
 		const f = await runtime(true); const local = f.access.sessions as unknown as {coordinator:SessionLeaseCoordinator;runtimeStore:SessionRuntimeStore};
 		const other = await local.coordinator.acquire('other-session'); if (other.status !== 'acquired') throw new Error('Other fixture lease failed.');

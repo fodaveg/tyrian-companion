@@ -201,7 +201,19 @@ function descriptorFor(id: SessionCommandId, available: boolean): SessionCommand
 	return { id, name: id, available, icon: 'test', destructive: id.includes('discard') || id.includes('clear'), targetKey: 'test' };
 }
 
+describe('passive source command policy', () => {
+	it('never checks an account connection to start and does not invent availability over a missing source', async () => {
+		const check=vi.fn(); const run=vi.fn(async () => 'completed' as const);
+		const controller=createController({hasKey:false,sessionSource:() => 'nexus_inventory',checkConnection:check,sessionRun:run});
+		await expect(controller.run('start-farming-session')).resolves.toBe('completed'); expect(check).not.toHaveBeenCalled(); expect(run).toHaveBeenCalledOnce();
+		const missing=createController({hasKey:true,sessionSource:() => 'nexus_inventory',canStartSession:() => true,
+			sessionDescribe:(id) => descriptorFor(id,false),checkConnection:check});
+		await expect(missing.run('start-farming-session')).resolves.toBe('unavailable'); expect(check).not.toHaveBeenCalled();
+	});
+});
+
 function createController(overrides: {
+	readonly sessionSource?: NonNullable<ProductActionControllerPorts['getSessionSource']>;
 	readonly sessionRun?: (id: SessionCommandId) => Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
 	readonly sessionDescribe?: (id: SessionCommandId) => SessionCommandDescriptor;
 	readonly execute?: ProductActionControllerPorts['execute'];
@@ -232,6 +244,7 @@ function createController(overrides: {
 		getRecoveryState: overrides.recovery ?? (() => ({ status: 'none' } as never)),
 		checkConnection: overrides.checkConnection,
 		canStartSession: overrides.canStartSession,
+		getSessionSource: overrides.sessionSource,
 		isCollector: overrides.isCollector,
 		diagnostics: overrides.diagnostics,
 	});

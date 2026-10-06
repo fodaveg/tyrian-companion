@@ -432,7 +432,6 @@ export class ManualSessionStartService {
 		await this.reviewFlight; await this.reclaimFlight; await this.abandonFlight; await this.heartbeatFlight;
 		const record = this.recoveryRecord;
 		if (record === null) return this.getPreservedLegacyRuntime() !== null || this.state.status === 'idle';
-		if (record.state.status === 'complete') return false;
 		const sessionId = record.state.status === 'error' ? record.state.failedState.sessionId : record.state.sessionId;
 		const acquired = await this.coordinator.acquire(sessionId);
 		if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== sessionId) return false;
@@ -441,7 +440,7 @@ export class ManualSessionStartService {
 		if (!await this.runtimeStore.archiveLegacyRuntime(sessionAuthorityFromLease(acquired.handle))) return false;
 		this.preservedLegacyRecords.unshift(record); this.recoveryRecord = null;
 		await this.coordinator.release(acquired.handle); this.currentHandle = null;
-		this.recoveryState = {status:'available',state:record.state,message:'Saved API evidence is preserved locally for reading; Nexus owns new sessions.'};
+		this.recoveryState = record.state.status === 'complete' ? {status:'none'} : {status:'available',state:record.state,message:'Saved API evidence is preserved locally for reading; Nexus owns new sessions.'};
 		this.onStateChange(); return true;
 	}
 
@@ -752,6 +751,7 @@ export class ManualSessionStartService {
 			this.recoveryState = preserved && preserved.state.status !== 'complete' ? {status:'available',state:preserved.state,message:'Saved API evidence is preserved locally for reading.'} : { status: 'none' };
 		} else if (loaded.status === 'loaded') {
 			if (loaded.record.state.status === 'complete') {
+				if (!this.automaticAccountCapture) this.recoveryRecord = loaded.record;
 				this.state = loaded.record.state;
 				this.baselineSnapshot = loaded.record.baselineSnapshot;
 				this.finalSnapshot = loaded.record.finalSnapshot;

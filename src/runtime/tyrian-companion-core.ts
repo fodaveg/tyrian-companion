@@ -1310,6 +1310,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.liveSessions.initialize();
 		this.liveEconomy = new LiveSessionEconomy({
 			lifecycle: this.liveSessions, gateway: publicClient, rateLimit: rateLimitCoordinator, now: () => Date.now(),
+			canEmit: () => !consulting(this) && !this.unloaded,
 			catalog: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveItems(ids,this.settings.language); },
 			emit: async (intent) => await this.emitLiveSessionAlert(intent), onError: (error) => { this.recordIngameSessionFailure(error); },
 			onChange: () => { this.renderViews(); },
@@ -1371,7 +1372,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/**
 	 * R1b: the Settings selector's write. Stores the mode in this device's local `kv` only, so no
 	 * synced `data.json` carries it to another device, then applies it without a reload. Consult is
-	 * refused while a session is still open: finishing it (its final capture, its note) needs the API.
+	 * refused while a session is still open: its durable source and collector ownership stay together.
 	 */
 	async updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult> {
 		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<SettingsUpdateResult> => {
@@ -1381,7 +1382,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				return { status: 'blocked', reason: 'runtime_starting' };
 			}
 			if (mode === this.collectorMode) return { status: 'saved', inventoryAdvisor: 'unchanged' };
-			if (mode === 'consult' && sessionInProgress(this.sessions.getState())) {
+			if (mode === 'consult' && (this.liveSessions?.getRuntime()?.phase === 'active' || sessionInProgress(this.sessions.getState()))) {
 				this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
 				return { status: 'blocked', reason: 'session_in_progress' };
 			}
@@ -1454,6 +1455,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const collector = !consulting(this);
 		if (collector) this.syncAlertIngameServer();
 		else await this.closeAlertIngameServer();
+		if (collector) for (const entry of this.liveSessions?.getJournal() ?? []) {
+			if (entry.outbox.some((intent) => intent.state === 'awaiting_price' || intent.state === 'ready')) this.liveEconomy?.observe(entry);
+		}
 		if (!collector) this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('mode_off'));
 		if (this.priceHistory !== null && this.settings.priceHistoryEnabled) {
 			const settings = priceHistorySettingsFrom(this.settings);
@@ -3162,7 +3166,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 	private enrichLiveSession(entry: LiveJournalEntryV1): void { if (!this.unloaded) this.liveEconomy?.observe(entry); }
 	private async emitLiveSessionAlert(intent: LiveAlertOutboxV1) {
-		if (intent.alert === null || this.alertQueue === null || this.unloaded) return {delivered:[],failed:[],rejected:true};
+		if (intent.alert === null || this.alertQueue === null || this.unloaded || consulting(this)) return {delivered:[],failed:[],rejected:true};
 		return await this.buildAlertEmitter(this.alertQueue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
 	}
 	private async saveLiveSessionNote(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[]): Promise<string|null> {
@@ -3520,6 +3524,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * rule for its enabled flag and port.
 	 */
 	private buildAlertEmitter(queue: EmittedAlertQueue, liveScope?: {sessionId:string;outboxId:string}): AlertEmitter {
+		const requireLiveCollector = () => { if (liveScope && (consulting(this) || this.unloaded)) throw new Error('Live alert collection is unavailable.'); };
 		// The reviewed outbound boundary stays at exactly one module, so the webhook rides the
 		// same transport every other call uses instead of reaching for the host's HTTP call
 		// here. Configured never to retry: a webhook host that is down is not worth a second
@@ -3530,16 +3535,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return new AlertEmitter([
 			{
 				id: 'toast',
-				deliver: (alert) => { this.emitNotice(this.alertToastText(alert), alertNoticeSource(alert.kind)); },
+				deliver: (alert) => { requireLiveCollector(); this.emitNotice(this.alertToastText(alert,liveScope !== undefined), alertNoticeSource(alert.kind)); },
 			},
 			{
 				id: 'system_notification',
 				deliver: (alert) => {
+					requireLiveCollector();
 					const translator = createTranslator(this.settings.language);
 					// The host picks the urgency from its own platform (Linux asks for `critical`).
 					const outcome = this.host.notify.system({
-						title: translateRuntime(translator, alertTitleKey(alert.kind)),
-						body: this.alertBodyText(alert),
+						title: translateRuntime(translator, liveScope ? 'alerts.observedIncrease.title' : alertTitleKey(alert.kind)),
+						body: this.alertBodyText(alert,liveScope !== undefined),
 					});
 					return systemNotificationChannelResult(outcome);
 				},
@@ -3547,6 +3553,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			{
 				id: 'sound',
 				deliver: () => {
+					requireLiveCollector();
 					if (this.host.notify.sound() !== 'played') {
 						throw new Error('No audio output was available.');
 					}
@@ -3555,6 +3562,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			{
 				id: 'webhook',
 				deliver: async (alert) => {
+					requireLiveCollector();
 					const outcome = await postAlertWebhook(
 						this.settings.alertWebhookUrl, alert,
 						{ post: async (request) => await webhookTransport.send(request) },
@@ -3569,6 +3577,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			{
 				id: 'ingame',
 				deliver: async (alert, context) => {
+					requireLiveCollector();
 					// Off ships as a silent success, exactly like the webhook's empty URL: a
 					// fresh install pays nothing for a channel it never enabled. Enabled but
 					// unreachable is different, and must NOT look like success: the addon
@@ -3576,6 +3585,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 					// the player never gets shown, with nothing in the emitter report to say why.
 					if (!this.settings.alertIngameEnabled) return;
 					const server = await this.ensureAlertIngameServer();
+					requireLiveCollector();
 					if (server === null || server.clientCount() === 0) {
 						// The step "Recibido en el juego" still needs to say the alert reached nobody.
 						this.trackIngameAlert(alert, context.emittedAtMs, this.nextAlertIngameSeq(), { v2Clients: [], v3Clients: [] }, liveScope);
@@ -3590,6 +3600,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			{
 				id: 'queue',
 				deliver: async (alert, context) => {
+					requireLiveCollector();
 					if (liveScope) {
 						if (!this.liveSessions?.getJournal().some((entry) => entry.sessionId === liveScope.sessionId
 							&& entry.outbox.some((intent) => intent.outboxId === liveScope.outboxId && intent.state === 'dispatching'))) throw new Error('The durable live alert claim is unavailable.');
@@ -3640,11 +3651,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async ensureAlertIngameServer(): Promise<AlertIngameServerHandle | null> {
 		if (consulting(this) || this.unloaded) return null;
 		await this.alertIngameCloseFlight;
+		if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled) return null;
 		const port = this.settings.alertIngamePort;
 		if (this.alertIngameServer !== null && this.alertIngameServerPort === port) return this.alertIngameServer;
 		if (this.alertIngameServer !== null) {
 			await this.closeAlertIngameServer();
 		}
+		if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled || this.settings.alertIngamePort !== port) return null;
 		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
 		const flight = startAlertIngameServer(
 			this.host.tcpServer,
@@ -3664,7 +3677,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				live: this.liveIngamePort(),
 			},
 		)
-			.then((server) => {
+			.then(async (server) => {
+				if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled || this.settings.alertIngamePort !== port) {
+					this.alertIngameServer = server; this.alertIngameServerPort = port;
+					await server.close();
+					if (this.alertIngameServer === server) { this.alertIngameServer = null; this.alertIngameServerPort = null; }
+					return null;
+				}
 				this.alertIngameServer = server;
 				this.alertIngameServerPort = port;
 				this.alertIngameServerErrorCode = null;
@@ -3694,6 +3713,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private liveIngamePort(): LiveIngamePort {
 		return {
 			open: async (source) => {
+				if (this.ingameSessionMarker?.blocksAutomaticRestart()) return 'source_conflict';
 				if (source.context.state !== 'gameplay') return 'not_gameplay';
 				if (source.build !== NEXUS_LIVE_BUILD || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
 				const prior = this.liveSessions?.getRuntime();
@@ -3703,7 +3723,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				}
 				if (this.liveSessions?.getRuntime()?.phase !== 'active') await this.startIngameSession(source.context.character);
 				if (this.liveSessions?.getRuntime()?.phase !== 'active') return 'source_conflict';
-				return await this.liveSessions?.open(source) ?? 'not_gameplay';
+				const opened = await this.liveSessions?.open(source) ?? 'not_gameplay';
+				const current = this.liveSessions?.getRuntime();
+				if (opened === 'ready' && prior?.sessionId !== current?.sessionId && current) this.ingameSessionMarker?.linkReplacement(prior?.sessionId ?? null,current.sessionId,'automatic');
+				return opened;
 			},
 			commit: async (sample) => await this.liveSessions?.commit({ ...sample,
 				rows: sample.rows.map(([kind,idNumber,quantity]) => ({kind:kind === 0 ? 'item' : 'currency',idNumber,quantity})),
@@ -3734,19 +3757,23 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** Starts the ack bookkeeping of one alert written to the bridge; `sent` reports it through `onChange`. */
 	private trackIngameAlert(alert: AlertV1, emittedAtMs: number, alertSeq: number, delivery: IngameAlertBroadcast, liveScope?: {sessionId:string;outboxId:string}): void {
+		// Both origins share the bridge sequence, including gaps and alternating legacy/live alerts.
+		for (const seq of new Set([...this.liveIngameTracked.keys(), ...this.ingameTracked.keys()])) {
+			if (seq > alertSeq - 256) continue;
+			const tracked = this.ingameTracked.get(seq);
+			if (tracked) this.ingameAwaitingAck.delete(tracked.alertId);
+			this.ingameReceipts.forget(seq);
+			this.liveIngameTracked.delete(seq);
+			this.ingameTracked.delete(seq);
+		}
 		if (liveScope) {
 			this.liveIngameTracked.set(alertSeq,{...liveScope,sentTo:[...new Set([...delivery.v3Clients,...delivery.v2Clients])]});
-			this.ingameReceipts.forget(alertSeq - 256); this.liveIngameTracked.delete(alertSeq - 256);
 			this.ingameReceipts.sent(alertSeq,delivery); return;
 		}
 		const alertId = this.alertQueue?.alertIdFor(alert, emittedAtMs) ?? null;
 		if (alertId === null) return;
 		const sentTo = [...new Set([...delivery.v3Clients, ...delivery.v2Clients])];
 		this.ingameTracked.set(alertSeq, { alert, emittedAtMs, alertId, sentTo });
-		// Bounded like the server's own per-connection memory: a late ack only makes sense soon after.
-		const stale = alertSeq - 256;
-		this.ingameReceipts.forget(stale);
-		this.ingameTracked.delete(stale);
 		if (delivery.v3Clients.length > 0) this.ingameAwaitingAck.add(alertId);
 		this.ingameReceipts.sent(alertSeq, delivery);
 	}
@@ -3938,8 +3965,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const state = this.sessions.getState();
 		const sessionId = state.status === 'idle' ? null
 			: state.status === 'error' ? state.failedState.sessionId : state.sessionId;
-		const released = state.status === 'idle' || state.status === 'abandoned'
-			|| (state.status === 'complete' && this.sessions.getCompletedSummaryReceipt() !== null);
+		const released = state.status === 'idle' || state.status === 'abandoned' || state.status === 'complete';
 		return {
 			status: state.status,
 			sessionId,
@@ -3954,10 +3980,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private async startIngameSession(character: string | null): Promise<string | null> {
 		if (!this.runtimeReady || !this.ingameSessionView().canStart) return null;
-		if (this.sessions.getRecoveryState().status !== 'none' && this.sessions.getPreservedLegacyRuntime() === null
+		if ((this.sessions.getRecoveryState().status !== 'none' || this.sessions.getState().status === 'complete') && this.sessions.getPreservedLegacyRuntime() === null
 			&& !await this.sessions.preserveLegacyForLiveMigration()) return null;
-		if (this.sessions.getState().status === 'complete' && this.sessions.getCompletedSummaryReceipt() !== null
-			&& !await this.sessions.resetCompletedSession()) return null;
 		return await this.liveSessions?.start(character) ?? null;
 	}
 
@@ -4070,7 +4094,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** Toast copy: the alert plus the latency the interface owes the player. */
-	private alertToastText(alert: AlertV1): string {
+	private alertToastText(alert: AlertV1, live = false): string {
+		if (live) return this.alertBodyText(alert,true);
 		const translator = createTranslator(this.settings.language);
 		return `${this.alertBodyText(alert)} ${translateRuntime(translator, 'notices.alertLatency', {
 			minimum: ALERT_LATENCY_MINUTES.minimum, maximum: ALERT_LATENCY_MINUTES.maximum,
@@ -4078,8 +4103,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** One line per kind. A price signal never borrows the loot wording: it is not a find. */
-	private alertBodyText(alert: AlertV1): string {
+	private alertBodyText(alert: AlertV1, live = false): string {
 		const translator = createTranslator(this.settings.language);
+		if (live) return translateRuntime(translator,'alerts.observedIncrease.body',{name:alert.name,quantity:alert.quantity,
+			value:alert.totalCopper === null ? translateRuntime(translator,'alerts.queue.noValue') : formatCopperCompact(alert.totalCopper,this.settings.language)});
 		const reason = translateRuntime(translator, alertReasonKey(alert.reason));
 		// A price signal says what acting on it is WORTH, in copper, on the stack
 		// the player actually holds. The amplitude of this bag is 1,35x, which is
@@ -4391,7 +4418,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	async stopManualSession(humanBoundaryAt: string | null = null): Promise<void> {
-		if (this.liveSessions?.getRuntime()) { await this.liveSessions.stop(Date.now()); return; }
+		const live = this.liveSessions?.getRuntime();
+		if (live) { this.ingameSessionMarker?.markStoppedByPlayer(live.sessionId); if (!await this.liveSessions!.stop(Date.now(),live.sessionId)) throw new Error('Live session finish is unavailable.'); return; }
 		const perform = async () => humanBoundaryAt === null
 			? await this.sessionDispatch.finish()
 			: await this.performStopManualSession(undefined, humanBoundaryAt);
@@ -4671,7 +4699,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				if (presence.status !== 'present') {
 					this.emitNotice('Connect Nexus to start an observed inventory session.', 'session_command'); return;
 				}
-				await this.startIngameSession(presence.context?.character ?? null);
+				await this.sessionCommands.run('start-farming-session');
 			});
 	}
 
@@ -5027,7 +5055,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	private setupSessionCommands(): void {
 		this.sessionCommands = new SessionCommandController({
-			getContext: () => this.runtimeReady
+			getContext: () => this.runtimeReady && this.liveSessions !== null ? this.passiveSessionCommandContext() : this.runtimeReady
 				? {
 					state: this.sessions.getState(),
 					recovery: this.sessions.getRecoveryState(),
@@ -5056,6 +5084,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	private setupProductActions(): void {
 		this.productActions = new ProductActionController({
+			getSessionSource: () => 'nexus_inventory',
 			getLocale: () => this.settings.language,
 			isRuntimeReady: () => this.runtimeReady,
 			hasApiKey: () => this.hasConfiguredApiKey(),
@@ -5063,6 +5092,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			getPendingProposals: () => this.getPendingProposalState(),
 			getDetectionState: () => this.getAssistedDetectionState(),
 			canArmDetection: () => {
+				if (this.liveSessions !== null) return false;
 				if (!this.runtimeReady) return false;
 				const connected = this.connection.getState().status;
 				const session = this.sessions.getState();
@@ -5083,9 +5113,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			execute: (id) => this.executeProductAction(id),
 			getRecoveryState: () => this.runtimeReady ? this.sessions.getRecoveryState() : { status: 'none' },
 			checkConnection: () => this.checkConnection(),
-			canStartSession: () => this.runtimeReady
-				&& this.sessions.getRecoveryState().status === 'none'
-				&& (this.sessions.getState().status === 'idle' || this.sessions.getState().status === 'abandoned'),
+			canStartSession: () => this.runtimeReady && this.liveSessions !== null && this.passiveSessionCommandContext().canStart,
 			isCollector: () => !consulting(this),
 			diagnostics: this.localDebugActions ?? undefined,
 		});
@@ -5166,12 +5194,35 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	private prepareSessionCommand(id: SessionCommandId): Promise<PreparedSessionCommand | null> {
 		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) return Promise.resolve(null);
+		if (this.liveSessions !== null) {
+			if (id === 'start-farming-session') return Promise.resolve(async () => {
+				const previous = this.liveSessions?.getRuntime()?.sessionId ?? null;
+				const presence = this.getIngamePresence();
+				if (presence.status !== 'present') throw new Error('The passive inventory source is unavailable.');
+				const id = await this.startIngameSession(presence.context?.character ?? null);
+				if (id === null) throw new Error('The passive session could not start.');
+				this.ingameSessionMarker?.linkReplacement(previous,id,'adopted');
+			});
+			if (id === 'finish-farming-session') return Promise.resolve(async () => { await this.stopManualSession(); });
+			return Promise.resolve(null);
+		}
 		if (id === 'start-farming-session') return this.prepareStartIntent();
 		if (id === 'discard-saved-session') return this.prepareDiscardIntent();
 		if (id === 'clear-completed-session') return this.prepareClearIntent();
 		if (id === 'abandon-farming-session') return this.prepareAbandonIntent();
 		if (id === 'finish-farming-session') return Promise.resolve(() => this.performStopManualSession());
 		return Promise.resolve(() => this.performRecoverSession());
+	}
+
+	/** Every palette/ribbon action uses the same passive identity and manual-source availability. */
+	private passiveSessionCommandContext() {
+		const live = this.liveSessions?.getRuntime(); const presence = this.getIngamePresence();
+		return {source:'nexus_inventory' as const,sessionId:live?.sessionId ?? null,phase:live?.phase ?? 'idle' as const,
+			fence:live?.authority.fence ?? null,
+			canStart:!consulting(this) && !this.unloaded && this.ingameSessionView().canStart && presence.status === 'present'
+				&& (presence.context?.source === 'nexus' || live?.sourceInstance !== null && live?.sourceInstance !== undefined),
+			canFinish:!consulting(this) && !this.unloaded && live !== null && live !== undefined
+				&& (live.phase === 'active' || live.summaryReceipt === null)};
 	}
 
 	private prepareStartIntent(): Promise<PreparedSessionCommand | null> {

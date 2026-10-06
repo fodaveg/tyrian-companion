@@ -1,4 +1,4 @@
-import type { SessionCommandContext, SessionCommandDescriptor, SessionCommandId } from './session-command-model';
+import type { SessionCommandInput, SessionCommandDescriptor, SessionCommandId } from './session-command-model';
 import { projectSessionCommand, projectSessionCommands } from './session-command-model';
 import { createTranslator, type Locale } from '../core/i18n';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
@@ -26,7 +26,7 @@ export class SessionCommandBackendFailure extends Error {
 }
 
 export interface SessionCommandPorts {
-	getContext(): SessionCommandContext;
+	getContext(): SessionCommandInput;
 	getLocale?(): Locale;
 	/** Resolves null on Cancel/Esc and returns a deferred backend action on user confirmation. */
 	prepare(id: SessionCommandId): Promise<PreparedSessionCommand | null>;

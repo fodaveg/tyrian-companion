@@ -34,6 +34,8 @@ export interface IngameSessionLink {
 	mapIntervals?: SessionMapInterval[];
 	mapObservation?: { mapId: number | null; fromMs: number } | null;
 	mapCoveragePartial?: boolean;
+	/** A manual stop persists across epoch changes/reload while this same presence continues. */
+	stoppedByPlayer?: boolean;
 }
 
 export interface IngameSessionView {
@@ -45,7 +47,7 @@ export interface IngameSessionView {
 }
 
 export interface IngameSessionMarkerPort {
-	/** The bridge is enabled and an API key is configured. */
+	/** The bridge is enabled. */
 	enabled(): boolean;
 	session(): IngameSessionView;
 	/** Starts a session through the host's own start pipeline; resolves to its id, or null. */
@@ -154,6 +156,26 @@ export class IngameSessionMarker {
 	linkFor(sessionId: string): Pick<IngameSessionLink, 'owner' | 'labyrinthAt'> | null {
 		if (this.link === null || this.link.sessionId !== sessionId) return null;
 		return { owner: this.link.owner, labyrinthAt: this.link.labyrinthAt };
+	}
+
+	/** Epoch/source negotiation cannot override an explicit stop in the same game presence. */
+	blocksAutomaticRestart(): boolean {
+		const presence = this.options.presence();
+		return this.link?.stoppedByPlayer === true && this.link.presenceId === presence.presenceId;
+	}
+	markStoppedByPlayer(sessionId: string): void {
+		const presence = this.options.presence();
+		if (presence.presenceId === null) return;
+		if (this.link?.sessionId === sessionId) this.setLink({...this.link,stoppedByPlayer:true});
+		else this.setLink({version:1,presenceId:presence.presenceId,sessionId,owner:'adopted',labyrinthAt:null,stoppedByPlayer:true,mapCoveragePartial:true});
+	}
+	/** Explicit manual restart and durable source rollover move the link to their actual new session. */
+	linkReplacement(previousSessionId: string | null, sessionId: string, owner: 'automatic' | 'adopted'): void {
+		const presence = this.options.presence();
+		if (presence.status !== 'present' || presence.presenceId === null || this.link !== null && this.link.sessionId !== previousSessionId && this.link.sessionId !== sessionId) return;
+		this.setLink({version:1,presenceId:presence.presenceId,sessionId,owner,labyrinthAt:null,mapCoveragePartial:true});
+		if (presence.context?.labyrinth === true) this.tagLabyrinth(presence.presenceId,this.options.now());
+		this.observeMap(presence.presenceId,presence.context?.mapId ?? null,this.options.now());
 	}
 
 	/** Map coverage of the linked connection, read at note time; loot stays whole-connection. */
@@ -298,6 +320,7 @@ function readLink(port: IngameSessionMarkerPort): IngameSessionLink | null {
 export function isIngameSessionLink(value: unknown): value is IngameSessionLink {
 	if (typeof value !== 'object' || value === null) return false;
 	const link = value as Record<string, unknown>;
+	if (link.stoppedByPlayer !== undefined && typeof link.stoppedByPlayer !== 'boolean') return false;
 	if (link.mapCoveragePartial !== undefined && typeof link.mapCoveragePartial !== 'boolean') return false;
 	if (link.mapIntervals !== undefined && (!Array.isArray(link.mapIntervals) || link.mapIntervals.length > 257 ||
 		link.mapIntervals.some((interval: unknown) => !validMapInterval(interval)))) return false;

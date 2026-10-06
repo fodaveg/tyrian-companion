@@ -200,7 +200,7 @@ export class LiveSessionLifecycle {
 
 	async updatePrices(prices: LiveSessionRuntimeRecord['prices'], capturedAt: string): Promise<boolean> {
 		return await this.enqueue(async () => {
-			if (this.record?.phase !== 'active' || !await this.owned()) return false;
+			if (!this.options.enabled() || this.record?.phase !== 'active' || !await this.owned() || !this.options.enabled()) return false;
 			const next = { ...this.record, prices: structuredClone(prices), priceCapturedAt: capturedAt, persistedAt: this.options.now() };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') return false;
 			this.record = next; this.rebuildChart(); this.options.onStateChange(); return true;
@@ -219,7 +219,7 @@ export class LiveSessionLifecycle {
 		return await this.enqueue(async () => {
 			const target = sessionId !== undefined && this.record?.sessionId !== sessionId ? this.completed.get(sessionId)
 				: this.record === null ? undefined : {record:this.record,journal:this.journal};
-			if (!target || !receiptOnly && (target.record !== this.record || target.record.phase !== 'active' || !await this.owned())) return null;
+			if (!target || !receiptOnly && (!this.options.enabled() || target.record !== this.record || target.record.phase !== 'active' || !await this.owned() || !this.options.enabled())) return null;
 			const entry = target.journal.find((row) => row.outbox.some((intent) => intent.outboxId === outboxId));
 			const prior = entry?.outbox.find((row) => row.outboxId === outboxId); if (!entry || !prior) return null;
 			const intent = update(structuredClone(prior));

@@ -24,6 +24,17 @@ export interface SessionCommandContext {
 	stopFailure: SessionStopFailure | null;
 }
 
+/** Passive commands carry their own source/lease identity instead of API-shaped snapshots. */
+export interface LiveSessionCommandContext {
+	source: 'nexus_inventory';
+	sessionId: string | null;
+	phase: 'idle' | 'active' | 'complete';
+	fence: number | null;
+	canStart: boolean;
+	canFinish: boolean;
+}
+export type SessionCommandInput = SessionCommandContext | LiveSessionCommandContext;
+
 export interface SessionCommandDescriptor {
 	id: SessionCommandId;
 	name: string;
@@ -34,9 +45,20 @@ export interface SessionCommandDescriptor {
 }
 
 /** Pure H5.2 palette/ribbon policy. Recovery always takes precedence. */
-export function projectSessionCommands(context: SessionCommandContext, locale: Locale = 'en'): SessionCommandDescriptor[] {
+export function projectSessionCommands(context: SessionCommandInput, locale: Locale = 'en'): SessionCommandDescriptor[] {
 	const translator = createTranslator(locale);
 	const t = (key: TranslationKey) => translator.t(key);
+	if ('source' in context) {
+		const target = JSON.stringify({source:context.source,sessionId:context.sessionId,phase:context.phase,fence:context.fence});
+		return [
+			descriptor('start-farming-session',t('commands.startSession'),context.canStart,'play',false,target),
+			descriptor('finish-farming-session',t('commands.finishSession'),context.canFinish,'square',false,target),
+			descriptor('recover-saved-session',t('commands.recoverSession'),false,'rotate-ccw',false,target),
+			descriptor('discard-saved-session',t('commands.discardSession'),false,'trash-2',true,target),
+			descriptor('clear-completed-session',t('commands.clearSession'),false,'eraser',true,target),
+			descriptor('abandon-farming-session',t('commands.abandonSession'),false,'circle-x',true,target),
+		];
+	}
 	const recovering = context.recovery.status !== 'none';
 	const recoveryRetry = context.recovery.status === 'available' || context.recovery.status === 'busy';
 	// An unreadable saved record cannot be recovered, but it can still be discarded: that path does
@@ -72,7 +94,7 @@ export function projectSessionCommands(context: SessionCommandContext, locale: L
 
 export function projectSessionCommand(
 	id: SessionCommandId,
-	context: SessionCommandContext,
+	context: SessionCommandInput,
 	locale: Locale = 'en',
 ): SessionCommandDescriptor {
 	return projectSessionCommands(context, locale).find((command) => command.id === id)!;
