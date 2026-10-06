@@ -1,3 +1,4 @@
+import { inspectLiveSessionNote } from './live-session-note-renderer';
 import { canonicalJson } from '../core/canonical-sha256';
 import { isFarmingGoal, isFarmingGoalProgress, type FarmingGoalV1, type FarmingGoalProgress } from './farming-goal';
 import { parseDurableSessionComparison, parseSessionSackObservation, type DurableSessionComparisonMetadata, type SessionSackObservation } from './session-comparison-metadata';
@@ -502,7 +503,8 @@ export class SessionHistoryService {
 		for (const file of this.vault.markdownFiles()) {
 			let content: string;
 			try { content = await this.vault.read(file); } catch { invalid += 1; continue; }
-			const decoded = await decodeDurableSession(content);
+			const live = await inspectLiveSessionNote(content);
+			const decoded = live.status === 'ok' ? live : await decodeDurableSession(content);
 			if (decoded.status !== 'ok') {
 				if (decoded.status === 'invalid') invalid += 1;
 				continue;
@@ -580,6 +582,9 @@ export class SessionHistoryService {
 /** Canonical durable-note inspector shared by history and opt-in feature backfills. */
 export async function inspectDurableSessionNote(content: string): Promise<DurableSessionNoteInspection> {
 	if (declaresOtherTyrianNoteKind(content)) return { status: 'non_candidate' };
+	const live = await inspectLiveSessionNote(content);
+	if (live.status === 'ok') return { status: 'non_candidate' };
+	if (live.status === 'invalid') return { status: 'invalid' };
 	const note = await inspectStoredSessionNote(content);
 	if (note === null) return { status: hasTcHint(content) ? 'invalid' : 'non_candidate' };
 	const fm = note.frontmatter;

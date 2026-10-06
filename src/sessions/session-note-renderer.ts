@@ -23,9 +23,9 @@ import {
 const START_PATTERN = /^<!-- tyrian-companion:managed:start:([a-z]+) sha256=([a-f0-9]{64}) -->$/u;
 const END_PATTERN = /^<!-- tyrian-companion:managed:end:([a-z]+) -->$/u;
 
-export interface RenderedSessionNote {
+export interface RenderedSessionNote<AccountRef extends string | null = string> {
 	sessionRef: string;
-	accountRef: string;
+	accountRef: AccountRef;
 	preferredPath: string;
 	collisionPath: string;
 	frontmatter: Record<string, string | number | null>;
@@ -128,15 +128,16 @@ export async function renderAbandonedSessionNote(input: AbandonedSessionNoteInpu
 }
 
 /** Path, managed blocks and content shared by every session note, whatever its outcome. */
-async function assembleNote(
+export async function assembleNote<AccountRef extends string | null>(
 	sessionRef: string,
-	accountRef: string,
+	accountRef: AccountRef,
 	baselineCompletedAt: string,
 	outputFolder: string,
 	locale: PreparedSessionNote['locale'],
 	frontmatter: Record<string, string | number | null>,
 	contents: Record<SessionNoteBlockId, string>,
-): Promise<RenderedSessionNote> {
+	titles?: { heading: string; notes: string },
+): Promise<RenderedSessionNote<AccountRef>> {
 	const [preferredPath, collisionPath] = sessionNoteRelativePaths(baselineCompletedAt, sessionRef);
 	const blocks = {} as RenderedSessionNote['blocks'];
 	for (const id of SESSION_NOTE_BLOCK_IDS) {
@@ -148,8 +149,8 @@ async function assembleNote(
 			serialized: `<!-- tyrian-companion:managed:start:${id} sha256=${hash} -->\n${content}\n<!-- tyrian-companion:managed:end:${id} -->`,
 		};
 	}
-	const heading = `# ${noteText(locale, 'note.heading')}`;
-	const notes = `## ${noteText(locale, 'note.myNotes')}`;
+	const heading = `# ${titles?.heading ?? noteText(locale, 'note.heading')}`;
+	const notes = `## ${titles?.notes ?? noteText(locale, 'note.myNotes')}`;
 	const body = `${heading}\n\n${SESSION_NOTE_BLOCK_IDS.map((id) => blocks[id].serialized).join('\n\n')}\n\n${notes}\n`;
 	return {
 		sessionRef, accountRef,
@@ -188,7 +189,8 @@ export function sessionNoteRelativePaths(baselineCompletedAt: string, sessionRef
  */
 export function sessionNotePathIdentity(content: string): { sessionRef: string; baselineCompletedAt: string } | null {
 	const parsed = parseFrontmatter(content);
-	if (!parsed || parsed.frontmatter.tc_kind !== 'gw2_farming_session') return null;
+	if (!parsed || !(parsed.frontmatter.tc_kind === 'gw2_farming_session' ||
+		parsed.frontmatter.tc_kind === 'session' && parsed.frontmatter.tc_schema === 7 && parsed.frontmatter.tc_source === 'nexus_inventory')) return null;
 	const startedAt = parsed.frontmatter.tc_started_at;
 	if (parsed.sessionRef === null || !/^[a-f0-9]{64}$/u.test(parsed.sessionRef)) return null;
 	if (!iso(startedAt)) return null;
@@ -202,10 +204,11 @@ function iso(value: unknown): value is string {
 
 export async function mergeRenderedSessionNote(
 	existing: string,
-	rendered: RenderedSessionNote,
+	rendered: RenderedSessionNote<string | null>,
 ): Promise<{ status: 'ok'; content: string } | { status: 'conflict' }> {
 	const parsed = parseFrontmatter(existing);
-	if (!parsed || parsed.sessionRef !== rendered.sessionRef) return { status: 'conflict' };
+	if (!parsed || parsed.sessionRef !== rendered.sessionRef || parsed.frontmatter.tc_kind !== rendered.frontmatter.tc_kind
+		|| rendered.frontmatter.tc_schema === 7 && (parsed.frontmatter.tc_schema !== 7 || parsed.frontmatter.tc_source !== rendered.frontmatter.tc_source)) return { status: 'conflict' };
 	const body = await replaceManagedBlocks(parsed.body, rendered.blocks);
 	if (body === null) return { status: 'conflict' };
 	return { status: 'ok', content: `${serializeFrontmatter(rendered.frontmatter, parsed.humanLines, parsed.tags)}${body}` };
@@ -230,7 +233,8 @@ export async function inspectStoredSessionNote(content: string): Promise<{
 } | null> {
 	const parsed = parseFrontmatter(content);
 	if (parsed === null) return null;
-	if (parsed.frontmatter.tc_kind !== 'gw2_farming_session') {
+	if (!(parsed.frontmatter.tc_kind === 'gw2_farming_session' ||
+		parsed.frontmatter.tc_kind === 'session' && parsed.frontmatter.tc_schema === 7 && parsed.frontmatter.tc_source === 'nexus_inventory')) {
 		return { frontmatter: parsed.frontmatter, managedBlocksValid: false, hasInvalidScalar: true };
 	}
 	const strict = parseStrictTcFrontmatter(content);
@@ -239,6 +243,16 @@ export async function inspectStoredSessionNote(content: string): Promise<{
 		managedBlocksValid: await managedBlockRanges(parsed.body) !== null,
 		hasInvalidScalar: parsed.hasInvalidScalar || strict === null,
 	};
+}
+
+/** Reads only intact producer-owned blocks; human regions are never treated as session data. */
+export async function readStoredSessionBlocks(content: string): Promise<Record<SessionNoteBlockId, string> | null> {
+	const parsed = parseFrontmatter(content);
+	if (parsed === null) return null;
+	const ranges = await managedBlockRanges(parsed.body);
+	if (ranges === null) return null;
+	const lines = parsed.body.split('\n');
+	return Object.fromEntries(ranges.map((range) => [range.id, lines.slice(range.start + 1, range.end).join('\n')])) as Record<SessionNoteBlockId, string>;
 }
 
 export interface StoredSessionLootSummary {

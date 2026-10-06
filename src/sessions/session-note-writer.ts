@@ -1,3 +1,6 @@
+import { canonicalJson } from '../core/canonical-sha256';
+import { renderLiveSessionNote, inspectLiveSessionNote } from './live-session-note-renderer';
+import type { LiveSessionNoteInput } from './live-session-note-model';
 import { errorClassName } from '../core/local-debug-error-details';
 import { ensureFoldersBySegments } from '../core/vault-folders';
 import { prepareSessionNote, type SessionNoteInput } from './session-note-model';
@@ -31,6 +34,7 @@ export type SessionNoteWriteResult =
 
 export class SessionNoteWriter {
 	private readonly flights = new Map<string, Promise<SessionNoteWriteResult>>();
+	private readonly liveFlights = new Map<string, { payload: string; flight: Promise<SessionNoteWriteResult> }>();
 
 	constructor(private readonly vault: SessionNoteVault) {}
 
@@ -45,6 +49,28 @@ export class SessionNoteWriter {
 			if (this.flights.get(rendered.note.sessionRef) === flight) this.flights.delete(rendered.note.sessionRef);
 		});
 		this.flights.set(rendered.note.sessionRef, flight);
+		return flight;
+	}
+
+	/** The live clear barrier succeeds only after rereading the persisted full journal. */
+	async writeLive(input: LiveSessionNoteInput): Promise<SessionNoteWriteResult> {
+		const rendered = await renderLiveSessionNote(input);
+		if (rendered.status !== 'ok') return rendered;
+		const payload = canonicalJson(rendered.session);
+		const pending = this.liveFlights.get(rendered.note.sessionRef);
+		if (pending) return pending.payload === payload ? pending.flight
+			: { status: 'conflict', message: 'A different live session revision is being written.' };
+		const flight = this.writeRendered(rendered.note).then(async (result): Promise<SessionNoteWriteResult> => {
+			if (result.status !== 'written' && result.status !== 'unchanged') return result;
+			try {
+				const file = this.vault.file(result.path);
+				if (file === null) return { status: 'unavailable', message: 'The live session note could not be verified.' };
+				const verified = await inspectLiveSessionNote(await this.vault.read(file));
+				return verified.status === 'ok' && canonicalJson(verified.session) === payload ? result
+					: { status: 'conflict', message: 'The persisted live session evidence does not match the completed session.' };
+			} catch (error) { return { status: 'unavailable', message: 'The live session note could not be verified.', errorName: errorClassName(error) }; }
+		}).finally(() => { if (this.liveFlights.get(rendered.note.sessionRef)?.flight === flight) this.liveFlights.delete(rendered.note.sessionRef); });
+		this.liveFlights.set(rendered.note.sessionRef,{ payload, flight });
 		return flight;
 	}
 
@@ -64,7 +90,7 @@ export class SessionNoteWriter {
 		return flight;
 	}
 
-	private async writeRendered(note: RenderedSessionNote): Promise<SessionNoteWriteResult> {
+	private async writeRendered(note: RenderedSessionNote<string | null>): Promise<SessionNoteWriteResult> {
 		try {
 			await this.ensureFolder(note.preferredPath.slice(0, note.preferredPath.lastIndexOf('/')));
 			const preferred = this.vault.file(note.preferredPath);
@@ -88,7 +114,7 @@ export class SessionNoteWriter {
 		}
 	}
 
-	private async writeCollision(note: RenderedSessionNote): Promise<SessionNoteWriteResult> {
+	private async writeCollision(note: RenderedSessionNote<string | null>): Promise<SessionNoteWriteResult> {
 		const existing = this.vault.file(note.collisionPath);
 		if (existing) {
 			const content = await this.vault.read(existing);
@@ -111,7 +137,7 @@ export class SessionNoteWriter {
 		}
 	}
 
-	private async update(file: SessionNoteFile, initial: string, note: RenderedSessionNote): Promise<SessionNoteWriteResult> {
+	private async update(file: SessionNoteFile, initial: string, note: RenderedSessionNote<string | null>): Promise<SessionNoteWriteResult> {
 		let existing = initial;
 		for (let attempt = 0; attempt < 3; attempt += 1) {
 			const merged = await mergeRenderedSessionNote(existing, note);

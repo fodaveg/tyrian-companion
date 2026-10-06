@@ -1,0 +1,255 @@
+import type { LiveNoteOutboxInput } from './live-session-note-outbox';
+import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_FARMING_PREPARATION } from './farming-goal-preparation';
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionRuntimeRecord } from './live-session-model';
+import { reduceLiveInventorySample } from './live-session-reducer';
+import { isStoredLiveSessionPayload, prepareLiveSessionPayload, type LiveSessionNoteInput } from './live-session-note-model';
+import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
+import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
+import { inspectDurableSessionNote, SessionHistoryService, SessionHistoryRuntimeAuthority, type SessionHistoryVault } from './session-history';
+import { LiveSessionHistoryService, liveSessionViewFromStored, liveSessionAlertsFromStored } from './live-session-history';
+import { serializeLiveSessionExport } from './live-session-export';
+import { readStoredSessionBlocks, sessionNotePathIdentity } from './session-note-renderer';
+import { canonicalPathFor } from '../runtime/canonical-path';
+
+const AT = Date.parse('2026-10-06T12:00:00.000Z');
+const EPOCH = 'AgICAgICAgICAgICAgICAg';
+const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
+function fixture(quantities = [0,2,4]): LiveSessionNoteInput {
+	const sessionId = 'sensitive-local-session-id';
+	let record: LiveSessionRuntimeRecord = { version: 4,kind: 'live_inventory',sessionId,phase: 'active',
+		authority: { machineId: 'private-machine',instanceId: 'private-host',sessionId,fence: 1,acquiredAt: AT },
+		startedAt: iso(0),endedAt: null,persistedAt: AT,sourceInstance: INSTANCE,build: NEXUS_LIVE_BUILD,profile: NEXUS_LIVE_PROFILE,
+		epoch: EPOCH,context: { state: 'gameplay',mapId: 866,character: 'Private character' },connection: 'connected',lastPresenceAt: AT,
+		lastObservationAt: null,lastValidItemsAt: null,lastValidCurrenciesAt: null,currencyTrackedIds: [],lastSample: null,fingerprint: null,
+		itemComparable: false,currencyComparable: false,sourceState: 'warming_up',sourceReason: null,observationCount: 0,sampleCount: 0,
+		totals: [],gaps: [],observedItemsMs: 0,observedCurrenciesMs: 0,prices: [],priceCapturedAt: null,
+		magicFind: { value: null,source: 'unknown' },preparation: { ...DEFAULT_FARMING_PREPARATION },farmingGoal: {version: 1,kind: 'bags',targetBags: 500},
+		groupContext: 'without_bosses',mapIntervals: [],mapObservation: null,mapCoveragePartial: false,summaryReceipt: null };
+	const journal: LiveJournalEntryV1[] = [];
+	for (const [cursor,quantity] of quantities.entries()) {
+		const sample: LiveInventorySampleV1 = { epoch: EPOCH,cursor,contextSeq: 0,sourceElapsedMs: cursor * 1000,
+			mode: cursor === 0 ? 'baseline' : 'sample',itemCoverage: 'complete',currencyCoverage: 'none',unknownPositions: 0,freeSlots: 8,
+			rows: [{ kind: 'item',idNumber: 12147,quantity }],observedAt: iso(cursor),sourceInstance: INSTANCE,
+			build: NEXUS_LIVE_BUILD,profile: NEXUS_LIVE_PROFILE,context: record.context! };
+		const next = reduceLiveInventorySample(record,sample); record = next.record; journal.push(next.journal);
+	}
+	record = { ...record,phase: 'complete',endedAt: iso(quantities.length - 1),prices: [{ itemId: 12147,unitCopper: 10 }],priceCapturedAt: iso(0) };
+	return { record,journal,locale: 'es',outputFolder: 'Tyrian Companion',displayNames: { 'item:12147': 'Champiñón' } };
+}
+function iso(seconds: number): string { return new Date(AT + seconds * 1000).toISOString(); }
+async function rendered(input = fixture()) {
+	const result = await renderLiveSessionNote(input);
+	if (result.status !== 'ok') throw new Error(result.reason);
+	return result;
+}
+
+/** In-memory vault implements the real CAS callback and lets tests inject races or partial writes. */
+class TestVault implements SessionNoteVault {
+	readonly contents = new Map<string,string>(); readonly folders = new Set<string>();
+	beforeProcess: ((path: string) => void) | null = null;
+	createMutation: ((content: string) => string) | null = null;
+	markdownFiles(): SessionNoteFile[] { return [...this.contents.keys()].filter((path) => path.endsWith('.md')).map((path) => ({ path })); }
+	exists(path: string): boolean { return this.contents.has(path) || this.folders.has(path); }
+	file(path: string): SessionNoteFile | null { return this.exists(path) ? {path} : null; }
+	async read(file: SessionNoteFile): Promise<string> { const content = this.contents.get(file.path); if (content === undefined) throw new Error('missing'); return content; }
+	async createFolder(path: string): Promise<void> { this.folders.add(path); }
+	async create(path: string, content: string): Promise<SessionNoteFile> {
+		if (this.exists(path)) throw new Error('occupied');
+		this.contents.set(path,this.createMutation?.(content) ?? content); return {path};
+	}
+	async process(file: SessionNoteFile, update: (content: string) => string): Promise<string> {
+		this.beforeProcess?.(file.path);
+		const content = update(await this.read(file)); this.contents.set(file.path,content); return content;
+	}
+}
+
+function historyVault(vault: TestVault): SessionHistoryVault {
+	return { markdownFiles: () => vault.markdownFiles(),exists: (path) => vault.exists(path),file: (path) => vault.contents.has(path) ? {path} : null,
+		read: (file) => vault.read(file),createFolder: (path) => vault.createFolder(path),create: (path,content) => vault.create(path,content),
+		process: async (file,update) => { await vault.process(file,update); } };
+}
+
+describe('portable live session notes', () => {
+	it('round-trips the canonical 0→2→4 journal without local identity or an invented wallet', async () => {
+		const { note,session } = await rendered();
+		expect(note.content).toMatchSnapshot();
+		expect(note.frontmatter).toMatchObject({ tc_schema: 7,tc_kind: 'session',tc_source: 'nexus_inventory',tc_account_ref: null });
+		expect(note.content.match(/tyrian-companion:managed:start:/gu)).toHaveLength(6);
+		for (const secret of [INSTANCE,'private-machine','private-host','Private character','sensitive-local-session-id','sourceInstance','authority','baseline']) expect(note.content).not.toContain(secret);
+		expect(session.journal.flatMap((entry) => entry.observations).map((row) => row.delta)).toEqual([2,2]);
+		expect(session.totals).toEqual([{kind: 'item',idNumber: 12147,positive: 4,negative: 0,net: 4}]);
+		expect(session.valuation).toMatchObject({ positiveItemValueKnownCopper: 40,netItemValueKnownCopper: 40,coinNetCopper: null,knownNetValueCopper: null });
+		expect(session.farmingGoal).toEqual({version: 1,kind: 'bags',targetBags: 500});
+		expect(await inspectLiveSessionNote(note.content)).toEqual({status: 'ok',session});
+		expect(await inspectDurableSessionNote(note.content)).toEqual({status: 'non_candidate'});
+		expect(sessionNotePathIdentity(note.content)).toEqual({sessionRef: session.sessionRef,baselineCompletedAt: session.startedAt});
+		expect(canonicalPathFor('Tyrian Companion',note.content)).toContain(note.preferredPath.replace('Tyrian Companion/',''));
+	});
+	it.each(['es','en'] as const)('renders readable coverage, signed changes and unknown values in %s', async (locale) => {
+		const input = fixture([0,2,4,2]); input.locale = locale; input.record.prices = [{itemId: 12147,unitCopper: null}];
+		const { note,session } = await rendered(input);
+		expect(session.totals[0]).toMatchObject({positive: 4,negative: 2,net: 2});
+		expect(session.valuation.unpricedItemIds).toEqual([12147]);
+		expect(note.blocks.results.content).toContain('| 4 | 2 | -2 | — |');
+		expect(note.blocks.evidence.content).toContain(locale === 'es' ? 'Última cobertura de monedas: sin cobertura' : 'Last currency coverage: no coverage');
+		expect(note.blocks.economy.content).toContain(locale === 'es' ? 'Cambio neto de oro observado: —' : 'Observed net coin change: —');
+		expect(note.blocks.results.content).toContain('Champiñón');
+	});
+	it('keeps final uncovered intervals, and does not subtract simultaneous channel gaps twice', async () => {
+		const input = fixture(); input.record.endedAt = iso(3);
+		input.record.gaps = [{version: 1,fromAt: iso(2),toAt: iso(3),reason: 'disconnect',channels: ['items']},
+			{version: 1,fromAt: iso(2),toAt: iso(3),reason: 'disconnect',channels: ['currencies']}];
+		const {session} = await rendered(input);
+		expect(session.gaps).toEqual(input.record.gaps);
+		expect(session.observedItemsMs).toBe(2000);
+		expect(session.observedCurrenciesMs).toBe(0);
+	});
+	it('preserves processed alert receipts while anonymizing its local session and outbox identity', async () => {
+		const input = fixture(); const observation = input.journal[1]!.observations[0]!;
+		const outbox: LiveNoteOutboxInput = { source: 'nexus_inventory',accountRef: null,sessionId: input.record.sessionId,
+			observationId: observation.id,ruleVersion: 1,outboxId: `${input.record.sessionId}/private-dispatch-id`,state: 'processed',skipReason: null,
+			alert: {kind: 'valuable_loot',itemId: 12147,name: 'Champiñón',quantity: 2,totalCopper: 20,priceStatus: 'known',reason: 'valuable'},
+			priceCapturedAt: iso(1),thresholdCopper: 10,claimedAt: iso(1),deliveryReport: {delivered: ['ingame'],failed: [],rejected: false},
+			sentTo: ['nexus'],receipt: {state: 'received',client: 'nexus',atMs: AT + 2000} };
+		(input.journal[1] as LiveJournalEntryV1 & {outbox: LiveNoteOutboxInput[]}).outbox = [outbox];
+		const {session,note} = await rendered(input); const stored = session.journal[1]!.outbox[0]!;
+		expect(stored).toMatchObject({sessionRef: session.sessionRef,state: 'processed',receipt: outbox.receipt,deliveryReport: outbox.deliveryReport});
+		expect(stored.outboxId).toMatch(/^[a-f0-9]{64}$/u); expect(note.content).not.toContain('private-dispatch-id');
+		expect(note.content).not.toContain(input.record.sessionId); expect((await inspectLiveSessionNote(note.content)).status).toBe('ok');
+		expect(serializeLiveSessionExport(session,'timeline','csv')).toContain('"alert",');
+		expect(liveSessionAlertsFromStored(session)).toMatchObject([{outboxId: stored.outboxId,state: 'processed',receipt: outbox.receipt}]);
+		const pending = structuredClone(session); pending.journal[1]!.outbox[0]!.receipt = {state: 'pending'};
+		expect(liveSessionAlertsFromStored(pending)[0]?.receipt).toEqual({state: 'unconfirmed',cause: 'restart'});
+		expect(pending.journal[1]!.outbox[0]!.receipt).toEqual({state: 'pending'});
+		const corrupt = structuredClone(session); corrupt.journal[1]!.outbox[0]!.accountRef = 'fake' as never;
+		expect(isStoredLiveSessionPayload(corrupt)).toBe(false);
+	});
+	it('normalizes summary ordering without converting unpriced items into zero', async () => {
+		const input = fixture(); const extra = {...input.journal[1]!.observations[0]!,idNumber: 1,id: `${EPOCH}/1/item/1`};
+		input.journal[1]!.observations.push(extra); input.record.observationCount += 1;
+		input.record.totals.push({kind: 'item',idNumber: 1,positive: 2,negative: 0,net: 2}); input.record.prices = [];
+		const {session} = await rendered(input); expect(session.valuation.unpricedItemIds).toEqual([1,12147]);
+		expect(session.valuation.knownNetValueCopper).toBeNull();
+	});
+	it('preserves eligible source sample count independently of complete journal entries', async () => {
+		const input = fixture(); input.record.sampleCount = 2;
+		const {session} = await rendered(input); expect(session.sampleCount).toBe(2); expect(session.journal).toHaveLength(3);
+	});
+	it('rejects truncated journal, signed-summary mismatch, causal claims and unknown nested keys', async () => {
+		const input = fixture();
+		expect(await prepareLiveSessionPayload({...input,journal: input.journal.slice(0,2)})).toBeNull();
+		const payload = (await rendered()).session;
+		expect(isStoredLiveSessionPayload({...payload,totals: [{...payload.totals[0]!,net: 200}]})).toBe(false);
+		expect(isStoredLiveSessionPayload({...payload,totals: [null]})).toBe(false);
+		const cause = structuredClone(payload); (cause.journal[1]!.observations[0] as unknown as {cause: string}).cause = 'sale';
+		expect(isStoredLiveSessionPayload(cause)).toBe(false);
+		expect(isStoredLiveSessionPayload({...payload,sourceInstance: INSTANCE})).toBe(false);
+		const discontinuous = structuredClone(payload); discontinuous.journal[1]!.cursor = 3; expect(isStoredLiveSessionPayload(discontinuous)).toBe(false);
+		const coveredGap = structuredClone(payload); coveredGap.gaps.push({version: 1,fromAt: iso(1),toAt: iso(2),reason: 'disconnect',channels: ['items']});
+		expect(isStoredLiveSessionPayload(coveredGap)).toBe(false);
+	});
+	it('rejects modified, reordered and duplicated managed regions, and duplicate YAML identity', async () => {
+		const {note} = await rendered();
+		for (const content of [note.content.replace('Champiñón','tampered'),
+			note.content.replace(note.blocks.results.serialized,'') + '\n' + note.blocks.results.serialized,
+			note.content + '\n' + note.blocks.results.serialized,
+			note.content.replace('tc_schema: 7','tc_schema: 7\ntc_schema: 7'),
+			note.content.replace('tc_account_ref: null','tc_account_ref: "invented"')]) {
+			expect((await inspectLiveSessionNote(content)).status).toBe('invalid');
+		}
+	});
+	it('cannot inject managed regions through a cached item name', async () => {
+		const input = fixture(); input.displayNames = {'item:12147': 'Long | name\n<!-- tyrian-companion:managed:end:results -->'};
+		const {note} = await rendered(input);
+		expect((await inspectLiveSessionNote(note.content)).status).toBe('ok');
+		expect(note.content.match(/tyrian-companion:managed:start:/gu)).toHaveLength(6);
+	});
+});
+
+describe('live note write verification and CAS', () => {
+	it('creates, retries idempotently and preserves human text/frontmatter across a concurrent edit', async () => {
+		const input = fixture(); const vault = new TestVault(); const writer = new SessionNoteWriter(vault);
+		const first = await writer.writeLive(input); expect(first.status).toBe('written');
+		if (first.status !== 'written') throw new Error('fixture');
+		vault.contents.set(first.path,vault.contents.get(first.path)!.replace('---\n','---\naliases: [Personal]\n') + '\nHuman field notes.\n');
+		expect((await writer.writeLive(input)).status).toBe('written');
+		expect((await writer.writeLive(input)).status).toBe('unchanged');
+		let edited = false;
+		vault.beforeProcess = (path) => { if (!edited) { edited = true; vault.contents.set(path,vault.contents.get(path)! + '\nConcurrent human note.\n'); } };
+		expect((await writer.writeLive(input)).status).toBe('unchanged');
+		expect(vault.contents.get(first.path)).toContain('Human field notes.\n\nConcurrent human note.');
+		expect(vault.contents.get(first.path)).toContain('aliases: [Personal]');
+		expect(vault.contents.size).toBe(1);
+	});
+	it('keeps the completed runtime when create reports success but durable evidence is corrupted', async () => {
+		const vault = new TestVault(); vault.createMutation = (content) => content.replace('Champiñón','corrupted');
+		const result = await new SessionNoteWriter(vault).writeLive(fixture());
+		expect(result.status).toBe('conflict');
+	});
+	it('refuses modified managed data and does not rewrite the note', async () => {
+		const vault = new TestVault(); const writer = new SessionNoteWriter(vault); const {note} = await rendered();
+		const corrupt = note.content.replace('Champiñón','edited'); vault.contents.set(note.preferredPath,corrupt);
+		expect((await writer.writeLive(fixture())).status).toBe('conflict');
+		expect(vault.contents.get(note.preferredPath)).toBe(corrupt);
+	});
+	it('preserves occupied preferred and collision paths rather than overwriting them', async () => {
+		const {note} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,'Unrelated note.');
+		const writer = new SessionNoteWriter(vault); const result = await writer.writeLive(fixture());
+		expect(result).toEqual({status: 'written',path: note.collisionPath});
+		expect(vault.contents.get(note.preferredPath)).toBe('Unrelated note.');
+		vault.contents.set(note.collisionPath,'Another note.'); expect((await writer.writeLive(fixture())).status).toBe('conflict');
+	});
+});
+
+describe('vault live history, exports and privacy', () => {
+	it('recovers the full journal from a synced note without any local store or API', async () => {
+		const {note,session} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,note.content);
+		const service = new LiveSessionHistoryService(historyVault(vault));
+		expect(await service.list()).toEqual({status: 'ok',ignored: 0,sessions: [{sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: 2}]});
+		expect(await service.select(session.sessionRef)).toEqual({status: 'found',session});
+		expect(await new SessionHistoryService(historyVault(vault)).scan()).toEqual({status: 'ok',sessions: [],ignored: 1});
+	});
+	it('fails closed on corrupt or duplicate live histories', async () => {
+		const {note} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,note.content); vault.contents.set('duplicate.md',note.content);
+		expect((await new LiveSessionHistoryService(historyVault(vault)).list()).status).toBe('conflict');
+		vault.contents.delete('duplicate.md'); vault.contents.set(note.preferredPath,note.content.replace('Champiñón','corrupt'));
+		expect((await new SessionHistoryService(historyVault(vault)).scan()).status).toBe('conflict');
+	});
+	it.each(['timeline','summary'] as const)('exports all 1,000 observations in %s CSV and JSON, preserving price and unknown currency', async (kind) => {
+		const input = fixture(Array.from({length: 1001},(_,i) => i * 2)); const {session} = await rendered(input);
+		const json = JSON.parse(serializeLiveSessionExport(session,kind,'json')) as {version: number;session: typeof session};
+		expect(json.version).toBe(1); expect(json.session.journal.flatMap((entry) => entry.observations)).toHaveLength(1000);
+		expect(json.session.totals[0]?.net).toBe(2000); expect(json.session.valuation.coinNetCopper).toBeNull();
+		const view = liveSessionViewFromStored(session,AT + 86400000,400,1000);
+		expect(view).toMatchObject({phase: 'complete',connection: 'disconnected',sourceState: 'unavailable',sessionId: session.sessionRef,observationCount: 1000,observationOffset: 400,hasMore: true,elapsedMs: 1000000});
+		expect(view.observations).toHaveLength(200); expect(view.chartPoints).toHaveLength(600);
+		expect(view.chartPoints[0]?.breakBefore).toBe(true); expect(view.chartPoints.at(-1)).toMatchObject({itemQuantityNet: 2000,netItemValueKnownCopper: 20000});
+		expect(view.valuation).toEqual(session.valuation);
+		const csv = serializeLiveSessionExport(session,kind,'csv');
+		expect(csv.match(/^"observation",/gmu)).toHaveLength(1000);
+		expect(csv).toContain('"instant_sell_net"'); expect(csv).toContain('"price",');
+		expect(csv).not.toContain(INSTANCE); expect(csv).not.toContain(input.record.sessionId);
+	});
+	it('verifies create-only exports and protects mismatched existing files without process', async () => {
+		const {session} = await rendered(); const vault = new TestVault(); const process = vi.spyOn(vault,'process');
+		const service = new LiveSessionHistoryService(historyVault(vault));
+		const result = await service.export('Tyrian Companion','timeline','json',session); expect(result.status).toBe('written');
+		if (result.status !== 'written') throw new Error('fixture');
+		expect(await service.export('Tyrian Companion','timeline','json',session)).toEqual({status: 'unchanged',path: result.path});
+		expect((await service.export('Tyrian Companion','timeline','csv',session)).status).toBe('written');
+		vault.contents.set(result.path,'existing export');
+		expect((await service.export('Tyrian Companion','timeline','json',session)).status).toBe('conflict');
+		expect(vault.contents.get(result.path)).toBe('existing export'); expect(process).not.toHaveBeenCalled();
+	});
+	it('includes live notes in the existing byte-bound privacy scrub and retains human regions', async () => {
+		const {note} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,note.content + '\nHuman memory.\n');
+		const service = new SessionHistoryService(historyVault(vault));
+		const authority = new SessionHistoryRuntimeAuthority(() => ({sessionStatus: 'idle',recoveryStatus: 'none',detectorStatus: 'disarmed'}));
+		const preview = await service.previewScrub(authority); expect(preview.status).toBe('ready');
+		if (preview.status !== 'ready') throw new Error('fixture'); expect(preview.sessions).toBe(1);
+		expect((await service.scrub(preview.token,authority)).status).toBe('erased');
+		const content = vault.contents.get(note.preferredPath)!; expect(content).toContain('Human memory.');
+		expect(content).not.toContain('tc_'); expect(content).not.toContain('Champiñón'); expect(await readStoredSessionBlocks(content)).toBeNull();
+	});
+});
