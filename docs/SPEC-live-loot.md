@@ -167,6 +167,19 @@ La representación durable de nota live será `tc_schema:7`, `tc_kind:session`, 
 
 Mantener notas humanas, CAS/verificación de regiones, recovery y requisito de receipt de nota antes de liberar. JSON/CSV live deben incluir todas las observaciones, huecos, fuente, tiempos, cobertura, cantidades, snapshot de precios y su criterio. Reusar exportación create-only, versionando el formato exportado cuando cambie su esquema. No sobrescribir exportaciones existentes.
 
+### 6.1. Transferencia durable del runtime API legacy
+
+Excepción estrecha de migración, ratificada como decisión de ingeniería dentro del alcance de conservar históricos y habilitar sesiones Nexus sin API. **Implementación y verificación pendientes.** Permite liberar `active-session-v1` mediante transferencia durable de un runtime v3 válido, sin exigir una nota final que ese registro todavía no tenga. No es una finalización, un descarte ni una eliminación de evidencia; no relaja el receipt-before-clear del cierre live ni del recorrido v3 habitual.
+
+- Se usa la misma base de datos y el mismo store que contienen `active-session-v1`. El destino es `legacy-api-runtime:<sessionId>`: conserva el registro v3 original validado, el recibo real de nota vinculado a esa misma sesión cuando exista, checksum del contenido preservado y `preservedAt`. Si no existe recibo, se conserva esa ausencia. No se fabrica receipt, estado `complete`, `endedAt`, snapshot final ni delta.
+- La operación exige un lease específico de la sesión legacy: `handle.sessionId` debe coincidir con su ID y la autoridad seguir vigente. No se reutiliza el handle de la futura sesión live ni se arrebata un lease a un propietario vivo. Un v3 inválido, recibo presente que no corresponda o lease ajeno bloquean la transferencia conservando el activo.
+- Antes de transferir se detiene y drena el trabajo local de esa sesión que pueda volver a escribir. No se inicia recaptura API para completar o reparar el registro. Dentro de la transacción se relee y compara por CAS el valor observado de `active-session-v1`, se comprueba la autoridad y se valida el destino. Un cambio concurrente, colisión o error aborta sin sobrescribir archivo ni liberar el único registro activo.
+- Una sola transacción durable guarda el archivo íntegro y libera la clave activa. No se publica éxito antes del commit. Solo después se libera el lease legacy y se adquiere la autoridad de una sesión live nueva. Si esa adquisición falla, el archivo ya preservado permanece; no se convierte ni se borra para reintentar. La nueva fuente exige su propia época/baseline y nunca calcula delta contra el snapshot API archivado.
+- El archivo permanece de solo lectura, legible y exportable, incluso tras reiniciar. Preserva identidad, origen API y controles de acceso de la evidencia histórica; no se atribuye a la fuente Nexus ni se mezcla con sus observaciones. No se borra la copia preservada durante rollover, recovery o inicio live.
+- Las acciones legacy de recaptura API o descarte no operan sobre un v4 ni sobre el archivo de solo lectura. La transferencia no autoriza consultas autenticadas automáticas ni una acción de borrado nueva.
+
+B implementa esta migración en modelo/store/runtime. Pruebas requeridas: fallo IDB antes/durante commit conserva activo y evita pérdida; reread/CAS concurrente y colisión abortan; handle de otra sesión o dueño vivo no transfieren; v3 inválido y recibo cruzado bloquean; v3 sin recibo se conserva sin fingir finalización; tras reinicio el archivo se lee/exporta y sigue intacto; una nueva sesión live empieza con baseline propia, sin API ni cruce de datos; recaptura/descarte legacy no mutan v4 ni archivo. Los gates de finalización habituales siguen exigiendo su receipt.
+
 ## 7. Economía, gráfica y avisos
 
 `LiveValuationV1` separa:
