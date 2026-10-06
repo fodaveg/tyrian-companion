@@ -1,3 +1,4 @@
+import { buildLiveSessionComparison, type LiveSessionComparison } from './live-session-comparison';
 import { settlePersistedIngameReceipt } from '../alerts/alert-ingame-receipt';
 import { liveObservationTotals, valueLiveTotals } from './live-session-reducer';
 import type { LiveSessionViewV1, LiveChartPointV1, LiveTotalV1 } from './live-session-model';
@@ -11,6 +12,8 @@ export interface LiveSessionHistoryEntry {
 }
 export type LiveSessionHistoryList = { status: 'ok'; sessions: LiveSessionHistoryEntry[]; ignored: number }
 	| { status: 'conflict'; invalid: number; duplicates: number } | { status: 'unavailable' };
+export type LiveSessionComparisonLoad = { status: 'ok'; comparison: LiveSessionComparison; ignored: number }
+	| Exclude<LiveSessionHistoryList, { status: 'ok' }>;
 export type LiveSessionHistorySelection = { status: 'found'; session: StoredLiveSessionPayloadV1 }
 	| { status: 'missing' | 'conflict' | 'unavailable' };
 
@@ -24,6 +27,12 @@ export class LiveSessionHistoryService {
 		return { status: 'ok',ignored: scan.ignored,sessions: scan.sessions.map((session) => ({
 			sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: session.observationCount,
 		})) };
+	}
+
+	/** One explicit comparison load reuses the validated scan; no per-session rereads or API fallback. */
+	async loadComparison(): Promise<LiveSessionComparisonLoad> {
+		const scan = await this.scan();
+		return scan.status === 'ok' ? { status: 'ok', comparison: buildLiveSessionComparison(scan.sessions), ignored: scan.ignored } : scan;
 	}
 
 	/** No source freshness is reconstructed here; the caller projects saved evidence as historical. */

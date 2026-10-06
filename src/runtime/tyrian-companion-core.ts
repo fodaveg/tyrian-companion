@@ -12,6 +12,8 @@
  * builtin (`src/test/module-boundary.test.ts`, `npm run build:host-esm`).
  */
 
+import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
+import { provisionalLiveComparison, type LiveSessionComparisonState, type LiveSessionComparisonView } from '../sessions/live-session-comparison';
 import { farmingBagCapacity, farmingGoalForSession, projectFarmingIngameState, projectLiveFarmingIngameState } from './farming-runtime-projection';
 import { observeFarmingSessionContext, readFarmingSessionContext, type FarmingSessionContext, type FarmingGroupContext } from './farming-session-context';
 import { normalizeFarmingGoal, projectFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
@@ -441,6 +443,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private liveSessions: LiveSessionLifecycle | null = null;
 	private liveEconomy: LiveSessionEconomy | null = null;
 	private liveHistory: LiveSessionHistoryService | null = null;
+	private liveComparison: LiveSessionComparisonState = { status: 'idle' };
+	private liveComparisonFlight: Promise<void> | null = null;
 	private selectedLiveHistory: {payload:StoredLiveSessionPayloadV1;view:LiveSessionViewV1;observations:LiveSessionViewV1['observations'];alerts:LiveSessionAlertViewV1[]} | null = null;
 	private assistedDetection!: AssistedDetectionService;
 	private detectionQuality!: DetectionQualityRecorder;
@@ -1302,6 +1306,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			onStateChange: () => { this.renderViews(); void this.ingameSessionMarker?.reconcile(); },
 			onError: (error) => { this.recordIngameSessionFailure(error); },
 			preparation: () => this.settings.farmingPreparation,
+			declaredBuild: () => { const declaration = readFarmingDeclaredBuild(this.settings.farmingDeclaredBuild);
+				return declaration.status === 'valid' ? declaration.value : null; },
 			farmingGoal: () => this.settings.farmingGoal, groupContext: () => this.farmingGroupContext,
 			thresholdCopper: () => this.settings.valuableLootThresholdCopper,
 			onCommitted: (entry) => { this.enrichLiveSession(entry); },
@@ -3044,7 +3050,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	async saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void> {
 		await this.saveFarmingSettings({ farmingPreparation: settings });
 	}
-	/** Serializes the two visible preference forms, merging each write against the latest saved settings. */
+	/** Raw declarations are next-session preferences; invalid drafts never replace captured active metadata. */
+	getFarmingDeclaredBuildPreference(): unknown { return this.settings.farmingDeclaredBuild; }
+	async saveFarmingDeclaredBuildPreference(value: FarmingDeclaredBuildPreferenceV1 | null): Promise<void> {
+		await this.saveFarmingSettings({ farmingDeclaredBuild: value });
+	}
+	/** Serializes the visible preference forms, merging each write against the latest saved settings. */
 	private async saveFarmingSettings(settings: Partial<TyrianSettings>): Promise<void> {
 		const save = async (): Promise<void> => {
 			const result = await this.updateSettings(settings);
@@ -3134,6 +3145,25 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const selected = this.selectedLiveHistory; const start = Math.max(0,Number.isSafeInteger(offset) ? offset : 0);
 		const size = Math.max(1,Math.min(200,Number.isSafeInteger(limit) ? limit : 200));
 		return {...selected.view,observations:structuredClone(selected.observations.slice(start,start+size)),observationOffset:start,hasMore:start+size<selected.observations.length};
+	}
+	/** A saved-note comparison and the real active runtime retain independent sample counts. */
+	getLiveSessionComparison(): LiveSessionComparisonView {
+		return { history: this.liveComparison, provisional: provisionalLiveComparison(this.liveSessions?.getRuntime() ?? null, this.liveSessions?.getView().elapsedMs ?? 0) };
+	}
+	/** Loads schema7 notes only after an explicit action; comparison performs no account requests. */
+	async loadLiveSessionComparison(): Promise<void> {
+		if (this.liveComparisonFlight !== null) return this.liveComparisonFlight;
+		this.liveComparison = { status: 'loading' };
+		const flight = this.loadLiveComparisonNotes(); this.liveComparisonFlight = flight;
+		try { await flight; } finally { this.liveComparisonFlight = null; }
+	}
+	private async loadLiveComparisonNotes(): Promise<void> {
+		try {
+			const result = await this.liveHistory?.loadComparison();
+			this.liveComparison = result?.status === 'ok' ? { status: 'ready', comparison: result.comparison, ignored: result.ignored }
+				: result?.status === 'conflict' ? result : { status: 'unavailable' };
+		} catch { this.liveComparison = { status: 'unavailable' }; }
+		this.renderViews();
 	}
 	getSelectedLiveSessionHistory(): string | null { return this.selectedLiveHistory?.payload.sessionRef ?? null; }
 	async listLiveSessionHistory(): Promise<{sessionRef:string;startedAt:string;endedAt:string;observationCount:number}[]> {

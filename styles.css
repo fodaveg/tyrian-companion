@@ -3060,3 +3060,10 @@
 .tyrian-companion-view__legacy-session > summary, .tyrian-companion-view__legacy-history > summary, .tyrian-farming-session > details > summary { min-height: 44px; padding-block: 12px; box-sizing: border-box; }
 
 .tyrian-companion-view__legacy-export { min-height: 44px; max-width: 100%; white-space: normal; }
+
+.tyrian-live-comparison > summary { min-height: 44px; padding-block: 12px; box-sizing: border-box; }
+.tyrian-live-comparison section { margin-block: 16px; }
+.tyrian-declared-build textarea, .tyrian-declared-build input { width: 100%; min-width: 0; min-height: 44px; box-sizing: border-box; font: inherit; }
+.tyrian-declared-build button { min-height: 44px; white-space: normal; max-width: 100%; }
+
+.tyrian-live-comparison code { display: block; overflow-wrap: anywhere; white-space: normal; }
