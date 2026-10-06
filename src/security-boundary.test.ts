@@ -28,6 +28,9 @@ const REVIEWED_FUTURE_OUTBOUND_FILES = [
 	'src/platform/mumble-v2-observation.ts',
 	'src/platform/mumble-v2-presence-policy.ts',
 	'src/platform/mumble-v2-process-adapter.ts',
+	// Reviewed 2026-10-06: validated anonymous live evidence, create-only local Vault export,
+	// full-journal serialization and reread verification; no transport or credential capability.
+	'src/sessions/live-session-export.ts',
 	'src/sessions/mumble-v2-shadow-proposal.ts',
 	// Explicit local Vault export only; the reviewed module has no outbound or credential capability.
 	'src/sessions/pilot-metrics-export.ts',

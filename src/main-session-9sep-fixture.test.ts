@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { parseDocument } from 'yaml';
+import { createHash } from 'node:crypto';
 import { IDBFactory } from 'fake-indexeddb';
 import { TFile, type App, type PluginManifest } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +15,8 @@ import {
 	COORDINATION_STORE_NAME,
 } from './sessions/coordination-store';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
+import type { SessionRecoveryState } from './sessions/manual-session-start-service';
+import type { TyrianHost } from './host/tyrian-host';
 import {
 	SESSION_RUNTIME_DB_NAME,
 	SESSION_RUNTIME_DB_VERSION,
@@ -28,68 +30,71 @@ interface FixtureHarness {
 	initializeRuntime(): Promise<void>;
 	getSessionState(): { status: string };
 	getSessionSummarySaveState(): string;
+	getSessionRecoveryState(): SessionRecoveryState;
+	shutdownRuntime(): Promise<void>;
+	readonly host: TyrianHost;
 }
 
-/**
- * Lote S (2026-09-09), test obligatorio: the real record David hit today
- * (`registro-sesion-9sep.json`, saved by the version before this lote while `provisional`) never
- * asks a human anything on load anymore — it finalizes on its own, through the exact same
- * `initializeRuntime` boot a real Obsidian start runs, and its note gets written the same way a
- * live `stop()` would write it.
- */
-describe('the real 9-sep provisional record auto-finalizes and saves on boot', () => {
+/** The actual provisional 9-sep capture remains available unchanged when passive sessions boot. */
+describe('the real 9-sep provisional record is preserved read-only on passive boot', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 	});
 
-	it.each([false, true])('starts provisional, ends complete, and saves its summary (captured goal: %s)', async (hasGoal) => {
+	it.each([false, true])('retains both snapshots, provisional evidence and the captured goal without account queries (captured goal: %s)', async (hasGoal) => {
 		const factory = new IDBFactory();
 		const record = readFixtureRecord();
 		const authority = (record.state as { authority: { machineId: string; fence: number } }).authority;
 		await seedRuntimeRecord(factory, record);
-		// The lease coordinator only recovers a record's authority onto a NEW lease from the SAME
-		// machine, with a strictly higher fence (`canRecoverAuthority`, `session-state-machine.ts`) —
-		// a real safety invariant, unrelated to Lote S. `acquireVacant` grants `fenceCounter + 1`, so
-		// seeding the persisted `fenceCounter` at the fixture's own fence (not one below it) is what a
-		// real second boot on David's own machine looks like; this is not something
-		// `autoFinalizeProvisionalRecord` itself has to fake.
 		await seedCoordinationState(factory, authority.machineId, authority.fence);
 
 		const notes = new Map<string, string>();
-		const session = record.state as { sessionId: string; baseline: { completedAt: string } };
+		const session = record.state as { sessionId: string; status: string; baseline: { completedAt: string } };
 		const farmingContext = hasGoal ? { version: 1, sessionId: session.sessionId,
 			goal: { version: 1, kind: 'duration', targetDurationMs: 3_600_000 }, groupContext: null,
 			observedFrom: session.baseline.completedAt, observedAt: session.baseline.completedAt, sampleCount: 1 } : null;
 		const plugin = fixturePlugin(factory, notes, farmingContext);
-		await plugin.initializeRuntime();
-
-		expect(plugin.getSessionState()).toMatchObject({ status: 'complete' });
-		expect(plugin.getSessionSummarySaveState()).toBe('saved');
-		const content = [...notes.values()][0] ?? '';
-		const frontmatterText = /^---\n([\s\S]*?)\n---\n/u.exec(content)?.[1];
-		expect(frontmatterText).toBeDefined();
-		const frontmatter = parseDocument(frontmatterText ?? '').toJS() as Record<string, unknown>;
-		if (hasGoal) {
-			expect(JSON.parse(String(frontmatter.tc_farming_goal_json))).toEqual(farmingContext?.goal);
-			const result = JSON.parse(String(frontmatter.tc_farming_goal_result_json)) as Record<string, unknown>;
-			expect(result).toMatchObject({ goal: farmingContext?.goal, observedBags: null });
-			expect(typeof result.elapsedMs).toBe('number');
-			const closing = JSON.parse(String(frontmatter.tc_sack_observation_json)) as { netRetained: number | null };
-			expect(result).toHaveProperty('finalNetBags', closing.netRetained);
-		} else {
-			expect(frontmatter).not.toHaveProperty('tc_farming_goal_json');
-			expect(frontmatter).not.toHaveProperty('tc_farming_goal_result_json');
-		}
-	}, 30_000); // a real IndexedDB boot: 2.6 s here, past the 5 s default on the GitHub runner (release 0.1.31 run 34345598250)
+		const request = vi.spyOn(plugin.host.http,'request');
+		const before = recordHash(record);
+		try {
+			await plugin.initializeRuntime();
+			expect(plugin.getSessionState()).toMatchObject({ status: 'idle' });
+			expect(plugin.getSessionRecoveryState()).toMatchObject({status:'available',state:{status:session.status,sessionId:session.sessionId}});
+			expect(plugin.getSessionSummarySaveState()).toBe('unknown');
+			expect(notes.size).toBe(0);
+			expect(recordHash(await readPersistedRecord(factory))).toBe(before);
+			expect(plugin.host.localStorage?.load('tyrian-farming-session')).toEqual(farmingContext);
+			expect(request.mock.calls.filter(([input]) => /account|characters|tokeninfo/u.test(input.url))).toEqual([]);
+		} finally { await plugin.shutdownRuntime(); }
+		// Unload must not finalize, clear or rewrite the only historical evidence either.
+		expect(recordHash(await readPersistedRecord(factory))).toBe(before);
+	}, 30_000);
 });
+
+/** Hash the whole capture so failure output never dumps the large historical inventory. */
+function recordHash(record: unknown): string { return createHash('sha256').update(JSON.stringify(record)).digest('hex'); }
+async function readPersistedRecord(factory: IDBFactory): Promise<unknown> {
+	const database = await openIndexedDb({factory,databaseName:SESSION_RUNTIME_DB_NAME,databaseVersion:SESSION_RUNTIME_DB_VERSION,
+		schema:[{name:SESSION_RUNTIME_STORE_NAME}],accept:() => true,onVersionChange:() => undefined,
+		toError:(reason) => new Error(`Could not read historical evidence: ${reason}`)});
+	try {
+		return await new Promise((resolve,reject) => {
+			const transaction=database.transaction(SESSION_RUNTIME_STORE_NAME,'readonly');
+			const request=transaction.objectStore(SESSION_RUNTIME_STORE_NAME).get(SESSION_RUNTIME_KEY); let record:unknown;
+			request.onsuccess=() => {record=request.result as unknown;};
+			transaction.oncomplete=() => resolve(record);
+			transaction.onerror=() => reject(new Error('Could not read the historical runtime.'));
+		});
+	} finally { database.close(); }
+}
 
 function readFixtureRecord(): Record<string, unknown> {
 	const raw = readFileSync(new URL('./sessions/__fixtures__/registro-sesion-9sep.json', import.meta.url), 'utf8');
 	return JSON.parse(raw) as Record<string, unknown>;
 }
 
-/** Seeds the coordinator's own persisted state: same machine, one fence below the fixture's own. */
+/** Seeds the same machine and persisted fence; passive boot must not reclaim the historical lease. */
 async function seedCoordinationState(factory: IDBFactory, machineId: string, fence: number): Promise<void> {
 	const database = await openIndexedDb({
 		factory,
@@ -159,7 +164,9 @@ function fixturePlugin(factory: IDBFactory, notes = new Map<string, string>(), f
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
 	};
-	target.settings = structuredClone(DEFAULT_SETTINGS);
+	target.settings = {...structuredClone(DEFAULT_SETTINGS),apiKeySecret:'manual-fixture-key'};
+	vi.spyOn(target.host.secrets,'list').mockReturnValue(['manual-fixture-key']);
+	vi.spyOn(target.host.secrets,'get').mockReturnValue('not-a-real-key-passive-fixture');
 	// R1b: this device collects, as every install did before the collector/consult split.
 	core.collectorMode = 'collector';
 	target.localDebug = null;

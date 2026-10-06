@@ -28,6 +28,7 @@ import { sanitizeLocalDebugRecord } from './core/local-debug-sanitizer';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import { withObsidianHost } from './test/obsidian-host-harness';
+import { createRuntimeHarness } from './test/runtime-harness';
 import { COMPANION_VIEW_TYPE, ConfirmAbandonSessionModal } from './ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from './ui/sale-item-view';
@@ -201,7 +202,25 @@ describe('Halloween backfill wiring (H14.11)', () => {
  * `armAssistedDetection` now registers the failure itself instead of relying on `run()`'s outcome
  * projection.
  */
-describe('armAssistedDetection observability (H15.12)', () => {
+describe('legacy armAssistedDetection observability (H15.12)', () => {
+	it('the initialized Nexus runtime refuses account detection before lease acquisition, without a false failure diagnostic', async () => {
+		const runtime=createRuntimeHarness();
+		const record=vi.fn((_input:LocalDebugRecordInput) => true);
+		(runtime.core as unknown as {localDebugActions:LocalDebugActionRunner}).localDebugActions=new LocalDebugActionRunner({diagnostics:{record} as unknown as LocalDebugLogger,createId:() => 'passive-arm'});
+		try {
+			await runtime.initializeRuntime();
+			const local=runtime.core as unknown as {
+				assistedDetection:{arm():Promise<unknown>};sessionHistoryRuntimeAuthority:{acquireRuntimeMutation():unknown};
+			};
+			const arm=vi.spyOn(local.assistedDetection,'arm');
+			const acquire=vi.spyOn(local.sessionHistoryRuntimeAuthority,'acquireRuntimeMutation');
+			const check=vi.spyOn(runtime.core,'checkConnection');
+			await expect(runtime.core.armAssistedDetection()).resolves.toBe('unavailable');
+			expect(arm).not.toHaveBeenCalled(); expect(acquire).not.toHaveBeenCalled(); expect(check).not.toHaveBeenCalled();
+			expect(runtime.requests().filter((request) => /account|characters|tokeninfo/u.test(request.url))).toEqual([]);
+			expect(record.mock.calls.map(([event]) => event).filter((event) => event.action === 'detection_arm' && event.phase === 'failure')).toEqual([]);
+		} finally { await runtime.shutdown(); runtime.dispose(); }
+	});
 	it('registers a detection_arm failure with the returned code when arming stops in error', async () => {
 		const events: unknown[] = [];
 		const localDebugActions = {
@@ -210,6 +229,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 		};
 		const harness = {
 			runtimeReady: true,
+			liveSessions: null,
 			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => ({ release: vi.fn() }) },
 			connection: { getState: () => ({ status: 'connected' as const }) },
 			sessions: {
@@ -248,6 +268,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 		};
 		const harness = {
 			runtimeReady: true,
+			liveSessions: null,
 			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => ({ release: vi.fn() }) },
 			connection: { getState: () => ({ status: 'connected' as const }) },
 			sessions: {
@@ -256,7 +277,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 			},
 			renderViews: vi.fn(),
 			assistedDetection: {
-				arm: async () => ({ status: 'armed' as const, armedAt: '2026-09-10T00:00:00.000Z', scheduler: {}, lastSnapshotAt: null }),
+				arm: vi.fn(async () => ({ status: 'armed' as const, armedAt: '2026-09-10T00:00:00.000Z', scheduler: {}, lastSnapshotAt: null })),
 			},
 			settings: { ...DEFAULT_SETTINGS },
 			localDebugActions,
@@ -268,6 +289,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 
 		await armAssistedDetection.call(harness);
 
+		expect(harness.assistedDetection.arm).toHaveBeenCalledOnce();
 		expect(events).toEqual([]);
 	});
 });
@@ -833,11 +855,12 @@ describe('product navigation diagnostics', () => {
 		expect(id.startsWith('preview-') ? previewWalletVaultSync : applyWalletVaultSync).toHaveBeenCalledOnce();
 	});
 
-	it('maps an arm attempt without the runtime mutation lease to unavailable', async () => {
+	it('maps a legacy arm attempt without the runtime mutation lease to unavailable', async () => {
 		const acquireRuntimeMutation = vi.fn(() => null);
 		const armRuntime = vi.fn(async () => undefined);
 		const armHarness = {
 			runtimeReady: true,
+			liveSessions: null,
 			localDebugActions: null,
 			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation },
 			notifyRuntimeStarting: vi.fn(),
@@ -1370,8 +1393,8 @@ describe('stop workflow outcome in the receipt and the pilot (H18.4)', () => {
 	});
 });
 
-describe('detection after a finished session (H18.9, prueba 6)', () => {
-	it('re-arms the detector once the first summary is saved, without a manual connection check', async () => {
+describe('legacy summary reconciliation under passive sessions', () => {
+	it('saves already captured evidence without re-arming account detection or checking the connection', async () => {
 		const arm = vi.fn(async () => ({ status: 'armed' as const, armedAt: '2026-09-10T00:00:00.000Z', scheduler: {}, lastSnapshotAt: null }));
 		const checkConnection = vi.fn();
 		const proto = TyrianCompanionCore.prototype as unknown as {
@@ -1379,6 +1402,7 @@ describe('detection after a finished session (H18.9, prueba 6)', () => {
 		};
 		const harness = Object.assign(Object.create(proto) as object, {
 			runtimeReady: true,
+			liveSessions: {},
 			pilotMetrics: null,
 			sessions: {
 				getCompletedRuntimeRecord: vi.fn(async () => ({ state: { status: 'complete', sessionId: 'session-1' } })),
@@ -1401,7 +1425,8 @@ describe('detection after a finished session (H18.9, prueba 6)', () => {
 			review: { classification: { status: 'exact', reasons: [] } },
 		})).resolves.toBe(true);
 
-		await vi.waitFor(() => expect(arm).toHaveBeenCalledOnce());
+		expect(harness.persistCompletedSessionSummary).toHaveBeenCalledOnce();
+		expect(arm).not.toHaveBeenCalled();
 		expect(checkConnection).not.toHaveBeenCalled();
 	});
 });
@@ -1856,6 +1881,16 @@ describe('alert dispatch diagnostics', () => {
 });
 
 describe('in-game alert server start diagnostics', () => {
+	it('a disabled bridge does not bind or manufacture a port failure', async () => {
+		alertIngameServerMocks.start.mockClear();
+		const record=vi.fn((_input:LocalDebugRecordInput) => true);
+		const harness=withObsidianHost({settings:{alertIngamePort:47823,alertIngameEnabled:false},alertIngameCloseFlight:null,
+			alertIngameServerErrorCode:null,localDebugActions:new LocalDebugActionRunner({diagnostics:{record} as unknown as LocalDebugLogger,createId:() => 'disabled-bridge'})});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit disabled host harness.
+		const ensure=(TyrianCompanionCore.prototype as unknown as {ensureAlertIngameServer(this:typeof harness):Promise<unknown>}).ensureAlertIngameServer;
+		await expect(ensure.call(harness)).resolves.toBeNull();
+		expect(alertIngameServerMocks.start).not.toHaveBeenCalled(); expect(harness.alertIngameServerErrorCode).toBeNull(); expect(record).not.toHaveBeenCalled();
+	});
 	// H15.17 (2026-09-10 incident): `.catch(() => null)` discarded the rejection entirely, so a
 	// port already in use (or denied by the OS) looked identical to the addon simply not being
 	// connected yet: no log line, and the settings row kept the toggle looking fine.
@@ -1866,11 +1901,13 @@ describe('in-game alert server start diagnostics', () => {
 		const record = vi.fn((_input: LocalDebugRecordInput) => true);
 		const diagnostics = { record } as unknown as LocalDebugLogger;
 		const harness = withObsidianHost({
-			settings: { alertIngamePort: 47_823 },
+			settings: { alertIngamePort: 47_823, alertIngameEnabled: true },
 			alertIngameServer: null,
 			alertIngameServerPort: null,
 			alertIngameServerFlight: null,
 			alertIngameServerErrorCode: null as string | null,
+			// The bind fixture needs the actual source port factory; no source callback runs on rejection.
+			liveIngamePort: () => (TyrianCompanionCore.prototype as unknown as {liveIngamePort():unknown}).liveIngamePort.call(harness),
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'ingame-server-start' }),
 			settingTab: { refreshAlertIngameServerRow: vi.fn() },
 		});
