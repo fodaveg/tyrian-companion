@@ -1,0 +1,21 @@
+test_wrong_vtable_rejects_before_any_bucket_read (test_probe.WalletTests.test_wrong_vtable_rejects_before_any_bucket_read) ... FAIL
+
+======================================================================
+FAIL: test_wrong_vtable_rejects_before_any_bucket_read (test_probe.WalletTests.test_wrong_vtable_rejects_before_any_bucket_read)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "docs/audit/loot-wallet-probe/test_probe.py", line 99, in test_wrong_vtable_rejects_before_any_bucket_read
+    self.assert_unknown(fixture, 'currency_manager_vtable', reader)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "docs/audit/loot-wallet-probe/test_probe.py", line 72, in assert_unknown
+    self.assertEqual(result['status'], 'unknown')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'candidate_balance' != 'unknown'
+- candidate_balance
++ unknown
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

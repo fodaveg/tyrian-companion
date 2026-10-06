@@ -1,0 +1,11 @@
+{
+  "method": "Targeted PE string/RIP/absolute xrefs; each candidate individually confirmed by bounded objdump disassembly, using existing static_analysis.py",
+  "source_tool_sha256": "6b947fc2f6996c23392e5039ee86d361aa7e69931b119ca2ea3fd0ff35d662b1",
+  "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "wallet_UI_source": "InvWalletPage.cpp RVA0x6a9225, InvWalletListEntry.cpp RVA0x6af3d0",
+  "root_and_map_fields": "See README route table; all candidate fields tied to code guards in profile.json",
+  "public_currency_catalog": "https://api.guildwars2.com/v2/currencies/45?lang=es; unauthenticated GET only, no account API",
+  "API_ID_to_native_key_proven": false,
+  "runtime_wallet_attempted": false,
+  "artifact_format": "Static byte guards retained in profile.json; no live wallet data or binary dump retained"
+}

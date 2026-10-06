@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-06",
+  "scope": "isolated sparse wallet candidate and controlled fixtures; not a production currency profile",
+  "base_commit": "fe3d8857006fb8a4ebcd09eac51006f8980e771a",
+  "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "candidate_currency_id": 45,
+  "runtime_attempted": false,
+  "native_key_mapping_proven": false,
+  "acquisition_proven": false,
+  "environment": {
+    "platform": "Fedora Linux",
+    "python": "3.14.7",
+    "dependencies": "Python stdlib only; existing static-analysis tooling; no installs/build/EXE/game access"
+  },
+  "checks": {
+    "red_guard": {
+      "cwd": "docs/audit/loot-wallet-probe",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 prove_guard_red.py",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "failures": 1,
+      "mutation": "Disable both initial/final real CurrencyMgr identity guards only in the fixture process",
+      "observed_failure": "candidate_balance != unknown",
+      "evidence": "evidence/guard-red.stderr"
+    },
+    "green_fixtures": {
+      "cwd": "docs/audit/loot-wallet-probe",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_probe.py",
+      "exit_code": 0,
+      "tests": 22,
+      "evidence": "evidence/fixtures.stderr"
+    }
+  },
+  "bounds": {
+    "process_requested_bytes_per_run": 4096,
+    "samples_max": 2,
+    "search_buckets_per_sample_max": 15,
+    "selected_bucket_rereads_per_sample": 1,
+    "bucket_bytes_per_sample_max": 192,
+    "capacity_max": 4096
+  },
+  "limitations": [
+    "Game was closed; no real wallet, saldo or acquisition observed.",
+    "API currency45 to native key45 remains unverified despite public ID metadata.",
+    "Only the statically identified base-class dispatch is allowed; live alternative types are unknown.",
+    "Snapshots are not atomic; concurrent differences are rejected, not losslessly reconstructed.",
+    "Net changes do not establish event cause or complete acquisition history."
+  ],
+  "evidence_paths": "Repository-relative paths normalized in synthetic test logs; original private logs were temporary under /tmp/tyrian-wallet-investigation-20261006",
+  "files": {
+    "README.md": "d5e5fe5c348d6ac94f952c34864134b4ca57684eca5613b66b1139a13bee0b76",
+    "evidence/currency-45-public.json": "ffd0d09e31a320e0109901e693a988e1565f9cd2ec17d3fd3ff344f041d184e9",
+    "evidence/fixtures.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "evidence/fixtures.stderr": "9dd0a9853edcb13b64459f9115b5ee1861982bf8ee1ebedde3c2fb4adb553d6b",
+    "evidence/fixtures.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence/guard-red.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "evidence/guard-red.stderr": "29aaa44285b49a8e39e37212191d8327e3a2567a4d599751a19fbb409f4ac1c4",
+    "evidence/guard-red.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence/static-findings.json": "932caac0e5d7fbe42fc62e0683ea0095db25c8b7017aaea203a4c6ba11e1d61d",
+    "probe.py": "f8f090f9932851c6bae7a11816e670fc295e0d5f061aa1ff9989c9c866d4009b",
+    "profile.json": "abbc63a0e214910653c63ffca5aec562f69d88a939b2853caf224b7b381f7690",
+    "prove_guard_red.py": "ebb7fc702664193a5e2f84e4150f76c0852194c6563937af9fa8d23629a06ec2",
+    "test_probe.py": "cb36674e8b7c0cfe947d3e4b005662c06b90523f4c84408f3a9a28a6997d5163"
+  }
+}

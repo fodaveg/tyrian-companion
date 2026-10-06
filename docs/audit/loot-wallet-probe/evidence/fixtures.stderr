@@ -1,0 +1,27 @@
+test_byte_budget_rejects_before_more_reads (test_probe.WalletTests.test_byte_budget_rejects_before_more_reads) ... ok
+test_changed_balance_rejects (test_probe.WalletTests.test_changed_balance_rejects) ... ok
+test_changed_header_rejects (test_probe.WalletTests.test_changed_header_rejects) ... ok
+test_changed_owner_rejects (test_probe.WalletTests.test_changed_owner_rejects) ... ok
+test_collision_cap_has_at_most_sixteen_bucket_reads (test_probe.WalletTests.test_collision_cap_has_at_most_sixteen_bucket_reads) ... ok
+test_collision_lookup_and_wrap (test_probe.WalletTests.test_collision_lookup_and_wrap) ... ok
+test_empty_map_is_unknown_not_zero (test_probe.WalletTests.test_empty_map_is_unknown_not_zero) ... ok
+test_invalid_capacity_rejects (test_probe.WalletTests.test_invalid_capacity_rejects) ... ok
+test_invalid_map_pointer_rejects (test_probe.WalletTests.test_invalid_map_pointer_rejects) ... ok
+test_main_owner_change_between_samples_does_not_project_delta (test_probe.WalletTests.test_main_owner_change_between_samples_does_not_project_delta) ... ok
+test_null_pointer_rejects (test_probe.WalletTests.test_null_pointer_rejects) ... ok
+test_out_of_mapping_rejects_before_read (test_probe.WalletTests.test_out_of_mapping_rejects_before_read) ... ok
+test_positive_six_delta_with_full_static_guard (test_probe.WalletTests.test_positive_six_delta_with_full_static_guard) ... ok
+test_short_read_rejects_without_partial_value (test_probe.WalletTests.test_short_read_rejects_without_partial_value) ... ok
+test_static_guard_mutation_fails_then_restoration_passes (test_probe.WalletTests.test_static_guard_mutation_fails_then_restoration_passes) ... ok
+test_supported_zero_is_distinct_from_unknown (test_probe.WalletTests.test_supported_zero_is_distinct_from_unknown) ... ok
+test_unmapped_pointer_rejects (test_probe.WalletTests.test_unmapped_pointer_rejects) ... ok
+test_wrong_character_context_rejects (test_probe.WalletTests.test_wrong_character_context_rejects) ... ok
+test_wrong_getter_rejects (test_probe.WalletTests.test_wrong_getter_rejects) ... ok
+test_wrong_hash_is_unknown_not_zero (test_probe.WalletTests.test_wrong_hash_is_unknown_not_zero) ... ok
+test_wrong_key_is_unknown_not_zero (test_probe.WalletTests.test_wrong_key_is_unknown_not_zero) ... ok
+test_wrong_vtable_rejects_before_any_bucket_read (test_probe.WalletTests.test_wrong_vtable_rejects_before_any_bucket_read) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.007s
+
+OK
