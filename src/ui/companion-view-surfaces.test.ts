@@ -483,6 +483,48 @@ describe('Companion saved note delivery', () => {
 });
 
 describe('Companion API settlement surface', () => {
+	const waiting = () => ({
+		status: 'waiting' as const, windowMs: 600_000, waitedMs: 180_000, remainingMs: 420_000,
+		dueAt: Date.parse('2026-08-31T10:10:00.000Z'),
+	});
+	const captureButton = (contentEl: FakeElement, text: string) =>
+		find(contentEl, (node) => node.tag === 'button' && node.textContent === text);
+
+	it('«Capturar ya» answers the click at once: disabled and saying the capture is under way until it ends', async () => {
+		let finish: () => void = () => undefined;
+		const captureSessionFinalNow = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+		const { contentEl, render } = mountCompanion({
+			captureSessionFinalNow, getSessionState: () => stoppingSession(), getSessionSettlementWait: waiting,
+		});
+		render();
+
+		captureButton(contentEl, 'Capturar ya')?.click();
+		await Promise.resolve();
+
+		expect(captureSessionFinalNow).toHaveBeenCalledOnce();
+		expect(captureButton(contentEl, 'Capturar ya')).toBeUndefined();
+		const busy = captureButton(contentEl, 'Capturando la instantánea final…');
+		expect(busy?.disabled).toBe(true);
+
+		finish();
+		await Promise.resolve(); await Promise.resolve();
+		expect(captureButton(contentEl, 'Capturar ya')?.disabled).toBe(false);
+	});
+
+	it('«Capturar ya» shows the failure on the card instead of swallowing it', async () => {
+		const captureSessionFinalNow = vi.fn(async () => { throw new Error('refused'); });
+		const { contentEl, render } = mountCompanion({
+			captureSessionFinalNow, getSessionState: () => stoppingSession(), getSessionSettlementWait: waiting,
+		});
+		render();
+
+		captureButton(contentEl, 'Capturar ya')?.click();
+		await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+		expect(texts(contentEl)).toContain('No se pudo completar la acción de sesión.');
+		expect(captureButton(contentEl, 'Capturar ya')?.disabled).toBe(false);
+	});
+
 	it('explains the wait, counts it down and keeps the escape hatch with its cost', async () => {
 		const captureSessionFinalNow = vi.fn(async () => undefined);
 		const { contentEl, render } = mountCompanion({

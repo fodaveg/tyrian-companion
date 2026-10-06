@@ -200,6 +200,8 @@ export class TyrianCompanionView {
 	private recoveryRecoverButton: HTMLButtonElement | null = null;
 	private recoveryDiscardButton: HTMLButtonElement | null = null;
 	private checkButton: HTMLButtonElement | null = null;
+	/** "Capturar ya": `working` while its request is in flight, `failed` once it was refused. */
+	private captureNowState: 'idle' | 'working' | 'failed' = 'idle';
 	/** The card's single callout slot, rebuilt in place every tick instead of the whole card. */
 	private calloutSlot: HTMLElement | null = null;
 	private detectionTimelineNodes: { last: HTMLElement; result: HTMLElement; next: HTMLElement } | null = null;
@@ -812,7 +814,12 @@ export class TyrianCompanionView {
 			const stopFailure = this.actions.getSessionStopFailure();
 			const actions: SessionCardAction[] = [];
 			if (wait !== null && this.actions.captureSessionFinalNow) {
-				actions.push({ text: this.t('view.captureNow'), onClick: () => { void this.actions.captureSessionFinalNow?.()?.catch(() => undefined); } });
+				const capturing = this.captureNowState === 'working';
+				actions.push({
+					text: capturing ? this.t('view.settlementDue') : this.t('view.captureNow'),
+					disabled: capturing,
+					onClick: () => { void this.runCaptureNow(); },
+				});
 			} else if (wait === null && stopFailure !== null) {
 				// The final capture failed after the wait (H18.7): it already retries on its own, and
 				// this is the visible way to try right now instead of leaving the card without actions.
@@ -837,6 +844,8 @@ export class TyrianCompanionView {
 					why: [
 						{ text: this.t('view.settlementWhy') },
 						{ text: this.t('view.captureNowWarning'), alert: true },
+						...(this.captureNowState === 'failed'
+							? [{ text: createTranslator(this.actions.getLocale()).t('commands.actionFailed'), alert: true }] : []),
 					],
 					receipt: {
 						ariaLabel: this.t('sessionCard.receipt.closureAria'),
@@ -1398,6 +1407,23 @@ export class TyrianCompanionView {
 	private hasFreshPendingProposal(now: number): boolean {
 		const state = this.actions.getPendingProposalState();
 		return state.status === 'ready' && state.next !== null && Date.parse(state.next.staleAt) > now;
+	}
+
+	/**
+	 * "Capturar ya": the click repaints at once with the button disabled and saying the capture is
+	 * under way, and a refusal stays on the card instead of dying in a swallowed rejection.
+	 */
+	private async runCaptureNow(): Promise<void> {
+		if (this.captureNowState === 'working') return;
+		this.captureNowState = 'working';
+		this.render();
+		try {
+			await this.actions.captureSessionFinalNow?.();
+			this.captureNowState = 'idle';
+		} catch {
+			this.captureNowState = 'failed';
+		}
+		this.render();
 	}
 
 	private async checkConnection(): Promise<void> {
