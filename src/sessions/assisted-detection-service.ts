@@ -189,6 +189,11 @@ export class AssistedDetectionService {
 		return structuredClone(this.state);
 	}
 
+	/** Latest successful account read, detached for consumers; failures and display ticks never advance it. */
+	getLastSnapshot(): StorageSnapshot | null {
+		return this.previousSnapshot === null ? null : structuredClone(this.previousSnapshot);
+	}
+
 	arm(intervalMs: number, actionContext?: ResolvedLocalDebugActionContext): Promise<AssistedDetectionState> {
 		if (this.disposed) return Promise.resolve(this.fail('Assisted detection is unavailable.'));
 		const interval = positiveInteger(intervalMs, 'intervalMs');

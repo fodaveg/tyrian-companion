@@ -1,3 +1,4 @@
+import { FarmingSessionPanel, type FarmingSessionPanelActions } from './farming-session-panel';
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import { createTranslator, type Locale } from '../core/i18n';
@@ -60,7 +61,7 @@ import {
 } from './halloween-alert-panel';
 import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
-import { emptyExcept, reconcileChildren, settleLast } from './reconcile-children';
+import { reconcileChildren, settleLast } from './reconcile-children';
 import {
 	mountSessionHistoryPanel,
 	SessionHistoryPanelController,
@@ -83,7 +84,7 @@ import {
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
-export interface CompanionActions extends HalloweenAlertPanelActions {
+export interface CompanionActions extends HalloweenAlertPanelActions, Partial<FarmingSessionPanelActions> {
 	getLocale(): Locale;
 	getConnectionState(): ConnectionState;
 	checkConnection(): Promise<ConnectionState>;
@@ -187,6 +188,8 @@ interface LiveLootItem {
  */
 export class TyrianCompanionView {
 	private refreshInterval: number | null = null;
+	private farmingPanel: FarmingSessionPanel | null = null;
+	private farmingPanelLocale: Locale | null = null;
 	/** Torn down in `onClose`; set once in `onOpen` so a repeated `render()` never registers twice. */
 	private visibilityCleanup: (() => void) | null = null;
 	/** The card's ticking clock (`.tyrian-companion-session__clock`), while a session is active. */
@@ -248,6 +251,8 @@ export class TyrianCompanionView {
 		this.sessionHistoryMount = null;
 		this.sessionHistoryLocale = null;
 		this.liveLoot = null;
+		this.farmingPanel = null;
+		this.farmingPanelLocale = null;
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;
@@ -321,12 +326,20 @@ export class TyrianCompanionView {
 		}
 		this.productShell?.update();
 		const surface = this.productShell?.content ?? contentEl;
-		// Everything is rebuilt except the history panel, which stays attached: taking it out of the
+		// The history and farming editors stay attached: taking it out of the
 		// tree, even to put it back, would drop the focus and the scroll offset it holds.
-		emptyExcept(surface, this.sessionHistoryMount?.element ?? null);
+		if (this.farmingPanel !== null && this.farmingPanelLocale !== locale) this.farmingPanel = null;
+		const retained = new Set([this.sessionHistoryMount?.element, this.farmingPanel?.element]);
+		for (const child of Array.from(surface.children)) if (!retained.has(child as HTMLElement)) surface.removeChild(child);
 		surface.addClass('tyrian-companion-view__page');
 		this.renderStatusLine(surface);
 		this.renderSimpleSession(surface, connectionState, sessionState, projection, now);
+		if (this.actions.getFarmingGoal !== undefined && this.actions.getFarmingIngameState !== undefined) {
+			this.farmingPanel ??= new FarmingSessionPanel(surface.ownerDocument, this.actions as FarmingSessionPanelActions);
+			this.farmingPanelLocale = locale;
+			this.farmingPanel.refresh();
+			settleLast(surface, this.farmingPanel.element);
+		}
 		this.renderPendingConfirmationSlot(surface, now);
 		const retryAt = getRetryAt(connectionState);
 		this.scheduleRefresh(projection, retryAt, now);
@@ -1151,12 +1164,12 @@ export class TyrianCompanionView {
 		}
 		const windowMs = this.liveSessionWindowMs(now);
 		const totalCopper = loot.status === 'idle' ? 0 : loot.knownTotalCopper;
-		const sacks = loot.status === 'idle' ? 0 : loot.sackQuantity;
+		const sacks = loot.status === 'idle' ? null : loot.observedSackGains ?? null;
 		const figures: SessionCardFigure[] = [
 			// H18.36 (boceto lámina 2.1, decidido): «Ganado», nunca «Valor observado» ni «en vivo»
 			// (David 24 sep: la tarjeta nunca dice «en vivo», dice cuándo se leyó la cuenta).
 			{ label: this.t('sessionCard.earned'), value: simpleMoney(totalCopper, locale), band: this.goldRateHeadline(totalCopper, windowMs, locale) },
-			{ label: copy.sacks, value: String(sacks), band: liveSackRateHeadline(sacks, windowMs, copy, locale) },
+			{ label: copy.sacks, value: sacks === null ? '—' : String(sacks), band: sacks === null ? copy.sacksRatePending : liveSackRateHeadline(sacks, windowMs, copy, locale) },
 		];
 		const scheduler = this.actions.getAssistedDetectionState().scheduler;
 		if (scheduler.lastSuccessAt !== null) {
@@ -1207,13 +1220,15 @@ export class TyrianCompanionView {
 			band: totalCopper === null ? undefined : this.goldRateHeadline(totalCopper, elapsedMs, locale),
 		};
 		if (liveLoot.status === 'idle') return [valueFigure];
-		return [
-			valueFigure,
-			{
-				label: copy.sacks, value: String(liveLoot.sackQuantity),
-				band: liveSackRateHeadline(liveLoot.sackQuantity, elapsedMs, copy, locale),
-			},
-		];
+		const observed = liveLoot.observedSackGains ?? null;
+		const figures = [valueFigure, {
+			label: copy.sacks, value: observed === null ? '—' : String(observed),
+			band: observed === null ? copy.sacksRatePending : liveSackRateHeadline(observed, elapsedMs, copy, locale),
+		}];
+		if (liveLoot.netSackQuantity != null) figures.push({
+			label: this.t('sessionCard.netSacks'), value: String(liveLoot.netSackQuantity), band: undefined,
+		});
+		return figures;
 	}
 
 	/**
@@ -1380,6 +1395,7 @@ export class TyrianCompanionView {
 			if (observed.status === 'active') this.headerElapsed.setText(formatElapsed(now - Date.parse(observed.baseline.completedAt)));
 		}
 		this.refreshSessionFigures(now);
+		this.farmingPanel?.refresh();
 		this.refreshRecoveryOwnerCountdown();
 		const retryAt = getRetryAt(connection);
 		if (this.checkButton) {
@@ -1397,7 +1413,8 @@ export class TyrianCompanionView {
 	}
 
 	private scheduleRefresh(projection: CompanionStatusProjection, retryAt: number | null, now: number): void {
-		const shouldRefresh = projection.refreshEveryMs !== null || isCoolingDown(retryAt) || this.hasFreshPendingProposal(now);
+		const shouldRefresh = projection.refreshEveryMs !== null || isCoolingDown(retryAt) || this.hasFreshPendingProposal(now)
+			|| (this.actions.getFarmingReminders?.().length ?? 0) > 0;
 		// A hidden window (backgrounded, or a popout tucked behind another) gets no ticking
 		// interval at all: `registerVisibilityPause` rearms it, with an immediate repaint, the
 		// moment `contentEl.doc` reports visible again.

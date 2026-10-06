@@ -25,6 +25,11 @@ import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { AssistedDetectionService } from './sessions/assisted-detection-service';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import type { ActiveSessionState, SessionSnapshotReference, SessionState } from './sessions/session';
+import { DEFAULT_FARMING_PREPARATION, type FarmingPreparationSettingsV1 } from './sessions/farming-goal-preparation';
+import type { FarmingPreparationContext } from './sessions/farming-goal-preparation';
+import { ingamePresenceSnapshot, initialIngamePresenceState, type IngamePresenceSnapshot } from './alerts/alert-ingame-presence';
+import type { FarmingGoalV1, FarmingGoalProgress } from './sessions/farming-goal';
+import type { FarmingGroupContext } from './runtime/farming-session-context';
 import type { LiveSessionLootState } from './sessions/live-session-loot';
 
 /**
@@ -46,6 +51,12 @@ interface AlertWiringHarness {
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
 	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1>;
 	getLiveSessionLoot(): LiveSessionLootState;
+	getFarmingGoalProgress(): FarmingGoalProgress | null;
+	getFarmingPreparationContext(): FarmingPreparationContext;
+	getIngamePresence(): IngamePresenceSnapshot;
+	setFarmingGroupContext(context: FarmingGroupContext): void;
+	saveFarmingGoal(goal: FarmingGoalV1): Promise<void>;
+	saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void>;
 	getAssistedDetectionState(): { status: string };
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 }
@@ -59,6 +70,70 @@ describe('H13.3 loot poll cabling', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
+	});
+
+	it('captures next-session intent before an asynchronous start and restores it without adopting changed defaults', async () => {
+		const record = activeSessionRecord();
+		const local = new Map<string, unknown>();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue(record.state);
+		const plugin = alertWiringPlugin(new IDBFactory(), {}, local);
+		await plugin.initializeRuntime();
+		plugin.settings.farmingGoal = { version: 1, kind: 'bags', targetBags: 123 };
+		plugin.setFarmingGroupContext('without_bosses');
+		vi.spyOn(ManualSessionStartService.prototype, 'start').mockImplementation(async () => {
+			plugin.settings.farmingGoal = { version: 1, kind: 'bags', targetBags: 999 };
+			plugin.setFarmingGroupContext('with_bosses');
+			return { status: 'started', state: record.state } as never;
+		});
+		await plugin.startManualSession({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		expect(local.get('tyrian-farming-session')).toMatchObject({ sessionId: record.state.sessionId,
+			goal: { version: 1, kind: 'bags', targetBags: 123 }, groupContext: 'without_bosses', sampleCount: 1 });
+		expect(plugin.getFarmingGoalProgress()?.goal).toEqual({ version: 1, kind: 'bags', targetBags: 123 });
+		const reloaded = alertWiringPlugin(new IDBFactory(), {}, local);
+		await reloaded.initializeRuntime();
+		reloaded.settings.farmingGoal = { version: 1, kind: 'none' };
+		expect(reloaded.getFarmingGoalProgress()?.goal).toEqual({ version: 1, kind: 'bags', targetBags: 123 });
+	});
+
+	it('keeps the captured session character separate from current character bag capacity', async () => {
+		const record = activeSessionRecord();
+		const snapshot = storageDeltaSnapshot({
+			completedAt: record.baselineSnapshot.completedAt,
+			freeSlots: { bank: null, sharedInventory: null, characterBags: [{ character: 'Astra Uno', bagIndex: 0, bagItemId: 1, free: 7, total: 20 }] },
+		});
+		const session = { ...record.state, startContext: { ...record.state.startContext, characterName: 'Captured A' } };
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue(session);
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(snapshot);
+		const plugin = alertWiringPlugin(new IDBFactory());
+		await plugin.initializeRuntime();
+		vi.spyOn(plugin, 'getIngamePresence').mockReturnValue({ ...ingamePresenceSnapshot(initialIngamePresenceState()),
+			status: 'present', context: { source: 'nexus', state: 'gameplay', character: 'Astra Uno', mapId: 866, labyrinth: true } });
+		expect(plugin.getFarmingPreparationContext()).toMatchObject({
+			characterName: 'Captured A', buildName: 'Farm', freeBagSlots: 7, freeBagSlotsCharacter: 'Astra Uno',
+			freeBagSlotsObservedAt: snapshot.completedAt,
+		});
+	});
+
+	it('serializes goal and preparation preference writes and reports a blocked save as failure', async () => {
+		const plugin = alertWiringPlugin(new IDBFactory());
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => { finish = resolve; });
+		const update = vi.spyOn(plugin, 'updateSettings').mockImplementationOnce(async () => {
+			await pending;
+			return { status: 'saved', inventoryAdvisor: 'unchanged' };
+		}).mockResolvedValue({ status: 'saved', inventoryAdvisor: 'unchanged' });
+		const goal = plugin.saveFarmingGoal({ version: 1, kind: 'bags', targetBags: 1_000 });
+		const prep = plugin.saveFarmingPreparationSettings({ ...DEFAULT_FARMING_PREPARATION, enabled: true });
+		await Promise.resolve();
+		expect(update).toHaveBeenCalledTimes(1);
+		finish();
+		await Promise.all([goal, prep]);
+		expect(update).toHaveBeenCalledTimes(2);
+		update.mockResolvedValueOnce({ status: 'blocked', reason: 'runtime_starting' });
+		await expect(plugin.saveFarmingGoal({ version: 1, kind: 'none' })).rejects.toThrow('unavailable');
 	});
 
 	it('arms the loot poll at five minutes on a manual start before assisted detection has armed', async () => {
@@ -381,7 +456,8 @@ describe('H13.4 alert channel cabling', () => {
 				}
 			});
 			socket.write(ingameHello(await pluginBridgeSecret(plugin), version));
-			await vi.waitFor(() => { expect(lines).toHaveLength(1); });
+			await vi.waitFor(() => { expect(lines).toHaveLength(version === 3 ? 2 : 1); });
+			if (version === 3) expect(JSON.parse(lines[1] ?? '{}')).toMatchObject({ type: 'farming_cap', tag: 'farm1' });
 			const { nonce } = JSON.parse(lines[0] ?? '{}') as { nonce: string };
 			return { socket, lines, nonce };
 		}
@@ -393,8 +469,8 @@ describe('H13.4 alert channel cabling', () => {
 			await withBridge(async (plugin, port) => {
 				const addon = await connectAddon(plugin, port, 3);
 				await plugin.emitAlert(VALUABLE);
-				await vi.waitFor(() => { expect(addon.lines).toHaveLength(2); });
-				const alert = JSON.parse(addon.lines[1] ?? '{}') as { v: number; seq: number };
+				await vi.waitFor(() => { expect(addon.lines).toHaveLength(3); });
+				const alert = JSON.parse(addon.lines[2] ?? '{}') as { v: number; seq: number };
 				expect(alert.v).toBe(3);
 				await vi.waitFor(() => {
 					expect([...plugin.getAlertDeliveries().values()]).toMatchObject([{ state: 'pending', sentTo: ['nexus'] }]);
@@ -454,7 +530,7 @@ describe('H13.4 alert channel cabling', () => {
 	});
 });
 
-function alertWiringPlugin(factory: IDBFactory, hostApis: Record<string, unknown> = {}): AlertWiringHarness {
+function alertWiringPlugin(factory: IDBFactory, hostApis: Record<string, unknown> = {}, local = new Map<string, unknown>()): AlertWiringHarness {
 	const notes = new Map<string, string>();
 	const files = (): TFile[] => [...notes.keys()].map((path) => Object.assign(new TFile(), { path }));
 	const vault = {
@@ -480,6 +556,8 @@ function alertWiringPlugin(factory: IDBFactory, hostApis: Record<string, unknown
 	const secrets = new Map<string, string>();
 	const app = {
 		vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager,
+		loadLocalStorage: (key: string) => structuredClone(local.get(key) ?? null),
+		saveLocalStorage: (key: string, value: unknown) => { local.set(key, structuredClone(value)); },
 		secretStorage: {
 			listSecrets: () => [...secrets.keys()],
 			getSecret: (id: string) => secrets.get(id) ?? null,

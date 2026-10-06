@@ -71,7 +71,7 @@ que el addon **no** hace, que es lo que ArenaNet mira:
 - no lee memoria del proceso: solo los datos que su anfitrión ya expone a todos los addons (mapa,
   personaje, si hay gameplay), los mismos que usan los overlays habituales;
 - lo que el plugin hace con ese contexto ocurre **fuera** del juego: marcar una sesión en las notas
-  del usuario. Nada del plugin vuelve al juego salvo el texto de un aviso.
+  del usuario. Vuelven al juego los avisos y, con suscripción `farm1`, el DTO de medición numérico y cerrado definido abajo.
 
 Un mensaje del addon que pidiera una acción (un comando, una consulta, un «empieza la sesión») no
 existe en el protocolo: las claves son cerradas y cualquier campo de más cierra la conexión.
@@ -225,7 +225,7 @@ conexión v2, `alert_ack` es `unexpected_message`, como cualquier tipo desconoci
 ## Versión 3: el acuse de un aviso
 
 Hasta v2 el addon no decía si había enseñado un aviso, y el plugin no podía distinguir «enviado» de
-«visto en el juego». v3 añade solo `alert_ack`.
+«visto en el juego». v3 añade `alert_ack` y la extensión opcional negociada `farm1` descrita más abajo.
 
 | | v2 | v3 |
 |---|---|---|
@@ -406,7 +406,7 @@ Lo que lo impide estructuralmente:
 **En cada repo de addon** (`tyrian-companion-nexus`, Rust; `tyrian-companion-blish`, C#): ajustes
 de puerto y token; conectar y reconectar; `hello`; leer líneas; pintar `alert`; enviar `context`
 al cambiar, `heartbeat` en los silencios y `bye` al irse. Cero llamadas a la API de GW2, cero
-escritura hacia el plugin fuera de estos cuatro tipos, cero acciones dentro del juego.
+escritura hacia el plugin fuera de los tipos documentados; `farm1` solo añade una suscripción, nunca acciones dentro del juego.
 
 ## Aceptación (auditoría del 24 sep, pruebas 12 a 15)
 
@@ -445,7 +445,7 @@ Pendiente de QA humana en la plataforma real, y no acreditado por lo anterior:
 
 El plugin no lee Mumble Link ni NexusLink: lo leen los addons a través de su anfitrión. No
 inspecciona memoria ni proceso del juego. No automatiza ninguna acción dentro del juego. No
-transporta la cuenta, el botín ni la actividad. No saca la capa H8 del árbol. No mete binarios en
+transporta la cuenta ni una lista de botín o actividad; `farm1` añade únicamente las métricas numéricas cerradas de medición autorizadas el 6 oct 2026. No saca la capa H8 del árbol. No mete binarios en
 este repo.
 
 ## Fuentes
@@ -459,3 +459,68 @@ este repo.
 - [Blish HUD con Proton en Linux (gist)](https://gist.github.com/martinlabate/c4e6f08880a009f88dc1edaa4c6cd87a)
 - [ArenaNet, Policy: Third-Party Programs](https://help.guildwars2.com/hc/en-us/articles/360013625034-Policy-Third-Party-Programs)
 - [Obsidian, Node y Electron solo en escritorio](https://docs.obsidian.md/Plugins/Getting+started/Mobile+development)
+
+
+## Extensión opt-in `farm1`: panel de medición (6 oct 2026)
+
+El encargo Halloween amplía expresamente la salida con un panel de solo lectura. Esta excepción
+mínima al límite anterior de «solo avisos» conserva v3 y sus mensajes `hello`, `welcome` y `alert`
+exactamente iguales. No envía nombres, builds, IDs de cuenta/personaje, precios, oro, secretos,
+listas de objetos, buffs activos ni señales de AFK. H8 continúa aislado.
+
+Tras el `welcome` v3, el servidor anuncia una capacidad separada:
+
+```json
+{"v":3,"type":"farming_cap","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"farm1"}
+```
+
+Un cliente antiguo ignora el tipo desconocido. Un cliente nuevo que quiera mostrar el panel envía:
+
+```json
+{"v":3,"type":"farming_sub","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":0,"tag":"farm1"}
+```
+
+Sus claves son exactas y consume la MISMA secuencia addon→plugin que `context`, `heartbeat`, `bye`
+y `alert_ack`. Solo se admite en v3. Repetir la suscripción consume la siguiente secuencia de entrada,
+pero no manda otra lectura ni crea otro temporizador. Una conexión v2, pendiente o no suscrita nunca
+recibe estado de farming. La suscripción no solicita API ni inicia o finaliza una sesión.
+
+El servidor envía el snapshot actual al suscribirse y después cada 5 segundos, sin backlog ni consultas
+adicionales. Esta secuencia de salida empieza en 1 para cada conexión nueva y es INDEPENDIENTE de
+`alert.seq`, los recibos, los acuses y la deduplicación de avisos. El nonce identifica la conexión;
+los clientes eliminan el estado de transporte al desconectar o reconectar.
+
+```json
+{"v":3,"type":"farming_state","tag":"farm1","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":1,"ttl":15,"phase":"active","err":null,"elapsed":1200,"observed":200,"net":null,"lo":400,"hi":1200,"age":300,"slots":8,"slotSrc":"ingame","slotAge":300,"goal":"bags","target":1000,"progress":200,"eta":4800,"mf":320,"mfKind":"partial","prep":"partial"}
+```
+
+Ese objeto tiene exactamente las 24 claves del ejemplo. El frame completo no supera 512 bytes sin
+terminador. Toda métrica es int32 o `null`; todas son no negativas salvo `net`, que admite signo.
+Valores fraccionarios, no finitos o fuera del rango son `null`. Se redondea la banda hacia fuera:
+`lo` abajo, `hi` arriba; con solo límite inferior `hi=null`, y sin evidencia ambos `null`. `seq` es un
+int32 positivo. `ttl` vale siempre 15 segundos y describe vigencia del TRANSPORTE.
+
+| Campo | Significado cerrado |
+|---|---|
+| `phase` | `idle`, `starting`, `active`, `stopping`, `provisional`, `complete`, `error`, `abandoned` |
+| `err` | `null`, `start`, `observe`, `stop`, `save`, `other`; diferencia fallo de inicio, lectura, cierre y guardado |
+| `elapsed` | Segundos de la duración declarada, descontando interrupciones registradas; `null` sin punto de partida suficiente |
+| `observed` | Incrementos de bolsas observados entre lecturas API; se conserva el contador al reconciliar el cierre; `null` si una recarga perdió esos incrementos |
+| `net` | Delta neto retenido al cierre, separado de lo observado; `null` antes del cierre o sin delta válido |
+| `lo`, `hi` | Banda de bolsas/h calculada sobre la ventana observada y el margen de caché; no un ritmo de botín en vivo |
+| `age` | Segundos desde la última observación API de bolsas; aumenta sin que el tick la rejuvenezca |
+| `slots` | Huecos libres de las bolsas del personaje relevante, nunca suma de banco o de otros personajes |
+| `slotSrc` | `ingame` para gameplay autenticado y capturado, `recent` para actividad API inferida, `unknown` sin selección demostrable |
+| `slotAge` | Segundos desde el snapshot que midió los huecos; independiente de `age` y `ttl` |
+| `goal` | `none`, `bags` o `duration`, capturado al iniciar la sesión y conservado al recargar |
+| `target`, `progress` | Bolsas para `bags`, segundos para `duration`; `null` para `none` o evidencia insuficiente |
+| `eta` | Segundos restantes del modelo del host; bolsas exige 3 observaciones, 20 min de muestra y edad máxima de 15 min; duración es cuenta atrás, nunca inferida del botín |
+| `mf`, `mfKind` | Porcentaje de Hallazgo mágico parcial, etiquetado `partial`; sin evidencia `mf=null`, `mfKind=unknown` |
+| `prep` | `partial`, `attention` o `unknown`; preparación opcional, sin certificación de buffs ni bloqueo de medición |
+
+El addon muestra conexión y medición como estados distintos. Tras 15 s sin `farming_state` marca el
+transporte como antiguo; conserva la lectura con su antigüedad en vez de sustituirla por cero.
+Una API antigua mantiene sus cifras y retira la ETA de bolsas. Desconectar del host no demuestra
+que terminó la sesión: el runtime sigue el contrato de presencia y sus 10 min de gracia.
+La ausencia de incrementos nunca demuestra AFK. El total obtenido entre lecturas es inobservable.
+Posición, visibilidad y escala pertenecen al menú del addon y no introducen botones de juego.

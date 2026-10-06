@@ -1012,7 +1012,7 @@ describe('Companion live sack counter', () => {
 			getLocale: () => 'es' as const,
 			getLiveSessionLoot: () => ({
 				status: 'observing' as const, sessionId: 'session', restored: false, rows: [],
-				knownTotalCopper: 0, sackQuantity, hasUnknownValue: false, updatedAt: BASELINE_AT, error: null,
+				knownTotalCopper: 0, sackQuantity, observedSackGains: sackQuantity, netSackQuantity: null, hasUnknownValue: false, updatedAt: BASELINE_AT, error: null,
 			}),
 			getSessionState: () => ({
 				version: 1 as const, status: 'active' as const, sessionId: 'session',
@@ -1049,6 +1049,21 @@ describe('Companion live sack counter', () => {
 		const figures = build.call(harness, Date.now(), simpleSessionCopy('es'), 'es');
 
 		expect(figures[1]).toEqual(expect.objectContaining({ label: 'Sacos observados', value: '12', band: '18,0–36,0 sacos/h' }));
+	});
+
+	it('keeps restored observed sacks unknown and separates the signed closing net', () => {
+		const harness = harnessAt(50);
+		const restored = Object.assign(Object.create(TyrianCompanionView.prototype) as object, { ...harness, actions: { ...harness.actions,
+			getLiveSessionLoot: () => ({ ...harness.actions.getLiveSessionLoot(), status: 'complete' as const,
+				observedSackGains: null, netSackQuantity: -20, restored: true }),
+		} });
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness.
+		const terminal = (TyrianCompanionView.prototype as unknown as {
+			buildTerminalFigures(this: typeof restored, elapsedMs: number, copy: unknown, locale: string): { label: string; value: string; band?: string }[];
+		}).buildTerminalFigures;
+		const figures = terminal.call(restored, 1_800_000, simpleSessionCopy('es'), 'es');
+		expect(figures[1]).toMatchObject({ label: 'Sacos observados', value: '—' });
+		expect(figures[2]).toMatchObject({ label: 'sessionCard.netSacks', value: '-20' });
 	});
 
 	it('repaints the live figures in place on the tick the view already runs every second', () => {

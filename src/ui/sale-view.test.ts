@@ -263,10 +263,10 @@ describe('sale view render', () => {
 			storageSpace: {
 				bags: { free: 5, total: 160 }, bank: { free: 4, total: 210 }, sharedInventory: { free: 0, total: 6 },
 				lowSpace: { freeSlots: 9, totalSlots: 376, thresholdFreeSlots: 20, isLow: true },
-				materialCapacity: null,
+				materialCapacity: null, bagCharacter: { character: 'Beta', source: 'addon' },
 			},
 			rows: [row({
-				itemId: 43320, name: 'Jorcamelo', slotsUsed: 1,
+				itemId: 43320, name: 'Jorcamelo', slotsUsed: 1, bagSlotsUsed: 1,
 				decision: { action: 'hold', reason: 'below_local_band', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
 			})],
 		}));
@@ -277,7 +277,8 @@ describe('sale view render', () => {
 		// The row itself, not just `model.groups`, now says "Vender ahora" and "Libera 1 hueco.".
 		const rowEl = find(container, 'li').find((li) => li.attributes.get('data-item') === '43320')!;
 		expect(text(rowEl)).toContain('Vender ahora');
-		expect(text(rowEl)).toContain('Libera 1 hueco');
+		expect(text(rowEl)).toContain('Libera 1 hueco en las bolsas de Beta');
+		expect(text(render(model, 'en'))).toContain('Frees 1 slot in Beta’s bags');
 	});
 
 	it('H18.37: shows the verdict and its lateral mark before the meter and the free-slot line, same as Inventory', () => {

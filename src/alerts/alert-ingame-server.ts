@@ -19,6 +19,8 @@ import {
 	type IngameByeReason,
 } from './alert-ingame-protocol';
 
+import { FARMING_INGAME_REFRESH_MS, farmingIngameCapabilityLine, farmingIngameStateLine, type FarmingIngameState } from './farming-ingame-state';
+
 export { ALERT_INGAME_MAX_MESSAGE_BYTES };
 
 /**
@@ -104,6 +106,10 @@ export interface AlertIngameBridgeOptions {
 	onConnectionEvent(event: IngameConnectionEvent): void;
 	/** H18.38: a v3 `alert_ack` for an alert sent to that same connection. Others are ignored. */
 	onAlertAck?(ack: IngameAlertAck): void;
+	/** Reads cached product state only; a transport tick never starts account work. */
+	farmingState?(): FarmingIngameState;
+	/** Observes projection failures without placing runtime errors or input on the wire. */
+	onFarmingError?(error: unknown): void;
 	readonly helloTimeoutMs?: number;
 	readonly livenessTimeoutMs?: number;
 }
@@ -121,6 +127,9 @@ interface BridgeConnection {
 	/** Alert sequences written to this connection, oldest first, bounded. */
 	readonly sentAlertSeqs: Set<number>;
 	nextSeq: number;
+	farmingSubscribed: boolean;
+	farmingSeq: number;
+	farmingTimer: unknown;
 	lastSeenAtMs: number;
 	deadline: unknown;
 	endReason: 'lost' | IngameByeReason;
@@ -177,7 +186,10 @@ export async function startAlertIngameServer(
 		broadcast: (line) => { broadcastLine(runtime.authenticated, line); },
 		broadcastAlert: (alertSeq, lineFor) => broadcastAlertLines(runtime.authenticated, alertSeq, lineFor),
 		close: async () => {
-			for (const connection of [...runtime.pending, ...runtime.authenticated]) connection.socket.destroy();
+			for (const connection of [...runtime.pending, ...runtime.authenticated]) {
+				cancelFarmingTimer(connection, runtime);
+				connection.socket.destroy();
+			}
 			await server.close();
 		},
 	};
@@ -260,7 +272,7 @@ function attachClient(socket: TyrianTcpConnection, runtime: BridgeRuntime): void
 	if (runtime.pending.size >= INGAME_BRIDGE_MAX_PENDING_CONNECTIONS) { socket.destroy(); return; }
 	const connection: BridgeConnection = {
 		socket, phase: 'awaiting_hello', buffered: EMPTY_BYTES, nonce: null, version: 2, client: null,
-		sentAlertSeqs: new Set(), nextSeq: 0,
+		sentAlertSeqs: new Set(), nextSeq: 0, farmingSubscribed: false, farmingSeq: 1, farmingTimer: null,
 		lastSeenAtMs: runtime.bridge.now(), deadline: null, endReason: 'lost',
 	};
 	runtime.pending.add(connection);
@@ -312,6 +324,13 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 	connection.nextSeq += 1;
 	connection.lastSeenAtMs = runtime.bridge.now();
 	armDeadline(connection, runtime, runtime.bridge.livenessTimeoutMs ?? INGAME_BRIDGE_LIVENESS_TIMEOUT_MS, 'liveness_timeout');
+	if (message.value.type === 'farming_sub') {
+		if (!connection.farmingSubscribed && runtime.bridge.farmingState) {
+			connection.farmingSubscribed = true;
+			sendFarmingState(connection, runtime);
+		}
+		return;
+	}
 	if (message.value.type === 'context') {
 		const { state, mapId, character } = message.value;
 		runtime.bridge.onConnectionEvent({
@@ -332,6 +351,7 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 		// connection stops counting the moment the addon says it is leaving.
 		connection.endReason = message.value.reason;
 		connection.phase = 'closed';
+		cancelFarmingTimer(connection, runtime);
 		cancelDeadline(connection, runtime);
 		runtime.authenticated.delete(connection);
 		emitClosed(connection, runtime);
@@ -361,6 +381,9 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 	connection.nextSeq = 0;
 	connection.lastSeenAtMs = runtime.bridge.now();
 	connection.socket.write(`${ingameWelcomeLine(runtime.serverInstance, nonce, connection.version)}\n`);
+	if (connection.version === 3 && runtime.bridge.farmingState) {
+		connection.socket.write(`${farmingIngameCapabilityLine(nonce)}\n`);
+	}
 	armDeadline(connection, runtime, runtime.bridge.livenessTimeoutMs ?? INGAME_BRIDGE_LIVENESS_TIMEOUT_MS, 'liveness_timeout');
 	runtime.bridge.onConnectionEvent({
 		kind: 'authenticated', connectionId: nonce, client: hello.value.client,
@@ -376,6 +399,7 @@ function reject(connection: BridgeConnection, runtime: BridgeRuntime, code: Inga
 	if (connection.phase === 'closed') return;
 	const wasAuthenticated = connection.phase === 'authenticated';
 	connection.phase = 'closed';
+	cancelFarmingTimer(connection, runtime);
 	cancelDeadline(connection, runtime);
 	runtime.pending.delete(connection);
 	runtime.authenticated.delete(connection);
@@ -387,6 +411,7 @@ function reject(connection: BridgeConnection, runtime: BridgeRuntime, code: Inga
 
 /** The socket is gone, whichever way. Idempotent: `close` follows `error`, and `reject` may have run. */
 function settleClosed(connection: BridgeConnection, runtime: BridgeRuntime): void {
+	cancelFarmingTimer(connection, runtime);
 	cancelDeadline(connection, runtime);
 	runtime.pending.delete(connection);
 	const wasAuthenticated = runtime.authenticated.delete(connection);
@@ -420,4 +445,29 @@ function cancelDeadline(connection: BridgeConnection, runtime: BridgeRuntime): v
 	if (connection.deadline === null) return;
 	runtime.timer.cancel(connection.deadline);
 	connection.deadline = null;
+}
+
+/** At most one current snapshot per tick, with its own sequence and no alert receipt. */
+function sendFarmingState(connection: BridgeConnection, runtime: BridgeRuntime): void {
+	if (connection.phase !== 'authenticated' || !connection.farmingSubscribed || connection.nonce === null) return;
+	if (connection.farmingSeq > 2_147_483_647) { reject(connection, runtime, 'sequence_mismatch'); return; }
+	try {
+		const state = runtime.bridge.farmingState?.();
+		if (state === undefined) return;
+		connection.socket.write(`${farmingIngameStateLine(state, connection.nonce, connection.farmingSeq)}\n`);
+		connection.farmingSeq += 1;
+	} catch (error) {
+		runtime.bridge.onFarmingError?.(error);
+	}
+	if (connection.phase !== 'authenticated') return;
+	connection.farmingTimer = runtime.timer.schedule(() => {
+		connection.farmingTimer = null;
+		sendFarmingState(connection, runtime);
+	}, FARMING_INGAME_REFRESH_MS);
+}
+
+function cancelFarmingTimer(connection: BridgeConnection, runtime: BridgeRuntime): void {
+	if (connection.farmingTimer === null) return;
+	runtime.timer.cancel(connection.farmingTimer);
+	connection.farmingTimer = null;
 }

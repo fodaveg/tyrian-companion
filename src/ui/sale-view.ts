@@ -67,7 +67,7 @@ export function renderSaleView(
 	// building the review-fix DOM assertions for the calendar's own bars, 26 sep 2026).
 	const sale = container.createDiv({ cls: 'tyrian-sale' });
 	sale.setAttribute('aria-label', translator.t('sale.view.title'));
-	if (model.hero !== null) sale.append(renderHeroCard(model.hero, model.nowMs, translator, ui));
+	if (model.hero !== null) sale.append(renderHeroCard(model.hero, model.nowMs, translator, ui, model.storageSpace?.bagCharacter?.character ?? null));
 	if (model.calendar.length > 0) sale.append(renderCalendar(model.calendar, model.nowMs, translator));
 	if (model.status === 'empty' && model.hero === null && model.calendar.length === 0) {
 		sale.createEl('p', { text: translator.t('sale.view.empty') });
@@ -143,7 +143,7 @@ function renderBlocked(model: SaleViewModel, translator: Translator): HTMLElemen
 	return surface;
 }
 
-function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Translator, ui: IconPainter): HTMLElement {
+function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Translator, ui: IconPainter, bagCharacter: string | null): HTMLElement {
 	const article = createEl('article', { cls: 'tyrian-sale__card tyrian-sale__card--hero' });
 	article.setAttribute('aria-labelledby', `tyrian-sale-hero-${String(hero.itemId)}`);
 	const head = article.createDiv({ cls: 'tyrian-sale__head' });
@@ -156,7 +156,7 @@ function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Tran
 	small.textContent = quantityAndSlots(hero, translator);
 	const verdict = article.createEl('p', { cls: 'tyrian-sale__verdict' });
 	verdict.append(renderActionBadge(hero.action, translator));
-	verdict.append(createSpan({ text: rowDetailText(hero, nowMs, translator) }));
+	verdict.append(createSpan({ text: rowDetailText(hero, nowMs, translator, bagCharacter) }));
 	if (hero.openVsSell !== null) {
 		const comparison = article.createEl('p', { cls: 'tyrian-sale__why' });
 		comparison.createEl('strong', { text: `${translator.t('sale.hero.open')}: ` });
@@ -269,11 +269,11 @@ function renderGroup(
 	head.createSpan({ text: translator.t('sale.row.head.decision') });
 	head.createSpan({ text: translator.t('sale.row.head.price') });
 	head.createSpan({ text: translator.t('sale.row.head.value') });
-	for (const row of rows) list.append(renderRow(row, model.nowMs, translator, ui));
+	for (const row of rows) list.append(renderRow(row, model.nowMs, translator, ui, model.storageSpace?.bagCharacter?.character ?? null));
 	return section;
 }
 
-function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator, ui: IconPainter): HTMLElement {
+function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator, ui: IconPainter, bagCharacter: string | null): HTMLElement {
 	const li = createEl('li', { cls: 'tyrian-sale__row', attr: { 'data-item': String(row.itemId) } });
 	const item = li.createDiv({ cls: 'tyrian-sale__item' });
 	item.append(renderIcon(row.name, row.icon));
@@ -284,7 +284,7 @@ function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator,
 	});
 	const decision = li.createDiv({ cls: 'tyrian-sale__decision' });
 	decision.append(renderActionBadge(row.action, translator));
-	decision.createEl('small', { text: rowDetailText(row, nowMs, translator) });
+	decision.createEl('small', { text: rowDetailText(row, nowMs, translator, bagCharacter) });
 	const price = li.createDiv({ cls: 'tyrian-sale__price' });
 	if (row.bidCopper === null) price.setText(translator.t('sale.quote.none'));
 	else price.append(renderMoney(row.bidCopper, translator));
@@ -303,9 +303,12 @@ function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator,
 	return li;
 }
 
-function rowDetailText(row: SaleRowViewModel, nowMs: number, translator: Translator): string {
+function rowDetailText(row: SaleRowViewModel, nowMs: number, translator: Translator, bagCharacter: string | null): string {
 	if (row.slotsFreedLabel !== null) {
-		const freed = translator.t(row.slotsFreedLabel === 1 ? 'sale.detail.freesSlots.one' : 'sale.detail.freesSlots.many', { count: row.slotsFreedLabel });
+		const freed = translator.t(bagCharacter === null
+			? (row.slotsFreedLabel === 1 ? 'sale.detail.freesSlots.one' : 'sale.detail.freesSlots.many')
+			: (row.slotsFreedLabel === 1 ? 'sale.detail.freesSlots.namedOne' : 'sale.detail.freesSlots.namedMany'),
+			{ count: row.slotsFreedLabel, character: bagCharacter ?? '' });
 		return `${freed}.`;
 	}
 	if (row.action === 'not_yet' && row.window !== null) {

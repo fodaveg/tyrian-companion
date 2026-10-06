@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
+import { storageDeltaSnapshot, looseHolding } from './account/__fixtures__/storage-delta';
 import { createTranslator } from './core/i18n';
 import {
 	TyrianCompanionCore,
@@ -11,6 +12,7 @@ import {
 	resolveSaleSeasonalInputFor,
 	saleOpenVsSellCopper,
 	saleSourceRowFromAdvisorRow,
+	saleBagSlotsUsed,
 } from './runtime/tyrian-companion-core';
 import { festivalCalendarEntryForItem, type FestivalCalendarCandidateV1 } from './economy/seasonal-window';
 import { sellTimingHistoryBagDays } from './economy/__fixtures__/sell-timing-history-36038';
@@ -506,6 +508,18 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 			expect(model.status).toBe('ready');
 			expect(model.groups).not.toEqual([]);
 		});
+	});
+});
+
+describe('sale bag liberation producer', () => {
+	it('counts fully allocated selected-character bag stacks once, excluding bank, other characters and partial stacks', () => {
+		const holding = (character: string, quantity: number) => looseHolding(36038, quantity, { source: 'character', character, container: 'bag', bagIndex: 0, slot: 0 });
+		const holdings = [holding('Astra Uno', 20), holding('Other', 20), looseHolding(36038, 20, { source: 'bank', slot: 0 }), holding('Astra Uno', 20)];
+		const snapshot = storageDeltaSnapshot({ holdings });
+		const row = { allocations: holdings.map((entry, index) => ({ positionRef: `#/positions/36038/${String(index)}`, quantity: index === 3 ? 10 : entry.quantity, location: entry.location })) };
+		row.allocations.push({ ...row.allocations[0]! });
+		expect(saleBagSlotsUsed(row, snapshot, 'Astra Uno')).toBe(1);
+		expect(saleBagSlotsUsed(row, snapshot, null)).toBeNull();
 	});
 });
 

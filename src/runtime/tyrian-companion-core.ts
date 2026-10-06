@@ -12,6 +12,13 @@
  * builtin (`src/test/module-boundary.test.ts`, `npm run build:host-esm`).
  */
 
+import { farmingBagCapacity, farmingGoalForSession, projectFarmingIngameState } from './farming-runtime-projection';
+import { observeFarmingSessionContext, readFarmingSessionContext, type FarmingSessionContext, type FarmingGroupContext } from './farming-session-context';
+import { normalizeFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
+import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
+import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import type { FarmingIngameState } from '../alerts/farming-ingame-state';
+
 import { installDomHelpers } from '../host/dom-polyfill';
 import type {
 	CreateTyrianRuntime,
@@ -438,6 +445,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private sessionHistory!: SessionHistoryService;
 	private lootPresentation = new LootPresentationCache(() => this.renderViews());
 	private liveSessionLoot!: LiveSessionLootTracker;
+	private farmingSessionContext: FarmingSessionContext | null = null;
+	private farmingGroupContext: FarmingGroupContext = null;
+	private farmingReminders: FarmingManualReminder[] = [];
+	private farmingSettingsFlight: Promise<void> = Promise.resolve();
 	private sessionSummarySaveState: 'unknown' | 'saving' | 'saved' | 'failed' = 'unknown';
 	private storedSessionLootSummary: StoredSessionLootSummary | null = null;
 	/** Economic evidence measured for the completed session on screen, or `null` while unmeasured. */
@@ -1165,7 +1176,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			objects: {
 				derivedGoals: async () => await inventoryAnalysis.derivedGoals(),
 				evaluate: async (source, uncertainItemIds) => await inventoryAnalysis.evaluate(
-					source, uncertainItemIds, { refreshSeeds: this.inventoryAnalysisForSync },
+					source, uncertainItemIds, { refreshSeeds: this.inventoryAnalysisForSync, storageCharacter: this.storageCharacterFromIngame() },
 				),
 			},
 			// One macrotask between the classifier and the discard allowlist (each a whole-account
@@ -1220,6 +1231,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			onObservedDelta: (delta) => {
 				const session = this.sessions.getState();
 				if (session.status === 'active') {
+					const context = this.currentFarmingSessionContext(session.sessionId);
+					if (context && delta.status !== 'invalid') this.persistFarmingSessionContext(observeFarmingSessionContext(context, delta.window?.to ?? null));
 					fireAndForgetLocal(this.localDebugActions,
 						{ component: 'session', action: 'session_projection', state: 'live_loot' },
 						() => this.liveSessionLoot.observe(session.sessionId, delta));
@@ -1821,7 +1834,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		for (const [itemId, row] of rowsByItemId) {
 			if (itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID || !calendarItemIds.has(itemId)) continue;
 			if (row.decision?.action === 'hold_for_legendary') continue;
-			rows.push(saleSourceRowFromAdvisorRow(row, bidByItemId.get(itemId) ?? null));
+			rows.push({ ...saleSourceRowFromAdvisorRow(row, bidByItemId.get(itemId) ?? null),
+				bagSlotsUsed: saleBagSlotsUsed(row, analysis?.source.input.snapshot ?? null, analysis?.objects?.storageSpace?.bagCharacter?.character ?? null),
+			});
 		}
 		return buildSaleViewModel({
 			status: advisorModel.status,
@@ -1830,6 +1845,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			...(advisorModel.storageSpace === undefined ? {} : { storageSpace: advisorModel.storageSpace }),
 			hero, rows, calendar,
 		});
+	}
+
+	/** Authenticated current gameplay only: a lost connection is not a character selector. */
+	private storageCharacterFromIngame(): string | null {
+		const presence = this.getIngamePresence();
+		return presence.status === 'present' && presence.context?.state === 'gameplay'
+			? presence.context.character : null;
 	}
 
 	/**
@@ -1848,6 +1870,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		yearThresholdCopper: number | null;
 		openVsSell: { openCopper: number; sellCopper: number } | null;
 	}) | null {
+		const analysis = this.inventoryAdvisor.analysis();
 		const timing = this.saleHeroTiming;
 		const projection = this.getSellSignalState()?.projection ?? null;
 		if (row === null && timing === null) return null;
@@ -1865,6 +1888,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			icon: row?.icon ?? null,
 			ownedQuantity: row?.ownedQuantity ?? 0,
 			slotsUsed: row?.allocations.length ?? 0,
+			bagSlotsUsed: row === null ? null : saleBagSlotsUsed(row, analysis?.source.input.snapshot ?? null, analysis?.objects?.storageSpace?.bagCharacter?.character ?? null),
 			// The Saco is a container, never a bankable material.
 			materialStorageEligible: false,
 			decision,
@@ -2956,6 +2980,94 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.lootPresentation.get();
 	}
 
+	/** Session-local intent is matched by id after reload, never inferred from changed defaults. */
+	private currentFarmingSessionContext(sessionId: string): FarmingSessionContext | null {
+		if (this.farmingSessionContext?.sessionId === sessionId) return this.farmingSessionContext;
+		try {
+			const loaded = readFarmingSessionContext(this.host.localStorage?.load('tyrian-farming-session'));
+			if (loaded?.sessionId === sessionId) this.farmingSessionContext = loaded;
+		} catch (error) { this.recordIngameSessionFailure(error); }
+		return this.farmingSessionContext?.sessionId === sessionId ? this.farmingSessionContext : null;
+	}
+
+	private persistFarmingSessionContext(context: FarmingSessionContext): void {
+		this.farmingSessionContext = context;
+		try { this.host.localStorage?.save('tyrian-farming-session', context); }
+		catch (error) { this.recordIngameSessionFailure(error); }
+	}
+
+	/** Default intent is saved for the next session; active measurements keep their captured goal. */
+	getFarmingGoal(): FarmingGoalV1 { return normalizeFarmingGoal(this.settings.farmingGoal); }
+	async saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { await this.saveFarmingSettings({ farmingGoal: goal }); }
+	getFarmingGroupContext(): FarmingGroupContext { return this.farmingGroupContext; }
+	setFarmingGroupContext(context: FarmingGroupContext): void { this.farmingGroupContext = context; }
+	getFarmingPreparationSettings(): FarmingPreparationSettingsV1 { return { ...this.settings.farmingPreparation }; }
+	async saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void> {
+		await this.saveFarmingSettings({ farmingPreparation: settings });
+	}
+	/** Serializes the two visible preference forms, merging each write against the latest saved settings. */
+	private async saveFarmingSettings(settings: Partial<TyrianSettings>): Promise<void> {
+		const save = async (): Promise<void> => {
+			const result = await this.updateSettings(settings);
+			if (result.status !== 'saved') throw new Error('Farming settings are unavailable.');
+		};
+		const flight = this.farmingSettingsFlight.then(save, save);
+		this.farmingSettingsFlight = flight;
+		await flight;
+	}
+	getFarmingReminders(): readonly FarmingManualReminder[] { return this.farmingReminders.map((reminder) => ({ ...reminder })); }
+	startFarmingReminder(kind: FarmingReminderKind, minutes: number): void {
+		if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1_440) return;
+		this.farmingReminders = [...this.farmingReminders.filter((reminder) => reminder.kind !== kind),
+			{ kind, durationMinutes: minutes, startedAt: new Date().toISOString() }];
+	}
+	clearFarmingReminder(kind: FarmingReminderKind): void {
+		this.farmingReminders = this.farmingReminders.filter((reminder) => reminder.kind !== kind);
+	}
+
+	/** The newest already captured capacity evidence; reading it never requests account data. */
+	private farmingCapacitySnapshot(): StorageSnapshot | null {
+		if (!this.runtimeReady) return null;
+		const baseline = this.sessions.getBaselineSnapshot();
+		const inventory = this.inventoryAdvisor.analysis()?.source.input.snapshot ?? null;
+		const live = this.assistedDetection.getLastSnapshot();
+		return [baseline, inventory, live].filter((snapshot): snapshot is StorageSnapshot => snapshot !== null && (!baseline || snapshot.accountId === baseline.accountId))
+			.sort((left, right) => Date.parse(right.completedAt) - Date.parse(left.completedAt))[0] ?? null;
+	}
+
+	getFarmingGoalProgress(): FarmingGoalProgress | null {
+		if (!this.runtimeReady) return null;
+		const state = this.sessions.getState();
+		const observed = state.status === 'error' ? state.failedState : state;
+		const context = observed.status === 'idle' ? null : this.currentFarmingSessionContext(observed.sessionId);
+		return farmingGoalForSession(state, this.getLiveSessionLoot(), context, Date.now());
+	}
+
+	getFarmingPreparationContext(): FarmingPreparationContext {
+		const state = this.getSessionState();
+		const session = state.status === 'error' ? state.failedState : state;
+		const context = session.status === 'idle' || session.status === 'starting' ? null : session.startContext;
+		const presence = this.getIngamePresence();
+		const snapshot = this.farmingCapacitySnapshot();
+		const bags = farmingBagCapacity(snapshot, presence, Date.now());
+		return {
+			characterName: context?.characterName ?? bags.character, buildName: context?.build.name ?? null,
+			freeBagSlots: bags.slots, freeBagSlotsCharacter: bags.character, freeBagSlotsObservedAt: snapshot?.completedAt ?? null, collectorMode: this.getCollectorMode(),
+			addonConnection: presence.status === 'present' ? 'connected' : 'disconnected',
+			magicFindBreakdown: context?.magicFind.breakdown ?? null, magicFindObservedAt: context?.capturedAt ?? null,
+		};
+	}
+
+	/** The game consumes the same goal/evidence as the host, with identities removed at the wire boundary. */
+	getFarmingIngameState(): FarmingIngameState {
+		return projectFarmingIngameState({
+			state: this.getSessionState(), loot: this.getLiveSessionLoot(), snapshot: this.farmingCapacitySnapshot(),
+			presence: this.getIngamePresence(), goal: this.getFarmingGoalProgress(), now: Date.now(),
+			saveFailed: this.sessionSummarySaveState === 'failed', preparationEnabled: this.settings.farmingPreparation.enabled,
+			observationFailed: this.runtimeReady && this.assistedDetection.getState().scheduler.consecutiveFailures > 0,
+		});
+	}
+
 	getLiveSessionLoot(): LiveSessionLootState {
 		// H checkpoint 16 (Hebra): `liveSessionLoot` is assigned inside `initializeRuntime`, but a
 		// saved-tab view can mount and read this before that finishes. Answer with the same `idle`
@@ -3443,6 +3555,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				fillRandom: (bytes) => { crypto.getRandomValues(bytes); },
 				onConnectionEvent: (event) => { this.ingamePresenceTracker().apply(event); },
 				onAlertAck: (ack) => { this.ingameReceipts.acked(ack.alertSeq, ack.client, ack.atMs); },
+				farmingState: () => this.getFarmingIngameState(),
+				onFarmingError: (error) => { this.recordIngameSessionFailure(error); },
 			},
 		)
 			.then((server) => {
@@ -3679,7 +3793,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const characterName = (character ?? this.settings.preferredCharacter).trim();
 		if (characterName.length === 0) return null;
 		const start = async () => {
-			await this.startManualSession({ characterName, magicFind: null, consumablesBonus: 0 });
+			await this.startManualSession({ characterName, magicFind: null, consumablesBonus: this.settings.farmingPreparation.manualMagicFindBonus ?? 0 });
 		};
 		await (this.localDebugActions?.run(
 			{ component: 'session', action: 'session_start', state: 'ingame_presence' }, start,
@@ -4427,6 +4541,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
 		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
 		const detection = this.assistedDetection.getState();
+		const capturedGoal = normalizeFarmingGoal(this.settings.farmingGoal);
+		const capturedGroup = this.farmingGroupContext;
 		const proposal = pendingClaim?.proposal.phase === 'start'
 			? pendingClaim.proposal.proposal : detection.status === 'start_proposed' ? detection.proposal : null;
 		const workflowProposalId = pendingClaim?.proposal.proposalId ?? proposal?.proposalId ?? null;
@@ -4440,6 +4556,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			if (runtimeLease === null) throw new Error('Session history scrub is active.');
 			const result = await this.sessions.start(input).finally(() => runtimeLease.release());
 			if (result.status === 'started') {
+				this.persistFarmingSessionContext({ version: 1, sessionId: result.state.sessionId, goal: capturedGoal,
+					groupContext: capturedGroup, observedFrom: result.state.baseline.completedAt,
+					observedAt: result.state.baseline.completedAt, sampleCount: 1 });
+				this.farmingReminders = [];
 				this.startLiveObservation(result.state.sessionId, false);
 				void this.pilotMetrics?.sessionStarted(result.state.sessionId, result.state.baseline.completedAt);
 				await this.detectionQuality.recordAccepted(
@@ -5108,6 +5228,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId))
 				?? this.ingameLabyrinthDeclaration(runtime),
 			displayNames: this.liveSessionLoot.displayNames(), firstSeenItemIds, rareUnpricedOrBoundItemIds,
+			farmingGoal: this.currentFarmingSessionContext(sessionId)?.goal,
+			farmingGoalResult: this.getFarmingGoalProgress() ?? undefined,
+			comparisonMetadata: { groupContext: this.currentFarmingSessionContext(sessionId)?.groupContext ?? null,
+				presence: this.ingameSessionMarker?.presenceEvidenceFor(sessionId, runtime.state.status === 'complete' ? Date.parse(runtime.state.stopRequestedAt) : undefined) ?? undefined },
+			sackObservation: this.liveSessionLoot.sackObservation(sessionId) ?? undefined,
 			locale: this.settings.language, outputFolder: this.settings.outputFolder,
 		};
 	}
@@ -5359,6 +5484,22 @@ const POSITION_RECOMMENDATION_REASON_SET: ReadonlySet<string> = new Set(POSITION
  */
 function isPositionRecommendationReasonCode(value: string): value is PositionRecommendationReasonCode {
 	return POSITION_RECOMMENDATION_REASON_SET.has(value);
+}
+
+/** Counts whole loose stacks in the selected bags, preserving reservations and physical placement. */
+export function saleBagSlotsUsed(row: Pick<InventoryAdvisorViewRow, 'allocations'>, snapshot: StorageSnapshot | null, character: string | null): number | null {
+	if (snapshot === null || character === null) return null;
+	const cleared = new Set<number>();
+	for (const allocation of row.allocations) {
+		const match = /^#\/positions\/(\d+)\/(\d+)$/u.exec(allocation.positionRef);
+		if (match === null) continue;
+		const index = Number(match[2]);
+		const holding = snapshot.holdings[index];
+		if (holding?.itemId === Number(match[1]) && holding.state === 'loose' && holding.quantity === allocation.quantity
+			&& holding.location.source === 'character' && holding.location.container === 'bag'
+			&& holding.location.character === character) cleared.add(index);
+	}
+	return cleared.size;
 }
 
 /**

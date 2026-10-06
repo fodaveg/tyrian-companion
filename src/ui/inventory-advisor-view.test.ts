@@ -118,9 +118,10 @@ describe('Inventory Advisor view', () => {
 			.toEqual(['Oro', 'Bulto']);
 
 		const low = storageModel([heavy, bulky], true);
+		low.storageSpace!.bagCharacter = { character: 'Beta', source: 'addon' };
 		const mount = render(low, 'es');
 		const copy = text(mount.elements());
-		expect(copy).toContain('Huecos libres: bolsas 3/30 · banco 4/30 · almacén compartido sin datos');
+		expect(copy).toContain('Huecos libres: bolsas de Beta (actividad API) 3/30 · banco 4/30 · almacén compartido sin datos');
 		expect(text(walk(only(byClass(mount.elements(), 'tyrian-inventory-advisor__storage-verdict'))))).toMatch(/Poco espacio: 3 huecos libres.*20/u);
 		expect(copy).toContain('Materiales: al menos 1500 por material (mínimo visto en tu almacén)');
 		expect(only(find(mount.elements(), 'meter')).attributes.get('value')).toBe('27');
@@ -133,7 +134,7 @@ describe('Inventory Advisor view', () => {
 		// H18.37: the single list still lists the slot-freeing row first and says what it frees.
 		const rowNames = find(mount.elements(), 'strong').map((cell) => text(walk(cell)).trim());
 		expect(rowNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Oro', 'Bulto']);
-		expect(copy).toContain('2 huecos');
+		expect(copy).toContain('2 huecos en las bolsas de Beta');
 
 		const plenty = render(storageModel([heavy, bulky], false), 'en');
 		const plentyNames = find(plenty.elements(), 'strong').map((cell) => text(walk(cell)).trim());

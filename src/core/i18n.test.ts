@@ -152,7 +152,7 @@ const H5_11_KEYS = [
 	'advisor.view.storage.unknown', 'advisor.view.storage.name.bags', 'advisor.view.storage.name.bank',
 	'advisor.view.storage.name.sharedInventory', 'advisor.view.storage.low', 'advisor.view.storage.plenty',
 	'advisor.view.storage.lowUnknown', 'advisor.view.storage.meter', 'advisor.view.storage.materials',
-	'advisor.view.slotsFreed.label', 'advisor.view.slotsFreed.one', 'advisor.view.slotsFreed.many',
+	'advisor.view.slotsFreed.label', 'advisor.view.slotsFreed.namedOne', 'advisor.view.slotsFreed.namedMany', 'advisor.view.slotsFreed.one', 'advisor.view.slotsFreed.many',
 	'advisor.view.scope.showing', 'advisor.view.scope.character', 'advisor.view.scope.source.bags',
 	'advisor.view.scope.source.bank', 'advisor.view.scope.source.materials', 'advisor.view.scope.source.delivery',
 	'advisor.view.scope.outsideOne', 'advisor.view.scope.outsideMany', 'advisor.view.scope.reason.bank',

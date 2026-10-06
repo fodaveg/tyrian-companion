@@ -866,6 +866,7 @@ function mountInventoryAdvisorView(
 		const keep = keepContext();
 		const rowContext: RowRenderContext = {
 			showSlotsFreed: model.storageSpace?.lowSpace?.isLow === true,
+			bagCharacter: model.storageSpace?.bagCharacter?.character ?? null,
 			keep,
 			// Read at the click: a row outlives the `interactions` it was built under.
 			onOpenSale: () => interactions.onOpenSale?.(),
@@ -874,7 +875,7 @@ function mountInventoryAdvisorView(
 		};
 		// Whatever `renderInventoryListRow` reads besides the row itself must enter this key, or a
 		// kept row element shows a stale value after that input changes.
-		const nextRowElementsKey = JSON.stringify([rowContext.showSlotsFreed, keep === null ? null : [keep.busy, [...keep.kept]]]);
+		const nextRowElementsKey = JSON.stringify([rowContext.showSlotsFreed, rowContext.bagCharacter, keep === null ? null : [keep.busy, [...keep.kept]]]);
 		if (nextRowElementsKey !== rowElementsKey) {
 			rowElementsKey = nextRowElementsKey;
 			rowElements.clear();
@@ -1411,7 +1412,10 @@ function renderInventoryListRow(
 	actionCell.className = 'tyrian-inventory__cell c-action';
 	actionCell.append(renderActionMark(row, translator));
 	const slots = rowContext.showSlotsFreed && row.slotsFreed !== undefined && row.slotsFreed > 0
-		? translator.t(row.slotsFreed === 1 ? 'sale.detail.freesSlots.one' : 'sale.detail.freesSlots.many', { count: row.slotsFreed })
+		? translator.t(rowContext.bagCharacter === null
+			? (row.slotsFreed === 1 ? 'sale.detail.freesSlots.one' : 'sale.detail.freesSlots.many')
+			: (row.slotsFreed === 1 ? 'sale.detail.freesSlots.namedOne' : 'sale.detail.freesSlots.namedMany'),
+			{ count: row.slotsFreed, character: rowContext.bagCharacter ?? '' })
 		: null;
 	if (slots !== null) {
 		const slotsLine = createSpan();
@@ -1483,7 +1487,7 @@ function rowDetailDisclosure(
 		if (mounted) return;
 		mounted = true;
 		rowContext.mountedDetails.add(disclosure);
-		details.append(...rowDetailBody(row, translator, rowContext.concentration(row), rowContext.showSlotsFreed, rowContext.onOpenSale));
+		details.append(...rowDetailBody(row, translator, rowContext.concentration(row), rowContext.showSlotsFreed, rowContext.onOpenSale, rowContext.bagCharacter));
 	};
 	function unmountBody(): void {
 		if (!mounted) return;
@@ -1511,6 +1515,7 @@ function rowDetailBody(
 	concentration: InventoryAdvisorValueConcentration | null,
 	showSlotsFreed: boolean,
 	onOpenSale?: () => void,
+	bagCharacter: string | null = null,
 ): HTMLElement[] {
 	const body: HTMLElement[] = [];
 	if (row.containerEconomy !== undefined) {
@@ -1536,7 +1541,7 @@ function rowDetailBody(
 	addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
 	addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
 	body.push(list);
-	const context = rowContextDetails(row, translator, showSlotsFreed);
+	const context = rowContextDetails(row, translator, showSlotsFreed, bagCharacter);
 	if (context !== null) body.push(context);
 	const advanced = advancedEvidenceDetails(row.coverage, translator);
 	if (advanced !== null) body.push(advanced);
@@ -1585,6 +1590,7 @@ function renderInventoryGroupSubtotal(
 /** What every rendered row needs besides itself: the low-space detail and the quick "keep" action. */
 interface RowRenderContext {
 	readonly showSlotsFreed: boolean;
+	readonly bagCharacter: string | null;
 	readonly keep: RowKeepContext | null;
 	/** "Ver en Venta" on a container row (H18.31, lámina 3.1, decision E); absent hides the button. */
 	readonly onOpenSale?: () => void;
@@ -2024,6 +2030,7 @@ function rowContextDetails(
 	row: InventoryAdvisorViewRow,
 	translator: Translator,
 	showSlotsFreed = false,
+	bagCharacter: string | null = null,
 ): HTMLDListElement | null {
 	// H18.15: with little free space the list is ordered by it, so each row says what it frees.
 	const slotsFreed = showSlotsFreed && (row.slotsFreed ?? 0) > 0 ? row.slotsFreed ?? 0 : 0;
@@ -2034,7 +2041,10 @@ function rowContextDetails(
 	if (slotsFreed > 0) addDefinition(
 		list,
 		translator.t('advisor.view.slotsFreed.label'),
-		translator.t(slotsFreed === 1 ? 'advisor.view.slotsFreed.one' : 'advisor.view.slotsFreed.many', { count: slotsFreed }),
+		translator.t(bagCharacter === null
+			? (slotsFreed === 1 ? 'advisor.view.slotsFreed.one' : 'advisor.view.slotsFreed.many')
+			: (slotsFreed === 1 ? 'advisor.view.slotsFreed.namedOne' : 'advisor.view.slotsFreed.namedMany'),
+			{ count: slotsFreed, character: bagCharacter ?? '' }),
 	);
 	if (row.materialStorage != null) addDefinition(
 		list,

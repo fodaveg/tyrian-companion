@@ -49,6 +49,24 @@ describe('AssistedDetectionService', () => {
 		expect(harness.scheduler.starts).toEqual([120_000]);
 	});
 
+	it('exposes a detached last successful capture without extra requests, and keeps it through a failed poll', async () => {
+		const baseline = snapshot('capacity-baseline', 0, 0);
+		const harness = createHarness([baseline]);
+		expect(harness.service.getLastSnapshot()).toBeNull();
+		harness.service.armFromSnapshot(baseline, 120_000);
+		const cached = harness.service.getLastSnapshot();
+		expect(cached).toMatchObject({ snapshotId: baseline.snapshotId, completedAt: baseline.completedAt });
+		if (cached) cached.roster.length = 0;
+		expect(harness.service.getLastSnapshot()?.roster).toEqual(baseline.roster);
+		expect(harness.captures()).toBe(0);
+		// One success advances the source timestamp; the next missing fixture is an API failure.
+		await harness.scheduler.trigger();
+		await expect(harness.scheduler.trigger()).rejects.toThrow('Missing snapshot fixture');
+		expect(harness.service.getLastSnapshot()?.completedAt).toBe(baseline.completedAt);
+		harness.service.disarm();
+		expect(harness.service.getLastSnapshot()).toBeNull();
+	});
+
 	it('deduplicates concurrent arm requests', async () => {
 		let resolveSnapshot!: (value: StorageSnapshot) => void;
 		const pending = new Promise<StorageSnapshot>((resolve) => { resolveSnapshot = resolve; });

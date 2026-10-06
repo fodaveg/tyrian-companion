@@ -104,7 +104,9 @@ export type IngameSequencedMessageV2 =
 	| { readonly v: IngameBridgeVersion; readonly type: 'heartbeat'; readonly nonce: string; readonly seq: number }
 	| { readonly v: IngameBridgeVersion; readonly type: 'bye'; readonly nonce: string; readonly seq: number; readonly reason: IngameByeReason }
 	/** v3 only: the addon shows the alert the plugin sent with sequence `alertSeq`. */
-	| { readonly v: 3; readonly type: 'alert_ack'; readonly nonce: string; readonly seq: number; readonly alertSeq: number };
+	| { readonly v: 3; readonly type: 'alert_ack'; readonly nonce: string; readonly seq: number; readonly alertSeq: number }
+	/** farm1 only: opt in to the separate read-only farming stream. */
+	| { readonly v: 3; readonly type: 'farming_sub'; readonly nonce: string; readonly seq: number; readonly tag: 'farm1' };
 
 export type IngameParseResult<T> =
 	| { readonly ok: true; readonly value: T }
@@ -116,6 +118,7 @@ const SEQUENCED_KEYS = {
 	heartbeat: ['v', 'type', 'nonce', 'seq'],
 	bye: ['v', 'type', 'nonce', 'seq', 'reason'],
 	alert_ack: ['v', 'type', 'nonce', 'seq', 'alertSeq'],
+	farming_sub: ['v', 'type', 'nonce', 'seq', 'tag'],
 } as const;
 const MAP_ID_MAXIMUM = 2_147_483_647;
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -180,7 +183,7 @@ export function parseIngameSequenced(
 	if (record.v !== version) return { ok: false, code: 'frame_schema' };
 	const type = record.type;
 	// `alert_ack` exists only from v3 on: to a v2 connection it is a type like any unknown one.
-	const known = type === 'context' || type === 'heartbeat' || type === 'bye' || (type === 'alert_ack' && version === INGAME_BRIDGE_PROTOCOL_VERSION_V3);
+	const known = type === 'context' || type === 'heartbeat' || type === 'bye' || ((type === 'alert_ack' || type === 'farming_sub') && version === INGAME_BRIDGE_PROTOCOL_VERSION_V3);
 	if (!known) return { ok: false, code: 'unexpected_message' };
 	if (!exactKeys(record, SEQUENCED_KEYS[type])) return { ok: false, code: 'frame_schema' };
 	if (typeof record.nonce !== 'string' || typeof record.seq !== 'number' || !Number.isSafeInteger(record.seq)) {
@@ -189,6 +192,10 @@ export function parseIngameSequenced(
 	if (record.nonce !== expected.nonce) return { ok: false, code: 'nonce_mismatch' };
 	if (record.seq !== expected.seq) return { ok: false, code: 'sequence_mismatch' };
 	const base = { v: version, nonce: record.nonce, seq: record.seq } as const;
+	if (type === 'farming_sub') {
+		if (record.tag !== 'farm1') return { ok: false, code: 'frame_schema' };
+		return { ok: true, value: { v: 3, type, nonce: record.nonce, seq: record.seq, tag: 'farm1' } };
+	}
 	if (type === 'alert_ack') {
 		const alertSeq = record.alertSeq;
 		if (typeof alertSeq !== 'number' || !Number.isSafeInteger(alertSeq) || alertSeq < 1) return { ok: false, code: 'frame_schema' };
