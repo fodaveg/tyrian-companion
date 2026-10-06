@@ -8,7 +8,7 @@ import type { LiveObservationV1 } from './live-session-model';
 
 /** Portable alert evidence has pseudonymous session/outbox IDs, never local delivery authority. */
 export interface StoredLiveAlertOutboxV1 {
-	source: 'nexus_inventory'; accountRef: null; sessionRef: string; observationId: string; ruleVersion: 1; outboxId: string;
+	version: 1; source: 'nexus_inventory'; accountRef: null; sessionRef: string; observationId: string; ruleVersion: 1; outboxId: string;
 	state: 'awaiting_price' | 'skipped' | 'ready' | 'dispatching' | 'processed';
 	skipReason: 'no_price' | 'below_threshold' | 'session_closed' | null;
 	alert: AlertV1 | null; priceCapturedAt: string | null; thresholdCopper: number;
@@ -19,9 +19,9 @@ export type LiveNoteOutboxInput = Omit<StoredLiveAlertOutboxV1,'sessionRef'> & {
 /** Explicit projections keep transport paths, source instance and unexpected object fields out. */
 export async function prepareLiveNoteOutbox(rows: readonly LiveNoteOutboxInput[], sessionId: string,
 	sessionRef: string): Promise<StoredLiveAlertOutboxV1[] | null> {
-	if (rows.some((row) => row.sessionId !== sessionId || row.source !== 'nexus_inventory' || row.accountRef !== null)) return null;
+	if (rows.some((row) => row.version !== 1 || row.sessionId !== sessionId || row.source !== 'nexus_inventory' || row.accountRef !== null)) return null;
 	return await Promise.all(rows.map(async (row) => ({
-		source: row.source,accountRef: null,sessionRef,observationId: row.observationId,ruleVersion: row.ruleVersion,
+		version: row.version,source: row.source,accountRef: null,sessionRef,observationId: row.observationId,ruleVersion: row.ruleVersion,
 		outboxId: await sha256Text(row.outboxId),state: row.state,skipReason: row.skipReason,
 		alert: row.alert === null ? null : { kind: row.alert.kind,itemId: row.alert.itemId,name: row.alert.name,quantity: row.alert.quantity,
 			totalCopper: row.alert.totalCopper,priceStatus: row.alert.priceStatus,reason: row.alert.reason },
@@ -37,9 +37,9 @@ export function isStoredLiveNoteOutbox(value: unknown, sessionRef: string, obser
 	if (!Array.isArray(value)) return false;
 	const ids = new Set<string>(); const observationIds = new Set<string>();
 	for (const row of value) {
-		if (!record(row) || !keys(row,['source','accountRef','sessionRef','observationId','ruleVersion','outboxId','state',
+		if (!record(row) || !keys(row,['version','source','accountRef','sessionRef','observationId','ruleVersion','outboxId','state',
 			'skipReason','alert','priceCapturedAt','thresholdCopper','claimedAt','deliveryReport','sentTo','receipt'])
-			|| row.source !== 'nexus_inventory' || row.accountRef !== null || row.sessionRef !== sessionRef || row.ruleVersion !== 1
+			|| row.version !== 1 || row.source !== 'nexus_inventory' || row.accountRef !== null || row.sessionRef !== sessionRef || row.ruleVersion !== 1
 			|| typeof row.outboxId !== 'string' || !/^[a-f0-9]{64}$/u.test(row.outboxId) || ids.has(row.outboxId)
 			|| !['awaiting_price','skipped','ready','dispatching','processed'].includes(row.state as string)
 			|| !(row.skipReason === null || ['no_price','below_threshold','session_closed'].includes(row.skipReason as string))

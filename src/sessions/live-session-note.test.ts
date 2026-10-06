@@ -108,14 +108,14 @@ describe('portable live session notes', () => {
 	});
 	it('preserves processed alert receipts while anonymizing its local session and outbox identity', async () => {
 		const input = fixture(); const observation = input.journal[1]!.observations[0]!;
-		const outbox: LiveNoteOutboxInput = { source: 'nexus_inventory',accountRef: null,sessionId: input.record.sessionId,
+		const outbox: LiveNoteOutboxInput = { version: 1,source: 'nexus_inventory',accountRef: null,sessionId: input.record.sessionId,
 			observationId: observation.id,ruleVersion: 1,outboxId: `${input.record.sessionId}/private-dispatch-id`,state: 'processed',skipReason: null,
 			alert: {kind: 'valuable_loot',itemId: 12147,name: 'Champiñón',quantity: 2,totalCopper: 20,priceStatus: 'known',reason: 'valuable'},
 			priceCapturedAt: iso(1),thresholdCopper: 10,claimedAt: iso(1),deliveryReport: {delivered: ['ingame'],failed: [],rejected: false},
 			sentTo: ['nexus'],receipt: {state: 'received',client: 'nexus',atMs: AT + 2000} };
 		(input.journal[1] as LiveJournalEntryV1 & {outbox: LiveNoteOutboxInput[]}).outbox = [outbox];
 		const {session,note} = await rendered(input); const stored = session.journal[1]!.outbox[0]!;
-		expect(stored).toMatchObject({sessionRef: session.sessionRef,state: 'processed',receipt: outbox.receipt,deliveryReport: outbox.deliveryReport});
+		expect(stored).toMatchObject({version: 1,sessionRef: session.sessionRef,state: 'processed',receipt: outbox.receipt,deliveryReport: outbox.deliveryReport});
 		expect(stored.outboxId).toMatch(/^[a-f0-9]{64}$/u); expect(note.content).not.toContain('private-dispatch-id');
 		expect(note.content).not.toContain(input.record.sessionId); expect((await inspectLiveSessionNote(note.content)).status).toBe('ok');
 		expect(serializeLiveSessionExport(session,'timeline','csv')).toContain('"alert",');
@@ -136,6 +136,22 @@ describe('portable live session notes', () => {
 	it('preserves eligible source sample count independently of complete journal entries', async () => {
 		const input = fixture(); input.record.sampleCount = 2;
 		const {session} = await rendered(input); expect(session.sampleCount).toBe(2); expect(session.journal).toHaveLength(3);
+	});
+	it.each(['missing','unknown'] as const)('rejects %s outbox versions at the producer and portable boundaries', async (kind) => {
+		const input = fixture(); const observation = input.journal[1]!.observations[0]!;
+		const outbox: LiveNoteOutboxInput = {version: 1,source: 'nexus_inventory',accountRef: null,sessionId: input.record.sessionId,
+			observationId: observation.id,ruleVersion: 1,outboxId: 'local-outbox-id',state: 'awaiting_price',skipReason: null,
+			alert: null,priceCapturedAt: null,thresholdCopper: 0,claimedAt: null,deliveryReport: null,sentTo: [],receipt: null};
+		const entry = input.journal[1] as LiveJournalEntryV1 & {outbox: LiveNoteOutboxInput[]}; entry.outbox = [outbox];
+		const payload = await prepareLiveSessionPayload(input); if (payload === null) throw new Error('fixture');
+		const corruptStored = payload.journal[1]!.outbox[0]! as unknown as Record<string,unknown>;
+		const corruptInput = outbox as unknown as Record<string,unknown>;
+		if (kind === 'missing') { delete corruptStored.version; delete corruptInput.version; }
+		else { corruptStored.version = 2; corruptInput.version = 2; }
+		expect(isStoredLiveSessionPayload(payload)).toBe(false);
+		expect(await prepareLiveSessionPayload(input)).toBeNull();
+		input.record.phase = 'active'; input.record.endedAt = null;
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toBeNull();
 	});
 	it('rejects truncated journal, signed-summary mismatch, causal claims and unknown nested keys', async () => {
 		const input = fixture();
