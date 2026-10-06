@@ -22,7 +22,7 @@ import { INVENTORY_ADVISOR_VIEW_TYPE } from '../ui/inventory-advisor-item-view';
 import { PRODUCT_ACTION_IDS } from '../ui/product-action-controller';
 import { SALE_VIEW_TYPE } from '../ui/sale-item-view';
 import { createTyrianRuntime } from './index';
-import { ALERT_INGAME_SECRET_COMMAND_ID } from './tyrian-companion-core';
+import { ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID } from './tyrian-companion-core';
 
 /**
  * R1c: the whole of Tyrian booted through `createTyrianRuntime(host).start()` over a host with no
@@ -150,7 +150,9 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual([
 			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'],
 		]);
-		expect(registered.commands.map(({ id }) => id)).toEqual([...PRODUCT_ACTION_IDS, ALERT_INGAME_SECRET_COMMAND_ID]);
+		expect(registered.commands.map(({ id }) => id)).toEqual([
+			...PRODUCT_ACTION_IDS, ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID,
+		]);
 		expect(registered.ribbons.map(({ icon }) => icon)).toEqual(['compass']);
 		expect(registered.codeBlocks).toEqual([PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE]);
 		expect(registered.panels).toHaveLength(1);
@@ -158,6 +160,37 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		// The account, session and storage services wait for the host to say it is ready.
 		expect(registered.ready).toHaveLength(1);
 		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('offers the two export commands only while there is something to export, and answers with a notice', async () => {
+		const { host, registered } = neutralHost();
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		const command = (id: string) => registered.commands.find((candidate) => candidate.id === id)!;
+		const live = command(EXPORT_LIVE_SESSION_COMMAND_ID), legacy = command(EXPORT_LEGACY_SESSION_COMMAND_ID);
+		expect(live.name).toBe('Export the current session (CSV)');
+		expect(legacy.name).toBe('Export the saved old session');
+		const core = runtime as unknown as Record<string, unknown>;
+		const exportLive = vi.spyOn(runtime, 'exportLiveSession').mockResolvedValue();
+		const exportLegacy = vi.spyOn(runtime, 'exportPreservedLegacySession').mockResolvedValue();
+
+		// Nothing to export yet: unavailable, and a press does nothing.
+		expect(live.checkCallback?.(true)).toBe(false); expect(legacy.checkCallback?.(true)).toBe(false);
+		live.checkCallback?.(false); legacy.checkCallback?.(false);
+		expect(exportLive).not.toHaveBeenCalled(); expect(exportLegacy).not.toHaveBeenCalled();
+
+		core.runtimeReady = true;
+		core.liveSessions = { getRuntime: () => ({ sessionId: 's' }) };
+		core.sessions = { getPreservedLegacyRuntime: () => ({}) };
+		expect(live.checkCallback?.(true)).toBe(true); expect(legacy.checkCallback?.(true)).toBe(true);
+		expect(exportLive).not.toHaveBeenCalled();
+		live.checkCallback?.(false);
+		await vi.waitFor(() => expect(registered.notices).toContain('Export saved.'));
+		expect(exportLive).toHaveBeenCalledWith('timeline', 'csv');
+		exportLegacy.mockRejectedValueOnce(new Error('no'));
+		legacy.checkCallback?.(false);
+		await vi.waitFor(() => expect(registered.notices).toContain('Could not export. Your data is kept; try again.'));
+		expect(exportLegacy).toHaveBeenCalledOnce();
 	});
 
 	it('boots the runtime when the host is ready, opens the ribbon menu through the host, and drains the log on stop', async () => {

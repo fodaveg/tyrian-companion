@@ -17,9 +17,9 @@ sesión real). La 0.5.0 publicada sigue siendo la última release.
   sesión guardada, pestañas Cronología/Resumen, coberturas, «Detalles», paginación, selector
   CSV/JSON con «Exportar», gráfica de cantidad y «Datos de la gráfica», huecos en lista, objetos
   valiosos, comparar tandas, preparar la próxima tanda y sesiones anteriores de cuenta. Los datos,
-  las notas de sesión, los avisos y el historial durable se conservan; la exportación de la sesión
-  activa no tiene ahora control visible (el código sigue en el núcleo) y el historial se exporta
-  desde Ajustes → Mantenimiento.
+  las notas de sesión, los avisos y el historial durable se conservan. Dos comandos nuevos, sin
+  interfaz propia, exportan «la sesión actual (CSV)» y «la sesión antigua guardada», disponibles
+  solo si hay algo que exportar; el historial se exporta desde Ajustes → Mantenimiento.
 - **Sesión antigua.** Si una sesión anterior de cuenta impide abrir una nueva, la pestaña lo dice
   en una línea; el descarte solo se ofrece si la acción existente está disponible.
 - **Ajustes en una página.** Modo, clave de API, carpeta de salida, aviso del juego (con su token

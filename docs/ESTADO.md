@@ -8,8 +8,8 @@ Sesión simplificada y ajustes en una página (ver [CHANGELOG](CHANGELOG.md)); m
 Verificado en el árbol de trabajo, con tests acotados y `--maxWorkers=1`:
 
 - `tsc --noEmit --skipLibCheck`: 0 errores.
-- vitest de `src/ui`, `src/host/hebra`, i18n y límites de módulo: 989 pasados, 1 omitido; guardrails
-  (ajustes, arquitectura i18n): 68 pasados. Test de `markStoppedByPlayer` en el marker de sesión.
+- vitest de `src/ui`, `src/runtime`, `src/host/hebra`, `src/core`, `main.test.ts` y el marker de
+  sesión: 1584 pasados, 1 omitido; guardrails (ajustes, arquitectura, núcleo, main): 73 pasados. Test de `markStoppedByPlayer` en el marker de sesión.
 - `i18n:unused`, contrato de texto fuente, censo de observabilidad de acciones (reindexado por `id`),
   `probar-build-host-esm.mjs` y `release:identity-contract`: PASS.
 - Capturas del CÓDIGO real (`CompanionView` en su rama live, tokens y CSS de Hebra, claro/oscuro, 320,
@@ -18,8 +18,8 @@ Verificado en el árbol de trabajo, con tests acotados y `--maxWorkers=1`:
   sin desborde horizontal. Diferencias: sin fila «Por hora» sin tasa, y los avisos sin icono.
 
 No verificado: el gate completo (`npm run check`, pendiente de la raíz), la publicación, la
-instalación en Hebra/Obsidian y una sesión real en el juego. La exportación de la sesión activa ya
-no tiene control visible.
+instalación en Hebra/Obsidian y una sesión real en el juego. La exportación de la sesión activa y
+de la sesión antigua guardada pasa a dos comandos (probados con dobles de host, no en un cliente real).
 
 ## Canal 0.5.0 publicado: captura propia Nexus (6 oct 2026)
 

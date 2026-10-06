@@ -101,7 +101,7 @@ import { HostRequestTransport } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { HostApiKeyProvider } from '../core/secret-provider';
 import { SerialTaskQueue } from '../core/serial-task-queue';
-import { createTranslator, type Locale } from '../core/i18n';
+import { createTranslator, type Locale, type Translator } from '../core/i18n';
 import {
 	type LocalDebugAction,
 	type LocalDebugComponent,
@@ -396,8 +396,11 @@ type NoticeDiagnosticSource =
 
 /** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
 export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
+/** Palette commands that export what the simplified Session tab no longer offers (0.6.0 candidate). */
+export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
+export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
 /** Commands `onload` registers besides `PRODUCT_ACTION_IDS`; the load journal counts both. */
-const STANDALONE_COMMAND_IDS = [ALERT_INGAME_SECRET_COMMAND_ID] as const;
+const STANDALONE_COMMAND_IDS = [ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID] as const;
 
 /**
  * `createTyrianRuntime(host)`: Tyrian over any `TyrianHost`, Obsidian's (`src/main.ts`) or
@@ -719,6 +722,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.setupSessionCommands();
 		this.setupProductActions();
 		this.registerAlertIngameSecretCommand();
+		this.registerSessionExportCommands();
 		// `state` reads `unattributed_origin` for both listeners below, not `window_error` or
 		// `unhandled_rejection`: those names described which browser event fired, which reads
 		// as attribution but is not one. The sanitizer already redacts any absolute path in
@@ -3939,6 +3943,39 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				? 'settings.alerts.ingame.secret.generated' : 'settings.alerts.ingame.secret.copied'), 'ingame_secret_copy');
 		} catch {
 			this.emitNotice(translator.t('settings.alerts.ingame.secret.failed'), 'ingame_secret_copy');
+		}
+	}
+
+	/**
+	 * Two commands with no interface of their own: the active live session as CSV, and the preserved
+	 * account-era session. Each is available only while there is something to export, and answers
+	 * with a notice either way; the data and the export code are the ones the Session tab used.
+	 */
+	private registerSessionExportCommands(): void {
+		const translator = (): Translator => createTranslator(this.settings.language);
+		const specs = [
+			{ id: EXPORT_LIVE_SESSION_COMMAND_ID, name: 'commands.exportLiveSession' as const,
+				available: () => this.runtimeReady && this.liveSessions?.getRuntime() != null,
+				run: () => this.exportLiveSession('timeline', 'csv') },
+			{ id: EXPORT_LEGACY_SESSION_COMMAND_ID, name: 'commands.exportLegacySession' as const,
+				available: () => this.runtimeReady && this.sessions.getPreservedLegacyRuntime() !== null,
+				run: () => this.exportPreservedLegacySession() },
+		];
+		for (const spec of specs) {
+			this.host.ui.registerCommand({
+				id: spec.id,
+				name: translator().t(spec.name),
+				checkCallback: (checking) => {
+					const available = spec.available();
+					if (!checking && available) {
+						void spec.run().then(
+							() => { this.emitNotice(translateRuntime(translator(), 'notices.exportSaved'), 'session_command'); },
+							() => { this.emitNotice(translateRuntime(translator(), 'notices.exportFailed'), 'session_command'); },
+						);
+					}
+					return available;
+				},
+			});
 		}
 	}
 
