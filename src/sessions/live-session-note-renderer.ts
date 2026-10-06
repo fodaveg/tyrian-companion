@@ -76,6 +76,12 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 					'Item value reflects estimated net instant selling; it is not profit or account wealth.'),
 			].join('\n'),
 			decision: [`## ${label('Contexto manual','Manual context')}`,
+				...(session.declaredBuild === undefined ? [] : session.declaredBuild === null
+					? [`- ${label('Build declarada','Declared build')}: ${label('desconocida','unknown')}`]
+					: [`- ${label('Build declarada manualmente','Manually declared build')}: ${escapeMarkdown(session.declaredBuild.label ?? label('sin nombre','unnamed'))}`,
+						`- ${label('Plantilla declarada','Declared template')}: \`${session.declaredBuild.templateCode}\``,
+						label('Esta plantilla es una declaración manual; no verifica la build activa ni el equipo.',
+							'This template is a manual declaration; it does not verify the active build or equipment.')]),
 				`- ${label('Grupo','Group')}: ${session.groupContext === null ? label('desconocido','unknown') : session.groupContext === 'with_bosses' ? label('con jefes (declarado)','with bosses (declared)') : label('sin jefes (declarado)','without bosses (declared)')}`,
 				label('Ninguna acción en el juego se ejecuta desde esta nota.','This note executes no action in the game.')].join('\n'),
 			provenance: [

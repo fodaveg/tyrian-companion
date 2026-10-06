@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { canonicalJson } from '../core/canonical-sha256';
+import { readFarmingDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
 import type { LiveNoteOutboxInput } from './live-session-note-outbox';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_FARMING_PREPARATION } from './farming-goal-preparation';
@@ -9,7 +12,7 @@ import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from '
 import { inspectDurableSessionNote, SessionHistoryService, SessionHistoryRuntimeAuthority, type SessionHistoryVault } from './session-history';
 import { LiveSessionHistoryService, liveSessionViewFromStored, liveSessionAlertsFromStored } from './live-session-history';
 import { serializeLiveSessionExport, prepareLiveSessionExportSnapshot } from './live-session-export';
-import { readStoredSessionBlocks, sessionNotePathIdentity } from './session-note-renderer';
+import { readStoredSessionBlocks, sessionNotePathIdentity, sha256Text, assembleNote } from './session-note-renderer';
 import { canonicalPathFor } from '../runtime/canonical-path';
 
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
@@ -219,6 +222,23 @@ describe('live note write verification and CAS', () => {
 	});
 });
 
+describe('portable payload byte compatibility', () => {
+	it('keeps payload and export bytes for notes that predate a manual build descriptor', async () => {
+		const input = fixture(); const {session,note} = await rendered(input);
+		expect(session).not.toHaveProperty('declaredBuild');
+		const fingerprints: Record<string,string> = {payload: String(note.frontmatter.tc_payload_sha256)};
+		for (const kind of ['timeline','summary'] as const) for (const format of ['json','csv'] as const) {
+			fingerprints[`${kind}_${format}`] = await sha256Text(serializeLiveSessionExport(session,kind,format));
+		}
+		input.record.phase = 'active'; input.record.endedAt = null;
+		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)});
+		if (snapshot === null) throw new Error('fixture');
+		expect(snapshot).not.toHaveProperty('declaredBuild');
+		for (const format of ['json','csv'] as const) fingerprints[`active_${format}`] = await sha256Text(serializeLiveSessionExport(snapshot,'timeline',format));
+		expect(fingerprints).toMatchSnapshot();
+	});
+});
+
 describe('explicit active export snapshots', () => {
 	it.each(['timeline','summary'] as const)('exports a coherent active %s snapshot with 1,000 rows and no invented close', async (kind) => {
 		const input = fixture(Array.from({length: 1001},(_,i) => i * 2)); input.record.phase = 'active'; input.record.endedAt = null;
@@ -338,5 +358,88 @@ describe('partial currency history', () => {
 		expect(serializeLiveSessionExport(payload,'timeline','csv').match(/^"observation",/gmu)).toHaveLength(3);
 		input.record.phase = 'active'; input.record.endedAt = null;
 		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(4)})).not.toBeNull();
+	});
+});
+
+
+function declaredBuild(label: string | null = 'Manual farm'): DeclaredBuildV1 {
+	const samples = JSON.parse(readFileSync(new URL('./__fixtures__/build-template-chatlinks.json',import.meta.url),'utf8')) as {samples: {code: string}[]};
+	const parsed = readFarmingDeclaredBuild({version: 1,templateCode: samples.samples[0]!.code,label});
+	if (parsed.status !== 'valid') throw new Error('Shared build fixture is invalid.');
+	return parsed.value;
+}
+
+describe('portable manual build declaration', () => {
+	it.each(['Farm | <manual>',null] as const)('preserves a declared template with label %s through note creation/read/history and full exports', async (name) => {
+		const build = declaredBuild(name); const input = fixture(); Object.assign(input.record,{declaredBuild: build});
+		const {session,note} = await rendered(input); expect(session.declaredBuild).toEqual(build);
+		expect(session.declaredBuild).not.toBe(build); expect(session.declaredBuild?.configuration).not.toBe(build.configuration);
+		expect(note.content).toContain('Build declarada manualmente'); expect(note.content).toContain('no verifica la build activa ni el equipo');
+		expect(note.content).toContain(name === null ? 'sin nombre' : 'Farm \\| \\<manual\\>');
+		const english = await rendered({...input,locale: 'en'});
+		expect(english.note.content).toContain('Manually declared build'); expect(english.note.content).toContain('does not verify the active build or equipment');
+		const vault = new TestVault(); const result = await new SessionNoteWriter(vault).writeLive(input); expect(result.status).toBe('written');
+		if (result.status !== 'written') throw new Error('fixture');
+		const inspected = await inspectLiveSessionNote(vault.contents.get(result.path)!); expect(inspected.status).toBe('ok');
+		if (inspected.status !== 'ok') throw new Error('fixture'); expect(inspected.session.declaredBuild).toEqual(build);
+		const selected = await new LiveSessionHistoryService(historyVault(vault)).select(session.sessionRef);
+		expect(selected.status).toBe('found'); if (selected.status !== 'found') throw new Error('fixture');
+		expect(selected.session.declaredBuild).toEqual(build);
+		for (const kind of ['timeline','summary'] as const) {
+			const json = JSON.parse(serializeLiveSessionExport(session,kind,'json')) as {session: typeof session}; expect(json.session.declaredBuild).toEqual(build);
+			expect(serializeLiveSessionExport(session,kind,'csv')).toContain(canonicalJson(build).replace(/"/gu,'""'));
+		}
+		input.record.phase = 'active'; input.record.endedAt = null;
+		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)});
+		if (snapshot === null) throw new Error('fixture'); expect(snapshot.declaredBuild).toEqual(build);
+		expect(serializeLiveSessionExport(snapshot,'timeline','csv')).toContain(canonicalJson(build).replace(/"/gu,'""'));
+		const saved = await new LiveSessionHistoryService(historyVault(vault)).export('Tyrian Companion','timeline','json',snapshot);
+		expect(saved.status).toBe('written'); if (saved.status !== 'written') throw new Error('fixture');
+		const stored = JSON.parse(vault.contents.get(saved.path)!) as {session: typeof snapshot}; expect(stored.session.declaredBuild).toEqual(build);
+		const original = structuredClone(snapshot.declaredBuild); build.label = 'Later setting'; build.configuration.specializations[0]!.id += 1;
+		expect(snapshot.declaredBuild).toEqual(original); expect(stored.session.declaredBuild).toEqual(original);
+	});
+	it('keeps an explicit unknown declaration distinct from an absent field without injecting defaults before hashing', async () => {
+		const input = fixture(); const old = await rendered(input); Object.assign(input.record,{declaredBuild: null});
+		const current = await rendered(input); expect(current.session).toHaveProperty('declaredBuild',null);
+		expect(current.note.frontmatter.tc_payload_sha256).not.toBe(old.note.frontmatter.tc_payload_sha256);
+		expect(current.note.content).toContain('Build declarada: desconocida');
+		const inspection = await inspectLiveSessionNote(current.note.content); expect(inspection.status).toBe('ok');
+		if (inspection.status !== 'ok') throw new Error('fixture'); expect(inspection.session).toHaveProperty('declaredBuild',null);
+		const vault = new TestVault(); const saved = await new SessionNoteWriter(vault).writeLive(input); expect(saved.status).toBe('written');
+		if (saved.status !== 'written') throw new Error('fixture');
+		expect((await inspectLiveSessionNote(vault.contents.get(saved.path)!))).toMatchObject({status: 'ok',session: {declaredBuild: null}});
+		for (const format of ['json','csv'] as const) {
+			const absent = serializeLiveSessionExport(old.session,'timeline',format); const knownUnknown = serializeLiveSessionExport(inspection.session,'timeline',format);
+			expect(knownUnknown).not.toBe(absent); expect(await sha256Text(knownUnknown)).not.toBe(await sha256Text(absent));
+		}
+		input.record.phase = 'active'; input.record.endedAt = null;
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toHaveProperty('declaredBuild',null);
+	});
+	it.each(['unknown_key','bad_code','different_configuration','missing_label','undefined'] as const)('rejects %s declarations on every boundary without rewriting an existing human note', async (kind) => {
+		const input = fixture(); const build = declaredBuild(); Object.assign(input.record,{declaredBuild: build});
+		const {session,note} = await rendered(input); const vault = new TestVault(); const writer = new SessionNoteWriter(vault);
+		const saved = await writer.writeLive(input); if (saved.status !== 'written') throw new Error('fixture');
+		vault.contents.set(saved.path,`${vault.contents.get(saved.path)!}\nKeep this human context.\n`); const before = new Map(vault.contents);
+		const corrupt: Record<string,unknown> = structuredClone(build) as unknown as Record<string,unknown>;
+		if (kind === 'unknown_key') corrupt.foreign = true;
+		else if (kind === 'bad_code') corrupt.templateCode = '[&AA==]';
+		else if (kind === 'different_configuration') (corrupt.configuration as DeclaredBuildV1['configuration']).profession = 'Guardian';
+		else if (kind === 'missing_label') delete corrupt.label;
+		const bad = kind === 'undefined' ? undefined : corrupt;
+		const invalid = {...session,declaredBuild: bad}; expect(isStoredLiveSessionPayload(invalid)).toBe(false);
+		if (kind !== 'undefined') {
+			const blocks = await readStoredSessionBlocks(note.content); if (blocks === null) throw new Error('fixture');
+			const payload = canonicalJson(invalid); const forged = await assembleNote(session.sessionRef,null,session.startedAt,input.outputFolder,input.locale,
+				{...note.frontmatter,tc_payload_sha256: await sha256Text(payload)},
+				{...blocks,provenance: blocks.provenance.replace(canonicalJson(session),payload)});
+			expect((await inspectLiveSessionNote(forged.content)).status).toBe('invalid');
+		}
+		Object.assign(input.record,{declaredBuild: bad}); expect((await writer.writeLive(input)).status).toBe('invalid');
+		const service = new LiveSessionHistoryService(historyVault(vault));
+		expect((await service.export(input.outputFolder,'timeline','json',invalid as typeof session)).status).toBe('invalid');
+		input.record.phase = 'active'; input.record.endedAt = null;
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toBeNull();
+		expect(vault.contents).toEqual(before);
 	});
 });

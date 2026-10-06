@@ -77,3 +77,15 @@ El siguiente registro conserva la sesión completa para recuperarla y exportarla
 ## Mis notas
 "
 `;
+
+exports[`portable payload byte compatibility > keeps payload and export bytes for notes that predate a manual build descriptor 1`] = `
+{
+  "active_csv": "764fb6ac1607ebba0263a5ac2b60fe11bf926a621c6156de6b97b1a153b964ff",
+  "active_json": "e6364603baa8e88ffa05de5d8592377d4ad679574105d2fa888e9cc82773aa7d",
+  "payload": "7ea38aba0a45959fadf7f20d88440a38fd02df9d25bf0f81d13b529ff5b50154",
+  "summary_csv": "845e895d72de3bf11b4efe23e521b2ad3ccd743df5f3acef3f9a5922f8f24d5b",
+  "summary_json": "cde4f44ef419c0eb104011aa2a04fa8a041163bf45d0623ccd1b396f88ef93ba",
+  "timeline_csv": "845e895d72de3bf11b4efe23e521b2ad3ccd743df5f3acef3f9a5922f8f24d5b",
+  "timeline_json": "38d1f0e84c403e4e9c2d6ee2aeff4e49975986b80b63e60641d6f5c793450b38",
+}
+`;

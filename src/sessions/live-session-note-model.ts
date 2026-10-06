@@ -1,3 +1,4 @@
+import { isDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
 import { isStoredLiveNoteOutbox, prepareLiveNoteOutbox, type LiveNoteOutboxInput, type StoredLiveAlertOutboxV1 } from './live-session-note-outbox';
 import { canonicalJson } from '../core/canonical-sha256';
 import { isFarmingGoal, type FarmingGoalV1 } from './farming-goal';
@@ -19,6 +20,7 @@ export interface StoredLiveSessionPayloadV1 {
 	journal: StoredLiveJournalEntryV1[]; gaps: LiveGapV1[]; totals: LiveTotalV1[];
 	valuation: LiveValuationV1; magicFind: LiveSessionRuntimeRecord['magicFind'];
 	preparation: FarmingPreparationSettingsV1; farmingGoal: FarmingGoalV1 | null;
+	declaredBuild?: DeclaredBuildV1 | null;
 	groupContext: 'with_bosses' | 'without_bosses' | null;
 	mapIntervals: LiveSessionRuntimeRecord['mapIntervals']; mapCoveragePartial: boolean;
 }
@@ -59,6 +61,12 @@ export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInpu
 /** Full journal is required at this boundary; a paged UI view cannot satisfy its count and sums. */
 async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'record' | 'journal'>): Promise<Omit<StoredLiveSessionPayloadV1,'endedAt'> | null> {
 	const live = input.record;
+	let declaredBuild: Pick<StoredLiveSessionPayloadV1,'declaredBuild'> = {};
+	if ('declaredBuild' in live) {
+		if (live.declaredBuild === null) declaredBuild = {declaredBuild: null};
+		else if (isDeclaredBuild(live.declaredBuild)) declaredBuild = {declaredBuild: structuredClone(live.declaredBuild)};
+		else return null;
+	}
 	const entries = input.journal as readonly (LiveJournalEntryV1 & {outbox: LiveNoteOutboxInput[]})[];
 	if (live.version !== 4 || live.kind !== 'live_inventory' || !['active','complete'].includes(live.phase)
 		|| !entries.every((entry) => entry.sessionId === live.sessionId && Array.isArray(entry.outbox) && entry.observations.every(isLiveObservation))
@@ -83,7 +91,7 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 		valuation: valueLiveTotals(orderTotals(live.totals), live.prices, live.priceCapturedAt), magicFind: { value: live.magicFind.value, source: live.magicFind.source },
 		preparation: { version: 1, enabled: live.preparation.enabled, manualMagicFindBonus: live.preparation.manualMagicFindBonus,
 			foodReminderMinutes: live.preparation.foodReminderMinutes, utilityReminderMinutes: live.preparation.utilityReminderMinutes },
-		farmingGoal: live.farmingGoal, groupContext: live.groupContext,
+		farmingGoal: live.farmingGoal, groupContext: live.groupContext,...declaredBuild,
 		mapIntervals: live.mapIntervals.map((interval) => ({ mapId: interval.mapId, fromMs: interval.fromMs, toMs: interval.toMs })),
 		mapCoveragePartial: live.mapCoveragePartial,
 	};
@@ -105,7 +113,7 @@ export function isLiveSessionSnapshot(value: unknown): value is LiveSessionSnaps
 function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 	if (!record(value) || !keys(value, ['version','source','sessionRef','accountRef','build','profile','startedAt','endedAt',
 		'observationCount','sampleCount','observedItemsMs','observedCurrenciesMs','coverage','journal','gaps','totals','valuation','magicFind',
-		'preparation','farmingGoal','groupContext','mapIntervals','mapCoveragePartial',...(snapshot ? ['capturedAt','exportState'] : [])]) || value.version !== 1
+		'preparation','farmingGoal','groupContext','mapIntervals','mapCoveragePartial',...('declaredBuild' in value ? ['declaredBuild'] : []),...(snapshot ? ['capturedAt','exportState'] : [])]) || value.version !== 1
 		|| value.source !== 'nexus_inventory' || value.accountRef !== null || typeof value.sessionRef !== 'string'
 		|| !/^[a-f0-9]{64}$/u.test(value.sessionRef) || !date(value.startedAt)
 		|| value.build !== null && value.build !== NEXUS_LIVE_BUILD || value.profile !== null && value.profile !== NEXUS_LIVE_PROFILE
@@ -113,6 +121,7 @@ function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 		|| !natural(value.observedItemsMs) || !natural(value.observedCurrenciesMs)
 		|| !isFarmingPreparationSettings(value.preparation) || value.farmingGoal !== null && !isFarmingGoal(value.farmingGoal)
 		|| ![null,'with_bosses','without_bosses'].includes(value.groupContext as null)
+		|| 'declaredBuild' in value && value.declaredBuild !== null && !isDeclaredBuild(value.declaredBuild)
 		|| typeof value.mapCoveragePartial !== 'boolean') return false;
 	const boundary = snapshot && value.endedAt === null ? value.capturedAt : value.endedAt;
 	if (!date(boundary) || boundary < value.startedAt || !snapshot && value.endedAt === null
