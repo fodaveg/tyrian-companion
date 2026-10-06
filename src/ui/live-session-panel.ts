@@ -223,7 +223,8 @@ export class LiveSessionPanel {
 		if (this.failure === 'start' || view.phase === 'error') return 'error';
 		if (view.phase === 'active') return 'active';
 		if (view.phase === 'complete') return 'complete';
-		return control.gameConnected ? 'idle' : 'off';
+		// A consult installation runs no sessions, so whether the game is connected is not its business.
+		return control.gameConnected || control.consult ? 'idle' : 'off';
 	}
 
 	private renderHeader(view: LiveSessionViewV1, control: LiveSessionControlState): void {
@@ -379,43 +380,35 @@ export class LiveSessionPanel {
 		const key = JSON.stringify([points.length, points[points.length - 1], t0, view.gaps, max, min]);
 		if (key !== this.chartKey) {
 			this.chartKey = key;
-			const shapes: SVGElement[] = [];
+			// One step line: the cumulative value is constant across a reading gap (nothing is
+			// interpolated), so the line is drawn whole and each gap is a band laid over it that
+			// hides it: an opaque mask plus a tint.
+			const path = [`M${String(x(t0))} ${String(y(0))}`];
+			points.forEach((point, index) => path.push(`H${String(x(Date.parse(point.observedAt)))}`, `V${String(y(values[index]!))}`));
+			path.push(`H${String(x(t1))}`);
+			const area = this.document.createElementNS(SVG_NS, 'path');
+			area.setAttribute('class', 'tyrian-live-session__area');
+			area.setAttribute('d', `${path.join('')}V${String(y(0))}H${String(x(t0))}Z`);
+			const line = this.document.createElementNS(SVG_NS, 'path');
+			line.setAttribute('class', 'tyrian-live-session__line');
+			line.setAttribute('d', path.join(''));
+			const shapes: SVGElement[] = [area, line];
 			for (const gap of view.gaps) {
 				const from = Date.parse(gap.fromAt), to = gap.toAt === null ? t1 : Date.parse(gap.toAt);
 				if (!(to > from) || to < t0 || from > t1) continue;
-				const rect = this.document.createElementNS(SVG_NS, 'rect');
-				rect.setAttribute('class', 'tyrian-live-session__gap');
-				rect.setAttribute('x', String(x(from))); rect.setAttribute('y', '0');
-				rect.setAttribute('width', String(Math.max(1, x(to) - x(from)))); rect.setAttribute('height', String(PLOT_H));
-				shapes.push(rect);
-			}
-			const segments: string[][] = [];
-			let current: string[] = [];
-			const begin = (at: number, level: number): void => { current = [`M${String(x(at))} ${String(y(level))}`]; segments.push(current); };
-			for (let index = 0; index < points.length; index++) {
-				const at = Date.parse(points[index]!.observedAt);
-				const step = (): number => current.push(`H${String(x(at))}`, `V${String(y(values[index]!))}`);
-				// The first line climbs from zero at the session start; a line after a gap starts on its own point.
-				if (index === 0 && !points[index]!.breakBefore && at > t0) { begin(t0, 0); step(); }
-				else if (index === 0 || points[index]!.breakBefore) begin(at, values[index]!);
-				else step();
-			}
-			const baseline = y(0);
-			for (const segment of segments) {
-				const start = /^M([\d.-]+)/.exec(segment[0]!)?.[1] ?? '0';
-				const end = segment.slice().reverse().find((part) => part.startsWith('H'))?.slice(1) ?? start;
-				const area = this.document.createElementNS(SVG_NS, 'path');
-				area.setAttribute('class', 'tyrian-live-session__area');
-				area.setAttribute('d', `${segment.join('')}H${end}V${String(baseline)}H${start}Z`);
-				const line = this.document.createElementNS(SVG_NS, 'path');
-				line.setAttribute('class', 'tyrian-live-session__line');
-				line.setAttribute('d', segment.join(''));
-				shapes.push(area, line);
+				for (const kind of ['gap-mask', 'gap']) {
+					const rect = this.document.createElementNS(SVG_NS, 'rect');
+					rect.setAttribute('class', `tyrian-live-session__${kind}`);
+					rect.setAttribute('x', String(x(from))); rect.setAttribute('y', '0');
+					rect.setAttribute('width', String(Math.max(1, x(to) - x(from)))); rect.setAttribute('height', String(PLOT_H));
+					shapes.push(rect);
+				}
 			}
 			this.svg.replaceChildren(...shapes);
 			const lastValue = values[values.length - 1]!;
-			this.plotDot.style.setProperty('left', `${String(x(last) / PLOT_W * 100)}%`);
-			this.plotDot.style.setProperty('top', `${String(y(lastValue))}%`);
+			// The end dot sits on the plot's own fractions, so it can never push the panel wider.
+			this.plotDot.style.setProperty('--x', String(x(last) / PLOT_W));
+			this.plotDot.style.setProperty('--y', String(y(lastValue) / PLOT_H));
 			this.setText(this.plotMax, max > 0 ? this.money(max) : '');
 			this.setText(this.axisStart, this.clockOfDay(t0));
 			this.setText(this.axisEnd, this.clockOfDay(t1));

@@ -67,8 +67,9 @@ describe('Session tab: header and the one button', () => {
 		expect(controls(idle.panel)).toEqual(['button:Start session']);
 		const active = harness(liveView(), control());
 		expect(controls(active.panel)).toEqual(['button:Finish session', 'summary:Timeline (2)']);
-		const consult = harness(idleView(), control({ consult: true }));
+		const consult = harness(idleView(), control({ consult: true, gameConnected: false }));
 		expect(controls(consult.panel)).toEqual([]);
+		expect(consult.panel.element.querySelector('.tyrian-live-session__phase')?.textContent).toBe('No session');
 		expect(consult.panel.element.textContent).toContain('This installation is in consult mode');
 		const many = harness(liveView(120), control());
 		openTimeline(many.panel);
@@ -221,7 +222,9 @@ describe('Session tab: figures, objects and chart', () => {
 		expect(legend.hasAttribute('hidden')).toBe(false);
 		expect(legend.textContent).toBe('No reading · 2 gaps');
 		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__gap')).toHaveLength(2);
-		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__line')).toHaveLength(2);
+		// One whole step line (the value is constant across a gap); each gap is a mask plus a tinted band over it.
+		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__line')).toHaveLength(1);
+		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__gap-mask')).toHaveLength(2);
 		expect(gapped.panel.element.querySelector('[role="img"]')!.getAttribute('aria-label')).toContain('2 reading gaps');
 	});
 });
