@@ -1,5 +1,23 @@
 # Changelog
 
+## Release beta 0.3.4 - iniciar justo después de parar ya no falla, y «Capturar ya» responde al pulsarlo
+
+- **Iniciar una sesión poco después de parar la anterior ya no termina en «No se pudo iniciar la
+  sesión».** Al acabar una parada, la detección asistida vuelve a armarse con una lectura completa
+  de la cuenta que tarda unos 30 s; un inicio pulsado en ese rato reaprovechaba esa lectura, que había
+  empezado antes que él, y la sesión rechazaba una línea base anterior a su propia petición. Ahora el
+  inicio espera a que esa lectura termine y hace la suya: puede tardar más, pero ya no falla (`d040fd8`).
+- **Lo mismo en la parada forzada con «Capturar ya»**: la instantánea final ya no reaprovecha una
+  lectura de la detección que empezó antes de pedir la parada (`1b4f50a`).
+- **Un rechazo de ese tipo deja su motivo en el registro local** (`invariant_violation`, etc.) en vez
+  de un `Error` sin más.
+- **«Capturar ya» responde al pulsarlo**: el botón se desactiva y dice «Capturando la instantánea
+  final…» mientras dura la captura, y si falla, la tarjeta lo dice («No se pudo completar la acción
+  de sesión.») en vez de no mostrar nada (`1162e7a`, `371a358`).
+- **El título de la vista en español es «Acompañante de Tyria»** (antes «Acompañante de Tyrian»).
+
+Límites: no comprobado en Hebra ni en Obsidian reales antes de publicar.
+
 ## Release beta 0.3.3 - «Comprobar conexión» funciona en modo consulta y la paleta de Hebra dice por qué un comando no está disponible
 
 - **En modo consulta, «Comprobar conexión» consulta la clave y la cuenta** (`tokeninfo` y `account`) y
