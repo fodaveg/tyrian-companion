@@ -12,6 +12,8 @@ David autoriza el lector propio y pasivo de Nexus para el alcance completo del a
 - Monedas y MF siguen dentro del encargo completo. Mientras falte evidencia se muestran sin cobertura/desconocidos; ese estado honesto no cierra su investigación ni el objetivo. La preparación manual declara su procedencia.
 - Runtime live v4 y notas schema 7 conservan lectura de registros anteriores y texto humano. No se fabrican snapshots API ni se mezcla estadística legacy con live. Las decisiones económicas permanecen en el inventario acumulado y siempre son manuales.
 
+La [comparación live y build declarada](SPEC-live-loot.md#14-build-declarada-y-comparación-de-sesiones-live) es obligatoria para 0.5.0: incluye sesiones Nexus separadas del historial API, bolsas observadas/netas y tasas sobre tiempo cubierto, con al menos dos completas por grupo comparable; la activa queda provisional. La preparación admite pegar una plantilla GW2 y etiqueta opcional, congeladas al iniciar e identificadas por configuración validada, no por etiqueta ni SHA del ejecutable. No acredita build equipada, equipo/stats ni causalidad. Una entrada inválida permanece visible y la sesión continúa con declaración desconocida, sin fallback a otra válida. Este lote tiene evidencia parcial de parser/dominio; integración de consumidores y verificación conjunta pendientes.
+
 Las secciones H1–H18 siguientes documentan implementación y decisiones históricas. Sus requisitos API-only de sesiones, calentamiento autenticado automático y condiciones de clave quedan sustituidos por esta decisión. La clasificación API sigue describiendo solo registros legacy; no atribuye causalidad a live1. La frontera específica H8 permanece intacta.
 
 ## Propósito y usuarios

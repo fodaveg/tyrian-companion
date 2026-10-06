@@ -13,6 +13,12 @@ por separado en [ESTADO](ESTADO.md); la QA de clientes reales sigue pendiente.
   cambios negativos con causa desconocida, cobertura y huecos de lectura. Baseline y rebaseline
   no cuentan como adquisiciones. Un precio ausente no convierte un objeto en valor cero ni
   invalida por sí solo una cantidad observada.
+- **Plantilla de build declarada y comparación live, en preparación para el candidato.** El contrato
+  añade pegado de plantilla GW2 y etiqueta opcional, capturados al iniciar sin afirmar que estén
+  equipados ni incluir equipo/stats. La comparación live separa historial API, bolsas observadas/netas
+  y tasas sobre tiempo cubierto; exige dos completas por grupo y deja la activa provisional.
+  Parser y dominio tienen evidencia acotada; integración de notas/editor/comparador pendiente de
+  acreditar en el árbol conjunto.
 - **Guardado y exportación.** El runtime live y las notas schema 7 conservan observaciones y texto
   humano. La exportación de la sesión activa es una instantánea de lo guardado hasta ese momento;
   el historial y su exportación muestran sesiones guardadas por separado, sin truncar el ledger

@@ -55,10 +55,14 @@ remain pending. The native 0.5.0 reader does not cover wallet/currencies, verifi
 
 ## Halloween farming
 
-The candidate retains optional bag/duration goals, manual preparation and run comparisons. Bag
-rates use observed quantities and covered time, separately from item-price coverage. Pure/mixed
-labyrinth presence and build configuration describe a run; sample size and dispersion do not prove
-that a build caused a difference. Integrated candidate checks and visual/keyboard/game QA remain pending.
+The candidate retains optional bag/duration goals and manual preparation. The required 0.5.0
+[manual build and live comparison contract](docs/SPEC-live-loot.md#14-build-declarada-y-comparación-de-sesiones-live)
+adds a pasted GW2 build template with an optional label, captured at session start. This is a
+declaration, not detection of the active build or gear/stats. Live comparisons use observed/net bags
+and covered item time independently of prices, keep API history separate, and require two completed
+sessions per comparable group; the active session stays provisional. Unknown configuration remains
+unknown. Sample size and dispersion do not establish causation. Parser/domain have scoped evidence;
+notes/editor/comparator integration, combined checks and real-client QA remain to be accredited.
 
 Live sessions require the matching **0.5.0 Nexus producer candidate**, including when Blish HUD is
 the Windows overlay. Consult the [Nexus releases](https://github.com/fodaveg/tyrian-companion-nexus/releases/latest)

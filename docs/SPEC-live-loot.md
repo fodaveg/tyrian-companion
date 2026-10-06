@@ -296,3 +296,84 @@ Pruebas requeridas:
 4. `pending` tardío no pisa `received`; cambiar clave/cuenta/sesión antes del ACK no redirige el recibo. La fila permanece accesible sin cuenta y después del cierre.
 5. Precio tardío se resuelve una vez; cierre sin precio conserva `skipped/session_closed`. Baselines, negativos, duplicados y muestras sin cobertura no generan candidatos.
 6. `AlertV1`, `alert` y `alert_ack` mantienen claves exactas; ningún payload de notificación expone identidad, texto arbitrario o metadata interna de origen.
+
+## 14. Build declarada y comparación de sesiones live
+
+Ampliación de ingeniería del 6 oct 2026 dentro del audit autorizado. Parser/modelo, retención de ajustes y validación v4 tienen evidencia acotada; este apartado fija además la obligación de notas, editor y comparador para 0.5.0. La integración de esos consumidores, el gate conjunto, la publicación y la QA real se acreditan por separado en [ESTADO](ESTADO.md).
+
+### Alcance y fuente
+
+La comparación de tandas debe consumir sesiones live schema 7, además de conservar el comparador API para sus registros anteriores. Son fuentes distintas y no se mezclan como si midieran lo mismo. Esta obligación forma parte de la entrega 0.5.0; una implementación que solo compara notas API deja sin cubrir las nuevas sesiones Nexus.
+
+`live.build`/`live_open.build` sigue identificando el SHA del ejecutable de GW2. No identifica la build del jugador y no cambia su wire. Nexus no aporta configuración activa de habilidades/rasgos/equipo. El usuario puede declarar una plantilla mediante pegado de un código de build GW2 y una etiqueta opcional en la preparación existente. No se crea una vista principal nueva ni se consulta la API autenticada.
+
+La declaración no acredita build actualmente equipada, atributos, estadísticas, piezas de equipo, mejoras, ni buffs/MF. Es preparación manual fechada por el inicio de sesión, no evidencia nativa del personaje. H8, protocolo y fuentes autorizadas permanecen intactos.
+
+### Modelo y preferencia
+
+Los módulos compartidos son `src/sessions/manual-build-model.ts` y `src/sessions/build-template-parser.ts`. Exports: `DeclaredBuildV1`, `DecodedBuildTemplateV1`, `FarmingDeclaredBuildPreferenceV1`, `isDeclaredBuild`, `readFarmingDeclaredBuild` y `manualBuildIdentityInput`; el parser puro exporta `parseBuildTemplate`.
+
+```text
+FarmingDeclaredBuildPreferenceV1 = {
+  version: 1,
+  templateCode: string,
+  label: string | null
+}
+DeclaredBuildV1 = {
+  version: 1,
+  source: 'manual_template',
+  label: string | null,
+  templateCode: string,
+  configuration: DecodedBuildTemplateV1
+}
+```
+
+`label` es una clave requerida con valor `string|null`, no una propiedad omitible del DTO. Límite de plantilla: 4096 unidades de longitud JS antes de trim; etiqueta: 120, sin controles U+0000–U+001F ni U+007F. La lectura de preferencia null/ausente, o válida en forma con código vacío tras trim, retorna `empty`; una declaración válida normaliza la etiqueta con trim y cadena vacía a null, y el código a `[&Base64]` con padding canónico. `farmingDeclaredBuild` se almacena como `unknown`, con default null: migración y actualización de ajustes conservan mediante copia profunda el valor JSON raw inválido o de una versión futura, sin normalizarlo, resetearlo ni sustituirlo por la última declaración válida. Los límites anteriores gobiernan la aceptación del parser/modelo; no autorizan truncar evidencia persistida inválida.
+
+`DecodedBuildTemplateV1` conserva campos conocidos y orden explícito:
+
+- `profession`: Guardian, Warrior, Engineer, Ranger, Thief, Elementalist, Mesmer, Necromancer o Revenant.
+- `specializations`: exactamente tres posiciones `{ id, traitSelections:[number,number,number] }`; id byte y selección de tier 0–3, incluidos los ceros.
+- `skills`: `terrestrial` y `aquatic`, cada una `{ heal, utilities:[number,number,number], elite }`; son paletas u16, no IDs API de skills resueltos.
+- `rangerPets`: cuatro bytes para Ranger, null en las otras profesiones.
+- `revenantLegends`: cuatro bytes para Revenant; `inactiveLegendUtilities`: tres paletas u16 terrestres y tres acuáticas para Revenant; ambos null en las demás profesiones.
+- `weaponTypes`: array u16; `skillOverrides`: array u32. Para formato legacy sin esa sección ambos son null, no arrays vacíos. El formato moderno puede acreditar arrays vacíos mediante sus counts explícitos.
+
+Preferencia independiente `farmingDeclaredBuild`; snapshot opcional `declaredBuild?: DeclaredBuildV1|null` en sesión/nota, congelado al iniciar. Registros v4/schema 7 antiguos sin ese campo se leen como desconocidos, conservando su representación/bytes/checksums. Un campo durable presente pero inválido se rechaza sin reescribir ni descartar el original.
+
+La identidad comparativa se deriva de los campos conocidos normalizados de `configuration`, su versión y fuente. Excluye la etiqueta, diferencias de representación Base64 admitidas y el SHA del ejecutable. No se confía en un hash almacenado que el registro pueda proporcionar: la identidad se recalcula desde la configuración validada. Cambiar solo una etiqueta no crea otra build; cambiar un campo significativo sí. Conservar orden/semántica de las ranuras que formen parte de la configuración.
+
+### Entrada y compatibilidad
+
+El editor mantiene la entrada inválida/no soportada y muestra el error; la validación aplica los límites anteriores. No bloquea el inicio de sesión. En ese inicio se captura `null`/desconocido cuando no hay una declaración válida; no se usa silenciosamente la última válida como fallback. Modificar o corregir la preferencia afecta sesiones posteriores, no la instantánea ya guardada de la sesión activa.
+
+La validación del código es local y estricta. Se admite el formato legacy de 44 bytes y el moderno de longitud exacta `46 + 2*n + 4*m`, con counts consistentes, armas u16 y overrides u32. No se hidratan obligatoriamente los IDs contra una API para poder usar la declaración. Los IDs de paleta no se presentan como IDs de skill resueltos. Bytes reservados/formatos desconocidos se tratan como no soportados por la política de Tyrian, sin afirmar que el juego no los admite. Se conserva la entrada y no se adivina una configuración.
+
+No se completa una declaración ausente desde nombre de personaje, etiqueta libre, SHA de GW2 ni API. Importar o leer un registro anterior no inventa declaración y no recalcula sus checksums por normalizar una ausencia histórica. Una declaración presente debe hacer roundtrip estricto en payload, nota y exportación; inconsistencias entre código canónico y configuración no son datos válidos.
+
+### Comparación de tandas
+
+El comparador live consume notas schema 7 validadas y usa datos de su fuente: incrementos positivos observados, neto con signo y tasas sobre intervalos cubiertos; no reutiliza el margen de caché API ni el total de tiempo sin observar. La cobertura de cantidades y tasas usa el tiempo observado válido del canal de items (`observedItemsMs`), independiente de precio/valor. Las tasas agregadas se ponderan por tiempo cubierto. Un cero observado exige un intervalo comparable, con al menos dos muestras y tiempo cubierto positivo; falta de intervalo permanece desconocida. Un precio ausente no elimina bolsas ni su tasa, y monedas sin cobertura no autorizan a fabricar oro/h. El perfil nativo actual no acredita oro/h completo; el valor estimado de objetos es otra métrica. Identificar huecos, falta de evidencia y tamaño de muestra; no atribuir causalidad al build declarado.
+
+Se exige un mínimo de **dos sesiones completas por grupo comparable** para su agregado y confianza comparativa. Dos completas pertenecientes a grupos distintos con una sola muestra cada uno no acreditan grupos robustos ni una comparación consolidada. Las filas individuales pueden mostrarse por separado. La sesión activa puede mostrarse como provisional, fuera del conjunto de completas y de ese mínimo.
+
+La agrupación separa origen API/live, presencia pura/mixta/desconocida, condiciones registradas y configuraciones manuales validadas. MF desconocido y MF manual cero son valores distintos. Configuración desconocida sigue desconocida: puede tener un grupo explícito de evidencia, sin certificar que esas sesiones compartan build, atribuir su resultado a una build conocida ni usar una etiqueta como identidad. Cambiar etiqueta, spelling Base64 equivalente o build de ejecutable no separa la identidad de la configuración declarada. La declaración es una covariable registrada, no una prueba de la configuración activa ni del motivo del rendimiento.
+
+### Responsabilidades y aceptación
+
+- Dominio/ajustes: parser/modelo públicos, preferencia, captura inmutable al iniciar, validación de identidad/configuración y compatibilidad sin pérdida en dominio/store.
+- Notas: payload/schema 7 opcional con validación y roundtrip estricto, sin cambiar bytes/checksums de registros antiguos por su ausencia.
+- Presentación/core: editor reutilizando preparación, error/desconocido visibles y comparador live; consume el modelo compartido, sin decodificar otra vez de forma divergente.
+
+Pruebas discriminantes requeridas para el candidato integrado:
+
+1. Fixtures reales de código legacy/moderno y profesión con pets/Revenant, armas y overrides; counts/longitud/trailing bytes/reservados desconocidos fallan de forma explícita y acotada.
+2. Identidad igual con distinto label o representación admitida del mismo contenido, distinta con una configuración significativa distinta; nunca igualada mediante un hash almacenado hostil.
+3. Entrada inválida conservada/error visible/inicio no bloqueado; snapshot capturado desconocido, sin recuperar una declaración válida anterior. Edición posterior no modifica la sesión activa.
+4. Registros v4/schema 7 sin campo permanecen legibles y byte/checksum-estables; presente inválido se rechaza sin pérdida; presente válido hace roundtrip nota/payload/exportación.
+5. Comparador toma sesiones live guardadas, mantiene activo provisional, exige dos completas por grupo comparable, separa API/live y calcula tasas con cobertura sin convertir desconocido en cero.
+6. Ningún flujo de editar/iniciar/comparar provoca consulta API autenticada; no hay obligación de hidratar IDs para aceptar una plantilla local válida.
+
+### Evidencia de formato y límites
+
+Los seis golden fixtures de `src/sessions/__fixtures__/build-template-chatlinks.json` conservan la procedencia de las muestras upstream de [gw2-chatlinks-go](https://github.com/Ev3nt1ne/gw2-chatlinks-go/blob/main/chatlinks/chatlinks_test.go), etiquetadas allí como reales, y el SHA-256 del archivo de origen `f3183336799be033ef318e38b70f18ac9b43bcd8a811c8fae396c19a6a165f7a`. Las expectativas fueron decodificadas independientemente con base64/struct y contrastadas con las aserciones upstream. La investigación también consultó el [formato de chat links de la wiki oficial](https://wiki.guildwars2.com/wiki/Chat_link_format#Build_template_link). El parser local se prueba contra esas fixtures; no se ejecutaron los tests upstream ni QA del juego. Las restricciones conservadoras de Tyrian no se atribuyen al juego ni a la wiki.
