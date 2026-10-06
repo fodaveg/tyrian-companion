@@ -108,6 +108,20 @@ describe('session runtime persistence', () => {
 		store.close();
 	});
 
+	it('archives an unfinished API runtime additively before freeing the canonical slot', async () => {
+		const factory = new IDBFactory(); const name = databaseName('archive'); const record = activeRecord();
+		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record);
+		await expect(store.archiveLegacyRuntime({...authority,fence:authority.fence+1})).resolves.toBe(true);
+		await expect(store.load()).resolves.toEqual({status:'empty'}); store.close();
+		const reopened = new IndexedDbSessionRuntimeStore(factory,name);
+		await expect(reopened.listLegacyRuntimeArchives()).resolves.toEqual([record]);
+		expect((await reopened.listLegacyRuntimeArchives())[0]?.state).toEqual(record.state); reopened.close();
+	});
+	it('a mismatched legacy lease retains the only active runtime copy', async () => {
+		const store = new IndexedDbSessionRuntimeStore(new IDBFactory(),databaseName('wrong-archive-lease')); const record = activeRecord();
+		await store.save(record); await expect(store.archiveLegacyRuntime({...authority,sessionId:'other'})).resolves.toBe(false);
+		await expect(store.load()).resolves.toEqual({status:'loaded',record}); await expect(store.listLegacyRuntimeArchives()).resolves.toEqual([]); store.close();
+	});
 	it('persists an active session across IndexedDB close and reopen', async () => {
 		const factory = new IDBFactory();
 		const name = databaseName('reopen');

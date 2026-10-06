@@ -1,13 +1,14 @@
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, LIVE_GAP_REASONS,
 	type LiveSessionRuntimeRecord, type LiveJournalEntryV1, type LiveObservationV1 } from './live-session-model';
 import { isFarmingGoal } from './farming-goal';
+import { isLiveAlertOutbox } from './live-session-outbox';
 import { isFarmingPreparationSettings } from './farming-goal-preparation';
 import { bounded, date, isLiveContext, isLiveGap, isLiveInventorySample, keys, natural, nonce, record } from './live-session-reducer';
 
 /** Closed persisted source variant. It contains no API snapshot or credential capability. */
 export function isLiveSessionRuntimeRecord(value: unknown): value is LiveSessionRuntimeRecord {
 	if (!record(value) || !keys(value, ['version','kind','sessionId','phase','authority','startedAt','endedAt','persistedAt',
-		'sourceInstance','build','profile','epoch','context','connection','lastPresenceAt','lastObservationAt','lastValidItemsAt','lastValidCurrenciesAt','currencyTrackedIds','lastSample','fingerprint','itemComparable','currencyComparable','sourceState',
+		'sourceInstance','build','profile','epoch','context','connection','lastPresenceAt','lastObservationAt','lastValidItemsAt','lastValidCurrenciesAt','lastSourceDisconnectedAt','currencyTrackedIds','lastSample','fingerprint','itemComparable','currencyComparable','sourceState',
 		'sourceReason','observationCount','sampleCount','totals','gaps','observedItemsMs','observedCurrenciesMs','prices','priceCapturedAt',
 		'magicFind','preparation','farmingGoal','groupContext','mapIntervals','mapObservation','mapCoveragePartial','summaryReceipt'])) return false;
 	if (value.version !== 4 || value.kind !== 'live_inventory' || typeof value.sessionId !== 'string' || !value.sessionId
@@ -19,6 +20,7 @@ export function isLiveSessionRuntimeRecord(value: unknown): value is LiveSession
 		|| value.context !== null && !isLiveContext(value.context) || !['connected','disconnected'].includes(value.connection as string)
 		|| !natural(value.lastPresenceAt) || value.lastObservationAt !== null && !date(value.lastObservationAt)
 		|| value.lastValidItemsAt !== null && !date(value.lastValidItemsAt) || value.lastValidCurrenciesAt !== null && !date(value.lastValidCurrenciesAt)
+		|| value.lastSourceDisconnectedAt !== null && !date(value.lastSourceDisconnectedAt)
 		|| !Array.isArray(value.currencyTrackedIds) || value.currencyTrackedIds.length > 4096 || !value.currencyTrackedIds.every((id) => bounded(id, 1, 2147483647))
 		|| new Set(value.currencyTrackedIds).size !== value.currencyTrackedIds.length
 		|| typeof value.itemComparable !== 'boolean' || typeof value.currencyComparable !== 'boolean' || typeof value.mapCoveragePartial !== 'boolean'
@@ -73,12 +75,19 @@ export function isLiveObservation(value: unknown): value is LiveObservationV1 {
 		&& value.coverage === 'observed_interval' && value.id === `${value.epoch}/${String(value.cursor)}/${String(value.kind)}/${String(value.idNumber)}`;
 }
 export function isLiveJournalEntry(value: unknown): value is LiveJournalEntryV1 {
-	return record(value) && keys(value, ['version','sessionId','epoch','cursor','observedAt','observations','breakBefore','alertsProcessed'])
+	if (!record(value) || !Array.isArray(value.observations)) return false;
+	const observations = value.observations;
+	return record(value) && keys(value, ['version','sessionId','epoch','cursor','observedAt','observations','breakBefore','alertsProcessed','outbox'])
 		&& value.version === 1 && typeof value.sessionId === 'string' && value.sessionId.length > 0 && nonce(value.epoch)
 		&& natural(value.cursor) && date(value.observedAt) && typeof value.breakBefore === 'boolean' && typeof value.alertsProcessed === 'boolean'
 		&& Array.isArray(value.observations) && value.observations.length <= 4096 && value.observations.every((row) =>
 			isLiveObservation(row) && row.epoch === value.epoch && row.cursor === value.cursor && row.observedAt === value.observedAt)
-		&& new Set(value.observations.map((row) => (row as LiveObservationV1).id)).size === value.observations.length;
+		&& new Set(value.observations.map((row) => (row as LiveObservationV1).id)).size === value.observations.length
+		&& Array.isArray(value.outbox) && value.outbox.length <= observations.length && value.outbox.every((intent) =>
+			isLiveAlertOutbox(intent) && intent.sessionId === value.sessionId && observations.some((row) =>
+				isLiveObservation(row) && row.kind === 'item' && row.delta > 0 && row.id === intent.observationId
+				&& (intent.alert === null || intent.alert.itemId === row.idNumber && intent.alert.quantity === row.delta)))
+		&& new Set(value.outbox.map((intent: unknown) => isLiveAlertOutbox(intent) ? intent.outboxId : null)).size === value.outbox.length;
 }
 function authority(value: unknown, sessionId: string): boolean {
 	return record(value) && keys(value, ['machineId','instanceId','sessionId','fence','acquiredAt'])

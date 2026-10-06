@@ -10,6 +10,8 @@ import { LIVE_SOURCE_STALE_MS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveSessionViewV1, type LiveGapV1, type LiveChartPointV1 } from './live-session-model';
 import { liveObservationTotals, liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals } from './live-session-reducer';
 import type { IngameGameContext } from '../alerts/alert-ingame-protocol';
+import { createLiveAlertIntent, settleLiveAlertRestart } from './live-session-outbox';
+import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } from './live-session-model';
 
 export interface LiveSessionSourceInput { sourceInstance: string; epoch: string; build: string; profile: string; context: IngameGameContext }
 export interface LiveSessionLifecycleOptions {
@@ -18,6 +20,7 @@ export interface LiveSessionLifecycleOptions {
 	setInterval(callback: () => void, intervalMs: number): unknown; clearInterval(handle: unknown): void;
 	onStateChange(): void; onError(error: unknown): void;
 	preparation?(): FarmingPreparationSettingsV1; farmingGoal?(): FarmingGoalV1; groupContext?(): 'with_bosses' | 'without_bosses' | null;
+	thresholdCopper?(): number;
 	/** Receives only newly committed journal entries. Public enrichment cannot block measurement ACK. */
 	onCommitted?(entry: LiveJournalEntryV1): void;
 	/** Durable note writer; a failed write keeps the terminal record and its lease recoverable. */
@@ -28,6 +31,7 @@ export interface LiveSessionLifecycleOptions {
 export class LiveSessionLifecycle {
 	private record: LiveSessionRuntimeRecord | null = null;
 	private journal: LiveJournalEntryV1[] = [];
+	private readonly completed = new Map<string, { record: LiveSessionRuntimeRecord; journal: LiveJournalEntryV1[] }>();
 	private observations: LiveSessionViewV1['observations'] = [];
 	private chart: LiveChartPointV1[] = [];
 	private handle: ActiveSessionLeaseHandle | null = null;
@@ -54,7 +58,19 @@ export class LiveSessionLifecycle {
 			}
 			if (!this.options.enabled()) return;
 			this.armHeartbeat();
-			if (loaded.record.phase === 'complete') { await this.saveCompletedNote(); return; }
+			let settled = false;
+			for (const entry of this.journal) {
+				const next = { ...entry, outbox: entry.outbox.map(settleLiveAlertRestart) };
+				if (JSON.stringify(next) !== JSON.stringify(entry) && await this.options.persistence.replaceLiveJournal(entry, next)) {
+					Object.assign(entry, next); settled = true;
+				}
+			}
+			if (loaded.record.phase === 'complete') {
+				if (settled && loaded.record.summaryReceipt !== null && this.options.onComplete) {
+					await this.options.onComplete(structuredClone(this.record), structuredClone(this.journal));
+				}
+				await this.saveCompletedNote(); return;
+			}
 			await this.reclaim();
 			this.armHeartbeat();
 		});
@@ -69,14 +85,16 @@ export class LiveSessionLifecycle {
 				if (this.record.summaryReceipt === null && !await this.saveCompletedNote()) return null;
 				const cleared = await this.options.persistence.clear(this.record.authority);
 				if (cleared.status !== 'cleared') return null;
+				this.completed.set(this.record.sessionId, { record: this.record, journal: this.journal });
+				if (this.completed.size > 8) this.completed.delete(this.completed.keys().next().value!);
 			}
 			const id = this.options.sessionId(); const acquired = await this.options.coordinator.acquire(id);
-			if (acquired.status !== 'acquired' && acquired.status !== 'already_owned') return null;
+			if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== id) return null;
 			const now = this.options.now(); const at = new Date(now).toISOString();
 			const next: LiveSessionRuntimeRecord = { version: 4, kind: 'live_inventory', sessionId: id, phase: 'active',
 				authority: sessionAuthorityFromLease(acquired.handle), startedAt: at, endedAt: null, persistedAt: now,
 				sourceInstance: null, build: null, profile: null, epoch: null,
-				context: character === null ? null : { state: 'gameplay', mapId: null, character }, connection: 'connected', lastPresenceAt: now, lastObservationAt: null, lastValidItemsAt: null, lastValidCurrenciesAt: null, currencyTrackedIds: [],
+				context: character === null ? null : { state: 'gameplay', mapId: null, character }, connection: 'connected', lastPresenceAt: now, lastObservationAt: null, lastValidItemsAt: null, lastValidCurrenciesAt: null, lastSourceDisconnectedAt: null, currencyTrackedIds: [],
 				lastSample: null, fingerprint: null, itemComparable: false, currencyComparable: false, sourceState: 'missing', sourceReason: 'source_missing',
 				observationCount: 0, sampleCount: 0, totals: [], gaps: [{ version: 1, fromAt: at, toAt: null, reason: 'source_missing', channels: ['items'] }],
 				observedItemsMs: 0, observedCurrenciesMs: 0, prices: [], priceCapturedAt: null,
@@ -100,7 +118,7 @@ export class LiveSessionLifecycle {
 			let next = this.record;
 			if (next.sourceInstance !== null) next = liveSessionGap(next, 'context_changed', this.nowIso());
 			next = { ...next, sourceInstance: source.sourceInstance, build: source.build, profile: NEXUS_LIVE_PROFILE,
-				epoch: source.epoch, context: { ...source.context }, lastSample: null, fingerprint: null,
+				epoch: source.epoch, context: { ...source.context }, lastSample: null, fingerprint: null, lastSourceDisconnectedAt: null,
 				itemComparable: false, currencyComparable: false, sourceState: 'warming_up', sourceReason: null, persistedAt: this.options.now(), connection: 'connected' };
 			next = this.observeMap(next, source.context.mapId, this.options.now());
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') return 'source_conflict';
@@ -119,6 +137,10 @@ export class LiveSessionLifecycle {
 				return 'stored';
 			}
 			const reduced = reduceLiveInventorySample(this.record, sample);
+			reduced.record.persistedAt = this.options.now();
+			const sessionId = this.record.sessionId;
+			reduced.journal.outbox = reduced.journal.observations.filter((row) => row.kind === 'item' && row.delta > 0)
+				.map((row) => createLiveAlertIntent(sessionId, row, this.options.thresholdCopper?.() ?? 50000));
 			const saved = await this.options.persistence.saveLive(reduced.record, reduced.journal);
 			if (saved.status !== 'saved') {
 				this.failure = true; this.options.onStateChange(); return saved.status === 'stale' ? 'not_owner' : 'storage_unavailable';
@@ -133,6 +155,10 @@ export class LiveSessionLifecycle {
 			if (this.record?.phase !== 'active' || this.record.sourceInstance !== event.sourceInstance || event.epoch !== null && this.record.epoch !== null && event.epoch !== this.record.epoch || !await this.owned()) return;
 			const next = liveSessionGap(this.record, event.reason, event.observedAt);
 			next.epoch = null; next.lastSample = null; next.fingerprint = null; next.persistedAt = this.options.now();
+			if (event.reason === 'disconnect') {
+				next.connection = 'disconnected'; next.lastPresenceAt = Math.min(this.options.now(),Date.parse(event.observedAt));
+				next.lastSourceDisconnectedAt = new Date(next.lastPresenceAt).toISOString();
+			}
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') throw new Error('Could not persist the live source gap.');
 			this.record = next; this.options.onStateChange();
 		});
@@ -156,6 +182,14 @@ export class LiveSessionLifecycle {
 			if (this.record === null || !this.options.enabled()) return false;
 			if (this.record.phase === 'complete') return await this.saveCompletedNote();
 			if (!await this.owned()) return false;
+			for (const entry of this.journal) {
+				const nextEntry = { ...entry, outbox: entry.outbox.map((intent) => ['awaiting_price','ready'].includes(intent.state)
+					? { ...intent, state: 'skipped' as const, skipReason: 'session_closed' as const, alert: null } : intent) };
+				if (JSON.stringify(entry) !== JSON.stringify(nextEntry)) {
+					if (!await this.options.persistence.replaceLiveJournal(entry,nextEntry,this.record)) return false;
+					Object.assign(entry,nextEntry);
+				}
+			}
 			const ended = Math.max(Date.parse(this.record.startedAt), Math.min(endedAtMs, this.options.now()));
 			let next = liveSessionGap(this.record, 'source_stale', new Date(ended).toISOString());
 			if (this.record.lastValidItemsAt !== null && Date.parse(this.record.lastValidItemsAt) >= ended) next.gaps = next.gaps.filter((gap) => gap.toAt !== null || gap.channels[0] !== 'items');
@@ -170,7 +204,7 @@ export class LiveSessionLifecycle {
 
 	async updatePrices(prices: LiveSessionRuntimeRecord['prices'], capturedAt: string): Promise<boolean> {
 		return await this.enqueue(async () => {
-			if (this.record === null || !await this.owned()) return false;
+			if (this.record?.phase !== 'active' || !await this.owned()) return false;
 			const next = { ...this.record, prices: structuredClone(prices), priceCapturedAt: capturedAt, persistedAt: this.options.now() };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') return false;
 			this.record = next; this.rebuildChart(); this.options.onStateChange(); return true;
@@ -178,6 +212,37 @@ export class LiveSessionLifecycle {
 	}
 	getRuntime(): LiveSessionRuntimeRecord | null { return this.record === null ? null : structuredClone(this.record); }
 	getJournal(): LiveJournalEntryV1[] { return structuredClone(this.journal); }
+	/** Export snapshots copy record and full journal at one durable queue boundary. */
+	async capture(): Promise<LiveSessionCaptureV1 | null> {
+		return await this.enqueue(async () => this.record === null ? null : {record:structuredClone(this.record),
+			journal:structuredClone(this.journal),capturedAt:this.nowIso()});
+	}
+
+	/** Claims precede effects; receipt-only updates may settle evidence after the session closes. */
+	async updateAlert(outboxId: string, update: (prior: LiveAlertOutboxV1) => LiveAlertOutboxV1, receiptOnly = false, sessionId?: string): Promise<LiveAlertOutboxV1 | null> {
+		return await this.enqueue(async () => {
+			const target = sessionId !== undefined && this.record?.sessionId !== sessionId ? this.completed.get(sessionId)
+				: this.record === null ? undefined : {record:this.record,journal:this.journal};
+			if (!target || !receiptOnly && (target.record !== this.record || target.record.phase !== 'active' || !await this.owned())) return null;
+			const entry = target.journal.find((row) => row.outbox.some((intent) => intent.outboxId === outboxId));
+			const prior = entry?.outbox.find((row) => row.outboxId === outboxId); if (!entry || !prior) return null;
+			const intent = update(structuredClone(prior));
+			const next = { ...entry, outbox: entry.outbox.map((row) => row.outboxId === outboxId ? intent : row) };
+			if (JSON.stringify(prior) === JSON.stringify(intent)) return null;
+			if (!await this.options.persistence.replaceLiveJournal(entry, next, receiptOnly ? undefined : target.record)) return null;
+			Object.assign(entry, next); this.options.onStateChange();
+			if (target.record.phase === 'complete' && target.record.summaryReceipt !== null && this.options.onComplete) await this.options.onComplete(structuredClone(target.record), structuredClone(target.journal));
+			return structuredClone(intent);
+		});
+	}
+	getAlerts(): LiveSessionAlertViewV1[] {
+		return this.journal.flatMap((entry) => entry.outbox.map((intent) => {
+			const observation = entry.observations.find((row) => row.id === intent.observationId)!;
+			return { id: intent.observationId, outboxId: intent.outboxId, observedAt: entry.observedAt, itemId: observation.idNumber,
+				quantity: observation.delta, totalCopper: intent.alert?.totalCopper ?? null, state: intent.state, skipReason: intent.skipReason,
+				sentTo: [...intent.sentTo], receipt: structuredClone(intent.receipt), deliveryReport: structuredClone(intent.deliveryReport) };
+		}));
+	}
 
 	getView(offset = 0, limit = 200): LiveSessionViewV1 {
 		const row = this.record; const size = Math.max(1, Math.min(200, Number.isSafeInteger(limit) ? limit : 200));
@@ -186,7 +251,8 @@ export class LiveSessionLifecycle {
 		const valuation = valueLiveTotals(row?.totals ?? [], row?.prices ?? [], row?.priceCapturedAt ?? null);
 		const at = row?.lastObservationAt ?? null;
 		return { version: 1, sessionId: row?.sessionId ?? null, phase: this.failure ? 'error' : row?.phase ?? 'idle',
-			connection: row?.connection ?? 'disconnected', sourceState: row?.sourceState ?? 'missing', sourceReason: row?.sourceReason ?? 'source_missing',
+			connection: row?.phase === 'complete' ? 'disconnected' : row?.connection ?? 'disconnected',
+			sourceState: row?.phase === 'complete' ? 'unavailable' : row?.sourceState ?? 'missing', sourceReason: row?.sourceReason ?? 'source_missing',
 			source: row?.sourceInstance ? 'nexus_inventory' : null, startedAt: row?.startedAt ?? null, endedAt: row?.endedAt ?? null,
 			elapsedMs: row === null ? null : Math.max(0, (row.endedAt === null ? this.options.now() : Date.parse(row.endedAt)) - Date.parse(row.startedAt)),
 			observedItemsMs: row?.observedItemsMs ?? 0, observedCurrenciesMs: row?.observedCurrenciesMs ?? 0, lastObservationAt: at,
@@ -277,4 +343,12 @@ function boundedChart(points: LiveChartPointV1[]): LiveChartPointV1[] {
 	if (points.length <= 600) return points;
 	// The displayed tail is explicit: its first point contains the full preceding cumulative net.
 	return points.slice(-600).map((point, index) => index === 0 ? { ...point, breakBefore: true } : point);
+}
+
+/** Host views can mount before IndexedDB recovery has finished. */
+export function emptyLiveSessionView(): LiveSessionViewV1 {
+	return {version:1,sessionId:null,phase:'idle',connection:'disconnected',sourceState:'missing',sourceReason:'source_missing',source:null,
+		startedAt:null,endedAt:null,elapsedMs:null,observedItemsMs:0,observedCurrenciesMs:0,lastObservationAt:null,itemCoverage:'none',currencyCoverage:'none',
+		currencyIds:[],freeSlots:null,observations:[],observationCount:0,observationOffset:0,hasMore:false,gaps:[],totals:[],
+		valuation:valueLiveTotals([],[],null),chartPoints:[],magicFind:{value:null,source:'unknown'}};
 }

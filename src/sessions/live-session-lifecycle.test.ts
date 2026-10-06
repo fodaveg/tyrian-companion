@@ -5,12 +5,15 @@ import { MemorySessionRuntimeStore, IndexedDbSessionRuntimeStore } from './sessi
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1 } from './live-session-model';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
+import { LiveSessionEconomy } from './live-session-economy';
+import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
+import { decideLiveAlert } from './live-session-outbox';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
 function fixture(store = new MemorySessionRuntimeStore()) {
-	let now = AT; let fence = 0; let owned = true; let interval: (() => void) | null = null;
+	let now = AT; let fence = 0; let owned = true; let interval: (() => void) | null = null; let ids = 0;
 	const onComplete = vi.fn(async () => 'Sessions/live.md'); const onCommitted = vi.fn();
 	const handle = (sessionId: string): ActiveSessionLeaseHandle => ({ machineId: 'machine', instanceId: 'host', sessionId,
 		fence: ++fence, acquiredAt: now, renewedAt: now, expiresAt: now + 120_000 });
@@ -20,7 +23,7 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 		assertOwned: vi.fn(async () => owned ? { status: 'owned' as const } : { status: 'lost' as const }),
 		release: vi.fn(async () => ({ status: 'released' as const })), dispose: vi.fn(),
 	};
-	const options = { coordinator, persistence: store, enabled: () => true, now: () => now, sessionId: () => 'session',
+	const options = { coordinator, persistence: store, enabled: () => true, now: () => now, sessionId: () => ++ids === 1 ? 'session' : `session-${ids}`, thresholdCopper: () => 1,
 		setInterval: (callback: () => void) => { interval = callback; return 1; }, clearInterval: () => { interval = null; },
 		onStateChange: vi.fn(), onError: vi.fn(), onCommitted, onComplete };
 	const service = new LiveSessionLifecycle(options);
@@ -87,5 +90,92 @@ describe('passive live session lifecycle', () => {
 		const reopened = new IndexedDbSessionRuntimeStore(factory, 'live-atomic');
 		expect(await reopened.loadLive()).toMatchObject({ status: 'loaded', record: { observationCount: 1 } });
 		expect(await reopened.readLiveJournal('session')).toHaveLength(2); reopened.close();
+	});
+});
+
+function economy(f: ReturnType<typeof fixture>, lifecycle = f.service) {
+	const emit = vi.fn(async () => ({delivered:['queue'] as const,failed:[],rejected:false}));
+	const requestDetailed = vi.fn(async () => ({status:200,headers:{},body:[{id:12147,whitelisted:true,
+		buys:{unit_price:100,quantity:100},sells:{unit_price:120,quantity:100}}]}));
+	const service = new LiveSessionEconomy({lifecycle,gateway:{requestDetailed},rateLimit:new RateLimitCoordinator({now:f.options.now}),
+		now:f.options.now,catalog:async () => ({}),emit,onError:vi.fn(),onChange:vi.fn()});
+	return {service,emit,requestDetailed};
+}
+async function positive(f: ReturnType<typeof fixture>) {
+	await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+	f.setNow(AT+1000); await f.service.commit(f.sample(1,2));
+	return f.service.getJournal()[1]!;
+}
+
+describe('durable live alert outbox', () => {
+	it('a durable claim cannot rewrite the captured price or alert', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await expect(f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString(),
+			alert:{...prior.alert!,totalCopper:999}}))).resolves.toBeNull();
+		expect(f.service.getAlerts()[0]).toMatchObject({state:'ready',totalCopper:170}); await f.service.dispose();
+	});
+	it('restart settles a completed pending receipt and rewrites the already verified note', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString(),receipt:{state:'pending'}}));
+		await f.service.stop(AT+1000); await f.service.dispose(); const restored = new LiveSessionLifecycle(f.options); await restored.initialize();
+		expect(restored.getAlerts()[0]).toMatchObject({state:'processed',receipt:{state:'unconfirmed',cause:'restart'}});
+		expect(f.onComplete).toHaveBeenCalledTimes(2); expect(restored.getView().sourceState).toBe('unavailable'); await restored.dispose();
+	});
+	it('records one positive intent atomically and never creates one for a decrease or replay', async () => {
+		const f = fixture(); const entry = await positive(f);
+		expect(entry.outbox).toMatchObject([{source:'nexus_inventory',accountRef:null,state:'awaiting_price',thresholdCopper:1}]);
+		await f.service.commit(f.sample(1,2)); f.setNow(AT+2000); await f.service.commit(f.sample(2,0));
+		expect(f.service.getJournal().flatMap((row) => row.outbox)).toHaveLength(1); await f.service.dispose();
+	});
+	it('a failed durable claim prevents every emitter side effect', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const replace = f.store.replaceLiveJournal.bind(f.store);
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) =>
+			next.outbox.some((intent) => intent.state === 'dispatching') ? false : await replace(prior,next,owner));
+		e.service.observe(entry); await e.service.drain(); expect(e.emit).not.toHaveBeenCalled();
+		expect(f.service.getAlerts()[0]?.state).toBe('ready'); await e.service.dispose(); await f.service.dispose();
+	});
+	it('claims once before fanout, caches public quotes, and replay never emits twice', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		e.emit.mockImplementation(async () => {
+			expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]?.state).toBe('dispatching');
+			return {delivered:['queue'],failed:[],rejected:false};
+		});
+		e.service.observe(entry); await e.service.drain(); e.service.observe(entry); await e.service.drain();
+		expect(e.emit).toHaveBeenCalledTimes(1); expect(e.requestDetailed).toHaveBeenCalledTimes(1);
+		expect(f.service.getAlerts()[0]).toMatchObject({state:'processed',totalCopper:170});
+		expect(f.service.getView().valuation).toMatchObject({coinNetCopper:null,knownNetValueCopper:null});
+		await e.service.dispose(); await f.service.dispose();
+	});
+	it('a crash after claim is unconfirmed on restart and never re-emits', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString()}));
+		await f.service.dispose(); const restored = new LiveSessionLifecycle(f.options); await restored.initialize();
+		expect(restored.getAlerts()[0]).toMatchObject({state:'processed',receipt:{state:'unconfirmed',cause:'restart'}});
+		const e = economy(f,restored); e.service.observe(restored.getJournal()[1]!); await e.service.drain();
+		expect(e.emit).not.toHaveBeenCalled(); await e.service.dispose(); await restored.dispose();
+	});
+	it('lost ownership blocks pricing decisions and claims', async () => {
+		const f = fixture(); const entry = await positive(f); f.loseLease(); const e = economy(f);
+		e.service.observe(entry); await e.service.drain(); expect(e.emit).not.toHaveBeenCalled();
+		expect(f.service.getAlerts()[0]?.state).toBe('awaiting_price'); await e.service.dispose(); await f.service.dispose();
+	});
+	it('closing before price arrival freezes skipped intent and never sends it afterwards', async () => {
+		const f = fixture(); const entry = await positive(f); await f.service.stop(AT+1000); const e = economy(f);
+		e.service.observe(entry); await e.service.drain(); expect(e.requestDetailed).not.toHaveBeenCalled(); expect(e.emit).not.toHaveBeenCalled();
+		expect(f.service.getAlerts()[0]).toMatchObject({state:'skipped',skipReason:'session_closed'}); await e.service.dispose(); await f.service.dispose();
+	});
+	it('late receipt persists to the old journal and note after a new session, without downgrading received', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString()}));
+		await f.service.stop(AT+1000); f.setNow(AT+2000); await f.service.start('Next');
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'processed',sentTo:['nexus'],receipt:{state:'received',client:'nexus',atMs:AT+2000}}),true,'session');
+		await expect(f.service.updateAlert(intent.outboxId,(prior) => ({...prior,receipt:{state:'pending'}}),true,'session')).resolves.toBeNull();
+		expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]).toMatchObject({state:'processed',receipt:{state:'received'}});
+		expect(f.onComplete).toHaveBeenCalledTimes(2); expect(f.service.getView().sessionId).toBe('session-2'); await f.service.dispose();
 	});
 });

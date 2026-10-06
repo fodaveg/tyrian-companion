@@ -2,6 +2,7 @@ import type { LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-sessio
 import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-validation';
 import type { SessionRuntimeMutationResult, SessionRuntimeLoadResult } from './session-runtime-store';
 import { SESSION_RUNTIME_KEY, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
+import { canUpdateLiveOutbox } from './live-session-outbox';
 
 export const LIVE_SESSION_JOURNAL_STORE_NAME = 'live-inventory-journal-v1';
 export type LiveRuntimeLoadResult = { status: 'empty' | 'legacy' } | { status: 'loaded'; record: LiveSessionRuntimeRecord }
@@ -11,6 +12,7 @@ export interface LiveSessionPersistence {
 	saveLive(record: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult>;
 	readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]>;
 	markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean>;
+	replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean>;
 }
 
 /** One transaction commits the bounded runtime cursor and appends the sample's ledger together. */
@@ -87,9 +89,30 @@ export function canReplaceLiveRuntime(current: LiveSessionRuntimeRecord, next: L
 }
 export function journalKey(entry: LiveJournalEntryV1): [string,string,number] { return [entry.sessionId, entry.epoch, entry.cursor]; }
 export function identicalJournal(left: LiveJournalEntryV1, right: LiveJournalEntryV1): boolean {
-	const { alertsProcessed: _leftProcessed, ...leftEvidence } = left;
-	const { alertsProcessed: _rightProcessed, ...rightEvidence } = right;
+	const { alertsProcessed: _leftProcessed, outbox: _leftOutbox, ...leftEvidence } = left;
+	const { alertsProcessed: _rightProcessed, outbox: _rightOutbox, ...rightEvidence } = right;
 	return JSON.stringify(leftEvidence) === JSON.stringify(rightEvidence);
+}
+
+/** Compare-and-set intent/receipts without ever replacing measurement evidence. Claims are fenced. */
+export async function replaceLiveJournal(database: IDBDatabase, prior: LiveJournalEntryV1,
+	next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean> {
+	if (!isLiveJournalEntry(prior) || !isLiveJournalEntry(next) || !identicalJournal(prior,next) || !canUpdateLiveOutbox(prior,next,owner !== undefined)) return false;
+	return await new Promise((resolve) => {
+		const tx = database.transaction([SESSION_RUNTIME_STORE_NAME,LIVE_SESSION_JOURNAL_STORE_NAME],'readwrite');
+		const journal = tx.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME); let saved = false;
+		const write = (): void => {
+			const request = journal.get(journalKey(prior));
+			request.onsuccess = () => { if (JSON.stringify(request.result) !== JSON.stringify(prior)) return;
+				journal.put(structuredClone(next),journalKey(next)); saved = true; };
+		};
+		if (owner) {
+			const request = tx.objectStore(SESSION_RUNTIME_STORE_NAME).get(SESSION_RUNTIME_KEY);
+			request.onsuccess = () => { if (isLiveSessionRuntimeRecord(request.result) && request.result.sessionId === owner.sessionId
+				&& JSON.stringify(request.result.authority) === JSON.stringify(owner.authority)) write(); };
+		} else write();
+		tx.oncomplete = () => resolve(saved); tx.onerror = tx.onabort = () => resolve(false);
+	});
 }
 
 export function liveRuntimeLoadResult(loaded: SessionRuntimeLoadResult): LiveRuntimeLoadResult {

@@ -19,7 +19,7 @@ function initial(): LiveSessionRuntimeRecord {
 		authority: { machineId: 'machine', instanceId: 'host', sessionId: 'session', fence: 1, acquiredAt: AT },
 		startedAt: new Date(AT).toISOString(), endedAt: null, persistedAt: AT, sourceInstance: INSTANCE,
 		build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE, epoch: EPOCH, context: sample(0, 0).context,
-		connection: 'connected', lastPresenceAt: AT, lastObservationAt: null, lastValidItemsAt: null, lastValidCurrenciesAt: null, currencyTrackedIds: [], lastSample: null, fingerprint: null, itemComparable: false, currencyComparable: false, sourceState: 'warming_up',
+		connection: 'connected', lastPresenceAt: AT, lastObservationAt: null, lastValidItemsAt: null, lastValidCurrenciesAt: null, lastSourceDisconnectedAt: null, currencyTrackedIds: [], lastSample: null, fingerprint: null, itemComparable: false, currencyComparable: false, sourceState: 'warming_up',
 		sourceReason: null, observationCount: 0, sampleCount: 0, totals: [], gaps: [], observedItemsMs: 0, observedCurrenciesMs: 0,
 		prices: [], priceCapturedAt: null, magicFind: { value: null, source: 'unknown' }, farmingGoal: {version: 1, kind: 'none'}, groupContext: null, preparation: { ...DEFAULT_FARMING_PREPARATION },
 		mapIntervals: [], mapObservation: null, mapCoveragePartial: false, summaryReceipt: null };

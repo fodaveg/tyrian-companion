@@ -63,7 +63,7 @@ export function reduceLiveInventorySample(record: LiveSessionRuntimeRecord, samp
 	}
 	observations.sort((left, right) => left.kind.localeCompare(right.kind) || left.idNumber - right.idNumber);
 	next.totals = liveObservationTotals([...next.totals], observations);
-	next.observationCount += observations.length; next.sampleCount += 1;
+	next.observationCount += observations.length; if (sample.itemCoverage === 'complete') next.sampleCount += 1;
 	if (!Number.isSafeInteger(next.observationCount) || !Number.isSafeInteger(next.observedItemsMs)
 		|| !Number.isSafeInteger(next.observedCurrenciesMs)) throw new Error('Live session arithmetic overflow.');
 	const breakBefore = !itemInterval && continuing || sample.mode === 'baseline' && record.gaps.length > 0;
@@ -84,14 +84,14 @@ export function reduceLiveInventorySample(record: LiveSessionRuntimeRecord, samp
 		next.gaps.push({ version: 1, fromAt: record.lastValidCurrenciesAt ?? record.startedAt, toAt: null, reason: 'partial_inventory', channels: ['currencies'] });
 	}
 	next.gaps = next.gaps.filter((gap) => gap.toAt === null || gap.toAt > gap.fromAt);
-	next.lastObservationAt = sample.observedAt; next.lastPresenceAt = Date.parse(sample.observedAt);
+	next.lastObservationAt = sample.observedAt; next.lastPresenceAt = Math.max(record.lastPresenceAt,Date.parse(sample.observedAt));
 	next.lastSample = structuredClone(sample); next.fingerprint = liveSampleFingerprint(sample);
 	next.itemComparable = sample.itemCoverage === 'complete'; next.currencyComparable = sample.currencyCoverage === 'listed';
 	next.persistedAt = Date.parse(sample.observedAt);
 	next.sourceState = sample.itemCoverage === 'complete' ? 'ready' : 'unavailable';
 	next.sourceReason = sample.itemCoverage === 'complete' ? null : 'partial_inventory';
 	return { record: next, journal: { version: 1, sessionId: record.sessionId, epoch: sample.epoch,
-		cursor: sample.cursor, observedAt: sample.observedAt, observations, breakBefore, alertsProcessed: false } };
+		cursor: sample.cursor, observedAt: sample.observedAt, observations, breakBefore, alertsProcessed: false, outbox: [] } };
 }
 
 export function liveObservationTotals(totals: LiveTotalV1[], observations: readonly LiveObservationV1[]): LiveTotalV1[] {
