@@ -113,7 +113,7 @@ Desconexión: cerrar época; persistir gaps por canal desde sus últimas captura
 
 ## 5. DTOs que B expone a C
 
-Módulo contractual propuesto: `src/sessions/live-loot-model.ts`, propiedad B. C importa tipos, no reconstruye deltas desde DOM/StorageSnapshot. A usa las mismas fixtures wire, no depende de TypeScript.
+Módulo contractual asignado al núcleo: `src/sessions/live-session-model.ts`, propiedad B. Esta ruta identifica la juntura acordada, no acredita que su implementación o runtime estén verificados. C importa tipos, no reconstruye deltas desde DOM/StorageSnapshot. A usa las mismas fixtures wire, no depende de TypeScript.
 
 `LiveObservationV1`:
 

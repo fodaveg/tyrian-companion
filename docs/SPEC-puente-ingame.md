@@ -511,22 +511,24 @@ int32 positivo. `ttl` vale siempre 15 segundos y describe vigencia del TRANSPORT
 | `phase` | `idle`, `starting`, `active`, `stopping`, `provisional`, `complete`, `error`, `abandoned` |
 | `err` | `null`, `start`, `observe`, `stop`, `save`, `other`; diferencia fallo de inicio, lectura, cierre y guardado |
 | `elapsed` | Segundos de la duración declarada, descontando interrupciones registradas; `null` sin punto de partida suficiente |
-| `observed` | Incrementos de bolsas observados entre lecturas API; se conserva el contador al reconciliar el cierre; `null` si una recarga perdió esos incrementos |
+| `observed` | Incrementos positivos de bolsas observados: entre snapshots API en legacy; entre muestras Nexus comprometidas y con cobertura en live1, excluyendo baseline/rebaseline. Se conserva al cierre; `null` sin evidencia recuperable. Live1 restaura su contador del ledger durable |
 | `net` | Delta neto retenido al cierre, separado de lo observado; `null` antes del cierre o sin delta válido |
-| `lo`, `hi` | Banda de bolsas/h calculada sobre la ventana observada y el margen de caché; no un ritmo de botín en vivo |
-| `age` | Segundos desde la última observación API de bolsas; aumenta sin que el tick la rejuvenezca |
+| `lo`, `hi` | Banda de bolsas/h: en legacy, ventana observada y margen de caché API; en live1, incrementos observados e intervalos cubiertos, excluyendo huecos del denominador. Sin evidencia suficiente no se calcula; nunca representa un flujo causal completo de botín |
+| `age` | Segundos desde la última observación válida de bolsas de su fuente: snapshot API legacy o muestra Nexus comprometida con cobertura live1. Tick, heartbeat y replay no rejuvenecen la observación |
 | `slots` | Huecos libres de las bolsas del personaje relevante, nunca suma de banco o de otros personajes |
-| `slotSrc` | `ingame` para gameplay autenticado y capturado, `recent` para actividad API inferida, `unknown` sin selección demostrable |
-| `slotAge` | Segundos desde el snapshot que midió los huecos; independiente de `age` y `ttl` |
+| `slotSrc` | `ingame` para gameplay autenticado y capturado, incluida la fuente Nexus live1 vinculada; `recent` para actividad API inferida legacy; `unknown` sin selección demostrable |
+| `slotAge` | Segundos desde el snapshot API o la muestra Nexus que midió los huecos; independiente de `age` y `ttl` |
 | `goal` | `none`, `bags` o `duration`, capturado al iniciar la sesión y conservado al recargar |
 | `target`, `progress` | Bolsas para `bags`, segundos para `duration`; `null` para `none` o evidencia insuficiente |
-| `eta` | Segundos restantes del modelo del host; bolsas exige 3 observaciones, 20 min de muestra y edad máxima de 15 min; duración es cuenta atrás, nunca inferida del botín |
+| `eta` | Segundos restantes del modelo del host. Se conservan los mínimos de bolsas: 3 observaciones, 20 min de muestra y edad máxima de 15 min; en live1, esos 20 min requieren intervalos cubiertos. Si no se acreditan, `null`. Duración es cuenta atrás del tiempo declarado, nunca inferida del botín ni de su cobertura |
 | `mf`, `mfKind` | Porcentaje de Hallazgo mágico parcial, etiquetado `partial`; sin evidencia `mf=null`, `mfKind=unknown` |
 | `prep` | `partial`, `attention` o `unknown`; preparación opcional, sin certificación de buffs ni bloqueo de medición |
 
 El addon muestra conexión y medición como estados distintos. Tras 15 s sin `farming_state` marca el
 transporte como antiguo; conserva la lectura con su antigüedad en vez de sustituirla por cero.
-Una API antigua mantiene sus cifras y retira la ETA de bolsas. Desconectar del host no demuestra
+Una observación antigua mantiene sus cifras y retira la ETA de bolsas. En live1 también se retira
+cuando la fuente carece de cobertura vigente; la cota de 15 min no sustituye la caducidad de fuente
+de 5 s definida en [SPEC-live-loot](SPEC-live-loot.md). Desconectar del host no demuestra
 que terminó la sesión: el runtime sigue el contrato de presencia y sus 10 min de gracia.
 La ausencia de incrementos nunca demuestra AFK. El total obtenido entre lecturas es inobservable.
 Posición, visibilidad y escala pertenecen al menú del addon y no introducen botones de juego.
