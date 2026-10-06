@@ -1,3 +1,4 @@
+import type { FarmingGoalV1 } from './farming-goal';
 import type { SessionAuthority } from './session';
 import type { IngameGameContext } from '../alerts/alert-ingame-protocol';
 import type { SessionSummaryReceipt } from './session-runtime-store';
@@ -59,13 +60,14 @@ export interface LiveSessionRuntimeRecord {
 	version: 4; kind: 'live_inventory'; sessionId: string; phase: 'active' | 'complete';
 	authority: SessionAuthority; startedAt: string; endedAt: string | null; persistedAt: number;
 	sourceInstance: string | null; build: string | null; profile: typeof NEXUS_LIVE_PROFILE | null;
-	epoch: string | null; context: IngameGameContext | null; connection: 'connected' | 'disconnected';
-	lastSample: LiveInventorySampleV1 | null; fingerprint: string | null; itemComparable: boolean;
+	epoch: string | null; context: IngameGameContext | null; connection: 'connected' | 'disconnected'; lastPresenceAt: number; lastObservationAt: string | null;
+	lastValidItemsAt: string | null; lastValidCurrenciesAt: string | null; currencyTrackedIds: number[];
+	lastSample: LiveInventorySampleV1 | null; fingerprint: string | null; itemComparable: boolean; currencyComparable: boolean;
 	sourceState: LiveSessionViewV1['sourceState']; sourceReason: LiveGapV1['reason'] | null;
-	observationCount: number; totals: LiveTotalV1[]; gaps: LiveGapV1[];
+	observationCount: number; sampleCount: number; totals: LiveTotalV1[]; gaps: LiveGapV1[];
 	observedItemsMs: number; observedCurrenciesMs: number;
 	prices: LivePriceV1[]; priceCapturedAt: string | null;
-	magicFind: LiveSessionViewV1['magicFind']; preparation: FarmingPreparationSettingsV1;
+	magicFind: LiveSessionViewV1['magicFind']; preparation: FarmingPreparationSettingsV1; farmingGoal: FarmingGoalV1; groupContext: 'with_bosses' | 'without_bosses' | null;
 	mapIntervals: { mapId: number | null; fromMs: number; toMs: number }[];
 	mapObservation: { mapId: number | null; fromMs: number } | null; mapCoveragePartial: boolean;
 	summaryReceipt: SessionSummaryReceipt | null;

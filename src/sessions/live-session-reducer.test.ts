@@ -19,9 +19,9 @@ function initial(): LiveSessionRuntimeRecord {
 		authority: { machineId: 'machine', instanceId: 'host', sessionId: 'session', fence: 1, acquiredAt: AT },
 		startedAt: new Date(AT).toISOString(), endedAt: null, persistedAt: AT, sourceInstance: INSTANCE,
 		build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE, epoch: EPOCH, context: sample(0, 0).context,
-		connection: 'connected', lastSample: null, fingerprint: null, itemComparable: false, sourceState: 'warming_up',
-		sourceReason: null, observationCount: 0, totals: [], gaps: [], observedItemsMs: 0, observedCurrenciesMs: 0,
-		prices: [], priceCapturedAt: null, magicFind: { value: null, source: 'unknown' }, preparation: { ...DEFAULT_FARMING_PREPARATION },
+		connection: 'connected', lastPresenceAt: AT, lastObservationAt: null, lastValidItemsAt: null, lastValidCurrenciesAt: null, currencyTrackedIds: [], lastSample: null, fingerprint: null, itemComparable: false, currencyComparable: false, sourceState: 'warming_up',
+		sourceReason: null, observationCount: 0, sampleCount: 0, totals: [], gaps: [], observedItemsMs: 0, observedCurrenciesMs: 0,
+		prices: [], priceCapturedAt: null, magicFind: { value: null, source: 'unknown' }, farmingGoal: {version: 1, kind: 'none'}, groupContext: null, preparation: { ...DEFAULT_FARMING_PREPARATION },
 		mapIntervals: [], mapObservation: null, mapCoveragePartial: false, summaryReceipt: null };
 }
 
@@ -68,6 +68,50 @@ describe('live inventory ledger', () => {
 		expect(restored.journal.observations).toMatchObject([{ kind: 'currency', delta: 6 }]);
 		expect(restored.record.observedItemsMs).toBe(0);
 		expect(restored.record.observedCurrenciesMs).toBe(2000);
+	});
+	it('a currency gap invalidates its next boundary without discarding item continuity', () => {
+		const currency = (cursor: number, quantity: number) => sample(cursor, cursor * 2, { currencyCoverage: 'listed', rows: [
+			{ kind: 'item' as const, idNumber: 12147, quantity: cursor * 2 }, { kind: 'currency' as const, idNumber: 1, quantity },
+		] });
+		let current = reduceLiveInventorySample(initial(), currency(0, 0)).record;
+		current = reduceLiveInventorySample(current, currency(1, 6)).record;
+		current = liveSessionGap(current, 'read_failed', new Date(AT + 1500).toISOString(), ['currencies']);
+		const next = reduceLiveInventorySample(current, currency(2, 12));
+		expect(next.journal.observations).toMatchObject([{ kind: 'item', delta: 2 }]);
+		expect(next.record.totals.find((row) => row.kind === 'currency')?.positive).toBe(6);
+		expect(next.record.observedCurrenciesMs).toBe(1000);
+	});
+	it('currency recovery closes its own gap while partial items remain unavailable', () => {
+		const record = liveSessionGap({ ...initial(), currencyTrackedIds: [1] }, 'read_failed', new Date(AT).toISOString());
+		const baseline = sample(0, 0, { itemCoverage: 'partial', unknownPositions: 1, currencyCoverage: 'listed',
+			rows: [{ kind: 'currency', idNumber: 1, quantity: 0 }] });
+		const resumed = reduceLiveInventorySample(record, baseline);
+		expect(resumed.record.gaps.filter((gap) => gap.toAt === null).flatMap((gap) => gap.channels)).toEqual(['items']);
+		expect(resumed.record.gaps.some((gap) => gap.channels.includes('currencies'))).toBe(false);
+		const next = reduceLiveInventorySample(resumed.record, { ...baseline, mode: 'sample', cursor: 1,
+			sourceElapsedMs: 1000, observedAt: new Date(AT + 1000).toISOString() });
+		expect(next.record.gaps.filter((gap) => gap.toAt === null)).toHaveLength(1);
+	});
+	it('keeps healthy currency changes but covers no full-wallet time while one prior ID is absent', () => {
+		const currencies = (cursor: number, one: number, two: number | null) => sample(cursor, 0, {
+			currencyCoverage: 'listed', rows: [{ kind: 'currency' as const, idNumber: 1, quantity: one },
+				...(two === null ? [] : [{ kind: 'currency' as const, idNumber: 2, quantity: two }])],
+		});
+		let current = reduceLiveInventorySample(initial(), currencies(0, 0, 0)).record;
+		const missing = reduceLiveInventorySample(current, currencies(1, 6, null));
+		expect(missing.journal.observations).toMatchObject([{ idNumber: 1, delta: 6 }]);
+		expect(missing.record.observedCurrenciesMs).toBe(0);
+		const restored = reduceLiveInventorySample(missing.record, currencies(2, 12, 22));
+		expect(restored.journal.observations).toMatchObject([{ idNumber: 1, delta: 6 }]);
+		expect(restored.record.observedCurrenciesMs).toBe(0);
+		expect(restored.record.gaps).toMatchObject([{ channels: ['currencies'], fromAt: new Date(AT).toISOString(), toAt: new Date(AT + 2000).toISOString() }]);
+		current = reduceLiveInventorySample(restored.record, currencies(3, 18, 28)).record;
+		expect(current.observedCurrenciesMs).toBe(1000);
+	});
+	it('a backwards receipt clock never creates a negative observation window', () => {
+		const baseline = reduceLiveInventorySample(initial(), sample(0, 0)).record;
+		const first = reduceLiveInventorySample(baseline, sample(1, 2)).record;
+		expect(() => reduceLiveInventorySample(first, sample(2, 4, { observedAt: new Date(AT).toISOString() }))).toThrow('continuity');
 	});
 	it('missing currency ID is missing coverage, never a zero saldo', () => {
 		const baseline = reduceLiveInventorySample(initial(), sample(0, 0, { currencyCoverage: 'listed', rows: [{ kind: 'currency', idNumber: 1, quantity: 10 }] })).record;

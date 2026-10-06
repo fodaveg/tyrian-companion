@@ -1,3 +1,4 @@
+import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { readFileSync } from 'node:fs';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
@@ -50,6 +51,26 @@ const startContext: SessionStartContext = {
 };
 
 describe('session runtime persistence', () => {
+	it('retains an unfinished v3 record when a Nexus session attempts to replace it', async () => {
+		const factory = new IDBFactory(); const name = databaseName('legacy-preserved');
+		const store = new IndexedDbSessionRuntimeStore(factory, name); const prior = activeRecord();
+		await store.save(prior); let released = false;
+		const live = new LiveSessionLifecycle({ persistence: store, enabled: () => true,
+			coordinator: { instanceId: 'live-host', acquire: async (sessionId) => ({ status: 'acquired', handle: {
+				machineId: authority.machineId, instanceId: 'live-host', sessionId, fence: 2,
+				acquiredAt: authority.acquiredAt + 1000, renewedAt: authority.acquiredAt + 1000, expiresAt: authority.acquiredAt + 120000,
+			} }), renew: async () => ({ status: 'lost' }), assertOwned: async () => ({ status: 'owned' }),
+				release: async () => { released = true; return {status: 'released'}; }, dispose: () => {} },
+			now: () => authority.acquiredAt + 1000, sessionId: () => 'nexus-new', setInterval: () => 1, clearInterval: () => {},
+			onStateChange: () => {}, onError: () => {},
+		});
+		await live.initialize(); await expect(live.start('Test')).resolves.toBeNull();
+		expect(released).toBe(true); expect(await store.load()).toEqual({status: 'loaded', record: prior});
+		await live.dispose(); store.close();
+		const reopened = new IndexedDbSessionRuntimeStore(factory, name);
+		expect(await reopened.load()).toEqual({status: 'loaded', record: prior}); reopened.close();
+	});
+
 	it('reports a deliberate storage failure with a child id, parent correlation and no runtime payload', async () => {
 		const events: LocalDebugPersistenceEvent[] = [];
 		const diagnostics = new LocalDebugPersistenceProbe({
@@ -395,7 +416,7 @@ describe('session runtime persistence', () => {
 		const store = new IndexedDbSessionRuntimeStore(factory, name);
 		await expect(store.load()).resolves.toEqual({ status: 'empty' });
 
-		const upgraded = await openRaw(factory, name, 2);
+		const upgraded = await openRaw(factory, name, 3);
 		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
 		upgraded.close();
 	});

@@ -5,14 +5,18 @@ import { LIVE_GAP_REASONS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveValuationV1, type LivePriceV1 } from './live-session-model';
 
 /** Keeps unknown coverage explicit and invalidates item comparisons across missing intervals. */
-export function liveSessionGap(record: LiveSessionRuntimeRecord, reason: LiveGapV1['reason'], at: string,
+export function liveSessionGap(record: LiveSessionRuntimeRecord, reason: LiveGapV1['reason'], _at: string,
 	channels: LiveGapV1['channels'] = ['items', 'currencies']): LiveSessionRuntimeRecord {
 	const next = structuredClone(record);
 	if (next.phase !== 'active') return next;
-	if (!next.gaps.some((gap) => gap.toAt === null && channels.every((channel) => gap.channels.includes(channel)))) {
-		next.gaps.push({ version: 1, reason, fromAt: next.lastSample?.observedAt ?? at, toAt: null, channels: [...channels] });
+	for (const channel of channels) {
+		if (channel === 'currencies' && next.currencyTrackedIds.length === 0) continue;
+		if (next.gaps.some((gap) => gap.toAt === null && gap.channels[0] === channel)) continue;
+		const fromAt = (channel === 'items' ? next.lastValidItemsAt : next.lastValidCurrenciesAt) ?? next.startedAt;
+		next.gaps.push({ version: 1, reason, fromAt, toAt: null, channels: [channel] });
 	}
 	if (channels.includes('items')) next.itemComparable = false;
+	if (channels.includes('currencies')) next.currencyComparable = false;
 	next.sourceState = reason === 'source_stale' ? 'stale' : reason === 'source_missing' ? 'missing' : 'unavailable';
 	next.sourceReason = reason;
 	return next;
@@ -26,16 +30,18 @@ export function reduceLiveInventorySample(record: LiveSessionRuntimeRecord, samp
 		|| sample.epoch !== record.epoch) throw new Error('Invalid live inventory sample.');
 	const previous = record.lastSample;
 	const continuing = previous !== null && previous.epoch === sample.epoch && sample.mode === 'sample';
-	if (continuing && (sample.cursor !== previous.cursor + 1 || sample.sourceElapsedMs <= previous.sourceElapsedMs)) {
+	if (continuing && (sample.cursor !== previous.cursor + 1 || sample.sourceElapsedMs <= previous.sourceElapsedMs || sample.observedAt < previous.observedAt)) {
 		throw new Error('Invalid live inventory continuity.');
 	}
+	if (sample.observedAt < record.startedAt) throw new Error('Invalid live inventory reception time.');
 	if (!continuing && (sample.mode !== 'baseline' || sample.cursor !== 0 || sample.sourceElapsedMs !== 0)) {
 		throw new Error('A live inventory epoch requires a baseline.');
 	}
 	const next = structuredClone(record);
 	const observations: LiveObservationV1[] = [];
 	const itemInterval = continuing && record.itemComparable && sample.itemCoverage === 'complete' && previous.itemCoverage === 'complete';
-	const currencyInterval = continuing && previous.currencyCoverage === 'listed' && sample.currencyCoverage === 'listed';
+	const currencyInterval = continuing && record.currencyComparable && previous.currencyCoverage === 'listed' && sample.currencyCoverage === 'listed'
+		&& previous.rows.some((row) => row.kind === 'currency' && sample.rows.some((other) => other.kind === 'currency' && other.idNumber === row.idNumber));
 	if (continuing && (itemInterval || currencyInterval)) {
 		const before = new Map(previous.rows.map((row) => [`${row.kind}:${String(row.idNumber)}`, row.quantity]));
 		const after = new Map(sample.rows.map((row) => [`${row.kind}:${String(row.idNumber)}`, row.quantity]));
@@ -52,30 +58,38 @@ export function reduceLiveInventorySample(record: LiveSessionRuntimeRecord, samp
 		}
 		const duration = sample.sourceElapsedMs - previous.sourceElapsedMs;
 		if (itemInterval) next.observedItemsMs += duration;
-		if (currencyInterval) next.observedCurrenciesMs += duration;
+		if (currencyInterval && record.currencyTrackedIds.length > 0 && record.currencyTrackedIds.every((id) =>
+			previous.rows.some((row) => row.kind === 'currency' && row.idNumber === id) && sample.rows.some((row) => row.kind === 'currency' && row.idNumber === id))) next.observedCurrenciesMs += duration;
 	}
 	observations.sort((left, right) => left.kind.localeCompare(right.kind) || left.idNumber - right.idNumber);
 	next.totals = liveObservationTotals([...next.totals], observations);
-	next.observationCount += observations.length;
+	next.observationCount += observations.length; next.sampleCount += 1;
 	if (!Number.isSafeInteger(next.observationCount) || !Number.isSafeInteger(next.observedItemsMs)
 		|| !Number.isSafeInteger(next.observedCurrenciesMs)) throw new Error('Live session arithmetic overflow.');
 	const breakBefore = !itemInterval && continuing || sample.mode === 'baseline' && record.gaps.length > 0;
+	const currencyIds = sample.rows.filter((row) => row.kind === 'currency').map((row) => row.idNumber);
+	next.currencyTrackedIds = [...new Set([...record.currencyTrackedIds, ...currencyIds])].sort((left, right) => left - right);
+	const currenciesRestored = next.currencyTrackedIds.length > 0 && sample.currencyCoverage === 'listed'
+		&& next.currencyTrackedIds.every((id) => currencyIds.includes(id));
 	for (const gap of next.gaps) {
 		if (gap.toAt !== null) continue;
-		const closesItems = !gap.channels.includes('items') || sample.itemCoverage === 'complete';
-		const closesCurrency = !gap.channels.includes('currencies') || sample.currencyCoverage === 'listed';
-		if (closesItems && closesCurrency) gap.toAt = sample.observedAt;
-		else if (closesItems && gap.channels.includes('items')) {
-			gap.channels = ['currencies'];
-			next.gaps.push({ ...gap, channels: ['items'], toAt: sample.observedAt });
-		}
+		if (gap.channels[0] === 'items' ? sample.itemCoverage === 'complete' : currenciesRestored) gap.toAt = sample.observedAt;
 	}
+	if (sample.itemCoverage === 'complete') next.lastValidItemsAt = sample.observedAt;
+	if (currenciesRestored) next.lastValidCurrenciesAt = sample.observedAt;
+	if (sample.itemCoverage !== 'complete' && !next.gaps.some((gap) => gap.toAt === null && gap.channels[0] === 'items')) {
+		next.gaps.push({ version: 1, fromAt: record.lastValidItemsAt ?? record.startedAt, toAt: null, reason: 'partial_inventory', channels: ['items'] });
+	}
+	if (!currenciesRestored && next.currencyTrackedIds.length > 0 && !next.gaps.some((gap) => gap.toAt === null && gap.channels[0] === 'currencies')) {
+		next.gaps.push({ version: 1, fromAt: record.lastValidCurrenciesAt ?? record.startedAt, toAt: null, reason: 'partial_inventory', channels: ['currencies'] });
+	}
+	next.gaps = next.gaps.filter((gap) => gap.toAt === null || gap.toAt > gap.fromAt);
+	next.lastObservationAt = sample.observedAt; next.lastPresenceAt = Date.parse(sample.observedAt);
 	next.lastSample = structuredClone(sample); next.fingerprint = liveSampleFingerprint(sample);
-	next.itemComparable = sample.itemCoverage === 'complete'; next.persistedAt = Date.parse(sample.observedAt);
+	next.itemComparable = sample.itemCoverage === 'complete'; next.currencyComparable = sample.currencyCoverage === 'listed';
+	next.persistedAt = Date.parse(sample.observedAt);
 	next.sourceState = sample.itemCoverage === 'complete' ? 'ready' : 'unavailable';
 	next.sourceReason = sample.itemCoverage === 'complete' ? null : 'partial_inventory';
-	if (sample.itemCoverage !== 'complete') next.gaps.push({ version: 1, fromAt: sample.observedAt,
-		toAt: null, reason: 'partial_inventory', channels: ['items'] });
 	return { record: next, journal: { version: 1, sessionId: record.sessionId, epoch: sample.epoch,
 		cursor: sample.cursor, observedAt: sample.observedAt, observations, breakBefore, alertsProcessed: false } };
 }
@@ -138,7 +152,7 @@ export function isLiveGap(value: unknown): value is LiveGapV1 {
 	return record(value) && keys(value, ['version','fromAt','toAt','reason','channels']) && value.version === 1
 		&& date(value.fromAt) && (value.toAt === null || date(value.toAt) && value.toAt >= value.fromAt)
 		&& LIVE_GAP_REASONS.includes(value.reason as LiveGapV1['reason']) && Array.isArray(value.channels)
-		&& value.channels.length > 0 && value.channels.length <= 2 && new Set(value.channels).size === value.channels.length
+		&& value.channels.length > 0 && value.channels.length === 1 && new Set(value.channels).size === value.channels.length
 		&& value.channels.every((channel) => channel === 'items' || channel === 'currencies');
 }
 export function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }

@@ -1,14 +1,15 @@
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, LIVE_GAP_REASONS,
 	type LiveSessionRuntimeRecord, type LiveJournalEntryV1, type LiveObservationV1 } from './live-session-model';
+import { isFarmingGoal } from './farming-goal';
 import { isFarmingPreparationSettings } from './farming-goal-preparation';
 import { bounded, date, isLiveContext, isLiveGap, isLiveInventorySample, keys, natural, nonce, record } from './live-session-reducer';
 
 /** Closed persisted source variant. It contains no API snapshot or credential capability. */
 export function isLiveSessionRuntimeRecord(value: unknown): value is LiveSessionRuntimeRecord {
 	if (!record(value) || !keys(value, ['version','kind','sessionId','phase','authority','startedAt','endedAt','persistedAt',
-		'sourceInstance','build','profile','epoch','context','connection','lastSample','fingerprint','itemComparable','sourceState',
-		'sourceReason','observationCount','totals','gaps','observedItemsMs','observedCurrenciesMs','prices','priceCapturedAt',
-		'magicFind','preparation','mapIntervals','mapObservation','mapCoveragePartial','summaryReceipt'])) return false;
+		'sourceInstance','build','profile','epoch','context','connection','lastPresenceAt','lastObservationAt','lastValidItemsAt','lastValidCurrenciesAt','currencyTrackedIds','lastSample','fingerprint','itemComparable','currencyComparable','sourceState',
+		'sourceReason','observationCount','sampleCount','totals','gaps','observedItemsMs','observedCurrenciesMs','prices','priceCapturedAt',
+		'magicFind','preparation','farmingGoal','groupContext','mapIntervals','mapObservation','mapCoveragePartial','summaryReceipt'])) return false;
 	if (value.version !== 4 || value.kind !== 'live_inventory' || typeof value.sessionId !== 'string' || !value.sessionId
 		|| !['active','complete'].includes(value.phase as string) || !date(value.startedAt) || !natural(value.persistedAt)
 		|| value.endedAt !== null && (!date(value.endedAt) || value.endedAt < value.startedAt)
@@ -16,14 +17,18 @@ export function isLiveSessionRuntimeRecord(value: unknown): value is LiveSession
 		|| value.sourceInstance !== null && !nonce(value.sourceInstance) || value.build !== null && value.build !== NEXUS_LIVE_BUILD
 		|| value.profile !== null && value.profile !== NEXUS_LIVE_PROFILE || value.epoch !== null && !nonce(value.epoch)
 		|| value.context !== null && !isLiveContext(value.context) || !['connected','disconnected'].includes(value.connection as string)
-		|| typeof value.itemComparable !== 'boolean' || typeof value.mapCoveragePartial !== 'boolean'
+		|| !natural(value.lastPresenceAt) || value.lastObservationAt !== null && !date(value.lastObservationAt)
+		|| value.lastValidItemsAt !== null && !date(value.lastValidItemsAt) || value.lastValidCurrenciesAt !== null && !date(value.lastValidCurrenciesAt)
+		|| !Array.isArray(value.currencyTrackedIds) || value.currencyTrackedIds.length > 4096 || !value.currencyTrackedIds.every((id) => bounded(id, 1, 2147483647))
+		|| new Set(value.currencyTrackedIds).size !== value.currencyTrackedIds.length
+		|| typeof value.itemComparable !== 'boolean' || typeof value.currencyComparable !== 'boolean' || typeof value.mapCoveragePartial !== 'boolean'
 		|| !['missing','warming_up','ready','stale','unavailable','conflict'].includes(value.sourceState as string)
 		|| value.sourceReason !== null && !LIVE_GAP_REASONS.includes(value.sourceReason as LiveSessionRuntimeRecord['sourceReason'] & string)
-		|| !natural(value.observationCount) || !natural(value.observedItemsMs) || !natural(value.observedCurrenciesMs)
-		|| !Array.isArray(value.gaps) || !value.gaps.every(isLiveGap)
+		|| !natural(value.observationCount) || !natural(value.sampleCount) || !natural(value.observedItemsMs) || !natural(value.observedCurrenciesMs)
+		|| !Array.isArray(value.gaps) || !value.gaps.every(isLiveGap) || value.phase === 'complete' && value.gaps.some((gap) => gap.toAt === null)
 		|| !Array.isArray(value.totals) || value.totals.length > 8192
 		|| !Array.isArray(value.prices) || value.prices.length > 4096 || value.priceCapturedAt !== null && !date(value.priceCapturedAt)
-		|| !isFarmingPreparationSettings(value.preparation)
+		|| !isFarmingGoal(value.farmingGoal) || ![null,'with_bosses','without_bosses'].includes(value.groupContext as string | null) || !isFarmingPreparationSettings(value.preparation)
 		|| !record(value.magicFind) || !keys(value.magicFind, ['value','source'])
 		|| !['manual','verified','unknown'].includes(value.magicFind.source as string)
 		|| value.magicFind.value !== null && !bounded(value.magicFind.value, 0, 100000)

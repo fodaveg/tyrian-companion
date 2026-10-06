@@ -236,6 +236,8 @@ export interface ManualSessionStartServiceOptions {
 	 */
 	onSettlementDue?: () => void;
 	runtimeStore: SessionRuntimeStore;
+	/** Legacy evidence may be restored locally without any automatic authenticated recapture. */
+	automaticAccountCapture?: boolean;
 	priceCapture?: SessionPriceCapture;
 	/**
 	 * Resolves the public-catalog type of the session's lost items before contamination review
@@ -318,6 +320,7 @@ export class ManualSessionStartService {
 	/** Proof that the completed session's summary reached the vault (H18.8); see `markCompletedSummarySaved`. */
 	private summaryReceipt: SessionSummaryReceipt | null = null;
 	private disposed = false;
+	private readonly automaticAccountCapture: boolean;
 	private readonly now: () => number;
 	private readonly sessionId: () => string;
 	private readonly scheduleInterval: (callback: () => void, milliseconds: number) => unknown;
@@ -340,6 +343,7 @@ export class ManualSessionStartService {
 		private readonly baselineCapture: SessionBaselineCapture,
 		options: ManualSessionStartServiceOptions,
 	) {
+		this.automaticAccountCapture = options.automaticAccountCapture !== false;
 		this.now = options.now ?? Date.now;
 		this.sessionId = options.sessionId ?? (() => crypto.randomUUID());
 		this.scheduleInterval = options.setInterval ?? ((callback, milliseconds) => window.setInterval(callback, milliseconds));
@@ -701,7 +705,7 @@ export class ManualSessionStartService {
 	private async initializeInternal(): Promise<void> {
 		if (this.disposed || this.recoveryRecord || this.state.status !== 'idle') return;
 		const loaded = await this.runtimeStore.load();
-		if (loaded.status === 'empty') {
+		if (loaded.status === 'empty' || loaded.status === 'live') {
 			this.recoveryState = { status: 'none' };
 		} else if (loaded.status === 'loaded') {
 			if (loaded.record.state.status === 'complete') {
@@ -714,6 +718,9 @@ export class ManualSessionStartService {
 				this.recoveryState = { status: 'none' };
 				const receipt = await this.loadSummaryReceipt();
 				this.summaryReceipt = receipt?.sessionId === loaded.record.state.sessionId ? receipt : null;
+			} else if (this.automaticAccountCapture === false) {
+				this.recoveryRecord = loaded.record;
+				this.recoveryState = { status: 'available', state: loaded.record.state };
 			} else if (recoverableState(loaded.record.state).status === 'provisional') {
 				// A session that already captured its final snapshot never asks a human to review it
 				// (David, 2026-09-09): reclaim the lease and finalize through the exact same path a
@@ -1678,7 +1685,7 @@ export class ManualSessionStartService {
 		if (loaded.status === 'error') {
 			return { code: 'coordination_unavailable', message: 'Session recovery storage is unavailable.' };
 		}
-		if (loaded.status === 'empty') {
+		if (loaded.status === 'empty' || loaded.status === 'live') {
 			return { code: 'lease_lost', message: 'The saved farming session no longer exists.' };
 		}
 		const record = loaded.record;

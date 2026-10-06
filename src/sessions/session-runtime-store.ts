@@ -1,3 +1,7 @@
+import type { LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-session-model';
+import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-validation';
+import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey, LIVE_SESSION_JOURNAL_STORE_NAME,
+	liveRuntimeLoadResult, markLiveAlertsProcessed, readLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
@@ -28,7 +32,7 @@ import type {
 
 export const SESSION_RUNTIME_VERSION = 3 as const;
 export const SESSION_RUNTIME_DB_NAME = 'tyrian-companion-session-runtime';
-export const SESSION_RUNTIME_DB_VERSION = 1;
+export const SESSION_RUNTIME_DB_VERSION = 2;
 export const SESSION_RUNTIME_STORE_NAME = 'active-session-v1';
 /** Exported so a test can seed a legacy-schema record directly, bypassing `save()`'s current-schema validation. */
 export const SESSION_RUNTIME_KEY = 'active-session';
@@ -66,6 +70,7 @@ export interface SessionRuntimeRecord {
 }
 
 export type SessionRuntimeLoadResult =
+	| { status: 'live'; record: LiveSessionRuntimeRecord }
 	| { status: 'empty' }
 	/**
 	 * `reviewVerified` is only ever present, and only ever `false`, when the stored `review` could
@@ -100,9 +105,10 @@ export interface SessionRuntimeStore {
 }
 
 /** Deterministic test adapter. Production must use IndexedDbSessionRuntimeStore. */
-export class MemorySessionRuntimeStore implements SessionRuntimeStore {
+export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessionPersistence {
 	private value: unknown;
 	private summaryReceipt: SessionSummaryReceipt | null = null;
+	private readonly liveJournal = new Map<string, LiveJournalEntryV1>();
 
 	constructor(initial?: unknown) {
 		this.value = initial === undefined ? undefined : structuredClone(initial);
@@ -110,6 +116,7 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 
 	async load(): Promise<SessionRuntimeLoadResult> {
 		if (this.value === undefined) return { status: 'empty' };
+		if (isLiveSessionRuntimeRecord(this.value)) return { status: 'live', record: structuredClone(this.value) };
 		const normalized = normalizeSessionRuntimeRecord(this.value);
 		if (!normalized) return { status: 'error', code: 'corrupt' };
 		this.value = structuredClone(normalized.record);
@@ -121,6 +128,7 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 	async save(record: SessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
 		if (!isSessionRuntimeRecord(record)) return { status: 'error', code: 'corrupt' };
 		if (this.value !== undefined) {
+			if (isLiveSessionRuntimeRecord(this.value)) return { status: 'stale' };
 			const current = normalizeSessionRuntimeRecord(this.value);
 			if (!current) return { status: 'error', code: 'corrupt' };
 			if (!canReplace(current.record, record)) return { status: 'stale' };
@@ -131,6 +139,10 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 
 	async clear(authority: SessionAuthority): Promise<SessionRuntimeMutationResult> {
 		if (this.value === undefined) return { status: 'cleared' };
+		if (isLiveSessionRuntimeRecord(this.value)) {
+			if (!canWriteAuthority(this.value.authority, authority)) return { status: 'stale' };
+			this.value = undefined; return { status: 'cleared' };
+		}
 		const current = normalizeSessionRuntimeRecord(this.value);
 		if (!current) return { status: 'error', code: 'corrupt' };
 		if (!canWriteAuthority(runtimeAuthority(current.record.state), authority)) return { status: 'stale' };
@@ -153,11 +165,30 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 		return true;
 	}
 
+	async loadLive(): Promise<LiveRuntimeLoadResult> { return liveRuntimeLoadResult(await this.load()); }
+	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult> {
+		if (!isLiveSessionRuntimeRecord(next) || journal && (!isLiveJournalEntry(journal) || journal.sessionId !== next.sessionId || journal.epoch !== next.lastSample?.epoch || journal.cursor !== next.lastSample.cursor)) return { status: 'error', code: 'corrupt' };
+		if (this.value !== undefined && (!isLiveSessionRuntimeRecord(this.value) || !canReplaceLiveRuntime(this.value, next))) return { status: 'stale' };
+		if (journal) {
+			const key = JSON.stringify(journalKey(journal)); const current = this.liveJournal.get(key);
+			if (current) return identicalJournal(current, journal) ? { status: 'saved' } : { status: 'error', code: 'corrupt' };
+			this.liveJournal.set(key, structuredClone(journal));
+		}
+		this.value = structuredClone(next); return { status: 'saved' };
+	}
+	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> {
+		return structuredClone([...this.liveJournal.values()].filter((entry) => entry.sessionId === sessionId));
+	}
+	async markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean> {
+		const entry = this.liveJournal.get(JSON.stringify([sessionId,epoch,cursor]));
+		if (!entry) return false; entry.alertsProcessed = true; return true;
+	}
+
 	close(): void {}
 }
 
 /** Machine-local, fail-closed persistence. It never falls back to vault files or memory. */
-export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
+export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSessionPersistence {
 	private database: IDBDatabase | null = null;
 	private opening: Promise<IDBDatabase> | null = null;
 	private unavailable = false;
@@ -178,6 +209,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		try {
 			const value = await this.read(context);
 			if (value === undefined) { attempt.skip(); return { status: 'empty' }; }
+			if (isLiveSessionRuntimeRecord(value)) { attempt.success(); return { status: 'live', record: structuredClone(value) }; }
 			const normalized = normalizeSessionRuntimeRecord(value);
 			if (!normalized) { attempt.failure('validation_failed'); return { status: 'error', code: 'corrupt' }; }
 			if (!normalized.reviewVerified) {
@@ -200,6 +232,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		if (!isSessionRuntimeRecord(record)) { attempt.failure('validation_failed'); return { status: 'error', code: 'corrupt' }; }
 		try {
 			const result = await this.mutate<SessionRuntimeMutationResult>((value) => {
+				if (isLiveSessionRuntimeRecord(value)) return { result: { status: 'stale' } as const };
 				const current = value === undefined ? null : normalizeSessionRuntimeRecord(value);
 				if (value !== undefined && !current) return { result: { status: 'error', code: 'corrupt' } as const };
 				if (current && !canReplace(current.record, record)) {
@@ -225,6 +258,8 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		try {
 			const result = await this.mutate<SessionRuntimeMutationResult>((value) => {
 				if (value === undefined) return { result: { status: 'cleared' } as const, remove: true };
+				if (isLiveSessionRuntimeRecord(value)) return canWriteAuthority(value.authority, authority)
+					? { result: { status: 'cleared' } as const, remove: true } : { result: { status: 'stale' } as const };
 				const current = normalizeSessionRuntimeRecord(value);
 				if (!current) return { result: { status: 'error', code: 'corrupt' } as const };
 				if (!canWriteAuthority(runtimeAuthority(current.record.state), authority)) {
@@ -281,6 +316,16 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		}
 	}
 
+	async loadLive(): Promise<LiveRuntimeLoadResult> { return liveRuntimeLoadResult(await this.load()); }
+	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult> {
+		try { return await commitLiveRuntime(await this.open(), next, journal); }
+		catch { return { status: 'error', code: 'unavailable' }; }
+	}
+	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> { return await readLiveJournal(await this.open(), sessionId); }
+	async markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean> {
+		try { return await markLiveAlertsProcessed(await this.open(), sessionId, epoch, cursor); } catch { return false; }
+	}
+
 	close(): void {
 		const attempt = this.diagnostics.begin('session_runtime', 'close');
 		this.unavailable = true;
@@ -315,7 +360,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 			factory: this.factory,
 			databaseName,
 			databaseVersion: SESSION_RUNTIME_DB_VERSION,
-			schema: [{ name: SESSION_RUNTIME_STORE_NAME }],
+			schema: [{ name: SESSION_RUNTIME_STORE_NAME }, { name: LIVE_SESSION_JOURNAL_STORE_NAME, indexes: [{ name: 'session', keyPath: 'sessionId' }] }],
 			accept: () => !this.unavailable,
 			onVersionChange: (database) => {
 				if (this.database === database) this.database = null;
