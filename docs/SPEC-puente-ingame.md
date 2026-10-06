@@ -510,7 +510,7 @@ int32 positivo. `ttl` vale siempre 15 segundos y describe vigencia del TRANSPORT
 |---|---|
 | `phase` | `idle`, `starting`, `active`, `stopping`, `provisional`, `complete`, `error`, `abandoned` |
 | `err` | `null`, `start`, `observe`, `stop`, `save`, `other`; diferencia fallo de inicio, lectura, cierre y guardado |
-| `elapsed` | Segundos de la duración declarada, descontando interrupciones registradas; `null` sin punto de partida suficiente |
+| `elapsed` | Segundos de duración declarada de conexión; `null` sin punto de partida suficiente. En live1, durante pérdida de presencia agregada se acota provisionalmente a `lastPresenceAt` según [§4.1 de live1](SPEC-live-loot.md#41-presencia-agregada-duración-y-objetivos); los huecos de fuente no descuentan pausas del jugador. Legacy conserva sus interrupciones registradas |
 | `observed` | Incrementos positivos de bolsas observados: entre snapshots API en legacy; entre muestras Nexus comprometidas y con cobertura en live1, excluyendo baseline/rebaseline. Se conserva al cierre; `null` sin evidencia recuperable. Live1 restaura su contador del ledger durable |
 | `net` | Delta neto retenido al cierre, separado de lo observado; `null` antes del cierre o sin delta válido |
 | `lo`, `hi` | Banda de bolsas/h: en legacy, ventana observada y margen de caché API; en live1, incrementos observados e intervalos cubiertos, excluyendo huecos del denominador. Sin evidencia suficiente no se calcula; nunca representa un flujo causal completo de botín |
@@ -520,7 +520,7 @@ int32 positivo. `ttl` vale siempre 15 segundos y describe vigencia del TRANSPORT
 | `slotAge` | Segundos desde el snapshot API o la muestra Nexus que midió los huecos; independiente de `age` y `ttl` |
 | `goal` | `none`, `bags` o `duration`, capturado al iniciar la sesión y conservado al recargar |
 | `target`, `progress` | Bolsas para `bags`, segundos para `duration`; `null` para `none` o evidencia insuficiente |
-| `eta` | Segundos restantes del modelo del host. Se conservan los mínimos de bolsas: 3 observaciones, 20 min de muestra y edad máxima de 15 min; en live1, esos 20 min requieren intervalos cubiertos. Si no se acreditan, `null`. Duración es cuenta atrás del tiempo declarado, nunca inferida del botín ni de su cobertura |
+| `eta` | Segundos restantes del modelo del host. Se conservan los mínimos de bolsas: 3 observaciones, 20 min de muestra y edad máxima de 15 min; en live1, esos 20 min requieren intervalos cubiertos. Si no se acreditan, `null`. Duración es cuenta atrás del mismo reloj declarado de `elapsed`, incluido su acotado provisional por pérdida de presencia agregada; nunca se infiere del botín ni de su cobertura |
 | `mf`, `mfKind` | Porcentaje de Hallazgo mágico parcial, etiquetado `partial`; sin evidencia `mf=null`, `mfKind=unknown` |
 | `prep` | `partial`, `attention` o `unknown`; preparación opcional, sin certificación de buffs ni bloqueo de medición |
 
