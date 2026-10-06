@@ -182,7 +182,7 @@ Una venta puede retirar objetos y aumentar oro, por lo que neto firmado evita su
 
 Gráfica: cantidades observadas y valor estimado, huecos sin interpolación; al actualizar precios, recalcular toda la curva visible con el mismo snapshot y rotular su hora, o conservar el snapshot elegido al cierre. No mezclar precios sucesivos haciendo pasar una revalorización por adquisición. Valor/h = valor neto elegible / duración observada pertinente; null ante denominador cero o cobertura insuficiente; subtotal/h puede mostrarse como parcial con etiqueta distinta. Cronología, resumen, gráfica y export derivan del mismo ledger.
 
-Avisos: reutilizar motor/umbral/canales existentes para observación positiva valorizable, clave idempotente observation.id + regla. Texto «Aumento observado: 2 Champiñones · valor estimado…»; jamás «drop», «botín confirmado» o «vendido» por inferencia. Baseline, negativo, muestra incompleta, duplicado, rebaseline, sin precio o fuera de cobertura no emiten aviso de objeto caro. Un precio que llega tarde no vuelve a avisar de una observación ya procesada; la regla evalúa una vez al resolver la observación pendiente o la descarta explícitamente al cerrar el intervalo, manteniendo outbox/receipt durables existentes. No requiere confirmación humana ni acciones en juego.
+Avisos: reutilizar motor/umbral/canales existentes para observación positiva valorizable, clave idempotente observation.id + regla. Texto «Aumento observado: 2 Champiñones · valor estimado…»; jamás «drop», «botín confirmado» o «vendido» por inferencia. Baseline, negativo, muestra incompleta, duplicado, rebaseline, sin precio o fuera de cobertura no emiten aviso de objeto caro. Un precio que llega tarde no vuelve a avisar de una observación ya procesada; la regla evalúa una vez al resolver la observación pendiente o la descarta explícitamente al cerrar el intervalo, con intención y recibos durables según §13, sin insertar avisos live en la cola legacy ligada a cuenta. No requiere confirmación humana ni acciones en juego.
 
 ## 8. Ejemplo canónico UI y fixtures
 
@@ -231,3 +231,49 @@ QA real pendiente: addon cargado en Nexus, bootstrap autónomo, arranque/reapert
 Companion: `docs/PRODUCT.md` (fuentes/semántica/no revisión), `docs/PLATFORM_POLICY.md` (API-only y frontera lector), `docs/SPEC-puente-ingame.md` (live1 y farm1), `docs/THREAT-MODEL.md` (proceso lector, fuente no confiable, volumen/retención, sin garantía frente a malware local), `docs/ARCHITECTURE.md` (runtime/puertos reales, fuente/sesiones/esquemas), `README.md`, `docs/QA-MVP.md` y documentación de soporte pertinente. Nexus README y Blish README por sus respectivos propietarios.
 
 La vieja afirmación de que no leer memoria garantiza encaje en una política de terceros se sustituye por descripción factual del nuevo alcance; no afirmar aprobación de ArenaNet. Las reglas históricas de H8 siguen locales a H8. Las propuestas anteriores DRF/token/helper del audit no reabren la dirección ya elegida. La nueva autorización no elimina garantías de integridad, privacidad ni la obligación Windows existente.
+
+## 13. Avisos live sin identidad de cuenta
+
+Decisión de ingeniería ratificada en la coordinación del 6 oct 2026 dentro del alcance autorizado. **Implementación y verificación pendientes**: no se presenta como una instrucción histórica adicional del usuario ni como comportamiento ya entregado.
+
+La intención de aviso vive en el journal live canónico, en la misma transacción que la observación. No se crea otra base de datos ni se inserta una copia en `EmittedAlertQueue`: esa cola y sus registros legacy conservan su contrato ligado a cuenta. La fuente es `nexus_inventory` y la cuenta desconocida permanece `null`; no se fabrican `accountRef` ni nombres de cuenta/sesión a partir de instance, personaje, bóveda o placeholders.
+
+Registro `LiveAlertOutboxV1`, dentro del journal de la muestra o como clave hija del mismo store y transacción:
+
+```text
+version: 1
+source: 'nexus_inventory'; accountRef: null
+sessionId: string; observationId: string; ruleVersion: 1
+outboxId: string  # determinista: sessionId + observationId + ruleVersion
+state: 'awaiting_price' | 'skipped' | 'ready' | 'dispatching' | 'processed'
+skipReason: null | 'no_price' | 'below_threshold' | 'session_closed'
+alert: AlertV1 | null  # payload económico capturado, sin campos extra de origen
+priceCapturedAt: string | null; thresholdCopper: number
+claimedAt: string | null  # durable antes de efectos; inmutable para ese intento
+deliveryReport: AlertDeliveryReport | null
+sentTo: IngameBridgeClient[]
+receipt: IngameAlertReceipt | null
+```
+
+Solo una observación positiva de objeto, comprometida y con cobertura, genera candidato. Baseline, rebaseline, negativo o duplicado no lo generan. La intención `awaiting_price`, o la decisión inmediata con precio disponible, se guarda atómicamente con la observación. El ACK live `stored` no espera precio, red ni notificaciones. Un booleano derivado como `alertsProcessed` no sustituye estos estados ni permite repetir un intento ambiguo.
+
+El resolver público existente decide una sola vez `skipped` o `ready`, capturando precio, umbral y payload. Al cerrar, pendientes sin cotización quedan `skipped/session_closed`, visibles como no evaluables, sin bloquear el guardado. `ready` sin claim puede ejecutarse tras recovery. Deduplicar o cambiar ajustes/precios no altera un candidato evaluado ni reabre `skipped`/`processed`.
+
+Antes de efectos externos, un CAS bajo lease/autoridad vigente guarda `ready → dispatching` y `claimedAt` en transacción durable. Si falla, no se llama al emisor; solo el ganador emite. Se reutiliza `AlertEmitter` con un ámbito interno tipado por emisión, nunca una variable global que mezcle avisos concurrentes. Su sink live confirma/proyecta el registro canónico, sin `EmittedAlertQueue.enqueue`; legacy mantiene su sink. Después se guarda el reporte de canales y el estado `processed`.
+
+Los recibos conservan `pending | received | unconfirmed` y sus causas existentes. Antes del callback `sent` se registra la asociación efímera `alertSeq → { origin: 'live', sessionId, outboxId }`. `persistIngameReceipt` escribe en ese destino capturado, no en la cuenta o sesión actual. El upsert por `outboxId` es monotónico: un `pending` tardío no pisa `received` ni un reporte final. Fallar la persistencia produce diagnóstico, sin borrar la intención ni inventar recepción.
+
+**Garantía: como máximo un intento automático de emisión por `outboxId`.** Al recuperar un `dispatching` o un recibo todavía `pending` después de un reinicio, se persiste `processed` y `unconfirmed/restart`, sin reemitir. Perder ACK produce `unconfirmed/timeout`, sin retransmitir el aviso. Una caída entre claim y envío puede dejar un aviso no mostrado: su fila permanece con entrega no confirmada. No se promete visualización exactamente una vez ni entrega eventual con una transacción local y canales externos no transaccionales.
+
+La UI lee una proyección durable del journal con fuente, sesión, `outboxId` y recibo, también sin cuenta conocida y después del cierre. Puede componer filas legacy/live mediante unión discriminada, sin convertir live en un `EmittedAlertRecordV1` ficticio. El texto expresa aumento observado y valor estimado, no drop confirmado ni causalidad. Ingame, toast y sistema usan formato cerrado y origen interno tipado; no aceptan texto arbitrario ni envían cuenta, sesión, motivo interno o asociaciones de recibos al addon. `AlertV1`, `alert`, `alert_ack` y sus límites de privacidad permanecen intactos.
+
+B posee modelo/outbox/store/lifecycle, composición y enrutado de recibos, con la adaptación mínima necesaria de emisor/formateadores. C presenta la proyección visible del ledger. El propietario del puente conserva codec/servidor; esta decisión no añade mensajes ni cambia la cola legacy.
+
+Pruebas requeridas:
+
+1. Cuenta `null` produce candidato, aviso y fila durable sin tocar la cola legacy; observaciones diferentes del mismo objeto/milisegundo tienen distintos IDs. Replay de muestra o ACK live perdido no duplica intención.
+2. Claims concurrentes emiten una sola vez; fallo de commit antes del claim produce cero efectos. `ready` sin claim sigue procesable tras recovery.
+3. Caída después de claim antes/después de enviar, ACK perdido y restart no reemiten: conservan entrega no confirmada. Los canales independientes continúan y su reporte no inventa éxito.
+4. `pending` tardío no pisa `received`; cambiar clave/cuenta/sesión antes del ACK no redirige el recibo. La fila permanece accesible sin cuenta y después del cierre.
+5. Precio tardío se resuelve una vez; cierre sin precio conserva `skipped/session_closed`. Baselines, negativos, duplicados y muestras sin cobertura no generan candidatos.
+6. `AlertV1`, `alert` y `alert_ack` mantienen claves exactas; ningún payload de notificación expone identidad, texto arbitrario o metadata interna de origen.
