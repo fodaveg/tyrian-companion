@@ -1,0 +1,82 @@
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, LIVE_GAP_REASONS,
+	type LiveSessionRuntimeRecord, type LiveJournalEntryV1, type LiveObservationV1 } from './live-session-model';
+import { isFarmingPreparationSettings } from './farming-goal-preparation';
+import { bounded, date, isLiveContext, isLiveGap, isLiveInventorySample, keys, natural, nonce, record } from './live-session-reducer';
+
+/** Closed persisted source variant. It contains no API snapshot or credential capability. */
+export function isLiveSessionRuntimeRecord(value: unknown): value is LiveSessionRuntimeRecord {
+	if (!record(value) || !keys(value, ['version','kind','sessionId','phase','authority','startedAt','endedAt','persistedAt',
+		'sourceInstance','build','profile','epoch','context','connection','lastSample','fingerprint','itemComparable','sourceState',
+		'sourceReason','observationCount','totals','gaps','observedItemsMs','observedCurrenciesMs','prices','priceCapturedAt',
+		'magicFind','preparation','mapIntervals','mapObservation','mapCoveragePartial','summaryReceipt'])) return false;
+	if (value.version !== 4 || value.kind !== 'live_inventory' || typeof value.sessionId !== 'string' || !value.sessionId
+		|| !['active','complete'].includes(value.phase as string) || !date(value.startedAt) || !natural(value.persistedAt)
+		|| value.endedAt !== null && (!date(value.endedAt) || value.endedAt < value.startedAt)
+		|| (value.phase === 'complete') !== (value.endedAt !== null) || !authority(value.authority, value.sessionId)
+		|| value.sourceInstance !== null && !nonce(value.sourceInstance) || value.build !== null && value.build !== NEXUS_LIVE_BUILD
+		|| value.profile !== null && value.profile !== NEXUS_LIVE_PROFILE || value.epoch !== null && !nonce(value.epoch)
+		|| value.context !== null && !isLiveContext(value.context) || !['connected','disconnected'].includes(value.connection as string)
+		|| typeof value.itemComparable !== 'boolean' || typeof value.mapCoveragePartial !== 'boolean'
+		|| !['missing','warming_up','ready','stale','unavailable','conflict'].includes(value.sourceState as string)
+		|| value.sourceReason !== null && !LIVE_GAP_REASONS.includes(value.sourceReason as LiveSessionRuntimeRecord['sourceReason'] & string)
+		|| !natural(value.observationCount) || !natural(value.observedItemsMs) || !natural(value.observedCurrenciesMs)
+		|| !Array.isArray(value.gaps) || !value.gaps.every(isLiveGap)
+		|| !Array.isArray(value.totals) || value.totals.length > 8192
+		|| !Array.isArray(value.prices) || value.prices.length > 4096 || value.priceCapturedAt !== null && !date(value.priceCapturedAt)
+		|| !isFarmingPreparationSettings(value.preparation)
+		|| !record(value.magicFind) || !keys(value.magicFind, ['value','source'])
+		|| !['manual','verified','unknown'].includes(value.magicFind.source as string)
+		|| value.magicFind.value !== null && !bounded(value.magicFind.value, 0, 100000)
+		|| (value.magicFind.source === 'unknown') !== (value.magicFind.value === null)
+		|| !Array.isArray(value.mapIntervals) || value.mapIntervals.length > 256
+		|| value.mapObservation !== null && (!record(value.mapObservation) || !keys(value.mapObservation, ['mapId','fromMs'])
+			|| !natural(value.mapObservation.fromMs) || value.mapObservation.mapId !== null && !bounded(value.mapObservation.mapId, 1, 2147483647))) return false;
+	const ids = new Set<string>();
+	for (const total of value.totals) {
+		if (!record(total) || !keys(total, ['kind','idNumber','positive','negative','net']) || !['item','currency'].includes(total.kind as string)
+			|| !bounded(total.idNumber, 1, 2147483647) || !natural(total.positive) || !natural(total.negative)
+			|| !Number.isSafeInteger(total.net) || total.net !== total.positive - total.negative) return false;
+		const id = `${String(total.kind)}:${String(total.idNumber)}`; if (ids.has(id)) return false; ids.add(id);
+	}
+	const priceIds = new Set<number>();
+	for (const price of value.prices) {
+		if (!record(price) || !keys(price, ['itemId','unitCopper']) || !bounded(price.itemId, 1, 2147483647)
+			|| price.unitCopper !== null && !natural(price.unitCopper) || priceIds.has(price.itemId)) return false;
+		priceIds.add(price.itemId);
+	}
+	for (const interval of value.mapIntervals) {
+		if (!record(interval) || !keys(interval, ['mapId','fromMs','toMs']) || !natural(interval.fromMs) || !natural(interval.toMs)
+			|| interval.toMs <= interval.fromMs || interval.mapId !== null && !bounded(interval.mapId, 1, 2147483647)) return false;
+	}
+	if (value.lastSample !== null && (!isLiveInventorySample(value.lastSample) || value.lastSample.sourceInstance !== value.sourceInstance
+		|| value.lastSample.epoch !== value.epoch)) return false;
+	if ((value.lastSample === null) !== (value.fingerprint === null) || value.fingerprint !== null &&
+		(typeof value.fingerprint !== 'string' || !/^[a-f0-9]{64}$/u.test(value.fingerprint))) return false;
+	if (value.summaryReceipt !== null && (!record(value.summaryReceipt) || !keys(value.summaryReceipt, ['version','sessionId','path','savedAt'])
+		|| value.summaryReceipt.version !== 1 || value.summaryReceipt.sessionId !== value.sessionId || typeof value.summaryReceipt.path !== 'string'
+		|| !value.summaryReceipt.path || !natural(value.summaryReceipt.savedAt))) return false;
+	return true;
+}
+
+export function isLiveObservation(value: unknown): value is LiveObservationV1 {
+	return record(value) && keys(value, ['version','id','source','epoch','cursor','kind','idNumber','before','after','delta',
+		'observedAt','windowStartAt','sourceElapsedMs','cause','coverage']) && value.version === 1 && value.source === 'nexus_inventory'
+		&& nonce(value.epoch) && natural(value.cursor) && ['item','currency'].includes(value.kind as string)
+		&& bounded(value.idNumber, 1, 2147483647) && bounded(value.before, 0, 2147483647) && bounded(value.after, 0, 2147483647)
+		&& value.delta === value.after - value.before && value.delta !== 0 && date(value.observedAt) && date(value.windowStartAt)
+		&& value.windowStartAt <= value.observedAt && natural(value.sourceElapsedMs) && value.cause === 'unknown'
+		&& value.coverage === 'observed_interval' && value.id === `${value.epoch}/${String(value.cursor)}/${String(value.kind)}/${String(value.idNumber)}`;
+}
+export function isLiveJournalEntry(value: unknown): value is LiveJournalEntryV1 {
+	return record(value) && keys(value, ['version','sessionId','epoch','cursor','observedAt','observations','breakBefore','alertsProcessed'])
+		&& value.version === 1 && typeof value.sessionId === 'string' && value.sessionId.length > 0 && nonce(value.epoch)
+		&& natural(value.cursor) && date(value.observedAt) && typeof value.breakBefore === 'boolean' && typeof value.alertsProcessed === 'boolean'
+		&& Array.isArray(value.observations) && value.observations.length <= 4096 && value.observations.every((row) =>
+			isLiveObservation(row) && row.epoch === value.epoch && row.cursor === value.cursor && row.observedAt === value.observedAt)
+		&& new Set(value.observations.map((row) => (row as LiveObservationV1).id)).size === value.observations.length;
+}
+function authority(value: unknown, sessionId: string): boolean {
+	return record(value) && keys(value, ['machineId','instanceId','sessionId','fence','acquiredAt'])
+		&& typeof value.machineId === 'string' && value.machineId.length > 0 && typeof value.instanceId === 'string' && value.instanceId.length > 0
+		&& value.sessionId === sessionId && bounded(value.fence, 1, Number.MAX_SAFE_INTEGER) && natural(value.acquiredAt);
+}
