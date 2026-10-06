@@ -280,6 +280,11 @@ function encodeBase64Url(bytes: Uint8Array): string {
 	return encoded;
 }
 
+/** Canonical connection/epoch id shared by negotiated extensions. */
+export function validIngameBridgeId(value: unknown): value is string {
+	return validBase64UrlId(value, 22, 16);
+}
+
 /** Canonical base64url of exactly `bytes` bytes: re-encoding the decoded value must give it back. */
 function validBase64UrlId(value: unknown, characters: number, bytes: number): value is string {
 	if (typeof value !== 'string' || value.length !== characters || !/^[A-Za-z0-9_-]+$/u.test(value)) return false;

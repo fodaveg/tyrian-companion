@@ -15749,6 +15749,16 @@
 					"reason": "Allowlisted callback_registration: In \"groupEditor\", \"addEventListener\": The selection edits only the manually declared next-session group, captured before session start. It never starts gameplay, polling, or writes historical loot. Verified registration: \"addEventListener\" in \"groupEditor\"."
 				}
 			]
+		},
+		"src/alerts/live-loot-protocol.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/alerts/live-loot-assembler.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		}
 	}
 }
