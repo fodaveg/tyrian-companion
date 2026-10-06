@@ -31,6 +31,8 @@ import { ingamePresenceSnapshot, initialIngamePresenceState, type IngamePresence
 import type { FarmingGoalV1, FarmingGoalProgress } from './sessions/farming-goal';
 import type { FarmingGroupContext } from './runtime/farming-session-context';
 import type { LiveSessionLootState } from './sessions/live-session-loot';
+import { LiveSessionLifecycle } from './sessions/live-session-lifecycle';
+import type { LiveSessionViewV1 } from './sessions/live-session-model';
 
 /**
  * Cabling, not shape.
@@ -51,6 +53,7 @@ interface AlertWiringHarness {
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
 	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1>;
 	getLiveSessionLoot(): LiveSessionLootState;
+	getLiveSessionView(): LiveSessionViewV1;
 	getFarmingGoalProgress(): FarmingGoalProgress | null;
 	getFarmingPreparationContext(): FarmingPreparationContext;
 	getIngamePresence(): IngamePresenceSnapshot;
@@ -193,7 +196,7 @@ describe('H13.4 alert channel cabling', () => {
 		expect([...report.delivered].sort())
 			.toEqual(['ingame', 'queue', 'sound', 'system_notification', 'toast', 'webhook']);
 		expect(banners).toHaveLength(1);
-		expect(banners[0]?.title).toBe('Hallazgo valioso');
+		expect(banners[0]?.title).toBe('Objeto valioso observado');
 		expect(banners[0]?.options.body).toContain('Saco de Halloween');
 		expect(audioContexts).toHaveLength(1);
 		await vi.waitFor(() => {
@@ -356,7 +359,7 @@ describe('H13.4 alert channel cabling', () => {
 		}
 	});
 
-	it('H18.26: an addon entering gameplay starts the session through the start pipeline, once', async () => {
+	it('an addon entering gameplay starts one passive connection session without invoking account capture', async () => {
 		const record = activeSessionRecord();
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
 		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
@@ -366,6 +369,7 @@ describe('H13.4 alert channel cabling', () => {
 			sessionState.mockReturnValue(record.state);
 			return { status: 'started', state: record.state } as never;
 		});
+		const liveStart = vi.spyOn(LiveSessionLifecycle.prototype,'start');
 		vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot').mockReturnValue(armedState());
 		const plugin = alertWiringPlugin(new IDBFactory());
 		plugin.host.secrets.set('gw2-key', 'synthetic-gw2-key');
@@ -384,15 +388,16 @@ describe('H13.4 alert channel cabling', () => {
 			addon.write(`${JSON.stringify({ v: 2, type: 'context', nonce, seq: 0, state: 'gameplay', mapId: 866, character: 'Astra Uno' })}\n`);
 			addon.write(`${JSON.stringify({ v: 2, type: 'context', nonce, seq: 1, state: 'gameplay', mapId: 50, character: 'Astra Dos' })}\n`);
 
-			await vi.waitFor(() => { expect(start).toHaveBeenCalledOnce(); });
-			expect(start).toHaveBeenCalledWith({ characterName: 'Astra Uno', magicFind: null, consumablesBonus: 0 });
+			await vi.waitFor(() => { expect(plugin.getLiveSessionView().phase).toBe('active'); });
+			expect(liveStart).toHaveBeenCalledOnce(); expect(liveStart).toHaveBeenCalledWith('Astra Uno');
+			expect(start).not.toHaveBeenCalled(); expect(plugin.getLiveSessionView()).toMatchObject({observationCount:0,sourceState:'missing'});
 			addon.destroy();
 		} finally {
 			await server()?.close();
 		}
 	});
 
-	it('H18.26: without an API key the addon presence starts nothing', async () => {
+	it('without an API key addon gameplay starts a passive session while missing inventory remains unmeasured', async () => {
 		const record = activeSessionRecord();
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
 		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
@@ -415,8 +420,9 @@ describe('H13.4 alert channel cabling', () => {
 			addon.write(`${JSON.stringify({ v: 2, type: 'context', nonce, seq: 0, state: 'gameplay', mapId: 50, character: 'Astra Uno' })}\n`);
 
 			await vi.waitFor(() => { expect(plugin.getIngamePresence().status).toBe('present'); });
-			await new Promise((resolve) => { queueMicrotask(() => { resolve(undefined); }); });
+			await vi.waitFor(() => { expect(plugin.getLiveSessionView().phase).toBe('active'); });
 			expect(start).not.toHaveBeenCalled();
+			expect(plugin.getLiveSessionView()).toMatchObject({observationCount:0,sourceState:'missing',totals:[]});
 			addon.destroy();
 		} finally {
 			await server()?.close();
@@ -456,8 +462,11 @@ describe('H13.4 alert channel cabling', () => {
 				}
 			});
 			socket.write(ingameHello(await pluginBridgeSecret(plugin), version));
-			await vi.waitFor(() => { expect(lines).toHaveLength(version === 3 ? 2 : 1); });
-			if (version === 3) expect(JSON.parse(lines[1] ?? '{}')).toMatchObject({ type: 'farming_cap', tag: 'farm1' });
+			await vi.waitFor(() => { expect(lines).toHaveLength(version === 3 ? 3 : 1); });
+			if (version === 3) {
+				expect(JSON.parse(lines[1] ?? '{}')).toMatchObject({ type: 'farming_cap', tag: 'farm1' });
+				expect(JSON.parse(lines[2] ?? '{}')).toMatchObject({ type: 'live_cap', tag: 'live1' });
+			}
 			const { nonce } = JSON.parse(lines[0] ?? '{}') as { nonce: string };
 			return { socket, lines, nonce };
 		}
@@ -469,8 +478,8 @@ describe('H13.4 alert channel cabling', () => {
 			await withBridge(async (plugin, port) => {
 				const addon = await connectAddon(plugin, port, 3);
 				await plugin.emitAlert(VALUABLE);
-				await vi.waitFor(() => { expect(addon.lines).toHaveLength(3); });
-				const alert = JSON.parse(addon.lines[2] ?? '{}') as { v: number; seq: number };
+				await vi.waitFor(() => { expect(addon.lines).toHaveLength(4); });
+				const alert = JSON.parse(addon.lines[3] ?? '{}') as { v: number; seq: number };
 				expect(alert.v).toBe(3);
 				await vi.waitFor(() => {
 					expect([...plugin.getAlertDeliveries().values()]).toMatchObject([{ state: 'pending', sentTo: ['nexus'] }]);

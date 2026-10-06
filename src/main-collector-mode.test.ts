@@ -168,8 +168,9 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 		world.plugin.openManualSessionStart();
 		await settle();
 
-		// "Comprobar conexión" is no longer here: under rule A it is a manual action (see below).
-		expect(notify).toHaveBeenCalledTimes(2);
+		// Assisted API capture is unavailable for every new session; the start action still
+		// reports consult mode. Manual account checks are covered separately below.
+		expect(notify).toHaveBeenCalledOnce();
 		expect(outbound.urls).toEqual([]);
 		expect(world.writes).toEqual([]);
 		await world.plugin.shutdownRuntime();

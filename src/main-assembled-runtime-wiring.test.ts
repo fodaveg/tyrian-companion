@@ -59,6 +59,7 @@ interface AssembledRuntimeHarness {
 	settings: TyrianSettings;
 	runtimeReady: boolean;
 	initializeRuntime(): Promise<void>;
+	checkConnection(): Promise<unknown>;
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
 	halloweenAccountRef: string | null;
 	halloweenPriceAlert: HalloweenPriceAlertRuntime | null;
@@ -213,13 +214,13 @@ describe('H13.10 Halloween price alert cabling', () => {
  * rest of this file asserts wiring, not the account gateway's own behaviour, which is covered
  * elsewhere.
  */
-describe('H16.5 connection warmup cabling', () => {
+describe('manual-only account connection cabling', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 	});
 
-	it('warms the connection at startup when a key is already configured, without a manual check', async () => {
+	it('does not warm an authenticated connection at startup even with a configured key, and preserves the explicit check', async () => {
 		const checkConnection = vi.spyOn(TyrianCompanionCore.prototype, 'checkConnection')
 			.mockResolvedValue({ status: 'idle' });
 		const record = activeSessionRecord();
@@ -238,7 +239,9 @@ describe('H16.5 connection warmup cabling', () => {
 
 		await plugin.initializeRuntime();
 
-		expect(checkConnection).toHaveBeenCalled();
+		expect(checkConnection).not.toHaveBeenCalled();
+		await plugin.checkConnection();
+		expect(checkConnection).toHaveBeenCalledOnce();
 	});
 
 	it('never asks for a connection at startup when no key is configured', async () => {

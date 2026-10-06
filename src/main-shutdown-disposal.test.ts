@@ -30,6 +30,8 @@ describe('H14.14 shutdownRuntime disposal', () => {
 			ingameReceipts: { dispose: vi.fn() },
 			productActions: { dispose: productActionsDispose },
 			alertIngameServer: { close: alertIngameServerClose },
+			alertIngameServerFlight: null,
+			alertIngameCloseFlight: null,
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const shutdownRuntime = (TyrianCompanionCore.prototype as unknown as {
