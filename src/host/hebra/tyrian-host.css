@@ -258,7 +258,10 @@
     .lv1-modules-panel[data-module-panel],
     .cm-hebra-module-code-block
   )
-  :where(.mod-cta) {
+  button.mod-cta {
+  /* `button.mod-cta` y no `:where(.mod-cta)`: a especificidad 0 perdía contra el
+     `button { background: none }` de `app.css` (0,0,1) y la acción principal salía
+     sin relleno (medido en la pestaña «Sesión», 6 oct 2026). */
   border-color: var(--violet);
   background: var(--violet);
   color: var(--violet-ink);

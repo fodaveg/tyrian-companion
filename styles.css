@@ -3051,6 +3051,7 @@
 .tyrian-live-session__status[data-tone="err"] .tyrian-live-session__dot { border-color: var(--text-error); background: var(--text-error); }
 .tyrian-live-session__status[data-hollow] .tyrian-live-session__dot { background: transparent; }
 .tyrian-live-session__elapsed { color: var(--text-muted); font-weight: var(--font-medium); font-variant-numeric: tabular-nums; }
+.tyrian-live-session__elapsed { margin-inline-start: calc(-1 * var(--size-4-1)); }
 .tyrian-live-session__elapsed::before { content: "·"; margin-inline-end: var(--size-4-1); }
 .tyrian-live-session--panel .tyrian-live-session__toggle { flex: none; white-space: nowrap; }
 .tyrian-live-session__toggle[aria-disabled="true"] { opacity: 0.46; cursor: not-allowed; }
@@ -3060,7 +3061,7 @@
 .tyrian-live-session__hint { color: var(--text-muted); line-height: var(--line-height-normal); overflow-wrap: anywhere; }
 .tyrian-live-session__alert, .tyrian-live-session__notice { display: flex; align-items: center; gap: var(--size-4-2); padding: var(--size-4-1) var(--size-4-2); border-radius: var(--radius-s); font-size: var(--font-ui-smaller); }
 .tyrian-live-session__alert { background: var(--background-modifier-error); color: var(--text-error); font-weight: var(--font-semibold); }
-.tyrian-live-session__notice { background: var(--background-secondary); color: var(--text-warning); }
+.tyrian-live-session__notice { background: color-mix(in srgb, var(--text-warning) 14%, transparent); color: var(--text-warning); }
 .tyrian-live-session__notice-text { flex: 1; min-width: 0; overflow: hidden; font-weight: var(--font-semibold); text-overflow: ellipsis; white-space: nowrap; }
 .tyrian-live-session__notice-time { flex: none; font-variant-numeric: tabular-nums; }
 .tyrian-live-session__old { display: flex; align-items: center; flex-wrap: wrap; gap: var(--size-4-2); }
@@ -3083,15 +3084,19 @@
 .tyrian-live-session__plot::before { content: ""; position: absolute; inset: 0 0 auto; border-top: 1px dashed var(--background-modifier-border); }
 .tyrian-live-session__plot svg { display: block; width: calc(100% - var(--size-4-1)); height: 100%; overflow: visible; }
 .tyrian-live-session__line { fill: none; stroke: var(--text-accent); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.tyrian-live-session__area { fill: var(--background-modifier-hover); stroke: none; }
-.tyrian-live-session__gap { fill: var(--background-modifier-border); }
-.tyrian-live-session__plot-dot { position: absolute; width: var(--size-4-2); height: var(--size-4-2); margin: calc(var(--size-4-2) / -2) 0 0 calc(var(--size-4-2) / -2); border-radius: 50%; background: var(--text-accent); outline: var(--size-2-1) solid var(--background-primary); }
+.tyrian-live-session__area { fill: color-mix(in srgb, var(--text-accent) 16%, transparent); stroke: none; }
+.tyrian-live-session__gap-mask { fill: var(--background-primary); }
+.tyrian-live-session__gap { fill: color-mix(in srgb, var(--background-modifier-border) 55%, transparent); }
+.tyrian-live-session__plot-dot { position: absolute; left: calc((100% - var(--size-4-1)) * var(--x, 1)); top: calc(100% * var(--y, 0)); width: var(--size-4-2); height: var(--size-4-2); margin: calc(var(--size-4-2) / -2) 0 0 calc(var(--size-4-2) / -2); border-radius: 50%; background: var(--text-accent); outline: var(--size-2-1) solid var(--background-primary); }
 .tyrian-live-session__plot-max { position: absolute; top: var(--size-4-1); left: 0; color: var(--text-muted); font-size: var(--font-smallest); font-variant-numeric: tabular-nums; }
 .tyrian-live-session__axis { display: flex; justify-content: space-between; margin-top: var(--size-4-1); color: var(--text-muted); font-size: var(--font-smallest); font-variant-numeric: tabular-nums; }
 .tyrian-live-session__legend { display: flex; align-items: center; gap: var(--size-4-2); margin: var(--size-4-1) 0 0; color: var(--text-muted); font-size: var(--font-smallest); }
-.tyrian-live-session__legend i { flex: none; width: var(--size-4-3); height: var(--size-4-3); border: 1px solid var(--background-modifier-border); background: var(--background-modifier-hover); }
+.tyrian-live-session__legend i { flex: none; width: var(--size-4-3); height: var(--size-4-3); border: 1px solid var(--background-modifier-border); background: color-mix(in srgb, var(--background-modifier-border) 55%, transparent); }
 .tyrian-live-session__timeline { border-top: 1px solid var(--background-modifier-border); padding-top: var(--size-4-2); }
-.tyrian-live-session__timeline > summary { min-height: 44px; padding-block: 0; display: flex; align-items: center; gap: var(--size-4-2); color: var(--text-normal); font-weight: var(--font-semibold); cursor: pointer; }
+.tyrian-live-session__timeline > summary { min-height: 44px; padding-block: 0; display: flex; align-items: center; gap: var(--size-4-2); color: var(--text-normal); font-weight: var(--font-semibold); cursor: pointer; list-style: none; }
+.tyrian-live-session__timeline > summary::-webkit-details-marker { display: none; }
+.tyrian-live-session__timeline > summary::before { content: ""; flex: none; box-sizing: border-box; width: var(--size-4-2); height: var(--size-4-2); margin-inline: var(--size-4-1); border: solid var(--text-muted); border-width: 0 var(--size-2-1) var(--size-2-1) 0; transform: rotate(-45deg); }
+.tyrian-live-session__timeline[open] > summary::before { transform: rotate(45deg); }
 .tyrian-live-session__timeline > summary:hover { background: var(--background-modifier-hover); }
 .tyrian-live-session--panel .tyrian-live-session__rows { margin: 0; padding: var(--size-4-1) 0 0; list-style: none; overflow: visible; }
 .tyrian-live-session__row { display: grid; grid-template-columns: auto var(--tyrian-row-icon) minmax(0, 1fr) auto; align-items: center; gap: var(--size-4-2); padding: var(--size-4-1) 0; break-inside: avoid; }
