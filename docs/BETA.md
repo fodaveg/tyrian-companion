@@ -51,16 +51,18 @@ plataformas). Los tres van a `.release/<id>/` junto a los de Obsidian, pasan el 
 credenciales y se publican como assets, pero no entran en el ZIP, que sigue siendo la instalación de
 Obsidian. Son generados: no se commitean (`.gitignore`).
 
-En CI, todo push de rama o tag ejecuta primero el gate completo, recrea un staging temporal exacto y
-después sube únicamente el ZIP, su `.sha256` e `install-beta.mjs`. El upload ocurre inmediatamente tras
-sellar y enumerar esos tres ficheros: identidad del directorio, bytes persistidos y pareja
-checksum/ZIP deben seguir coincidiendo con las fuentes capturadas. No se sube el directorio de build
-interno ni se admite otra variante de la acción de upload en ese job.
-Un tag solo es aceptado cuando coincide **exactamente** con `manifest.version`, sin prefijo `v`. La
-pipeline tiene permisos `contents: read` y no crea tags, GitHub Releases ni publicaciones.
+El workflow `ci.yml` ejecuta `check` y `check:guardrails` en cada push de rama o pull request;
+en `main` añade los benchmarks existentes. Los jobs del helper nativo solo se ejecutan cuando ese
+alcance cambia. Tras los gates prepara el artifact de desarrollo con `release:package` y
+`beta:artifact`. Mantiene permisos `contents: read` y no publica releases.
 
-La publicación manual debe usar también `manifest.version` como nombre exacto de la GitHub Release.
-Después de publicarla, valida los metadatos que sirve GitHub y el conjunto exacto de ocho assets
+El workflow `release.yml` es propietario de la publicación al hacer push de un tag. Ejecuta su
+propio `check`, genera el paquete y exige un plan válido de ocho assets antes de crear la release.
+El tag y el título deben coincidir **exactamente** con `manifest.version`, sin prefijo `v`; el cuerpo
+procede de la entrada correspondiente del changelog. Solo ese job tiene `contents: write`.
+Tras subir los assets verifica el contrato contra los metadatos reales de GitHub.
+
+La sesión de publicación comprueba además los metadatos que sirve GitHub y el conjunto exacto de ocho assets
 (`manifest.json`, `main.js`, `styles.css`, el ZIP, su `.sha256`, `hebra.json`, `hebra-main.mjs` y
 `hebra-styles.css`):
 
