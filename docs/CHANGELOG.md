@@ -2,9 +2,15 @@
 
 ## Release beta 0.6.0 - pestaña Sesión y ajustes simplificados
 
-Release por tag `0.6.0`. [ESTADO](ESTADO.md) separa lo verificado (gate completo y capturas del
-código real contra la maqueta) de lo pendiente: instalación en Hebra y Obsidian, y una sesión real
-con el addon de Nexus.
+[Canal 0.6.0 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.0);
+**instalación/runtime pendiente**. Tag `0.6.0`, commit
+`bffb6fa9ecac20451d1adaa4cd3f9d0b2b847473`, árbol `bd7bc4a0b2cda6cd633ade916347c023a51e2f4c`:
+`check` 8/8 (4895 tests/309 archivos) sobre ese árbol; guardrails y benchmark H6 solo sobre el
+árbol anterior `7e6802e` (`02f769b`), porque entre ambos solo cambió este archivo. La
+[CI de main](https://github.com/fodaveg/tyrian-companion/actions/runs/37501082514) y el
+[workflow de release](https://github.com/fodaveg/tyrian-companion/actions/runs/37501092628) pasaron y
+`release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de
+lo no verificado: instalación en Hebra y Obsidian, y una sesión real con el addon de Nexus.
 
 - **Pestaña Sesión.** Cabecera de una línea con estado y un botón «Iniciar sesión» / «Terminar
   sesión». La sesión sigue abriéndose y cerrándose con la conexión al juego; el botón corta la

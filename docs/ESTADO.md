@@ -1,11 +1,29 @@
 # Estado
 
-## Candidato 0.6.0: pestaña Sesión y ajustes simplificados (6 oct 2026)
+## Canal 0.6.0 publicado: pestaña Sesión y ajustes simplificados (6 oct 2026)
 
-**Candidato en rama `claude/sesion-simple-20261006`, sin publicar ni etiquetar.** Cambios: pestaña
-Sesión simplificada y ajustes en una página (ver [CHANGELOG](CHANGELOG.md)); metadatos en 0.6.0.
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.0](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.0)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.0`. El
+tag apunta a `bffb6fa9ecac20451d1adaa4cd3f9d0b2b847473`, árbol
+`bd7bc4a0b2cda6cd633ade916347c023a51e2f4c`. El
+[workflow de release](https://github.com/fodaveg/tyrian-companion/actions/runs/37501092628)
+terminó en SUCCESS sobre `bffb6fa`. Un primer tag `0.6.0` sobre `02f769b` falló en el paso Publish
+(`changelog-entry: version-not-found`: el encabezado decía «Candidato 0.6.0») sin crear release ni
+subir assets (run 37500003591); `bffb6fa` corrige el encabezado de `docs/CHANGELOG.md` y el tag se
+recolocó ahí. La CI de main sobre `02f769b` (run 37500000850) terminó en SUCCESS; la de `bffb6fa`
+([run 37501082514](https://github.com/fodaveg/tyrian-companion/actions/runs/37501082514)) también.
 
-Verificado en el árbol de trabajo, con tests acotados y `--maxWorkers=1`:
+Gate local: árbol `7e6802e` (`02f769b`): `check` 8/8 con 4894 tests pasados y 1 omitido,
+guardrails 25/25, benchmark H6 y su sabotaje rojo, `release:preflight`, todo exit 0. Árbol
+`bd7bc4a` (`bffb6fa`): `check` 8/8 con 4895 tests, 309 archivos; guardrails y benchmark no se
+repitieron sobre ese árbol (solo cambió `docs/CHANGELOG.md`). `release:brat-verify` pasó contra la
+salida real de `gh release view 0.6.0`: exactamente ocho assets subidos y no vacíos. En los assets
+de Hebra descargados, `hebra.json` dice versión `0.6.0` y el SHA-256 de `hebra-main.mjs` y de
+`hebra-styles.css` coincide con el que declara. No hay releases nuevas de Nexus ni de Blish HUD en
+este lote.
+
+Cambios: pestaña Sesión simplificada y ajustes en una página (ver [CHANGELOG](CHANGELOG.md)).
+Verificado además en el árbol de trabajo, con tests acotados y `--maxWorkers=1`:
 
 - `tsc --noEmit --skipLibCheck`: 0 errores.
 - vitest de `src/ui`, `src/runtime`, `src/host/hebra`, `src/core`, `main.test.ts` y el marker de
@@ -17,8 +35,8 @@ Verificado en el árbol de trabajo, con tests acotados y `--maxWorkers=1`:
   bloques, cabecera de una línea, rejilla, gráfica con huecos, cronología y «Ver 50 más»; 25 marcos
   sin desborde horizontal. Diferencias: sin fila «Por hora» sin tasa, y los avisos sin icono.
 
-No verificado: el gate completo (`npm run check`, pendiente de la raíz), la publicación, la
-instalación en Hebra/Obsidian y una sesión real en el juego. La exportación de la sesión activa y
+No verificado: la instalación y carga en Hebra, BRAT/Obsidian, y una sesión real con el addon de
+Nexus. La exportación de la sesión activa y
 de la sesión antigua guardada pasa a dos comandos (probados con dobles de host, no en un cliente real).
 
 ## Canal 0.5.0 publicado: captura propia Nexus (6 oct 2026)
