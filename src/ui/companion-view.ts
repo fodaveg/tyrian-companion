@@ -737,6 +737,12 @@ export class TyrianCompanionView {
 		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'loot' | 'drawerOrder'>,
 		callout: SessionCardCallout | null,
 	): SessionCardModel {
+		// A refused "Capturar ya" belongs to the wait it was pressed in: once the card leaves it
+		// (another phase, or a stopping session whose wait is over) the failure line must not
+		// come back in the next session's wait.
+		if (this.captureNowState === 'failed' && (observed.status !== 'stopping' || this.settlementWait() === null)) {
+			this.captureNowState = 'idle';
+		}
 		if (observed.status === 'idle') {
 			const recovery = this.actions.getSessionRecoveryState();
 			if (recovery.status !== 'none') return this.buildRecoveryModel(recovery, copy, callout, drawers);

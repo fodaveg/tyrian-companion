@@ -511,6 +511,27 @@ describe('Companion API settlement surface', () => {
 		expect(captureButton(contentEl, 'Capturar ya')?.disabled).toBe(false);
 	});
 
+	it('a refused «Capturar ya» does not leak its failure line into the next session\'s wait', async () => {
+		let wait: ReturnType<typeof waiting> | null = waiting();
+		let session: SessionState = stoppingSession();
+		const { contentEl, render } = mountCompanion({
+			captureSessionFinalNow: vi.fn(async () => { throw new Error('refused'); }),
+			getSessionState: () => session, getSessionSettlementWait: () => wait,
+		});
+		render();
+		captureButton(contentEl, 'Capturar ya')?.click();
+		await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+		expect(texts(contentEl)).toContain('No se pudo completar la acción de sesión.');
+
+		wait = null; session = activeSession();
+		render();
+		wait = waiting(); session = stoppingSession();
+		render();
+
+		expect(captureButton(contentEl, 'Capturar ya')).toBeDefined();
+		expect(texts(contentEl)).not.toContain('No se pudo completar la acción de sesión.');
+	});
+
 	it('«Capturar ya» shows the failure on the card instead of swallowing it', async () => {
 		const captureSessionFinalNow = vi.fn(async () => { throw new Error('refused'); });
 		const { contentEl, render } = mountCompanion({
