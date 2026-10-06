@@ -216,7 +216,7 @@ describe('settings information architecture', () => {
 		'This installation\'s mode', 'API key', 'Output folder', 'In-game alert (optional)',
 		'Alert me about a drop from', 'Alert webhook (optional)', 'Legendary targets',
 	];
-	const MAINTENANCE_ROWS = ['Durable history', 'Diagnostic logs', 'Diagnostic logs: actions', 'Managed assets'];
+	const MAINTENANCE_ROWS = ['Durable history', 'Local price history', 'Diagnostic logs', 'Diagnostic logs: actions', 'Managed assets'];
 
 	it('mounts exactly the contracted rows, in order, with the bridge token only while the bridge is on', () => {
 		const plugin = settingsPlugin();
@@ -318,6 +318,30 @@ describe('settings information architecture', () => {
 		await renderControl(definition, 'text').change('250');
 
 		expect(updates).toEqual([{ valuableLootThresholdCopper: 2_500_000 }]);
+	});
+
+	it('saves the price-history switch alone, and shows its stored value', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Local price history');
+		if (definition === undefined) throw new Error('Expected the price-history setting.');
+		let shown: unknown; let listener: (value: boolean) => Promise<void> = async () => undefined;
+		const toggle = {
+			toggleEl: { setAttr: () => undefined },
+			setValue: (value: boolean) => { shown = value; return toggle; },
+			setDisabled: () => toggle,
+			onChange: (next: typeof listener) => { listener = next; return toggle; },
+		};
+		definition.render({ addToggle: (build: (control: typeof toggle) => unknown) => { build(toggle); } } as never);
+		expect(shown).toBe(plugin.settings.priceHistoryEnabled);
+
+		await listener(true);
+
+		expect(updates).toEqual([{ priceHistoryEnabled: true }]);
 	});
 
 	it('keeps the page DOM-light: native rows, a closed details block, focus restored and the save-state announcer', () => {

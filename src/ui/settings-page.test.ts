@@ -5,22 +5,26 @@ import { DEFAULT_SETTINGS, type TyrianSettings } from '../core/settings';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import { TyrianCompanionSettingTab } from './settings-tab';
 
+const XHTML = 'http://www.w3.org/1999/xhtml';
+/** The fixture's own element factory: it stands in for Obsidian's `createEl` family, which happy-dom lacks. */
+const make = (doc: Document, tag: string): HTMLElement => doc.createElementNS(XHTML, tag);
+
 /** Obsidian's element helpers, which the settings page uses on its container and rows. */
 beforeAll(() => {
 	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
-	proto.createEl = function (this: HTMLElement, tag: string, options?: { text?: string; cls?: string }) {
-		const el = this.ownerDocument.createElement(tag);
+	type Options = { text?: string; cls?: string };
+	proto.createEl = function (this: HTMLElement, tag: string, options?: Options) {
+		const el = make(this.ownerDocument, tag);
 		if (options?.text !== undefined) el.textContent = options.text;
 		if (options?.cls !== undefined) el.className = options.cls;
 		this.appendChild(el);
 		return el;
 	};
-	proto.createDiv = function (this: HTMLElement, options?: { cls?: string }) {
-		return (this as unknown as { createEl(tag: string, o?: unknown): HTMLElement }).createEl('div', options);
+	const shorthand = (tag: string) => function (this: HTMLElement, options?: Options) {
+		return (this as unknown as { createEl(name: string, o?: Options): HTMLElement }).createEl(tag, options);
 	};
-	proto.createSpan = function (this: HTMLElement, options?: { cls?: string; text?: string }) {
-		return (this as unknown as { createEl(tag: string, o?: unknown): HTMLElement }).createEl('span', options);
-	};
+	proto.createDiv = shorthand('div');
+	proto.createSpan = shorthand('span');
 	proto.empty = function (this: HTMLElement) { this.replaceChildren(); };
 	proto.addClass = function (this: HTMLElement, name: string) { this.classList.add(name); };
 	proto.setAttr = function (this: HTMLElement, name: string, value: string) { this.setAttribute(name, value); };
@@ -30,13 +34,13 @@ beforeAll(() => {
 /** A host `setting()` row that really builds DOM, one native control per `add*` call. */
 function fakeRow(container: HTMLElement) {
 	const doc = container.ownerDocument;
-	const settingEl = container.appendChild(doc.createElement('div'));
+	const settingEl = container.appendChild(make(doc, 'div'));
 	settingEl.className = 'setting-item';
-	const info = settingEl.appendChild(doc.createElement('div'));
-	const nameEl = info.appendChild(doc.createElement('div'));
-	const descEl = info.appendChild(doc.createElement('div'));
+	const info = settingEl.appendChild(make(doc, 'div'));
+	const nameEl = info.appendChild(make(doc, 'div'));
+	const descEl = info.appendChild(make(doc, 'div'));
 	descEl.className = 'setting-item-description';
-	const controlEl = settingEl.appendChild(doc.createElement('div'));
+	const controlEl = settingEl.appendChild(make(doc, 'div'));
 	const row: Record<string, unknown> = { settingEl, descEl, controlEl };
 	const chain = () => row;
 	row.setName = (name: string) => { nameEl.textContent = name; return row; };
@@ -50,14 +54,14 @@ function fakeRow(container: HTMLElement) {
 			setValue: (value: string) => { (el as HTMLInputElement).value = String(value); return api; },
 			onChange: (cb: (value: string) => unknown) => { el.addEventListener('change', () => { void cb((el as HTMLInputElement).value); }); return api; },
 			setPlaceholder: self, setDisabled: self, setTooltip: self, setCta: self,
-			addOption: (value: string) => { const o = doc.createElement('option'); o.value = value; el.appendChild(o); return api; },
+			addOption: (value: string) => { const o = make(doc, 'option') as HTMLOptionElement; o.value = value; el.appendChild(o); return api; },
 			setButtonText: (text: string) => { el.textContent = text; return api; },
 			onClick: (cb: () => unknown) => { el.addEventListener('click', () => { void cb(); }); return api; },
 		});
 		return api;
 	};
 	const add = (tag: string, type?: string) => (build: (api: unknown) => unknown) => {
-		const el = controlEl.appendChild(doc.createElement(tag));
+		const el = controlEl.appendChild(make(doc, tag));
 		if (type !== undefined) (el as HTMLInputElement).type = type;
 		build(control(el));
 		return row;
@@ -96,7 +100,7 @@ function plugin() {
 function mountPage(p = plugin()) {
 	const host = { vault: { configDir: 'config-dir' }, ui: { setting: fakeRow, pickFolder: () => () => undefined } };
 	const tab = new TyrianCompanionSettingTab(host as never, p as never);
-	const container = document.body.appendChild(document.createElement('div'));
+	const container = document.body.appendChild(make(document, 'div'));
 	tab.mount(container);
 	return { tab, container, plugin: p };
 }
@@ -112,12 +116,12 @@ describe('settings page: one list, a closed maintenance block', () => {
 		expect(rowNames(container)).toEqual([
 			'This installation\'s mode', 'API key', 'Output folder', 'In-game alert (optional)',
 			'Alert me about a drop from', 'Alert webhook (optional)', 'Legendary targets',
-			'Durable history', 'Diagnostic logs', 'Diagnostic logs: actions', 'Managed assets',
+			'Durable history', 'Local price history', 'Diagnostic logs', 'Diagnostic logs: actions', 'Managed assets',
 		]);
 		const details = container.querySelector('details');
 		expect(details?.open).toBe(false);
 		expect(details?.querySelector('summary')?.textContent).toBe('Maintenance');
-		expect(rowNames(details!)).toEqual(['Durable history', 'Diagnostic logs', 'Diagnostic logs: actions', 'Managed assets']);
+		expect(rowNames(details!)).toEqual(['Durable history', 'Local price history', 'Diagnostic logs', 'Diagnostic logs: actions', 'Managed assets']);
 		// Focus order is DOM order: every main row precedes the summary, which precedes its own rows.
 		const order = Array.from(container.querySelectorAll('.setting-item, summary'));
 		const summaryAt = order.indexOf(details!.querySelector('summary')!);

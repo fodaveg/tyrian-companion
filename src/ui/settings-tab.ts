@@ -576,6 +576,21 @@ export class TyrianCompanionSettingTab {
 					this.refreshSessionHistoryRow();
 				},
 			},
+			{
+				group: 'maintenance',
+				name: this.t('settings.priceHistory.enabled.name'), desc: this.t('settings.priceHistory.enabled.desc'),
+				render: (setting, save) => {
+					setting.addToggle((toggle) => {
+						toggle.toggleEl.setAttr('aria-label', this.t('settings.priceHistory.enabled.name'));
+						return toggle.setValue(this.plugin.settings.priceHistoryEnabled).onChange(async (priceHistoryEnabled) => {
+							toggle.setDisabled(true);
+							await save({ priceHistoryEnabled });
+							toggle.setDisabled(false);
+							this.refreshForSettingsChange();
+						});
+					});
+				},
+			},
 			...this.debugDefinitions(),
 			// A host without managed assets (`capabilities.managedAssets: false`) has no such section.
 			...this.managedAssetsDefinitions(),
