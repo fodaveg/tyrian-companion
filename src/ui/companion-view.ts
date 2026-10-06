@@ -1,3 +1,4 @@
+import { liveSessionCopy } from './live-session-copy';
 import { FarmingSessionPanel, type FarmingSessionPanelActions } from './farming-session-panel';
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
@@ -190,6 +191,7 @@ export class TyrianCompanionView {
 	private refreshInterval: number | null = null;
 	private farmingPanel: FarmingSessionPanel | null = null;
 	private farmingPanelLocale: Locale | null = null;
+	private legacyHistoryContainer: HTMLDetailsElement | null = null;
 	/** Torn down in `onClose`; set once in `onOpen` so a repeated `render()` never registers twice. */
 	private visibilityCleanup: (() => void) | null = null;
 	/** The card's ticking clock (`.tyrian-companion-session__clock`), while a session is active. */
@@ -253,6 +255,7 @@ export class TyrianCompanionView {
 		this.liveLoot = null;
 		this.farmingPanel = null;
 		this.farmingPanelLocale = null;
+		this.legacyHistoryContainer = null;
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;
@@ -302,7 +305,8 @@ export class TyrianCompanionView {
 		contentEl.addClass('tyrian-companion-view');
 		const actionController = this.actions.getProductActionController?.();
 		const locale = this.actions.getLocale();
-		const missingApiKey = !(this.actions.hasConfiguredApiKey?.() ?? true);
+		const liveSurface = this.actions.getLiveSessionView !== undefined;
+		const missingApiKey = !liveSurface && !(this.actions.hasConfiguredApiKey?.() ?? true);
 		const shellKey = `${locale}:${String(missingApiKey)}`;
 		if (actionController === undefined) {
 			// Without a shell `contentEl` is the surface itself, emptied a few lines below; only a
@@ -328,19 +332,32 @@ export class TyrianCompanionView {
 		const surface = this.productShell?.content ?? contentEl;
 		// The history and farming editors stay attached: taking it out of the
 		// tree, even to put it back, would drop the focus and the scroll offset it holds.
-		if (this.farmingPanel !== null && this.farmingPanelLocale !== locale) this.farmingPanel = null;
-		const retained = new Set([this.sessionHistoryMount?.element, this.farmingPanel?.element]);
+		if (this.farmingPanel !== null && this.farmingPanelLocale !== locale) { this.farmingPanel = null; this.legacyHistoryContainer = null; }
+		const retained = new Set([this.sessionHistoryMount?.element, this.farmingPanel?.element, this.legacyHistoryContainer]);
 		for (const child of Array.from(surface.children)) if (!retained.has(child as HTMLElement)) surface.removeChild(child);
 		surface.addClass('tyrian-companion-view__page');
-		this.renderStatusLine(surface);
-		this.renderSimpleSession(surface, connectionState, sessionState, projection, now);
+		if (!liveSurface) {
+			this.renderStatusLine(surface);
+			this.renderSimpleSession(surface, connectionState, sessionState, projection, now);
+		} else if (sessionState.status !== 'idle' || this.actions.getSessionRecoveryState().status !== 'none') {
+			const previous = surface.createEl('details', { cls: 'tyrian-companion-view__legacy-session' });
+			previous.createEl('summary', { text: liveSessionCopy(locale, 'legacySession') });
+			previous.createEl('p', { text: liveSessionCopy(locale, 'legacyReadOnly') });
+			this.renderSimpleSession(previous, connectionState, sessionState, projection, now);
+		}
 		if (this.actions.getFarmingGoal !== undefined && this.actions.getFarmingIngameState !== undefined) {
 			this.farmingPanel ??= new FarmingSessionPanel(surface.ownerDocument, this.actions as FarmingSessionPanelActions);
 			this.farmingPanelLocale = locale;
 			this.farmingPanel.refresh();
 			settleLast(surface, this.farmingPanel.element);
 		}
-		this.renderPendingConfirmationSlot(surface, now);
+		if (liveSurface) {
+			this.legacyHistoryContainer ??= surface.createEl('details', { cls: 'tyrian-companion-view__legacy-history' });
+			if (this.legacyHistoryContainer.children.length === 0) this.legacyHistoryContainer.createEl('summary');
+			this.legacyHistoryContainer.children[0]!.textContent = liveSessionCopy(locale, 'legacyHistory');
+			this.renderSessionHistoryPanel(this.legacyHistoryContainer, false);
+			settleLast(surface, this.legacyHistoryContainer);
+		} else this.renderPendingConfirmationSlot(surface, now);
 		const retryAt = getRetryAt(connectionState);
 		this.scheduleRefresh(projection, retryAt, now);
 	}
@@ -689,7 +706,8 @@ export class TyrianCompanionView {
 		const callout = this.buildIncidentCallout(projection, connection);
 		const model = this.buildSessionCardModel(connection, observed, projection, now, copy, locale, drawers, callout);
 		const errorRecoveryActions = this.sessionErrorRecoveryActions(session);
-		const cardModel = errorRecoveryActions.length > 0 ? { ...model, actions: errorRecoveryActions } : model;
+		const cardModel = this.actions.getLiveSessionView !== undefined ? { ...model, actions: [] }
+			: errorRecoveryActions.length > 0 ? { ...model, actions: errorRecoveryActions } : model;
 		const mount = renderSessionCard(container, this.ui, cardModel);
 		this.headerElapsed = mount.clock;
 		this.liveFigures = mount.figureNodes;
@@ -725,11 +743,12 @@ export class TyrianCompanionView {
 		// H18.36 (boceto lámina 2.5): historial fuera del cajón, solo sin sesión en curso, leído
 		// solo (nunca por un botón) — una vez al llegar aquí, y otra vez cuando una sesión que
 		// acaba de terminar deja la vista en reposo.
-		if (observed.status === 'idle') {
-			const justFinished = this.lastObservedSessionStatus !== null && this.lastObservedSessionStatus !== 'idle';
-			this.renderSessionHistoryPanel(container, justFinished);
-		} else {
-			this.releaseSessionHistoryMount();
+		// With live ports the previous-account history owns its own retained disclosure.
+		if (this.actions.getLiveSessionView === undefined) {
+			if (observed.status === 'idle') {
+				const justFinished = this.lastObservedSessionStatus !== null && this.lastObservedSessionStatus !== 'idle';
+				this.renderSessionHistoryPanel(container, justFinished);
+			} else this.releaseSessionHistoryMount();
 		}
 		this.lastObservedSessionStatus = observed.status;
 	}
@@ -1413,7 +1432,8 @@ export class TyrianCompanionView {
 	}
 
 	private scheduleRefresh(projection: CompanionStatusProjection, retryAt: number | null, now: number): void {
-		const shouldRefresh = projection.refreshEveryMs !== null || isCoolingDown(retryAt) || this.hasFreshPendingProposal(now)
+		const live = this.actions.getLiveSessionView?.();
+		const shouldRefresh = live?.phase === 'active' || live?.phase === 'starting' || live?.phase === 'stopping' || projection.refreshEveryMs !== null || isCoolingDown(retryAt) || this.hasFreshPendingProposal(now)
 			|| (this.actions.getFarmingReminders?.().length ?? 0) > 0;
 		// A hidden window (backgrounded, or a popout tucked behind another) gets no ticking
 		// interval at all: `registerVisibilityPause` rearms it, with an immediate repaint, the
@@ -1471,6 +1491,7 @@ export class TyrianCompanionView {
 		session: SessionState,
 	): void {
 		const state = this.actions.getAssistedDetectionState();
+		const readOnly = this.actions.getLiveSessionView !== undefined;
 		const list = container.createEl('dl', { cls: 'tyrian-companion-session__rows' });
 		list.setAttr('role', state.status === 'error' ? 'alert' : 'status');
 		list.setAttr('aria-live', 'polite');
@@ -1499,34 +1520,40 @@ export class TyrianCompanionView {
 			stateText.addClass('tyrian-companion-view__session-error');
 			// H15.12: without this, a detector stopped by an error had no way back short of a
 			// manual disarm+arm round trip or waiting for the next automatic poll.
-			const retry = dd.createEl('button', { text: this.t('view.tryArmingAgain'), cls: 'mod-cta' });
-			retry.addEventListener('click', () => { void this.actions.armAssistedDetection(); });
+			if (!readOnly) {
+				const retry = dd.createEl('button', { text: this.t('view.tryArmingAgain'), cls: 'mod-cta' });
+				retry.addEventListener('click', () => { void this.actions.armAssistedDetection(); });
+			}
 		} else if (state.status === 'start_proposed') {
-			try { this.actions.recordAssistedProposalPresented?.(); }
+			try { if (!readOnly) this.actions.recordAssistedProposalPresented?.(); }
 			catch { /* Optional pilot metrics never affect foreground actions. */ }
 			stateText.setText(this.t('view.bagSignalFound'));
 			proposal.hidden = false;
 			const startDetail = proposal.createEl('p', { text: this.t('view.startProposalDetail') });
 			startDetail.setAttr('title', this.t('view.startProposalDetail.tooltip'));
 			this.renderProposalDetails(proposal, state.proposal.possibleStart, state.proposal.evidenceQuality);
-			const answers = proposal.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const start = answers.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
-			start.disabled = session.status !== 'idle';
-			start.addEventListener('click', () => this.actions.openManualSessionStart(null));
-			this.addDismissAndDisarm(answers, 'start');
+			if (!readOnly) {
+				const answers = proposal.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+				const start = answers.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
+				start.disabled = session.status !== 'idle';
+				start.addEventListener('click', () => this.actions.openManualSessionStart(null));
+				this.addDismissAndDisarm(answers, 'start');
+			}
 		} else if (state.status === 'stop_proposed') {
-			try { this.actions.recordAssistedProposalPresented?.(); }
+			try { if (!readOnly) this.actions.recordAssistedProposalPresented?.(); }
 			catch { /* Optional pilot metrics never affect foreground actions. */ }
 			stateText.setText(this.t('view.quietSignalFound'));
 			proposal.hidden = false;
 			proposal.createEl('p', { text: this.t('view.stopProposalDetail') });
 			this.renderProposalDetails(proposal, state.proposal.possibleStop, state.proposal.evidenceQuality);
 			this.renderStopProposalLag(proposal, state.proposal.possibleStop.to, state.proposal.detectedAt);
-			const answers = proposal.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const stop = answers.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
-			stop.disabled = session.status !== 'active';
-			stop.addEventListener('click', () => { void this.actions.stopManualSession(null).catch(() => undefined); });
-			this.addDismissAndDisarm(answers, 'stop');
+			if (!readOnly) {
+				const answers = proposal.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+				const stop = answers.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
+				stop.disabled = session.status !== 'active';
+				stop.addEventListener('click', () => { void this.actions.stopManualSession(null).catch(() => undefined); });
+				this.addDismissAndDisarm(answers, 'stop');
+			}
 		} else {
 			stateText.setText(`${this.t('status.armed')} · ${this.t('view.detectionNextQuery')}: ${timeline.next}`);
 		}

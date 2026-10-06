@@ -3055,3 +3055,6 @@
 @media (max-width: 400px) { .tyrian-live-session__table { min-width: 32rem; } }
 
 .tyrian-live-session__chart-gaps { grid-column: 1 / -1; font-size: var(--font-ui-small); overflow-wrap: anywhere; }
+
+.tyrian-companion-view .tyrian-product-shell__nav button { min-width: 44px; min-height: 44px; }
+.tyrian-companion-view__legacy-session > summary, .tyrian-companion-view__legacy-history > summary, .tyrian-farming-session > details > summary { min-height: 44px; padding-block: 12px; box-sizing: border-box; }

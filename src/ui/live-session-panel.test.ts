@@ -171,4 +171,19 @@ describe('shared live observation surface', () => {
 		expect(panel.element.querySelector('img')).toBeNull(); expect(panel.element.querySelector('script')).toBeNull();
 		expect(panel.element.textContent).toContain('ID 12147');
 	});
+	it('restores the selected saved session on remount and language rebuild', async () => {
+		const view = liveView(); view.phase = 'complete'; view.sourceState = 'stale'; view.connection = 'disconnected';
+		const select = vi.fn(async () => {});
+		const actions: LiveSessionPanelActions = { getLocale: () => 'en', getLiveSessionView: () => view,
+			getLiveSessionEntity: () => null, exportLiveSession: async () => {}, getSelectedLiveSessionHistory: () => 'saved',
+			listLiveSessionHistory: async () => [{sessionRef:'saved',startedAt:at(0),endedAt:at(2),observationCount:2}], selectLiveSessionHistory: select };
+		for (const locale of ['en', 'es'] as const) {
+			const panel = new LiveSessionPanel(document, {...actions, getLocale: () => locale});
+			expect(panel.element.querySelector<HTMLSelectElement>('select[aria-label="Saved session"], select[aria-label="Sesión guardada"]')?.value).toBe('saved');
+			await vi.waitFor(() => expect(panel.element.querySelector<HTMLSelectElement>('select[aria-label="Saved session"], select[aria-label="Sesión guardada"]')?.value).toBe('saved'));
+			expect(panel.element.textContent).toContain(locale === 'en' ? 'Session complete' : 'Sesión terminada');
+		}
+		expect(select).not.toHaveBeenCalled();
+	});
+
 });

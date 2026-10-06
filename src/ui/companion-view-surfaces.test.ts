@@ -18,6 +18,7 @@ import type { SessionRecoveryState } from '../sessions/manual-session-start-serv
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionState } from '../sessions/session';
 import { createTranslator } from '../core/i18n';
+import type { LiveSessionViewV1 } from '../sessions/live-session-model';
 import { formatClock } from './format-time';
 
 /**
@@ -798,6 +799,19 @@ describe('Companion start in consult mode', () => {
 });
 
 describe('Companion saved-session decision', () => {
+	it('keeps archived account recovery readable without API resume, start, discard or retry actions', () => {
+		const recover = vi.fn(async () => {}); const start = vi.fn();
+		const { contentEl, render } = mountCompanion({getLiveSessionView: () => ({phase:'active'} as LiveSessionViewV1),
+			getSessionRecoveryState: availableRecovery, recoverSession: recover, openManualSessionStart: start});
+		render();
+		expect(texts(contentEl)).toContain('Recuperación disponible');
+		expect(texts(contentEl)).toContain('Sesión anterior de cuenta / recuperación');
+		for (const label of ['Iniciar sesión', 'Recuperar sesión', 'Descartar sesión guardada', 'Capturar ya']) {
+			expect(find(contentEl, (node) => node.tag === 'button' && node.textContent === label)).toBeUndefined();
+		}
+		expect(recover).not.toHaveBeenCalled(); expect(start).not.toHaveBeenCalled();
+	});
+
 	it('replaces the start action with recovery instead of offering a start that would be refused', async () => {
 		const recoverSession = vi.fn(async () => undefined);
 		const openManualSessionStart = vi.fn();

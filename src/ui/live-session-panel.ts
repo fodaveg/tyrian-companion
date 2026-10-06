@@ -7,6 +7,7 @@ import { liveSessionCopy, type LiveSessionCopyKey } from './live-session-copy';
 export interface LiveSessionPanelActions {
 	getLocale(): 'es' | 'en';
 	getLiveSessionAlerts?(): readonly LiveSessionAlertViewV1[];
+	getSelectedLiveSessionHistory?(): string | null;
 	getLiveSessionView(offset?: number, limit?: number): LiveSessionViewV1;
 	getLiveSessionEntity(kind: 'item' | 'currency', id: number): { name: string; icon: string | null } | null;
 	listLiveSessionHistory?(): Promise<{ sessionRef: string; startedAt: string; endedAt: string; observationCount: number }[]>;
@@ -48,6 +49,7 @@ export class LiveSessionPanel {
 	private historyFeedback: HTMLElement | null = null;
 
 	constructor(private readonly document: Document, private readonly actions: LiveSessionPanelActions) {
+		this.selectedHistoryRef = actions.getSelectedLiveSessionHistory?.() ?? null;
 		this.element = this.node('section', 'tyrian-live-session');
 		this.element.append(this.node('h3', '', this.copy('title')));
 		const id = `tyrian-live-session-${String(++panelNumber)}`;
@@ -118,7 +120,12 @@ export class LiveSessionPanel {
 		this.historySelect = this.document.createElement('select');
 		this.historySelect.setAttribute('aria-label', this.copy('history'));
 		const current = this.document.createElement('option'); current.value = ''; current.textContent = this.copy('current');
-		this.historySelect.append(current); label.append(this.historySelect);
+		this.historySelect.append(current);
+		if (this.selectedHistoryRef !== null) {
+			const selected = this.document.createElement('option'); selected.value = this.selectedHistoryRef; selected.textContent = this.copy('history');
+			this.historySelect.append(selected); this.historySelect.value = this.selectedHistoryRef;
+		}
+		label.append(this.historySelect);
 		this.historySelect.addEventListener('change', () => { void this.selectHistory(); });
 		this.historyRefresh = this.button(this.copy('refreshHistory'), () => { void this.loadHistory(); });
 		this.historyFeedback = this.node('span'); this.historyFeedback.setAttribute('role', 'status');
@@ -133,12 +140,15 @@ export class LiveSessionPanel {
 		this.setHistoryWorking(true);
 		try {
 			const entries = await this.actions.listLiveSessionHistory();
-			const selected = this.historySelect.value;
+			const selected = this.selectedHistoryRef ?? '';
 			const current = this.historySelect.options[0]!; this.historySelect.replaceChildren(current);
 			for (const entry of entries) {
 				const option = this.document.createElement('option'); option.value = entry.sessionRef;
-				option.textContent = `${this.timestamp(entry.startedAt)} → ${this.timestamp(entry.endedAt)} · ${String(entry.observationCount)} ${this.copy(this.selected === 'timeline' ? 'changes' : 'entities')}`;
+				option.textContent = `${this.timestamp(entry.startedAt)} → ${this.timestamp(entry.endedAt)} · ${String(entry.observationCount)} ${this.copy('changes')}`;
 				this.historySelect.append(option);
+			}
+			if (selected !== '' && !entries.some((entry) => entry.sessionRef === selected)) {
+				const retained = this.document.createElement('option'); retained.value = selected; retained.textContent = this.copy('history'); this.historySelect.append(retained);
 			}
 			this.historySelect.value = selected;
 			if (this.historyFeedback) this.historyFeedback.textContent = '';
