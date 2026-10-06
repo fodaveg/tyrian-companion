@@ -14,22 +14,56 @@ interface LiveEconomyOptions {
 	canEmit?(): boolean;
 	emit(intent: LiveAlertOutboxV1): Promise<AlertDeliveryReport>; onError(error: unknown): void; onChange(): void;
 }
+const RETRY_MS = 5 * 60_000;
 /** Public, cached enrichment runs after the durable measurement ACK, never during rendering. */
 export class LiveSessionEconomy {
 	private readonly entities = new Map<number,{name:string;icon:string|null}>();
 	private readonly quotes = new Map<number,{unitCopper:number|null;capturedAt:number}>();
+	/** Ids a panel asked for and nobody has resolved yet, and when each id was last tried (so a miss is not a loop). */
+	private readonly wanted = new Set<number>();
+	private readonly tried = new Map<number,number>();
+	private lookup: Promise<void> | null = null;
 	private flight = Promise.resolve();
 	private disposed = false;
 	constructor(private readonly options: LiveEconomyOptions) {}
+	/**
+	 * Names live only in memory, so after a plugin reload they are empty for a restored session
+	 * (finished or running) until something resolves them. A miss therefore asks the public catalog
+	 * (cache first, ids only) once per `RETRY_MS` and repaints through `onChange` when it answers.
+	 */
 	entity(kind: 'item'|'currency', id: number): {name:string;icon:string|null}|null {
-		return kind === 'item' ? this.entities.get(id) ?? null : null;
+		if (kind !== 'item') return null;
+		const known = this.entities.get(id);
+		if (known) return known;
+		this.want(id);
+		return null;
+	}
+	private want(id: number): void {
+		if (this.disposed || this.wanted.has(id)) return;
+		const last = this.tried.get(id);
+		if (last !== undefined && this.options.now() - last < RETRY_MS) return;
+		this.wanted.add(id);
+		this.lookup ??= Promise.resolve().then(async () => await this.resolveWanted());
+	}
+	private async resolveWanted(): Promise<void> {
+		const ids = [...this.wanted]; this.wanted.clear(); this.lookup = null;
+		const now = this.options.now();
+		for (const id of ids) this.tried.set(id,now);
+		if (this.disposed || this.options.rateLimit.status().active) return;
+		try {
+			const metadata = await this.options.catalog(ids);
+			if (this.disposed) return;
+			let changed = false;
+			for (const item of Object.values(metadata)) if (!this.entities.has(item.id)) { this.entities.set(item.id,{name:item.name,icon:item.icon ?? null}); changed = true; }
+			if (changed) this.options.onChange();
+		} catch { /* A cosmetic lookup that fails (offline, no catalog) keeps "Item <id>" and is retried after RETRY_MS. */ }
 	}
 	observe(entry: LiveJournalEntryV1): void {
 		if (this.disposed || entry.observations.length === 0 && entry.outbox.length === 0) return;
 		this.flight = this.flight.then(async () => await this.enrich(entry)).catch((error: unknown) => { this.options.onError(error); });
 	}
-	async dispose(): Promise<void> { this.disposed = true; await this.flight; }
-	async drain(): Promise<void> { await this.flight; }
+	async dispose(): Promise<void> { this.disposed = true; await this.flight; await this.lookup; }
+	async drain(): Promise<void> { await this.flight; await this.lookup; }
 	private async enrich(entry: LiveJournalEntryV1): Promise<void> {
 		const lifecycle = this.options.lifecycle; const runtime = lifecycle.getRuntime();
 		if (this.disposed || runtime?.phase !== 'active' || runtime.sessionId !== entry.sessionId) return;

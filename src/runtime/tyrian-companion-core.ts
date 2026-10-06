@@ -81,7 +81,7 @@ import {
 } from '../account/guild-wars-2-client';
 import { StorageSnapshotService } from '../account/storage-snapshot-service';
 import { RateLimitedStorageSnapshotService } from '../account/rate-limited-storage-snapshot-service';
-import { GuildWars2PublicCatalogClient } from '../catalog/public-catalog-client';
+import { GuildWars2PublicCatalogClient, type PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogItem } from '../catalog/public-catalog-model';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
 import { createCatalogCacheAdapter } from '../catalog/persistent-catalog-cache';
@@ -1318,13 +1318,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			onComplete: async (record, journal) => await this.saveLiveSessionNote(record, journal),
 		});
 		await this.liveSessions.initialize();
-		this.liveEconomy = new LiveSessionEconomy({
-			lifecycle: this.liveSessions, gateway: publicClient, rateLimit: rateLimitCoordinator, now: () => Date.now(),
-			canEmit: () => !consulting(this) && !this.unloaded,
-			catalog: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveItems(ids,this.settings.language); },
-			emit: async (intent) => await this.emitLiveSessionAlert(intent), onError: (error) => { this.recordIngameSessionFailure(error); },
-			onChange: () => { this.renderViews(); },
-		});
+		this.liveEconomy = this.createLiveEconomy(this.liveSessions, publicClient, rateLimitCoordinator);
 		for (const entry of this.liveSessions.getJournal()) if (entry.outbox.some((intent) => ['awaiting_price','ready'].includes(intent.state))) this.liveEconomy.observe(entry);
 		this.pendingProposals = sessionServices.pendingProposals;
 		this.pendingClaimRenewals = sessionServices.pendingClaimRenewals;
@@ -3194,6 +3188,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const preserved = await this.sessions.readPreservedLegacyRuntime();
 		if (preserved === null) throw new Error('Preserved API session evidence is unavailable.');
 		await exportLegacyRuntimeArchive(this.host.vault,this.settings.outputFolder,preserved.archive,preserved.runtime);
+	}
+	private createLiveEconomy(lifecycle: LiveSessionLifecycle, gateway: PublicCatalogGateway, rateLimit: RateLimitCoordinator): LiveSessionEconomy {
+		return new LiveSessionEconomy({
+			lifecycle, gateway, rateLimit, now: () => Date.now(),
+			canEmit: () => !consulting(this) && !this.unloaded,
+			catalog: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveItems(ids,this.settings.language); },
+			emit: async (intent) => await this.emitLiveSessionAlert(intent), onError: (error) => { this.recordIngameSessionFailure(error); },
+			onChange: () => { this.renderViews(); },
+		});
 	}
 	getLiveSessionEntity(kind: 'item' | 'currency', id: number): {name:string;icon:string|null}|null {
 		return this.liveEconomy?.entity(kind,id) ?? null;
