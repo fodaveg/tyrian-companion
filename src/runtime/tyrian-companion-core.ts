@@ -5219,6 +5219,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const sessionId = runtime.state.status === 'complete' ? runtime.state.sessionId : '';
 		const economy = this.sessionEconomyFor(runtime);
 		const { firstSeenItemIds, rareUnpricedOrBoundItemIds } = this.sessionHalloweenInfoItemIds(sessionId);
+		const farmingContext = this.currentFarmingSessionContext(sessionId);
+		// Optional evidence must be absent rather than present with undefined: the durable
+		// note boundary accepts exact keys, including when boot restores a legacy session.
+		const liveLoot = this.liveSessionLoot.getState();
+		const matchingLoot = liveLoot.status !== 'idle' && liveLoot.sessionId === sessionId ? liveLoot : { status: 'idle' as const };
+		const projectedGoal = farmingGoalForSession(runtime.state, matchingLoot, farmingContext, Date.now());
+		// A restored tracker has no observed increments; the retained final delta still proves net.
+		const finalNetBags = runtime.delta === null || runtime.delta.status === 'invalid' ? null
+			: runtime.delta.itemChanges.find(({ id }) => id === 36038)?.delta ?? 0;
+		const farmingGoalResult = projectedGoal === null ? null : { ...projectedGoal, finalNetBags };
+		const sackObservation = this.liveSessionLoot.sackObservation(sessionId);
+		const presence = this.ingameSessionMarker?.presenceEvidenceFor(sessionId,
+			runtime.state.status === 'complete' ? Date.parse(runtime.state.stopRequestedAt) : undefined);
 		return {
 			runtime, valuation: economy.valuation, reservation: economy.reservation, hold: economy.hold,
 			// H4.12 container recommendations have no runtime producer: `recommendContainerDisposition`
@@ -5228,11 +5241,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId))
 				?? this.ingameLabyrinthDeclaration(runtime),
 			displayNames: this.liveSessionLoot.displayNames(), firstSeenItemIds, rareUnpricedOrBoundItemIds,
-			farmingGoal: this.currentFarmingSessionContext(sessionId)?.goal,
-			farmingGoalResult: this.getFarmingGoalProgress() ?? undefined,
-			comparisonMetadata: { groupContext: this.currentFarmingSessionContext(sessionId)?.groupContext ?? null,
-				presence: this.ingameSessionMarker?.presenceEvidenceFor(sessionId, runtime.state.status === 'complete' ? Date.parse(runtime.state.stopRequestedAt) : undefined) ?? undefined },
-			sackObservation: this.liveSessionLoot.sackObservation(sessionId) ?? undefined,
+			...(farmingContext === null ? {} : { farmingGoal: farmingContext.goal }),
+			...(farmingGoalResult === null ? {} : { farmingGoalResult }),
+			comparisonMetadata: { groupContext: farmingContext?.groupContext ?? null,
+				...(presence == null ? {} : { presence }) },
+			...(sackObservation === null ? {} : { sackObservation }),
 			locale: this.settings.language, outputFolder: this.settings.outputFolder,
 		};
 	}

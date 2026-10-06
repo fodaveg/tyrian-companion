@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { parseDocument } from 'yaml';
 import { IDBFactory } from 'fake-indexeddb';
 import { TFile, type App, type PluginManifest } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -42,7 +43,7 @@ describe('the real 9-sep provisional record auto-finalizes and saves on boot', (
 		vi.unstubAllGlobals();
 	});
 
-	it('starts provisional, ends complete, and saves its summary', async () => {
+	it.each([false, true])('starts provisional, ends complete, and saves its summary (captured goal: %s)', async (hasGoal) => {
 		const factory = new IDBFactory();
 		const record = readFixtureRecord();
 		const authority = (record.state as { authority: { machineId: string; fence: number } }).authority;
@@ -55,11 +56,31 @@ describe('the real 9-sep provisional record auto-finalizes and saves on boot', (
 		// `autoFinalizeProvisionalRecord` itself has to fake.
 		await seedCoordinationState(factory, authority.machineId, authority.fence);
 
-		const plugin = fixturePlugin(factory);
+		const notes = new Map<string, string>();
+		const session = record.state as { sessionId: string; baseline: { completedAt: string } };
+		const farmingContext = hasGoal ? { version: 1, sessionId: session.sessionId,
+			goal: { version: 1, kind: 'duration', targetDurationMs: 3_600_000 }, groupContext: null,
+			observedFrom: session.baseline.completedAt, observedAt: session.baseline.completedAt, sampleCount: 1 } : null;
+		const plugin = fixturePlugin(factory, notes, farmingContext);
 		await plugin.initializeRuntime();
 
 		expect(plugin.getSessionState()).toMatchObject({ status: 'complete' });
 		expect(plugin.getSessionSummarySaveState()).toBe('saved');
+		const content = [...notes.values()][0] ?? '';
+		const frontmatterText = /^---\n([\s\S]*?)\n---\n/u.exec(content)?.[1];
+		expect(frontmatterText).toBeDefined();
+		const frontmatter = parseDocument(frontmatterText ?? '').toJS() as Record<string, unknown>;
+		if (hasGoal) {
+			expect(JSON.parse(String(frontmatter.tc_farming_goal_json))).toEqual(farmingContext?.goal);
+			const result = JSON.parse(String(frontmatter.tc_farming_goal_result_json)) as Record<string, unknown>;
+			expect(result).toMatchObject({ goal: farmingContext?.goal, observedBags: null });
+			expect(typeof result.elapsedMs).toBe('number');
+			const closing = JSON.parse(String(frontmatter.tc_sack_observation_json)) as { netRetained: number | null };
+			expect(result).toHaveProperty('finalNetBags', closing.netRetained);
+		} else {
+			expect(frontmatter).not.toHaveProperty('tc_farming_goal_json');
+			expect(frontmatter).not.toHaveProperty('tc_farming_goal_result_json');
+		}
 	}, 30_000); // a real IndexedDB boot: 2.6 s here, past the 5 s default on the GitHub runner (release 0.1.31 run 34345598250)
 });
 
@@ -111,7 +132,7 @@ async function seedRuntimeRecord(factory: IDBFactory, record: Record<string, unk
 	database.close();
 }
 
-function fixturePlugin(factory: IDBFactory): FixtureHarness {
+function fixturePlugin(factory: IDBFactory, notes = new Map<string, string>(), farmingContext: unknown = null): FixtureHarness {
 	const vault = {
 		configDir: 'test-config-dir',
 		adapter: { getBasePath: () => '/test/vault' },
@@ -121,11 +142,15 @@ function fixturePlugin(factory: IDBFactory): FixtureHarness {
 		on: vi.fn(() => ({ off: () => undefined })),
 		read: vi.fn(async () => ''),
 		createFolder: vi.fn(async () => undefined),
-		create: vi.fn(async (path: string) => Object.assign(new TFile(), { path })),
+		create: vi.fn(async (path: string, content: string) => {
+			notes.set(path, content);
+			return Object.assign(new TFile(), { path });
+		}),
 		process: vi.fn(async (_file: TFile, update: (content: string) => string) => update('')),
 		fileManager: { trashFile: vi.fn(async () => undefined) },
 	};
-	const app = { vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager } as unknown as App;
+	const app = { vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager,
+		loadLocalStorage: (key: string) => key === 'tyrian-farming-session' ? farmingContext : null } as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
 	const { core } = obsidianPluginCore(app, manifest);
 	const target = core as unknown as FixtureHarness & {

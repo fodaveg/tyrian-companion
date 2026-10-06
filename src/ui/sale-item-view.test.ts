@@ -60,11 +60,11 @@ describe('SaleItemView wiring', () => {
 		const model = buildSaleViewModel(baseInput({
 			storageSpace: {
 				bags: { free: 5, total: 160 }, bank: { free: 4, total: 210 }, sharedInventory: { free: 0, total: 6 },
-				lowSpace: { freeSlots: 9, totalSlots: 376, thresholdFreeSlots: 20, isLow: true },
-				materialCapacity: null,
+				lowSpace: { freeSlots: 5, totalSlots: 160, thresholdFreeSlots: 20, isLow: true },
+				materialCapacity: null, bagCharacter: { character: 'Beta', source: 'addon' },
 			},
 			rows: [row({
-				itemId: 43320, name: 'Jorcamelo', slotsUsed: 1,
+				itemId: 43320, name: 'Jorcamelo', slotsUsed: 1, bagSlotsUsed: 1,
 				decision: { action: 'hold', reason: 'below_local_band', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null },
 			})],
 		}));
@@ -73,7 +73,7 @@ describe('SaleItemView wiring', () => {
 		const root = view.contentEl as unknown as FakeElement;
 		const jorcamelo = find(root, 'li').find((li) => li.attributes.get('data-item') === '43320')!;
 		expect(text(jorcamelo)).toContain('Vender ahora');
-		expect(text(jorcamelo)).toContain('Libera 1 hueco');
+		expect(text(jorcamelo)).toContain('Libera 1 hueco en las bolsas de Beta');
 	});
 
 	it('mounts the product shell active on "sale" and navigates through the same controller as the other tabs', async () => {

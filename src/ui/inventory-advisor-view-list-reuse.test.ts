@@ -120,6 +120,9 @@ describe('Inventory Advisor list: equivalence of what is visible', () => {
 		repaint(fixtureModel(45), 'es', keepInteractions([1_003, 1_010]));
 		repaint(fixtureModel(45), 'es', { ...keepInteractions([1_010]), preferencesBusy: true });
 		repaint({ ...fixtureModel(60), storageSpace: lowSpace() }, 'es', {});
+		// The deliberate bag-only copy changes this pin, while retained-row equivalence remains.
+		expect(visibleTree(mount.results)).toContain('en las bolsas del personaje seleccionado');
+		expect(fullTree(mount.results)).not.toContain('entre bolsas y banco');
 		repaint({ ...fixtureModel(60), status: 'loading' }, 'es', {});
 		repaint(fixtureModel(60), 'es', {});
 		expect(hash.digest('hex')).toBe(PINNED.repaints);
@@ -438,7 +441,8 @@ const PINNED = {
 	combinations: 'bfdf52bd3d2cb89216e600458ecc3e7acd613879612edc5aa1a5891ca979a2fe',
 	searches: '1a7431810c76531c5eb8a368001813bb5bdfeea8e2f436a9205c427b85b4f0dd',
 	openDetails: 'b5d3d5a0859400b28a1a0b4d732028b7a8be13c2c6730485e8534a5f7c27185f',
-	repaints: 'b525f5b4b5993bfc097c29b7ecae6c6e783f4909217fffdefdc87a0c57e27138',
+	// Halloween scope: the low-space repaint labels character bags; its pressure fixture now excludes bank slots.
+	repaints: 'b2abb6b7aeee4723c45081bbe0ad874c47e21d65ae6bf959ea339c2f102b342e',
 	/** Elements created to mount 1,371 rows; 36,144 while every closed detail carried its body. */
 	nodesOnMount: 18_110,
 	/**
@@ -502,7 +506,7 @@ function keepInteractions(keptItemIds: readonly number[]): InventoryAdvisorViewI
 function lowSpace(): NonNullable<InventoryAdvisorViewModel['storageSpace']> {
 	return {
 		bags: { free: 3, total: 30 }, bank: { free: 4, total: 30 }, sharedInventory: null,
-		lowSpace: { freeSlots: 7, totalSlots: 60, thresholdFreeSlots: 20, isLow: true },
+		lowSpace: { freeSlots: 3, totalSlots: 30, thresholdFreeSlots: 20, isLow: true },
 		materialCapacity: { quantity: 1_500, source: 'observed_minimum' },
 	};
 }
