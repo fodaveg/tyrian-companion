@@ -30,17 +30,24 @@ sincronización API como sustituto de una fuente live ausente.
 
 ### Candidato 0.5.0: alcance y QA pendientes
 
-La captura propia se rige por [SPEC-live-loot](SPEC-live-loot.md). Los lotes de lector pasivo Nexus
-y transporte live1 tienen implementación; la integración completa del consumidor, persistencia,
-avisos y presentación y su verificación conjunta siguen pendientes en esta preparación documental.
-No se declara que el paquete instalado ya entregue ese recorrido. Las evidencias aisladas solo
-acreditan su candidato y alcance, no el runtime de la futura release.
+La captura propia se rige por [SPEC-live-loot](SPEC-live-loot.md). El código candidato incluye lector/
+transporte, consumidor de sesiones, journal/notas, avisos y presentación. Gate del árbol conjunto,
+publicación y QA real siguen pendientes en [ESTADO](ESTADO.md). Las
+comprobaciones de cada lote acreditan solo su candidato y alcance, no la instalación o ejecución
+real de la futura release.
+
+La entrega 0.5.0 se prepara como release **normal, no prerelease**, para que el instalador del Hebra
+canónico la incluya. Hebra consume los tres assets de plugin externo de esa misma versión; no se
+infiere carga correcta de la versión que figure en disco. Nexus no ofrece autoactualización para
+este addon: con GW2 cerrado, sustituir manualmente la DLL por el artifact elegido y comprobar la
+versión cargada al reabrir. Publicar Companion no sustituye la DLL local de Nexus.
 
 La matriz vigente de sesiones requiere Nexus en Fedora/GE-Proton y Windows; en Windows, Blish HUD
 conserva HUD/avisos y necesita ese productor local. Blish por sí solo no aporta objetos; su soporte
 en Fedora no está acreditado. La sesión abarca la conexión al juego y diez minutos de gracia,
-independientemente de los huecos de lectura. Sin cobertura demostrada, cartera, MF y huecos de
-bolsas se muestran desconocidos, nunca cero ni inferidos por consultas privadas automáticas.
+independientemente de los huecos de lectura. El lector nativo de 0.5.0 no cubre cartera/monedas,
+MF verificado ni huecos de bolsas: se muestran desconocidos, nunca cero ni inferidos mediante
+consultas privadas automáticas. La preparación MF manual conserva su procedencia.
 
 La [matriz live de QA](QA-MVP.md) exige arranque, reapertura, adquisición, huecos, cierre, guardado,
 exportación y avisos en clientes reales, además de instalación/actualización BRAT y carga Hebra.

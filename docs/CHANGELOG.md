@@ -1,32 +1,44 @@
 # Changelog
 
-## Release beta 0.5.0 - captura propia Nexus y sesiones live (candidata)
+## Release beta 0.5.0 - sesiones de inventario observado con Nexus
 
-**Entrada candidata del 6 oct 2026, ajustable antes de publicar.** Describe trabajo en curso;
-no acredita una release publicada, el gate global ni un recorrido completo funcionando.
+Cambios del código candidato. La verificación conjunta y el estado de publicación se registran
+por separado en [ESTADO](ESTADO.md); la QA de clientes reales sigue pendiente.
 
-- **Lector pasivo propio de Nexus implementado en su lote de desarrollo.** Obtiene observaciones
-  agregadas del inventario para el perfil/build admitido, sin hooks nuevos, getters, escritura ni
-  automatización del juego. La carga y lectura dentro del addon real siguen pendientes de QA.
-- **Transporte live1 implementado en su lote de desarrollo.** Negocia la fuente sobre el puente
-  autenticado, con mensajes acotados, épocas y lotes de muestras. Conserva los mensajes anteriores
-  y el panel `farm1`; eso no certifica todavía el consumidor completo ni sus efectos durables.
-- **Integración pendiente:** sesiones por toda la conexión, journal y notas live, timeline/resumen/
-  gráfica/exportación, avisos sin cuenta ficticia y proyección común de Hebra/Obsidian y HUD. Deben
-  contrastarse conjuntamente contra [el contrato](SPEC-live-loot.md) antes de declararse entregados.
-- **Sesiones sin clave API.** El requisito del candidato reserva la API autenticada a inventario/
-  cartera manuales y comprobación explícita de conexión. Catálogo y precios públicos permanecen
-  disponibles; faltan gates del candidato integrado que acrediten la ausencia de consultas privadas
-  automáticas en todo el recorrido.
-- **Cobertura visible.** Baselines no son adquisiciones; los cambios tienen causa desconocida y
-  los huecos no cuentan como tiempo observado. Cartera, MF y huecos libres sin evidencia permanecen
-  desconocidos. Esos límites no cierran la investigación ni el alcance pendiente de esas señales.
+- **Sesiones sin clave API.** Nexus aporta observaciones locales; la sesión sigue la conexión al
+  juego, con diez minutos de gracia cuando se pierde presencia. La API autenticada queda para
+  acciones manuales de inventario/cartera y comprobación explícita de conexión. Catálogo y precios
+  públicos siguen disponibles sin clave.
+- **Timeline, resumen y gráfica desde el mismo ledger.** Se conservan incrementos positivos y
+  cambios negativos con causa desconocida, cobertura y huecos de lectura. Baseline y rebaseline
+  no cuentan como adquisiciones. Un precio ausente no convierte un objeto en valor cero ni
+  invalida por sí solo una cantidad observada.
+- **Guardado y exportación.** El runtime live y las notas schema 7 conservan observaciones y texto
+  humano. La exportación de la sesión activa es una instantánea de lo guardado hasta ese momento;
+  el historial y su exportación muestran sesiones guardadas por separado, sin truncar el ledger
+  a las filas visibles de la UI.
+- **Intenciones y recibos de avisos guardados.** La intención se guarda con la observación y se
+  reclama antes del envío, sin inventar identidad de cuenta. Un reinicio con entrega ambigua
+  conserva «no confirmada» y no vuelve a emitir automáticamente: una caída entre reclamar y enviar
+  puede dejar un aviso no mostrado, sin ocultar su registro. Guardar el registro no garantiza la
+  entrega externa.
+- **Compatibilidad de datos anteriores.** Los registros API conservan identidad y evidencia. La
+  transferencia de un runtime legacy al archivo local de solo lectura no fabrica un fin de sesión
+  ni recaptura la API; el archivo sigue legible/exportable y Nexus parte de su propia baseline.
+- **Reloj coherente durante la gracia.** Si se pierde la presencia agregada, duración y objetivo
+  quedan provisionalmente acotados a la última presencia. Recuperarla restaura el reloj declarado;
+  perder solo la fuente de objetos, con Blish todavía en gameplay, no inventa una pausa del jugador.
 
-Windows con Blish HUD requiere el productor Nexus local; Fedora/GE-Proton usa Nexus. Pendientes:
-integración y verificación conjunta, carga del addon, arranque/reapertura Hebra, sesión real en
-ambas plataformas e instalación/actualización BRAT/Obsidian. La sonda externa histórica no acredita
-esas pruebas. Al publicar se mantiene igualdad exacta nombre/tag/manifest y los ocho assets de
-[BETA](BETA.md); publicación y QA de cliente se informan por separado.
+Nexus es el productor requerido en Fedora/GE-Proton y Windows; Blish HUD conserva panel/avisos en
+Windows y requiere Nexus local. El lector pasivo está limitado al perfil/build admitido, sin operar
+el juego. Su DLL requiere actualización manual; no hay autoactualización del addon. Los cambios
+observados no son eventos causales ni una reconstrucción completa de todo lo obtenido entre muestras.
+
+Límites de 0.5.0: el lector nativo no cubre cartera/monedas, MF verificado ni huecos libres; esas
+señales permanecen desconocidas. La preparación MF manual declara su origen y MagicFinder/Reffect
+sigue siendo una ayuda externa. Siguen pendientes carga/arranque real de Nexus, sesión completa en
+Fedora y Windows, reapertura del Hebra canónico e instalación/actualización BRAT/Obsidian. Las pruebas
+de código y builds no acreditan esa QA. Véanse [contrato live1](SPEC-live-loot.md) y [BETA](BETA.md).
 
 ## Release beta 0.4.0 - objetivos y comparación de tandas, con panel de farmeo en Nexus y Blish HUD
 

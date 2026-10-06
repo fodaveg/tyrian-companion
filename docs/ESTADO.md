@@ -2,31 +2,45 @@
 
 ## Candidato 0.5.0: captura propia Nexus (6 oct 2026)
 
-**Entrega en preparación; integración y QA conjunta pendientes.** Hay implementación por lotes de
-lector pasivo Nexus y transporte live1. Esto no acredita que el candidato completo arranque, mida,
-persista y presente una sesión real ni que su gate global esté verde. La [entrada candidata del
-changelog](CHANGELOG.md) debe ajustarse a la evidencia final antes de publicar.
+**Código candidato integrado y revisión independiente aprobada; gate conjunto, publicación y QA
+real pendientes.** Lector/transporte, dominio de sesiones, journal/notas, avisos y presentación tienen
+implementación en los lotes del candidato. No se equiparan las pruebas de esos lotes con un verde
+global ni con el recorrido funcionando en el juego.
 
-El [contrato live1](SPEC-live-loot.md) ya fija el recorrido: fuente Nexus sin clave API, sesión por
-conexión y gracia de diez minutos, journal durable, presentación compartida y avisos con entrega
-explícita. Se conserva API autenticada solo para inventario/cartera manuales y conexión explícita;
-catálogo y precios públicos siguen separados. Cartera, MF y huecos de bolsas sin evidencia se
-muestran desconocidos; no se declara resuelto su alcance por disponer de un placeholder.
+La raíz ha revisado/integrado localmente Nexus/Blish y las notas/UI (integración `71c77`). El cierre
+de composición y correcciones de B es `d37606c3cd81099c7cc94cedae83e0f86827bb9a`, árbol
+`54e04e45bde033bd4609d7ad238ed0eaaab075ac`: su recibo y comandos están referenciados en el cuerpo
+del commit. Acredita checks afectados con dobles de host/IndexedDB y loopback IPC; no el árbol
+conjunto posterior. Las revisiones independientes de arquitectura y backend de ese cierre han sido
+aprobadas sin hallazgos abiertos. Las integraciones del núcleo son `6e95cfc`, `2368894` y
+`8f2cce3`; falta el gate conjunto de esa composición y estos documentos. Las tareas
+y recibos permanecen en Lumbre y en las referencias de cada candidato.
 
-Pendiente de integrar/verificar conjuntamente: consumidor de sesión, journal/notas, avisos,
-timeline/resumen/gráfica/exportación y HUD. B posee modelo/store/runtime y avisos; C, presentación;
-el lector Nexus y el transporte conservan sus lotes propios. Las tareas y evidencia concreta viven
-en Lumbre y en los recibos de cada candidato; este estado no convierte trabajo abierto en QA.
+El [contrato live1](SPEC-live-loot.md) se refleja en el código candidato: fuente Nexus sin clave
+API, sesión por conexión y gracia de diez minutos, ledger durable, timeline/resumen/gráfica,
+exportación activa separada de historial y notas schema 7. Las intenciones y recibos de avisos se
+guardan, pero la entrega externa sigue siendo no transaccional y puede quedar no confirmada.
+Los registros API anteriores conservan origen/identidad y pueden archivarse en solo lectura sin
+inventar cierre ni recapturar la cuenta. La API autenticada se reserva a inventario/cartera manuales
+y conexión explícita; catálogo/precios públicos siguen separados.
+
+El lector nativo de 0.5.0 no cubre cartera/monedas, MF verificado ni huecos de bolsas. Esos datos
+permanecen desconocidos; una preparación MF manual declara su origen y no completa la cobertura.
+La investigación y el objetivo de esas señales no quedan cerrados por mostrar un placeholder.
 
 La [matriz 0.5.0](QA-MVP.md) sigue pendiente: Fedora/GE-Proton con Nexus, Windows con productor
-Nexus local y Blish HUD consumidor, carga/reapertura Hebra y BRAT/Obsidian. Blish por sí solo no es
-fuente de objetos. La [sonda externa histórica](audit/live-loot-evidence-provenance.md) no acredita
-bootstrap dentro de Nexus ni runtime Windows. H8 y las antiguas sesiones API conservan historia y
-compatibilidad, sin ser la fuente ni el gate funcional de las sesiones live.
+Nexus local y Blish HUD consumidor, carga/reapertura del Hebra canónico y BRAT/Obsidian. La
+[sonda externa histórica](audit/live-loot-evidence-provenance.md) no acredita el runtime del addon.
+La actualización del Hebra canónico usa el plugin externo de la misma release normal; las
+prereleases quedan fuera de su instalador. Nexus tiene `UpdateProvider::None`: requiere sustituir
+su DLL manualmente y verificar la versión cargada, sin prometer autoactualización. En la comprobación
+previa a este despliegue figuraban Tyrian 0.3.4 en Hebra y Nexus 0.3.1; esas versiones no prueban que
+el candidato 0.5.0 esté instalado.
 
-No se afirma publicación de 0.5.0 en este registro. Nombre/tag/manifest y los ocho assets siguen
-[BETA](BETA.md); hasta verificar instalación/carga reales, una publicación se informa como
-«canal publicado; instalación/runtime pendiente».
+La release 0.5.0 se prepara como release normal, no prerelease. Este registro no afirma que esté
+publicada. Nombre/tag/manifest y los ocho assets siguen [BETA](BETA.md); hasta verificar carga real,
+una publicación se informa como «canal publicado; instalación/runtime pendiente». H8 e historia
+API conservan sus límites y evidencia, sin ser la fuente de las nuevas sesiones.
 
 ## Historia conservada de candidatos anteriores
 

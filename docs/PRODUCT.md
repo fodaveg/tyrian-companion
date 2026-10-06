@@ -2,7 +2,7 @@
 
 ## Decisión vigente: sesiones con fuente Nexus (6 oct 2026)
 
-David autoriza el lector propio y pasivo de Nexus para el alcance completo del audit: sesiones, timeline, resumen, gráfica, valoración y exportación en Hebra/Obsidian, con HUD y avisos en Nexus/Blish. El contrato canónico es [SPEC-live-loot](SPEC-live-loot.md). **Implementación y QA de producción pendientes**: esta sección fija el resultado exigido, no declara que el addon actual ya lo entregue.
+David autoriza el lector propio y pasivo de Nexus para el alcance completo del audit: sesiones, timeline, resumen, gráfica, valoración y exportación en Hebra/Obsidian, con HUD y avisos en Nexus/Blish. El contrato canónico es [SPEC-live-loot](SPEC-live-loot.md). **Implementación en código candidato 0.5.0; verificación conjunta y QA real pendientes**: esta sección fija el resultado exigido, sin certificar la instalación ni la ejecución del addon.
 
 - La sesión conserva toda la conexión al juego y la gracia de diez minutos. La presencia y la disponibilidad de muestras son independientes; cambiar de mapa o personaje no recorta por sí solo la sesión.
 - Nexus es el único productor. Windows con Blish HUD conserva su obligación de soporte y requiere Nexus local para los objetos. Fuente ausente, parcial, antigua o en conflicto se muestra sin fingir cobertura.

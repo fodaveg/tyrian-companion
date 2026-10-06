@@ -1,9 +1,9 @@
 # Tyrian Companion
 
 > **Contract update, October 6, 2026:** [live1](docs/SPEC-live-loot.md) supersedes the API-only session
-> design. Production implementation is pending. Existing release instructions and H1–H18
-> descriptions below document legacy behavior, not permission to retain automatic authenticated
-> API requests in the new session flow.
+> design. The 0.5.0 candidate implements this path in code; final checks and real-client QA are
+> separate. H1–H18 descriptions below retain legacy history, not permission to restore automatic
+> authenticated API requests in live sessions.
 
 Tyrian Companion is a desktop-only Obsidian plugin for reviewing Guild Wars 2 farming sessions and
 account inventory context inside a vault, with an independent Hebra host adapter. Recommendations
@@ -11,8 +11,8 @@ describe manual actions: the plugin never operates the game account. A connected
 addon can mark session boundaries automatically from game presence.
 
 The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
-our Nexus addon as the source of new sessions. **Production implementation and runtime QA are
-pending**; this documentation does not claim the current addon already supplies that source.
+our Nexus addon as the source of new sessions. **The path is implemented in candidate code;
+native runtime QA remains pending.** This does not prove that an installed older addon supplies it.
 Authenticated GW2 API requests are reserved for explicit manual inventory/wallet operations and
 connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
 is primary. Windows with Blish HUD remains required and needs a local Nexus producer for live
@@ -33,7 +33,7 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 
 > [!WARNING]
 > `manifest.json` identifies the checkout or installed candidate; it does not by itself prove that
-> version is published. The 0.5.0 integration and real-client QA are pending. Use a disposable vault
+> version is published. Final candidate checks and real-client QA remain pending. Use a disposable vault
 > and record the exact Companion and addon versions when testing.
 
 ## Required live session behavior
@@ -48,22 +48,25 @@ be missed. Observed positive quantities, signed net quantities, valued subtotal 
 separate. Gaps do not count as measured time. Wallet and verified Magic Find remain in scope;
 unimplemented coverage displays unknown, not zero. Economic actions stay manual in inventory.
 
-Evidence is limited to an external Fedora/GE-Proton 11-7 probe of the exact game build recorded in
-[evidence provenance](docs/audit/live-loot-evidence-provenance.md). Native Nexus bootstrap, a complete
-game session, Hebra reopen and Windows Nexus+Blish QA remain pending.
+Historical game-reading evidence comes from the external Fedora/GE-Proton 11-7 probe recorded in
+[evidence provenance](docs/audit/live-loot-evidence-provenance.md); candidate code checks are separate.
+Native Nexus bootstrap, a complete game session, canonical Hebra reopen and Windows Nexus+Blish QA
+remain pending. The native 0.5.0 reader does not cover wallet/currencies, verified MF or free slots.
 
 ## Halloween farming
 
 The candidate retains optional bag/duration goals, manual preparation and run comparisons. Bag
 rates use observed quantities and covered time, separately from item-price coverage. Pure/mixed
 labyrinth presence and build configuration describe a run; sample size and dispersion do not prove
-that a build caused a difference. End-to-end integration and visual/keyboard/game QA remain pending.
+that a build caused a difference. Integrated candidate checks and visual/keyboard/game QA remain pending.
 
 Live sessions require the matching **0.5.0 Nexus producer candidate**, including when Blish HUD is
 the Windows overlay. Consult the [Nexus releases](https://github.com/fodaveg/tyrian-companion-nexus/releases/latest)
 and [Blish releases](https://github.com/fodaveg/tyrian-companion-blish/releases/latest) for actually
 published artifacts; these links do not assert that 0.5.0 is published. For an unpublished candidate,
-use the exact artifacts identified for that test. Older v3 clients retain their compatible alerts/
+use the exact artifacts identified for that test. This Nexus addon has no automatic updater:
+with GW2 closed, replace its DLL manually and verify the loaded version after reopening the game.
+Publishing Companion does not update that DLL. Older v3 clients retain their compatible alerts/
 panel behavior, but that does not provide the new live source. See the
 [live source contract](docs/SPEC-live-loot.md) and [bridge contract](docs/SPEC-puente-ingame.md).
 
@@ -108,13 +111,14 @@ a new release; that delay proves neither installation success nor failure.
 
 Developers testing an exact unpublished commit use the existing
 [artifact installation procedure](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores).
-Hebra uses the matching external-plugin assets from that candidate, described in the same
-[beta guide](docs/BETA.md). Record installation/loading separately from session QA.
+The canonical Hebra host uses the matching external-plugin assets, described in the same
+[beta guide](docs/BETA.md). The 0.5.0 channel is prepared as a normal release, not a prerelease,
+because the Hebra installer omits prereleases. Record installation/loading separately from session QA.
 
 ## First farming session
 
-These steps describe the required 0.5.0 flow under integration; they do not certify that the current
-installed build implements it. The [live QA matrix](docs/QA-MVP.md) records the pending real-client
+These steps describe the 0.5.0 candidate implemented in code; they do not certify its behavior in
+an installed client. The [live QA matrix](docs/QA-MVP.md) records the pending real-client
 checks. Legacy API session controls are not a fallback for missing Nexus observations.
 
 1. Run Tyrian on the collector host, enable the bridge and configure the addon token in Nexus.

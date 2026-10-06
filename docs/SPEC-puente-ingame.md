@@ -2,7 +2,7 @@
 
 ## Extensión live1 autorizada el 6 oct 2026
 
-[SPEC-live-loot](SPEC-live-loot.md) fija la captura propia Nexus; **implementación y QA de producción pendientes**. Conserva v2/v3, hello/welcome, avisos y farm1 sin nuevas claves; negocia capacidad separada después de autenticar v3. Usa nonce y secuencia existentes, framing cerrado de 512 bytes y commit durable antes de ACK/publicación. ACK live no confirma avisos ni farm1.
+[SPEC-live-loot](SPEC-live-loot.md) fija la captura propia Nexus, implementada en código candidato 0.5.0; **verificación conjunta y QA real pendientes**. Conserva v2/v3, hello/welcome, avisos y farm1 sin nuevas claves; negocia capacidad separada después de autenticar v3. Usa nonce y secuencia existentes, framing cerrado de 512 bytes y commit durable antes de ACK/publicación. ACK live no confirma avisos ni farm1.
 
 El contexto ordinario conserva mapa/personaje/estado; las muestras agregadas viajan solo por live1. Blish consume avisos y farm1 y requiere Nexus local como fuente live en Windows. Plugin→addon sigue sin cuenta/personaje, rutas ni secretos; no hay mensajes para ejecutar acciones del juego.
 

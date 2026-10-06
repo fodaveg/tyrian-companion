@@ -1,6 +1,6 @@
 # SPEC: captura pasiva de inventario y sesiones live1
 
-Contrato normativo autorizado por David el **6 de octubre de 2026** para sustituir la fuente API-only de las sesiones por el lector propio y pasivo de Nexus. Fija el comportamiento requerido; **implementación y verificación del runtime de producción pendientes** en este candidato documental. No acredita carga del addon ni QA Windows.
+Contrato normativo autorizado por David el **6 de octubre de 2026** para sustituir la fuente API-only de las sesiones por el lector propio y pasivo de Nexus. Fija el comportamiento requerido para el código candidato 0.5.0; **gate conjunto y QA real pendientes** según [ESTADO](ESTADO.md). No acredita carga del addon ni QA Windows.
 
 La [política de plataformas](PLATFORM_POLICY.md) fija la frontera autorizada y el [puente v2/v3](SPEC-puente-ingame.md) sigue siendo el contrato base. La [investigación histórica](audit/2026-10-06-loot-memory-live.md) y su [procedencia verificable](audit/live-loot-evidence-provenance.md) acreditan solo las sondas allí descritas. Esta decisión prevalece sobre las descripciones históricas API-only para sesiones; no amplía la política específica H8 ni elimina integridad, privacidad o acciones manuales del inventario.
 
@@ -113,7 +113,7 @@ Desconexión: cerrar época; persistir gaps por canal desde sus últimas captura
 
 ### 4.1. Presencia agregada, duración y objetivos
 
-Precisión de ingeniería ratificada el 6 oct 2026; **implementación y gate pendientes**. Mientras se pierde la presencia agregada de todos los addons, la sesión conserva su fase activa y la gracia de diez minutos, pero la proyección provisional de duración usa `lastPresenceAt` como extremo temporal en vez de avanzar con cada tick. El progreso y la cuenta atrás del objetivo de duración usan ese mismo reloj: el tiempo transcurrido durante la gracia no puede marcarlo alcanzado para luego revertirlo al cerrar en la última presencia. Al restaurarse la presencia agregada, se recupera el reloj de la conexión declarada, sin descontar una pausa inferida ni afirmar tiempo efectivamente jugado.
+Precisión de ingeniería ratificada el 6 oct 2026, incorporada al código candidato; **verificación conjunta y QA real pendientes**. Mientras se pierde la presencia agregada de todos los addons, la sesión conserva su fase activa y la gracia de diez minutos, pero la proyección provisional de duración usa `lastPresenceAt` como extremo temporal en vez de avanzar con cada tick. El progreso y la cuenta atrás del objetivo de duración usan ese mismo reloj: el tiempo transcurrido durante la gracia no puede marcarlo alcanzado para luego revertirlo al cerrar en la última presencia. Al restaurarse la presencia agregada, se recupera el reloj de la conexión declarada, sin descontar una pausa inferida ni afirmar tiempo efectivamente jugado.
 
 La indisponibilidad o antigüedad de la fuente, errores de items/currencies y pérdida de Nexus con gameplay de Blish todavía vivo no congelan este reloj. Los huecos de lectura solo afectan cobertura, tasas y la disponibilidad de ETA de bolsas según sus reglas; no son interrupciones del jugador. Esta precisión no añade estados, campos, almacenamiento ni pausas durables. Aceptación mínima: objetivo de 60 s, última presencia a los 55 s y tick a los 61 s durante pérdida agregada conserva 55 s y objetivo no alcanzado; restaurar presencia reanuda el reloj declarado, y mantener Blish en gameplay impide ese acotado aunque Nexus deje de observar.
 
@@ -175,7 +175,7 @@ Mantener notas humanas, CAS/verificación de regiones, recovery y requisito de r
 
 ### 6.1. Transferencia durable del runtime API legacy
 
-Excepción estrecha de migración, ratificada como decisión de ingeniería dentro del alcance de conservar históricos y habilitar sesiones Nexus sin API. **Implementación y verificación pendientes.** Permite retirar la clave `active-session` del store `active-session-v1` mediante transferencia durable de un runtime v3 válido, sin exigir una nota final que ese registro todavía no tenga. No es una finalización, un descarte ni una eliminación de evidencia; no relaja el receipt-before-clear del cierre live ni del recorrido v3 habitual.
+Excepción estrecha de migración, ratificada como decisión de ingeniería dentro del alcance de conservar históricos y habilitar sesiones Nexus sin API. **Implementación en código candidato; verificación conjunta y QA real pendientes.** Permite retirar la clave `active-session` del store `active-session-v1` mediante transferencia durable de un runtime v3 válido, sin exigir una nota final que ese registro todavía no tenga. No es una finalización, un descarte ni una eliminación de evidencia; no relaja el receipt-before-clear del cierre live ni del recorrido v3 habitual.
 
 - Se usa la misma base de datos y el store `active-session-v1`, que contiene la clave `active-session`. El destino es la clave `legacy-api-runtime:<sessionId>` en ese mismo store: conserva el registro v3 original validado, el recibo real de nota vinculado a esa misma sesión cuando exista, checksum del contenido preservado y `preservedAt`. Si no existe recibo, se conserva esa ausencia. No se fabrica receipt, estado `complete`, `endedAt`, snapshot final ni delta.
 - La operación exige un lease específico de la sesión legacy: `handle.sessionId` debe coincidir con su ID y la autoridad seguir vigente. No se reutiliza el handle de la futura sesión live ni se arrebata un lease a un propietario vivo. Un v3 inválido, recibo presente que no corresponda o lease ajeno bloquean la transferencia conservando el activo.
@@ -253,7 +253,7 @@ La vieja afirmación de que no leer memoria garantiza encaje en una política de
 
 ## 13. Avisos live sin identidad de cuenta
 
-Decisión de ingeniería ratificada en la coordinación del 6 oct 2026 dentro del alcance autorizado. **Implementación y verificación pendientes**: no se presenta como una instrucción histórica adicional del usuario ni como comportamiento ya entregado.
+Decisión de ingeniería ratificada en la coordinación del 6 oct 2026 dentro del alcance autorizado. **Implementación en código candidato; verificación conjunta y QA real pendientes**: no se presenta como una instrucción histórica adicional del usuario ni como entrega externa garantizada.
 
 La intención de aviso vive en el journal live canónico, en la misma transacción que la observación. No se crea otra base de datos ni se inserta una copia en `EmittedAlertQueue`: esa cola y sus registros legacy conservan su contrato ligado a cuenta. La fuente es `nexus_inventory` y la cuenta desconocida permanece `null`; no se fabrican `accountRef` ni nombres de cuenta/sesión a partir de instance, personaje, bóveda o placeholders.
 
