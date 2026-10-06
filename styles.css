@@ -3058,3 +3058,5 @@
 
 .tyrian-companion-view .tyrian-product-shell__nav button { min-width: 44px; min-height: 44px; }
 .tyrian-companion-view__legacy-session > summary, .tyrian-companion-view__legacy-history > summary, .tyrian-farming-session > details > summary { min-height: 44px; padding-block: 12px; box-sizing: border-box; }
+
+.tyrian-companion-view__legacy-export { min-height: 44px; max-width: 100%; white-space: normal; }

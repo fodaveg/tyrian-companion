@@ -812,6 +812,22 @@ describe('Companion saved-session decision', () => {
 		expect(recover).not.toHaveBeenCalled(); expect(start).not.toHaveBeenCalled();
 	});
 
+	it('exports preserved account evidence explicitly and retains its control and focus during a refresh', async () => {
+		let finish: (() => void) | null = null;
+		const exporter = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+		const {contentEl, render} = mountCompanion({getLiveSessionView: () => ({phase:'active'} as LiveSessionViewV1),
+			getSessionRecoveryState: availableRecovery, exportPreservedLegacySession: exporter});
+		render();
+		const button = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Exportar evidencia de cuenta guardada (JSON)')!;
+		button.focus(); button.click(); expect(button.attributes.get('aria-disabled')).toBe('true'); expect(button.disabled).toBe(false); expect(exporter).toHaveBeenCalledOnce();
+		render(); expect(find(contentEl, (node) => node === button)).toBe(button); expect(button.ownerDocument.activeElement).toBe(button);
+		button.click(); expect(exporter).toHaveBeenCalledOnce();
+		finish!(); await Promise.resolve(); await Promise.resolve(); expect(button.attributes.get('aria-disabled')).toBe('false');
+		expect(texts(contentEl)).toContain('Exportación guardada');
+		exporter.mockRejectedValueOnce(new Error('storage')); button.click(); await Promise.resolve(); await Promise.resolve();
+		expect(texts(contentEl)).toContain('No se pudo exportar. La sesión se conserva; vuelve a intentarlo.');
+		expect(texts(contentEl)).toContain('Recuperación disponible');
+	});
 	it('replaces the start action with recovery instead of offering a start that would be refused', async () => {
 		const recoverSession = vi.fn(async () => undefined);
 		const openManualSessionStart = vi.fn();
