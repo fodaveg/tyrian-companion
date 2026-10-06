@@ -1,12 +1,24 @@
 # QA manual del MVP
 
-## Matriz live1 requerida (6 oct 2026; pendiente)
+## Matriz candidata 0.5.0 live1 (6 oct 2026; ejecución real pendiente)
 
 [SPEC-live-loot](SPEC-live-loot.md) prevalece sobre precondiciones y recorridos API históricos para las nuevas sesiones. La evidencia `e370775` de abajo no acredita live1. Registrar versiones, SHA y entorno realmente probado; cross-build no equivale a carga nativa. Se conserva QA de funciones API manuales.
 
+| Recorrido real | Fuente / consumidor | Estado de esta preparación |
+| --- | --- | --- |
+| Fedora con GE-Proton | Nexus productor y HUD; Hebra/Obsidian como host del candidato probado | Pendiente: cargar, arrancar/reabrir, medir, cerrar, guardar y exportar |
+| Windows | Nexus productor local obligatorio; Blish HUD consumidor y host disponible | Pendiente: mismo recorrido, avisos y fuente ausente al retirar Nexus |
+| Distribución Obsidian | BRAT, candidato instalado y actualización desde versión anterior | Pendiente: verificar versión realmente cargada y ejecutar recorrido |
+| Distribución Hebra | Plugin externo del mismo candidato | Pendiente: carga, reapertura, persistencia y presentación |
+
+No se infiere compatibilidad de Blish en Fedora. Registrar por fila versiones de host/addons, SHA y
+artefactos realmente instalados; las pruebas de lector/transporte aisladas no marcan estas filas
+PASS. Monedas, MF y slots sin evidencia deben seguir desconocidos; es comportamiento exigido,
+no acreditación de que esas fuentes ya estén implementadas.
+
 - Sin clave API: carga → presencia → inicio → muestra → cierre → recovery → render. Cualquier consulta autenticada automática falla; inventario/cartera manuales y conexión explícita funcionan. Catálogo/precios públicos son canales distintos.
 - Cargar addon Nexus real en Fedora/GE-Proton y Windows; Windows con Blish necesita productor Nexus local. Sin Nexus, presencia sigue pero fuente aparece ausente. Arranque autónomo y reapertura Hebra requieren evidencia propia.
-- Fixture `0 → 2 → 4`: dos filas `+2`, cuatro observados y valoración coherente. Reordenar no cambia cantidades; disminución tiene causa desconocida. Baselines no son botín; monedas/MF sin cobertura son desconocidos, no cero.
+- Fixture `0 → 2 → 4`: dos filas `+2`, cuatro observados y valoración coherente. Reordenar no cambia cantidades; disminución tiene causa desconocida. Baselines no son botín; monedas/MF/huecos de bolsas sin cobertura son desconocidos, no cero.
 - Contexto equivalente entre begin/rows/end conserva lote/época; cambio real incluso con retorno invalida época sin terminar conexión. Heartbeat vivo con muestras antiguas abre hueco, detiene tiempo observado y no activa API fallback.
 - Framing/límites/timeout adversos del contrato. Sin end, con fallo de almacén o lease perdido no hay stored/UI/avisos. Retry idéntico tras ACK perdido, incluido cursor 0, no duplica ni renueva frescura. Dos productores no mezclan filas.
 - Recuperación por canal: partial invalida solo su baseline; siguiente completa restablece sin delta y posterior compara. Huecos independientes cierran sin contar tiempo perdido ni descontar doblemente solapamientos. Cierre conserva extremo final y moneda desconocida.
@@ -15,7 +27,17 @@
 
 Casos discriminantes y comandos existentes: SPEC-live-loot §11. Monedas/MF siguen dentro del objetivo: ausencia de cobertura no acredita implementación. La [sonda externa](audit/live-loot-evidence-provenance.md) solo avala su candidato; QA dentro de Nexus y Windows siguen pendientes. En nuevas sesiones, salir de un mapa no las cierra: rige toda la conexión y su gracia de diez minutos.
 
-## Estado y alcance
+## Matriz histórica API/H18 y compatibilidad
+
+Las pruebas siguientes conservan el estado y referencias de sus candidatos originales. Las
+operaciones manuales de inventario y lectura de datos legacy siguen siendo pruebas de compatibilidad.
+Los pasos que inician/capturan/cierran sesiones mediante API, exigen clave para sesiones o conservan
+hipótesis antiguas de H18 no son el recorrido live de 0.5.0. Para ese recorrido manda la matriz
+anterior y [SPEC-live-loot](SPEC-live-loot.md), incluida la sesión por conexión: salir de un mapa no
+la cierra. H8 mantiene su alcance aislado y sus pruebas históricas, sin activación productiva por
+esta entrega. No se reutiliza un PASS antiguo como evidencia del candidato live.
+
+### Estado y alcance históricos
 
 Este protocolo cubre H6.8/H6.9 y recoge las dieciséis pruebas de aceptación de la sección 8 de la
 [[Tyrian Companion - Auditoría final consolidada 2026-09-24]], con las precisiones de su sección 9
@@ -30,12 +52,12 @@ del candidato instalado en cada prueba y repetir la comprobación si cambia.
 
 ## Precondiciones comunes
 
-Para todas las pruebas:
+Para las pruebas aplicables, distinguiendo matriz live y compatibilidad histórica:
 
 1. Crear una bóveda **desechable** nueva. No abrir, copiar ni modificar la bóveda canónica.
 2. Instalar el candidato y anotar: versión de Tyrian Companion (de `manifest.json`), SHA-256 del
    commit (`git rev-parse HEAD`), versión de Obsidian, sistema operativo y plataforma (Fedora con
-   Proton / Windows nativo con Blish HUD para el clan — macOS con CrossOver queda fuera de esta ronda
+   Proton con Nexus / Windows nativo con Nexus productor y Blish HUD para el clan — macOS con CrossOver queda fuera de esta ronda
    salvo que David lo pida).
 3. Solo para pruebas API manuales/legacy, crear un secreto de Obsidian con una clave de pruebas (`account`, `characters`, `inventories`,
    `builds` como mínimo).
@@ -549,7 +571,7 @@ fuera de ventana.
 
 ---
 
-## Medición de línea base (pendiente)
+## Medición de línea base histórica API/H18 (pendiente en su candidato)
 
 Estos límites se miden **después** de ejecutar una línea base real, **no antes** (auditoría §8, nota
 final: «Los límites de retraso, clics y tiempos se fijan después de medir una línea base, no antes.»):

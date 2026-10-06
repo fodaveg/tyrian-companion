@@ -2,9 +2,10 @@
 
 ## Estado actual
 
-**La beta pública es la que declara `manifest.json`, publicada como GitHub Release con ese mismo
-tag.** No se repite el número aquí: caduca en cada release y este documento no es quien lo gobierna.
-Para verificar la release vigente:
+`manifest.json` identifica la versión del checkout o candidato. **Una versión candidata todavía no
+acredita una release pública:** al publicar, nombre de GitHub Release, tag y `manifest.version`
+deben ser exactamente iguales. La preparación documental de **0.5.0** no afirma publicación,
+instalación ni gates globales superados. Para verificar una release de esa versión:
 
 ```sh
 version="$(node -p "require('./manifest.json').version")"
@@ -21,10 +22,31 @@ reales de Guild Wars 2, siguen pendientes de QA humana salvo que `docs/ESTADO.md
 contrario para la release vigente. Una release publicada o un artifact verde de CI no demuestran esos
 flujos por sí solos.
 
-Antes de probar, sigue el onboarding del [README](../README.md), crea una clave con la
-[guía de permisos](API-KEY.md) y conserva a mano el contrato de
-[soporte y redacción](SUPPORT.md). Estos documentos describen el producto actual; no sustituyen la
-matriz humana ni acreditan la QA pendiente.
+Antes de probar, sigue el onboarding del [README](../README.md) y el contrato de
+[soporte y redacción](SUPPORT.md). **Las sesiones live Nexus se prueban sin clave API.** Solo las
+acciones manuales de inventario/cartera y la comprobación explícita de conexión necesitan una clave
+con la [guía de permisos](API-KEY.md); catálogo y precios públicos no la requieren. No usar una
+sincronización API como sustituto de una fuente live ausente.
+
+### Candidato 0.5.0: alcance y QA pendientes
+
+La captura propia se rige por [SPEC-live-loot](SPEC-live-loot.md). Los lotes de lector pasivo Nexus
+y transporte live1 tienen implementación; la integración completa del consumidor, persistencia,
+avisos y presentación y su verificación conjunta siguen pendientes en esta preparación documental.
+No se declara que el paquete instalado ya entregue ese recorrido. Las evidencias aisladas solo
+acreditan su candidato y alcance, no el runtime de la futura release.
+
+La matriz vigente de sesiones requiere Nexus en Fedora/GE-Proton y Windows; en Windows, Blish HUD
+conserva HUD/avisos y necesita ese productor local. Blish por sí solo no aporta objetos; su soporte
+en Fedora no está acreditado. La sesión abarca la conexión al juego y diez minutos de gracia,
+independientemente de los huecos de lectura. Sin cobertura demostrada, cartera, MF y huecos de
+bolsas se muestran desconocidos, nunca cero ni inferidos por consultas privadas automáticas.
+
+La [matriz live de QA](QA-MVP.md) exige arranque, reapertura, adquisición, huecos, cierre, guardado,
+exportación y avisos en clientes reales, además de instalación/actualización BRAT y carga Hebra.
+Todo ello permanece pendiente. Las matrices históricas de sesiones API y del helper H8 conservan
+su evidencia de compatibilidad y sus propios límites; no certifican live1 ni requieren activar H8.
+Las condiciones de paquete, ocho assets y verificación BRAT que siguen no cambian.
 
 ## Contrato del paquete
 
@@ -138,6 +160,10 @@ instalación, modo de detección, fase y resultado. No se adjuntan claves, ident
 personaje, rutas absolutas, inventario/snapshots crudos, IndexedDB, notas completas ni logs o capturas
 sin redactar. Usa el [formato de soporte seguro](SUPPORT.md) también para una prueba satisfactoria.
 
+El siguiente piloto H7.13/H7.7 es evidencia y QA del recorrido histórico de detección API; no es la
+matriz live1 de 0.5.0 ni autorización para reintroducir sondeo privado en sesiones. H8 conserva
+su contrato aislado y sus pendientes propios.
+
 El journal local H7.13, ya publicado desde hace varias releases, prepara esa evidencia, pero
 publicarlo no acredita el piloto. Antes de H7.7 todavía hay que ejecutar el dry run instrumentado en
 Linux/Steam/Proton, macOS/CrossOver y Windows beta, revisar la muestra de cada plataforma y confirmar
@@ -156,14 +182,15 @@ una confirmación humana: el script no intenta inspeccionar ni abrir Obsidian.
 
 ## Canal BRAT publicado
 
-La release pública vigente cumple el contrato de BRAT: el tag coincide con `manifest.version` y
-adjunta `manifest.json`, `main.js` y `styles.css` como assets individuales. El ZIP reproducible puede
+Una release solo se declara publicada después de verificar su salida real de GitHub: nombre y tag
+coinciden con `manifest.version`, y están completos los ocho assets enumerados arriba. Los tres
+assets individuales de Obsidian son `manifest.json`, `main.js` y `styles.css`. El ZIP reproducible puede
 usarse para instalación manual; su SHA-256 exacto es el que reporta `npm run release:package` para
 esa versión y no sustituye los tres assets que descarga BRAT.
 
 Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión publicada más
 reciente (la que declara `manifest.json`). Antes de
 dar por validada una plataforma se debe descargar de nuevo la release publicada, verificar su SHA y
-sus tres assets, instalarla con BRAT en una bóveda desechable y probar una actualización real desde
+los ocho assets exigidos, instalarla con BRAT en una bóveda desechable y probar una actualización real desde
 una versión anterior. Hasta completar esa evidencia, la formulación correcta es «canal BRAT
 publicado; instalación y actualización pendientes de QA humana».

@@ -1,5 +1,33 @@
 # Changelog
 
+## Release beta 0.5.0 - captura propia Nexus y sesiones live (candidata)
+
+**Entrada candidata del 6 oct 2026, ajustable antes de publicar.** Describe trabajo en curso;
+no acredita una release publicada, el gate global ni un recorrido completo funcionando.
+
+- **Lector pasivo propio de Nexus implementado en su lote de desarrollo.** Obtiene observaciones
+  agregadas del inventario para el perfil/build admitido, sin hooks nuevos, getters, escritura ni
+  automatización del juego. La carga y lectura dentro del addon real siguen pendientes de QA.
+- **Transporte live1 implementado en su lote de desarrollo.** Negocia la fuente sobre el puente
+  autenticado, con mensajes acotados, épocas y lotes de muestras. Conserva los mensajes anteriores
+  y el panel `farm1`; eso no certifica todavía el consumidor completo ni sus efectos durables.
+- **Integración pendiente:** sesiones por toda la conexión, journal y notas live, timeline/resumen/
+  gráfica/exportación, avisos sin cuenta ficticia y proyección común de Hebra/Obsidian y HUD. Deben
+  contrastarse conjuntamente contra [el contrato](SPEC-live-loot.md) antes de declararse entregados.
+- **Sesiones sin clave API.** El requisito del candidato reserva la API autenticada a inventario/
+  cartera manuales y comprobación explícita de conexión. Catálogo y precios públicos permanecen
+  disponibles; faltan gates del candidato integrado que acrediten la ausencia de consultas privadas
+  automáticas en todo el recorrido.
+- **Cobertura visible.** Baselines no son adquisiciones; los cambios tienen causa desconocida y
+  los huecos no cuentan como tiempo observado. Cartera, MF y huecos libres sin evidencia permanecen
+  desconocidos. Esos límites no cierran la investigación ni el alcance pendiente de esas señales.
+
+Windows con Blish HUD requiere el productor Nexus local; Fedora/GE-Proton usa Nexus. Pendientes:
+integración y verificación conjunta, carga del addon, arranque/reapertura Hebra, sesión real en
+ambas plataformas e instalación/actualización BRAT/Obsidian. La sonda externa histórica no acredita
+esas pruebas. Al publicar se mantiene igualdad exacta nombre/tag/manifest y los ocho assets de
+[BETA](BETA.md); publicación y QA de cliente se informan por separado.
+
 ## Release beta 0.4.0 - objetivos y comparación de tandas, con panel de farmeo en Nexus y Blish HUD
 
 - **El espacio urgente es el de las bolsas del personaje que farmea.** Un banco vacío ya no oculta

@@ -1,6 +1,39 @@
 # Estado
 
-## Farmeo del laberinto de Halloween (6 oct 2026)
+## Candidato 0.5.0: captura propia Nexus (6 oct 2026)
+
+**Entrega en preparación; integración y QA conjunta pendientes.** Hay implementación por lotes de
+lector pasivo Nexus y transporte live1. Esto no acredita que el candidato completo arranque, mida,
+persista y presente una sesión real ni que su gate global esté verde. La [entrada candidata del
+changelog](CHANGELOG.md) debe ajustarse a la evidencia final antes de publicar.
+
+El [contrato live1](SPEC-live-loot.md) ya fija el recorrido: fuente Nexus sin clave API, sesión por
+conexión y gracia de diez minutos, journal durable, presentación compartida y avisos con entrega
+explícita. Se conserva API autenticada solo para inventario/cartera manuales y conexión explícita;
+catálogo y precios públicos siguen separados. Cartera, MF y huecos de bolsas sin evidencia se
+muestran desconocidos; no se declara resuelto su alcance por disponer de un placeholder.
+
+Pendiente de integrar/verificar conjuntamente: consumidor de sesión, journal/notas, avisos,
+timeline/resumen/gráfica/exportación y HUD. B posee modelo/store/runtime y avisos; C, presentación;
+el lector Nexus y el transporte conservan sus lotes propios. Las tareas y evidencia concreta viven
+en Lumbre y en los recibos de cada candidato; este estado no convierte trabajo abierto en QA.
+
+La [matriz 0.5.0](QA-MVP.md) sigue pendiente: Fedora/GE-Proton con Nexus, Windows con productor
+Nexus local y Blish HUD consumidor, carga/reapertura Hebra y BRAT/Obsidian. Blish por sí solo no es
+fuente de objetos. La [sonda externa histórica](audit/live-loot-evidence-provenance.md) no acredita
+bootstrap dentro de Nexus ni runtime Windows. H8 y las antiguas sesiones API conservan historia y
+compatibilidad, sin ser la fuente ni el gate funcional de las sesiones live.
+
+No se afirma publicación de 0.5.0 en este registro. Nombre/tag/manifest y los ocho assets siguen
+[BETA](BETA.md); hasta verificar instalación/carga reales, una publicación se informa como
+«canal publicado; instalación/runtime pendiente».
+
+## Historia conservada de candidatos anteriores
+
+Los apartados siguientes mantienen fechas, evidencia y deuda de sus candidatos. Sus afirmaciones
+de API-only, gates verdes o estado de publicación no certifican ni gobiernan el candidato live 0.5.0.
+
+## Farmeo del laberinto de Halloween: candidato 0.4.0 (6 oct 2026)
 
 El [audit funcional](audit/2026-10-06-laberinto-halloween.md) originó el proyecto de Lumbre
 «Tyrian Companion · Farmeo del laberinto Halloween». El candidato de integración incorpora
