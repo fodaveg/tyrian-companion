@@ -36,10 +36,11 @@ publicación y QA real siguen pendientes en [ESTADO](ESTADO.md). Las
 comprobaciones de cada lote acreditan solo su candidato y alcance, no la instalación o ejecución
 real de la futura release.
 
-El contrato de 0.5.0 incluye plantilla de build declarada y comparación live separada del historial
-API. Parser/dominio tienen evidencia acotada; notas/editor/comparador todavía requieren acreditación
-integrada. En QA se comprueban captura inmutable, entrada inválida visible y mínimo de dos completas
-por grupo; una plantilla declarada no acredita build equipada ni equipo/stats.
+El candidato 0.5.0 integra plantilla de build declarada y comparación live separada del historial
+API: parser, captura inmutable, notas, editor y comparador cuentan con revisión independiente. Los
+checks de cada lote no sustituyen el gate conjunto ni la QA real. En QA se comprueban captura
+inmutable al solicitar el inicio, entrada inválida visible y mínimo de dos completas por grupo;
+una plantilla declarada no acredita build equipada ni equipo/stats.
 
 La entrega 0.5.0 se prepara como release **normal, no prerelease**, para que el instalador del Hebra
 canónico la incluya. Hebra consume los tres assets de plugin externo de esa misma versión; no se

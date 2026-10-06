@@ -17,7 +17,10 @@ La evidencia es una sonda externa en Fedora con GE-Proton 11-7 sobre el ejecutab
 `27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c`. Se conservan adquisiciones
 observadas con lector v2 y la corrección/baseline v3 con 254 tipos conocidos; no se atribuye al v3 una
 adquisición observada con v2. No prueba bootstrap dentro de Nexus, carga del addon, cobertura de
-todas las clases de objetos, cartera/MF ni Windows. Producción y QA real siguen pendientes.
+todas las clases de objetos, cartera/MF ni Windows. El lector/transporte y sus consumidores están
+implementados en el código candidato según [ESTADO](../ESTADO.md); sus checks y revisiones tienen
+evidencia propia. Esta sonda histórica no certifica ese árbol integrado, el gate conjunto ni la QA
+real del addon, que siguen pendientes de acreditar.
 
 Esta reconciliación no ejecuta sondas ni accede al juego. Comprueba identidad de bytes frente al
 commit de origen y hashes de recibos cuando sus archivos están incluidos. No añade inventario

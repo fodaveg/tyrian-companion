@@ -7,14 +7,24 @@ real pendientes.** Lector/transporte, dominio de sesiones, journal/notas, avisos
 implementación en los lotes del candidato. No se equiparan las pruebas de esos lotes con un verde
 global ni con el recorrido funcionando en el juego.
 
-La raíz ha revisado/integrado localmente Nexus/Blish y las notas/UI (integración `71c77`). El cierre
-de composición y correcciones de B es `d37606c3cd81099c7cc94cedae83e0f86827bb9a`, árbol
-`54e04e45bde033bd4609d7ad238ed0eaaab075ac`: su recibo y comandos están referenciados en el cuerpo
-del commit. Acredita checks afectados con dobles de host/IndexedDB y loopback IPC; no el árbol
-conjunto posterior. Las revisiones independientes de arquitectura y backend de ese cierre han sido
-aprobadas sin hallazgos abiertos. Las integraciones del núcleo son `6e95cfc`, `2368894` y
-`8f2cce3`; falta el gate conjunto de esa composición y estos documentos. Las tareas
-y recibos permanecen en Lumbre y en las referencias de cada candidato.
+La raíz ha revisado/integrado localmente Nexus/Blish, notas/UI y el cierre de composición de
+sesiones. Su evidencia previa incluye `d37606c3cd81099c7cc94cedae83e0f86827bb9a`, árbol
+`54e04e45bde033bd4609d7ad238ed0eaaab075ac`, integrado como `8f2cce3` junto con `6e95cfc` y
+`2368894`. Esos checks con dobles de host/IndexedDB y loopback IPC acreditan sus árboles y alcance,
+no el árbol conjunto posterior ni ejecución real en juego.
+
+El lote de plantilla declarada/comparación está integrado en `d2a6149`: parser `57416b8`, dominio
+`cefb606`, captura al solicitar el inicio `8b2f3bc`, notas `76eb16b` y editor/comparador `d2a6149`.
+Las revisiones independientes de parser, dominio/captura, notas y los once archivos de consumidores
+han sido aprobadas sin hallazgos abiertos. Los commits originales `d8f252c`, `d124a586`, `d54222f`,
+`b9c8477` y `8796a8b` referencian sus árboles, comandos y recibos: parser con seis fixtures de origen
+identificado; conservación de raw inválido/v4; captura antes de suspensión con regresión roja/verde;
+155 tests de notas/compatibilidad; y 23 tests de consumidores más 21 de fronteras y cinco previews
+ES/EN aisladas. Cada resultado pertenece a su candidato; no se suma como un gate global. Las vistas
+usan componentes reales con datos sintéticos y red abortada, no Hebra/Obsidian ni GW2 reales.
+
+El siguiente paso de verificación es el gate conjunto con estos documentos. Las tareas y recibos
+permanecen en Lumbre y en las referencias de cada candidato.
 
 El [contrato live1](SPEC-live-loot.md) se refleja en el código candidato: fuente Nexus sin clave
 API, sesión por conexión y gracia de diez minutos, ledger durable, timeline/resumen/gráfica,
@@ -23,6 +33,14 @@ guardan, pero la entrega externa sigue siendo no transaccional y puede quedar no
 Los registros API anteriores conservan origen/identidad y pueden archivarse en solo lectura sin
 inventar cierre ni recapturar la cuenta. La API autenticada se reserva a inventario/cartera manuales
 y conexión explícita; catálogo/precios públicos siguen separados.
+
+La preparación permite declarar una plantilla GW2 y etiqueta opcional. Se valida y congela al
+solicitar una sesión nueva; editar después no altera su evidencia. Una entrada inválida se conserva
+con error visible y captura desconocida, sin bloquear sesiones ni usar otra válida antigua. Notas
+schema 7 y exportaciones conservan el campo opcional, sin reescribir ausencias históricas. El
+comparador consume esas notas, separa API/live, exige dos completas por grupo y mantiene la activa
+provisional. Las tasas usan cobertura de objetos y no dependen de tener precio; no acreditan oro/h
+completo ni causalidad de la build. La declaración no demuestra configuración equipada o equipo/stats.
 
 El lector nativo de 0.5.0 no cubre cartera/monedas, MF verificado ni huecos de bolsas. Esos datos
 permanecen desconocidos; una preparación MF manual declara su origen y no completa la cobertura.
