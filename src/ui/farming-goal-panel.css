@@ -1,0 +1,21 @@
+/* Merge into styles.css at integration; only host semantic tokens are used. */
+.tyrian-farming { display: grid; gap: 8px; min-width: 0; }
+.tyrian-farming__metrics, .tyrian-farming__options, .tyrian-farming__reminder {
+	display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+}
+.tyrian-farming__metrics { justify-content: space-between; font-variant-numeric: tabular-nums; }
+.tyrian-farming__progress { width: 100%; height: 8px; accent-color: var(--interactive-accent); }
+.tyrian-farming__editor { display: grid; gap: 8px; margin: 0; padding: 16px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); }
+.tyrian-farming__editor label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.tyrian-farming__editor input[type="number"] { width: 8rem; max-width: 100%; }
+.tyrian-farming__editor button { justify-self: start; min-height: 30px; }
+.tyrian-farming__editor input[aria-invalid="true"] { border-color: var(--text-error); }
+.tyrian-farming__editor :focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.tyrian-farming__preparation { display: grid; gap: 8px; }
+.tyrian-farming__preparation[hidden] { display: none; }
+.tyrian-farming__facts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; margin: 0; }
+.tyrian-farming__facts dd { margin: 0; overflow-wrap: anywhere; }
+.tyrian-farming__caption, .tyrian-farming__feedback { color: var(--text-muted); font-size: var(--font-ui-small); overflow-wrap: anywhere; }
+.tyrian-farming__feedback[role="alert"] { color: var(--text-error); }
+.is-mobile .tyrian-farming__editor button, .is-mobile .tyrian-farming__editor input { min-height: 44px; }
+@media (max-width: 400px) { .tyrian-farming__facts { grid-template-columns: minmax(0, 1fr); } }

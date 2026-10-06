@@ -20,6 +20,13 @@ import type {
 	EquipmentSalvageSaleStrategy,
 } from '../economy/equipment-salvage-economy';
 import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel } from './local-debug-contract';
+import { isFarmingGoal, normalizeFarmingGoal, type FarmingGoalV1 } from '../sessions/farming-goal';
+import {
+	DEFAULT_FARMING_PREPARATION,
+	isFarmingPreparationSettings,
+	normalizeFarmingPreparationSettings,
+	type FarmingPreparationSettingsV1,
+} from '../sessions/farming-goal-preparation';
 
 export const SETTINGS_SCHEMA_VERSION = 14 as const;
 
@@ -194,6 +201,10 @@ export interface TyrianSettings {
 	halloweenPriceAlertCooldownHours: HalloweenPriceAlertCooldownHours;
 	/** Manual values for explicit non-liquid outcomes. Independent from Halloween alerts. */
 	halloweenPersonalValuation: ContainerPersonalValuationV1;
+	/** Default for the next session; an active session keeps its own copy. */
+	farmingGoal: FarmingGoalV1;
+	/** Optional checklist and manual reminders, never a condition of automatic start. */
+	farmingPreparation: FarmingPreparationSettingsV1;
 	/** Manual account-wide per-material cap. Null means unknown; the advisor may rely only on the guaranteed 250 floor. */
 	materialStorageCapacity: MaterialStorageCapacity | null;
 	/**
@@ -242,6 +253,8 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	halloweenPriceAlertMinimumAboveP90Bps: 0,
 	halloweenPriceAlertCooldownHours: 24,
 	halloweenPersonalValuation: { version: 1 as const, values: [] },
+	farmingGoal: { version: 1 as const, kind: 'none' as const },
+	farmingPreparation: { ...DEFAULT_FARMING_PREPARATION },
 	materialStorageCapacity: null,
 	lowStorageSpaceThresholdFreeSlots: DEFAULT_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS,
 	salvageKit: null,
@@ -354,6 +367,8 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 			HALLOWEEN_PRICE_ALERT_COOLDOWNS, DEFAULT_SETTINGS.halloweenPriceAlertCooldownHours) as HalloweenPriceAlertCooldownHours,
 		halloweenPersonalValuation: halloweenPersonalValuation(data.halloweenPersonalValuation)
 			?? { version: 1, values: [] },
+		farmingGoal: normalizeFarmingGoal(data.farmingGoal),
+		farmingPreparation: normalizeFarmingPreparationSettings(data.farmingPreparation),
 		materialStorageCapacity: materialStorageCapacity(data.materialStorageCapacity),
 		// v14+. Read defensively rather than gated by a schema-version check, same precedent as
 		// `recommendationCapitalThresholdCopper` above: an absent value on any pre-H18.15 install
@@ -378,6 +393,8 @@ function cloneDefaultSettings(hostLocale: string | undefined): TyrianSettings {
 		...DEFAULT_SETTINGS,
 		language: hostLanguage(hostLocale),
 		halloweenPersonalValuation: { version: 1, values: [] },
+		farmingGoal: { version: 1, kind: 'none' },
+		farmingPreparation: { ...DEFAULT_FARMING_PREPARATION },
 	};
 }
 
@@ -583,6 +600,10 @@ export function mergeSettingsUpdate(
 	return migrateSettings({
 		...current,
 		...safeUpdate,
+		farmingGoal: safeUpdate.farmingGoal === undefined || !isFarmingGoal(safeUpdate.farmingGoal)
+			? current.farmingGoal : safeUpdate.farmingGoal,
+		farmingPreparation: safeUpdate.farmingPreparation === undefined || !isFarmingPreparationSettings(safeUpdate.farmingPreparation)
+			? current.farmingPreparation : safeUpdate.farmingPreparation,
 		halloweenPersonalValuation: personalValuation,
 		materialStorageCapacity: materialCapacity,
 		salvageKit: nextSalvageKit,
