@@ -1,7 +1,8 @@
 import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { readFileSync } from 'node:fs';
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { archiveLegacyRuntime, LEGACY_RUNTIME_ARCHIVE_PREFIX, prepareLegacyRuntimeArchive, prepareLegacyRuntimeExport } from './live-session-legacy-archive';
 
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
 import { compareStorageSnapshots } from '../account/storage-delta';
@@ -121,6 +122,51 @@ describe('session runtime persistence', () => {
 		const store = new IndexedDbSessionRuntimeStore(new IDBFactory(),databaseName('wrong-archive-lease')); const record = activeRecord();
 		await store.save(record); await expect(store.archiveLegacyRuntime({...authority,sessionId:'other'})).resolves.toBe(false);
 		await expect(store.load()).resolves.toEqual({status:'loaded',record}); await expect(store.listLegacyRuntimeArchives()).resolves.toEqual([]); store.close();
+	});
+	it('a crossed summary receipt blocks transfer rather than being silently erased', async () => {
+		const store = new IndexedDbSessionRuntimeStore(new IDBFactory(),databaseName('cross-receipt')); const record = activeRecord();
+		await store.save(record); const receipt = {version:1 as const,sessionId:'other-session',path:'other.md',savedAt:1}; await store.saveSummaryReceipt(receipt);
+		await expect(store.archiveLegacyRuntime({...authority,fence:authority.fence+1})).resolves.toBe(false);
+		await expect(store.load()).resolves.toEqual({status:'loaded',record}); await expect(store.loadSummaryReceipt()).resolves.toEqual(receipt);
+		await expect(store.listLegacyRuntimeArchives()).resolves.toEqual([]); store.close();
+	});
+	it('portable legacy export allows only validated matching evidence and pseudonymous references', () => {
+		const record = activeRecord(); const archive = prepareLegacyRuntimeArchive(record,1); const payload = prepareLegacyRuntimeExport(archive,record);
+		expect(payload).toMatchObject({source:'account_api',originalStatus:'active',stoppedAt:null,finalizedAt:null,final:null,
+			scope:'saved_aggregate_inventory_and_wallet'});
+		expect(JSON.stringify(payload)).not.toMatch(/session-1|account-anonymous|Astra Uno|machine-1|instance-1|authority|holdings/u);
+		expect(() => prepareLegacyRuntimeExport(archive,{...record,persistedAt:record.persistedAt+1})).toThrow();
+		expect(() => prepareLegacyRuntimeExport({...archive,original:{...record,apiKey:'forbidden-field'}},record)).toThrow();
+	});
+	it('a corrupted prior archive receipt cannot make the active copy disposable', async () => {
+		const factory = new IDBFactory(); const name = databaseName('archive-corrupt-receipt'); const record = activeRecord();
+		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record); const database = await openRaw(factory,name,2);
+		const prior = {...prepareLegacyRuntimeArchive(record,1),receipt:{version:1,sessionId:'tampered-session',path:'other.md',savedAt:1}};
+		const tx = database.transaction(SESSION_RUNTIME_STORE_NAME,'readwrite'); tx.objectStore(SESSION_RUNTIME_STORE_NAME).add(prior,`${LEGACY_RUNTIME_ARCHIVE_PREFIX}${authority.sessionId}`); await transactionDone(tx);
+		await expect(store.archiveLegacyRuntime({...authority,fence:authority.fence+1})).resolves.toBe(false);
+		await expect(store.load()).resolves.toEqual({status:'loaded',record}); const read = database.transaction(SESSION_RUNTIME_STORE_NAME,'readonly');
+		const request = read.objectStore(SESSION_RUNTIME_STORE_NAME).get(`${LEGACY_RUNTIME_ARCHIVE_PREFIX}${authority.sessionId}`); await transactionDone(read); expect(request.result).toEqual(prior);
+		database.close(); store.close();
+	});
+	it('a conflicting additive archive never overwrites either preserved or active evidence', async () => {
+		const factory = new IDBFactory(); const name = databaseName('archive-collision'); const record = activeRecord();
+		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record); const database = await openRaw(factory,name,2);
+		const prior = prepareLegacyRuntimeArchive({...record,persistedAt:record.persistedAt+1},1);
+		const tx = database.transaction(SESSION_RUNTIME_STORE_NAME,'readwrite'); tx.objectStore(SESSION_RUNTIME_STORE_NAME).add(prior,`${LEGACY_RUNTIME_ARCHIVE_PREFIX}${authority.sessionId}`);
+		await transactionDone(tx); await expect(store.archiveLegacyRuntime({...authority,fence:authority.fence+1})).resolves.toBe(false);
+		await expect(store.load()).resolves.toEqual({status:'loaded',record}); await expect(store.readLegacyRuntimeArchive(authority.sessionId)).resolves.toEqual(prior);
+		database.close(); store.close();
+	});
+	it('an aborted archival transaction leaves the original as the only durable copy', async () => {
+		const factory = new IDBFactory(); const name = databaseName('archive-abort'); const record = activeRecord();
+		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record); const database = await openRaw(factory,name,2);
+		const transaction = database.transaction.bind(database);
+		vi.spyOn(database,'transaction').mockImplementation((stores,mode,options) => {
+			const tx = transaction(stores,mode,options); queueMicrotask(() => tx.abort()); return tx;
+		});
+		await expect(archiveLegacyRuntime(database,record,prepareLegacyRuntimeArchive(record,1),{...authority,fence:authority.fence+1})).resolves.toBe(false);
+		await expect(store.load()).resolves.toEqual({status:'loaded',record}); await expect(store.listLegacyRuntimeArchives()).resolves.toEqual([]);
+		database.close(); store.close();
 	});
 	it('persists an active session across IndexedDB close and reopen', async () => {
 		const factory = new IDBFactory();

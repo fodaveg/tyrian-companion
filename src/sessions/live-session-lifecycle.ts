@@ -57,11 +57,19 @@ export class LiveSessionLifecycle {
 				throw new Error('Live session journal does not match its committed cursor.');
 			}
 			if (!this.options.enabled()) return;
-			this.armHeartbeat();
+			if (loaded.record.phase === 'active' && !await this.reclaim()) return;
+			if (loaded.record.phase === 'complete' && this.journal.some((entry) => entry.outbox.some((intent) => intent.state === 'dispatching' || intent.receipt?.state === 'pending'))) {
+				const acquired = await this.options.coordinator.acquire(loaded.record.sessionId);
+				if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== loaded.record.sessionId
+					|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') return;
+				const next = {...this.record,authority:sessionAuthorityFromLease(acquired.handle),persistedAt:this.options.now()};
+				if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return; }
+				this.handle = acquired.handle; this.record = next;
+			}
 			let settled = false;
 			for (const entry of this.journal) {
 				const next = { ...entry, outbox: entry.outbox.map(settleLiveAlertRestart) };
-				if (JSON.stringify(next) !== JSON.stringify(entry) && await this.options.persistence.replaceLiveJournal(entry, next)) {
+				if (JSON.stringify(next) !== JSON.stringify(entry) && await this.owned() && await this.options.persistence.replaceLiveJournal(entry, next,this.record)) {
 					Object.assign(entry, next); settled = true;
 				}
 			}
@@ -69,9 +77,10 @@ export class LiveSessionLifecycle {
 				if (settled && loaded.record.summaryReceipt !== null && this.options.onComplete) {
 					await this.options.onComplete(structuredClone(this.record), structuredClone(this.journal));
 				}
-				await this.saveCompletedNote(); return;
+				await this.saveCompletedNote();
+				if (this.handle !== null) { await this.options.coordinator.release(this.handle); this.handle = null; }
+				return;
 			}
-			await this.reclaim();
 			this.armHeartbeat();
 		});
 	}
@@ -156,8 +165,7 @@ export class LiveSessionLifecycle {
 			const next = liveSessionGap(this.record, event.reason, event.observedAt);
 			next.epoch = null; next.lastSample = null; next.fingerprint = null; next.persistedAt = this.options.now();
 			if (event.reason === 'disconnect') {
-				next.connection = 'disconnected'; next.lastPresenceAt = Math.min(this.options.now(),Date.parse(event.observedAt));
-				next.lastSourceDisconnectedAt = new Date(next.lastPresenceAt).toISOString();
+				next.lastSourceDisconnectedAt = new Date(Math.min(this.options.now(),Date.parse(event.observedAt))).toISOString();
 			}
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') throw new Error('Could not persist the live source gap.');
 			this.record = next; this.options.onStateChange();
@@ -165,18 +173,20 @@ export class LiveSessionLifecycle {
 	}
 
 	/** Presence remains independent from source freshness; disconnect only closes after the marker's grace. */
-	async presence(connected: boolean, atMs = this.options.now()): Promise<void> {
+	async presence(connected: boolean, atMs?: number): Promise<void> {
 		return await this.enqueue(async () => {
 			if (this.record?.phase !== 'active' || !await this.owned()) return;
-			let next = { ...this.record, connection: connected ? 'connected' as const : 'disconnected' as const, lastPresenceAt: Math.max(this.record.lastPresenceAt, atMs), persistedAt: this.options.now() };
+			const evidencedAt = atMs ?? (connected ? this.options.now() : this.record.lastPresenceAt);
+			let next = { ...this.record, connection: connected ? 'connected' as const : 'disconnected' as const,
+				lastPresenceAt: Math.max(this.record.lastPresenceAt,Math.min(this.options.now(),evidencedAt)), persistedAt: this.options.now() };
 			if (!connected) { next = liveSessionGap(next, 'disconnect', this.nowIso()); next.mapCoveragePartial = true; }
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') throw new Error('Could not persist live presence.');
 			this.record = next; this.options.onStateChange();
 		});
 	}
 
-	async stop(endedAtMs: number): Promise<boolean> {
-		return await this.enqueue(() => this.stopInternal(endedAtMs));
+	async stop(endedAtMs: number, sessionId?:string): Promise<boolean> {
+		return await this.enqueue(async () => sessionId !== undefined && this.record?.sessionId !== sessionId ? false : await this.stopInternal(endedAtMs));
 	}
 	private async stopInternal(endedAtMs: number): Promise<boolean> {
 			if (this.record === null || !this.options.enabled()) return false;
@@ -254,7 +264,8 @@ export class LiveSessionLifecycle {
 			connection: row?.phase === 'complete' ? 'disconnected' : row?.connection ?? 'disconnected',
 			sourceState: row?.phase === 'complete' ? 'unavailable' : row?.sourceState ?? 'missing', sourceReason: row?.sourceReason ?? 'source_missing',
 			source: row?.sourceInstance ? 'nexus_inventory' : null, startedAt: row?.startedAt ?? null, endedAt: row?.endedAt ?? null,
-			elapsedMs: row === null ? null : Math.max(0, (row.endedAt === null ? this.options.now() : Date.parse(row.endedAt)) - Date.parse(row.startedAt)),
+			elapsedMs: row === null ? null : Math.max(0, (row.endedAt !== null ? Date.parse(row.endedAt)
+				: row.connection === 'disconnected' ? Math.min(this.options.now(),row.lastPresenceAt) : this.options.now()) - Date.parse(row.startedAt)),
 			observedItemsMs: row?.observedItemsMs ?? 0, observedCurrenciesMs: row?.observedCurrenciesMs ?? 0, lastObservationAt: at,
 			itemCoverage: row?.lastSample?.itemCoverage ?? 'none', currencyCoverage: row?.lastSample?.currencyCoverage ?? 'none',
 			currencyIds: row?.lastSample?.rows.filter((item) => item.kind === 'currency').map((item) => item.idNumber) ?? [], freeSlots: row?.lastSample?.freeSlots ?? null,
@@ -267,16 +278,18 @@ export class LiveSessionLifecycle {
 		this.disposed = true; if (this.timer !== null) this.options.clearInterval(this.timer); this.timer = null;
 		await this.queue; if (this.handle !== null) await this.options.coordinator.release(this.handle); this.handle = null;
 	}
-	private async reclaim(): Promise<void> {
-		if (this.record?.phase !== 'active' || !this.options.enabled()) return;
+	private async reclaim(): Promise<boolean> {
+		if (this.record?.phase !== 'active' || !this.options.enabled()) return false;
 		const acquisition = await this.options.coordinator.acquire(this.record.sessionId);
-		if (acquisition.status !== 'acquired' && acquisition.status !== 'already_owned') return;
+		if ((acquisition.status !== 'acquired' && acquisition.status !== 'already_owned') || acquisition.handle.sessionId !== this.record.sessionId
+			|| (await this.options.coordinator.assertOwned(acquisition.handle)).status !== 'owned') return false;
 		this.handle = acquisition.handle;
 		let next = liveSessionGap(this.record, 'host_restart', this.nowIso());
 		next = { ...next, authority: sessionAuthorityFromLease(acquisition.handle), epoch: null, lastSample: null,
-			fingerprint: null, persistedAt: this.options.now(), connection: 'disconnected', mapCoveragePartial: true, mapObservation: null };
+			fingerprint: null, persistedAt: this.options.now(), connection: 'disconnected',
+			lastSourceDisconnectedAt:new Date(Math.min(this.options.now(),this.record.lastPresenceAt)).toISOString(),mapCoveragePartial: true, mapObservation: null };
 		if ((await this.options.persistence.saveLive(next)).status !== 'saved') throw new Error('Live session recovery could not be persisted.');
-		this.record = next; this.options.onStateChange();
+		this.record = next; this.options.onStateChange(); return true;
 	}
 	private async owned(): Promise<boolean> {
 		return this.handle !== null && (await this.options.coordinator.assertOwned(this.handle)).status === 'owned';
@@ -299,7 +312,8 @@ export class LiveSessionLifecycle {
 		if (this.options.onComplete === undefined) return false;
 		if (this.handle === null) {
 			const acquired = await this.options.coordinator.acquire(this.record.sessionId);
-			if (acquired.status !== 'acquired' && acquired.status !== 'already_owned') return false;
+			if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== this.record.sessionId
+				|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') return false;
 			this.handle = acquired.handle;
 			this.record = { ...this.record, authority: sessionAuthorityFromLease(acquired.handle), persistedAt: this.options.now() };
 			if ((await this.options.persistence.saveLive(this.record)).status !== 'saved') return false;

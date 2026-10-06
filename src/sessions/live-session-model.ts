@@ -83,6 +83,7 @@ export interface LiveJournalEntryV1 {
 
 /** The effect intent is saved with its sample; dispatching is an at-most-once durable claim. */
 export interface LiveAlertOutboxV1 {
+	version: 1;
 	source: 'nexus_inventory'; accountRef: null; sessionId: string; observationId: string; ruleVersion: 1; outboxId: string;
 	state: 'awaiting_price' | 'skipped' | 'ready' | 'dispatching' | 'processed';
 	skipReason: 'no_price' | 'below_threshold' | 'session_closed' | null;

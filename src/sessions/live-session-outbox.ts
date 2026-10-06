@@ -6,7 +6,7 @@ import { bounded, date, keys, natural, record } from './live-session-reducer';
 
 /** A durable positive observation is the only source of a candidate, regardless of its unknown cause. */
 export function createLiveAlertIntent(sessionId: string, observation: LiveObservationV1, thresholdCopper: number): LiveAlertOutboxV1 {
-	return { source: 'nexus_inventory', accountRef: null, sessionId, observationId: observation.id, ruleVersion: 1,
+	return { version:1, source: 'nexus_inventory', accountRef: null, sessionId, observationId: observation.id, ruleVersion: 1,
 		outboxId: sha256CanonicalValue([sessionId, observation.id, 1]), state: 'awaiting_price', skipReason: null,
 		alert: null, priceCapturedAt: null, thresholdCopper, claimedAt: null, deliveryReport: null, sentTo: [], receipt: null };
 }
@@ -35,6 +35,9 @@ export function canUpdateLiveOutbox(prior: LiveJournalEntryV1, next: LiveJournal
 		const after = next.outbox[index]; if (!after || before.outboxId !== after.outboxId
 			|| before.thresholdCopper !== after.thresholdCopper || before.observationId !== after.observationId) return false;
 		if (before.receipt?.state === 'received' && JSON.stringify(before.receipt) !== JSON.stringify(after.receipt)) return false;
+		if (before.receipt?.state === 'unconfirmed' && after.receipt?.state !== 'received'
+			&& JSON.stringify(before.receipt) !== JSON.stringify(after.receipt)) return false;
+		if (before.deliveryReport !== null && JSON.stringify(before.deliveryReport) !== JSON.stringify(after.deliveryReport)) return false;
 		if (before.sentTo.length > 0 && JSON.stringify(before.sentTo) !== JSON.stringify(after.sentTo)) return false;
 		if (before.state === after.state) return JSON.stringify(before.alert) === JSON.stringify(after.alert)
 			&& before.priceCapturedAt === after.priceCapturedAt && before.claimedAt === after.claimedAt && before.skipReason === after.skipReason;
@@ -51,7 +54,7 @@ export function canUpdateLiveOutbox(prior: LiveJournalEntryV1, next: LiveJournal
 
 /** Exact durable intent schema, independently of the legacy account-scoped queue. */
 export function isLiveAlertOutbox(value: unknown): value is LiveAlertOutboxV1 {
-	if (!record(value) || !keys(value,['source','accountRef','sessionId','observationId','ruleVersion','outboxId','state','skipReason',
+	if (!record(value) || value.version !== 1 || !keys(value,['version','source','accountRef','sessionId','observationId','ruleVersion','outboxId','state','skipReason',
 		'alert','priceCapturedAt','thresholdCopper','claimedAt','deliveryReport','sentTo','receipt']) || value.source !== 'nexus_inventory'
 		|| value.accountRef !== null || typeof value.sessionId !== 'string' || !value.sessionId || typeof value.observationId !== 'string'
 		|| !value.observationId || value.ruleVersion !== 1 || value.outboxId !== sha256CanonicalValue([value.sessionId,value.observationId,1])

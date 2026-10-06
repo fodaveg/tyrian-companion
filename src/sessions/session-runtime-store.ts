@@ -1,8 +1,7 @@
 import type { LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-session-model';
 import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-validation';
 import { canUpdateLiveOutbox } from './live-session-outbox';
-import { archiveLegacyRuntime, prepareLegacyRuntimeArchive, LEGACY_RUNTIME_ARCHIVE_PREFIX } from './live-session-legacy-archive';
-import { sha256CanonicalValue } from '../core/canonical-sha256';
+import { archiveLegacyRuntime, prepareLegacyRuntimeArchive, isLegacyRuntimeArchive, LEGACY_RUNTIME_ARCHIVE_PREFIX, type LegacyRuntimeArchiveV1 } from './live-session-legacy-archive';
 import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey, LIVE_SESSION_JOURNAL_STORE_NAME,
 	liveRuntimeLoadResult, markLiveAlertsProcessed, readLiveJournal, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
@@ -39,6 +38,13 @@ export const SESSION_RUNTIME_DB_VERSION = 2;
 export const SESSION_RUNTIME_STORE_NAME = 'active-session-v1';
 /** Exported so a test can seed a legacy-schema record directly, bypassing `save()`'s current-schema validation. */
 export const SESSION_RUNTIME_KEY = 'active-session';
+/** Normalize retained API evidence without writing it, querying an account or changing its phase. */
+export function legacyRuntimeRecordFromArchive(value:LegacyRuntimeArchiveV1):SessionRuntimeRecord|null {
+	if (!isLegacyRuntimeArchive(value)) return null;
+	const normalized = normalizeSessionRuntimeRecord(value.original); if (normalized === null) return null;
+	if (value.receipt !== null && value.receipt.sessionId !== runtimeAuthority(normalized.record.state).sessionId) return null;
+	return structuredClone(normalized.record);
+}
 const RUNTIME_KEY = SESSION_RUNTIME_KEY;
 /**
  * Second key in the same object store (no schema upgrade): the proof that one completed session's
@@ -106,6 +112,7 @@ export interface SessionRuntimeStore {
 	saveSummaryReceipt?(receipt: SessionSummaryReceipt): Promise<boolean>;
 	archiveLegacyRuntime?(authority: SessionAuthority): Promise<boolean>;
 	listLegacyRuntimeArchives?(): Promise<SessionRuntimeRecord[]>;
+	readLegacyRuntimeArchive?(sessionId:string):Promise<LegacyRuntimeArchiveV1|null>;
 	close(): void;
 }
 
@@ -114,7 +121,7 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 	private value: unknown;
 	private summaryReceipt: SessionSummaryReceipt | null = null;
 	private readonly liveJournal = new Map<string, LiveJournalEntryV1>();
-	private readonly legacyArchives = new Map<string,unknown>();
+	private readonly legacyArchives = new Map<string,LegacyRuntimeArchiveV1>();
 
 	constructor(initial?: unknown) {
 		this.value = initial === undefined ? undefined : structuredClone(initial);
@@ -176,13 +183,15 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 		const current = normalizeSessionRuntimeRecord(this.value); if (!current || runtimeAuthority(current.record.state).sessionId !== authority.sessionId
 			|| !canWriteAuthority(runtimeAuthority(current.record.state),authority)) return false;
 		const key = runtimeAuthority(current.record.state).sessionId; const archive = prepareLegacyRuntimeArchive(this.value,Date.now(),this.summaryReceipt?.sessionId === key ? this.summaryReceipt : null);
+		if (this.summaryReceipt !== null && this.summaryReceipt.sessionId !== key) return false;
 		const prior = this.legacyArchives.get(key);
-		if (prior !== undefined && sha256CanonicalValue(prior) !== sha256CanonicalValue(archive.original)) return false;
-		this.legacyArchives.set(key,structuredClone(this.value)); this.value = undefined; return true;
+		if (prior !== undefined && prior.sha256 !== archive.sha256) return false;
+		this.legacyArchives.set(key,structuredClone(archive)); this.value = undefined; return true;
 	}
 	async listLegacyRuntimeArchives(): Promise<SessionRuntimeRecord[]> {
-		return [...this.legacyArchives.values()].map((value) => normalizeSessionRuntimeRecord(value)?.record).filter((value): value is SessionRuntimeRecord => value !== undefined);
+		return [...this.legacyArchives.values()].map(legacyRuntimeRecordFromArchive).filter((value): value is SessionRuntimeRecord => value !== null);
 	}
+	async readLegacyRuntimeArchive(sessionId:string):Promise<LegacyRuntimeArchiveV1|null> { return structuredClone(this.legacyArchives.get(sessionId) ?? null); }
 	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult> {
 		if (!isLiveSessionRuntimeRecord(next) || journal && (!isLiveJournalEntry(journal) || journal.sessionId !== next.sessionId || journal.epoch !== next.lastSample?.epoch || journal.cursor !== next.lastSample.cursor)) return { status: 'error', code: 'corrupt' };
 		if (this.value !== undefined && (!isLiveSessionRuntimeRecord(this.value) || !canReplaceLiveRuntime(this.value, next))) return { status: 'stale' };
@@ -345,6 +354,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 			const original = await this.read(); const normalized = normalizeSessionRuntimeRecord(original);
 			if (!normalized) return false;
 			const savedReceipt = await this.loadSummaryReceipt();
+			if (savedReceipt !== null && savedReceipt.sessionId !== runtimeAuthority(normalized.record.state).sessionId) return false;
 			return await archiveLegacyRuntime(await this.open(),normalized.record,prepareLegacyRuntimeArchive(original,Date.now(),savedReceipt?.sessionId === runtimeAuthority(normalized.record.state).sessionId ? savedReceipt : null),authority);
 		} catch { return false; }
 	}
@@ -357,16 +367,23 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 				const cursor = request.result; if (!cursor) return;
 				if (typeof cursor.key === 'string' && cursor.key.startsWith(LEGACY_RUNTIME_ARCHIVE_PREFIX)) {
 					const value: unknown = cursor.value;
-					if (!isRecord(value) || value.version !== 1 || value.kind !== 'legacy_api_runtime' || value.sha256 !== sha256CanonicalValue([value.original,value.receipt])
-						|| value.receipt !== null && !isSessionSummaryReceipt(value.receipt)) { corrupt = true; tx.abort(); return; }
-					const normalized = normalizeSessionRuntimeRecord(value.original);
-					if (!normalized || cursor.key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${runtimeAuthority(normalized.record.state).sessionId}`) { corrupt = true; tx.abort(); return; }
-					records.push(normalized.record);
+					if (!isLegacyRuntimeArchive(value)) { corrupt = true; tx.abort(); return; }
+					const record = legacyRuntimeRecordFromArchive(value);
+					if (!record || cursor.key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${runtimeAuthority(record.state).sessionId}`) { corrupt = true; tx.abort(); return; }
+					records.push(record);
 				}
 				cursor.continue();
 			};
 			tx.oncomplete = () => resolve(records); tx.onerror = tx.onabort = () => reject(new Error(corrupt ? 'Preserved API runtime is corrupt.' : 'Preserved API runtime is unavailable.'));
 		});
+	}
+	async readLegacyRuntimeArchive(sessionId:string):Promise<LegacyRuntimeArchiveV1|null> {
+		const value = await this.read(undefined,`${LEGACY_RUNTIME_ARCHIVE_PREFIX}${sessionId}`);
+		if (value === undefined) return null;
+		if (!isLegacyRuntimeArchive(value)) throw new Error('Preserved API runtime metadata is corrupt.');
+		const record = legacyRuntimeRecordFromArchive(value);
+		if (!record || runtimeAuthority(record.state).sessionId !== sessionId) throw new Error('Preserved API runtime identity is corrupt.');
+		return structuredClone(value);
 	}
 	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult> {
 		try { return await commitLiveRuntime(await this.open(), next, journal); }

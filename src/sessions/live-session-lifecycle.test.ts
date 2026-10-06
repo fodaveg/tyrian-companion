@@ -7,7 +7,7 @@ import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import { LiveSessionEconomy } from './live-session-economy';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
-import { decideLiveAlert } from './live-session-outbox';
+import { decideLiveAlert, isLiveAlertOutbox } from './live-session-outbox';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -38,6 +38,15 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 }
 
 describe('passive live session lifecycle', () => {
+	it('aggregate presence loss freezes duration through grace and final close, while source loss alone does not', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+		f.setNow(AT+55*60000); await f.service.presence(true);
+		await f.service.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'disconnect',observedAt:new Date(AT+55*60000).toISOString()});
+		f.setNow(AT+61*60000); expect(f.service.getView().elapsedMs).toBe(61*60000);
+		await f.service.presence(false); expect(f.service.getView().elapsedMs).toBe(55*60000);
+		f.setNow(AT+65*60000); await f.service.presence(false); expect(f.service.getView().elapsedMs).toBe(55*60000);
+		await f.tick(); expect(f.service.getView()).toMatchObject({phase:'complete',elapsedMs:55*60000}); await f.service.dispose();
+	});
 	it('commits before ACK, deduplicates replay without refreshing evidence, and persists the same ledger', async () => {
 		const f = fixture(); await f.service.start('Test'); await expect(f.service.open(f.source)).resolves.toBe('ready');
 		await expect(f.service.commit(f.sample(0, 0))).resolves.toBe('stored');
@@ -108,6 +117,34 @@ async function positive(f: ReturnType<typeof fixture>) {
 }
 
 describe('durable live alert outbox', () => {
+	it('requires version1 in the durable intent schema', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		expect(intent.version).toBe(1); expect(isLiveAlertOutbox(intent)).toBe(true);
+		const missing = {...intent} as Partial<typeof intent>; delete missing.version; expect(isLiveAlertOutbox(missing)).toBe(false);
+		expect(isLiveAlertOutbox({...intent,version:2})).toBe(false); await f.service.dispose();
+	});
+	it('a second busy window cannot settle a live owner intent or invalidate its later ACK', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString(),receipt:{state:'pending'}}));
+		const journal = await f.store.readLiveJournal('session');
+		const other = new LiveSessionLifecycle({...f.options,coordinator:{...f.options.coordinator,instanceId:'other',
+			acquire:async () => ({status:'busy',ownerExpiresAt:AT+120000,ownerInstanceId:'host',ownerMachineId:'machine'})}});
+		await other.initialize(); expect(await f.store.readLiveJournal('session')).toEqual(journal);
+		await expect(f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'processed',receipt:{state:'received',client:'nexus',atMs:AT+1000}}),true)).resolves.not.toBeNull();
+		await other.dispose(); await f.service.dispose();
+	});
+	it('terminal uncertainty and delivery report cannot be downgraded or contradicted', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString()}));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'processed',receipt:{state:'unconfirmed',cause:'timeout'},
+			deliveryReport:{delivered:['ingame'],failed:[],rejected:false}}),true);
+		await expect(f.service.updateAlert(intent.outboxId,(prior) => ({...prior,receipt:{state:'pending'}}),true)).resolves.toBeNull();
+		await expect(f.service.updateAlert(intent.outboxId,(prior) => ({...prior,deliveryReport:null}),true)).resolves.toBeNull();
+		await expect(f.service.updateAlert(intent.outboxId,(prior) => ({...prior,deliveryReport:{delivered:[],failed:[],rejected:true}}),true)).resolves.toBeNull();
+		await f.service.dispose();
+	});
 	it('a durable claim cannot rewrite the captured price or alert', async () => {
 		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
 		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
