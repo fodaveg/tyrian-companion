@@ -2,8 +2,15 @@
 
 ## Release beta 0.6.1 - los objetos de una sesión restaurada recuperan nombre e icono
 
-Release por tag `0.6.1`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación en
-Hebra y Obsidian y sesión real con Nexus).
+[Canal 0.6.1 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.1);
+**instalación/runtime pendiente**. Tag `0.6.1`, commit
+`7353b6ce4a3811b36bbfce1410d607b312a31b82`, árbol `e24684ef72141cd7282afb3d8c0b2d083934562e`:
+`check` 8/8 (4900 tests pasados, 1 omitido, 310 archivos), guardrails 25/25, benchmark H6 con su
+sabotaje rojo, `release:preflight` y `changelog-entry.mjs 0.6.1`, todo con exit 0. La
+[CI de main](https://github.com/fodaveg/tyrian-companion/actions/runs/37510020140) y el
+[workflow de release](https://github.com/fodaveg/tyrian-companion/actions/runs/37510024143) pasaron
+y `release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de
+lo pendiente (instalación en Hebra y Obsidian y sesión real con Nexus).
 
 - Qué se veía: tras recargar el plugin, la rejilla «Objetos» y la cronología de una sesión restaurada
   mostraban casillas con «?» y «Objeto <id>» en lugar del icono y el nombre. Ya ocurría en 0.5.0, aunque

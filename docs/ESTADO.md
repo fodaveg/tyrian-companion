@@ -1,17 +1,27 @@
 # Estado
 
-## 0.6.1 preparada: nombres e iconos de sesiones restauradas (6 oct 2026)
+## Canal 0.6.1 publicado: nombres e iconos de sesiones restauradas (6 oct 2026)
 
-**Candidato en rama `claude/sesion-entidades-20261006`; nada publicado ni etiquetado.** Corrige que, tras
-recargar el plugin, los objetos de una sesión restaurada salieran como «Objeto <id>» con marcador «?».
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.1](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.1)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.1`. El tag
+apunta a `7353b6ce4a3811b36bbfce1410d607b312a31b82`, árbol `e24684ef72141cd7282afb3d8c0b2d083934562e`.
+Corrige que, tras recargar el plugin, los objetos de una sesión restaurada salieran como «Objeto <id>»
+con marcador «?».
 
+- Publicación: el [workflow de release](https://github.com/fodaveg/tyrian-companion/actions/runs/37510024143)
+  y la [CI de main](https://github.com/fodaveg/tyrian-companion/actions/runs/37510020140) terminaron en
+  SUCCESS sobre `7353b6c`. `release:brat-verify` contra la salida real de `gh release view 0.6.1`: PASS,
+  exactamente ocho assets subidos y no vacíos. En los assets de Hebra descargados, `hebra.json` dice `0.6.1`
+  y el SHA-256 de `hebra-main.mjs` y `hebra-styles.css` coincide con el declarado.
+- Gate local de ese árbol: `check` 8/8 (4900 tests pasados, 1 omitido, 310 archivos), guardrails 25/25,
+  benchmark H6 y su sabotaje rojo, `release:preflight` y `changelog-entry.mjs 0.6.1`, todo con exit 0.
 - Verificado: `src/runtime/live-session-entities-restored.test.ts` (5 tests, núcleo real más vista real) con un
   espía de transporte que registra cualquier petición HTTP: caché con los tres objetos (sesión terminada y en
   curso), caché vacía, caché parcial y modo consulta dan cero peticiones al cargar, restaurar y pintar. Un test
   del servicio cubre `readCachedItems`. Vitest acotado de los ficheros afectados 109/109, `tsc` limpio,
   eslint sin avisos en lo tocado, censo de observabilidad PASS, `i18n:unused` y contrato de texto fuente PASS.
-- No verificado: el gate completo (lo corre la raíz), la publicación, la instalación en Hebra y Obsidian y el
-  comportamiento real de la caché de catálogo dentro de Hebra, que solo se ha probado con dobles.
+- No verificado: la instalación y carga en Hebra y en BRAT/Obsidian, que la caché de catálogo persista
+  dentro de Hebra (solo se ha probado con dobles) y una sesión real con Nexus.
 
 ## Canal 0.6.0 publicado: pestaña Sesión y ajustes simplificados (6 oct 2026)
 
