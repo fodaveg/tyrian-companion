@@ -172,7 +172,7 @@ export function companionView(actions: Pick<CompanionActions, 'getLocale'>): Tyr
 	return {
 		type: COMPANION_VIEW_TYPE,
 		title: () => translateRuntime(createTranslator(actions.getLocale()), 'view.displayName'),
-		icon: 'compass',
+		icon: 'sword',
 		placement: 'column',
 	};
 }

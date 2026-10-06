@@ -5198,7 +5198,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 		this.sessionDispatch = createSessionCommandDispatch(this.sessionCommands);
 		this.sessionRibbon = this.host.ui.ribbon({
-			icon: 'compass',
+			icon: 'sword',
 			title: createTranslator(this.settings.language).t('commands.ribbon'),
 			onClick: (event) => { this.openSessionCommandMenu(event); },
 		});

@@ -13,7 +13,7 @@ export interface PaletteCommandRegistry {
 }
 
 export type SessionMenuDescriptor =
-	| { type: 'open'; title: string; icon: 'compass' }
+	| { type: 'open'; title: string; icon: 'sword' }
 	| { type: 'separator' }
 	| { type: 'command'; command: SessionCommandDescriptor };
 
@@ -67,7 +67,7 @@ export function registerSessionPalette(
 export function projectSessionMenu(commands: readonly SessionCommandDescriptor[], locale: Locale = 'en'): SessionMenuDescriptor[] {
 	const primary = commands.filter((command) => !command.destructive);
 	const destructive = commands.filter((command) => command.destructive);
-	const menu: SessionMenuDescriptor[] = [{ type: 'open', title: createTranslator(locale).t('commands.openCompanion'), icon: 'compass' }];
+	const menu: SessionMenuDescriptor[] = [{ type: 'open', title: createTranslator(locale).t('commands.openCompanion'), icon: 'sword' }];
 	if (primary.length > 0) menu.push({ type: 'separator' });
 	menu.push(...primary.map((command) => ({ type: 'command', command }) as const));
 	if (destructive.length > 0) menu.push({ type: 'separator' });

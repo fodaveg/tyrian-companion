@@ -153,7 +153,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		expect(registered.commands.map(({ id }) => id)).toEqual([
 			...PRODUCT_ACTION_IDS, ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID,
 		]);
-		expect(registered.ribbons.map(({ icon }) => icon)).toEqual(['compass']);
+		expect(registered.ribbons.map(({ icon }) => icon)).toEqual(['sword']);
 		expect(registered.codeBlocks).toEqual([PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE]);
 		expect(registered.panels).toHaveLength(1);
 		expect(registered.panels[0]?.settingDefinitions?.().length).toBeGreaterThan(0);

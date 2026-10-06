@@ -53,7 +53,7 @@ describe('the product views as the host registers them', () => {
 		const described = [companionView(locale), inventoryAdvisorView(locale), saleView(locale)]
 			.map(({ type, icon, placement }) => ({ type, icon, placement }));
 		expect(described).toEqual([
-			{ type: COMPANION_VIEW_TYPE, icon: 'compass', placement: 'column' },
+			{ type: COMPANION_VIEW_TYPE, icon: 'sword', placement: 'column' },
 			{ type: INVENTORY_ADVISOR_VIEW_TYPE, icon: 'package-search', placement: 'dialog' },
 			{ type: SALE_VIEW_TYPE, icon: 'candy', placement: 'dialog' },
 		]);

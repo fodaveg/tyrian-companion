@@ -256,7 +256,7 @@ contents, or unredacted screenshots/logs in a report.
 The current published vertical provides:
 
 - A loadable, note-independent Obsidian view and the **Open companion** command. One session card keeps the phase and the elapsed time first, then the highest-priority incident and, once a measurement exists, how trustworthy it is; detector and polling detail stay in the detection panel, and the account detail lives in Settings.
-- H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
+- H5.2 session controls in the command palette plus one context-sensitive sword ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
 - H5.3 durable confirmation queue in a dedicated local IndexedDB: assisted proposals survive a closed note or restart, remain data-only in the background, and reappear as a count plus one review summary without notices, notifications, focus changes, or automatic session transitions.
 - H5.4 writes a completed session to a vault note before local runtime can be cleared: hashed account/session references, stable `tc_*` frontmatter and verified managed blocks preserve human notes without exposing raw account evidence.
 - H5.5 projects completed-session loot once into a data-only bilingual view model shared by the managed note blocks and the responsive Companion card; unreliable evidence withholds value and recommendations instead of guessing.

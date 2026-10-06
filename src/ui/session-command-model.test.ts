@@ -348,7 +348,7 @@ describe('session command adapters', () => {
 	});
 
 	it('localizes the stable Open menu entry', () => {
-		expect(projectSessionMenu([], 'es')[0]).toEqual({ type: 'open', title: 'Abrir acompañante', icon: 'compass' });
+		expect(projectSessionMenu([], 'es')[0]).toEqual({ type: 'open', title: 'Abrir acompañante', icon: 'sword' });
 	});
 
 	it('routes view recovery and discard actions through the same controller resource', async () => {
