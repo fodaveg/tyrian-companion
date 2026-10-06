@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFarmingDeclaredBuild } from '../sessions/manual-build-model';
 
 import {
 	DEFAULT_SETTINGS,
@@ -579,4 +580,31 @@ describe('resolveVaultFolderInput', () => {
 			expect(resolveVaultFolderInput(path, '.config')).toEqual({ status: 'invalid' });
 		},
 	);
+});
+
+
+describe('independent manual build preferences', () => {
+	it('defaults absent history to unknown without requiring preparation', () => {
+		expect(migrateSettings(null).farmingDeclaredBuild).toBeNull();
+		expect(migrateSettings({}).farmingDeclaredBuild).toBeNull();
+	});
+	it.each(['malformed draft',{version:99,templateCode:'future-code',label:null},{version:1,templateCode:'invalid',label:null}])('retains invalid/future draft evidence on load and unrelated changes: %j', (draft) => {
+		const loaded=migrateSettings({schemaVersion:SETTINGS_SCHEMA_VERSION,farmingDeclaredBuild:draft});
+		expect(loaded.farmingDeclaredBuild).toEqual(draft); expect(readFarmingDeclaredBuild(loaded.farmingDeclaredBuild).status).toBe('invalid');
+		const updated=mergeSettingsUpdate(loaded,{language:'es'}); expect(updated.farmingDeclaredBuild).toEqual(draft);
+	});
+	it('replaces a valid preference with the newly typed invalid draft rather than reusing last-valid configuration', () => {
+		const initial=migrateSettings({farmingDeclaredBuild:{version:1,templateCode:'[&DQQAAAAAAAB5AAAAAAAAAAAAAAAAAAAAAAAAADA7FD8AAAAAAAAAAAAAAAACIwAyAAA=]',label:'Manual'}});
+		expect(readFarmingDeclaredBuild(initial.farmingDeclaredBuild).status).toBe('valid');
+		const draft={version:1,templateCode:'not a template',label:'Editing'};
+		const next=mergeSettingsUpdate(initial,{farmingDeclaredBuild:draft});
+		expect(next.farmingDeclaredBuild).toEqual(draft); expect(readFarmingDeclaredBuild(next.farmingDeclaredBuild).status).toBe('invalid');
+		expect(mergeSettingsUpdate(next,{farmingDeclaredBuild:null}).farmingDeclaredBuild).toBeNull();
+	});
+	it('does not share the restored raw nested object with a caller or mutate preparation', () => {
+		const raw={version:1,templateCode:'[&DQQAAAAAAAB5AAAAAAAAAAAAAAAAAAAAAAAAADA7FD8AAAAAAAAAAAAAAAACIwAyAAA=]',label:'Manual'};
+		const loaded=migrateSettings({farmingDeclaredBuild:raw}); raw.label='Changed later';
+		expect(loaded.farmingDeclaredBuild).toMatchObject({label:'Manual'}); expect(loaded.farmingPreparation.enabled).toBe(false);
+		expect(shouldPersistSettingsOnLoad(loaded,migrateSettings(loaded))).toBe(false);
+	});
 });

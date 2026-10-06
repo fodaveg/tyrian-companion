@@ -3,6 +3,7 @@ import { DEFAULT_FARMING_PREPARATION } from './farming-goal-preparation';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveSessionRuntimeRecord } from './live-session-model';
 import { liveSessionGap, liveSampleFingerprint, reduceLiveInventorySample, valueLiveTotals } from './live-session-reducer';
 import { isLiveSessionRuntimeRecord } from './live-session-validation';
+import { readFarmingDeclaredBuild } from './manual-build-model';
 
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
@@ -26,6 +27,16 @@ function initial(): LiveSessionRuntimeRecord {
 }
 
 describe('live inventory ledger', () => {
+	it('old v4 absence remains valid; explicit null is unknown and present invalid declarations are rejected', () => {
+		const old=initial(); expect(isLiveSessionRuntimeRecord(old)).toBe(true);
+		expect(isLiveSessionRuntimeRecord({...old,declaredBuild:null})).toBe(true);
+		const result=readFarmingDeclaredBuild({version:1,templateCode:'[&DQQAAAAAAAB5AAAAAAAAAAAAAAAAAAAAAAAAADA7FD8AAAAAAAAAAAAAAAACIwAyAAA=]',label:'Declared'});
+		if (result.status !== 'valid') throw new Error('Declared build fixture failed.');
+		expect(isLiveSessionRuntimeRecord({...old,declaredBuild:result.value})).toBe(true);
+		expect(isLiveSessionRuntimeRecord({...old,declaredBuild:undefined})).toBe(false);
+		expect(isLiveSessionRuntimeRecord({...old,declaredBuild:{...result.value,configuration:{...result.value.configuration,weaponTypes:[50,35]}}})).toBe(false);
+		expect(isLiveSessionRuntimeRecord({...old,declaredBuild:{...result.value,extra:'foreign'}})).toBe(false);
+	});
 	it('keeps two observed increments and one price snapshot without inventing currency', () => {
 		const baseline = reduceLiveInventorySample(initial(), sample(0, 0));
 		expect(baseline.journal.observations).toEqual([]);

@@ -1,3 +1,4 @@
+import { isDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
 import { normalizeFarmingGoal, type FarmingGoalV1 } from './farming-goal';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
@@ -20,6 +21,8 @@ export interface LiveSessionLifecycleOptions {
 	setInterval(callback: () => void, intervalMs: number): unknown; clearInterval(handle: unknown): void;
 	onStateChange(): void; onError(error: unknown): void;
 	preparation?(): FarmingPreparationSettingsV1; farmingGoal?(): FarmingGoalV1; groupContext?(): 'with_bosses' | 'without_bosses' | null;
+	/** Only a valid declaration is captured; an invalid/unsupported editor draft remains unknown. */
+	declaredBuild?(): DeclaredBuildV1 | null;
 	thresholdCopper?(): number;
 	/** Receives only newly committed journal entries. Public enrichment cannot block measurement ACK. */
 	onCommitted?(entry: LiveJournalEntryV1): void;
@@ -75,6 +78,8 @@ export class LiveSessionLifecycle {
 		return await this.enqueue(async () => {
 			if (!this.options.enabled() || this.disposed) return null;
 			if (this.record?.phase === 'active') return this.record.sessionId;
+			const declaration = this.options.declaredBuild?.() ?? null;
+			const declaredBuild = isDeclaredBuild(declaration) ? structuredClone(declaration) : null;
 			if (this.record !== null) {
 				if (!await this.saveCompletedNote()) return null;
 				const cleared = await this.options.persistence.clear(this.record.authority);
@@ -95,7 +100,7 @@ export class LiveSessionLifecycle {
 				magicFind: magicFind === null ? { value: null, source: 'unknown' } : { value: magicFind, source: 'manual' },
 				preparation: normalizeFarmingPreparationSettings(this.options.preparation?.() ?? DEFAULT_FARMING_PREPARATION),
 				farmingGoal: normalizeFarmingGoal(this.options.farmingGoal?.()), groupContext: this.options.groupContext?.() ?? null,
-				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, summaryReceipt: null };
+				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, declaredBuild, summaryReceipt: null };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return null; }
 			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = []; this.failure = false;
 			this.recovering = false; this.noteNeedsVerification = false;

@@ -1,3 +1,4 @@
+import { isDeclaredBuild } from './manual-build-model';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, LIVE_GAP_REASONS,
 	type LiveSessionRuntimeRecord, type LiveJournalEntryV1, type LiveObservationV1 } from './live-session-model';
 import { isFarmingGoal } from './farming-goal';
@@ -10,7 +11,9 @@ export function isLiveSessionRuntimeRecord(value: unknown): value is LiveSession
 	if (!record(value) || !keys(value, ['version','kind','sessionId','phase','authority','startedAt','endedAt','persistedAt',
 		'sourceInstance','build','profile','epoch','context','connection','lastPresenceAt','lastObservationAt','lastValidItemsAt','lastValidCurrenciesAt','lastSourceDisconnectedAt','currencyTrackedIds','lastSample','fingerprint','itemComparable','currencyComparable','sourceState',
 		'sourceReason','observationCount','sampleCount','totals','gaps','observedItemsMs','observedCurrenciesMs','prices','priceCapturedAt',
-		'magicFind','preparation','farmingGoal','groupContext','mapIntervals','mapObservation','mapCoveragePartial','summaryReceipt'])) return false;
+		'magicFind','preparation','farmingGoal','groupContext','mapIntervals','mapObservation','mapCoveragePartial','summaryReceipt',
+		...('declaredBuild' in value ? ['declaredBuild'] : [])])) return false;
+	if ('declaredBuild' in value && value.declaredBuild !== null && !isDeclaredBuild(value.declaredBuild)) return false;
 	if (value.version !== 4 || value.kind !== 'live_inventory' || typeof value.sessionId !== 'string' || !value.sessionId
 		|| !['active','complete'].includes(value.phase as string) || !date(value.startedAt) || !natural(value.persistedAt)
 		|| value.endedAt !== null && (!date(value.endedAt) || value.endedAt < value.startedAt)

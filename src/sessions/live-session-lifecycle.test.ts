@@ -8,6 +8,7 @@ import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import { LiveSessionEconomy } from './live-session-economy';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { decideLiveAlert, isLiveAlertOutbox } from './live-session-outbox';
+import { readFarmingDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -38,6 +39,43 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 }
 
 describe('passive live session lifecycle', () => {
+	it('captures a valid manual declaration once, independent of later settings edits and future sessions', async () => {
+		const f=fixture(); const parsed=readFarmingDeclaredBuild({version:1,templateCode:'[&DQQAAAAAAAB5AAAAAAAAAAAAAAAAAAAAAAAAADA7FD8AAAAAAAAAAAAAAAACIwAyAAA=]',label:'At start'});
+		if (parsed.status !== 'valid') throw new Error('Manual build fixture failed.');
+		let declared:DeclaredBuildV1|null=parsed.value;
+		const preference=vi.fn(() => declared); Object.assign(f.options,{declaredBuild:preference});
+		await f.service.start('Test'); const captured=structuredClone(f.service.getRuntime()?.declaredBuild);
+		parsed.value.label='Future label'; parsed.value.configuration.rangerPets![0]=0;
+		expect(f.service.getRuntime()?.declaredBuild).toEqual(captured);
+		await f.service.start('Test'); expect(preference).toHaveBeenCalledOnce();
+		await f.service.stop(AT+1000); declared=null; await f.service.start('Test');
+		expect(f.service.getRuntime()?.declaredBuild).toBeNull(); expect(preference).toHaveBeenCalledTimes(2);
+		await f.service.dispose();
+	});
+	it('an invalid defensive callback value captures unknown without blocking the Nexus baseline', async () => {
+		const f=fixture(); Object.assign(f.options,{declaredBuild:() => ({version:1,source:'manual_template',templateCode:'invalid'} as DeclaredBuildV1)});
+		await expect(f.service.start('Test')).resolves.toBe('session'); expect(f.service.getRuntime()?.declaredBuild).toBeNull();
+		await expect(f.service.open(f.source)).resolves.toBe('ready'); await expect(f.service.commit(f.sample(0,0))).resolves.toBe('stored');
+		await f.service.dispose();
+	});
+	it('restoring old v4 evidence never hydrates the new declaration from current preferences', async () => {
+		const f=fixture(); await f.service.start('Test'); const prior=f.service.getRuntime()!; delete prior.declaredBuild;
+		await f.store.saveLive(prior); await f.service.dispose();
+		const preference=vi.fn(); const restored=new LiveSessionLifecycle({...f.options,declaredBuild:preference});
+		await restored.initialize(); expect(preference).not.toHaveBeenCalled(); expect(restored.getRuntime()).not.toHaveProperty('declaredBuild');
+		await restored.dispose();
+	});
+	it('a malformed stored declaration stays corrupt and untouched instead of being normalized or cleared', async () => {
+		const f=fixture(); await f.service.start('Test'); const original=f.service.getRuntime()!; await f.service.dispose();
+		const malformed={...original,declaredBuild:{version:1,source:'manual_template',templateCode:'invalid'}};
+		const store=new MemorySessionRuntimeStore(malformed); const before=structuredClone((store as unknown as {value:unknown}).value);
+		const clear=vi.spyOn(store,'clear'); const acquire=vi.spyOn(f.options.coordinator,'acquire'); acquire.mockClear();
+		const recovery=new LiveSessionLifecycle({...f.options,persistence:store}); await recovery.initialize();
+		expect(recovery.getView().phase).toBe('error'); expect(recovery.getRuntime()).toBeNull();
+		expect(clear).not.toHaveBeenCalled(); expect(acquire).not.toHaveBeenCalled();
+		expect((store as unknown as {value:unknown}).value).toEqual(before); await expect(store.loadLive()).resolves.toMatchObject({status:'error',code:'corrupt'});
+		await recovery.dispose();
+	});
 	it('aggregate presence loss freezes duration through grace and final close, while source loss alone does not', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
 		f.setNow(AT+55*60000); await f.service.presence(true);

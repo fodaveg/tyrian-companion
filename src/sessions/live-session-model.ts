@@ -1,3 +1,4 @@
+import type { DeclaredBuildV1 } from './manual-build-model';
 import type { FarmingGoalV1 } from './farming-goal';
 import type { SessionAuthority } from './session';
 import type { IngameGameContext } from '../alerts/alert-ingame-protocol';
@@ -74,6 +75,8 @@ export interface LiveSessionRuntimeRecord {
 	magicFind: LiveSessionViewV1['magicFind']; preparation: FarmingPreparationSettingsV1; farmingGoal: FarmingGoalV1; groupContext: 'with_bosses' | 'without_bosses' | null;
 	mapIntervals: { mapId: number | null; fromMs: number; toMs: number }[];
 	mapObservation: { mapId: number | null; fromMs: number } | null; mapCoveragePartial: boolean;
+	/** Captured once at start; historical absence remains unknown. */
+	declaredBuild?: DeclaredBuildV1 | null;
 	summaryReceipt: SessionSummaryReceipt | null;
 }
 export interface LiveJournalEntryV1 {

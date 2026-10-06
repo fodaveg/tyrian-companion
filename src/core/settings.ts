@@ -205,6 +205,8 @@ export interface TyrianSettings {
 	farmingGoal: FarmingGoalV1;
 	/** Optional checklist and manual reminders, never a condition of automatic start. */
 	farmingPreparation: FarmingPreparationSettingsV1;
+	/** Independent manual template draft. Invalid persisted evidence stays visible to its reader. */
+	farmingDeclaredBuild: unknown;
 	/** Manual account-wide per-material cap. Null means unknown; the advisor may rely only on the guaranteed 250 floor. */
 	materialStorageCapacity: MaterialStorageCapacity | null;
 	/**
@@ -255,6 +257,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	halloweenPersonalValuation: { version: 1 as const, values: [] },
 	farmingGoal: { version: 1 as const, kind: 'none' as const },
 	farmingPreparation: { ...DEFAULT_FARMING_PREPARATION },
+	farmingDeclaredBuild: null,
 	materialStorageCapacity: null,
 	lowStorageSpaceThresholdFreeSlots: DEFAULT_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS,
 	salvageKit: null,
@@ -369,6 +372,7 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 			?? { version: 1, values: [] },
 		farmingGoal: normalizeFarmingGoal(data.farmingGoal),
 		farmingPreparation: normalizeFarmingPreparationSettings(data.farmingPreparation),
+		farmingDeclaredBuild: data.farmingDeclaredBuild === undefined ? null : structuredClone(data.farmingDeclaredBuild),
 		materialStorageCapacity: materialStorageCapacity(data.materialStorageCapacity),
 		// v14+. Read defensively rather than gated by a schema-version check, same precedent as
 		// `recommendationCapitalThresholdCopper` above: an absent value on any pre-H18.15 install
