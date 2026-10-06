@@ -1,5 +1,13 @@
 # SPEC: puente con los addons del juego (Nexus y Blish HUD), protocolo v2 y v3
 
+## Extensión live1 autorizada el 6 oct 2026
+
+[SPEC-live-loot](SPEC-live-loot.md) fija la captura propia Nexus; **implementación y QA de producción pendientes**. Conserva v2/v3, hello/welcome, avisos y farm1 sin nuevas claves; negocia capacidad separada después de autenticar v3. Usa nonce y secuencia existentes, framing cerrado de 512 bytes y commit durable antes de ACK/publicación. ACK live no confirma avisos ni farm1.
+
+El contexto ordinario conserva mapa/personaje/estado; las muestras agregadas viajan solo por live1. Blish consume avisos y farm1 y requiere Nexus local como fuente live en Windows. Plugin→addon sigue sin cuenta/personaje, rutas ni secretos; no hay mensajes para ejecutar acciones del juego.
+
+En farm1 legacy, antigüedad y banda proceden de snapshots API; en live1 proceden de observaciones y tiempo cubierto, con huecos y desconocidos explícitos. No se cambia su wire ni se inventa causalidad, monedas o MF. Las descripciones históricas que limitan todos los addons a contexto quedan ampliadas solo para el productor live1.
+
 Escrito el 2026-09-03 para H13.9 (addon de Nexus) y H13.15 (módulo de Blish HUD); reescrito el
 2026-09-24 para H18.22 (validar el saludo) y H18.23 (protocolo bidireccional y autenticado). Esta es
 la especificación que lee quien implementa un cliente: con este documento se puede escribir el addon
@@ -64,12 +72,10 @@ help players without affecting others… While, in general, we will not take act
 the use of such a utility program or modification, action is subject to ArenaNet's discretion», y
 «ArenaNet does not review, approve, or endorse any third-party program».
 
-La v1 se quedaba dentro de «utility» haciendo que el addon solo dibujara. La v2 sigue dentro por lo
-que el addon **no** hace, que es lo que ArenaNet mira:
+La frontera autorizada del proyecto describe acciones concretas; no demuestra aprobación de ArenaNet ni garantiza su criterio sobre un programa tercero:
 
 - no simula entrada, no pulsa teclas, no automatiza nada dentro del juego;
-- no lee memoria del proceso: solo los datos que su anfitrión ya expone a todos los addons (mapa,
-  personaje, si hay gameplay), los mismos que usan los overlays habituales;
+- el contexto ordinario usa datos expuestos por el anfitrión; solo el productor Nexus live1 añade la lectura pasiva acotada de [SPEC-live-loot](SPEC-live-loot.md), sin hooks, getters ni escritura;
 - lo que el plugin hace con ese contexto ocurre **fuera** del juego: marcar una sesión en las notas
   del usuario. Vuelven al juego los avisos y, con suscripción `farm1`, el DTO de medición numérico y cerrado definido abajo.
 

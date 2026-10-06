@@ -1,15 +1,23 @@
 # Tyrian Companion
 
+> **Contract update, October 6, 2026:** [live1](docs/SPEC-live-loot.md) supersedes the API-only session
+> design. Production implementation is pending. Existing release instructions and H1–H18
+> descriptions below document legacy behavior, not permission to retain automatic authenticated
+> API requests in the new session flow.
+
 Tyrian Companion is a desktop-only Obsidian plugin for reviewing Guild Wars 2 farming sessions and
 account inventory context inside a vault, with an independent Hebra host adapter. Recommendations
 describe manual actions: the plugin never operates the game account. A connected Nexus or Blish HUD
 addon can mark session boundaries automatically from game presence.
 
-Inventory, loot and economic evidence come from the GW2 API. Linux with Steam/Proton and Nexus is
-the primary platform; Blish HUD provides the Windows game overlay. The addons report map, character
-and game state, without a loot feed, AFK detection or game automation. The separate H8 Mumble Link
-helper remains reserved for an optional v2 map/activity IPC path under the documented no-injection
-and no-automation boundary.
+The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
+our Nexus addon as the source of new sessions. **Production implementation and runtime QA are
+pending**; this documentation does not claim the current addon already supplies that source.
+Authenticated GW2 API requests are reserved for explicit manual inventory/wallet operations and
+connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
+is primary. Windows with Blish HUD remains required and needs a local Nexus producer for live
+inventory. AFK detection and game automation are not provided. The separate H8 Mumble Link helper
+retains its existing isolated map/activity policy and is not the live source.
 H8.1 fixes that future contract and its guards. H8.2 adds only a non-production, read-only CrossOver
 probe spike under `spikes/`; no helper, IPC runtime or plugin integration is shipped.
 H8.3 provisionally accepts Rust and H8.4 fixes the executable local IPC protocol. H8.5 implements
@@ -27,6 +35,22 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 > The version declared by `manifest.json` is a public beta distributed through its GitHub Release
 > and the active BRAT channel. Installation, update, and runtime QA in Obsidian are still pending
 > across the platform matrix, so use a disposable vault while validating it.
+
+## Required live session behavior
+
+The game connection defines the session, with a ten-minute disconnect grace period. Source health
+is separate from presence. Nexus supplies bounded aggregate observations; Blish alone cannot supply
+items. Sessions do not require an API key and missing samples never trigger an API fallback.
+
+Timeline, summary, chart and full CSV/JSON exports must share the durable ledger in Hebra/Obsidian.
+Baseline/rebaseline are not acquisitions. Changes have unknown cause; movements between samples may
+be missed. Observed positive quantities, signed net quantities, valued subtotal and coverage are
+separate. Gaps do not count as measured time. Wallet and verified Magic Find remain in scope;
+unimplemented coverage displays unknown, not zero. Economic actions stay manual in inventory.
+
+Evidence is limited to an external Fedora/GE-Proton 11-7 probe of the exact game build recorded in
+[evidence provenance](docs/audit/live-loot-evidence-provenance.md). Native Nexus bootstrap, a complete
+game session, Hebra reopen and Windows Nexus+Blish QA remain pending.
 
 ## Halloween farming
 
@@ -174,7 +198,7 @@ frontmatter display labels under Obsidian's canonical `note.tc_*` property names
 still use stable `tc_*` marker/schema keys instead of a folder predicate, and their value formula
 remains numeric so sorting is based on copper rather than formatted text. See the [activation and migration guide](docs/INVENTORY-VAULT-SYNC.md).
 
-## What the result means
+## What the existing API-based result means
 
 - A session is an observed net change between stable account snapshots, not a drop log and not total
   account wealth. Transfers and unrelated account activity can change that net.
@@ -477,6 +501,12 @@ remain human QA even when the package and CI gates are green.
 
 ## Privacy and network behavior
 
+For live1, the [current contract](docs/SPEC-live-loot.md) takes precedence over legacy session paths:
+no authenticated API request on load, presence, start, sampling, stop, recovery or live view refresh.
+Inventory/wallet and connection checks remain explicit manual operations. Local live journals are
+private observations and must not be included in support reports. HUD messages exclude
+account/character identity, paths and secrets.
+
 Plugin settings store only the selected Obsidian secret name. Recoverable session evidence is kept
 machine-locally in IndexedDB, outside settings and vault notes, and contains no API key. The API-key
 value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start
@@ -735,6 +765,8 @@ recoverable states after a restart. H3.9 owns contamination review, acceptance, 
 durable session history.
 
 ## Project documentation
+
+- [Live session contract](docs/SPEC-live-loot.md) and [historical evidence provenance](docs/audit/live-loot-evidence-provenance.md).
 
 - [`docs/BETA.md`](docs/BETA.md)
 - [`docs/API-KEY.md`](docs/API-KEY.md)

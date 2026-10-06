@@ -1,5 +1,20 @@
 # Modelo de amenazas
 
+## Cambio normativo live1 (6 oct 2026)
+
+[SPEC-live-loot](SPEC-live-loot.md) añade lectura pasiva dentro del addon Nexus ordinario. **Estos controles son requisitos pendientes de implementación/verificación**, no resultados acreditados por este cambio documental. Los controles históricos siguen en sus superficies; API-only no rige nuevas sesiones y H8 conserva su frontera.
+
+| Riesgo | Control requerido | Límite residual |
+| --- | --- | --- |
+| Perfil incorrecto, puntero inválido, cambio de build | SHA/perfil cerrados, lectura validada sin getters, hooks, escrituras ni suspensión; fallo explícito sin cobertura | Sonda externa no certifica estabilidad dentro del juego ni todas las clases de objeto |
+| Fuente falsa o dos productores | Autenticación, nonce, secuencia y única fuente vinculada; `instance` no identifica cuenta | Un proceso local con secreto puede mentir; no se garantiza protección frente a malware local |
+| Lote parcial, replay, ACK perdido | 512 bytes, claves cerradas, cuotas/timeout y commit durable bajo lease; retry último cursor idéntico sin efectos nuevos | La desconexión pierde cobertura, no permite reconstruir observaciones |
+| Fuga de actividad privada o journal creciente | DTO agregado, lotes acotados, trabajo incremental, journal local y HUD sin identidad/rutas/secretos; soporte sin memoria cruda ni ledger completo | Journal/notas contienen actividad personal y requieren protección del host/bóveda |
+| Ganancia, tasa o valor falso | Baselines sin delta; causa desconocida, huecos por canal, tiempo cubierto y subtotal separado; moneda/MF desconocidos no son cero | Movimientos compensados entre muestras no se ven y no demuestran causalidad |
+| Consulta API privada desde rutas antiguas | Espía HTTP load/presence/start/sample/stop/recovery/render; solo acciones manuales explícitas consultan cuenta/inventario/cartera | H3 histórico no certifica la nueva separación |
+
+Runtime v4/notas 7 preservan datos legacy y texto humano. No hay purga automática para esconder volumen: liberar datos requiere persistencia durable y receipt. El [registro de evidencia](audit/live-loot-evidence-provenance.md) distingue sondas y controles pendientes. La decisión no implica aprobación de ArenaNet.
+
 ## Alcance y supuestos
 
 Tyrian Companion es un plugin local de Obsidian para escritorio. Consulta la API oficial de Guild Wars 2 (GW2), escribe notas y assets en la bóveda y mantiene estado operativo en IndexedDB. No tiene backend propio, Sync propio, analítica remota, telemetría remota, exportación de soporte ni automatización de cuenta. H8.1/H8.4 fijan el contrato v2, H8.2 mantiene un spike C fuera de `src/` y del paquete, H8.3 acepta provisionalmente Rust, H8.5 implementa el helper aislado y H8.6 un cliente core TypeScript puro también aislado. H8.7 implementa una frontera pura de plan/integridad/proceso inyectado, sin executor. H8.8 añade una política shadow pura de presencia/ausencia y un DTO efímero sin efectos de producto. El plugin distribuido todavía no tiene composición, launcher real, settings/UI ni runtime Mumble activo. Sí existe telemetría **local** de calidad de detección API para poder revisar cómo se propuso o confirmó una sesión.

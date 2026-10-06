@@ -1,0 +1,233 @@
+# SPEC: captura pasiva de inventario y sesiones live1
+
+Contrato normativo autorizado por David el **6 de octubre de 2026** para sustituir la fuente API-only de las sesiones por el lector propio y pasivo de Nexus. Fija el comportamiento requerido; **implementación y verificación del runtime de producción pendientes** en este candidato documental. No acredita carga del addon ni QA Windows.
+
+La [política de plataformas](PLATFORM_POLICY.md) fija la frontera autorizada y el [puente v2/v3](SPEC-puente-ingame.md) sigue siendo el contrato base. La [investigación histórica](audit/2026-10-06-loot-memory-live.md) y su [procedencia verificable](audit/live-loot-evidence-provenance.md) acreditan solo las sondas allí descritas. Esta decisión prevalece sobre las descripciones históricas API-only para sesiones; no amplía la política específica H8 ni elimina integridad, privacidad o acciones manuales del inventario.
+
+## 1. Decisiones vigentes
+
+- Nexus es el único productor de observaciones. Hebra/Obsidian reciben por el puente existente; el núcleo de Tyrian posee sesiones, persistencia, precios, avisos y proyecciones. Sin servicio adicional ni cambios en H8.
+- API autenticada: únicamente acciones manuales de inventario/cartera y la comprobación explícita de su conexión. Ningún arranque, presencia, inicio, observación, cierre, recovery, comparación, MF o refresco de la vista live lanza consultas autenticadas. Sin fallback automático API cuando falta Nexus. Catálogo y precios públicos siguen disponibles, mediante clientes, cachés y permisos existentes.
+- Presencia y disponibilidad de fuente son estados distintos. La sesión sigue la conexión al juego, con gracia de diez minutos; un hueco de lectura se registra aunque Blish siga conectado y la presencia nunca se pierda.
+- Baseline no es botín. La señal es inventario agregado observado, no un evento causal del motor del juego. No se promete observar cambios que ocurren y se compensan entre muestras.
+- Solo lectura pasiva del juego: sin hooks nuevos, inyección de código adicional al addon cargado normalmente por Nexus, llamadas a getters del juego, escritura en su memoria, ptrace, suspensión de hilos ni automatización. Las funciones/vtables del perfil sirven para comprobar identidad y estructura, no para invocarlas.
+- Una fuente Nexus vinculada por sesión. El `instance` del hello identifica un proceso addon, no una cuenta GW2. No asociarlo automáticamente con la cuenta de una clave API configurada.
+- Blish conserva presencia, avisos y HUD en Windows. Para el nuevo feed necesita Nexus local como productor; Blish/Mumble no aportan objetos ni monedas. Mostrar la carencia cuando no exista fuente. La QA Windows sigue siendo necesaria y la nueva dependencia debe explicarse.
+- El objetivo completo incluye monedas y MF pendiente del audit. Se permite entregar código que declare falta de cobertura; eso no cierra esas tareas ni el objetivo completo.
+
+## 2. Negociación y compatibilidad
+
+Conservar sin cambios `hello`, `welcome`, v2/v3, autenticación, framing UTF-8, CRLF aceptado, claves exactas, rechazo de claves duplicadas, límite **512 bytes por línea sin terminador**, nonce, secuencia y plazos existentes. Ningún campo nuevo en hello/welcome/alert/farm1.
+
+Solo en conexión v3 autenticada, el servidor nuevo envía una capacidad independiente:
+
+```json
+{"v":3,"type":"live_cap","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"live1"}
+```
+
+Clientes anteriores ignoran el tipo desconocido. Un Nexus nuevo frente a servidor antiguo no envía mensajes live. La ausencia de capacidad significa fuente live no disponible, sin impedir contexto/avisos.
+
+Nexus manda primero el `context` ordinario. Con gameplay y capacidad, abre una época:
+
+```json
+{"v":3,"type":"live_open","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":1,"tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","build":"27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c","profile":"owned-bags-v3"}
+```
+
+`epoch`: 16 bytes aleatorios, base64url canónico de 22 caracteres, mismas reglas que nonce. `build`: SHA-256 minúscula de 64 caracteres. `profile`: exactamente `owned-bags-v3` en esta revisión. Todos los mensajes addon→host consumen **la misma** secuencia `seq` que context/heartbeat/bye/alert_ack/farming_sub; inicia en 0 y avanza de uno en uno. No existe una secuencia TCP paralela para live.
+
+El servidor contesta:
+
+```json
+{"v":3,"type":"live_ready","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","status":"ready"}
+```
+
+`status`: `ready|source_conflict|unsupported_build|not_gameplay`. Solo `client:nexus` puede abrir fuente. Un segundo productor no reemplaza al propietario de una sesión: recibe `source_conflict`, conserva contexto/avisos y aparece excluido. Se permite reconectar al mismo `instance`. No se cambia de proceso durante una sesión activa ni se mezclan sus muestras. Nueva fuente tras cierre produce sesión nueva. La atribución de mapa/personaje de live usa el contexto del productor seleccionado, no el contexto de otro cliente.
+
+`live_cap`, `live_ready` y `live_ack` no usan `alert.seq` ni `farming_state.seq`. Son respuestas ligadas al nonce y, donde procede, época/cursor; nunca generan alert_ack. Repetir live_open de la misma época en la misma conexión devuelve el mismo ready sin reiniciar nada. Una época distinta invalida el ensamblado previo y exige baseline. El host solo permite una época viva por fuente.
+
+## 3. Snapshot en lotes y tipos exactos
+
+El addon agrega cantidades por ID antes de transportar. No envía punteros, PID, rutas, memoria cruda, nombre de cuenta ni slots individuales. Una muestra completa contiene los totales de todos los objetos leídos y los saldos de las monedas expresamente soportadas.
+
+### live_begin (claves exactamente como el ejemplo)
+
+```json
+{"v":3,"type":"live_begin","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":2,"tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","cursor":0,"ctx":0,"ms":0,"mode":"baseline","items":"complete","currencies":"none","unknown":0,"slots":8,"rows":2}
+```
+
+- `cursor`: entero seguro no negativo. Empieza en 0; cada muestra comprometida de esa época incrementa uno. Independiente de seq. `mode`: `baseline|sample`; cursor 0 exige baseline, posteriores sample.
+- `ctx`: seq del context vigente que el productor capturó para esta muestra. Al aceptar un **begin nuevo**, debe corresponder al último context recibido de ese productor, en gameplay; el receptor fija también su valor semántico `(state,mapId,character)`. Un context posterior con seq nuevo y los mismos tres valores NO invalida el lote, abre hueco ni cambia época: solo actualiza la referencia de transporte para el siguiente begin. Un cambio real de cualquiera de los tres durante el ensamblado invalida el lote y exige época nueva; aunque luego vuelva al valor anterior, no recupera la continuidad perdida. Cambiar mapa/personaje corta época pero no cierra por sí solo la sesión de conexión. Para repetir el último cursor comprometido se acepta el ctx original guardado si el contexto semántico sigue siendo el mismo y la época no ha sido invalidada; no se obliga a reescribir la muestra repetida con un ctx más reciente.
+- `ms`: milisegundos monotónicos desde la primera captura de la época (0 en baseline); entero seguro, creciente en muestras. Marca la captura, no su envío. El host conserva su fecha UTC de recepción por separado; no afirma hora exacta del drop.
+- `items`: `complete|partial|none`. `complete` significa cobertura completa de las bolsas propias del personaje controlado bajo el perfil, no de toda la cuenta. `partial` indica cantidades/posiciones no resueltas; `none` ausencia de lectura.
+- `currencies`: `none|listed`. En listed solo están cubiertos los IDs presentes como filas de moneda; **todos los IDs soportados se incluyen incluso con saldo cero**. Omitir un ID de moneda no significa cero.
+- `unknown`: entero 0..4096, número de posiciones presentes cuya cantidad/identidad no se puede resolver; complete exige 0; none no admite filas de objetos.
+- `slots`: huecos libres medidos del mismo inventario, entero 0..4096 o null. No derivar desde banco/cuenta. Si no se pueden demostrar, null.
+- `rows`: número total de filas del lote, entero 0..4096. Currencies none prohíbe filas moneda; listed exige al menos una. Los límites son defensas del contrato, no afirmación sobre capacidad del juego.
+
+### live_rows
+
+```json
+{"v":3,"type":"live_rows","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":3,"tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","cursor":0,"part":0,"rows":[[0,12147,0],[0,36038,200]]}
+```
+
+Cada fila es una tupla exacta `[kind,id,quantity]`; kind 0=objeto, 1=moneda. ID entero 1..2147483647, quantity entero 0..2147483647. Cantidad es total agregado; puede superar 250 por sumar stacks. El perfil nativo actual solo acepta **cada stack** en 0..250. No recortar overflow ni convertir desconocido en 0.
+
+De 1 a 8 filas por trama; `part` empieza en 0 y crece de uno en uno. Orden global lexicográfico por `(kind,id)`, sin duplicados. Emisor debe comprobar 512 bytes después de serializar; receptor también. Cero filas totales significa begin→end, sin live_rows.
+
+### live_end y ACK durable
+
+```json
+{"v":3,"type":"live_end","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":4,"tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","cursor":0}
+{"v":3,"type":"live_ack","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","cursor":0,"status":"stored"}
+```
+
+El receptor publica **solo** tras end, conteo/orden/contexto válidos y commit local durable con lease vigente. Antes, nada entra en totales, precios, gráfica, aviso ni UI de adquisiciones. `live_ack.status`: `stored|storage_unavailable|not_owner`; los dos fallos no autorizan descartar como guardado ni publicar. El addon muestra fallo de medición, mantiene presencia y reinicia el canal live mediante reconexión acotada cuando sea recuperable; no crea un bucle de muestras que no pueden persistirse.
+
+Máximo un lote en vuelo; 4096 filas, 512 chunks, **256 KiB** de bytes de muestra y 10 s desde begin hasta end. Timeout/incompletitud descarta todo el lote y abre hueco; no cierra por sí sola la sesión. Nonce/seq/esquema inválidos conservan el cierre de conexión con los códigos existentes. Context/heartbeat pueden intercalarse; solo un cambio semántico de context invalida el lote, nunca su nueva revisión/seq por sí sola. Serializar ensamblado y commit: un segundo begin no puede adelantarse al commit pendiente ni reiniciar un lote en curso. Nunca bloquear render ni el hilo de juego esperando red o disco.
+
+Tras end, el productor espera ACK antes de emitir otra muestra. El lector puede mantener la última lectura local acotada; no acumula backlog ilimitado. Timeout de ACK 10 s: reconexión y nueva época/baseline. No se implementa replay durable en el addon en este lote. Sus consecuencias quedan declaradas: pérdidas entre muestras y durante caída/reinicio no se reconstruyen.
+
+Deduplicación durable por `(sourceInstance,epoch,cursor)`: se admite repetir **solo el último cursor comprometido** de la época vigente. El reintento completo usa nuevos seq de transporte consecutivos, empieza part en0 y conserva mode/ctx/ms/cobertura/filas originales. El fingerprint canónico incluye los metadatos de muestra y las filas ordenadas; excluye nonce, seq, partición en chunks y fecha de recepción. Contenido idéntico recibe stored sin nuevo commit lógico, filas, precios, avisos, cambio de baseline, cierre de huecos ni renovación de frescura. Mismo identificador y contenido distinto es error de protocolo. Esto incluye cursor0/mode baseline/ms0: repetirlo después de guardar el baseline solo devuelve ACK, no reinicia sesión/época ni vuelve a aplicar baseline. Comprobar esta rama antes de exigir cursor+1/ms creciente. Si ya se comprometió cursor1, repetir cursor0 se rechaza como replay antiguo; no se mantiene un historial ilimitado de fingerprints.
+
+Una muestra nueva requiere cursor=último+1 y ms mayor al último, o cursor0/baseline/ms0 si la época aún no tiene muestra. El cursor solo avanza una vez al commit; begin/chunks y ACK duplicados no lo avanzan. Un ACK stored solo libera al productor si coincide exactamente con nonce/época/cursor del lote que espera; uno tardío de otro lote se ignora. Si la conexión cambia, hay nonce y época nuevos: no se reproduce cursor0 de la época vieja. No aceptar cursores futuros con salto como si fueran continuos: error de continuidad, hueco, nueva época. Los secuenciadores paran antes de superar enteros seguros.
+
+## 4. Estado de fuente, huecos y frecuencia
+
+Además de las muestras, Nexus puede informar:
+
+```json
+{"v":3,"type":"live_status","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":5,"tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","status":"unavailable","reason":"read_failed"}
+```
+
+Claves exactas; `status` es `unavailable` y `reason` es `unsupported_build|root_unavailable|read_failed|partial_inventory|not_gameplay`. Este mensaje descarta lote, invalida comparabilidad y abre hueco desde la última muestra válida. Su epoch puede ser null si nunca se abrió una. Recuperar requiere live_open con época nueva. No mostrar excepciones, direcciones ni datos crudos en reason. `live_status` solo se envía después de live_cap, por Nexus autenticado.
+
+Captura objetivo inicial: una muestra por segundo, limitada por lectura segura y ACK; comunicar resolución observada real, no prometer 100 ms. 5 s sin muestra completa implica fuente stale aunque lleguen heartbeats. El temporizador, un context equivalente y un ACK/reintento duplicado no rejuvenecen `ms` ni la fecha de captura. Pérdida de conexión/productor, fallo global de lectura, live_status, cambio real de contexto o caducidad invalidan la época: abrir huecos de los canales afectados y exigir live_open/época/baseline nuevos. Una pérdida de cobertura declarada dentro de una muestra atómica válida afecta solo al canal correspondiente, como se define a continuación. Nunca inferir del baseline lo adquirido durante un hueco.
+
+No calcular delta de objetos entre muestras con items partial/none ni atravesándolas. Guardar cobertura/diagnóstico y cantidades conocidas para inspección, abrir hueco de items y dejar su baseline local inválido. La primera muestra posterior items complete es **baseline local de items**, sin cambios/avisos para ese canal; cierra su hueco. Puede llevar mode sample y cursor consecutivo de la misma época: este rebaseline por cobertura NO requiere live_open ni reinicia las monedas sanas. En cambio live_status partial_inventory declara fuente globalmente no disponible y sí exige época nueva; no usarlo para una muestra parcial que todavía aporta monedas válidas.
+
+Para moneda, comparar solo un ID presente y cubierto en las dos muestras consecutivas; ausencia/pérdida de cobertura corta su continuidad. Su primera aparición o reaparición es baseline local de ese ID, sin delta. Monedas listadas pueden seguir aportando cambios mientras items está parcial, y viceversa. Un hueco currencies indica que el conjunto de monedas previamente cubierto dejó de estar completo; no niega los cambios observados válidos de IDs que permanecen cubiertos. Cerrar ese hueco solo cuando todos los IDs que faltaban vuelvan a tener baseline; mantener internamente ese conjunto durante recovery. `observedCurrenciesMs` cuenta únicamente intervalos con todos los IDs del conjunto cubierto presentes en ambos extremos; los cambios de IDs individuales no autorizan un total monetario completo cuando falta otro. Monedas sin soporte desde el inicio son coverage none, no un saldo cero ni una sucesión infinita de huecos.
+
+Huecos: representar un registro independiente por canal (channels con un único elemento); no cerrar currencies porque se recuperó items. Su fromAt es la última captura válida del canal, o startedAt si nunca pudo empezar. Mantener un solo hueco abierto por canal, conservando la primera causa; repetir errores no crea huecos solapados ni cambia fromAt. Cerrarlo con toAt de la captura comprometida que restablece su baseline, sin contar ese intervalo como observado. La posterior muestra comparable empieza a sumar tiempo desde ese baseline. Al finalizar la sesión, cerrar todo hueco abierto en endedAt, marcado por su razón existente y manteniendo el resultado incompleto: cerrar un hueco al terminar NO significa recuperación. Recortar los intervalos a [startedAt,endedAt] y omitir los de longitud cero; una sesión complete nunca conserva toAt null. Para duración deducida, usar unión de huecos del canal relevante, sin restar dos veces los huecos simultáneos de items/currencies.
+
+Desconexión: cerrar época; persistir gaps por canal desde sus últimas capturas válidas, mantener sesión durante la gracia existente. `game_exit` cierra con la última evidencia ya guardada, sin API final; si endedAt es posterior a la última captura cubierta, conservar ese tramo final sin observación en el canal pertinente. La pérdida abrupta puede impedir última muestra: cierre incompleto declarado. Host reiniciado restaura journal/cursor/sesión y huecos por canal, pero la nueva conexión exige nueva época y baseline. Ningún cero sintético ni aviso atrasado del baseline.
+
+## 5. DTOs que B expone a C
+
+Módulo contractual propuesto: `src/sessions/live-loot-model.ts`, propiedad B. C importa tipos, no reconstruye deltas desde DOM/StorageSnapshot. A usa las mismas fixtures wire, no depende de TypeScript.
+
+`LiveObservationV1`:
+
+```
+version: 1
+id: string                   # determinista: epoch/cursor/kind/id
+source: 'nexus_inventory'
+epoch: string; cursor: number
+kind: 'item' | 'currency'; idNumber: number
+before: number; after: number; delta: number
+observedAt: string           # UTC de recepción del snapshot completo
+windowStartAt: string        # recepción snapshot anterior; no fecha exacta del drop
+sourceElapsedMs: number      # reloj monotónico del productor
+cause: 'unknown'             # live1 nunca afirma venta/drop/apertura/depósito
+coverage: 'observed_interval'
+```
+
+`LiveGapV1`: `{version:1,fromAt:string,toAt:string|null,reason,channels:('items'|'currencies')[]}`. Reason cerrado: `disconnect|source_stale|read_failed|partial_inventory|context_changed|host_restart|storage_unavailable|unsupported_build|source_missing|cursor_gap`. No crea observaciones por sí mismo.
+
+`LiveSessionViewV1` (única proyección UI/HUD, propiedad B salvo formato visual):
+
+```
+version:1
+sessionId:string|null
+phase:'idle'|'starting'|'active'|'stopping'|'complete'|'error'
+sourceState:'missing'|'warming_up'|'ready'|'stale'|'unavailable'|'conflict'
+sourceReason:string|null     # solo enums anteriores; no error libre
+source:'nexus_inventory'|null
+startedAt:string|null; endedAt:string|null
+elapsedMs:number|null; observedItemsMs:number; observedCurrenciesMs:number
+lastObservationAt:string|null
+itemCoverage:'complete'|'partial'|'none'
+currencyCoverage:'none'|'listed'; currencyIds:number[]
+freeSlots:number|null
+observations:LiveObservationV1[]   # ventana paginable, nunca render infinito
+gaps:LiveGapV1[]
+totals:{kind,idNumber,positive,negative,net}[]
+valuation:LiveValuationV1
+magicFind:{value:number|null,source:'manual'|'verified'|'unknown'}
+```
+
+La API concreta de paginación queda local a B/C pero debe servir todas las filas en exportación. No truncar journal para limitar DOM. B publica `getLiveSessionView()` y suscripción ya integrada en refrescos del runtime; C no añade polling API. Persistir fuente/MF y procedencia; hoy no hay MF verified del lector. No degradar los controles manuales de preparación existentes ni prometer MagicFinder integrado.
+
+## 6. Persistencia y legacy
+
+Actualmente `SessionRuntimeRecord` v3 obliga a baseline/final StorageSnapshot y delta API; no fabricar estos objetos para introducir live. Añadir variante v4 discriminada `kind:'live_inventory'` al contrato del store existente. Mantener lectura v3 y sus validadores de forma; el recovery legacy puede mostrar/exportar evidencia guardada pero no consultar la cuenta automáticamente ni mezclarla con live.
+
+Variante v4 contiene: sesión/lease/autoridad existentes, sourceInstance+profile+build, estado/época/contexto, última muestra comprometida y fingerprint/cursor, ledger de cambios, gaps por canal, precios capturados, contexto manual de preparación y receipt de nota. Utilizar transacción atómica del almacenamiento local existente para commit de cursor+muestra+observaciones; si hacen falta stores nuevos para journal, versión IDB aditiva, preservar el store y registros antiguos. No guardar una cronología creciente íntegra por cada tick si provoca reescritura cuadrática: journal append por muestra con clave compuesta y cursor en la misma transacción.
+
+La representación durable de nota live será `tc_schema:7`, `tc_kind:session`, `tc_source:nexus_inventory`, con snapshot de resumen y ledger/coverage versionados en los bloques gestionados existentes; sin baseline crudo, punteros, IDs de cuenta ni sourceInstance raw en la nota. El identificador local de fuente se conserva solo en runtime; exportar `source:nexus_inventory`, build/profile y sesión pseudónima. `tc_account_ref` queda null/desconocido para live si no existe identidad demostrada; no inventar una cuenta a partir de instance/character. Ajustar lectores a un modelo discriminado, conservando notas schema1..6 sin reescritura. Legacy se presenta como neto API, no se fusiona en comparaciones live como si midiera lo mismo.
+
+Mantener notas humanas, CAS/verificación de regiones, recovery y requisito de receipt de nota antes de liberar. JSON/CSV live deben incluir todas las observaciones, huecos, fuente, tiempos, cobertura, cantidades, snapshot de precios y su criterio. Reusar exportación create-only, versionando el formato exportado cuando cambie su esquema. No sobrescribir exportaciones existentes.
+
+## 7. Economía, gráfica y avisos
+
+`LiveValuationV1` separa:
+
+- `positiveItemValueKnownCopper`: valor de incrementos observados con precio conocido; puede incluir retiradas/compras y no equivale a beneficio.
+- `netItemValueKnownCopper`: suma de delta firmado por precio unitario fijado para esa proyección; preserva pérdidas observadas.
+- `coinNetCopper:number|null`: saldo neto observado de la moneda oro solo con fuente demostrada y continuidad; null hoy.
+- `knownNetValueCopper:number|null`: netItemValue + coinNet solo con cobertura suficiente de ambos; si no, null y subtotal conocido separado. Etiqueta «Valor neto estimado», nunca «beneficio exacto».
+- `unpricedItemIds`, moneda sin cobertura y gaps explícitos. Precio desconocido no vale cero. Divisas distintas de oro no se convierten a cobre sin modelo económico ya soportado y criterio mostrado.
+- `priceBasis:'instant_sell_net'`, capturedAt y unitCopper por ID; reutilizar precio de venta inmediata neta y reglas/fees existentes, no duplicar fórmulas. Si no hay cotización válida, cantidad permanece visible. No usar valoraciones DRF.
+
+Una venta puede retirar objetos y aumentar oro, por lo que neto firmado evita sumar íntegramente ambos como ganancias. Sin causa no afirmar que la operación fue venta. Depósito puede bajar bolsas sin bajar patrimonio: mostrar explícitamente ámbito bolsas, no riqueza de cuenta.
+
+Gráfica: cantidades observadas y valor estimado, huecos sin interpolación; al actualizar precios, recalcular toda la curva visible con el mismo snapshot y rotular su hora, o conservar el snapshot elegido al cierre. No mezclar precios sucesivos haciendo pasar una revalorización por adquisición. Valor/h = valor neto elegible / duración observada pertinente; null ante denominador cero o cobertura insuficiente; subtotal/h puede mostrarse como parcial con etiqueta distinta. Cronología, resumen, gráfica y export derivan del mismo ledger.
+
+Avisos: reutilizar motor/umbral/canales existentes para observación positiva valorizable, clave idempotente observation.id + regla. Texto «Aumento observado: 2 Champiñones · valor estimado…»; jamás «drop», «botín confirmado» o «vendido» por inferencia. Baseline, negativo, muestra incompleta, duplicado, rebaseline, sin precio o fuera de cobertura no emiten aviso de objeto caro. Un precio que llega tarde no vuelve a avisar de una observación ya procesada; la regla evalúa una vez al resolver la observación pendiente o la descarta explícitamente al cerrar el intervalo, manteniendo outbox/receipt durables existentes. No requiere confirmación humana ni acciones en juego.
+
+## 8. Ejemplo canónico UI y fixtures
+
+Usar epoch E y fuente única. Baseline cursor0 (items complete, currencies none), total12147=0. Sin fila de cronología, resumen adquirido0; monedas «Sin cobertura», no0.
+
+Cursor1: total12147=2 ⇒ observación +2, before0/after2, cause unknown. Cursor2: total12147=4 ⇒ segunda observación +2, before2/after4. Resumen: positivos4, negativos0, neto4. La hora es observada, no hora exacta del evento de juego.
+
+Precio público sintético de fixture=10c netos/unidad: cada fila valor20c, subtotal objetos40c. Monedas y total económico completo siguen desconocidos. Nunca copiar importes DRF. Solo cuando una fuente real futura soporte moneda X y envíe baseline0→6→12: dos filas+6 y resumen12; no inferir22 de la captura de DRF.
+
+Si se pierde enlace y nuevo baseline muestra12147=9: conservar total observado4, abrir/cerrar hueco, ninguna fila+5 ni aviso; nuevos cambios se comparan desde9. Resumen de cambios observados sigue separado de tenencia actual9. Si se reordena inventario pero agregado permanece4, cero filas. Si baja4→2: fila−2 unknown; no etiquetar venta/apertura.
+
+## 9. Fuente nativa: evidencia y trabajo todavía real
+
+Perfil aprobado técnicamente solo para SHA `27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c`, probado externamente en Fedora GE-Proton11-7. Las fuentes archivadas [inventory_reader_v3.py](audit/loot-inventory-probe/inventory_reader_v3.py) y [state_reader.py](audit/loot-inventory-probe/state_reader.py) contienen las guardas/relaciones observadas; reutilizar su conocimiento, no ejecutar Python como dependencia del addon.
+
+A debe implementar descubrimiento autónomo de base/contexto, lectura segura desde el addon y comprobación de identidad de binario/perfil. No fijar la dirección virtual de la sonda ni su PID. Validar owner/location/vtables/quantities y reread coherente; abortar muestra si cambian. El límite<=250 es por stack de este perfil; una cantidad fuera de rango es parcial/error, nunca clamp.
+
+Hash distinto, tipo no soportado o raíz no encontrada: estado explícito, sin lectura especulativa ni escaneo indiscriminado. La evidencia de sonda incluye baseline v3 de 254 tipos sin cantidad desconocida, pero no prueba todas las clases de ítem futuras. No inventar offsets de cartera/monedas ni de MF. Fuente wallet y MF verificado permanecen investigación/implementación pendientes; placeholders none/null son honestidad, no cierre.
+
+## 10. Propiedad y junturas
+
+- **A / Nexus:** repo Nexus completo dentro del lote; nuevos módulos lector/cobertura/codec live, client/protocol/state/render diagnóstico, fixtures Rust y README. Emite contrato exacto; no edita Companion/Blish.
+- **B / núcleo:** Companion alerts live codec/assembler/server, sessions live model/reducer/store/lifecycle/note/history/export, runtime wiring y eliminación de consultas autenticadas automáticas; tests correspondientes. Dueño de DTO, `getLiveSessionView` y wire TS. La documentación normativa corresponde al lote documental previo. Extraer módulos live en vez de duplicar motor API o crear proveedor genérico sin necesidad.
+- **C / presentación:** Companion UI, i18n, estilos y proyección HUD; Blish consumo/etiquetas/estados y tests. No edita runtime/store/codec TS. Coordinar un único dueño de `farming-runtime-projection.ts` (C); B aporta datos y firma estable. Reutilizar `farm1` sin nuevas claves; textos/age/observed dejan de decir necesariamente API. No inventar capacidad de lectura Blish.
+- **Raíz:** integra fixtures/contrato, decide diferencias, asigna las líneas compartidas de composición, valida evidencia y evita suites pesadas concurrentes. Cada lote rama/worktree propio. Los ocho ítems Halloween existentes no se recrean: enlazar las tareas nuevas a lo ya entregado y a los pendientes reales de QA/MagicFinder.
+
+## 11. Casos de prueba discriminantes y gates
+
+1. Fixture exacta cruzada TS/Rust de handshake, begin/rows/end/ack/status; cliente antiguo y servidor antiguo no reciben mensajes inesperados. Blish ignora live_cap y sigue farm1/avisos.
+2. 512 bytes aceptados/513 rechazados, UTF-8 y claves duplicadas, nonce falso, hueco seq, enum/cantidad overflow, fila duplicada o fuera de orden, 9 filas/chunk, rows4097, byte budget, timeout, part faltante, end sin begin, contexto cambiado, currencies none con fila.
+3. Begin y filas sin end no producen ni guardado ni UI ni aviso. Fallo IDB/lease no obtiene stored. Commit durable seguido de pérdida de ACK y reintento no duplica. Repetir cursor0 baseline ya comprometido con nuevos seq y mismo contenido devuelve ACK sin reset/avance/frescura; cambiar contenido bajo cursor0 falla. Tras cursor1, cursor0 es replay antiguo. ACK anterior no libera un lote posterior.
+4. Fixture canónica0→2→4, reorder sin delta, negativo firmado, stacks múltiples>250 agregado permitido/stack251 rechazado, unknown qty no0, monedas none no0, listed0 demostrado; pérdida de cobertura por canal.
+5. Dos productores: solo propietario; mismo instance reconecta con epoch nueva/baseline; Blish solo mantiene presencia pero nunca fuente ready. Context con seq nuevo y mismos state/mapId/character intercalado entre begin/rows/end conserva el lote y no crea hueco; cambio real seguido de retorno al valor anterior lo invalida. Cambio de personaje/mapa corta época sin fabricar adquisición ni terminar automáticamente conexión.
+6. Desconexión/host restart/fuente stale con heartbeats vivos: gap durable, reloj observado detenido, rebaseline9 no+5, cierre/reapertura/CSV/JSON conserva las mismas sumas. Items partial con monedas válidas permite deltas de monedas; items complete siguiente solo rehace baseline items; tercera completa reanuda sus deltas. Recuperar items no cierra gap currencies. Finalizar con gap abierto fija toAt=endedAt sin contarlo observado; huecos simultáneos no duplican descuento y none de monedas nunca produce cero.
+7. Espía de transporte HTTP que falla cualquier endpoint autenticado durante load→presence→start→sample→stop→recovery→render; captura manual inventario continúa funcionando. Catálogo/precios públicos se permiten según políticas existentes.
+8. Lectura de notas1..6 y runtimev3 preservada; livev4/schema7 no simula StorageSnapshot, mantiene texto humano y receipt. Sesión pendiente de guardar no se pierde al llegar nueva presencia.
+9. Avisos positivos con precio/umbral una vez; baseline, duplicado y sin cobertura ninguno. Compras/ventas/depósitos nunca reciben causa inventada. Gráfica y export coinciden con ledger y snapshot de precio.
+10. UI claro/oscuro, teclado, contraste medido, 0/1/muchas filas, cantidades grandes, nombres largos, icono fallido, layouts estrechos, fuente ausente/parcial/error, monedas/MF desconocidos. Checklist siete ejes: todos parciales hasta esa evidencia, sin crear infraestructura de diseño nueva.
+
+Rápidos/tests afectados antes de gate global. Companion: `npm run check`, `npm run check:guardrails` (incluyen seguridad/censo/ESM según grupo; CI también H6). Nexus: `cargo test` y `cargo build --release --target x86_64-pc-windows-gnu`. Blish: `dotnet run --project tests/ProtocolConsoleTests`, `dotnet build -c Release`. Una build/suite pesada cada vez, presupuesto/df previo. No volver a ejecutar H8 nativo por este cambio si su evidencia del mismo alcance sigue vigente y contratos no lo requieren.
+
+QA real pendiente: addon cargado en Nexus, bootstrap autónomo, arranque/reapertura Hebra, adquisición/reordenación/apertura/depósito/venta/cambio personaje, caída y restauración, cerrar guardar reabrir exportar en Fedora/Proton; Windows con productor Nexus y Blish HUD consumidor. No confundir cross-build con carga nativa. Este documento no acredita publicación, instalación ni runtime de una release.
+
+## 12. Referencias normativas reconciliadas
+
+Companion: `docs/PRODUCT.md` (fuentes/semántica/no revisión), `docs/PLATFORM_POLICY.md` (API-only y frontera lector), `docs/SPEC-puente-ingame.md` (live1 y farm1), `docs/THREAT-MODEL.md` (proceso lector, fuente no confiable, volumen/retención, sin garantía frente a malware local), `docs/ARCHITECTURE.md` (runtime/puertos reales, fuente/sesiones/esquemas), `README.md`, `docs/QA-MVP.md` y documentación de soporte pertinente. Nexus README y Blish README por sus respectivos propietarios.
+
+La vieja afirmación de que no leer memoria garantiza encaje en una política de terceros se sustituye por descripción factual del nuevo alcance; no afirmar aprobación de ArenaNet. Las reglas históricas de H8 siguen locales a H8. Las propuestas anteriores DRF/token/helper del audit no reabren la dirección ya elegida. La nueva autorización no elimina garantías de integridad, privacidad ni la obligación Windows existente.

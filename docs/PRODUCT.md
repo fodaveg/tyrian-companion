@@ -1,5 +1,19 @@
 # Producto
 
+## Decisión vigente: sesiones con fuente Nexus (6 oct 2026)
+
+David autoriza el lector propio y pasivo de Nexus para el alcance completo del audit: sesiones, timeline, resumen, gráfica, valoración y exportación en Hebra/Obsidian, con HUD y avisos en Nexus/Blish. El contrato canónico es [SPEC-live-loot](SPEC-live-loot.md). **Implementación y QA de producción pendientes**: esta sección fija el resultado exigido, no declara que el addon actual ya lo entregue.
+
+- La sesión conserva toda la conexión al juego y la gracia de diez minutos. La presencia y la disponibilidad de muestras son independientes; cambiar de mapa o personaje no recorta por sí solo la sesión.
+- Nexus es el único productor. Windows con Blish HUD conserva su obligación de soporte y requiere Nexus local para los objetos. Fuente ausente, parcial, antigua o en conflicto se muestra sin fingir cobertura.
+- La API autenticada queda reservada a acciones manuales de inventario/cartera y comprobación explícita de conexión. La sesión live no requiere clave; no se consulta en carga, presencia, inicio, muestreo, cierre, recovery, comparación, MF o refresco de vista, ni como fallback. Catálogo y precios públicos continúan bajo sus políticas vigentes.
+- Se muestran cambios del inventario observado con causa desconocida. Baselines/rebaselines no son adquisiciones; los huecos no son tiempo medido y lo desconocido no equivale a cero. Un aumento no demuestra un drop; una disminución no demuestra apertura o venta.
+- Timeline, resumen, gráfica y exportación proceden del mismo ledger durable. La UI puede paginar; exportar conserva todas las filas. Cantidad positiva observada, neto firmado, subtotal valorado y cobertura monetaria se distinguen. Tasas y objetivos respetan tiempo cubierto y frescura.
+- Monedas y MF siguen dentro del encargo completo. Mientras falte evidencia se muestran sin cobertura/desconocidos; ese estado honesto no cierra su investigación ni el objetivo. La preparación manual declara su procedencia.
+- Runtime live v4 y notas schema 7 conservan lectura de registros anteriores y texto humano. No se fabrican snapshots API ni se mezcla estadística legacy con live. Las decisiones económicas permanecen en el inventario acumulado y siempre son manuales.
+
+Las secciones H1–H18 siguientes documentan implementación y decisiones históricas. Sus requisitos API-only de sesiones, calentamiento autenticado automático y condiciones de clave quedan sustituidos por esta decisión. La clasificación API sigue describiendo solo registros legacy; no atribuye causalidad a live1. La frontera específica H8 permanece intacta.
+
 ## Propósito y usuarios
 
 Tyrian Companion es una plataforma modular para entender y organizar una cuenta de Guild Wars 2 desde Obsidian. Su norte es convertir datos dispersos de cuenta, inventario, economía, sesiones y objetivos en información explicada y accionable, sin operar nunca sobre la cuenta del jugador.
@@ -18,7 +32,7 @@ Está pensado tanto para un jugador individual como para grupos o clanes que qui
 
 ## Semántica de exactitud
 
-El producto nunca promete conocer «todo el loot»: la API de Guild Wars 2 ofrece snapshots, no un flujo de cada objeto obtenido. Toda medición futura deberá declarar uno de estos estados:
+El producto nunca promete conocer «todo el loot»: tanto snapshots API históricos como muestras de inventario pueden perder movimientos entre lecturas. Para las mediciones API legacy se conservan estos estados; live1 usa cobertura, huecos y causa desconocida según su contrato:
 
 - `exacta`: snapshots estables y sin actividad externa detectada o declarada.
 - `estimada`: resultado útil con una limitación conocida, como una ubicación no validada, incertidumbre temporal o insumos consumidos durante el farmeo (contenedores abiertos, llaves o viales gastados). El rendimiento se publica como banda observada, con sus dos extremos y su motivo, nunca como cifra exacta.
@@ -413,7 +427,7 @@ La versión `0.1.0` valida la base técnica:
   marca el inicio y el fin de la sesión sin confirmación, con hora corregible después. El puente ya
   expone esa presencia (H18.23) y H18.26 la consume (`src/sessions/ingame-session-marker.ts`): abre
   la sesión, la etiqueta como Laberinto en el mapa 866 y la cierra a la hora de la última presencia
-  tras 10 minutos de gracia. Solo actúa con el puente activado y una clave API configurada. Una
+  tras 10 minutos de gracia. La implementación API histórica exige puente activado y clave configurada; live1 elimina el requisito de clave. Una
   sesión iniciada a mano se adopta y se etiqueta, pero la presencia nunca la cierra. La corrección
   posterior de la hora todavía no tiene interfaz.
 - Compatibilidad móvil.

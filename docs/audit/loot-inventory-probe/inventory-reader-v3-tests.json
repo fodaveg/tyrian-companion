@@ -1,0 +1,7 @@
+{
+  "fixture": "sparse synthetic memory; no process accessed",
+  "tests": 19,
+  "failures": 0,
+  "errors": 0,
+  "ok": true
+}

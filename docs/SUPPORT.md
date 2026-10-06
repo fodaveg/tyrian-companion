@@ -1,5 +1,11 @@
 # Soporte y reporte seguro de errores
 
+## Diagnóstico live1 (contrato del 6 oct 2026)
+
+La captura propia está definida en [SPEC-live-loot](SPEC-live-loot.md); implementación/QA de producción pendientes en este candidato documental. Al probarla, anotar versiones Companion/Nexus/Blish y Hebra/Obsidian, plataforma/runtime, checksum público del juego/candidato, fase de sesión, estado de fuente, error cerrado y cobertura visible. En Windows con Blish, indicar presencia del productor Nexus local.
+
+Live no requiere clave API; sincronizar inventario no resuelve una fuente ausente. Muestra antigua/parcial es distinta de perder presencia. Conservar evidencia y recovery: no borrar journal/notas para desbloquear. No adjuntar memoria de proceso, punteros, secretos del puente, inventario completo, journal íntegro, exportaciones personales ni rutas locales. Usar caso mínimo redactado y estados/códigos cerrados. La sonda histórica no reproduce por sí misma fallos del addon o Windows.
+
 Tyrian Companion es una beta pública. El canal de soporte es el formulario **Bug report** del
 repositorio. Si el repositorio no está disponible, envía al coordinador solo el mismo conjunto mínimo
 y redactado; no abras un canal alternativo con más datos.

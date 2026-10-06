@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-06",
+  "scope": "isolated read-only TEB/TLS route diagnostic; no acquisition capture",
+  "source_candidate_tree": "2400328bb90a11854687cda7ff5cba56e77ef956",
+  "base_commit": "046f1a1f9f2abd0994ed095fead237955ebe4745",
+  "source_sha256": "94b148cff37eff8c7d9860a474e3417d10f729fb2dc68bfe906b507c9b1449b3",
+  "executable_sha256": "c388acab8acdfa8cd98b28d7a99d20779a3cdb3703df073fe0f9ca6481ba8543",
+  "executable_bytes": 290357,
+  "game_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "game_identity": "externally confirmed by root; helper accepts explicit confirmation, does not hash loaded image",
+  "runtime": {
+    "operator": "root agent",
+    "host": "Fedora Linux",
+    "wine": "GE-Proton11-7; same Wine and prefix as active game",
+    "windows_pid": 328,
+    "linux_pid": 855956,
+    "WINEESYNC": "1",
+    "WINEFSYNC": "1"
+  },
+  "build": {
+    "compiler": "x86_64-w64-mingw32-gcc (GCC) 16.2.1 20260819 (Fedora MinGW 16.2.1-1.fc44)",
+    "command": "x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -static-libgcc docs/audit/loot-teb-probe/probe.c -o /tmp/tyrian-teb-probe.exe",
+    "exit_code": 0,
+    "evidence": "successful tools.exec_command result recorded by implementer; separate compiler log not retained"
+  },
+  "checks": {
+    "pe_imports": {
+      "command": "python3 docs/audit/loot-teb-probe/check.py /tmp/tyrian-teb-probe.exe",
+      "exit_code": 0,
+      "amd64_pe": true,
+      "required_imports": true,
+      "forbidden_imports_absent": true,
+      "size_limit": true,
+      "evidence": "successful checker JSON recorded by implementer; hashes match final executable"
+    },
+    "self_test": {
+      "arguments": [
+        "--self-test"
+      ],
+      "exit_code": 0,
+      "all_controls_passed": true,
+      "evidence": "evidence/self.jsonl"
+    },
+    "live": {
+      "arguments": [
+        "--confirmed-build-sha256",
+        "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+        "--pid",
+        "328",
+        "--max-threads",
+        "127"
+      ],
+      "exit_code": 0,
+      "complete": true,
+      "threads_examined": 114,
+      "threads_total": 114,
+      "failures": 0,
+      "nonzero_loot_roots": 1,
+      "bytes_requested": 2748,
+      "bytes_read": 2748,
+      "byte_limit": 4096,
+      "evidence": "evidence/live.jsonl"
+    },
+    "negative_cap": {
+      "temporary_cap": 128,
+      "compiler_exit_code": 1,
+      "expected_assertion": true,
+      "evidence": "evidence/cap-negative.json"
+    }
+  },
+  "loot_capture_proven": false,
+  "limitations": [
+    "Only TEB/TLS pointer route read; no acquisition ID or quantity captured.",
+    "Mutable game memory; no atomic snapshot and no suspension.",
+    "Toolhelp snapshot excludes subsequently created threads.",
+    "Profile applies only to externally confirmed build; no production addon integration.",
+    "PE imports check is static evidence, not proof of dynamic runtime behavior."
+  ],
+  "temporary_executable": "/tmp/tyrian-teb-probe.exe; local temporary artifact, another machine may not retain it",
+  "files": {
+    "README.md": "c786d652bb5c765a69042e63670b1ef0315853c93a2f5a8cd5c7f25a685610f9",
+    "check.py": "971ec1febdf678943a479add8b89f3515cafc52cf9c4427d19ab5e5489bf0574",
+    "evidence/cap-negative.json": "e5c8dc9e0a01cf0f60fe99b34c06f0638f75ba6bd3b3540fd45460ec5c742af0",
+    "evidence/live.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "evidence/live.jsonl": "756e55c0667e368c16c1b7232d3405f53b9bcb260a251918ad5d126dfeec2c15",
+    "evidence/live.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence/self.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "evidence/self.jsonl": "1d0471b062606bdb6ccad4da064b80995543b575add68106b8b34cfdd355bc86",
+    "evidence/self.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "probe.c": "94b148cff37eff8c7d9860a474e3417d10f729fb2dc68bfe906b507c9b1449b3"
+  }
+}

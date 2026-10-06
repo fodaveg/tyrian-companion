@@ -1,5 +1,20 @@
 # QA manual del MVP
 
+## Matriz live1 requerida (6 oct 2026; pendiente)
+
+[SPEC-live-loot](SPEC-live-loot.md) prevalece sobre precondiciones y recorridos API históricos para las nuevas sesiones. La evidencia `e370775` de abajo no acredita live1. Registrar versiones, SHA y entorno realmente probado; cross-build no equivale a carga nativa. Se conserva QA de funciones API manuales.
+
+- Sin clave API: carga → presencia → inicio → muestra → cierre → recovery → render. Cualquier consulta autenticada automática falla; inventario/cartera manuales y conexión explícita funcionan. Catálogo/precios públicos son canales distintos.
+- Cargar addon Nexus real en Fedora/GE-Proton y Windows; Windows con Blish necesita productor Nexus local. Sin Nexus, presencia sigue pero fuente aparece ausente. Arranque autónomo y reapertura Hebra requieren evidencia propia.
+- Fixture `0 → 2 → 4`: dos filas `+2`, cuatro observados y valoración coherente. Reordenar no cambia cantidades; disminución tiene causa desconocida. Baselines no son botín; monedas/MF sin cobertura son desconocidos, no cero.
+- Contexto equivalente entre begin/rows/end conserva lote/época; cambio real incluso con retorno invalida época sin terminar conexión. Heartbeat vivo con muestras antiguas abre hueco, detiene tiempo observado y no activa API fallback.
+- Framing/límites/timeout adversos del contrato. Sin end, con fallo de almacén o lease perdido no hay stored/UI/avisos. Retry idéntico tras ACK perdido, incluido cursor 0, no duplica ni renueva frescura. Dos productores no mezclan filas.
+- Recuperación por canal: partial invalida solo su baseline; siguiente completa restablece sin delta y posterior compara. Huecos independientes cierran sin contar tiempo perdido ni descontar doblemente solapamientos. Cierre conserva extremo final y moneda desconocida.
+- Cerrar/guardar/reabrir/exportar conserva todas las filas/sumas; runtime v3/notas 1–6 legibles, schema 7 preserva texto humano. Avisos positivos valorados una vez; baseline/replay/incompletos no avisan.
+- Timeline/resumen/gráfica/objetivos/HUD con cero/una/muchas filas, cantidades grandes, nombres largos, icono fallido, anchuras pequeñas, claro/oscuro, teclado y contraste medido. Gráfica/tabla/exportación comparten instantánea de precio y no interpolan huecos.
+
+Casos discriminantes y comandos existentes: SPEC-live-loot §11. Monedas/MF siguen dentro del objetivo: ausencia de cobertura no acredita implementación. La [sonda externa](audit/live-loot-evidence-provenance.md) solo avala su candidato; QA dentro de Nexus y Windows siguen pendientes. En nuevas sesiones, salir de un mapa no las cierra: rige toda la conexión y su gracia de diez minutos.
+
 ## Estado y alcance
 
 Este protocolo cubre H6.8/H6.9 y recoge las dieciséis pruebas de aceptación de la sección 8 de la
@@ -22,7 +37,7 @@ Para todas las pruebas:
    commit (`git rev-parse HEAD`), versión de Obsidian, sistema operativo y plataforma (Fedora con
    Proton / Windows nativo con Blish HUD para el clan — macOS con CrossOver queda fuera de esta ronda
    salvo que David lo pida).
-3. Crear un secreto de Obsidian con una clave de pruebas (`account`, `characters`, `inventories`,
+3. Solo para pruebas API manuales/legacy, crear un secreto de Obsidian con una clave de pruebas (`account`, `characters`, `inventories`,
    `builds` como mínimo).
 4. Configurar una carpeta de salida portable en Ajustes.
 5. Registrar timestamps en UTC. Conservar solo: rutas de notas, SHA-256 de ficheros, estado visible,

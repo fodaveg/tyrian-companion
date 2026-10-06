@@ -1,0 +1,22 @@
+{
+  "symptom": "First inventory candidate produced zero objects despite 496 non-null owner-linked slots",
+  "root_cause": "Inventory is multi-section: +a8/count+b4 is location4; carried inventory location3 is +c8/count+d4. Filter location3 correctly excluded the wrong section.",
+  "corrected_prior_assertion": "The statement main inventory array+a8 was incorrect. Owner identity alone does not identify the carried section; vslot218 count-by-definition consumes section4.",
+  "static_evidence": {
+    "location_getter": "RVA13c45d0: WORD[item+48]&15",
+    "location3_assertion": "RVA13c4260, assertion string RVA225b950 ITEM_LOCATION_INVENTORY",
+    "count_switch": "RVA11ee310 jump table RVA11ee3a4: input3->RVA11ee33d=count+d4; input4->RVA11ee348=count+b4",
+    "location3_index_getter": "vslot190 RVA11ee3d0 -> array+c8, stride8/count+d4",
+    "location4_index_getter": "vslot168 RVA11ee080 -> array+a8, stride8/count+b4"
+  },
+  "live_evidence": {
+    "incorrect_section": "inventory-location-live.json:570slots,496objects,alllocation4,owner matched;22104B no IDs/qty",
+    "correct_section": "inventory-location3-live.json:512slots,306objects,alllocation3,owner matched;16236B no IDs/qty"
+  },
+  "candidate": "inventory_reader_v2.py",
+  "candidate_sha256": "805da35cba54886d6c48c6a7ceaea0cb40c15ff80266660d1daedfbd6c610df3",
+  "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "preserved_prior_candidate": "inventory_reader.py SHA2cf53e858faad7dd85e9516a7adf480cdf2cecf81cff3b9e9a06e53578bd7eb4 unchanged",
+  "tests": "python3 test_inventory_reader_v2.py:16tests PASS; includes location4 array never read and errors before baseline; py_compile exit0",
+  "boundary": "No live item IDs/quantities read by author for corrected candidate; root review and real precheck/listener pending. Five-minute listener records inventory deltas, which require user action correlation to establish acquisition."
+}

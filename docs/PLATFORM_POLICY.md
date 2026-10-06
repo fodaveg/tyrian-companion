@@ -1,16 +1,22 @@
 # Política de plataformas e integraciones
 
-Este documento fija las decisiones H0.4 y H0.6 vigentes desde el 14 de agosto de 2026. El
-MVP sigue siendo un plugin de Obsidian para escritorio y obtiene la evidencia de juego
-exclusivamente de la API oficial de Guild Wars 2.
+Este documento conserva las decisiones H0.4/H0.6 y explicita la autorización posterior de David del **6 de octubre de 2026**: las nuevas sesiones obtienen muestras del lector propio y pasivo de Nexus, según [SPEC-live-loot](SPEC-live-loot.md). La API autenticada queda para inventario/cartera manuales y comprobación explícita de conexión. El núcleo se comparte entre Hebra y Obsidian para escritorio.
+
+## Captura pasiva de Nexus autorizada el 6 oct 2026
+
+Esta decisión **sustituye la restricción API-only de producción para las sesiones**. Permite únicamente lectura pasiva por el addon cargado de forma ordinaria en Nexus: sin escrituras en memoria, llamadas a getters del juego, hooks nuevos, suspensión de hilos, ptrace, inyección adicional ni automatización. Solo el perfil y SHA de juego admitidos por el contrato pueden producir muestras; un perfil desconocido falla cerrado. No se habilita un helper nuevo ni se modifica la política específica H8 que figura más abajo.
+
+La implementación de producción live1 y su QA siguen pendientes. La evidencia existente es una sonda externa en Fedora con GE-Proton 11-7, sobre `Gw2-64.exe` SHA-256 `27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c`; no acredita carga de Nexus, bootstrap dentro del addon ni funcionamiento Windows. Véanse [audit histórico](audit/2026-10-06-loot-memory-live.md) y [procedencia](audit/live-loot-evidence-provenance.md).
+
+Describir esta frontera no implica aprobación de ArenaNet ni garantiza compatibilidad futura con su política de terceros. Se conservan privacidad, integridad, compatibilidad y QA del proyecto. Los apartados históricos API-only siguientes se aplican a sus módulos legacy; no permiten recuperar consultas autenticadas automáticas en el recorrido live.
 
 ## Matriz de plataformas
 
 | Prioridad | Entorno de juego | Alcance del MVP | Criterio de release |
 | --- | --- | --- | --- |
-| Primaria | Linux con Steam/Proton | Conexión, sesiones manuales, detección asistida por API, recovery y artefactos Vault | La matriz funcional completa es bloqueante. No se publica con pérdida de datos, credenciales expuestas o un flujo obligatorio roto. |
-| Secundaria | macOS con CrossOver | El mismo contrato API-only, sin integración con el proceso de CrossOver | Son bloqueantes los fallos de datos, privacidad, conexión, lifecycle o recovery. Una limitación exclusiva de presentación puede documentarse sin prometer paridad visual inmediata. |
-| Beta | Windows | El mismo contrato API-only, distribuido como soporte experimental | Debe pasar instalación, conexión, sesión manual, recovery y escritura segura. Un defecto exclusivamente Windows puede quedar conocido durante la beta; nunca se relajan privacidad, integridad ni la prohibición de operar sobre la cuenta. |
+| Primaria | Linux con Steam/Proton | Nexus como fuente live, presencia automática, recovery y artefactos Hebra/Vault; inventario API manual | La matriz funcional completa es bloqueante. No se publica con pérdida de datos, credenciales expuestas o un flujo obligatorio roto. |
+| Secundaria | macOS con CrossOver | Funciones manuales API existentes; captura live bajo CrossOver todavía no acreditada | Son bloqueantes los fallos de datos, privacidad, conexión, lifecycle o recovery. Una limitación exclusiva de presentación puede documentarse sin prometer paridad visual inmediata. |
+| Beta | Windows | Funciones manuales API existentes; para sesiones live, productor Nexus local y consumidor Blish HUD | Debe pasar instalación, conexión, sesión manual, recovery y escritura segura. Un defecto exclusivamente Windows puede quedar conocido durante la beta; nunca se relajan privacidad, integridad ni la prohibición de operar sobre la cuenta. |
 
 Excepción decidida por David el 24 sep 2026: el puente con los addons del juego en **Windows con
 Blish HUD** deja de ser beta y tiene que funcionar, porque es la plataforma de los compañeros del
@@ -207,32 +213,17 @@ terceros de ArenaNet. Sin addon autenticado, el canal falla en el informe del em
 éxito; no hay cola ni replay al reconectar, la cola durable de Obsidian ya guarda el histórico de
 avisos. Contrato de mensajes en [SPEC del puente](SPEC-puente-ingame.md).
 
-## Límite del MVP: solo API
+## Fuentes de sesiones e inventario manual
 
-El MVP consulta casi exclusivamente endpoints oficiales de Guild Wars 2. Las únicas excepciones,
-todas revisadas y documentadas en sus propias secciones, son la semilla histórica, el icono del
-panel de precios y el piloto en la nota: el endpoint público de datawars2 (`api.datawars2.ie`, H13.2,
-H9.1 y H9.2) y el icono servido por `render.guildwars2.com` que la propia API oficial referencia en
-el campo `icon` de `/v2/items`. La carga del plugin y la apertura de una vista o de una nota
-permanecen sin red; una conexión, una captura manual, el armado explícito de la detección asistida,
-la activación explícita del histórico público de precios y la carga explícita de una serie en su
-panel, o el render de una nota que contiene el bloque `tyrian-price-history` de uno de los cuatro
-objetos del piloto H9.2, son las únicas puertas de entrada a las consultas ya descritas en
-[Arquitectura](ARCHITECTURE.md). «Sin red» aquí es sin petición saliente a un servicio, propio o de
-terceros: el `bind` loopback en `127.0.0.1` que H13.9/H13.15 abre en la carga cuando `ingame` ya
-estaba activado no contacta nada fuera de la máquina, no es una consulta y no es una excepción a
-esta regla.
+La fuente live de sesiones es Nexus, mediante negociación `live1` sobre el puente autenticado. Las observaciones solo llegan al consumidor después del commit durable; ninguna línea parcial es evidencia. Presencia por Blish sin productor Nexus no sustituye la fuente de objetos. La API autenticada no se consulta automáticamente desde el ciclo de sesión ni cuando falta una muestra. Inventario/cartera manuales y comprobación explícita de conexión conservan API oficial y permisos.
 
-El plugin no lee Mumble Link por sí mismo ni depende de Steam, Proton o CrossOver para obtener
-evidencia. Su evidencia de cuenta y botín llega únicamente por API; un aviso dentro del juego se ve,
-y el contexto de juego se lee, por un addon de Nexus o un módulo de Blish HUD, instalados aparte por
-el usuario, que se conectan al servidor TCP en loopback descrito arriba. Esos addons son terceros
-que corren dentro del proceso del juego o al lado de él, dentro de lo que la política de addons de
-terceros de ArenaNet permite, y leen el contexto de lo que su anfitrión ya expone; sus repositorios
-son independientes de este y el plugin sigue sin inspeccionar el cliente ni leer su memoria.
-Inicio y parada asistidos siguen siendo propuestas: una persona debe aceptarlas o descartarlas.
-Vender, listar, abrir, consumir, mover, fabricar, canjear o ejecutar cualquier otra operación
-dentro del juego o sobre la cuenta queda siempre fuera del companion.
+Catálogo y precios públicos mantienen los clientes, cachés, cuotas y hosts autorizados: API oficial, `api.datawars2.ie` para las semillas expresamente descritas y `render.guildwars2.com` para iconos oficiales. Esta autorización no abre hosts nuevos. El `bind` del puente en `127.0.0.1` es local, no una petición a terceros. El plugin no inspecciona por sí mismo el proceso; el lector pertenece al addon Nexus y solo envía el DTO cerrado del contrato.
+
+Vender, listar, abrir, consumir, mover, fabricar, canjear o ejecutar operaciones dentro del juego o sobre la cuenta sigue fuera del companion. Inicio y cierre por presencia son automáticos según su lifecycle; no necesitan aprobación manual ni modifican el juego.
+
+## Excepción de investigación — captura local de objetos (6 oct 2026)
+
+Este título conserva la referencia de los documentos de sonda históricos, copiados sin alterar sus recibos. La investigación externa fue evidencia acotada, no certificación del addon. Su procedencia consta en [el registro de evidencia](audit/live-loot-evidence-provenance.md). La autorización de producción vigente es la sección «Captura pasiva de Nexus autorizada el 6 oct 2026» y [SPEC-live-loot](SPEC-live-loot.md); no se importa una excepción de investigación como permiso abierto de runtime.
 
 ## Histórico público de precios H9.1
 
@@ -489,7 +480,7 @@ matriz completa continúa `qa=pending`; el contrato exacto H8.3 está en
 
 Para observar el estado o la actividad del jugador en runtime solo se admiten:
 
-1. La API oficial de Guild Wars 2.
+1. La API oficial de Guild Wars 2: autenticada solo para inventario/cartera manuales o conexión explícita; catálogo y precios públicos conforme a sus políticas.
 2. La interfaz oficial Mumble Link, exclusivamente mediante el helper opcional de v2 anterior.
 3. El contexto de juego que envían los addons de Nexus y de Blish HUD por el puente autenticado
    (H18.23): mapa, personaje y estado de juego (gameplay, carga o selección de personaje), tal como
@@ -499,16 +490,16 @@ Para observar el estado o la actividad del jugador en runtime solo se admiten:
    combate, una desconexión o un cambio de mapa no prueban por sí solos inactividad, y una conexión
    cerrada es pérdida de presencia con gracia, no el cierre del juego.
 
-No se admiten scraping de estado personal, lectura de logs o memoria del cliente, inyección,
-hooks, interceptación de tráfico, simulación de entrada, macros, bots ni automatización mediante
-herramientas de Steam, Proton, CrossOver o Windows. Las fuentes editoriales usadas para modelos
+4. Las muestras agregadas del lector propio Nexus por `live1`, bajo la autorización pasiva del 6 oct 2026 y el perfil cerrado de [SPEC-live-loot](SPEC-live-loot.md). No se reciben volcados de memoria ni punteros.
+
+Fuera de esa lectura pasiva acotada, no se admiten scraping de estado personal, lectura de logs o memoria del cliente, inyección adicional a la carga ordinaria del addon Nexus, hooks, interceptación de tráfico, simulación de entrada, macros, bots ni automatización mediante herramientas de Steam, Proton, CrossOver o Windows. Las fuentes editoriales usadas para modelos
 estáticos deben seguir siendo citadas, fechadas y revisadas como evidencia offline; no se convierten
 en una integración runtime ni en autoridad sobre la cuenta.
 
 Ningún componente puede ejecutar operaciones desatendidas. Una recomendación solo explica una
 acción que la persona realiza manualmente dentro del juego. El polling armado, el cálculo local y
 la persistencia de evidencia no son autorización para cambiar el estado del juego, de la cuenta o
-de una sesión sin la confirmación prevista por su lifecycle.
+de una sesión fuera de su lifecycle; las transiciones automáticas por presencia ya autorizadas no requieren confirmación.
 
 ## Métricas del piloto
 

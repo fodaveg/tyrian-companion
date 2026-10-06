@@ -1,0 +1,1 @@
+{"event":"self_test","ok":true,"ntstatus":"0x00000000","returned":48,"teb_matches":true,"positive_win32":0,"invalid_read_rejected":true,"invalid_win32":299,"fixture":true,"null_fixture":true,"range_guard":true,"index_guard":true,"budget_guard":true}

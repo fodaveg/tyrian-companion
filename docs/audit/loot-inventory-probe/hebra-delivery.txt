@@ -1,0 +1,6 @@
+- **note_id:** `d6e87335-1f8c-4b80-aa4b-748ab35c5fbf`
+- **Operación:** sección única añadida y subida a Hebra, con el informe íntegro y todo el contenido anterior preservado.
+- **Verificación:** relectura exacta; comprobados todos los puntos solicitados.
+- **Capturas:** no adjuntadas; la herramienta disponible requiere base64.
+
+[Ver nota](https://app.hebra.pro/note/d6e87335-1f8c-4b80-aa4b-748ab35c5fbf).

@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Champiñón",
+    "description": "Ingrediente",
+    "type": "CraftingMaterial",
+    "level": 0,
+    "rarity": "Basic",
+    "vendor_value": 1,
+    "game_types": [
+      "Activity",
+      "Wvw",
+      "Dungeon",
+      "Pve"
+    ],
+    "flags": [
+      "NoSalvage"
+    ],
+    "restrictions": [],
+    "id": 12147,
+    "chat_link": "[&AgFzLwAA]",
+    "icon": "https://render.guildwars2.com/file/2713C5787FCB403F25A4F7144D2B1E52291E3178/219399.png"
+  }
+]

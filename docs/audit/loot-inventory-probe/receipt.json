@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-06",
+  "scope": "isolated direct loot feasibility proof; no production integration",
+  "game_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "runtime": "Fedora Linux, active GE-Proton11-7, Linux PID 855956",
+  "v2": {
+    "source_sha256": "805da35cba54886d6c48c6a7ceaea0cb40c15ff80266660d1daedfbd6c610df3",
+    "tests": 16,
+    "tests_result": "PASS",
+    "command": "python3 inventory_reader_v2.py --pid 855956 --context 0x19c8de0 --seconds 300 --output inventory-v2-live-acquisition-01.jsonl",
+    "exit_code": 0,
+    "samples": 507,
+    "valid_snapshots": 507,
+    "bytes_read": 31203621,
+    "user_confirmed_first_acquisition": true,
+    "user_screenshot_second_acquisition": {
+      "source": "/tmp/codex-clipboard-LeCy3h.png",
+      "objects": "2 Champiñones",
+      "currency_not_captured": "6 magia volátil"
+    },
+    "captured_id": 12147,
+    "quantity_changes": [
+      [
+        0,
+        2
+      ],
+      [
+        2,
+        4
+      ]
+    ],
+    "additional_user_screenshot_drf": {
+      "timeline": "/tmp/codex-clipboard-7KS3Aj.png",
+      "summary": "/tmp/codex-clipboard-rlFsiQ.png",
+      "comparison": "two events2each; summary4; currenciesnotoursource",
+      "drf_disabled_control_performed": false
+    }
+  },
+  "v3": {
+    "source_sha256": "9007515514fb22f6caf4af22e2afa5bc92e7203ba33715f451cb658623a2e64d",
+    "tests": 19,
+    "tests_result": "PASS",
+    "command": "python3 inventory_reader_v3.py --pid 855956 --context 0x19c8de0 --seconds 2 --output inventory-v3-live-precheck-01.jsonl",
+    "exit_code": 0,
+    "samples": 3,
+    "valid_snapshots": 3,
+    "bytes_read": 209841,
+    "baseline_supported_types": 254,
+    "baseline_unsupported_types": 0,
+    "acquisition_capture_claimed": false
+  },
+  "catalog": {
+    "url": "https://api.guildwars2.com/v2/items?ids=12147&lang=es",
+    "authentication": "none, public catalog",
+    "id": 12147,
+    "name": "Champiñón"
+  },
+  "projection": "baseline full inventory omitted; summaries, captured ID quantity, deltas, errors and finish retained",
+  "temporary_original_directory": "/tmp/tyrian-loot-memory-stage2-20261006",
+  "temporary_original_sha256": {
+    "inventory-v2-live-precheck-02.jsonl": "06fe69e32c864551b4aaa6d96f2d9e8a48d4f2a956f167fcb8cbc854ebd01f1b",
+    "inventory-v2-live-acquisition-01.jsonl": "8fab2d7d1b30510c21dafacbb1698d04c1f3bc2968f4c98e9c7315fb2181355c",
+    "inventory-v3-live-precheck-01.jsonl": "1ddb444a8066cc1fff2bf55e5aa0790ad49c820d7a6899fc11d1dcdf82088639"
+  },
+  "limitations": [
+    "inventory changes are not cause-labeled game events",
+    "currencies not captured",
+    "no Nexus addon or Tyrian session consumer implemented",
+    "single game build, quantities limited to250 per supported stack",
+    "requested100ms interval is not actual resolution"
+  ],
+  "files": {
+    "acquisition-items-catalog-es.json": "4275343b086d227a53ebbb7166121c2897c2473a740c72f276c839ec7d98e807",
+    "inventory-reader-v2-tests.json": "93604f203230e51c4cb2fca4ccbba3d49d6935ea8cb41ff828bf6224d9b3cb17",
+    "inventory-reader-v3-tests.json": "af4fc676688889d9585581503c1d0d88d28acaed1bacab19ce9e1644932223c1",
+    "inventory-route-correction.json": "d7f252feccef54aae988c8fef28b077cae07aab5c1aa8614344266ce1c2499d4",
+    "inventory-v2-live-acquisition-01.jsonl": "c7ed05c1f088165f98d6e80b19032bd1808fb3850e96a65160f69b0ad0da523a",
+    "inventory-v2-live-precheck-02.jsonl": "2817eced1ee0e696b553d3348c86ec2c52a3398f576e9fe76ee6502c03c720fa",
+    "inventory-v3-live-precheck-01.jsonl": "86483e236f5bacfc06f88dd14dd1ba4cee7edd2f7ce311a1170f556d4c315258",
+    "inventory_reader_v2.py": "805da35cba54886d6c48c6a7ceaea0cb40c15ff80266660d1daedfbd6c610df3",
+    "inventory_reader_v3.py": "9007515514fb22f6caf4af22e2afa5bc92e7203ba33715f451cb658623a2e64d",
+    "state_reader.py": "693cec68425b55bad434651d6712cbe9534008bbe291cf4195e17e9ea1dd39d9",
+    "test_inventory_reader_v2.py": "4a8e2f86b24fbbf7e48db60bb96080be68c133ad0eaada2beb35ad6ba7e8e7f4",
+    "test_inventory_reader_v3.py": "0906d22cdb24948f5ab9e7f82a562f27225665023b6b42d89ca3801cd5e985cd",
+    "test_state_reader.py": "5c8b2082d2dbc1b633e872d309386b0b5e0776b755c43bcbfa3c8c468d47c79f",
+    "hebra-delivery.txt": "8c4c37e6326dbf5a4c56baf2e82ffe5433e59e3f242bb5da2ae075234244e12e"
+  },
+  "report_sha256": "c7ccf3c6227c74a50449284207d042147550aec976931836d17dd44aceda8d26",
+  "hebra_note_id": "d6e87335-1f8c-4b80-aa4b-748ab35c5fbf",
+  "hebra_delivery_verified": true,
+  "ui_screenshots_attached": false
+}

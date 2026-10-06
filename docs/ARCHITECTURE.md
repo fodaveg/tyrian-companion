@@ -1,5 +1,17 @@
 # Arquitectura
 
+## Arquitectura requerida para live1 (6 oct 2026)
+
+La autorización posterior a API-only se concreta en [SPEC-live-loot](SPEC-live-loot.md). **Este bloque fija implementación pendiente**, sin atribuir nuevos módulos al candidato documental. Los apartados H1–H18 describen código y evidencia históricos y no autorizan consultas privadas automáticas para live.
+
+Flujo requerido: lector pasivo Nexus → codec/ensamblador autenticado del puente → commit atómico bajo lease en runtime local → ledger/proyección compartida → timeline/resumen/gráfica/exportación de Hebra/Obsidian y HUD farm1. ACK `stored` solo tras persistir cursor, muestra y journal. Una caída, lote incompleto o escritura rechazada no publica evidencia, precio ni aviso; retry idéntico no renueva frescura ni duplica efectos.
+
+Una sola fuente Nexus por sesión, separada de presencia y sin asociar `instance` a cuenta API. Contexto equivalente conserva época; cambio real la invalida. Cada canal pierde/recupera cobertura por separado, con baseline local y huecos durables. Gracia de conexión: diez minutos. Cierre y recovery usan lo comprometido, sin snapshot API final.
+
+Runtime live v4 usa almacén y cercado existentes; no fabrica `StorageSnapshot`. Notas schema 7 conservan regiones humanas, CAS y receipt antes de liberar datos. Lectores legacy permanecen, sin reescritura ni mezcla estadística silenciosa. Paginar UI no trunca exportación. Catálogo/precios públicos conservan clientes; consultas privadas exclusivamente manuales para inventario/cartera o conexión explícita.
+
+H8 mantiene su isla y garantías; no se conecta un helper ni se introduce proveedor o servicio nuevo. Windows conserva Nexus productor y Blish consumidor. La [evidencia externa](audit/live-loot-evidence-provenance.md) no acredita todavía bootstrap Nexus, runtime Hebra ni QA Windows.
+
 ## Capas
 
 `src/runtime/tyrian-companion-core.ts` es la composición de Tyrian, sin Obsidian: `createTyrianRuntime(host)` construye los servicios y registra las vistas, los comandos, el ribbon con su menú, el bloque de código, el panel de ajustes y los avisos, todo por `TyrianHost` (`src/host/tyrian-host.ts`). `src/main.ts` es solo el adaptador de Obsidian: crea el `ObsidianHost` (`src/host/obsidian/`), le pasa ese host a la misma composición y reenvía `onload`/`onunload`. Hebra arranca la misma composición con su propio host: `src/host/hebra/` es el adaptador a la API pública de plugins de Hebra (`hebra-plugin-api` v1), y su entrada `src/host/hebra/entry.ts` exporta `activate(api)`, que `npm run build:host-esm` empaqueta en `hebra-main.mjs` para que Hebra lo instale desde la release como plugin externo. `src/runtime/index.ts` sigue siendo la entrada neutral que compilaba Hebra mientras tenía Tyrian dentro. Las capacidades opcionales del host viven en `TyrianHost.capabilities`; omitida una, vale «soportada»: `managedAssets: false` (Hebra, sin Bases en su primera versión) oculta la sección de assets de Ajustes y desactiva su instalación, mudanza, reparación, borrado y el auto-update tras el sync de inventario.
