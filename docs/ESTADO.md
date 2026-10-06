@@ -1,5 +1,18 @@
 # Estado
 
+## 0.6.1 preparada: nombres e iconos de sesiones restauradas (6 oct 2026)
+
+**Candidato en rama `claude/sesion-entidades-20261006`; nada publicado ni etiquetado.** Corrige que, tras
+recargar el plugin, los objetos de una sesión restaurada salieran como «Objeto <id>» con marcador «?».
+
+- Verificado: `src/runtime/live-session-entities-restored.test.ts` (5 tests, núcleo real más vista real) con un
+  espía de transporte que registra cualquier petición HTTP: caché con los tres objetos (sesión terminada y en
+  curso), caché vacía, caché parcial y modo consulta dan cero peticiones al cargar, restaurar y pintar. Un test
+  del servicio cubre `readCachedItems`. Vitest acotado de los ficheros afectados 109/109, `tsc` limpio,
+  eslint sin avisos en lo tocado, censo de observabilidad PASS, `i18n:unused` y contrato de texto fuente PASS.
+- No verificado: el gate completo (lo corre la raíz), la publicación, la instalación en Hebra y Obsidian y el
+  comportamiento real de la caché de catálogo dentro de Hebra, que solo se ha probado con dobles.
+
 ## Canal 0.6.0 publicado: pestaña Sesión y ajustes simplificados (6 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.0](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.0)

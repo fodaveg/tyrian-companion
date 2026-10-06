@@ -1,5 +1,20 @@
 # Changelog
 
+## Release beta 0.6.1 - los objetos de una sesión restaurada recuperan nombre e icono
+
+Release por tag `0.6.1`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación en
+Hebra y Obsidian y sesión real con Nexus).
+
+- Qué se veía: tras recargar el plugin, la rejilla «Objetos» y la cronología de una sesión restaurada
+  mostraban casillas con «?» y «Objeto <id>» en lugar del icono y el nombre. Ya ocurría en 0.5.0, aunque
+  allí pasaba desapercibido.
+- Causa: el nombre y el icono solo vivían en memoria y los rellenaban las observaciones en vivo; tras
+  recargar, nada los volvía a rellenar.
+- Arreglo: al pintar, el panel lee nombre e icono de la caché local de catálogo, con cualquier
+  antigüedad. No se hacen peticiones al cargar ni al pintar; la red sigue naciendo solo tras una
+  observación en vivo.
+- Límite: un objeto que nunca estuvo en la caché sigue como «Objeto <id>» hasta la siguiente observación.
+
 ## Release beta 0.6.0 - pestaña Sesión y ajustes simplificados
 
 [Canal 0.6.0 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.0);
