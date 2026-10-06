@@ -276,4 +276,70 @@ describe('live1 authenticated atomic consumer', () => {
 		expect(JSON.stringify(next.lines)).not.toContain(failure.message); await h.server.close();
 	});
 
+	it('does not complete server close until a pending commit and its disconnect gap are durable', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const client = h.connect(); await open(client);
+		const commit = deferred<LiveIngameAckStatus>(); const gap = deferred<void>(); h.commit.mockReturnValueOnce(commit.promise); h.gap.mockReturnValueOnce(gap.promise);
+		sample(client); await flush(); let closed = false; const closing = h.server.close().then(() => { closed = true; }); await flush();
+		expect(closed).toBe(false); expect(h.gap).not.toHaveBeenCalled();
+		commit.resolve('stored'); await flush(); expect(h.gap).toHaveBeenCalledTimes(1); expect(closed).toBe(false);
+		gap.resolve(); await closing; expect(closed).toBe(true); expect(client.lines.some((line) => line.type === 'live_ack')).toBe(false);
+		const replacement = await bridge(); const next = replacement.connect(); await open(next); expect(next.lines.at(-1)).toMatchObject({ type: 'live_ready', status: 'ready' }); await replacement.server.close();
+	});
+
+	it('anchors sample freshness to reception rather than a delayed commit completion', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const client = h.connect(); await open(client);
+		vi.advanceTimersByTime(1_000); const commit = deferred<LiveIngameAckStatus>(); h.commit.mockReturnValueOnce(commit.promise); sample(client); await flush();
+		vi.advanceTimersByTime(3_000); commit.resolve('stored'); await flush();
+		vi.advanceTimersByTime(1_999); await flush(); expect(h.gap).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1); await flush(); expect(h.gap).toHaveBeenCalledWith(expect.objectContaining({ reason: 'source_stale' })); await h.server.close();
+	});
+
+	it('retains a failed gap and prevents a later open until the same obligation is durably reconciled', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const client = h.connect(); await open(client);
+		const failure = new Error('gap persistence unavailable'); h.gap.mockRejectedValueOnce(failure); h.gap.mockRejectedValueOnce(failure);
+		client.send('context', { ...context, mapId: 1 }); await flush(); expect(h.gap).toHaveBeenCalledTimes(1);
+		client.live('live_open', { epoch: nextEpoch, build: LIVE_INGAME_BUILD, profile: LIVE_INGAME_PROFILE }); await flush();
+		expect(h.open).toHaveBeenCalledTimes(1); expect(h.gap).toHaveBeenCalledTimes(2); expect(h.gap.mock.calls[1]?.[0]).toEqual(h.gap.mock.calls[0]?.[0]);
+		client.live('live_open', { epoch: nextEpoch, build: LIVE_INGAME_BUILD, profile: LIVE_INGAME_PROFILE }); await flush();
+		expect(h.gap).toHaveBeenCalledTimes(3); expect(h.open).toHaveBeenCalledTimes(2); expect(client.lines.at(-1)).toMatchObject({ type: 'live_ready', epoch: nextEpoch, status: 'ready' }); await h.server.close();
+	});
+
+	it('drains previously disconnected source work and rejects close when its retained gap still fails', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const client = h.connect(); await open(client);
+		const commit = deferred<LiveIngameAckStatus>(); h.commit.mockReturnValueOnce(commit.promise); sample(client); await flush(); client.destroy();
+		const gapError = new Error('still unavailable'); h.gap.mockRejectedValue(gapError); const closing = h.server.close();
+		const rejection = expect(closing).rejects.toThrow('Live source gap has not been durably stored.');
+		commit.resolve('stored'); await rejection; expect(h.gap).toHaveBeenCalledTimes(2); expect(h.gap.mock.calls[1]?.[0]).toEqual(h.gap.mock.calls[0]?.[0]);
+		h.gap.mockResolvedValue(undefined); await h.server.close(); expect(h.gap).toHaveBeenCalledTimes(3); expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('captures diagnostic sink exceptions locally and reports them through close without a false receipt', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const client = h.connect(); await open(client);
+		const observerError = new Error('observer failure'); h.error.mockImplementation(() => { throw observerError; });
+		h.commit.mockRejectedValueOnce(new Error('commit failure')); sample(client); await flush();
+		expect(client.lines.at(-1)).toMatchObject({ type: 'live_ack', status: 'storage_unavailable' });
+		await expect(h.server.close()).rejects.toBe(observerError); expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('rejects new connections while close waits for durable source work', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const client = h.connect(); await open(client);
+		const commit = deferred<LiveIngameAckStatus>(); h.commit.mockReturnValueOnce(commit.promise); sample(client); await flush();
+		const closing = h.server.close(); const late = h.connect(); expect(late.lines).toEqual([]); expect(h.server.clientCount()).toBe(0);
+		commit.resolve('stored'); await closing;
+	});
+
+	it('expires immediately when the complete reception date is already stale at durable completion', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const client = h.connect(); await open(client);
+		const commit = deferred<LiveIngameAckStatus>(); h.commit.mockReturnValueOnce(commit.promise); sample(client); await flush();
+		vi.setSystemTime(Date.now() + 6_000); commit.resolve('stored'); await flush();
+		expect(client.lines.at(-1)).toMatchObject({ type: 'live_ack', status: 'stored' }); expect(h.gap).toHaveBeenCalledWith(expect.objectContaining({ reason: 'source_stale' })); await h.server.close();
+	});
+
+	it('does not let an unselected diagnostic failure invalidate the selected producer', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const owner = h.connect(); await open(owner); sample(owner); await flush();
+		const diagnostic = h.connect(3, 'nexus', 'AQEBAQEBAQEBAQEBAQEBAQ'); h.gap.mockRejectedValueOnce(new Error('unselected gap failure'));
+		diagnostic.live('live_status', { epoch: null, status: 'unavailable', reason: 'root_unavailable' }); await flush();
+		sample(owner, { cursor: 1, mode: 'sample', ms: 1 }); await flush(); expect(h.commit).toHaveBeenCalledTimes(2); expect(owner.lines.at(-1)).toMatchObject({ type: 'live_ack', status: 'stored', cursor: 1 }); await h.server.close();
+	});
+
 });

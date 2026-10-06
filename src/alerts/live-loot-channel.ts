@@ -17,6 +17,7 @@ interface LiveChannelOptions {
 	reject(code: IngameBridgeErrorCode): void;
 	claim(): boolean;
 	release(): void;
+	onDrained(): void;
 }
 
 /** One selected connection. Durable calls are serialized; context and transport remain responsive. */
@@ -26,6 +27,10 @@ export class LiveIngameChannel {
 	private generation = 0;
 	private closed = false;
 	private busy = false;
+	private operation: Promise<void> = Promise.resolve();
+	private draining: Promise<void> | null = null;
+	private observerFailure: unknown;
+	private observerFailed = false;
 	private releasePending = false;
 	private pendingGap: LiveIngameGap | null = null;
 	private queuedOpen: { message: LiveIngameOpen; generation: number } | null = null;
@@ -56,7 +61,22 @@ export class LiveIngameChannel {
 		this.generation += 1;
 		this.invalidate('disconnect');
 		this.queuedOpen = null;
-		if (!this.busy) this.options.release();
+		if (!this.busy && this.pendingGap === null) { this.options.release(); this.options.onDrained(); }
+	}
+
+	/** Shutdown cannot dispose the store while an accepted sample or its gap is still in flight. */
+	drain(): Promise<void> {
+		if (this.draining !== null) return this.draining;
+		this.draining = this.finishDrain();
+		return this.draining;
+	}
+	private async finishDrain(): Promise<void> {
+		try {
+			await this.operation;
+			if (this.pendingGap !== null) { this.run(async () => {}); await this.operation; }
+			if (this.pendingGap !== null) throw new Error('Live source gap has not been durably stored.');
+			if (this.observerFailed) throw this.observerFailure;
+		} finally { this.draining = null; }
 	}
 
 	receive(message: LiveIngameMessage, bytes: number): void {
@@ -91,14 +111,14 @@ export class LiveIngameChannel {
 		this.run(async () => {
 			let status;
 			try { status = await this.options.port.commit(sample); }
-			catch (error) { this.options.port.onError(error); status = 'storage_unavailable' as const; }
+			catch (error) { this.report(error); status = 'storage_unavailable' as const; }
 			// An ended sample may remain historical evidence after a context change. Its ACK never
 			// restores that invalidated epoch, and is never sent to a replacement connection.
 			if (!this.closed) this.options.send(liveIngameAckLine(this.options.nonce, sample.epoch, sample.cursor, status));
 			if (status !== 'stored') { this.invalidate(status === 'not_owner' ? 'source_missing' : 'storage_unavailable'); return; }
 			if (this.closed || this.assembler !== assembler || !assembler.isValid()) return;
 			assembler.stored();
-			if (!duplicate) this.armStale();
+			if (!duplicate) this.armStale(Date.parse(sample.observedAt));
 		});
 	}
 
@@ -116,6 +136,7 @@ export class LiveIngameChannel {
 		if (this.busy || this.pendingGap !== null) {
 			if (this.queuedOpen !== null && this.queuedOpen.message.epoch !== message.epoch) { this.options.reject('unexpected_message'); return; }
 			this.queuedOpen = { message: Object.freeze({ ...message }), generation: this.generation };
+			if (!this.busy) this.run(async () => {});
 			return;
 		}
 		this.epoch = message.epoch;
@@ -132,7 +153,7 @@ export class LiveIngameChannel {
 		this.run(async () => {
 			let status: LiveIngameReadyStatus;
 			try { status = await this.options.port.open(source); }
-			catch (error) { this.options.port.onError(error); this.releasePending = true; this.invalidate('storage_unavailable', true); return; }
+			catch (error) { this.report(error); this.releasePending = true; this.invalidate('storage_unavailable', true); return; }
 			if (status !== 'ready') this.releasePending = true;
 			if (this.closed || generation !== this.generation) return;
 			if (status === 'ready') {
@@ -166,22 +187,22 @@ export class LiveIngameChannel {
 	/** Drain a single diagnostic behind the current durable call, without an unbounded promise queue. */
 	private run(action: () => Promise<void>): void {
 		this.busy = true;
-		void (async () => {
+		this.operation = (async () => {
 			try {
 				await action();
 				while (this.pendingGap !== null) {
 					const gap = this.pendingGap;
-					this.pendingGap = null;
 					await this.options.port.gap(gap);
+					this.pendingGap = null;
 				}
 			} catch (error) {
 				this.queuedOpen = null;
-				this.pendingGap = null;
-				this.options.port.onError(error);
+				this.report(error);
 			}
 			finally {
 				this.busy = false;
-				if (this.closed || this.releasePending) this.options.release();
+				if (this.pendingGap === null && (this.closed || this.releasePending)) this.options.release();
+				if (this.closed && this.pendingGap === null) this.options.onDrained();
 				const queued = this.queuedOpen;
 				this.queuedOpen = null;
 				if (!this.closed && queued !== null && queued.generation === this.generation) this.open(queued.message);
@@ -189,12 +210,23 @@ export class LiveIngameChannel {
 		})();
 	}
 
-	private armStale(): void {
+	/** A disk delay does not change when the complete sample was received. */
+	private armStale(observedAtMs = this.options.now()): void {
 		if (this.staleTimer !== null) this.options.cancel(this.staleTimer);
+		const remaining = observedAtMs + LIVE_INGAME_STALE_MS - this.options.now();
+		if (remaining <= 0) { this.staleTimer = null; this.invalidate('source_stale'); return; }
 		this.staleTimer = this.options.schedule(() => {
 			this.staleTimer = null;
 			this.invalidate('source_stale');
-		}, LIVE_INGAME_STALE_MS);
+		}, remaining);
+	}
+	/** A throwing diagnostic sink cannot strand durable work or create an unhandled rejection. */
+	private report(error: unknown): void {
+		try { this.options.port.onError(error); }
+		catch (observerFailure) {
+			if (!this.observerFailed) this.observerFailure = observerFailure;
+			this.observerFailed = true;
+		}
 	}
 	private cancelBatch(): void {
 		if (this.batchTimer !== null) this.options.cancel(this.batchTimer);

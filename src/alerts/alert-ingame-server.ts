@@ -147,6 +147,8 @@ interface BridgeRuntime {
 	readonly pending: Set<BridgeConnection>;
 	readonly authenticated: Set<BridgeConnection>;
 	liveOwner: BridgeConnection | null;
+	readonly liveChannels: Set<LiveIngameChannel>;
+	closing: boolean;
 }
 
 const EMPTY_BYTES = new Uint8Array(0);
@@ -171,7 +173,7 @@ export async function startAlertIngameServer(
 	const runtime: BridgeRuntime = {
 		timer, bridge,
 		serverInstance: createIngameBridgeNonce((bytes) => { bridge.fillRandom(bytes); }),
-		pending: new Set(), authenticated: new Set(), liveOwner: null,
+		pending: new Set(), authenticated: new Set(), liveOwner: null, liveChannels: new Set(), closing: false,
 	};
 	const server = await listenWithRetry(
 		tcp, port, (connection) => { attachClient(connection, runtime); }, timer, retryDelaysMs,
@@ -192,12 +194,15 @@ export async function startAlertIngameServer(
 		broadcast: (line) => { broadcastLine(runtime.authenticated, line); },
 		broadcastAlert: (alertSeq, lineFor) => broadcastAlertLines(runtime.authenticated, alertSeq, lineFor),
 		close: async () => {
+			runtime.closing = true;
+			const liveChannels = [...runtime.liveChannels];
 			for (const connection of [...runtime.pending, ...runtime.authenticated]) {
 				cancelFarmingTimer(connection, runtime);
 				connection.live?.close();
 				connection.socket.destroy();
 			}
 			await server.close();
+			await Promise.all(liveChannels.map((channel) => channel.drain()));
 		},
 	};
 }
@@ -276,7 +281,7 @@ function broadcastAlertLines(
  * dropped at once, without an answer: a local process opening sockets in a loop gets nothing back.
  */
 function attachClient(socket: TyrianTcpConnection, runtime: BridgeRuntime): void {
-	if (runtime.pending.size >= INGAME_BRIDGE_MAX_PENDING_CONNECTIONS) { socket.destroy(); return; }
+	if (runtime.closing || runtime.pending.size >= INGAME_BRIDGE_MAX_PENDING_CONNECTIONS) { socket.destroy(); return; }
 	const connection: BridgeConnection = {
 		socket, phase: 'awaiting_hello', buffered: EMPTY_BYTES, nonce: null, version: 2, client: null,
 		sentAlertSeqs: new Set(), nextSeq: 0, farmingSubscribed: false, farmingSeq: 1, farmingTimer: null, live: null,
@@ -404,7 +409,7 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 		connection.socket.write(`${farmingIngameCapabilityLine(nonce)}\n`);
 	}
 	const live = runtime.bridge.live;
-	if (connection.version === 3 && connection.client === 'nexus' && live !== undefined) {
+	if (connection.version === 3 && connection.client === 'nexus' && live !== undefined && runtime.liveChannels.size < INGAME_BRIDGE_MAX_AUTHENTICATED_CONNECTIONS) {
 		connection.live = new LiveIngameChannel({
 			sourceInstance: hello.value.instance, nonce, port: live,
 			now: () => runtime.bridge.now(),
@@ -418,7 +423,9 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 				return true;
 			},
 			release: () => { if (runtime.liveOwner === connection) runtime.liveOwner = null; },
+			onDrained: () => { if (connection.live !== null) runtime.liveChannels.delete(connection.live); },
 		});
+		runtime.liveChannels.add(connection.live);
 		connection.socket.write(`${liveIngameCapabilityLine(nonce)}\n`);
 	}
 	armDeadline(connection, runtime, runtime.bridge.livenessTimeoutMs ?? INGAME_BRIDGE_LIVENESS_TIMEOUT_MS, 'liveness_timeout');

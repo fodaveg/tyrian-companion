@@ -2,9 +2,9 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 499,
+		"catch_clause": 500,
 		"promise_catch": 53,
-		"void_expression": 110,
+		"void_expression": 109,
 		"callback_registration": 206
 	},
 	"files": {
@@ -1553,9 +1553,9 @@
 				{
 					"id": "ca9c7692b816ad7dd7fa1cb93af354e5fc3c122c",
 					"kind": "catch_clause",
-					"line": 498,
+					"line": 505,
 					"column": 4,
-					"endLine": 500,
+					"endLine": 507,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -15765,12 +15765,12 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "aa75817d078b5c400fc6c773929b09fb6ad30504",
+					"id": "6f97b9896979ad634416a9b76006c3be69c59472",
 					"kind": "catch_clause",
-					"line": 94,
+					"line": 114,
 					"column": 4,
-					"endLine": 94,
-					"endColumn": 96,
+					"endLine": 114,
+					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -15781,12 +15781,12 @@
 					"reason": "Allowlisted catch_clause: The \"receive\" boundary uses \"local_recovery\" to report commit rejection through the host-local onError sink, return storage_unavailable, and invalidate the epoch; it never fabricates stored or exposes exception text. Verified recovery: \"local_recovery\" in \"receive\"."
 				},
 				{
-					"id": "c9d71434e6185537bfe2c6e8216c05256409859a",
+					"id": "1a4ee0035e9c70b5e58663b36d34b4750dafc331",
 					"kind": "catch_clause",
-					"line": 135,
+					"line": 156,
 					"column": 4,
-					"endLine": 135,
-					"endColumn": 137,
+					"endLine": 156,
+					"endColumn": 123,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -15797,36 +15797,36 @@
 					"reason": "Allowlisted catch_clause: The \"open\" boundary uses \"fallback_return\" to report failed durable source activation through onError, invalidate the source with storage_unavailable, and suppress a success ready response. Verified recovery: \"fallback_return\" in \"open\"."
 				},
 				{
-					"id": "c9ca98d4da2e94887ff0302991525b9147aadc63",
-					"kind": "void_expression",
-					"line": 169,
-					"column": 3,
-					"endLine": 189,
-					"endColumn": 7,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "inline_async_function",
-						"scope": "run",
-						"justification": "The \"run\" owner detaches \"inline_async_function\" because IO must not block ordinary context/heartbeat; its internal catch reports through onError and its finally always releases the operation slot and bounds the queued replacement."
-					},
-					"reason": "Allowlisted void_expression: The \"run\" owner detaches \"inline_async_function\" because IO must not block ordinary context/heartbeat; its internal catch reports through onError and its finally always releases the operation slot and bounds the queued replacement. Verified target: \"inline_async_function\" in \"run\"."
-				},
-				{
-					"id": "e38d711dac482ab31128c4aea76c037d875c114b",
+					"id": "c48ac3f54bee3cb55b2101633d024156461f9243",
 					"kind": "catch_clause",
-					"line": 177,
+					"line": 198,
 					"column": 6,
-					"endLine": 181,
+					"endLine": 201,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "run",
-						"justification": "The \"run\" boundary uses \"local_recovery\" to report durable gap/callback failure through onError; it clears the execution slot without treating that failure as an acquisition or stored receipt."
+						"justification": "The \"run\" boundary uses \"local_recovery\" to report durable gap/callback failure through onError; it retains the immutable gap obligation, clears the operation slot, and blocks replacement ready until a serial retry stores that same obligation."
 					},
-					"reason": "Allowlisted catch_clause: The \"run\" boundary uses \"local_recovery\" to report durable gap/callback failure through onError; it clears the execution slot without treating that failure as an acquisition or stored receipt. Verified recovery: \"local_recovery\" in \"run\"."
+					"reason": "Allowlisted catch_clause: The \"run\" boundary uses \"local_recovery\" to report durable gap/callback failure through onError; it retains the immutable gap obligation, clears the operation slot, and blocks replacement ready until a serial retry stores that same obligation. Verified recovery: \"local_recovery\" in \"run\"."
+				},
+				{
+					"id": "6f20cce9a6ebcf6e5f63546326de6db0a45cc603",
+					"kind": "catch_clause",
+					"line": 226,
+					"column": 3,
+					"endLine": 229,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "report",
+						"justification": "The \"report\" boundary uses \"local_recovery\" to retain a throwing diagnostic sink failure for the shutdown drain; accepted durable calls continue and the exception never becomes wire input or an unhandled rejection."
+					},
+					"reason": "Allowlisted catch_clause: The \"report\" boundary uses \"local_recovery\" to retain a throwing diagnostic sink failure for the shutdown drain; accepted durable calls continue and the exception never becomes wire input or an unhandled rejection. Verified recovery: \"local_recovery\" in \"report\"."
 				}
 			]
 		}
