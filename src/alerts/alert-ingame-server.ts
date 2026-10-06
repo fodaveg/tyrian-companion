@@ -1,5 +1,7 @@
 import type { TyrianTcpConnection, TyrianTcpListenError, TyrianTcpServer, TyrianTcpServerPort } from '../host/tyrian-host';
 import { ALERT_INGAME_MAX_MESSAGE_BYTES } from './alert-ingame';
+import { LiveIngameChannel } from './live-loot-channel';
+import { isLiveIngameType, parseLiveIngameMessage, liveIngameCapabilityLine, type LiveIngamePort } from './live-loot-protocol';
 import type { IngameConnectionEvent } from './alert-ingame-presence';
 import {
 	INGAME_BRIDGE_HELLO_TIMEOUT_MS,
@@ -36,9 +38,9 @@ export { ALERT_INGAME_MAX_MESSAGE_BYTES };
  * both ways, so every connection must first authenticate: a valid `hello` with the shared secret,
  * within `INGAME_BRIDGE_HELLO_TIMEOUT_MS`. Until then a connection is pending: it is not counted,
  * it receives no alert, and it is closed when the deadline passes (H18.22). After the `welcome`,
- * the only thing an addon can send is a closed, sequenced report of the game context; nothing it
- * sends reaches an alert, a command or the account. The report goes out through
- * `onConnectionEvent` and nowhere else.
+ * the base channel reports closed, sequenced game context through `onConnectionEvent`. The
+ * separately negotiated `live1` channel hands complete passive Nexus samples to a durable owner
+ * under `docs/SPEC-live-loot.md`; it never reaches commands or the authenticated account API.
  *
  * `src/platform/` (H8's link-layer helper) is not imported: its discipline (nonce, sequence, a
  * 512-byte cap, exact keys) is re-stated in `alert-ingame-protocol.ts`, not shared, so this channel
@@ -110,6 +112,8 @@ export interface AlertIngameBridgeOptions {
 	farmingState?(): FarmingIngameState;
 	/** Observes projection failures without placing runtime errors or input on the wire. */
 	onFarmingError?(error: unknown): void;
+	/** Negotiated Nexus-only live feed; success waits for this owner's durable commit. */
+	readonly live?: LiveIngamePort;
 	readonly helloTimeoutMs?: number;
 	readonly livenessTimeoutMs?: number;
 }
@@ -130,6 +134,7 @@ interface BridgeConnection {
 	farmingSubscribed: boolean;
 	farmingSeq: number;
 	farmingTimer: unknown;
+	live: LiveIngameChannel | null;
 	lastSeenAtMs: number;
 	deadline: unknown;
 	endReason: 'lost' | IngameByeReason;
@@ -141,6 +146,7 @@ interface BridgeRuntime {
 	readonly serverInstance: string;
 	readonly pending: Set<BridgeConnection>;
 	readonly authenticated: Set<BridgeConnection>;
+	liveOwner: BridgeConnection | null;
 }
 
 const EMPTY_BYTES = new Uint8Array(0);
@@ -165,7 +171,7 @@ export async function startAlertIngameServer(
 	const runtime: BridgeRuntime = {
 		timer, bridge,
 		serverInstance: createIngameBridgeNonce((bytes) => { bridge.fillRandom(bytes); }),
-		pending: new Set(), authenticated: new Set(),
+		pending: new Set(), authenticated: new Set(), liveOwner: null,
 	};
 	const server = await listenWithRetry(
 		tcp, port, (connection) => { attachClient(connection, runtime); }, timer, retryDelaysMs,
@@ -188,6 +194,7 @@ export async function startAlertIngameServer(
 		close: async () => {
 			for (const connection of [...runtime.pending, ...runtime.authenticated]) {
 				cancelFarmingTimer(connection, runtime);
+				connection.live?.close();
 				connection.socket.destroy();
 			}
 			await server.close();
@@ -272,7 +279,7 @@ function attachClient(socket: TyrianTcpConnection, runtime: BridgeRuntime): void
 	if (runtime.pending.size >= INGAME_BRIDGE_MAX_PENDING_CONNECTIONS) { socket.destroy(); return; }
 	const connection: BridgeConnection = {
 		socket, phase: 'awaiting_hello', buffered: EMPTY_BYTES, nonce: null, version: 2, client: null,
-		sentAlertSeqs: new Set(), nextSeq: 0, farmingSubscribed: false, farmingSeq: 1, farmingTimer: null,
+		sentAlertSeqs: new Set(), nextSeq: 0, farmingSubscribed: false, farmingSeq: 1, farmingTimer: null, live: null,
 		lastSeenAtMs: runtime.bridge.now(), deadline: null, endReason: 'lost',
 	};
 	runtime.pending.add(connection);
@@ -319,6 +326,16 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 	if (connection.phase === 'awaiting_hello') { handleHello(connection, runtime, decoded.value); return; }
 	const nonce = connection.nonce;
 	if (nonce === null) { reject(connection, runtime, 'unexpected_message'); return; }
+	if (isLiveIngameType(decoded.value.type)) {
+		if (connection.live === null) { reject(connection, runtime, 'unexpected_message'); return; }
+		const live = parseLiveIngameMessage(decoded.value, { nonce, seq: connection.nextSeq }, connection.version);
+		if (!live.ok) { reject(connection, runtime, live.code); return; }
+		connection.nextSeq += 1;
+		connection.lastSeenAtMs = runtime.bridge.now();
+		armDeadline(connection, runtime, runtime.bridge.livenessTimeoutMs ?? INGAME_BRIDGE_LIVENESS_TIMEOUT_MS, 'liveness_timeout');
+		connection.live.receive(live.value, frame.byteLength - (frame.at(-1) === 0x0d ? 1 : 0));
+		return;
+	}
 	const message = parseIngameSequenced(decoded.value, { nonce, seq: connection.nextSeq }, connection.version);
 	if (!message.ok) { reject(connection, runtime, message.code); return; }
 	connection.nextSeq += 1;
@@ -333,6 +350,7 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 	}
 	if (message.value.type === 'context') {
 		const { state, mapId, character } = message.value;
+		connection.live?.context(message.value.seq, { state, mapId, character });
 		runtime.bridge.onConnectionEvent({
 			kind: 'context', connectionId: nonce, context: { state, mapId, character }, atMs: connection.lastSeenAtMs,
 		});
@@ -350,6 +368,7 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 		// Settled here rather than on the socket's `close`: the goodbye is the evidence, and the
 		// connection stops counting the moment the addon says it is leaving.
 		connection.endReason = message.value.reason;
+		connection.live?.close();
 		connection.phase = 'closed';
 		cancelFarmingTimer(connection, runtime);
 		cancelDeadline(connection, runtime);
@@ -384,6 +403,24 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 	if (connection.version === 3 && runtime.bridge.farmingState) {
 		connection.socket.write(`${farmingIngameCapabilityLine(nonce)}\n`);
 	}
+	const live = runtime.bridge.live;
+	if (connection.version === 3 && connection.client === 'nexus' && live !== undefined) {
+		connection.live = new LiveIngameChannel({
+			sourceInstance: hello.value.instance, nonce, port: live,
+			now: () => runtime.bridge.now(),
+			schedule: (callback, milliseconds) => runtime.timer.schedule(callback, milliseconds),
+			cancel: (handle) => { runtime.timer.cancel(handle); },
+			send: (line) => { if (connection.phase === 'authenticated') connection.socket.write(`${line}\n`); },
+			reject: (code) => { reject(connection, runtime, code); },
+			claim: () => {
+				if (runtime.liveOwner !== null && runtime.liveOwner !== connection) return false;
+				runtime.liveOwner = connection;
+				return true;
+			},
+			release: () => { if (runtime.liveOwner === connection) runtime.liveOwner = null; },
+		});
+		connection.socket.write(`${liveIngameCapabilityLine(nonce)}\n`);
+	}
 	armDeadline(connection, runtime, runtime.bridge.livenessTimeoutMs ?? INGAME_BRIDGE_LIVENESS_TIMEOUT_MS, 'liveness_timeout');
 	runtime.bridge.onConnectionEvent({
 		kind: 'authenticated', connectionId: nonce, client: hello.value.client,
@@ -398,6 +435,7 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 function reject(connection: BridgeConnection, runtime: BridgeRuntime, code: IngameBridgeErrorCode): void {
 	if (connection.phase === 'closed') return;
 	const wasAuthenticated = connection.phase === 'authenticated';
+	connection.live?.close();
 	connection.phase = 'closed';
 	cancelFarmingTimer(connection, runtime);
 	cancelDeadline(connection, runtime);
@@ -411,6 +449,7 @@ function reject(connection: BridgeConnection, runtime: BridgeRuntime, code: Inga
 
 /** The socket is gone, whichever way. Idempotent: `close` follows `error`, and `reject` may have run. */
 function settleClosed(connection: BridgeConnection, runtime: BridgeRuntime): void {
+	connection.live?.close();
 	cancelFarmingTimer(connection, runtime);
 	cancelDeadline(connection, runtime);
 	runtime.pending.delete(connection);

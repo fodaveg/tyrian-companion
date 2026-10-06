@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { decodeIngameFrame } from './alert-ingame-protocol';
 import { LIVE_INGAME_BUILD, LIVE_INGAME_PROFILE, parseLiveIngameMessage, liveIngameCapabilityLine, liveIngameAckLine, liveIngameReadyLine } from './live-loot-protocol';
@@ -9,6 +10,21 @@ const begin = { ...base, type: 'live_begin', cursor: 0, ctx: 0, ms: 0, mode: 'ba
 const parse = (record: Record<string, unknown>) => parseLiveIngameMessage(record, { nonce, seq: 0 }, 3);
 
 describe('live1 strict wire codec', () => {
+	it('matches the exact Nexus Rust shared fixture without treating synthetic slots as reader coverage', () => {
+		const fixture = JSON.parse(readFileSync(new URL('./__fixtures__/live1.json', import.meta.url), 'utf8')) as { frames: Record<string, unknown>[]; limitations: string };
+		for (const frame of fixture.frames) {
+			const line = JSON.stringify(frame);
+			expect(new TextEncoder().encode(line).byteLength).toBeLessThanOrEqual(512);
+			expect(decodeIngameFrame(new TextEncoder().encode(line))).toEqual({ ok: true, value: frame });
+			if (frame.seq !== undefined) {
+				expect(parseLiveIngameMessage(frame, { nonce, seq: frame.seq as number }, 3)).toEqual({ ok: true, value: frame });
+			} else if (frame.type === 'live_cap') expect(liveIngameCapabilityLine(nonce)).toBe(line);
+			else if (frame.type === 'live_ready') expect(liveIngameReadyLine(nonce, epoch, 'ready')).toBe(line);
+			else if (frame.type === 'live_ack') expect(liveIngameAckLine(nonce, epoch, 0, 'stored')).toBe(line);
+		}
+		expect(fixture.limitations).toContain('native reader reports null');
+	});
+
 	it('accepts each exact message and keeps response shapes independent of alert/farming sequences', () => {
 		for (const record of [
 			{ ...base, type: 'live_open', build: LIVE_INGAME_BUILD, profile: LIVE_INGAME_PROFILE }, begin,
