@@ -106,7 +106,7 @@ const ES = {
 		'manual.invalidDetails': 'Revisa los detalles de la sesión.',
 		'manual.magicFindWholeNumber': 'El Hallazgo mágico debe ser un número entero.',
 		'manual.consumablesBonusWholeNumber': 'La bonificación por consumibles debe ser un número entero.',
-		'view.displayName': 'Acompañante de Tyrian',
+		'view.displayName': 'Acompañante de Tyria',
 		'view.checkConnection': 'Comprobar conexión',
 		'view.checking': 'Comprobando…',
 		'view.pendingAria': 'Confirmaciones de farmeo pendientes',
