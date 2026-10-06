@@ -14,12 +14,20 @@ import { MemoryCatalogCache } from '../catalog/public-catalog-cache';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { HttpResponse } from '../core/http';
+import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
+import { CATALOG_NORMALIZER_VERSION } from '../catalog/public-catalog-model';
+import { parseCatalogItem } from '../catalog/public-catalog-parsers';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const AT = Date.parse('2026-10-06T20:00:00.000Z');
 const ITEMS = [{ id: 12334, name: 'Portobello Mushroom', qty: 3 }, { id: 12147, name: 'Mushroom', qty: 7 }, { id: 19620, name: 'Dandelion Sprout', qty: 1 }];
 
+function appendElement(parent: HTMLElement, tag: string, options: { text?: string; cls?: string; attr?: Record<string, string> }): HTMLElement {
+	const el = document.createElementNS('http://www.w3.org/1999/xhtml', tag); el.textContent = options.text ?? ''; el.className = options.cls ?? '';
+	for (const [key, value] of Object.entries(options.attr ?? {})) el.setAttribute(key, value);
+	parent.append(el); return el;
+}
 const original = new Map<string, PropertyDescriptor | undefined>();
 /** Only the Obsidian DOM conveniences the view calls, added to the isolated happy-dom fixture. */
 beforeEach(() => {
@@ -28,13 +36,9 @@ beforeEach(() => {
 		empty(this: HTMLElement) { this.replaceChildren(); },
 		setText(this: HTMLElement, text: string) { this.textContent = text; },
 		setAttr(this: HTMLElement, name: string, value: string) { this.setAttribute(name, value); },
-		createEl(this: HTMLElement, tag: string, options: { text?: string; cls?: string; attr?: Record<string, string> } = {}) {
-			const el = document.createElementNS('http://www.w3.org/1999/xhtml', tag); el.textContent = options.text ?? ''; el.className = options.cls ?? '';
-			for (const [key, value] of Object.entries(options.attr ?? {})) el.setAttribute(key, value);
-			this.append(el); return el;
-		},
-		createDiv(this: HTMLElement, options: { text?: string; cls?: string } = {}) { return this.createEl('div', options); },
-		createSpan(this: HTMLElement, options: { text?: string; cls?: string } = {}) { return this.createEl('span', options); },
+		createEl(this: HTMLElement, tag: string, options: { text?: string; cls?: string; attr?: Record<string, string> } = {}) { return appendElement(this, tag, options); },
+		createDiv(this: HTMLElement, options: { text?: string; cls?: string } = {}) { return appendElement(this, 'div', options); },
+		createSpan(this: HTMLElement, options: { text?: string; cls?: string } = {}) { return appendElement(this, 'span', options); },
 	};
 	for (const [name, value] of Object.entries(methods)) { original.set(name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)); Object.defineProperty(HTMLElement.prototype, name, { value, configurable: true }); }
 	for (const [name, value] of [['doc', document], ['win', window]] as const) { original.set(name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)); Object.defineProperty(HTMLElement.prototype, name, { value, configurable: true }); }
@@ -67,22 +71,28 @@ function lifecycleOver(store: MemorySessionRuntimeStore): LiveSessionLifecycle {
 		setInterval: () => 1, clearInterval: () => undefined, onStateChange: () => undefined, onError: (error) => { throw error; }, onCommitted: () => undefined, onComplete: async () => 'Sessions/live.md' });
 }
 
-type Catalog = { calls: string[]; gateway: PublicCatalogGateway; online: { value: boolean } };
-function publicCatalog(): Catalog {
-	const calls: string[] = []; const online = { value: true };
-	const gateway: PublicCatalogGateway = { requestDetailed: async (path): Promise<HttpResponse> => {
-		calls.push(path);
-		if (!online.value) throw new Error('offline');
-		const ids = (new URL(path, 'https://example.invalid').searchParams.get('ids') ?? '').split(',').filter(Boolean).map(Number);
-		const body = ids.map((id) => { const item = ITEMS.find((candidate) => candidate.id === id)!;
-			return { id, name: item.name, icon: `https://render.guildwars2.com/file/${String(id)}.png`, type: 'Food', rarity: 'Basic', level: 0, vendor_value: 1, flags: [], game_types: [], restrictions: [] }; });
-		return { status: 200, headers: {}, body };
-	} };
-	return { calls, gateway, online };
+/** The transport spy: any HTTP request, to any path, is recorded and refused, and each test asserts the record is empty. */
+type Catalog = { calls: string[]; gateway: PublicCatalogGateway };
+function transportSpy(): Catalog {
+	const calls: string[] = [];
+	const gateway: PublicCatalogGateway = { requestDetailed: async (path): Promise<HttpResponse> => { calls.push(path); throw new Error(`unexpected request: ${path}`); } };
+	return { calls, gateway };
+}
+/** A local catalog cache as an earlier session left it, with entries older than any TTL. */
+async function cacheWith(ids: readonly number[], language: 'es' | 'en'): Promise<MemoryCatalogCache> {
+	const cache = new MemoryCatalogCache();
+	for (const id of ids) {
+		const item = ITEMS.find((candidate) => candidate.id === id)!;
+		const value = parseCatalogItem({ id, name: item.name, icon: `https://render.guildwars2.com/file/${String(id)}.png`, type: 'Food', rarity: 'Basic', level: 0, vendor_value: 1, flags: [], game_types: [], restrictions: [] });
+		await cache.set({ kind: 'items', locale: language, id, schemaVersion: PINNED_SCHEMA, normalizerVersion: CATALOG_NORMALIZER_VERSION },
+			{ value, storedAt: Date.now() - 400 * 24 * 3_600_000, schemaVersion: PINNED_SCHEMA, normalizerVersion: CATALOG_NORMALIZER_VERSION });
+	}
+	return cache;
 }
 
 /** The real core object (its entity port, render queue and economy wiring) over a freshly restored lifecycle, with the real view mounted on it. */
-async function restoredPlugin(finish: boolean, catalog = publicCatalog()) {
+async function restoredPlugin(finish: boolean, options: { cached?: readonly number[]; consult?: boolean } = {}) {
+	const catalog = transportSpy();
 	const store = new MemorySessionRuntimeStore();
 	await persistedSession(store, finish);
 	const restored = lifecycleOver(store);
@@ -91,9 +101,11 @@ async function restoredPlugin(finish: boolean, catalog = publicCatalog()) {
 	const internals = core as unknown as { liveSessions: LiveSessionLifecycle; liveEconomy: unknown; sessionCatalogFactory: () => Promise<PublicCatalogService>;
 		createLiveEconomy(lifecycle: LiveSessionLifecycle, gateway: PublicCatalogGateway, rateLimit: RateLimitCoordinator): unknown; mountedViews: { companion: { byContainer: Map<HTMLElement, unknown> } } };
 	internals.liveSessions = restored;
-	internals.sessionCatalogFactory = async () => new PublicCatalogService(catalog.gateway, new MemoryCatalogCache());
+	const cache = await cacheWith(options.cached ?? [], core.settings.language);
+	if (options.consult) (core as unknown as { collectorMode: string }).collectorMode = 'consult';
+	internals.sessionCatalogFactory = async () => new PublicCatalogService(catalog.gateway, cache);
 	internals.liveEconomy = internals.createLiveEconomy(restored, catalog.gateway, new RateLimitCoordinator());
-	const content = document.createElement('div'); document.body.append(content);
+	const content = document.createElementNS('http://www.w3.org/1999/xhtml', 'div'); document.body.append(content);
 	const actions = {
 		getProductActionController: () => ({ refresh: vi.fn(), run: vi.fn(async () => 'completed'), describe: (id: string) => ({ id, available: false, state: 'idle' }) } as unknown as ProductActionController),
 		getLocale: () => 'en', hasConfiguredApiKey: () => false, getConnectionState: () => ({ status: 'idle' }),
@@ -109,49 +121,52 @@ async function restoredPlugin(finish: boolean, catalog = publicCatalog()) {
 	const tiles = () => Array.from(content.querySelectorAll('.tyrian-live-session__tile'));
 	return { core, content, view, catalog, tiles, restored };
 }
-const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); await new Promise((resolve) => setTimeout(resolve, 0)); };
+const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); await new Promise((resolve) => window.setTimeout(resolve, 0)); };
 
 describe('entity names and icons of a live session restored after a plugin reload', () => {
-	it('a finished session shows the real name and icon of its three objects once the catalog answers', async () => {
-		const { tiles, content } = await restoredPlugin(true);
+	const ALL = ITEMS.map((item) => item.id);
+	it('a finished session shows the real name and icon of its three objects from the local catalog cache, with no request', async () => {
+		const { tiles, content, catalog } = await restoredPlugin(true, { cached: ALL });
 		expect(tiles()).toHaveLength(3);
 		await settle();
+		expect(catalog.calls).toEqual([]);
 		expect(tiles().map((tile) => tile.getAttribute('aria-label'))).toEqual(expect.arrayContaining(['Portobello Mushroom, 3', 'Mushroom, 7', 'Dandelion Sprout, 1']));
 		expect(content.querySelectorAll('.tyrian-live-session__tile img')).toHaveLength(3);
 		expect(content.querySelector('.tyrian-live-session__missing')).toBeNull();
 	});
 
 	it('a running session restored with objects observed before the reload resolves them the same way, in the grid and the timeline', async () => {
-		const { tiles, content } = await restoredPlugin(false);
+		const { tiles, content, catalog } = await restoredPlugin(false, { cached: ALL });
 		content.querySelector<HTMLDetailsElement>('.tyrian-live-session__timeline')!.open = true;
 		await settle();
+		expect(catalog.calls).toEqual([]);
 		expect(tiles().map((tile) => tile.getAttribute('aria-label'))).toEqual(expect.arrayContaining(['Portobello Mushroom, 3', 'Mushroom, 7', 'Dandelion Sprout, 1']));
 		const names = Array.from(content.querySelectorAll('.tyrian-live-session__row .tyrian-live-session__name')).map((node) => node.textContent);
 		expect(names).toEqual(expect.arrayContaining(['Portobello Mushroom', 'Mushroom', 'Dandelion Sprout']));
 		expect(names.some((name) => name?.startsWith('Item '))).toBe(false);
 	});
 
-	it('asks the public catalog once, for the three ids together, and never again while nothing changes', async () => {
-		const { catalog, view } = await restoredPlugin(true);
+	it('an empty cache keeps "Item <id>" with the marker, and load, restore and repeated renders make zero requests', async () => {
+		const { tiles, content, view, catalog } = await restoredPlugin(true);
 		await settle(); view.render(); view.render(); await settle();
-		expect(catalog.calls).toHaveLength(1);
-		expect(catalog.calls[0]).toContain('ids=12147,12334,19620');
-		expect(catalog.calls[0]).not.toContain('account'); // public endpoint only, no authenticated path
-	});
-
-	it('offline keeps "Item <id>" with the marker, does not loop, and repaints by itself once the catalog answers', async () => {
-		const offline = publicCatalog(); offline.online.value = false;
-		const { tiles, content, view, catalog } = await restoredPlugin(true, offline);
-		await settle(); view.render(); await settle();
-		expect(catalog.calls).toHaveLength(1); // a failed lookup is not retried on every repaint
+		expect(catalog.calls).toEqual([]);
 		expect(tiles().map((tile) => tile.getAttribute('aria-label'))).toEqual(['Item 12147, 7', 'Item 12334, 3', 'Item 19620, 1']);
 		expect(content.querySelectorAll('.tyrian-live-session__missing')).toHaveLength(3);
-		offline.online.value = true;
-		vi.useFakeTimers(); vi.setSystemTime(Date.now() + 6 * 60_000);
-		try { view.render(); } finally { vi.useRealTimers(); } // the next repaint after the retry window asks again
+	});
+
+	it('a partly cached session names what is cached and leaves the rest as a placeholder, still without a request', async () => {
+		const { tiles, catalog } = await restoredPlugin(true, { cached: [12147] });
 		await settle();
-		expect(catalog.calls).toHaveLength(2);
-		expect(tiles().map((tile) => tile.getAttribute('aria-label'))).toEqual(expect.arrayContaining(['Mushroom, 7']));
-		expect(content.querySelector('.tyrian-live-session__missing')).toBeNull();
+		expect(catalog.calls).toEqual([]);
+		expect(tiles().map((tile) => tile.getAttribute('aria-label'))).toEqual(['Mushroom, 7', 'Item 12334, 3', 'Item 19620, 1']);
+	});
+
+	it('consult mode behaves the same: names from the cache, zero requests', async () => {
+		const warm = await restoredPlugin(true, { cached: ALL, consult: true }); await settle();
+		expect(warm.catalog.calls).toEqual([]);
+		expect(warm.tiles().map((tile) => tile.getAttribute('aria-label'))).toEqual(expect.arrayContaining(['Mushroom, 7']));
+		const cold = await restoredPlugin(true, { consult: true }); await settle();
+		expect(cold.catalog.calls).toEqual([]);
+		expect(cold.content.querySelectorAll('.tyrian-live-session__missing')).toHaveLength(3);
 	});
 });

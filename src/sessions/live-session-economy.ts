@@ -11,25 +11,29 @@ import { decideLiveAlert } from './live-session-outbox';
 interface LiveEconomyOptions {
 	lifecycle: LiveSessionLifecycle; gateway: PublicCatalogGateway; rateLimit: RateLimitCoordinator;
 	now(): number; catalog(ids: readonly number[]): Promise<Record<string,CatalogItem>>;
+	/** Local catalog cache only, any age, never a request: how a restored session gets its labels back. */
+	cachedItems(ids: readonly number[]): Promise<Record<string,CatalogItem>>;
 	canEmit?(): boolean;
 	emit(intent: LiveAlertOutboxV1): Promise<AlertDeliveryReport>; onError(error: unknown): void; onChange(): void;
 }
-const RETRY_MS = 5 * 60_000;
-/** Public, cached enrichment runs after the durable measurement ACK, never during rendering. */
+/**
+ * Public catalog and price requests run only in `enrich()`, after the durable measurement ACK, never
+ * during rendering. Rendering may read labels from the LOCAL catalog cache (no network, any age).
+ */
 export class LiveSessionEconomy {
 	private readonly entities = new Map<number,{name:string;icon:string|null}>();
 	private readonly quotes = new Map<number,{unitCopper:number|null;capturedAt:number}>();
-	/** Ids a panel asked for and nobody has resolved yet, and when each id was last tried (so a miss is not a loop). */
+	/** Ids a panel asked for and nobody has resolved yet, and ids whose cache read already missed (cleared when `enrich()` resolves something). */
 	private readonly wanted = new Set<number>();
-	private readonly tried = new Map<number,number>();
+	private readonly tried = new Set<number>();
 	private lookup: Promise<void> | null = null;
 	private flight = Promise.resolve();
 	private disposed = false;
 	constructor(private readonly options: LiveEconomyOptions) {}
 	/**
 	 * Names live only in memory, so after a plugin reload they are empty for a restored session
-	 * (finished or running) until something resolves them. A miss therefore asks the public catalog
-	 * (cache first, ids only) once per `RETRY_MS` and repaints through `onChange` when it answers.
+	 * (finished or running). A miss reads the local catalog cache once (no network) and repaints
+	 * through `onChange`; an id absent from the cache stays a placeholder until `enrich()` resolves it.
 	 */
 	entity(kind: 'item'|'currency', id: number): {name:string;icon:string|null}|null {
 		if (kind !== 'item') return null;
@@ -40,23 +44,21 @@ export class LiveSessionEconomy {
 	}
 	private want(id: number): void {
 		if (this.disposed || this.wanted.has(id)) return;
-		const last = this.tried.get(id);
-		if (last !== undefined && this.options.now() - last < RETRY_MS) return;
+		if (this.tried.has(id)) return;
 		this.wanted.add(id);
 		this.lookup ??= Promise.resolve().then(async () => await this.resolveWanted());
 	}
 	private async resolveWanted(): Promise<void> {
 		const ids = [...this.wanted]; this.wanted.clear(); this.lookup = null;
-		const now = this.options.now();
-		for (const id of ids) this.tried.set(id,now);
-		if (this.disposed || this.options.rateLimit.status().active) return;
+		for (const id of ids) this.tried.add(id);
+		if (this.disposed) return;
 		try {
-			const metadata = await this.options.catalog(ids);
+			const metadata = await this.options.cachedItems(ids);
 			if (this.disposed) return;
 			let changed = false;
 			for (const item of Object.values(metadata)) if (!this.entities.has(item.id)) { this.entities.set(item.id,{name:item.name,icon:item.icon ?? null}); changed = true; }
 			if (changed) this.options.onChange();
-		} catch { /* A cosmetic lookup that fails (offline, no catalog) keeps "Item <id>" and is retried after RETRY_MS. */ }
+		} catch { /* A cosmetic lookup that fails (offline, no catalog) keeps "Item <id>" until `enrich()` resolves it. */ }
 	}
 	observe(entry: LiveJournalEntryV1): void {
 		if (this.disposed || entry.observations.length === 0 && entry.outbox.length === 0) return;
@@ -105,6 +107,7 @@ export class LiveSessionEconomy {
 			const report = await this.options.emit(claimed);
 			await lifecycle.updateAlert(candidate.outboxId,(prior) => ({...prior,state:'processed',deliveryReport:report}),true);
 		}
+		this.tried.clear(); // what enrich() just fetched may have filled the cache for ids a render missed
 		this.options.onChange();
 	}
 }

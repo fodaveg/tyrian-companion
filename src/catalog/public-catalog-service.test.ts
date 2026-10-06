@@ -66,6 +66,21 @@ function snapshotWithItems(ids: number[]): StorageSnapshot {
 
 describe('PublicCatalogService', () => {
 	// H14.14: `main.ts` held three of these across the plugin's life and closed none of them.
+	it('readCachedItems answers from the cache at any age, never requests, and skips negative, other-schema and absent records', async () => {
+		const cache = new MemoryCatalogCache();
+		const [old, other] = [parseCatalogItems([itemPayload(10)])[0], parseCatalogItems([itemPayload(11)])[0]];
+		if (!old || !other) throw new Error('Missing item fixture.');
+		await cache.set(cacheKey('items', 'es', 10), cacheRecord(old, NOW - 900 * DAY_MS));
+		await cache.set({ ...cacheKey('items', 'es', 11), schemaVersion: 'previous-schema' }, { ...cacheRecord(other, NOW), schemaVersion: 'previous-schema' });
+		await cache.set(cacheKey('items', 'es', 12), cacheRecord(null, NOW, 'not_found'));
+		const api = gateway(() => { throw new Error('A cache-only read must not request.'); });
+
+		const found = await new PublicCatalogService(api, cache, () => NOW).readCachedItems([10, 11, 12, 13], 'es');
+
+		expect(Object.keys(found)).toEqual(['10']);
+		expect(api.calls).toEqual([]);
+	});
+
 	it('forwards dispose() to the underlying cache', () => {
 		const cache = { get: vi.fn(), set: vi.fn(), dispose: vi.fn() };
 		new PublicCatalogService(gateway(() => http(200, [])), cache, () => NOW).dispose();

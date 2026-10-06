@@ -3194,6 +3194,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			lifecycle, gateway, rateLimit, now: () => Date.now(),
 			canEmit: () => !consulting(this) && !this.unloaded,
 			catalog: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveItems(ids,this.settings.language); },
+			cachedItems: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedItems(ids,this.settings.language); },
 			emit: async (intent) => await this.emitLiveSessionAlert(intent), onError: (error) => { this.recordIngameSessionFailure(error); },
 			onChange: () => { this.renderViews(); },
 		});

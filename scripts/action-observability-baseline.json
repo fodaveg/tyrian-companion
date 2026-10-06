@@ -15742,9 +15742,9 @@
 						"type": "reviewed_registered_callback",
 						"registration": "then",
 						"scope": "want",
-						"justification": "The \"want\" \"then\" boundary defers one batched public-catalog lookup for the entity names a panel asked for; its failure is contained by the lookup's own recovery and no measurement is acknowledged by it."
+						"justification": "The \"want\" \"then\" boundary defers one batched local catalog-cache read for the entity names a panel asked for; its failure is contained by the read's own recovery and no measurement is acknowledged by it."
 					},
-					"reason": "Allowlisted callback_registration: The \"want\" \"then\" boundary defers one batched public-catalog lookup for the entity names a panel asked for; its failure is contained by the lookup's own recovery and no measurement is acknowledged by it. Verified registration: \"then\" in \"want\"."
+					"reason": "Allowlisted callback_registration: The \"want\" \"then\" boundary defers one batched local catalog-cache read for the entity names a panel asked for; its failure is contained by the read's own recovery and no measurement is acknowledged by it. Verified registration: \"then\" in \"want\"."
 				},
 				{
 					"id": "efbf0ddfbe72bb6eacc679d633319116351a2ab4",
@@ -15758,9 +15758,9 @@
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
 						"scope": "resolveWanted",
-						"justification": "The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder name when the cosmetic public-catalog lookup fails (offline, no catalog) and retries after a fixed window; no measurement or alert depends on it."
+						"justification": "The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder name when the cosmetic local catalog-cache read fails; it makes no request, and no measurement or alert depends on it."
 					},
-					"reason": "Allowlisted catch_clause: The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder name when the cosmetic public-catalog lookup fails (offline, no catalog) and retries after a fixed window; no measurement or alert depends on it. Verified recovery: \"intentional_noop\" in \"resolveWanted\"."
+					"reason": "Allowlisted catch_clause: The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder name when the cosmetic local catalog-cache read fails; it makes no request, and no measurement or alert depends on it. Verified recovery: \"intentional_noop\" in \"resolveWanted\"."
 				},
 				{
 					"id": "45540b035538247e4cc76dbc9b51d1eb68435de0",
