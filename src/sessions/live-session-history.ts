@@ -4,7 +4,7 @@ import type { LiveSessionViewV1, LiveChartPointV1, LiveTotalV1 } from './live-se
 import { inspectLiveSessionNote } from './live-session-note-renderer';
 import { inspectDurableSessionNote, type SessionHistoryVault } from './session-history';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
-import { exportLiveSession, type LiveSessionExportFormat, type LiveSessionExportKind, type LiveSessionExportResult } from './live-session-export';
+import { exportLiveSession, type LiveSessionExportFormat, type LiveSessionExportKind, type LiveSessionExportResult, type LiveSessionExportPayload } from './live-session-export';
 
 export interface LiveSessionHistoryEntry {
 	sessionRef: string; startedAt: string; endedAt: string; observationCount: number;
@@ -36,7 +36,7 @@ export class LiveSessionHistoryService {
 	}
 
 	export(folder: unknown, kind: LiveSessionExportKind, format: LiveSessionExportFormat,
-		session: StoredLiveSessionPayloadV1): Promise<LiveSessionExportResult> {
+		session: LiveSessionExportPayload): Promise<LiveSessionExportResult> {
 		return exportLiveSession(this.vault,folder,kind,format,session);
 	}
 

@@ -31,22 +31,48 @@ export interface LiveSessionNoteInput {
 	locale: 'es' | 'en'; outputFolder: string; displayNames?: Readonly<Record<string, string>>;
 }
 
-/** Full journal is required at this boundary; a paged UI view cannot satisfy its count and sums. */
+/** An explicit point-in-time export; active sessions retain their real null end boundary. */
+export interface LiveSessionSnapshotV1 extends Omit<StoredLiveSessionPayloadV1,'endedAt'> {
+	endedAt: string | null; capturedAt: string; exportState: 'active_snapshot' | 'completed_session';
+}
+
+/** Durable notes remain completed evidence, independently of active export snapshots. */
 export async function prepareLiveSessionPayload(input: LiveSessionNoteInput): Promise<StoredLiveSessionPayloadV1 | null> {
+	if (input.record.phase !== 'complete' || input.record.endedAt === null) return null;
+	const evidence = await prepareLiveSessionEvidence(input);
+	if (evidence === null) return null;
+	const payload = {...evidence,endedAt: input.record.endedAt};
+	return isStoredLiveSessionPayload(payload) ? payload : null;
+}
+
+/** The caller supplies one coherent durable record/journal capture and its actual host timestamp. */
+export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInput,'record' | 'journal'>,
+	capturedAt: string): Promise<LiveSessionSnapshotV1 | null> {
+	if (!date(capturedAt) || (input.record.phase === 'active') !== (input.record.endedAt === null)) return null;
+	const evidence = await prepareLiveSessionEvidence(input);
+	if (evidence === null) return null;
+	const snapshot: LiveSessionSnapshotV1 = {...evidence,endedAt: input.record.endedAt,capturedAt,
+		exportState: input.record.phase === 'active' ? 'active_snapshot' : 'completed_session'};
+	return isLiveSessionSnapshot(snapshot) ? snapshot : null;
+}
+
+/** Full journal is required at this boundary; a paged UI view cannot satisfy its count and sums. */
+async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'record' | 'journal'>): Promise<Omit<StoredLiveSessionPayloadV1,'endedAt'> | null> {
 	const live = input.record;
-	if (live.version !== 4 || live.kind !== 'live_inventory' || live.phase !== 'complete' || live.endedAt === null
-		|| !input.journal.every((entry) => entry.sessionId === live.sessionId && entry.observations.every(isLiveObservation))
+	const entries = input.journal as readonly (LiveJournalEntryV1 & {outbox: LiveNoteOutboxInput[]})[];
+	if (live.version !== 4 || live.kind !== 'live_inventory' || !['active','complete'].includes(live.phase)
+		|| !entries.every((entry) => entry.sessionId === live.sessionId && Array.isArray(entry.outbox) && entry.observations.every(isLiveObservation))
 		|| live.sampleCount > input.journal.length) return null;
 	const sessionRef = await sha256Text(live.sessionId);
-	const journal = await Promise.all(input.journal.map(async (entry) => {
-		const outbox = await prepareLiveNoteOutbox((entry as LiveJournalEntryV1 & { outbox?: LiveNoteOutboxInput[] }).outbox ?? [],live.sessionId,sessionRef);
+	const journal = await Promise.all(entries.map(async (entry) => {
+		const outbox = await prepareLiveNoteOutbox(entry.outbox,live.sessionId,sessionRef);
 		return outbox === null ? null : { version: 1 as const,epoch: entry.epoch,cursor: entry.cursor,observedAt: entry.observedAt,
 			observations: entry.observations.map(copyObservation),breakBefore: entry.breakBefore,outbox };
 	}));
 	if (journal.some((entry) => entry === null)) return null;
-	const payload: StoredLiveSessionPayloadV1 = {
+	const payload: Omit<StoredLiveSessionPayloadV1,'endedAt'> = {
 		version: 1, source: 'nexus_inventory', sessionRef, accountRef: null,
-		build: live.build, profile: live.profile, startedAt: live.startedAt, endedAt: live.endedAt,
+		build: live.build, profile: live.profile, startedAt: live.startedAt,
 		observationCount: live.observationCount, sampleCount: live.sampleCount, observedItemsMs: live.observedItemsMs, observedCurrenciesMs: live.observedCurrenciesMs,
 		coverage: { items: live.lastSample?.itemCoverage ?? 'none', currencies: live.lastSample?.currencyCoverage ?? 'none',
 			currencyIds: live.lastSample?.rows.filter((row) => row.kind === 'currency').map((row) => row.idNumber) ?? [],
@@ -61,7 +87,7 @@ export async function prepareLiveSessionPayload(input: LiveSessionNoteInput): Pr
 		mapIntervals: live.mapIntervals.map((interval) => ({ mapId: interval.mapId, fromMs: interval.fromMs, toMs: interval.toMs })),
 		mapCoveragePartial: live.mapCoveragePartial,
 	};
-	return isStoredLiveSessionPayload(payload) ? payload : null;
+	return payload;
 }
 
 function copyObservation(row: LiveObservationV1): LiveObservationV1 {
@@ -71,36 +97,45 @@ function copyObservation(row: LiveObservationV1): LiveObservationV1 {
 		cause: 'unknown', coverage: 'observed_interval' };
 }
 
+/** Shared arithmetic validation never rewrites an active snapshot into a completed note. */
+export function isStoredLiveSessionPayload(value: unknown): value is StoredLiveSessionPayloadV1 { return validPublicLiveSession(value,false); }
+export function isLiveSessionSnapshot(value: unknown): value is LiveSessionSnapshotV1 { return validPublicLiveSession(value,true); }
+
 /** Closed, source-specific decoder also checks journal sums against the saved summary. */
-export function isStoredLiveSessionPayload(value: unknown): value is StoredLiveSessionPayloadV1 {
+function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 	if (!record(value) || !keys(value, ['version','source','sessionRef','accountRef','build','profile','startedAt','endedAt',
 		'observationCount','sampleCount','observedItemsMs','observedCurrenciesMs','coverage','journal','gaps','totals','valuation','magicFind',
-		'preparation','farmingGoal','groupContext','mapIntervals','mapCoveragePartial']) || value.version !== 1
+		'preparation','farmingGoal','groupContext','mapIntervals','mapCoveragePartial',...(snapshot ? ['capturedAt','exportState'] : [])]) || value.version !== 1
 		|| value.source !== 'nexus_inventory' || value.accountRef !== null || typeof value.sessionRef !== 'string'
-		|| !/^[a-f0-9]{64}$/u.test(value.sessionRef) || !date(value.startedAt) || !date(value.endedAt) || value.endedAt < value.startedAt
+		|| !/^[a-f0-9]{64}$/u.test(value.sessionRef) || !date(value.startedAt)
 		|| value.build !== null && value.build !== NEXUS_LIVE_BUILD || value.profile !== null && value.profile !== NEXUS_LIVE_PROFILE
 		|| (value.build === null) !== (value.profile === null) || !natural(value.observationCount) || !natural(value.sampleCount)
 		|| !natural(value.observedItemsMs) || !natural(value.observedCurrenciesMs)
-		|| value.observedItemsMs > Date.parse(value.endedAt) - Date.parse(value.startedAt)
-		|| value.observedCurrenciesMs > Date.parse(value.endedAt) - Date.parse(value.startedAt)
 		|| !isFarmingPreparationSettings(value.preparation) || value.farmingGoal !== null && !isFarmingGoal(value.farmingGoal)
 		|| ![null,'with_bosses','without_bosses'].includes(value.groupContext as null)
 		|| typeof value.mapCoveragePartial !== 'boolean') return false;
+	const boundary = snapshot && value.endedAt === null ? value.capturedAt : value.endedAt;
+	if (!date(boundary) || boundary < value.startedAt || !snapshot && value.endedAt === null
+		|| snapshot && (!date(value.capturedAt) || value.capturedAt < boundary
+			|| value.exportState !== (value.endedAt === null ? 'active_snapshot' : 'completed_session'))) return false;
+	if (value.observedItemsMs > Date.parse(boundary) - Date.parse(value.startedAt)
+		|| value.observedCurrenciesMs > Date.parse(boundary) - Date.parse(value.startedAt)) return false;
 	const coverage = value.coverage;
 	if (!record(coverage) || !keys(coverage, ['items','currencies','currencyIds','lastObservationAt','freeSlots'])
 		|| !['complete','partial','none'].includes(coverage.items as string) || !['none','listed'].includes(coverage.currencies as string)
 		|| !Array.isArray(coverage.currencyIds) || !coverage.currencyIds.every((id) => bounded(id,1,2147483647))
 		|| new Set(coverage.currencyIds).size !== coverage.currencyIds.length
 		|| (coverage.currencies === 'none') !== (coverage.currencyIds.length === 0)
-		|| coverage.lastObservationAt !== null && !inside(coverage.lastObservationAt,value.startedAt,value.endedAt)
+		|| coverage.lastObservationAt !== null && !inside(coverage.lastObservationAt,value.startedAt,boundary)
 		|| coverage.freeSlots !== null && !bounded(coverage.freeSlots,0,4096)) return false;
-	if (!Array.isArray(value.gaps) || !value.gaps.every((gap) => isLiveGap(gap) && gap.toAt !== null
-		&& gap.toAt > gap.fromAt && gap.channels.length === 1 && inside(gap.fromAt,value.startedAt as string,value.endedAt as string)
-		&& inside(gap.toAt,value.startedAt as string,value.endedAt as string))) return false;
+	if (!Array.isArray(value.gaps) || !value.gaps.every((gap) => isLiveGap(gap)
+		&& (gap.toAt === null ? snapshot && value.endedAt === null && gap.fromAt <= boundary : gap.toAt > gap.fromAt
+			&& inside(gap.toAt,value.startedAt as string,boundary))
+		&& gap.channels.length === 1 && inside(gap.fromAt,value.startedAt as string,boundary))) return false;
 	if (!Array.isArray(value.mapIntervals) || value.mapIntervals.length > 256 || !value.mapIntervals.every((interval) =>
 		record(interval) && keys(interval,['mapId','fromMs','toMs']) && natural(interval.fromMs) && natural(interval.toMs)
 		&& interval.toMs > interval.fromMs && interval.fromMs >= Date.parse(value.startedAt as string)
-		&& interval.toMs <= Date.parse(value.endedAt as string) && (interval.mapId === null || bounded(interval.mapId,1,2147483647)))) return false;
+		&& interval.toMs <= Date.parse(boundary) && (interval.mapId === null || bounded(interval.mapId,1,2147483647)))) return false;
 	if (!record(value.magicFind) || !keys(value.magicFind,['value','source']) || !['manual','verified','unknown'].includes(value.magicFind.source as string)
 		|| value.magicFind.value !== null && !bounded(value.magicFind.value,0,100000)
 		|| (value.magicFind.source === 'unknown') !== (value.magicFind.value === null)) return false;
@@ -111,7 +146,7 @@ export function isStoredLiveSessionPayload(value: unknown): value is StoredLiveS
 	let previousAt = value.startedAt;
 	for (const entry of journal) {
 		if (!record(entry) || !keys(entry,['version','epoch','cursor','observedAt','observations','breakBefore','outbox']) || entry.version !== 1
-			|| !nonce(entry.epoch) || !natural(entry.cursor) || !inside(entry.observedAt,value.startedAt,value.endedAt)
+			|| !nonce(entry.epoch) || !natural(entry.cursor) || !inside(entry.observedAt,value.startedAt,boundary)
 			|| entry.observedAt < previousAt || typeof entry.breakBefore !== 'boolean' || !Array.isArray(entry.observations)
 			|| entry.observations.length > 4096 || cursors.has(`${entry.epoch}/${String(entry.cursor)}`)) return false;
 		const previous = lastInEpoch.get(entry.epoch);
@@ -120,9 +155,10 @@ export function isStoredLiveSessionPayload(value: unknown): value is StoredLiveS
 		lastInEpoch.set(entry.epoch,{cursor: entry.cursor,observedAt: entry.observedAt});
 		for (const row of entry.observations) {
 			if (!isLiveObservation(row) || row.epoch !== entry.epoch || row.cursor !== entry.cursor || row.observedAt !== entry.observedAt
-				|| ids.has(row.id) || !inside(row.windowStartAt,value.startedAt,value.endedAt) || row.windowStartAt !== previous?.observedAt
-				|| (value.gaps as LiveGapV1[]).some((gap) => gap.channels.includes(row.kind === 'item' ? 'items' : 'currencies')
-					&& row.windowStartAt < gap.toAt! && row.observedAt > gap.fromAt)) return false;
+				|| ids.has(row.id) || !inside(row.windowStartAt,value.startedAt,boundary) || row.windowStartAt !== previous?.observedAt
+				// A currencies gap means incomplete aggregate coverage; individually covered IDs can still change.
+				|| row.kind === 'item' && (value.gaps as LiveGapV1[]).some((gap) => gap.channels.includes('items')
+					&& row.windowStartAt < (gap.toAt ?? boundary) && row.observedAt > gap.fromAt)) return false;
 			ids.add(row.id); observations.push(row);
 		}
 		if (!isStoredLiveNoteOutbox(entry.outbox,value.sessionRef,entry.observations as LiveObservationV1[])) return false;
@@ -133,9 +169,9 @@ export function isStoredLiveSessionPayload(value: unknown): value is StoredLiveS
 		&& total.net === total.positive - total.negative)) return false;
 	const expectedTotals = totalsForObservations(observations);
 	if (expectedTotals === null || canonicalJson(orderTotals(value.totals as LiveTotalV1[])) !== canonicalJson(expectedTotals)) return false;
-	const duration = Date.parse(value.endedAt) - Date.parse(value.startedAt);
-	if (value.observedItemsMs > duration - gapDuration(value.gaps as LiveGapV1[],'items')
-		|| value.observedCurrenciesMs > duration - gapDuration(value.gaps as LiveGapV1[],'currencies')) return false;
+	const duration = Date.parse(boundary) - Date.parse(value.startedAt);
+	if (value.observedItemsMs > duration - gapDuration(value.gaps as LiveGapV1[],'items',boundary)
+		|| value.observedCurrenciesMs > duration - gapDuration(value.gaps as LiveGapV1[],'currencies',boundary)) return false;
 	return validValuation(value.valuation, expectedTotals);
 }
 
@@ -170,10 +206,10 @@ function validValuation(value: unknown, totals: readonly LiveTotalV1[]): boolean
 function inside(value: unknown, start: string, end: string): value is string { return date(value) && value >= start && value <= end; }
 
 /** Union prevents overlapping diagnostics from manufacturing additional observed time. */
-function gapDuration(gaps: readonly LiveGapV1[], channel: 'items' | 'currencies'): number {
+function gapDuration(gaps: readonly LiveGapV1[], channel: 'items' | 'currencies', boundary: string): number {
 	let end = Number.NEGATIVE_INFINITY; let total = 0;
 	for (const gap of [...gaps].filter((row) => row.channels.includes(channel)).sort((a,b) => a.fromAt.localeCompare(b.fromAt))) {
-		const from = Date.parse(gap.fromAt); const to = Date.parse(gap.toAt!);
+		const from = Date.parse(gap.fromAt); const to = Date.parse(gap.toAt ?? boundary);
 		total += Math.max(0,to - Math.max(from,end)); end = Math.max(end,to);
 	}
 	return total;

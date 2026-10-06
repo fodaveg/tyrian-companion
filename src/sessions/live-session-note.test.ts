@@ -8,16 +8,16 @@ import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-no
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
 import { inspectDurableSessionNote, SessionHistoryService, SessionHistoryRuntimeAuthority, type SessionHistoryVault } from './session-history';
 import { LiveSessionHistoryService, liveSessionViewFromStored, liveSessionAlertsFromStored } from './live-session-history';
-import { serializeLiveSessionExport } from './live-session-export';
+import { serializeLiveSessionExport, prepareLiveSessionExportSnapshot } from './live-session-export';
 import { readStoredSessionBlocks, sessionNotePathIdentity } from './session-note-renderer';
 import { canonicalPathFor } from '../runtime/canonical-path';
 
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
-function fixture(quantities = [0,2,4]): LiveSessionNoteInput {
+function fixture(quantities = [0,2,4], currencies?: readonly {one: number;two: number | null}[]): LiveSessionNoteInput {
 	const sessionId = 'sensitive-local-session-id';
-	let record: LiveSessionRuntimeRecord = { version: 4,kind: 'live_inventory',sessionId,phase: 'active',
+	let record: LiveSessionRuntimeRecord = { ...{lastSourceDisconnectedAt: null},version: 4,kind: 'live_inventory',sessionId,phase: 'active',
 		authority: { machineId: 'private-machine',instanceId: 'private-host',sessionId,fence: 1,acquiredAt: AT },
 		startedAt: iso(0),endedAt: null,persistedAt: AT,sourceInstance: INSTANCE,build: NEXUS_LIVE_BUILD,profile: NEXUS_LIVE_PROFILE,
 		epoch: EPOCH,context: { state: 'gameplay',mapId: 866,character: 'Private character' },connection: 'connected',lastPresenceAt: AT,
@@ -29,10 +29,11 @@ function fixture(quantities = [0,2,4]): LiveSessionNoteInput {
 	const journal: LiveJournalEntryV1[] = [];
 	for (const [cursor,quantity] of quantities.entries()) {
 		const sample: LiveInventorySampleV1 = { epoch: EPOCH,cursor,contextSeq: 0,sourceElapsedMs: cursor * 1000,
-			mode: cursor === 0 ? 'baseline' : 'sample',itemCoverage: 'complete',currencyCoverage: 'none',unknownPositions: 0,freeSlots: 8,
-			rows: [{ kind: 'item',idNumber: 12147,quantity }],observedAt: iso(cursor),sourceInstance: INSTANCE,
+			mode: cursor === 0 ? 'baseline' : 'sample',itemCoverage: 'complete',currencyCoverage: currencies === undefined ? 'none' : 'listed',unknownPositions: 0,freeSlots: 8,
+			rows: [{ kind: 'item',idNumber: 12147,quantity },...(currencies === undefined ? [] : [{kind: 'currency' as const,idNumber: 1,quantity: currencies[cursor]!.one},
+				...(currencies[cursor]!.two === null ? [] : [{kind: 'currency' as const,idNumber: 2,quantity: currencies[cursor]!.two}])])],observedAt: iso(cursor),sourceInstance: INSTANCE,
 			build: NEXUS_LIVE_BUILD,profile: NEXUS_LIVE_PROFILE,context: record.context! };
-		const next = reduceLiveInventorySample(record,sample); record = next.record; journal.push(next.journal);
+		const next = reduceLiveInventorySample(record,sample); record = next.record; const entry = Object.assign({outbox: []},next.journal); journal.push(entry);
 	}
 	record = { ...record,phase: 'complete',endedAt: iso(quantities.length - 1),prices: [{ itemId: 12147,unitCopper: 10 }],priceCapturedAt: iso(0) };
 	return { record,journal,locale: 'es',outputFolder: 'Tyrian Companion',displayNames: { 'item:12147': 'Champiñón' } };
@@ -76,7 +77,7 @@ describe('portable live session notes', () => {
 		expect(note.content).toMatchSnapshot();
 		expect(note.frontmatter).toMatchObject({ tc_schema: 7,tc_kind: 'session',tc_source: 'nexus_inventory',tc_account_ref: null });
 		expect(note.content.match(/tyrian-companion:managed:start:/gu)).toHaveLength(6);
-		for (const secret of [INSTANCE,'private-machine','private-host','Private character','sensitive-local-session-id','sourceInstance','authority','baseline']) expect(note.content).not.toContain(secret);
+		for (const secret of [INSTANCE,'private-machine','private-host','Private character','sensitive-local-session-id','sourceInstance','authority','baseline','lastSourceDisconnectedAt']) expect(note.content).not.toContain(secret);
 		expect(session.journal.flatMap((entry) => entry.observations).map((row) => row.delta)).toEqual([2,2]);
 		expect(session.totals).toEqual([{kind: 'item',idNumber: 12147,positive: 4,negative: 0,net: 4}]);
 		expect(session.valuation).toMatchObject({ positiveItemValueKnownCopper: 40,netItemValueKnownCopper: 40,coinNetCopper: null,knownNetValueCopper: null });
@@ -202,6 +203,54 @@ describe('live note write verification and CAS', () => {
 	});
 });
 
+describe('explicit active export snapshots', () => {
+	it.each(['timeline','summary'] as const)('exports a coherent active %s snapshot with 1,000 rows and no invented close', async (kind) => {
+		const input = fixture(Array.from({length: 1001},(_,i) => i * 2)); input.record.phase = 'active'; input.record.endedAt = null;
+		input.record.gaps = [{version: 1,fromAt: iso(1000),toAt: null,reason: 'disconnect',channels: ['items']}];
+		const before = structuredClone(input.record);
+		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(1002)});
+		expect(snapshot).not.toBeNull(); if (snapshot === null) throw new Error('fixture');
+		expect(snapshot).toMatchObject({endedAt: null,capturedAt: iso(1002),exportState: 'active_snapshot',observationCount: 1000,sampleCount: 1001});
+		expect(snapshot.gaps[0]?.toAt).toBeNull(); expect(snapshot.valuation.coinNetCopper).toBeNull();
+		expect(input.record).toEqual(before); expect(await prepareLiveSessionPayload(input)).toBeNull();
+		const json = JSON.parse(serializeLiveSessionExport(snapshot,kind,'json')) as {version: number;session: typeof snapshot};
+		expect(json.version).toBe(2); expect(json.session.endedAt).toBeNull(); expect(json.session.journal.flatMap((entry) => entry.observations)).toHaveLength(1000);
+		expect(json.session.totals[0]?.net).toBe(2000); expect(json.session.valuation.netItemValueKnownCopper).toBe(20000);
+		const csv = serializeLiveSessionExport(snapshot,kind,'csv'); expect(csv).toContain('"captured_at","export_state"');
+		expect(csv).toContain('"active_snapshot"'); expect(csv.match(/^"observation",/gmu)).toHaveLength(1000);
+		expect(csv).toContain(snapshot.journal[1]!.observations[0]!.id);
+		expect(csv).toContain('version"":1');
+		for (const secret of [INSTANCE,input.record.sessionId,'private-machine','lastSourceDisconnectedAt']) expect(csv).not.toContain(secret);
+	});
+	it('creates a new immutable snapshot path when the active capture changes, keeping previous exports', async () => {
+		const input = fixture(); input.record.phase = 'active'; input.record.endedAt = null;
+		const first = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(2)});
+		const second = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)});
+		if (first === null || second === null) throw new Error('fixture');
+		const vault = new TestVault(); const service = new LiveSessionHistoryService(historyVault(vault));
+		const a = await service.export('Tyrian Companion','timeline','json',first); const b = await service.export('Tyrian Companion','timeline','json',second);
+		expect(a.status).toBe('written'); expect(b.status).toBe('written'); if (a.status !== 'written' || b.status !== 'written') throw new Error('fixture');
+		expect(a.path).not.toBe(b.path); expect(a.path).toContain('-v2.json');
+		expect(await service.export('Tyrian Companion','timeline','json',first)).toEqual({status: 'unchanged',path: a.path});
+		const saved = JSON.parse(vault.contents.get(a.path)!) as {session: {capturedAt: string}};
+		expect(saved.session.capturedAt).toBe(iso(2));
+	});
+	it('rejects a journal without its mandatory alert evidence instead of assuming an empty outbox', async () => {
+		const input = fixture(); const entry = input.journal[0] as unknown as {outbox?: LiveNoteOutboxInput[]};
+		delete entry.outbox;
+		expect(await prepareLiveSessionPayload(input)).toBeNull();
+		input.record.phase = 'active'; input.record.endedAt = null;
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toBeNull();
+	});
+	it('rejects stale or truncated captures rather than inventing timestamps, quantities or a complete phase', async () => {
+		const input = fixture(); input.record.phase = 'active'; input.record.endedAt = null;
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(1)})).toBeNull();
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal.slice(0,2),capturedAt: iso(3)})).toBeNull();
+		input.record.endedAt = iso(2);
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toBeNull();
+	});
+});
+
 describe('vault live history, exports and privacy', () => {
 	it('recovers the full journal from a synced note without any local store or API', async () => {
 		const {note,session} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,note.content);
@@ -251,5 +300,27 @@ describe('vault live history, exports and privacy', () => {
 		expect((await service.scrub(preview.token,authority)).status).toBe('erased');
 		const content = vault.contents.get(note.preferredPath)!; expect(content).toContain('Human memory.');
 		expect(content).not.toContain('tc_'); expect(content).not.toContain('Champiñón'); expect(await readStoredSessionBlocks(content)).toBeNull();
+	});
+});
+
+
+describe('partial currency history', () => {
+	it('preserves a covered currency across another missing ID without manufacturing full-wallet coverage', async () => {
+		const input = fixture([0,0,0,0],[{one: 0,two: 0},{one: 6,two: 0},{one: 12,two: null},{one: 18,two: 0}]);
+		expect(input.journal.flatMap((entry) => entry.observations).map((row) => row.delta)).toEqual([6,6,6]);
+		expect(input.record.gaps).toMatchObject([{channels: ['currencies'],fromAt: iso(1),toAt: iso(3)}]);
+		expect(input.record.observedCurrenciesMs).toBe(1000);
+		const payload = await prepareLiveSessionPayload(input); expect(payload).not.toBeNull(); if (payload === null) throw new Error('fixture');
+		expect(payload.totals).toEqual([{kind: 'currency',idNumber: 1,positive: 18,negative: 0,net: 18}]);
+		expect(payload.valuation.coinNetCopper).toBeNull();
+		const vault = new TestVault(); expect((await new SessionNoteWriter(vault).writeLive(input)).status).toBe('written');
+		const selected = await new LiveSessionHistoryService(historyVault(vault)).select(payload.sessionRef);
+		expect(selected.status).toBe('found'); if (selected.status !== 'found') throw new Error('fixture');
+		expect(selected.session.journal.flatMap((entry) => entry.observations)).toHaveLength(3);
+		const json = JSON.parse(serializeLiveSessionExport(payload,'timeline','json')) as {session: typeof payload};
+		expect(json.session.totals).toEqual(payload.totals); expect(json.session.observedCurrenciesMs).toBe(1000);
+		expect(serializeLiveSessionExport(payload,'timeline','csv').match(/^"observation",/gmu)).toHaveLength(3);
+		input.record.phase = 'active'; input.record.endedAt = null;
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(4)})).not.toBeNull();
 	});
 });
