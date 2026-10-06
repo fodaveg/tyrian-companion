@@ -1,6 +1,6 @@
 import { FarmingDeclaredBuildEditor, type FarmingDeclaredBuildActions } from './farming-declared-build-editor';
 import { LiveSessionComparisonPanel, type LiveSessionComparisonActions } from './live-session-comparison-panel';
-import { LiveSessionPanel, type LiveSessionPanelActions } from './live-session-panel';
+import type { LiveSessionDataActions } from './live-session-panel';
 import type { FarmingGoalProgress, FarmingGoalV1 } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
 import type { FarmingGroupContext } from '../runtime/farming-session-context';
@@ -9,7 +9,7 @@ import { FarmingGoalEditor, renderFarmingGoalProgress } from './farming-goal-pan
 import { FarmingPreparationPanel } from './farming-preparation-panel';
 import { farmingCopy } from './farming-goal-copy';
 
-export interface FarmingSessionPanelActions extends Partial<LiveSessionPanelActions>, Partial<LiveSessionComparisonActions>, Partial<FarmingDeclaredBuildActions> {
+export interface FarmingSessionPanelActions extends Partial<LiveSessionDataActions>, Partial<LiveSessionComparisonActions>, Partial<FarmingDeclaredBuildActions> {
 	getLocale(): 'es' | 'en';
 	getFarmingGoal(): FarmingGoalV1;
 	saveFarmingGoal(goal: FarmingGoalV1): Promise<void>;
@@ -34,7 +34,6 @@ export class FarmingSessionPanel {
 	private readonly preparation: HTMLElement;
 	private readonly editor: FarmingGoalEditor;
 	private readonly preparationPanel: FarmingPreparationPanel;
-	private readonly live: LiveSessionPanel | null;
 	private readonly comparison: LiveSessionComparisonPanel | null;
 	private readonly declaredBuild: FarmingDeclaredBuildEditor | null;
 	private editorKey: string | null = null;
@@ -65,9 +64,7 @@ export class FarmingSessionPanel {
 		if (this.declaredBuild) defaults.append(this.declaredBuild.element);
 		defaults.prepend(summary);
 		defaults.append(this.goalEditor, this.groupEditor(document), this.preparation);
-		this.live = actions.getLiveSessionView !== undefined && actions.getLiveSessionEntity !== undefined && actions.exportLiveSession !== undefined
-			? new LiveSessionPanel(document, actions as LiveSessionPanelActions) : null;
-		if (this.live) this.element.append(this.live.element);
+		// The comparison module stays here with its tests; the simplified Session tab does not mount this panel.
 		this.comparison = actions.getLiveSessionComparison !== undefined && actions.loadLiveSessionComparison !== undefined
 			? new LiveSessionComparisonPanel(document, actions as LiveSessionComparisonActions) : null;
 		if (this.comparison) this.element.append(this.comparison.element);
@@ -77,7 +74,6 @@ export class FarmingSessionPanel {
 
 	/** Read-only metrics tick separately from editors, so a poll never resets a draft. */
 	refresh(): void {
-		this.live?.refresh();
 		this.comparison?.refresh();
 		this.declaredBuild?.refresh();
 		const locale = this.actions.getLocale();

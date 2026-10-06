@@ -279,6 +279,40 @@ describe('H18.26: the in-game presence marks the session', () => {
 		expect(game.port.start).toHaveBeenCalledOnce();
 	});
 
+	// The Session tab's «Finish session» goes through `stopManualSession`, which marks the stop with
+	// `markStoppedByPlayer`; this is what that mark guarantees (measured 6 oct 2026).
+	it('keeps the automatic start closed after a hand stop for as long as the same presence lasts, and a hand start reopens it', async () => {
+		const game = harness();
+		game.connect('a'); game.report('a', OUTSIDE); await game.settled();
+		expect(game.marker.blocksAutomaticRestart()).toBe(false);
+		expect(game.port.start).toHaveBeenCalledOnce();
+
+		game.marker.markStoppedByPlayer('session-1');
+		game.setSession({ status: 'complete', sessionId: 'session-1' });
+		expect(game.marker.blocksAutomaticRestart()).toBe(true);
+		expect(game.link()).toMatchObject({ sessionId: 'session-1', stoppedByPlayer: true });
+		game.report('a', LABYRINTH); await game.marker.reconcile(); await game.settled();
+		expect(game.port.start).toHaveBeenCalledOnce();
+		expect(game.marker.blocksAutomaticRestart()).toBe(true);
+
+		// «Start session» by hand (the core links the new session through `linkReplacement`) lifts the block.
+		game.marker.linkReplacement('session-1', 'session-2', 'adopted');
+		expect(game.marker.blocksAutomaticRestart()).toBe(false);
+		expect(game.link()).toMatchObject({ sessionId: 'session-2', owner: 'adopted' });
+		expect(game.link()?.stoppedByPlayer).toBeUndefined();
+	});
+
+	it('lets a new game connection open its own session after a hand stop on the previous one', async () => {
+		const game = harness();
+		game.connect('a'); game.report('a', OUTSIDE); await game.settled();
+		game.marker.markStoppedByPlayer('session-1');
+		game.setSession({ status: 'complete', sessionId: 'session-1' });
+		game.drop('a'); game.advance(INGAME_PRESENCE_GRACE_MS); await game.settled();
+		game.connect('b'); game.report('b', OUTSIDE); await game.settled();
+		expect(game.marker.blocksAutomaticRestart()).toBe(false);
+		expect(game.port.start).toHaveBeenCalledTimes(2);
+	});
+
 	it('keeps an automatic session automatic across a plugin reload', async () => {
 		const link: IngameSessionLink = {
 			version: 1, presenceId: 'before-reload', sessionId: 'session-9', owner: 'automatic', labyrinthAt: null,

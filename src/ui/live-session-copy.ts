@@ -57,7 +57,45 @@ const ES: Record<keyof typeof EN, string> = {
  last: 'Última lectura guardada', noReading: 'Sin lectura guardada', baselineRecovery: 'Esperando un nuevo baseline tras un hueco de lectura.',
  disconnect: 'Conexión perdida', source_stale: 'Sin muestra reciente del lector', read_failed: 'El lector no pudo completar la muestra', partial_inventory: 'No se pudieron leer algunas posiciones de las bolsas', context_changed: 'Cambio de personaje o mapa', host_restart: 'Host reiniciado', storage_unavailable: 'No se pudo guardar la lectura', unsupported_build: 'Versión del juego no compatible', source_missing: 'Falta la fuente del lector', cursor_gap: 'Falta una muestra', kindItem: 'Objeto', kindCurrency: 'Moneda', pause: 'Observación pausada',
 };
-export type LiveSessionCopyKey = keyof typeof EN;
+/** Copy of the simplified Session tab (6 oct 2026): one header, three figures, one chart, one timeline. */
+const SIMPLE_EN = {
+ stateIdle: 'No session', stateStarting: 'Preparing session', stateActive: 'In progress', stateStopping: 'Finishing session',
+ stateComplete: 'Finished', stateError: 'Session error', stateGameOff: 'Game disconnected',
+ start: 'Start session', stop: 'Finish session', startBusy: 'Starting…', stopBusy: 'Finishing…',
+ hintReady: 'Game connected. Start a session to see what enters your bags.',
+ hintGameOff: 'Open Guild Wars 2 with the Nexus addon to be able to start.',
+ hintConsult: 'This installation is in consult mode: it does not run sessions.',
+ startFailed: 'The session could not be started', stopFailed: 'The session could not be finished',
+ oldSessionBlocks: 'An older session is blocking a new one.',
+ oldSessionHint: 'Finish it with the session commands in the command palette.',
+ discardOld: 'Discard old session',
+ statValue: 'Estimated value', statRate: 'Per hour', objects: 'Objects', coins: 'Observed coins',
+ noChanges: 'No inventory changes observed yet.',
+ chartTitle: 'Value over time', chartLabel: 'Estimated value from {from} to {to}, {start} to {end}, {gaps}',
+ gapsNone: 'no reading gaps', gapsOne: '1 reading gap', gapsMany: '{n} reading gaps',
+ legendOne: 'No reading · 1 gap', legendMany: 'No reading · {n} gaps', since: 'since',
+ timeline: 'Timeline', showMore: 'Show 50 more', shownOf: '{shown} of {total}', tileLabel: '{name}, {quantity}',
+} as const;
+const SIMPLE_ES: Record<keyof typeof SIMPLE_EN, string> = {
+ stateIdle: 'Sin sesión', stateStarting: 'Preparando sesión', stateActive: 'En curso', stateStopping: 'Terminando sesión',
+ stateComplete: 'Terminada', stateError: 'Error de sesión', stateGameOff: 'Juego desconectado',
+ start: 'Iniciar sesión', stop: 'Terminar sesión', startBusy: 'Iniciando…', stopBusy: 'Terminando…',
+ hintReady: 'Juego conectado. Inicia una sesión para ver lo que entra en tus bolsas.',
+ hintGameOff: 'Abre Guild Wars 2 con el addon de Nexus para poder iniciar.',
+ hintConsult: 'Esta instalación está en modo consulta: no lleva sesiones.',
+ startFailed: 'No se pudo iniciar la sesión', stopFailed: 'No se pudo terminar la sesión',
+ oldSessionBlocks: 'Una sesión antigua impide abrir otra.',
+ oldSessionHint: 'Termínala con los comandos de sesión de la paleta de comandos.',
+ discardOld: 'Descartar sesión antigua',
+ statValue: 'Valor estimado', statRate: 'Por hora', objects: 'Objetos', coins: 'Monedas observadas',
+ noChanges: 'Todavía no se han observado cambios de inventario.',
+ chartTitle: 'Valor en el tiempo', chartLabel: 'Valor estimado de {from} a {to}, de {start} a {end}, {gaps}',
+ gapsNone: 'sin huecos de lectura', gapsOne: '1 hueco de lectura', gapsMany: '{n} huecos de lectura',
+ legendOne: 'Sin lectura · 1 hueco', legendMany: 'Sin lectura · {n} huecos', since: 'desde',
+ timeline: 'Cronología', showMore: 'Ver 50 más', shownOf: '{shown} de {total}', tileLabel: '{name}, {quantity}',
+};
+export type LiveSessionCopyKey = keyof typeof EN | keyof typeof SIMPLE_EN;
 export function liveSessionCopy(locale: 'es' | 'en', key: LiveSessionCopyKey): string {
- return locale === 'es' ? ES[key] : EN[key];
+ if (key in SIMPLE_EN) return (locale === 'es' ? SIMPLE_ES : SIMPLE_EN)[key as keyof typeof SIMPLE_EN];
+ return locale === 'es' ? ES[key as keyof typeof EN] : EN[key as keyof typeof EN];
 }

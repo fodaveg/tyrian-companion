@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 520,
+		"catch_clause": 518,
 		"promise_catch": 54,
-		"void_expression": 113,
-		"callback_registration": 206
+		"void_expression": 110,
+		"callback_registration": 203
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -11215,60 +11215,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "41d72f3afc513a647703a57dc5529b5d48f7ad2d",
-					"kind": "callback_registration",
-					"line": 361,
-					"column": 6,
-					"endLine": 361,
-					"endColumn": 101,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "render",
-						"justification": "In \"render\", the retained \"addEventListener\" control explicitly requests the validated previous-session export; its helper retains focus, prevents duplicate requests and presents local failure feedback."
-					},
-					"reason": "Allowlisted callback_registration: In \"render\", the retained \"addEventListener\" control explicitly requests the validated previous-session export; its helper retains focus, prevents duplicate requests and presents local failure feedback. Verified registration: \"addEventListener\" in \"render\"."
-				},
-				{
-					"id": "6bcdb1529331b585ed15fc9689a3b636e5ef401c",
-					"kind": "void_expression",
-					"line": 361,
-					"column": 64,
-					"endLine": 361,
-					"endColumn": 97,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.exportPreservedLegacy",
-						"scope": "render",
-						"justification": "In \"render\", detached \"this.exportPreservedLegacy\" owns its rejection recovery and retained status feedback; no authenticated query, session lifecycle change or export success is inferred by the callback."
-					},
-					"reason": "Allowlisted void_expression: In \"render\", detached \"this.exportPreservedLegacy\" owns its rejection recovery and retained status feedback; no authenticated query, session lifecycle change or export success is inferred by the callback. Verified target: \"this.exportPreservedLegacy\" in \"render\"."
-				},
-				{
-					"id": "7629c756eca03726e1a985f1e447b91c0a3d2482",
-					"kind": "catch_clause",
-					"line": 396,
-					"column": 3,
-					"endLine": 396,
-					"endColumn": 54,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "exportPreservedLegacy",
-						"justification": "In \"exportPreservedLegacy\", \"local_recovery\" sets explicit export-failure feedback while preserving the previous evidence and re-enabling the same retained button; core owns validation and create-only persistence."
-					},
-					"reason": "Allowlisted catch_clause: In \"exportPreservedLegacy\", \"local_recovery\" sets explicit export-failure feedback while preserving the previous evidence and re-enabling the same retained button; core owns validation and create-only persistence. Verified recovery: \"local_recovery\" in \"exportPreservedLegacy\"."
-				},
-				{
 					"id": "f5e0bdb561915a3539e0eb76b46b0c72fe28dbe1",
 					"kind": "void_expression",
-					"line": 448,
+					"line": 417,
 					"column": 4,
-					"endLine": 448,
+					"endLine": 417,
 					"endColumn": 92,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11282,9 +11233,9 @@
 				{
 					"id": "96ff996b0c9a037a6877e60cb888ac1f463d4aa2",
 					"kind": "promise_catch",
-					"line": 448,
+					"line": 417,
 					"column": 9,
-					"endLine": 448,
+					"endLine": 417,
 					"endColumn": 92,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11299,9 +11250,9 @@
 				{
 					"id": "704ca55f280d25e9fb06f9913ace1f425fd0fa77",
 					"kind": "void_expression",
-					"line": 481,
+					"line": 450,
 					"column": 55,
-					"endLine": 481,
+					"endLine": 450,
 					"endColumn": 95,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11315,9 +11266,9 @@
 				{
 					"id": "71d29359a943577caba41b190b5a3cd5c1ead65a",
 					"kind": "void_expression",
-					"line": 506,
+					"line": 475,
 					"column": 7,
-					"endLine": 508,
+					"endLine": 477,
 					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11331,9 +11282,9 @@
 				{
 					"id": "6adfc4fcea4a2ef4e4a78dce3444ab3589148b2b",
 					"kind": "void_expression",
-					"line": 562,
+					"line": 531,
 					"column": 23,
-					"endLine": 562,
+					"endLine": 531,
 					"endColumn": 50,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11347,9 +11298,9 @@
 				{
 					"id": "6a5f91c00d032a1d359e87b89c610981baf920c1",
 					"kind": "void_expression",
-					"line": 619,
+					"line": 588,
 					"column": 77,
-					"endLine": 619,
+					"endLine": 588,
 					"endColumn": 118,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11363,9 +11314,9 @@
 				{
 					"id": "890af555c5bdbfcc4d9ae1d0fff15ab89f8a2833",
 					"kind": "callback_registration",
-					"line": 786,
+					"line": 755,
 					"column": 3,
-					"endLine": 786,
+					"endLine": 755,
 					"endColumn": 109,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11380,9 +11331,9 @@
 				{
 					"id": "98967692c4f51572e8656e48fcae2686e25b90e7",
 					"kind": "callback_registration",
-					"line": 787,
+					"line": 756,
 					"column": 3,
-					"endLine": 787,
+					"endLine": 756,
 					"endColumn": 109,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11397,9 +11348,9 @@
 				{
 					"id": "5763e776b0d9ca0f02d33601caecde8ec7211dda",
 					"kind": "callback_registration",
-					"line": 788,
+					"line": 757,
 					"column": 3,
-					"endLine": 788,
+					"endLine": 757,
 					"endColumn": 103,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11414,9 +11365,9 @@
 				{
 					"id": "c284db029907a1968b3b33060aeb5f9f4afca2f5",
 					"kind": "void_expression",
-					"line": 891,
+					"line": 860,
 					"column": 64,
-					"endLine": 891,
+					"endLine": 860,
 					"endColumn": 124,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11430,9 +11381,9 @@
 				{
 					"id": "271e74be7d88f32d8d29e4a4d20c7bf77189e7f6",
 					"kind": "promise_catch",
-					"line": 891,
+					"line": 860,
 					"column": 69,
-					"endLine": 891,
+					"endLine": 860,
 					"endColumn": 124,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11447,9 +11398,9 @@
 				{
 					"id": "8cb21a0fbac7f005bccb23e3e15c2f43c02be258",
 					"kind": "void_expression",
-					"line": 906,
+					"line": 875,
 					"column": 23,
-					"endLine": 906,
+					"endLine": 875,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11463,9 +11414,9 @@
 				{
 					"id": "6243ae2d061ad4b212fe789de00dc7697e672674",
 					"kind": "void_expression",
-					"line": 913,
+					"line": 882,
 					"column": 23,
-					"endLine": 913,
+					"endLine": 882,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11479,9 +11430,9 @@
 				{
 					"id": "dcf31d370744298866eb3a77ab954d3df23b804c",
 					"kind": "promise_catch",
-					"line": 913,
+					"line": 882,
 					"column": 28,
-					"endLine": 913,
+					"endLine": 882,
 					"endColumn": 83,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11496,9 +11447,9 @@
 				{
 					"id": "8220d41b3689dfdf0cd5219a1d6e9e2eff33de86",
 					"kind": "void_expression",
-					"line": 1033,
+					"line": 1002,
 					"column": 21,
-					"endLine": 1033,
+					"endLine": 1002,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11512,9 +11463,9 @@
 				{
 					"id": "043a12ea0cddd8eb5b82ae2cbf1e573cddf4c62f",
 					"kind": "promise_catch",
-					"line": 1033,
+					"line": 1002,
 					"column": 26,
-					"endLine": 1033,
+					"endLine": 1002,
 					"endColumn": 81,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11529,9 +11480,9 @@
 				{
 					"id": "ab5f51855b26fc0553853c4fc61cde5c2c43acea",
 					"kind": "void_expression",
-					"line": 1058,
+					"line": 1027,
 					"column": 58,
-					"endLine": 1058,
+					"endLine": 1027,
 					"endColumn": 103,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11545,9 +11496,9 @@
 				{
 					"id": "50e09a2a94b971d66a47cb0625d9a870fc155c5f",
 					"kind": "void_expression",
-					"line": 1061,
+					"line": 1030,
 					"column": 78,
-					"endLine": 1061,
+					"endLine": 1030,
 					"endColumn": 118,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11561,9 +11512,9 @@
 				{
 					"id": "cf0715cdc9cb73c05d429f2a783f7a032c92a0ff",
 					"kind": "void_expression",
-					"line": 1102,
+					"line": 1071,
 					"column": 22,
-					"endLine": 1102,
+					"endLine": 1071,
 					"endColumn": 45,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11577,9 +11528,9 @@
 				{
 					"id": "f8ff8ee099b3e0a907f81c14bd877a1eee1eae81",
 					"kind": "callback_registration",
-					"line": 1153,
+					"line": 1122,
 					"column": 3,
-					"endLine": 1153,
+					"endLine": 1122,
 					"endColumn": 75,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11594,9 +11545,9 @@
 				{
 					"id": "549fa46f04eb53d1a6c733142963693beb71335a",
 					"kind": "void_expression",
-					"line": 1153,
+					"line": 1122,
 					"column": 44,
-					"endLine": 1153,
+					"endLine": 1122,
 					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11610,9 +11561,9 @@
 				{
 					"id": "0553cec68f89bfa2aa57f019625c940a604132dc",
 					"kind": "callback_registration",
-					"line": 1186,
+					"line": 1155,
 					"column": 3,
-					"endLine": 1189,
+					"endLine": 1158,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11627,9 +11578,9 @@
 				{
 					"id": "b72bd4860d70663f9b61829f6f8351314bd4eb68",
 					"kind": "void_expression",
-					"line": 1188,
+					"line": 1157,
 					"column": 4,
-					"endLine": 1188,
+					"endLine": 1157,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11643,9 +11594,9 @@
 				{
 					"id": "5e0421ab8f003bcd27d6cee59c69b8668c7a3047",
 					"kind": "promise_catch",
-					"line": 1188,
+					"line": 1157,
 					"column": 9,
-					"endLine": 1188,
+					"endLine": 1157,
 					"endColumn": 82,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11660,9 +11611,9 @@
 				{
 					"id": "d35bb1afc9c4257fe75a7b6ddf2a92c0f6e28f51",
 					"kind": "promise_catch",
-					"line": 1195,
+					"line": 1164,
 					"column": 20,
-					"endLine": 1195,
+					"endLine": 1164,
 					"endColumn": 72,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11677,9 +11628,9 @@
 				{
 					"id": "24378bc0453ae15b316b91c882d2fea4a1bc1f3a",
 					"kind": "catch_clause",
-					"line": 1410,
+					"line": 1379,
 					"column": 3,
-					"endLine": 1410,
+					"endLine": 1379,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11693,9 +11644,9 @@
 				{
 					"id": "a395627ecadc8268191fd5db9ddbb0e7174d9d7e",
 					"kind": "callback_registration",
-					"line": 1412,
+					"line": 1381,
 					"column": 3,
-					"endLine": 1418,
+					"endLine": 1387,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11710,9 +11661,9 @@
 				{
 					"id": "baba5c07132cb60a0aaeea0345450e2ca1eea7a5",
 					"kind": "void_expression",
-					"line": 1413,
+					"line": 1382,
 					"column": 4,
-					"endLine": 1417,
+					"endLine": 1386,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11726,9 +11677,9 @@
 				{
 					"id": "f5367a1693135c198f2333192dbfc043f5a5f648",
 					"kind": "callback_registration",
-					"line": 1413,
+					"line": 1382,
 					"column": 9,
-					"endLine": 1417,
+					"endLine": 1386,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -11743,9 +11694,9 @@
 				{
 					"id": "f9c34e9a22190f1a2207c5157b4920b16f11d4d8",
 					"kind": "void_expression",
-					"line": 1416,
+					"line": 1385,
 					"column": 10,
-					"endLine": 1416,
+					"endLine": 1385,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11759,9 +11710,9 @@
 				{
 					"id": "96e9ca2f1ee9f5b72512c920d2d99788de43ccc9",
 					"kind": "callback_registration",
-					"line": 1420,
+					"line": 1389,
 					"column": 3,
-					"endLine": 1426,
+					"endLine": 1395,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11776,9 +11727,9 @@
 				{
 					"id": "ac6d09ae4849c684bd1877ad212c901c9762923d",
 					"kind": "callback_registration",
-					"line": 1493,
+					"line": 1462,
 					"column": 27,
-					"endLine": 1493,
+					"endLine": 1462,
 					"endColumn": 99,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -11793,9 +11744,9 @@
 				{
 					"id": "1ff80ae91502af1aafd2bca2d2996ac3e1f07575",
 					"kind": "catch_clause",
-					"line": 1513,
+					"line": 1482,
 					"column": 5,
-					"endLine": 1515,
+					"endLine": 1484,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11809,9 +11760,9 @@
 				{
 					"id": "e047efebd801ada065f4bd153a27a5c53dde3453",
 					"kind": "callback_registration",
-					"line": 1572,
+					"line": 1541,
 					"column": 5,
-					"endLine": 1572,
+					"endLine": 1541,
 					"endColumn": 89,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11826,9 +11777,9 @@
 				{
 					"id": "0ef7e565b9560cbc45a429dbe9044dd2d6df46e6",
 					"kind": "void_expression",
-					"line": 1572,
+					"line": 1541,
 					"column": 45,
-					"endLine": 1572,
+					"endLine": 1541,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11842,9 +11793,9 @@
 				{
 					"id": "30add2133fb14a1fe1a3e15678bd5318a4d17656",
 					"kind": "catch_clause",
-					"line": 1576,
+					"line": 1545,
 					"column": 4,
-					"endLine": 1576,
+					"endLine": 1545,
 					"endColumn": 75,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11858,9 +11809,9 @@
 				{
 					"id": "eee34c4eb0f68993e5be7f001b51d100fb0a2f86",
 					"kind": "callback_registration",
-					"line": 1586,
+					"line": 1555,
 					"column": 5,
-					"endLine": 1586,
+					"endLine": 1555,
 					"endColumn": 85,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11875,9 +11826,9 @@
 				{
 					"id": "02f668dc3601b40a7c8ba758741f6e21df635a3d",
 					"kind": "catch_clause",
-					"line": 1591,
+					"line": 1560,
 					"column": 4,
-					"endLine": 1591,
+					"endLine": 1560,
 					"endColumn": 75,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11891,9 +11842,9 @@
 				{
 					"id": "106a0b531d204ea98a3d29fcc56c390e8c6f0622",
 					"kind": "callback_registration",
-					"line": 1601,
+					"line": 1570,
 					"column": 5,
-					"endLine": 1601,
+					"endLine": 1570,
 					"endColumn": 112,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11908,9 +11859,9 @@
 				{
 					"id": "54c81d787df8689a717f0eb9199952d6b58d7e08",
 					"kind": "void_expression",
-					"line": 1601,
+					"line": 1570,
 					"column": 44,
-					"endLine": 1601,
+					"endLine": 1570,
 					"endColumn": 108,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11924,9 +11875,9 @@
 				{
 					"id": "9993a394942bcc8a106247329e5ccab2a577ca82",
 					"kind": "promise_catch",
-					"line": 1601,
+					"line": 1570,
 					"column": 49,
-					"endLine": 1601,
+					"endLine": 1570,
 					"endColumn": 108,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11941,9 +11892,9 @@
 				{
 					"id": "fea288d641df3e129adcaf78ea93b923d535333b",
 					"kind": "callback_registration",
-					"line": 1678,
+					"line": 1647,
 					"column": 3,
-					"endLine": 1685,
+					"endLine": 1654,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11958,9 +11909,9 @@
 				{
 					"id": "0f504242c22c8b8455685e239def8740fdd136f5",
 					"kind": "callback_registration",
-					"line": 1687,
+					"line": 1656,
 					"column": 3,
-					"endLine": 1687,
+					"endLine": 1656,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11975,9 +11926,9 @@
 				{
 					"id": "7bec48aa0ae7de63e510a5115a8e5d58814b5083",
 					"kind": "callback_registration",
-					"line": 1901,
+					"line": 1870,
 					"column": 3,
-					"endLine": 1901,
+					"endLine": 1870,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -11992,9 +11943,9 @@
 				{
 					"id": "c788c18fe2a2bb65c493059db8a961dd220fe37c",
 					"kind": "callback_registration",
-					"line": 1902,
+					"line": 1871,
 					"column": 3,
-					"endLine": 1906,
+					"endLine": 1875,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -12009,9 +11960,9 @@
 				{
 					"id": "3eb64f1e085f805f293527536d7a73d15fe191a1",
 					"kind": "void_expression",
-					"line": 1905,
+					"line": 1874,
 					"column": 4,
-					"endLine": 1905,
+					"endLine": 1874,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12025,9 +11976,9 @@
 				{
 					"id": "45546f30413fbeb6e13bf980f0a07b4290c1d328",
 					"kind": "callback_registration",
-					"line": 1905,
+					"line": 1874,
 					"column": 9,
-					"endLine": 1905,
+					"endLine": 1874,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12041,6 +11992,73 @@
 				},
 				{
 					"id": "6d1612cddb609531160a36cfe6684d6e46b98619",
+					"kind": "callback_registration",
+					"line": 1911,
+					"column": 3,
+					"endLine": 1911,
+					"endColumn": 55,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"id": "b4da6fbf79577e444ee9cc71ff8649ab2527bf65",
+					"kind": "callback_registration",
+					"line": 1912,
+					"column": 3,
+					"endLine": 1916,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"id": "dad65d481490834c4dfa3bc3b2afadaa51ab2367",
+					"kind": "void_expression",
+					"line": 1915,
+					"column": 4,
+					"endLine": 1915,
+					"endColumn": 53,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.onConfirm().finally",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.onConfirm().finally\" in \"onOpen\"."
+				},
+				{
+					"id": "08ae24450f02c7ba9432684948ae71b199bb7a75",
+					"kind": "callback_registration",
+					"line": 1915,
+					"column": 9,
+					"endLine": 1915,
+					"endColumn": 53,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"onOpen\"."
+				},
+				{
+					"id": "320cdab82621dc5085f626765efbfb5ae4383e7a",
 					"kind": "callback_registration",
 					"line": 1942,
 					"column": 3,
@@ -12057,7 +12075,7 @@
 					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
 				},
 				{
-					"id": "b4da6fbf79577e444ee9cc71ff8649ab2527bf65",
+					"id": "219ad628ec156ee98e00ba6c74f212058904f3e8",
 					"kind": "callback_registration",
 					"line": 1943,
 					"column": 3,
@@ -12074,78 +12092,11 @@
 					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
 				},
 				{
-					"id": "dad65d481490834c4dfa3bc3b2afadaa51ab2367",
-					"kind": "void_expression",
-					"line": 1946,
-					"column": 4,
-					"endLine": 1946,
-					"endColumn": 53,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.onConfirm().finally",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.onConfirm().finally\" in \"onOpen\"."
-				},
-				{
-					"id": "08ae24450f02c7ba9432684948ae71b199bb7a75",
-					"kind": "callback_registration",
-					"line": 1946,
-					"column": 9,
-					"endLine": 1946,
-					"endColumn": 53,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"onOpen\"."
-				},
-				{
-					"id": "320cdab82621dc5085f626765efbfb5ae4383e7a",
-					"kind": "callback_registration",
-					"line": 1973,
-					"column": 3,
-					"endLine": 1973,
-					"endColumn": 55,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"id": "219ad628ec156ee98e00ba6c74f212058904f3e8",
-					"kind": "callback_registration",
-					"line": 1974,
-					"column": 3,
-					"endLine": 1978,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
 					"id": "02510c10f890733758abcffd562abe3d859f3f4f",
 					"kind": "void_expression",
-					"line": 1977,
+					"line": 1946,
 					"column": 4,
-					"endLine": 1977,
+					"endLine": 1946,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12159,9 +12110,9 @@
 				{
 					"id": "c5ace1b792bf38522525ce7f081958b690fee6b6",
 					"kind": "callback_registration",
-					"line": 1977,
+					"line": 1946,
 					"column": 9,
-					"endLine": 1977,
+					"endLine": 1946,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12176,9 +12127,9 @@
 				{
 					"id": "18857d01ce5106492b3ec12fef225dd5be3ad15d",
 					"kind": "callback_registration",
-					"line": 2011,
+					"line": 1980,
 					"column": 3,
-					"endLine": 2011,
+					"endLine": 1980,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -12193,9 +12144,9 @@
 				{
 					"id": "5ded0e49ee8474ef8c7de4ff479a56af79e54ff1",
 					"kind": "callback_registration",
-					"line": 2012,
+					"line": 1981,
 					"column": 3,
-					"endLine": 2016,
+					"endLine": 1985,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -12210,9 +12161,9 @@
 				{
 					"id": "7358ac9e62bb20bb452de10bcac381c5db69eb0e",
 					"kind": "void_expression",
-					"line": 2015,
+					"line": 1984,
 					"column": 4,
-					"endLine": 2015,
+					"endLine": 1984,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12226,9 +12177,9 @@
 				{
 					"id": "d316fe460bbc48bcd87041ccc805da8ec11ebcb3",
 					"kind": "callback_registration",
-					"line": 2015,
+					"line": 1984,
 					"column": 9,
-					"endLine": 2015,
+					"endLine": 1984,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12243,9 +12194,9 @@
 				{
 					"id": "2a76f324f5f8dcfcd97b37e7880de318cb088a02",
 					"kind": "callback_registration",
-					"line": 2063,
+					"line": 2032,
 					"column": 3,
-					"endLine": 2063,
+					"endLine": 2032,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -12260,9 +12211,9 @@
 				{
 					"id": "a1396c7f6d95dcf057d061d9e887c173697b1cdd",
 					"kind": "callback_registration",
-					"line": 2064,
+					"line": 2033,
 					"column": 3,
-					"endLine": 2086,
+					"endLine": 2055,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -12277,9 +12228,9 @@
 				{
 					"id": "2b98eab0f75874cb4268e5d351781a101eea6bb6",
 					"kind": "void_expression",
-					"line": 2081,
+					"line": 2050,
 					"column": 4,
-					"endLine": 2085,
+					"endLine": 2054,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12293,9 +12244,9 @@
 				{
 					"id": "028a6335a48ddaedff2d2560ce6e8cf2f2b4f247",
 					"kind": "callback_registration",
-					"line": 2081,
+					"line": 2050,
 					"column": 9,
-					"endLine": 2081,
+					"endLine": 2050,
 					"endColumn": 75,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -12310,9 +12261,9 @@
 				{
 					"id": "0a84e6f36735d2020a9653cb3c3d4ee76399b8dd",
 					"kind": "promise_catch",
-					"line": 2081,
+					"line": 2050,
 					"column": 9,
-					"endLine": 2085,
+					"endLine": 2054,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -16002,188 +15953,111 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/ui/live-session-control.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/ui/live-session-panel.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "e0d8049575962844144a6c44fb089e31069c0a0a",
+					"id": "e32d8b128697052fb6551899c75fffca8f753a14",
+					"kind": "void_expression",
+					"line": 128,
+					"column": 68,
+					"endLine": 128,
+					"endColumn": 85,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.press",
+						"scope": "constructor",
+						"justification": "In \"constructor\", detached \"this.press\" owns rejection recovery: a refused or failed start or finish leaves the session untouched, shows one alert line and re-enables the button; it only runs the shared product action and never opens or closes a session itself."
+					},
+					"reason": "Allowlisted void_expression: In \"constructor\", detached \"this.press\" owns rejection recovery: a refused or failed start or finish leaves the session untouched, shows one alert line and re-enables the button; it only runs the shared product action and never opens or closes a session itself. Verified target: \"this.press\" in \"constructor\"."
+				},
+				{
+					"id": "6149a2118a8fae9661b982d35ac393a6da53f1bd",
+					"kind": "void_expression",
+					"line": 136,
+					"column": 70,
+					"endLine": 136,
+					"endColumn": 92,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.discardOld",
+						"scope": "constructor",
+						"justification": "In \"constructor\", detached \"this.discardOld\" owns rejection recovery and reports the failure on the same alert line; it only runs the existing discard action, offered only while an older session blocks the start."
+					},
+					"reason": "Allowlisted void_expression: In \"constructor\", detached \"this.discardOld\" owns rejection recovery and reports the failure on the same alert line; it only runs the existing discard action, offered only while an older session blocks the start. Verified target: \"this.discardOld\" in \"constructor\"."
+				},
+				{
+					"id": "cb726164b914d4713903582c1139522e18e2503d",
 					"kind": "callback_registration",
-					"line": 66,
-					"column": 4,
-					"endLine": 73,
-					"endColumn": 6,
+					"line": 193,
+					"column": 3,
+					"endLine": 193,
+					"endColumn": 70,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "addEventListener",
 						"scope": "constructor",
-						"justification": "In \"constructor\", the \"addEventListener\" callback handles tab keyboard navigation and focus synchronously; it selects the canonical projection without asynchronous side effects or account requests."
+						"justification": "In \"constructor\", the \"addEventListener\" callback repaints the timeline when its native details element opens or closes; it reads the canonical projection synchronously and makes no account request."
 					},
-					"reason": "Allowlisted callback_registration: In \"constructor\", the \"addEventListener\" callback handles tab keyboard navigation and focus synchronously; it selects the canonical projection without asynchronous side effects or account requests. Verified registration: \"addEventListener\" in \"constructor\"."
+					"reason": "Allowlisted callback_registration: In \"constructor\", the \"addEventListener\" callback repaints the timeline when its native details element opens or closes; it reads the canonical projection synchronously and makes no account request. Verified registration: \"addEventListener\" in \"constructor\"."
 				},
 				{
-					"id": "c1620bd3382dbce83b59e7d6e2b081e9260721b9",
-					"kind": "void_expression",
-					"line": 93,
-					"column": 72,
-					"endLine": 93,
-					"endColumn": 90,
+					"id": "edacb96a69c53b12c87cb28af0cc6919a55c88f4",
+					"kind": "catch_clause",
+					"line": 293,
+					"column": 5,
+					"endLine": 293,
+					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.export",
-						"scope": "constructor",
-						"justification": "In \"constructor\", detached \"this.export\" catches export failures into the retained alert feedback and restores the button; core owns create-only export validation, and the UI never claims success before resolution."
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "press",
+						"justification": "In \"press\", \"local_recovery\" records the failed start or finish, shows an alert line and keeps the session view as the core reports it; a failure never presents a session as started or finished."
 					},
-					"reason": "Allowlisted void_expression: In \"constructor\", detached \"this.export\" catches export failures into the retained alert feedback and restores the button; core owns create-only export validation, and the UI never claims success before resolution. Verified target: \"this.export\" in \"constructor\"."
+					"reason": "Allowlisted catch_clause: In \"press\", \"local_recovery\" records the failed start or finish, shows an alert line and keeps the session view as the core reports it; a failure never presents a session as started or finished. Verified recovery: \"local_recovery\" in \"press\"."
 				},
 				{
-					"id": "f05d02fede4e67c593c55d64c1a9356920d8cac8",
-					"kind": "callback_registration",
-					"line": 129,
-					"column": 3,
-					"endLine": 129,
+					"id": "0019b13a254654f5cc7426828afb0148d6f87153",
+					"kind": "catch_clause",
+					"line": 301,
+					"column": 51,
+					"endLine": 301,
 					"endColumn": 86,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "mountHistory",
-						"justification": "In \"mountHistory\", the \"addEventListener\" callback delegates the explicit selection to a helper that retains the previous selection on failure and reports status; it creates no shadow ledger or account request."
-					},
-					"reason": "Allowlisted callback_registration: In \"mountHistory\", the \"addEventListener\" callback delegates the explicit selection to a helper that retains the previous selection on failure and reports status; it creates no shadow ledger or account request. Verified registration: \"addEventListener\" in \"mountHistory\"."
-				},
-				{
-					"id": "aa3a61f4501974344bc1c73ad09e6a0fafd44309",
-					"kind": "void_expression",
-					"line": 129,
-					"column": 57,
-					"endLine": 129,
-					"endColumn": 82,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.selectHistory",
-						"scope": "mountHistory",
-						"justification": "In \"mountHistory\", detached \"this.selectHistory\" owns rejection recovery, restores the previous selection and exposes failure feedback while preserving the canonical captured session."
-					},
-					"reason": "Allowlisted void_expression: In \"mountHistory\", detached \"this.selectHistory\" owns rejection recovery, restores the previous selection and exposes failure feedback while preserving the canonical captured session. Verified target: \"this.selectHistory\" in \"mountHistory\"."
-				},
-				{
-					"id": "f33f3c3d23df915f6f5ad9c90a9a8012d56d5242",
-					"kind": "void_expression",
-					"line": 130,
-					"column": 74,
-					"endLine": 130,
-					"endColumn": 97,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.loadHistory",
-						"scope": "mountHistory",
-						"justification": "In \"mountHistory\", detached \"this.loadHistory\" owns rejection recovery and visible history feedback; the refresh reads only managed saved-session notes through the core port."
-					},
-					"reason": "Allowlisted void_expression: In \"mountHistory\", detached \"this.loadHistory\" owns rejection recovery and visible history feedback; the refresh reads only managed saved-session notes through the core port. Verified target: \"this.loadHistory\" in \"mountHistory\"."
-				},
-				{
-					"id": "9df3fff7d74f2728f4b2972b14e26ffa9a62f888",
-					"kind": "void_expression",
-					"line": 134,
-					"column": 3,
-					"endLine": 134,
-					"endColumn": 26,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.loadHistory",
-						"scope": "mountHistory",
-						"justification": "In \"mountHistory\", detached \"this.loadHistory\" owns rejection recovery and visible history feedback; initial loading retains the selected history reference even before the saved-session list resolves."
-					},
-					"reason": "Allowlisted void_expression: In \"mountHistory\", detached \"this.loadHistory\" owns rejection recovery and visible history feedback; initial loading retains the selected history reference even before the saved-session list resolves. Verified target: \"this.loadHistory\" in \"mountHistory\"."
-				},
-				{
-					"id": "b9058fd918774edde5242dd0900f2d7213025baa",
-					"kind": "catch_clause",
-					"line": 155,
-					"column": 5,
-					"endLine": 155,
-					"endColumn": 35,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
-						"scope": "loadHistory",
-						"justification": "In \"loadHistory\", \"local_recovery\" presents history-error feedback and restores enabled controls; the previously captured session and selected reference remain intact for an explicit retry."
+						"scope": "discardOld",
+						"justification": "In \"discardOld\", \"local_recovery\" shows an alert line and leaves the older session untouched; a failed discard never claims the session was dropped."
 					},
-					"reason": "Allowlisted catch_clause: In \"loadHistory\", \"local_recovery\" presents history-error feedback and restores enabled controls; the previously captured session and selected reference remain intact for an explicit retry. Verified recovery: \"local_recovery\" in \"loadHistory\"."
+					"reason": "Allowlisted catch_clause: In \"discardOld\", \"local_recovery\" shows an alert line and leaves the older session untouched; a failed discard never claims the session was dropped. Verified recovery: \"local_recovery\" in \"discardOld\"."
 				},
 				{
-					"id": "46124577b623c35abf8e5bfd6c993e17dc522a80",
+					"id": "36b02e844fdd780d903b84216364bef4841d1f17",
 					"kind": "catch_clause",
-					"line": 166,
-					"column": 5,
-					"endLine": 166,
-					"endColumn": 93,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "selectHistory",
-						"justification": "In \"selectHistory\", \"local_recovery\" restores the previous history selector and exposes an error before repainting the canonical view; failure never manufactures a successful selection or new reading."
-					},
-					"reason": "Allowlisted catch_clause: In \"selectHistory\", \"local_recovery\" restores the previous history selector and exposes an error before repainting the canonical view; failure never manufactures a successful selection or new reading. Verified recovery: \"local_recovery\" in \"selectHistory\"."
-				},
-				{
-					"id": "0633774b30a44b3aee50c0a0209cab0a5c2bd434",
-					"kind": "catch_clause",
-					"line": 233,
-					"column": 5,
-					"endLine": 236,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "export",
-						"justification": "In \"export\", \"local_recovery\" presents explicit retained export-failure feedback and re-enables controls; the UI preserves captured data and never marks an unsuccessful create-only export as saved."
-					},
-					"reason": "Allowlisted catch_clause: In \"export\", \"local_recovery\" presents explicit retained export-failure feedback and re-enables controls; the UI preserves captured data and never marks an unsuccessful create-only export as saved. Verified recovery: \"local_recovery\" in \"export\"."
-				},
-				{
-					"id": "e5367b0dc142d108a08d2084a1fd03faf5df7a46",
-					"kind": "callback_registration",
-					"line": 308,
-					"column": 43,
-					"endLine": 308,
-					"endColumn": 106,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "entityCell",
-						"justification": "In \"entityCell\", the \"addEventListener\" callback hides a failed optional cached icon while the item name and stable ID remain visible; it does not alter the canonical observation or its value."
-					},
-					"reason": "Allowlisted callback_registration: In \"entityCell\", the \"addEventListener\" callback hides a failed optional cached icon while the item name and stable ID remain visible; it does not alter the canonical observation or its value. Verified registration: \"addEventListener\" in \"entityCell\"."
-				},
-				{
-					"id": "575f22c4d622878629a5c2d69b17988feeccef25",
-					"kind": "catch_clause",
-					"line": 310,
+					"line": 486,
 					"column": 6,
-					"endLine": 310,
+					"endLine": 486,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
-						"scope": "entityCell",
-						"justification": "In \"entityCell\", \"intentional_noop\" handles malformed optional icon metadata by keeping the already-rendered name and stable ID; icon absence does not suppress the observation or imply missing captured data."
+						"scope": "icon",
+						"justification": "In \"icon\", \"intentional_noop\" handles malformed optional icon metadata by drawing a quiet placeholder; the item name, quantity and stable observation stay visible and icon absence implies no missing captured data."
 					},
-					"reason": "Allowlisted catch_clause: In \"entityCell\", \"intentional_noop\" handles malformed optional icon metadata by keeping the already-rendered name and stable ID; icon absence does not suppress the observation or imply missing captured data. Verified recovery: \"intentional_noop\" in \"entityCell\"."
+					"reason": "Allowlisted catch_clause: In \"icon\", \"intentional_noop\" handles malformed optional icon metadata by drawing a quiet placeholder; the item name, quantity and stable observation stay visible and icon absence implies no missing captured data. Verified recovery: \"intentional_noop\" in \"icon\"."
 				}
 			]
 		},

@@ -1,4 +1,6 @@
-import { liveSessionCopy } from './live-session-copy';
+import { LiveSessionPanel, type LiveSessionPanelActions } from './live-session-panel';
+import { liveSessionControl } from './live-session-control';
+import type { LiveSessionViewV1 } from '../sessions/live-session-model';
 import { FarmingSessionPanel, type FarmingSessionPanelActions } from './farming-session-panel';
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
@@ -192,13 +194,9 @@ export class TyrianCompanionView {
 	private refreshInterval: number | null = null;
 	private farmingPanel: FarmingSessionPanel | null = null;
 	private farmingPanelLocale: Locale | null = null;
-	private legacyHistoryContainer: HTMLDetailsElement | null = null;
-	private legacySessionContainer: HTMLDetailsElement | null = null;
-	private legacySessionBody: HTMLElement | null = null;
-	private legacyExportButton: HTMLButtonElement | null = null;
-	private legacyExportFeedback: HTMLElement | null = null;
-	private legacyExportWorking = false;
-	private legacyExportResult: 'exported' | 'exportFailed' | null = null;
+	/** The live surface's one panel, kept across `render()` so a repaint never rebuilds it. */
+	private livePanel: LiveSessionPanel | null = null;
+	private livePanelLocale: Locale | null = null;
 	/** Torn down in `onClose`; set once in `onOpen` so a repeated `render()` never registers twice. */
 	private visibilityCleanup: (() => void) | null = null;
 	/** The card's ticking clock (`.tyrian-companion-session__clock`), while a session is active. */
@@ -262,11 +260,8 @@ export class TyrianCompanionView {
 		this.liveLoot = null;
 		this.farmingPanel = null;
 		this.farmingPanelLocale = null;
-		this.legacyHistoryContainer = null;
-		this.legacySessionContainer = null;
-		this.legacySessionBody = null;
-		this.legacyExportButton = null;
-		this.legacyExportFeedback = null;
+		this.livePanel = null;
+		this.livePanelLocale = null;
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;
@@ -343,70 +338,44 @@ export class TyrianCompanionView {
 		const surface = this.productShell?.content ?? contentEl;
 		// The history and farming editors stay attached: taking it out of the
 		// tree, even to put it back, would drop the focus and the scroll offset it holds.
-		if (this.farmingPanel !== null && this.farmingPanelLocale !== locale) { this.farmingPanel = null; this.legacyHistoryContainer = null; this.legacySessionContainer = null; }
-		const retained = new Set([this.sessionHistoryMount?.element, this.farmingPanel?.element, this.legacyHistoryContainer, this.legacySessionContainer]);
+		if (this.farmingPanel !== null && this.farmingPanelLocale !== locale) this.farmingPanel = null;
+		if (this.livePanel !== null && this.livePanelLocale !== locale) this.livePanel = null;
+		const retained = new Set(liveSurface ? [this.livePanel?.element] : [this.sessionHistoryMount?.element, this.farmingPanel?.element]);
 		for (const child of Array.from(surface.children)) if (!retained.has(child as HTMLElement)) surface.removeChild(child);
 		surface.addClass('tyrian-companion-view__page');
-		if (!liveSurface) {
+		if (liveSurface) {
+			// The simplified Session tab (6 oct 2026): the one panel and nothing else. The account-era
+			// session, the saved-session history, the comparison and the next-session preparation are
+			// no longer painted here; their data and commands are untouched.
+			this.livePanel ??= new LiveSessionPanel(surface.ownerDocument, this.liveSessionPanelActions());
+			this.livePanelLocale = locale;
+			this.livePanel.refresh();
+			reconcileChildren(surface, [this.livePanel.element]);
+		} else {
 			this.renderStatusLine(surface);
 			this.renderSimpleSession(surface, connectionState, sessionState, projection, now);
-		} else if (sessionState.status !== 'idle' || this.actions.getSessionRecoveryState().status !== 'none') {
-			if (this.legacySessionContainer === null || this.legacySessionContainer === undefined) {
-				this.legacyExportButton = null; this.legacyExportFeedback = null;
-				this.legacySessionContainer = surface.createEl('details', { cls: 'tyrian-companion-view__legacy-session' });
-				this.legacySessionContainer.createEl('summary', { text: liveSessionCopy(locale, 'legacySession') });
-				this.legacySessionContainer.createEl('p', { text: liveSessionCopy(locale, 'legacyReadOnly') });
-				if (this.actions.exportPreservedLegacySession !== undefined) {
-					this.legacyExportButton = this.legacySessionContainer.createEl('button', { text: liveSessionCopy(locale, 'legacyExport'), cls: 'tyrian-companion-view__legacy-export' });
-					this.legacyExportButton.addEventListener('click', () => { void this.exportPreservedLegacy(); });
-					this.legacyExportFeedback = this.legacySessionContainer.createEl('p');
-				}
-				this.legacySessionBody = this.legacySessionContainer.createDiv();
+			if (this.actions.getFarmingGoal !== undefined && this.actions.getFarmingIngameState !== undefined) {
+				this.farmingPanel ??= new FarmingSessionPanel(surface.ownerDocument, this.actions as FarmingSessionPanelActions);
+				this.farmingPanelLocale = locale;
+				this.farmingPanel.refresh();
+				settleLast(surface, this.farmingPanel.element);
 			}
-			this.legacySessionBody!.empty();
-			this.renderSimpleSession(this.legacySessionBody!, connectionState, sessionState, projection, now);
-			this.updateLegacyExport();
-		} else if (liveSurface) {
-			if (this.legacySessionContainer?.parentElement) this.legacySessionContainer.parentElement.removeChild(this.legacySessionContainer); this.legacySessionContainer = null; this.legacySessionBody = null;
-			this.legacyExportButton = null; this.legacyExportFeedback = null;
+			this.renderPendingConfirmationSlot(surface, now);
 		}
-		if (this.actions.getFarmingGoal !== undefined && this.actions.getFarmingIngameState !== undefined) {
-			this.farmingPanel ??= new FarmingSessionPanel(surface.ownerDocument, this.actions as FarmingSessionPanelActions);
-			this.farmingPanelLocale = locale;
-			this.farmingPanel.refresh();
-			if (!liveSurface) settleLast(surface, this.farmingPanel.element);
-		}
-		if (liveSurface) {
-			this.legacyHistoryContainer ??= surface.createEl('details', { cls: 'tyrian-companion-view__legacy-history' });
-			if (this.legacyHistoryContainer.children.length === 0) this.legacyHistoryContainer.createEl('summary');
-			this.legacyHistoryContainer.children[0]!.textContent = liveSessionCopy(locale, 'legacyHistory');
-			this.renderSessionHistoryPanel(this.legacyHistoryContainer, false);
-		} else this.renderPendingConfirmationSlot(surface, now);
 		const retryAt = getRetryAt(connectionState);
-		// Reconcile the live sections once: moving each retained sibling in turn would blur a focused export control.
-		if (liveSurface) reconcileChildren(surface, [this.legacySessionContainer, this.farmingPanel?.element, this.legacyHistoryContainer].filter((node): node is HTMLElement => node !== null && node !== undefined));
 		this.scheduleRefresh(projection, retryAt, now);
 	}
 
-	/** Exports only the core's validated, privacy-preserving previous-session evidence. */
-	private async exportPreservedLegacy(): Promise<void> {
-		if (this.legacyExportWorking || this.actions.exportPreservedLegacySession === undefined) return;
-		this.legacyExportWorking = true; this.legacyExportResult = null; this.updateLegacyExport();
-		try { await this.actions.exportPreservedLegacySession(); this.legacyExportResult = 'exported'; }
-		catch { this.legacyExportResult = 'exportFailed'; }
-		finally { this.legacyExportWorking = false; this.updateLegacyExport(); }
-	}
-
-	private updateLegacyExport(): void {
-		if (this.legacyExportButton) {
-			this.legacyExportButton.setAttr('aria-disabled', String(this.legacyExportWorking));
-			this.legacyExportButton.setAttr('aria-busy', String(this.legacyExportWorking));
-			this.legacyExportButton.textContent = liveSessionCopy(this.actions.getLocale(), this.legacyExportWorking ? 'exporting' : 'legacyExport');
-		}
-		if (this.legacyExportFeedback) {
-			this.legacyExportFeedback.setAttr('role', this.legacyExportResult === 'exportFailed' ? 'alert' : 'status');
-			this.legacyExportFeedback.textContent = this.legacyExportResult === null ? '' : liveSessionCopy(this.actions.getLocale(), this.legacyExportResult);
-		}
+	/** The panel's ports: the view's own data actions plus the one session button, wired to the shared product actions. */
+	private liveSessionPanelActions(): LiveSessionPanelActions {
+		const actions = this.actions;
+		const view = (): LiveSessionViewV1 => actions.getLiveSessionView!(0, 1);
+		return {
+			getLocale: () => actions.getLocale(),
+			getLiveSessionView: (offset, limit) => actions.getLiveSessionView!(offset, limit),
+			getLiveSessionEntity: (kind, id) => actions.getLiveSessionEntity?.(kind, id) ?? null,
+			...liveSessionControl(actions, view),
+		};
 	}
 
 	/** Owns the slot the background refresh repaints in place, so the queue never needs a full rerender. */

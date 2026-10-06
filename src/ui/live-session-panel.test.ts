@@ -1,189 +1,311 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import type { LiveObservationV1, LiveSessionViewV1 } from '../sessions/live-session-model';
-import { LiveSessionPanel, type LiveSessionPanelActions } from './live-session-panel';
+import type { LiveGapV1, LiveObservationV1, LiveSessionViewV1 } from '../sessions/live-session-model';
+import {
+	LiveSessionPanel, liveSessionRatePerHour, liveSessionValue,
+	type LiveSessionControlState, type LiveSessionPanelActions,
+} from './live-session-panel';
 
 const at = (seconds: number): string => new Date(Date.UTC(2026, 9, 6, 8, 0, seconds)).toISOString();
-function observation(cursor: number, before: number, after: number): LiveObservationV1 {
-	return { version: 1, id: `epoch/${String(cursor)}/item/12147`, source: 'nexus_inventory', epoch: 'epoch', cursor,
-		kind: 'item', idNumber: 12147, before, after, delta: after - before, observedAt: at(cursor),
+function observation(cursor: number, delta = 1, id = 12147): LiveObservationV1 {
+	return { version: 1, id: `epoch/${String(cursor)}/item/${String(id)}`, source: 'nexus_inventory', epoch: 'epoch', cursor,
+		kind: 'item', idNumber: id, before: 0, after: delta, delta, observedAt: at(cursor),
 		windowStartAt: at(cursor - 1), sourceElapsedMs: cursor * 1_000, cause: 'unknown', coverage: 'observed_interval' };
 }
-function liveView(): LiveSessionViewV1 {
+function liveView(count = 2): LiveSessionViewV1 {
+	const observations = Array.from({ length: count }, (_, index) => observation(index + 1));
 	return { version: 1, sessionId: 'session', phase: 'active', connection: 'connected', sourceState: 'ready', sourceReason: null,
-		source: 'nexus_inventory', startedAt: at(0), endedAt: null, elapsedMs: 2_000, observedItemsMs: 2_000,
-		observedCurrenciesMs: 0, lastObservationAt: at(2), itemCoverage: 'complete', currencyCoverage: 'none', currencyIds: [], freeSlots: 8,
-		observations: [observation(1, 0, 2), observation(2, 2, 4)], observationCount: 2, observationOffset: 0, hasMore: false,
-		gaps: [], totals: [{ kind: 'item', idNumber: 12147, positive: 4, negative: 0, net: 4 }],
+		source: 'nexus_inventory', startedAt: at(0), endedAt: null, elapsedMs: 1_223_000, observedItemsMs: 3_600_000,
+		observedCurrenciesMs: 0, lastObservationAt: at(count), itemCoverage: 'complete', currencyCoverage: 'none', currencyIds: [], freeSlots: 8,
+		observations, observationCount: count, observationOffset: 0, hasMore: false,
+		gaps: [], totals: [{ kind: 'item', idNumber: 12147, positive: count, negative: 0, net: count }],
 		valuation: { priceBasis: 'instant_sell_net', capturedAt: at(2), prices: [{ itemId: 12147, unitCopper: 10 }],
-			positiveItemValueKnownCopper: 40, netItemValueKnownCopper: 40, coinNetCopper: null, knownNetValueCopper: null, unpricedItemIds: [] },
+			positiveItemValueKnownCopper: 10 * count, netItemValueKnownCopper: 10 * count, coinNetCopper: null, knownNetValueCopper: null, unpricedItemIds: [] },
 		chartPoints: [{ observedAt: at(0), itemQuantityNet: 0, netItemValueKnownCopper: 0, knownNetValueCopper: null, breakBefore: false },
-			{ observedAt: at(1), itemQuantityNet: 2, netItemValueKnownCopper: 20, knownNetValueCopper: null, breakBefore: false },
-			{ observedAt: at(2), itemQuantityNet: 4, netItemValueKnownCopper: 40, knownNetValueCopper: null, breakBefore: false }],
+			{ observedAt: at(1), itemQuantityNet: 1, netItemValueKnownCopper: 10, knownNetValueCopper: null, breakBefore: false },
+			{ observedAt: at(count), itemQuantityNet: count, netItemValueKnownCopper: 10 * count, knownNetValueCopper: null, breakBefore: false }],
 		magicFind: { value: null, source: 'unknown' } };
 }
-function harness(view = liveView(), locale: 'es' | 'en' = 'en') {
-	const exportSession = vi.fn(async (_kind: 'timeline' | 'summary', _format: 'csv' | 'json') => {});
-	const getView = vi.fn((offset: number = 0, limit: number = 50): LiveSessionViewV1 => ({ ...view,
-		observations: view.observations.slice(offset, offset + limit), observationOffset: offset, hasMore: offset + limit < view.observationCount }));
-	const entity = vi.fn(() => ({ name: 'Mushroom', icon: 'https://render.guildwars2.com/file/hash/1.png' }));
-	const panel = new LiveSessionPanel(document, { getLocale: () => locale, getLiveSessionView: getView,
-		getLiveSessionEntity: entity, exportLiveSession: exportSession });
-	return { view, panel, exportSession, getView, entity };
+const idleView = (): LiveSessionViewV1 => ({ ...liveView(0), sessionId: null, phase: 'idle', connection: 'disconnected', sourceState: 'missing',
+	source: null, startedAt: null, elapsedMs: null, itemCoverage: 'none', totals: [], chartPoints: [], observations: [], lastObservationAt: null });
+const control = (patch: Partial<LiveSessionControlState> = {}): LiveSessionControlState => ({
+	gameConnected: true, consult: false, canStart: false, canStop: true, busy: null, oldSession: null, ...patch });
+
+function harness(initial = liveView(), initialControl = control(), locale: 'es' | 'en' = 'en') {
+	const state = { view: initial, control: initialControl };
+	const start = vi.fn(async () => {});
+	const stop = vi.fn(async () => {});
+	const discard = vi.fn(async () => {});
+	const getView = vi.fn((offset: number = 0, limit: number = 50): LiveSessionViewV1 => ({ ...state.view,
+		observations: state.view.observations.slice(offset, offset + limit), observationOffset: offset,
+		hasMore: offset + limit < state.view.observationCount }));
+	const actions: LiveSessionPanelActions = {
+		getLocale: () => locale, getLiveSessionView: getView,
+		getLiveSessionEntity: (_kind, id) => ({ name: `Item ${String(id)}`, icon: 'https://render.guildwars2.com/file/hash/1.png' }),
+		getLiveSessionControl: () => state.control, startLiveSession: start, stopLiveSession: stop, discardOldSession: discard,
+	};
+	const panel = new LiveSessionPanel(document, actions);
+	document.body.append(panel.element);
+	return { state, panel, start, stop, discard, getView };
 }
 
-function button(panel: LiveSessionPanel, label: string): HTMLButtonElement {
-	return Array.from(panel.element.querySelectorAll('button')).find((value) => value.textContent === label)!;
+/** Everything a person can tab to or press that is actually rendered (not inside a hidden block, not inside a closed details). */
+function controls(panel: LiveSessionPanel): string[] {
+	return Array.from(panel.element.querySelectorAll<HTMLElement>('button, summary, a, input, select, textarea, [tabindex]'))
+		.filter((el) => el.closest('[hidden]') === null)
+		.filter((el) => { const details = el.closest('details'); return details === null || details.open || el.tagName === 'SUMMARY' && el.parentElement === details; })
+		.map((el) => `${el.tagName.toLowerCase()}:${el.textContent}`);
 }
+const toggle = (panel: LiveSessionPanel): HTMLButtonElement => panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__toggle')!;
+const timeline = (panel: LiveSessionPanel): HTMLDetailsElement => panel.element.querySelector<HTMLDetailsElement>('details')!;
+const openTimeline = (panel: LiveSessionPanel): void => { timeline(panel).open = true; timeline(panel).dispatchEvent(new Event('toggle')); };
+const rowTimes = (panel: LiveSessionPanel): string[] => Array.from(panel.element.querySelectorAll('.tyrian-live-session__row time')).map((el) => el.getAttribute('datetime')!);
 
-describe('shared live observation surface', () => {
-	it('reopens a saved ledger through the core and exports the selected canonical session', async () => {
-		const current = liveView(); let selected = current;
-		const saved = { ...liveView(), sessionId: 'saved', phase: 'complete' as const, connection: 'disconnected' as const,
-			sourceState: 'stale' as const, sourceReason: 'source_stale' as const };
-		const select = vi.fn(async (ref: string | null) => { selected = ref === null ? current : saved; });
-		const exported: string[] = [];
-		const actions: LiveSessionPanelActions = { getLocale: () => 'en', getLiveSessionView: () => selected,
-			getLiveSessionEntity: () => null, listLiveSessionHistory: async () => [{ sessionRef: 'saved-ref', startedAt: at(0), endedAt: at(2), observationCount: 2 }],
-			selectLiveSessionHistory: select, exportLiveSession: async () => { exported.push(selected.sessionId!); } };
-		const panel = new LiveSessionPanel(document, actions);
-		const history = panel.element.querySelector<HTMLSelectElement>('select[aria-label="Saved session"]')!;
-		await vi.waitFor(() => expect(history.options).toHaveLength(2));
-		history.value = 'saved-ref'; history.dispatchEvent(new Event('change'));
-		await vi.waitFor(() => expect(panel.element.textContent).toContain('Session complete'));
-		expect(select).toHaveBeenLastCalledWith('saved-ref');
-		expect(panel.element.textContent).toContain('Game disconnected');
-		button(panel, 'Export timeline').click(); await vi.waitFor(() => expect(exported).toEqual(['saved']));
-		history.value = ''; history.dispatchEvent(new Event('change'));
-		await vi.waitFor(() => expect(panel.element.textContent).toContain('Session active'));
-		expect(select).toHaveBeenLastCalledWith(null);
+describe('Session tab: header and the one button', () => {
+	it('draws exactly one button and one summary per state, and one more when the timeline has a second page', () => {
+		const idle = harness(idleView(), control({ canStart: true }));
+		expect(controls(idle.panel)).toEqual(['button:Start session']);
+		const active = harness(liveView(), control());
+		expect(controls(active.panel)).toEqual(['button:Finish session', 'summary:Timeline (2)']);
+		const consult = harness(idleView(), control({ consult: true }));
+		expect(controls(consult.panel)).toEqual([]);
+		expect(consult.panel.element.textContent).toContain('This installation is in consult mode');
+		const many = harness(liveView(120), control());
+		openTimeline(many.panel);
+		expect(controls(many.panel)).toEqual(['button:Finish session', 'summary:Timeline (120)', 'button:Show 50 more']);
+		const old = harness(idleView(), control({ oldSession: { canDiscard: true } }));
+		expect(controls(old.panel)).toContain('button:Discard old session');
 	});
 
-	it('keeps the selected session when a history read fails and provides a retry', async () => {
-		const failed = vi.fn(async (): Promise<{ sessionRef: string; startedAt: string; endedAt: string; observationCount: number }[]> => { throw new Error('unreadable note'); });
-		const panel = new LiveSessionPanel(document, { getLocale: () => 'en', getLiveSessionView: liveView,
-			getLiveSessionEntity: () => null, exportLiveSession: vi.fn(async () => {}), listLiveSessionHistory: failed,
-			selectLiveSessionHistory: vi.fn(async () => {}) });
-		await vi.waitFor(() => expect(panel.element.querySelector('[role="alert"]')?.textContent).toContain('Could not load this session'));
-		expect(panel.element.querySelectorAll('tbody tr')).toHaveLength(2);
-		failed.mockResolvedValueOnce([]); button(panel, 'Refresh history').click();
-		await vi.waitFor(() => expect(panel.element.querySelector('[role="alert"]')).toBeNull());
+	it('wires every state to its action and reads like the mockup', async () => {
+		const idle = harness(idleView(), control({ canStart: true }), 'es');
+		expect(idle.panel.element.textContent).toContain('Sin sesión');
+		expect(idle.panel.element.textContent).toContain('Juego conectado. Inicia una sesión');
+		expect(toggle(idle.panel).textContent).toBe('Iniciar sesión');
+		toggle(idle.panel).click();
+		expect(idle.start).toHaveBeenCalledOnce();
+
+		const active = harness(liveView(), control());
+		expect(active.panel.element.querySelector('.tyrian-live-session__status')?.textContent).toBe('In progress20:23');
+		expect(toggle(active.panel).textContent).toBe('Finish session');
+		toggle(active.panel).click();
+		expect(active.stop).toHaveBeenCalledOnce();
+		expect(active.start).not.toHaveBeenCalled();
+
+		const done = harness({ ...liveView(), phase: 'complete', connection: 'disconnected' }, control({ canStart: true }));
+		expect(done.panel.element.querySelector('.tyrian-live-session__phase')?.textContent).toBe('Finished');
+		expect(done.panel.element.querySelector('.tyrian-live-session__grid > li')!.getAttribute('aria-label')).toBe('Item 12147, 2');
+		expect(toggle(done.panel).textContent).toBe('Start session');
+		toggle(done.panel).click();
+		expect(done.start).toHaveBeenCalledOnce();
 	});
 
-	it('reconciles two observed mushroom increases with a summary of four, never foreign currency totals', () => {
-		const { panel } = harness();
-		const rows = panel.element.querySelectorAll('tbody tr');
-		expect(rows).toHaveLength(2);
-		expect(rows[0]?.textContent).toContain('ID 12147+2020g 0s 20c');
-		expect(rows[1]?.textContent).toContain('ID 12147+2240g 0s 20c');
-		expect(panel.element.textContent).toContain('Currency coverageNo coverage');
-		button(panel, 'Session summary').click();
-		expect(panel.element.querySelectorAll('tbody tr')).toHaveLength(1);
-		expect(panel.element.querySelector('tbody tr')?.textContent).toContain('ID 12147+40+40g 0s 40c');
-		expect(panel.element.textContent).not.toContain('Volatile Magic');
-		expect(panel.element.textContent).toContain('Observed net coins—');
+	it('refuses to start with the game disconnected and says why', () => {
+		const { panel, start } = harness(idleView(), control({ gameConnected: false, canStart: false }), 'es');
+		expect(toggle(panel).getAttribute('aria-disabled')).toBe('true');
+		expect(panel.element.querySelector('.tyrian-live-session__phase')?.textContent).toBe('Juego desconectado');
+		expect(panel.element.textContent).toContain('Abre Guild Wars 2 con el addon de Nexus para poder iniciar.');
+		toggle(panel).click();
+		expect(start).not.toHaveBeenCalled();
 	});
 
-	it('shows baseline and missing source explicitly without manufacturing zero observations', () => {
-		const view = liveView(); view.sessionId = null; view.phase = 'idle'; view.source = null;
-		view.sourceState = 'missing'; view.itemCoverage = 'none'; view.observations = []; view.totals = [];
-		view.observationCount = 0; view.chartPoints = []; view.lastObservationAt = null;
-		const { panel } = harness(view, 'es');
-		expect(panel.element.querySelector('table')).toBeNull();
-		expect(panel.element.textContent).toContain('Sin fuente Nexus de inventario');
-		expect(panel.element.textContent).toContain('Conecta un lector Nexus local compatible');
-		expect(button(panel, 'Exportar cronología').disabled).toBe(true);
-		view.sessionId = 'session'; view.phase = 'starting'; view.sourceState = 'warming_up'; panel.refresh();
-		expect(panel.element.textContent).toContain('Un baseline no es una adquisición.');
+	it('goes busy on the first click and ignores the second one', async () => {
+		const h = harness(idleView(), control({ canStart: true }));
+		let release: () => void = () => {};
+		h.start.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+		toggle(h.panel).click();
+		expect(toggle(h.panel).getAttribute('aria-busy')).toBe('true');
+		expect(toggle(h.panel).getAttribute('aria-disabled')).toBe('true');
+		expect(toggle(h.panel).textContent).toBe('Starting…');
+		toggle(h.panel).click(); toggle(h.panel).click();
+		expect(h.start).toHaveBeenCalledOnce();
+		release();
+		await vi.waitFor(() => expect(toggle(h.panel).hasAttribute('aria-busy')).toBe(false));
 	});
 
-	it('uses observed currencies only and preserves signed changes with unknown prices', () => {
-		const view = liveView(); view.currencyCoverage = 'listed'; view.currencyIds = [45];
-		view.observations.push({ ...observation(3, 0, 6), kind: 'currency', idNumber: 45 }, { ...observation(4, 6, 12), kind: 'currency', idNumber: 45 });
-		view.observationCount = 4; view.totals.push({ kind: 'currency', idNumber: 45, positive: 12, negative: 0, net: 12 });
-		view.valuation.prices = []; view.valuation.unpricedItemIds = [12147];
-		const { panel } = harness(view); button(panel, 'Session summary').click();
-		const rows = panel.element.querySelectorAll('tbody tr');
-		expect(rows[0]?.textContent).toContain('ID 12147+40+4—');
-		expect(rows[1]?.textContent).toContain('ID 45+120+12—');
-		expect(panel.element.textContent).toContain('No eligible rate yet');
+	it('shows busy while finishing and once the same click is repeated only one stop goes out', async () => {
+		const h = harness();
+		let release: () => void = () => {};
+		h.stop.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+		toggle(h.panel).click(); toggle(h.panel).click();
+		expect(toggle(h.panel).textContent).toBe('Finishing…');
+		expect(h.stop).toHaveBeenCalledOnce();
+		release();
+		await vi.waitFor(() => expect(toggle(h.panel).hasAttribute('aria-busy')).toBe(false));
 	});
 
-	it('keeps tabs and export focus across ticks and supplies keyboard tab navigation', () => {
-		const { panel, view } = harness(); document.body.append(panel.element);
-		const tab = button(panel, 'Timeline'); tab.focus(); view.elapsedMs = 4_000; panel.refresh();
-		expect(document.activeElement).toBe(tab);
-		tab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-		expect(document.activeElement).toBe(button(panel, 'Session summary'));
-		expect(button(panel, 'Session summary').getAttribute('aria-selected')).toBe('true');
-		expect(panel.element.querySelector('[role="tabpanel"]')?.getAttribute('aria-labelledby')).toBe(button(panel, 'Session summary').id);
-		panel.element.remove();
+	it('reports a failed start as an alert, keeps the start button and clears the alert on the next try', async () => {
+		const h = harness(idleView(), control({ canStart: true }));
+		h.start.mockRejectedValueOnce(new Error('boom'));
+		toggle(h.panel).click();
+		await vi.waitFor(() => expect(h.panel.element.querySelector('[role="alert"]')?.textContent).toBe('The session could not be started'));
+		expect(h.panel.element.querySelector('.tyrian-live-session__phase')?.textContent).toBe('Session error');
+		expect(toggle(h.panel).textContent).toBe('Start session');
+		expect(toggle(h.panel).getAttribute('aria-disabled')).toBe('false');
+		toggle(h.panel).click();
+		await vi.waitFor(() => expect(h.start).toHaveBeenCalledTimes(2));
+		await vi.waitFor(() => expect(h.panel.element.querySelector('[role="alert"]')!.hasAttribute('hidden')).toBe(true));
 	});
 
-	it('preserves expanded chart and gap controls and their focus through a new committed sample', () => {
-		const { panel, view } = harness(); view.gaps = [{version:1,fromAt:at(1),toAt:null,reason:'read_failed',channels:['items']}]; panel.refresh();
-		document.body.append(panel.element);
-		const chart = panel.element.querySelector<HTMLDetailsElement>('.tyrian-live-session__charts details')!;
-		chart.open = true; const summary = chart.querySelector('summary')!; summary.tabIndex = 0; summary.focus();
-		view.elapsedMs = 10_000; panel.refresh(); expect(chart.open).toBe(true); expect(document.activeElement).toBe(summary);
-		const gap = panel.element.querySelector<HTMLDetailsElement>('.tyrian-live-session__gaps details')!;
-		gap.open = true; view.elapsedMs = 12_000; panel.refresh(); expect(gap.open).toBe(true);
-		panel.element.remove();
+	it('announces only the phase: the clock lives outside the status region', () => {
+		const h = harness();
+		const region = h.panel.element.querySelector('[role="status"]')!;
+		expect(region.textContent).toBe('In progress');
+		h.state.view = { ...h.state.view, elapsedMs: 1_300_000 }; h.panel.refresh();
+		expect(region.textContent).toBe('In progress');
+		expect(h.panel.element.querySelector('.tyrian-live-session__elapsed')?.textContent).toBe('21:40');
 	});
 
-	it('paginates the observation window while full totals stay reconciled', () => {
-		const view = liveView(); view.observations = Array.from({ length: 71 }, (_, index) => observation(index + 1, index, index + 1));
-		view.observationCount = 71; view.totals[0] = { kind: 'item', idNumber: 12147, positive: 71, negative: 0, net: 71 };
-		const { panel, getView } = harness(view);
-		expect(panel.element.querySelectorAll('tbody tr')).toHaveLength(50);
-		button(panel, 'Next').click(); expect(getView).toHaveBeenLastCalledWith(50, 50);
-		expect(panel.element.querySelectorAll('tbody tr')).toHaveLength(21);
-		button(panel, 'Session summary').click(); expect(panel.element.querySelector('tbody tr')?.textContent).toContain('+71');
+	it('names the open reading gap on the header without adding a control', () => {
+		const gap: LiveGapV1 = { version: 1, fromAt: at(3), toAt: null, reason: 'disconnect', channels: ['items'] };
+		const h = harness({ ...liveView(), connection: 'disconnected', gaps: [gap] });
+		const notice = h.panel.element.querySelector('.tyrian-live-session__notice')!;
+		expect(notice.hasAttribute('hidden')).toBe(false);
+		expect(notice.textContent).toContain('Connection lost');
+		expect(controls(h.panel)).toEqual(['button:Finish session', 'summary:Timeline (2)']);
+	});
+});
+
+describe('Session tab: figures, objects and chart', () => {
+	it('uses the known net value, falling back to the item subtotal, and leaves «Per hour» out when there is no rate', () => {
+		const withCoins = liveView(); withCoins.valuation.knownNetValueCopper = 413;
+		expect(liveSessionValue(withCoins)).toBe(413);
+		expect(liveSessionValue(liveView())).toBe(20);
+		const h = harness(liveView());
+		const labels = () => Array.from(h.panel.element.querySelectorAll('.tyrian-live-session__stats > div')).filter((row) => !row.hasAttribute('hidden')).map((row) => row.firstElementChild!.textContent);
+		expect(labels()).toEqual(['Estimated value', 'Per hour']);
+		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).toContain('0g 0s 20c');
+		const unpriced = liveView(); unpriced.valuation.unpricedItemIds = [12147];
+		expect(liveSessionRatePerHour(unpriced)).toBeNull();
+		h.state.view = unpriced; h.panel.refresh();
+		expect(labels()).toEqual(['Estimated value']);
+		const rate = Array.from(h.panel.element.querySelectorAll('.tyrian-live-session__stats > div')).find((row) => row.textContent?.includes('Per hour'))!;
+		expect(rate.hasAttribute('hidden')).toBe(true);
+		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).not.toContain('—');
 	});
 
-	it('splits the chart at a source gap and does not fabricate recovery acquisitions', () => {
-		const view = liveView(); view.sourceState = 'stale'; view.sourceReason = 'source_stale'; view.connection = 'connected';
-		view.chartPoints[2]!.breakBefore = true;
-		view.gaps = [{ version: 1, fromAt: at(1), toAt: null, reason: 'source_stale', channels: ['items', 'currencies'] }];
+	it('draws the objects as a labelled list with the net quantity on each tile, sorted by value, without a row cap', () => {
+		const view = liveView();
+		view.totals = Array.from({ length: 40 }, (_, index) => ({ kind: 'item' as const, idNumber: 100 + index, positive: index + 1, negative: 0, net: index + 1 }));
+		view.totals.push({ kind: 'item', idNumber: 999, positive: 0, negative: 3, net: -3 }, { kind: 'item', idNumber: 998, positive: 0, negative: 0, net: 0 });
+		view.valuation.prices = [{ itemId: 100, unitCopper: 5_000 }];
 		const { panel } = harness(view);
-		expect(panel.element.textContent).toContain('Game connected · Reading is old');
-		expect(panel.element.textContent).toContain('Observation paused');
-		expect(panel.element.querySelectorAll('svg polyline')).toHaveLength(4);
-		expect(panel.element.textContent).toContain('No recent reader sample');
-		expect(panel.element.querySelectorAll('tbody tr')).toHaveLength(2);
+		const tiles = Array.from(panel.element.querySelectorAll('.tyrian-live-session__grid > li'));
+		expect(tiles).toHaveLength(41);
+		expect(tiles[0]!.getAttribute('aria-label')).toBe('Item 100, 1');
+		expect(tiles[40]!.getAttribute('aria-label')).toBe('Item 999, -3');
+		expect(panel.element.querySelector('.tyrian-live-session__grid')!.getAttribute('aria-label')).toBe('Objects');
+		expect(panel.element.querySelector('.tyrian-live-session__objects h4 b')!.textContent).toBe(String(820 - 3));
 	});
 
-	it('exports both canonical views and reports errors without losing data', async () => {
-		const { panel, exportSession } = harness();
-		button(panel, 'Export timeline').click(); await vi.waitFor(() => expect(panel.element.textContent).toContain('Export saved'));
-		expect(exportSession).toHaveBeenLastCalledWith('timeline', 'csv');
-		button(panel, 'Session summary').click(); panel.element.querySelector('select')!.value = 'json';
-		exportSession.mockRejectedValueOnce(new Error('storage')); button(panel, 'Export summary').click();
-		await vi.waitFor(() => expect(panel.element.querySelector('[role="alert"]')?.textContent).toContain('Could not export'));
-		expect(exportSession).toHaveBeenLastCalledWith('summary', 'json');
-		expect(panel.element.querySelector('tbody tr')?.textContent).toContain('+4');
+	it('shows observed coins under the grid and a quiet line while nothing was observed yet', () => {
+		const view = liveView(); view.totals.push({ kind: 'currency', idNumber: 1, positive: 15_525, negative: 0, net: 15_525 });
+		const { panel } = harness(view);
+		expect(panel.element.querySelector('.tyrian-live-session__coins')!.textContent).toContain('1g 55s 25c');
+		const none = harness({ ...liveView(0), totals: [], chartPoints: [] });
+		expect(none.panel.element.textContent).toContain('No inventory changes observed yet.');
+		expect(none.panel.element.querySelector('.tyrian-live-session__chart')!.hasAttribute('hidden')).toBe(true);
+		expect(none.panel.element.querySelector('details')!.hasAttribute('hidden')).toBe(true);
 	});
 
-	it('keeps readable entity IDs when icons fail and wraps hostile long metadata as plain text', () => {
-		const { panel, entity } = harness();
-		const image = panel.element.querySelector('img')!; image.dispatchEvent(new Event('error')); expect(image.hidden).toBe(true);
-		entity.mockReturnValue({ name: '<script>' + 'Long name '.repeat(100), icon: 'https://untrusted.example/icon.png' }); panel.refresh();
-		expect(panel.element.querySelector('img')).toBeNull(); expect(panel.element.querySelector('script')).toBeNull();
-		expect(panel.element.textContent).toContain('ID 12147');
+	it('draws one chart with a summary label, and the legend only when there are reading gaps', () => {
+		const clean = harness();
+		expect(clean.panel.element.querySelectorAll('[role="img"]')).toHaveLength(1);
+		expect(clean.panel.element.querySelector('[role="img"]')!.getAttribute('aria-label')).toMatch(/^Value over time: Estimated value from 0g 0s 0c to 0g 0s 20c, .+ to .+, no reading gaps$/);
+		expect(clean.panel.element.querySelector('.tyrian-live-session__legend')!.hasAttribute('hidden')).toBe(true);
+		const view = liveView();
+		view.gaps = [{ version: 1, fromAt: at(1), toAt: at(2), reason: 'disconnect', channels: ['items'] }, { version: 1, fromAt: at(2), toAt: at(3), reason: 'source_stale', channels: ['items'] }];
+		view.chartPoints[2]!.breakBefore = true;
+		const gapped = harness(view);
+		const legend = gapped.panel.element.querySelector('.tyrian-live-session__legend')!;
+		expect(legend.hasAttribute('hidden')).toBe(false);
+		expect(legend.textContent).toBe('No reading · 2 gaps');
+		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__gap')).toHaveLength(2);
+		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__line')).toHaveLength(2);
+		expect(gapped.panel.element.querySelector('[role="img"]')!.getAttribute('aria-label')).toContain('2 reading gaps');
 	});
-	it('restores the selected saved session on remount and language rebuild', async () => {
-		const view = liveView(); view.phase = 'complete'; view.sourceState = 'stale'; view.connection = 'disconnected';
-		const select = vi.fn(async () => {});
-		const actions: LiveSessionPanelActions = { getLocale: () => 'en', getLiveSessionView: () => view,
-			getLiveSessionEntity: () => null, exportLiveSession: async () => {}, getSelectedLiveSessionHistory: () => 'saved',
-			listLiveSessionHistory: async () => [{sessionRef:'saved',startedAt:at(0),endedAt:at(2),observationCount:2}], selectLiveSessionHistory: select };
-		for (const locale of ['en', 'es'] as const) {
-			const panel = new LiveSessionPanel(document, {...actions, getLocale: () => locale});
-			expect(panel.element.querySelector<HTMLSelectElement>('select[aria-label="Saved session"], select[aria-label="Sesión guardada"]')?.value).toBe('saved');
-			await vi.waitFor(() => expect(panel.element.querySelector<HTMLSelectElement>('select[aria-label="Saved session"], select[aria-label="Sesión guardada"]')?.value).toBe('saved'));
-			expect(panel.element.textContent).toContain(locale === 'en' ? 'Session complete' : 'Sesión terminada');
-		}
-		expect(select).not.toHaveBeenCalled();
+});
+
+describe('Session tab: timeline', () => {
+	it('is closed by default and holds the newest observation first, 50 at a time, out of 300', () => {
+		const { panel, getView } = harness(liveView(300));
+		expect(timeline(panel).open).toBe(false);
+		expect(panel.element.querySelectorAll('.tyrian-live-session__row')).toHaveLength(0);
+		expect(timeline(panel).querySelector('summary')!.textContent).toBe('Timeline (300)');
+		openTimeline(panel);
+		let times = rowTimes(panel);
+		expect(times).toHaveLength(50);
+		expect(times[0]).toBe(at(300)); expect(times[49]).toBe(at(251));
+		expect(times).toEqual([...times].sort().reverse());
+		expect(panel.element.querySelector('.tyrian-live-session__more span')!.textContent).toBe('50 of 300');
+		const more = panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__more-button')!;
+		more.click();
+		times = rowTimes(panel);
+		expect(times).toHaveLength(100); expect(times[99]).toBe(at(201));
+		for (let page = 0; page < 4; page++) more.click();
+		expect(rowTimes(panel)).toHaveLength(300);
+		expect(rowTimes(panel)[299]).toBe(at(1));
+		expect(panel.element.querySelector('.tyrian-live-session__more')!.hasAttribute('hidden')).toBe(true);
+		expect(getView.mock.calls.every(([, limit]) => (limit ?? 0) <= 200)).toBe(true);
 	});
 
+	it('writes the hour without a date, signs the change and never splits a long name letter by letter', () => {
+		const view = liveView(1); view.observations = [observation(1, -2)];
+		const { panel } = harness(view);
+		openTimeline(panel);
+		const row = panel.element.querySelector('.tyrian-live-session__row')!;
+		expect(row.querySelector('time')!.textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+		expect(row.querySelector('.tyrian-live-session__delta')!.textContent).toBe('-2');
+		expect(row.querySelector('.tyrian-live-session__name')!.textContent).toBe('Item 12147');
+		// The name is one text node in one element: the stylesheet truncates it with an ellipsis, it is never split.
+		expect(row.querySelector('.tyrian-live-session__name')!.childNodes).toHaveLength(1);
+	});
+
+	it('keeps the open timeline, the row nodes and the focus when a new observation arrives', () => {
+		const h = harness(liveView(60));
+		openTimeline(h.panel);
+		const before = Array.from(h.panel.element.querySelectorAll('.tyrian-live-session__row'));
+		const tree = h.panel.element.getElementsByTagName('*').length;
+		const button = toggle(h.panel); button.focus();
+		const more = h.panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__more-button')!;
+		const next = liveView(61);
+		h.state.view = next; h.panel.refresh();
+		expect(timeline(h.panel).open).toBe(true);
+		expect(document.activeElement).toBe(button);
+		expect(toggle(h.panel)).toBe(button);
+		expect(h.panel.element.querySelector('.tyrian-live-session__more-button')).toBe(more);
+		const after = Array.from(h.panel.element.querySelectorAll('.tyrian-live-session__row'));
+		expect(after).toHaveLength(50);
+		// 49 rows survive as the same nodes (the oldest left the window, the newest is the only new one).
+		expect(after.filter((row) => before.includes(row))).toHaveLength(49);
+		expect(Math.abs(h.panel.element.getElementsByTagName('*').length - tree)).toBeLessThanOrEqual(8);
+		expect(timeline(h.panel).querySelector('summary')!.textContent).toBe('Timeline (61)');
+	});
+
+	it('moves the focus to the summary when «Show 50 more» loads the last page', () => {
+		const { panel } = harness(liveView(70));
+		openTimeline(panel);
+		const more = panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__more-button')!;
+		more.focus(); more.click();
+		expect(document.activeElement).toBe(timeline(panel).querySelector('summary'));
+	});
+});
+
+describe('Session tab: an old session blocks the start', () => {
+	it('says so in one line and offers the discard only when the existing action can drop it', async () => {
+		const h = harness(idleView(), control({ oldSession: { canDiscard: false } }));
+		expect(h.panel.element.querySelector('.tyrian-live-session__old')!.hasAttribute('hidden')).toBe(false);
+		expect(h.panel.element.textContent).toContain('An older session is blocking a new one.');
+		expect(controls(h.panel)).toEqual(['button:Start session']);
+		h.state.control = control({ oldSession: { canDiscard: true } }); h.panel.refresh();
+		const discard = h.panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__discard')!;
+		expect(discard.hasAttribute('hidden')).toBe(false);
+		discard.click();
+		expect(h.discard).toHaveBeenCalledOnce();
+	});
+
+	it('paints nothing about an old session when none blocks', () => {
+		const h = harness(idleView(), control({ canStart: true }));
+		expect(h.panel.element.querySelector('.tyrian-live-session__old')!.hasAttribute('hidden')).toBe(true);
+	});
 });

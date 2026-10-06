@@ -66,7 +66,7 @@ async function mount(): Promise<{ panel: FarmingSessionPanel; content: HTMLEleme
 	await harness.initializeRuntime();
 	const content = document.createElement('div'); document.body.append(content);
 	const panel = new FarmingSessionPanel(document, harness.core); content.append(panel.element);
-	await vi.waitFor(() => { expect(content.querySelector('select[aria-label="Sesión guardada"]')).not.toBeNull(); });
+	await vi.waitFor(() => { expect(content.querySelector('.tyrian-live-comparison')).not.toBeNull(); });
 	return { panel, content };
 }
 

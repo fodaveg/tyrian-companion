@@ -18,7 +18,6 @@ import type { SessionRecoveryState } from '../sessions/manual-session-start-serv
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionState } from '../sessions/session';
 import { createTranslator } from '../core/i18n';
-import type { LiveSessionViewV1 } from '../sessions/live-session-model';
 import { formatClock } from './format-time';
 
 /**
@@ -799,35 +798,8 @@ describe('Companion start in consult mode', () => {
 });
 
 describe('Companion saved-session decision', () => {
-	it('keeps archived account recovery readable without API resume, start, discard or retry actions', () => {
-		const recover = vi.fn(async () => {}); const start = vi.fn();
-		const { contentEl, render } = mountCompanion({getLiveSessionView: () => ({phase:'active'} as LiveSessionViewV1),
-			getSessionRecoveryState: availableRecovery, recoverSession: recover, openManualSessionStart: start});
-		render();
-		expect(texts(contentEl)).toContain('Recuperación disponible');
-		expect(texts(contentEl)).toContain('Sesión anterior de cuenta / recuperación');
-		for (const label of ['Iniciar sesión', 'Recuperar sesión', 'Descartar sesión guardada', 'Capturar ya']) {
-			expect(find(contentEl, (node) => node.tag === 'button' && node.textContent === label)).toBeUndefined();
-		}
-		expect(recover).not.toHaveBeenCalled(); expect(start).not.toHaveBeenCalled();
-	});
-
-	it('exports preserved account evidence explicitly and retains its control and focus during a refresh', async () => {
-		let finish: (() => void) | null = null;
-		const exporter = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
-		const {contentEl, render} = mountCompanion({getLiveSessionView: () => ({phase:'active'} as LiveSessionViewV1),
-			getSessionRecoveryState: availableRecovery, exportPreservedLegacySession: exporter});
-		render();
-		const button = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Exportar evidencia de cuenta guardada (JSON)')!;
-		button.focus(); button.click(); expect(button.attributes.get('aria-disabled')).toBe('true'); expect(button.disabled).toBe(false); expect(exporter).toHaveBeenCalledOnce();
-		render(); expect(find(contentEl, (node) => node === button)).toBe(button); expect(button.ownerDocument.activeElement).toBe(button);
-		button.click(); expect(exporter).toHaveBeenCalledOnce();
-		finish!(); await Promise.resolve(); await Promise.resolve(); expect(button.attributes.get('aria-disabled')).toBe('false');
-		expect(texts(contentEl)).toContain('Exportación guardada');
-		exporter.mockRejectedValueOnce(new Error('storage')); button.click(); await Promise.resolve(); await Promise.resolve();
-		expect(texts(contentEl)).toContain('No se pudo exportar. La sesión se conserva; vuelve a intentarlo.');
-		expect(texts(contentEl)).toContain('Recuperación disponible');
-	});
+	// 6 oct 2026: the live surface no longer paints the archived account session, its recovery or its
+	// export (the data and the commands stay). `companion-view-live.test.ts` asserts that on the real DOM.
 	it('replaces the start action with recovery instead of offering a start that would be refused', async () => {
 		const recoverSession = vi.fn(async () => undefined);
 		const openManualSessionStart = vi.fn();
