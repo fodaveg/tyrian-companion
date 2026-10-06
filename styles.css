@@ -3015,3 +3015,43 @@
 @media (max-width: 400px) { .tyrian-farming__facts { grid-template-columns: minmax(0, 1fr); } }
 
 .tyrian-farming-session { margin-block: 16px; }
+
+/* The observation surface shares host tokens and keeps controls attached on ticks. */
+.tyrian-live-session { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; margin-block: 16px; container-type: inline-size; }
+.tyrian-live-session h3, .tyrian-live-session p { margin: 0; }
+.tyrian-live-session__status { font-weight: var(--font-semibold); overflow-wrap: anywhere; }
+.tyrian-live-session__scope, .tyrian-live-session__feedback { font-size: var(--font-ui-small); overflow-wrap: anywhere; }
+.tyrian-live-session__split { display: grid; grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr); gap: 16px; min-width: 0; align-items: start; }
+.tyrian-live-session__sidebar, .tyrian-live-session__main { display: grid; gap: 16px; min-width: 0; align-content: start; }
+.tyrian-live-session__tabs, .tyrian-live-session__toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.tyrian-live-session__toolbar label { min-width: 0; max-width: 100%; }
+.tyrian-live-session__toolbar label select { width: 100%; }
+.tyrian-live-session button, .tyrian-live-session select { min-height: 44px; max-width: 100%; white-space: normal; }
+.tyrian-live-session summary { min-height: 44px; padding-block: 12px; box-sizing: border-box; }
+.tyrian-live-session [role="tab"][aria-selected="true"] { font-weight: var(--font-bold); border-bottom: 3px solid var(--text-normal); }
+.tyrian-live-session :focus-visible { outline: 2px solid var(--text-normal); outline-offset: 2px; }
+.tyrian-live-session__metrics { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 8px 12px; margin: 0; padding: 16px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); }
+.tyrian-live-session__metrics dt { font-size: var(--font-ui-small); overflow-wrap: anywhere; }
+.tyrian-live-session__metrics dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tyrian-live-session__rows { overflow-x: auto; max-width: 100%; min-width: 0; }
+.tyrian-live-session__table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.tyrian-live-session__table caption { text-align: start; font-weight: var(--font-semibold); padding-block: 8px; }
+.tyrian-live-session__table th, .tyrian-live-session__table td { padding: 8px; text-align: start; border-bottom: 1px solid var(--background-modifier-border); vertical-align: top; }
+.tyrian-live-session__table td { min-width: 4rem; overflow-wrap: anywhere; }
+.tyrian-live-session__table img { display: inline-block; width: 32px; height: 32px; object-fit: contain; vertical-align: middle; margin-inline-end: 8px; }
+.tyrian-live-session__table img[hidden] { display: none; }
+.tyrian-live-session__charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }
+.tyrian-live-session__charts[hidden] { display: none; }
+.tyrian-live-session__charts figure { min-width: 0; margin: 0; }
+.tyrian-live-session__charts figcaption { font-weight: var(--font-semibold); overflow-wrap: anywhere; }
+.tyrian-live-session__charts svg { width: 100%; min-height: 120px; border-bottom: 1px solid var(--background-modifier-border); color: var(--text-normal); }
+.tyrian-live-session__charts polyline { fill: none; stroke: currentColor; stroke-width: 2; }
+.tyrian-live-session__charts circle { fill: currentColor; }
+.tyrian-live-session__charts ol, .tyrian-live-session__gaps ul { max-height: 16rem; overflow: auto; overflow-wrap: anywhere; padding-inline-start: 24px; }
+.tyrian-live-session__feedback[role="alert"] { font-weight: var(--font-semibold); }
+@container (max-width: 700px) { .tyrian-live-session__split, .tyrian-live-session__charts { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 400px) { .tyrian-live-session__metrics { grid-template-columns: minmax(0, 1fr); gap: 4px; } .tyrian-live-session__metrics dd { margin-block-end: 8px; } }
+@media (max-width: 700px) { .tyrian-live-session__split { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 400px) { .tyrian-live-session__table { min-width: 32rem; } }
+
+.tyrian-live-session__chart-gaps { grid-column: 1 / -1; font-size: var(--font-ui-small); overflow-wrap: anywhere; }

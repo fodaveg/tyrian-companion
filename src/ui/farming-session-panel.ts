@@ -1,3 +1,4 @@
+import { LiveSessionPanel, type LiveSessionPanelActions } from './live-session-panel';
 import type { FarmingGoalProgress, FarmingGoalV1 } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
 import type { FarmingGroupContext } from '../runtime/farming-session-context';
@@ -6,7 +7,7 @@ import { FarmingGoalEditor, renderFarmingGoalProgress } from './farming-goal-pan
 import { FarmingPreparationPanel } from './farming-preparation-panel';
 import { farmingCopy } from './farming-goal-copy';
 
-export interface FarmingSessionPanelActions {
+export interface FarmingSessionPanelActions extends Partial<LiveSessionPanelActions> {
 	getLocale(): 'es' | 'en';
 	getFarmingGoal(): FarmingGoalV1;
 	saveFarmingGoal(goal: FarmingGoalV1): Promise<void>;
@@ -31,6 +32,7 @@ export class FarmingSessionPanel {
 	private readonly preparation: HTMLElement;
 	private readonly editor: FarmingGoalEditor;
 	private readonly preparationPanel: FarmingPreparationPanel;
+	private readonly live: LiveSessionPanel | null;
 	private editorKey: string | null = null;
 	private preparationKey: string | null = null;
 
@@ -55,12 +57,16 @@ export class FarmingSessionPanel {
 		const summary = document.createElement('summary');
 		summary.textContent = actions.getLocale() === 'es' ? 'Preparar la próxima tanda' : 'Prepare the next session';
 		defaults.append(summary, this.goalEditor, this.groupEditor(document), this.preparation);
+		this.live = actions.getLiveSessionView !== undefined && actions.getLiveSessionEntity !== undefined && actions.exportLiveSession !== undefined
+			? new LiveSessionPanel(document, actions as LiveSessionPanelActions) : null;
+		if (this.live) this.element.append(this.live.element);
 		this.element.append(this.figures, this.progress, defaults);
 		this.refresh();
 	}
 
 	/** Read-only metrics tick separately from editors, so a poll never resets a draft. */
 	refresh(): void {
+		this.live?.refresh();
 		const locale = this.actions.getLocale();
 		const goalKey = JSON.stringify([locale, this.actions.getFarmingGoal()]);
 		if (goalKey !== this.editorKey) { this.editorKey = goalKey; this.editor.render(this.goalEditor); }

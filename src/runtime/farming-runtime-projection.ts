@@ -1,3 +1,5 @@
+import { FARMING_GOAL_MIN_WINDOW_MS } from '../sessions/farming-goal';
+import type { LiveSessionViewV1 } from '../sessions/live-session-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { IngamePresenceSnapshot } from '../alerts/alert-ingame-presence';
 import { emptyFarmingIngameState, type FarmingIngameState } from '../alerts/farming-ingame-state';
@@ -100,4 +102,37 @@ function evidenceAge(at: string | null, now: number): number | null {
 	if (at === null) return null;
 	const age = now - Date.parse(at);
 	return Number.isFinite(age) && age >= 0 ? Math.floor(age / 1_000) : null;
+}
+
+/** Nexus observations use their covered intervals; account API cache margins do not apply. */
+export function projectLiveFarmingIngameState(input: {
+	view: LiveSessionViewV1; goal: FarmingGoalProgress | null; now: number; preparationEnabled: boolean;
+}): FarmingIngameState {
+	const { view, goal, now } = input;
+	const output = emptyFarmingIngameState();
+	output.phase = view.phase;
+	output.err = view.phase === 'error' ? 'save' : view.phase !== 'idle' && ['stale', 'unavailable', 'conflict', 'missing'].includes(view.sourceState) ? 'observe' : null;
+	output.elapsed = view.elapsedMs === null ? null : Math.floor(view.elapsedMs / 1_000);
+	output.age = evidenceAge(view.lastObservationAt, now);
+	const bags = view.totals.find((row) => row.kind === 'item' && row.idNumber === 36038);
+	const measured = view.lastObservationAt !== null && view.itemCoverage === 'complete';
+	output.observed = bags?.positive ?? (measured ? 0 : null);
+	output.net = bags?.net ?? (measured ? 0 : null);
+	const band = output.observed === null || view.observedItemsMs <= 0 || view.itemCoverage !== 'complete'
+		? null : observedRateBand(output.observed * 1_000, view.observedItemsMs, 0);
+	output.lo = band?.low == null ? null : Math.floor(band.low / 1_000);
+	output.hi = band?.high == null ? null : Math.ceil(band.high / 1_000);
+	output.slots = view.freeSlots;
+	output.slotSrc = view.freeSlots === null ? 'unknown' : view.connection === 'connected' && view.sourceState === 'ready' ? 'ingame' : 'recent';
+	output.slotAge = view.freeSlots === null ? null : output.age;
+	output.mf = view.magicFind.value;
+	output.mfKind = output.mf === null ? 'unknown' : 'partial';
+	if (goal !== null) {
+		output.goal = goal.goal.kind;
+		output.target = goal.goal.kind === 'bags' ? goal.goal.targetBags : goal.goal.kind === 'duration' ? Math.floor(goal.goal.targetDurationMs / 1_000) : null;
+		output.progress = goal.goal.kind === 'bags' ? output.observed : goal.goal.kind === 'duration' ? output.elapsed : null;
+		output.eta = view.phase !== 'active' || view.sourceState !== 'ready' || view.connection !== 'connected' || goal.goal.kind === 'bags' && view.observedItemsMs < FARMING_GOAL_MIN_WINDOW_MS || goal.remainingMs === null ? null : Math.ceil(goal.remainingMs / 1_000);
+	}
+	output.prep = !input.preparationEnabled ? 'unknown' : output.mf === null || output.slots === null || output.slots <= 5 ? 'attention' : 'partial';
+	return output;
 }

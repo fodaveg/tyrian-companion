@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { FarmingGroupContext } from '../runtime/farming-session-context';
 import { emptyFarmingIngameState } from '../alerts/farming-ingame-state';
 import { DEFAULT_FARMING_PREPARATION, type FarmingManualReminder } from '../sessions/farming-goal-preparation';
+import type { LiveSessionViewV1 } from '../sessions/live-session-model';
 import { FarmingSessionPanel, type FarmingSessionPanelActions } from './farming-session-panel';
 
 function panelHarness() {
@@ -26,6 +27,19 @@ function panelHarness() {
 }
 
 describe('retained farming session consumer', () => {
+	it('mounts the live view through the public core ports while retaining preparation drafts', () => {
+		const { actions } = panelHarness();
+		const view: LiveSessionViewV1 = { version:1,sessionId:null,phase:'idle',connection:'connected',sourceState:'missing',sourceReason:null,source:null,
+			startedAt:null,endedAt:null,elapsedMs:null,observedItemsMs:0,observedCurrenciesMs:0,lastObservationAt:null,itemCoverage:'none',currencyCoverage:'none',currencyIds:[],freeSlots:null,
+			observations:[],observationCount:0,observationOffset:0,hasMore:false,gaps:[],totals:[],chartPoints:[],
+			valuation:{priceBasis:'instant_sell_net',capturedAt:null,prices:[],positiveItemValueKnownCopper:0,netItemValueKnownCopper:0,coinNetCopper:null,knownNetValueCopper:null,unpricedItemIds:[]},magicFind:{value:null,source:'unknown'}};
+		const panel = new FarmingSessionPanel(document,{...actions,getLiveSessionView:()=>view,getLiveSessionEntity:()=>null,exportLiveSession:async()=>{}});
+		expect(panel.element.querySelector('.tyrian-live-session')).not.toBeNull();
+		expect(panel.element.textContent).toContain('No Nexus inventory source');
+		const input = panel.element.querySelector<HTMLInputElement>('input[type="number"]')!; input.value='1234'; panel.refresh();
+		expect(input.value).toBe('1234');
+	});
+
 	it('keeps goal and preparation drafts and focus across observation repaints', () => {
 		const { panel } = panelHarness();
 		document.body.append(panel.element);
