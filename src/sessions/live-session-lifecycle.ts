@@ -73,13 +73,14 @@ export class LiveSessionLifecycle {
 		});
 	}
 
-	/** Starts a connection session even before item coverage arrives; no API credential is consulted. */
+	/** Freezes the declared build at the start request; queued idempotent calls retain the active snapshot. */
 	async start(character: string | null, magicFind: number | null = null): Promise<string | null> {
+		if (!this.options.enabled() || this.disposed) return null;
+		const declaration = this.options.declaredBuild?.() ?? null;
+		const declaredBuild = isDeclaredBuild(declaration) ? structuredClone(declaration) : null;
 		return await this.enqueue(async () => {
 			if (!this.options.enabled() || this.disposed) return null;
 			if (this.record?.phase === 'active') return this.record.sessionId;
-			const declaration = this.options.declaredBuild?.() ?? null;
-			const declaredBuild = isDeclaredBuild(declaration) ? structuredClone(declaration) : null;
 			if (this.record !== null) {
 				if (!await this.saveCompletedNote()) return null;
 				const cleared = await this.options.persistence.clear(this.record.authority);

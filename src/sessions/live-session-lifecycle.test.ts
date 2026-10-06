@@ -39,17 +39,48 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 }
 
 describe('passive live session lifecycle', () => {
-	it('captures a valid manual declaration once, independent of later settings edits and future sessions', async () => {
+	it('captures the requested declaration before suspension and retains it on idempotent active calls', async () => {
 		const f=fixture(); const parsed=readFarmingDeclaredBuild({version:1,templateCode:'[&DQQAAAAAAAB5AAAAAAAAAAAAAAAAAAAAAAAAADA7FD8AAAAAAAAAAAAAAAACIwAyAAA=]',label:'At start'});
 		if (parsed.status !== 'valid') throw new Error('Manual build fixture failed.');
 		let declared:DeclaredBuildV1|null=parsed.value;
 		const preference=vi.fn(() => declared); Object.assign(f.options,{declaredBuild:preference});
-		await f.service.start('Test'); const captured=structuredClone(f.service.getRuntime()?.declaredBuild);
+		const captured=structuredClone(parsed.value); const pending=f.service.start('Test');
+		expect(preference).toHaveBeenCalledOnce();
 		parsed.value.label='Future label'; parsed.value.configuration.rangerPets![0]=0;
+		await pending;
 		expect(f.service.getRuntime()?.declaredBuild).toEqual(captured);
-		await f.service.start('Test'); expect(preference).toHaveBeenCalledOnce();
+		await f.service.start('Test'); expect(preference).toHaveBeenCalledTimes(2);
+		expect(f.service.getRuntime()?.declaredBuild).toEqual(captured);
 		await f.service.stop(AT+1000); declared=null; await f.service.start('Test');
-		expect(f.service.getRuntime()?.declaredBuild).toBeNull(); expect(preference).toHaveBeenCalledTimes(2);
+		expect(f.service.getRuntime()?.declaredBuild).toBeNull(); expect(preference).toHaveBeenCalledTimes(3);
+		await f.service.dispose();
+	});
+	it('captures a new start behind a pending stop without losing queue ordering', async () => {
+		const f=fixture(); await f.service.start('First');
+		const parsed=readFarmingDeclaredBuild({version:1,templateCode:'[&DQQAAAAAAAB5AAAAAAAAAAAAAAAAAAAAAAAAADA7FD8AAAAAAAAAAAAAAAACIwAyAAA=]',label:'Next start'});
+		if (parsed.status !== 'valid') throw new Error('Manual build fixture failed.');
+		const preference=vi.fn(() => parsed.value); Object.assign(f.options,{declaredBuild:preference});
+		const captured=structuredClone(parsed.value); const stopping=f.service.stop(AT+1000); const starting=f.service.start('Next');
+		expect(preference).toHaveBeenCalledOnce(); parsed.value.label='Edited after new start request';
+		await expect(stopping).resolves.toBe(true); await expect(starting).resolves.toBe('session-2');
+		expect(f.service.getRuntime()?.declaredBuild).toEqual(captured);
+		await f.service.dispose();
+	});
+	it('disabled or disposed callers never read a declaration or acquire a session', async () => {
+		const f=fixture(); const acquire=vi.spyOn(f.options.coordinator,'acquire'); const preference=vi.fn(); let enabled=false;
+		Object.assign(f.options,{declaredBuild:preference,enabled:() => enabled});
+		await expect(f.service.start('Disabled')).resolves.toBeNull();
+		enabled=true; await f.service.dispose(); await expect(f.service.start('Disposed')).resolves.toBeNull();
+		expect(preference).not.toHaveBeenCalled(); expect(acquire).not.toHaveBeenCalled();
+	});
+	it.each(['disabled','disposed'] as const)('rechecks %s after a start request is queued', async (state) => {
+		const f=fixture(); const acquire=vi.spyOn(f.options.coordinator,'acquire'); const preference=vi.fn(() => null); let enabled=true;
+		Object.assign(f.options,{declaredBuild:preference,enabled:() => enabled});
+		const starting=f.service.start('Queued');
+		const disposal=state === 'disposed' ? f.service.dispose() : null;
+		if (state === 'disabled') enabled=false;
+		await expect(starting).resolves.toBeNull(); await disposal;
+		expect(preference).toHaveBeenCalledOnce(); expect(acquire).not.toHaveBeenCalled();
 		await f.service.dispose();
 	});
 	it('an invalid defensive callback value captures unknown without blocking the Nexus baseline', async () => {
