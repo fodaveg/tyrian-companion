@@ -32,9 +32,9 @@ proposal queue or session lifecycle. Neither side
 is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
-> The version declared by `manifest.json` is a public beta distributed through its GitHub Release
-> and the active BRAT channel. Installation, update, and runtime QA in Obsidian are still pending
-> across the platform matrix, so use a disposable vault while validating it.
+> `manifest.json` identifies the checkout or installed candidate; it does not by itself prove that
+> version is published. The 0.5.0 integration and real-client QA are pending. Use a disposable vault
+> and record the exact Companion and addon versions when testing.
 
 ## Required live session behavior
 
@@ -54,104 +54,102 @@ game session, Hebra reopen and Windows Nexus+Blish QA remain pending.
 
 ## Halloween farming
 
-Optional bag or duration goals, preparation and comparisons are available in Companion. Bag rates
-have their own evidence and do not disappear merely because some items lack a price. Runs record
-pure or mixed labyrinth presence and build configuration; sample size and dispersion are shown
-without claiming that the build caused the difference.
+The candidate retains optional bag/duration goals, manual preparation and run comparisons. Bag
+rates use observed quantities and covered time, separately from item-price coverage. Pure/mixed
+labyrinth presence and build configuration describe a run; sample size and dispersion do not prove
+that a build caused a difference. End-to-end integration and visual/keyboard/game QA remain pending.
 
-The in-game panel requires [Nexus 0.4.0](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.4.0)
-or [Blish HUD module 0.4.0](https://github.com/fodaveg/tyrian-companion-blish/releases/tag/0.4.0)
-and Tyrian Companion 0.4.0. It shows observed bags, rate, bag space, goal and data age. Existing
-alerts remain compatible with earlier v3 addons; a new addon connected to an older host reports
-that the panel is unavailable. See the [bridge contract](docs/SPEC-puente-ingame.md).
+Live sessions require the matching **0.5.0 Nexus producer candidate**, including when Blish HUD is
+the Windows overlay. Consult the [Nexus releases](https://github.com/fodaveg/tyrian-companion-nexus/releases/latest)
+and [Blish releases](https://github.com/fodaveg/tyrian-companion-blish/releases/latest) for actually
+published artifacts; these links do not assert that 0.5.0 is published. For an unpublished candidate,
+use the exact artifacts identified for that test. Older v3 clients retain their compatible alerts/
+panel behavior, but that does not provide the new live source. See the
+[live source contract](docs/SPEC-live-loot.md) and [bridge contract](docs/SPEC-puente-ingame.md).
 
-Observed increments and net bags retained at close are separate metrics. Opening bags between API
-reads makes total acquired bags unobservable; the panel cannot reconstruct them. The API also does
-not certify temporary Magic Find buffs. [MagicFinder](https://github.com/DominantNostril/MagicFinder)
-is documented as a possible Reffect/Nexus complement, without automatic integration or verified
-compatibility with this candidate.
+The panel distinguishes connection, measurement, observed bags, net bags retained, covered rate,
+goal and data age. Opening bags between observations can hide acquired quantities; the ledger
+cannot reconstruct unseen movements or infer whether a change was a drop, purchase, sale or use.
+Baseline and rebaseline do not add acquisitions. Wallet, Magic Find and free bag slots without
+source evidence remain unknown rather than zero. Entering Magic Find explicitly is manual
+preparation, not a verified buff reading; leaving it empty does not trigger API-derived startup data.
 
-Live installation, visual/keyboard QA and a complete game session on each platform remain pending.
+[MagicFinder](https://github.com/DominantNostril/MagicFinder) remains an optional external aid for
+Reffect/Nexus JSON configuration. It does not feed verified Magic Find into Tyrian; automatic
+integration and compatibility with this candidate are not certified.
 
 The fixed plugin name, ID, author, repository and MIT license are recorded in the
-[Release identity](docs/IDENTITY.md). The repository and the
-[latest beta release](https://github.com/fodaveg/tyrian-companion/releases/latest) are public, and
-its three plugin assets are available to BRAT.
+[Release identity](docs/IDENTITY.md). Published versions are listed in the
+[Companion releases](https://github.com/fodaveg/tyrian-companion/releases/latest). A release must
+provide the eight assets described in the [beta guide](docs/BETA.md); BRAT installs its three
+Obsidian plugin assets. Publication does not prove installation or runtime behavior.
 
 ## Install the beta
 
-Requirements: desktop Obsidian `1.11.4` or newer, and a disposable vault. BRAT is the supported way
-to install and update this beta; nothing else is needed.
+For Obsidian, use desktop `1.11.4` or newer and a disposable vault. BRAT installs published beta
+versions; an unpublished 0.5.0 candidate needs its identified development artifact. Game sessions
+also need the matching Nexus producer. Windows with Blish HUD still needs Nexus locally.
 
 1. From **Settings → Community plugins → Browse**, install and enable
    [BRAT](https://github.com/TfTHacker/obsidian42-brat).
-2. In BRAT, choose **Add beta plugin**, enter `fodaveg/tyrian-companion`, and select the latest
-   published version (the one declared by `manifest.json`). BRAT downloads `manifest.json`,
-   `main.js`, and `styles.css` from that GitHub Release.
+2. In BRAT, choose **Add beta plugin**, enter `fodaveg/tyrian-companion`, and select an actually
+   published version. BRAT downloads `manifest.json`, `main.js` and `styles.css` from that release.
+   Check the installed version; the latest public release may predate this candidate's live flow.
 3. Back in **Settings → Community plugins**, enable **Tyrian Companion** and open its settings page.
-4. [Create a Guild Wars 2 API key](docs/API-KEY.md) and select or create an Obsidian secret in the
-   **API key** setting. Paste the value only into Obsidian Secret Storage; the plugin setting keeps
-   only the secret name.
-5. Select **Check connection**. A successful connection check proves only `account` access; starting
-   a farming session also requires `characters`, `inventories`, and `builds`.
-6. Open the command palette and run **Open companion**. This opens the Companion view, not Settings.
+4. Open the command palette and run **Open companion**. For a live session, continue with the
+   collector/bridge/Nexus setup below. **No GW2 API key or Check connection step is required.**
+5. Only if using manual inventory/wallet features or explicitly checking the account connection,
+   [create an API key](docs/API-KEY.md), select or create a secret in **API key**, and store the
+   value in Obsidian Secret Storage. The plugin setting retains only the secret name. Use
+   **Check connection** when you want to validate that API connection; it is not session setup.
 
-To update, use **Check for updates** in BRAT. GitHub can take between 5 and 15 minutes to serve a new
-release to BRAT.
+To update a published beta, use **Check for updates** in BRAT. GitHub can take 5–15 minutes to serve
+a new release; that delay proves neither installation success nor failure.
 
-Developers who need a specific commit instead of a published release have a separate guarded path
-with Node.js 22 and a CI artifact, documented in the
-[beta guide](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores). It is for
-development only and is not the supported way to install the plugin.
+Developers testing an exact unpublished commit use the existing
+[artifact installation procedure](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores).
+Hebra uses the matching external-plugin assets from that candidate, described in the same
+[beta guide](docs/BETA.md). Record installation/loading separately from session QA.
 
 ## First farming session
 
-For automatic sessions, run Tyrian on the collector host, enable the bridge and copy its addon token
-to Nexus or Blish HUD. The token is separate from the GW2 API key. Nexus can open the chosen host
-(Obsidian or Hebra) when the game starts; Blish HUD requires the host to be available already.
-Gameplay starts a session after the baseline capture. Leaving the game closes it; a dropped addon
-connection has a ten-minute grace period. Check the measurement phase rather than treating a
-connected bridge as proof that loot is being observed. Goals and preparation do not block this flow.
+These steps describe the required 0.5.0 flow under integration; they do not certify that the current
+installed build implements it. The [live QA matrix](docs/QA-MVP.md) records the pending real-client
+checks. Legacy API session controls are not a fallback for missing Nexus observations.
 
-The alternative manual flow is state-dependent. The palette and the Companion view show only the action that is
-valid for the current state.
+1. Run Tyrian on the collector host, enable the bridge and configure the addon token in Nexus.
+   The bridge token is separate from a GW2 API key. On Windows, configure Blish HUD as a consumer
+   too; Nexus remains the source. Nexus retains the Obsidian/Hebra host selector; Blish needs the
+   host to be available. Startup and reopening with this candidate still require QA.
+2. Enter gameplay. Presence starts the session automatically without manual review. The first
+   valid inventory sample establishes a baseline, not loot; it does not move the session start time.
+   Check both the session phase and source state: a connected addon alone is not evidence of items.
+3. Farm normally. Positive and negative changes enter the same ledger with unknown cause. Opening,
+   consuming, depositing or buying items does not become a fabricated drop classification. A source
+   gap remains visible and contributes no covered measurement time; recovery establishes a fresh
+   baseline. Changing map or character does not end the whole game-connection session.
+4. Use optional bag/duration goals and explicit manual preparation. Unknown MF, wallet or slots
+   remain unknown; no startup API query fills them. Public catalog names and price estimates do
+   not require an API key and cannot establish missing account or buff evidence.
+5. While active, exporting the current session produces a snapshot of its committed ledger at that
+   moment. Session history is a separate view/export of saved sessions; an active export does not
+   finish the session or imply that it already appears in completed history.
+6. Leaving the game closes the session; loss of addon presence uses a ten-minute grace period.
+   Closing uses existing observations rather than an API final capture. The saved result must keep
+   its ledger, gaps and coverage across reopening, with save failures visible. Timeline, summary,
+   chart and exports must agree; history remains separate from the active-session snapshot.
 
-1. With the connection checked, run **Start farming session**. Choose the character. Magic Find
-   can be entered manually or left empty to derive the API components; optional consumable bonuses
-   are declared separately. Wait until Companion says the baseline is captured and the session is
-   active.
-2. Farm normally. Avoid opening, salvaging, crafting, buying, selling, moving account items from
-   another device, or otherwise changing the tracked account outside the run if you need an exact net
-   result.
-3. When the session is active, **Start farming session** is replaced by **Finish farming session**;
-   the Companion view also shows **Finish session**. If the view still says `idle`, no session was
-   started and there is nothing to finish.
-4. After the final snapshot, **Finish farming session** classifies the result and writes the
-   managed session note automatically. The Companion view shows the classification, its confidence
-   and any detected outside activity. A failed capture or save remains visible and retryable.
-5. **Clear completed session** releases the already saved local session; it is not an approval gate
-   for finalization.
+### Historical API detector and pilot
 
-Assisted detection is optional. Set **Detection mode → Assisted**, check the connection, and run
-**Arm assisted detection**. Arming captures a baseline and may later propose a start or finish, but
-every proposal still needs an explicit review action. This API detector is distinct from automatic
-addon presence. On the collector, startup connection checks can arm detection and successful session
-finalization can re-arm it; the view shows the actual detector state.
+The old API-assisted start/finish proposals, startup connection warm-up, automatic re-arming and
+manual final-snapshot flow belong to earlier versions. They are not onboarding steps for live1 and
+do not authorize private API polling during sessions. Earlier records remain readable without
+recapturing the account; detailed implementation history is retained below.
 
-Pilot metrics are also optional and local. After a tester configures a platform profile in Settings,
-the plugin keeps a vault-scoped, unsynchronized journal used to aggregate the H0.6 pilot criteria.
-Every human silent-loss review is bound to the journal's monotonic sample revision; a concurrent
-profile or evidence change makes that review stale instead of attaching it to unseen data. The
-non-personal revision counter also advances across disable/re-enable, so an old review cannot become
-valid again after the journal data has been erased. Assisted
-start/stop controls never open or wait for a metrics-only modal and proceed with a nullable timing
-correction when the optional journal is absent or unavailable.
-Reviewing and exporting is explicit and creates four deterministic JSON/CSV files without overwriting
-existing files. **Clear metrics** removes observations and the silent-loss review but keeps the local
-profile; **Disable and delete** also removes that profile while retaining only the non-personal
-monotonic generation counter. Previously created Vault exports remain and
-may be synchronized by Obsidian, and their proposal references are pseudonyms rather than anonymous
-identifiers. This instrumentation never gates a session action and sends no remote telemetry.
+Legacy pilot metrics were optional and local. Their journal, review and export behavior describes
+the historical detector's instrumentation, not the new source's evidence or a prerequisite for live
+sessions. Existing exports remain historical records; a prior pilot result does not certify the
+0.5.0 candidate or its runtime.
 
 ## Inventory advisor
 
@@ -199,6 +197,9 @@ still use stable `tc_*` marker/schema keys instead of a folder predicate, and th
 remains numeric so sorting is based on copper rather than formatted text. See the [activation and migration guide](docs/INVENTORY-VAULT-SYNC.md).
 
 ## What the existing API-based result means
+
+This section explains preserved records from earlier API-based sessions. It does not describe
+live1 measurements, current onboarding or an instruction to enable automatic authenticated polling.
 
 - A session is an observed net change between stable account snapshots, not a drop log and not total
   account wealth. Transfers and unrelated account activity can change that net.
