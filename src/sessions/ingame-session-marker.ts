@@ -19,7 +19,7 @@ import type { SessionStatus } from './session';
  * presence, at the end the presence observed. And a presence that was linked to a session once
  * never opens another one: a session the player stopped by hand mid-game stays stopped.
  *
- * It does nothing at all unless `enabled()` says so (the bridge is on and an API key is set).
+ * It does nothing at all unless `enabled()` says so (the bridge is enabled).
  */
 
 /** What survives a plugin reload, so an automatic session found running again stays automatic. */

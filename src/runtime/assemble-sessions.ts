@@ -97,6 +97,7 @@ export interface SessionsAssembly {
 	pilotMetrics: PilotMetricsRecorder;
 	pilotMetricsExporter: PilotMetricsExporter;
 	sessions: ManualSessionStartService;
+	runtimeStore: IndexedDbSessionRuntimeStore;
 	sessionNotes: SessionNoteWriter;
 	sessionHistory: SessionHistoryService;
 	pendingProposals: PendingProposalService;
@@ -116,6 +117,9 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 		input.diagnostics ?? undefined,
 	);
 	const pilotMetricsExporter = new PilotMetricsExporter(input.pilotMetricsVault);
+	const runtimeStore = new IndexedDbSessionRuntimeStore(
+		input.factory, async () => await input.sessionStorage.runtimeDatabaseName(), input.sessionRecoverPersistence,
+	);
 	const sessions = new ManualSessionStartService(
 		input.coordinator,
 		new SessionStartCaptureService(input.client, input.snapshots),
@@ -124,9 +128,8 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 			onSettlementDue: input.onSettlementDue,
 			onAutoRecovered: input.onSessionAutoRecovered,
 			...(input.observedPlayIntervals === undefined ? {} : { observedPlayIntervals: input.observedPlayIntervals }),
-			runtimeStore: new IndexedDbSessionRuntimeStore(
-				input.factory, async () => await input.sessionStorage.runtimeDatabaseName(), input.sessionRecoverPersistence,
-			),
+			runtimeStore,
+			automaticAccountCapture: false,
 			priceCapture: new SessionPriceSnapshotService(input.priceGateway),
 			farmedLossItemTypeCapture: new SessionItemTypeSnapshotService(input.priceGateway),
 			diagnostics: input.diagnostics ?? undefined,
@@ -154,7 +157,7 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 		onProposal: input.onProposal,
 	});
 	return {
-		detectionQuality, pilotMetrics, pilotMetricsExporter, sessions, sessionNotes,
+		detectionQuality, pilotMetrics, pilotMetricsExporter, sessions, runtimeStore, sessionNotes,
 		sessionHistory, pendingProposals, pendingClaimRenewals, assistedDetection,
 	};
 }

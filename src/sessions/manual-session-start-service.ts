@@ -301,6 +301,8 @@ export class ManualSessionStartService {
 	private priceSnapshot: SessionPriceSnapshot | null = null;
 	private recoveryState: SessionRecoveryState = { status: 'none' };
 	private recoveryRecord: SessionRuntimeRecord | null = null;
+	private preservedLegacyRecords: SessionRuntimeRecord[] = [];
+	private legacyMigrationFlight: Promise<boolean> | null = null;
 	/**
 	 * Set once, right after `initialize()` auto-finalizes a `provisional` record it found already
 	 * stopped, and only ever read by `takeStartupFinalization()`, which consumes it: the host needs
@@ -409,6 +411,39 @@ export class ManualSessionStartService {
 	getRecoveryState(): SessionRecoveryState {
 		return structuredClone(this.recoveryState);
 	}
+	getPreservedLegacyRuntime(): SessionRuntimeRecord | null { return this.preservedLegacyRecords.length === 0 ? null : structuredClone(this.preservedLegacyRecords[0]!); }
+	async readPreservedLegacyRuntime() {
+		const runtime = this.getPreservedLegacyRuntime(); if (runtime === null) return null;
+		const state = runtime.state.status === 'error' ? runtime.state.failedState : runtime.state;
+		const archive = await this.runtimeStore.readLegacyRuntimeArchive?.(state.sessionId);
+		return archive === null || archive === undefined ? null : {archive,runtime};
+	}
+
+	/** A source migration transfers evidence locally; it never resumes or recaptures the API session. */
+	async preserveLegacyForLiveMigration(): Promise<boolean> {
+		if (this.legacyMigrationFlight !== null) return await this.legacyMigrationFlight;
+		const flight = this.performLegacyMigration(); this.legacyMigrationFlight = flight;
+		try { return await flight; }
+		finally { if (this.legacyMigrationFlight === flight) this.legacyMigrationFlight = null; }
+	}
+	private async performLegacyMigration(): Promise<boolean> {
+		if (this.automaticAccountCapture || this.runtimeStore.archiveLegacyRuntime === undefined) return false;
+		await this.initializationFlight; await this.startFlight; await this.stopFlight; await this.recoveryFlight;
+		await this.reviewFlight; await this.reclaimFlight; await this.abandonFlight; await this.heartbeatFlight;
+		const record = this.recoveryRecord;
+		if (record === null) return this.getPreservedLegacyRuntime() !== null || this.state.status === 'idle';
+		if (record.state.status === 'complete') return false;
+		const sessionId = record.state.status === 'error' ? record.state.failedState.sessionId : record.state.sessionId;
+		const acquired = await this.coordinator.acquire(sessionId);
+		if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== sessionId) return false;
+		this.currentHandle = acquired.handle;
+		if ((await this.coordinator.assertOwned(acquired.handle)).status !== 'owned') return false;
+		if (!await this.runtimeStore.archiveLegacyRuntime(sessionAuthorityFromLease(acquired.handle))) return false;
+		this.preservedLegacyRecords.unshift(record); this.recoveryRecord = null;
+		await this.coordinator.release(acquired.handle); this.currentHandle = null;
+		this.recoveryState = {status:'available',state:record.state,message:'Saved API evidence is preserved locally for reading; Nexus owns new sessions.'};
+		this.onStateChange(); return true;
+	}
 
 	/** The proof that the completed session's summary is in the vault, or null while it is not. */
 	getCompletedSummaryReceipt(): SessionSummaryReceipt | null {
@@ -475,14 +510,17 @@ export class ManualSessionStartService {
 	}
 
 	recover(): Promise<SessionRecoveryResult> {
+		if (!this.automaticAccountCapture) return Promise.resolve({ status: 'failed', message: 'Saved API evidence remains preserved. Account recapture is disabled.' });
 		return this.runRecovery('recover');
 	}
 
 	discardRecovery(): Promise<SessionRecoveryResult> {
+		if (!this.automaticAccountCapture && this.preservedLegacyRecords.length > 0) return Promise.resolve({status:'failed',message:'Preserved API evidence is read-only and cannot clear the Nexus runtime.'});
 		return this.runRecovery('discard');
 	}
 
 	start(input: SessionStartInput): Promise<ManualSessionStartResult> {
+		if (!this.automaticAccountCapture) return Promise.resolve({ status: 'failed', failure: { code: 'missing_capability', message: 'New sessions use the connected Nexus inventory source.' } });
 		if (this.startFlight) return this.startFlight;
 		const flight = this.startInternal(input).finally(() => {
 			if (this.startFlight === flight) this.startFlight = null;
@@ -496,6 +534,7 @@ export class ManualSessionStartService {
 	 * While it has not, the session stays `stopping` and the result says how long is left.
 	 */
 	stop(): Promise<ManualSessionStopResult> {
+		if (!this.automaticAccountCapture) return Promise.resolve({ status: 'failed', failure: { code: 'unexpected', message: 'Saved API evidence remains preserved without account recapture.' } });
 		return this.runStop(false);
 	}
 
@@ -505,6 +544,7 @@ export class ManualSessionStartService {
 	 * grace later. Clamped to the baseline and to now; a session already stopping keeps its end.
 	 */
 	stopAt(endAtMs: number): Promise<ManualSessionStopResult> {
+		if (!this.automaticAccountCapture) return this.stop();
 		return this.runStop(false, endAtMs);
 	}
 
@@ -513,6 +553,7 @@ export class ManualSessionStartService {
 	 * estimate because the snapshot cannot contain what the Guild Wars 2 cache has not published yet.
 	 */
 	captureFinalNow(): Promise<ManualSessionStopResult> {
+		if (!this.automaticAccountCapture) return this.stop();
 		return this.runStop(true);
 	}
 
@@ -704,9 +745,11 @@ export class ManualSessionStartService {
 
 	private async initializeInternal(): Promise<void> {
 		if (this.disposed || this.recoveryRecord || this.state.status !== 'idle') return;
+		if (!this.automaticAccountCapture && this.runtimeStore.listLegacyRuntimeArchives) this.preservedLegacyRecords = await this.runtimeStore.listLegacyRuntimeArchives();
 		const loaded = await this.runtimeStore.load();
 		if (loaded.status === 'empty' || loaded.status === 'live') {
-			this.recoveryState = { status: 'none' };
+			const preserved = this.getPreservedLegacyRuntime();
+			this.recoveryState = preserved && preserved.state.status !== 'complete' ? {status:'available',state:preserved.state,message:'Saved API evidence is preserved locally for reading.'} : { status: 'none' };
 		} else if (loaded.status === 'loaded') {
 			if (loaded.record.state.status === 'complete') {
 				this.state = loaded.record.state;
