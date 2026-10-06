@@ -39,6 +39,8 @@ export class LiveSessionLifecycle {
 	private timer: unknown = null;
 	private disposed = false;
 	private failure = false;
+	private recovering = false;
+	private noteNeedsVerification = false;
 
 	constructor(private readonly options: LiveSessionLifecycleOptions) {}
 
@@ -57,31 +59,14 @@ export class LiveSessionLifecycle {
 				throw new Error('Live session journal does not match its committed cursor.');
 			}
 			if (!this.options.enabled()) return;
+			this.recovering = true;
+			this.noteNeedsVerification = loaded.record.phase === 'complete';
+			this.armHeartbeat();
 			if (loaded.record.phase === 'active' && !await this.reclaim()) return;
-			if (loaded.record.phase === 'complete' && this.journal.some((entry) => entry.outbox.some((intent) => intent.state === 'dispatching' || intent.receipt?.state === 'pending'))) {
-				const acquired = await this.options.coordinator.acquire(loaded.record.sessionId);
-				if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== loaded.record.sessionId
-					|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') return;
-				const next = {...this.record,authority:sessionAuthorityFromLease(acquired.handle),persistedAt:this.options.now()};
-				if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return; }
-				this.handle = acquired.handle; this.record = next;
-			}
-			let settled = false;
-			for (const entry of this.journal) {
-				const next = { ...entry, outbox: entry.outbox.map(settleLiveAlertRestart) };
-				if (JSON.stringify(next) !== JSON.stringify(entry) && await this.owned() && await this.options.persistence.replaceLiveJournal(entry, next,this.record)) {
-					Object.assign(entry, next); settled = true;
-				}
-			}
 			if (loaded.record.phase === 'complete') {
-				if (settled && loaded.record.summaryReceipt !== null && this.options.onComplete) {
-					await this.options.onComplete(structuredClone(this.record), structuredClone(this.journal));
-				}
 				await this.saveCompletedNote();
-				if (this.handle !== null) { await this.options.coordinator.release(this.handle); this.handle = null; }
 				return;
 			}
-			this.armHeartbeat();
 		});
 	}
 
@@ -91,7 +76,7 @@ export class LiveSessionLifecycle {
 			if (!this.options.enabled() || this.disposed) return null;
 			if (this.record?.phase === 'active') return this.record.sessionId;
 			if (this.record !== null) {
-				if (this.record.summaryReceipt === null && !await this.saveCompletedNote()) return null;
+				if (!await this.saveCompletedNote()) return null;
 				const cleared = await this.options.persistence.clear(this.record.authority);
 				if (cleared.status !== 'cleared') return null;
 				this.completed.set(this.record.sessionId, { record: this.record, journal: this.journal });
@@ -113,6 +98,7 @@ export class LiveSessionLifecycle {
 				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, summaryReceipt: null };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return null; }
 			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = []; this.failure = false;
+			this.recovering = false; this.noteNeedsVerification = false;
 			this.armHeartbeat(); this.options.onStateChange(); return id;
 		});
 	}
@@ -284,12 +270,49 @@ export class LiveSessionLifecycle {
 		if ((acquisition.status !== 'acquired' && acquisition.status !== 'already_owned') || acquisition.handle.sessionId !== this.record.sessionId
 			|| (await this.options.coordinator.assertOwned(acquisition.handle)).status !== 'owned') return false;
 		this.handle = acquisition.handle;
+		await this.refreshRecovery();
+		const recovered = this.getRuntime();
+		if (recovered === null) throw new Error('Live recovery record is unavailable.');
+		this.record = recovered;
+		if (recovered.phase === 'complete') {
+			this.noteNeedsVerification = true;
+			this.record = {...this.record,authority:sessionAuthorityFromLease(acquisition.handle),persistedAt:this.options.now()};
+			if ((await this.options.persistence.saveLive(this.record)).status !== 'saved') throw new Error('Completed recovery could not be persisted.');
+			await this.saveCompletedNote(); return false;
+		}
 		let next = liveSessionGap(this.record, 'host_restart', this.nowIso());
 		next = { ...next, authority: sessionAuthorityFromLease(acquisition.handle), epoch: null, lastSample: null,
 			fingerprint: null, persistedAt: this.options.now(), connection: 'disconnected',
 			lastSourceDisconnectedAt:new Date(Math.min(this.options.now(),this.record.lastPresenceAt)).toISOString(),mapCoveragePartial: true, mapObservation: null };
 		if ((await this.options.persistence.saveLive(next)).status !== 'saved') throw new Error('Live session recovery could not be persisted.');
-		this.record = next; this.options.onStateChange(); return true;
+		this.record = next;
+		await this.settleRecovery();
+		this.options.onStateChange(); return true;
+	}
+	/** Re-read the last owner's committed evidence only after acquiring its exact session lease. */
+	private async refreshRecovery(): Promise<void> {
+		if (!this.recovering || this.record === null) return;
+		const loaded = await this.options.persistence.loadLive();
+		if (loaded.status !== 'loaded' || loaded.record.sessionId !== this.record.sessionId) throw new Error('Live recovery identity changed.');
+		const journal = await this.options.persistence.readLiveJournal(loaded.record.sessionId);
+		const observations = journal.flatMap((entry) => entry.observations);
+		if (observations.length !== loaded.record.observationCount || JSON.stringify(liveObservationTotals([],observations)) !== JSON.stringify(loaded.record.totals)) throw new Error('Live recovery journal changed.');
+		this.record = loaded.record; this.journal = journal; this.observations = observations; this.rebuildChart();
+	}
+	/** A late takeover settles interrupted effects before publishing resumable, unclaimed intents. */
+	private async settleRecovery(): Promise<void> {
+		if (!this.recovering || this.record === null || !await this.owned()) return;
+		for (const entry of this.journal) {
+			const next = {...entry,outbox:entry.outbox.map(settleLiveAlertRestart)};
+			if (JSON.stringify(next) !== JSON.stringify(entry)) {
+				if (!await this.options.persistence.replaceLiveJournal(entry,next,this.record)) throw new Error('Live recovery settlement could not be persisted.');
+				Object.assign(entry,next); this.noteNeedsVerification = this.record.phase === 'complete';
+			}
+		}
+		this.recovering = false;
+		if (this.record.phase === 'active') for (const entry of this.journal) {
+			if (entry.outbox.some((intent) => intent.state === 'ready' || intent.state === 'awaiting_price')) this.options.onCommitted?.(structuredClone(entry));
+		}
 	}
 	private async owned(): Promise<boolean> {
 		return this.handle !== null && (await this.options.coordinator.assertOwned(this.handle)).status === 'owned';
@@ -298,8 +321,8 @@ export class LiveSessionLifecycle {
 		if (this.timer !== null) return;
 		this.timer = this.options.setInterval(() => { void this.enqueue(async () => {
 			if (!this.options.enabled() || this.disposed || this.record === null) return;
-			if (this.record.phase === 'complete') { if (this.record.summaryReceipt === null) await this.saveCompletedNote(); return; }
-			if (this.handle === null) { await this.reclaim(); return; }
+			if (this.record.phase === 'complete') { if (this.record.summaryReceipt === null || this.noteNeedsVerification) await this.saveCompletedNote(); return; }
+			if (this.handle === null || this.recovering) { await this.reclaim(); return; }
 			if (this.record.connection === 'disconnected' && this.options.now() - this.record.lastPresenceAt >= 600_000) { await this.stopInternal(this.record.lastPresenceAt); return; }
 			const renewed = await this.options.coordinator.renew(this.handle);
 			if (renewed.status !== 'renewed') { this.handle = null; this.failure = true; this.options.onStateChange(); return; }
@@ -308,22 +331,25 @@ export class LiveSessionLifecycle {
 	}
 	private async saveCompletedNote(): Promise<boolean> {
 		if (this.record?.phase !== 'complete') return false;
-		if (this.record.summaryReceipt !== null) return true;
+		if (this.record.summaryReceipt !== null && !this.noteNeedsVerification) return true;
 		if (this.options.onComplete === undefined) return false;
+		if (this.handle !== null && !await this.owned()) this.handle = null;
 		if (this.handle === null) {
 			const acquired = await this.options.coordinator.acquire(this.record.sessionId);
 			if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== this.record.sessionId
 				|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') return false;
 			this.handle = acquired.handle;
+			await this.refreshRecovery();
 			this.record = { ...this.record, authority: sessionAuthorityFromLease(acquired.handle), persistedAt: this.options.now() };
 			if ((await this.options.persistence.saveLive(this.record)).status !== 'saved') return false;
 		}
 		if (!await this.owned()) return false;
+		await this.settleRecovery();
 		const path = await this.options.onComplete(structuredClone(this.record), structuredClone(this.journal));
 		if (path === null) return false;
 		const next = { ...this.record, summaryReceipt: { version: 1 as const, sessionId: this.record.sessionId, path, savedAt: this.options.now() }, persistedAt: this.options.now() };
 		if ((await this.options.persistence.saveLive(next)).status !== 'saved') return false;
-		this.record = next; await this.options.coordinator.release(this.handle); this.handle = null;
+		this.record = next; this.noteNeedsVerification = false; await this.options.coordinator.release(this.handle); this.handle = null;
 		this.options.onStateChange(); return true;
 	}
 	private observeMap(record: LiveSessionRuntimeRecord, mapId: number | null, atMs: number): LiveSessionRuntimeRecord {

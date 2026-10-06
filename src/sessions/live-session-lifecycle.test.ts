@@ -117,6 +117,45 @@ async function positive(f: ReturnType<typeof fixture>) {
 }
 
 describe('durable live alert outbox', () => {
+	it('retries a busy recovery, rereads the old owner ACK and settles only the remaining interrupted effect', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString(),receipt:{state:'pending'}}));
+		let busy = true; let retry:(() => void)|null = null;
+		const restored = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {retry=callback;return 2;},
+			coordinator:{...f.options.coordinator,acquire:async (id) => busy
+				? {status:'busy',ownerExpiresAt:AT+120000,ownerInstanceId:'host',ownerMachineId:'machine'}
+				: await f.options.coordinator.acquire(id)}});
+		const before = await f.store.readLiveJournal('session'); await restored.initialize();
+		expect(await f.store.readLiveJournal('session')).toEqual(before); expect(retry).not.toBeNull();
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'processed',receipt:{state:'received',client:'nexus',atMs:AT+1000}}),true);
+		await f.service.dispose(); busy=false;
+		(retry as unknown as () => void)(); await restored.capture();
+		expect(restored.getAlerts()[0]?.receipt).toEqual({state:'received',client:'nexus',atMs:AT+1000});
+		await expect(restored.open({...f.source,epoch:'AwMDAwMDAwMDAwMDAwMDAw'})).resolves.toBe('ready'); await restored.dispose();
+	});
+	it('keeps a timer and retries a recovered complete note failure without releasing its unique evidence', async () => {
+		const f = fixture(); await positive(f); f.onComplete.mockResolvedValueOnce(null as unknown as string);
+		await f.service.stop(AT+1000); await f.service.dispose();
+		f.onComplete.mockResolvedValueOnce(null as unknown as string); let retry:(() => void)|null = null;
+		const restored = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {retry=callback;return 2;}});
+		await restored.initialize(); expect(restored.getRuntime()?.summaryReceipt).toBeNull(); expect(retry).not.toBeNull();
+		(retry as unknown as () => void)(); await restored.capture();
+		expect(restored.getRuntime()?.summaryReceipt?.path).toBe('Sessions/live.md'); await restored.dispose();
+	});
+	it('a late takeover settles dispatching durably without offering the effect for re-emission', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString(),receipt:{state:'pending'}}));
+		let busy=true; let retry:(() => void)|null=null; const resumed=vi.fn();
+		const restored=new LiveSessionLifecycle({...f.options,onCommitted:resumed,setInterval:(callback) => {retry=callback;return 2;},
+			coordinator:{...f.options.coordinator,acquire:async (id) => busy
+				? {status:'busy',ownerExpiresAt:AT+120000,ownerInstanceId:'host',ownerMachineId:'machine'} : await f.options.coordinator.acquire(id)}});
+		await restored.initialize(); await f.service.dispose(); busy=false;
+		(retry as unknown as () => void)(); await restored.capture();
+		expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]).toMatchObject({state:'processed',receipt:{state:'unconfirmed',cause:'restart'}});
+		expect(resumed).not.toHaveBeenCalled(); await restored.dispose();
+	});
 	it('requires version1 in the durable intent schema', async () => {
 		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
 		expect(intent.version).toBe(1); expect(isLiveAlertOutbox(intent)).toBe(true);
