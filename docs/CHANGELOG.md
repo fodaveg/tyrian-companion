@@ -1,10 +1,10 @@
 # Changelog
 
-## Candidato 0.6.0: pestaña Sesión y ajustes simplificados
+## Release beta 0.6.0 - pestaña Sesión y ajustes simplificados
 
-**Candidato sin publicar.** Metadatos en 0.6.0; no hay tag, release ni canal BRAT/Hebra de esta
-versión. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (gate completo, instalación y
-sesión real). La 0.5.0 publicada sigue siendo la última release.
+Release por tag `0.6.0`. [ESTADO](ESTADO.md) separa lo verificado (gate completo y capturas del
+código real contra la maqueta) de lo pendiente: instalación en Hebra y Obsidian, y una sesión real
+con el addon de Nexus.
 
 - **Pestaña Sesión.** Cabecera de una línea con estado y un botón «Iniciar sesión» / «Terminar
   sesión». La sesión sigue abriéndose y cerrándose con la conexión al juego; el botón corta la
