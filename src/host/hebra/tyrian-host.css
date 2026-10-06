@@ -127,6 +127,23 @@
   --interactive-accent: var(--accent);
 }
 
+/* Geometría de la pestaña «Sesión» (maqueta del 6 oct 2026): tres alias de la escala de
+   Hebra, ningún número nuevo. `styles.css` lleva su equivalente en px para Obsidian; aquí
+   ganan por especificidad (hueco + clase). Táctil: dianas de 44 y un paso más de icono. */
+:is(.lv1-context-module-el, .hebra-module-view-content, .hebra-module-modal-content)
+  .tyrian-live-session--panel {
+  --tyrian-tile: var(--hit-touch-dense);
+  --tyrian-chart-h: calc(var(--space-8) * 3);
+  --tyrian-row-icon: var(--space-5);
+}
+@media (pointer: coarse) {
+  :is(.lv1-context-module-el, .hebra-module-view-content, .hebra-module-modal-content)
+    .tyrian-live-session--panel {
+    --tyrian-tile: var(--hit-touch);
+    --tyrian-row-icon: var(--space-6);
+  }
+}
+
 /* ---- 2. Elementos de Obsidian (§6, «Elementos nativos») ------------------------ */
 
 /* `button`: el de `.lv1-context-retry` del inspector (hit-pointer, radius-sm, filete
