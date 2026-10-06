@@ -1,5 +1,32 @@
 # Changelog
 
+## Release beta 0.4.0 - objetivos y comparación de tandas, con panel de farmeo en Nexus y Blish HUD
+
+- **El espacio urgente es el de las bolsas del personaje que farmea.** Un banco vacío ya no oculta
+  unas bolsas llenas, y desconocer el banco no invalida una lectura conocida del personaje. La
+  identidad válida comunicada por el addon tiene prioridad; en su ausencia se indica la inferencia
+  del personaje reciente. Venta cuenta los huecos que libera en esas bolsas.
+- **Bolsas/h y oro/h tienen muestras independientes.** Una cotización ausente no elimina una tanda
+  con bolsas y duración conocidas. Las comparaciones distinguen presencia pura o mixta en el
+  laberinto, configuración de build y condiciones registradas, y muestran tamaño y dispersión de
+  la muestra sin atribuir causalidad a una build.
+- **Bolsas observadas y bolsas netas al cierre son métricas distintas.** Abrir o gastar bolsas no
+  reemplaza el contador observado por el neto final. El total obtenido entre lecturas sigue sin
+  poder reconstruirse a partir de instantáneas de cuenta.
+- **Objetivos opcionales de bolsas o duración y preparación de la tanda.** El objetivo se conserva
+  para esa sesión y se guarda su resultado. La estimación por bolsas necesita suficientes lecturas
+  recientes; los recordatorios de comida y utilidad son manuales y el Hallazgo mágico se etiqueta
+  como parcial.
+- **Panel de solo lectura en Nexus y Blish HUD 0.4.0.** Muestra medición, duración, bolsas, ritmo,
+  huecos, objetivo y antigüedad de cada lectura sin cambiar de aplicación. La extensión optativa
+  `farm1` del protocolo v3 mantiene los avisos anteriores y separa la caducidad del transporte de la
+  antigüedad de la API. Actualizar el addon es necesario para ver el panel.
+
+Límites: la API no es un feed de botín ni una señal de AFK; los buffs temporales no se verifican.
+MagicFinder/Reffect se documenta como complemento, sin integración automática ni compatibilidad real
+certificada. Carga y sesión completa con Hebra/Nexus en Fedora y Blish HUD en Windows pendientes.
+La publicación del canal no acredita instalación ni ejecución en BRAT/Obsidian reales.
+
 ## Release beta 0.3.4 - iniciar justo después de parar ya no falla, y «Capturar ya» responde al pulsarlo
 
 - **Iniciar una sesión poco después de parar la anterior ya no termina en «No se pudo iniciar la

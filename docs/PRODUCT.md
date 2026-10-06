@@ -220,6 +220,29 @@ valorar cualquier salida de shadow.
 
 ## Vertical actual
 
+### Farmeo del laberinto: extensión de octubre de 2026
+
+La sesión automática conserva el alcance de una conexión al juego; los tramos de presencia por
+mapa distinguen laberinto puro, sesión mixta y evidencia insuficiente. No se reparte botín ni oro
+de cuenta proporcionalmente a minutos en un mapa. La comparación separa las muestras de bolsas/h
+y oro/h y usa la configuración estructural de build, no solo su nombre. Conserva condiciones
+manuales y Hallazgo mágico parcial; muestras y dispersión no demuestran una relación causal.
+
+«Bolsas observadas» cuenta incrementos positivos entre lecturas disponibles; «bolsas netas al
+cierre» es el delta entre fronteras. Reconciliar el cierre no sustituye la primera por la segunda.
+Las aperturas y otros cambios entre lecturas impiden reconstruir el total obtenido, que permanece
+desconocido. Cada métrica muestra su propia cobertura y antigüedad, sin convertir ausencia en cero.
+
+Un objetivo opcional de bolsas o duración se captura para la sesión y conserva su resultado en la
+nota. Bolsas usa progreso observado y estima tiempo restante solo con una muestra suficiente y
+reciente; duración usa cuenta atrás. La preparación es opcional y los recordatorios de comida y
+utilidad son manuales: no certifican buffs, no bloquean la sesión y no crean automatización del juego.
+
+Los addons reciben exclusivamente el resumen agregado de solo lectura `farm1`, negociado sobre
+v3. Una conexión viva no rejuvenece observaciones de la API ni acredita medición activa. Caducidad
+del panel, antigüedad del botín y antigüedad de la capacidad se tratan por separado. El contrato
+normativo de transporte, privacidad y compatibilidad está en `SPEC-puente-ingame.md`.
+
 La versión `0.1.0` valida la base técnica:
 
 - El plugin carga solo en escritorio.
@@ -299,10 +322,14 @@ La versión `0.1.0` valida la base técnica:
   La valoración de una posición no se confunde con su recomendación: conservar o depositar no elimina
   un valor de mercado conocido. Desde H18.15 la vista muestra los huecos libres de bolsas, banco y
   almacén compartido. La decisión del 26 sep sustituye la suma de bolsas de todos los personajes:
-  las bolsas deben corresponder al personaje con actividad reciente y, si no se puede identificar
-  con evidencia suficiente, su espacio es desconocido. `last_modified` es una inferencia de actividad
-  API, no una garantía de personaje activo; la vista indica esa procedencia. El umbral sigue sumando
-  las bolsas elegidas y el banco; sin cualquiera de ambos datos no se afirma que hay poco espacio.
+  las bolsas deben corresponder al personaje que comunica el addon, si esa identidad y su lectura
+  de bolsas son válidas; en su ausencia se usa el personaje con actividad reciente. Si no se puede
+  identificar con evidencia suficiente, su espacio es desconocido. `last_modified` es una inferencia
+  de actividad API, no una garantía de personaje activo; la vista indica esa procedencia. El umbral
+  de poco espacio usa exclusivamente las bolsas de ese personaje. El banco y las posibilidades de
+  depósito se muestran por separado: un banco vacío no oculta unas bolsas llenas y un banco
+  desconocido no invalida una lectura conocida de bolsas. Las acciones prioritarias por poco espacio
+  deben liberar huecos reales de esas bolsas; vender desde el banco u otro personaje no cuenta.
   La vista muestra la capacidad de materiales como «al menos N» cuando ninguna está
   configurada y alguna pila supera 250 (N es el siguiente múltiplo de 250 que la contiene, fuente
   `observed_minimum`).

@@ -1,12 +1,15 @@
 # Tyrian Companion
 
 Tyrian Companion is a desktop-only Obsidian plugin for reviewing Guild Wars 2 farming sessions and
-account inventory context inside a vault. Every recommendation and session boundary remains under
-human control: the plugin never operates the game account.
+account inventory context inside a vault, with an independent Hebra host adapter. Recommendations
+describe manual actions: the plugin never operates the game account. A connected Nexus or Blish HUD
+addon can mark session boundaries automatically from game presence.
 
-The MVP is API-only. Linux with Steam/Proton is the primary platform, macOS with CrossOver is
-secondary, and Windows support is beta. Mumble Link is not part of the MVP; it is reserved for an
-optional v2 map/activity IPC helper under the documented no-injection and no-automation boundary.
+Inventory, loot and economic evidence come from the GW2 API. Linux with Steam/Proton and Nexus is
+the primary platform; Blish HUD provides the Windows game overlay. The addons report map, character
+and game state, without a loot feed, AFK detection or game automation. The separate H8 Mumble Link
+helper remains reserved for an optional v2 map/activity IPC path under the documented no-injection
+and no-automation boundary.
 H8.1 fixes that future contract and its guards. H8.2 adds only a non-production, read-only CrossOver
 probe spike under `spikes/`; no helper, IPC runtime or plugin integration is shipped.
 H8.3 provisionally accepts Rust and H8.4 fixes the executable local IPC protocol. H8.5 implements
@@ -25,19 +28,26 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 > and the active BRAT channel. Installation, update, and runtime QA in Obsidian are still pending
 > across the platform matrix, so use a disposable vault while validating it.
 
-## Current candidate
+## Halloween farming
 
-The isolated `codex/parallel-integration` candidate now includes the audited H9.5/H9.19/H9.20 and
-H12.5/H12.6 batch. Session-history comparisons can group qualified Halloween runs by declared build;
-those local fields are excluded from JSON/CSV exports. Economic totals use the session delta window,
-never prorate account-wide market depth through a character/storage filter, and consume bid depth
-plus fees across session, durable inventory, and the curated `#36038` decision.
+Optional bag or duration goals, preparation and comparisons are available in Companion. Bag rates
+have their own evidence and do not disappear merely because some items lack a price. Runs record
+pure or mixed labyrinth presence and build configuration; sample size and dispersion are shown
+without claiming that the build caused the difference.
 
-The Inventory Advisor leads with the fresh manual queue and folds advanced scope controls. Settings
-shows one accessible category at a time, serializes visible writes, and switches navigation, rows,
-Halloween data, and full-width controls at the documented container breakpoints. This work is not in
-`main` or a release. Real Obsidian visual/keyboard QA and live listings/Refresh/session contrast are
-still required before publication.
+The in-game panel requires [Nexus 0.4.0](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.4.0)
+or [Blish HUD module 0.4.0](https://github.com/fodaveg/tyrian-companion-blish/releases/tag/0.4.0)
+and Tyrian Companion 0.4.0. It shows observed bags, rate, bag space, goal and data age. Existing
+alerts remain compatible with earlier v3 addons; a new addon connected to an older host reports
+that the panel is unavailable. See the [bridge contract](docs/SPEC-puente-ingame.md).
+
+Observed increments and net bags retained at close are separate metrics. Opening bags between API
+reads makes total acquired bags unobservable; the panel cannot reconstruct them. The API also does
+not certify temporary Magic Find buffs. [MagicFinder](https://github.com/DominantNostril/MagicFinder)
+is documented as a possible Reffect/Nexus complement, without automatic integration or verified
+compatibility with this candidate.
+
+Live installation, visual/keyboard QA and a complete game session on each platform remain pending.
 
 The fixed plugin name, ID, author, repository and MIT license are recorded in the
 [Release identity](docs/IDENTITY.md). The repository and the
@@ -72,29 +82,37 @@ development only and is not the supported way to install the plugin.
 
 ## First farming session
 
-The manual flow is state-dependent. The palette and the Companion view show only the action that is
+For automatic sessions, run Tyrian on the collector host, enable the bridge and copy its addon token
+to Nexus or Blish HUD. The token is separate from the GW2 API key. Nexus can open the chosen host
+(Obsidian or Hebra) when the game starts; Blish HUD requires the host to be available already.
+Gameplay starts a session after the baseline capture. Leaving the game closes it; a dropped addon
+connection has a ten-minute grace period. Check the measurement phase rather than treating a
+connected bridge as proof that loot is being observed. Goals and preparation do not block this flow.
+
+The alternative manual flow is state-dependent. The palette and the Companion view show only the action that is
 valid for the current state.
 
-1. With the connection checked, run **Start farming session**. Choose the character and enter the
-   total Magic Find shown in the game. Wait until Companion says the baseline is captured and the
-   session is active.
+1. With the connection checked, run **Start farming session**. Choose the character. Magic Find
+   can be entered manually or left empty to derive the API components; optional consumable bonuses
+   are declared separately. Wait until Companion says the baseline is captured and the session is
+   active.
 2. Farm normally. Avoid opening, salvaging, crafting, buying, selling, moving account items from
    another device, or otherwise changing the tracked account outside the run if you need an exact net
    result.
 3. When the session is active, **Start farming session** is replaced by **Finish farming session**;
    the Companion view also shows **Finish session**. If the view still says `idle`, no session was
    started and there is nothing to finish.
-4. After the final snapshot, **Finish farming session** classifies the result automatically and
-   leaves the session ready to save. The Companion view shows the classification, its confidence
-   and any detected outside activity.
-5. Run **Clear completed session** and confirm. This writes or updates the managed session
-   note and only then clears the local runtime.
+4. After the final snapshot, **Finish farming session** classifies the result and writes the
+   managed session note automatically. The Companion view shows the classification, its confidence
+   and any detected outside activity. A failed capture or save remains visible and retryable.
+5. **Clear completed session** releases the already saved local session; it is not an approval gate
+   for finalization.
 
 Assisted detection is optional. Set **Detection mode → Assisted**, check the connection, and run
 **Arm assisted detection**. Arming captures a baseline and may later propose a start or finish, but
-every proposal still needs an explicit review action. Arming always reloads disarmed and never starts or
-stops a session automatically. When you stop a session, the detector disarms; run **Check connection**
-again to re-arm it.
+every proposal still needs an explicit review action. This API detector is distinct from automatic
+addon presence. On the collector, startup connection checks can arm detection and successful session
+finalization can re-arm it; the view shows the actual detector state.
 
 Pilot metrics are also optional and local. After a tester configures a platform profile in Settings,
 the plugin keeps a vault-scoped, unsynchronized journal used to aggregate the H0.6 pilot criteria.

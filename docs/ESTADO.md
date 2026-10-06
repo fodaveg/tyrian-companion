@@ -1,5 +1,24 @@
 # Estado
 
+## Farmeo del laberinto de Halloween (6 oct 2026)
+
+El [audit funcional](audit/2026-10-06-laberinto-halloween.md) originó el proyecto de Lumbre
+«Tyrian Companion · Farmeo del laberinto Halloween». El candidato de integración incorpora
+correcciones de espacio y métricas, objetivos, preparación y el panel común de Nexus y Blish HUD.
+Las tareas y su verificación se mantienen en Lumbre. El audit conserva la evidencia de los
+checkouts anteriores; no certifica por sí mismo esta implementación.
+
+El panel usa la extensión optativa `farm1` del protocolo v3; los addons anteriores siguen
+recibiendo avisos y los nuevos pueden conectarse a un host anterior sin capacidad de panel.
+Los datos proceden de instantáneas API, con edad explícita. Observado, neto al cierre y total
+obtenido no son intercambiables; este último permanece sin observar.
+
+QA pendiente: carga y recorrido de una sesión completa con Hebra/Nexus en Fedora y Blish HUD
+en Windows, instalación y ejecución de BRAT/Obsidian, comprobación visual y compatibilidad real
+de MagicFinder. Las pruebas de código, builds y publicación tienen evidencia separada y no
+se presentan como esa aceptación de cliente. Blish HUD requiere el host ya disponible;
+el lanzamiento automático desde Nexus conserva el selector Obsidian/Hebra existente.
+
 ## Tyrian dentro de Hebra (en curso desde el 28 sep 2026)
 
 El estado, los checkpoints y cómo retomar viven en el repo de Hebra:
