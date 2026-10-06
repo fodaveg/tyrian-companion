@@ -389,30 +389,22 @@
 	min-width: 0;
 }
 
-/* Settings tab: a horizontal tablist above native `Setting` rows. No lateral nav, no per-row
-   container, and no forced 44px targets — the Obsidian modal already sizes its own controls. */
-.tyrian-product-settings__nav {
-	display: flex;
-	flex-wrap: wrap;
-	gap: var(--size-4-2);
-	margin-block-end: var(--size-4-4);
+/* Settings: one page of native `Setting` rows, then a closed "Maintenance" `<details>`. No tabs,
+   no per-row container, and no forced 44px targets — the Obsidian modal already sizes its own controls. */
+.tyrian-companion-settings__maintenance {
+	margin-block-start: var(--size-4-4);
+	border-block-start: 1px solid var(--background-modifier-border);
 }
 
-.tyrian-product-settings__nav button {
-	display: inline-flex;
-	justify-content: center;
-	align-items: center;
-	padding: var(--size-4-2) var(--size-4-3);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-m);
-	background: var(--background-secondary);
-	color: var(--text-normal);
-	white-space: normal;
+.tyrian-companion-settings__maintenance > summary {
+	padding: var(--size-4-2) 0;
+	color: var(--text-muted);
+	cursor: pointer;
 }
 
-.tyrian-product-settings__nav button[aria-selected="true"] {
-	border-color: var(--interactive-accent);
-	background: var(--background-modifier-hover);
+.tyrian-companion-settings__maintenance > summary:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
 }
 
 .tyrian-companion-settings .setting-item-control {

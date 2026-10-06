@@ -35,9 +35,9 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 14');
 		expect(settings).toContain('halloweenPersonalValuation: { version: 1 as const, values: [] }');
-		expect(settingsTab.indexOf("settings.halloween.personal.name")).toBeLessThan(
-			settingsTab.indexOf("settings.halloween.enabled.name"),
-		);
+		// 6 oct 2026: the page lost this row (presentation only); the saved overlay still feeds the
+		// advisor through the settings key and the wiring asserted below.
+		expect(settingsTab).not.toMatch(/halloween\.personal|HalloweenPersonalValuationSettings/u);
 		expect(readModuleSource('src/runtime/assemble-advisor.ts'))
 			.toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');
 		expect(main).toContain('personalValuation: () => this.settings.halloweenPersonalValuation');

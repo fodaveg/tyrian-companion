@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
-import { DEFAULT_SETTINGS, POLLING_INTERVAL_OPTIONS, type TyrianSettings } from '../core/settings';
+import { DEFAULT_SETTINGS, mergeSettingsUpdate, type TyrianSettings } from '../core/settings';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { ConnectionErrorCode } from '../account/account-service';
 import type { ConnectionState } from '../account/connection-service';
@@ -14,17 +14,11 @@ import {
 } from './settings-i18n';
 import {
 	TyrianCompanionSettingTab,
-	createSettingsSections,
-	bpsToPercentDisplay,
 	goldThresholdToCopper,
-	isActiveSettingsCategory,
-	nextSettingsCategory,
-	percentDisplayToBps,
 	projectLocalDebugStatus,
 	runConfirmedLocalDebugClear,
 	runConfirmedLocalDebugExport,
 	runSettingWrite,
-	SETTINGS_CATEGORIES,
 	SettingsWriteQueue,
 } from './settings-tab';
 import { forbiddenBoundaryUses, type ModuleBoundary, calleeChains, readModuleSource } from '../test/module-boundary';
@@ -41,8 +35,8 @@ describe('essential alert threshold', () => {
 		const plugin = settingsPlugin();
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
-			.find((candidate) => candidate.name === 'Catch a single expensive item');
-		if (definition === undefined) throw new Error('Expected the per-unit Halloween threshold setting.');
+			.find((candidate) => candidate.name === 'Alert me about a drop from');
+		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
 		const control = renderControl(definition, 'text');
 
 		await control.change('-1');
@@ -50,7 +44,7 @@ describe('essential alert threshold', () => {
 		expect(control.ariaInvalid).toBe('true');
 		expect(control.feedbackRole).toBe('alert');
 		expect(control.feedback).toBe('Enter a non-negative gold amount with at most four decimal places.');
-		expect(plugin.settings.halloweenValueThresholdCopper).toBe(DEFAULT_SETTINGS.halloweenValueThresholdCopper);
+		expect(plugin.settings.valuableLootThresholdCopper).toBe(DEFAULT_SETTINGS.valuableLootThresholdCopper);
 	});
 });
 
@@ -117,18 +111,6 @@ describe('managed assets section and the host capability', () => {
 
 	it('hides it when the host declares managedAssets: false', () => {
 		expect(names(Object.assign(settingsPlugin(), { managedAssetsSupported: () => false }))).not.toContain('Managed assets');
-	});
-});
-
-describe('percentage-to-basis-points conversion for the price-alert margin', () => {
-	it('round-trips a one-decimal percentage through whole basis points', () => {
-		expect(bpsToPercentDisplay(0)).toBe('0.0');
-		expect(bpsToPercentDisplay(125)).toBe('1.3');
-		expect(percentDisplayToBps('1.25')).toBe(125);
-		expect(percentDisplayToBps('0')).toBe(0);
-		expect(percentDisplayToBps('-1')).toBe('invalid');
-		expect(percentDisplayToBps('1001')).toBe('invalid');
-		expect(percentDisplayToBps('')).toBe('invalid');
 	});
 });
 
@@ -226,105 +208,43 @@ describe('Settings i18n projection', () => {
 	});
 });
 
-describe('Halloween price-alert settings wiring', () => {
-	it('rebuilds the open settings tab and immediately reflects enabled controls after every change', async () => {
-		const plugin = settingsPlugin();
-		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
-		const refresh = vi.spyOn(tab, 'refreshForSettingsChange').mockImplementation(() => undefined);
-		const definitions = () => tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[];
-		const byName = (name: string) => definitions().find((definition) => definition.name === name)!;
-		const enabledName = 'Local bag price alert';
-		const marginName = 'Minimum margin above p90';
-		const cooldownName = 'Price-alert cooldown';
-
-		expect(renderControl(byName(marginName), 'text').disabled).toBe(true);
-		expect(renderControl(byName(cooldownName), 'dropdown').disabled).toBe(true);
-		await renderControl(byName(enabledName), 'dropdown').change('on');
-		expect(plugin.settings.halloweenPriceAlertEnabled).toBe(true);
-		expect(refresh).toHaveBeenCalledOnce();
-		expect(renderControl(byName(marginName), 'text').disabled).toBe(false);
-		expect(renderControl(byName(cooldownName), 'dropdown').disabled).toBe(false);
-
-		await renderControl(byName(marginName), 'text').change('1.25');
-		await renderControl(byName(cooldownName), 'dropdown').change('48');
-		expect(plugin.settings).toMatchObject({
-			halloweenPriceAlertMinimumAboveP90Bps: 125, halloweenPriceAlertCooldownHours: 48,
-		});
-		expect(refresh).toHaveBeenCalledTimes(3);
-		await renderControl(byName(enabledName), 'dropdown').change('off');
-		expect(renderControl(byName(marginName), 'text').disabled).toBe(true);
-		expect(refresh).toHaveBeenCalledTimes(4);
-	});
-});
-
-describe('assisted-detection polling settings', () => {
-	it('offers every declared cadence and preselects the persisted one', () => {
-		const plugin = settingsPlugin();
-		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
-		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
-			.find((candidate) => candidate.name === 'Polling interval');
-		if (definition === undefined) throw new Error('Expected polling interval setting.');
-
-		const control = renderControl(definition, 'dropdown');
-
-		expect(plugin.settings.pollingIntervalMinutes).toBe(10);
-		// The default cadence must be selectable, or the dropdown silently shows another value.
-		expect(control.options).toEqual(POLLING_INTERVAL_OPTIONS.map(String));
-		expect(control.value).toBe('10');
-
-		plugin.settings.pollingIntervalMinutes = 60;
-		const existing = renderControl(definition, 'dropdown');
-		expect(existing.value).toBe('60');
-		return expect(existing.change('15')).resolves.toBeUndefined().then(() => {
-			expect(plugin.settings.pollingIntervalMinutes).toBe(15);
-		});
-	});
-});
-
 describe('settings information architecture', () => {
-	// The detection settings row is gone (Lote S, 2026-09-09: assisted detection is always armed
-	// with a connected account, no more on/off setting), dropping the "Advanced" tab from 28 to 27
-	// rows and the total from 32 to 31. M1 of SPEC-recomendacion-por-objeto adds the recommendation
-	// capital threshold as a new "Advanced" row, back up to 28/32. M4 adds the legendary targets
-	// row, another "Advanced" row, to 29/33. H18.23 adds the in-game bridge secret, an "Advanced"
-	// row shown only while the bridge is on, to 30/34. H18.15 adds the low-storage-space threshold,
-	// another "Advanced" row, to 31/35. 0.2.1 moves the bridge secret to "Essentials", still shown
-	// only while the bridge is on: 5 assigned there, 30 under "Advanced". R1b adds the
-	// collector/consult row, to 37 (H18.39 added the inventory-timing row): under "Advanced" for a
-	// collector (next test for consult).
-	it('assigns all 37 existing rows to explicit intent categories', () => {
-		// An upgraded installation with a key is the collector: its first tab is unchanged by R1b.
+	// 6 oct 2026: one page, no tabs. The rows a person sees are the seven below plus the in-game
+	// token while the bridge is on; diagnostics, history and managed assets sit in "Maintenance".
+	// Every other setting keeps its saved value and its feature, only its row is gone.
+	const MAIN_ROWS = [
+		'This installation\'s mode', 'API key', 'Output folder', 'In-game alert (optional)',
+		'Alert me about a drop from', 'Alert webhook (optional)', 'Legendary targets',
+	];
+	const MAINTENANCE_ROWS = ['Durable history', 'Diagnostic logs', 'Diagnostic logs: actions', 'Managed assets'];
+
+	it('mounts exactly the contracted rows, in order, with the bridge token only while the bridge is on', () => {
 		const plugin = settingsPlugin();
-		plugin.collectorMode = 'collector';
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
-		const assignments = tab.getSettingCategoryAssignments();
-		expect(assignments).toHaveLength(37);
-		// H14.20: the first screen of a new install is exactly the four rows it needs; the fifth
-		// "Essentials" row, the bridge token, only mounts once the bridge is on (next test). Every
-		// other row (31) lives under the single "Advanced" tab.
-		const essentials = assignments.filter(({ category }) => category === 'essentials');
-		expect(essentials).toHaveLength(5);
-		expect(essentials.map(({ name }) => name).sort()).toEqual(
-			['API key', 'Addon token', 'Alert me about a drop from', 'Default character', 'Output folder'].sort(),
-		);
-		expect(tab.getMountedSettingNames('essentials').sort()).toEqual(
-			['API key', 'Alert me about a drop from', 'Default character', 'Output folder'].sort(),
-		);
-		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(32);
-		expect(tab.getMountedSettingNames('advanced')).toContain('This installation\'s mode');
-		expect(assignments.every(({ category }) => SETTINGS_CATEGORIES.includes(category))).toBe(true);
+		expect(tab.getMountedSettingNames('main')).toEqual(MAIN_ROWS);
+		expect(tab.getMountedSettingNames('maintenance')).toEqual(MAINTENANCE_ROWS);
+		// The search list is the page: the same rows in the same order, no more and no fewer.
+		expect((tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[]).map(({ name }) => name))
+			.toEqual([...MAIN_ROWS, ...MAINTENANCE_ROWS]);
+
+		plugin.settings.alertIngameEnabled = true;
+
+		expect(tab.getMountedSettingNames('main')).toEqual([
+			'This installation\'s mode', 'API key', 'Output folder', 'In-game alert (optional)', 'Addon token',
+			'Alert me about a drop from', 'Alert webhook (optional)', 'Legendary targets',
+		]);
+		expect(tab.getMountedSettingNames('maintenance')).toEqual(MAINTENANCE_ROWS);
 	});
 
-	// R1b: a consult installation (every new one) must find the switch that makes it the collector
-	// on the tab the settings open to, and the row stays put while the player flips it.
-	it('mounts the mode row first on the first tab of a consult installation, and keeps it there on a switch', async () => {
+	// R1b: the mode row is the first row, for a collector and a consult installation alike.
+	it('keeps the mode row first and writes it as this device\'s mode, never into the synced settings', async () => {
 		const plugin = settingsPlugin();
 		expect(plugin.getCollectorMode()).toBe('consult');
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
-		expect(tab.getMountedSettingNames('essentials')).toEqual([
-			'This installation\'s mode', 'API key', 'Output folder', 'Default character', 'Alert me about a drop from',
-		]);
-		expect(tab.getMountedSettingNames('advanced')).not.toContain('This installation\'s mode');
+		expect(tab.getMountedSettingNames('main')[0]).toBe('This installation\'s mode');
+		plugin.collectorMode = 'collector';
+		expect(tab.getMountedSettingNames('main')[0]).toBe('This installation\'s mode');
+		plugin.collectorMode = 'consult';
 
 		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
 			.find((candidate) => candidate.name === 'This installation\'s mode');
@@ -335,75 +255,87 @@ describe('settings information architecture', () => {
 		const before = structuredClone(plugin.settings);
 		await control.change('collector');
 
-		// This device's mode, written locally: the synced settings (data.json) are untouched.
 		expect(plugin.updateCollectorMode).toHaveBeenCalledWith('collector');
 		expect(plugin.getCollectorMode()).toBe('collector');
 		expect(plugin.settings).toEqual(before);
-		expect(tab.getMountedSettingNames('essentials')[0]).toBe('This installation\'s mode');
 	});
 
-	// 0.2.1: with the bridge on, the token row sat at the bottom of "Advanced" and could not be
-	// found; it now mounts on the first tab the settings open to, and never under "Advanced".
-	it('mounts the bridge token row on the first tab only while the bridge is on', () => {
+	it('draws no rows for settings that lost their row, and drops no setting key', () => {
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, settingsPlugin() as never);
+		const names = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[]).map(({ name }) => name);
+		for (const gone of [
+			'Language', 'Polling interval', 'Default character', 'Local pilot metrics', 'Inventory sync timing',
+			'In-game alert port', 'Salvage kit', 'Price history', 'Local bag price alert',
+		]) expect(names).not.toContain(gone);
+		// The keys behind those rows stay in the defaults: only the PRESENTATION was reduced.
+		for (const key of [
+			'language', 'pollingIntervalMinutes', 'preferredCharacter', 'salvageKit', 'priceHistoryEnabled',
+			'alertIngamePort', 'halloweenPriceAlertEnabled', 'materialStorageCapacity', 'halloweenEnabled',
+		]) expect(DEFAULT_SETTINGS).toHaveProperty(key);
+	});
+
+	it('keeps the value of every hidden setting when a visible row is saved', async () => {
 		const plugin = settingsPlugin();
+		// The core's real merge, not the fake's `Object.assign`: it is what a save goes through.
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => {
+			plugin.settings = mergeSettingsUpdate(plugin.settings, update, 'config-dir', 'en');
+		};
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
-		expect(tab.getMountedSettingNames('essentials')).not.toContain('Addon token');
-		expect(tab.getMountedSettingNames('advanced')).not.toContain('Addon token');
-
-		plugin.settings.alertIngameEnabled = true;
-
-		expect(tab.getMountedSettingNames('essentials')).toContain('Addon token');
-		expect(tab.getMountedSettingNames('advanced')).not.toContain('Addon token');
-		expect(tab.getMountedSettingNames('advanced')).toEqual(expect.arrayContaining(['In-game alert (optional)', 'In-game alert port']));
-	});
-
-	it('keeps exactly one category mounted and provides a wrapping keyboard tab order', () => {
-		for (const active of SETTINGS_CATEGORIES) {
-			expect(SETTINGS_CATEGORIES.filter((category) => isActiveSettingsCategory(category, active))).toEqual([active]);
-		}
-		expect(nextSettingsCategory('essentials', 'ArrowLeft')).toBe('advanced');
-		expect(nextSettingsCategory('advanced', 'ArrowRight')).toBe('essentials');
-		expect(nextSettingsCategory('essentials', 'ArrowUp')).toBe('advanced');
-		expect(nextSettingsCategory('advanced', 'ArrowDown')).toBe('essentials');
-		expect(nextSettingsCategory('advanced', 'Home')).toBe('essentials');
-		expect(nextSettingsCategory('essentials', 'End')).toBe('advanced');
-		expect(nextSettingsCategory('essentials', 'Enter')).toBeNull();
-	});
-
-	it('keeps the category h2 in the DOM but visually hidden, and the intro visible', () => {
-		const styles = readModuleSource('styles.css');
-		expect(styles).toMatch(/\.tyrian-visually-hidden\s*\{[\s\S]*position:\s*absolute;[\s\S]*clip-path:\s*inset\(50%\);[\s\S]*white-space:\s*nowrap;/u);
-		const created: Array<{ tag: string; text?: string; cls?: string }> = [];
-		const fake = (): Record<string, unknown> => ({
-			createEl: (tag: string, options?: { text?: string; cls?: string }) => {
-				created.push({ tag, ...options });
-				return fake();
-			},
-			setAttr: () => undefined,
-			addEventListener: () => undefined,
+		// Resolved while the interface is still English: the row names follow `language`.
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert me about a drop from');
+		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
+		Object.assign(plugin.settings, {
+			salvageKit: 'mystic', priceHistoryEnabled: true, pollingIntervalMinutes: 30, language: 'es',
+			alertIngamePort: DEFAULT_SETTINGS.alertIngamePort + 1,
 		});
-		createSettingsSections(fake() as unknown as HTMLElement, 'essentials', (key) => key, () => undefined);
-		expect(created.find((entry) => entry.tag === 'h2')?.cls).toBe('tyrian-visually-hidden');
-		expect(created.find((entry) => entry.tag === 'p')?.cls).toBeUndefined();
+		const hidden = structuredClone({
+			salvageKit: plugin.settings.salvageKit, priceHistoryEnabled: plugin.settings.priceHistoryEnabled,
+			pollingIntervalMinutes: plugin.settings.pollingIntervalMinutes, language: plugin.settings.language,
+			alertIngamePort: plugin.settings.alertIngamePort,
+		});
+
+		await renderControl(definition, 'text').change('250');
+
+		expect(plugin.settings.valuableLootThresholdCopper).toBe(2_500_000);
+		expect({
+			salvageKit: plugin.settings.salvageKit, priceHistoryEnabled: plugin.settings.priceHistoryEnabled,
+			pollingIntervalMinutes: plugin.settings.pollingIntervalMinutes, language: plugin.settings.language,
+			alertIngamePort: plugin.settings.alertIngamePort,
+		}).toEqual(hidden);
 	});
 
-	it('renders a flat horizontal tablist with no nested advanced disclosure or forced touch sizing', () => {
+	it('writes a visible row as a partial update, so a hidden key can never be part of the save', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert me about a drop from');
+		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
+
+		await renderControl(definition, 'text').change('250');
+
+		expect(updates).toEqual([{ valuableLootThresholdCopper: 2_500_000 }]);
+	});
+
+	it('keeps the page DOM-light: native rows, a closed details block, focus restored and the save-state announcer', () => {
 		const source = readModuleSource('src/ui/settings-tab.ts');
 		const styles = readModuleSource('styles.css');
 		expect(calleeChains(source)).not.toContain('renderProductShell');
 		const boundary: ModuleBoundary = {
 			path: 'src/ui/settings-tab.ts',
 			forbiddenImports: [],
-			forbiddenNames: ['tyrian-companion-settings__essentials', 'tyrian-companion-settings__advanced'],
+			forbiddenNames: ['tyrian-companion-settings__essentials', 'tyrian-companion-settings__advanced', 'tablist'],
 		};
 		expect(forbiddenBoundaryUses(source, boundary)).toEqual([]);
-		expect(styles).not.toContain('tyrian-companion-settings__essentials');
-		expect(styles).not.toContain('tyrian-companion-settings__advanced');
-		expect(styles).not.toContain('tyrian-product-settings__layout');
-		expect(styles).not.toContain('tyrian-product-settings__panels');
-		expect(styles).not.toContain('tyrian-product-settings__section');
-		expect(styles).toMatch(/\.tyrian-product-settings__nav\s*\{[\s\S]*display:\s*flex;/u);
-		expect(styles).toMatch(/\.tyrian-product-settings__nav button\[aria-selected="true"\]\s*\{[\s\S]*border-color:\s*var\(--interactive-accent\);/u);
+		for (const gone of [
+			'tyrian-companion-settings__essentials', 'tyrian-companion-settings__advanced',
+			'tyrian-product-settings__layout', 'tyrian-product-settings__panels', 'tyrian-product-settings__section',
+			'tyrian-product-settings__nav',
+		]) expect(styles).not.toContain(gone);
+		expect(styles).toMatch(/\.tyrian-companion-settings__maintenance > summary:focus-visible\s*\{[\s\S]*outline:\s*2px solid var\(--interactive-accent\);/u);
 		expect(styles).toMatch(/\.tyrian-companion-settings \.setting-item-control\s*\{[\s\S]*flex-wrap:\s*wrap;/u);
 		expect(styles).not.toMatch(/\.tyrian-companion-settings[^{]*\{[^}]*min-(?:block-size|height):\s*44px/su);
 		expect(source).toContain('restoreSettingsFocus(this.containerEl, focus)');

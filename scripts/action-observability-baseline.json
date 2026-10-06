@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 520,
 		"promise_catch": 54,
-		"void_expression": 117,
-		"callback_registration": 218
+		"void_expression": 113,
+		"callback_registration": 206
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -13938,11 +13938,27 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "eb533c800eabc8d12da19019e34a0e7c7a30e0ca",
+					"kind": "catch_clause",
+					"line": 428,
+					"column": 10,
+					"endLine": 431,
+					"endColumn": 9,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "render",
+						"justification": "The \"render\" owner applies \"local_recovery\" when copying the in-game bridge secret fails: it shows the failure in the row feedback with role alert, and copyAlertIngameSecret already records the failure through localDebugActions.run."
+					},
+					"reason": "Allowlisted catch_clause: The \"render\" owner applies \"local_recovery\" when copying the in-game bridge secret fails: it shows the failure in the row feedback with role alert, and copyAlertIngameSecret already records the failure through localDebugActions.run. Verified recovery: \"local_recovery\" in \"render\"."
+				},
+				{
 					"id": "87d1a9c2a5d897e35e6d76d4d27fb263fe257d97",
 					"kind": "callback_registration",
-					"line": 621,
+					"line": 540,
 					"column": 8,
-					"endLine": 623,
+					"endLine": 542,
 					"endColumn": 10,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -13957,9 +13973,9 @@
 				{
 					"id": "3df29c4fd86c51ad74513efe8b648b7725b3110c",
 					"kind": "void_expression",
-					"line": 622,
+					"line": 541,
 					"column": 9,
-					"endLine": 622,
+					"endLine": 541,
 					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13971,27 +13987,11 @@
 					"reason": "Allowlisted void_expression: The \"renderList\" owner deliberately detaches \"applyLegendaryTargetChange\"; that named operation owns rejection and terminal diagnostics. Verified target: \"applyLegendaryTargetChange\" in \"renderList\"."
 				},
 				{
-					"id": "eb533c800eabc8d12da19019e34a0e7c7a30e0ca",
-					"kind": "catch_clause",
-					"line": 1015,
-					"column": 10,
-					"endLine": 1018,
-					"endColumn": 9,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "render",
-						"justification": "The \"render\" owner applies \"local_recovery\" when copying the in-game bridge secret fails: it shows the failure in the row feedback with role alert, and copyAlertIngameSecret already records the failure through localDebugActions.run."
-					},
-					"reason": "Allowlisted catch_clause: The \"render\" owner applies \"local_recovery\" when copying the in-game bridge secret fails: it shows the failure in the row feedback with role alert, and copyAlertIngameSecret already records the failure through localDebugActions.run. Verified recovery: \"local_recovery\" in \"render\"."
-				},
-				{
 					"id": "33c79ee5f21a9f074b1ed0b905f5cd921083c86e",
 					"kind": "catch_clause",
-					"line": 1137,
+					"line": 668,
 					"column": 9,
-					"endLine": 1137,
+					"endLine": 668,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14005,9 +14005,9 @@
 				{
 					"id": "56ba2f02a483eb889d7a35810217e5e649bbc3f5",
 					"kind": "catch_clause",
-					"line": 1146,
+					"line": 677,
 					"column": 10,
-					"endLine": 1146,
+					"endLine": 677,
 					"endColumn": 70,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14021,9 +14021,9 @@
 				{
 					"id": "27a4377ab04d1db119ebfb53537eefc2d5314b7f",
 					"kind": "catch_clause",
-					"line": 1159,
+					"line": 690,
 					"column": 10,
-					"endLine": 1159,
+					"endLine": 690,
 					"endColumn": 70,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14037,9 +14037,9 @@
 				{
 					"id": "0844782fb9fe934ccf0975c433c9932786536f7d",
 					"kind": "catch_clause",
-					"line": 1174,
+					"line": 705,
 					"column": 10,
-					"endLine": 1174,
+					"endLine": 705,
 					"endColumn": 70,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14051,143 +14051,11 @@
 					"reason": "Allowlisted catch_clause: The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"render\"."
 				},
 				{
-					"id": "8f4940af7ed65759bfc01a3079a1bccaad4f853d",
-					"kind": "void_expression",
-					"line": 1230,
-					"column": 6,
-					"endLine": 1230,
-					"endColumn": 76,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "profileFlight.finally",
-						"scope": "render",
-						"justification": "The \"render\" owner deliberately detaches \"profileFlight.finally\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"render\" owner deliberately detaches \"profileFlight.finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"profileFlight.finally\" in \"render\"."
-				},
-				{
-					"id": "a95c5430bc58b9715dfd5061ca280459061b5553",
-					"kind": "callback_registration",
-					"line": 1230,
-					"column": 11,
-					"endLine": 1230,
-					"endColumn": 76,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "render",
-						"justification": "The \"render\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"render\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"render\"."
-				},
-				{
-					"id": "4e4742c2d2f4397f5f659cd64d430ecb11708d9a",
-					"kind": "void_expression",
-					"line": 1235,
-					"column": 7,
-					"endLine": 1242,
-					"endColumn": 9,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "profileFlight.then",
-						"scope": "render",
-						"justification": "The \"render\" owner deliberately detaches \"profileFlight.then\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"render\" owner deliberately detaches \"profileFlight.then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"profileFlight.then\" in \"render\"."
-				},
-				{
-					"id": "5c64624ee33ec2994b7a072eaeaac32543ae1643",
-					"kind": "callback_registration",
-					"line": 1235,
-					"column": 12,
-					"endLine": 1242,
-					"endColumn": 9,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "render",
-						"justification": "The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"render\"."
-				},
-				{
-					"id": "78813eeffef2d383c69df84905c99d487c4c1de8",
-					"kind": "void_expression",
-					"line": 1249,
-					"column": 7,
-					"endLine": 1253,
-					"endColumn": 9,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "profileFlight.then",
-						"scope": "render",
-						"justification": "The \"render\" owner deliberately detaches \"profileFlight.then\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"render\" owner deliberately detaches \"profileFlight.then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"profileFlight.then\" in \"render\"."
-				},
-				{
-					"id": "961c6f0e57acf809ddabf84b94c1b85e3713f320",
-					"kind": "callback_registration",
-					"line": 1249,
-					"column": 12,
-					"endLine": 1253,
-					"endColumn": 9,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "render",
-						"justification": "The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"render\"."
-				},
-				{
-					"id": "cfc2fb8b741d77294d9f6a2d861f6736ac96f674",
-					"kind": "void_expression",
-					"line": 1278,
-					"column": 7,
-					"endLine": 1282,
-					"endColumn": 9,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "verificationFlight.then",
-						"scope": "render",
-						"justification": "The \"render\" owner deliberately detaches \"verificationFlight.then\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"render\" owner deliberately detaches \"verificationFlight.then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"verificationFlight.then\" in \"render\"."
-				},
-				{
-					"id": "fea009ac0bc289fec6fecf1a2d0817e562236cdb",
-					"kind": "callback_registration",
-					"line": 1278,
-					"column": 12,
-					"endLine": 1282,
-					"endColumn": 9,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "render",
-						"justification": "The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"render\"."
-				},
-				{
 					"id": "3d22a6c68c622c20da334d61d658af501ccb16d3",
 					"kind": "callback_registration",
-					"line": 1354,
+					"line": 737,
 					"column": 28,
-					"endLine": 1356,
+					"endLine": 739,
 					"endColumn": 12,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -14200,45 +14068,11 @@
 					"reason": "Allowlisted callback_registration: The \"startCountdown\" owner registers \"setInterval\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"setInterval\" in \"startCountdown\"."
 				},
 				{
-					"id": "7abf8fa0e165d9cb7a4dec25783d967c0594c451",
-					"kind": "callback_registration",
-					"line": 1390,
-					"column": 3,
-					"endLine": 1390,
-					"endColumn": 58,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "createSettingsSections",
-						"justification": "The \"createSettingsSections\" owner registers \"addEventListener\" as a framework or user-interaction callback; the callback only updates local view state or delegates work to the action owner that reports its outcome."
-					},
-					"reason": "Allowlisted callback_registration: The \"createSettingsSections\" owner registers \"addEventListener\" as a framework or user-interaction callback; the callback only updates local view state or delegates work to the action owner that reports its outcome. Verified registration: \"addEventListener\" in \"createSettingsSections\"."
-				},
-				{
-					"id": "4fdf9fd93b24be737b1ae81e03dee8524ae7ce79",
-					"kind": "callback_registration",
-					"line": 1391,
-					"column": 3,
-					"endLine": 1396,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "createSettingsSections",
-						"justification": "The \"createSettingsSections\" owner registers \"addEventListener\" as a framework or user-interaction callback; the callback only updates local view state or delegates work to the action owner that reports its outcome."
-					},
-					"reason": "Allowlisted callback_registration: The \"createSettingsSections\" owner registers \"addEventListener\" as a framework or user-interaction callback; the callback only updates local view state or delegates work to the action owner that reports its outcome. Verified registration: \"addEventListener\" in \"createSettingsSections\"."
-				},
-				{
 					"id": "e0922a92d52c127532c40ecefaf0adc34bff6b22",
 					"kind": "catch_clause",
-					"line": 1434,
+					"line": 762,
 					"column": 4,
-					"endLine": 1437,
+					"endLine": 765,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14252,9 +14086,9 @@
 				{
 					"id": "826b6ec6b15c390fdddecf57e3d0f3cf75dae5ff",
 					"kind": "callback_registration",
-					"line": 1446,
+					"line": 774,
 					"column": 15,
-					"endLine": 1446,
+					"endLine": 774,
 					"endColumn": 60,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -14269,9 +14103,9 @@
 				{
 					"id": "31cbe6860ba9a9e8d60cad1f5c9c3bcc4bb08fda",
 					"kind": "callback_registration",
-					"line": 1516,
+					"line": 842,
 					"column": 5,
-					"endLine": 1516,
+					"endLine": 842,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14286,9 +14120,9 @@
 				{
 					"id": "e1cf534867c8b5170905d92c17c418c5a84d60c3",
 					"kind": "callback_registration",
-					"line": 1518,
+					"line": 844,
 					"column": 5,
-					"endLine": 1518,
+					"endLine": 844,
 					"endColumn": 93,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14303,9 +14137,9 @@
 				{
 					"id": "f4af13bb105899e92b4ca4efb519a79c60ec2539",
 					"kind": "callback_registration",
-					"line": 1547,
+					"line": 873,
 					"column": 5,
-					"endLine": 1547,
+					"endLine": 873,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14320,9 +14154,9 @@
 				{
 					"id": "8863b713f6966aea94a35f54ce0ff2d991a840f4",
 					"kind": "callback_registration",
-					"line": 1549,
+					"line": 875,
 					"column": 5,
-					"endLine": 1549,
+					"endLine": 875,
 					"endColumn": 92,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14337,9 +14171,9 @@
 				{
 					"id": "358c2c9b4cd92c09d37408db389273d3e0f64190",
 					"kind": "callback_registration",
-					"line": 1627,
+					"line": 953,
 					"column": 5,
-					"endLine": 1627,
+					"endLine": 953,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14354,9 +14188,9 @@
 				{
 					"id": "eb5f014e9fabf9d5c5529fdf73ba87c86db16f30",
 					"kind": "callback_registration",
-					"line": 1629,
+					"line": 955,
 					"column": 5,
-					"endLine": 1629,
+					"endLine": 955,
 					"endColumn": 94,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14371,9 +14205,9 @@
 				{
 					"id": "280657b18f700c61843369dafd45e512776eb8a4",
 					"kind": "callback_registration",
-					"line": 1650,
+					"line": 976,
 					"column": 5,
-					"endLine": 1650,
+					"endLine": 976,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14388,112 +14222,10 @@
 				{
 					"id": "55fa4524e537663cc02bf139aa8dd00df0322a12",
 					"kind": "callback_registration",
-					"line": 1652,
+					"line": 978,
 					"column": 5,
-					"endLine": 1652,
+					"endLine": 978,
 					"endColumn": 92,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"id": "f4f9a76124ef5697b7f1f4785df4c2a9cacb0400",
-					"kind": "callback_registration",
-					"line": 1682,
-					"column": 5,
-					"endLine": 1682,
-					"endColumn": 107,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"id": "a5177cc9f56c3dcebd603a1f930e0e7cd637df7a",
-					"kind": "callback_registration",
-					"line": 1684,
-					"column": 5,
-					"endLine": 1684,
-					"endColumn": 94,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"id": "300a75b00a5c9cafa4bdb838eefc3c7dde8cddc4",
-					"kind": "callback_registration",
-					"line": 1704,
-					"column": 5,
-					"endLine": 1704,
-					"endColumn": 107,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"id": "173acff03630ed8a22ac668c4096d639edef5e21",
-					"kind": "callback_registration",
-					"line": 1706,
-					"column": 5,
-					"endLine": 1706,
-					"endColumn": 92,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"id": "0fbdee669a8eba169c6e01eb2166e3efa7377f44",
-					"kind": "callback_registration",
-					"line": 1730,
-					"column": 5,
-					"endLine": 1730,
-					"endColumn": 107,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"id": "fe2e50043c680b235cd56da03b70d73246feb9a1",
-					"kind": "callback_registration",
-					"line": 1732,
-					"column": 5,
-					"endLine": 1732,
-					"endColumn": 94,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
