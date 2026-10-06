@@ -1,0 +1,453 @@
+{
+  "source": "https://raw.githubusercontent.com/Ev3nt1ne/gw2-chatlinks-go/main/chatlinks/chatlinks_test.go",
+  "sourceSha256": "f3183336799be033ef318e38b70f18ac9b43bcd8a811c8fae396c19a6a165f7a",
+  "provenance": "Codes labelled real by upstream; expected raw values derived here with stdlib base64/struct, upstream assertions separately available; no game QA performed",
+  "samples": [
+    {
+      "name": "rangerPetSample",
+      "code": "[&DQQAAAAAAAB5AAAAAAAAAAAAAAAAAAAAAAAAADA7FD8AAAAAAAAAAAAAAAACIwAyAAA=]",
+      "byteLength": 50,
+      "professionCode": 4,
+      "specializations": [
+        {
+          "id": 0,
+          "choices": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": 0,
+          "choices": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": 0,
+          "choices": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "skillPalettesInterleaved": [
+        121,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "professionBytes": [
+        48,
+        59,
+        20,
+        63,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pets": [
+        48,
+        59,
+        20,
+        63
+      ],
+      "weapons": [
+        35,
+        50
+      ],
+      "overrideSkillIds": [],
+      "unconsumedBytes": 0
+    },
+    {
+      "name": "untamedPetsSample",
+      "code": "[&DQQIOyAuSBuhABQblgGWAbYAmgC4ALgAlwHtAB9CFQwAAAAAAAAAAAAAAAACIwAFAAA=]",
+      "byteLength": 50,
+      "professionCode": 4,
+      "specializations": [
+        {
+          "id": 8,
+          "choices": [
+            3,
+            2,
+            3
+          ]
+        },
+        {
+          "id": 32,
+          "choices": [
+            2,
+            3,
+            2
+          ]
+        },
+        {
+          "id": 72,
+          "choices": [
+            3,
+            2,
+            1
+          ]
+        }
+      ],
+      "skillPalettesInterleaved": [
+        161,
+        6932,
+        406,
+        406,
+        182,
+        154,
+        184,
+        184,
+        407,
+        237
+      ],
+      "professionBytes": [
+        31,
+        66,
+        21,
+        12,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pets": [
+        31,
+        66,
+        21,
+        12
+      ],
+      "weapons": [
+        35,
+        5
+      ],
+      "overrideSkillIds": [],
+      "unconsumedBytes": 0
+    },
+    {
+      "name": "revenantLegendsRealSample",
+      "code": "[&DQkPPQMZPyrcEdwRBhIGEisSKxLUEdQRyhHKEQUCAwLUESsSBhIGEisS1BECawBaAAA=]",
+      "byteLength": 50,
+      "professionCode": 9,
+      "specializations": [
+        {
+          "id": 15,
+          "choices": [
+            1,
+            3,
+            3
+          ]
+        },
+        {
+          "id": 3,
+          "choices": [
+            1,
+            2,
+            1
+          ]
+        },
+        {
+          "id": 63,
+          "choices": [
+            2,
+            2,
+            2
+          ]
+        }
+      ],
+      "skillPalettesInterleaved": [
+        4572,
+        4572,
+        4614,
+        4614,
+        4651,
+        4651,
+        4564,
+        4564,
+        4554,
+        4554
+      ],
+      "professionBytes": [
+        5,
+        2,
+        3,
+        2,
+        212,
+        17,
+        43,
+        18,
+        6,
+        18,
+        6,
+        18,
+        43,
+        18,
+        212,
+        17
+      ],
+      "legends": [
+        5,
+        2,
+        3,
+        2
+      ],
+      "inactiveTerrestrialPalettes": [
+        4564,
+        4651,
+        4614
+      ],
+      "inactiveAquaticPalettes": [
+        4614,
+        4651,
+        4564
+      ],
+      "weapons": [
+        107,
+        90
+      ],
+      "overrideSkillIds": [],
+      "unconsumedBytes": 0
+    },
+    {
+      "name": "weaponmasterVariantSample",
+      "code": "[&DQQIKR46TilUHXkAmgAAAIMdmgB1HQAAWx0AAEI3ARMAAAAAAAAAAAAAAAACMwAJAQNn9wAAm/YAAOj2AAA=]",
+      "byteLength": 62,
+      "professionCode": 4,
+      "specializations": [
+        {
+          "id": 8,
+          "choices": [
+            1,
+            2,
+            2
+          ]
+        },
+        {
+          "id": 30,
+          "choices": [
+            2,
+            2,
+            3
+          ]
+        },
+        {
+          "id": 78,
+          "choices": [
+            1,
+            2,
+            2
+          ]
+        }
+      ],
+      "skillPalettesInterleaved": [
+        7508,
+        121,
+        154,
+        0,
+        7555,
+        154,
+        7541,
+        0,
+        7515,
+        0
+      ],
+      "professionBytes": [
+        66,
+        55,
+        1,
+        19,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "pets": [
+        66,
+        55,
+        1,
+        19
+      ],
+      "weapons": [
+        51,
+        265
+      ],
+      "overrideSkillIds": [
+        63335,
+        63131,
+        63208
+      ],
+      "unconsumedBytes": 0
+    },
+    {
+      "name": "catalystSample",
+      "code": "[&DQYfPSkfQyZ0AHUAvgFNAVABkQD4Go8AJgCWAAAAAAAAAAAAAAAAAAAAAAACVgAvAAA=]",
+      "byteLength": 50,
+      "professionCode": 6,
+      "specializations": [
+        {
+          "id": 31,
+          "choices": [
+            1,
+            3,
+            3
+          ]
+        },
+        {
+          "id": 41,
+          "choices": [
+            3,
+            3,
+            1
+          ]
+        },
+        {
+          "id": 67,
+          "choices": [
+            2,
+            1,
+            2
+          ]
+        }
+      ],
+      "skillPalettesInterleaved": [
+        116,
+        117,
+        446,
+        333,
+        336,
+        145,
+        6904,
+        143,
+        38,
+        150
+      ],
+      "professionBytes": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "weapons": [
+        86,
+        47
+      ],
+      "overrideSkillIds": [],
+      "unconsumedBytes": 0
+    },
+    {
+      "name": "evokerSample2",
+      "code": "[&DQYfCxEpUDpiHQAATQEAAB0BAACLHQAAah0AAAAAAAAAAAAAAAAAAAAAAAACLwBZAAA=]",
+      "byteLength": 50,
+      "professionCode": 6,
+      "specializations": [
+        {
+          "id": 31,
+          "choices": [
+            3,
+            2,
+            0
+          ]
+        },
+        {
+          "id": 17,
+          "choices": [
+            1,
+            2,
+            2
+          ]
+        },
+        {
+          "id": 80,
+          "choices": [
+            2,
+            2,
+            3
+          ]
+        }
+      ],
+      "skillPalettesInterleaved": [
+        7522,
+        0,
+        333,
+        0,
+        285,
+        0,
+        7563,
+        0,
+        7530,
+        0
+      ],
+      "professionBytes": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "weapons": [
+        47,
+        89
+      ],
+      "overrideSkillIds": [],
+      "unconsumedBytes": 0
+    }
+  ]
+}
