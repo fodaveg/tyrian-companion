@@ -171,6 +171,8 @@ Variante v4 contiene: sesión/lease/autoridad existentes, sourceInstance+profile
 
 La representación durable de nota live será `tc_schema:7`, `tc_kind:session`, `tc_source:nexus_inventory`, con snapshot de resumen y ledger/coverage versionados en los bloques gestionados existentes; sin baseline crudo, punteros, IDs de cuenta ni sourceInstance raw en la nota. El identificador local de fuente se conserva solo en runtime; exportar `source:nexus_inventory`, build/profile y sesión pseudónima. `tc_account_ref` queda null/desconocido para live si no existe identidad demostrada; no inventar una cuenta a partir de instance/character. Ajustar lectores a un modelo discriminado, conservando notas schema1..6 sin reescritura. Legacy se presenta como neto API, no se fusiona en comparaciones live como si midiera lo mismo.
 
+> **Presentación simplificada el 6 oct 2026 por decisión de David:** el selector CSV/JSON con «Exportar», «Sesión guardada» + «Actualizar historial», la recuperación y la exportación de la sesión anterior de cuenta, «Comparar tandas Nexus» y «Preparar la próxima tanda» dejan de pintarse en la pestaña «Sesión». Los datos y las exportaciones por comando se conservan y siguen exigiendo todo lo de este apartado.
+
 Mantener notas humanas, CAS/verificación de regiones, recovery y requisito de receipt de nota antes de liberar. JSON/CSV live deben incluir todas las observaciones, huecos, fuente, tiempos, cobertura, cantidades, snapshot de precios y su criterio. Reusar exportación create-only, versionando el formato exportado cuando cambie su esquema. No sobrescribir exportaciones existentes.
 
 ### 6.1. Transferencia durable del runtime API legacy
@@ -199,11 +201,15 @@ B implementa esta migración en modelo/store/runtime. Pruebas requeridas: fallo 
 
 Una venta puede retirar objetos y aumentar oro, por lo que neto firmado evita sumar íntegramente ambos como ganancias. Sin causa no afirmar que la operación fue venta. Depósito puede bajar bolsas sin bajar patrimonio: mostrar explícitamente ámbito bolsas, no riqueza de cuenta.
 
+> **Presentación simplificada el 6 oct 2026 por decisión de David:** la pestaña pinta una sola gráfica, la de valor estimado, con los huecos de lectura como franja y corte; la gráfica de cantidad y «Datos de la gráfica» dejan de pintarse en la pestaña. `chartPoints` sigue llevando ambas series y los huecos.
+
 Gráfica: cantidades observadas y valor estimado, huecos sin interpolación; al actualizar precios, recalcular toda la curva visible con el mismo snapshot y rotular su hora, o conservar el snapshot elegido al cierre. No mezclar precios sucesivos haciendo pasar una revalorización por adquisición. Valor/h = valor neto elegible / duración observada pertinente; null ante denominador cero o cobertura insuficiente; subtotal/h puede mostrarse como parcial con etiqueta distinta. Cronología, resumen, gráfica y export derivan del mismo ledger.
 
 Avisos: reutilizar motor/umbral/canales existentes para observación positiva valorizable, clave idempotente observation.id + regla. Texto «Aumento observado: 2 Champiñones · valor estimado…»; jamás «drop», «botín confirmado» o «vendido» por inferencia. Baseline, negativo, muestra incompleta, duplicado, rebaseline, sin precio o fuera de cobertura no emiten aviso de objeto caro. Un precio que llega tarde no vuelve a avisar de una observación ya procesada; la regla evalúa una vez al resolver la observación pendiente o la descarta explícitamente al cerrar el intervalo, con intención y recibos durables según §13, sin insertar avisos live en la cola legacy ligada a cuenta. No requiere confirmación humana ni acciones en juego.
 
 ## 8. Ejemplo canónico UI y fixtures
+
+> **Presentación simplificada el 6 oct 2026 por decisión de David:** la pestaña «Sesión» pinta una cabecera con un botón, «Valor estimado», «Por hora» (solo si hay tasa elegible), la rejilla de objetos con las monedas observadas, una gráfica de valor y la cronología desplegable (lo último arriba, de 50 en 50). Las pestañas «Cronología / Resumen de sesión», la tarjeta de coberturas visible, «Detalles», «Anterior/Siguiente», «Datos de la gráfica», el bloque «Huecos de lectura» y el selector de sesión guardada dejan de pintarse en la pestaña; el dato, el DTO y los comandos se conservan. El ejemplo de abajo sigue describiendo el comportamiento del núcleo.
 
 Usar epoch E y fuente única. Baseline cursor0 (items complete, currencies none), total12147=0. Sin fila de cronología, resumen adquirido0; monedas «Sin cobertura», no0.
 
