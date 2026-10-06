@@ -19,6 +19,8 @@ export interface FarmingPreparationContext {
 	characterName: string | null;
 	buildName: string | null;
 	freeBagSlots: number | null;
+	/** Bags may belong to the currently played character, independently of the captured context. */
+	freeBagSlotsCharacter?: string | null;
 	freeBagSlotsObservedAt?: string | null;
 	collectorMode: CollectorMode;
 	addonConnection: 'connected' | 'disconnected' | 'unknown';

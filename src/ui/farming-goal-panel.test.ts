@@ -148,6 +148,25 @@ describe('host-neutral farming components', () => {
 		mount.remove();
 	});
 
+	it.each(['es', 'en'] as const)('labels current-character bags separately from the captured character/build/MF in %s', (locale) => {
+		const mount = container();
+		const ports = preparationPorts(locale);
+		const panel = new FarmingPreparationPanel({ ...ports, context: () => ({ ...ports.context(),
+			characterName: 'Captured Farmer', buildName: 'Captured build',
+			freeBagSlots: 5, freeBagSlotsCharacter: 'Current Farmer', freeBagSlotsObservedAt: observation.observedAt,
+		}) });
+		panel.render(mount);
+		const slotsLabel = locale === 'es' ? 'Huecos libres en las bolsas del personaje' : 'Free character bag slots';
+		const terms = Array.from(mount.querySelectorAll('dt'));
+		const slots = terms.find((term) => term.textContent === `${slotsLabel} · Current Farmer`)!;
+		expect(slots.nextElementSibling?.textContent).toBe('5');
+		expect(terms.some((term) => term.textContent === `${slotsLabel} · Captured Farmer`)).toBe(false);
+		expect(terms.some((term) => term.textContent?.startsWith(`${slotsLabel} · Current Farmer ·`))).toBe(true);
+		expect(mount.textContent).toContain('Captured Farmer');
+		expect(mount.textContent).toContain('Captured build');
+		expect(mount.textContent).toContain('370%');
+	});
+
 	it.each(['es', 'en'] as const)('keeps preparation off, blank unknown manual inputs and no timer on render in %s', (locale) => {
 		const mount = container();
 		const ports = preparationPorts(locale);

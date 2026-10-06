@@ -169,9 +169,11 @@ export class FarmingPreparationPanel {
 		};
 		fact(farmingCopy(locale, 'character'), context.characterName ?? '—');
 		fact(farmingCopy(locale, 'build'), context.buildName === '' ? farmingCopy(locale, 'noBuildName') : context.buildName ?? '—');
-		fact(farmingCopy(locale, 'slots'), context.freeBagSlots === null ? '—' : new Intl.NumberFormat(locale).format(context.freeBagSlots));
+		const slotsLabel = context.freeBagSlotsCharacter === undefined ? farmingCopy(locale, 'slots')
+			: `${farmingCopy(locale, 'slots')} · ${context.freeBagSlotsCharacter ?? '—'}`;
+		fact(slotsLabel, context.freeBagSlots === null ? '—' : new Intl.NumberFormat(locale).format(context.freeBagSlots));
 		if (context.freeBagSlotsObservedAt !== undefined) {
-			fact(`${farmingCopy(locale, 'slots')} · ${farmingCopy(locale, 'age')}`, age(context.freeBagSlotsObservedAt));
+			fact(`${slotsLabel} · ${farmingCopy(locale, 'age')}`, age(context.freeBagSlotsObservedAt));
 		}
 		fact(farmingCopy(locale, 'collector'), farmingCopy(locale, context.collectorMode === 'collector' ? 'collectorMode' : 'consultMode'));
 		fact(farmingCopy(locale, 'addon'), farmingCopy(locale, context.addonConnection));
