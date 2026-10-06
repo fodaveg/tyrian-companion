@@ -199,7 +199,8 @@ export class LiveSessionPanel {
 	/** One tick: every block is updated in place, so focus, scroll and the open timeline survive it. */
 	refresh(): void {
 		const view = this.actions.getLiveSessionView(0, 1);
-		if (view.sessionId !== this.sessionId) { this.sessionId = view.sessionId; this.shown = PAGE_SIZE; }
+		// Another session shares no observation with this one: the rows of the old one are dropped, open or not.
+		if (view.sessionId !== this.sessionId) { this.sessionId = view.sessionId; this.shown = PAGE_SIZE; this.rowCache.clear(); }
 		if (view.phase === 'active' && this.failure === 'start') this.failure = null;
 		const control = this.actions.getLiveSessionControl();
 		this.renderHeader(view, control);
@@ -262,7 +263,8 @@ export class LiveSessionPanel {
 		this.setText(this.hint, hint);
 		this.hint.hidden = hint === '';
 
-		const failureCopy: LiveSessionCopyKey | null = this.failure === 'start' ? 'startFailed' : this.failure === 'stop' ? 'stopFailed' : null;
+		const failureCopy: LiveSessionCopyKey | null = this.failure === 'start' ? 'startFailed' : this.failure === 'stop' ? 'stopFailed'
+			: this.failure === 'discard' ? 'discardFailed' : null;
 		this.setText(this.alert, failureCopy === null ? '' : this.copy(failureCopy));
 		this.alert.hidden = failureCopy === null;
 

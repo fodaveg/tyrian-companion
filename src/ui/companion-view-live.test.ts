@@ -34,10 +34,10 @@ function live(count = 0): LiveSessionViewV1 {
 }
 
 /** The real `render()` of `CompanionView` with the live surface, over the ports the product gives it. */
-function mount(options: { view?: (offset?: number, limit?: number) => LiveSessionViewV1; sessionState?: unknown; recovery?: unknown } = {}) {
+function mount(options: { view?: (offset?: number, limit?: number) => LiveSessionViewV1; sessionState?: unknown; recovery?: unknown; finishState?: () => string } = {}) {
  const content = document.createElement('div'); document.body.append(content);
  const run = vi.fn(async () => 'completed');
- const describe = vi.fn((id: string) => ({ id, available: id === 'finish-farming-session', state: 'idle' }));
+ const describe = vi.fn((id: string) => ({ id, available: id === 'finish-farming-session', state: id === 'finish-farming-session' ? (options.finishState?.() ?? 'idle') : 'idle' }));
  const load = vi.fn(async () => ({status:'ok' as const,sessions:[],ignored:0}));
  const openManualSessionStart = vi.fn(); const checkConnection = vi.fn(); const stopManualSession = vi.fn(async () => {});
  const exportLiveSession = vi.fn(async () => {}); const listLiveSessionHistory = vi.fn(async () => []);
@@ -106,6 +106,54 @@ describe('mounted Companion live consumer (simplified Session tab)', () => {
   expect(run).toHaveBeenCalledOnce(); expect(run).toHaveBeenCalledWith('finish-farming-session');
   expect(stopManualSession).not.toHaveBeenCalled(); expect(openManualSessionStart).not.toHaveBeenCalled();
   await view.onClose();
+ });
+
+ // The 1 s tick is the only thing that moves the clock and shows a start or finish launched elsewhere
+ // (the palette, another view) without a full `render()`; a committed sample already goes through `render()`.
+ describe('the background tick repaints the live panel without render()', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(Date.UTC(2026, 9, 6, 8, 0, 0))); });
+  afterEach(() => { vi.useRealTimers(); });
+  const startedAt = Date.UTC(2026, 9, 6, 8, 0, 0);
+  const ticking = (count: () => number) => (offset = 0, limit = 50): LiveSessionViewV1 => { const all = live(count());
+   return { ...all, elapsedMs: Date.now() - startedAt, observations: all.observations.slice(offset, offset + limit) }; };
+
+  it('moves the clock every second', async () => {
+   const { content, view } = mount({ view: ticking(() => 3) });
+   view.render();
+   const clock = () => content.querySelector('.tyrian-live-session__elapsed')!.textContent;
+   expect(clock()).toBe('00:00');
+   vi.advanceTimersByTime(1000);
+   expect(clock()).toBe('00:01');
+   vi.advanceTimersByTime(4000);
+   expect(clock()).toBe('00:05');
+   await view.onClose();
+  });
+
+  it('shows a new observation in the figures and the total on the next tick', async () => {
+   let count = 3;
+   const { content, view } = mount({ view: ticking(() => count) });
+   view.render();
+   const total = () => content.querySelector('.tyrian-live-session__objects h4 b')!.textContent;
+   expect(total()).toBe('3');
+   count = 4;
+   vi.advanceTimersByTime(1000);
+   expect(total()).toBe('4');
+   expect(content.querySelector('details summary')!.textContent).toBe('Timeline (4)');
+   await view.onClose();
+  });
+
+  it('turns the button busy when a finish starts elsewhere', async () => {
+   let state = 'idle';
+   const { content, view } = mount({ view: ticking(() => 3), finishState: () => state });
+   view.render();
+   const button = () => content.querySelector<HTMLButtonElement>('.tyrian-live-session__toggle')!;
+   expect(button().hasAttribute('aria-busy')).toBe(false);
+   state = 'running';
+   vi.advanceTimersByTime(1000);
+   expect(button().getAttribute('aria-busy')).toBe('true');
+   expect(button().textContent).toBe('Finishing…');
+   await view.onClose();
+  });
  });
 
  it('keeps the same panel, the open timeline and the focus across repaints and new observations', async () => {

@@ -285,6 +285,16 @@ describe('Session tab: timeline', () => {
 		expect(timeline(h.panel).querySelector('summary')!.textContent).toBe('Timeline (61)');
 	});
 
+	it('drops the cached rows of the old session when another one takes over, even with the timeline closed', () => {
+		const h = harness(liveView(60));
+		openTimeline(h.panel);
+		const cache = (h.panel as unknown as { rowCache: Map<string, unknown> }).rowCache;
+		expect(cache.size).toBe(50);
+		timeline(h.panel).open = false;
+		h.state.view = { ...idleView(), sessionId: 'another' }; h.panel.refresh();
+		expect(cache.size).toBe(0);
+	});
+
 	it('moves the focus to the summary when «Show 50 more» loads the last page', () => {
 		const { panel } = harness(liveView(70));
 		openTimeline(panel);
@@ -305,6 +315,16 @@ describe('Session tab: an old session blocks the start', () => {
 		expect(discard.hasAttribute('hidden')).toBe(false);
 		discard.click();
 		expect(h.discard).toHaveBeenCalledOnce();
+	});
+
+	it('shows a failed discard as an alert line, in both languages', async () => {
+		for (const [locale, text] of [['en', 'The old session could not be discarded'], ['es', 'No se pudo descartar la sesión antigua']] as const) {
+			const h = harness(idleView(), control({ oldSession: { canDiscard: true } }), locale);
+			h.discard.mockRejectedValueOnce(new Error('boom'));
+			h.panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__discard')!.click();
+			await vi.waitFor(() => expect(h.panel.element.querySelector('[role="alert"]')?.textContent).toBe(text));
+			expect(h.panel.element.querySelector('[role="alert"]')!.hasAttribute('hidden')).toBe(false);
+		}
 	});
 
 	it('paints nothing about an old session when none blocks', () => {

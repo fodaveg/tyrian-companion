@@ -1431,6 +1431,9 @@ export class TyrianCompanionView {
 		}
 		this.refreshSessionFigures(now);
 		this.farmingPanel?.refresh();
+		// The live surface has no farming panel: this tick moves its clock and shows a start or finish
+		// launched from elsewhere. A committed sample reaches it through `render()`.
+		this.livePanel?.refresh();
 		this.refreshRecoveryOwnerCountdown();
 		const retryAt = getRetryAt(connection);
 		if (this.checkButton) {

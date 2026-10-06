@@ -62,13 +62,16 @@ describe('the one button reaches the product actions that already exist', () => 
 		expect(liveSessionControl(away.value, view).getLiveSessionControl()).toMatchObject({ gameConnected: false, consult: true, oldSession: null });
 	});
 
-	it('starts, finishes and discards through run(), and treats anything but a completed outcome as a failure', async () => {
+	it('starts, finishes and discards through run(); only a rejection is a failure, never unavailable or cancelled', async () => {
 		const { value, run } = source();
 		const control = liveSessionControl(value, view);
 		await control.startLiveSession(); await control.stopLiveSession(); await control.discardOldSession();
 		expect(run.mock.calls.map(([id]) => id)).toEqual(['start-farming-session', 'finish-farming-session', 'discard-saved-session']);
-		const refused = source({ run: async () => 'unavailable' });
-		await expect(liveSessionControl(refused.value, view).startLiveSession()).rejects.toThrow();
+		for (const outcome of ['unavailable', 'cancelled']) {
+			const quiet = source({ run: async () => outcome });
+			await expect(liveSessionControl(quiet.value, view).startLiveSession()).resolves.toBeUndefined();
+			await expect(liveSessionControl(quiet.value, view).stopLiveSession()).resolves.toBeUndefined();
+		}
 		const failing = source({ run: async () => { throw new Error('boom'); } });
 		await expect(liveSessionControl(failing.value, view).stopLiveSession()).rejects.toThrow('boom');
 		await expect(liveSessionControl({ ...value, getProductActionController: undefined }, view).startLiveSession()).rejects.toThrow();

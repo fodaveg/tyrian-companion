@@ -45,8 +45,9 @@ export function liveSessionControl(
 	const run = async (id: 'start-farming-session' | 'finish-farming-session' | 'discard-saved-session'): Promise<void> => {
 		const controller = source.getProductActionController?.();
 		if (controller === undefined) throw new Error('Session actions are unavailable.');
-		// `run` rejects when the command fails; any other outcome than a completed one is a refusal.
-		if (await controller.run(id) !== 'completed') throw new Error('The session command was refused.');
+		// `run` rejects when the command fails. `unavailable` (a race with another trigger) and
+		// `cancelled` are not failures: the panel just reflects the state the core reports next.
+		await controller.run(id);
 	};
 	return {
 		getLiveSessionControl(): LiveSessionControlState {
