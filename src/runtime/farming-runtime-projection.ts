@@ -131,7 +131,7 @@ export function projectLiveFarmingIngameState(input: {
 		output.goal = goal.goal.kind;
 		output.target = goal.goal.kind === 'bags' ? goal.goal.targetBags : goal.goal.kind === 'duration' ? Math.floor(goal.goal.targetDurationMs / 1_000) : null;
 		output.progress = goal.goal.kind === 'bags' ? output.observed : goal.goal.kind === 'duration' ? output.elapsed : null;
-		output.eta = view.phase !== 'active' || view.sourceState !== 'ready' || view.connection !== 'connected' || goal.goal.kind === 'bags' && view.observedItemsMs < FARMING_GOAL_MIN_WINDOW_MS || goal.remainingMs === null ? null : Math.ceil(goal.remainingMs / 1_000);
+		output.eta = view.phase !== 'active' || goal.remainingMs === null || goal.goal.kind === 'bags' && (view.sourceState !== 'ready' || view.connection !== 'connected' || view.observedItemsMs < FARMING_GOAL_MIN_WINDOW_MS) ? null : Math.ceil(goal.remainingMs / 1_000);
 	}
 	output.prep = !input.preparationEnabled ? 'unknown' : output.mf === null || output.slots === null || output.slots <= 5 ? 'attention' : 'partial';
 	return output;

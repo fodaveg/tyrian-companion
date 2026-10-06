@@ -46,6 +46,18 @@ describe('Nexus inventory farm1 projection', () => {
 		v.connection = 'connected'; v.observedItemsMs--; expect(read().eta).toBeNull();
 	});
 
+	it('keeps declared duration countdown independent of inventory freshness and coverage', () => {
+		const v = view(); v.phase = 'active'; v.sourceState = 'stale'; v.connection = 'disconnected'; v.elapsedMs = 20 * 60_000;
+		const now = '2026-10-06T08:20:00.000Z';
+		const goal = projectFarmingGoal({ version: 1, kind: 'duration', targetDurationMs: 60 * 60_000 }, {
+			startedAt: at, now, observedBags: null, observedFrom: null, observedAt: null, sampleCount: 0,
+		});
+		const read = () => projectLiveFarmingIngameState({ view: v, goal, now: Date.parse(now), preparationEnabled: true });
+		expect(read()).toMatchObject({ eta: 2_400, err: 'observe' });
+		v.sourceState = 'missing'; expect(read().eta).toBe(2_400);
+		v.phase = 'complete'; expect(read().eta).toBeNull();
+	});
+
 	it('preserves old evidence while stale and never refreshes its age from transport or prices', () => {
 		const v = view(); v.phase = 'active'; v.sourceState = 'stale'; v.lastObservationAt = at; v.freeSlots = 8;
 		v.totals = [{ kind: 'item', idNumber: 36038, positive: 4, negative: 0, net: 4 }];
