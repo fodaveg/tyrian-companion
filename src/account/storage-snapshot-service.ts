@@ -45,6 +45,11 @@ interface CaptureActivity {
 
 export type StorageSnapshotCaptureScope = 'complete' | 'inventory_advisor';
 
+export interface StorageSnapshotCaptureOptions {
+	/** Epoch ms: do not adopt a capture already in flight that started before this instant. */
+	readonly startedNotBefore?: number;
+}
+
 /**
  * Real request counts for a capture in progress. Every `total` is either fixed
  * (`roster`) or known when its pass roster lands (`accountStores` from the pinned
@@ -91,7 +96,7 @@ const REQUIRED_SCOPES = ['account', 'characters', 'inventories'] as const;
 
 /** Captures a consistency-qualified storage snapshot without writing or valuing assets. */
 export class StorageSnapshotService {
-	private readonly inFlight = new Map<string, Promise<StorageSnapshot>>();
+	private readonly inFlight = new Map<string, { promise: Promise<StorageSnapshot>; startedAtMs: number }>();
 	private readonly globalLimit = createLimiter(6);
 	/**
 	 * Character inventories in flight at once, for every capture scope. The Inventory Advisor read
@@ -116,8 +121,11 @@ export class StorageSnapshotService {
 	}
 
 	/** Reuses an already pinned credential for a larger atomic workflow. */
-	async captureWithOperation(operation: GuildWars2Operation): Promise<StorageSnapshot> {
-		return this.captureScopedWithOperation(operation, 'complete');
+	async captureWithOperation(
+		operation: GuildWars2Operation,
+		options?: StorageSnapshotCaptureOptions,
+	): Promise<StorageSnapshot> {
+		return this.captureScopedWithOperation(operation, 'complete', undefined, undefined, options);
 	}
 
 	/**
@@ -140,11 +148,21 @@ export class StorageSnapshotService {
 		scope: StorageSnapshotCaptureScope,
 		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
 		onPassTelemetry?: (telemetry: StorageSnapshotPassTelemetry) => void,
+		options?: StorageSnapshotCaptureOptions,
 	): Promise<StorageSnapshot> {
 		const context = await verifySnapshotContext(operation, this.globalLimit);
 		const key = `${context.key}:${scope}`;
-		const existing = this.inFlight.get(key);
-		if (existing) return existing;
+		// A capture already running for this account is joined, except by a caller that needs one
+		// that starts at or after `startedNotBefore` (a session start: its baseline must begin after
+		// the start request, `requestedAt <= baseline.startedAt`). That caller waits the older one out
+		// and then joins or starts a newer one, so the account is still read once at a time.
+		let existing = this.inFlight.get(key);
+		while (existing && options?.startedNotBefore !== undefined && existing.startedAtMs < options.startedNotBefore) {
+			await existing.promise.then(() => undefined, () => undefined);
+			existing = this.inFlight.get(key);
+		}
+		if (existing) return existing.promise;
+		const startedAtMs = Date.now();
 		const activity: CaptureActivity = { previous: this.previousCharacterActivity.get(key) ?? null, current: null };
 		const promise = this.captureInternal(operation, context, scope, activity, onProgress, onPassTelemetry).then((snapshot) => {
 			if (activity.current !== null && snapshot.coverage.sources.characters.status === 'complete') {
@@ -152,9 +170,9 @@ export class StorageSnapshotService {
 			}
 			return snapshot;
 		}).finally(() => {
-			if (this.inFlight.get(key) === promise) this.inFlight.delete(key);
+			if (this.inFlight.get(key)?.promise === promise) this.inFlight.delete(key);
 		});
-		this.inFlight.set(key, promise);
+		this.inFlight.set(key, { promise, startedAtMs });
 		return promise;
 	}
 

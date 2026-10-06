@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { HttpResponse } from '../core/http';
 import { HttpTransportError } from '../core/http';
@@ -955,6 +955,36 @@ describe('StorageSnapshotService', () => {
 		expect(fixture.beginCalls()).toBe(2);
 		expect(maxActive).toBeLessThanOrEqual(6);
 		expect(maxCharacters).toBeLessThanOrEqual(4);
+	});
+
+	it('a capture that must start after an instant waits out the one already running instead of adopting it', async () => {
+		// Real incident (6 oct 2026): a session start joined the snapshot the detection arm had begun
+		// seconds earlier, so its baseline started before its own request and the state machine
+		// rejected the confirmation.
+		const bagsPath = `characters/${encodeURIComponent(characterName)}/inventory`;
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		let blocked = false;
+		const fixture = clientFor([passWith(), passWith()], {
+			onRequest: async (path) => {
+				if (path.split('?')[0] === bagsPath && !blocked) {
+					blocked = true;
+					await gate;
+				}
+			},
+		});
+		const service = new StorageSnapshotService(fixture.client);
+		const running = service.capture();
+		await vi.waitFor(() => { expect(blocked).toBe(true); });
+		const floor = Date.now() + 1;
+		const joinedByDefault = service.capture();
+		const later = service.captureWithOperation(fixture.client.beginOperation(), { startedNotBefore: floor });
+		release();
+
+		const [first, joined, fresh] = await Promise.all([running, joinedByDefault, later]);
+		expect(joined.snapshotId).toBe(first.snapshotId);
+		expect(fresh.snapshotId).not.toBe(first.snapshotId);
+		expect(Date.parse(fresh.startedAt)).toBeGreaterThanOrEqual(floor);
 	});
 
 	it('treats wallet-to-delivery transfer as placement change, not ownership change', async () => {

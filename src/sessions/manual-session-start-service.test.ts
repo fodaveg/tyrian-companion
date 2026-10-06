@@ -157,6 +157,47 @@ describe('ManualSessionStartService', () => {
 		expect(baseline.capture).toHaveBeenCalledTimes(1);
 	});
 
+	it('asks the capture for a baseline that starts after the request, never one already in flight', async () => {
+		const baseline = { capture: vi.fn(async () => structuredClone(captured)) };
+		const service = new ManualSessionStartService(coordinator(), baseline, serviceOptions());
+
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+
+		// `clock` is 07:59:59.500Z, the instant the start is requested.
+		expect(baseline.capture).toHaveBeenCalledWith(expect.anything(), Date.parse('2026-08-13T07:59:59.500Z'));
+	});
+
+	it('a baseline that began before its own request fails as unexpected and logs the transition code, never the message', async () => {
+		// The 6 oct 2026 incident: the capture adopted a snapshot that started before `requestedAt`,
+		// the state machine refused the confirmation and the log only said `reason: Error`.
+		const early = structuredClone(captured);
+		early.snapshot = { ...early.snapshot, startedAt: '2026-08-13T07:59:00.000Z' };
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const leases = coordinator();
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => early) },
+			serviceOptions({
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
+			}),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'unexpected' } });
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			action: 'session_start',
+			phase: 'failure',
+			code: 'unknown_failure',
+			details: { reason: 'SessionTransitionRejectedError', code: 'invariant_violation' },
+		}));
+		expect(JSON.stringify((diagnosticsEvent as ReturnType<typeof vi.fn>).mock.calls)).not.toContain('Session transition rejected');
+		expect(leases.release).toHaveBeenCalledWith(handle);
+		expect(service.getState()).toEqual({ version: 1, status: 'idle' });
+	});
+
 	it('releases the lease and returns to idle when capture fails', async () => {
 		const leases = coordinator();
 		const service = new ManualSessionStartService(

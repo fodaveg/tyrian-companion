@@ -118,10 +118,16 @@ export class SessionStartCaptureService {
 		private readonly now: () => Date = () => new Date(),
 	) {}
 
-	async capture(inputValue: SessionStartInput): Promise<SessionStartCaptureResult> {
+	/**
+	 * `startedNotBefore` is the instant the start was requested: the baseline must begin after it,
+	 * so a capture another flow (detection arm, sync) already had running is waited out, not adopted.
+	 */
+	async capture(inputValue: SessionStartInput, startedNotBefore?: number): Promise<SessionStartCaptureResult> {
 		const input = normalizeSessionStartInput(inputValue);
 		const operation = this.client.beginOperation();
-		const snapshot = await this.snapshots.captureWithOperation(operation);
+		const snapshot = startedNotBefore === undefined
+			? await this.snapshots.captureWithOperation(operation)
+			: await this.snapshots.captureWithOperation(operation, { startedNotBefore });
 		if (snapshot.quality !== 'stable' && snapshot.quality !== 'stable_owned_placement_changed') {
 			throw new SessionStartCaptureError(
 				'snapshot_not_stable',

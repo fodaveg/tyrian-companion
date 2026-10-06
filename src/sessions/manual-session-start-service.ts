@@ -29,6 +29,7 @@ import {
 	type SessionInProgressState,
 	type SessionSnapshotReference,
 	type SessionState,
+	type SessionTransitionRejection,
 } from './session';
 import {
 	createSessionContaminationReview,
@@ -69,7 +70,7 @@ export interface SessionLeaseCoordinator {
 }
 
 export interface SessionBaselineCapture {
-	capture(input: SessionStartInput): Promise<SessionStartCaptureResult>;
+	capture(input: SessionStartInput, startedNotBefore?: number): Promise<SessionStartCaptureResult>;
 	captureFinal?(): Promise<StorageSnapshot>;
 }
 
@@ -125,6 +126,18 @@ export type SessionRecoveryResult =
 	| { status: 'recovered'; state: SessionState }
 	| { status: 'discarded' }
 	| { status: 'busy' | 'failed'; message: string };
+
+/**
+ * A state-machine rejection the service could not map to a product failure. `code` is the machine
+ * reason (`illegal_transition`, `invariant_violation`...): `unmappedErrorLogDetails` logs it as
+ * `details.code` and never the message.
+ */
+class SessionTransitionRejectedError extends Error {
+	constructor(readonly code: SessionTransitionRejection) {
+		super(`Session transition rejected: ${code}`);
+		this.name = 'SessionTransitionRejectedError';
+	}
+}
 
 class ManualSessionStartError extends Error {
 	constructor(readonly failure: SessionStartFailure) {
@@ -1069,7 +1082,9 @@ export class ManualSessionStartService {
 			const requestedAt = this.timestampAtOrAfter(authority.acquiredAt);
 			this.apply({ type: 'request_start', authority, requestedAt });
 			this.startHeartbeat(acquisition.handle);
-			const captured = await this.baselineCapture.capture(normalizedInput);
+			// The baseline must start after the request (`requestedAt <= baseline.startedAt`, checked by
+			// the state machine): a capture another flow already had in flight is never adopted.
+			const captured = await this.baselineCapture.capture(normalizedInput, Date.parse(requestedAt));
 			if (this.authorityFailure) throw new ManualSessionStartError(this.authorityFailure);
 			const owned = await this.safeAssert(this.requireHandle());
 			if (owned.status === 'error') {
@@ -1366,7 +1381,7 @@ export class ManualSessionStartService {
 
 	private apply(event: SessionEvent): void {
 		const result = transitionSession(this.state, event);
-		if (result.status === 'rejected') throw new Error(`Session transition rejected: ${result.reason}`);
+		if (result.status === 'rejected') throw new SessionTransitionRejectedError(result.reason);
 		this.state = result.state;
 		this.onStateChange();
 	}
