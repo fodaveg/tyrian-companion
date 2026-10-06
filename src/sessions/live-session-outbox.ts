@@ -22,7 +22,7 @@ export function decideLiveAlert(intent: LiveAlertOutboxV1, observation: LiveObse
 	return {...intent, state: skipReason === null ? 'ready' : 'skipped', skipReason, alert, priceCapturedAt: capturedAt};
 }
 export function settleLiveAlertRestart(intent: LiveAlertOutboxV1): LiveAlertOutboxV1 {
-	if (intent.state === 'dispatching') return {...intent, state:'processed', receipt: intent.receipt?.state === 'received'
+	if (intent.state === 'dispatching') return {...intent, state:'processed', receipt: intent.receipt?.state === 'received' || intent.receipt?.state === 'unconfirmed'
 		? intent.receipt : {state:'unconfirmed',cause:'restart'}};
 	if (intent.receipt?.state === 'pending') return {...intent,receipt:{state:'unconfirmed',cause:'restart'}};
 	return structuredClone(intent);

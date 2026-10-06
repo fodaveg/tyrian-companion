@@ -117,6 +117,15 @@ async function positive(f: ReturnType<typeof fixture>) {
 }
 
 describe('durable live alert outbox', () => {
+	it.each(['timeout','no_addon','old_addon'] as const)('restart processes a dispatching terminal %s receipt without contradicting it or re-emitting', async (cause) => {
+		const f=fixture(); const entry=await positive(f); const intent=entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString(),receipt:{state:'unconfirmed',cause}}));
+		await f.service.dispose(); const resumed=vi.fn(); const restored=new LiveSessionLifecycle({...f.options,onCommitted:resumed});
+		await restored.initialize(); expect(f.options.onError).not.toHaveBeenCalled();
+		expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]).toMatchObject({state:'processed',receipt:{state:'unconfirmed',cause}});
+		expect(resumed).not.toHaveBeenCalled(); await expect(restored.open({...f.source,epoch:'AwMDAwMDAwMDAwMDAwMDAw'})).resolves.toBe('ready'); await restored.dispose();
+	});
 	it('retries a busy recovery, rereads the old owner ACK and settles only the remaining interrupted effect', async () => {
 		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
 		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
