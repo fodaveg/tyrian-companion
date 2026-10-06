@@ -141,7 +141,8 @@ checks. Legacy API session controls are not a fallback for missing Nexus observa
 4. Use optional bag/duration goals and explicit manual preparation. Unknown MF, wallet or slots
    remain unknown; no startup API query fills them. Public catalog names and price estimates do
    not require an API key and cannot establish missing account or buff evidence.
-5. While active, exporting the current session produces a snapshot of its committed ledger at that
+5. From 0.6.0 (candidate) the Session tab paints no export control; the core still exports the
+   active session, and saved history exports from Settings → Maintenance. While active, exporting the current session produces a snapshot of its committed ledger at that
    moment. Session history is a separate view/export of saved sessions; an active export does not
    finish the session or imply that it already appears in completed history.
 6. Leaving the game closes the session; loss of addon presence uses a ten-minute grace period.

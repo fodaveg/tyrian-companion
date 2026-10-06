@@ -1,5 +1,34 @@
 # Changelog
 
+## Candidato 0.6.0: pestaña Sesión y ajustes simplificados
+
+**Candidato sin publicar.** Metadatos en 0.6.0; no hay tag, release ni canal BRAT/Hebra de esta
+versión. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (gate completo, instalación y
+sesión real). La 0.5.0 publicada sigue siendo la última release.
+
+- **Pestaña Sesión.** Cabecera de una línea con estado y un botón «Iniciar sesión» / «Terminar
+  sesión». La sesión sigue abriéndose y cerrándose con la conexión al juego; el botón corta la
+  sesión en curso o abre otra a mano, por las mismas acciones que ya usaba la paleta. Tras
+  terminar a mano, el arranque automático no reabre otra mientras dure la misma conexión del juego.
+- **Qué se ve.** «Valor estimado» y «Por hora» (solo si hay tasa elegible), rejilla de objetos con
+  la cantidad neta, monedas observadas, una gráfica de valor con los huecos de lectura marcados y
+  la cronología plegada (lo último arriba, de 50 en 50).
+- **Qué deja de pintarse en la pestaña.** Sesión anterior de cuenta y su recuperación, selector de
+  sesión guardada, pestañas Cronología/Resumen, coberturas, «Detalles», paginación, selector
+  CSV/JSON con «Exportar», gráfica de cantidad y «Datos de la gráfica», huecos en lista, objetos
+  valiosos, comparar tandas, preparar la próxima tanda y sesiones anteriores de cuenta. Los datos,
+  las notas de sesión, los avisos y el historial durable se conservan; la exportación de la sesión
+  activa no tiene ahora control visible (el código sigue en el núcleo) y el historial se exporta
+  desde Ajustes → Mantenimiento.
+- **Sesión antigua.** Si una sesión anterior de cuenta impide abrir una nueva, la pestaña lo dice
+  en una línea; el descarte solo se ofrece si la acción existente está disponible.
+- **Ajustes en una página.** Modo, clave de API, carpeta de salida, aviso del juego (con su token
+  mientras está activo), umbral de caída, webhook y objetivos legendarios; un bloque «Mantenimiento»
+  plegado con historial durable, histórico local de precios (solo el interruptor), registros de
+  diagnóstico y assets gestionados. Las demás filas dejan de verse y conservan su valor guardado.
+- **Hebra.** El botón principal (`mod-cta`) vuelve a salir con relleno: su regla perdía contra el
+  reset de botones de la aplicación.
+
 ## Release beta 0.5.0 - sesiones de inventario observado con Nexus
 
 [Canal 0.5.0 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.5.0);

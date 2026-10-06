@@ -1,5 +1,26 @@
 # Estado
 
+## Candidato 0.6.0: pestaña Sesión y ajustes simplificados (6 oct 2026)
+
+**Candidato en rama `claude/sesion-simple-20261006`, sin publicar ni etiquetar.** Cambios: pestaña
+Sesión simplificada y ajustes en una página (ver [CHANGELOG](CHANGELOG.md)); metadatos en 0.6.0.
+
+Verificado en el árbol de trabajo, con tests acotados y `--maxWorkers=1`:
+
+- `tsc --noEmit --skipLibCheck`: 0 errores.
+- vitest de `src/ui`, `src/host/hebra`, i18n y límites de módulo: 989 pasados, 1 omitido; guardrails
+  (ajustes, arquitectura i18n): 68 pasados. Test de `markStoppedByPlayer` en el marker de sesión.
+- `i18n:unused`, contrato de texto fuente, censo de observabilidad de acciones (reindexado por `id`),
+  `probar-build-host-esm.mjs` y `release:identity-contract`: PASS.
+- Capturas del CÓDIGO real (`CompanionView` en su rama live, tokens y CSS de Hebra, claro/oscuro, 320,
+  390 y 900 px) contra la maqueta `design/tyrian-panel-2026-10-06` del repo de Hebra: coinciden en
+  bloques, cabecera de una línea, rejilla, gráfica con huecos, cronología y «Ver 50 más»; 25 marcos
+  sin desborde horizontal. Diferencias: sin fila «Por hora» sin tasa, y los avisos sin icono.
+
+No verificado: el gate completo (`npm run check`, pendiente de la raíz), la publicación, la
+instalación en Hebra/Obsidian y una sesión real en el juego. La exportación de la sesión activa ya
+no tiene control visible.
+
 ## Canal 0.5.0 publicado: captura propia Nexus (6 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.5.0](https://github.com/fodaveg/tyrian-companion/releases/tag/0.5.0)
