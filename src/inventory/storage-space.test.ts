@@ -56,30 +56,27 @@ describe('resolveStorageSpaceState', () => {
 		...overrides,
 	});
 
-	it('returns null when the bank was not captured instead of inventing a total', () => {
-		expect(resolveStorageSpaceState(freeSlots({ bank: null }), 20)).toBeNull();
+	it('ignores bank and other characters when comparing bag pressure with the threshold', () => {
+		expect(resolveStorageSpaceState(freeSlots(), 5, 'A')).toEqual({
+			freeSlots: 5, totalSlots: 20, thresholdFreeSlots: 5, isLow: true,
+		});
+		expect(resolveStorageSpaceState(freeSlots(), 4, 'A')).toMatchObject({ isLow: false });
 	});
 
-	it('sums bags plus bank and flags low space at or under the threshold', () => {
-		expect(resolveStorageSpaceState(freeSlots(), 40)).toEqual({
-			freeSlots: 38,
-			totalSlots: 240,
-			thresholdFreeSlots: 40,
-			isLow: true,
+	it.each([{ total: 200, free: 100 }, null])('reports full bags with bank=%j', (bank) => {
+		const full = freeSlots({ bank, characterBags: [
+			{ character: 'A', bagIndex: 0, bagItemId: 1, total: 20, free: 0 },
+			{ character: 'B', bagIndex: 0, bagItemId: 1, total: 20, free: 20 },
+		] });
+		expect(resolveStorageSpaceState(full, 10, 'A')).toEqual({
+			freeSlots: 0, totalSlots: 20, thresholdFreeSlots: 10, isLow: true,
 		});
 	});
 
-	it('reports plenty of space above the threshold', () => {
-		expect(resolveStorageSpaceState(freeSlots(), 20)).toMatchObject({ isLow: false });
-	});
-
-	it('counts zero character bags without crashing', () => {
-		expect(resolveStorageSpaceState(freeSlots({ characterBags: [] }), 20)).toEqual({
-			freeSlots: 30,
-			totalSlots: 200,
-			thresholdFreeSlots: 20,
-			isLow: false,
-		});
+	it('reports unknown when the character is absent or has no captured bags', () => {
+		expect(resolveStorageSpaceState(freeSlots(), 20)).toBeNull();
+		expect(resolveStorageSpaceState(freeSlots(), 20, 'Missing')).toBeNull();
+		expect(resolveStorageSpaceState(freeSlots({ characterBags: [] }), 20, 'A')).toBeNull();
 	});
 });
 

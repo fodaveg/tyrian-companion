@@ -47,26 +47,25 @@ export interface StorageSpaceState {
 }
 
 /**
- * Sums free slots across every character's bags plus the bank (the boceto's definition of "poco
- * espacio", H18.31 decision 9) and compares the total against the threshold. Returns `null` when
- * the bank was not part of this capture (missing scope, restricted URL, or a failed request):
- * without it the total would silently under-count real free space, and the audit explicitly asks
- * not to invent a number when the account did not answer.
+ * Compares the selected character's bags with the threshold. Bank capacity cannot receive loot
+ * while farming and never offsets bag pressure. Without a character or captured bags the verdict
+ * is unknown, independently of whether the bank was captured.
  */
 export function resolveStorageSpaceState(
 	freeSlots: Pick<StorageFreeSlots, 'bank' | 'characterBags'>,
 	thresholdFreeSlots: number,
+	character: string | null = null,
 ): StorageSpaceState | null {
-	if (freeSlots.bank === null) return null;
-	const bagsFree = freeSlots.characterBags.reduce((sum, bag) => sum + bag.free, 0);
-	const bagsTotal = freeSlots.characterBags.reduce((sum, bag) => sum + bag.total, 0);
-	const freeTotal = bagsFree + freeSlots.bank.free;
-	const totalSlots = bagsTotal + freeSlots.bank.total;
+	if (character === null) return null;
+	const bags = freeSlots.characterBags.filter((bag) => bag.character === character);
+	if (bags.length === 0) return null;
+	const bagsFree = bags.reduce((sum, bag) => sum + bag.free, 0);
+	const bagsTotal = bags.reduce((sum, bag) => sum + bag.total, 0);
 	return {
-		freeSlots: freeTotal,
-		totalSlots,
+		freeSlots: bagsFree,
+		totalSlots: bagsTotal,
 		thresholdFreeSlots,
-		isLow: freeTotal <= thresholdFreeSlots,
+		isLow: bagsFree <= thresholdFreeSlots,
 	};
 }
 
@@ -106,7 +105,7 @@ export interface SpaceFreeingPriorityInput {
 /**
  * David's 24 sep 2026 decision (§9, question 4): with little free space, prioritize whatever frees
  * the most slots first; with plenty of space, keep the existing gold-value order. `state === null`
- * (storage space unknown, e.g. the bank was not captured) behaves like plenty of space rather than
+ * (selected character's bag space unknown) behaves like plenty of space rather than
  * inventing urgency the snapshot cannot back. Ties keep every action's original relative order.
  */
 export function prioritizeSpaceFreeingActions<T extends SpaceFreeingPriorityInput>(

@@ -107,9 +107,9 @@ export interface InventoryObjectSlotCountV1 {
 }
 
 /** Storage from the same capture as the recommendations.
- * Bags and lowSpace are scoped to the recent character's bags (plus bank for lowSpace).
+ * Bags, lowSpace and slotsFreedByDecision are scoped to bagCharacter's bags alone.
  * Without a character choice or complete counts they remain null. Shared inventory and
- * bank retain their own observed counts. slotsFreedByDecision counts whole emptied stacks.
+ * bank retain their own observed counts. Only whole emptied bag stacks free backpack slots.
  */
 export interface InventoryObjectStorageSpaceV1 {
 	bags: InventoryObjectSlotCountV1 | null;
@@ -118,6 +118,8 @@ export interface InventoryObjectStorageSpaceV1 {
 	lowSpace: { freeSlots: number; totalSlots: number; thresholdFreeSlots: number; isLow: boolean } | null;
 	materialCapacity: { quantity: number; source: MaterialStorageCapacitySource } | null;
 	slotsFreedByDecision: Record<string, number>;
+	/** Character whose captured bags determine pressure: authenticated addon first, recent API activity otherwise. */
+	bagCharacter?: { character: string; source: 'addon' | 'last_modified' | 'age_delta' } | null;
 	/** Optional so every pre-H18.38 fixture and test-built result keeps typechecking unchanged. */
 	lastPlayedCharacter?: { character: string; source: 'last_modified' | 'age_delta' } | null;
 }

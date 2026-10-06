@@ -1179,6 +1179,10 @@ export function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceVie
 	section.className = 'tyrian-inventory-advisor__storage-space';
 	section.setAttribute('aria-label', translator.t('advisor.view.storage.title'));
 	const lowSpace = storageSpace.lowSpace;
+	const bagCharacter = storageSpace.bagCharacter ?? storageSpace.lastPlayedCharacter ?? null;
+	const bagsLabel = bagCharacter === null
+		? translator.t('advisor.view.storage.name.bags')
+		: translator.t('advisor.view.storage.name.bagsFor', { character: bagCharacter.character });
 	// H18.37: the verdict (and its lateral mark) come first, then the meter, then the free-slot
 	// breakdown — the order David approved for Venta's maqueta (`docs/diseno/halloween-venta`,
 	// `maqueta.html:190-206,529-532`), shared here since `renderStorageSpace` is the same component.
@@ -1188,9 +1192,9 @@ export function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceVie
 	if (lowSpace === null) verdict.textContent = translator.t('advisor.view.storage.lowUnknown');
 	else {
 		verdict.setAttribute('data-low-space', String(lowSpace.isLow));
-		verdict.textContent = translator.t(lowSpace.isLow ? 'advisor.view.storage.low' : 'advisor.view.storage.plenty', {
+		verdict.textContent = `${bagsLabel}: ${translator.t(lowSpace.isLow ? 'advisor.view.storage.low' : 'advisor.view.storage.plenty', {
 			free: lowSpace.freeSlots, threshold: lowSpace.thresholdFreeSlots,
-		});
+		})}`;
 	}
 	section.append(verdict);
 	if (lowSpace !== null) {
@@ -1213,13 +1217,7 @@ export function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceVie
 	}
 	const stores = createEl('p');
 	stores.className = 'tyrian-inventory-advisor__storage-stores';
-	// H18.38: `bags` names WHO it counts once the capture chose one, instead of the generic word —
-	// never claims a character without a real choice behind it (`lastPlayedCharacter` from
-	// `chooseLastPlayedCharacter`, `character-activity.ts`).
-	const lastPlayedCharacter = storageSpace.lastPlayedCharacter ?? null;
-	const bagsLabel = lastPlayedCharacter === null
-		? translator.t('advisor.view.storage.name.bags')
-		: translator.t('advisor.view.storage.name.bagsFor', { character: lastPlayedCharacter.character });
+	// The verdict and the bag breakdown name the same selection; bank/shared remain separate.
 	stores.textContent = translator.t('advisor.view.storage.freeSlots', {
 		stores: ([['bags', storageSpace.bags, bagsLabel], ['bank', storageSpace.bank, null], ['sharedInventory', storageSpace.sharedInventory, null]] as const)
 			.map(([store, count, label]) => count === null

@@ -97,7 +97,7 @@ export interface InventoryPositionRecommendationPort {
 	 * targets are forged yet" (every target still gets a goal), the SAFER of the two guesses.
 	 */
 	readLegendaryArmoryCounts(): Promise<ReadonlyMap<number, number> | null>;
-	/** H18.15: settings' "low storage space" line in free slots (bags + bank). Read fresh per analysis. */
+	/** Settings' "low storage space" line in the selected character's free bag slots. Read fresh per analysis. */
 	lowStorageSpaceThresholdFreeSlots(): number;
 }
 
@@ -198,11 +198,13 @@ export class InventoryAnalysisService {
 	 * `refreshSeeds` is on only for an inventory sync (decision 4: datawars2 seeding "solo detrás
 	 * del botón «Sincronizar»"); it runs before any history is read, so a seed just downloaded for an
 	 * item that had none counts. An item whose copy is merely past its 24 h is read from that copy.
+	 * `storageCharacter` is the caller's authenticated addon character, when available. It affects
+	 * bag pressure only if this capture observed its bags; otherwise recent API activity is used.
 	 */
 	async evaluate(
 		source: InventoryAdvisorContextualPresentationSource,
 		uncertainItemIds: readonly number[],
-		options: { refreshSeeds: boolean } = { refreshSeeds: false },
+		options: { refreshSeeds: boolean; storageCharacter?: string | null } = { refreshSeeds: false },
 	): Promise<InventoryObjectResultsV1> {
 		const input = source.input;
 		const report = source.result.report;
@@ -370,7 +372,7 @@ export class InventoryAnalysisService {
 			positions,
 			uncertainItemIds: sortedIds(uncertain),
 			valuationByDecision,
-			storageSpace: storageSpaceOf(source, decisions, this.recommendation.lowStorageSpaceThresholdFreeSlots()),
+			storageSpace: storageSpaceOf(source, decisions, this.recommendation.lowStorageSpaceThresholdFreeSlots(), options.storageCharacter),
 		};
 	}
 
@@ -513,25 +515,32 @@ function catalogUnavailable(source: InventoryAdvisorContextualPresentationSource
  * Free-slot counts are the capture's own (`StorageSnapshot.freeSlots`); a capture without them
  * (older fixtures) reports every store as unknown rather than full or empty.
  *
- * Bag pressure refers only to the recently observed character, never every inactive character.
- * Ambiguous activity leaves bags and lowSpace unknown while keeping bank/shared counts.
+ * Bag pressure and clearing counts refer to an addon character with captured bags, falling back
+ * to recent API activity. Ambiguous activity leaves them unknown while keeping bank/shared counts.
  */
 function storageSpaceOf(
 	source: InventoryAdvisorContextualPresentationSource,
 	decisions: Readonly<Record<string, InventoryObjectDecisionV1>>,
 	thresholdFreeSlots: number,
+	storageCharacter?: string | null,
 ): InventoryObjectStorageSpaceV1 {
 	const input = source.input;
 	const freeSlots = input.snapshot.freeSlots;
 	const lastPlayedCharacter = input.snapshot.lastPlayedCharacter ?? null;
-	const scopedBags = lastPlayedCharacter === null ? undefined
-		: freeSlots?.characterBags.filter((bag) => bag.character === lastPlayedCharacter.character);
+	const capturedCharacter = (character: string) => input.snapshot.roster.includes(character)
+		&& input.snapshot.coverage.characters[character]?.status === 'complete'
+		&& freeSlots?.characterBags.some((bag) => bag.character === character) === true;
+	const bagCharacter: InventoryObjectStorageSpaceV1['bagCharacter'] = storageCharacter != null && capturedCharacter(storageCharacter)
+		? { character: storageCharacter, source: 'addon' }
+		: lastPlayedCharacter !== null && capturedCharacter(lastPlayedCharacter.character) ? { ...lastPlayedCharacter } : null;
+	const scopedBags = bagCharacter === null ? undefined
+		: freeSlots?.characterBags.filter((bag) => bag.character === bagCharacter.character);
 	const bags = scopedBags === undefined || scopedBags.length === 0 ? null : {
 		free: scopedBags.reduce((total, bag) => total + bag.free, 0),
 		total: scopedBags.reduce((total, bag) => total + bag.total, 0),
 	};
 	const lowSpace = freeSlots === undefined || bags === null ? null
-		: resolveStorageSpaceState({ ...freeSlots, characterBags: scopedBags! }, thresholdFreeSlots);
+		: resolveStorageSpaceState(freeSlots, thresholdFreeSlots, bagCharacter?.character ?? null);
 	const capacity = source.discardContext.engineInput.materialStorageCapacity;
 	const slotsFreedByDecision: Record<string, number> = {};
 	for (const line of source.result.report?.lines ?? []) for (const decision of line.decisions) {
@@ -541,10 +550,10 @@ function storageSpaceOf(
 			const holding = input.snapshot.holdings[holdingIndexOf(allocation.positionRef)];
 			if (holding?.kind !== 'item' || holding.quantity !== allocation.quantity) return [];
 			const location = holding.location;
-			if (location.source !== 'character' && location.source !== 'shared_inventory' && location.source !== 'bank') return [];
+			if (bagCharacter === null || location.source !== 'character' || location.character !== bagCharacter.character || location.container !== 'bag') return [];
 			return [{
 				itemId: holding.itemId, source: location.source, quantity: allocation.quantity,
-				character: location.source === 'character' ? location.character : null,
+				character: location.character,
 			}];
 		});
 		const slotsFreed = buildSlotClearingActions(cleared).reduce((total, action) => total + action.slotsFreed, 0);
@@ -558,6 +567,7 @@ function storageSpaceOf(
 		lowSpace: lowSpace === null ? null : { ...lowSpace },
 		materialCapacity: capacity === undefined ? null : { ...capacity },
 		slotsFreedByDecision,
+		bagCharacter,
 		lastPlayedCharacter,
 	};
 }

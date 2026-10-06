@@ -41,6 +41,8 @@ export interface SaleSourceRow {
 	ownedQuantity: number;
 	/** Whole physical slots occupied, or null when the source cannot establish the count. */
 	slotsUsed: number | null;
+	/** Whole stacks the row clears in storageSpace.bagCharacter's bags. Unknown never inherits slotsUsed from other stores. */
+	bagSlotsUsed?: number | null;
 	/** True when the row carries a `materialStorage` context: it can be deposited without losing the sale. */
 	materialStorageEligible: boolean;
 	/** Null only when the row never reached `recommendPosition` (should not happen for a calendar item, but never assumed). */
@@ -198,7 +200,7 @@ function baseDisplayAction(decision: SaleSourceDecision | null, bidCopper: numbe
 
 /**
  * David's 24 sep 2026 decision (ficha decision 3): with plenty of space nothing here changes; with
- * little space, "wait" and "not_yet" both mean "not now" and both flip to "sell" (freeing the slot
+ * little space in this row's selected-character bags, "wait" and "not_yet" both flip to "sell" (freeing the slot
  * now beats a demonstrated-but-later gain), UNLESS the row can be deposited into material storage
  * instead, which never loses the sale and so wins over selling early.
  */
@@ -225,8 +227,10 @@ function applyOpenVsSellOverride(hero: SaleHeroViewModel): SaleHeroViewModel {
 }
 
 function toRowViewModel(source: SaleSourceRow, isLow: boolean, nowMs: number): SaleRowViewModel {
-	const action = applyLowSpaceOverride(baseDisplayAction(source.decision, source.bidCopper), source.materialStorageEligible, isLow);
-	const slotsFreedLabel = isLow && (action === 'sell' || action === 'deposit') ? source.slotsUsed : null;
+	const bagSlotsUsed = source.bagSlotsUsed ?? 0;
+	const freesBags = bagSlotsUsed > 0;
+	const action = applyLowSpaceOverride(baseDisplayAction(source.decision, source.bidCopper), source.materialStorageEligible, isLow && freesBags);
+	const slotsFreedLabel = isLow && freesBags && (action === 'sell' || action === 'deposit') ? bagSlotsUsed : null;
 	const quotedAtMs = parseIsoOrNull(source.decision?.priceQuotedAt ?? null);
 	const staleAtMs = parseIsoOrNull(source.decision?.until ?? null);
 	const window = source.decision?.sellWindowFromDay != null && source.decision.sellWindowToDay != null

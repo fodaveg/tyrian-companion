@@ -108,7 +108,7 @@ export interface InventoryAdvisorPresentationRow {
 	 */
 	decision?: InventoryObjectDecisionV1 | null;
 	/**
-	 * H18.15: whole bag, shared-inventory or bank slots this act-now decision empties, from the same
+	 * Whole slots in storageSpace.bagCharacter's bags this act-now decision empties, from the same
 	 * analysis. Absent when the presentation was built without one that measured storage space.
 	 */
 	slotsFreed?: number;

@@ -15,6 +15,7 @@ function row(overrides: Partial<SaleSourceRow> & Pick<SaleSourceRow, 'itemId' | 
 		icon: null,
 		ownedQuantity: 1,
 		slotsUsed: 1,
+		bagSlotsUsed: overrides.slotsUsed ?? 1,
 		materialStorageEligible: false,
 		decision: null,
 		bidCopper: null,
@@ -96,6 +97,25 @@ describe('sale view model: low-space override (ficha decision 3)', () => {
 		expect(model.groups.now.map((r) => r.itemId)).toEqual([43320]);
 		expect(model.groups.now[0]!.action).toBe('sell');
 		expect(model.groups.now[0]!.slotsFreedLabel).toBe(1);
+	});
+
+	it.each([0, null, undefined])('never sells early or promises backpack space for bagSlotsUsed=%j', (bagSlotsUsed) => {
+		const model = buildSaleViewModel(baseInput({ storageSpace: lowSpace, rows: [
+			row({ itemId: 1, name: 'Stored elsewhere', slotsUsed: 10, bagSlotsUsed,
+				decision: { action: 'hold', reason: 'below_local_band', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null } }),
+			row({ itemId: 2, name: 'Sale elsewhere', slotsUsed: 10, bagSlotsUsed,
+				decision: { action: 'sell', reason: 'seasonal_sell_window', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null } }),
+		] }));
+		expect(model.groups.wait[0]!).toMatchObject({ itemId: 1, action: 'wait', slotsFreedLabel: null });
+		expect(model.groups.now[0]!).toMatchObject({ itemId: 2, action: 'sell', slotsFreedLabel: null });
+	});
+
+	it('counts only selected-character slots on a row also stored elsewhere', () => {
+		const model = buildSaleViewModel(baseInput({ storageSpace: lowSpace, rows: [
+			row({ itemId: 1, name: 'Mixed stores', slotsUsed: 10, bagSlotsUsed: 2,
+				decision: { action: 'hold', reason: 'below_local_band', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null } }),
+		] }));
+		expect(model.groups.now[0]!).toMatchObject({ action: 'sell', slotsUsed: 10, slotsFreedLabel: 2 });
 	});
 
 	it('routes a depositable material to "deposit" instead of "sell", even over an already-sell row\'s "libera N" label', () => {

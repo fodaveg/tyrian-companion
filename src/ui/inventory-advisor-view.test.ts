@@ -90,6 +90,21 @@ describe('Inventory Advisor view', () => {
 			.toHaveLength(1);
 	});
 
+	it('names the addon character whose bags determine pressure while bank capacity stays separate', () => {
+		const mount = render({ ...readyModel(), storageSpace: {
+			bags: { free: 0, total: 20 }, bank: { free: 100, total: 120 }, sharedInventory: null,
+			lowSpace: { freeSlots: 0, totalSlots: 20, thresholdFreeSlots: 10, isLow: true }, materialCapacity: null,
+			bagCharacter: { character: 'Beta', source: 'addon' }, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' },
+		} }, 'es');
+		const verdict = text(walk(only(byClass(mount.elements(), 'tyrian-inventory-advisor__storage-verdict'))));
+		expect(verdict).toContain('Beta');
+		expect(verdict).not.toContain('Alfa');
+		expect(verdict).toContain('0 huecos');
+		expect(text(mount.elements())).toContain('banco 100/120');
+		expect(only(find(mount.elements(), 'meter')).attributes.get('max')).toBe('20');
+		expect(only(find(mount.elements(), 'meter')).attributes.get('value')).toBe('20');
+	});
+
 	it('shows the low-space warning without changing descending net-value order', () => {
 		const heavy = row({ id: '#/explanations/1/0', itemId: 1, name: 'Oro', action: 'sell', slotsFreed: 0,
 			value: { status: 'available', copper: 90_000, route: 'instant_sell' } });
@@ -106,15 +121,15 @@ describe('Inventory Advisor view', () => {
 		const mount = render(low, 'es');
 		const copy = text(mount.elements());
 		expect(copy).toContain('Huecos libres: bolsas 3/30 · banco 4/30 · almacén compartido sin datos');
-		expect(copy).toContain('Poco espacio: 7 huecos libres entre bolsas y banco (aviso con 20 o menos).');
+		expect(text(walk(only(byClass(mount.elements(), 'tyrian-inventory-advisor__storage-verdict'))))).toMatch(/Poco espacio: 3 huecos libres.*20/u);
 		expect(copy).toContain('Materiales: al menos 1500 por material (mínimo visto en tu almacén)');
-		expect(only(find(mount.elements(), 'meter')).attributes.get('value')).toBe('53');
+		expect(only(find(mount.elements(), 'meter')).attributes.get('value')).toBe('27');
 		// `low`/`optimum` turn the threshold crossing into the meter's own alert state
 		// (fewer occupied slots is optimal), not just `high` on its own.
 		const meter = only(find(mount.elements(), 'meter'));
 		expect(meter.attributes.get('optimum')).toBe('0');
 		expect(meter.attributes.get('low')).toBe(meter.attributes.get('high'));
-		expect(meter.attributes.get('high')).toBe('40');
+		expect(meter.attributes.get('high')).toBe('10');
 		// H18.37: the single list still lists the slot-freeing row first and says what it frees.
 		const rowNames = find(mount.elements(), 'strong').map((cell) => text(walk(cell)).trim());
 		expect(rowNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Oro', 'Bulto']);
@@ -123,7 +138,7 @@ describe('Inventory Advisor view', () => {
 		const plenty = render(storageModel([heavy, bulky], false), 'en');
 		const plentyNames = find(plenty.elements(), 'strong').map((cell) => text(walk(cell)).trim());
 		expect(plentyNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Oro', 'Bulto']);
-		expect(text(plenty.elements())).toContain('Plenty of space: 7 free slots across bags and bank (warning at 5 or fewer). Gold comes first.');
+		expect(text(walk(only(byClass(plenty.elements(), 'tyrian-inventory-advisor__storage-verdict'))))).toMatch(/Plenty of space: 3 free slots.*2/u);
 		expect(text(plenty.elements())).not.toContain('2 slots');
 	});
 
@@ -1809,7 +1824,7 @@ function storageModel(rows: InventoryAdvisorViewRow[], low: boolean): InventoryA
 		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready', optionalSources: null,
 		storageSpace: {
 			bags: { free: 3, total: 30 }, bank: { free: 4, total: 30 }, sharedInventory: null,
-			lowSpace: { freeSlots: 7, totalSlots: 60, thresholdFreeSlots: low ? 20 : 5, isLow: low },
+			lowSpace: { freeSlots: 3, totalSlots: 30, thresholdFreeSlots: low ? 20 : 2, isLow: low },
 			materialCapacity: { quantity: 1_500, source: 'observed_minimum' },
 		},
 		groups: [{ key: 'market', rows }],

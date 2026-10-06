@@ -506,8 +506,8 @@ describe('inventory analysis: legendary reservations through the advisor (H18.1)
 
 /**
  * H18.15 (audit 2026-09-24 §3.E, §9): the object result carries the storage space of the same
- * capture, and how many whole slots each act-now decision empties, so the view can say how full
- * the account is and put the actions that free space first when it is low.
+ * capture, and how many whole slots each act-now decision empties in the selected character's
+ * bags, so the view can prioritize actions that relieve that backpack's pressure.
  */
 describe('storage space in the one result per object (H18.15)', () => {
 	const freeSlots: StorageFreeSlots = {
@@ -538,9 +538,10 @@ describe('storage space in the one result per object (H18.15)', () => {
 			bags: { free: 3, total: 30 },
 			bank: { free: 4, total: 30 },
 			sharedInventory: { free: 10, total: 10 },
-			lowSpace: { freeSlots: 7, totalSlots: 60, thresholdFreeSlots: 20, isLow: true },
+			lowSpace: { freeSlots: 3, totalSlots: 30, thresholdFreeSlots: 20, isLow: true },
 			materialCapacity: null,
 			slotsFreedByDecision: { [sold.id]: 1 },
+			bagCharacter: { character: 'Alfa', source: 'age_delta' },
 			lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' },
 		});
 		expect(sold.slotsFreed).toBe(1);
@@ -553,12 +554,63 @@ describe('storage space in the one result per object (H18.15)', () => {
 
 	it('reads the threshold from settings and never invents space for a store the capture missed', async () => {
 		const plenty = await analyse([character(23, 5, 'Alfa', 0)], {
-			freeSlots, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' }, port: recommendationPort({ lowStorageSpaceThresholdFreeSlots: () => 5 }),
+			freeSlots, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' }, port: recommendationPort({ lowStorageSpaceThresholdFreeSlots: () => 2 }),
 		});
-		expect(plenty.objects.storageSpace?.lowSpace).toEqual({ freeSlots: 7, totalSlots: 60, thresholdFreeSlots: 5, isLow: false });
+		expect(plenty.objects.storageSpace?.lowSpace).toEqual({ freeSlots: 3, totalSlots: 30, thresholdFreeSlots: 2, isLow: false });
 
 		const withoutBank = await analyse([character(23, 5, 'Alfa', 0)], { freeSlots: { ...freeSlots, bank: null }, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' } });
-		expect(withoutBank.objects.storageSpace).toMatchObject({ bank: null, lowSpace: null, bags: { free: 3, total: 30 } });
+		expect(withoutBank.objects.storageSpace).toMatchObject({ bank: null, lowSpace: { freeSlots: 3, totalSlots: 30, isLow: true }, bags: { free: 3, total: 30 } });
+	});
+
+	it.each([{ total: 120, free: 100 }, null])('keeps full selected bags urgent with bank=%j', async (bank) => {
+		const analysed = await analyse([character(23, 5, 'Alfa', 0)], {
+			freeSlots: { ...freeSlots, bank, characterBags: [{ ...freeSlots.characterBags[0]!, free: 0 }] },
+			lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' },
+			port: recommendationPort({ lowStorageSpaceThresholdFreeSlots: () => 10 }),
+		});
+		expect(analysed.objects.storageSpace?.lowSpace).toEqual({ freeSlots: 0, totalSlots: 20, thresholdFreeSlots: 10, isLow: true });
+	});
+
+	it('prefers a captured addon character and counts no bank or other-character stacks as bag space freed', async () => {
+		const analysed = await analyse([
+			character(23, 5, 'Alfa', 0), character(24, 5, 'Beta', 0), bank(25, 5, 0),
+		], {
+			freeSlots: { ...freeSlots, characterBags: [...freeSlots.characterBags,
+				{ character: 'Beta', bagIndex: 0, bagItemId: 8_932, total: 20, free: 0 },
+			] },
+			lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' }, storageCharacter: 'Beta',
+		});
+		expect(analysed.objects.storageSpace).toMatchObject({
+			bags: { free: 0, total: 20 }, bagCharacter: { character: 'Beta', source: 'addon' },
+			lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' }, lowSpace: { isLow: true },
+		});
+		expect(rowFor(analysed.rows, 24, 'sell').slotsFreed).toBe(1);
+		expect(rowFor(analysed.rows, 23, 'sell').slotsFreed).toBe(0);
+		expect(rowFor(analysed.rows, 25, 'sell').slotsFreed).toBe(0);
+	});
+
+	it('falls back to recent activity if the addon character was not captured', async () => {
+		const analysed = await analyse([character(23, 5, 'Alfa', 0)], {
+			freeSlots, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' }, storageCharacter: 'Missing',
+		});
+		expect(analysed.objects.storageSpace).toMatchObject({
+			bagCharacter: { character: 'Alfa', source: 'age_delta' }, bags: { free: 3, total: 30 },
+		});
+	});
+
+	it('counts only the selected bag stack when one decision spans characters and bank', async () => {
+		const analysed = await analyse([
+			character(23, 5, 'Alfa', 0), character(23, 5, 'Beta', 0), bank(23, 5, 0),
+		], { freeSlots, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' } });
+		expect(rowFor(analysed.rows, 23, 'sell').slotsFreed).toBe(1);
+	});
+
+	it('does not count a selected bag stack when only its unreserved part can be sold', async () => {
+		const analysed = await analyse([character(21, 5, 'Alfa', 0)], {
+			freeSlots, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' },
+			goals: [goal('build-21', 'Build', 21, 3)],
+		});
+		expect(rowFor(analysed.rows, 21, 'sell').slotsFreed).toBe(0);
 	});
 });
 
@@ -579,8 +631,9 @@ describe('inventory value and character scope', () => {
 		] };
 		const unknown = await analyse([character(23, 5, 'Alfa', 0)], { freeSlots });
 		expect(unknown.objects.storageSpace).toMatchObject({ bags: null, lowSpace: null, lastPlayedCharacter: null });
+		expect(rowFor(unknown.rows, 23, 'sell').slotsFreed).toBe(0);
 		const known = await analyse([character(23, 5, 'Alfa', 0)], { freeSlots, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' } });
-		expect(known.objects.storageSpace).toMatchObject({ bags: { total: 20, free: 2 }, lowSpace: { freeSlots: 6, totalSlots: 40 } });
+		expect(known.objects.storageSpace).toMatchObject({ bags: { total: 20, free: 2 }, lowSpace: { freeSlots: 2, totalSlots: 20 } });
 	});
 });
 
@@ -736,6 +789,7 @@ interface AnalyseOptions {
 	capture?: ReturnType<typeof vi.fn>;
 	freeSlots?: StorageFreeSlots;
 	lastPlayedCharacter?: StorageSnapshot['lastPlayedCharacter'];
+	storageCharacter?: string | null;
 }
 
 /**
@@ -751,7 +805,7 @@ async function analyse(holdings: ItemHolding[], options: AnalyseOptions = {}) {
 	const service = new InventoryAnalysisService(options.port ?? recommendationPort());
 	const objects: InventoryObjectAnalysisPort = {
 		derivedGoals: async () => await service.derivedGoals(),
-		evaluate: async (source, uncertainItemIds) => await service.evaluate(source, uncertainItemIds, { refreshSeeds: options.refreshSeeds ?? false }),
+		evaluate: async (source, uncertainItemIds) => await service.evaluate(source, uncertainItemIds, { refreshSeeds: options.refreshSeeds ?? false, storageCharacter: options.storageCharacter }),
 	};
 	const workflow = new InventoryAdvisorWorkflow({
 		capture: { capture: capture as never },
