@@ -1,9 +1,9 @@
 # Tyrian Companion
 
 > **Contract update, October 6, 2026:** [live1](docs/SPEC-live-loot.md) supersedes the API-only session
-> design. The 0.5.0 candidate implements this path in code; final checks and real-client QA are
-> separate. H1–H18 descriptions below retain legacy history, not permission to restore automatic
-> authenticated API requests in live sessions.
+> design. The 0.5.0 channel is published with its release-tree checks verified; installation and
+> runtime QA remain pending. H1–H18 descriptions below retain legacy history, not permission to
+> restore automatic authenticated API requests in live sessions.
 
 Tyrian Companion is a desktop-only Obsidian plugin for reviewing Guild Wars 2 farming sessions and
 account inventory context inside a vault, with an independent Hebra host adapter. Recommendations
@@ -11,8 +11,8 @@ describe manual actions: the plugin never operates the game account. A connected
 addon can mark session boundaries automatically from game presence.
 
 The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
-our Nexus addon as the source of new sessions. **The path is implemented in candidate code;
-native runtime QA remains pending.** This does not prove that an installed older addon supplies it.
+our Nexus addon as the source of new sessions. **The 0.5.0 channel is published;
+installation and runtime QA remain pending.** This does not prove that an installed older addon supplies it.
 Authenticated GW2 API requests are reserved for explicit manual inventory/wallet operations and
 connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
 is primary. Windows with Blish HUD remains required and needs a local Nexus producer for live
@@ -33,8 +33,9 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 
 > [!WARNING]
 > `manifest.json` identifies the checkout or installed candidate; it does not by itself prove that
-> version is published. Final candidate checks and real-client QA remain pending. Use a disposable vault
-> and record the exact Companion and addon versions when testing.
+> version is published or loaded. The [0.5.0 channel](https://github.com/fodaveg/tyrian-companion/releases/tag/0.5.0)
+> is published; real-client installation/runtime QA remains pending. Use a disposable vault and
+> record the exact Companion and addon versions when testing.
 
 ## Required live session behavior
 
@@ -55,21 +56,21 @@ remain pending. The native 0.5.0 reader does not cover wallet/currencies, verifi
 
 ## Halloween farming
 
-The candidate retains optional bag/duration goals and manual preparation. The 0.5.0 candidate implements the
+Release 0.5.0 retains optional bag/duration goals and manual preparation. It implements the
 [manual build and live comparison contract](docs/SPEC-live-loot.md#14-build-declarada-y-comparación-de-sesiones-live)
 with a pasted GW2 build template and optional label, captured when a new session is requested. This is a
 declaration, not detection of the active build or gear/stats. Live comparisons use observed/net bags
 and covered item time independently of prices, keep API history separate, and require two completed
 sessions per comparable group; the active session stays provisional. Unknown configuration remains
 unknown. Sample size and dispersion do not establish causation. Parser, immutable capture, notes,
-editor and live comparison are integrated in candidate code with independent review. Combined
-checks, publication and real-client QA remain separate and pending.
+editor and live comparison are integrated with independent review. The published release tree
+passed its combined checks; real-client installation/runtime QA remains pending. See
+[release evidence](docs/ESTADO.md).
 
-Live sessions require the matching **0.5.0 Nexus producer candidate**, including when Blish HUD is
-the Windows overlay. Consult the [Nexus releases](https://github.com/fodaveg/tyrian-companion-nexus/releases/latest)
-and [Blish releases](https://github.com/fodaveg/tyrian-companion-blish/releases/latest) for actually
-published artifacts; these links do not assert that 0.5.0 is published. For an unpublished candidate,
-use the exact artifacts identified for that test. This Nexus addon has no automatic updater:
+Live sessions require the matching **0.5.0 Nexus producer**, including when Blish HUD is the
+Windows overlay. [Nexus 0.5.0](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.5.0)
+and [Blish HUD 0.5.0](https://github.com/fodaveg/tyrian-companion-blish/releases/tag/0.5.0) are
+published with verified package/checksum assets. This Nexus addon has no automatic updater:
 with GW2 closed, replace its DLL manually and verify the loaded version after reopening the game.
 Publishing Companion does not update that DLL. Older v3 clients retain their compatible alerts/
 panel behavior, but that does not provide the new live source. See the
@@ -95,14 +96,14 @@ Obsidian plugin assets. Publication does not prove installation or runtime behav
 ## Install the beta
 
 For Obsidian, use desktop `1.11.4` or newer and a disposable vault. BRAT installs published beta
-versions; an unpublished 0.5.0 candidate needs its identified development artifact. Game sessions
-also need the matching Nexus producer. Windows with Blish HUD still needs Nexus locally.
+versions; select the published 0.5.0 release. Game sessions also need the matching Nexus producer.
+Windows with Blish HUD still needs Nexus locally.
 
 1. From **Settings → Community plugins → Browse**, install and enable
    [BRAT](https://github.com/TfTHacker/obsidian42-brat).
 2. In BRAT, choose **Add beta plugin**, enter `fodaveg/tyrian-companion`, and select an actually
    published version. BRAT downloads `manifest.json`, `main.js` and `styles.css` from that release.
-   Check the installed version; the latest public release may predate this candidate's live flow.
+   Check the installed and actually loaded version; publication alone does not prove either.
 3. Back in **Settings → Community plugins**, enable **Tyrian Companion** and open its settings page.
 4. Open the command palette and run **Open companion**. For a live session, continue with the
    collector/bridge/Nexus setup below. **No GW2 API key or Check connection step is required.**
@@ -117,12 +118,12 @@ a new release; that delay proves neither installation success nor failure.
 Developers testing an exact unpublished commit use the existing
 [artifact installation procedure](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores).
 The canonical Hebra host uses the matching external-plugin assets, described in the same
-[beta guide](docs/BETA.md). The 0.5.0 channel is prepared as a normal release, not a prerelease,
+[beta guide](docs/BETA.md). The 0.5.0 channel is a normal release, not a prerelease,
 because the Hebra installer omits prereleases. Record installation/loading separately from session QA.
 
 ## First farming session
 
-These steps describe the 0.5.0 candidate implemented in code; they do not certify its behavior in
+These steps describe the published 0.5.0 code; they do not certify its behavior in
 an installed client. The [live QA matrix](docs/QA-MVP.md) records the pending real-client
 checks. Legacy API session controls are not a fallback for missing Nexus observations.
 

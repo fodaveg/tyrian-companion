@@ -2,8 +2,15 @@
 
 ## Release beta 0.5.0 - sesiones de inventario observado con Nexus
 
-Cambios del código candidato. La verificación conjunta y el estado de publicación se registran
-por separado en [ESTADO](ESTADO.md); la QA de clientes reales sigue pendiente.
+[Canal 0.5.0 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.5.0);
+**instalación/runtime pendiente**. Tag `0.5.0`, commit
+`d5acce0a9d2c9d34f537b20df4380a1a2ee85b61`, árbol
+`79381f36eb42e1eb644e409abe9f19765bf4952a`: check 8/8 (4863 tests/307 archivos), guardrails 25/25,
+benchmark H6 y sabotaje rojo, paquete e integridad verificados. La
+[CI de main](https://github.com/fodaveg/tyrian-companion/actions/runs/37447940061) y el
+[workflow de release](https://github.com/fodaveg/tyrian-companion/actions/runs/37449142919) pasaron;
+el contrato BRAT verificó los ocho assets reales. [ESTADO](ESTADO.md) distingue esa evidencia del
+árbol documental posterior y de la QA real pendiente.
 
 - **Sesiones sin clave API.** Nexus aporta observaciones locales; la sesión sigue la conexión al
   juego, con diez minutos de gracia cuando se pierde presencia. La API autenticada queda para
@@ -18,8 +25,8 @@ por separado en [ESTADO](ESTADO.md); la QA de clientes reales sigue pendiente.
   equipada ni incluir equipo/stats. Editarlas después no cambia la sesión; una entrada inválida se conserva y
   la nueva sesión sigue con configuración desconocida. Notas y exportación guardan la declaración.
   La comparación separa historial API, bolsas observadas/netas y tasas sobre tiempo cubierto; exige
-  dos completas por grupo y deja la activa provisional. El código está integrado y revisado; gate
-  conjunto, publicación y QA real conservan su estado separado en ESTADO.
+  dos completas por grupo y deja la activa provisional. La publicación y sus checks no certifican
+  instalación ni ejecución real en los clientes.
 - **Guardado y exportación.** El runtime live y las notas schema 7 conservan observaciones y texto
   humano. La exportación de la sesión activa es una instantánea de lo guardado hasta ese momento;
   el historial y su exportación muestran sesiones guardadas por separado, sin truncar el ledger

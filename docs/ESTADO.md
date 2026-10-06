@@ -1,11 +1,32 @@
 # Estado
 
-## Candidato 0.5.0: captura propia Nexus (6 oct 2026)
+## Canal 0.5.0 publicado: captura propia Nexus (6 oct 2026)
 
-**Código candidato integrado y revisión independiente aprobada; gate conjunto, publicación y QA
-real pendientes.** Lector/transporte, dominio de sesiones, journal/notas, avisos y presentación tienen
-implementación en los lotes del candidato. No se equiparan las pruebas de esos lotes con un verde
-global ni con el recorrido funcionando en el juego.
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.5.0](https://github.com/fodaveg/tyrian-companion/releases/tag/0.5.0)
+es una release normal, sin draft ni prerelease. El tag apunta a
+`d5acce0a9d2c9d34f537b20df4380a1a2ee85b61`, árbol
+`79381f36eb42e1eb644e409abe9f19765bf4952a`. La
+[CI de main](https://github.com/fodaveg/tyrian-companion/actions/runs/37447940061) y el
+[workflow de release](https://github.com/fodaveg/tyrian-companion/actions/runs/37449142919)
+terminaron en SUCCESS para ese SHA.
+
+El gate local de ese mismo árbol pasó `check` 8/8 (4863 tests, 307 archivos), guardrails 25/25,
+benchmark H6 y su sabotaje rojo controlado, paquete, identidad y escaneo de secretos. Nombre de
+release, tag y manifest son exactamente `0.5.0`. `release:brat-verify` pasó contra la salida real de
+GitHub: exactamente ocho assets subidos y no vacíos. Se descargaron y comprobaron ZIP/checksum,
+los tres archivos Obsidian extraídos y la integridad del manifiesto Hebra. El ESM Hebra servido
+solo difiere del local en 69 comentarios de rutas de dependencias; tras normalizarlos es idéntico.
+Su SHA-256 es `7fe9cd2650ff2a6eb88adf7a7ef71430c6ab8f9bab30c9e946057e4f6ef78298`; el manifiesto
+servido contiene ese hash y el correcto de estilos, sin otros cambios respecto al local.
+
+También están publicados [Nexus 0.5.0](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.5.0)
+y [Blish HUD 0.5.0](https://github.com/fodaveg/tyrian-companion-blish/releases/tag/0.5.0), cada uno con
+paquete y checksum descargados y verificados. Ninguna publicación demuestra instalación ni una
+sesión real. Los recibos locales `/tmp/tyrian-050-integrated-release-receipt.json` y
+`/tmp/tyrian-050-served-assets-receipt.json` registran el detalle y pueden no existir en otra máquina;
+el commit acreditativo y los workflows enlazados conservan la referencia durable al candidato.
+Esta actualización documental posterior al tag no hereda la ejecución de tests de ese árbol:
+requiere su propia CI y no modifica ni retaggea el código publicado.
 
 La raíz ha revisado/integrado localmente Nexus/Blish, notas/UI y el cierre de composición de
 sesiones. Su evidencia previa incluye `d37606c3cd81099c7cc94cedae83e0f86827bb9a`, árbol
@@ -23,8 +44,8 @@ identificado; conservación de raw inválido/v4; captura antes de suspensión co
 ES/EN aisladas. Cada resultado pertenece a su candidato; no se suma como un gate global. Las vistas
 usan componentes reales con datos sintéticos y red abortada, no Hebra/Obsidian ni GW2 reales.
 
-El siguiente paso de verificación es el gate conjunto con estos documentos. Las tareas y recibos
-permanecen en Lumbre y en las referencias de cada candidato.
+El gate conjunto del árbol publicado queda acreditado arriba, separado de estos checks por lote.
+Las tareas y recibos permanecen en Lumbre y en las referencias de cada candidato.
 
 El [contrato live1](SPEC-live-loot.md) se refleja en el código candidato: fuente Nexus sin clave
 API, sesión por conexión y gracia de diez minutos, ledger durable, timeline/resumen/gráfica,
@@ -55,10 +76,9 @@ su DLL manualmente y verificar la versión cargada, sin prometer autoactualizaci
 previa a este despliegue figuraban Tyrian 0.3.4 en Hebra y Nexus 0.3.1; esas versiones no prueban que
 el candidato 0.5.0 esté instalado.
 
-La release 0.5.0 se prepara como release normal, no prerelease. Este registro no afirma que esté
-publicada. Nombre/tag/manifest y los ocho assets siguen [BETA](BETA.md); hasta verificar carga real,
-una publicación se informa como «canal publicado; instalación/runtime pendiente». H8 e historia
-API conservan sus límites y evidencia, sin ser la fuente de las nuevas sesiones.
+La release normal 0.5.0 cumple nombre/tag/manifest y los ocho assets de [BETA](BETA.md). Hasta
+verificar carga real, el estado permanece «canal publicado; instalación/runtime pendiente». H8 e
+historia API conservan sus límites y evidencia, sin ser la fuente de las nuevas sesiones.
 
 ## Historia conservada de candidatos anteriores
 

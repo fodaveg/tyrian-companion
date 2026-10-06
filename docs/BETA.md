@@ -2,10 +2,12 @@
 
 ## Estado actual
 
-`manifest.json` identifica la versión del checkout o candidato. **Una versión candidata todavía no
-acredita una release pública:** al publicar, nombre de GitHub Release, tag y `manifest.version`
-deben ser exactamente iguales. La preparación documental de **0.5.0** no afirma publicación,
-instalación ni gates globales superados. Para verificar una release de esa versión:
+[0.5.0 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.5.0) como release
+normal, sin draft ni prerelease: **canal publicado; instalación/runtime pendiente**. Nombre de
+GitHub Release, tag y `manifest.version` son exactamente `0.5.0`, con ocho assets reales subidos,
+no vacíos y verificados. El SHA del tag, gates y workflows están en [ESTADO](ESTADO.md).
+`manifest.json` por sí solo identifica un checkout o instalación; no demuestra carga correcta.
+Para volver a verificar los metadatos de la release:
 
 ```sh
 version="$(node -p "require('./manifest.json').version")"
@@ -28,22 +30,21 @@ acciones manuales de inventario/cartera y la comprobación explícita de conexi�
 con la [guía de permisos](API-KEY.md); catálogo y precios públicos no la requieren. No usar una
 sincronización API como sustituto de una fuente live ausente.
 
-### Candidato 0.5.0: alcance y QA pendientes
+### Release 0.5.0: alcance y QA pendientes
 
-La captura propia se rige por [SPEC-live-loot](SPEC-live-loot.md). El código candidato incluye lector/
-transporte, consumidor de sesiones, journal/notas, avisos y presentación. Gate del árbol conjunto,
-publicación y QA real siguen pendientes en [ESTADO](ESTADO.md). Las
-comprobaciones de cada lote acreditan solo su candidato y alcance, no la instalación o ejecución
-real de la futura release.
+La captura propia se rige por [SPEC-live-loot](SPEC-live-loot.md). La release incluye lector/
+transporte, consumidor de sesiones, journal/notas, avisos y presentación. Gate del árbol publicado,
+CI y assets servidos están acreditados en [ESTADO](ESTADO.md); la QA real sigue pendiente. Esos
+checks no demuestran instalación ni ejecución en el host o el juego.
 
-El candidato 0.5.0 integra plantilla de build declarada y comparación live separada del historial
+La release 0.5.0 integra plantilla de build declarada y comparación live separada del historial
 API: parser, captura inmutable, notas, editor y comparador cuentan con revisión independiente. Los
 checks de cada lote no sustituyen el gate conjunto ni la QA real. En QA se comprueban captura
 inmutable al solicitar el inicio, entrada inválida visible y mínimo de dos completas por grupo;
 una plantilla declarada no acredita build equipada ni equipo/stats.
 
-La entrega 0.5.0 se prepara como release **normal, no prerelease**, para que el instalador del Hebra
-canónico la incluya. Hebra consume los tres assets de plugin externo de esa misma versión; no se
+La entrega 0.5.0 es una release **normal, no prerelease**, disponible para el instalador del Hebra
+canónico. Hebra consume los tres assets de plugin externo de esa misma versión; no se
 infiere carga correcta de la versión que figure en disco. Nexus no ofrece autoactualización para
 este addon: con GW2 cerrado, sustituir manualmente la DLL por el artifact elegido y comprobar la
 versión cargada al reabrir. Publicar Companion no sustituye la DLL local de Nexus.
