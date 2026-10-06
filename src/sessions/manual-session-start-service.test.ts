@@ -1196,6 +1196,32 @@ describe('ManualSessionStartService', () => {
 		expect(record.stack).toBeUndefined();
 	});
 
+	it('asks the final capture for a snapshot that starts at or after the stop request, never one already in flight (e.g. a detection poll)', async () => {
+		const earlyFinal = afterSnapshot({
+			snapshotId: 'snapshot-early', startedAt: '2026-08-13T08:48:00.000Z', completedAt: '2026-08-13T08:48:30.000Z',
+		});
+		const captureFinal = vi.fn(async (startedNotBefore?: number) => (
+			// What the snapshot service does: a floor after the running capture's start makes it
+			// wait that one out and begin a new one.
+			startedNotBefore !== undefined && startedNotBefore > Date.parse(earlyFinal.startedAt)
+				? afterSnapshot()
+				: earlyFinal
+		));
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => structuredClone(captured)), captureFinal },
+			serviceOptions(),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		clock = Date.parse('2026-08-13T08:49:00.000Z');
+
+		await expect(service.captureFinalNow()).resolves.toMatchObject({
+			status: 'stopped',
+			state: { status: 'provisional', finalSnapshot: { snapshotId: 'snapshot-after' } },
+		});
+		expect(captureFinal).toHaveBeenCalledWith(Date.parse('2026-08-13T08:49:00.000Z'));
+	});
+
 	it('logs the error class of an unclassified stop failure instead of discarding it (H15.1)', async () => {
 		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
 		const service = new ManualSessionStartService(

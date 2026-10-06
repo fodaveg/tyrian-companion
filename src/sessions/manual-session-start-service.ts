@@ -71,7 +71,7 @@ export interface SessionLeaseCoordinator {
 
 export interface SessionBaselineCapture {
 	capture(input: SessionStartInput, startedNotBefore?: number): Promise<SessionStartCaptureResult>;
-	captureFinal?(): Promise<StorageSnapshot>;
+	captureFinal?(startedNotBefore?: number): Promise<StorageSnapshot>;
 }
 
 export interface SessionStartFailure {
@@ -1182,7 +1182,9 @@ export class ManualSessionStartService {
 				return { status: 'awaiting_settlement', state: structuredClone(stopping), wait };
 			}
 			this.stopSettlement();
-			const finalSnapshot = await this.baselineCapture.captureFinal();
+			// The final snapshot must start at or after the stop request (`stoppedAt <= finalSnapshot.startedAt`):
+			// a capture another flow (the detection poll) already had in flight is never adopted.
+			const finalSnapshot = await this.baselineCapture.captureFinal(Date.parse(stopping.stopRequestedAt));
 			const finalReference = snapshotReference(finalSnapshot);
 			const delta = compareStorageSnapshots(this.baselineSnapshot, finalSnapshot);
 			if (delta.status === 'invalid') {

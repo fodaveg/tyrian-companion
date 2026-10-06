@@ -168,8 +168,11 @@ export class SessionStartCaptureService {
 	}
 
 	/** Captures the stable account boundary used to close a manual session. */
-	async captureFinal(): Promise<StorageSnapshot> {
-		return this.snapshots.captureWithOperation(this.client.beginOperation());
+	async captureFinal(startedNotBefore?: number): Promise<StorageSnapshot> {
+		const operation = this.client.beginOperation();
+		return startedNotBefore === undefined
+			? this.snapshots.captureWithOperation(operation)
+			: this.snapshots.captureWithOperation(operation, { startedNotBefore });
 	}
 
 	/**

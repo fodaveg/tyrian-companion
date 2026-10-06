@@ -976,7 +976,10 @@ describe('StorageSnapshotService', () => {
 		const service = new StorageSnapshotService(fixture.client);
 		const running = service.capture();
 		await vi.waitFor(() => { expect(blocked).toBe(true); });
-		const floor = Date.now() + 1;
+		// A floor strictly after the running capture's start, and not ahead of the clock.
+		const tick = Date.now();
+		while (Date.now() === tick) { /* wait out the millisecond */ }
+		const floor = Date.now();
 		const joinedByDefault = service.capture();
 		const later = service.captureWithOperation(fixture.client.beginOperation(), { startedNotBefore: floor });
 		release();
