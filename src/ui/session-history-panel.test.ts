@@ -165,6 +165,25 @@ describe('mountSessionHistoryPanel', () => {
 		expect(wideCells.length).toBeGreaterThan(0);
 	});
 
+	it('shows independent bag and money samples with price gaps and explicit comparison limitations', async () => {
+		const document = new FakeDocument();
+		const container = new FakeElement('div', document);
+		const controller = new SessionHistoryPanelController(async () => ({ status: 'ok', ignored: 0, sessions: [
+			record('2026-10-01T10:00:00.000Z', 3_600_000, { build: '', sacks: 500, valuationCoverage: 'partial' }),
+			record('2026-10-02T10:00:00.000Z', 3_600_000, { build: '', sacks: 500, valuationCoverage: 'partial' }),
+		] }));
+		mountSessionHistoryPanel(container as unknown as HTMLElement, 'es', controller);
+		await controller.load();
+		const visible = allText(container);
+		expect(visible).toContain('Build sin nombre');
+		expect(visible).toContain('2 sesiones · 120 min');
+		expect(visible).toContain('0 sesiones · 0 min');
+		expect(visible).toContain('Rango observado:');
+		expect(visible).toContain('buffs desconocidos');
+		expect(visible).toContain('Neto conservado · 36038');
+		expect(visible).toContain('no demuestran que una build cause mejor rendimiento');
+	});
+
 	it('labels a session outside the Labyrinth "All year" instead of hiding it from performance', async () => {
 		const document = new FakeDocument();
 		const container = new FakeElement('div', document);

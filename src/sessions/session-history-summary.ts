@@ -1,3 +1,4 @@
+import { canonicalJson } from '../core/canonical-sha256';
 import type { DurableSessionHistoryRecord, DurableSessionLootLine, SessionHistoryScan } from './session-history';
 
 /** Result exposed to the UI after one explicit load request. */
@@ -64,6 +65,13 @@ export type SessionHistoryPerformanceQuality = 'exact' | 'estimated';
 export interface SessionHistoryPerformanceGroup {
 	readonly activity: SessionHistoryPerformanceActivity;
 	readonly build: string;
+	readonly buildRef: string | null;
+	readonly presenceScope: 'pure_labyrinth' | 'mixed' | 'unknown';
+	readonly groupContext: 'with_bosses' | 'without_bosses' | null;
+	readonly magicFind: { readonly observable: number | null; readonly manual: number | null; readonly unobservedBuffs: true };
+	readonly sackBasis: 'observed_gains' | 'closing_net';
+	readonly sacksMetric: SessionHistoryMetricSample;
+	readonly goldMetric: SessionHistoryMetricSample;
 	readonly quality: SessionHistoryPerformanceQuality;
 	readonly sessionCount: number;
 	readonly eligibleSessions: number;
@@ -71,6 +79,16 @@ export interface SessionHistoryPerformanceGroup {
 	readonly sacksPerHourMilli: number | null;
 	readonly immediateCopperPerHour: number | null;
 	readonly exclusions: readonly SessionHistoryPerformanceExclusion[];
+}
+
+/** Duration-weighted rate and the range of individual observations, never a causal ranking. */
+export interface SessionHistoryMetricSample {
+	readonly eligibleSessions: number;
+	readonly durationMs: number | null;
+	readonly status: 'ready' | 'insufficient_sample' | 'unavailable';
+	readonly rate: number | null;
+	readonly minimumRate: number | null;
+	readonly maximumRate: number | null;
 }
 
 export type SessionHistoryPerformanceExclusion = 'valuation' | 'metrics';
@@ -132,68 +150,43 @@ export function buildSessionHistoryAggregate(
 	};
 }
 
-/**
- * Groups by build alone used to also require `activity === 'halloween'`, so a manual session or
- * any farm outside the Labyrinth never formed a group at all: it just inflated
- * `missingContextSessions`, indistinguishable from a session that genuinely declared nothing
- * (H18.10, audit §3.C). A build is still required — the rate is meaningless without knowing which
- * spec earned it — but the activity itself now always resolves to one of two buckets instead of
- * silently dropping everything that isn't Halloween.
- *
- * The grouping key also carries `quality` now: a Labyrinth session is routinely `estimated` (its
- * sacks and keys never get an `exact`/`high` window), so requiring `exact`/`high` to even join a
- * group — the previous shape — left the comparison empty in exactly the case it exists for. Two
- * sessions of the same activity, build, and quality still share one rate; an `exact` one and an
- * `estimated` one never average together (H18 audit, Anexo 2).
- */
+/** Captured configuration, evidence of buffs and map scope keep unlike observations apart. */
 function buildPerformance(sessions: readonly DurableSessionHistoryRecord[]): SessionHistoryPerformance {
-	const grouped = new Map<string, {
-		activity: SessionHistoryPerformanceActivity; build: string; quality: SessionHistoryPerformanceQuality;
-		sessions: DurableSessionHistoryRecord[];
-	}>();
+	const grouped = new Map<string, { dimensions: PerformanceDimensions; sessions: DurableSessionHistoryRecord[] }>();
 	let missingContextSessions = 0;
 	let qualityExcludedSessions = 0;
 	let abandonedSessions = 0;
 	for (const session of sessions) {
-		// An abandoned session measured nothing: counted apart, never averaged into a rate.
-		if (session.outcome === 'abandoned') {
-			abandonedSessions += 1;
-			continue;
-		}
-		const build = normalizeBuild(session.build);
-		if (build === null) {
-			missingContextSessions += 1;
-			continue;
-		}
+		if (session.outcome === 'abandoned') { abandonedSessions += 1; continue; }
 		const quality = qualityBucket(session);
-		if (quality === null) {
-			qualityExcludedSessions += 1;
-			continue;
-		}
-		const activity = normalizeActivity(session.activity);
-		const key = `${activity}\u0000${build}\u0000${quality}`;
-		const group = grouped.get(key) ?? { activity, build, quality, sessions: [] };
+		if (quality === null) { qualityExcludedSessions += 1; continue; }
+		const metadata = session.comparisonMetadata;
+		const build = session.build?.trim() || '';
+		if (!metadata && !build) missingContextSessions += 1;
+		const dimensions: PerformanceDimensions = {
+			activity: session.activity === 'halloween' ? 'halloween' : 'general', build,
+			buildRef: metadata?.buildRef ?? null, quality,
+			presenceScope: metadata?.presence?.scope ?? 'unknown', groupContext: metadata?.groupContext ?? null,
+			magicFind: metadata?.magicFind ?? { observable: null, manual: null, unobservedBuffs: true },
+			sackBasis: session.sackObservation?.observedGains != null ? 'observed_gains' : 'closing_net',
+		};
+		// The name is a label, never part of a known configuration's identity. Old notes retain a
+		// labelled unknown-identity bucket rather than lose their basic metrics.
+		const key = canonicalJson({ ...dimensions, build: dimensions.buildRef === null ? build : null });
+		const group = grouped.get(key) ?? { dimensions, sessions: [] };
 		group.sessions.push(session);
 		grouped.set(key, group);
 	}
 	return {
-		minimumSessions: SESSION_HISTORY_PERFORMANCE_MINIMUM,
-		missingContextSessions,
-		qualityExcludedSessions,
-		abandonedSessions,
-		groups: [...grouped.values()].map(performanceGroup).sort((left, right) =>
-			left.activity.localeCompare(right.activity) || left.build.localeCompare(right.build) ||
-			left.quality.localeCompare(right.quality)),
+		minimumSessions: SESSION_HISTORY_PERFORMANCE_MINIMUM, missingContextSessions, qualityExcludedSessions, abandonedSessions,
+		groups: [...grouped.values()].map(performanceGroup).sort((a, b) =>
+			a.activity.localeCompare(b.activity) || a.build.localeCompare(b.build) || a.quality.localeCompare(b.quality)),
 	};
 }
 
-function normalizeActivity(activity: 'halloween' | null): SessionHistoryPerformanceActivity {
-	return activity === 'halloween' ? 'halloween' : 'general';
-}
+type PerformanceDimensions = Pick<SessionHistoryPerformanceGroup,
+	'activity' | 'build' | 'buildRef' | 'quality' | 'presenceScope' | 'groupContext' | 'magicFind' | 'sackBasis'>;
 
-/** `null` means neither bucket fits — in practice a `contaminated` session, whose metrics are
- *  already withheld at the source (`inspectDurableSessionNote`), so it was never going to clear
- *  the `metrics` filter below either; it just never gets the chance to join a group first. */
 function qualityBucket(session: DurableSessionHistoryRecord): SessionHistoryPerformanceQuality | null {
 	if (session.classification === 'exact' && session.confidence === 'high') return 'exact';
 	if (session.classification === 'estimated') return 'estimated';
@@ -201,48 +194,47 @@ function qualityBucket(session: DurableSessionHistoryRecord): SessionHistoryPerf
 }
 
 function performanceGroup(group: {
-	readonly activity: SessionHistoryPerformanceActivity;
-	readonly build: string;
-	readonly quality: SessionHistoryPerformanceQuality;
+	readonly dimensions: PerformanceDimensions;
 	readonly sessions: readonly DurableSessionHistoryRecord[];
 }): SessionHistoryPerformanceGroup {
-	const exclusions = new Set<SessionHistoryPerformanceExclusion>();
-	const eligible = group.sessions.filter((session) => {
-		let accepted = true;
-		if (session.valuationCoverage !== 'complete') {
-			exclusions.add('valuation');
-			accepted = false;
-		}
-		if (session.sacks === null || session.observedImmediateCopper === null) {
-			exclusions.add('metrics');
-			accepted = false;
-		}
-		return accepted;
-	});
-	if (eligible.length < SESSION_HISTORY_PERFORMANCE_MINIMUM) {
-		return {
-			activity: group.activity, build: group.build, quality: group.quality, sessionCount: group.sessions.length,
-			eligibleSessions: eligible.length, status: 'insufficient_sample', sacksPerHourMilli: null,
-			immediateCopperPerHour: null, exclusions: [...exclusions],
-		};
-	}
-	const durationMs = sumBigInt(eligible.map((session) => session.durationMs));
-	const sacks = sumBigInt(eligible.map((session) => session.sacks as number));
-	const immediateCopper = sumBigInt(eligible.map((session) => session.observedImmediateCopper as number));
-	const sacksPerHourMilli = safeRoundedRate(sacks, durationMs, 3_600_000_000n);
-	const immediateCopperPerHour = safeRoundedRate(immediateCopper, durationMs, 3_600_000n);
+	const sacksValue = (session: DurableSessionHistoryRecord): number | null =>
+		session.sackObservation?.observedGains ?? (session.sackObservation?.netRetained != null
+			? Math.max(0, session.sackObservation.netRetained) : session.sacks);
+	const sacksEligible = group.sessions.filter((session) => usableDuration(session) && sacksValue(session) !== null);
+	const goldEligible = group.sessions.filter((session) => usableDuration(session) &&
+		session.valuationCoverage === 'complete' && session.observedImmediateCopper !== null);
+	const sacksMetric = metricSample(sacksEligible, (session) => sacksValue(session) as number, 3_600_000_000n);
+	const goldMetric = metricSample(goldEligible, (session) => session.observedImmediateCopper as number, 3_600_000n);
+	const exclusions: SessionHistoryPerformanceExclusion[] = [];
+	if (goldEligible.length < group.sessions.length) exclusions.push('valuation');
+	if (sacksEligible.length < group.sessions.length) exclusions.push('metrics');
 	return {
-		activity: group.activity, build: group.build, quality: group.quality, sessionCount: group.sessions.length,
-		eligibleSessions: eligible.length,
-		status: sacksPerHourMilli === null || immediateCopperPerHour === null ? 'unavailable' : 'ready',
-		sacksPerHourMilli, immediateCopperPerHour, exclusions: [...exclusions],
+		...group.dimensions, sessionCount: group.sessions.length,
+		// Kept for old consumers; new presentation always uses each metric's own evidence.
+		eligibleSessions: Math.max(sacksEligible.length, goldEligible.length),
+		status: sacksMetric.status === 'unavailable' || goldMetric.status === 'unavailable' ? 'unavailable'
+			: sacksMetric.status === 'ready' || goldMetric.status === 'ready' ? 'ready' : 'insufficient_sample',
+		sacksPerHourMilli: sacksMetric.rate, immediateCopperPerHour: goldMetric.rate, sacksMetric, goldMetric, exclusions,
 	};
 }
 
-function normalizeBuild(build: string | null): string | null {
-	if (build === null) return null;
-	const normalized = build.trim();
-	return normalized.length === 0 ? null : normalized;
+function usableDuration(session: DurableSessionHistoryRecord): boolean {
+	return Number.isSafeInteger(session.durationMs) && session.durationMs > 0;
+}
+
+/** Each rate divides only by the time of the sessions eligible for that particular metric. */
+function metricSample(sessions: readonly DurableSessionHistoryRecord[], value: (session: DurableSessionHistoryRecord) => number,
+	scale: bigint): SessionHistoryMetricSample {
+	const duration = sumBigInt(sessions.map((session) => session.durationMs));
+	const durationMs = duration <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(duration) : null;
+	if (sessions.length < SESSION_HISTORY_PERFORMANCE_MINIMUM) return {
+		eligibleSessions: sessions.length, durationMs, status: 'insufficient_sample', rate: null, minimumRate: null, maximumRate: null,
+	};
+	const rate = safeRoundedRate(sumBigInt(sessions.map(value)), duration, scale);
+	const individual = sessions.map((session) => safeRoundedRate(BigInt(value(session)), BigInt(session.durationMs), scale));
+	const complete = individual.every((item): item is number => item !== null);
+	return { eligibleSessions: sessions.length, durationMs, status: rate === null ? 'unavailable' : 'ready', rate,
+		minimumRate: complete ? individual.reduce((lowest, item) => Math.min(lowest, item), Infinity) : null, maximumRate: complete ? individual.reduce((highest, item) => Math.max(highest, item), -Infinity) : null };
 }
 
 function sumBigInt(values: readonly number[]): bigint {

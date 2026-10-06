@@ -1,3 +1,5 @@
+import { isFarmingGoal, isFarmingGoalProgress, type FarmingGoalV1, type FarmingGoalProgress } from './farming-goal';
+import { isSessionComparisonMetadata, isSessionSackObservation, type SessionComparisonMetadata, type SessionSackObservation } from './session-comparison-metadata';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 import {
 	isContainerRecommendationResult,
@@ -45,6 +47,10 @@ export type SessionNoteEventDeclaration =
 	| { event: 'halloween'; source: 'ingame_presence'; observedAt: string };
 
 export interface SessionNoteInput {
+	farmingGoal?: FarmingGoalV1;
+	farmingGoalResult?: FarmingGoalProgress;
+	comparisonMetadata?: SessionComparisonMetadata;
+	sackObservation?: SessionSackObservation;
 	runtime: SessionRuntimeRecord;
 	valuation: SessionValuation | null;
 	reservation: { plan: ReservationPlan; overlay: SessionValuationReservationOverlay } | null;
@@ -73,6 +79,10 @@ export type OptionalEvidence<T> =
 	| { status: 'valid'; value: T };
 
 export interface PreparedSessionNote {
+	farmingGoal?: FarmingGoalV1;
+	farmingGoalResult?: FarmingGoalProgress;
+	comparisonMetadata?: SessionComparisonMetadata;
+	sackObservation?: SessionSackObservation;
 	runtime: SessionRuntimeRecord & {
 		state: Extract<SessionRuntimeRecord['state'], { status: 'complete' }>;
 		finalSnapshot: NonNullable<SessionRuntimeRecord['finalSnapshot']>;
@@ -122,12 +132,23 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 		'runtime', 'valuation', 'reservation', 'hold', 'recommendation', 'envelope',
 		'eventDeclaration', 'displayNames', 'firstSeenItemIds', 'rareUnpricedOrBoundItemIds',
 		'locale', 'outputFolder',
+		...(isRecord(value) && value.farmingGoal !== undefined ? ['farmingGoal'] : []),
+		...(isRecord(value) && value.farmingGoalResult !== undefined ? ['farmingGoalResult'] : []),
+		...(isRecord(value) && value.comparisonMetadata !== undefined ? ['comparisonMetadata'] : []),
+		...(isRecord(value) && value.sackObservation !== undefined ? ['sackObservation'] : []),
 	])) return { status: 'invalid', reason: 'invalid_input' };
 	if (!isSessionRuntimeRecord(value.runtime) || value.runtime.state.status !== 'complete' ||
 		value.runtime.finalSnapshot === null || value.runtime.delta === null || value.runtime.review === null) {
 		return { status: 'invalid', reason: 'invalid_runtime' };
 	}
+	if ((value.farmingGoal !== undefined && !isFarmingGoal(value.farmingGoal)) ||
+		(value.farmingGoalResult !== undefined && !isFarmingGoalProgress(value.farmingGoalResult)) ||
+		(value.farmingGoalResult !== undefined && canonical(value.farmingGoal) !== canonical(value.farmingGoalResult.goal)) ||
+		(value.comparisonMetadata !== undefined && !isSessionComparisonMetadata(value.comparisonMetadata)) ||
+		(value.sackObservation !== undefined && !isSessionSackObservation(value.sackObservation))) return { status: 'invalid', reason: 'invalid_input' };
 	const runtime = value.runtime as PreparedSessionNote['runtime'];
+	const netSacks = runtime.delta.status === 'invalid' ? null : runtime.delta.itemChanges.find(({ id }) => id === 36038)?.delta ?? 0;
+	if (value.sackObservation !== undefined && value.sackObservation.netRetained !== netSacks) return { status: 'invalid', reason: 'invalid_input' };
 	if (runtime.review.classification.status !== runtime.state.classification) {
 		return { status: 'invalid', reason: 'invalid_runtime' };
 	}
@@ -164,6 +185,11 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 		status: 'ok',
 		note: {
 			runtime: structuredClone(runtime), durationMs, valuation, reservation, hold,
+			...(value.farmingGoal !== undefined ? { farmingGoal: structuredClone(value.farmingGoal) } : {}),
+			...(value.farmingGoalResult !== undefined ? { farmingGoalResult: structuredClone(value.farmingGoalResult) } : {}),
+			...(value.comparisonMetadata !== undefined ? { comparisonMetadata: structuredClone(value.comparisonMetadata) } : {}),
+			sackObservation: value.sackObservation !== undefined ? structuredClone(value.sackObservation)
+				: { itemId: 36038, observedGains: null, netRetained: netSacks, totalObtained: null },
 			recommendation, envelope, eventDeclaration, displayNames: structuredClone(value.displayNames),
 			firstSeenItemIds: [...value.firstSeenItemIds], rareUnpricedOrBoundItemIds: [...value.rareUnpricedOrBoundItemIds],
 			locale: value.locale, outputFolder,

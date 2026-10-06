@@ -311,9 +311,11 @@ function renderPerformance(container: HTMLElement, locale: Locale, aggregate: Se
 	const section = container.createEl('section', { cls: 'tyrian-session-history__performance' });
 	section.createEl('h4', { text: t.t('sessionHistory.performance') });
 	section.createEl('p', { text: t.t('sessionHistory.performanceIntro', { minimum: aggregate.performance.minimumSessions }) });
+	section.createEl('p', { text: locale === 'es' ? 'Comparación descriptiva: la muestra y las condiciones no demuestran que una build cause mejor rendimiento.' : 'Descriptive comparison: the sample and conditions do not establish that a build causes better performance.' });
 	if (aggregate.performance.missingContextSessions > 0) {
 		section.createEl('p', {
-			text: t.t('sessionHistory.performanceMissingContext', { count: aggregate.performance.missingContextSessions }),
+			text: locale === 'es' ? `${String(aggregate.performance.missingContextSessions)} sesiones sin identidad de build; conservan estadísticas en un grupo de contexto desconocido.`
+				: `${String(aggregate.performance.missingContextSessions)} sessions without build identity; statistics remain in an unknown-context group.`,
 			cls: 'tyrian-session-history__warning',
 		});
 	}
@@ -352,6 +354,17 @@ const PERFORMANCE_EXCLUSION_KEY = {
 	metrics: 'sessionHistory.performanceExclusion.metrics',
 } as const;
 
+/** Every metric discloses its own sample, time and dispersion; neither ranks builds causally. */
+function metricEvidence(cell: HTMLElement, metric: SessionHistoryPerformanceGroup['sacksMetric'], locale: Locale,
+	format: (value: number) => string): void {
+	const es = locale === 'es';
+	cell.createEl('small', { text: `${String(metric.eligibleSessions)} ${es ? 'sesiones' : 'sessions'} · ${metric.durationMs === null ? '—' : `${String(Math.round(metric.durationMs / 60_000))} min`}` });
+	if (metric.minimumRate !== null && metric.maximumRate !== null) cell.createEl('small', {
+		text: `${es ? 'Rango observado' : 'Observed range'}: ${format(metric.minimumRate)}–${format(metric.maximumRate)}`,
+	});
+	if (metric.status === 'insufficient_sample') cell.createEl('small', { text: es ? 'Muestra insuficiente' : 'Insufficient sample' });
+}
+
 /**
  * H18.36 (boceto lámina 2.5, decidido): one table instead of an `<article>` per group — quality
  * still names itself with the same shape/word `.tyrian-session-history__quality` already uses in
@@ -368,7 +381,7 @@ function renderPerformanceTable(container: HTMLElement, locale: Locale, groups: 
 	appendHeaderCell(head, t.t('sessionHistory.performanceGroup'));
 	appendHeaderCell(head, t.t('sessionHistory.sessions'), 'is-num');
 	appendHeaderCell(head, t.t('sessionHistory.immediatePerHour'), 'is-num');
-	appendHeaderCell(head, t.t('sessionHistory.sacksPerHour'), 'is-num is-wide');
+	appendHeaderCell(head, t.t('sessionHistory.sacksPerHour'), 'is-num');
 	const body = table.createEl('tbody');
 	for (const group of groups) renderPerformanceRow(body, locale, group);
 }
@@ -379,7 +392,7 @@ function renderPerformanceRow(body: HTMLElement, locale: Locale, group: SessionH
 	const groupHeader = tr.createEl('th', { attr: { scope: 'row' } });
 	groupHeader.createSpan({
 		cls: 'tyrian-session-history__quality', attr: { 'data-quality': group.quality },
-		text: `${t.t(PERFORMANCE_ACTIVITY_KEY[group.activity])} · ${group.build} · ${qualityLabel(group.quality, t)}`,
+		text: `${t.t(PERFORMANCE_ACTIVITY_KEY[group.activity])} · ${group.build || (locale === 'es' ? 'Build sin nombre' : 'Unnamed build')} · ${qualityLabel(group.quality, t)}`,
 	});
 	if (group.quality === 'estimated') {
 		groupHeader.createEl('small', { text: t.t('sessionHistory.performanceEstimatedNote') });
@@ -391,14 +404,29 @@ function renderPerformanceRow(body: HTMLElement, locale: Locale, group: SessionH
 		});
 	}
 	const sessionsCell = tr.createEl('td', { cls: 'is-num' });
-	sessionsCell.createSpan({ text: `${String(group.eligibleSessions)}/${String(group.sessionCount)}` });
+	sessionsCell.createSpan({ text: String(group.sessionCount) });
 	sessionsCell.createEl('small', {
 		text: t.t(PERFORMANCE_STATUS_KEY[group.status], {
 			eligible: group.eligibleSessions, total: group.sessionCount, minimum: SESSION_HISTORY_PERFORMANCE_MINIMUM,
 		}),
 	});
-	appendCell(tr, money(group.immediateCopperPerHour, locale), 'is-num');
-	appendCell(tr, group.sacksPerHourMilli === null ? t.t('sessionHistory.unknown') : rate(group.sacksPerHourMilli, locale), 'is-num is-wide');
+	const goldCell = appendCell(tr, money(group.immediateCopperPerHour, locale), 'is-num');
+	const sacksCell = appendCell(tr, group.sacksPerHourMilli === null ? t.t('sessionHistory.unknown') : rate(group.sacksPerHourMilli, locale), 'is-num');
+	metricEvidence(goldCell, group.goldMetric, locale, (value) => money(value, locale));
+	metricEvidence(sacksCell, group.sacksMetric, locale, (value) => rate(value, locale));
+	const es = locale === 'es';
+	groupHeader.createEl('small', { text: group.buildRef === null ? es ? 'Identidad de build desconocida' : 'Unknown build identity'
+		: `${es ? 'Configuración' : 'Configuration'} ${group.buildRef.slice(0, 8)}` });
+	groupHeader.createEl('small', { text: `${es ? 'Presencia' : 'Presence'}: ${group.presenceScope === 'pure_labyrinth'
+		? es ? 'laberinto observado' : 'observed Labyrinth' : group.presenceScope === 'mixed' ? es ? 'conexión mixta' : 'mixed connection'
+			: es ? 'desconocida' : 'unknown'}` });
+	const mf = group.magicFind;
+	groupHeader.createEl('small', { text: `MF: observable ${String(mf.observable ?? '—')}; manual ${String(mf.manual ?? '—')}; ${es ? 'buffs desconocidos' : 'buffs unknown'}` });
+	groupHeader.createEl('small', { text: group.groupContext === null ? es ? 'Grupo desconocido' : 'Unknown group'
+		: group.groupContext === 'with_bosses' ? es ? 'Con jefes (declarado)' : 'With bosses (declared)'
+			: es ? 'Sin jefes (declarado)' : 'Without bosses (declared)' });
+	sacksCell.createEl('small', { text: group.sackBasis === 'observed_gains' ? es ? 'Incrementos observados · 36038' : 'Observed increments · 36038'
+		: es ? 'Neto conservado · 36038' : 'Closing net · 36038' });
 }
 
 /**
@@ -488,7 +516,7 @@ function appendDetail(container: HTMLElement, label: string, value: string): voi
 	container.createEl('dd', { text: value });
 }
 
-function appendCell(row: HTMLElement, text: string, cls?: string): void { row.createEl('td', { text, ...(cls === undefined ? {} : { cls }) }); }
+function appendCell(row: HTMLElement, text: string, cls?: string): HTMLElement { return row.createEl('td', { text, ...(cls === undefined ? {} : { cls }) }); }
 
 function appendHeaderCell(row: HTMLElement, text: string, cls?: string): void {
 	const header = row.createEl('th', { text, ...(cls === undefined ? {} : { cls }) });

@@ -1,3 +1,6 @@
+import { canonicalJson } from '../core/canonical-sha256';
+import { isFarmingGoal, isFarmingGoalProgress, type FarmingGoalV1, type FarmingGoalProgress } from './farming-goal';
+import { parseDurableSessionComparison, parseSessionSackObservation, type DurableSessionComparisonMetadata, type SessionSackObservation } from './session-comparison-metadata';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import { INVENTORY_NOTE_KIND } from '../inventory/inventory-vault-sync';
@@ -61,6 +64,10 @@ export interface DurableSessionLootLine {
 }
 
 export interface DurableSessionHistoryRecord {
+	farmingGoal?: FarmingGoalV1;
+	farmingGoalResult?: FarmingGoalProgress;
+	comparisonMetadata?: DurableSessionComparisonMetadata;
+	sackObservation?: SessionSackObservation;
 	sessionRef: string;
 	accountRef: string;
 	/** Declared comparison dimensions are available only to the explicit local history view. */
@@ -577,8 +584,21 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	if (Object.keys(fm).length === 0) return { status: 'non_candidate' };
 	if (fm.tc_kind !== 'gw2_farming_session' ||
 		(fm.tc_schema !== 1 && fm.tc_schema !== 2 && fm.tc_schema !== 3 && fm.tc_schema !== 4 && fm.tc_schema !== 5 && fm.tc_schema !== 6) ||
-		!hasExactKeys(fm, sessionKeysFor(fm.tc_schema)) ||
+		!hasExactKeys(fm, [...sessionKeysFor(fm.tc_schema),
+			...(fm.tc_schema === 6 && fm.tc_comparison_json !== undefined ? ['tc_comparison_json'] : []),
+			...(fm.tc_schema === 6 && fm.tc_sack_observation_json !== undefined ? ['tc_sack_observation_json'] : []),
+			...(fm.tc_schema === 6 && fm.tc_farming_goal_json !== undefined ? ['tc_farming_goal_json'] : []),
+			...(fm.tc_schema === 6 && fm.tc_farming_goal_result_json !== undefined ? ['tc_farming_goal_result_json'] : [])]) ||
 		!note.managedBlocksValid || note.hasInvalidScalar) return { status: 'invalid' };
+	const farmingGoal = parseOptionalJson(fm.tc_farming_goal_json, isFarmingGoal);
+	const farmingGoalResult = parseOptionalJson(fm.tc_farming_goal_result_json, isFarmingGoalProgress);
+	if ((fm.tc_farming_goal_json !== undefined && farmingGoal === null) ||
+		(fm.tc_farming_goal_result_json !== undefined && (farmingGoalResult === null ||
+		canonicalJson(farmingGoal) !== canonicalJson(farmingGoalResult.goal)))) return { status: 'invalid' };
+	const comparisonMetadata = parseDurableSessionComparison(fm.tc_comparison_json);
+	const sackObservation = parseSessionSackObservation(fm.tc_sack_observation_json);
+	if ((fm.tc_comparison_json !== undefined && comparisonMetadata === null) ||
+		(fm.tc_sack_observation_json !== undefined && sackObservation === null)) return { status: 'invalid' };
 	const sessionRef = fm.tc_session_ref;
 	const accountRef = fm.tc_account_ref;
 	const startedAt = fm.tc_started_at;
@@ -609,6 +629,10 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	const lootSummary = await inspectStoredSessionLootSummary(content);
 	return { status: 'ok', session: {
 		sessionRef, accountRef,
+		...(farmingGoal ? { farmingGoal } : {}),
+		...(farmingGoalResult ? { farmingGoalResult } : {}),
+		...(comparisonMetadata ? { comparisonMetadata } : {}),
+		...(sackObservation ? { sackObservation } : {}),
 		activity: fm.tc_schema === 1 ? null : fm.tc_event as 'halloween' | null,
 		build: nullableString(fm.tc_build),
 		startedAt, endedAt, durationMs,
@@ -770,7 +794,7 @@ function serializeJson(sessions: readonly DurableSessionHistoryRecord[]): string
 }
 
 /** Export v1 is an explicit allowlist; local activity/build/loot-row dimensions never cross this boundary. */
-function exportSession(session: DurableSessionHistoryRecord): Omit<DurableSessionHistoryRecord, 'activity' | 'build' | 'lootRows'> {
+function exportSession(session: DurableSessionHistoryRecord): Omit<DurableSessionHistoryRecord, 'activity' | 'build' | 'lootRows' | 'comparisonMetadata' | 'sackObservation' | 'farmingGoal' | 'farmingGoalResult'> {
 	return {
 		sessionRef: session.sessionRef,
 		accountRef: session.accountRef,
@@ -801,7 +825,7 @@ function serializeCsv(sessions: readonly DurableSessionHistoryRecord[]): string 
 	return `${rows.join('\r\n')}\r\n`;
 }
 function valueForColumn(session: DurableSessionHistoryRecord, column: typeof CSV_COLUMNS[number]): string | number | null {
-	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'lootRows' | 'outcome'>;
+	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'lootRows' | 'outcome' | 'comparisonMetadata' | 'sackObservation' | 'farmingGoal' | 'farmingGoalResult'>;
 	return session[key];
 }
 /** RFC-style quoting plus spreadsheet formula protection after invisible prefixes. */
@@ -876,3 +900,9 @@ function numberOrNull(value: unknown): number | null { return typeof value === '
 function nullableString(value: unknown): string | null { return typeof value === 'string' ? value : null; }
 function isNullableString(value: unknown): value is string | null { return value === null || typeof value === 'string'; }
 function stringOr(value: unknown): string { return typeof value === 'string' ? value : 'not_evaluated'; }
+
+function parseOptionalJson<T>(value: unknown, validate: (candidate: unknown) => candidate is T): T | null {
+	if (typeof value !== 'string') return null;
+	try { const parsed: unknown = JSON.parse(value); return validate(parsed) ? parsed : null; }
+	catch { return null; }
+}

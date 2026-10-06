@@ -187,7 +187,7 @@ describe('LiveSessionLootTracker', () => {
 		expect(tracker.getState()).toMatchObject({ sackQuantity: 3 });
 	});
 
-	it('restates the sack count from the reconciled session net rather than adding to it', async () => {
+	it('retains observed increments alongside the signed closing net', async () => {
 		const tracker = new LiveSessionLootTracker({
 			gateway: { requestDetailed: vi.fn(async () => { throw new Error('offline'); }) },
 			locale: () => 'es', thresholdCopper: () => 10_000, sackItemIds: [36_038],
@@ -196,7 +196,24 @@ describe('LiveSessionLootTracker', () => {
 		await tracker.observe('session', delta(36_038, 7));
 		await tracker.reconcile('session', delta(36_038, 9));
 
-		expect(tracker.getState()).toMatchObject({ status: 'complete', sackQuantity: 9 });
+		expect(tracker.getState()).toMatchObject({ status: 'complete', sackQuantity: 7, observedSackGains: 7, netSackQuantity: 9, totalSacksObtained: null });
+	});
+
+	it('does not claim zero obtained bags when acquisition and opening are invisible between polls', async () => {
+		const tracker = new LiveSessionLootTracker({ gateway: { requestDetailed: vi.fn(async () => { throw new Error('offline'); }) },
+			locale: () => 'es', thresholdCopper: () => 10_000 });
+		tracker.begin('session');
+		await tracker.observe('session', delta(36038, 100));
+		await tracker.observe('session', delta(36038, -100));
+		await tracker.reconcile('session', delta(36038, 0));
+		expect(tracker.sackObservation('session')).toEqual({ itemId: 36038, observedGains: 100, netRetained: 0, totalObtained: null });
+		expect(tracker.getState()).toMatchObject({ sackQuantity: 100, knownTotalCopper: 0, rows: [] });
+		tracker.begin('unseen');
+		await tracker.reconcile('unseen', delta(36038, 0));
+		expect(tracker.sackObservation('unseen')).toMatchObject({ observedGains: 0, totalObtained: null });
+		tracker.begin('restored', true);
+		await tracker.observe('restored', delta(36038, 10));
+		expect(tracker.sackObservation('restored')).toMatchObject({ observedGains: null });
 	});
 
 	/**

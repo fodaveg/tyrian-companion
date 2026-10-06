@@ -1,3 +1,4 @@
+import type { SessionMapInterval, SessionPresenceEvidence } from './session-comparison-metadata';
 import type { IngamePresenceEvent, IngamePresenceSnapshot } from '../alerts/alert-ingame-presence';
 import type { SessionStatus } from './session';
 
@@ -29,6 +30,10 @@ export interface IngameSessionLink {
 	owner: 'automatic' | 'adopted';
 	/** First instant the presence reported map 866 while this session ran; null until then. */
 	labyrinthAt: string | null;
+	/** Optional extension of link v1: old links remain valid, with unknown map coverage. */
+	mapIntervals?: SessionMapInterval[];
+	mapObservation?: { mapId: number | null; fromMs: number } | null;
+	mapCoveragePartial?: boolean;
 }
 
 export interface IngameSessionView {
@@ -80,7 +85,11 @@ export class IngameSessionMarker {
 
 	constructor(private readonly options: IngameSessionMarkerOptions) {
 		this.link = readLink(options.port);
-		if (this.link !== null) this.linkedPresences.add(this.link.presenceId);
+		if (this.link !== null) {
+			this.linkedPresences.add(this.link.presenceId);
+			// Reload silence cannot certify which map was played while this marker was absent.
+			this.link = { ...this.link, mapObservation: null, mapCoveragePartial: true };
+		}
 	}
 
 	/** Feeds one presence event. Events are handled one at a time, in order. */
@@ -111,6 +120,7 @@ export class IngameSessionMarker {
 			if (presence.status !== 'present' || presence.presenceId === null) return;
 			await this.ensureLinked(presence.presenceId, presence.context?.character ?? null);
 			if (presence.context?.labyrinth === true) this.tagLabyrinth(presence.presenceId, this.options.now());
+			this.observeMap(presence.presenceId, presence.context?.state === 'gameplay' ? presence.context.mapId : null, this.options.now());
 		});
 	}
 
@@ -146,6 +156,49 @@ export class IngameSessionMarker {
 		return { owner: this.link.owner, labyrinthAt: this.link.labyrinthAt };
 	}
 
+	/** Map coverage of the linked connection, read at note time; loot stays whole-connection. */
+	presenceEvidenceFor(sessionId: string, endedAtMs?: number): SessionPresenceEvidence | null {
+		if (this.link?.sessionId !== sessionId) return null;
+		const intervals = (this.link.mapIntervals ?? []).map((interval) => ({ ...interval }));
+		const current = this.link.mapObservation;
+		const presence = this.options.presence();
+		const observedEnd = presence.status === 'lost' ? presence.lastSeenAtMs : this.options.now();
+		const end = endedAtMs ?? observedEnd;
+		if (current && end !== null && end > current.fromMs) intervals.push({ mapId: current.mapId, fromMs: current.fromMs, toMs: end });
+		const clipped = intervals.map((interval) => ({ ...interval,
+			toMs: Math.min(interval.toMs, end ?? interval.toMs),
+		})).filter((interval) => interval.toMs > interval.fromMs);
+		const partial = this.link.mapCoveragePartial === true;
+		const maps = clipped.map((interval) => interval.mapId);
+		const scope = maps.includes(866) && maps.some((map) => map !== null && map !== 866) ? 'mixed'
+			: partial || maps.length === 0 || maps.includes(null) ? 'unknown'
+				: maps.every((map) => map === 866) ? 'pure_labyrinth' : 'unknown';
+		return { scope, intervals: clipped, ...(partial ? { coverage: 'partial' } : {}) };
+	}
+
+	/** A context transition closes only its map interval, never the session itself. */
+	private observeMap(presenceId: string, mapId: number | null, atMs: number): void {
+		if (this.link?.presenceId !== presenceId) return;
+		const session = this.options.port.session();
+		if (session.sessionId !== this.link.sessionId || !IN_PROGRESS.has(session.status)) return;
+		const previous = this.link.mapObservation;
+		if (previous?.mapId === mapId) return;
+		const intervals = [...(this.link.mapIntervals ?? [])];
+		if (previous && atMs > previous.fromMs) intervals.push({ mapId: previous.mapId, fromMs: previous.fromMs, toMs: atMs });
+		// Bounded persistence: a very long connection can lose detail, never gain a "pure" claim.
+		const overflow = intervals.length > 256;
+		this.setLink({ ...this.link, mapIntervals: overflow ? intervals.slice(-256) : intervals,
+			mapObservation: { mapId, fromMs: atMs }, mapCoveragePartial: this.link.mapCoveragePartial === true || overflow });
+	}
+
+	private finishMap(presenceId: string, atMs: number): void {
+		if (this.link?.presenceId !== presenceId || !this.link.mapObservation) return;
+		const previous = this.link.mapObservation;
+		const intervals = [...(this.link.mapIntervals ?? [])];
+		if (atMs > previous.fromMs) intervals.push({ mapId: previous.mapId, fromMs: previous.fromMs, toMs: atMs });
+		this.setLink({ ...this.link, mapIntervals: intervals, mapObservation: null });
+	}
+
 	dispose(): void {
 		this.disposed = true;
 	}
@@ -169,15 +222,20 @@ export class IngameSessionMarker {
 			case 'context':
 				await this.ensureLinked(event.presenceId, event.context.character);
 				if (event.context.labyrinth) this.tagLabyrinth(event.presenceId, event.atMs);
+				this.observeMap(event.presenceId, event.context.state === 'gameplay' ? event.context.mapId : null, event.atMs);
 				return;
 			case 'restored':
 				// Back within the grace: the same session goes on, nothing to open or close.
 				await this.ensureLinked(event.presenceId, this.options.presence().context?.character ?? null);
+				this.observeMap(event.presenceId, this.options.presence().context?.state === 'gameplay' ? this.options.presence().context?.mapId ?? null : null, event.atMs);
 				return;
 			case 'lost':
+				this.finishMap(event.presenceId, event.lastSeenAtMs);
+				if (this.link?.presenceId === event.presenceId) this.setLink({ ...this.link, mapCoveragePartial: true });
 				// A short disconnection never cuts the session; the tracker's grace decides.
 				return;
 			case 'ended':
+				this.finishMap(event.presenceId, event.endedAtMs);
 				await this.closeAutomatic(event.presenceId, event.endedAtMs);
 				return;
 		}
@@ -194,7 +252,7 @@ export class IngameSessionMarker {
 		}
 		if (this.linkedPresences.has(presenceId)) return;
 		if (session.sessionId !== null && (session.status === 'starting' || session.status === 'active')) {
-			this.setLink({ version: 1, presenceId, sessionId: session.sessionId, owner: 'adopted', labyrinthAt: null });
+			this.setLink({ version: 1, presenceId, sessionId: session.sessionId, owner: 'adopted', labyrinthAt: null, mapCoveragePartial: true });
 			return;
 		}
 		if (!session.canStart) return;
@@ -202,7 +260,7 @@ export class IngameSessionMarker {
 		try {
 			const sessionId = await this.options.port.start(character);
 			if (sessionId === null) return;
-			this.setLink({ version: 1, presenceId, sessionId, owner: 'automatic', labyrinthAt: null });
+			this.setLink({ version: 1, presenceId, sessionId, owner: 'automatic', labyrinthAt: null, mapCoveragePartial: false });
 		} finally {
 			this.startInFlight = false;
 		}
@@ -240,9 +298,27 @@ function readLink(port: IngameSessionMarkerPort): IngameSessionLink | null {
 export function isIngameSessionLink(value: unknown): value is IngameSessionLink {
 	if (typeof value !== 'object' || value === null) return false;
 	const link = value as Record<string, unknown>;
+	if (link.mapCoveragePartial !== undefined && typeof link.mapCoveragePartial !== 'boolean') return false;
+	if (link.mapIntervals !== undefined && (!Array.isArray(link.mapIntervals) || link.mapIntervals.length > 257 ||
+		link.mapIntervals.some((interval: unknown) => !validMapInterval(interval)))) return false;
+	if (link.mapObservation !== undefined && link.mapObservation !== null) {
+		const current = link.mapObservation as Record<string, unknown>;
+		if (typeof current !== 'object' || !current || !validMapId(current.mapId) || !Number.isSafeInteger(current.fromMs)) return false;
+	}
 	return link.version === 1
 		&& typeof link.presenceId === 'string' && link.presenceId.length > 0
 		&& typeof link.sessionId === 'string' && link.sessionId.length > 0
 		&& (link.owner === 'automatic' || link.owner === 'adopted')
 		&& (link.labyrinthAt === null || (typeof link.labyrinthAt === 'string' && Number.isFinite(Date.parse(link.labyrinthAt))));
+}
+
+function validMapId(value: unknown): boolean {
+	return value === null || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
+}
+
+function validMapInterval(value: unknown): boolean {
+	if (typeof value !== 'object' || value === null) return false;
+	const interval = value as Record<string, unknown>;
+	return validMapId(interval.mapId) && typeof interval.fromMs === 'number' && Number.isSafeInteger(interval.fromMs) &&
+		typeof interval.toMs === 'number' && Number.isSafeInteger(interval.toMs) && interval.toMs > interval.fromMs;
 }

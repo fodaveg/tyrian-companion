@@ -6,6 +6,7 @@ import type { LocalDebugLogger } from '../core/local-debug-logger';
 import type { LocalDebugRecordInput } from '../core/local-debug-contract';
 import { SESSION_NOTE_BLOCK_IDS } from './session-note-model';
 import { renderAbandonedSessionNote, sha256Text } from './session-note-renderer';
+import { inspectDurableSessionNote } from './session-history';
 import { buildSessionHistoryAggregate } from './session-history-summary';
 import type { AbandonedSessionState } from './session';
 import { renderCollectorStatusNote } from '../runtime/collector-status';
@@ -25,6 +26,12 @@ import {
 describe('durable session history', () => {
 	const scrubGate = { sessionStatus: 'idle', recoveryStatus: 'none', detectorStatus: 'disarmed' } as const;
 	const idleAuthority = () => new SessionHistoryRuntimeAuthority(() => scrubGate);
+
+	it('rejects malformed optional comparison metadata while retaining legacy schema 6 notes', async () => {
+		expect((await inspectDurableSessionNote(await note({ tc_schema: 6 }))).status).toBe('ok');
+		expect((await inspectDurableSessionNote(await note({ tc_schema: 6, tc_comparison_json: '{}' }))).status).toBe('invalid');
+		expect((await inspectDurableSessionNote(await note({ tc_schema: 6, tc_sack_observation_json: '{"itemId":42}' }))).status).toBe('invalid');
+	});
 
 	it('keeps the future scrub gate closed around every runtime, recovery, detector, and completed state', () => {
 		expect(canScrubSessionHistory({ sessionStatus: 'idle', recoveryPending: false, detectorStatus: 'disarmed' })).toBe(true);
@@ -509,7 +516,10 @@ describe('durable session history', () => {
 
 	it('creates deterministic create-only JSON and CRLF CSV without human data or formula injection', async () => {
 		const vault = new MemoryVault();
-		vault.contents.set('Sessions/one.md', await note({ tc_build: 'Private Power Reaper' }));
+		vault.contents.set('Sessions/one.md', await note({ tc_schema: 6, tc_build: 'Private Power Reaper', tc_comparison_json: JSON.stringify({ buildRef: 'c'.repeat(64),
+			magicFind: { observable: 321, manual: 123, unobservedBuffs: true }, groupContext: 'without_bosses' }),
+			tc_farming_goal_json: JSON.stringify({ version: 1, kind: 'bags', targetBags: 999 }),
+			tc_sack_observation_json: JSON.stringify({ itemId: 36038, observedGains: 17, netRetained: 1, totalObtained: null }) }));
 		const history = new SessionHistoryService(vault);
 		await expect(history.export('Tyrian Companion')).resolves.toEqual({ status: 'written', sessions: 1 });
 		const json = vault.contents.get(`Tyrian Companion/exports/${SESSION_HISTORY_JSON_FILE}`)!;
@@ -519,6 +529,8 @@ describe('durable session history', () => {
 		expect(`${json}\n${csv}`).not.toContain('Human body must stay private');
 		expect(`${json}\n${csv}`).not.toContain('=malicious-character');
 		expect(`${json}\n${csv}`).not.toContain('Private Power Reaper');
+		expect(`${json}\n${csv}`).not.toContain('c'.repeat(64));
+		for (const field of ['groupContext', 'magicFind', 'farmingGoal', 'sackObservation', 'without_bosses']) expect(`${json}\n${csv}`).not.toContain(field);
 		expect(csv).toContain('\r\n');
 		expect(csv.replace(/\r\n/gu, '')).not.toContain('\n');
 		await expect(history.export('Tyrian Companion')).resolves.toEqual({ status: 'unchanged', sessions: 1 });

@@ -1,3 +1,4 @@
+import type { SessionSackObservation } from './session-comparison-metadata';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { AlertPriceStatus, AlertV1 } from '../alerts/alert-contract';
@@ -32,6 +33,11 @@ export type LiveSessionLootState =
 		 * the account cache exactly like every other number here.
 		 */
 		readonly sackQuantity: number;
+		/** Observed positive changes of item 36038; opening bags never subtracts from this count. */
+		readonly observedSackGains?: number | null;
+		/** Signed closing delta of 36038, distinct from gains and never used as total obtained. */
+		readonly netSackQuantity?: number | null;
+		readonly totalSacksObtained?: null;
 		readonly hasUnknownValue: boolean;
 		readonly updatedAt: string | null;
 		readonly error: LiveSessionLootError;
@@ -71,6 +77,9 @@ export class LiveSessionLootTracker {
 	private readonly rows = new Map<number, MutableLootRow>();
 	private readonly pendingValuableGains: PendingValuableGain[] = [];
 	private flight = Promise.resolve();
+	private observedSackGains = 0;
+	private netSackQuantity: number | null = null;
+	private accumulatedSackQuantity = 0;
 
 	constructor(private readonly options: LiveSessionLootOptions) {}
 
@@ -80,9 +89,13 @@ export class LiveSessionLootTracker {
 
 	begin(sessionId: string, restored = false): void {
 		this.rows.clear();
+		this.observedSackGains = 0;
+		this.netSackQuantity = null;
+		this.accumulatedSackQuantity = 0;
 		this.pendingValuableGains.length = 0;
 		this.state = {
 			status: 'observing', sessionId, restored, rows: [], knownTotalCopper: 0, sackQuantity: 0,
+			observedSackGains: restored ? null : 0, netSackQuantity: null, totalSacksObtained: null,
 			hasUnknownValue: false, updatedAt: null, error: null,
 		};
 		this.options.onStateChange?.();
@@ -99,6 +112,9 @@ export class LiveSessionLootTracker {
 		return this.enqueue(async () => {
 			if (this.state.status !== 'observing' || this.state.sessionId !== sessionId || delta.status === 'invalid') return;
 			const gains = delta.itemChanges.filter(({ delta: quantity }) => quantity > 0);
+			this.observedSackGains += gains.filter(({ id }) => id === 36038).reduce((sum, gain) => sum + gain.delta, 0);
+			this.accumulatedSackQuantity += gains.filter(({ id }) => (this.options.sackItemIds ?? SESSION_SACK_ITEM_IDS).includes(id))
+				.reduce((sum, gain) => sum + gain.delta, 0);
 			const unresolvedIds = [...this.rows.values()].flatMap((row) =>
 				row.nameResolved && row.unitCopper !== null ? [] : [row.itemId]);
 			const enriched = await this.enrich([...unresolvedIds, ...gains.map(({ id }) => id)]);
@@ -123,6 +139,8 @@ export class LiveSessionLootTracker {
 		return this.enqueue(async () => {
 			if ((this.state.status !== 'observing' && this.state.status !== 'complete') || this.state.sessionId !== sessionId) return;
 			const restored = this.state.restored;
+			this.netSackQuantity = delta.status === 'invalid' ? null
+				: delta.itemChanges.find(({ id }) => id === 36038)?.delta ?? 0;
 			this.rows.clear();
 			this.pendingValuableGains.length = 0;
 			const gains = delta.status === 'invalid' ? [] : delta.itemChanges.filter(({ delta: quantity }) => quantity > 0);
@@ -139,6 +157,13 @@ export class LiveSessionLootTracker {
 			}
 			this.project('complete', restored, delta.window?.to ?? this.nowIso(), enriched.error);
 		});
+	}
+
+	/** Optional note evidence survives reconciliation without adding cumulative feed value to net value. */
+	sackObservation(sessionId: string): SessionSackObservation | null {
+		if (this.state.status === 'idle' || this.state.sessionId !== sessionId) return null;
+		return { itemId: 36038, observedGains: this.state.observedSackGains ?? null,
+			netRetained: this.state.netSackQuantity ?? null, totalObtained: null };
 	}
 
 	displayNames(): Record<string, string> {
@@ -267,11 +292,11 @@ export class LiveSessionLootTracker {
 			...row,
 			totalCopper: safeProduct(row.unitCopper, row.quantity),
 		})).sort((left, right) => (right.totalCopper ?? -1) - (left.totalCopper ?? -1) || left.name.localeCompare(right.name));
-		const sackItemIds = this.options.sackItemIds ?? SESSION_SACK_ITEM_IDS;
 		this.state = {
 			status, sessionId, restored, rows,
 			knownTotalCopper: rows.reduce((total, row) => total + (row.totalCopper ?? 0), 0),
-			sackQuantity: rows.reduce((total, row) => total + (sackItemIds.includes(row.itemId) ? row.quantity : 0), 0),
+			sackQuantity: this.accumulatedSackQuantity,
+			observedSackGains: restored || !Number.isSafeInteger(this.observedSackGains) ? null : this.observedSackGains, netSackQuantity: this.netSackQuantity, totalSacksObtained: null,
 			hasUnknownValue: rows.some(({ totalCopper }) => totalCopper === null),
 			updatedAt, error,
 		};

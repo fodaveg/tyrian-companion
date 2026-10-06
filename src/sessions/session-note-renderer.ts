@@ -1,3 +1,4 @@
+import { sessionBuildIdentityInput, sessionMagicFindEvidence } from './session-comparison-metadata';
 import type {
 	SessionClassificationReason,
 	SessionClassificationReasonCode,
@@ -42,6 +43,12 @@ export async function renderSessionNote(note: PreparedSessionNote): Promise<Rend
 		const sessionRef = await sha256Text(state.sessionId);
 		const accountRef = await sha256Text(note.runtime.finalSnapshot.accountId);
 		const frontmatter = createFrontmatter(note, sessionRef, accountRef);
+		frontmatter.tc_comparison_json = JSON.stringify({ ...note.comparisonMetadata,
+			buildRef: await sha256Text(sessionBuildIdentityInput(state.startContext.build)),
+			magicFind: sessionMagicFindEvidence(state.startContext.magicFind) });
+		if (note.farmingGoal !== undefined) frontmatter.tc_farming_goal_json = JSON.stringify(note.farmingGoal);
+		if (note.farmingGoalResult !== undefined) frontmatter.tc_farming_goal_result_json = JSON.stringify(note.farmingGoalResult);
+		if (note.sackObservation !== undefined) frontmatter.tc_sack_observation_json = JSON.stringify(note.sackObservation);
 		return { status: 'ok', note: await assembleNote(sessionRef, accountRef, state.baseline.completedAt, note.outputFolder, note.locale, frontmatter, createBlocks(note)) };
 	} catch {
 		return { status: 'invalid', reason: 'hash_unavailable' };
@@ -376,6 +383,38 @@ function positiveItemDeltasJson(note: PreparedSessionNote): string {
 		.map(({ id, delta }) => [id, delta] as const).sort(([left], [right]) => left - right));
 }
 
+/** Observation labels distinguish the feed from closing inventory and unknown hidden openings. */
+function comparisonSummary(note: PreparedSessionNote): string[] {
+	const es = note.locale === 'es';
+	const metadata = note.comparisonMetadata;
+	const scope = metadata?.presence?.scope ?? 'unknown';
+	const mf = sessionMagicFindEvidence(note.runtime.state.startContext.magicFind);
+	const lines = [es ? `- Magic Find parcial: observable ${String(mf.observable ?? 'desconocido')}; manual ${String(mf.manual ?? 'no declarado')}; buffs temporales desconocidos.`
+		: `- Partial Magic Find: observable ${String(mf.observable ?? 'unknown')}; manual ${String(mf.manual ?? 'not declared')}; temporary buffs unknown.`];
+	if (note.eventDeclaration?.event === 'halloween' || metadata?.presence) lines.push(es
+		? `- Presencia: ${scope === 'pure_labyrinth' ? 'laberinto observado' : scope === 'mixed' ? 'conexión mixta' : 'sin cobertura suficiente'}. Botín de toda la conexión; sin atribución por mapa.`
+		: `- Presence: ${scope === 'pure_labyrinth' ? 'observed Labyrinth' : scope === 'mixed' ? 'mixed connection' : 'insufficient coverage'}. Whole-connection loot; no map allocation.`);
+	if (metadata?.groupContext) lines.push(es ? `- Grupo declarado: ${metadata.groupContext === 'with_bosses' ? 'con jefes' : 'sin jefes'}.`
+		: `- Declared group: ${metadata.groupContext === 'with_bosses' ? 'with bosses' : 'without bosses'}.`);
+	if (note.sackObservation) {
+		const sacks = note.sackObservation;
+		lines.push(es ? `- Bolsas (36038): incrementos observados ${String(sacks.observedGains ?? 'desconocidos')}; neto al cierre ${String(sacks.netRetained ?? 'desconocido')}; total obtenido no observable.`
+			: `- Bags (36038): observed increments ${String(sacks.observedGains ?? 'unknown')}; closing net ${String(sacks.netRetained ?? 'unknown')}; total obtained unobservable.`);
+	}
+	if (note.farmingGoal) {
+		const goal = note.farmingGoal;
+		const label = goal.kind === 'bags' ? `${String(goal.targetBags)} ${es ? 'bolsas observadas' : 'observed bags'}`
+			: goal.kind === 'duration' ? formatDuration(goal.targetDurationMs) : es ? 'sin objetivo' : 'no goal';
+		lines.push(`${es ? '- Objetivo de la sesión' : '- Session goal'}: ${label}.`);
+		if (note.farmingGoalResult) {
+			const status = note.farmingGoalResult.status;
+			lines.push(`${es ? '- Resultado del objetivo' : '- Goal result'}: ${status === 'reached' ? es ? 'alcanzado' : 'reached'
+				: status === 'in_progress' ? es ? 'no alcanzado' : 'not reached' : es ? 'sin evidencia suficiente' : 'insufficient evidence'}.`);
+		}
+	}
+	return lines;
+}
+
 function frontmatterRecommendation(note: PreparedSessionNote):
 	| { action: 'open' | 'sell'; quantity: number; route: 'instant_sell' | 'vendor' | null }
 	| null {
@@ -404,6 +443,7 @@ function createBlocks(note: PreparedSessionNote): Record<SessionNoteBlockId, str
 	return {
 		summary: [
 			`## ${noteText(locale, 'note.summary')}`,
+			...comparisonSummary(note),
 			`- ${noteText(locale, 'note.character')}: ${text(state.startContext.characterName)}`,
 			`- ${noteText(locale, 'note.profession')}: ${text(state.startContext.build.profession)}`,
 			`- ${noteText(locale, 'note.duration')}: ${formatDuration(note.durationMs)}`,

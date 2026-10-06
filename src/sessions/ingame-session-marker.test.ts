@@ -102,6 +102,30 @@ function harness(options: {
 describe('H18.26: the in-game presence marks the session', () => {
 	beforeEach(() => { clock = T0; });
 
+	it('observes outside and Labyrinth intervals without splitting the whole connection', async () => {
+		const game = harness();
+		game.connect('a'); game.report('a', OUTSIDE); await game.settled();
+		game.advance(30 * 60_000); game.report('a', LABYRINTH); await game.settled();
+		game.advance(60 * 60_000);
+		expect(game.marker.presenceEvidenceFor('session-1')).toEqual({ scope: 'mixed', intervals: [
+			{ mapId: 50, fromMs: T0, toMs: T0 + 30 * 60_000 },
+			{ mapId: 866, fromMs: T0 + 30 * 60_000, toMs: T0 + 90 * 60_000 },
+		] });
+		expect(game.marker.presenceEvidenceFor('session-1', T0 + 60 * 60_000)).toEqual({ scope: 'mixed', intervals: [
+			{ mapId: 50, fromMs: T0, toMs: T0 + 30 * 60_000 },
+			{ mapId: 866, fromMs: T0 + 30 * 60_000, toMs: T0 + 60 * 60_000 },
+		] });
+		expect(game.port.start).toHaveBeenCalledOnce(); expect(game.port.stopAt).not.toHaveBeenCalled();
+	});
+
+	it('certifies observed pure Labyrinth presence but marks disconnect coverage unknown', async () => {
+		const game = harness(); game.connect('a'); game.report('a', LABYRINTH); await game.settled();
+		game.advance(60_000);
+		expect(game.marker.presenceEvidenceFor('session-1')?.scope).toBe('pure_labyrinth');
+		game.drop('a'); await game.settled();
+		expect(game.marker.presenceEvidenceFor('session-1')).toMatchObject({ scope: 'unknown', coverage: 'partial' });
+	});
+
 	it('opens a session when the game starts, once, with the character the game reported', async () => {
 		const game = harness();
 		game.connect('a');

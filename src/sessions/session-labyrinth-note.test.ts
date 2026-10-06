@@ -1,3 +1,7 @@
+import { projectFarmingGoal } from './farming-goal';
+import { inspectDurableSessionNote } from './session-history';
+import { sessionBuildIdentityInput, sessionMagicFindEvidence } from './session-comparison-metadata';
+import { sha256Text } from './session-note-renderer';
 import { describe, expect, it } from 'vitest';
 
 import { afterSnapshot, looseHolding, storageDeltaSnapshot, walletCurrency } from '../account/__fixtures__/storage-delta';
@@ -37,6 +41,59 @@ const authority: SessionAuthority = {
 };
 
 describe('H14.1 · a real Labyrinth session (bags opened, keys spent, no bazaar)', () => {
+	it('keeps captured configuration identity independent of the display name and tab', async () => {
+		const build = (labyrinthSession().runtime.state as CompleteSessionState).startContext.build;
+		expect(sessionBuildIdentityInput({ ...build, name: '', tab: 2 })).toBe(sessionBuildIdentityInput(build));
+		expect(await sha256Text(sessionBuildIdentityInput({ ...build, skills: { ...build.skills, heal: 123 } })))
+			.not.toBe(await sha256Text(sessionBuildIdentityInput(build)));
+		expect(sessionMagicFindEvidence({ value: 300, source: 'derived', consumablesBonus: 0, breakdown: null }))
+			.toEqual({ observable: 300, manual: null, unobservedBuffs: true });
+		expect(sessionMagicFindEvidence({ value: 350, source: 'manual', consumablesBonus: 50, breakdown: null }))
+			.toEqual({ observable: null, manual: 350, unobservedBuffs: true });
+	});
+
+	it('roundtrips optional note metadata and keeps net bags separate from obtained bags', async () => {
+		const session = labyrinthSession();
+		const input = noteInput(session);
+		(input.runtime.state as CompleteSessionState).startContext.build.name = '';
+		input.comparisonMetadata = { groupContext: 'without_bosses', presence: { scope: 'mixed', intervals: [
+			{ mapId: 50, fromMs: Date.parse(SESSION_FROM), toMs: Date.parse(SESSION_FROM) + 30 * 60_000 },
+			{ mapId: 866, fromMs: Date.parse(SESSION_FROM) + 30 * 60_000, toMs: Date.parse(SESSION_TO) },
+		] } };
+		input.sackObservation = { itemId: 36038, observedGains: 100, netRetained: -BAGS_OPENED, totalObtained: null };
+		input.farmingGoal = { version: 1, kind: 'bags', targetBags: 100 };
+		input.farmingGoalResult = projectFarmingGoal(input.farmingGoal, { startedAt: SESSION_FROM, now: SESSION_TO,
+			endedAt: SESSION_TO, observedBags: 100, observedFrom: SESSION_FROM, observedAt: SESSION_TO, sampleCount: 2, finalNetBags: -BAGS_OPENED });
+		const prepared = prepareSessionNote(input);
+		expect(prepared.status).toBe('ok'); if (prepared.status !== 'ok') return;
+		const rendered = await renderSessionNote(prepared.note);
+		expect(rendered.status).toBe('ok'); if (rendered.status !== 'ok') return;
+		const inspected = await inspectDurableSessionNote(rendered.note.content);
+		expect(inspected.status).toBe('ok'); if (inspected.status !== 'ok') return;
+		expect(inspected.session).toMatchObject({ build: null, comparisonMetadata: { groupContext: 'without_bosses',
+			presence: { scope: 'mixed' }, magicFind: { unobservedBuffs: true } }, sackObservation: input.sackObservation,
+			farmingGoal: input.farmingGoal, farmingGoalResult: { status: 'reached', observedBags: 100, finalNetBags: -BAGS_OPENED } });
+		expect(rendered.note.content).toContain('total obtenido no observable');
+		expect(rendered.note.content).toContain('conexión mixta');
+		expect(rendered.note.content).toContain('Resultado del objetivo: alcanzado');
+		expect(rendered.note.frontmatter.tc_observed_immediate_copper).toBe(session.economy.valuation?.totals.observedImmediateCopper);
+		expect(prepareSessionNote({ ...input, sackObservation: { ...input.sackObservation, netRetained: 0 } }).status).toBe('invalid');
+	});
+
+	it('keeps bag net evidence when money is not evaluated, without adding cumulative gains to economy', async () => {
+		const session = labyrinthSession();
+		const input = { ...noteInput(session), valuation: null, reservation: null, hold: null };
+		const prepared = prepareSessionNote(input);
+		expect(prepared.status).toBe('ok'); if (prepared.status !== 'ok') return;
+		const rendered = await renderSessionNote(prepared.note);
+		expect(rendered.status).toBe('ok'); if (rendered.status !== 'ok') return;
+		const inspected = await inspectDurableSessionNote(rendered.note.content);
+		expect(inspected.status).toBe('ok'); if (inspected.status !== 'ok') return;
+		expect(inspected.session).toMatchObject({ observedImmediateCopper: null, sackObservation: {
+			itemId: 36038, observedGains: null, netRetained: -BAGS_OPENED, totalObtained: null,
+		} });
+	});
+
 	it('classifies the session as exact/high with recommend and grossPerHour granted', () => {
 		const { review } = labyrinthSession();
 

@@ -192,12 +192,13 @@ describe('buildSessionHistoryAggregate', () => {
 			record('2026-08-24T10:00:00.000Z', { build: null }),
 		]);
 
-		expect(aggregate.performance).toEqual({
+		expect(aggregate.performance).toMatchObject({
 			minimumSessions: 2,
 			missingContextSessions: 1,
 			qualityExcludedSessions: 0,
 			abandonedSessions: 0,
 			groups: [
+				{ activity: 'general', build: '', quality: 'exact', sessionCount: 1, status: 'insufficient_sample' },
 				{
 					activity: 'halloween', build: 'Condi Scourge', quality: 'exact', sessionCount: 1, eligibleSessions: 1,
 					status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null,
@@ -231,7 +232,7 @@ describe('buildSessionHistoryAggregate', () => {
 			}),
 		]);
 
-		expect(aggregate.performance.groups).toEqual([{
+		expect(aggregate.performance.groups).toMatchObject([{
 			activity: 'halloween', build: 'Deadeye', quality: 'estimated', sessionCount: 2, eligibleSessions: 2,
 			status: 'ready', sacksPerHourMilli: 25_000, immediateCopperPerHour: 25_000, exclusions: [],
 		}]);
@@ -245,7 +246,7 @@ describe('buildSessionHistoryAggregate', () => {
 			}),
 		]);
 
-		expect(aggregate.performance.groups).toEqual([
+		expect(aggregate.performance.groups).toMatchObject([
 			{
 				activity: 'halloween', build: 'Deadeye', quality: 'estimated', sessionCount: 1, eligibleSessions: 1,
 				status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null, exclusions: [],
@@ -269,7 +270,7 @@ describe('buildSessionHistoryAggregate', () => {
 
 		expect(aggregate.performance.qualityExcludedSessions).toBe(1);
 		expect(aggregate.performance.missingContextSessions).toBe(0);
-		expect(aggregate.performance.groups).toEqual([]);
+		expect(aggregate.performance.groups).toMatchObject([]);
 	});
 
 	/**
@@ -286,15 +287,72 @@ describe('buildSessionHistoryAggregate', () => {
 		]);
 
 		expect(aggregate.performance.missingContextSessions).toBe(0);
-		expect(aggregate.performance.groups).toContainEqual({
+		expect(aggregate.performance.groups).toContainEqual(expect.objectContaining({
 			activity: 'general', build: 'Power Reaper', quality: 'exact', sessionCount: 2, eligibleSessions: 2,
 			status: 'ready', sacksPerHourMilli: 25_000, immediateCopperPerHour: 25_000, exclusions: [],
-		});
-		expect(aggregate.performance.groups).toContainEqual({
+		}));
+		expect(aggregate.performance.groups).toContainEqual(expect.objectContaining({
 			activity: 'halloween', build: 'Power Reaper', quality: 'exact', sessionCount: 1, eligibleSessions: 1,
 			status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null, exclusions: [],
-		});
+		}));
 	});
+	it('keeps 500 observed bags/hour with partial prices and publishes separate evidence per metric', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-10-01T10:00:00.000Z', { build: 'farm', sacks: 500, valuationCoverage: 'partial' }),
+			record('2026-10-02T10:00:00.000Z', { build: 'farm', sacks: 500, valuationCoverage: 'partial' }),
+		]);
+		expect(aggregate.performance.groups[0]).toMatchObject({ status: 'ready', sacksPerHourMilli: 500_000,
+			immediateCopperPerHour: null, sacksMetric: { eligibleSessions: 2, durationMs: 7_200_000, minimumRate: 500_000, maximumRate: 500_000 },
+			goldMetric: { eligibleSessions: 0, durationMs: 0, status: 'insufficient_sample' } });
+	});
+
+	it('compares observed gains even if all bags were opened and no money could be evaluated', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-10-01T10:00:00.000Z', { build: 'farm', sacks: null, valuationCoverage: 'not_evaluated',
+				observedImmediateCopper: null, sackObservation: { itemId: 36038, observedGains: 500, netRetained: 0, totalObtained: null } }),
+			record('2026-10-02T10:00:00.000Z', { build: 'farm', sacks: null, valuationCoverage: 'not_evaluated',
+				observedImmediateCopper: null, sackObservation: { itemId: 36038, observedGains: 500, netRetained: 0, totalObtained: null } }),
+		]);
+		expect(aggregate.performance.groups[0]).toMatchObject({ sacksPerHourMilli: 500_000, immediateCopperPerHour: null,
+			sackBasis: 'observed_gains', sacksMetric: { eligibleSessions: 2, durationMs: 7_200_000 } });
+	});
+
+	it('retains unnamed build statistics and separates captured configurations sharing a name', () => {
+		const metadata = (ref: string) => ({ buildRef: ref.repeat(64),
+			magicFind: { observable: 300, manual: null, unobservedBuffs: true as const } });
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-10-01T10:00:00.000Z', { build: null, comparisonMetadata: metadata('a') }),
+			record('2026-10-02T10:00:00.000Z', { build: '', comparisonMetadata: metadata('a') }),
+			record('2026-10-03T10:00:00.000Z', { build: 'farm', comparisonMetadata: metadata('b') }),
+			record('2026-10-04T10:00:00.000Z', { build: 'farm', comparisonMetadata: metadata('c') }),
+		]);
+		expect(aggregate.performance.groups).toHaveLength(3);
+		expect(aggregate.performance.groups[0]).toMatchObject({ build: '', sessionCount: 2, status: 'ready' });
+	});
+
+	it('keeps pure and mixed connections and declared group/MF evidence in different groups', () => {
+		const metadata = { buildRef: 'a'.repeat(64), magicFind: { observable: 300, manual: null, unobservedBuffs: true as const } };
+		const pure = { ...metadata, presence: { scope: 'pure_labyrinth' as const, intervals: [] } };
+		const mixed = { ...metadata, presence: { scope: 'mixed' as const, intervals: [] } };
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-10-01T10:00:00.000Z', { comparisonMetadata: pure }),
+			record('2026-10-02T10:00:00.000Z', { comparisonMetadata: mixed }),
+			record('2026-10-03T10:00:00.000Z', { comparisonMetadata: { ...pure, groupContext: 'with_bosses' } }),
+			record('2026-10-04T10:00:00.000Z', { comparisonMetadata: { ...pure, magicFind: { ...metadata.magicFind, manual: 50 } } }),
+		]);
+		expect(aggregate.performance.groups).toHaveLength(4);
+	});
+
+	it('weights each metric by its own eligible time and describes the spread', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-10-01T10:00:00.000Z', { build: 'farm', sacks: 100, observedImmediateCopper: 1000 }),
+			record('2026-10-02T10:00:00.000Z', { build: 'farm', sacks: 300, observedImmediateCopper: 3000 }),
+			record('2026-10-03T10:00:00.000Z', { build: 'farm', sacks: 1000, durationMs: 7_200_000, valuationCoverage: 'partial' }),
+		]);
+		expect(aggregate.performance.groups[0]).toMatchObject({ sacksMetric: { eligibleSessions: 3, durationMs: 14_400_000,
+			rate: 350_000, minimumRate: 100_000, maximumRate: 500_000 }, goldMetric: { eligibleSessions: 2, durationMs: 7_200_000, rate: 2000 } });
+	});
+
 });
 
 function record(
