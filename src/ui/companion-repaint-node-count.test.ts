@@ -30,10 +30,32 @@ describe('Durable history: nodes built per paint (audit 3.6)', () => {
 		const bare = await mountedHistory(sessionRecords(count, 0));
 		expect(bare.document.created - bare.createdBeforeReady).toBe(HISTORY_FIXED_NODES + (NODES_PER_SESSION * count));
 		expect(historyRows(bare.container)).toHaveLength(count);
+		const performance = walk(bare.container).find((node) => node.className === 'tyrian-session-history__performance')!;
+		const groups = walk(performance).find((node) => node.tag === 'tbody')!;
+		expect(groups.children).toHaveLength(1);
+		expect(walk(groups.children[0]!)).toHaveLength(PERFORMANCE_GROUP_NODES);
+		expect(walk(performance)).toHaveLength(PERFORMANCE_SECTION_NODES + PERFORMANCE_TABLE_NODES + PERFORMANCE_GROUP_NODES);
 
 		const withLoot = await mountedHistory(sessionRecords(count, LOOT_LINES_PER_SESSION));
 		expect(withLoot.document.created - withLoot.createdBeforeReady)
 			.toBe(HISTORY_FIXED_NODES + (NODES_PER_SESSION_WITH_LOOT * count));
+	});
+
+	it('adds one comparison row per distinct condition group, independently of the session rows', async () => {
+		const sessions = sessionRecords(30, 0);
+		const oneGroup = await mountedHistory(sessions);
+		const twoGroups = await mountedHistory(sessions.map((session, index) => index < 15 ? {
+			...session,
+			comparisonMetadata: { buildRef: 'c'.repeat(64), magicFind: { observable: 300, manual: null, unobservedBuffs: true } },
+		} : session));
+		const performance = walk(twoGroups.container).find((node) => node.className === 'tyrian-session-history__performance')!;
+		const groups = walk(performance).find((node) => node.tag === 'tbody')!;
+		expect(groups.children).toHaveLength(2);
+		for (const group of groups.children) expect(walk(group)).toHaveLength(PERFORMANCE_GROUP_NODES);
+		expect(walk(performance)).toHaveLength(PERFORMANCE_SECTION_NODES + PERFORMANCE_TABLE_NODES + 2 * PERFORMANCE_GROUP_NODES);
+		expect(historyRows(twoGroups.container)).toHaveLength(30);
+		expect((twoGroups.document.created - twoGroups.createdBeforeReady) - (oneGroup.document.created - oneGroup.createdBeforeReady))
+			.toBe(PERFORMANCE_GROUP_NODES);
 	});
 
 	it.each(HISTORY_SIZES)('builds no history node on a repaint of the Companion tab with %i unchanged sessions', async (count) => {
@@ -311,8 +333,21 @@ const ACTIVE_SESSION = {
 	baseline: { completedAt: '2026-08-31T09:00:00.000Z' }, startContext: { characterName: 'Rinopopo' },
 } as unknown as SessionState;
 
-/** Everything the ready state builds that does not grow with the session count. */
-const HISTORY_FIXED_NODES = 44;
+/** Section, title, sample introduction, causal caveat and the missing-build warning. */
+const PERFORMANCE_SECTION_NODES = 5;
+/** Overflow, table, caption, thead, header row, four headers and tbody. */
+const PERFORMANCE_TABLE_NODES = 10;
+/**
+ * This fixture's exact-quality row: tr, th and quality; four context details and one exclusion;
+ * session cell/count/status; gold cell/sample/range; bags cell/sample/insufficient/source.
+ * Optional evidence changes this cost per group, never per session in that group.
+ */
+const PERFORMANCE_GROUP_NODES = 3 + 4 + 1 + 3 + 3 + 4;
+/** Ready paragraph/summary/four three-node totals, latest comparison, ledger shell and footer. */
+const HISTORY_OUTSIDE_PERFORMANCE_NODES = (2 + 4 * 3) + (4 + 4 * 2) + (6 + 6) + 1;
+/** One group remains one group at every size in the ladder, even without a captured build. */
+const HISTORY_FIXED_NODES = HISTORY_OUTSIDE_PERFORMANCE_NODES
+	+ PERFORMANCE_SECTION_NODES + PERFORMANCE_TABLE_NODES + PERFORMANCE_GROUP_NODES;
 /** The `<tr>`, its row header and five cells. */
 const NODES_PER_SESSION = 7;
 /** Plus the detail `<tr>`, its cell, the label, the list and one `<li>` per gains line. */

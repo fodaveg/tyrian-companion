@@ -1149,7 +1149,7 @@ const ES = {
 		// casi siempre vacía. Ahora cada calidad tiene su propio grupo y su propia tasa; nunca se
 		// mezclan una exacta y una estimada en una misma media.
 		'sessionHistory.performanceIntro': 'Cada actividad, build y calidad forma su propio grupo con su propia tasa: una calidad nunca se promedia con otra. Solo se comparan grupos con al menos {{minimum}} sesiones con valoración completa. Las tasas se ponderan por duración.',
-		'sessionHistory.performanceMissingContext': '{{count}} sesiones no entran en grupos porque no declaran build.',
+		'sessionHistory.performanceMissingContext': '{{count}} sesiones sin identidad de build; conservan estadísticas en un grupo de contexto desconocido.',
 		'sessionHistory.performanceQualityExcluded': '{{count}} sesiones quedan excluidas: su calidad no es comparable (por ejemplo, contaminada por actividad externa).',
 		'sessionHistory.performanceAbandoned': '{{count}} sesiones abandonadas quedan fuera del rendimiento y de los totales: no midieron botín.',
 		'sessionHistory.performanceEstimatedNote': 'Tasa estimada: no se compara con una tasa exacta.',
@@ -2320,7 +2320,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sessionHistory.performanceTableCaption': 'Gold per hour selling now, weighted by duration. One quality is never averaged with another.',
 	'sessionHistory.performanceGroup': 'Group',
 	'sessionHistory.performanceIntro': 'Each activity, build, and quality forms its own group with its own rate: one quality is never averaged with another. Only groups with at least {{minimum}} fully valued sessions are compared. Rates are weighted by duration.',
-	'sessionHistory.performanceMissingContext': '{{count}} sessions are outside groups because build is not declared.',
+	'sessionHistory.performanceMissingContext': '{{count}} sessions without build identity; statistics remain in an unknown-context group.',
 	'sessionHistory.performanceQualityExcluded': '{{count}} sessions are excluded: their quality is not comparable (for example, contaminated by external activity).',
 	'sessionHistory.performanceAbandoned': '{{count}} abandoned sessions are left out of performance and totals: they measured no loot.',
 	'sessionHistory.performanceEstimatedNote': 'Estimated rate: not compared with an exact one.',

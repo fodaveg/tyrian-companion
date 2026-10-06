@@ -314,8 +314,7 @@ function renderPerformance(container: HTMLElement, locale: Locale, aggregate: Se
 	section.createEl('p', { text: locale === 'es' ? 'Comparación descriptiva: la muestra y las condiciones no demuestran que una build cause mejor rendimiento.' : 'Descriptive comparison: the sample and conditions do not establish that a build causes better performance.' });
 	if (aggregate.performance.missingContextSessions > 0) {
 		section.createEl('p', {
-			text: locale === 'es' ? `${String(aggregate.performance.missingContextSessions)} sesiones sin identidad de build; conservan estadísticas en un grupo de contexto desconocido.`
-				: `${String(aggregate.performance.missingContextSessions)} sessions without build identity; statistics remain in an unknown-context group.`,
+			text: t.t('sessionHistory.performanceMissingContext', { count: aggregate.performance.missingContextSessions }),
 			cls: 'tyrian-session-history__warning',
 		});
 	}

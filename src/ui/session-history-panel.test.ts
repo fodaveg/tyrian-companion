@@ -136,6 +136,24 @@ describe('mountSessionHistoryPanel', () => {
 		expect(descendants(state).some((element) => element.tag === 'table')).toBe(false);
 	});
 
+	it.each([
+		['es' as const, '2 sesiones sin identidad de build; conservan estadísticas en un grupo de contexto desconocido.'],
+		['en' as const, '2 sessions without build identity; statistics remain in an unknown-context group.'],
+	])('keeps missing-build statistics with a translated warning in %s', async (locale, warning) => {
+		const container = new FakeElement('div', new FakeDocument());
+		const controller = new SessionHistoryPanelController(async () => ({
+			status: 'ok', ignored: 0, sessions: [
+				record('2026-08-20T10:00:00.000Z', 3_600_000, { build: null }),
+				record('2026-08-20T11:00:00.000Z', 3_600_000, { build: null }),
+			],
+		}));
+		mountSessionHistoryPanel(container as unknown as HTMLElement, locale, controller);
+		await controller.load();
+		const performance = descendants(container).find((element) => element.className === 'tyrian-session-history__performance')!;
+		expect(allText(performance)).toContain(warning);
+		expect(descendants(performance).find((element) => element.tag === 'tbody')!.children).toHaveLength(1);
+	});
+
 	it('renders duration-weighted activity/build performance and an honest minimum-sample warning', async () => {
 		const document = new FakeDocument();
 		const container = new FakeElement('div', document);
