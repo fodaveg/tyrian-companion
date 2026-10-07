@@ -1,5 +1,26 @@
 # Estado
 
+## Candidata 0.6.8: recuperación ante la caída del almacén local (7 oct 2026)
+
+**Candidata integrada en local; sin publicar ni etiquetar; gate pendiente.** `manifest.version`, `package.json`,
+`package-lock.json` y `versions.json` están alineados a 0.6.8. No hay tag ni release, y no se ha corrido el gate
+sobre este árbol. Parte de `f11872d` (canal 0.6.7 publicado) y suma la recuperación ante la caída de IndexedDB
+(incidente del 7 oct 2026 en Hebra, WebKitGTK 2.54.1) y la línea base del censo de observabilidad reconciliada
+con las fronteras de esos cambios; el detalle está en [CHANGELOG](CHANGELOG.md).
+
+- Contenido: reapertura de conexiones muertas en los almacenes de sesión, coordinación y preferencias;
+  `onabort` y reapertura en el backend de ficheros de Hebra; límite de 10 s en las escrituras de diagnóstico; la
+  sesión live sale del error con hueco `storage_unavailable` y sin deltas a través de él (`docs/SPEC-live-loot.md`
+  §4); relevo de un productor desconectado según el host, nunca con una conexión abierta; el asesor de inventario
+  quita su bloqueo de preferencias.
+- Revisión independiente hecha antes de publicar: un defecto condicional y tres menores, arreglados con test.
+- Pendiente: el gate completo sobre el árbol final, la atestación, la publicación y la verificación de
+  instalación en Hebra y Obsidian.
+- No verificado: nada de esto se ha probado en el runtime real de Hebra ni de Obsidian. No está demostrado que
+  WebKitGTK acepte una conexión nueva tras ese fallo; si no la acepta, el plugin sigue en error, sin bucle.
+- Límites conocidos: los de la entrada 0.6.8 del CHANGELOG (almacenes sin reapertura, cola del ciclo de vida
+  bloqueable, `replaceLiveJournal` sin reproducir, `live_open` en `source_conflict` durante la caída).
+
 ## Canal 0.6.7 publicado: precio del saco de Halloween para el addon del juego (7 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.7](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.7)

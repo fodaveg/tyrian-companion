@@ -1,5 +1,42 @@
 # Changelog
 
+## Release beta 0.6.8 - recuperación ante la caída del almacén local
+
+Candidata a release por tag `0.6.8`; nada publicado ni etiquetado, gate pendiente. [ESTADO](ESTADO.md) separa lo
+verificado de lo pendiente (gate, publicación e instalación).
+
+- Reapertura de conexiones IndexedDB muertas: los almacenes de sesión, de coordinación (lease) y de preferencias
+  reabren la conexión (una reapertura por operación, sin bucle). El backend de ficheros de Hebra rechaza las
+  transacciones abortadas (`onabort`) y reabre su base. Las escrituras de diagnóstico tienen un límite de 10 s.
+- La sesión live sale del error cuando el almacén vuelve: deja un hueco `storage_unavailable` (o la primera causa
+  que no se pudo guardar) y ningún delta lo cruza. Lo pendiente de escribir (causa del hueco, fin de época,
+  desconexión, presencia) se conserva en memoria y lo escribe el primer paso que encuentre el almacén de vuelta.
+  Está descrito en `docs/SPEC-live-loot.md` §4.
+- Relevo de un productor que el host vio desconectarse (regla de §2 de la spec): un addon reconectado puede
+  relevarlo, pero nunca releva a un productor con una conexión abierta.
+- El asesor de inventario quita su bloqueo de preferencias cuando el almacén vuelve.
+- Revisión independiente antes de publicar: encontró un defecto condicional (una escritura aplicada pero
+  contestada como fallida dejaba el diario por delante del registro y el plugin no arrancaba la vez siguiente;
+  reproducido con un test y arreglado) y tres menores (un segundo intento de recuperación se trataba como
+  reinicio; la relectura la decidía el estado de la llamada y no la valla; el relevo «por lo escrito» no miraba las
+  conexiones abiertas). Los cuatro están arreglados, cada uno con su test.
+- Motivo: el incidente del 7 oct 2026 en Hebra (WebKitGTK 2.54.1), en el que la IndexedDB dejó de completar
+  operaciones a mitad de una sesión y se perdieron unos 20 minutos.
+- Sin verificar en el runtime real: nada de esto se ha probado en Hebra ni en Obsidian. No está demostrado que
+  WebKitGTK acepte una conexión nueva tras ese fallo; si no la acepta, el plugin sigue en error, sin bucle.
+- Límites conocidos: estos almacenes siguen sin reapertura: `pending-proposal-store`,
+  `session-detection-quality-store`, `pilot-metrics-store`, `halloween-store`, `price-history-store`, los dos de
+  `price-seed-cache-store`, `persistent-catalog-cache` y `managed-assets-pointer`; `path-index-kv` solo tiene
+  `onabort`. Una transacción o un `open` de los almacenes de sesión que no dispara ningún evento sigue bloqueando
+  la cola del ciclo de vida. `replaceLiveJournal` puede tener el mismo problema de escritura aplicada y contestada
+  como fallida (no reproducido). Una reapertura que sale bien no deja registro en el almacén de coordinación ni en
+  el backend de ficheros de Hebra. Una escritura de diagnóstico abandonada por timeout puede completarse tarde con
+  datos viejos (solo afecta al diagnóstico). Durante la caída, `live_open` responde `source_conflict` y el addon de
+  Nexus 0.7.0 deja de leer inventario hasta cambiar de contexto de juego; el reintento llega con el addon 0.7.1,
+  sin publicar.
+- Tests: pruebas nuevas para la reapertura de conexiones, la caída del almacén de sesión, la escritura aplicada y
+  contestada como fallida, y el relevo del productor.
+
 ## Release beta 0.6.7 - precio del saco de Halloween para el addon del juego
 
 [Canal 0.6.7 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.7);
