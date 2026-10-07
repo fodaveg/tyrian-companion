@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { startAlertIngameServer } from '../alerts/alert-ingame-server';
 import type { TyrianTcpConnection } from '../host/tyrian-host';
-import { killStorage, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
+import { killStorage, killStorageAfterNextCommit, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventoryRowV1, type LiveInventorySampleV1 } from './live-session-model';
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventoryRowV1, type LiveInventorySampleV1, type LiveJournalEntryV1 } from './live-session-model';
 import { liveObservationTotals } from './live-session-reducer';
 import { IndexedDbSessionRuntimeStore } from './session-runtime-store';
 
@@ -47,6 +47,15 @@ function outage(label: string) {
 		observedAt: new Date(now).toISOString() });
 	return { tracked, store, lease, options, service, source, sample, onError,
 		at: (offsetMs: number) => { now = AT + offsetMs; },
+		/** The engine applies the next write of the session store and dies before saying so. */
+		dieAfterNextCommit: () => { killStorageAfterNextCommit(tracked, `live-outage-${label}`); },
+		/** Another host starting on what is on disk now, as the next launch of the plugin would. */
+		restarted: () => {
+			const persistence = new IndexedDbSessionRuntimeStore(tracked.factory, `live-outage-${label}`); const failed = vi.fn();
+			const next = new LiveSessionLifecycle({ ...options, coordinator: lease('next-host'), persistence, onError: failed,
+				setInterval: () => 1, clearInterval: () => undefined });
+			return { service: next, onError: failed, dispose: async () => { await next.dispose(); persistence.close(); } };
+		},
 		/** One heartbeat, awaited through the lifecycle's own queue. */
 		beat: async () => { beat?.(); await service.capture(); },
 		/** What a host starting now would find on disk, read through a connection of its own. */
@@ -220,6 +229,141 @@ describe('live session across a storage outage', () => {
 		expect(f.service.getView().phase).toBe('error');
 		expect(await f.durable()).toEqual(before);
 		other.dispose(); await f.service.dispose();
+	});
+});
+
+/**
+ * The other way storage fails: the engine applies the commit and dies before answering. The host is
+ * told the sample was not stored and keeps the state from before it, while disk holds the record and
+ * the journal entry of that sample.
+ */
+describe('live session across a storage outage that hid a commit already on disk', () => {
+	/** Cursor 2 (three bags more) lands on disk at 2 s and is answered as not stored. */
+	async function landed(label: string) {
+		const f = outage(label);
+		await f.service.start('Test'); await expect(f.service.open(f.source)).resolves.toBe('ready');
+		await expect(f.service.commit(f.sample(0, 0, bags(5)))).resolves.toBe('stored');
+		f.at(1000); await expect(f.service.commit(f.sample(1, 1000, bags(7)))).resolves.toBe('stored');
+		f.dieAfterNextCommit();
+		f.at(2000); await expect(f.service.commit(f.sample(2, 2000, bags(10)))).resolves.toBe('storage_unavailable');
+		// What the host knows is still the state before that sample.
+		expect(f.service.getView()).toMatchObject({ phase: 'error', observationCount: 1, observedItemsMs: 1000 });
+		expect(f.service.getRuntime()?.lastSample).toMatchObject({ cursor: 1 });
+		return f;
+	}
+	/** Disk is one sample ahead of the host: this is the state the recovery starts from. */
+	async function expectDiskAhead(f: Awaited<ReturnType<typeof landed>>): Promise<void> {
+		const durable = await f.durable();
+		expect(durable.journal.map((entry) => entry.cursor)).toEqual([0, 1, 2]);
+		expect(durable.record).toMatchObject({ observationCount: 2, lastSample: { cursor: 2 } });
+	}
+	async function expectDiskConsistent(f: Awaited<ReturnType<typeof landed>>): Promise<void> {
+		const durable = await f.durable();
+		const stored = durable.journal.flatMap((entry) => entry.observations);
+		expect(stored).toHaveLength(durable.record.observationCount);
+		expect(liveObservationTotals([], stored)).toEqual(durable.record.totals);
+	}
+
+	it('the recovery does not write the older state over it: journal and counter agree, and the next start loads the session', async () => {
+		const f = await landed('landed-restart');
+		// The bridge ends the epoch of a sample that was not stored; storage is still down for that.
+		await expect(f.service.gap({ sourceInstance: INSTANCE, epoch: EPOCH, reason: 'storage_unavailable', observedAt: iso(2000) })).resolves.toBeUndefined();
+		reviveStorage(f.tracked);
+		await expectDiskAhead(f);
+
+		f.at(10_000); await f.beat();
+		expect(f.service.getView().phase).toBe('active');
+
+		// A journal entry the stored counters leave out is what no later start can load.
+		const next = f.restarted();
+		await expect(next.service.initialize()).resolves.toBeUndefined();
+		expect(next.onError).not.toHaveBeenCalled();
+		expect(next.service.getView()).toMatchObject({ observationCount: 2, observedItemsMs: 2000 });
+		await expectDiskConsistent(f);
+		expect((await f.durable()).record).toEqual(f.service.getRuntime());
+		await next.dispose(); await f.service.dispose();
+	});
+
+	it('the observation that landed is counted once, its alert is published, and no delta crosses the gap that follows it', async () => {
+		const f = await landed('landed-observation');
+		await f.service.gap({ sourceInstance: INSTANCE, epoch: EPOCH, reason: 'storage_unavailable', observedAt: iso(2000) });
+		reviveStorage(f.tracked);
+		await expectDiskAhead(f);
+		f.at(10_000); await f.beat();
+
+		const view = f.service.getView();
+		expect(view.observations.map((row) => [row.cursor, row.before, row.after, row.delta])).toEqual([[1, 5, 7, 2], [2, 7, 10, 3]]);
+		expect(view.totals).toEqual([{ kind: 'item', idNumber: 12147, positive: 5, negative: 0, net: 5 }]);
+		expect(view.observedItemsMs).toBe(2000);
+		// The entry the host never saw stored reaches the consumers of committed entries, once.
+		expect(f.options.onCommitted.mock.calls.map(([entry]) => (entry as LiveJournalEntryV1).cursor)).toEqual([0, 1, 2]);
+		// The gap starts at the last capture that IS on disk, which is the one answered as not stored.
+		expect(storageGaps(f.service)).toEqual([{ version: 1, reason: 'storage_unavailable', fromAt: iso(2000), toAt: null, channels: ['items'] }]);
+
+		// Thirty bags arrive while nobody observes; the new epoch starts over from its own baseline.
+		await expect(f.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		f.at(11_000); await expect(f.service.commit(f.sample(0, 0, bags(40), NEXT_EPOCH))).resolves.toBe('stored');
+		f.at(12_000); await expect(f.service.commit(f.sample(1, 1000, bags(43), NEXT_EPOCH))).resolves.toBe('stored');
+		expect(f.service.getView().observations.map((row) => [row.before, row.after, row.delta])).toEqual([[5, 7, 2], [7, 10, 3], [40, 43, 3]]);
+		expect(f.service.getView().observedItemsMs).toBe(3000);
+		expect(storageGaps(f.service)).toEqual([{ version: 1, reason: 'storage_unavailable', fromAt: iso(2000), toAt: iso(11_000), channels: ['items'] }]);
+		await expectDiskConsistent(f);
+		await f.service.dispose();
+	});
+
+	it('the same sample sent again is answered as stored, without being counted twice', async () => {
+		const f = await landed('landed-resent');
+		reviveStorage(f.tracked);
+		await expectDiskAhead(f);
+
+		// No heartbeat in between: it is this commit that finds storage back.
+		f.at(3000); await expect(f.service.commit(f.sample(2, 2000, bags(10)))).resolves.toBe('stored');
+		expect(f.service.getView()).toMatchObject({ phase: 'active', observationCount: 2, observedItemsMs: 2000 });
+		expect(f.service.getView().observations.map((row) => [row.cursor, row.delta])).toEqual([[1, 2], [2, 3]]);
+		expect(f.service.getJournal().map((entry) => entry.cursor)).toEqual([0, 1, 2]);
+		// The host cannot tell what it missed while storage was refusing, so the next sample is a baseline.
+		f.at(4000); await expect(f.service.commit(f.sample(3, 3000, bags(25)))).resolves.toBe('stored');
+		expect(f.service.getView()).toMatchObject({ observationCount: 2, observedItemsMs: 2000 });
+		expect(storageGaps(f.service)).toEqual([{ version: 1, reason: 'storage_unavailable', fromAt: iso(2000), toAt: iso(4000), channels: ['items'] }]);
+		await expectDiskConsistent(f);
+		await f.service.dispose();
+	});
+
+	it('a reclaim under the same lease does not write the older state over it either', async () => {
+		const f = await landed('landed-reclaim');
+		reviveStorage(f.tracked);
+		await expectDiskAhead(f);
+		// The lease is still this host's, but one renewal fails for a reason that is not storage, so
+		// it is the reclaim and not a queued operation that writes first.
+		vi.spyOn(f.options.coordinator, 'renew').mockResolvedValueOnce({ status: 'error', code: 'clock_anomaly' });
+		f.at(5000); await f.beat();
+		expect(f.service.getView().phase).toBe('error');
+		f.at(10_000); await f.beat();
+
+		expect(f.service.getRuntime()).toMatchObject({ authority: { fence: 1 }, epoch: null, observationCount: 2 });
+		expect(f.service.getView().observations.map((row) => [row.cursor, row.delta])).toEqual([[1, 2], [2, 3]]);
+		await expectDiskConsistent(f);
+		expect((await f.durable()).record).toEqual(f.service.getRuntime());
+		await f.service.dispose();
+	});
+
+	it('a finish that landed unseen is not reopened: the session stays closed and its note is saved', async () => {
+		const f = outage('landed-finish');
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.dieAfterNextCommit();
+		f.at(2000); await expect(f.service.stop(AT + 2000)).resolves.toBe(false);
+		expect(f.service.getView().phase).toBe('error');
+		expect(f.service.getRuntime()?.phase).toBe('active');
+		reviveStorage(f.tracked);
+		expect((await f.durable()).record).toMatchObject({ phase: 'complete', endedAt: iso(2000), summaryReceipt: null });
+
+		f.at(5000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'complete', endedAt: iso(2000) });
+		// And the beat after it finishes what a closed session still owes: its note.
+		f.at(10_000); await f.beat();
+		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
+		expect((await f.durable()).record).toMatchObject({ phase: 'complete', summaryReceipt: { path: 'Sessions/live.md' } });
+		await f.service.dispose();
 	});
 });
 

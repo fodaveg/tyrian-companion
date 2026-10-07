@@ -331,6 +331,8 @@ export class LiveSessionLifecycle {
 		if (acquisition.status === 'acquired') this.recovering = true;
 		this.handle = acquisition.handle;
 		await this.refreshRecovery();
+		// Under the lease it already had nothing is read as a takeover, but a write of its own may have landed unseen.
+		if (!this.recovering && await this.adoptLanded() === 'unavailable') { this.handle = null; return false; }
 		const recovered = this.getRuntime();
 		if (recovered === null) throw new Error('Live recovery record is unavailable.');
 		this.record = recovered;
@@ -405,11 +407,45 @@ export class LiveSessionLifecycle {
 		const ownership = await this.ownership();
 		if (ownership === 'unavailable') { this.storageLost(); return ownership; }
 		if (ownership !== 'owned' || this.unsaved === null || this.record?.phase !== 'active') return ownership;
+		// Memory is written back only once it is known not to be behind what storage holds.
+		const landed = await this.adoptLanded();
+		if (landed === 'unavailable') return landed;
+		// The write that landed unseen was the end of the session: nothing is owed to it any more.
+		if (landed === 'ended') { this.unsaved = null; this.failure = false; this.options.onStateChange(); return 'lost'; }
 		const restored = this.withUnsaved(this.record, this.unsaved);
 		const saved = await this.persist(restored);
 		if (saved !== 'saved') return saved === 'stale' ? 'lost' : 'unavailable';
 		this.record = restored; this.unsaved = null; this.failure = false; this.options.onStateChange();
 		return 'owned';
+	}
+	/**
+	 * Storage can report as failed a write it had applied: the engine died after the commit and
+	 * before answering. Memory is then behind disk, and saving it would leave on disk a journal entry
+	 * the stored counters leave out, which no later start can load. Under this host's own lease
+	 * nobody else writes, so a stored record ahead of memory is this host's own last write: it
+	 * becomes the state again, with its journal, and its entries are published as committed.
+	 *
+	 * A record of another session or authority is a lost lease, not this case: it is left as it is
+	 * for the save that follows to refuse.
+	 */
+	private async adoptLanded(): Promise<'current' | 'ended' | 'unavailable'> {
+		const known = this.record;
+		if (known === null) return 'current';
+		let stored: LiveSessionRuntimeRecord; let journal: LiveJournalEntryV1[];
+		try {
+			const loaded = await this.options.persistence.loadLive();
+			if (loaded.status === 'error' && loaded.code === 'unavailable') { this.storageLost(); return 'unavailable'; }
+			if (loaded.status !== 'loaded' || loaded.record.sessionId !== known.sessionId
+				|| JSON.stringify(loaded.record.authority) !== JSON.stringify(known.authority)
+				|| loaded.record.persistedAt < known.persistedAt || JSON.stringify(loaded.record) === JSON.stringify(known)) return 'current';
+			stored = loaded.record; journal = await this.options.persistence.readLiveJournal(stored.sessionId);
+		} catch { this.storageLost(); return 'unavailable'; }
+		const observations = journal.flatMap((entry) => entry.observations);
+		if (observations.length !== stored.observationCount || JSON.stringify(liveObservationTotals([],observations)) !== JSON.stringify(stored.totals)) throw new Error('Live recovery journal changed.');
+		const seen = new Set(this.journal.map((entry) => `${entry.epoch}/${String(entry.cursor)}`));
+		this.record = stored; this.journal = journal; this.observations = observations; this.rebuildChart();
+		for (const entry of journal) if (!seen.has(`${entry.epoch}/${String(entry.cursor)}`)) this.options.onCommitted?.(structuredClone(entry));
+		return stored.phase === 'active' ? 'current' : 'ended';
 	}
 	/** One durable write of the session record. A refusal by storage itself is remembered; a stale authority is not its fault. */
 	private async persist(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<'saved' | 'stale' | 'unavailable'> {
