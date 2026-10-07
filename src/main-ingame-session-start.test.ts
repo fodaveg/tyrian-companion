@@ -9,7 +9,8 @@ import { createSessionRuntimeRecord, type SessionRuntimeStore } from './sessions
 import { sessionAuthorityFromLease } from './sessions/session-state-machine';
 import { storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import type { AlertIngameServerHandle } from './alerts/alert-ingame-server';
-import type { IngamePresenceTracker } from './alerts/alert-ingame-presence';
+import type { IngameConnectionEvent, IngamePresenceTracker } from './alerts/alert-ingame-presence';
+import type { LiveSessionPersistence } from './sessions/live-session-persistence';
 import type { IngameSessionMarker } from './sessions/ingame-session-marker';
 import type { ProductActionController } from './ui/product-action-controller';
 import type { SessionCommandController } from './ui/session-command-controller';
@@ -24,6 +25,7 @@ import type { AlertV1 } from './alerts/alert-contract';
 
 interface RuntimeAccess {host:TyrianHost;liveIngamePort():LiveIngamePort;liveSessions:LiveSessionLifecycle;sessions:ManualSessionStartService;alertIngameServer:AlertIngameServerHandle|null;
 	alertIngameServerPort:number|null;ensureAlertIngameServer():Promise<AlertIngameServerHandle|null>;ingamePresenceTracker():IngamePresenceTracker;
+	onIngameConnectionEvent(event:IngameConnectionEvent):void;
 	ingameSessionMarker:IngameSessionMarker;setupSessionCommands():void;setupProductActions():void;productActions:ProductActionController;
 	sessionCommands:SessionCommandController;collectorMode:'collector'|'consult';liveEconomy:LiveSessionEconomy;emitLiveSessionAlert(intent:unknown):Promise<unknown>}
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ'; const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -81,6 +83,15 @@ async function presence(f:Awaited<ReturnType<typeof runtime>>,connectionId='a',s
 	await f.access.ingameSessionMarker.reconcile(); await f.access.liveSessions.capture(); return tracker;
 }
 
+/** One connection event as the bridge reports it, through the core's own handler and settled. */
+async function bridge(f:Awaited<ReturnType<typeof runtime>>,event:IngameConnectionEvent) {
+	f.h.core.settings.alertIngameEnabled=true; f.access.onIngameConnectionEvent(event);
+	await f.access.ingameSessionMarker.reconcile(); await f.access.liveSessions.capture();
+}
+/** The store the live session writes to, to make it refuse writes the way a dead engine does. */
+function livePersistence(f:Awaited<ReturnType<typeof runtime>>) {
+	return (f.access.liveSessions as unknown as {options:{persistence:LiveSessionPersistence}}).options.persistence;
+}
 describe('real passive Nexus composition', () => {
 	it('repaints the open views on every presence transition, so the Session button does not stay on "open the game" while idle', async () => {
 		const f=await runtime(); const render=vi.spyOn(f.h.core as unknown as {renderViews():void},'renderViews');
@@ -240,6 +251,55 @@ describe('real passive Nexus composition', () => {
 		await f.h.core.selectLiveSessionHistory(history[0]!.sessionRef);
 		expect(f.h.core.getLiveSessionView()).toMatchObject({phase:'complete',connection:'disconnected',sourceState:'unavailable',totals:[{positive:4}]});
 		expect(f.h.core.getFarmingIngameState().phase).toBe('active');
+	});
+	// 7 Oct 2026: storage was down when the game closed, so the disconnection was never written, and
+	// the addon of the restarted game was answered `source_conflict` by a session nobody fed.
+	it('another instance relieves a producer this host saw disconnect, although storage could not write that it did', async () => {
+		const f = await runtime(); await bridge(f,{kind:'authenticated',connectionId:'a',client:'nexus',instance:INSTANCE,atMs:AT});
+		await bridge(f,{kind:'context',connectionId:'a',context:f.source.context,atMs:AT});
+		await f.port.open(f.source); await f.port.commit(f.sample(0,0)); f.setNow(AT+1000); await f.port.commit(f.sample(1,4));
+		const priorId = f.h.core.getLiveSessionView().sessionId;
+		const save = vi.spyOn(livePersistence(f),'saveLive').mockResolvedValue({status:'error',code:'unavailable'});
+		f.setNow(AT+2000);
+		// What the bridge does when the addon's socket closes: its gap, then the closed connection.
+		await expect(f.port.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'disconnect',observedAt:new Date(AT+2000).toISOString()})).resolves.toBeUndefined();
+		await bridge(f,{kind:'closed',connectionId:'a',atMs:AT+2000,lastSeenAtMs:AT+2000,reason:'lost'});
+		expect(f.access.liveSessions.getRuntime()).toMatchObject({sessionId:priorId,epoch:EPOCH,lastSourceDisconnectedAt:null});
+		expect(f.h.core.getLiveSessionView().phase).toBe('error');
+
+		save.mockRestore(); f.setNow(AT+60_000);
+		const next = {...f.source,sourceInstance:'AwMDAwMDAwMDAwMDAwMDAw',epoch:'BAQEBAQEBAQEBAQEBAQEBA'};
+		await bridge(f,{kind:'authenticated',connectionId:'b',client:'nexus',instance:next.sourceInstance,atMs:AT+60_000});
+		await expect(f.port.open(next)).resolves.toBe('ready'); await f.port.commit(f.sample(0,9,next));
+		expect(f.h.core.getLiveSessionView()).toMatchObject({phase:'active',observationCount:0});
+		expect(f.h.core.getLiveSessionView().sessionId).not.toBe(priorId);
+		// The relieved session is closed where its producer was last connected, with what it had stored.
+		const history = await f.h.core.listLiveSessionHistory(); expect(history).toHaveLength(1);
+		await f.h.core.selectLiveSessionHistory(history[0]!.sessionRef);
+		expect(f.h.core.getLiveSessionView()).toMatchObject({phase:'complete',endedAt:new Date(AT+2000).toISOString(),totals:[{positive:4}]});
+	});
+	it('a second producer is still refused while the linked one holds a connection, written disconnection or not', async () => {
+		const f = await runtime(); await bridge(f,{kind:'authenticated',connectionId:'a',client:'nexus',instance:INSTANCE,atMs:AT});
+		await bridge(f,{kind:'context',connectionId:'a',context:f.source.context,atMs:AT});
+		await f.port.open(f.source); await f.port.commit(f.sample(0,0)); const priorId = f.h.core.getLiveSessionView().sessionId;
+		const next = {...f.source,sourceInstance:'AwMDAwMDAwMDAwMDAwMDAw',epoch:'BAQEBAQEBAQEBAQEBAQEBA'};
+		await bridge(f,{kind:'authenticated',connectionId:'b',client:'nexus',instance:next.sourceInstance,atMs:AT+500});
+		await expect(f.port.open(next)).resolves.toBe('source_conflict');
+
+		// Storage down changes nothing about it: the linked producer is still here.
+		const save = vi.spyOn(livePersistence(f),'saveLive').mockResolvedValue({status:'error',code:'unavailable'});
+		f.setNow(AT+1000); await expect(f.port.commit(f.sample(1,4))).resolves.toBe('storage_unavailable');
+		await expect(f.port.open(next)).resolves.toBe('source_conflict');
+		save.mockRestore();
+		await expect(f.port.open(next)).resolves.toBe('source_conflict');
+
+		// One of its two connections closing is not the producer leaving, and neither is a
+		// connection that closes after the same instance has reconnected.
+		await bridge(f,{kind:'authenticated',connectionId:'a2',client:'nexus',instance:INSTANCE,atMs:AT+1500});
+		await bridge(f,{kind:'closed',connectionId:'a',atMs:AT+2000,lastSeenAtMs:AT+2000,reason:'lost'});
+		await expect(f.port.open(next)).resolves.toBe('source_conflict');
+		expect(f.h.core.getLiveSessionView().sessionId).toBe(priorId);
+		expect(await f.h.core.listLiveSessionHistory()).toHaveLength(0);
 	});
 	it('unselected or old-epoch diagnostics cannot erase current source evidence', async () => {
 		const f = await runtime(); await f.port.open(f.source); await f.port.commit(f.sample(0,0));

@@ -23,6 +23,7 @@ import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
 import { LiveSessionLifecycle, emptyLiveSessionView } from '../sessions/live-session-lifecycle';
+import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
 import type { LiveSessionViewV1, LiveJournalEntryV1, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from '../sessions/live-session-model';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live-session-model';
@@ -65,6 +66,7 @@ import { alertIngamePayload } from '../alerts/alert-ingame';
 import { startAlertIngameServer, type AlertIngameServerHandle } from '../alerts/alert-ingame-server';
 import {
 	IngamePresenceTracker,
+	type IngameConnectionEvent,
 	type IngamePresenceEvent,
 	type IngamePresenceSnapshot,
 } from '../alerts/alert-ingame-presence';
@@ -446,6 +448,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private connection!: ConnectionService;
 	private sessions!: ManualSessionStartService;
 	private liveSessions: LiveSessionLifecycle | null = null;
+	/** Which Nexus producers are connected right now, in memory: see `liveSourceReliefAt`. */
+	private readonly liveSourceConnections = new LiveSourceConnections();
 	private liveEconomy: LiveSessionEconomy | null = null;
 	private liveHistory: LiveSessionHistoryService | null = null;
 	private liveComparison: LiveSessionComparisonState = { status: 'idle' };
@@ -3738,7 +3742,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				authenticate: (candidate) => ingameBridgeSecretMatches(candidate, this.readAlertIngameSecret()),
 				now: () => Date.now(),
 				fillRandom: (bytes) => { crypto.getRandomValues(bytes); },
-				onConnectionEvent: (event) => { this.ingamePresenceTracker().apply(event); },
+				onConnectionEvent: (event) => { this.onIngameConnectionEvent(event); },
 				onAlertAck: (ack) => { this.ingameReceipts.acked(ack.alertSeq, ack.client, ack.atMs); },
 				farmingState: () => this.getFarmingIngameState(),
 				priceState: () => this.getBagPriceIngameState(),
@@ -3778,6 +3782,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return await flight;
 	}
 
+	/** What the bridge reports about one connection: which producers are here, then the game presence. */
+	private onIngameConnectionEvent(event: IngameConnectionEvent): void {
+		this.liveSourceConnections.apply(event);
+		this.ingamePresenceTracker().apply(event);
+	}
+
 	/** The selected Nexus producer is the sole source; effective Blish context cannot substitute it. */
 	private liveIngamePort(): LiveIngamePort {
 		return {
@@ -3786,9 +3796,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				if (source.context.state !== 'gameplay') return 'not_gameplay';
 				if (source.build !== NEXUS_LIVE_BUILD || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
 				const prior = this.liveSessions?.getRuntime();
-				if (prior?.phase === 'active' && prior.sourceInstance !== null && prior.sourceInstance !== source.sourceInstance
-					&& prior.epoch === null && prior.lastSourceDisconnectedAt !== null) {
-					if (!await this.liveSessions?.stop(Date.parse(prior.lastSourceDisconnectedAt),prior.sessionId)) return 'source_conflict';
+				// Another instance takes over only from a producer that is gone: written as disconnected,
+				// or seen disconnecting by this host when storage could not write it (SPEC-live-loot §2).
+				const relievedAt = prior == null ? null : liveSourceReliefAt(prior, source.sourceInstance, this.liveSourceConnections);
+				if (prior != null && relievedAt !== null) {
+					if (!await this.liveSessions?.stop(relievedAt,prior.sessionId)) return 'source_conflict';
 				}
 				if (this.liveSessions?.getRuntime()?.phase !== 'active') await this.startIngameSession(source.context.character);
 				if (this.liveSessions?.getRuntime()?.phase !== 'active') return 'source_conflict';
