@@ -1,5 +1,20 @@
 # Estado
 
+## 0.6.3 preparada: sesiones anteriores en la pestaña Sesión y avisos de drop sin cotización (7 oct 2026)
+
+**Candidata en `main`; nada publicado ni etiquetado.** El gate está pendiente. Añade el bloque plegado
+«Sesiones anteriores» al final de la pestaña Sesión, hace que un umbral de drop vacío valga 0 y evita que
+un objeto sin cotización en el bazar deje sin decidir los avisos de su lectura.
+
+- Cambios: `src/ui/live-session-panel.ts` y `src/sessions/live-session-history.ts` (lista de sesiones
+  anteriores, de 10 en 10 y solo lectura), `src/ui/settings-tab.ts` (umbral vacío leído como 0) y
+  `src/sessions/live-session-economy.ts` (objeto sin cotización como «sin precio»). Metadatos alineados a
+  0.6.3.
+- Verificado: solo los metadatos de versión y la entrada de changelog de esta preparación (extractor de notas
+  `changelog-entry.mjs`). Los commits de código traen sus tests; no se han reejecutado aquí.
+- No verificado: el gate completo, la publicación, la instalación en Hebra y Obsidian y una sesión real de
+  juego con la 0.6.3.
+
 ## Canal 0.6.2 publicado: la sesión en vivo real guarda su nota (7 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.2](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.2)

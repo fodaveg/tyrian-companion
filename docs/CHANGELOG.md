@@ -1,5 +1,28 @@
 # Changelog
 
+## Release beta 0.6.3 - la pestaña Sesión lista las sesiones anteriores y los avisos de drop ya se deciden
+
+Release por tag `0.6.3`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación en
+Hebra y Obsidian y sesión real de juego con la 0.6.3).
+
+- Sesiones anteriores (petición de David del 7 oct 2026): al final de la pestaña Sesión, debajo de la
+  cronología, hay un bloque plegado «Sesiones anteriores». Al abrirlo lista las sesiones en vivo guardadas,
+  de la más reciente a la más antigua: día, hora de inicio y de fin, duración, valor estimado guardado y
+  número de objetos. Es solo lectura y se muestra de 10 en 10. La sesión que ya se muestra arriba no se
+  repite en la lista.
+- Cuándo se lee la lista: al abrir el bloque y cuando termina o arranca una sesión con el bloque abierto,
+  nunca en cada refresco, porque esa lectura recorre todas las notas de la biblioteca.
+- Ajuste «Avisarme de un drop desde»: dejar el campo vacío equivale a 0 y avisa de cualquier drop con
+  precio. Antes un campo vacío se rechazaba sin guardarse y el umbral seguía en el valor anterior (5 oro
+  por defecto).
+- Avisos de drop en la sesión en vivo: un objeto sin cotización en el bazar ya no deja sin decidir su propio
+  aviso ni el de los objetos con precio que llegaron en la misma lectura.
+- Causa: la API de precios responde 404 cuando ningún id del lote cotiza y 206 cuando solo cotizan algunos,
+  y las dos respuestas abortaban o saltaban el lote entero. Esos avisos se quedaban en espera hasta el
+  cierre de la sesión. Se midió en dos sesiones reales (3 de 10 drops y 2 de 7).
+- Arreglo: el objeto sin cotización queda como «sin precio» en el momento y los demás se deciden con su
+  precio.
+
 ## Release beta 0.6.2 - una sesión en vivo real ya guarda su nota y deja de bloquear al addon
 
 [Canal 0.6.2 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.2);
