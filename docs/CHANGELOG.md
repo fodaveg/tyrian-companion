@@ -1,5 +1,28 @@
 # Changelog
 
+## Release beta 0.6.5 - las sesiones anteriores muestran también sus objetos
+
+Release por tag `0.6.5`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (gate, publicación e
+instalación).
+
+- Sesiones anteriores con objetos (petición de David del 7 oct 2026, tras ver el bloque en la 0.6.4: «en las
+  sesiones anteriores quiero ver también los objetos»): en la pestaña Sesión, cada sesión anterior muestra
+  también sus objetos, con las mismas teselas de icono y cantidad que la rejilla «Objetos» de la sesión
+  actual.
+- Qué se pinta: solo objetos, no monedas, con cantidad neta distinta de 0. El orden es el de la rejilla de
+  arriba: por valor estimado, con los consumidos (cantidad negativa y en rojo) al final. Hay hasta 12
+  teselas por sesión. Si hay más, una celda final «+N» cuenta los objetos distintos que faltan. Una sesión
+  sin objetos no tiene rejilla. El texto «N objetos» de la fila se queda.
+- Nombre e icono salen de la caché local del catálogo, sin peticiones de red nuevas (`getLiveSessionEntity`,
+  que lee la caché una vez por objeto y en un solo lote). Un objeto que no esté en esa caché sale como
+  «Objeto <id>» con «?» hasta que una sesión activa lo resuelva.
+- Coste: la lista sigue leyéndose solo al abrir el bloque y al terminar o arrancar una sesión con el bloque
+  abierto. Con el bloque cerrado no se pregunta por ningún objeto. Solo se resuelven los de las 10 sesiones
+  de la página visible.
+- Ficheros: `src/ui/live-session-panel.ts`, `src/sessions/live-session-history.ts` (la entrada del historial
+  lleva la lista de objetos; `liveItemRank` pasa a compartirse entre las dos rejillas),
+  `src/ui/live-session-copy.ts` y `styles.css`.
+
 ## Release beta 0.6.4 - el asesor de inventario muestra el histórico de precio de venta de cada objeto
 
 [Canal 0.6.4 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.4);

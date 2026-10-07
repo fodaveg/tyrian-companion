@@ -1,5 +1,24 @@
 # Estado
 
+## 0.6.5 preparada: las sesiones anteriores muestran también sus objetos (7 oct 2026)
+
+**Candidata en `main`; nada publicado ni etiquetado.** El gate está pendiente. En la pestaña Sesión, cada
+sesión anterior del bloque «Sesiones anteriores» muestra ahora sus objetos con las mismas teselas que la
+rejilla «Objetos» de la sesión actual. Salen de la caché local del catálogo, sin peticiones de red nuevas.
+
+- Cambios: `src/ui/live-session-panel.ts`, `src/sessions/live-session-history.ts`,
+  `src/ui/live-session-copy.ts` y `styles.css`. Metadatos alineados a 0.6.5.
+- Verificado: solo los metadatos de versión y la entrada de changelog de esta preparación (extractor de notas
+  `changelog-entry.mjs`). El commit de código `2c74069` trae sus tests; no se han reejecutado aquí. Las
+  teselas se midieron en Firefox sin cabeza a 280 px con iconos de prueba.
+- Verificado por David hoy en su instalación de Hebra (Fedora): la 0.6.4 está instalada y cargada
+  (existe `plugins/tyrian-companion/0.6.4` y confirmó «si que veo la gráfica»). El bloque «Sesiones
+  anteriores» muestra datos reales (su captura: «6 oct 17:05–17:25 · 20:22 · 0g 4s 13c · 11 objetos») y la
+  sesión mostrada arriba no se repite en la lista. Con la 0.6.2 la sesión arrancó sola con el juego abierto
+  (su captura: «En curso · 00:13»).
+- No verificado: la instalación en Obsidian/BRAT, los avisos de drop en una sesión real con el umbral vacío
+  y la 0.6.5 en sí (gate, publicación e instalación).
+
 ## Canal 0.6.4 publicado: histórico de precio de venta en los detalles del asesor de inventario (7 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.4](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.4)
