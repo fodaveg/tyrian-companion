@@ -31,6 +31,13 @@ describe('essential alert threshold', () => {
 		expect(goldThresholdToCopper('0.00001')).toBe('invalid');
 	});
 
+	it('reads an empty field as 0 (alert on any priced drop) and still rejects text', () => {
+		expect(goldThresholdToCopper('')).toBe(0);
+		expect(goldThresholdToCopper('  ')).toBe(0);
+		expect(goldThresholdToCopper('0')).toBe(0);
+		expect(goldThresholdToCopper('abc')).toBe('invalid');
+	});
+
 	it('marks an invalid gold amount and announces actionable feedback without saving it', async () => {
 		const plugin = settingsPlugin();
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);

@@ -61,7 +61,8 @@ interface CategorizedSettingDefinition {
 const SETTINGS_FOCUSABLE = 'button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])';
 
 export function goldThresholdToCopper(value: string): number | 'invalid' {
-	if (value.trim() === '') return 'invalid';
+	// Empty means "no minimum", the same as 0: the player cleared the field to be told about any priced drop.
+	if (value.trim() === '') return 0;
 	const gold = Number(value);
 	const copper = gold * 10_000;
 	return Number.isFinite(gold) && gold >= 0 && Number.isSafeInteger(copper) ? copper : 'invalid';
