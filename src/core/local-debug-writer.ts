@@ -1,6 +1,7 @@
 import {
 	LOCAL_DEBUG_FILE_BYTES,
 	LOCAL_DEBUG_FILE_COUNT,
+	LOCAL_DEBUG_WRITE_TIMEOUT_MS,
 	type LocalDebugRecordV1,
 	type LocalDebugWriterStatus,
 } from './local-debug-contract';
@@ -22,7 +23,25 @@ export interface LocalDebugWriterOptions {
 	directory: string;
 	maximumFileBytes?: number;
 	maximumFiles?: number;
+	/** How long one writer operation may wait for the storage port before it is abandoned. */
+	operationTimeoutMs?: number;
+	schedule?: (callback: () => void, milliseconds: number) => unknown;
+	cancel?: (handle: unknown) => void;
 }
+
+/**
+ * What a writer operation rejects with when the storage port did not answer in time. The name is
+ * what the logger's closed status mapping reads.
+ */
+export class LocalDebugWriteTimeoutError extends Error {
+	constructor() {
+		super('The diagnostic storage did not answer in time.');
+		this.name = 'TimeoutError';
+	}
+}
+
+/** One serial operation; `abandoned` once its time ran out, so nothing it still awaits is used. */
+interface WriterOperation { abandoned: boolean }
 
 /** Serial append-only JSONL writer over an Obsidian DataAdapter-compatible storage port. */
 export class LocalDebugJsonlWriter {
@@ -30,7 +49,11 @@ export class LocalDebugJsonlWriter {
 	private readonly directory: string;
 	private readonly maximumFileBytes: number;
 	private readonly maximumFiles: number;
+	private readonly operationTimeoutMs: number;
+	private readonly schedule: (callback: () => void, milliseconds: number) => unknown;
+	private readonly cancel: (handle: unknown) => void;
 	private tail: Promise<unknown> = Promise.resolve();
+	private current: WriterOperation = { abandoned: false };
 	private initialized = false;
 	private readonly fileBytes: number[];
 	private fileCount = 0;
@@ -38,10 +61,15 @@ export class LocalDebugJsonlWriter {
 	private maxSequence = 0;
 
 	constructor(options: LocalDebugWriterOptions) {
-		this.storage = options.storage;
+		// Every port call is fenced to the operation that issued it: see `fencedStorage`.
+		this.storage = fencedStorage(options.storage, () => this.current);
 		this.directory = portableDirectory(options.directory);
 		this.maximumFileBytes = positiveInteger(options.maximumFileBytes ?? LOCAL_DEBUG_FILE_BYTES, 'maximumFileBytes');
 		this.maximumFiles = boundedFileCount(options.maximumFiles ?? LOCAL_DEBUG_FILE_COUNT);
+		this.operationTimeoutMs = positiveInteger(options.operationTimeoutMs ?? LOCAL_DEBUG_WRITE_TIMEOUT_MS, 'operationTimeoutMs');
+		// Wrapped, never stored bare: a browser timer function kept in a field loses its receiver.
+		this.schedule = options.schedule ?? ((callback, milliseconds) => window.setTimeout(callback, milliseconds));
+		this.cancel = options.cancel ?? ((handle) => { window.clearTimeout(handle as number); });
 		this.fileBytes = Array.from({ length: this.maximumFiles }, () => 0);
 	}
 
@@ -118,9 +146,45 @@ export class LocalDebugJsonlWriter {
 
 	/** Runs an operation after all earlier writer operations, including after a rejected one. */
 	private serial<T>(operation: () => Promise<T>): Promise<T> {
-		const next = this.tail.then(operation, operation);
+		const bounded = (): Promise<T> => this.bounded(operation);
+		const next = this.tail.then(bounded, bounded);
 		this.tail = next;
 		return next;
+	}
+
+	/**
+	 * Gives one operation a bounded time to finish. A storage call that never answers used to hold
+	 * `tail` forever, and with it every later record; now the operation is abandoned, the caller is
+	 * told, and the queue moves on to the next one.
+	 *
+	 * The abandoned call cannot be cancelled and may still reach the disk later, so what this writer
+	 * believes about the files is no longer trusted: the next operation reads them again.
+	 *
+	 * A host that cannot arm a timer (no `window`, as in a unit test under Node) gets the operation
+	 * unbounded, exactly as before: the bound must never be the reason a record is lost.
+	 */
+	private async bounded<T>(operation: () => Promise<T>): Promise<T> {
+		const running: WriterOperation = { abandoned: false };
+		this.current = running;
+		let expire: () => void = () => undefined;
+		const expired = new Promise<never>((_resolve, reject) => {
+			expire = () => {
+				running.abandoned = true;
+				this.initialized = false;
+				reject(new LocalDebugWriteTimeoutError());
+			};
+		});
+		let handle: unknown;
+		try {
+			handle = this.schedule(expire, this.operationTimeoutMs);
+		} catch {
+			return await operation();
+		}
+		try {
+			return await Promise.race([operation(), expired]);
+		} finally {
+			try { this.cancel(handle); } catch { /* A timer that cannot be cancelled fires into an operation already settled. */ }
+		}
 	}
 
 	/** Initializes once inside the serial critical section. */
@@ -182,6 +246,29 @@ export class LocalDebugJsonlWriter {
 			maxSequence: this.maxSequence,
 		};
 	}
+}
+
+/**
+ * The port as one writer operation sees it. A call answered after its operation was abandoned
+ * throws instead of returning, so the abandoned operation stops at that `await` and can never run
+ * alongside the operation that replaced it in the serial queue.
+ */
+function fencedStorage(storage: LocalDebugStoragePort, current: () => WriterOperation): LocalDebugStoragePort {
+	const fenced = async <T>(call: () => Promise<T>): Promise<T> => {
+		const operation = current();
+		const value = await call();
+		if (operation.abandoned) throw new LocalDebugWriteTimeoutError();
+		return value;
+	};
+	return {
+		exists: async (path) => await fenced(async () => await storage.exists(path)),
+		read: async (path) => await fenced(async () => await storage.read(path)),
+		write: async (path, data) => { await fenced(async () => { await storage.write(path, data); }); },
+		append: async (path, data) => { await fenced(async () => { await storage.append(path, data); }); },
+		mkdir: async (path) => { await fenced(async () => { await storage.mkdir(path); }); },
+		remove: async (path) => { await fenced(async () => { await storage.remove(path); }); },
+		rename: async (path, destination) => { await fenced(async () => { await storage.rename(path, destination); }); },
+	};
 }
 
 /** Retains only complete, individually valid JSON lines and discovers their maximum sequence. */

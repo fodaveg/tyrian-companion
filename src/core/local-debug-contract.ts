@@ -2,6 +2,11 @@ export const LOCAL_DEBUG_SCHEMA_VERSION = 1 as const;
 export const LOCAL_DEBUG_FILE_BYTES = 2 * 1024 * 1024;
 export const LOCAL_DEBUG_FILE_COUNT = 5;
 export const LOCAL_DEBUG_QUEUE_CAPACITY = 256;
+/**
+ * How long one writer operation may wait for the storage port. Past it the record is dropped and
+ * counted, and the queue goes on: a diagnostic write that never answers must not hold the rest.
+ */
+export const LOCAL_DEBUG_WRITE_TIMEOUT_MS = 10_000;
 
 export const LOCAL_DEBUG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 export type LocalDebugLevel = typeof LOCAL_DEBUG_LEVELS[number];

@@ -4,6 +4,7 @@ import { LocalDebugActionRunner, startLocalDebugAction } from './local-debug-act
 import {
 	LOCAL_DEBUG_FILE_BYTES,
 	LOCAL_DEBUG_FILE_COUNT,
+	LOCAL_DEBUG_WRITE_TIMEOUT_MS,
 	localDebugDirectory,
 	type LocalDebugRecordInput,
 	type LocalDebugRecordV1,
@@ -240,6 +241,37 @@ describe('LocalDebugJsonlWriter', () => {
 		await writer.appendRecord(baseRecord(2));
 		expect(storage.files.get(`${TEST_LOG_DIRECTORY}/debug.jsonl`)).toBe(`${JSON.stringify(baseRecord(2))}\n`);
 	});
+
+	// 7 Oct 2026: a storage call that never answered held the serial queue for the rest of the
+	// plugin's life (measured in a probe: 142 records dropped, one line written).
+	it('abandons a storage call that never answers and serves the next operation', async () => {
+		vi.useFakeTimers();
+		try {
+			const storage = new MemoryStorage();
+			const writer = new LocalDebugJsonlWriter({ storage, directory: TEST_LOG_DIRECTORY,
+				schedule: (callback, milliseconds) => setTimeout(callback, milliseconds),
+				cancel: (handle) => { clearTimeout(handle as ReturnType<typeof setTimeout>); } });
+			await writer.appendRecord(baseRecord(1));
+			let release = (): void => undefined;
+			storage.appendGate = new Promise<void>((resolve) => { release = resolve; });
+			const stuck = writer.appendRecord(baseRecord(2)).then(() => 'written', (error: unknown) => (error as Error).name);
+			await vi.advanceTimersByTimeAsync(LOCAL_DEBUG_WRITE_TIMEOUT_MS - 1);
+			expect(await Promise.race([stuck, Promise.resolve('pending')])).toBe('pending');
+			await vi.advanceTimersByTimeAsync(1);
+			expect(await stuck).toBe('TimeoutError');
+
+			// The abandoned call answers late and its line does reach the file: the writer neither
+			// goes on with that operation nor trusts its old byte count afterwards.
+			storage.appendGate = null;
+			release();
+			await writer.appendRecord(baseRecord(3));
+			const content = storage.files.get(`${TEST_LOG_DIRECTORY}/debug.jsonl`) ?? '';
+			expect(content.trim().split('\n').map((line) => parseRecord(line).sequence)).toEqual([1, 2, 3]);
+			expect(writer.status().bytes).toBe(new TextEncoder().encode(content).byteLength);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe('LocalDebugLogger and action runner', () => {
@@ -285,6 +317,38 @@ describe('LocalDebugLogger and action runner', () => {
 		release();
 		await diagnostics.flush();
 		expect(diagnostics.status()).toMatchObject({ queuedRecords: 0, droppedRecords: 1 });
+	});
+
+	it('drops and counts a record whose write never returns, and keeps logging once storage answers', async () => {
+		vi.useFakeTimers();
+		// The writer as production builds it, with no timer injected: it must find the host's own.
+		vi.stubGlobal('window', {
+			setTimeout: (callback: () => void, milliseconds: number) => setTimeout(callback, milliseconds),
+			clearTimeout: (handle: ReturnType<typeof setTimeout>) => { clearTimeout(handle); },
+		});
+		try {
+			const storage = new MemoryStorage();
+			const diagnostics = new LocalDebugLogger({ enabled: true, pluginVersion: '0.1.14', writer: createWriter(storage) });
+			diagnostics.record(input('first'));
+			await diagnostics.flush();
+			storage.appendGate = new Promise<void>(() => undefined);
+			expect(diagnostics.record(input('stuck'))).toBe(true);
+			expect(diagnostics.record(input('stuck-too'))).toBe(true);
+
+			await vi.advanceTimersByTimeAsync(LOCAL_DEBUG_WRITE_TIMEOUT_MS);
+			expect(diagnostics.status()).toMatchObject({ state: 'degraded', queuedRecords: 1, droppedRecords: 1, errorCode: 'timeout' });
+			await vi.advanceTimersByTimeAsync(LOCAL_DEBUG_WRITE_TIMEOUT_MS);
+			expect(diagnostics.status()).toMatchObject({ state: 'degraded', queuedRecords: 0, droppedRecords: 2, errorCode: 'timeout' });
+
+			storage.appendGate = null;
+			expect(diagnostics.record(input('after'))).toBe(true);
+			await diagnostics.flush();
+			expect(diagnostics.status()).toMatchObject({ state: 'ready', queuedRecords: 0, droppedRecords: 2, errorCode: null });
+			expect(recordsIn(storage).map((record) => record.actionId)).toEqual(['first', 'after']);
+		} finally {
+			vi.unstubAllGlobals();
+			vi.useRealTimers();
+		}
 	});
 
 	it('counts every accepted error record since load and names the most recent one (H14.5)', async () => {

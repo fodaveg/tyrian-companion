@@ -7,7 +7,7 @@ import {
 	type LocalDebugStatus,
 } from './local-debug-contract';
 import { resanitizeLocalDebugRecord, sanitizeLocalDebugRecord } from './local-debug-sanitizer';
-import { LocalDebugJsonlWriter } from './local-debug-writer';
+import { LocalDebugJsonlWriter, LocalDebugWriteTimeoutError } from './local-debug-writer';
 
 export interface LocalDebugLoggerOptions {
 	enabled: boolean;
@@ -20,7 +20,13 @@ export interface LocalDebugLoggerOptions {
 	vaultBasePath?: () => string | null;
 }
 
-/** Fail-open local diagnostic boundary with a bounded serial queue and visible health status. */
+/**
+ * Fail-open local diagnostic boundary with a bounded serial queue and visible health status.
+ *
+ * Nothing here may stall the product: the queue is bounded in length (`queue_overflow`) and, since
+ * the writer abandons a storage call that never answers, in time too. A record lost that way is
+ * counted in `droppedRecords` and shows as `timeout` in `status()`.
+ */
 export class LocalDebugLogger {
 	private readonly pluginVersion: string;
 	private readonly writer: LocalDebugJsonlWriter;
@@ -73,6 +79,7 @@ export class LocalDebugLogger {
 		this.chain = this.chain.then(async () => {
 			try {
 				await this.initializeUnlocked();
+				const initializationTimedOut = !this.initialized && this.errorCode === 'timeout';
 				const timestampMs = this.now();
 				this.sequence += 1;
 				const record = sanitizeLocalDebugRecord(input, {
@@ -90,6 +97,9 @@ export class LocalDebugLogger {
 						occurredAt: record.timestampUtc,
 					};
 				}
+				// The writer bounds every storage wait, so this queue always moves on. A storage that
+				// did not even answer the initialization is not asked again for this same record.
+				if (initializationTimedOut) throw new LocalDebugWriteTimeoutError();
 				await this.writer.appendRecord(record);
 				this.lastEventAt = record.timestampUtc;
 				this.errorCode = null;
@@ -226,6 +236,8 @@ function storageErrorCode(error: unknown): LocalDebugCode {
 	const name = error instanceof Error ? error.name.toUpperCase() : '';
 	if (/QUOTA/u.test(code) || /QUOTA/u.test(name)) return 'quota_exceeded';
 	if (/PERM|ACCESS|DENIED|NOTALLOWED|SECURITY/u.test(code) || /PERM|ACCESS|DENIED|NOTALLOWED|SECURITY/u.test(name)) return 'permission_denied';
+	// The writer abandoned a storage call that never answered: the record is dropped, not retried.
+	if (error instanceof LocalDebugWriteTimeoutError) return 'timeout';
 	return 'logger_failure';
 }
 
