@@ -4018,6 +4018,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 		this.ingameSessionMarker = marker;
 		this.onIngamePresence((event) => {
+			// The Session panel reads presence only when it paints, and an idle panel has no tick: without
+			// this repaint «Iniciar sesión» stays on «Abre Guild Wars 2…» after the addon connects.
+			this.renderViews();
 			void marker.handle(event);
 			void this.liveSessions?.presence(this.getIngamePresence().status === 'present',
 				event.kind === 'lost' ? event.lastSeenAtMs : event.kind === 'ended' ? event.endedAtMs : Date.now());

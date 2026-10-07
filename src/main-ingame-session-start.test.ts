@@ -82,6 +82,13 @@ async function presence(f:Awaited<ReturnType<typeof runtime>>,connectionId='a',s
 }
 
 describe('real passive Nexus composition', () => {
+	it('repaints the open views on every presence transition, so the Session button does not stay on "open the game" while idle', async () => {
+		const f=await runtime(); const render=vi.spyOn(f.h.core as unknown as {renderViews():void},'renderViews');
+		f.h.core.settings.alertIngameEnabled=true; const tracker=f.access.ingamePresenceTracker(); render.mockClear();
+		tracker.apply({kind:'authenticated',connectionId:'a',client:'nexus',instance:INSTANCE,atMs:Date.now()});
+		tracker.apply({kind:'context',connectionId:'a',context:f.source.context,atMs:Date.now()});
+		expect(f.h.core.getIngamePresence().status).toBe('present'); expect(render).toHaveBeenCalled();
+	});
 	it('bounds receipt tracking across alternating origins and sparse shared sequences', async () => {
 		const f=await runtime(); const local=f.h.core as unknown as {
 			liveIngameTracked:Map<number,unknown>;ingameTracked:Map<number,{alertId:string}>;ingameAwaitingAck:Set<string>;
