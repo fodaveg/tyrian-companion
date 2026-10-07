@@ -2146,6 +2146,68 @@
 	overflow-wrap: anywhere;
 }
 
+/* «Histórico de precio de venta» inside a row's «Detalles» (`inventory-advisor-price-history-block.ts`).
+   The chart widget is `.tyrian-price-chart` (its SVG scales to the width it is given: viewBox 800x300,
+   width 100%), so the block only frames it and never sets a width of its own. */
+.tyrian-inventory__price-history {
+	min-width: 0;
+	margin-block: var(--size-4-3) var(--size-4-2);
+}
+
+.tyrian-inventory__price-history-heading {
+	margin: 0 0 var(--size-4-2);
+	color: var(--text-normal);
+	font-weight: var(--font-weight-bold, 600);
+}
+
+.tyrian-inventory__price-history-state {
+	margin: 0 0 var(--size-4-2);
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory__price-history-state[role='alert'] {
+	color: var(--text-error);
+}
+
+.tyrian-inventory__price-history-action {
+	min-height: 44px;
+	max-width: 100%;
+}
+
+.tyrian-inventory__price-history-action:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+/* A `<figure>` brings 40 px of inline margin from the browser and Hebra does not reset it. */
+.tyrian-inventory__price-history-figure {
+	min-width: 0;
+	margin: 0;
+}
+
+.tyrian-inventory__price-history-figure figcaption {
+	margin-block-start: var(--size-4-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory__price-history-chart {
+	width: 100%;
+	min-width: 0;
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+}
+
+/* `.tyrian-inventory__more dl` above (grid, two columns) would also catch the chart's own max/min/last
+   summary, which is a `<dl>` too: it keeps its own flex row. */
+.tyrian-inventory__more .tyrian-price-chart__summary {
+	display: flex;
+	grid-template-columns: none;
+}
+
 /* [NUEVO] H18.37: variantes de `.tyrian-action` (ya viva en Venta) que Inventario necesita
  * y Venta no: `list`/`keep` las aprobó el boceto; `vendor`/`salvage`/`use` extienden el mismo
  * lenguaje (palabra + filete lateral) a las acciones que la tabla retirada pintaba solo con color. */

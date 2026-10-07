@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 522,
 		"promise_catch": 54,
-		"void_expression": 117,
-		"callback_registration": 206
+		"void_expression": 119,
+		"callback_registration": 209
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -12539,6 +12539,95 @@
 						"justification": "The \"loadPriceHistoryCatalog\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"loadPriceHistoryCatalog\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"loadPriceHistoryCatalog\"."
+				}
+			]
+		},
+		"src/ui/inventory-advisor-price-history-block.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "50fb8e87fcda148135e73c5e28668d5638a51acf",
+					"kind": "void_expression",
+					"line": 85,
+					"column": 3,
+					"endLine": 88,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "Promise.resolve().then",
+						"scope": "request",
+						"justification": "The \"request\" owner deliberately detaches \"Promise.resolve().then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"request\" owner deliberately detaches \"Promise.resolve().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"Promise.resolve().then\" in \"request\"."
+				},
+				{
+					"id": "10442c7a1e0bbb18199ec433caeaaff32bb7ecdf",
+					"kind": "callback_registration",
+					"line": 85,
+					"column": 8,
+					"endLine": 88,
+					"endColumn": 4,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "request",
+						"justification": "The \"request\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"request\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"request\"."
+				},
+				{
+					"id": "373d593bf089bcad1572676b8f8cf8e428cb88eb",
+					"kind": "callback_registration",
+					"line": 142,
+					"column": 4,
+					"endLine": 142,
+					"endColumn": 82,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "paint",
+						"justification": "The \"paint\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"paint\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"paint\"."
+				},
+				{
+					"id": "d2078ec8b36b4625ede444bab1633f82f8185f92",
+					"kind": "void_expression",
+					"line": 142,
+					"column": 45,
+					"endLine": 142,
+					"endColumn": 78,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "options.source().onEnable",
+						"scope": "paint",
+						"justification": "The \"paint\" owner deliberately detaches \"options.source().onEnable\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"paint\" owner deliberately detaches \"options.source().onEnable\"; that named operation owns rejection and terminal diagnostics. Verified target: \"options.source().onEnable\" in \"paint\"."
+				},
+				{
+					"id": "8add74c274859d967fd006fd7e9291f828657a99",
+					"kind": "callback_registration",
+					"line": 150,
+					"column": 4,
+					"endLine": 156,
+					"endColumn": 6,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "paint",
+						"justification": "The \"paint\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"paint\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"paint\"."
 				}
 			]
 		},

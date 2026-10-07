@@ -5,6 +5,7 @@ import type { Locale, Translator } from '../core/i18n';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import { inventorySyncPanel } from './inventory-sync-panel-view';
 import { mountPriceHistoryPanel, type PriceHistoryPanelInteractions } from './price-history-panel-view';
+import { mountRowPriceHistoryBlock, type InventoryAdvisorRowPriceHistory, type RowPriceHistoryBlock } from './inventory-advisor-price-history-block';
 import { renderSellSignalLine } from './sell-signal-line';
 import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
@@ -77,6 +78,11 @@ export interface InventoryAdvisorViewInteractions {
 	};
 	/** Local-only history. Reading storage and enabling polling require an explicit callback. */
 	priceHistory?: PriceHistoryPanelInteractions;
+	/**
+	 * The price chart inside each row's «Detalles». Absent hides the block. It reads the datawars2
+	 * seed of the ROW's item, never the selection of the price panel above.
+	 */
+	rowPriceHistory?: InventoryAdvisorRowPriceHistory;
 	/**
 	 * Opt-in offer for price history (David, 24 sep 2026: off by default, offered here). Present
 	 * only while the host decides to offer it (`priceHistoryOptInOffered`); absent hides the block.
@@ -792,6 +798,8 @@ function mountInventoryAdvisorView(
 	const rowElements = new Map<InventoryAdvisorViewRow, HTMLLIElement>();
 	let rowElementsKey = '';
 	const mountedDetails = new Set<RowDetailDisclosure>();
+	// The price blocks of the details that are open: a repaint of the tab reaches them through here.
+	const mountedPriceHistory = new Set<RowPriceHistoryBlock>();
 	let shownRows: readonly InventoryAdvisorViewRow[] = [];
 	let shownConcentration: ReadonlyMap<string, InventoryAdvisorValueConcentration> | null = null;
 	/** The rows in scope, in the chosen order. `dataChanged` discards what the previous data left. */
@@ -872,6 +880,13 @@ function mountInventoryAdvisorView(
 			onOpenSale: () => interactions.onOpenSale?.(),
 			concentration: (row) => (shownConcentration ??= inventoryAdvisorValueConcentration(shownRows)).get(row.id) ?? null,
 			mountedDetails,
+			priceHistory: {
+				blocks: mountedPriceHistory,
+				// Read at paint time: a row outlives the `interactions` and the translator it was built under.
+				source: () => interactions.rowPriceHistory === undefined ? undefined
+					: { ...interactions.rowPriceHistory, offerVisible: interactions.priceHistoryOptIn !== undefined },
+				translator: () => translator,
+			},
 		};
 		// Whatever `renderInventoryListRow` reads besides the row itself must enter this key, or a
 		// kept row element shows a stale value after that input changes.
@@ -1042,6 +1057,7 @@ function mountInventoryAdvisorView(
 		}
 		priceHistorySummary.textContent = translator.t('priceHistory.title');
 		priceHistoryPanel.update(translator, interactions.priceHistory);
+		for (const block of mountedPriceHistory) block.update();
 		searchLabelText.textContent = translator.t('advisor.view.search');
 		search.placeholder = translator.t('advisor.view.searchPlaceholder');
 		search.setAttribute('aria-label', translator.t('advisor.view.search'));
@@ -1090,7 +1106,14 @@ function mountInventoryAdvisorView(
 		}
 	};
 	update(model, translator, interactions);
-	return { update, dispose: () => priceHistoryPanel.dispose() };
+	return {
+		update,
+		dispose: () => {
+			priceHistoryPanel.dispose();
+			for (const block of mountedPriceHistory) block.dispose();
+			mountedPriceHistory.clear();
+		},
+	};
 }
 
 function optionalSourceCoverageLabel(
@@ -1476,6 +1499,7 @@ function rowDetailDisclosure(
 	summary.textContent = translator.t('advisor.view.list.detailsSummary');
 	details.append(summary);
 	let mounted = false;
+	let priceBlock: RowPriceHistoryBlock | null = null;
 	const disclosure: RowDetailDisclosure = {
 		element: details,
 		collapse: () => {
@@ -1487,12 +1511,26 @@ function rowDetailDisclosure(
 		if (mounted) return;
 		mounted = true;
 		rowContext.mountedDetails.add(disclosure);
-		details.append(...rowDetailBody(row, translator, rowContext.concentration(row), rowContext.showSlotsFreed, rowContext.onOpenSale, rowContext.bagCharacter));
+		// The host that offers no price source gets no block: nothing to hide, nothing to ask.
+		if (rowContext.priceHistory.source() !== undefined) {
+			priceBlock = mountRowPriceHistoryBlock({
+				itemId: row.itemId, itemName: row.name, hasMarket: rowHasMarket(row),
+				source: rowContext.priceHistory.source, translator: rowContext.priceHistory.translator,
+			});
+			rowContext.priceHistory.blocks.add(priceBlock);
+		}
+		const body = rowDetailBody(row, translator, rowContext.concentration(row), rowContext.showSlotsFreed, rowContext.onOpenSale, rowContext.bagCharacter, priceBlock?.element ?? null);
+		details.append(...body);
 	};
 	function unmountBody(): void {
 		if (!mounted) return;
 		mounted = false;
 		rowContext.mountedDetails.delete(disclosure);
+		if (priceBlock !== null) {
+			rowContext.priceHistory.blocks.delete(priceBlock);
+			priceBlock.dispose();
+			priceBlock = null;
+		}
 		details.replaceChildren(summary);
 	}
 	// The click comes before the browser opens the detail, so the body is there when it shows;
@@ -1516,6 +1554,7 @@ function rowDetailBody(
 	showSlotsFreed: boolean,
 	onOpenSale?: () => void,
 	bagCharacter: string | null = null,
+	priceHistory: HTMLElement | null = null,
 ): HTMLElement[] {
 	const body: HTMLElement[] = [];
 	if (row.containerEconomy !== undefined) {
@@ -1541,6 +1580,8 @@ function rowDetailBody(
 	addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
 	addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
 	body.push(list);
+	// The price chart of this item, right under the facts it helps to weigh.
+	if (priceHistory !== null) body.push(priceHistory);
 	const context = rowContextDetails(row, translator, showSlotsFreed, bagCharacter);
 	if (context !== null) body.push(context);
 	const advanced = advancedEvidenceDetails(row.coverage, translator);
@@ -1598,6 +1639,17 @@ interface RowRenderContext {
 	readonly concentration: (row: InventoryAdvisorViewRow) => InventoryAdvisorValueConcentration | null;
 	/** The details whose body is in the document, so the list can close them when it changes. */
 	readonly mountedDetails: Set<RowDetailDisclosure>;
+	/** What a row's price block needs; the set holds the blocks of the open details. */
+	readonly priceHistory: {
+		readonly blocks: Set<RowPriceHistoryBlock>;
+		readonly source: () => InventoryAdvisorRowPriceHistory | undefined;
+		readonly translator: () => Translator;
+	};
+}
+
+/** `false` only when the advisor's own market depth proved the item has no listings at all. */
+function rowHasMarket(row: InventoryAdvisorViewRow): boolean {
+	return row.marketComparison?.depthStatus !== 'no_market';
 }
 
 interface RowKeepContext {

@@ -2270,6 +2270,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.renderInventoryAdvisorViews();
 	}
 
+	/**
+	 * The datawars2 seed of one item for the chart inside an Inventory row's «Detalles». Unlike
+	 * `loadPriceHistorySeries` it never touches the price panel's selected item or its local series:
+	 * the seed service takes any item id (the watch list only bounds the LOCAL captures), and it
+	 * already carries the 24 h cache and the shared interactive download turn. With the history off
+	 * it does nothing at all, so opening a row cannot start a request the player has not consented to.
+	 */
+	async ensurePriceHistorySeed(itemId: number): Promise<void> {
+		if (!this.settings.priceHistoryEnabled || !this.runtimeReady || this.priceHistoryPanelSeed === null) return;
+		await this.priceHistoryPanelSeed.ensure(itemId);
+		this.renderInventoryAdvisorViews();
+	}
+
 	/** Last known datawars2 seed for one item; a stale read, it never starts a download itself. */
 	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState {
 		return this.priceHistoryPanelSeed?.getState(itemId)

@@ -93,6 +93,45 @@ describe('price history chart widget (H9.1/H9.2 shared)', () => {
 	});
 });
 
+describe('price history chart widget: the zoom a fresh series opens on', () => {
+	const seedDays = (count: number): PriceSeedDayV1[] => Array.from({ length: count }, (_unused, index) => (
+		{ dayUtc: dayAt(index), bidCopper: 10, askCopper: 100 + index }
+	));
+	const pressedLabels = (container: FakeElement): string[] => walk(container)
+		.filter((element) => element.tag === 'button' && element.attributes.get('aria-pressed') === 'true')
+		.map((element) => element.textContent ?? '');
+
+	it('opens on the last N days when the series reaches back further, as a range that can be reset', () => {
+		const mount = createMount();
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(300), initialWindowDays: 90 });
+
+		// Day 299 is the last one: 100 + 299 = 399 copper; the first of the 90 shown is day 210 (310 copper).
+		expect(summaryOf(mount.container)).toContain('0g 3s 99c · 2026-10-27');
+		expect(summaryOf(mount.container)).toContain('0g 3s 10c · 2026-07-30');
+		expect(pressedLabels(mount.container)).toEqual([]);
+		expect(walk(mount.container).some((element) => element.className === 'tyrian-price-chart__reset')).toBe(true);
+	});
+
+	it('opens on everything, with no range to reset, when the series is shorter than the window', () => {
+		const mount = createMount();
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(5), initialWindowDays: 90 });
+
+		expect(pressedLabels(mount.container)).toEqual(['All']);
+		expect(walk(mount.container).some((element) => element.className === 'tyrian-price-chart__reset')).toBe(false);
+	});
+
+	it('is the old behaviour (everything) without the option, and a reader\'s own zoom wins over it on a repaint', () => {
+		const mount = createMount();
+		const options = { daily: [], side: 'ask' as const, seedDays: seedDays(300) };
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), options);
+		expect(pressedLabels(mount.container)).toEqual(['All']);
+
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { ...options, initialWindowDays: 90 });
+		// Same series, same container: the zoom already there (everything) is not replaced by the default.
+		expect(pressedLabels(mount.container)).toEqual(['All']);
+	});
+});
+
 function summaryOf(container: FakeElement): string[] {
 	return walk(container).filter((element) => element.tag === 'dd').map((element) => element.textContent ?? '');
 }

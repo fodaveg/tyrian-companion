@@ -50,6 +50,12 @@ export interface InventoryAdvisorViewActions {
 	/** Last known datawars2 seed state for one item; a stale read, never a trigger. */
 	getPriceHistorySeedState?(itemId: number): PriceHistoryPanelSeedState;
 	/**
+	 * The datawars2 seed of ONE item for the chart inside a row's «Detalles»: the same 24 h cache and
+	 * download turn as the price panel, but it never moves the panel's selected item. No-op while the
+	 * history is off, so opening a row starts no request then. Repaints the tab when it ends.
+	 */
+	ensurePriceHistorySeed?(itemId: number): Promise<void>;
+	/**
 	 * H18.17: the bulk seed queue's coverage across the whole watch list, from the last
 	 * "Sincronizar inventario" pass. A stale read, never a trigger.
 	 */
@@ -184,6 +190,18 @@ export class InventoryAdvisorItemView {
 				onEnable: () => this.runPriceHistoryAction(() => this.actions.enablePriceHistory!()),
 				onDismiss: () => this.runPriceHistoryAction(() => this.actions.dismissPriceHistoryOptIn!()),
 			};
+		const rowPriceHistory = priceHistory === undefined
+			|| this.actions.ensurePriceHistorySeed === undefined
+			|| this.actions.getPriceHistorySeedState === undefined
+			? undefined
+			: {
+				enabled: priceHistory.state.status !== 'disabled',
+				consultOnly,
+				busy: this.priceHistoryBusy,
+				getSeed: (itemId: number) => this.actions.getPriceHistorySeedState!(itemId),
+				ensureSeed: (itemId: number) => this.actions.ensurePriceHistorySeed!(itemId),
+				onEnable: priceHistory.onEnable,
+			};
 		const actionController = this.actions.getProductActionController?.();
 		actionController?.setInventorySurfaceBusy(this, this.analysisBusy || this.syncBusy);
 		const locale = this.actions.getInventoryAdvisorLocale();
@@ -223,6 +241,7 @@ export class InventoryAdvisorItemView {
 				inventorySync: sync,
 				priceHistory,
 				priceHistoryOptIn,
+				rowPriceHistory,
 				sellSignalState: this.actions.getSellSignalState?.() ?? null,
 			},
 		);

@@ -44,6 +44,12 @@ export interface PriceHistoryChartMountOptions {
 	readonly daily: readonly PriceHistoryDailyV1[];
 	readonly side: PriceHistorySide;
 	readonly seedDays: readonly PriceSeedDayV1[];
+	/**
+	 * The zoom a fresh series opens on: its last N days, instead of the whole history. Only a
+	 * fresh series reads it (a reader's own zoom outlives repaints), and a series that does not
+	 * reach back N days opens on «all», which is the same view without a reset button to dismiss.
+	 */
+	readonly initialWindowDays?: number;
 }
 
 interface ChartZoomState {
@@ -93,7 +99,7 @@ export function mountPriceHistoryChart(
 	const stored = ZOOM_STATE.get(container);
 	const state: ChartZoomState = stored !== undefined && stored.seriesKey === seriesKey
 		? stored
-		: { seriesKey, windowId: 'all', customRange: null };
+		: initialChartZoom(seriesKey, merged, options.initialWindowDays);
 	ZOOM_STATE.set(container, state);
 
 	const document = container.ownerDocument;
@@ -117,6 +123,19 @@ export function mountPriceHistoryChart(
 	};
 
 	paint();
+}
+
+function initialChartZoom(
+	seriesKey: string,
+	merged: readonly PriceHistoryChartPoint[],
+	windowDays: number | undefined,
+): ChartZoomState {
+	const all: ChartZoomState = { seriesKey, windowId: 'all', customRange: null };
+	if (windowDays === undefined || !Number.isSafeInteger(windowDays) || windowDays < 2) return all;
+	const endDayUtc = merged.at(-1)!.dayUtc;
+	const startDayUtc = new Date(Date.parse(`${endDayUtc}T00:00:00.000Z`) - (windowDays - 1) * 86_400_000).toISOString().slice(0, 10);
+	if (merged[0]!.dayUtc >= startDayUtc) return all;
+	return { seriesKey, windowId: 'custom', customRange: { startDayUtc, endDayUtc } };
 }
 
 function buildToolbar(translator: Translator, state: ChartZoomState, repaint: () => void): HTMLElement {

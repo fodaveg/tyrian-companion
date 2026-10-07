@@ -495,6 +495,66 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(host.dismiss).not.toHaveBeenCalled();
 		expect(host.settings.priceHistoryEnabled).toBe(false);
 	});
+
+	describe('the price chart inside a row\'s «Detalles»', () => {
+		function openRow(root: FakeElement): FakeElement {
+			const details = find(root, 'details').find((candidate) => candidate.className === 'tyrian-inventory__more')!;
+			details.children[0]!.dispatch('click');
+			(details as unknown as { open: boolean }).open = true;
+			details.dispatch('toggle');
+			return details;
+		}
+
+		it('history off: opening the row asks for nothing, shows the opt-in, and its button is the same enable as the offer', async () => {
+			const host = optInHost();
+			const ensure = vi.fn(async () => undefined);
+			installDom();
+			const view = new InventoryAdvisorItemView(content(), icons, {
+				...host.actions, ensurePriceHistorySeed: ensure,
+				getPriceHistorySeedState: () => ({ status: 'idle', itemId: 10, days: [], failureReason: null, retrievedAt: null }),
+			});
+			await view.onOpen();
+
+			const details = openRow(view.contentEl as unknown as FakeElement);
+			const rowBlock = walk(details).find((element) => element.className === 'tyrian-inventory__price-history')!;
+			expect(ensure).not.toHaveBeenCalled();
+			expect(text(rowBlock)).toContain('El histórico de precios está desactivado');
+
+			buttonWithText(rowBlock, 'Activar histórico de precios').dispatch('click');
+			await flush();
+			expect(host.enable).toHaveBeenCalledTimes(1);
+			expect(host.settings.priceHistoryEnabled).toBe(true);
+		});
+
+		it('history on: opening the row asks for THAT row\'s item once, and a repaint of the tab does not ask again', async () => {
+			const ensure = vi.fn(async () => undefined);
+			installDom();
+			const view = new InventoryAdvisorItemView(content(), icons, {
+				...actions(() => 'es', { priceHistory: { state: priceHistoryState({ status: 'collecting' }) } }).value,
+				ensurePriceHistorySeed: ensure,
+				getPriceHistorySeedState: () => ({ status: 'idle', itemId: 10, days: [], failureReason: null, retrievedAt: null }),
+			});
+			await view.onOpen();
+			expect(ensure).not.toHaveBeenCalled();
+
+			openRow(view.contentEl as unknown as FakeElement);
+			view.render();
+			view.render();
+
+			expect(ensure).toHaveBeenCalledTimes(1);
+			expect(ensure).toHaveBeenCalledWith(10);
+		});
+
+		it('a host without the seed action renders no block', async () => {
+			installDom();
+			const view = new InventoryAdvisorItemView(content(), icons, actions(() => 'es', { priceHistory: { state: priceHistoryState() } }).value);
+			await view.onOpen();
+
+			const details = openRow(view.contentEl as unknown as FakeElement);
+
+			expect(walk(details).filter((element) => element.className === 'tyrian-inventory__price-history')).toHaveLength(0);
+		});
+	});
 });
 
 /**
