@@ -198,6 +198,20 @@ describe('passive live session lifecycle', () => {
 			.resolves.toMatchObject({ exportState: 'active_snapshot', observedItemsMs: 853 });
 		await f.service.dispose();
 	});
+	it('publishes a session whose end was stamped one clock read before its last observation', async () => {
+		// The presence ends at the connection's last frame; the sample that frame carried is stamped
+		// by a later read of the clock.
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));
+		f.setNow(AT + 1000); await f.service.commit(f.sample(1, 2));
+		f.setNow(AT + 5000); await expect(f.service.stop(AT + 999)).resolves.toBe(true);
+		const record = f.service.getRuntime()!; const journal = f.service.getJournal();
+		expect(record).toMatchObject({ endedAt: new Date(AT + 999).toISOString(), lastObservationAt: new Date(AT + 1000).toISOString() });
+		const rendered = await renderLiveSessionNote({ record, journal, locale: 'es', outputFolder: 'Tyrian' });
+		expect(rendered, 'the finished session renders its note').toMatchObject({ status: 'ok', session: { endedAt: new Date(AT + 1000).toISOString(), observationCount: 1 } });
+		if (rendered.status !== 'ok') throw new Error('unreachable');
+		await expect(inspectLiveSessionNote(rendered.note.content), 'and the note reads back as valid evidence').resolves.toMatchObject({ status: 'ok' });
+		await f.service.dispose();
+	});
 });
 
 function economy(f: ReturnType<typeof fixture>, lifecycle = f.service) {

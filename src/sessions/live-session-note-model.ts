@@ -40,11 +40,23 @@ export interface LiveSessionSnapshotV1 extends Omit<StoredLiveSessionPayloadV1,'
 
 /** Durable notes remain completed evidence, independently of active export snapshots. */
 export async function prepareLiveSessionPayload(input: LiveSessionNoteInput): Promise<StoredLiveSessionPayloadV1 | null> {
-	if (input.record.phase !== 'complete' || input.record.endedAt === null) return null;
-	const evidence = await prepareLiveSessionEvidence(input, input.record.endedAt);
+	const endedAt = publishedEnd(input.record);
+	if (input.record.phase !== 'complete' || endedAt === null) return null;
+	const evidence = await prepareLiveSessionEvidence(input, endedAt);
 	if (evidence === null) return null;
-	const payload = {...evidence,endedAt: input.record.endedAt};
+	const payload = {...evidence,endedAt};
 	return isStoredLiveSessionPayload(payload) ? payload : null;
+}
+
+/**
+ * The end a finished session is published with. The record's `endedAt` comes from the presence (the
+ * connection's last frame, or the goodbye) and every observation carries its own reception stamp,
+ * taken one clock read later, so the last observation can sit a moment after that end. A session
+ * did not end before something it observed: the later of the two is its end.
+ */
+function publishedEnd(live: LiveSessionRuntimeRecord): string | null {
+	if (live.endedAt === null) return null;
+	return date(live.lastObservationAt) && live.lastObservationAt > live.endedAt ? live.lastObservationAt : live.endedAt;
 }
 
 /**
@@ -64,9 +76,10 @@ function observedWithin(observedMs: number, gaps: readonly LiveGapV1[], channel:
 export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInput,'record' | 'journal'>,
 	capturedAt: string): Promise<LiveSessionSnapshotV1 | null> {
 	if (!date(capturedAt) || (input.record.phase === 'active') !== (input.record.endedAt === null)) return null;
-	const evidence = await prepareLiveSessionEvidence(input, input.record.endedAt ?? capturedAt);
+	const endedAt = publishedEnd(input.record);
+	const evidence = await prepareLiveSessionEvidence(input, endedAt ?? capturedAt);
 	if (evidence === null) return null;
-	const snapshot: LiveSessionSnapshotV1 = {...evidence,endedAt: input.record.endedAt,capturedAt,
+	const snapshot: LiveSessionSnapshotV1 = {...evidence,endedAt,capturedAt,
 		exportState: input.record.phase === 'active' ? 'active_snapshot' : 'completed_session'};
 	return isLiveSessionSnapshot(snapshot) ? snapshot : null;
 }
