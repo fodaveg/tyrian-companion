@@ -1,5 +1,5 @@
 import { isPublicCatalogNotFound, type PublicCatalogGateway, type PublicCatalogResponse } from '../catalog/public-catalog-client';
-import type { CatalogItem } from '../catalog/public-catalog-model';
+import type { CatalogCurrency, CatalogIdCoverage, CatalogItem } from '../catalog/public-catalog-model';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
@@ -16,9 +16,19 @@ interface LiveEconomyOptions {
 	now(): number; catalog(ids: readonly number[]): Promise<Record<string,CatalogItem>>;
 	/** Local catalog cache only, any age, never a request: how a restored session gets its labels back. */
 	cachedItems(ids: readonly number[]): Promise<Record<string,CatalogItem>>;
+	/** Public `currencies` lookup (name, icon) for ONLY the coins this session observed; `coverage` says how each id fared. */
+	currencies(ids: readonly number[]): Promise<{currencies: Record<string,CatalogCurrency>; coverage: Record<string,CatalogIdCoverage>}>;
+	/** Local currency cache only, any age, never a request. */
+	cachedCurrencies(ids: readonly number[]): Promise<Record<string,CatalogCurrency>>;
 	canEmit?(): boolean;
 	emit(intent: LiveAlertOutboxV1): Promise<AlertDeliveryReport>; onError(error: unknown): void; onChange(): void;
 }
+/** A coin the public catalog could not name: `unavailable` is a failed request, `missing` an id it does not know (404). */
+class CurrencyCatalogUnavailableError extends Error { constructor() { super('The currency catalog could not be read.'); this.name = 'CurrencyCatalogUnavailableError'; } }
+class CurrencyCatalogMissingError extends Error { constructor() { super('The currency catalog does not know an observed currency.'); this.name = 'CurrencyCatalogMissingError'; } }
+/** A coin that stayed unresolved is asked again at most this often; the catalog service itself caches a 404 for an hour. */
+const CURRENCY_RETRY_MS = 5 * 60_000;
+
 /**
  * Public catalog and price requests run only in `enrich()`, after the durable measurement ACK, never
  * during rendering. Rendering may read labels from the LOCAL catalog cache (no network, any age).
@@ -29,6 +39,11 @@ export class LiveSessionEconomy {
 	/** Ids a panel asked for and nobody has resolved yet, and ids whose cache read already missed (cleared when `enrich()` resolves something). */
 	private readonly wanted = new Set<number>();
 	private readonly tried = new Set<number>();
+	/** The same four pieces for coins, which live apart from items: an item id and a currency id can coincide. */
+	private readonly currencyEntities = new Map<number,{name:string;icon:string|null}>();
+	private readonly wantedCurrencies = new Set<number>();
+	private readonly triedCurrencies = new Set<number>();
+	private readonly currencyAskedAt = new Map<number,number>();
 	/** Gross best bid and lowest ask of the Halloween bag from the last public read of THIS process; a restored quote has none. */
 	private bagRaw: BagRawQuote | null = null;
 	private bagAttemptedAt: number | null = null;
@@ -43,22 +58,34 @@ export class LiveSessionEconomy {
 	 * through `onChange`; an id absent from the cache stays a placeholder until `enrich()` resolves it.
 	 */
 	entity(kind: 'item'|'currency', id: number): {name:string;icon:string|null}|null {
-		if (kind !== 'item') return null;
-		const known = this.entities.get(id);
+		const known = (kind === 'item' ? this.entities : this.currencyEntities).get(id);
 		if (known) return known;
-		this.want(id);
+		this.want(kind,id);
 		return null;
 	}
-	private want(id: number): void {
-		if (this.disposed || this.wanted.has(id)) return;
-		if (this.tried.has(id)) return;
-		this.wanted.add(id);
+	private want(kind: 'item'|'currency', id: number): void {
+		const wanted = kind === 'item' ? this.wanted : this.wantedCurrencies;
+		if (this.disposed || wanted.has(id)) return;
+		if ((kind === 'item' ? this.tried : this.triedCurrencies).has(id)) return;
+		wanted.add(id);
 		this.lookup ??= Promise.resolve().then(async () => await this.resolveWanted());
 	}
 	private async resolveWanted(): Promise<void> {
-		const ids = [...this.wanted]; this.wanted.clear(); this.lookup = null;
+		const ids = [...this.wanted]; this.wanted.clear();
+		const currencyIds = [...this.wantedCurrencies]; this.wantedCurrencies.clear(); this.lookup = null;
 		for (const id of ids) this.tried.add(id);
+		for (const id of currencyIds) this.triedCurrencies.add(id);
 		if (this.disposed) return;
+		if (currencyIds.length > 0) {
+			try {
+				const metadata = await this.options.cachedCurrencies(currencyIds);
+				if (this.disposed) return;
+				let changed = false;
+				for (const currency of Object.values(metadata)) if (!this.currencyEntities.has(currency.id)) { this.currencyEntities.set(currency.id,{name:currency.name,icon:currency.icon}); changed = true; }
+				if (changed) this.options.onChange();
+			} catch { /* A cosmetic lookup that fails keeps "Currency <id>" until `enrich()` resolves it. */ }
+		}
+		if (ids.length === 0) return;
 		try {
 			const metadata = await this.options.cachedItems(ids);
 			if (this.disposed) return;
@@ -111,9 +138,33 @@ export class LiveSessionEconomy {
 	}
 	async dispose(): Promise<void> { this.disposed = true; await this.flight; await this.lookup; }
 	async drain(): Promise<void> { await this.flight; await this.lookup; }
+	/**
+	 * One public `currencies?ids=` read for the coins this entry observed and nobody has named yet (never the wallet).
+	 * It cannot fail the entry: an unavailable catalog or an unknown id is reported through `onError` and the tile
+	 * keeps its fallback name until a later entry asks again, at most every `CURRENCY_RETRY_MS`.
+	 */
+	private async enrichCurrencies(entry: LiveJournalEntryV1): Promise<void> {
+		const now = this.options.now();
+		const ids = [...new Set(entry.observations.filter((row) => row.kind === 'currency').map((row) => row.idNumber))]
+			.filter((id) => !this.currencyEntities.has(id) && now - (this.currencyAskedAt.get(id) ?? -Infinity) >= CURRENCY_RETRY_MS);
+		if (ids.length === 0 || this.options.rateLimit.status().active) return;
+		for (const id of ids) this.currencyAskedAt.set(id,now);
+		try {
+			const found = await this.options.currencies(ids);
+			if (this.disposed) return;
+			for (const currency of Object.values(found.currencies)) this.currencyEntities.set(currency.id,{name:currency.name,icon:currency.icon});
+			const unresolved = ids.filter((id) => !this.currencyEntities.has(id));
+			if (unresolved.some((id) => found.coverage[String(id)]?.status === 'unavailable' || found.coverage[String(id)] === undefined)) this.options.onError(new CurrencyCatalogUnavailableError());
+			if (unresolved.some((id) => { const status = found.coverage[String(id)]?.status; return status === 'missing' || status === 'invalid' || status === 'malformed'; })) this.options.onError(new CurrencyCatalogMissingError());
+			this.triedCurrencies.clear();
+			if (unresolved.length < ids.length) this.options.onChange();
+		} catch (error) { this.options.onError(error); }
+	}
 	private async enrich(entry: LiveJournalEntryV1): Promise<void> {
 		const lifecycle = this.options.lifecycle; const runtime = lifecycle.getRuntime();
 		if (this.disposed || runtime?.phase !== 'active' || runtime.sessionId !== entry.sessionId) return;
+		await this.enrichCurrencies(entry);
+		if (this.disposed || lifecycle.getRuntime()?.phase !== 'active' || lifecycle.getRuntime()?.sessionId !== entry.sessionId) return;
 		const ids = [...new Set(entry.observations.filter((row) => row.kind === 'item').map((row) => row.idNumber))];
 		const now = this.options.now();
 		for (const price of runtime.prices) if (!this.quotes.has(price.itemId) && runtime.priceCapturedAt !== null) this.quotes.set(price.itemId,{unitCopper:price.unitCopper,capturedAt:Date.parse(runtime.priceCapturedAt)});

@@ -3225,6 +3225,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			canEmit: () => !consulting(this) && !this.unloaded,
 			catalog: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveItems(ids,this.settings.language); },
 			cachedItems: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedItems(ids,this.settings.language); },
+			currencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveCurrencies(ids,this.settings.language); },
+			cachedCurrencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedCurrencies(ids,this.settings.language); },
 			emit: async (intent) => await this.emitLiveSessionAlert(intent), onError: (error) => { this.recordIngameSessionFailure(error); },
 			onChange: () => { this.renderViews(); },
 		});

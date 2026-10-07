@@ -8,6 +8,7 @@ import type {
 } from './public-catalog-cache';
 import type { PublicCatalogGateway } from './public-catalog-client';
 import {
+	type CatalogCurrency,
 	type CatalogEntityByKind,
 	type CatalogIdCoverage,
 	type CatalogItem,
@@ -105,19 +106,48 @@ export class PublicCatalogService {
 	}
 
 	/**
+	 * Resolves currency metadata for a bounded id list, keyed by decimal id, through the same cache,
+	 * batching and limiter as the items. Unlike `resolveItems` it also returns how each id fared: a
+	 * session shows a currency tile either way, so the caller reports a 404 or a failed request
+	 * instead of inferring it from an absent entry.
+	 */
+	async resolveCurrencies(
+		currencyIds: readonly number[],
+		locale: CatalogLocale,
+	): Promise<{ currencies: Record<string, CatalogCurrency>; coverage: Record<string, CatalogIdCoverage> }> {
+		const ids = uniqueSorted([...currencyIds]);
+		if (ids.length === 0) return { currencies: {}, coverage: {} };
+		const resolved = await this.resolveKind('currencies', ids, locale, parseCatalogCurrency, this.now());
+		return { currencies: mapEntities(resolved.entities), coverage: mapCoverage(resolved.coverage) };
+	}
+
+	/**
 	 * Cache-only read for cosmetic labels: never touches the gateway and accepts a record of ANY age
 	 * (a name and an icon do not change), but still rejects another schema/normalizer or a wrong shape.
 	 */
 	async readCachedItems(itemIds: readonly number[], locale: CatalogLocale): Promise<Record<string, CatalogItem>> {
-		const ids = uniqueSorted([...itemIds]);
+		return await this.readCached('items', itemIds, locale);
+	}
+
+	/** The same cache-only read for currencies: how a restored session gets its coin names and icons back. */
+	async readCachedCurrencies(currencyIds: readonly number[], locale: CatalogLocale): Promise<Record<string, CatalogCurrency>> {
+		return await this.readCached('currencies', currencyIds, locale);
+	}
+
+	private async readCached<K extends 'items' | 'currencies'>(
+		kind: K,
+		wanted: readonly number[],
+		locale: CatalogLocale,
+	): Promise<Record<string, CatalogEntityByKind[K]>> {
+		const ids = uniqueSorted([...wanted]);
 		if (ids.length === 0) return {};
-		const keys = ids.map((id) => cacheKey('items', locale, id));
+		const keys = ids.map((id) => cacheKey(kind, locale, id));
 		const cached = this.cache.getMany ? await this.cache.getMany(keys) : await getManyFallback(this.cache, keys);
-		const found = new Map<number, CatalogItem>();
+		const found = new Map<number, CatalogEntityByKind[K]>();
 		for (const id of ids) {
 			const record = cached.get(id);
 			if (!record?.value || record.schemaVersion !== PINNED_SCHEMA || record.normalizerVersion !== CATALOG_NORMALIZER_VERSION) continue;
-			if (record.value.id === id && hasExpectedKind('items', record.value.kind)) found.set(id, record.value);
+			if (record.value.id === id && hasExpectedKind(kind, record.value.kind)) found.set(id, record.value);
 		}
 		return mapEntities(found);
 	}

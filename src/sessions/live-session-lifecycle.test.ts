@@ -218,7 +218,7 @@ function economy(f: ReturnType<typeof fixture>, lifecycle = f.service) {
 	const emit = vi.fn(async () => ({delivered:['queue'] as const,failed:[],rejected:false}));
 	const requestDetailed = vi.fn(async () => ({status:200,headers:{},body:[{id:12147,whitelisted:true,
 		buys:{unit_price:100,quantity:100},sells:{unit_price:120,quantity:100}}]}));
-	const service = new LiveSessionEconomy({lifecycle,cachedItems:async () => ({}),gateway:{requestDetailed},rateLimit:new RateLimitCoordinator({now:f.options.now}),
+	const service = new LiveSessionEconomy({lifecycle,cachedItems:async () => ({}),currencies:async () => ({currencies:{},coverage:{}}),cachedCurrencies:async () => ({}),gateway:{requestDetailed},rateLimit:new RateLimitCoordinator({now:f.options.now}),
 		now:f.options.now,catalog:async () => ({}),emit,onError:vi.fn(),onChange:vi.fn()});
 	return {service,emit,requestDetailed};
 }

@@ -16,7 +16,7 @@ import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { HttpResponse } from '../core/http';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { CATALOG_NORMALIZER_VERSION } from '../catalog/public-catalog-model';
-import { parseCatalogItem } from '../catalog/public-catalog-parsers';
+import { parseCatalogCurrency, parseCatalogItem } from '../catalog/public-catalog-parsers';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -79,8 +79,13 @@ function transportSpy(): Catalog {
 	return { calls, gateway };
 }
 /** A local catalog cache as an earlier session left it, with entries older than any TTL. */
-async function cacheWith(ids: readonly number[], language: 'es' | 'en'): Promise<MemoryCatalogCache> {
+async function cacheWith(ids: readonly number[], language: 'es' | 'en', currencies: readonly number[] = []): Promise<MemoryCatalogCache> {
 	const cache = new MemoryCatalogCache();
+	for (const id of currencies) {
+		const value = parseCatalogCurrency({ id, name: `Coin ${String(id)}`, description: 'd', icon: `https://render.guildwars2.com/file/c${String(id)}.png`, order: id });
+		await cache.set({ kind: 'currencies', locale: language, id, schemaVersion: PINNED_SCHEMA, normalizerVersion: CATALOG_NORMALIZER_VERSION },
+			{ value, storedAt: Date.now() - 400 * 24 * 3_600_000, schemaVersion: PINNED_SCHEMA, normalizerVersion: CATALOG_NORMALIZER_VERSION });
+	}
 	for (const id of ids) {
 		const item = ITEMS.find((candidate) => candidate.id === id)!;
 		const value = parseCatalogItem({ id, name: item.name, icon: `https://render.guildwars2.com/file/${String(id)}.png`, type: 'Food', rarity: 'Basic', level: 0, vendor_value: 1, flags: [], game_types: [], restrictions: [] });
@@ -91,7 +96,7 @@ async function cacheWith(ids: readonly number[], language: 'es' | 'en'): Promise
 }
 
 /** The real core object (its entity port, render queue and economy wiring) over a freshly restored lifecycle, with the real view mounted on it. */
-async function restoredPlugin(finish: boolean, options: { cached?: readonly number[]; consult?: boolean } = {}) {
+async function restoredPlugin(finish: boolean, options: { cached?: readonly number[]; cachedCurrencies?: readonly number[]; consult?: boolean } = {}) {
 	const catalog = transportSpy();
 	const store = new MemorySessionRuntimeStore();
 	await persistedSession(store, finish);
@@ -101,7 +106,7 @@ async function restoredPlugin(finish: boolean, options: { cached?: readonly numb
 	const internals = core as unknown as { liveSessions: LiveSessionLifecycle; liveEconomy: unknown; sessionCatalogFactory: () => Promise<PublicCatalogService>;
 		createLiveEconomy(lifecycle: LiveSessionLifecycle, gateway: PublicCatalogGateway, rateLimit: RateLimitCoordinator): unknown; mountedViews: { companion: { byContainer: Map<HTMLElement, unknown> } } };
 	internals.liveSessions = restored;
-	const cache = await cacheWith(options.cached ?? [], core.settings.language);
+	const cache = await cacheWith(options.cached ?? [], core.settings.language, options.cachedCurrencies ?? []);
 	if (options.consult) (core as unknown as { collectorMode: string }).collectorMode = 'consult';
 	internals.sessionCatalogFactory = async () => new PublicCatalogService(catalog.gateway, cache);
 	internals.liveEconomy = internals.createLiveEconomy(restored, catalog.gateway, new RateLimitCoordinator());
@@ -168,6 +173,17 @@ describe('entity names and icons of a live session restored after a plugin reloa
 		const cold = await restoredPlugin(true, { consult: true }); await settle();
 		expect(cold.catalog.calls).toEqual([]);
 		expect(cold.content.querySelectorAll('.tyrian-live-session__missing')).toHaveLength(3);
+	});
+
+	it('coins come back the same way: name and icon from the local cache, an uncached coin stays unresolved, zero requests', async () => {
+		const { core, catalog } = await restoredPlugin(true, { cachedCurrencies: [1] });
+		expect(core.getLiveSessionEntity('currency', 1)).toBeNull(); // the first read only schedules the cache lookup
+		expect(core.getLiveSessionEntity('currency', 23)).toBeNull();
+		await settle();
+		expect(core.getLiveSessionEntity('currency', 1)).toEqual({ name: 'Coin 1', icon: 'https://render.guildwars2.com/file/c1.png' });
+		expect(core.getLiveSessionEntity('currency', 23)).toBeNull();
+		expect(core.getLiveSessionEntity('item', 1)).toBeNull(); // a coin id is not an item id
+		expect(catalog.calls).toEqual([]);
 	});
 
 	it('objects of OTHER (saved) sessions are asked in one batched local cache read, never over the network, and a miss is not asked twice', async () => {

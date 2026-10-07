@@ -19,7 +19,7 @@ function harness(options: { phase?: string; canEmit?: boolean; restored?: boolea
 	};
 	const economy = new LiveSessionEconomy({
 		lifecycle: lifecycle as never, gateway: gateway as never, rateLimit: new RateLimitCoordinator({ now: () => now }),
-		now: () => now, catalog: async () => ({}), cachedItems: async () => ({}), canEmit: () => state.canEmit,
+		now: () => now, catalog: async () => ({}), cachedItems: async () => ({}), currencies: async () => ({ currencies: {}, coverage: {} }), cachedCurrencies: async () => ({}), canEmit: () => state.canEmit,
 		emit: async () => ({ delivered: [], failed: [], rejected: false }), onError: vi.fn(), onChange: vi.fn(),
 	});
 	const entry = { sessionId: 's1', observations: [{ id: 'o1', kind: 'item', idNumber: BAG }], outbox: [] } as unknown as LiveJournalEntryV1;
