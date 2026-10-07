@@ -13,15 +13,15 @@ permite la investigación acotada. La identidad del binario analizado es SHA-256
 
 ## Ruta respaldada por código estático
 
-| Paso | Evidencia en este binario |
-| --- | --- |
-| Contexto general + `0x98` → ChCliContext | `InvWalletPage.cpp`, RVA `0x6A9225`, consume este campo |
-| ChCliContext + `0xA0` → personaje de cartera | Vtable `0x215CF48`, slot `0x70` → getter `0x498860`: `mov rax,[rcx+0xA0]; ret` |
-| Personaje + `0x1878` → gestor embebido | Vtable `0x215D958`, slot `0x250` → getter `0x11BA5E0`: `lea rax,[rcx+0x1878]; ret` |
-| Gestor de monedas | Constructor/destructor de `ChCliCurrency.cpp` fijan vtable `0x21720F8` |
-| Getter por ID | Slot 0 → RVA `0x1271810`; `InvWalletListEntry.cpp` le pasa `CurrencyDef+0x28` |
-| Mapa de claves | Capacidad DWORD `+0x08`, count DWORD `+0x0C`, puntero QWORD `+0x10` |
-| Bucket de 12 bytes | Clave DWORD `+0`, saldo candidato DWORD `+4`, hash ocupado DWORD `+8` |
+| Paso                                         | Evidencia en este binario                                                          |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Contexto general + `0x98` → ChCliContext     | `InvWalletPage.cpp`, RVA `0x6A9225`, consume este campo                            |
+| ChCliContext + `0xA0` → personaje de cartera | Vtable `0x215CF48`, slot `0x70` → getter `0x498860`: `mov rax,[rcx+0xA0]; ret`     |
+| Personaje + `0x1878` → gestor embebido       | Vtable `0x215D958`, slot `0x250` → getter `0x11BA5E0`: `lea rax,[rcx+0x1878]; ret` |
+| Gestor de monedas                            | Constructor/destructor de `ChCliCurrency.cpp` fijan vtable `0x21720F8`             |
+| Getter por ID                                | Slot 0 → RVA `0x1271810`; `InvWalletListEntry.cpp` le pasa `CurrencyDef+0x28`      |
+| Mapa de claves                               | Capacidad DWORD `+0x08`, count DWORD `+0x0C`, puntero QWORD `+0x10`                |
+| Bucket de 12 bytes                           | Clave DWORD `+0`, saldo candidato DWORD `+4`, hash ocupado DWORD `+8`              |
 
 La ruta de inventario controlado previamente probada utiliza **ChCliContext+0x98** y un wrapper
 con otra vtable. No se intercambian ambos campos. Si la clase observada en vivo difiere de las
@@ -94,3 +94,53 @@ todo el heap. Dos muestras prueban una diferencia neta, no la causa ni todos los
 Para ampliar soporte harán falta además cero real, gastos, otros ingresos, ráfagas, cambio de
 personaje/contexto y límites numéricos. Hasta entonces las monedas de producto permanecen
 sin soporte conocido; este candidato no se publica como perfil nativo validado.
+
+## Validación en vivo del 7 octubre 2026
+
+Esta sección supera lo dicho arriba sobre "sin validar", "runtime_wallet_attempted: false" y
+"monedas de producto sin soporte conocido" para los 55 IDs de moneda indicados más abajo. Las
+secciones anteriores y `receipt.json` se conservan sin cambios como historia.
+
+David pidió añadir las monedas a la sesión y eligió como fuente el lector de cartera del addon
+de Nexus, no la API. Autorizó ese día una sonda externa de solo lectura contra el juego abierto.
+Se midió en Fedora con GE-Proton11-7 sobre el `Gw2-64.exe` instalado, cuyo SHA-256
+(`27d179bf...10802c`) coincide con el del perfil.
+
+- La sonda TEB obtuvo el contexto desde el hilo 508. Leyó 114 de 114 hilos, sin fallos, con una
+  raíz de loot no nula y 2748 de 4096 bytes. Su autocontrol terminó con exit 0.
+- `probe.py`, sin modificar, tomó dos muestras separadas por un segundo. Terminó con exit 0.
+  Las dos dieron el mismo saldo para la clave 45 y un cambio neto de 0. Pidió y leyó 1736 bytes,
+  4 buckets y no escribió nada. Ese saldo coincidió exactamente con el de la moneda 45 en
+  `/v2/account/wallet`, consultada justo después.
+- `full_map_compare.py` es una variante de diagnóstico. Reutiliza `Reader`, los guards y
+  `currency_hash` de `probe.py` y solo sube el presupuesto a 64 KiB para leer una vez la tabla
+  de la cartera (capacidad por 12 bytes). No barre el heap ni escribe. Resultado: capacidad 128,
+  55 entradas, 55 buckets ocupados, 4088 bytes pedidos y leídos, 0 claves con hash incorrecto
+  y 0 claves inalcanzables por sondeo lineal.
+- Comparado con `/v2/account/wallet`: la API tiene 55 monedas y las 55 claves nativas son
+  exactamente esos IDs. Ninguna está solo en la API ni solo en el mapa nativo. 54 saldos son
+  idénticos. La moneda 45 (magia volátil) tiene 11 más en el juego, porque la API responde desde
+  una caché de 5 a 10 minutos y David estaba jugando.
+- IDs comparados: 1, 2, 3, 4, 7, 15, 16, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 29, 32, 34,
+  35, 37, 38, 41, 42, 43, 44, 47, 49, 50, 51, 54, 58, 60, 61, 62, 63, 65, 66, 67, 68, 69, 70,
+  71, 72, 73, 75, 76, 78, 79, 80, 81, 82, 83.
+
+Queda acreditado que, para esos 55 IDs y en ese binario, la clave nativa es el ID público de la
+moneda y el saldo es el DWORD en `+4` del bucket. Los detalles y los hashes de cada pieza
+(sonda TEB, `probe.py`, `profile.json`, `full_map_compare.py`) están en
+[`receipt-live-2026-10-07.json`](receipt-live-2026-10-07.json). El recibo no contiene saldos.
+
+Sigue sin acreditar:
+
+- La causa de una adquisición.
+- El cero real de una moneda gastada del todo.
+- El cambio de personaje o de contexto.
+- Las ráfagas de cambios.
+- Los límites numéricos.
+- Windows nativo.
+- El funcionamiento del lector dentro del addon, que es otro trabajo en el repo
+  `tyrian-companion-nexus`.
+
+Límite de producto: el mapa nativo es disperso. Una moneda que la cuenta nunca ha tenido no
+tiene clave, así que su primera aparición es una línea base local sin delta y su primera
+ganancia no se cuenta.

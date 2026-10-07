@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-07",
+  "scope": "read-only live validation of the sparse wallet path against the installed binary of the profile; not the in-addon reader and not Windows",
+  "supersedes": "receipt.json fields runtime_attempted=false and native_key_mapping_proven=false, for the 55 currency IDs listed below only. receipt.json is kept unchanged.",
+  "authorization": "David asked to add coins to the session, chose the Nexus addon wallet reader as the source (not the API) and authorized the external read-only probe against the open game on 2026-10-07.",
+  "environment": {
+    "platform": "Fedora Linux",
+    "runtime": "GE-Proton11-7",
+    "binary": "Gw2-64.exe"
+  },
+  "hashes": {
+    "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+    "binary_note": "computed on the installed file; matches profile.json",
+    "teb_probe_source_sha256": "94b148cff37eff8c7d9860a474e3417d10f729fb2dc68bfe906b507c9b1449b3",
+    "teb_probe_exe_sha256": "558f3f8cfb60bc4ba7f20979520c9ed7fe0b8644f5870641446fa4a243e838a4",
+    "teb_probe_exe_bytes": 290357,
+    "probe.py": "f8f090f9932851c6bae7a11816e670fc295e0d5f061aa1ff9989c9c866d4009b",
+    "profile.json": "abbc63a0e214910653c63ffca5aec562f69d88a939b2853caf224b7b381f7690",
+    "full_map_compare.py": "93a08c773d21b8e95957d13f07dcc4fda7915c89b833f7c1e4ed9d588b9eb284"
+  },
+  "teb_probe": {
+    "path": "docs/audit/loot-teb-probe/probe.c",
+    "check_py_checks_true": 4,
+    "self_check_exit": 0,
+    "self_check_controls_all_true": true,
+    "live_read_exit": 0,
+    "threads_read": 114,
+    "threads_total": 114,
+    "failures": 0,
+    "non_null_loot_roots": 1,
+    "bytes_read": 2748,
+    "bytes_budget": 4096,
+    "context_from_thread": 508
+  },
+  "wallet_probe": {
+    "path": "docs/audit/loot-wallet-probe/probe.py",
+    "modified": false,
+    "samples": 2,
+    "interval_seconds": 1,
+    "exit": 0,
+    "candidate_currency_id": 45,
+    "candidate_balance_equal_in_both_samples": true,
+    "candidate_net_change": 0,
+    "bytes_requested": 1736,
+    "bytes_read": 1736,
+    "buckets": 4,
+    "writes": 0,
+    "api_wallet_match_for_45": "exact, queried right after the probe"
+  },
+  "full_map_compare": {
+    "path": "docs/audit/loot-wallet-probe/full_map_compare.py",
+    "description": "Diagnostic variant. Reuses Reader, guards and currency_hash from probe.py and only raises the byte budget to 64 KiB to read the wallet table once (capacity x 12 bytes). No heap scan, no writes.",
+    "capacity": 128,
+    "count": 55,
+    "occupied_buckets": 55,
+    "bytes_requested": 4088,
+    "bytes_read": 4088,
+    "keys_with_wrong_hash": 0,
+    "keys_unreachable_by_linear_probing": 0,
+    "api_currencies": 55,
+    "native_keys": 55,
+    "only_in_api": [],
+    "only_native": [],
+    "balances_identical": 54,
+    "balances_different": [
+      {
+        "currency_id": 45,
+        "name": "volatile magic",
+        "game_minus_api": 11,
+        "explanation": "The API serves from a cache of 5 to 10 minutes and the player was playing."
+      }
+    ],
+    "identical_ids": [
+      1, 2, 3, 4, 7, 15, 16, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 29, 32, 34,
+      35, 37, 38, 41, 42, 43, 44, 47, 49, 50, 51, 54, 58, 60, 61, 62, 63, 65,
+      66, 67, 68, 69, 70, 71, 72, 73, 75, 76, 78, 79, 80, 81, 82, 83
+    ]
+  },
+  "accredited": [
+    "For those 55 IDs in that binary, the native key is the public currency ID.",
+    "For those 55 IDs in that binary, the balance is the DWORD at +4 of the bucket."
+  ],
+  "not_accredited": [
+    "Cause of an acquisition.",
+    "The real zero of a currency spent completely.",
+    "Character change or context change.",
+    "Bursts of changes.",
+    "Numeric limits.",
+    "Windows native.",
+    "The reader working inside the Nexus addon (separate work in the tyrian-companion-nexus repository).",
+    "A currency the account has never had: the sparse map has no key for it, so its first appearance is a local baseline without delta and its first gain is not counted."
+  ],
+  "privacy": "No balances are stored in this receipt. Only counts, IDs and the +11 difference of currency 45."
+}

@@ -22,7 +22,12 @@ Conservar sin cambios `hello`, `welcome`, v2/v3, autenticación, framing UTF-8, 
 Solo en conexión v3 autenticada, el servidor nuevo envía una capacidad independiente:
 
 ```json
-{"v":3,"type":"live_cap","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"live1"}
+{
+  "v": 3,
+  "type": "live_cap",
+  "nonce": "AQEBAQEBAQEBAQEBAQEBAQ",
+  "tag": "live1"
+}
 ```
 
 Clientes anteriores ignoran el tipo desconocido. Un Nexus nuevo frente a servidor antiguo no envía mensajes live. La ausencia de capacidad significa fuente live no disponible, sin impedir contexto/avisos.
@@ -30,7 +35,16 @@ Clientes anteriores ignoran el tipo desconocido. Un Nexus nuevo frente a servido
 Nexus manda primero el `context` ordinario. Con gameplay y capacidad, abre una época:
 
 ```json
-{"v":3,"type":"live_open","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":1,"tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","build":"27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c","profile":"owned-bags-v3"}
+{
+  "v": 3,
+  "type": "live_open",
+  "nonce": "AQEBAQEBAQEBAQEBAQEBAQ",
+  "seq": 1,
+  "tag": "live1",
+  "epoch": "AgICAgICAgICAgICAgICAg",
+  "build": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "profile": "owned-bags-v3"
+}
 ```
 
 `epoch`: 16 bytes aleatorios, base64url canónico de 22 caracteres, mismas reglas que nonce. `build`: SHA-256 minúscula de 64 caracteres. `profile`: exactamente `owned-bags-v3` en esta revisión. Todos los mensajes addon→host consumen **la misma** secuencia `seq` que context/heartbeat/bye/alert_ack/farming_sub; inicia en 0 y avanza de uno en uno. No existe una secuencia TCP paralela para live.
@@ -38,7 +52,14 @@ Nexus manda primero el `context` ordinario. Con gameplay y capacidad, abre una �
 El servidor contesta:
 
 ```json
-{"v":3,"type":"live_ready","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","status":"ready"}
+{
+  "v": 3,
+  "type": "live_ready",
+  "nonce": "AQEBAQEBAQEBAQEBAQEBAQ",
+  "tag": "live1",
+  "epoch": "AgICAgICAgICAgICAgICAg",
+  "status": "ready"
+}
 ```
 
 `status`: `ready|source_conflict|unsupported_build|not_gameplay`. Solo `client:nexus` puede abrir fuente. Un segundo productor no reemplaza al propietario de una sesión: recibe `source_conflict`, conserva contexto/avisos y aparece excluido. Se permite reconectar al mismo `instance`. No se cambia de proceso durante una sesión activa ni se mezclan sus muestras. Nueva fuente tras cierre produce sesión nueva. La atribución de mapa/personaje de live usa el contexto del productor seleccionado, no el contexto de otro cliente.
@@ -52,7 +73,23 @@ El addon agrega cantidades por ID antes de transportar. No envía punteros, PID,
 ### live_begin (claves exactamente como el ejemplo)
 
 ```json
-{"v":3,"type":"live_begin","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":2,"tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","cursor":0,"ctx":0,"ms":0,"mode":"baseline","items":"complete","currencies":"none","unknown":0,"slots":8,"rows":2}
+{
+  "v": 3,
+  "type": "live_begin",
+  "nonce": "AQEBAQEBAQEBAQEBAQEBAQ",
+  "seq": 2,
+  "tag": "live1",
+  "epoch": "AgICAgICAgICAgICAgICAg",
+  "cursor": 0,
+  "ctx": 0,
+  "ms": 0,
+  "mode": "baseline",
+  "items": "complete",
+  "currencies": "none",
+  "unknown": 0,
+  "slots": 8,
+  "rows": 2
+}
 ```
 
 - `cursor`: entero seguro no negativo. Empieza en 0; cada muestra comprometida de esa época incrementa uno. Independiente de seq. `mode`: `baseline|sample`; cursor 0 exige baseline, posteriores sample.
@@ -67,7 +104,20 @@ El addon agrega cantidades por ID antes de transportar. No envía punteros, PID,
 ### live_rows
 
 ```json
-{"v":3,"type":"live_rows","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":3,"tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","cursor":0,"part":0,"rows":[[0,12147,0],[0,36038,200]]}
+{
+  "v": 3,
+  "type": "live_rows",
+  "nonce": "AQEBAQEBAQEBAQEBAQEBAQ",
+  "seq": 3,
+  "tag": "live1",
+  "epoch": "AgICAgICAgICAgICAgICAg",
+  "cursor": 0,
+  "part": 0,
+  "rows": [
+    [0, 12147, 0],
+    [0, 36038, 200]
+  ]
+}
 ```
 
 Cada fila es una tupla exacta `[kind,id,quantity]`; kind 0=objeto, 1=moneda. ID entero 1..2147483647, quantity entero 0..2147483647. Cantidad es total agregado; puede superar 250 por sumar stacks. El perfil nativo actual solo acepta **cada stack** en 0..250. No recortar overflow ni convertir desconocido en 0.
@@ -96,7 +146,16 @@ Una muestra nueva requiere cursor=último+1 y ms mayor al último, o cursor0/bas
 Además de las muestras, Nexus puede informar:
 
 ```json
-{"v":3,"type":"live_status","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":5,"tag":"live1","epoch":"AgICAgICAgICAgICAgICAg","status":"unavailable","reason":"read_failed"}
+{
+  "v": 3,
+  "type": "live_status",
+  "nonce": "AQEBAQEBAQEBAQEBAQEBAQ",
+  "seq": 5,
+  "tag": "live1",
+  "epoch": "AgICAgICAgICAgICAgICAg",
+  "status": "unavailable",
+  "reason": "read_failed"
+}
 ```
 
 Claves exactas; `status` es `unavailable` y `reason` es `unsupported_build|root_unavailable|read_failed|partial_inventory|not_gameplay`. Este mensaje descarta lote, invalida comparabilidad y abre hueco desde la última muestra válida. Su epoch puede ser null si nunca se abrió una. Recuperar requiere live_open con época nueva. No mostrar excepciones, direcciones ni datos crudos en reason. `live_status` solo se envía después de live_cap, por Nexus autenticado.
@@ -105,7 +164,7 @@ Captura objetivo inicial: una muestra por segundo, limitada por lectura segura y
 
 No calcular delta de objetos entre muestras con items partial/none ni atravesándolas. Guardar cobertura/diagnóstico y cantidades conocidas para inspección, abrir hueco de items y dejar su baseline local inválido. La primera muestra posterior items complete es **baseline local de items**, sin cambios/avisos para ese canal; cierra su hueco. Puede llevar mode sample y cursor consecutivo de la misma época: este rebaseline por cobertura NO requiere live_open ni reinicia las monedas sanas. En cambio live_status partial_inventory declara fuente globalmente no disponible y sí exige época nueva; no usarlo para una muestra parcial que todavía aporta monedas válidas.
 
-Para moneda, comparar solo un ID presente y cubierto en las dos muestras consecutivas; ausencia/pérdida de cobertura corta su continuidad. Su primera aparición o reaparición es baseline local de ese ID, sin delta. Monedas listadas pueden seguir aportando cambios mientras items está parcial, y viceversa. Un hueco currencies indica que el conjunto de monedas previamente cubierto dejó de estar completo; no niega los cambios observados válidos de IDs que permanecen cubiertos. Cerrar ese hueco solo cuando todos los IDs que faltaban vuelvan a tener baseline; mantener internamente ese conjunto durante recovery. `observedCurrenciesMs` cuenta únicamente intervalos con todos los IDs del conjunto cubierto presentes en ambos extremos; los cambios de IDs individuales no autorizan un total monetario completo cuando falta otro. Monedas sin soporte desde el inicio son coverage none, no un saldo cero ni una sucesión infinita de huecos.
+Para moneda, comparar solo un ID presente y cubierto en las dos muestras consecutivas; ausencia/pérdida de cobertura corta su continuidad. Su primera aparición o reaparición es baseline local de ese ID, sin delta. Monedas listadas pueden seguir aportando cambios mientras items está parcial, y viceversa. Un hueco currencies indica que el conjunto de monedas previamente cubierto dejó de estar completo; no niega los cambios observados válidos de IDs que permanecen cubiertos. Cerrar ese hueco solo cuando todos los IDs que faltaban vuelvan a tener baseline; mantener internamente ese conjunto durante recovery. `observedCurrenciesMs` cuenta únicamente intervalos con todos los IDs del conjunto cubierto presentes en ambos extremos; los cambios de IDs individuales no autorizan un total monetario completo cuando falta otro. Monedas sin soporte desde el inicio son coverage none, no un saldo cero ni una sucesión infinita de huecos. Límite conocido: el mapa nativo de cartera es disperso y una moneda que la cuenta nunca ha tenido no tiene clave. Su primera aparición es línea base local sin delta, así que su primera ganancia no se cuenta.
 
 Huecos: representar un registro independiente por canal (channels con un único elemento); no cerrar currencies porque se recuperó items. Su fromAt es la última captura válida del canal, o startedAt si nunca pudo empezar. Mantener un solo hueco abierto por canal, conservando la primera causa; repetir errores no crea huecos solapados ni cambia fromAt. Cerrarlo con toAt de la captura comprometida que restablece su baseline, sin contar ese intervalo como observado. La posterior muestra comparable empieza a sumar tiempo desde ese baseline. Al finalizar la sesión, cerrar todo hueco abierto en endedAt, marcado por su razón existente y manteniendo el resultado incompleto: cerrar un hueco al terminar NO significa recuperación. Recortar los intervalos a [startedAt,endedAt] y omitir los de longitud cero; una sesión complete nunca conserva toAt null. Para el tiempo cubierto de tasas, usar unión de huecos del canal relevante, sin restar dos veces los huecos simultáneos de items/currencies. Ese cálculo no descuenta huecos de la duración declarada de conexión.
 
@@ -194,8 +253,8 @@ B implementa esta migración en modelo/store/runtime. Pruebas requeridas: fallo 
 
 - `positiveItemValueKnownCopper`: valor de incrementos observados con precio conocido; puede incluir retiradas/compras y no equivale a beneficio.
 - `netItemValueKnownCopper`: suma de delta firmado por precio unitario fijado para esa proyección; preserva pérdidas observadas.
-- `coinNetCopper:number|null`: saldo neto observado de la moneda oro solo con fuente demostrada y continuidad; null hoy.
-- `knownNetValueCopper:number|null`: netItemValue + coinNet solo con cobertura suficiente de ambos; si no, null y subtotal conocido separado. Etiqueta «Valor neto estimado», nunca «beneficio exacto».
+- `coinNetCopper:number|null`: neto observado del oro (moneda 1) si la sesión lo ha seguido alguna vez, 0 si no cambió, null si nunca estuvo cubierto. Un hueco de monedas no lo anula: el hueco se guarda aparte.
+- `knownNetValueCopper:number|null`: `netItemValueKnownCopper + coinNetCopper` cuando `coinNetCopper` no es null; null si no. En una sesión guardada, la gráfica se revalora con oro si la valoración guardada lo traía. «Por hora» sigue usando solo el valor de objetos. Etiqueta «Valor neto estimado», nunca «beneficio exacto».
 - `unpricedItemIds`, moneda sin cobertura y gaps explícitos. Precio desconocido no vale cero. Divisas distintas de oro no se convierten a cobre sin modelo económico ya soportado y criterio mostrado.
 - `priceBasis:'instant_sell_net'`, capturedAt y unitCopper por ID; reutilizar precio de venta inmediata neta y reglas/fees existentes, no duplicar fórmulas. Si no hay cotización válida, cantidad permanece visible. No usar valoraciones DRF.
 
@@ -225,7 +284,7 @@ Perfil aprobado técnicamente solo para SHA `27d179bfe6a92fae633b412b8be0c90f697
 
 A debe implementar descubrimiento autónomo de base/contexto, lectura segura desde el addon y comprobación de identidad de binario/perfil. No fijar la dirección virtual de la sonda ni su PID. Validar owner/location/vtables/quantities y reread coherente; abortar muestra si cambian. El límite<=250 es por stack de este perfil; una cantidad fuera de rango es parcial/error, nunca clamp.
 
-Hash distinto, tipo no soportado o raíz no encontrada: estado explícito, sin lectura especulativa ni escaneo indiscriminado. La evidencia de sonda incluye baseline v3 de 254 tipos sin cantidad desconocida, pero no prueba todas las clases de ítem futuras. No inventar offsets de cartera/monedas ni de MF. Fuente wallet y MF verificado permanecen investigación/implementación pendientes; placeholders none/null son honestidad, no cierre.
+Hash distinto, tipo no soportado o raíz no encontrada: estado explícito, sin lectura especulativa ni escaneo indiscriminado. La evidencia de sonda incluye baseline v3 de 254 tipos sin cantidad desconocida, pero no prueba todas las clases de ítem futuras. No inventar offsets de MF. Ruta de cartera validada en vivo el 7 oct 2026 para el binario del perfil (ver [recibo](audit/loot-wallet-probe/receipt-live-2026-10-07.json)); el lector dentro del addon está en implementación y su QA en el juego sigue pendiente. MF verificado sigue pendiente; placeholders none/null son honestidad, no cierre.
 
 ## 10. Propiedad y junturas
 
