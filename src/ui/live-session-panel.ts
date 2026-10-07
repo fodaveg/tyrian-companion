@@ -292,6 +292,12 @@ export class LiveSessionPanel {
 			if (this.previous.open && !this.previousReading) void this.loadPrevious();
 		}
 		if (view.sessionId !== null && this.currentRef?.id !== view.sessionId) {
+			// Another session starts: the core only allows it once the previous one has its note, so that note is
+			// readable now even if the read made when it ended came too early to see it.
+			if (this.currentRef !== null) {
+				this.previousStale = true;
+				if (this.previous.open && !this.previousReading) void this.loadPrevious();
+			}
 			this.currentRef = { id: view.sessionId, ref: null };
 			void this.hashCurrent(view.sessionId);
 		}

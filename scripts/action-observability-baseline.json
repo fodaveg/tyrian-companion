@@ -4,7 +4,7 @@
 	"totals": {
 		"catch_clause": 521,
 		"promise_catch": 54,
-		"void_expression": 116,
+		"void_expression": 117,
 		"callback_registration": 206
 	},
 	"files": {
@@ -16175,11 +16175,27 @@
 					"reason": "Allowlisted void_expression: In \"trackPrevious\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing. Verified target: \"this.loadPrevious\" in \"trackPrevious\"."
 				},
 				{
+					"id": "679dd62421f5542e49646a144aaba73401c139bc",
+					"kind": "void_expression",
+					"line": 299,
+					"column": 54,
+					"endLine": 299,
+					"endColumn": 78,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.loadPrevious",
+						"scope": "trackPrevious",
+						"justification": "In \"trackPrevious\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing."
+					},
+					"reason": "Allowlisted void_expression: In \"trackPrevious\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing. Verified target: \"this.loadPrevious\" in \"trackPrevious\"."
+				},
+				{
 					"id": "dbd82876f32590ff80131745c5e63b4defd1baf7",
 					"kind": "void_expression",
-					"line": 296,
+					"line": 302,
 					"column": 4,
-					"endLine": 296,
+					"endLine": 302,
 					"endColumn": 41,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16193,9 +16209,9 @@
 				{
 					"id": "0866ed357ee6ba57fefc3f7a60bb9eefc308f882",
 					"kind": "catch_clause",
-					"line": 306,
+					"line": 312,
 					"column": 5,
-					"endLine": 306,
+					"endLine": 312,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16209,9 +16225,9 @@
 				{
 					"id": "edacb96a69c53b12c87cb28af0cc6919a55c88f4",
 					"kind": "catch_clause",
-					"line": 433,
+					"line": 439,
 					"column": 5,
-					"endLine": 433,
+					"endLine": 439,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16225,9 +16241,9 @@
 				{
 					"id": "0019b13a254654f5cc7426828afb0148d6f87153",
 					"kind": "catch_clause",
-					"line": 441,
+					"line": 447,
 					"column": 51,
-					"endLine": 441,
+					"endLine": 447,
 					"endColumn": 86,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16241,9 +16257,9 @@
 				{
 					"id": "36b02e844fdd780d903b84216364bef4841d1f17",
 					"kind": "catch_clause",
-					"line": 618,
+					"line": 624,
 					"column": 6,
-					"endLine": 618,
+					"endLine": 624,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {

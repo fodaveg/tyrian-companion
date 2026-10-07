@@ -480,6 +480,30 @@ describe('previous sessions block', () => {
 		await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(3));
 	});
 
+	it('reads once more when the next session starts, so a note that was late at the end still shows up', async () => {
+		const saved: LiveSessionHistoryEntry[] = [];
+		const list = vi.fn(async () => [...saved]);
+		const h = harness({ ...ended(), sessionId: 'session-a' }, control(), 'en', list);
+		open(h.panel);
+		await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+		// A finishes; the read made then runs before its note exists.
+		h.state.view = { ...liveView(), sessionId: 'session-a' }; h.panel.refresh();
+		h.state.view = { ...ended(), sessionId: 'session-a' }; h.panel.refresh();
+		await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+		await Promise.resolve();
+		expect(rowsOf(h.panel)).toHaveLength(0);
+		// The note lands; many ticks of the same session read nothing more.
+		saved.push(entry(0, { sessionRef: await sha256Text('session-a') }));
+		for (let tick = 0; tick < 5; tick++) h.panel.refresh();
+		expect(list).toHaveBeenCalledTimes(2);
+		// B starts: exactly one more read, and A is painted (it is no longer the session shown above).
+		h.state.view = { ...liveView(), sessionId: 'session-b' }; h.panel.refresh();
+		await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(1));
+		expect(list).toHaveBeenCalledTimes(3);
+		for (let tick = 0; tick < 5; tick++) h.panel.refresh();
+		expect(list).toHaveBeenCalledTimes(3);
+	});
+
 	it('keeps the open state, the focus and the very same nodes across a tick', async () => {
 		const h = harness(liveView(), control(), 'en', vi.fn(async () => entries(25)));
 		open(h.panel);
