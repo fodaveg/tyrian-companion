@@ -1,5 +1,27 @@
 # Estado
 
+## Candidata 0.6.9: las monedas observadas como teselas (7 oct 2026)
+
+**Candidata integrada en local; sin publicar ni etiquetar; gate pendiente.** `manifest.version`, `package.json`,
+`package-lock.json` y `versions.json` están alineados a 0.6.9. No hay tag ni release, y no se ha corrido el gate
+sobre este árbol. Parte de `47a2c1b`, cinco commits por delante de `9a8824c` (canal 0.6.8 publicado), solo en
+local; el detalle está en [CHANGELOG](CHANGELOG.md).
+
+- Contenido: en la pestaña «Sesión», las monedas observadas se pintan como teselas con icono en una sección
+  «Monedas» con su contador, en la sesión en curso y en «Sesiones anteriores». Nombre e icono salen del
+  catálogo público `/v2/currencies`, sin clave ni datos de cuenta. El oro se muestra en una sola unidad para
+  que quepa en la tesela. La nota de sesión guardada lleva el nombre resuelto cuando ya está en memoria.
+- Motivo: el 7 oct 2026, en la máquina del jugador (Fedora, GE-Proton), las monedas llegaron a la pestaña
+  «Sesión» de Hebra como lista de texto con «?».
+- Verificado hoy en esa máquina: el precio del saco (`price1`) se vio pintado en el panel del juego con el
+  addon de Nexus 0.7.1 contra el plugin en Hebra (no se anotó si era la 0.6.7 o la 0.6.8). El addon 0.7.1 está
+  integrado en el `main` de su repo, publicado como release `0.7.1` (DLL y su `.sha256`) e instalado ahí.
+- Pendiente: el gate sobre el árbol final, la atestación, la publicación y la verificación de instalación.
+- No verificado: la 0.6.9 instalada en Hebra u Obsidian; el aspecto real de las teselas de moneda en Hebra
+  (solo medido en un montaje de navegador con iconos reales); una respuesta real del catálogo de monedas
+  dentro del plugin (la forma de la respuesta sí se comprobó a mano contra la API pública); la nota guardada
+  con nombres de moneda; las líneas de antigüedad ocultas del panel del addon (el jugador no lo ha confirmado).
+
 ## Canal 0.6.8 publicado: recuperación ante la caída del almacén local (7 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.8](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.8)
@@ -20,10 +42,9 @@ cambios; el detalle está en [CHANGELOG](CHANGELOG.md).
 - Gate local previo, sobre el árbol atestado (Fedora, Node v22.23.1, 7 oct 2026), verde a la primera: `check`
   8/8 (5093 tests, 321 ficheros, ninguno saltado), guardrails 25/25 y `release:preflight` en verde. El
   benchmark H6 y su sabotaje no se corrieron en local porque el juego estaba abierto en la máquina.
-- Addon de Nexus: la 0.7.0 sigue instalada a mano en la máquina de David (iconos y paneles vistos en el
-  juego; precio sin ver). Hay una 0.7.1 en una rama de su repo, sin instalar ni publicar, que reintenta
-  `live_open` cada 30 s tras un `source_conflict`; hasta que se instale, el addon deja de leer hasta cambiar
-  de contexto de juego.
+- Addon de Nexus: el 0.7.1 está integrado en el `main` de su repo, publicado como release `0.7.1` (DLL y su
+  `.sha256`) e instalado en la máquina de David (corregido el 7 oct 2026; antes decía que la 0.7.0 estaba
+  instalada a mano y la 0.7.1 sin publicar). Reintenta `live_open` cada 30 s tras un `source_conflict`.
 
 - Contenido: reapertura de conexiones muertas en los almacenes de sesión, coordinación y preferencias;
   `onabort` y reapertura en el backend de ficheros de Hebra; límite de 10 s en las escrituras de diagnóstico; la
@@ -32,8 +53,9 @@ cambios; el detalle está en [CHANGELOG](CHANGELOG.md).
   quita su bloqueo de preferencias.
 - Revisión independiente hecha antes de publicar: un defecto condicional y tres menores, arreglados con test.
 - No verificado: la instalación y carga de la 0.6.8 en Hebra y en Obsidian/BRAT, ni ninguna de las
-  recuperaciones en el runtime real, ni el precio pintado en el juego (la 0.6.7 tampoco se ha visto instalada
-  todavía). No está demostrado que WebKitGTK acepte una conexión nueva tras ese fallo; si no la acepta, el
+  recuperaciones en el runtime real. El precio del saco sí se ha visto pintado en el panel del juego (7 oct
+  2026, Fedora con GE-Proton, addon 0.7.1 contra el plugin en Hebra; no se anotó si el plugin era la 0.6.7 o
+  la 0.6.8). No está demostrado que WebKitGTK acepte una conexión nueva tras ese fallo; si no la acepta, el
   plugin sigue en error, sin bucle.
 - Límites conocidos: los de la entrada 0.6.8 del CHANGELOG (almacenes sin reapertura, cola del ciclo de vida
   bloqueable, `replaceLiveJournal` sin reproducir, `live_open` en `source_conflict` durante la caída).
@@ -62,11 +84,11 @@ plugin sirve al addon el precio público neto del saco de Halloween por la exten
   previas ni tocar `src/`, y el gate se repitió entero. El benchmark H6 y su sabotaje no se corrieron en
   local porque el juego estaba abierto en la máquina.
 - Cambio de producto: `dc1034a` (precio `price1`). Metadatos alineados a 0.6.7.
-- No verificado: la instalación y carga de la 0.6.7 en Hebra y en Obsidian/BRAT, y el precio pintado en el
-  juego por el addon contra este plugin. El precio necesita el addon de Nexus 0.7.0 (precio, líneas de
-  antigüedad ocultas y dos iconos de acceso rápido), que no está publicado ni integrado en el `main` de su
-  repo; está instalado a mano en la máquina de David, donde se han visto en el juego los dos iconos y que
-  cada uno abre su panel. El precio en el juego no se ha visto todavía.
+- No verificado: la instalación y carga de la 0.6.7 en Hebra y en Obsidian/BRAT. El precio necesita el addon
+  de Nexus 0.7.x (precio, líneas de antigüedad ocultas y dos iconos de acceso rápido); la 0.7.0 estaba
+  instalada a mano en la máquina de David, donde se vieron en el juego los dos iconos y que cada uno abre su
+  panel. Corregido el 7 oct 2026: el precio ya se ha visto pintado en el juego (addon 0.7.1, publicado e
+  integrado en el `main` de su repo, contra el plugin en Hebra), sin anotar la versión del plugin.
 - Fuera de esta versión: la recuperación ante la caída del almacén local (la incidencia abierta de la 0.6.6,
   IndexedDB en Hebra) está implementada en una rama y en revisión.
 

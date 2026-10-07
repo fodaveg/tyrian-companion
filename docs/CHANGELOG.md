@@ -1,5 +1,33 @@
 # Changelog
 
+## Release beta 0.6.9 - las monedas observadas como teselas
+
+Candidata a release por tag `0.6.9`; nada publicado ni etiquetado, gate pendiente. [ESTADO](ESTADO.md) separa lo
+verificado de lo pendiente (gate, publicación e instalación).
+
+- Pestaña «Sesión»: las monedas observadas se pintan como teselas con su icono, igual que los objetos, en una
+  sección propia «Monedas» con su contador (número de monedas distintas), en la sesión en curso y en «Sesiones
+  anteriores». Antes eran una lista de texto con un marcador «?».
+- Nombre e icono: salen del catálogo público `/v2/currencies`, sin clave de API y sin datos de cuenta. Una
+  petición por lectura con solo los ids de las monedas observadas y aún sin nombre, por el mismo servicio, caché
+  (7 días; un 404, 1 hora) y límite de ritmo que los objetos. Un id sin resolver se vuelve a preguntar como mucho
+  cada 5 minutos. Nunca se pide la cartera.
+- Distintivo de la tesela: cantidad neta con signo; desde 1000, forma compacta (`+3,2k`, `+123k`). El oro
+  muestra una sola unidad, la más alta distinta de cero, con un decimal truncado por debajo de 100 (`2,3g`,
+  `10,5s`, `53c`), y solo las pérdidas llevan signo. La cantidad exacta va en el `title` y en el nombre
+  accesible. Motivo del oro en una unidad: medido en navegador con iconos reales, dos unidades (`10s 53c`) se
+  parten en dos líneas en una tesela de 40 px y tapan el icono.
+- Orden: oro primero y el resto por id.
+- Si el catálogo falla o no conoce un id, la tesela se pinta con el marcador de icono ausente y el nombre de
+  reserva, y el fallo se reporta por la vía de fallos de sesión.
+- Nota de sesión guardada: lleva el nombre resuelto de la moneda cuando ya está en memoria al guardar, en lugar
+  de su número.
+- Sin verificar: la 0.6.9 instalada en Hebra u Obsidian; el aspecto real de las teselas de moneda en Hebra
+  (solo medido en un montaje de navegador); una respuesta real del catálogo de monedas dentro del plugin (la
+  forma de la respuesta sí se comprobó a mano contra la API pública); la nota guardada con nombres de moneda.
+- Tests: pruebas nuevas para el distintivo, el panel, la economía de sesión, el catálogo y la restauración tras
+  reinicio.
+
 ## Release beta 0.6.8 - recuperación ante la caída del almacén local
 
 [Canal 0.6.8 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.8);
