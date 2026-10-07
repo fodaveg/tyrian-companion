@@ -2,6 +2,7 @@
 // and without it the durable queue silently reports every write as failed.
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
+import { readFileSync } from 'node:fs';
 import { createServer, Socket } from 'node:net';
 import { TFile, type App, type PluginManifest } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -525,6 +526,167 @@ describe('H13.4 alert channel cabling', () => {
 				const stored = plugin.getEmittedAlerts()[0]!;
 				const view = alertReceiptView(stored, plugin.getAlertDeliveries().get(stored.alertId), tr, 'es');
 				expect(view.steps[1]).toMatchObject({ status: 'skip', detail: { text: 'sin addon conectado' } });
+			});
+		});
+	});
+
+	/**
+	 * Addon/plugin seam for wallet currencies. The frames of the shared Nexus fixture travel over a real loopback
+	 * socket, through the real server, assembler and `liveIngamePort` of the plugin core (`kind 0 -> item`,
+	 * `kind 1 -> currency`), into the real lifecycle and reducer; the assertions read the public session view.
+	 * Left out: the addon itself, and the note/panel rendering (covered by their own tests).
+	 */
+	describe('live1 currency seam: shared Nexus fixture, real bridge, reducer and view', () => {
+		const wireFixture = JSON.parse(readFileSync(new URL('./alerts/__fixtures__/live1.json', import.meta.url), 'utf8')) as { frames: Record<string, unknown>[] };
+		const fixtureFrames = wireFixture.frames.filter((frame) => ['live_open', 'live_begin', 'live_rows', 'live_end'].includes(frame.type as string));
+		const EPOCH = 'AgICAgICAgICAgICAgICAg';
+		type Row = [0 | 1, number, number];
+		const ITEMS: Row[] = [[0, 12147, 2], [0, 36038, 200]];
+
+		async function withLiveAddon(body: (view: () => LiveSessionViewV1, sample: (cursor: number, currencies: 'none' | 'listed', rows: Row[]) => Promise<void>, fixtureSamples: () => Promise<void>) => Promise<void>): Promise<void> {
+			const record = activeSessionRecord();
+			vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+			vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+			vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue({ status: 'idle' } as SessionState);
+			const plugin = alertWiringPlugin(new IDBFactory());
+			const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+			await plugin.initializeRuntime();
+			const port = await freeLoopbackPort();
+			try {
+				await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: port });
+				await vi.waitFor(() => { expect(server()).not.toBeNull(); });
+				const socket = await connectLoopback(port);
+				socket.setEncoding('utf8');
+				const lines: Record<string, unknown>[] = [];
+				let buffer = '';
+				socket.on('data', (chunk: string) => {
+					buffer += chunk;
+					for (let newline = buffer.indexOf('\n'); newline !== -1; newline = buffer.indexOf('\n')) {
+						lines.push(JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>);
+						buffer = buffer.slice(newline + 1);
+					}
+				});
+				socket.write(ingameHello(await pluginBridgeSecret(plugin), 3));
+				await vi.waitFor(() => { expect(lines).toHaveLength(3); });
+				const nonce = lines[0]!.nonce as string;
+				const write = (record: Record<string, unknown>) => { socket.write(`${JSON.stringify({ ...record, nonce })}\n`); };
+				const acks = () => lines.filter((line) => line.type === 'live_ack').length;
+				const stored = async (count: number) => { await vi.waitFor(() => { expect(acks()).toBe(count); }); };
+				let seq = 0;
+				write({ v: 3, type: 'context', seq: seq++, state: 'gameplay', mapId: 866, character: 'Astra Uno' });
+				const fixtureSamples = async () => {
+					for (const frame of fixtureFrames) {
+						// Guard: the fixture sequence must be contiguous with ours, or the wire would not be the shared one.
+						expect(frame.seq).toBe(seq++);
+						write(frame);
+						if (frame.type === 'live_open') await vi.waitFor(() => { expect(lines.some((line) => line.type === 'live_ready')).toBe(true); });
+						if (frame.type === 'live_end') await stored(acks() + 1);
+					}
+				};
+				const sample = async (cursor: number, currencies: 'none' | 'listed', rows: Row[]) => {
+					const head = { v: 3, tag: 'live1', epoch: EPOCH, cursor };
+					write({ ...head, type: 'live_begin', seq: seq++, ctx: 0, ms: cursor * 1000, mode: 'sample', items: 'complete', currencies, unknown: 0, slots: null, rows: rows.length });
+					write({ ...head, type: 'live_rows', seq: seq++, part: 0, rows });
+					write({ ...head, type: 'live_end', seq: seq++ });
+					await stored(acks() + 1);
+				};
+				await body(() => plugin.getLiveSessionView(), sample, fixtureSamples);
+				socket.destroy();
+			} finally {
+				await server()?.close();
+			}
+		}
+
+		it('accepts the listed fixture sample: coverage listed with the wallet rows of the wire', async () => {
+			await withLiveAddon(async (view, _sample, fixtureSamples) => {
+				await fixtureSamples();
+				await vi.waitFor(() => { expect(view().currencyCoverage).toBe('listed'); });
+				expect(view()).toMatchObject({ currencyCoverage: 'listed', currencyIds: [1, 45], itemCoverage: 'complete' });
+			});
+		});
+
+		it('the first sample with coins is a baseline: no coin observation, ids 1 and 45 tracked', async () => {
+			await withLiveAddon(async (view, _sample, fixtureSamples) => {
+				await fixtureSamples();
+				await vi.waitFor(() => { expect(view().currencyIds).toEqual([1, 45]); });
+				expect(view().observations.filter((observation) => observation.kind === 'currency')).toEqual([]);
+			});
+		});
+
+		it('keeps the fixture object delta while the first wallet sample adds none', async () => {
+			await withLiveAddon(async (view, _sample, fixtureSamples) => {
+				await fixtureSamples();
+				await vi.waitFor(() => { expect(view().observationCount).toBe(1); });
+				expect(view().observations).toMatchObject([{ kind: 'item', idNumber: 12147, delta: 2 }]);
+			});
+		});
+
+		it('a following listed sample turns gold +250 and currency 45 +6 into two coin observations', async () => {
+			await withLiveAddon(async (view, sample, fixtureSamples) => {
+				await fixtureSamples();
+				await sample(2, 'listed', [...ITEMS, [1, 1, 250], [1, 45, 10_231]]);
+				await vi.waitFor(() => { expect(view().observations.filter((observation) => observation.kind === 'currency')).toHaveLength(2); });
+				expect(view().observations.filter((observation) => observation.kind === 'currency'))
+					.toMatchObject([{ idNumber: 1, before: 0, after: 250, delta: 250 }, { idNumber: 45, before: 10_225, after: 10_231, delta: 6 }]);
+			});
+		});
+
+		it('the coin totals carry currency:1 and currency:45 with their nets', async () => {
+			await withLiveAddon(async (view, sample, fixtureSamples) => {
+				await fixtureSamples();
+				await sample(2, 'listed', [...ITEMS, [1, 1, 250], [1, 45, 10_231]]);
+				await vi.waitFor(() => { expect(view().totals.filter((total) => total.kind === 'currency')).toHaveLength(2); });
+				expect(view().totals.filter((total) => total.kind === 'currency'))
+					.toEqual([{ kind: 'currency', idNumber: 1, positive: 250, negative: 0, net: 250 }, { kind: 'currency', idNumber: 45, positive: 6, negative: 0, net: 6 }]);
+			});
+		});
+
+		it('values the observed gold: coinNetCopper 250 and the known net is the item net plus 250', async () => {
+			await withLiveAddon(async (view, sample, fixtureSamples) => {
+				await fixtureSamples();
+				await sample(2, 'listed', [...ITEMS, [1, 1, 250], [1, 45, 10_231]]);
+				await vi.waitFor(() => { expect(view().valuation.coinNetCopper).toBe(250); });
+				expect(view().valuation.knownNetValueCopper).toBe(view().valuation.netItemValueKnownCopper + 250);
+			});
+		});
+
+		it('a sample with currencies none after the baseline makes no coin delta and opens a coin gap', async () => {
+			await withLiveAddon(async (view, sample, fixtureSamples) => {
+				await fixtureSamples();
+				await sample(2, 'none', [[0, 12147, 3], [0, 36038, 200]]);
+				await vi.waitFor(() => { expect(view().observationCount).toBe(2); });
+				expect({ coins: view().observations.filter((observation) => observation.kind === 'currency'), gaps: view().gaps.filter((gap) => gap.toAt === null).map((gap) => gap.channels) })
+					.toEqual({ coins: [], gaps: [['currencies']] });
+			});
+		});
+
+		it('a sample with currencies none leaves the object ledger running: no open item gap, the item delta is kept', async () => {
+			await withLiveAddon(async (view, sample, fixtureSamples) => {
+				await fixtureSamples();
+				await sample(2, 'none', [[0, 12147, 3], [0, 36038, 200]]);
+				await vi.waitFor(() => { expect(view().observationCount).toBe(2); });
+				expect({ items: view().observations.filter((observation) => observation.kind === 'item').map((observation) => observation.delta), itemGaps: view().gaps.filter((gap) => gap.channels.includes('items') && gap.toAt === null) })
+					.toEqual({ items: [2, 1], itemGaps: [] });
+			});
+		});
+
+		it('the listed sample after a gap is a baseline again: nothing is counted for what happened inside the gap', async () => {
+			await withLiveAddon(async (view, sample, fixtureSamples) => {
+				await fixtureSamples();
+				await sample(2, 'none', [[0, 12147, 3], [0, 36038, 200]]);
+				await sample(3, 'listed', [[0, 12147, 3], [0, 36038, 200], [1, 1, 9_999], [1, 45, 10_300]]);
+				await vi.waitFor(() => { expect(view().gaps.filter((gap) => gap.toAt === null)).toEqual([]); });
+				expect({ coins: view().observations.filter((observation) => observation.kind === 'currency'), totals: view().totals.filter((total) => total.kind === 'currency') })
+					.toEqual({ coins: [], totals: [] });
+			});
+		});
+
+		it('a currency that first appears mid-session is a baseline: no delta for it while a known one still counts', async () => {
+			await withLiveAddon(async (view, sample, fixtureSamples) => {
+				await fixtureSamples();
+				await sample(2, 'listed', [...ITEMS, [1, 1, 10], [1, 3, 500], [1, 45, 10_225]]);
+				await vi.waitFor(() => { expect(view().currencyIds).toEqual([1, 3, 45]); });
+				expect(view().observations.filter((observation) => observation.kind === 'currency')).toMatchObject([{ idNumber: 1, delta: 10 }]);
 			});
 		});
 	});
