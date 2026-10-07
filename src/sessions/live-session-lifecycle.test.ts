@@ -9,6 +9,8 @@ import { LiveSessionEconomy } from './live-session-economy';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { decideLiveAlert, isLiveAlertOutbox } from './live-session-outbox';
 import { readFarmingDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
+import { prepareLiveSessionSnapshot } from './live-session-note-model';
+import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -168,6 +170,33 @@ describe('passive live session lifecycle', () => {
 		const reopened = new IndexedDbSessionRuntimeStore(factory, 'live-atomic');
 		expect(await reopened.loadLive()).toMatchObject({ status: 'loaded', record: { observationCount: 1 } });
 		expect(await reopened.readLiveJournal('session')).toHaveLength(2); reopened.close();
+	});
+	it('publishes a session timed the way the addon times it: the baseline stamped a handshake after its read', async () => {
+		// The addon read the baseline at AT (its `ms` 0) and the plugin stamped it on arrival, 150 ms
+		// later; every other sample is stamped 3 ms after its read. Five seconds on the addon's clock
+		// fit in 4853 ms between the plugin's own stamps.
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source);
+		f.setNow(AT + 150); await f.service.commit(f.sample(0, 0));
+		for (let cursor = 1; cursor <= 5; cursor += 1) { f.setNow(AT + cursor * 1000 + 3); await f.service.commit(f.sample(cursor, cursor)); }
+		f.setNow(AT + 6000); await expect(f.service.stop(AT + 6000)).resolves.toBe(true);
+		const record = f.service.getRuntime()!; const journal = f.service.getJournal();
+		expect(record.observedItemsMs).toBe(5000);
+		const rendered = await renderLiveSessionNote({ record, journal, locale: 'es', outputFolder: 'Tyrian' });
+		expect(rendered, 'the finished session renders its note').toMatchObject({ status: 'ok', session: { observedItemsMs: 4853, observationCount: 5 } });
+		if (rendered.status !== 'ok') throw new Error('unreachable');
+		await expect(inspectLiveSessionNote(rendered.note.content), 'and the note reads back as valid evidence').resolves.toMatchObject({ status: 'ok' });
+		await expect(prepareLiveSessionSnapshot({ record, journal }, new Date(AT + 7000).toISOString()), 'and so does its export')
+			.resolves.toMatchObject({ exportState: 'completed_session', observedItemsMs: 4853 });
+		await f.service.dispose();
+	});
+	it('exports a running session timed the same way', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source);
+		f.setNow(AT + 150); await f.service.commit(f.sample(0, 0));
+		f.setNow(AT + 1003); await f.service.commit(f.sample(1, 2));
+		const capture = await f.service.capture(); if (capture === null) throw new Error('No capture.');
+		await expect(prepareLiveSessionSnapshot(capture, capture.capturedAt), 'the active snapshot is valid evidence')
+			.resolves.toMatchObject({ exportState: 'active_snapshot', observedItemsMs: 853 });
+		await f.service.dispose();
 	});
 });
 

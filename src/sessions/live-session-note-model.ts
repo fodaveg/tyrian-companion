@@ -41,25 +41,42 @@ export interface LiveSessionSnapshotV1 extends Omit<StoredLiveSessionPayloadV1,'
 /** Durable notes remain completed evidence, independently of active export snapshots. */
 export async function prepareLiveSessionPayload(input: LiveSessionNoteInput): Promise<StoredLiveSessionPayloadV1 | null> {
 	if (input.record.phase !== 'complete' || input.record.endedAt === null) return null;
-	const evidence = await prepareLiveSessionEvidence(input);
+	const evidence = await prepareLiveSessionEvidence(input, input.record.endedAt);
 	if (evidence === null) return null;
 	const payload = {...evidence,endedAt: input.record.endedAt};
 	return isStoredLiveSessionPayload(payload) ? payload : null;
+}
+
+/**
+ * Observed time is added up on the ADDON's clock, counted from the instant it read the baseline;
+ * the window it is published against is made of the PLUGIN's reception stamps, and the baseline is
+ * stamped a whole `live_open`/`live_ready` handshake after that read while every later sample is
+ * stamped one way after its own. The two never agree to the millisecond, so the total is bounded
+ * by the window it is published with: nothing was observed for longer than the time outside the
+ * gaps. Without the bound a real session's note was refused as invalid evidence, for good.
+ */
+function observedWithin(observedMs: number, gaps: readonly LiveGapV1[], channel: 'items' | 'currencies', startedAt: string, boundary: string): number {
+	const windowMs = Date.parse(boundary) - Date.parse(startedAt) - gapDuration(gaps,channel,boundary);
+	return Number.isFinite(windowMs) ? Math.max(0,Math.min(observedMs,windowMs)) : observedMs;
 }
 
 /** The caller supplies one coherent durable record/journal capture and its actual host timestamp. */
 export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInput,'record' | 'journal'>,
 	capturedAt: string): Promise<LiveSessionSnapshotV1 | null> {
 	if (!date(capturedAt) || (input.record.phase === 'active') !== (input.record.endedAt === null)) return null;
-	const evidence = await prepareLiveSessionEvidence(input);
+	const evidence = await prepareLiveSessionEvidence(input, input.record.endedAt ?? capturedAt);
 	if (evidence === null) return null;
 	const snapshot: LiveSessionSnapshotV1 = {...evidence,endedAt: input.record.endedAt,capturedAt,
 		exportState: input.record.phase === 'active' ? 'active_snapshot' : 'completed_session'};
 	return isLiveSessionSnapshot(snapshot) ? snapshot : null;
 }
 
-/** Full journal is required at this boundary; a paged UI view cannot satisfy its count and sums. */
-async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'record' | 'journal'>): Promise<Omit<StoredLiveSessionPayloadV1,'endedAt'> | null> {
+/**
+ * Full journal is required at this boundary; a paged UI view cannot satisfy its count and sums.
+ * `boundary` is where the published window closes: the session's end, or the capture of a
+ * snapshot taken while it runs.
+ */
+async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'record' | 'journal'>, boundary: string): Promise<Omit<StoredLiveSessionPayloadV1,'endedAt'> | null> {
 	const live = input.record;
 	let declaredBuild: Pick<StoredLiveSessionPayloadV1,'declaredBuild'> = {};
 	if ('declaredBuild' in live) {
@@ -78,15 +95,18 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 			observations: entry.observations.map(copyObservation),breakBefore: entry.breakBefore,outbox };
 	}));
 	if (journal.some((entry) => entry === null)) return null;
+	const gaps: LiveGapV1[] = live.gaps.map((gap) => ({ version: 1, fromAt: gap.fromAt, toAt: gap.toAt, reason: gap.reason, channels: [...gap.channels] }));
 	const payload: Omit<StoredLiveSessionPayloadV1,'endedAt'> = {
 		version: 1, source: 'nexus_inventory', sessionRef, accountRef: null,
 		build: live.build, profile: live.profile, startedAt: live.startedAt,
-		observationCount: live.observationCount, sampleCount: live.sampleCount, observedItemsMs: live.observedItemsMs, observedCurrenciesMs: live.observedCurrenciesMs,
+		observationCount: live.observationCount, sampleCount: live.sampleCount,
+		observedItemsMs: observedWithin(live.observedItemsMs,gaps,'items',live.startedAt,boundary),
+		observedCurrenciesMs: observedWithin(live.observedCurrenciesMs,gaps,'currencies',live.startedAt,boundary),
 		coverage: { items: live.lastSample?.itemCoverage ?? 'none', currencies: live.lastSample?.currencyCoverage ?? 'none',
 			currencyIds: live.lastSample?.rows.filter((row) => row.kind === 'currency').map((row) => row.idNumber) ?? [],
 			lastObservationAt: live.lastObservationAt, freeSlots: live.lastSample?.freeSlots ?? null },
 		journal: journal as StoredLiveJournalEntryV1[],
-		gaps: live.gaps.map((gap) => ({ version: 1, fromAt: gap.fromAt, toAt: gap.toAt, reason: gap.reason, channels: [...gap.channels] })),
+		gaps,
 		totals: orderTotals(live.totals.map((total) => ({ kind: total.kind, idNumber: total.idNumber, positive: total.positive, negative: total.negative, net: total.net }))),
 		valuation: valueLiveTotals(orderTotals(live.totals), live.prices, live.priceCapturedAt), magicFind: { value: live.magicFind.value, source: live.magicFind.source },
 		preparation: { version: 1, enabled: live.preparation.enabled, manualMagicFindBonus: live.preparation.manualMagicFindBonus,
