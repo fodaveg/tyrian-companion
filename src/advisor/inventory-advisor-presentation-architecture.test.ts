@@ -27,6 +27,7 @@ const PRESENTATION_DOMAIN_ALLOWLIST = new Set([
 	'src/advisor/inventory-advisor-result.ts',
 	'src/advisor/inventory-equipment-economy.ts',
 	'src/ui/inventory-advisor-controller.ts',
+	'src/ui/inventory-advisor-price-history-block.ts',
 	'src/ui/inventory-advisor-view-model.ts',
 	'src/ui/inventory-sync-panel-view.ts',
 	'src/ui/price-history-panel-view.ts',
@@ -87,6 +88,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 				'actions.runInventoryVaultSync', 'actions.confirmInventoryVaultSync', 'actions.cancelInventoryVaultSync',
 				'actions.getPriceHistoryState', 'actions.enablePriceHistory', 'actions.isPriceHistoryOptInOffered',
 				'actions.dismissPriceHistoryOptIn', 'actions.loadPriceHistorySeries',
+				// The price chart of a row's «Detalles»: only downloads one item's seed into the 24 h seed cache,
+				// and the host does nothing at all while the price history is off. Nothing reaches the vault.
+				'actions.ensurePriceHistorySeed',
 				'actions.resolvePriceHistoryItemCatalog', 'actions.getPriceHistorySeedState', 'actions.getSellSignalState',
 				'actions.getPriceSeedQueueCoverage',
 				'actions.getProductActionController', 'actions.hasConfiguredApiKey', 'actions.openProductSettings',
@@ -104,8 +108,16 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'../economy/reservation-model', '../economy/sell-signal-runtime', './inventory-advisor-view-model',
 			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view',
 			'./sell-signal-line',
+			// The price chart of a row's «Detalles»: a presentation module that mounts the shared chart widget.
+			'./inventory-advisor-price-history-block',
 			// H18.15: the pure "free space first when low, gold first otherwise" ordering; no I/O.
 			'../inventory/storage-space'],
+		portCalls: [],
+	}],
+	['src/ui/inventory-advisor-price-history-block.ts', {
+		// Types (`Translator`, the seed state) and the shared chart widget with its pure window list. It reads
+		// the seed through callbacks it is handed (`source.getSeed` / `ensureSeed`), so it has no capability of its own.
+		imports: ['../core/i18n', '../economy/price-seed-panel-service', './price-history-chart-view', './price-history-chart-model'],
 		portCalls: [],
 	}],
 	['src/ui/inventory-sync-panel-view.ts', {
@@ -149,6 +161,7 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			'src/advisor/inventory-equipment-economy.ts',
 			'src/ui/inventory-advisor-controller.ts',
 			'src/ui/inventory-advisor-item-view.ts',
+			'src/ui/inventory-advisor-price-history-block.ts',
 			'src/ui/inventory-advisor-view-model.ts',
 			'src/ui/inventory-advisor-view.ts',
 			'src/ui/inventory-sync-panel-view.ts',
