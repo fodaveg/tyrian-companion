@@ -1,19 +1,33 @@
 # Estado
 
-## 0.6.3 preparada: sesiones anteriores en la pestaña Sesión y avisos de drop sin cotización (7 oct 2026)
+## Canal 0.6.3 publicado: sesiones anteriores en la pestaña Sesión y avisos de drop sin cotización (7 oct 2026)
 
-**Candidata en `main`; nada publicado ni etiquetado.** El gate está pendiente. Añade el bloque plegado
-«Sesiones anteriores» al final de la pestaña Sesión, hace que un umbral de drop vacío valga 0 y evita que
-un objeto sin cotización en el bazar deje sin decidir los avisos de su lectura.
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.3](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.3)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.3`. El tag
+anotado apunta a `fe4ee83` (atestación). Añade el bloque plegado «Sesiones anteriores» al final de la
+pestaña Sesión, hace que un umbral de drop vacío valga 0 y evita que un objeto sin cotización en el bazar
+deje sin decidir los avisos de su lectura.
 
+- Publicación: el workflow `release.yml` (run 37593735963) terminó en success. La release tiene ocho assets,
+  todos `uploaded`: `hebra-main.mjs` 3274225, `hebra-styles.css` 115937, `hebra.json` 954, `main.js` 1861900,
+  `manifest.json` 236, `styles.css` 92471, `tyrian-companion-0.6.3.zip` 1954917 y
+  `tyrian-companion-0.6.3.zip.sha256` 93 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view`: «BRAT release contract: PASS (version=0.6.3; assets=8)». El `hebra-main.mjs`
+  descargado contiene los textos «Sesiones anteriores» y «Empty or 0» y la función
+  `isPublicCatalogNotFound`; `hebra.json` dice `0.6.3`.
+- Gate previo a publicar, sobre el árbol `8d2fea7beb0d0e6b1fb2086b73a421d9a9559c50` (Node 22.23.1): `check`
+  8/8 (4925 tests, 312 archivos), guardrails 25/25 (320 tests, 29 archivos), benchmark H6 y su sabotaje en
+  rojo PASS, `release:preflight` PASS y `changelog-entry.mjs 0.6.3` con exit 0. Una primera pasada sobre el
+  árbol anterior salió en rojo por `src/security-boundary.test.ts` y se corrigió en `7383585`.
 - Cambios: `src/ui/live-session-panel.ts` y `src/sessions/live-session-history.ts` (lista de sesiones
-  anteriores, de 10 en 10 y solo lectura), `src/ui/settings-tab.ts` (umbral vacío leído como 0) y
-  `src/sessions/live-session-economy.ts` (objeto sin cotización como «sin precio»). Metadatos alineados a
-  0.6.3.
-- Verificado: solo los metadatos de versión y la entrada de changelog de esta preparación (extractor de notas
-  `changelog-entry.mjs`). Los commits de código traen sus tests; no se han reejecutado aquí.
-- No verificado: el gate completo, la publicación, la instalación en Hebra y Obsidian y una sesión real de
-  juego con la 0.6.3.
+  anteriores, de 10 en 10 y solo lectura), `src/ui/settings-tab.ts` (umbral vacío leído como 0),
+  `src/sessions/live-session-economy.ts` y `src/catalog/public-catalog-client.ts` (objeto sin cotización
+  como «sin precio»). Metadatos alineados a 0.6.3.
+- Verificado: el gate local, la publicación y los ocho assets descritos arriba.
+- No verificado: la instalación y carga de la 0.6.3 en Hebra y en BRAT/Obsidian, una sesión real de juego
+  con la 0.6.3, el aspecto del bloque «Sesiones anteriores» dentro de Hebra con su paleta real (se midió a
+  280 px con colores sustitutos) y si el jugador que reportó el aviso escribió 0 o vació el campo (escribir 0
+  pasa en test). La CI del push (run 37593712382) seguía en curso al medir: no consta que pasara.
 
 ## Canal 0.6.2 publicado: la sesión en vivo real guarda su nota (7 oct 2026)
 

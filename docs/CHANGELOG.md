@@ -2,8 +2,13 @@
 
 ## Release beta 0.6.3 - la pestaña Sesión lista las sesiones anteriores y los avisos de drop ya se deciden
 
-Release por tag `0.6.3`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación en
-Hebra y Obsidian y sesión real de juego con la 0.6.3).
+[Canal 0.6.3 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.3);
+**instalación/runtime pendiente**. Tag `0.6.3` sobre `fe4ee83`, árbol verificado
+`8d2fea7beb0d0e6b1fb2086b73a421d9a9559c50`: `check` 8/8 (4925 tests, 312 archivos), guardrails 25/25
+(320 tests, 29 archivos), benchmark H6 con su sabotaje en rojo, `release:preflight` y
+`changelog-entry.mjs 0.6.3`, todo en verde. El workflow de release (run 37593735963) terminó en success y
+`release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo
+pendiente (instalación en Hebra y Obsidian y sesión real de juego con la 0.6.3).
 
 - Sesiones anteriores (petición de David del 7 oct 2026): al final de la pestaña Sesión, debajo de la
   cronología, hay un bloque plegado «Sesiones anteriores». Al abrirlo lista las sesiones en vivo guardadas,
