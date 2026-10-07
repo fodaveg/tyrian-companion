@@ -1,12 +1,29 @@
 # Estado
 
-## Candidata 0.6.8: recuperación ante la caída del almacén local (7 oct 2026)
+## Canal 0.6.8 publicado: recuperación ante la caída del almacén local (7 oct 2026)
 
-**Candidata integrada en local; sin publicar ni etiquetar; gate pendiente.** `manifest.version`, `package.json`,
-`package-lock.json` y `versions.json` están alineados a 0.6.8. No hay tag ni release, y no se ha corrido el gate
-sobre este árbol. Parte de `f11872d` (canal 0.6.7 publicado) y suma la recuperación ante la caída de IndexedDB
-(incidente del 7 oct 2026 en Hebra, WebKitGTK 2.54.1) y la línea base del censo de observabilidad reconciliada
-con las fronteras de esos cambios; el detalle está en [CHANGELOG](CHANGELOG.md).
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.8](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.8)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.8`. El tag apunta
+a `ca90259` (atestación del candidato `543312e`, árbol `d92bb690e4197ecde3b4ed466fcdc20b5e554e2b`). Parte de
+`f11872d` (canal 0.6.7 publicado) y suma la recuperación ante la caída de IndexedDB (incidente del 7 oct 2026
+en Hebra, WebKitGTK 2.54.1) y la línea base del censo de observabilidad reconciliada con las fronteras de esos
+cambios; el detalle está en [CHANGELOG](CHANGELOG.md).
+
+- Publicación: el workflow `release.yml` (run 37656040866) terminó en success. La release tiene ocho assets,
+  todos `uploaded`: `hebra-main.mjs` 3320361, `hebra-styles.css` 118737, `hebra.json` 954, `main.js`
+  1883945, `manifest.json` 236, `styles.css` 95271, `tyrian-companion-0.6.8.zip` 1979762 y
+  `tyrian-companion-0.6.8.zip.sha256` 93 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view`: «BRAT release contract: PASS (version=0.6.8; assets=8)». La CI de `main` para
+  `ca90259` (run 37656036881) terminó en success (`check`, `check-guardrails`, `detect-native-changes` y
+  `release-package`; los dos jobs de Rust se saltaron por no haber cambio nativo); corre el benchmark H6 y su
+  sabotaje, que no se corrieron en local.
+- Gate local previo, sobre el árbol atestado (Fedora, Node v22.23.1, 7 oct 2026), verde a la primera: `check`
+  8/8 (5093 tests, 321 ficheros, ninguno saltado), guardrails 25/25 y `release:preflight` en verde. El
+  benchmark H6 y su sabotaje no se corrieron en local porque el juego estaba abierto en la máquina.
+- Addon de Nexus: la 0.7.0 sigue instalada a mano en la máquina de David (iconos y paneles vistos en el
+  juego; precio sin ver). Hay una 0.7.1 en una rama de su repo, sin instalar ni publicar, que reintenta
+  `live_open` cada 30 s tras un `source_conflict`; hasta que se instale, el addon deja de leer hasta cambiar
+  de contexto de juego.
 
 - Contenido: reapertura de conexiones muertas en los almacenes de sesión, coordinación y preferencias;
   `onabort` y reapertura en el backend de ficheros de Hebra; límite de 10 s en las escrituras de diagnóstico; la
@@ -14,10 +31,10 @@ con las fronteras de esos cambios; el detalle está en [CHANGELOG](CHANGELOG.md)
   §4); relevo de un productor desconectado según el host, nunca con una conexión abierta; el asesor de inventario
   quita su bloqueo de preferencias.
 - Revisión independiente hecha antes de publicar: un defecto condicional y tres menores, arreglados con test.
-- Pendiente: el gate completo sobre el árbol final, la atestación, la publicación y la verificación de
-  instalación en Hebra y Obsidian.
-- No verificado: nada de esto se ha probado en el runtime real de Hebra ni de Obsidian. No está demostrado que
-  WebKitGTK acepte una conexión nueva tras ese fallo; si no la acepta, el plugin sigue en error, sin bucle.
+- No verificado: la instalación y carga de la 0.6.8 en Hebra y en Obsidian/BRAT, ni ninguna de las
+  recuperaciones en el runtime real, ni el precio pintado en el juego (la 0.6.7 tampoco se ha visto instalada
+  todavía). No está demostrado que WebKitGTK acepte una conexión nueva tras ese fallo; si no la acepta, el
+  plugin sigue en error, sin bucle.
 - Límites conocidos: los de la entrada 0.6.8 del CHANGELOG (almacenes sin reapertura, cola del ciclo de vida
   bloqueable, `replaceLiveJournal` sin reproducir, `live_open` en `source_conflict` durante la caída).
 
@@ -34,7 +51,10 @@ plugin sirve al addon el precio público neto del saco de Halloween por la exten
   `tyrian-companion-0.6.7.zip.sha256` 93 (bytes). `release:brat-verify` contra la salida real de
   `gh release view`: «BRAT release contract: PASS (version=0.6.7; assets=8)». La CI de `main` para
   `d82bc09` (run 37654263770) terminó en success; corre el benchmark H6 y su sabotaje, que no se corrieron
-  en local.
+  en local. La CI de `main` para `f11872d` (run 37655246212, el commit de documentación de la 0.6.7) figura
+  como `failure` sin ningún job fallido: `check`, `check-guardrails` y `detect-native-changes` terminaron en
+  success y el job `release-package` no llegó a crearse; GitHub no permite relanzar ese run. El commit
+  siguiente de `main` (`ca90259`), que lo contiene, tiene la CI completa en success.
 - Gate local previo, sobre el árbol atestado (Fedora, Node v22.23.1, 7 oct 2026): `check` 8/8 (5044 tests,
   319 ficheros, ninguno saltado), guardrails 25/25 y `release:preflight` en verde. Una primera corrida sobre
   `c32f941` salió en rojo (7/8): el censo de observabilidad listó 12 fronteras sin revisar del commit del

@@ -2,8 +2,13 @@
 
 ## Release beta 0.6.8 - recuperación ante la caída del almacén local
 
-Candidata a release por tag `0.6.8`; nada publicado ni etiquetado, gate pendiente. [ESTADO](ESTADO.md) separa lo
-verificado de lo pendiente (gate, publicación e instalación).
+[Canal 0.6.8 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.8);
+**instalación/runtime pendiente**. Tag `0.6.8` sobre `ca90259` (atestación del candidato `543312e`), árbol
+`d92bb690e4197ecde3b4ed466fcdc20b5e554e2b`. Gate local previo, verde a la primera: `check` 8/8 (5093 tests, 321
+archivos, ninguno saltado), guardrails 25/25 y `release:preflight` en verde. El benchmark H6 y su sabotaje no se
+corrieron en local; los corre la CI de `main`. El workflow de release (run 37656040866) terminó en success y
+`release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo pendiente
+(instalación en Hebra y Obsidian, y las recuperaciones en el runtime real).
 
 - Reapertura de conexiones IndexedDB muertas: los almacenes de sesión, de coordinación (lease) y de preferencias
   reabren la conexión (una reapertura por operación, sin bucle). El backend de ficheros de Hebra rechaza las
