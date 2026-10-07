@@ -1,7 +1,10 @@
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createHebraStorage, hebraDeviceKey, hebraSettingsKey } from '../../test/hebra-plugin-fakes';
+import {
+	abortingIndexedDb, closeUnderneath, emitEngineClose, killStorage, reviveStorage, settlement, trackedIndexedDb,
+} from '../../test/indexed-db-connections';
 import {
 	createIndexedDbFileBackend,
 	createLocalFileStorage,
@@ -85,3 +88,42 @@ function adapterContract(name: string, backend: () => LocalFileBackend): void {
 
 adapterContract('memory', () => createMemoryFileBackend());
 adapterContract('IndexedDB', () => createIndexedDbFileBackend(new IDBFactory(), 'hebra-tyrian-local-files'));
+
+// 7 Oct 2026: these files are the diagnostic log. A write that never settled stopped its queue for
+// good, and a dead connection was kept for the rest of the plugin's life.
+describe('file backend over a dying IndexedDB', () => {
+	it('an abort that brings no error event rejects every call instead of leaving it pending', async () => {
+		const backend = createIndexedDbFileBackend(abortingIndexedDb(), 'hebra-tyrian-local-files');
+		expect(await settlement(backend.set('lib-1/a', 'one'))).toBe('rejected');
+		expect(await settlement(backend.get('lib-1/a'))).toBe('rejected');
+		expect(await settlement(backend.delete('lib-1/a'))).toBe('rejected');
+		expect(await settlement(backend.keys())).toBe('rejected');
+	});
+
+	it('opens a new connection after the cached one was closed underneath it or by the engine', async () => {
+		const tracked = trackedIndexedDb();
+		const backend = createIndexedDbFileBackend(tracked.factory, 'hebra-tyrian-local-files');
+		await backend.set('lib-1/a', 'one');
+		closeUnderneath(tracked.connections[0]!);
+		expect(await backend.get('lib-1/a')).toBe('one');
+		expect(tracked.connections).toHaveLength(2);
+
+		emitEngineClose(tracked.connections[1]!);
+		await backend.set('lib-1/a', 'two');
+		expect(await backend.get('lib-1/a')).toBe('two');
+		expect(tracked.connections).toHaveLength(3);
+	});
+
+	it('one reopen per call while storage is down, and it works again once storage is back', async () => {
+		const tracked = trackedIndexedDb();
+		const backend = createIndexedDbFileBackend(tracked.factory, 'hebra-tyrian-local-files');
+		await backend.set('lib-1/a', 'one');
+		killStorage(tracked);
+		const open = vi.spyOn(tracked.factory, 'open');
+		expect(await settlement(backend.get('lib-1/a'))).toBe('rejected');
+		expect(open).toHaveBeenCalledTimes(1);
+
+		reviveStorage(tracked);
+		expect(await backend.get('lib-1/a')).toBe('one');
+	});
+});

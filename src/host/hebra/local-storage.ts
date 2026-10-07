@@ -14,6 +14,7 @@
  */
 import type { PluginStorage } from 'hebra-plugin-api';
 
+import { startIndexedDbTransaction, withIndexedDbReopen } from '../../core/indexed-db-open';
 import type { LocalDebugStoragePort } from '../../core/local-debug-writer';
 import type { TyrianLocalStoragePort, TyrianSettingsPort } from '../tyrian-host';
 
@@ -71,26 +72,56 @@ export function createMemoryFileBackend(): LocalFileBackend {
 export const LOCAL_FILES_DATABASE = 'local-files';
 const FILE_STORE_NAME = 'files';
 
-/** An IndexedDB database of the webview, apart from the core's (`kv.indexedDB`) and the path index. */
+/**
+ * An IndexedDB database of the webview, apart from the core's (`kv.indexedDB`) and the path index.
+ *
+ * The connection is kept between calls, but not past its death: one the engine closed, one that no
+ * longer starts transactions and an open that failed are all forgotten, and the call that found out
+ * opens one more (one reopen per call, see `withIndexedDbReopen`).
+ */
 export function createIndexedDbFileBackend(factory: IDBFactory, databaseName: string): LocalFileBackend {
-	let dbPromise: Promise<IDBDatabase> | undefined;
-	const open = (): Promise<IDBDatabase> => (dbPromise ??= new Promise((resolve, reject) => {
-		const request = factory.open(databaseName, 1);
-		request.onupgradeneeded = () => {
-			if (!request.result.objectStoreNames.contains(FILE_STORE_NAME)) request.result.createObjectStore(FILE_STORE_NAME);
+	let cached: { opening: Promise<IDBDatabase>; database: IDBDatabase | null } | null = null;
+	const forget = (database: IDBDatabase): void => {
+		if (cached?.database === database) cached = null;
+	};
+	const open = (): Promise<IDBDatabase> => {
+		if (cached !== null) return cached.opening;
+		const entry: { opening: Promise<IDBDatabase>; database: IDBDatabase | null } = {
+			database: null,
+			opening: new Promise<IDBDatabase>((resolve, reject) => {
+				const request = factory.open(databaseName, 1);
+				request.onupgradeneeded = () => {
+					if (!request.result.objectStoreNames.contains(FILE_STORE_NAME)) request.result.createObjectStore(FILE_STORE_NAME);
+				};
+				request.onsuccess = () => {
+					const database = request.result;
+					entry.database = database;
+					database.onclose = () => { forget(database); };
+					resolve(database);
+				};
+				request.onerror = () => reject(request.error ?? new Error('tyrian-local-files: open'));
+			}),
 		};
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error ?? new Error('tyrian-local-files: open'));
-	}));
-	const run = async <T>(mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> => {
-		const db = await open();
-		return await new Promise((resolve, reject) => {
-			const tx = db.transaction(FILE_STORE_NAME, mode);
+		cached = entry;
+		entry.opening.catch(() => { if (cached === entry) cached = null; });
+		return entry.opening;
+	};
+	const discard = (database: IDBDatabase): void => {
+		forget(database);
+		try { database.close(); } catch { /* Already gone, which is the reason it is being dropped. */ }
+	};
+	const run = async <T>(mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> =>
+		await withIndexedDbReopen({ open, discard }, async (db) => await new Promise<T>((resolve, reject) => {
+			// A throw here rejects this promise: the executor runs synchronously inside it.
+			const tx = startIndexedDbTransaction(db, FILE_STORE_NAME, mode);
 			const request = operation(tx.objectStore(FILE_STORE_NAME));
 			tx.oncomplete = () => resolve(request.result);
 			tx.onerror = () => reject(tx.error ?? new Error('tyrian-local-files: transaction'));
-		});
-	};
+			// An abort does not always come with an `error` event (a connection the engine closed, a
+			// commit it refused): without this handler the promise would never settle, and the
+			// diagnostic log queue waiting on it would stop for good.
+			tx.onabort = () => reject(tx.error ?? new Error('tyrian-local-files: transaction aborted'));
+		}));
 	return {
 		get: async (key) => await run('readonly', (store) => store.get(key)) as string | undefined,
 		set: async (key, value) => { await run('readwrite', (store) => store.put(value, key)); },

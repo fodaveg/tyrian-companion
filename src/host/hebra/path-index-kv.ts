@@ -60,6 +60,8 @@ export function createIndexedDbPathIndexKv(factory: IDBFactory, databaseName: st
 				tx.objectStore(STORE_NAME).put(value, key);
 				tx.oncomplete = () => resolve();
 				tx.onerror = () => reject(tx.error ?? new Error('tyrian-path-index-kv: set'));
+				// An abort does not always come with an `error` event; without this the save never settles.
+				tx.onabort = () => reject(tx.error ?? new Error('tyrian-path-index-kv: set aborted'));
 			});
 		},
 	};

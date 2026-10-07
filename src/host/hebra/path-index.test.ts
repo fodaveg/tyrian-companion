@@ -1,6 +1,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
+import { abortingIndexedDb, settlement } from '../../test/indexed-db-connections';
 import { TyrianPathIndex } from './path-index';
 import { createIndexedDbPathIndexKv, createMemoryPathIndexKv } from './path-index-kv';
 
@@ -26,6 +27,11 @@ describe('createIndexedDbPathIndexKv', () => {
 		const second = createIndexedDbPathIndexKv(factory, 'hebra-tyrian-path-index');
 		expect(await second.get('a')).toBe('two');
 		expect(await createIndexedDbPathIndexKv(factory, 'another-database').get('a')).toBeUndefined();
+	});
+
+	it('a save whose transaction aborts with no error event rejects instead of staying pending', async () => {
+		const kv = createIndexedDbPathIndexKv(abortingIndexedDb(), 'hebra-tyrian-path-index');
+		expect(await settlement(kv.set('a', 'one'))).toBe('rejected');
 	});
 });
 
