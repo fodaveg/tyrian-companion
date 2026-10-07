@@ -2,8 +2,15 @@
 
 ## Release beta 0.6.2 - una sesión en vivo real ya guarda su nota y deja de bloquear al addon
 
-Release por tag `0.6.2`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación en
-Hebra y Obsidian y sesión real con Nexus).
+[Canal 0.6.2 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.2);
+**instalación/runtime pendiente**. Tag `0.6.2`, commit
+`0e922079a0e73f8ce1904af7f4a9f5ad5d0cb1cd`, árbol `c3ce64fe4faa9e473c5fddc0d2ebcf1db5758888`:
+`check` 8/8 (4909 tests, 311 archivos), guardrails 25/25 (319 tests, 29 archivos), benchmark H6 con su
+sabotaje determinista, `release:preflight` y `changelog-entry.mjs 0.6.2`, todo con exit 0. La
+[CI de main](https://github.com/fodaveg/tyrian-companion/actions/runs/37582236342) y el
+[workflow de release](https://github.com/fodaveg/tyrian-companion/actions/runs/37582252535) pasaron
+y `release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de
+lo pendiente (instalación en Hebra y Obsidian y sesión real con Nexus).
 
 - Qué se veía: con el juego abierto y el addon de Nexus conectado, el botón «Iniciar sesión» de la
   pestaña Sesión seguía deshabilitado y el addon mostraba `Inventory: another source owns the session`.

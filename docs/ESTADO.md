@@ -1,21 +1,34 @@
 # Estado
 
-## 0.6.2 preparada: la sesión en vivo real guarda su nota (7 oct 2026)
+## Canal 0.6.2 publicado: la sesión en vivo real guarda su nota (7 oct 2026)
 
-**Candidato en `main`; nada publicado ni etiquetado.** Corrige que, desde
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.2](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.2)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.2`. El tag
+anotado apunta a `0e922079a0e73f8ce1904af7f4a9f5ad5d0cb1cd` (atestación), árbol verificado
+`c3ce64fe4faa9e473c5fddc0d2ebcf1db5758888`, candidato fuente `51df40c`. Corrige que, desde
 la 0.6.1 instalada en Hebra, con el juego abierto y el addon de Nexus conectado, «Iniciar sesión» siguiera
 deshabilitado y el addon mostrara `Inventory: another source owns the session`: la nota de la sesión real se
 rechazaba como `invalid_live_evidence` por 1 ms de diferencia entre el reloj del addon y los sellos del plugin.
 
+- Publicación: el [workflow de release](https://github.com/fodaveg/tyrian-companion/actions/runs/37582252535)
+  y la [CI de main](https://github.com/fodaveg/tyrian-companion/actions/runs/37582236342) terminaron en
+  SUCCESS sobre `0e92207`. `release:brat-verify` contra la salida real de `gh release view 0.6.2`: PASS
+  (`version=0.6.2; assets=8`), exactamente ocho assets subidos y no vacíos. En los assets de Hebra
+  descargados, `hebra.json` dice `0.6.2` y el SHA-256 de `hebra-main.mjs` y `hebra-styles.css` coincide con
+  el declarado. El `hebra-main.mjs` publicado contiene el arreglo (`observedWithin`, `publishedEnd` y el
+  evento `live_note_write`); el de la 0.6.1 instalada no contiene ninguno.
+- Gate local de ese árbol (Fedora, Node 22.23.1): `check` 8/8 (4909 tests, 311 archivos), guardrails 25/25
+  (319 tests, 29 archivos), benchmark H6 y su sabotaje determinista, `release:preflight` y
+  `changelog-entry.mjs 0.6.2`, todo con exit 0.
+
 - Cambios: `src/sessions/live-session-note-model.ts` (tiempo observado y fin publicados acotados a la ventana),
   `src/runtime/tyrian-companion-core.ts` (repintado al cambiar la presencia y diagnóstico del escritor) y
   `src/host/hebra/hebra-host.ts` (manifiesto de assets ilegible reportado). Metadatos alineados a 0.6.2.
-- Verificado: solo los metadatos de versión y la entrada de changelog de esta preparación (extractor de notas
-  `changelog-entry.mjs` y `release:identity-contract`). Los cinco commits de arreglo traen sus tests; no se han
-  reejecutado aquí.
-- No verificado: el gate completo (lo corre la raíz), la publicación, la instalación en Hebra y Obsidian, que el
-  registro atascado de la instalación que lo reportó fuera exactamente este caso (su estado guardado no se pudo
-  leer) y una sesión real de juego.
+- Verificado: el gate local, la publicación y los ocho assets descritos arriba; los cinco commits de arreglo
+  traen sus tests, que pasan dentro de ese `check`.
+- No verificado: la instalación y carga en Hebra y en BRAT/Obsidian, que el registro atascado de la
+  instalación que lo reportó fuera exactamente este caso (su estado guardado no se pudo leer) y una sesión
+  real de juego con Nexus.
 
 ## Canal 0.6.1 publicado: nombres e iconos de sesiones restauradas (6 oct 2026)
 
