@@ -158,15 +158,22 @@ export function outputFolderFromSettings(settings: unknown): string {
  * Is there anything of Tyrian's managed assets in the output folder? A manifest that is not
  * `detached` (the user removed them: never adopted again on their own) or, without a manifest,
  * some `.base` in `Bases/` (the copies imported from Obsidian arrive without one). Reads only.
+ * A manifest that cannot be read is handed to `onUnreadable` and counts as a footprint.
  */
-export async function hasManagedAssetsFootprint(vault: Pick<TyrianVault, 'file' | 'read' | 'listFiles'>, outputFolder: string): Promise<boolean> {
+export async function hasManagedAssetsFootprint(
+	vault: Pick<TyrianVault, 'file' | 'read' | 'listFiles'>,
+	outputFolder: string,
+	onUnreadable?: (error: unknown) => void,
+): Promise<boolean> {
 	const manifest = vault.file(`${outputFolder}/${MANAGED_ASSETS_MANIFEST}`);
 	if (manifest) {
 		try {
 			const parsed = JSON.parse(await vault.read(manifest)) as { state?: unknown } | null;
 			return parsed?.state !== 'detached';
-		} catch {
-			// Unreadable: it is still Tyrian's; the core shows it as a conflict in its settings.
+		} catch (error) {
+			// Unreadable (in Hebra, a file whose bytes are not on this device reads as a missing
+			// blob): it is still Tyrian's; the core shows it as a conflict in its settings.
+			onUnreadable?.(error);
 			return true;
 		}
 	}
@@ -422,7 +429,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			: null),
 		onReject: (error) => deps.report(error, 'vault.refusal'),
 	});
-	adoptManagedAssetsRoot = await hasManagedAssetsFootprint(vault, outputFolder);
+	adoptManagedAssetsRoot = await hasManagedAssetsFootprint(vault, outputFolder, (error) => deps.report(error, 'vault.file'));
 	// An indexed file (a Base, the manifest) someone trashes or purges in Hebra (Files, another
 	// device through sync) leaves the index: otherwise `file(path)` would keep returning it and the
 	// core would fail reading it instead of creating it again. Notes are followed by `onChange`.

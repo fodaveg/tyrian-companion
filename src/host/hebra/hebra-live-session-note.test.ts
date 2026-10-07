@@ -66,6 +66,16 @@ afterEach(() => {
 });
 
 describe('Tyrian in Hebra: a finished live session saves its note and frees the next session', () => {
+	it('a managed-assets manifest whose bytes are not on this device is reported once and the start reaches its end', async () => {
+		const test = collectorHebra();
+		// `activate` itself checks that the runtime became ready and that the boot did not fail.
+		const { core, cleanup, reports } = await activate(test, new IDBFactory());
+		expect(core.getCollectorMode(), 'the installation collects').toBe('collector');
+		expect(reports.filter((message) => message.startsWith('hebra host (vault.file):')), 'the unreadable manifest reaches the host diagnostics').toHaveLength(1);
+		expect(core.getLiveSessionView().phase, 'and no session is left half open by it').toBe('idle');
+		await cleanup();
+	}, 30_000);
+
 	it('the note is written when the game exits, and the next connection starts a new session', async () => {
 		const test = collectorHebra();
 		const factory = new IDBFactory();

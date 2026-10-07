@@ -14530,20 +14530,20 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "05b57f9b355a3611ea9d25611397ce9888465581",
+					"id": "aae281863ae83c12096abd2d9170896bd015f8c2",
 					"kind": "catch_clause",
-					"line": 168,
+					"line": 173,
 					"column": 5,
-					"endLine": 171,
+					"endLine": 178,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "hasManagedAssetsFootprint",
-						"justification": "The \"hasManagedAssetsFootprint\" catch (\"fallback_return\") treats an unreadable managed-assets manifest as still Tyrian's, so the core shows it as a conflict in its settings instead of failing the check."
+						"justification": "The \"hasManagedAssetsFootprint\" catch (\"fallback_return\") hands the failure to onUnreadable (deps.report, the adapter failure channel that logs it) and treats an unreadable managed-assets manifest as still Tyrian's, so the core shows it as a conflict in its settings instead of failing the check."
 					},
-					"reason": "Allowlisted catch_clause: The \"hasManagedAssetsFootprint\" catch (\"fallback_return\") treats an unreadable managed-assets manifest as still Tyrian's, so the core shows it as a conflict in its settings instead of failing the check. Verified recovery: \"fallback_return\" in \"hasManagedAssetsFootprint\"."
+					"reason": "Allowlisted catch_clause: The \"hasManagedAssetsFootprint\" catch (\"fallback_return\") hands the failure to onUnreadable (deps.report, the adapter failure channel that logs it) and treats an unreadable managed-assets manifest as still Tyrian's, so the core shows it as a conflict in its settings instead of failing the check. Verified recovery: \"fallback_return\" in \"hasManagedAssetsFootprint\"."
 				},
 				{
 					"id": "e987e64e1e161b77bca09ce99e9c5c400fc13978",
