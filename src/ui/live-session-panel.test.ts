@@ -214,11 +214,90 @@ describe('Session tab: figures, objects and chart', () => {
 	it('shows observed coins under the grid and a quiet line while nothing was observed yet', () => {
 		const view = liveView(); view.totals.push({ kind: 'currency', idNumber: 1, positive: 15_525, negative: 0, net: 15_525 });
 		const { panel } = harness(view);
-		expect(panel.element.querySelector('.tyrian-live-session__coins')!.textContent).toContain('1g 55s 25c');
+		const coin = panel.element.querySelector('.tyrian-live-session__coins > li')!;
+		expect(coin.querySelector('.tyrian-live-session__qty')!.textContent).toBe('1g 55s');
+		expect(coin.getAttribute('aria-label')).toBe('Item 1, 1g 55s 25c');
 		const none = harness({ ...liveView(0), totals: [], chartPoints: [] });
 		expect(none.panel.element.textContent).toContain('No inventory changes observed yet.');
 		expect(none.panel.element.querySelector('.tyrian-live-session__chart')!.hasAttribute('hidden')).toBe(true);
 		expect(none.panel.element.querySelector('details')!.hasAttribute('hidden')).toBe(true);
+	});
+
+	describe('coin tiles', () => {
+		const ICON = 'https://render.guildwars2.com/file/hash/9.png';
+		const withCoins = (rows: ReadonlyArray<readonly [number, number]>): LiveSessionViewV1 => {
+			const view = liveView();
+			view.totals.push(...rows.map(([idNumber, net]) => ({ kind: 'currency' as const, idNumber, positive: Math.max(net, 0), negative: Math.max(-net, 0), net })));
+			return view;
+		};
+		const known = (kind: 'item' | 'currency', id: number) => kind === 'currency' ? { name: `Coin ${String(id)}`, icon: ICON } : { name: 'Mushroom', icon: ICON };
+		const section = (panel: LiveSessionPanel): HTMLElement | null => panel.element.querySelector<HTMLElement>('.tyrian-live-session__currencies');
+		const tiles = (panel: LiveSessionPanel): HTMLElement[] => Array.from(panel.element.querySelectorAll<HTMLElement>('ul.tyrian-live-session__coins > li'));
+
+		it('gives the coins their own labelled section after the objects, with the number of coins, and none without coins', () => {
+			const { panel } = harness(withCoins([[1, 15_525], [2, 5]]), control(), 'en', undefined, known);
+			const head = section(panel)!.querySelector('h4')!;
+			expect(head.querySelector('span')!.textContent).toBe('Currencies');
+			expect(head.querySelector('b')!.textContent).toBe('2');
+			expect(section(panel)!.previousElementSibling!.classList.contains('tyrian-live-session__objects')).toBe(true);
+			expect(section(panel)!.hasAttribute('hidden')).toBe(false);
+			expect(harness(liveView(), control(), 'es', undefined, known).panel.element.querySelector('.tyrian-live-session__currencies')!.hasAttribute('hidden')).toBe(true);
+			expect(harness(withCoins([[3, 0]]), control(), 'en', undefined, known).panel.element.querySelector('.tyrian-live-session__currencies')!.hasAttribute('hidden')).toBe(true);
+			expect(section(harness(withCoins([[2, 1]]), control(), 'es', undefined, known).panel)!.querySelector('h4 span')!.textContent).toBe('Monedas');
+		});
+
+		it('draws each coin as the same tile as an object: real icon, net badge, name and exact amount as the accessible name', () => {
+			const { panel } = harness(withCoins([[2, -20], [1, 23_420], [23, 3_228]]), control(), 'en', undefined, known);
+			const [gold, loss, big] = tiles(panel) as [HTMLElement, HTMLElement, HTMLElement];
+			for (const tile of [gold, loss, big]) {
+				expect(tile.classList.contains('tyrian-live-session__tile')).toBe(true);
+				expect(tile.querySelector('img')!.getAttribute('src')).toBe(ICON);
+				expect(tile.hasAttribute('tabindex')).toBe(false);
+			}
+			expect(gold.querySelector('.tyrian-live-session__qty')!.textContent).toBe('2g 34s');
+			expect(gold.getAttribute('aria-label')).toBe('Coin 1, 2g 34s 20c');
+			expect(gold.title).toBe('Coin 1, 2g 34s 20c');
+			expect(loss.querySelector('.tyrian-live-session__qty')!.textContent).toBe('-20');
+			expect(loss.hasAttribute('data-neg')).toBe(true);
+			expect(big.querySelector('.tyrian-live-session__qty')!.textContent).toBe('+3.2k');
+			expect(big.getAttribute('aria-label')).toBe('Coin 23, +3,228');
+			expect(panel.element.querySelector('.tyrian-live-session__coins')!.getAttribute('aria-label')).toBe('Observed coins');
+		});
+
+		it('keeps the marker and the fallback name for a coin the catalog has not named, and never lists a net of zero', () => {
+			const { panel } = harness(withCoins([[7, 4], [8, 0]]), control(), 'en', undefined, (kind, id) => kind === 'currency' ? null : known(kind, id));
+			expect(tiles(panel)).toHaveLength(1);
+			expect(tiles(panel)[0]!.getAttribute('aria-label')).toBe('Currency 7, +4');
+			expect(tiles(panel)[0]!.querySelector('.tyrian-live-session__missing')!.textContent).toBe('?');
+		});
+
+		it('wraps any number of coins into the same grid, gold first and the rest by id', () => {
+			for (const count of [1, 5, 30]) {
+				const rows = Array.from({ length: count }, (_, index) => [31 - index, index + 1] as const);
+				const { panel } = harness(withCoins([...rows, [1, 100]]), control(), 'en', undefined, known);
+				expect(tiles(panel)).toHaveLength(count + 1);
+				const ids = tiles(panel).map((tile) => Number(tile.title.split(',')[0]!.replace('Coin ', '')));
+				expect(ids).toEqual([...ids].sort((a, b) => a === 1 ? -1 : b === 1 ? 1 : a - b));
+				expect(ids[0]).toBe(1);
+			}
+		});
+
+		it('repaints only the tile that changed: the same nodes survive a tick, and a late name replaces only its own', () => {
+			let named = false;
+			const port: LiveSessionPanelActions['getLiveSessionEntity'] = (kind, id) => kind === 'currency' ? (id === 2 && !named ? null : { name: `Coin ${String(id)}`, icon: ICON }) : known(kind, id);
+			const { panel } = harness(withCoins([[1, 100], [2, 5]]), control(), 'en', undefined, port);
+			const before = tiles(panel);
+			const qty = before[0]!.querySelector('.tyrian-live-session__qty')!;
+			panel.refresh();
+			expect(tiles(panel)).toEqual(before);
+			expect(before[0]!.querySelector('.tyrian-live-session__qty')).toBe(qty);
+			named = true; panel.refresh();
+			const after = tiles(panel);
+			expect(after).toEqual(before);
+			expect(after[1]!.getAttribute('aria-label')).toBe('Coin 2, +5');
+			expect(after[1]!.querySelector('img')).not.toBeNull();
+			expect(after[0]!.querySelector('.tyrian-live-session__qty')).toBe(qty);
+		});
 	});
 
 	it('draws one chart with a summary label, and the legend only when there are reading gaps', () => {
@@ -547,11 +626,13 @@ describe('previous sessions block', () => {
 			const [row] = await show([entry(0, { currencies: [{ idNumber: 1, net: 15_525 }] })]);
 			const coins = coinsOf(row!);
 			expect(coins).toHaveLength(1);
-			expect(coins[0]!.textContent).toBe('1g 55s 25c');
-			expect(coins[0]!.title).toBe('Coin 1');
+			expect(coins[0]!.textContent).toBe('1g 55s');
+			expect(coins[0]!.title).toBe('Coin 1, 1g 55s 25c');
 			expect(coins[0]!.getAttribute('aria-label')).toBe('Coin 1, 1g 55s 25c');
 			expect(coins[0]!.querySelector('img')!.getAttribute('src')).toBe(ICON);
-			expect(row!.querySelector('ul.tyrian-live-session__previous-coins')!.classList.contains('tyrian-live-session__coins')).toBe(true);
+			expect(coins[0]!.classList.contains('tyrian-live-session__tile')).toBe(true);
+			const list = row!.querySelector('ul.tyrian-live-session__previous-coins')!;
+			expect(list.classList.contains('tyrian-live-session__coins') && list.classList.contains('tyrian-live-session__grid')).toBe(true);
 		});
 
 		it('draws several coins in the given order, the others with sign, negatives included, and no cap', async () => {
@@ -559,7 +640,7 @@ describe('previous sessions block', () => {
 			const [row] = await show([entry(0, { currencies })]);
 			const coins = coinsOf(row!);
 			expect(coins).toHaveLength(16);
-			expect(coins[0]!.textContent).toBe('0g 1s 0c');
+			expect(coins[0]!.textContent).toBe('1s');
 			expect(coins[1]!.textContent).toBe('-3');
 			expect(coins[1]!.getAttribute('aria-label')).toBe('Coin 2, -3');
 			expect(coins[2]!.textContent).toBe('+2');
@@ -568,14 +649,15 @@ describe('previous sessions block', () => {
 		it('falls back to a generic name when the coin is not resolved', async () => {
 			const [row] = await show([entry(0, { currencies: [{ idNumber: 23, net: 5 }] })], named(() => null));
 			const coin = coinsOf(row!)[0]!;
-			expect(coin.title).toBe('Currency 23');
+			expect(coin.title).toBe('Currency 23, +5');
 			expect(coin.getAttribute('aria-label')).toBe('Currency 23, +5');
 			expect(coin.querySelector('img')).toBeNull();
+			expect(coin.querySelector('.tyrian-live-session__missing')!.textContent).toBe('?');
 		});
 
 		it('draws the coins of a session without objects, and no object grid', async () => {
 			const [row] = await show([entry(0, { itemCount: 0, items: [], currencies: [{ idNumber: 4, net: 2 }] })]);
-			expect(row!.querySelector('ul.tyrian-live-session__grid')).toBeNull();
+			expect(row!.querySelector('ul.tyrian-live-session__grid:not(.tyrian-live-session__coins)')).toBeNull();
 			expect(coinsOf(row!)).toHaveLength(1);
 		});
 
@@ -583,7 +665,24 @@ describe('previous sessions block', () => {
 			const rows = [entry(0, { itemCount: 1, items: [{ idNumber: 4, net: 1 }], currencies: [{ idNumber: 4, net: 2 }] })];
 			const [row] = await show(rows);
 			expect(row!.querySelector('li.tyrian-live-session__tile')!.getAttribute('aria-label')).toBe('Mushroom, 1');
-			expect(coinsOf(row!)[0]!.title).toBe('Coin 4');
+			expect(coinsOf(row!)[0]!.title).toBe('Coin 4, +2');
+		});
+
+		it('draws long amounts shortened with the exact figure in title and accessible name, and a loss marked', async () => {
+			const [row] = await show([entry(0, { currencies: [{ idNumber: 1, net: -23_420 }, { idNumber: 2, net: 123_456 }, { idNumber: 3, net: -3_228 }] })]);
+			const [gold, big, loss] = coinsOf(row!) as [HTMLElement, HTMLElement, HTMLElement];
+			expect(gold.querySelector('.tyrian-live-session__qty')!.textContent).toBe('-2g 34s');
+			expect(gold.getAttribute('aria-label')).toBe('Coin 1, -2g 34s 20c');
+			expect(big.querySelector('.tyrian-live-session__qty')!.textContent).toBe('+123k');
+			expect(big.title).toBe('Coin 2, +123,456');
+			expect(big.getAttribute('aria-label')).toBe('Coin 2, +123,456');
+			expect(loss.querySelector('.tyrian-live-session__qty')!.textContent).toBe('-3.2k');
+			expect(gold.hasAttribute('data-neg') && loss.hasAttribute('data-neg') && !big.hasAttribute('data-neg')).toBe(true);
+		});
+
+		it('sorts gold first and the rest by id however they arrived', async () => {
+			const [row] = await show([entry(0, { currencies: [{ idNumber: 23, net: 1 }, { idNumber: 2, net: 1 }, { idNumber: 1, net: 100 }] })]);
+			expect(coinsOf(row!).map((coin) => coin.title.split(',')[0])).toEqual(['Coin 1', 'Coin 2', 'Coin 23']);
 		});
 	});
 

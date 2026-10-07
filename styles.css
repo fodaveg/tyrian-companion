@@ -3160,9 +3160,6 @@
 .tyrian-live-session__missing { display: grid; place-items: center; box-sizing: border-box; border: 1px dashed var(--background-modifier-border); border-radius: inherit; color: var(--text-muted); font-size: var(--font-smallest); }
 .tyrian-live-session__qty { position: absolute; top: 0; right: 0; max-width: 100%; overflow: hidden; padding: var(--size-2-1) var(--size-4-1); border-bottom-left-radius: var(--radius-s); background: var(--background-primary); color: var(--text-normal); font-size: var(--font-smallest); font-weight: var(--font-semibold); line-height: var(--line-height-tight); font-variant-numeric: tabular-nums; }
 .tyrian-live-session__tile[data-neg] .tyrian-live-session__qty, .tyrian-live-session__delta[data-neg] { color: var(--text-error); }
-.tyrian-live-session__coins { display: flex; flex-wrap: wrap; gap: var(--size-4-1) var(--size-4-4); margin: var(--size-4-2) 0 0; padding: 0; list-style: none; font-variant-numeric: tabular-nums; }
-.tyrian-live-session__coins li { display: inline-flex; align-items: center; gap: var(--size-4-1); white-space: nowrap; }
-.tyrian-live-session__coins img, .tyrian-live-session__coins .tyrian-live-session__missing { width: var(--size-4-4); height: var(--size-4-4); }
 .tyrian-live-session__plot { position: relative; height: var(--tyrian-chart-h); border-bottom: 1px solid var(--background-modifier-border); }
 .tyrian-live-session__plot::before { content: ""; position: absolute; inset: 0 0 auto; border-top: 1px dashed var(--background-modifier-border); }
 .tyrian-live-session__plot svg { display: block; width: calc(100% - var(--size-4-1)); height: 100%; overflow: visible; }

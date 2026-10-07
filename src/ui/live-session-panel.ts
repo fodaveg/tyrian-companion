@@ -3,6 +3,7 @@ import type { LiveGapV1, LiveSessionAlertViewV1, LiveSessionViewV1 } from '../se
 import { liveItemRank, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
 import { sha256Text } from '../sessions/session-note-renderer';
 import { reconcileChildren } from './reconcile-children';
+import { coinBadge, compareCoins } from './live-session-coin-badge';
 import { liveSessionCopy, type LiveSessionCopyKey } from './live-session-copy';
 
 /**
@@ -70,6 +71,8 @@ export function liveSessionRatePerHour(view: LiveSessionViewV1): number | null {
 
 interface Tile { li: HTMLElement; sig: string }
 interface Row { li: HTMLElement; sig: string }
+/** What a coin tile needs: the corner `text`, the `exact` amount for the accessible name and `sig` to skip an unchanged repaint. */
+interface CoinView { name: string; icon: string | null; text: string; exact: string; negative: boolean; sig: string }
 type PreviousState = 'idle' | 'loading' | 'ready' | 'failed';
 
 /** The simplified Session tab: one header with one button, three figures, objects, one chart, one timeline. */
@@ -95,6 +98,8 @@ export class LiveSessionPanel {
 	private readonly objects: HTMLElement;
 	private readonly objectsTotal: HTMLElement;
 	private readonly grid: HTMLElement;
+	private readonly currencies: HTMLElement;
+	private readonly currenciesTotal: HTMLElement;
 	private readonly coins: HTMLElement;
 	private readonly empty: HTMLElement;
 	private readonly chart: HTMLElement;
@@ -182,10 +187,17 @@ export class LiveSessionPanel {
 		objectsHead.append(this.node('span', '', this.copy('objects')), this.objectsTotal);
 		this.grid = this.node('ul', 'tyrian-live-session__grid');
 		this.grid.setAttribute('aria-label', this.copy('objects'));
-		this.coins = this.node('ul', 'tyrian-live-session__coins');
-		this.coins.setAttribute('aria-label', this.copy('coins'));
 		this.empty = this.node('p', 'tyrian-live-session__hint', this.copy('noChanges'));
-		this.objects.append(objectsHead, this.grid, this.coins, this.empty);
+		this.objects.append(objectsHead, this.grid, this.empty);
+
+		// The coins are a section of their own, laid out like the objects (`__objects` carries its grid placement) with the same tile grid.
+		this.currencies = this.node('section', 'tyrian-live-session__objects tyrian-live-session__currencies');
+		const currenciesHead = this.node('h4', 'tyrian-live-session__section');
+		this.currenciesTotal = this.node('b');
+		currenciesHead.append(this.node('span', '', this.copy('currencies')), this.currenciesTotal);
+		this.coins = this.node('ul', 'tyrian-live-session__grid tyrian-live-session__coins');
+		this.coins.setAttribute('aria-label', this.copy('coins'));
+		this.currencies.append(currenciesHead, this.coins);
 
 		this.chart = this.node('section', 'tyrian-live-session__chart');
 		this.chart.append(this.node('h4', 'tyrian-live-session__section', this.copy('chartTitle')));
@@ -217,7 +229,7 @@ export class LiveSessionPanel {
 		this.timeline.append(this.timelineTitle, this.rows, this.more);
 		this.timeline.addEventListener('toggle', () => { this.refresh(); });
 
-		this.element.append(head, notices, this.stats, this.objects, this.chart, this.timeline);
+		this.element.append(head, notices, this.stats, this.objects, this.currencies, this.chart, this.timeline);
 
 		this.previousStatus = this.node('p', 'tyrian-live-session__hint');
 		this.previousStatus.setAttribute('role', 'status');
@@ -256,6 +268,7 @@ export class LiveSessionPanel {
 		const hasData = hasSession && view.observationCount > 0;
 		this.stats.hidden = !hasSession;
 		this.objects.hidden = !hasSession;
+		if (!hasSession) this.currencies.hidden = true; // with a session, `renderCoins()` decides
 		this.chart.hidden = !hasData || view.chartPoints.length === 0;
 		this.timeline.hidden = !hasData;
 		if (hasSession) {
@@ -342,7 +355,7 @@ export class LiveSessionPanel {
 				const entity = this.previousEntity(item.idNumber);
 				return { net: item.net, icon: entity?.icon ?? null, name: entity?.name ?? `${this.copy('kindItem')} ${String(item.idNumber)}`, quantity: this.number(item.net) };
 			});
-			const coins = entry.currencies.filter((row) => row.net !== 0).map((row) => this.coinOf(row.idNumber, row.net));
+			const coins = entry.currencies.filter((row) => row.net !== 0).sort((a, b) => compareCoins(a.idNumber, b.idNumber)).map((row) => this.coinOf(row.idNumber, row.net));
 			const sig = [entry.startedAt, entry.endedAt, entry.estimatedValueCopper, entry.itemCount, this.actions.getLocale(), hidden,
 				...tiles.map((tile) => `${tile.name}|${tile.icon ?? ''}|${tile.quantity}`), 'coins', ...coins.map((coin) => coin.sig)].join('|');
 			let cached = this.previousCache.get(entry.sessionRef);
@@ -375,10 +388,10 @@ export class LiveSessionPanel {
 					parts.push(grid);
 				}
 				if (coins.length > 0) {
-					const list = this.node('ul', 'tyrian-live-session__coins tyrian-live-session__previous-coins');
+					const list = this.node('ul', 'tyrian-live-session__grid tyrian-live-session__coins tyrian-live-session__previous-coins');
 					list.setAttribute('aria-label', this.copy('coins'));
 					for (const coin of coins) {
-						const li = this.node('li');
+						const li = this.node('li', 'tyrian-live-session__tile');
 						this.paintCoin(li, coin);
 						list.append(li);
 					}
@@ -519,11 +532,15 @@ export class LiveSessionPanel {
 		this.renderCoins(view);
 	}
 
-	/** One object tile: icon (or the placeholder), quantity in the corner, name and quantity as the accessible name and tooltip. */
-	private paintTile(li: HTMLElement, icon: string | null, name: string, quantity: string, negative: boolean): void {
+	/**
+	 * One tile: icon (or the placeholder), quantity in the corner, name and quantity as the accessible name and tooltip.
+	 * A coin passes `exact` when the corner shows a shortened amount: the tooltip then carries name and exact amount too.
+	 */
+	private paintTile(li: HTMLElement, icon: string | null, name: string, quantity: string, negative: boolean, exact?: string): void {
 		li.replaceChildren(this.icon(icon), this.node('span', 'tyrian-live-session__qty', quantity));
-		li.title = name;
-		li.setAttribute('aria-label', this.copy('tileLabel').replace('{name}', name).replace('{quantity}', quantity));
+		const label = this.copy('tileLabel').replace('{name}', name).replace('{quantity}', exact ?? quantity);
+		li.title = exact === undefined ? name : label;
+		li.setAttribute('aria-label', label);
 		if (negative) li.dataset.neg = ''; else delete li.dataset.neg;
 	}
 
@@ -539,33 +556,32 @@ export class LiveSessionPanel {
 		return entity;
 	}
 
-	/** What one observed coin shows, live or saved: gold (id 1) as money, the rest as a signed amount; `sig` changes with any of it. */
-	private coinOf(id: number, net: number): { name: string; icon: string | null; text: string; sig: string } {
+	/** What one observed coin shows, live or saved: the badge of `coinBadge()` and the resolved name or the fallback; `sig` changes with any of it. */
+	private coinOf(id: number, net: number): CoinView {
 		const entity = this.actions.getLiveSessionEntity('currency', id);
 		const name = entity?.name ?? `${this.copy('kindCurrency')} ${String(id)}`;
-		const text = id === 1 ? this.money(net) : this.signed(net);
-		return { name, icon: entity?.icon ?? null, text, sig: `${name}|${entity?.icon ?? ''}|${text}` };
+		const badge = coinBadge(id, net, this.actions.getLocale());
+		return { name, icon: entity?.icon ?? null, ...badge, negative: net < 0, sig: `${name}|${entity?.icon ?? ''}|${badge.text}|${badge.exact}|${String(net < 0)}` };
 	}
 
-	private paintCoin(li: HTMLElement, coin: { name: string; icon: string | null; text: string }): void {
-		li.replaceChildren(this.icon(coin.icon), this.node('span', '', coin.text));
-		li.title = coin.name;
-		li.setAttribute('aria-label', `${coin.name}, ${coin.text}`);
+	private paintCoin(li: HTMLElement, coin: CoinView): void {
+		this.paintTile(li, coin.icon, coin.name, coin.text, coin.negative, coin.exact);
 	}
 
 	private renderCoins(view: LiveSessionViewV1): void {
 		const wanted: HTMLElement[] = [];
-		for (const row of view.totals.filter((total) => total.kind === 'currency' && total.net !== 0)) {
+		for (const row of view.totals.filter((total) => total.kind === 'currency' && total.net !== 0).sort((a, b) => compareCoins(a.idNumber, b.idNumber))) {
 			const key = `currency:${String(row.idNumber)}`;
 			const coin = this.coinOf(row.idNumber, row.net);
 			let tile = this.coinCache.get(key);
-			if (tile === undefined) { tile = { li: this.node('li'), sig: '' }; this.coinCache.set(key, tile); }
+			if (tile === undefined) { tile = { li: this.node('li', 'tyrian-live-session__tile'), sig: '' }; this.coinCache.set(key, tile); }
 			if (tile.sig !== coin.sig) { tile.sig = coin.sig; this.paintCoin(tile.li, coin); }
 			wanted.push(tile.li);
 		}
 		for (const key of Array.from(this.coinCache.keys())) if (!wanted.includes(this.coinCache.get(key)!.li)) this.coinCache.delete(key);
 		reconcileChildren(this.coins, wanted);
-		this.coins.hidden = wanted.length === 0;
+		this.setText(this.currenciesTotal, this.number(wanted.length));
+		this.currencies.hidden = wanted.length === 0;
 	}
 
 	/** A step line of the estimated value; reading gaps are bands and cut the line, never interpolated. */
