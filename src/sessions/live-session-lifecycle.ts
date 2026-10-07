@@ -30,6 +30,23 @@ export interface LiveSessionLifecycleOptions {
 	onComplete?(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[]): Promise<string | null>;
 }
 
+/** Whether this host still holds the session lease, or cannot find out because storage does not answer. */
+type LeaseOwnership = 'owned' | 'lost' | 'unavailable';
+
+/**
+ * What storage refused while it was down. None of it is a measurement: it is the unobserved
+ * interval itself and the state changes that could not be written, kept in memory only so the
+ * first save that works again records them. A sample that could not be stored is never kept.
+ */
+interface UnsavedLiveState {
+	/** First cause of the unobserved interval; null while only bookkeeping (presence, lease) failed. */
+	gapReason: LiveGapV1['reason'] | null;
+	/** The producer reported the end of its epoch and that could not be written. */
+	epochEnded: boolean;
+	sourceDisconnectedAt: string | null;
+	presence: { connected: boolean; evidencedAt: number } | null;
+}
+
 /** A passive, fenced session lifecycle sharing the canonical runtime store and existing coordinator. */
 export class LiveSessionLifecycle {
 	private record: LiveSessionRuntimeRecord | null = null;
@@ -42,6 +59,8 @@ export class LiveSessionLifecycle {
 	private timer: unknown = null;
 	private disposed = false;
 	private failure = false;
+	/** Not null from the first durable step storage refused until the first one it accepts again. */
+	private unsaved: UnsavedLiveState | null = null;
 	private recovering = false;
 	private noteNeedsVerification = false;
 
@@ -104,7 +123,7 @@ export class LiveSessionLifecycle {
 				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, declaredBuild, summaryReceipt: null };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return null; }
 			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = []; this.failure = false;
-			this.recovering = false; this.noteNeedsVerification = false;
+			this.unsaved = null; this.recovering = false; this.noteNeedsVerification = false;
 			this.armHeartbeat(); this.options.onStateChange(); return id;
 		});
 	}
@@ -114,7 +133,8 @@ export class LiveSessionLifecycle {
 			if (!this.options.enabled() || this.record?.phase !== 'active' || source.context.state !== 'gameplay') return 'not_gameplay';
 			if (source.build !== NEXUS_LIVE_BUILD || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
 			if (this.record.sourceInstance !== null && this.record.sourceInstance !== source.sourceInstance) return 'source_conflict';
-			if (!await this.owned()) return 'source_conflict';
+			// `live_ready` has no status for storage: while it is down this answers as before.
+			if (await this.ready() !== 'owned') return 'source_conflict';
 			if (this.record.epoch === source.epoch) return 'ready';
 			let next = this.record;
 			if (next.sourceInstance !== null) next = liveSessionGap(next, 'context_changed', this.nowIso());
@@ -122,16 +142,26 @@ export class LiveSessionLifecycle {
 				epoch: source.epoch, context: { ...source.context }, lastSample: null, fingerprint: null, lastSourceDisconnectedAt: null,
 				itemComparable: false, currencyComparable: false, sourceState: 'warming_up', sourceReason: null, persistedAt: this.options.now(), connection: 'connected' };
 			next = this.observeMap(next, source.context.mapId, this.options.now());
-			if ((await this.options.persistence.saveLive(next)).status !== 'saved') return 'source_conflict';
+			if (await this.persist(next) !== 'saved') return 'source_conflict';
 			this.record = next; this.options.onStateChange(); return 'ready';
 		});
 	}
 
-	/** Measurement, cursor and ledger must reach one durable transaction before the server ACKs. */
+	/**
+	 * Measurement, cursor and ledger must reach one durable transaction before the server ACKs.
+	 *
+	 * A sample storage refuses is dropped, never kept for later: the interval it covered stays a
+	 * `storage_unavailable` gap, and the first sample stored afterwards is a local baseline, so no
+	 * delta and no observed time cross it.
+	 */
 	async commit(sample: LiveInventorySampleV1): Promise<'stored' | 'storage_unavailable' | 'not_owner'> {
 		return await this.enqueue(async () => {
-			if (!this.options.enabled() || this.record?.phase !== 'active' || !await this.owned()
+			if (!this.options.enabled() || this.record?.phase !== 'active'
 				|| this.record.sourceInstance !== sample.sourceInstance || this.record.epoch !== sample.epoch) return 'not_owner';
+			const ownership = await this.ready();
+			if (ownership === 'unavailable') { this.sampleLost(); return 'storage_unavailable'; }
+			// Checked again: what `ready()` just wrote may have ended the epoch this sample belongs to.
+			if (ownership !== 'owned' || this.record.epoch !== sample.epoch) return 'not_owner';
 			const previous = this.record.lastSample;
 			if (previous?.epoch === sample.epoch && previous.cursor === sample.cursor) {
 				if (this.record.fingerprint !== liveSampleFingerprint(sample)) throw new Error('Live sample identity changed.');
@@ -142,10 +172,9 @@ export class LiveSessionLifecycle {
 			const sessionId = this.record.sessionId;
 			reduced.journal.outbox = reduced.journal.observations.filter((row) => row.kind === 'item' && row.delta > 0)
 				.map((row) => createLiveAlertIntent(sessionId, row, this.options.thresholdCopper?.() ?? 50000));
-			const saved = await this.options.persistence.saveLive(reduced.record, reduced.journal);
-			if (saved.status !== 'saved') {
-				this.failure = true; this.options.onStateChange(); return saved.status === 'stale' ? 'not_owner' : 'storage_unavailable';
-			}
+			const saved = await this.persist(reduced.record, reduced.journal);
+			if (saved === 'unavailable') { this.sampleLost(); return 'storage_unavailable'; }
+			if (saved !== 'saved') { this.failure = true; this.options.onStateChange(); return 'not_owner'; }
 			this.record = reduced.record; this.journal.push(reduced.journal); this.observations.push(...reduced.journal.observations); this.appendChart(reduced.journal); this.failure = false;
 			this.options.onStateChange(); this.options.onCommitted?.(structuredClone(reduced.journal)); return 'stored';
 		});
@@ -153,13 +182,24 @@ export class LiveSessionLifecycle {
 
 	async gap(event: { sourceInstance: string; epoch: string | null; reason: LiveGapV1['reason']; observedAt: string }): Promise<void> {
 		return await this.enqueue(async () => {
-			if (this.record?.phase !== 'active' || this.record.sourceInstance !== event.sourceInstance || event.epoch !== null && this.record.epoch !== null && event.epoch !== this.record.epoch || !await this.owned()) return;
+			if (this.record?.phase !== 'active' || this.record.sourceInstance !== event.sourceInstance || event.epoch !== null && this.record.epoch !== null && event.epoch !== this.record.epoch) return;
+			const disconnectedAt = event.reason === 'disconnect' ? new Date(Math.min(this.options.now(),Date.parse(event.observedAt))).toISOString() : null;
+			// Storage that refuses the gap must not make this throw: the bridge would hold the producer's
+			// slot until it is written, and every later producer would be turned away. The gap is kept
+			// in memory and written by the first save that works.
+			const unwritten = (): void => {
+				const unsaved = this.storageLost(); unsaved.gapReason ??= event.reason; unsaved.epochEnded = true;
+				if (disconnectedAt !== null) unsaved.sourceDisconnectedAt = disconnectedAt;
+			};
+			const ownership = await this.ready();
+			if (ownership === 'lost') return;
+			if (ownership === 'unavailable') { unwritten(); return; }
 			const next = liveSessionGap(this.record, event.reason, event.observedAt);
 			next.epoch = null; next.lastSample = null; next.fingerprint = null; next.persistedAt = this.options.now();
-			if (event.reason === 'disconnect') {
-				next.lastSourceDisconnectedAt = new Date(Math.min(this.options.now(),Date.parse(event.observedAt))).toISOString();
-			}
-			if ((await this.options.persistence.saveLive(next)).status !== 'saved') throw new Error('Could not persist the live source gap.');
+			if (disconnectedAt !== null) next.lastSourceDisconnectedAt = disconnectedAt;
+			const saved = await this.persist(next);
+			if (saved === 'unavailable') { unwritten(); return; }
+			if (saved !== 'saved') throw new Error('Could not persist the live source gap.');
 			this.record = next; this.options.onStateChange();
 		});
 	}
@@ -167,12 +207,20 @@ export class LiveSessionLifecycle {
 	/** Presence remains independent from source freshness; disconnect only closes after the marker's grace. */
 	async presence(connected: boolean, atMs?: number): Promise<void> {
 		return await this.enqueue(async () => {
-			if (this.record?.phase !== 'active' || !await this.owned()) return;
+			if (this.record?.phase !== 'active') return;
+			const ownership = await this.ready();
+			if (ownership === 'lost') return;
 			const evidencedAt = atMs ?? (connected ? this.options.now() : this.record.lastPresenceAt);
-			let next = { ...this.record, connection: connected ? 'connected' as const : 'disconnected' as const,
-				lastPresenceAt: Math.max(this.record.lastPresenceAt,Math.min(this.options.now(),evidencedAt)), persistedAt: this.options.now() };
-			if (!connected) { next = liveSessionGap(next, 'disconnect', this.nowIso()); next.mapCoveragePartial = true; }
-			if ((await this.options.persistence.saveLive(next)).status !== 'saved') throw new Error('Could not persist live presence.');
+			// The last report wins, but never moves the evidence of presence backwards.
+			const unwritten = (): void => {
+				const unsaved = this.storageLost();
+				unsaved.presence = { connected, evidencedAt: Math.max(unsaved.presence?.evidencedAt ?? 0, Math.min(this.options.now(), evidencedAt)) };
+			};
+			if (ownership === 'unavailable') { unwritten(); return; }
+			const next = this.withPresence(this.record, connected, evidencedAt);
+			const saved = await this.persist(next);
+			if (saved === 'unavailable') { unwritten(); return; }
+			if (saved !== 'saved') throw new Error('Could not persist live presence.');
 			this.record = next; this.options.onStateChange();
 		});
 	}
@@ -183,7 +231,7 @@ export class LiveSessionLifecycle {
 	private async stopInternal(endedAtMs: number): Promise<boolean> {
 			if (this.record === null || !this.options.enabled()) return false;
 			if (this.record.phase === 'complete') return await this.saveCompletedNote();
-			if (!await this.owned()) return false;
+			if (await this.ready() !== 'owned') return false;
 			for (const entry of this.journal) {
 				const nextEntry = { ...entry, outbox: entry.outbox.map((intent) => ['awaiting_price','ready'].includes(intent.state)
 					? { ...intent, state: 'skipped' as const, skipReason: 'session_closed' as const, alert: null } : intent) };
@@ -200,15 +248,15 @@ export class LiveSessionLifecycle {
 			for (const gap of next.gaps) { gap.fromAt = new Date(Math.max(Date.parse(next.startedAt), Math.min(Date.parse(gap.fromAt), ended))).toISOString();
 				gap.toAt = new Date(Math.max(Date.parse(gap.fromAt), Math.min(gap.toAt === null ? ended : Date.parse(gap.toAt), ended))).toISOString(); }
 			next.gaps = next.gaps.filter((gap) => gap.toAt !== gap.fromAt);
-			if ((await this.options.persistence.saveLive(next)).status !== 'saved') return false;
+			if (await this.persist(next) !== 'saved') return false;
 			this.record = next; this.options.onStateChange(); return await this.saveCompletedNote();
 	}
 
 	async updatePrices(prices: LiveSessionRuntimeRecord['prices'], capturedAt: string): Promise<boolean> {
 		return await this.enqueue(async () => {
-			if (!this.options.enabled() || this.record?.phase !== 'active' || !await this.owned() || !this.options.enabled()) return false;
+			if (!this.options.enabled() || this.record?.phase !== 'active' || await this.ready() !== 'owned' || !this.options.enabled()) return false;
 			const next = { ...this.record, prices: structuredClone(prices), priceCapturedAt: capturedAt, persistedAt: this.options.now() };
-			if ((await this.options.persistence.saveLive(next)).status !== 'saved') return false;
+			if (await this.persist(next) !== 'saved') return false;
 			this.record = next; this.rebuildChart(); this.options.onStateChange(); return true;
 		});
 	}
@@ -275,6 +323,12 @@ export class LiveSessionLifecycle {
 		const acquisition = await this.options.coordinator.acquire(this.record.sessionId);
 		if ((acquisition.status !== 'acquired' && acquisition.status !== 'already_owned') || acquisition.handle.sessionId !== this.record.sessionId
 			|| (await this.options.coordinator.assertOwned(acquisition.handle)).status !== 'owned') return false;
+		// The lease was lost while this host kept running and storage was refusing writes: that is an
+		// outage to recover from, not a restart. Read before `recovering` changes below.
+		const outage = this.recovering ? null : this.unsaved;
+		// A lease under a new fence means it was free in between, and whoever held it may have written:
+		// what is on disk is read again and settled under the rules of a takeover before anything is saved.
+		if (acquisition.status === 'acquired') this.recovering = true;
 		this.handle = acquisition.handle;
 		await this.refreshRecovery();
 		const recovered = this.getRuntime();
@@ -286,12 +340,23 @@ export class LiveSessionLifecycle {
 			if ((await this.options.persistence.saveLive(this.record)).status !== 'saved') throw new Error('Completed recovery could not be persisted.');
 			await this.saveCompletedNote(); return false;
 		}
-		let next = liveSessionGap(this.record, 'host_restart', this.nowIso());
+		let next: LiveSessionRuntimeRecord;
+		if (outage === null) {
+			next = liveSessionGap(this.record, 'host_restart', this.nowIso());
+			next = { ...next, connection: 'disconnected',
+				lastSourceDisconnectedAt:new Date(Math.min(this.options.now(),this.record.lastPresenceAt)).toISOString(),mapCoveragePartial: true, mapObservation: null };
+		} else {
+			// The producer's link and the presence known in memory are still true, so no disconnection
+			// is made up: only the hole storage left, under the cause it started with.
+			next = this.withUnsaved(this.record, { ...outage, gapReason: outage.gapReason ?? 'storage_unavailable' });
+		}
 		next = { ...next, authority: sessionAuthorityFromLease(acquisition.handle), epoch: null, lastSample: null,
-			fingerprint: null, persistedAt: this.options.now(), connection: 'disconnected',
-			lastSourceDisconnectedAt:new Date(Math.min(this.options.now(),this.record.lastPresenceAt)).toISOString(),mapCoveragePartial: true, mapObservation: null };
-		if ((await this.options.persistence.saveLive(next)).status !== 'saved') throw new Error('Live session recovery could not be persisted.');
-		this.record = next;
+			fingerprint: null, persistedAt: this.options.now() };
+		const saved = await this.persist(next);
+		// Storage went away again: drop the handle so the next beat reclaims under the lease it finds.
+		if (saved === 'unavailable') { this.handle = null; return false; }
+		if (saved !== 'saved') throw new Error('Live session recovery could not be persisted.');
+		this.record = next; this.unsaved = null; this.failure = false;
 		await this.settleRecovery();
 		this.options.onStateChange(); return true;
 	}
@@ -321,7 +386,69 @@ export class LiveSessionLifecycle {
 		}
 	}
 	private async owned(): Promise<boolean> {
-		return this.handle !== null && (await this.options.coordinator.assertOwned(this.handle)).status === 'owned';
+		return await this.ownership() === 'owned';
+	}
+	/** Tells a lease that is gone from one that merely cannot be read, which is not evidence of losing it. */
+	private async ownership(): Promise<LeaseOwnership> {
+		if (this.handle === null) return 'lost';
+		const asserted = await this.options.coordinator.assertOwned(this.handle);
+		if (asserted.status === 'owned') return 'owned';
+		return asserted.status === 'error' && asserted.code === 'unavailable' ? 'unavailable' : 'lost';
+	}
+	/**
+	 * Lease ownership for one queued operation, after ONE attempt to write what storage refused
+	 * earlier. No timer and no loop of its own: while storage stays down every operation fails as it
+	 * did, and the first one that finds it back records the hole and clears the error. A lost lease is
+	 * not retried here; the heartbeat reclaims it under the coordination rules.
+	 */
+	private async ready(): Promise<LeaseOwnership> {
+		const ownership = await this.ownership();
+		if (ownership === 'unavailable') { this.storageLost(); return ownership; }
+		if (ownership !== 'owned' || this.unsaved === null || this.record?.phase !== 'active') return ownership;
+		const restored = this.withUnsaved(this.record, this.unsaved);
+		const saved = await this.persist(restored);
+		if (saved !== 'saved') return saved === 'stale' ? 'lost' : 'unavailable';
+		this.record = restored; this.unsaved = null; this.failure = false; this.options.onStateChange();
+		return 'owned';
+	}
+	/** One durable write of the session record. A refusal by storage itself is remembered; a stale authority is not its fault. */
+	private async persist(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<'saved' | 'stale' | 'unavailable'> {
+		let status: string;
+		try { status = (await this.options.persistence.saveLive(next, journal)).status; }
+		catch { status = 'error'; }
+		if (status === 'saved' || status === 'stale') return status;
+		this.storageLost();
+		return 'unavailable';
+	}
+	/** Storage refused a durable step: the view shows the error until the next step it accepts. */
+	private storageLost(): UnsavedLiveState {
+		this.unsaved ??= { gapReason: null, epochEnded: false, sourceDisconnectedAt: null, presence: null };
+		if (!this.failure) { this.failure = true; this.options.onStateChange(); }
+		return this.unsaved;
+	}
+	/** A complete sample arrived and could not be stored: the interval it covered is unobserved. */
+	private sampleLost(): void {
+		this.storageLost().gapReason ??= 'storage_unavailable';
+	}
+	/**
+	 * The durable record plus what storage refused: the gap of every affected channel from its last
+	 * valid capture (which also makes the next stored sample a local baseline), the ended epoch and
+	 * the last presence. It adds no sample, total or observed time.
+	 */
+	private withUnsaved(record: LiveSessionRuntimeRecord, unsaved: UnsavedLiveState): LiveSessionRuntimeRecord {
+		let next = unsaved.gapReason === null ? structuredClone(record) : liveSessionGap(record, unsaved.gapReason, this.nowIso());
+		if (unsaved.epochEnded) { next.epoch = null; next.lastSample = null; next.fingerprint = null; }
+		if (unsaved.sourceDisconnectedAt !== null) next.lastSourceDisconnectedAt = unsaved.sourceDisconnectedAt;
+		if (unsaved.presence !== null) next = this.withPresence(next, unsaved.presence.connected, unsaved.presence.evidencedAt);
+		next.persistedAt = this.options.now();
+		return next;
+	}
+	/** The record after one presence report; losing presence opens the disconnect gap of every channel. */
+	private withPresence(record: LiveSessionRuntimeRecord, connected: boolean, evidencedAt: number): LiveSessionRuntimeRecord {
+		let next: LiveSessionRuntimeRecord = { ...record, connection: connected ? 'connected' : 'disconnected',
+			lastPresenceAt: Math.max(record.lastPresenceAt,Math.min(this.options.now(),evidencedAt)), persistedAt: this.options.now() };
+		if (!connected) { next = liveSessionGap(next, 'disconnect', this.nowIso()); next.mapCoveragePartial = true; }
+		return next;
 	}
 	private armHeartbeat(): void {
 		if (this.timer !== null) return;
@@ -329,10 +456,18 @@ export class LiveSessionLifecycle {
 			if (!this.options.enabled() || this.disposed || this.record === null) return;
 			if (this.record.phase === 'complete') { if (this.record.summaryReceipt === null || this.noteNeedsVerification) await this.saveCompletedNote(); return; }
 			if (this.handle === null || this.recovering) { await this.reclaim(); return; }
-			if (this.record.connection === 'disconnected' && this.options.now() - this.record.lastPresenceAt >= 600_000) { await this.stopInternal(this.record.lastPresenceAt); return; }
 			const renewed = await this.options.coordinator.renew(this.handle);
-			if (renewed.status !== 'renewed') { this.handle = null; this.failure = true; this.options.onStateChange(); return; }
+			if (renewed.status !== 'renewed') {
+				// Storage that does not answer says nothing about the lease: the handle is kept and the
+				// next beat asks again, instead of giving the lease up for lost.
+				if (renewed.status === 'error' && renewed.code === 'unavailable') { this.storageLost(); return; }
+				this.handle = null; this.failure = true; this.options.onStateChange(); return;
+			}
 			this.handle = renewed.handle;
+			// The beat is what brings a quiet session back: with no sample arriving, this is the save
+			// that records the hole and clears the error once storage answers again.
+			if (this.unsaved !== null && await this.ready() !== 'owned') return;
+			if (this.record.connection === 'disconnected' && this.options.now() - this.record.lastPresenceAt >= 600_000) await this.stopInternal(this.record.lastPresenceAt);
 		}); }, LIVE_SOURCE_STALE_MS);
 	}
 	private async saveCompletedNote(): Promise<boolean> {
