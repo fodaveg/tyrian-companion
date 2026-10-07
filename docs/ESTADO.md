@@ -1,5 +1,18 @@
 # Estado
 
+## 0.6.7 preparada: precio del saco de Halloween para el addon del juego (7 oct 2026)
+
+**Candidata integrada en local; nada publicado ni etiquetado.** El plugin sirve al addon el precio público
+neto del saco de Halloween por la extensión `price1` del puente.
+
+- Cambio de producto: `dc1034a` (precio `price1`). Metadatos alineados a 0.6.7.
+- Gate: pendiente. Lo corre la sesión raíz sobre el árbol final; no se ha corrido sobre este candidato. Sin
+  publicar, sin etiquetar, sin instalar.
+- No verificado: el envío del precio no está probado en el runtime real de Hebra ni de Obsidian. El precio
+  necesita el addon de Nexus 0.7.0, que no está publicado en su `main`.
+- Fuera de esta versión: la recuperación ante la caída de IndexedDB (la incidencia abierta de la 0.6.6) está
+  implementada en una rama y en revisión; no forma parte de este candidato.
+
 ## Canal 0.6.6 publicado: monedas en las sesiones anteriores y oro observado en el valor (7 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.6](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.6)

@@ -1,5 +1,24 @@
 # Changelog
 
+## Release beta 0.6.7 - precio del saco de Halloween para el addon del juego
+
+Candidata a release por tag `0.6.7`; nada publicado ni etiquetado. [ESTADO](ESTADO.md) separa lo verificado de lo
+pendiente (gate, publicación e instalación).
+
+- Precio del saco en el juego: el plugin sirve al addon el precio público del saco de Halloween (objeto 36038)
+  por una extensión nueva del puente, `price1`: neto de comisión, por unidad y por stack de 250, en venta
+  inmediata y publicando. El neto del stack lo calcula el plugin sobre el total, no multiplicando el unitario.
+- Frescura: la cotización se refresca cada 120 s, que es lo que declara la API pública del bazar, solo con una
+  sesión live activa y un addon suscrito; sin esas dos condiciones no hay peticiones por este motivo. A los
+  600 s sin refresco viaja como caducada y sin cifras.
+- Compatibilidad: el contrato está en `docs/SPEC-puente-ingame.md`. `farm1` no cambia. Lo pinta el addon de
+  Nexus 0.7.0, que no está publicado en su `main`; un addon anterior ignora el anuncio y no cambia nada.
+- Sin verificar en el runtime real: el envío del precio no se ha probado en Hebra ni en Obsidian con el juego
+  abierto.
+- Fuera de esta versión: la recuperación ante la caída del almacén local (incidente del 7 oct 2026 en Hebra)
+  sigue en revisión y sale aparte.
+- Tests: pruebas nuevas para `price1` (protocolo, servidor del puente, proyección y cotización del saco).
+
 ## Release beta 0.6.6 - las sesiones anteriores muestran sus monedas y el valor incluye el oro observado
 
 [Canal 0.6.6 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.6);
