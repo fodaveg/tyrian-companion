@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 521,
+		"catch_clause": 522,
 		"promise_catch": 54,
 		"void_expression": 117,
 		"callback_registration": 206
@@ -15795,6 +15795,22 @@
 						"justification": "The \"observe\" \"intentional_noop\" boundary retains the serial public enrichment flight and forwards rejection to the local diagnostic observer; no measurement is acknowledged by this recovery."
 					},
 					"reason": "Allowlisted promise_catch: The \"observe\" \"intentional_noop\" boundary retains the serial public enrichment flight and forwards rejection to the local diagnostic observer; no measurement is acknowledged by this recovery. Verified recovery: \"intentional_noop\" in \"observe\"."
+				},
+				{
+					"id": "1c697122cfb8db2f4ae24e4441275864239e36fc",
+					"kind": "catch_clause",
+					"line": 86,
+					"column": 5,
+					"endLine": 86,
+					"endColumn": 147,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "enrich",
+						"justification": "The \"enrich\" \"rethrow\" boundary turns only the Trading Post 404 for ids it does not quote into an empty price answer so each id is decided as no_price; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer."
+					},
+					"reason": "Allowlisted catch_clause: The \"enrich\" \"rethrow\" boundary turns only the Trading Post 404 for ids it does not quote into an empty price answer so each id is decided as no_price; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer. Verified recovery: \"rethrow\" in \"enrich\"."
 				}
 			]
 		},
