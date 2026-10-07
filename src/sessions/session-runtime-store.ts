@@ -7,7 +7,7 @@ import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey,
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
-import { openIndexedDb } from '../core/indexed-db-open';
+import { openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
@@ -355,13 +355,13 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 			if (!normalized) return false;
 			const savedReceipt = await this.loadSummaryReceipt();
 			if (savedReceipt !== null && savedReceipt.sessionId !== runtimeAuthority(normalized.record.state).sessionId) return false;
-			return await archiveLegacyRuntime(await this.open(),normalized.record,prepareLegacyRuntimeArchive(original,Date.now(),savedReceipt?.sessionId === runtimeAuthority(normalized.record.state).sessionId ? savedReceipt : null),authority);
+			const archive = prepareLegacyRuntimeArchive(original,Date.now(),savedReceipt?.sessionId === runtimeAuthority(normalized.record.state).sessionId ? savedReceipt : null);
+			return await this.run(async (database) => await archiveLegacyRuntime(database,normalized.record,archive,authority));
 		} catch { return false; }
 	}
 	async listLegacyRuntimeArchives(): Promise<SessionRuntimeRecord[]> {
-		const database = await this.open();
-		return await new Promise((resolve,reject) => {
-			const tx = database.transaction(SESSION_RUNTIME_STORE_NAME,'readonly'); const request = tx.objectStore(SESSION_RUNTIME_STORE_NAME).openCursor();
+		return await this.run(async (database) => await new Promise((resolve,reject) => {
+			const tx = startIndexedDbTransaction(database,SESSION_RUNTIME_STORE_NAME,'readonly'); const request = tx.objectStore(SESSION_RUNTIME_STORE_NAME).openCursor();
 			const records: SessionRuntimeRecord[] = []; let corrupt = false;
 			request.onsuccess = () => {
 				const cursor = request.result; if (!cursor) return;
@@ -375,7 +375,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 				cursor.continue();
 			};
 			tx.oncomplete = () => resolve(records); tx.onerror = tx.onabort = () => reject(new Error(corrupt ? 'Preserved API runtime is corrupt.' : 'Preserved API runtime is unavailable.'));
-		});
+		}));
 	}
 	async readLegacyRuntimeArchive(sessionId:string):Promise<LegacyRuntimeArchiveV1|null> {
 		const value = await this.read(undefined,`${LEGACY_RUNTIME_ARCHIVE_PREFIX}${sessionId}`);
@@ -386,15 +386,15 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		return structuredClone(value);
 	}
 	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult> {
-		try { return await commitLiveRuntime(await this.open(), next, journal); }
+		try { return await this.run(async (database) => await commitLiveRuntime(database, next, journal)); }
 		catch { return { status: 'error', code: 'unavailable' }; }
 	}
-	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> { return await readLiveJournal(await this.open(), sessionId); }
+	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> { return await this.run(async (database) => await readLiveJournal(database, sessionId)); }
 	async markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean> {
-		try { return await markLiveAlertsProcessed(await this.open(), sessionId, epoch, cursor); } catch { return false; }
+		try { return await this.run(async (database) => await markLiveAlertsProcessed(database, sessionId, epoch, cursor)); } catch { return false; }
 	}
 	async replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean> {
-		try { return await replaceLiveJournal(await this.open(),prior,next,owner); } catch { return false; }
+		try { return await this.run(async (database) => await replaceLiveJournal(database,prior,next,owner)); } catch { return false; }
 	}
 
 	close(): void {
@@ -403,6 +403,24 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		this.database?.close();
 		this.database = null;
 		attempt.success();
+	}
+
+	/**
+	 * One operation on the cached connection, with a single reopen when the connection died
+	 * underneath (see `withIndexedDbReopen`). The operation must start its transaction with
+	 * `startIndexedDbTransaction`, which is what marks a dead connection as one.
+	 */
+	private async run<T>(operation: (database: IDBDatabase) => Promise<T>, context?: LocalDebugPersistenceContext): Promise<T> {
+		return await withIndexedDbReopen({
+			open: async () => await this.open(context),
+			discard: (database) => { this.discard(database); },
+		}, operation);
+	}
+
+	/** Forgets a connection the engine closed or that no longer starts transactions; the next `open()` opens anew. */
+	private discard(database: IDBDatabase): void {
+		if (this.database === database) this.database = null;
+		try { database.close(); } catch { /* Already gone, which is the reason it is being dropped. */ }
 	}
 
 	private async open(context?: LocalDebugPersistenceContext): Promise<IDBDatabase> {
@@ -433,10 +451,14 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 			databaseVersion: SESSION_RUNTIME_DB_VERSION,
 			schema: [{ name: SESSION_RUNTIME_STORE_NAME }, { name: LIVE_SESSION_JOURNAL_STORE_NAME, indexes: [{ name: 'session', keyPath: 'sessionId' }] }],
 			accept: () => !this.unavailable,
-			onVersionChange: (database) => {
+			onVersionChange: (database, kind) => {
 				if (this.database === database) this.database = null;
-				this.unavailable = true;
+				// Only a real upgrade is final: this build cannot read the newer schema, and opening
+				// again would fail against it every time. Anything else leaves the next operation free
+				// to open a new connection.
+				if (kind === 'upgrade') this.unavailable = true;
 			},
+			onClose: (database) => { this.discard(database); },
 			toError: (reason) => new Error(reason === 'blocked'
 				? 'Session recovery storage upgrade was blocked.'
 				: 'Could not open session recovery storage.'),
@@ -444,22 +466,16 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	}
 
 	private async read(context?: LocalDebugPersistenceContext, key: string = RUNTIME_KEY): Promise<unknown> {
-		const database = await this.open(context);
-		return await new Promise((resolve, reject) => {
-			let transaction: IDBTransaction;
-			try {
-				transaction = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readonly');
-			} catch {
-				reject(new Error('Session recovery storage is unavailable.'));
-				return;
-			}
+		return await this.run(async (database) => await new Promise((resolve, reject) => {
+			// A throw here rejects this promise: the executor runs synchronously inside it.
+			const transaction = startIndexedDbTransaction(database, SESSION_RUNTIME_STORE_NAME, 'readonly');
 			const request = transaction.objectStore(SESSION_RUNTIME_STORE_NAME).get(key);
 			let value: unknown;
 			request.onsuccess = () => { value = request.result as unknown; };
 			transaction.oncomplete = () => resolve(value);
 			transaction.onerror = () => reject(new Error('Could not read session recovery storage.'));
 			transaction.onabort = () => reject(new Error('Session recovery read was aborted.'));
-		});
+		}), context);
 	}
 
 	private async mutate<T extends SessionRuntimeMutationResult>(
@@ -473,15 +489,9 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		context?: LocalDebugPersistenceContext,
 		key: string = RUNTIME_KEY,
 	): Promise<T> {
-		const database = await this.open(context);
-		return await new Promise((resolve, reject) => {
-			let transaction: IDBTransaction;
-			try {
-				transaction = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readwrite');
-			} catch {
-				reject(new Error('Session recovery storage is unavailable.'));
-				return;
-			}
+		return await this.run(async (database) => await new Promise<T>((resolve, reject) => {
+			// A dead connection throws before anything is read or written, so running again is safe.
+			const transaction = startIndexedDbTransaction(database, SESSION_RUNTIME_STORE_NAME, 'readwrite');
 			const store = transaction.objectStore(SESSION_RUNTIME_STORE_NAME);
 			const request = store.get(key);
 			let result: T;
@@ -503,7 +513,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 			transaction.onabort = () => reject(new Error(
 				mutationFailed ? 'Session recovery mutation failed.' : 'Session recovery update was aborted.',
 			));
-		});
+		}), context);
 	}
 }
 

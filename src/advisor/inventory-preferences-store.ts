@@ -19,7 +19,12 @@ import {
 	type InventoryPreferencesV1,
 	type InventoryPreferencesWriteResult,
 } from './inventory-preferences-model';
-import { openIndexedDb } from '../core/indexed-db-open';
+import {
+	IndexedDbConnectionLostError,
+	openIndexedDb,
+	startIndexedDbTransaction,
+	withIndexedDbReopen,
+} from '../core/indexed-db-open';
 import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 
 /** Lets composition classify read and write persistence under their real actions. */
@@ -64,8 +69,7 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 			return { status: 'error', code: 'corrupt' };
 		}
 		try {
-			const database = await this.open(this.readDiagnostics, actionContext);
-			const result: InventoryPreferencesReadResult = await this.transaction<InventoryPreferencesReadResult>(database, 'readwrite', scope, (store, key, raw) => {
+			const result: InventoryPreferencesReadResult = await this.transaction<InventoryPreferencesReadResult>(this.readDiagnostics, actionContext, 'readwrite', scope, (store, key, raw) => {
 				const parsed = parseRecord(raw, scope);
 				if (parsed.status === 'error') return parsed;
 				const copied = parsed.record === null ? null : cloneInventoryPreferences(parsed.record);
@@ -96,8 +100,7 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 			return { status: 'error', code: 'corrupt' };
 		}
 		try {
-			const database = await this.open(this.writeDiagnostics, actionContext);
-			const result: InventoryPreferencesWriteResult = await this.transaction<InventoryPreferencesWriteResult>(database, 'readwrite', scope, (store, key, raw) => {
+			const result: InventoryPreferencesWriteResult = await this.transaction<InventoryPreferencesWriteResult>(this.writeDiagnostics, actionContext, 'readwrite', scope, (store, key, raw) => {
 				const parsed = parseRecord(raw, scope);
 				if (parsed.status === 'error') return parsed;
 				const current = parsed.record;
@@ -156,10 +159,13 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 			// unavailable, and the two codes reach the caller differently.
 			accept: (database) => !this.disposed
 				&& database.objectStoreNames.contains(INVENTORY_PREFERENCES_STORE_NAME),
-			onVersionChange: (database) => {
+			onVersionChange: (database, kind) => {
 				if (this.database === database) this.database = null;
-				this.disposed = true;
+				// Only a real upgrade is final: opening again would answer `future_schema` every time.
+				// Anything else leaves the next read or write free to open a new connection.
+				if (kind === 'upgrade') this.disposed = true;
 			},
+			onClose: (database) => { this.discard(database); },
 			toError: (reason, error) => new StorageFailure(reason === 'refused'
 				? (this.disposed ? 'unavailable' : 'corrupt')
 				: reason === 'error' && error?.name === 'VersionError' ? 'future_schema' : 'unavailable'),
@@ -178,20 +184,43 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 		}
 	}
 
+	/** Forgets a connection the engine closed or that no longer starts transactions; the next `open()` opens anew. */
+	private discard(database: IDBDatabase): void {
+		if (this.database === database) this.database = null;
+		try { database.close(); } catch { /* Already gone, which is the reason it is being dropped. */ }
+	}
+
+	/**
+	 * One transaction on the cached connection. A connection that died underneath is dropped and the
+	 * transaction runs once more on a new one (one reopen per operation); the mutator has not run
+	 * yet when that happens, so nothing is applied twice.
+	 */
 	private async transaction<T>(
+		diagnostics: LocalDebugPersistenceProbe,
+		actionContext: InventoryPreferencesActionContext | undefined,
+		mode: IDBTransactionMode,
+		scope: InventoryPreferenceScope,
+		mutator: (store: IDBObjectStore, key: string, raw: unknown) => T,
+	): Promise<T> {
+		try {
+			return await withIndexedDbReopen({
+				open: async () => await this.open(diagnostics, actionContext),
+				discard: (database) => { this.discard(database); },
+			}, async (database) => await this.transact(database, mode, scope, mutator));
+		} catch (error) {
+			throw error instanceof IndexedDbConnectionLostError ? new StorageFailure('unavailable') : error;
+		}
+	}
+
+	private async transact<T>(
 		database: IDBDatabase,
 		mode: IDBTransactionMode,
 		scope: InventoryPreferenceScope,
 		mutator: (store: IDBObjectStore, key: string, raw: unknown) => T,
 	): Promise<T> {
 		return await new Promise<T>((resolve, reject) => {
-			let transaction: IDBTransaction;
-			try {
-				transaction = database.transaction(INVENTORY_PREFERENCES_STORE_NAME, mode);
-			} catch {
-				reject(new StorageFailure('unavailable'));
-				return;
-			}
+			// A throw here rejects this promise: the executor runs synchronously inside it.
+			const transaction = startIndexedDbTransaction(database, INVENTORY_PREFERENCES_STORE_NAME, mode);
 			const store = transaction.objectStore(INVENTORY_PREFERENCES_STORE_NAME);
 			const request = store.get(storageKey(scope));
 			let result: T | undefined;

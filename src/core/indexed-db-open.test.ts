@@ -1,7 +1,15 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
-import { openIndexedDb, type IndexedDbOpenFailureReason } from './indexed-db-open';
+import {
+	IndexedDbConnectionLostError,
+	openIndexedDb,
+	startIndexedDbTransaction,
+	withIndexedDbReopen,
+	type IndexedDbOpenFailureReason,
+	type IndexedDbVersionChangeKind,
+} from './indexed-db-open';
+import { closeUnderneath, emitEngineClose, trackedIndexedDb, type TrackedIndexedDb } from '../test/indexed-db-connections';
 
 /**
  * The shared open handshake, proved once instead of ten times.
@@ -218,5 +226,114 @@ describe('openIndexedDb', () => {
 			.toEqual(['undefined', 'function']);
 		without.close();
 		with_.close();
+	});
+
+	/**
+	 * The two `versionchange` a store must tell apart: a real upgrade by another context is final,
+	 * anything else only costs this connection.
+	 */
+	it('tells a higher-version upgrade from any other versionchange', async () => {
+		const factory = new IDBFactory();
+		const kinds: IndexedDbVersionChangeKind[] = [];
+		const options = {
+			factory,
+			databaseVersion: 2,
+			schema: [{ name: 'records' }],
+			onVersionChange: (_database: IDBDatabase, kind: IndexedDbVersionChangeKind) => { kinds.push(kind); },
+			toError: () => new Error('unused'),
+		};
+		const upgradedName = databaseName('kind-upgrade');
+		await openIndexedDb({ ...options, databaseName: upgradedName });
+		(await openRaw(factory, upgradedName, 3)).close();
+
+		const deletedName = databaseName('kind-released');
+		await openIndexedDb({ ...options, databaseName: deletedName });
+		await new Promise<void>((resolve, reject) => {
+			const request = factory.deleteDatabase(deletedName);
+			request.onsuccess = () => resolve();
+			request.onerror = () => reject(request.error ?? new Error('delete failed'));
+		});
+
+		expect(kinds).toEqual(['upgrade', 'released']);
+	});
+
+	it('reports the engine closing the connection, and stays silent on the owner closing it', async () => {
+		const factory = new IDBFactory();
+		const closed: IDBDatabase[] = [];
+		const database = await openIndexedDb({
+			factory,
+			databaseName: databaseName('engine-close'),
+			databaseVersion: 1,
+			schema: [{ name: 'records' }],
+			onClose: (lost) => { closed.push(lost); },
+			toError: () => new Error('unused'),
+		});
+		database.close();
+		expect(closed).toEqual([]);
+		emitEngineClose(database);
+		expect(closed).toEqual([database]);
+	});
+});
+
+describe('withIndexedDbReopen', () => {
+	const schema = [{ name: 'records' }];
+	function connection(tracked: TrackedIndexedDb, name: string) {
+		let cached: IDBDatabase | null = null;
+		const discarded: IDBDatabase[] = [];
+		return {
+			discarded,
+			open: async () => cached ??= await openIndexedDb({
+				factory: tracked.factory, databaseName: name, databaseVersion: 1, schema, toError: () => new Error('open failed'),
+			}),
+			discard: (database: IDBDatabase) => { discarded.push(database); if (cached === database) cached = null; },
+		};
+	}
+	const count = async (database: IDBDatabase): Promise<number> => await new Promise((resolve, reject) => {
+		const request = startIndexedDbTransaction(database, 'records', 'readonly').objectStore('records').count();
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error ?? new Error('count failed'));
+	});
+
+	it('drops a connection that died underneath and runs the operation once more on a new one', async () => {
+		const tracked = trackedIndexedDb();
+		const store = connection(tracked, databaseName('reopen'));
+		await expect(withIndexedDbReopen(store, count)).resolves.toBe(0);
+		closeUnderneath(tracked.connections[0]!);
+
+		await expect(withIndexedDbReopen(store, count)).resolves.toBe(0);
+		expect(tracked.connections).toHaveLength(2);
+		expect(store.discarded).toEqual([tracked.connections[0]]);
+	});
+
+	it('reopens exactly once per operation: a second dead connection is that operation\'s failure', async () => {
+		const tracked = trackedIndexedDb();
+		const store = connection(tracked, databaseName('reopen-once'));
+		let runs = 0;
+		const alwaysDead = async (database: IDBDatabase): Promise<number> => {
+			runs += 1;
+			closeUnderneath(database);
+			return await count(database);
+		};
+
+		await expect(withIndexedDbReopen(store, alwaysDead)).rejects.toBeInstanceOf(IndexedDbConnectionLostError);
+		expect(runs).toBe(2);
+		expect(tracked.connections).toHaveLength(2);
+		expect(store.discarded).toHaveLength(2);
+	});
+
+	it('never repeats an operation that failed after its transaction started', async () => {
+		const tracked = trackedIndexedDb();
+		const store = connection(tracked, databaseName('no-repeat'));
+		let runs = 0;
+		const aborted = async (database: IDBDatabase): Promise<void> => {
+			runs += 1;
+			startIndexedDbTransaction(database, 'records', 'readwrite').objectStore('records').put('written', 'key');
+			throw new Error('aborted after writing');
+		};
+
+		await expect(withIndexedDbReopen(store, aborted)).rejects.toThrow('aborted after writing');
+		expect(runs).toBe(1);
+		expect(tracked.connections).toHaveLength(1);
+		expect(store.discarded).toEqual([]);
 	});
 });

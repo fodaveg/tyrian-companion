@@ -11,6 +11,7 @@ import type { InventoryAdvisorEvidenceCaptureResultV1 } from './inventory-adviso
 import { InventoryPreferencesRuntime } from './inventory-preferences-runtime';
 import { InventoryPreferencesService } from './inventory-preferences-service';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
+import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
 import { IndexedDbInventoryPreferencesStore } from './inventory-preferences-store';
 
 const scope: InventoryPreferenceScope = { vaultId: 'vault-alpha', accountId: 'account-alpha' };
@@ -204,6 +205,65 @@ describe('inventory preferences persistence', () => {
 		expect(opened).toBe(0);
 		preferences.dispose();
 		await expect(preferences.list(scope)).resolves.toEqual({ status: 'error', code: 'unavailable' });
+	});
+
+	// 7 Oct 2026: the engine stopped answering and the sale tab kept saying the local preferences
+	// were unavailable until the plugin was restarted, because the store never opened again.
+	it('reads on a new connection after the cached one was closed underneath it or by the engine', async () => {
+		const tracked = trackedIndexedDb();
+		const preferences = service(tracked.factory, databaseName('closed-underneath'));
+		await expect(preferences.upsertGoal(scope, 0, validGoal('goal-one'))).resolves.toMatchObject({ status: 'ok' });
+		closeUnderneath(tracked.connections[0]!);
+		await expect(preferences.list(scope)).resolves.toMatchObject({ status: 'ok', record: { generation: 1 } });
+		expect(tracked.connections).toHaveLength(2);
+
+		const dead = vi.spyOn(tracked.connections[1]!, 'transaction');
+		emitEngineClose(tracked.connections[1]!);
+		await expect(preferences.upsertGoal(scope, 1, validGoal('goal-two'))).resolves.toMatchObject({ status: 'ok', record: { generation: 2 } });
+		expect(dead).not.toHaveBeenCalled();
+		expect(tracked.connections).toHaveLength(3);
+		preferences.dispose();
+	});
+
+	it('reopens after a versionchange that is not an upgrade, and never after a real one', async () => {
+		const tracked = trackedIndexedDb();
+		const released = databaseName('versionchange-released');
+		const preferences = service(tracked.factory, released);
+		await expect(preferences.upsertGoal(scope, 0, validGoal('goal-one'))).resolves.toMatchObject({ status: 'ok' });
+		await new Promise<void>((resolve, reject) => {
+			const request = tracked.factory.deleteDatabase(released);
+			request.onsuccess = () => resolve();
+			request.onerror = () => reject(request.error ?? new Error('delete failed'));
+		});
+		await expect(preferences.list(scope)).resolves.toEqual({ status: 'ok', record: null });
+		preferences.dispose();
+
+		const upgradedName = databaseName('versionchange-upgrade');
+		const superseded = service(tracked.factory, upgradedName);
+		await expect(superseded.list(scope)).resolves.toEqual({ status: 'ok', record: null });
+		const upgraded = await openRaw(tracked.factory, upgradedName, 99);
+		const opened = tracked.connections.length;
+		await expect(superseded.list(scope)).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		await expect(superseded.upsertGoal(scope, 0, validGoal('goal-one'))).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		expect(tracked.connections).toHaveLength(opened);
+		upgraded.close();
+	});
+
+	it('the advisor load is blocked while storage is down and ready again once it is back, without a restart', async () => {
+		const tracked = trackedIndexedDb();
+		const preferences = service(tracked.factory, databaseName('down-and-back'));
+		const runtime = new InventoryPreferencesRuntime(preferences, scope.vaultId);
+		await expect(runtime.load(capture(scope.accountId))).resolves.toMatchObject({ status: 'ready' });
+		killStorage(tracked);
+		const open = vi.spyOn(tracked.factory, 'open');
+		await expect(runtime.load(capture(scope.accountId))).resolves.toEqual({ status: 'blocked', reason: 'preferences_unavailable' });
+		expect(runtime.current()).toMatchObject({ status: 'blocked', code: 'unavailable' });
+		expect(open).toHaveBeenCalledTimes(1);
+
+		reviveStorage(tracked);
+		await expect(runtime.load(capture(scope.accountId))).resolves.toMatchObject({ status: 'ready' });
+		await expect(runtime.loadCached()).resolves.toMatchObject({ status: 'ready' });
+		preferences.dispose();
 	});
 
 	it('never reaches for a timer, network, storage or plugin global across a full round trip', async () => {

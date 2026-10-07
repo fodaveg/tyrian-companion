@@ -3,6 +3,7 @@ import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-v
 import type { SessionRuntimeMutationResult, SessionRuntimeLoadResult } from './session-runtime-store';
 import { SESSION_RUNTIME_KEY, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
 import { canUpdateLiveOutbox } from './live-session-outbox';
+import { startIndexedDbTransaction } from '../core/indexed-db-open';
 
 export const LIVE_SESSION_JOURNAL_STORE_NAME = 'live-inventory-journal-v1';
 export type LiveRuntimeLoadResult = { status: 'empty' | 'legacy' } | { status: 'loaded'; record: LiveSessionRuntimeRecord }
@@ -22,7 +23,7 @@ export async function commitLiveRuntime(database: IDBDatabase, next: LiveSession
 		|| journal.epoch !== next.lastSample?.epoch || journal.cursor !== next.lastSample.cursor)) return { status: 'error', code: 'corrupt' };
 	return await new Promise((resolve) => {
 		let result: SessionRuntimeMutationResult = { status: 'error', code: 'unavailable' };
-		const transaction = database.transaction([SESSION_RUNTIME_STORE_NAME, LIVE_SESSION_JOURNAL_STORE_NAME], 'readwrite');
+		const transaction = startIndexedDbTransaction(database, [SESSION_RUNTIME_STORE_NAME, LIVE_SESSION_JOURNAL_STORE_NAME], 'readwrite');
 		const runtime = transaction.objectStore(SESSION_RUNTIME_STORE_NAME);
 		const entries = transaction.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME);
 		const request = runtime.get(SESSION_RUNTIME_KEY);
@@ -52,7 +53,7 @@ export async function commitLiveRuntime(database: IDBDatabase, next: LiveSession
 
 export async function readLiveJournal(database: IDBDatabase, sessionId: string): Promise<LiveJournalEntryV1[]> {
 	return await new Promise((resolve, reject) => {
-		const transaction = database.transaction(LIVE_SESSION_JOURNAL_STORE_NAME, 'readonly');
+		const transaction = startIndexedDbTransaction(database, LIVE_SESSION_JOURNAL_STORE_NAME, 'readonly');
 		const request = transaction.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME).index('session').openCursor(sessionId);
 		const result: LiveJournalEntryV1[] = [];
 		request.onsuccess = () => {
@@ -71,7 +72,7 @@ export async function readLiveJournal(database: IDBDatabase, sessionId: string):
 }
 export async function markLiveAlertsProcessed(database: IDBDatabase, sessionId: string, epoch: string, cursor: number): Promise<boolean> {
 	return await new Promise((resolve) => {
-		const transaction = database.transaction(LIVE_SESSION_JOURNAL_STORE_NAME, 'readwrite');
+		const transaction = startIndexedDbTransaction(database, LIVE_SESSION_JOURNAL_STORE_NAME, 'readwrite');
 		const store = transaction.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME); let saved = false;
 		const request = store.get([sessionId, epoch, cursor]);
 		request.onsuccess = () => {
@@ -99,7 +100,7 @@ export async function replaceLiveJournal(database: IDBDatabase, prior: LiveJourn
 	next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean> {
 	if (!isLiveJournalEntry(prior) || !isLiveJournalEntry(next) || !identicalJournal(prior,next) || !canUpdateLiveOutbox(prior,next,owner !== undefined)) return false;
 	return await new Promise((resolve) => {
-		const tx = database.transaction([SESSION_RUNTIME_STORE_NAME,LIVE_SESSION_JOURNAL_STORE_NAME],'readwrite');
+		const tx = startIndexedDbTransaction(database,[SESSION_RUNTIME_STORE_NAME,LIVE_SESSION_JOURNAL_STORE_NAME],'readwrite');
 		const journal = tx.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME); let saved = false;
 		const write = (): void => {
 			const request = journal.get(journalKey(prior));

@@ -236,7 +236,13 @@ export class ActiveSessionLeaseCoordinator {
 
 	private getStore(): Promise<CoordinationStore> {
 		if (this.disposed) return Promise.reject(new Error('Disposed.'));
-		this.storePromise ??= this.openStore();
+		if (this.storePromise === null) {
+			const opening = this.openStore();
+			this.storePromise = opening;
+			// A failed open is not kept: the next lease operation makes its own single attempt
+			// instead of answering `unavailable` for the rest of the plugin's life.
+			opening.catch(() => { if (this.storePromise === opening) this.storePromise = null; });
+		}
 		return this.storePromise;
 	}
 

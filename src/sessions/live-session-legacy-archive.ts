@@ -1,4 +1,5 @@
 import { canonicalJson, sha256CanonicalValue } from '../core/canonical-sha256';
+import { startIndexedDbTransaction } from '../core/indexed-db-open';
 import type { SessionRuntimeRecord, SessionSummaryReceipt } from './session-runtime-store';
 import { SESSION_RUNTIME_KEY, SESSION_RUNTIME_STORE_NAME, SESSION_SUMMARY_RECEIPT_KEY } from './session-runtime-store';
 import { isSessionSummaryReceipt, isSessionRuntimeRecord, legacyRuntimeRecordFromArchive } from './session-runtime-store';
@@ -69,7 +70,7 @@ export async function archiveLegacyRuntime(database: IDBDatabase, expected: Sess
 		|| authority.fence === priorAuthority.fence && (authority.instanceId !== priorAuthority.instanceId || authority.acquiredAt !== priorAuthority.acquiredAt)) return false;
 	const expectedJson = canonicalJson(archive.original); const archiveKey = `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${sessionId}`;
 	return await new Promise((resolve) => {
-		const tx = database.transaction(SESSION_RUNTIME_STORE_NAME,'readwrite'); const store = tx.objectStore(SESSION_RUNTIME_STORE_NAME); let saved = false;
+		const tx = startIndexedDbTransaction(database,SESSION_RUNTIME_STORE_NAME,'readwrite'); const store = tx.objectStore(SESSION_RUNTIME_STORE_NAME); let saved = false;
 		const request = store.get(SESSION_RUNTIME_KEY);
 		request.onsuccess = () => {
 			if (canonicalJson(request.result) !== expectedJson) return;

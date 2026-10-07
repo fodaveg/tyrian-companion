@@ -1,6 +1,7 @@
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import {
@@ -214,6 +215,85 @@ describe('ActiveSessionLeaseCoordinator', () => {
 		});
 
 		await expect(coordinator.acquire('session-1')).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		coordinator.dispose();
+	});
+
+	// 7 Oct 2026: with the engine no longer answering, the lease could not be renewed, and it stayed
+	// that way after the engine came back because nothing opened a second connection.
+	it('renews the lease on a new connection after the cached one was closed underneath it', async () => {
+		const tracked = trackedIndexedDb();
+		const coordinator = createCoordinator(tracked.factory, 'closed underneath');
+		const handle = requireHandle(await coordinator.acquire('session-1'));
+		closeUnderneath(tracked.connections[0]!);
+
+		await expect(coordinator.renew(handle)).resolves.toMatchObject({ status: 'renewed' });
+		await expect(coordinator.assertOwned(handle)).resolves.toEqual({ status: 'owned' });
+		expect(tracked.connections).toHaveLength(2);
+		coordinator.dispose();
+	});
+
+	it('forgets the connection on the engine close event and after a versionchange that is not an upgrade', async () => {
+		const tracked = trackedIndexedDb();
+		const name = databaseName('engine close');
+		const store = await IndexedDbCoordinationStore.open(tracked.factory, name);
+		const dead = vi.spyOn(tracked.connections[0]!, 'transaction');
+		emitEngineClose(tracked.connections[0]!);
+		await expect(store.read()).resolves.toBeUndefined();
+		expect(dead).not.toHaveBeenCalled();
+		expect(tracked.connections).toHaveLength(2);
+
+		await new Promise<void>((resolve, reject) => {
+			const request = tracked.factory.deleteDatabase(name);
+			request.onsuccess = () => resolve();
+			request.onerror = () => reject(request.error ?? new Error('delete failed'));
+		});
+		await expect(store.read()).resolves.toBeUndefined();
+		expect(tracked.connections).toHaveLength(3);
+		store.close();
+	});
+
+	it('never opens again after a real upgrade by another context', async () => {
+		const tracked = trackedIndexedDb();
+		const name = databaseName('upgrade is final');
+		const store = await IndexedDbCoordinationStore.open(tracked.factory, name);
+		const upgraded = await openRaw(tracked.factory, name, 2);
+		const opened = tracked.connections.length;
+
+		await expect(store.read()).rejects.toThrow('Coordination storage is unavailable.');
+		await expect(store.transaction(() => ({ result: null }))).rejects.toThrow('Coordination storage is unavailable.');
+		expect(tracked.connections).toHaveLength(opened);
+		upgraded.close();
+	});
+
+	it('gives each lease operation one reopen while storage is down, and recovers when it is back', async () => {
+		const tracked = trackedIndexedDb();
+		const coordinator = createCoordinator(tracked.factory, 'down');
+		const handle = requireHandle(await coordinator.acquire('session-1'));
+		killStorage(tracked);
+		const open = vi.spyOn(tracked.factory, 'open');
+
+		await expect(coordinator.renew(handle)).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		expect(open).toHaveBeenCalledTimes(1);
+		reviveStorage(tracked);
+		await expect(coordinator.renew(handle)).resolves.toMatchObject({ status: 'renewed' });
+		coordinator.dispose();
+	});
+
+	it('does not keep a failed first open: the next operation opens again', async () => {
+		const factory = new IDBFactory();
+		let opens = 0;
+		const coordinator = new ActiveSessionLeaseCoordinator({
+			instanceId: 'instance', machineId: () => 'machine', clock: () => 1_000, sleep: async () => undefined,
+			openStore: async () => {
+				opens += 1;
+				if (opens === 1) throw new Error('open failed');
+				return await IndexedDbCoordinationStore.open(factory, databaseName('failed first open'));
+			},
+		});
+
+		await expect(coordinator.acquire('session-1')).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		await expect(coordinator.acquire('session-1')).resolves.toMatchObject({ status: 'acquired' });
+		expect(opens).toBe(2);
 		coordinator.dispose();
 	});
 

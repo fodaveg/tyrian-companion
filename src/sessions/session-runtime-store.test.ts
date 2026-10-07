@@ -24,6 +24,7 @@ import {
 	SESSION_RUNTIME_STORE_NAME,
 } from './session-runtime-store';
 import type { SessionStartContext } from './session-start-capture';
+import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
 
 const requestedAt = '2026-08-13T07:59:59.500Z';
 const authority: SessionAuthority = {
@@ -479,6 +480,77 @@ describe('session runtime persistence', () => {
 		const upgraded = await openRaw(factory, name, 3);
 		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
 		upgraded.close();
+	});
+
+	// 7 Oct 2026: the engine stopped answering with the plugin alive, and no store ever opened a
+	// second connection. The three ways a connection is found dead, and the one that stays final.
+	it('opens a new connection when the cached one was closed underneath it', async () => {
+		const tracked = trackedIndexedDb();
+		const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('closed-underneath'));
+		const record = activeRecord();
+		await expect(store.save(record)).resolves.toEqual({ status: 'saved' });
+		closeUnderneath(tracked.connections[0]!);
+
+		await expect(store.load()).resolves.toMatchObject({ status: 'loaded', record: { persistedAt: record.persistedAt } });
+		expect(tracked.connections).toHaveLength(2);
+		store.close();
+	});
+
+	it('forgets the connection on the engine close event, before any operation trips over it', async () => {
+		const tracked = trackedIndexedDb();
+		const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('engine-close'));
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
+		const dead = vi.spyOn(tracked.connections[0]!, 'transaction');
+		emitEngineClose(tracked.connections[0]!);
+
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
+		expect(dead).not.toHaveBeenCalled();
+		expect(tracked.connections).toHaveLength(2);
+		store.close();
+	});
+
+	it('reopens after a versionchange that is not an upgrade', async () => {
+		const tracked = trackedIndexedDb();
+		const name = databaseName('versionchange-released');
+		const store = new IndexedDbSessionRuntimeStore(tracked.factory, name);
+		await expect(store.save(activeRecord())).resolves.toEqual({ status: 'saved' });
+		await new Promise<void>((resolve, reject) => {
+			const request = tracked.factory.deleteDatabase(name);
+			request.onsuccess = () => resolve();
+			request.onerror = () => reject(request.error ?? new Error('delete failed'));
+		});
+
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
+		expect(tracked.connections).toHaveLength(2);
+		store.close();
+	});
+
+	it('never opens again after a real upgrade by another context', async () => {
+		const tracked = trackedIndexedDb();
+		const name = databaseName('versionchange-upgrade');
+		const store = new IndexedDbSessionRuntimeStore(tracked.factory, name);
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
+		const upgraded = await openRaw(tracked.factory, name, 3);
+		const opened = tracked.connections.length;
+
+		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		await expect(store.save(activeRecord())).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		expect(tracked.connections).toHaveLength(opened);
+		upgraded.close();
+	});
+
+	it('gives each operation one reopen and no more while storage stays down', async () => {
+		const tracked = trackedIndexedDb();
+		const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('down'));
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
+		killStorage(tracked);
+		const open = vi.spyOn(tracked.factory, 'open');
+
+		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		expect(open).toHaveBeenCalledTimes(1);
+		reviveStorage(tracked);
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
+		store.close();
 	});
 
 	// Lote S (2026-09-09), test obligatorio: the real record David hit today (`registro-sesion-9sep.json`,

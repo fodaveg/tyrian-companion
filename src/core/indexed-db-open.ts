@@ -38,6 +38,17 @@ export interface IndexedDbStoreSchema {
  */
 export type IndexedDbOpenFailureReason = 'error' | 'blocked' | 'refused';
 
+/**
+ * Why a connection was asked to step aside.
+ *
+ * `upgrade`: another context opened this database with a HIGHER version, so the schema this code
+ * knows is no longer the one on disk and opening again would only fail against it. `released` is
+ * every other `versionchange` (the database is being deleted, or the engine wants the connection
+ * back without raising the version): the connection is closed and a later operation may open a
+ * new one against the same schema.
+ */
+export type IndexedDbVersionChangeKind = 'upgrade' | 'released';
+
 export interface OpenIndexedDbOptions {
 	factory: IDBFactory;
 	databaseName: string;
@@ -64,8 +75,17 @@ export interface OpenIndexedDbOptions {
 	 * handle. OMITTING it installs no handler at all, which is deliberately
 	 * available because the Halloween store has never had one, and quietly giving
 	 * it one would close a database its own methods still hold.
+	 *
+	 * The callback is told which kind it was, so a store can stay closed after a real
+	 * upgrade and still open again after anything else.
 	 */
-	onVersionChange?: 'close' | ((database: IDBDatabase) => void);
+	onVersionChange?: 'close' | ((database: IDBDatabase, kind: IndexedDbVersionChangeKind) => void);
+	/**
+	 * Runs when the engine closes the connection on its own (the `close` event: its storage
+	 * process died, the origin was cleared). `database.close()` never fires it. This is where a
+	 * store drops a handle that will throw on every later `transaction()`.
+	 */
+	onClose?: (database: IDBDatabase) => void;
 }
 
 /**
@@ -105,14 +125,80 @@ export function openIndexedDb(options: OpenIndexedDbOptions): Promise<IDBDatabas
 			settled = true;
 			const versionChange = options.onVersionChange;
 			if (versionChange !== undefined) {
-				database.onversionchange = () => {
+				database.onversionchange = (event) => {
+					// Read before closing: only a version above the one this connection holds is an upgrade.
+					const kind: IndexedDbVersionChangeKind = event.newVersion !== null && event.newVersion > database.version
+						? 'upgrade' : 'released';
 					database.close();
-					if (versionChange !== 'close') versionChange(database);
+					if (versionChange !== 'close') versionChange(database, kind);
 				};
 			}
+			const closed = options.onClose;
+			if (closed !== undefined) database.onclose = () => closed(database);
 			resolve(database);
 		};
 	});
+}
+
+/**
+ * Raised in place of whatever `transaction()` threw. It says one thing: the connection is not
+ * usable and nothing was started on it, which is what makes running the operation again safe.
+ */
+export class IndexedDbConnectionLostError extends Error {
+	constructor(readonly reason: unknown) {
+		super('The IndexedDB connection is no longer usable.');
+		this.name = 'IndexedDbConnectionLostError';
+	}
+}
+
+/** `database.transaction()`, with a dead connection reported as such instead of as the engine's own error. */
+export function startIndexedDbTransaction(
+	database: IDBDatabase,
+	storeNames: string | string[],
+	mode: IDBTransactionMode,
+): IDBTransaction {
+	try {
+		return database.transaction(storeNames, mode);
+	} catch (error) {
+		throw new IndexedDbConnectionLostError(error);
+	}
+}
+
+/** How a store hands out its cached connection and forgets one that died. */
+export interface ReopenableIndexedDb {
+	open(): Promise<IDBDatabase>;
+	/** Drops `database` from the cache if it is still the cached one; a later `open()` opens anew. */
+	discard(database: IDBDatabase): void;
+}
+
+/**
+ * Runs one operation on the store's connection. If the connection turns out to be dead before the
+ * operation could start a transaction, it is discarded and the operation runs once more on a new
+ * one.
+ *
+ * Exactly one reopen per operation, no waiting and no loop: a second dead connection is this
+ * operation's failure, and the next operation gets its own single attempt. Only
+ * `IndexedDbConnectionLostError` is retried, never an abort or a rejected request, because those
+ * happen after a transaction started and the caller alone knows whether repeating it is safe.
+ */
+export async function withIndexedDbReopen<T>(
+	connection: ReopenableIndexedDb,
+	run: (database: IDBDatabase) => Promise<T>,
+): Promise<T> {
+	const database = await connection.open();
+	try {
+		return await run(database);
+	} catch (error) {
+		if (!(error instanceof IndexedDbConnectionLostError)) throw error;
+		connection.discard(database);
+	}
+	const reopened = await connection.open();
+	try {
+		return await run(reopened);
+	} catch (error) {
+		if (error instanceof IndexedDbConnectionLostError) connection.discard(reopened);
+		throw error;
+	}
 }
 
 /** Creates every declared store and index that is not already there, and nothing else. */
