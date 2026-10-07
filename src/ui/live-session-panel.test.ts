@@ -189,6 +189,14 @@ describe('Session tab: figures, objects and chart', () => {
 		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).not.toContain('—');
 	});
 
+	it('shows the value with gold in «Estimated value» while «Per hour» stays the item subtotal rate', () => {
+		const view = liveView(); view.valuation.coinNetCopper = 100; view.valuation.knownNetValueCopper = view.valuation.netItemValueKnownCopper + 100;
+		expect(liveSessionValue(view)).toBe(view.valuation.netItemValueKnownCopper + 100);
+		expect(liveSessionRatePerHour(view)).toBe(liveSessionRatePerHour(liveView()));
+		const h = harness(view);
+		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).toContain('0g 1s 20c');
+	});
+
 	it('draws the objects as a labelled list with the net quantity on each tile, sorted by value, without a row cap', () => {
 		const view = liveView();
 		view.totals = Array.from({ length: 40 }, (_, index) => ({ kind: 'item' as const, idNumber: 100 + index, positive: index + 1, negative: 0, net: index + 1 }));

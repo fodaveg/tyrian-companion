@@ -5,7 +5,7 @@ import { isFarmingGoal, type FarmingGoalV1 } from './farming-goal';
 import { isFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveGapV1, type LiveJournalEntryV1,
 	type LiveObservationV1, type LiveSessionRuntimeRecord, type LivePriceV1, type LiveTotalV1, type LiveValuationV1 } from './live-session-model';
-import { bounded, date, isLiveGap, keys, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
+import { bounded, date, GOLD_CURRENCY_ID, isLiveGap, keys, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
 import { isLiveObservation } from './live-session-validation';
 import { sha256Text } from './session-note-renderer';
 
@@ -121,7 +121,7 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 		journal: journal as StoredLiveJournalEntryV1[],
 		gaps,
 		totals: orderTotals(live.totals.map((total) => ({ kind: total.kind, idNumber: total.idNumber, positive: total.positive, negative: total.negative, net: total.net }))),
-		valuation: valueLiveTotals(orderTotals(live.totals), live.prices, live.priceCapturedAt), magicFind: { value: live.magicFind.value, source: live.magicFind.source },
+		valuation: valueLiveTotals(orderTotals(live.totals), live.prices, live.priceCapturedAt, live.currencyTrackedIds.includes(GOLD_CURRENCY_ID)), magicFind: { value: live.magicFind.value, source: live.magicFind.source },
 		preparation: { version: 1, enabled: live.preparation.enabled, manualMagicFindBonus: live.preparation.manualMagicFindBonus,
 			foodReminderMinutes: live.preparation.foodReminderMinutes, utilityReminderMinutes: live.preparation.utilityReminderMinutes },
 		farmingGoal: live.farmingGoal, groupContext: live.groupContext,...declaredBuild,
@@ -242,7 +242,7 @@ function validValuation(value: unknown, totals: readonly LiveTotalV1[]): boolean
 			|| price.unitCopper !== null && !natural(price.unitCopper) || ids.has(price.itemId)) return false;
 		ids.add(price.itemId);
 	}
-	try { return canonicalJson(value) === canonicalJson(valueLiveTotals(totals,value.prices as LivePriceV1[],value.capturedAt)); }
+	try { return canonicalJson(value) === canonicalJson(valueLiveTotals(totals,value.prices as LivePriceV1[],value.capturedAt,value.coinNetCopper !== null)); }
 	catch { return false; }
 }
 function inside(value: unknown, start: string, end: string): value is string { return date(value) && value >= start && value <= end; }

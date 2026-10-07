@@ -1,4 +1,4 @@
-import { valueLiveTotals } from './live-session-reducer';
+import { GOLD_CURRENCY_ID, valueLiveTotals } from './live-session-reducer';
 import { manualBuildIdentityInput } from './manual-build-model';
 import { canonicalJson, sha256Utf8 } from '../core/canonical-sha256';
 import type { LiveSessionRuntimeRecord } from './live-session-model';
@@ -84,7 +84,7 @@ export function buildLiveSessionComparison(sessions: readonly StoredLiveSessionP
 
 /** A display tick may update connection time, but it never adds an active session to a final sample. */
 export function provisionalLiveComparison(record: LiveSessionRuntimeRecord | null, connectionMs: number): LiveComparisonRow | null {
-	return record?.phase === 'active' ? comparisonRow({ ...record, valuation: valueLiveTotals(record.totals, record.prices, record.priceCapturedAt) }, null, connectionMs) : null;
+	return record?.phase === 'active' ? comparisonRow({ ...record, valuation: valueLiveTotals(record.totals, record.prices, record.priceCapturedAt, record.currencyTrackedIds.includes(GOLD_CURRENCY_ID)) }, null, connectionMs) : null;
 }
 
 function comparisonRow(session: Evidence, endedAt: string | null, connectionMs: number): LiveComparisonRow {

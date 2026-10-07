@@ -9,7 +9,7 @@ import { DEFAULT_FARMING_PREPARATION, normalizeFarmingPreparationSettings, type 
 import { LIVE_SOURCE_STALE_MS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveSessionRuntimeRecord, type LiveJournalEntryV1,
 	type LiveSessionViewV1, type LiveGapV1, type LiveChartPointV1 } from './live-session-model';
-import { liveObservationTotals, liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals } from './live-session-reducer';
+import { liveObservationTotals, liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
 import type { IngameGameContext } from '../alerts/alert-ingame-protocol';
 import { createLiveAlertIntent, settleLiveAlertRestart } from './live-session-outbox';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } from './live-session-model';
@@ -250,7 +250,7 @@ export class LiveSessionLifecycle {
 		const row = this.record; const size = Math.max(1, Math.min(200, Number.isSafeInteger(limit) ? limit : 200));
 		const start = Math.max(0, Number.isSafeInteger(offset) ? offset : 0);
 		const all = this.observations;
-		const valuation = valueLiveTotals(row?.totals ?? [], row?.prices ?? [], row?.priceCapturedAt ?? null);
+		const valuation = valueLiveTotals(row?.totals ?? [], row?.prices ?? [], row?.priceCapturedAt ?? null, row?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
 		const at = row?.lastObservationAt ?? null;
 		return { version: 1, sessionId: row?.sessionId ?? null, phase: this.failure ? 'error' : row?.phase ?? 'idle',
 			connection: row?.phase === 'complete' ? 'disconnected' : row?.connection ?? 'disconnected',
@@ -366,7 +366,7 @@ export class LiveSessionLifecycle {
 		next.mapObservation = mapId === null ? null : { mapId, fromMs: atMs }; return next;
 	}
 	private appendChart(entry: LiveJournalEntryV1, totals = this.record?.totals ?? []): void {
-		const valuation = valueLiveTotals(totals, this.record?.prices ?? [], this.record?.priceCapturedAt ?? null);
+		const valuation = valueLiveTotals(totals, this.record?.prices ?? [], this.record?.priceCapturedAt ?? null, this.record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
 		this.chart.push({ observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
 			netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore });
 		if (this.chart.length > 600) this.chart.shift();
@@ -396,5 +396,5 @@ export function emptyLiveSessionView(): LiveSessionViewV1 {
 	return {version:1,sessionId:null,phase:'idle',connection:'disconnected',sourceState:'missing',sourceReason:'source_missing',source:null,
 		startedAt:null,endedAt:null,elapsedMs:null,observedItemsMs:0,observedCurrenciesMs:0,lastObservationAt:null,itemCoverage:'none',currencyCoverage:'none',
 		currencyIds:[],freeSlots:null,observations:[],observationCount:0,observationOffset:0,hasMore:false,gaps:[],totals:[],
-		valuation:valueLiveTotals([],[],null),chartPoints:[],magicFind:{value:null,source:'unknown'}};
+		valuation:valueLiveTotals([],[],null,false),chartPoints:[],magicFind:{value:null,source:'unknown'}};
 }

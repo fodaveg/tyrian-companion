@@ -45,7 +45,7 @@ describe('live inventory ledger', () => {
 		expect(first.journal.observations).toMatchObject([{ before: 0, after: 2, delta: 2, cause: 'unknown' }]);
 		expect(second.journal.observations).toMatchObject([{ before: 2, after: 4, delta: 2 }]);
 		expect(second.record.totals).toEqual([{ kind: 'item', idNumber: 12147, positive: 4, negative: 0, net: 4 }]);
-		expect(valueLiveTotals(second.record.totals, [{ itemId: 12147, unitCopper: 10 }], second.record.lastSample!.observedAt))
+		expect(valueLiveTotals(second.record.totals, [{ itemId: 12147, unitCopper: 10 }], second.record.lastSample!.observedAt, false))
 			.toMatchObject({ positiveItemValueKnownCopper: 40, netItemValueKnownCopper: 40, coinNetCopper: null, knownNetValueCopper: null });
 	});
 	it('records signed decreases without inferring a sale, and aggregate moves produce no observation', () => {
@@ -54,7 +54,7 @@ describe('live inventory ledger', () => {
 		expect(moved.journal.observations).toEqual([]);
 		const loss = reduceLiveInventorySample(moved.record, sample(2, 2));
 		expect(loss.journal.observations).toMatchObject([{ delta: -2, cause: 'unknown' }]);
-		expect(valueLiveTotals(loss.record.totals, [], null)).toMatchObject({ unpricedItemIds: [12147], knownNetValueCopper: null });
+		expect(valueLiveTotals(loss.record.totals, [], null, false)).toMatchObject({ unpricedItemIds: [12147], knownNetValueCopper: null });
 	});
 	it('reconnect baseline preserves old totals but never acquires the missing five items', () => {
 		let current = reduceLiveInventorySample(initial(), sample(0, 0)).record;
@@ -140,5 +140,45 @@ describe('live inventory ledger', () => {
 	});
 	it('fingerprints acquisition evidence independently of retransmission reception time', () => {
 		expect(liveSampleFingerprint(sample(1, 2))).toBe(liveSampleFingerprint(sample(1, 2, { observedAt: new Date(AT + 3000).toISOString() })));
+	});
+	describe('gold valuation (coinNetCopper)', () => {
+		const wallet = (cursor: number, gold: number, other: number | null = null, quantity = 0) => sample(cursor, quantity, { currencyCoverage: 'listed',
+			rows: [{ kind: 'item', idNumber: 12147, quantity }, { kind: 'currency', idNumber: 1, quantity: gold },
+				...(other === null ? [] : [{ kind: 'currency' as const, idNumber: 2, quantity: other }])] });
+		const price = [{ itemId: 12147, unitCopper: 10 }];
+		const value = (record: LiveSessionRuntimeRecord) => valueLiveTotals(record.totals, price, null, record.currencyTrackedIds.includes(1));
+		const run = (...samples: LiveInventorySampleV1[]) => samples.reduce((record, next) => reduceLiveInventorySample(record, next).record, initial());
+		it('session without coins stays null', () => {
+			expect(value(run(sample(0, 0), sample(1, 2)))).toMatchObject({ coinNetCopper: null, knownNetValueCopper: null, netItemValueKnownCopper: 20 });
+		});
+		it('tracked gold without change is zero and the total equals the objects', () => {
+			expect(value(run(wallet(0, 500), wallet(1, 500, null, 3)))).toMatchObject({ coinNetCopper: 0, netItemValueKnownCopper: 30, knownNetValueCopper: 30 });
+		});
+		it('adds a positive and a negative gold net in copper, and a sale nets out', () => {
+			const up = run(wallet(0, 500), wallet(1, 800, null, 1));
+			expect(value(up)).toMatchObject({ coinNetCopper: 300, knownNetValueCopper: 310 });
+			expect(value(reduceLiveInventorySample(up, wallet(2, 600, null, 1)).record)).toMatchObject({ coinNetCopper: 100, knownNetValueCopper: 110 });
+			expect(value(run(wallet(0, 0, null, 4), wallet(1, 35)))).toMatchObject({ netItemValueKnownCopper: -40, coinNetCopper: 35, knownNetValueCopper: -5 });
+		});
+		it('gold that appears mid-session is a baseline without delta', () => {
+			const later = run(sample(0, 0), wallet(1, 900));
+			expect(later.totals.some((total) => total.kind === 'currency')).toBe(false);
+			expect(value(later)).toMatchObject({ coinNetCopper: 0, knownNetValueCopper: 0 });
+		});
+		it('a currency other than gold never enters the copper value', () => {
+			const record = run(wallet(0, 500, 10), wallet(1, 500, 90));
+			expect(record.totals).toEqual([{ kind: 'currency', idNumber: 2, positive: 80, negative: 0, net: 80 }]);
+			expect(value(record)).toMatchObject({ coinNetCopper: 0, knownNetValueCopper: 0 });
+		});
+		it('a session that only tracked another currency stays null', () => {
+			const only = (cursor: number, other: number) => sample(cursor, 0, { currencyCoverage: 'listed', rows: [
+				{ kind: 'item', idNumber: 12147, quantity: 0 }, { kind: 'currency', idNumber: 2, quantity: other }] });
+			expect(value(run(only(0, 1), only(1, 9)))).toMatchObject({ coinNetCopper: null, knownNetValueCopper: null });
+		});
+		it('overflowing gold arithmetic throws like the item path', () => {
+			const totals = [{ kind: 'currency' as const, idNumber: 1, positive: 1, negative: 0, net: Number.MAX_SAFE_INTEGER },
+				{ kind: 'item' as const, idNumber: 12147, positive: 1, negative: 0, net: 1 }];
+			expect(() => valueLiveTotals(totals, price, null, true)).toThrow('overflow');
+		});
 	});
 });

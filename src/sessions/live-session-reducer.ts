@@ -106,8 +106,14 @@ export function liveObservationTotals(totals: LiveTotalV1[], observations: reado
 	return [...map.values()].sort((left, right) => left.kind.localeCompare(right.kind) || left.idNumber - right.idNumber);
 }
 
-/** Revalues the whole ledger with one public price snapshot; absent wallet coverage remains unknown. */
-export function valueLiveTotals(totals: readonly LiveTotalV1[], prices: readonly LivePriceV1[], capturedAt: string | null): LiveValuationV1 {
+/** Wallet currency that is valued in copper; every other currency stays unconverted. */
+export const GOLD_CURRENCY_ID = 1;
+
+/**
+ * Revalues the whole ledger with one public price snapshot. `goldTracked` says the gold currency (id 1) was ever covered by the
+ * session: only then the observed net gold (0 when unchanged) is added; otherwise wallet coverage remains unknown (null).
+ */
+export function valueLiveTotals(totals: readonly LiveTotalV1[], prices: readonly LivePriceV1[], capturedAt: string | null, goldTracked: boolean): LiveValuationV1 {
 	const quotes = new Map(prices.map((row) => [row.itemId, row.unitCopper]));
 	let positive = 0; let net = 0; const unpricedItemIds: number[] = [];
 	for (const total of totals) {
@@ -119,8 +125,11 @@ export function valueLiveTotals(totals: readonly LiveTotalV1[], prices: readonly
 		positive += unit * total.positive; net += unit * total.net;
 	}
 	if (!Number.isSafeInteger(positive) || !Number.isSafeInteger(net)) throw new Error('Live valuation arithmetic overflow.');
+	const coinNet = goldTracked ? totals.find((total) => total.kind === 'currency' && total.idNumber === GOLD_CURRENCY_ID)?.net ?? 0 : null;
+	const known = coinNet === null ? null : net + coinNet;
+	if (coinNet !== null && (!Number.isSafeInteger(coinNet) || !Number.isSafeInteger(known))) throw new Error('Live valuation arithmetic overflow.');
 	return { priceBasis: 'instant_sell_net', capturedAt, prices: [...prices], positiveItemValueKnownCopper: positive,
-		netItemValueKnownCopper: net, coinNetCopper: null, knownNetValueCopper: null, unpricedItemIds };
+		netItemValueKnownCopper: net, coinNetCopper: coinNet, knownNetValueCopper: known, unpricedItemIds };
 }
 
 export function isLiveInventorySample(value: unknown): value is LiveInventorySampleV1 {

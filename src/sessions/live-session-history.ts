@@ -108,7 +108,7 @@ export function liveSessionViewFromStored(payload: StoredLiveSessionPayloadV1, _
 	for (const [index,entry] of payload.journal.entries()) {
 		totals = liveObservationTotals(totals,entry.observations);
 		if (index < payload.journal.length - 600) continue;
-		const valuation = valueLiveTotals(totals,payload.valuation.prices,payload.valuation.capturedAt);
+		const valuation = valueLiveTotals(totals,payload.valuation.prices,payload.valuation.capturedAt,payload.valuation.coinNetCopper !== null);
 		chart.push({ observedAt: entry.observedAt,itemQuantityNet: totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0),
 			netItemValueKnownCopper: valuation.netItemValueKnownCopper,knownNetValueCopper: valuation.knownNetValueCopper,
 			breakBefore: entry.breakBefore || chart.length === 0 && index > 0 });

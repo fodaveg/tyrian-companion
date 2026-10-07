@@ -291,7 +291,7 @@ describe('vault live history, exports and privacy', () => {
 	it('recovers the full journal from a synced note without any local store or API', async () => {
 		const {note,session} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,note.content);
 		const service = new LiveSessionHistoryService(historyVault(vault));
-		expect(await service.list()).toEqual({status: 'ok',ignored: 0,sessions: [{sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: 2,estimatedValueCopper: 40,itemCount: session.totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0),items: session.totals.filter((row) => row.kind === 'item' && row.net !== 0).map((row) => ({idNumber: row.idNumber,net: row.net}))}]});
+		expect(await service.list()).toEqual({status: 'ok',ignored: 0,sessions: [{sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: 2,estimatedValueCopper: 40,itemCount: session.totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0),items: session.totals.filter((row) => row.kind === 'item' && row.net !== 0).map((row) => ({idNumber: row.idNumber,net: row.net})),currencies: []}]});
 		expect(await service.select(session.sessionRef)).toEqual({status: 'found',session});
 		expect(await new SessionHistoryService(historyVault(vault)).scan()).toEqual({status: 'ok',sessions: [],ignored: 1});
 	});
@@ -315,6 +315,20 @@ describe('vault live history, exports and privacy', () => {
 		expect(csv.match(/^"observation",/gmu)).toHaveLength(1000);
 		expect(csv).toContain('"instant_sell_net"'); expect(csv).toContain('"price",');
 		expect(csv).not.toContain(INSTANCE); expect(csv).not.toContain(input.record.sessionId);
+	});
+	it('revalues each chart point of a saved session with its gold, and an old note with null keeps the objects subtotal', async () => {
+		const input = fixture([0,2,4],[{one: 100,two: null},{one: 160,two: null},{one: 130,two: null}]);
+		const payload = await prepareLiveSessionPayload(input); if (payload === null) throw new Error('fixture');
+		expect(payload.valuation).toMatchObject({netItemValueKnownCopper: 40,coinNetCopper: 30,knownNetValueCopper: 70});
+		const view = liveSessionViewFromStored(payload,AT);
+		expect(view.chartPoints.map((point) => [point.netItemValueKnownCopper,point.knownNetValueCopper])).toEqual([[0,0],[20,80],[40,70]]);
+		const json = JSON.parse(serializeLiveSessionExport(payload,'summary','json')) as {session: typeof payload};
+		expect(json.session.valuation).toEqual(payload.valuation);
+		const vault = new TestVault(); expect((await new SessionNoteWriter(vault).writeLive(input)).status).toBe('written');
+		const selected = await new LiveSessionHistoryService(historyVault(vault)).select(payload.sessionRef);
+		expect(selected.status === 'found' && selected.session.valuation).toEqual(payload.valuation);
+		const old = await prepareLiveSessionPayload(fixture([0,2,4])); if (old === null) throw new Error('fixture');
+		expect(liveSessionViewFromStored(old,AT).chartPoints.map((point) => point.knownNetValueCopper)).toEqual([null,null,null]);
 	});
 	it('verifies create-only exports and protects mismatched existing files without process', async () => {
 		const {session} = await rendered(); const vault = new TestVault(); const process = vi.spyOn(vault,'process');
@@ -348,7 +362,7 @@ describe('partial currency history', () => {
 		expect(input.record.observedCurrenciesMs).toBe(1000);
 		const payload = await prepareLiveSessionPayload(input); expect(payload).not.toBeNull(); if (payload === null) throw new Error('fixture');
 		expect(payload.totals).toEqual([{kind: 'currency',idNumber: 1,positive: 18,negative: 0,net: 18}]);
-		expect(payload.valuation.coinNetCopper).toBeNull();
+		expect(payload.valuation).toMatchObject({coinNetCopper: 18,netItemValueKnownCopper: 0,knownNetValueCopper: 18});
 		const vault = new TestVault(); expect((await new SessionNoteWriter(vault).writeLive(input)).status).toBe('written');
 		const selected = await new LiveSessionHistoryService(historyVault(vault)).select(payload.sessionRef);
 		expect(selected.status).toBe('found'); if (selected.status !== 'found') throw new Error('fixture');
