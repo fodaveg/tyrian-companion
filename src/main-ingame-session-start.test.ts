@@ -305,6 +305,29 @@ describe('real passive Nexus composition', () => {
 		expect(f.h.core.getLiveSessionView().sessionId).toBe(priorId);
 		expect(await f.h.core.listLiveSessionHistory()).toHaveLength(0);
 	});
+	it('a written disconnection does not let a second producer in once the linked one is connected again', async () => {
+		const f = await runtime(); await bridge(f,{kind:'authenticated',connectionId:'a',client:'nexus',instance:INSTANCE,atMs:AT});
+		await bridge(f,{kind:'context',connectionId:'a',context:f.source.context,atMs:AT});
+		await f.port.open(f.source); await f.port.commit(f.sample(0,0)); f.setNow(AT+1000); await f.port.commit(f.sample(1,4));
+		const priorId = f.h.core.getLiveSessionView().sessionId;
+		// The producer leaves, and this time storage writes that it did.
+		f.setNow(AT+2000); await f.port.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'disconnect',observedAt:new Date(AT+2000).toISOString()});
+		await bridge(f,{kind:'closed',connectionId:'a',atMs:AT+2000,lastSeenAtMs:AT+2000,reason:'lost'});
+		expect(f.access.liveSessions.getRuntime()).toMatchObject({sessionId:priorId,phase:'active',epoch:null,lastSourceDisconnectedAt:new Date(AT+2000).toISOString()});
+
+		// It comes back and authenticates, and has not sent its `live_open` yet when another instance sends one.
+		f.setNow(AT+3000); await bridge(f,{kind:'authenticated',connectionId:'a2',client:'nexus',instance:INSTANCE,atMs:AT+3000});
+		const next = {...f.source,sourceInstance:'AwMDAwMDAwMDAwMDAwMDAw',epoch:'BAQEBAQEBAQEBAQEBAQEBA'};
+		await bridge(f,{kind:'authenticated',connectionId:'b',client:'nexus',instance:next.sourceInstance,atMs:AT+3500});
+		expect(f.access.liveSessions.getRuntime()).toMatchObject({sessionId:priorId,phase:'active',epoch:null,lastSourceDisconnectedAt:new Date(AT+2000).toISOString()});
+		await expect(f.port.open(next)).resolves.toBe('source_conflict');
+		expect(f.h.core.getLiveSessionView()).toMatchObject({sessionId:priorId,phase:'active'});
+		expect(await f.h.core.listLiveSessionHistory()).toHaveLength(0);
+
+		// Its own `live_open` then goes on with the session it was linked to.
+		await expect(f.port.open({...f.source,epoch:'BQUFBQUFBQUFBQUFBQUFBQ'})).resolves.toBe('ready');
+		expect(f.h.core.getLiveSessionView()).toMatchObject({sessionId:priorId,phase:'active',totals:[{positive:4}]});
+	});
 	it('unselected or old-epoch diagnostics cannot erase current source evidence', async () => {
 		const f = await runtime(); await f.port.open(f.source); await f.port.commit(f.sample(0,0));
 		f.setNow(AT+1000); await f.port.commit(f.sample(1,4));

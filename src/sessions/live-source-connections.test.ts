@@ -58,6 +58,20 @@ describe('relief of a live producer that is gone (SPEC-live-loot §2, rule of 7 
 		expect(liveSourceReliefAt({ ...active, phase: 'complete' }, OTHER, connections)).toBeNull();
 	});
 
+	it('a written disconnection does not relieve a producer that came back and holds a connection', () => {
+		const connections = new LiveSourceConnections();
+		const written = { ...active, epoch: null, lastSourceDisconnectedAt: new Date(AT + 500).toISOString() };
+		connect(connections, 'a', LINKED); close(connections, 'a', AT + 500);
+		expect(liveSourceReliefAt(written, OTHER, connections)).toBe(AT + 500);
+		// Authenticated again and not yet at its `live_open`: the record still says it left.
+		connect(connections, 'a2', LINKED);
+		expect(liveSourceReliefAt(written, OTHER, connections)).toBeNull();
+		close(connections, 'a2', AT + 3000);
+		expect(liveSourceReliefAt(written, OTHER, connections)).toBe(AT + 500);
+		// A host that restarted has seen no connection at all, and what is written decides alone.
+		expect(liveSourceReliefAt(written, OTHER, new LiveSourceConnections())).toBe(AT + 500);
+	});
+
 	it('remembers a bounded number of producers that left', () => {
 		const connections = new LiveSourceConnections();
 		connect(connections, 'a', LINKED); close(connections, 'a', AT);
