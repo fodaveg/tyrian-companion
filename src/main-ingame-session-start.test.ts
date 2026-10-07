@@ -260,16 +260,20 @@ describe('real passive Nexus composition', () => {
 		await f.port.open(f.source); await f.port.commit(f.sample(0,0)); f.setNow(AT+1000); await f.port.commit(f.sample(1,4));
 		const priorId = f.h.core.getLiveSessionView().sessionId;
 		const save = vi.spyOn(livePersistence(f),'saveLive').mockResolvedValue({status:'error',code:'unavailable'});
-		f.setNow(AT+2000);
-		// What the bridge does when the addon's socket closes: its gap, then the closed connection.
-		await expect(f.port.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'disconnect',observedAt:new Date(AT+2000).toISOString()})).resolves.toBeUndefined();
-		await bridge(f,{kind:'closed',connectionId:'a',atMs:AT+2000,lastSeenAtMs:AT+2000,reason:'lost'});
+		// What the bridge did that day: a sample is refused, so it ends the epoch with the gap of that
+		// refusal; when the socket then closes it has no disconnection gap left to send, only the
+		// closed connection. Nothing ever tells the stored record that the producer left.
+		f.setNow(AT+1500); await expect(f.port.commit(f.sample(2,8))).resolves.toBe('storage_unavailable');
+		await expect(f.port.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'storage_unavailable',observedAt:new Date(AT+1500).toISOString()})).resolves.toBeUndefined();
+		f.setNow(AT+2000); await bridge(f,{kind:'closed',connectionId:'a',atMs:AT+2000,lastSeenAtMs:AT+2000,reason:'lost'});
 		expect(f.access.liveSessions.getRuntime()).toMatchObject({sessionId:priorId,epoch:EPOCH,lastSourceDisconnectedAt:null});
 		expect(f.h.core.getLiveSessionView().phase).toBe('error');
 
 		save.mockRestore(); f.setNow(AT+60_000);
 		const next = {...f.source,sourceInstance:'AwMDAwMDAwMDAwMDAwMDAw',epoch:'BAQEBAQEBAQEBAQEBAQEBA'};
 		await bridge(f,{kind:'authenticated',connectionId:'b',client:'nexus',instance:next.sourceInstance,atMs:AT+60_000});
+		// Storage is back and has written what it owed, and still no disconnection is on record.
+		expect(f.access.liveSessions.getRuntime()).toMatchObject({sessionId:priorId,lastSourceDisconnectedAt:null});
 		await expect(f.port.open(next)).resolves.toBe('ready'); await f.port.commit(f.sample(0,9,next));
 		expect(f.h.core.getLiveSessionView()).toMatchObject({phase:'active',observationCount:0});
 		expect(f.h.core.getLiveSessionView().sessionId).not.toBe(priorId);
