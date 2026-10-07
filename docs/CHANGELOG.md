@@ -1,5 +1,34 @@
 # Changelog
 
+## Release beta 0.6.4 - el asesor de inventario muestra el histórico de precio de venta de cada objeto
+
+Release por tag `0.6.4`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación en
+Hebra y Obsidian y la gráfica con datos reales de datawars2).
+
+- Histórico de precio de venta (petición de David del 7 oct 2026: «una gráfica con el precio histórico de
+  venta de los últimos meses para decidir visualmente si es buen momento»): al abrir «Detalles» de una fila
+  del asesor de inventario hay un bloque «Histórico de precio de venta» con la gráfica del precio de ese
+  objeto.
+- Qué pinta: la oferta de venta más baja de cada día (lado `ask`), con la semilla diaria de datawars2, que
+  llega hasta ayer. Hay tres ventanas: «3 meses» (marcada al abrir), «1 año» y «Todo». No hay deslizadores
+  de rango. Debajo se ven el máximo, el mínimo y el último, con su fecha.
+- Sigue siendo opt-in (decisión del 24 sep 2026): con el histórico de precios apagado, abrir «Detalles» no
+  hace ninguna petición y el bloque ofrece «Activar histórico de precios». Con él encendido hay una petición
+  por objeto abierto, por el turno único de descargas de datawars2 y su caché de 24 h
+  (`ensurePriceHistorySeed` en `src/runtime/tyrian-companion-core.ts`, que no mueve la selección del panel
+  de precios).
+- Estados del bloque: histórico apagado, cargando, gráfica, sin datos para el objeto y fallo de descarga con
+  «Reintentar». La gráfica se monta al abrir «Detalles» y se desmonta al cerrar. El repintado de la pestaña
+  no la reconstruye ni repite la descarga.
+- Dibujo estrecho: por debajo de 480 px de ancho del bloque (paneles estrechos, Hebra en iPhone) la gráfica
+  usa un dibujo compacto cuyo ancho sigue al medido, para que las etiquetas de los ejes midan unos 11 px.
+  Antes quedaban en 2,9 px a 280 px. El ancho se mide una vez, al abrir «Detalles».
+- Gráfica compartida (`src/ui/price-history-chart-model.ts` y `src/ui/price-history-chart-view.ts`): el eje
+  de fechas ya no repite la misma etiqueta dos veces. Cuando el mes se repetiría, pasa a día y mes. Afecta
+  también al panel de precios y al bloque de nota, que por lo demás no cambian.
+- Ficheros: `src/ui/inventory-advisor-price-history-block.ts` (nuevo), `src/ui/inventory-advisor-view.ts`,
+  `src/ui/inventory-advisor-item-view.ts`, `styles.css` y `src/core/i18n-runtime-catalog.ts`.
+
 ## Release beta 0.6.3 - la pestaña Sesión lista las sesiones anteriores y los avisos de drop ya se deciden
 
 [Canal 0.6.3 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.3);

@@ -1,5 +1,22 @@
 # Estado
 
+## 0.6.4 preparada: histórico de precio de venta en los detalles del asesor de inventario (7 oct 2026)
+
+**Candidata en `main`; nada publicado ni etiquetado.** El gate está pendiente. Añade, dentro de «Detalles» de
+cada fila del asesor de inventario, el bloque «Histórico de precio de venta» con la gráfica de la oferta de
+venta más baja de cada día (3 meses, 1 año y Todo). Sigue siendo opt-in: con el histórico apagado no hay
+ninguna petición.
+
+- Cambios: `src/ui/inventory-advisor-price-history-block.ts` (nuevo), `src/ui/inventory-advisor-view.ts`,
+  `src/ui/inventory-advisor-item-view.ts`, `styles.css` y `src/core/i18n-runtime-catalog.ts`. La gráfica
+  compartida (`src/ui/price-history-chart-model.ts` y `src/ui/price-history-chart-view.ts`) deja de repetir
+  etiquetas en el eje de fechas. Metadatos alineados a 0.6.4.
+- Verificado: solo los metadatos de versión y la entrada de changelog de esta preparación (extractor de notas
+  `changelog-entry.mjs`). Los commits de código traen sus tests; no se han reejecutado aquí. La gráfica se
+  midió en Firefox a 900, 390 y 280 px con una serie de prueba y colores sustitutos.
+- No verificado: el gate completo, la publicación, la instalación en Hebra y Obsidian, y la gráfica dentro de
+  Hebra real con datos reales de datawars2. Tampoco qué responde datawars2 para un objeto ligado a cuenta.
+
 ## Canal 0.6.3 publicado: sesiones anteriores en la pestaña Sesión y avisos de drop sin cotización (7 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.3](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.3)
