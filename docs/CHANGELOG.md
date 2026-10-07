@@ -2,8 +2,15 @@
 
 ## Release beta 0.6.7 - precio del saco de Halloween para el addon del juego
 
-Candidata a release por tag `0.6.7`; nada publicado ni etiquetado. [ESTADO](ESTADO.md) separa lo verificado de lo
-pendiente (gate, publicación e instalación).
+[Canal 0.6.7 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.7);
+**instalación/runtime pendiente**. Tag `0.6.7` sobre `d82bc09` (atestación del candidato `3b72983`), árbol
+`618bdbda63699bf9266967ed86cb1aa9e603fe57`. Gate local previo: `check` 8/8 (5044 tests, 319 archivos, ninguno
+saltado), guardrails 25/25 y `release:preflight` en verde. Una primera corrida sobre `c32f941` salió en rojo
+(7/8): el censo de observabilidad listó 12 fronteras sin revisar del commit del precio; `3b72983` las revisó
+sin cambiar decisiones previas ni tocar `src/`, y el gate se repitió entero. El benchmark H6 y su sabotaje no se
+corrieron en local; los corre la CI de `main`. El workflow de release (run 37654267741) terminó en success y
+`release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo pendiente
+(instalación en Hebra y Obsidian, y el precio pintado en el juego).
 
 - Precio del saco en el juego: el plugin sirve al addon el precio público del saco de Halloween (objeto 36038)
   por una extensión nueva del puente, `price1`: neto de comisión, por unidad y por stack de 250, en venta

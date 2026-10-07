@@ -1,17 +1,33 @@
 # Estado
 
-## 0.6.7 preparada: precio del saco de Halloween para el addon del juego (7 oct 2026)
+## Canal 0.6.7 publicado: precio del saco de Halloween para el addon del juego (7 oct 2026)
 
-**Candidata integrada en local; nada publicado ni etiquetado.** El plugin sirve al addon el precio público
-neto del saco de Halloween por la extensión `price1` del puente.
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.7](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.7)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.7`. El tag apunta
+a `d82bc09` (atestación del candidato `3b72983`, árbol `618bdbda63699bf9266967ed86cb1aa9e603fe57`). El
+plugin sirve al addon el precio público neto del saco de Halloween por la extensión `price1` del puente.
 
+- Publicación: el workflow `release.yml` (run 37654267741) terminó en success. La release tiene ocho assets,
+  todos `uploaded`: `hebra-main.mjs` 3299713, `hebra-styles.css` 118737, `hebra.json` 954, `main.js`
+  1875841, `manifest.json` 236, `styles.css` 95271, `tyrian-companion-0.6.7.zip` 1971658 y
+  `tyrian-companion-0.6.7.zip.sha256` 93 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view`: «BRAT release contract: PASS (version=0.6.7; assets=8)». La CI de `main` para
+  `d82bc09` (run 37654263770) terminó en success; corre el benchmark H6 y su sabotaje, que no se corrieron
+  en local.
+- Gate local previo, sobre el árbol atestado (Fedora, Node v22.23.1, 7 oct 2026): `check` 8/8 (5044 tests,
+  319 ficheros, ninguno saltado), guardrails 25/25 y `release:preflight` en verde. Una primera corrida sobre
+  `c32f941` salió en rojo (7/8): el censo de observabilidad listó 12 fronteras sin revisar del commit del
+  precio; `3b72983` las revisó en `scripts/action-observability-baseline.json` sin cambiar decisiones
+  previas ni tocar `src/`, y el gate se repitió entero. El benchmark H6 y su sabotaje no se corrieron en
+  local porque el juego estaba abierto en la máquina.
 - Cambio de producto: `dc1034a` (precio `price1`). Metadatos alineados a 0.6.7.
-- Gate: pendiente. Lo corre la sesión raíz sobre el árbol final; no se ha corrido sobre este candidato. Sin
-  publicar, sin etiquetar, sin instalar.
-- No verificado: el envío del precio no está probado en el runtime real de Hebra ni de Obsidian. El precio
-  necesita el addon de Nexus 0.7.0, que no está publicado en su `main`.
-- Fuera de esta versión: la recuperación ante la caída de IndexedDB (la incidencia abierta de la 0.6.6) está
-  implementada en una rama y en revisión; no forma parte de este candidato.
+- No verificado: la instalación y carga de la 0.6.7 en Hebra y en Obsidian/BRAT, y el precio pintado en el
+  juego por el addon contra este plugin. El precio necesita el addon de Nexus 0.7.0 (precio, líneas de
+  antigüedad ocultas y dos iconos de acceso rápido), que no está publicado ni integrado en el `main` de su
+  repo; está instalado a mano en la máquina de David, donde se han visto en el juego los dos iconos y que
+  cada uno abre su panel. El precio en el juego no se ha visto todavía.
+- Fuera de esta versión: la recuperación ante la caída del almacén local (la incidencia abierta de la 0.6.6,
+  IndexedDB en Hebra) está implementada en una rama y en revisión.
 
 ## Canal 0.6.6 publicado: monedas en las sesiones anteriores y oro observado en el valor (7 oct 2026)
 
