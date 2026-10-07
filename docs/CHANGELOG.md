@@ -1,5 +1,26 @@
 # Changelog
 
+## Release beta 0.6.6 - las sesiones anteriores muestran sus monedas y el valor incluye el oro observado
+
+Release por tag `0.6.6`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (gate, publicación e
+instalación).
+
+- Sesiones anteriores con monedas: en la pestaña Sesión, cada sesión anterior muestra también sus monedas
+  observadas, debajo de las teselas de objetos, con el formato de la sesión actual (el oro como dinero, el
+  resto con signo). No hay tope. Una sesión sin monedas no pinta nada.
+- Valor: «Valor estimado» y la gráfica de valor incluyen el oro observado cuando la sesión ha tenido el oro
+  cubierto. Las demás monedas no se convierten a cobre. «Por hora» sigue contando solo objetos. Las notas de
+  sesión antiguas no cambian.
+- Origen de las monedas: el addon de Nexus 0.6.0, que lee la cartera del juego. Con un addon anterior el
+  plugin se comporta como hasta ahora (monedas «sin cobertura»). No hay consulta nueva a la API de cuenta.
+- Límites conocidos: una moneda que la cuenta nunca ha tenido no tiene clave en el juego, así que su primera
+  aparición es línea base y esa primera ganancia no se cuenta. El lector solo funciona con el binario del
+  juego del perfil vigente; tras un parche de GW2 objetos y monedas quedan sin lectura hasta revalidar.
+- Documentación: recibo de la validación en vivo de la ruta de cartera
+  (`docs/audit/loot-wallet-probe/receipt-live-2026-10-07.json`) y `docs/SPEC-live-loot.md` actualizada.
+- Tests: el fixture de wire `src/alerts/__fixtures__/live1.json` se sincroniza con el del addon y un test
+  nuevo pasa esas tramas por el plugin entero.
+
 ## Release beta 0.6.5 - las sesiones anteriores muestran también sus objetos
 
 [Canal 0.6.5 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.5);

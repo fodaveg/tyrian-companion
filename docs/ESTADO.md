@@ -1,5 +1,25 @@
 # Estado
 
+## 0.6.6 preparada: monedas en las sesiones anteriores y oro observado en el valor (7 oct 2026)
+
+**Candidata; nada publicado ni etiquetado.** Las sesiones anteriores muestran sus monedas observadas bajo las
+teselas de objetos, y «Valor estimado» y su gráfica incluyen el oro observado si la sesión tuvo el oro
+cubierto. Las monedas llegan del addon de Nexus 0.6.0 (lectura de la cartera del juego); con un addon
+anterior quedan «sin cobertura».
+
+- Cambios de producto: commits `4674478` y `d920bf8`. Documentación y recibo: `7d34cec`. Fixture de wire y
+  test de costura: `43778e5`. Metadatos alineados a 0.6.6.
+- Verificado: ruta de cartera validada el 7 oct 2026 con una sonda externa de solo lectura: 55 monedas, mismos
+  IDs que la API, 54 saldos idénticos (recibo en `docs/audit/loot-wallet-probe/`). Entrada de changelog
+  extraíble con `changelog-entry.mjs`.
+- No verificado: addon 0.6.0 con commit en rama propia del repo `tyrian-companion-nexus`, sin integrar ni
+  publicar; DLL instalada en la máquina de David el 7 oct, pero la lectura de cartera DENTRO del juego
+  cargado por Nexus está PENDIENTE de comprobar. Plugin: candidato 0.6.6 sin gate todavía (lo corre la
+  sesión raíz sobre el árbol final), sin publicar ni instalar.
+- Límites: una moneda que la cuenta nunca ha tenido no tiene clave en el juego, y su primera ganancia no se
+  cuenta (línea base). El lector solo sirve con el binario del juego del perfil vigente; tras un parche de
+  GW2, objetos y monedas quedan sin lectura hasta revalidar.
+
 ## Canal 0.6.5 publicado: las sesiones anteriores muestran también sus objetos (7 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.5](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.5)
@@ -249,8 +269,10 @@ comparador consume esas notas, separa API/live, exige dos completas por grupo y 
 provisional. Las tasas usan cobertura de objetos y no dependen de tener precio; no acreditan oro/h
 completo ni causalidad de la build. La declaración no demuestra configuración equipada o equipo/stats.
 
-El lector nativo de 0.5.0 no cubre cartera/monedas, MF verificado ni huecos de bolsas. Esos datos
-permanecen desconocidos; una preparación MF manual declara su origen y no completa la cobertura.
+El addon de Nexus 0.6.0 lee la cartera del juego (pendiente de QA dentro del juego, ver la entrada 0.6.6);
+con un addon anterior las monedas siguen sin cobertura. El lector no cubre MF verificado ni huecos de
+bolsas. Esos datos permanecen desconocidos; una preparación MF manual declara su origen y no completa la
+cobertura.
 La investigación y el objetivo de esas señales no quedan cerrados por mostrar un placeholder.
 
 La [matriz 0.5.0](QA-MVP.md) sigue pendiente: Fedora/GE-Proton con Nexus, Windows con productor
