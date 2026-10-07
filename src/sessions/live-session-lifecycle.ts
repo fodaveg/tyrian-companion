@@ -62,6 +62,8 @@ export class LiveSessionLifecycle {
 	/** Not null from the first durable step storage refused until the first one it accepts again. */
 	private unsaved: UnsavedLiveState | null = null;
 	private recovering = false;
+	/** How the reclaim in course began; null while none is, or once its save has worked. */
+	private reclaimingAs: 'restart' | 'outage' | null = null;
 	private noteNeedsVerification = false;
 
 	constructor(private readonly options: LiveSessionLifecycleOptions) {}
@@ -123,7 +125,7 @@ export class LiveSessionLifecycle {
 				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, declaredBuild, summaryReceipt: null };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return null; }
 			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = []; this.failure = false;
-			this.unsaved = null; this.recovering = false; this.noteNeedsVerification = false;
+			this.unsaved = null; this.recovering = false; this.reclaimingAs = null; this.noteNeedsVerification = false;
 			this.armHeartbeat(); this.options.onStateChange(); return id;
 		});
 	}
@@ -320,17 +322,23 @@ export class LiveSessionLifecycle {
 	}
 	private async reclaim(): Promise<boolean> {
 		if (this.record?.phase !== 'active' || !this.options.enabled()) return false;
+		// A lease lost while this host kept running and storage was refusing writes is an outage to
+		// recover from, not a restart. Decided on the first attempt and kept until a save works: an
+		// attempt that fails leaves `recovering` raised and `unsaved` touched, and the next one could
+		// no longer tell how this began.
+		this.reclaimingAs ??= this.recovering || this.unsaved === null ? 'restart' : 'outage';
 		const acquisition = await this.options.coordinator.acquire(this.record.sessionId);
 		if ((acquisition.status !== 'acquired' && acquisition.status !== 'already_owned') || acquisition.handle.sessionId !== this.record.sessionId
 			|| (await this.options.coordinator.assertOwned(acquisition.handle)).status !== 'owned') return false;
-		// The lease was lost while this host kept running and storage was refusing writes: that is an
-		// outage to recover from, not a restart. Read before `recovering` changes below.
-		const outage = this.recovering ? null : this.unsaved;
-		// A lease under a new fence means it was free in between, and whoever held it may have written:
-		// what is on disk is read again and settled under the rules of a takeover before anything is saved.
-		if (acquisition.status === 'acquired') this.recovering = true;
+		// A lease under another fence than the one the session was last saved under means it was free
+		// in between, and whoever held it may have written: what is on disk is read again and settled
+		// under the rules of a takeover before anything is saved. The fence says so on every attempt;
+		// `acquired` only says it on the attempt that took the lease, which may have ended before saving.
+		if (acquisition.handle.fence !== this.record.authority.fence) this.recovering = true;
 		this.handle = acquisition.handle;
-		await this.refreshRecovery();
+		// An attempt that ends here keeps no handle, as one that ends at the save below: until the
+		// session is saved under this lease, no queued operation may write under it.
+		try { await this.refreshRecovery(); } catch (error) { this.handle = null; throw error; }
 		// Under the lease it already had nothing is read as a takeover, but a write of its own may have landed unseen.
 		if (!this.recovering && await this.adoptLanded() === 'unavailable') { this.handle = null; return false; }
 		const recovered = this.getRuntime();
@@ -343,13 +351,14 @@ export class LiveSessionLifecycle {
 			await this.saveCompletedNote(); return false;
 		}
 		let next: LiveSessionRuntimeRecord;
-		if (outage === null) {
+		if (this.reclaimingAs === 'restart') {
 			next = liveSessionGap(this.record, 'host_restart', this.nowIso());
 			next = { ...next, connection: 'disconnected',
 				lastSourceDisconnectedAt:new Date(Math.min(this.options.now(),this.record.lastPresenceAt)).toISOString(),mapCoveragePartial: true, mapObservation: null };
 		} else {
 			// The producer's link and the presence known in memory are still true, so no disconnection
 			// is made up: only the hole storage left, under the cause it started with.
+			const outage = this.unsaved ?? { gapReason: null, epochEnded: false, sourceDisconnectedAt: null, presence: null };
 			next = this.withUnsaved(this.record, { ...outage, gapReason: outage.gapReason ?? 'storage_unavailable' });
 		}
 		next = { ...next, authority: sessionAuthorityFromLease(acquisition.handle), epoch: null, lastSample: null,
@@ -358,7 +367,7 @@ export class LiveSessionLifecycle {
 		// Storage went away again: drop the handle so the next beat reclaims under the lease it finds.
 		if (saved === 'unavailable') { this.handle = null; return false; }
 		if (saved !== 'saved') throw new Error('Live session recovery could not be persisted.');
-		this.record = next; this.unsaved = null; this.failure = false;
+		this.record = next; this.unsaved = null; this.reclaimingAs = null; this.failure = false;
 		await this.settleRecovery();
 		this.options.onStateChange(); return true;
 	}

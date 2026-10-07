@@ -212,6 +212,66 @@ describe('live session across a storage outage', () => {
 		await f.service.dispose();
 	});
 
+	it.each([
+		['the save', (f: ReturnType<typeof outage>) => vi.spyOn(f.store, 'saveLive').mockResolvedValueOnce({ status: 'error', code: 'unavailable' })],
+		['the re-read', (f: ReturnType<typeof outage>) => vi.spyOn(f.store, 'loadLive').mockResolvedValueOnce({ status: 'error', code: 'unavailable' })],
+	] as const)('a reclaim that fails at %s is still the same outage on the next beat, not a restart', async (_step, failOnce) => {
+		const f = outage(`reclaim-twice-${_step.replace(/\W/gu, '-')}`);
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		killStorage(f.tracked);
+		f.at(1000); await expect(f.service.commit(f.sample(1, 1000, bags(8)))).resolves.toBe('storage_unavailable');
+		// The producer is still there, and says so while nothing can be written.
+		f.at(2000); await f.service.presence(true, AT + 2000);
+		reviveStorage(f.tracked);
+		f.at(LEASE_TTL_MS + 5000); await f.beat();
+		// The lease is taken again under a new fence, and storage refuses once more before the session is saved under it.
+		const refused = failOnce(f);
+		f.at(LEASE_TTL_MS + 10_000); await f.beat();
+		expect(refused).toHaveBeenCalledTimes(1);
+		expect(f.service.getView().phase).toBe('error');
+		expect((await f.durable()).record).toMatchObject({ authority: { fence: 1 }, epoch: EPOCH });
+
+		f.at(LEASE_TTL_MS + 15_000); await f.beat();
+		expect(f.service.getView().phase).toBe('active');
+		expect(f.service.getView().gaps).toEqual([{ version: 1, reason: 'storage_unavailable', fromAt: iso(0), toAt: null, channels: ['items'] }]);
+		// No disconnection is made up, and the presence that could not be written is.
+		expect(f.service.getRuntime()).toMatchObject({ authority: { fence: 2 }, epoch: null, connection: 'connected',
+			lastSourceDisconnectedAt: null, lastPresenceAt: AT + 2000 });
+		expect((await f.durable()).record).toEqual(f.service.getRuntime());
+		await f.service.dispose();
+	});
+
+	it('a lease found under a new fence is read again even when the attempt that took it failed before saving', async () => {
+		const f = outage('fence-after-failed-attempt');
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+		killStorage(f.tracked);
+		f.at(2000); await expect(f.service.commit(f.sample(2, 2000, bags(9)))).resolves.toBe('storage_unavailable');
+		reviveStorage(f.tracked);
+		// Another host takes the expired lease, stores an observation of its own and lets the lease go.
+		f.at(LEASE_TTL_MS + 5000);
+		const other = f.restarted(); await other.service.initialize();
+		await expect(other.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		await expect(other.service.commit(f.sample(0, 0, bags(20), NEXT_EPOCH))).resolves.toBe('stored');
+		f.at(LEASE_TTL_MS + 6000); await expect(other.service.commit(f.sample(1, 1000, bags(24), NEXT_EPOCH))).resolves.toBe('stored');
+		await other.dispose();
+
+		f.at(LEASE_TTL_MS + 10_000); await f.beat();
+		// This host takes the lease back under a third fence and cannot confirm it: the attempt ends there.
+		const asserted = vi.spyOn(f.options.coordinator, 'assertOwned').mockResolvedValueOnce({ status: 'error', code: 'unavailable' });
+		f.at(LEASE_TTL_MS + 15_000); await f.beat();
+		expect(asserted).toHaveBeenCalledTimes(1);
+		// The next attempt is told `already_owned`. What the other host wrote is still read before anything is saved.
+		f.at(LEASE_TTL_MS + 20_000); await f.beat();
+		expect(f.service.getView().phase).toBe('active');
+		expect(f.service.getView().observations.map((row) => [row.epoch, row.before, row.after, row.delta])).toEqual([[EPOCH, 5, 7, 2], [NEXT_EPOCH, 20, 24, 4]]);
+		expect(f.service.getRuntime()).toMatchObject({ authority: { fence: 3 }, epoch: null, observationCount: 2 });
+		const durable = await f.durable();
+		expect(durable.record).toEqual(f.service.getRuntime());
+		expect(durable.journal.flatMap((entry) => entry.observations)).toHaveLength(durable.record.observationCount);
+		await f.service.dispose();
+	});
+
 	it('a lease another owner took during the outage is not stepped on', async () => {
 		const f = outage('taken');
 		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
