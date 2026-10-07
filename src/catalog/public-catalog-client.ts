@@ -1,4 +1,4 @@
-import type { HttpLogicalEndpoint, HttpResponse, HttpTransport } from '../core/http';
+import { HttpTransportError, type HttpLogicalEndpoint, type HttpResponse, type HttpTransport } from '../core/http';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 const DEFAULT_API_URL = 'https://api.guildwars2.com/v2';
@@ -11,6 +11,14 @@ export interface PublicCatalogGateway {
 		diagnosticItemIds?: readonly number[],
 	): Promise<HttpResponse>;
 }
+
+/** Whether a gateway call failed with the transport's HTTP 404 (the API's answer when none of the requested ids exists). */
+export function isPublicCatalogNotFound(error: unknown): boolean {
+	return error instanceof HttpTransportError && error.status === 404;
+}
+
+/** The answer a public gateway call resolves to. */
+export type PublicCatalogResponse = HttpResponse;
 
 /** Public GW2 transport. It deliberately has no API-key provider or Authorization header. */
 export class GuildWars2PublicCatalogClient implements PublicCatalogGateway {

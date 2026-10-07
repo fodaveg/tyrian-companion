@@ -15797,12 +15797,12 @@
 					"reason": "Allowlisted promise_catch: The \"observe\" \"intentional_noop\" boundary retains the serial public enrichment flight and forwards rejection to the local diagnostic observer; no measurement is acknowledged by this recovery. Verified recovery: \"intentional_noop\" in \"observe\"."
 				},
 				{
-					"id": "1c697122cfb8db2f4ae24e4441275864239e36fc",
+					"id": "be9aef04f0ed3e11926f3cbc3a3e09c0bd96abfd",
 					"kind": "catch_clause",
-					"line": 86,
+					"line": 85,
 					"column": 5,
-					"endLine": 86,
-					"endColumn": 147,
+					"endLine": 85,
+					"endColumn": 116,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",

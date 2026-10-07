@@ -1,6 +1,5 @@
-import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
+import { isPublicCatalogNotFound, type PublicCatalogGateway, type PublicCatalogResponse } from '../catalog/public-catalog-client';
 import type { CatalogItem } from '../catalog/public-catalog-model';
-import { HttpTransportError, type HttpResponse } from '../core/http';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
 import { parsePublicTradingPostPriceBatch } from '../economy/session-price-snapshot';
@@ -79,11 +78,11 @@ export class LiveSessionEconomy {
 			for (const item of Object.values(metadata)) this.entities.set(item.id,{name:item.name,icon:item.icon ?? null});
 			for (let offset = 0; offset < missing.length; offset += 200) {
 				if (this.disposed || this.options.rateLimit.status().active) break;
-				const batch = missing.slice(offset,offset+200); let response: HttpResponse;
+				const batch = missing.slice(offset,offset+200); let response: PublicCatalogResponse;
 				// The Trading Post answers 404 (thrown by the transport) when NONE of the ids is quoted and 206 when only some are:
 				// both mean "no price" for the unquoted ids, never "abort the entry", or their priced neighbours stay undecided until close.
 				try { response = await this.options.gateway.requestDetailed(`commerce/prices?ids=${batch.join(',')}`,undefined,batch); }
-				catch (error) { if (!(error instanceof HttpTransportError) || error.status !== 404) throw error; response = {status:404,headers:{},body:[]}; }
+				catch (error) { if (!isPublicCatalogNotFound(error)) throw error; response = {status:404,headers:{},body:[]}; }
 				if (response.status === 429) { this.options.rateLimit.recordRateLimited(null); break; }
 				if (![200,206,404].includes(response.status) || !Array.isArray(response.body)) continue;
 				const parsed = parsePublicTradingPostPriceBatch(response.body,new Set(batch));
