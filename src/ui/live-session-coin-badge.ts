@@ -22,17 +22,20 @@ function compact(abs: number, locale: string): string {
 
 /**
  * The corner badge of a coin tile for a non-zero net amount.
- * Gold (a copper amount) keeps its two most significant non-zero units (`2g 34s`, `10s 53c`, `53c`) and
- * only a loss is signed; any other coin is a signed count, whole under 1000 and shortened beyond it.
+ * Gold (a copper amount) shows its highest non-zero unit only, with one decimal truncated toward zero under 100
+ * and whole from 100 (`2,3g`, `10,5s`, `53c`, `123g`: two units do not fit a tile); only a loss is signed; any other coin is a signed count, whole under 1000 and shortened beyond it.
  * `exact` is always the complete amount, for the tooltip and the accessible name.
  */
 export function coinBadge(id: number, net: number, locale: string): CoinBadge {
 	const sign = net < 0 ? '-' : '';
 	const abs = Math.abs(net);
 	if (id === GOLD_CURRENCY_ID) {
-		const units = [[Math.floor(abs / 10_000), 'g'], [Math.floor(abs / 100) % 100, 's'], [abs % 100, 'c']] as const;
-		const text = units.filter(([amount]) => amount > 0).slice(0, 2).map(([amount, unit]) => `${amount.toLocaleString(locale)}${unit}`).join(' ');
-		return { text: `${sign}${text}`, exact: formatCopperVisual(net) };
+		const [div, unit] = abs >= 10_000 ? [10_000, 'g'] as const : abs >= 100 ? [100, 's'] as const : [1, 'c'] as const;
+		// Whole tenths of the unit, truncated toward zero (integer maths): a gain or a loss is never overstated.
+		const tenths = Math.floor(abs * 10 / div);
+		const amount = tenths >= 1_000 ? Math.floor(abs / div).toLocaleString(locale)
+			: tenths % 10 === 0 ? String(tenths / 10) : (tenths / 10).toLocaleString(locale, { minimumFractionDigits: 1 });
+		return { text: `${sign}${amount}${unit}`, exact: formatCopperVisual(net) };
 	}
 	const plus = net > 0 ? '+' : sign;
 	const whole = abs.toLocaleString(locale);

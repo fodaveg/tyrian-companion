@@ -215,7 +215,7 @@ describe('Session tab: figures, objects and chart', () => {
 		const view = liveView(); view.totals.push({ kind: 'currency', idNumber: 1, positive: 15_525, negative: 0, net: 15_525 });
 		const { panel } = harness(view);
 		const coin = panel.element.querySelector('.tyrian-live-session__coins > li')!;
-		expect(coin.querySelector('.tyrian-live-session__qty')!.textContent).toBe('1g 55s');
+		expect(coin.querySelector('.tyrian-live-session__qty')!.textContent).toBe('1.5g');
 		expect(coin.getAttribute('aria-label')).toBe('Item 1, 1g 55s 25c');
 		const none = harness({ ...liveView(0), totals: [], chartPoints: [] });
 		expect(none.panel.element.textContent).toContain('No inventory changes observed yet.');
@@ -254,7 +254,7 @@ describe('Session tab: figures, objects and chart', () => {
 				expect(tile.querySelector('img')!.getAttribute('src')).toBe(ICON);
 				expect(tile.hasAttribute('tabindex')).toBe(false);
 			}
-			expect(gold.querySelector('.tyrian-live-session__qty')!.textContent).toBe('2g 34s');
+			expect(gold.querySelector('.tyrian-live-session__qty')!.textContent).toBe('2.3g');
 			expect(gold.getAttribute('aria-label')).toBe('Coin 1, 2g 34s 20c');
 			expect(gold.title).toBe('Coin 1, 2g 34s 20c');
 			expect(loss.querySelector('.tyrian-live-session__qty')!.textContent).toBe('-20');
@@ -626,7 +626,7 @@ describe('previous sessions block', () => {
 			const [row] = await show([entry(0, { currencies: [{ idNumber: 1, net: 15_525 }] })]);
 			const coins = coinsOf(row!);
 			expect(coins).toHaveLength(1);
-			expect(coins[0]!.textContent).toBe('1g 55s');
+			expect(coins[0]!.textContent).toBe('1.5g');
 			expect(coins[0]!.title).toBe('Coin 1, 1g 55s 25c');
 			expect(coins[0]!.getAttribute('aria-label')).toBe('Coin 1, 1g 55s 25c');
 			expect(coins[0]!.querySelector('img')!.getAttribute('src')).toBe(ICON);
@@ -671,7 +671,7 @@ describe('previous sessions block', () => {
 		it('draws long amounts shortened with the exact figure in title and accessible name, and a loss marked', async () => {
 			const [row] = await show([entry(0, { currencies: [{ idNumber: 1, net: -23_420 }, { idNumber: 2, net: 123_456 }, { idNumber: 3, net: -3_228 }] })]);
 			const [gold, big, loss] = coinsOf(row!) as [HTMLElement, HTMLElement, HTMLElement];
-			expect(gold.querySelector('.tyrian-live-session__qty')!.textContent).toBe('-2g 34s');
+			expect(gold.querySelector('.tyrian-live-session__qty')!.textContent).toBe('-2.3g');
 			expect(gold.getAttribute('aria-label')).toBe('Coin 1, -2g 34s 20c');
 			expect(big.querySelector('.tyrian-live-session__qty')!.textContent).toBe('+123k');
 			expect(big.title).toBe('Coin 2, +123,456');

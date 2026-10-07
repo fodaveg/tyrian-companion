@@ -18,17 +18,23 @@ describe('coinBadge', () => {
 	});
 
 	it.each([
-		[105, '1s 5c', '0g 1s 5c'],
-		[23_420, '2g 34s', '2g 34s 20c'],
-		[1_053, '10s 53c', '0g 10s 53c'],
 		[53, '53c', '0g 0s 53c'],
-		[-53, '-53c', '-0g 0s 53c'],
-		[20_005, '2g 5c', '2g 0s 5c'],
+		[105, '1s', '0g 1s 5c'],
+		[150, '1,5s', '0g 1s 50c'],
+		[1_053, '10,5s', '0g 10s 53c'],
+		[9_999, '99,9s', '0g 99s 99c'],
 		[10_000, '1g', '1g 0s 0c'],
-		[-23_420, '-2g 34s', '-2g 34s 20c'],
-		[1_234_567_890, '123,456g 78s', '123456g 78s 90c'],
+		[20_005, '2g', '2g 0s 5c'],
+		[23_420, '2,3g', '2g 34s 20c'],
+		[1_234_567, '123g', '123g 45s 67c'],
+		[-23_420, '-2,3g', '-2g 34s 20c'],
+		[-53, '-53c', '-0g 0s 53c'],
 	])('writes gold %i copper as %s with the complete amount %s', (net, text, exact) => {
-		expect(coinBadge(1, net, 'en')).toEqual({ text, exact });
+		expect(coinBadge(1, net, 'es')).toEqual({ text, exact });
+	});
+
+	it('uses the locale decimal mark for gold', () => {
+		expect(coinBadge(1, 23_420, 'en').text).toBe('2.3g');
 	});
 
 	it('uses the locale decimal mark for a shortened amount', () => {
