@@ -78,21 +78,54 @@ describe('the price block of one row', () => {
 		expect(walk(root).filter((element) => element.className === 'tyrian-price-chart__plot')).toHaveLength(1);
 		// Max / min / last: the textual summary the widget gives.
 		expect(walk(root).filter((element) => element.className === 'tyrian-price-chart__summary')).toHaveLength(1);
-		// 300 days of history, 90 shown: the zoom is a custom range, none of the preset windows is pressed.
-		expect(pressed(root)).toEqual([]);
-		expect(walk(root).filter((element) => element.className === 'tyrian-price-chart__reset')).toHaveLength(1);
+		// 300 days of history, 90 shown: the real «3 months» window, pressed. Three buttons, nothing to explore with.
+		expect(pressed(root)).toEqual(['3 months']);
+		expect(walk(root).filter((element) => element.tag === 'button').map((element) => element.textContent)).toEqual(['3 months', '1 year', 'All']);
+		expect(walk(root).filter((element) => element.tag === 'input' || element.className === 'tyrian-price-chart__reset')).toHaveLength(0);
 		// The sell side: the plotted values are `askCopper` (1000 + day), never `bidCopper` (10 + day):
 		// the last of 300 days reads 1299 copper, which the widget writes as 12s 99c.
 		const summary = texts(only(walk(root).filter((element) => element.className === 'tyrian-price-chart__summary')));
 		expect(summary.join(' ')).toContain('12s 99c');
 	});
 
-	it('ready with a series of five days: it opens on everything, without a range to reset', () => {
+	it('ready with a series of five days: it opens on «All», pressed, with the same three buttons', () => {
 		const harness = block({ enabled: true, seed: seeded(5) });
 
 		expect(walk(harness.block.element).filter((element) => element.className === 'tyrian-price-chart__plot')).toHaveLength(1);
 		expect(pressed(harness.block.element)).toEqual(['All']);
-		expect(walk(harness.block.element).filter((element) => element.className === 'tyrian-price-chart__reset')).toHaveLength(0);
+		expect(walk(harness.block.element).filter((element) => element.tag === 'button')).toHaveLength(3);
+	});
+
+	it('draws the wide chart with a width of 0 (not laid out) or 900, and the compact one at 280 and 390', () => {
+		const shapes = (width: number): { viewBox: string | undefined; prices: number; dates: number; compact: boolean } => {
+			const harness = block({ enabled: true, seed: seeded(300), width });
+			const all = walk(harness.block.element);
+			return {
+				viewBox: all.find((element) => element.tag === 'svg')?.attributes.get('viewBox'),
+				prices: all.filter((element) => element.className === 'tyrian-price-chart__price-label').length,
+				dates: all.filter((element) => element.className.startsWith('tyrian-price-chart__date-label')).length,
+				compact: chartContainer(harness.block.element).className.includes('tyrian-price-chart--compact'),
+			};
+		};
+
+		for (const width of [0, 900, 480]) expect(shapes(width)).toEqual({ viewBox: '0 0 800 300', prices: 4, dates: 5, compact: false });
+		for (const width of [280, 390, 479]) expect(shapes(width)).toEqual({ viewBox: '0 0 200 190', prices: 3, dates: 2, compact: true });
+	});
+
+	it('measures the width once, when it first paints, and never again on a repaint', () => {
+		const measure = vi.fn(() => 280);
+		installDom();
+		const seed = seeded(300);
+		const real = mountRowPriceHistoryBlock({
+			itemId: ITEM_ID, itemName: 'Ancient grey amber chunk', hasMarket: true,
+			source: () => ({ enabled: true, getSeed: () => seed, ensureSeed: () => undefined, onEnable: () => undefined }),
+			translator: () => translator, measureWidth: measure,
+		});
+		expect(measure).toHaveBeenCalledTimes(0);
+		real.update();
+		for (let index = 0; index < 10; index += 1) real.update();
+
+		expect(measure).toHaveBeenCalledTimes(1);
 	});
 
 	it('an item with no market: one line, no chart, nothing requested and no opt-in button even with history off', () => {
@@ -159,8 +192,8 @@ describe('the price block of one row', () => {
 	it('twenty repaints with the same state: one request, the same nodes, none created, the zoom still there', () => {
 		const harness = block({ enabled: true, seed: seeded(300) });
 		const chart = chartContainer(harness.block.element);
-		windowButton(harness.block.element, '1 month').dispatch('click');
-		expect(windowButton(harness.block.element, '1 month').attributes.get('aria-pressed')).toBe('true');
+		windowButton(harness.block.element, '1 year').dispatch('click');
+		expect(windowButton(harness.block.element, '1 year').attributes.get('aria-pressed')).toBe('true');
 		const plot = only(walk(harness.block.element).filter((element) => element.className === 'tyrian-price-chart__plot'));
 		const created = countCreatedNodes(() => { for (let index = 0; index < 20; index += 1) harness.block.update(); });
 
@@ -170,7 +203,7 @@ describe('the price block of one row', () => {
 		const plots = walk(harness.block.element).filter((element) => element.className === 'tyrian-price-chart__plot');
 		expect(plots).toHaveLength(1);
 		expect(plots[0] === plot).toBe(true);
-		expect(windowButton(harness.block.element, '1 month').attributes.get('aria-pressed')).toBe('true');
+		expect(windowButton(harness.block.element, '1 year').attributes.get('aria-pressed')).toBe('true');
 	});
 
 	it('a new day of history redraws the series inside the same container and keeps the zoom the reader chose', () => {
@@ -182,8 +215,8 @@ describe('the price block of one row', () => {
 		harness.block.update();
 
 		expect(chartContainer(harness.block.element)).toBe(chart);
-		// A new last day is a new series for the widget: its zoom starts over, on the 90-day default.
-		expect(pressed(harness.block.element)).toEqual([]);
+		// A new last day is a new series for the widget: its zoom starts over, on the «3 months» default.
+		expect(pressed(harness.block.element)).toEqual(['3 months']);
 	});
 
 	it('repaints each state exactly once: loading, then the chart when the seed lands', () => {
@@ -258,12 +291,12 @@ describe('the price block inside the Inventory tab', () => {
 		tab.toggle(0, true);
 		const block = tab.blocks()[0]!;
 		const chart = chartContainer(block);
-		windowButton(block, '1 month').dispatch('click');
+		windowButton(block, '1 year').dispatch('click');
 		const created = countCreatedNodes(() => { for (let index = 0; index < 20; index += 1) tab.repaint(); }, HEAVY_TAGS);
 
 		expect(tab.blocks()[0]).toBe(block);
 		expect(chartContainer(block)).toBe(chart);
-		expect(windowButton(block, '1 month').attributes.get('aria-pressed')).toBe('true');
+		expect(windowButton(block, '1 year').attributes.get('aria-pressed')).toBe('true');
 		expect(tab.ensureSeed).toHaveBeenCalledTimes(1);
 		// The tab repainted twenty times: what it rebuilds is its own chrome, never a chart, figure or table.
 		expect(created).toBe(0);
@@ -298,6 +331,8 @@ interface BlockSetup {
 	hasMarket?: boolean;
 	seed?: PriceHistoryPanelSeedState;
 	ensure?: () => void | Promise<void>;
+	/** The width the block measures when it paints for the first time. Default 0: a block that is not laid out. */
+	width?: number;
 }
 
 function block(setup: BlockSetup) {
@@ -313,7 +348,10 @@ function block(setup: BlockSetup) {
 		itemId: ITEM_ID, itemName: 'Ancient grey amber chunk', hasMarket: setup.hasMarket ?? true,
 		source: () => ({ ...source, getSeed, ensureSeed, onEnable }),
 		translator: () => translator,
+		measureWidth: () => setup.width ?? 0,
 	});
+	// The host attaches the block and then asks it to paint, which is when it measures its width.
+	real.update();
 	const mounted = { element: real.element as unknown as FakeElement, update: () => real.update(), dispose: () => real.dispose() };
 	return { block: mounted, seed, source, ensureSeed, getSeed, onEnable };
 }

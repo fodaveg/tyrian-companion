@@ -4,6 +4,7 @@ import { createTranslator } from '../core/i18n';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
 import type { PriceSeedDayV1 } from '../economy/price-seed-model';
 import { mountPriceHistoryChart } from './price-history-chart-view';
+import { PRICE_HISTORY_CHART_ROW_WINDOWS } from './price-history-chart-model';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -93,42 +94,74 @@ describe('price history chart widget (H9.1/H9.2 shared)', () => {
 	});
 });
 
-describe('price history chart widget: the zoom a fresh series opens on', () => {
+describe('price history chart widget: the opt-in options of a surface that is for looking', () => {
 	const seedDays = (count: number): PriceSeedDayV1[] => Array.from({ length: count }, (_unused, index) => (
 		{ dayUtc: dayAt(index), bidCopper: 10, askCopper: 100 + index }
 	));
 	const pressedLabels = (container: FakeElement): string[] => walk(container)
 		.filter((element) => element.tag === 'button' && element.attributes.get('aria-pressed') === 'true')
 		.map((element) => element.textContent ?? '');
+	const buttonLabels = (container: FakeElement): string[] => walk(container).filter((element) => element.tag === 'button').map((element) => element.textContent ?? '');
+	const looking = { windows: PRICE_HISTORY_CHART_ROW_WINDOWS, initialWindow: '3m' as const, explore: false };
 
-	it('opens on the last N days when the series reaches back further, as a range that can be reset', () => {
+	it('offers only the listed windows and opens on a real 90-day window, pressed', () => {
 		const mount = createMount();
-		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(300), initialWindowDays: 90 });
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(300), ...looking });
 
 		// Day 299 is the last one: 100 + 299 = 399 copper; the first of the 90 shown is day 210 (310 copper).
 		expect(summaryOf(mount.container)).toContain('0g 3s 99c · 2026-10-27');
 		expect(summaryOf(mount.container)).toContain('0g 3s 10c · 2026-07-30');
-		expect(pressedLabels(mount.container)).toEqual([]);
-		expect(walk(mount.container).some((element) => element.className === 'tyrian-price-chart__reset')).toBe(true);
+		expect(buttonLabels(mount.container)).toEqual(['3 months', '1 year', 'All']);
+		expect(pressedLabels(mount.container)).toEqual(['3 months']);
 	});
 
-	it('opens on everything, with no range to reset, when the series is shorter than the window', () => {
+	it('draws no range slider, no reset and no drag selection when explore is off', () => {
 		const mount = createMount();
-		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(5), initialWindowDays: 90 });
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(300), ...looking });
+		const all = walk(mount.container);
+
+		expect(all.filter((element) => element.tag === 'input')).toHaveLength(0);
+		expect(all.filter((element) => element.className === 'tyrian-price-chart__range')).toHaveLength(0);
+		expect(all.filter((element) => element.tag === 'svg').every((element) => (element.listeners?.size ?? 0) === 0)).toBe(true);
+	});
+
+	it('opens on «All», pressed, when the series does not reach back as far as the window', () => {
+		const mount = createMount();
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(5), ...looking });
 
 		expect(pressedLabels(mount.container)).toEqual(['All']);
-		expect(walk(mount.container).some((element) => element.className === 'tyrian-price-chart__reset')).toBe(false);
 	});
 
-	it('is the old behaviour (everything) without the option, and a reader\'s own zoom wins over it on a repaint', () => {
+	it('is the old behaviour without the options: the four windows, everything, sliders', () => {
 		const mount = createMount();
-		const options = { daily: [], side: 'ask' as const, seedDays: seedDays(300) };
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(300) });
+
+		expect(buttonLabels(mount.container)).toEqual(['1 month', '1 year', '5 years', 'All']);
+		expect(pressedLabels(mount.container)).toEqual(['All']);
+		expect(walk(mount.container).filter((element) => element.tag === 'input')).toHaveLength(2);
+	});
+
+	it('a reader\'s own zoom wins over the initial window on a repaint of the same series', () => {
+		const mount = createMount();
+		const options = { daily: [], side: 'ask' as const, seedDays: seedDays(300), ...looking };
 		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), options);
-		expect(pressedLabels(mount.container)).toEqual(['All']);
+		walk(mount.container).find((element) => element.tag === 'button' && element.textContent === 'All')!.dispatch('click');
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), options);
 
-		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { ...options, initialWindowDays: 90 });
-		// Same series, same container: the zoom already there (everything) is not replaced by the default.
 		expect(pressedLabels(mount.container)).toEqual(['All']);
+	});
+
+	it('draws the compact layout: a 200-unit frame, three price marks, two date marks, first starting and last ending', () => {
+		const mount = createMount();
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(300), ...looking, layout: 'compact' });
+		const all = walk(mount.container);
+
+		expect(all.find((element) => element.tag === 'svg')?.attributes.get('viewBox')).toBe('0 0 200 190');
+		expect(all.filter((element) => element.className === 'tyrian-price-chart__price-label')).toHaveLength(3);
+		expect(all.filter((element) => element.className.startsWith('tyrian-price-chart__date-label')).map((element) => element.className)).toEqual([
+			'tyrian-price-chart__date-label tyrian-price-chart__date-label--start',
+			'tyrian-price-chart__date-label tyrian-price-chart__date-label--end',
+		]);
 	});
 });
 

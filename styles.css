@@ -2194,11 +2194,32 @@
 }
 
 .tyrian-inventory__price-history-chart {
+	box-sizing: border-box;
 	width: 100%;
 	min-width: 0;
 	padding: var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	background: var(--background-primary);
+}
+
+/* The compact drawing (`layout: 'compact'`, a block narrower than 480 px): its plot is stretched to a
+   far narrower frame than it was drawn for, so the line keeps its width in screen pixels, and the first
+   and last date marks sit inside the drawing instead of centred on its edges. */
+.tyrian-price-chart--compact .price-seed-solo {
+	stroke-width: 2px;
+	vector-effect: non-scaling-stroke;
+}
+
+.tyrian-price-chart--compact .price-seed-solo-marker {
+	vector-effect: non-scaling-stroke;
+}
+
+.tyrian-price-chart__date-label--start {
+	text-anchor: start;
+}
+
+.tyrian-price-chart__date-label--end {
+	text-anchor: end;
 }
 
 /* `.tyrian-inventory__more dl` above (grid, two columns) would also catch the chart's own max/min/last

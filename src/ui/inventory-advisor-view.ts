@@ -1521,6 +1521,8 @@ function rowDetailDisclosure(
 		}
 		const body = rowDetailBody(row, translator, rowContext.concentration(row), rowContext.showSlotsFreed, rowContext.onOpenSale, rowContext.bagCharacter, priceBlock?.element ?? null);
 		details.append(...body);
+		// Attached now: the block measures its width and paints.
+		priceBlock?.update();
 	};
 	function unmountBody(): void {
 		if (!mounted) return;

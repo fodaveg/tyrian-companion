@@ -1,5 +1,6 @@
 import type { PriceHistoryDailyV1, PriceHistorySide } from '../economy/price-history-model';
 import type { PriceSeedDayV1 } from '../economy/price-seed-model';
+import type { Locale } from '../core/i18n';
 
 /**
  * Pure geometry and scale math for the price-history chart (H9.1 panel and
@@ -52,13 +53,24 @@ export function mergePriceHistoryChartPoints(
 }
 
 /** The four zoom presets, in the order they are offered. `days: null` is the unbounded "all" window. */
-export type PriceHistoryChartWindowId = '1m' | '1y' | '5y' | 'all';
+export type PriceHistoryChartWindowId = '1m' | '3m' | '1y' | '5y' | 'all';
 
 export const PRICE_HISTORY_CHART_WINDOWS: ReadonlyArray<{ readonly id: PriceHistoryChartWindowId; readonly days: number | null }> =
 	Object.freeze([
 		{ id: '1m', days: 30 },
 		{ id: '1y', days: 365 },
 		{ id: '5y', days: 1_825 },
+		{ id: 'all', days: null },
+	]);
+
+/**
+ * The three presets of a surface that is for looking, not for exploring (the Inventory row): a real
+ * 90-day window, one year, everything. A surface opts into this list; the default four are untouched.
+ */
+export const PRICE_HISTORY_CHART_ROW_WINDOWS: ReadonlyArray<{ readonly id: PriceHistoryChartWindowId; readonly days: number | null }> =
+	Object.freeze([
+		{ id: '3m', days: 90 },
+		{ id: '1y', days: 365 },
 		{ id: 'all', days: null },
 	]);
 
@@ -75,7 +87,7 @@ export function priceHistoryChartWindowRange(
 	windowId: PriceHistoryChartWindowId,
 ): PriceHistoryChartRange {
 	if (points.length === 0 || windowId === 'all') return PRICE_HISTORY_CHART_ALL_RANGE;
-	const days = PRICE_HISTORY_CHART_WINDOWS.find((entry) => entry.id === windowId)?.days ?? null;
+	const days = [...PRICE_HISTORY_CHART_WINDOWS, ...PRICE_HISTORY_CHART_ROW_WINDOWS].find((entry) => entry.id === windowId)?.days ?? null;
 	if (days === null) return PRICE_HISTORY_CHART_ALL_RANGE;
 	const endDayUtc = points[points.length - 1]!.dayUtc;
 	const startMs = Date.parse(`${endDayUtc}T00:00:00.000Z`) - (days - 1) * 86_400_000;
@@ -228,6 +240,33 @@ export function priceHistoryDateAxisTicks(
 		ticks.push({ index, dayUtc: points[index]!.dayUtc });
 	}
 	return ticks;
+}
+
+const DATE_AXIS_LEVELS: readonly Intl.DateTimeFormatOptions[] = [
+	{ year: 'numeric', timeZone: 'UTC' },
+	{ month: 'short', year: 'numeric', timeZone: 'UTC' },
+	{ day: 'numeric', month: 'short', timeZone: 'UTC' },
+	{ day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' },
+];
+
+/**
+ * One label per tick, never two the same. The granularity follows the span the axis covers (years,
+ * months, or day and month); when that would print the same text twice (a 90-day axis that puts two
+ * ticks in July) every tick moves to the next finer one, until they all differ.
+ */
+export function priceHistoryDateAxisLabels(
+	ticks: ReadonlyArray<{ readonly dayUtc: string }>,
+	locale: Locale,
+	spanDays: number,
+): string[] {
+	const intlLocale = locale === 'es' ? 'es-ES' : 'en-US';
+	let level = spanDays <= 60 ? 2 : spanDays <= 3 * 365 ? 1 : 0;
+	for (;;) {
+		const format = new Intl.DateTimeFormat(intlLocale, DATE_AXIS_LEVELS[level]);
+		const labels = ticks.map((tick) => format.format(new Date(`${tick.dayUtc}T00:00:00.000Z`)));
+		if (new Set(labels).size === labels.length || level === DATE_AXIS_LEVELS.length - 1) return labels;
+		level += 1;
+	}
 }
 
 export interface PriceHistoryChartSummaryEntry {

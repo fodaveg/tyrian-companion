@@ -16,6 +16,7 @@ import {
 	priceHistoryChartIndexAtOffset,
 	priceHistoryChartSummary,
 	priceHistoryChartWindowRange,
+	priceHistoryDateAxisLabels,
 	priceHistoryDateAxisTicks,
 	priceHistoryPriceAxisTicks,
 	PRICE_HISTORY_CHART_ALL_RANGE,
@@ -45,11 +46,26 @@ export interface PriceHistoryChartMountOptions {
 	readonly side: PriceHistorySide;
 	readonly seedDays: readonly PriceSeedDayV1[];
 	/**
-	 * The zoom a fresh series opens on: its last N days, instead of the whole history. Only a
-	 * fresh series reads it (a reader's own zoom outlives repaints), and a series that does not
-	 * reach back N days opens on «all», which is the same view without a reset button to dismiss.
+	 * The window presets to offer, in order. Default: the four of the settings panel and the note
+	 * block. A surface that is for looking, not exploring, passes `PRICE_HISTORY_CHART_ROW_WINDOWS`.
 	 */
-	readonly initialWindowDays?: number;
+	readonly windows?: ReadonlyArray<{ readonly id: PriceHistoryChartWindowId; readonly days: number | null }>;
+	/**
+	 * The preset a fresh series opens on (default: «all»). A series that does not reach back as far
+	 * as the preset opens on «all», with that button pressed. A reader's own zoom outlives repaints.
+	 */
+	readonly initialWindow?: PriceHistoryChartWindowId;
+	/**
+	 * `false` leaves out everything that explores: the two range sliders, the drag selection and the
+	 * custom-range reset. Default `true`.
+	 */
+	readonly explore?: boolean;
+	/**
+	 * `'compact'` draws the narrow variant: a small viewBox so an axis label stays readable at ~280 px,
+	 * three price marks and two date marks. The caller measures its container once and decides;
+	 * default `'wide'`.
+	 */
+	readonly layout?: 'wide' | 'compact';
 }
 
 interface ChartZoomState {
@@ -63,14 +79,30 @@ const ZOOM_STATE = new WeakMap<HTMLElement, ChartZoomState>();
 /** The plot's own inner width, in the units its ordinal x-axis already uses: one point per pixel is generous. */
 const PLOT_INNER_WIDTH = PRICE_HISTORY_SVG_WIDTH - PRICE_HISTORY_SVG_PADDING * 2;
 
-const OUTER_WIDTH = 800;
-const OUTER_HEIGHT = 300;
-const PLOT_LEFT = 84;
-const PLOT_TOP = 8;
-const PLOT_WIDTH = OUTER_WIDTH - PLOT_LEFT - 16;
-const PLOT_HEIGHT = 232;
-const PRICE_TICK_COUNT = 4;
-const DATE_TICK_COUNT = 5;
+interface ChartGeometry {
+	readonly outerWidth: number;
+	readonly outerHeight: number;
+	readonly plotLeft: number;
+	readonly plotTop: number;
+	readonly plotWidth: number;
+	readonly plotHeight: number;
+	readonly priceTickCount: number;
+	readonly dateTickCount: number;
+	readonly compact: boolean;
+}
+
+const WIDE_GEOMETRY: ChartGeometry = {
+	outerWidth: 800, outerHeight: 300, plotLeft: 84, plotTop: 8, plotWidth: 800 - 84 - 16, plotHeight: 232,
+	priceTickCount: 4, dateTickCount: 5, compact: false,
+};
+/**
+ * 200 units wide: at 280 px the block is ~196 px of drawing, so a label of 11 units reads at ~10.8 px
+ * (the wide drawing, 800 units, put the same label at 2.9 px). The left margin holds «1g 55s 47c».
+ */
+const COMPACT_GEOMETRY: ChartGeometry = {
+	outerWidth: 200, outerHeight: 190, plotLeft: 74, plotTop: 8, plotWidth: 118, plotHeight: 150,
+	priceTickCount: 3, dateTickCount: 2, compact: true,
+};
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 /**
@@ -99,10 +131,14 @@ export function mountPriceHistoryChart(
 	const stored = ZOOM_STATE.get(container);
 	const state: ChartZoomState = stored !== undefined && stored.seriesKey === seriesKey
 		? stored
-		: initialChartZoom(seriesKey, merged, options.initialWindowDays);
+		: initialChartZoom(seriesKey, merged, options.initialWindow, options.windows ?? PRICE_HISTORY_CHART_WINDOWS);
 	ZOOM_STATE.set(container, state);
 
 	const document = container.ownerDocument;
+	const geometry = options.layout === 'compact' ? COMPACT_GEOMETRY : WIDE_GEOMETRY;
+	const explore = options.explore !== false;
+	const windows = options.windows ?? PRICE_HISTORY_CHART_WINDOWS;
+	if (geometry.compact && !container.className.split(/\s+/u).includes('tyrian-price-chart--compact')) container.className += ' tyrian-price-chart--compact';
 
 	const paint = (): void => {
 		container.replaceChildren();
@@ -114,9 +150,9 @@ export function mountPriceHistoryChart(
 		const unit = priceHistoryChartAggregationUnit(filtered.length, PLOT_INNER_WIDTH);
 		const aggregated = aggregatePriceHistoryChartPoints(filtered, unit);
 
-		container.append(buildToolbar(translator, state, paint));
-		container.append(buildPlot(document, options, filtered, aggregated, hasLocal, translator, state, paint));
-		container.append(buildRangeControls(translator, state, merged, filtered, paint));
+		container.append(buildToolbar(translator, state, windows, explore, paint));
+		container.append(buildPlot(document, options, geometry, explore, filtered, aggregated, hasLocal, translator, state, paint));
+		if (explore) container.append(buildRangeControls(translator, state, merged, filtered, paint));
 		container.append(buildSummary(translator, filtered));
 		const aggregationNote = buildAggregationNote(translator, unit);
 		if (aggregationNote !== null) container.append(aggregationNote);
@@ -128,24 +164,33 @@ export function mountPriceHistoryChart(
 function initialChartZoom(
 	seriesKey: string,
 	merged: readonly PriceHistoryChartPoint[],
-	windowDays: number | undefined,
+	initialWindow: PriceHistoryChartWindowId | undefined,
+	windows: ReadonlyArray<{ readonly id: PriceHistoryChartWindowId; readonly days: number | null }>,
 ): ChartZoomState {
 	const all: ChartZoomState = { seriesKey, windowId: 'all', customRange: null };
-	if (windowDays === undefined || !Number.isSafeInteger(windowDays) || windowDays < 2) return all;
-	const endDayUtc = merged.at(-1)!.dayUtc;
-	const startDayUtc = new Date(Date.parse(`${endDayUtc}T00:00:00.000Z`) - (windowDays - 1) * 86_400_000).toISOString().slice(0, 10);
-	if (merged[0]!.dayUtc >= startDayUtc) return all;
-	return { seriesKey, windowId: 'custom', customRange: { startDayUtc, endDayUtc } };
+	if (initialWindow === undefined || initialWindow === 'all') return all;
+	const days = windows.find((entry) => entry.id === initialWindow)?.days ?? null;
+	if (days === null) return all;
+	// A series that starts inside the window is the whole series: «all», pressed, not a preset that shows the same.
+	const range = priceHistoryChartWindowRange(merged, initialWindow);
+	if (range.startDayUtc === null || merged[0]!.dayUtc >= range.startDayUtc) return all;
+	return { seriesKey, windowId: initialWindow, customRange: null };
 }
 
-function buildToolbar(translator: Translator, state: ChartZoomState, repaint: () => void): HTMLElement {
+function buildToolbar(
+	translator: Translator,
+	state: ChartZoomState,
+	windows: ReadonlyArray<{ readonly id: PriceHistoryChartWindowId }>,
+	explore: boolean,
+	repaint: () => void,
+): HTMLElement {
 	const toolbar = createDiv();
 	toolbar.className = 'tyrian-price-chart__toolbar';
 	const group = createDiv();
 	group.className = 'tyrian-price-chart__window-group';
 	group.setAttribute('role', 'group');
 	group.setAttribute('aria-label', translator.t('priceHistory.chart.windowGroupLabel'));
-	for (const window of PRICE_HISTORY_CHART_WINDOWS) {
+	for (const window of windows) {
 		const active = state.windowId === window.id;
 		const windowButton = createEl('button');
 		windowButton.type = 'button';
@@ -160,7 +205,7 @@ function buildToolbar(translator: Translator, state: ChartZoomState, repaint: ()
 		group.append(windowButton);
 	}
 	toolbar.append(group);
-	if (state.windowId === 'custom') {
+	if (explore && state.windowId === 'custom') {
 		const reset = createEl('button');
 		reset.type = 'button';
 		reset.className = 'tyrian-price-chart__reset';
@@ -179,6 +224,8 @@ function buildToolbar(translator: Translator, state: ChartZoomState, repaint: ()
 function buildPlot(
 	document: Document,
 	options: PriceHistoryChartMountOptions,
+	geometry: ChartGeometry,
+	explore: boolean,
 	filtered: readonly PriceHistoryChartPoint[],
 	aggregated: readonly PriceHistoryChartAggregatedPoint[],
 	hasLocal: boolean,
@@ -189,41 +236,43 @@ function buildPlot(
 	const plotWrap = createDiv();
 	plotWrap.className = 'tyrian-price-chart__plot';
 	const svg = document.createElementNS(SVG_NAMESPACE, 'svg');
-	svg.setAttribute('viewBox', `0 0 ${String(OUTER_WIDTH)} ${String(OUTER_HEIGHT)}`);
+	svg.setAttribute('viewBox', `0 0 ${String(geometry.outerWidth)} ${String(geometry.outerHeight)}`);
 	svg.setAttribute('width', '100%');
 	svg.setAttribute('role', 'img');
 	svg.setAttribute('aria-hidden', 'true');
 
-	const dateTicks = priceHistoryDateAxisTicks(aggregated, DATE_TICK_COUNT);
-	const priceTicks = priceHistoryPriceAxisTicks(aggregated, PRICE_TICK_COUNT);
+	const dateTicks = priceHistoryDateAxisTicks(aggregated, geometry.dateTickCount);
+	const priceTicks = priceHistoryPriceAxisTicks(aggregated, geometry.priceTickCount);
 	const bounds = valueBoundsOf(aggregated);
-	const toOuterX = (index: number): number => PLOT_LEFT + xInner(index, aggregated.length) * (PLOT_WIDTH / PRICE_HISTORY_SVG_WIDTH);
+	const toOuterX = (index: number): number => geometry.plotLeft + xInner(index, aggregated.length) * (geometry.plotWidth / PRICE_HISTORY_SVG_WIDTH);
 	const toOuterY = (value: number): number => bounds === null
-		? PLOT_TOP + PLOT_HEIGHT / 2
-		: PLOT_TOP + yInner(value, bounds) * (PLOT_HEIGHT / PRICE_HISTORY_SVG_HEIGHT);
+		? geometry.plotTop + geometry.plotHeight / 2
+		: geometry.plotTop + yInner(value, bounds) * (geometry.plotHeight / PRICE_HISTORY_SVG_HEIGHT);
 
 	for (const value of priceTicks) {
 		const y = round(toOuterY(value));
 		const gridline = document.createElementNS(SVG_NAMESPACE, 'line');
 		gridline.setAttribute('class', 'tyrian-price-chart__gridline');
-		gridline.setAttribute('x1', String(PLOT_LEFT)); gridline.setAttribute('x2', String(PLOT_LEFT + PLOT_WIDTH));
+		gridline.setAttribute('x1', String(geometry.plotLeft)); gridline.setAttribute('x2', String(geometry.plotLeft + geometry.plotWidth));
 		gridline.setAttribute('y1', String(y)); gridline.setAttribute('y2', String(y));
 		svg.append(gridline);
 		const label = document.createElementNS(SVG_NAMESPACE, 'text');
 		label.setAttribute('class', 'tyrian-price-chart__price-label');
-		label.setAttribute('x', String(PLOT_LEFT - 6));
+		label.setAttribute('x', String(geometry.plotLeft - 6));
 		label.setAttribute('y', String(y));
 		label.textContent = formatLootMoney(value, translator.locale).visual;
 		svg.append(label);
 	}
-	const span = daySpan(aggregated);
-	for (const tick of dateTicks) {
+	const dateLabels = priceHistoryDateAxisLabels(dateTicks, translator.locale, daySpan(aggregated));
+	for (const [position, tick] of dateTicks.entries()) {
 		const x = round(toOuterX(tick.index));
 		const label = document.createElementNS(SVG_NAMESPACE, 'text');
-		label.setAttribute('class', 'tyrian-price-chart__date-label');
-		label.setAttribute('x', String(x));
-		label.setAttribute('y', String(OUTER_HEIGHT - 6));
-		label.textContent = dateAxisLabel(tick.dayUtc, translator.locale, span);
+		// Compact: the first mark starts at the plot's left edge and the last one ends at its right, so neither leaves the drawing.
+		const edge = geometry.compact && dateTicks.length > 1 ? (position === 0 ? ' tyrian-price-chart__date-label--start' : position === dateTicks.length - 1 ? ' tyrian-price-chart__date-label--end' : '') : '';
+		label.setAttribute('class', `tyrian-price-chart__date-label${edge}`);
+		label.setAttribute('x', String(edge.length > 0 ? (position === 0 ? geometry.plotLeft : geometry.plotLeft + geometry.plotWidth) : x));
+		label.setAttribute('y', String(geometry.outerHeight - 6));
+		label.textContent = dateLabels[position]!;
 		svg.append(label);
 	}
 
@@ -234,7 +283,7 @@ function buildPlot(
 		const localSlice = options.daily.filter((entry) => inRange(entry.dayUtc, filtered));
 		const seedSlice = options.seedDays.filter((day) => inRange(day.dayUtc, filtered));
 		const inner = priceHistorySvgElement(localSlice, options.side, seedSlice, document);
-		positionNestedPlot(inner);
+		positionNestedPlot(inner, geometry);
 		svg.append(inner);
 	} else {
 		const aggregatedSvg = document.createElementNS(SVG_NAMESPACE, 'svg');
@@ -242,20 +291,23 @@ function buildPlot(
 		aggregatedSvg.setAttribute('role', 'img');
 		aggregatedSvg.setAttribute('aria-hidden', 'true');
 		aggregatedSvg.append(aggregatedPlotGroup(document, aggregated, hasLocal));
-		positionNestedPlot(aggregatedSvg);
+		positionNestedPlot(aggregatedSvg, geometry);
 		svg.append(aggregatedSvg);
 	}
 
-	attachDragSelection(svg, plotWrap, aggregated, state, repaint);
+	if (explore) attachDragSelection(svg, plotWrap, geometry, aggregated, state, repaint);
 	plotWrap.append(svg);
 	return plotWrap;
 }
 
-function positionNestedPlot(element: SVGSVGElement): void {
-	element.setAttribute('x', String(PLOT_LEFT));
-	element.setAttribute('y', String(PLOT_TOP));
-	element.setAttribute('width', String(PLOT_WIDTH));
-	element.setAttribute('height', String(PLOT_HEIGHT));
+function positionNestedPlot(element: SVGSVGElement, geometry: ChartGeometry): void {
+	element.setAttribute('x', String(geometry.plotLeft));
+	element.setAttribute('y', String(geometry.plotTop));
+	element.setAttribute('width', String(geometry.plotWidth));
+	element.setAttribute('height', String(geometry.plotHeight));
+	// The compact frame is far narrower than the 760x240 plot it hosts: stretch it to the frame (the
+	// line's width is kept in pixels by the stylesheet) instead of letterboxing it into a sliver.
+	if (geometry.compact) element.setAttribute('preserveAspectRatio', 'none');
 }
 
 function inRange(dayUtc: string, points: readonly { readonly dayUtc: string }[]): boolean {
@@ -334,6 +386,7 @@ function aggregatedPlotGroup(document: Document, points: readonly PriceHistoryCh
 function attachDragSelection(
 	svg: SVGSVGElement,
 	plotWrap: HTMLElement,
+	geometry: ChartGeometry,
 	aggregated: readonly PriceHistoryChartAggregatedPoint[],
 	state: ChartZoomState,
 	repaint: () => void,
@@ -343,9 +396,9 @@ function attachDragSelection(
 	const indexAt = (clientX: number): number => {
 		const rect = plotWrap.getBoundingClientRect?.();
 		if (rect === undefined || rect.width <= 0) return 0;
-		const scale = OUTER_WIDTH / rect.width;
+		const scale = geometry.outerWidth / rect.width;
 		const offsetX = (clientX - rect.left) * scale;
-		return priceHistoryChartIndexAtOffset(offsetX, PLOT_LEFT, PLOT_WIDTH, aggregated.length);
+		return priceHistoryChartIndexAtOffset(offsetX, geometry.plotLeft, geometry.plotWidth, aggregated.length);
 	};
 	const onPointerDown = (event: PointerEvent): void => {
 		dragStartIndex = indexAt(event.clientX);
@@ -447,18 +500,6 @@ function buildAggregationNote(translator: Translator, unit: PriceHistoryChartAgg
 function daySpan(points: ReadonlyArray<{ readonly dayUtc: string }>): number {
 	if (points.length < 2) return 0;
 	return Math.round((Date.parse(`${points.at(-1)!.dayUtc}T00:00:00.000Z`) - Date.parse(`${points[0]!.dayUtc}T00:00:00.000Z`)) / 86_400_000);
-}
-
-/** Adapts the label's granularity to how much time the axis actually spans, so a five-year axis never renders 60 identical years. */
-function dateAxisLabel(dayUtc: string, locale: Translator['locale'], spanDays: number): string {
-	const date = new Date(`${dayUtc}T00:00:00.000Z`);
-	const intlLocale = locale === 'es' ? 'es-ES' : 'en-US';
-	const options: Intl.DateTimeFormatOptions = spanDays <= 60
-		? { day: 'numeric', month: 'short', timeZone: 'UTC' }
-		: spanDays <= 3 * 365
-			? { month: 'short', year: 'numeric', timeZone: 'UTC' }
-			: { year: 'numeric', timeZone: 'UTC' };
-	return new Intl.DateTimeFormat(intlLocale, options).format(date);
 }
 
 function round(value: number): number { return Math.round(value * 100) / 100; }

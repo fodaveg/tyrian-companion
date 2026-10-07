@@ -1,9 +1,10 @@
 import type { Translator } from '../core/i18n';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import { mountPriceHistoryChart } from './price-history-chart-view';
+import { PRICE_HISTORY_CHART_ROW_WINDOWS } from './price-history-chart-model';
 
-/** «Los últimos meses»: the zoom the row's chart opens on (orchestrator's decision, 7 oct 2026). */
-export const ROW_PRICE_HISTORY_WINDOW_DAYS = 90;
+/** Below this width of the block, measured once when it is mounted, the chart is drawn compact. */
+export const ROW_PRICE_HISTORY_COMPACT_BELOW_PX = 480;
 
 /**
  * What the Inventory tab hands a row's price-history block. Read at the moment the block paints,
@@ -33,12 +34,14 @@ export interface RowPriceHistoryBlockOptions {
 	readonly hasMarket: boolean;
 	readonly source: () => InventoryAdvisorRowPriceHistory | undefined;
 	readonly translator: () => Translator;
+	/** The block's width in pixels, read once at its first paint. Default: its own `clientWidth` (0 when it is not laid out). */
+	readonly measureWidth?: () => number;
 }
 
 /** A «Histórico de precio de venta» block kept for as long as its row's «Detalles» stays open. */
 export interface RowPriceHistoryBlock {
 	readonly element: HTMLElement;
-	/** Repaints from the latest state; does nothing when what it would paint is what is already there. */
+	/** The first call paints (and measures the width); later ones repaint only what changed. Call it once attached. */
 	update(): void;
 	/** Drops the block's chart and its kept state; later updates paint nothing. */
 	dispose(): void;
@@ -74,6 +77,9 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 	let failedLocally = false;
 	let inFlight = false;
 	let lastKey: string | null = null;
+	// Decided once, at the first paint (the host has attached the block by then), never observed again:
+	// closing and reopening «Detalles» builds a new block and decides again.
+	let layout: 'wide' | 'compact' | null = null;
 
 	const request = (source: InventoryAdvisorRowPriceHistory): void => {
 		requested = true;
@@ -110,6 +116,10 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 		const source = options.source();
 		if (source === undefined) { element.hidden = true; return; }
 		element.hidden = false;
+		if (layout === null) {
+			const width = (options.measureWidth ?? (() => element.clientWidth))();
+			layout = Number.isFinite(width) && width > 0 && width < ROW_PRICE_HISTORY_COMPACT_BELOW_PX ? 'compact' : 'wide';
+		}
 		const translator = options.translator();
 		const state = stateOf(source);
 		const key = stateKey(state, translator.locale, options.itemName);
@@ -119,7 +129,8 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 		if (state.kind === 'ready') {
 			// The chart container stays; only its contents (and the text around it) are redrawn.
 			mountPriceHistoryChart(chart, translator, {
-				daily: [], side: 'ask', seedDays: state.days, initialWindowDays: ROW_PRICE_HISTORY_WINDOW_DAYS,
+				daily: [], side: 'ask', seedDays: state.days,
+				windows: PRICE_HISTORY_CHART_ROW_WINDOWS, initialWindow: '3m', explore: false, layout,
 			});
 			const figure = createEl('figure');
 			figure.className = 'tyrian-inventory__price-history-figure';
@@ -161,7 +172,7 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 		}
 	};
 
-	paint();
+	// No paint here: a block that is not attached yet has no width to measure. The host calls `update()`.
 	return {
 		element,
 		update: paint,

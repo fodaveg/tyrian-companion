@@ -9,6 +9,8 @@ import {
 	priceHistoryChartIndexAtOffset,
 	priceHistoryChartSummary,
 	priceHistoryChartWindowRange,
+	PRICE_HISTORY_CHART_ROW_WINDOWS,
+	priceHistoryDateAxisLabels,
 	priceHistoryDateAxisTicks,
 	priceHistoryPriceAxisTicks,
 } from './price-history-chart-model';
@@ -165,6 +167,53 @@ function daily(dayUtc: string, closeCopper: number): PriceHistoryDailyV1 {
 		},
 	};
 }
+
+describe('priceHistoryDateAxisLabels', () => {
+	const ticksOf = (first: string, count: number, stepDays: number) => Array.from({ length: count }, (_unused, index) => ({
+		dayUtc: new Date(Date.parse(`${first}T00:00:00.000Z`) + index * stepDays * 86_400_000).toISOString().slice(0, 10),
+	}));
+
+	it('never prints the same text for two marks: a 90-day axis whose marks fall in the same month moves to day and month', () => {
+		// Five marks over ~88 days with two in July: «jul 2026» twice if labelled by month and year.
+		const ticks = [{ dayUtc: '2026-07-10' }, { dayUtc: '2026-07-31' }, { dayUtc: '2026-08-21' }, { dayUtc: '2026-09-14' }, { dayUtc: '2026-10-06' }];
+		const labels = priceHistoryDateAxisLabels(ticks, 'es', 88);
+
+		expect(new Set(labels).size).toBe(5);
+		expect(labels[0]).toBe('10 jul');
+		expect(labels[1]).toBe('31 jul');
+	});
+
+	it('keeps month and year when they are already all different, and year only on a long axis', () => {
+		expect(priceHistoryDateAxisLabels(ticksOf('2026-01-15', 5, 60), 'en', 240)).toEqual(['Jan 2026', 'Mar 2026', 'May 2026', 'Jul 2026', 'Sep 2026']);
+		expect(priceHistoryDateAxisLabels(ticksOf('2020-01-01', 5, 400), 'en', 1_600)).toEqual(['2020', '2021', '2022', '2023', '2024']);
+	});
+
+	it('goes as far as it needs: two marks a year apart on the same calendar day get the year too', () => {
+		const labels = priceHistoryDateAxisLabels([{ dayUtc: '2025-07-16' }, { dayUtc: '2026-07-16' }], 'en', 40);
+
+		expect(new Set(labels).size).toBe(2);
+		expect(labels[0]).toContain('2025');
+	});
+
+	it('is unique for every window of a 300-day series with 2 to 5 marks', () => {
+		for (const count of [2, 3, 4, 5]) for (const span of [30, 90, 200, 299]) {
+			const ticks = priceHistoryDateAxisTicks(Array.from({ length: span + 1 }, (_unused, index) => ({ dayUtc: dayAt(index + 180) })), count);
+			const labels = priceHistoryDateAxisLabels(ticks, 'es', span);
+			expect(new Set(labels).size).toBe(labels.length);
+		}
+	});
+});
+
+describe('PRICE_HISTORY_CHART_ROW_WINDOWS', () => {
+	it('«3m» is a real 90-day window anchored at the last day, and the default presets are untouched', () => {
+		const points = Array.from({ length: 300 }, (_unused, index) => ({ dayUtc: dayAt(index) }));
+		const range = priceHistoryChartWindowRange(points, '3m');
+
+		expect(range).toEqual({ startDayUtc: dayAt(300 - 90), endDayUtc: dayAt(299) });
+		expect(filterPriceHistoryChartRange(points, range)).toHaveLength(90);
+		expect(PRICE_HISTORY_CHART_ROW_WINDOWS.map((entry) => entry.id)).toEqual(['3m', '1y', 'all']);
+	});
+});
 
 function dayAt(offsetFromEpochAnchor: number): string {
 	return new Date(Date.UTC(2026, 0, 1) + offsetFromEpochAnchor * 86_400_000).toISOString().slice(0, 10);
