@@ -3215,8 +3215,16 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.sessionSummarySaveState = saved ? 'saved' : 'failed';
 			if (saved) this.savedSessionNotePath = result.path;
 		}
-		if (!saved) { this.recordIngameSessionFailure(new Error('Live session summary was not saved.')); return null; }
-		return result.status === 'written' || result.status === 'unchanged' ? result.path : null;
+		if (result.status === 'written' || result.status === 'unchanged') return result.path;
+		// The writer's own answer, not a generic error: an `invalid` note (and its reason) and a
+		// vault that refuses the write read the same from outside, a finished session that never
+		// lets the next one start, and the log could not tell them apart.
+		this.localDebugActions?.event({
+			component: 'session', action: 'session_finish', state: 'live_note_write',
+			level: 'error', phase: 'failure', code: 'storage_failure',
+			details: { status: result.status, reason: 'reason' in result ? result.reason : 'errorName' in result ? result.errorName ?? null : null },
+		});
+		return null;
 	}
 
 	/** The sell/hold verdict for the Halloween bag, a permanent surface rather than only a transient alert. */

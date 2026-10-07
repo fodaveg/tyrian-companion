@@ -106,6 +106,21 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 		await expectTheNextConnectionToStartASession(core, first);
 		await cleanup();
 	}, 30_000);
+
+	it('a note that could not be saved leaves the writer\'s own status and reason in the log', async () => {
+		const test = collectorHebra();
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		test.library.noteCreate = async () => { throw new Error('the library refuses the write'); };
+		const logged = vi.spyOn(core.localDebugActions, 'event');
+		// Timed like a fixture (the baseline stamped as promptly as every sample): only the refused write is in play.
+		await playUntilGameExit(core, 'a', FIRST_EPOCH, RECEPTION_MS);
+		expect(core.liveSessions.getRuntime(), 'the session is finished and waits for its note').toMatchObject({ phase: 'complete', summaryReceipt: null });
+		expect(logged.mock.calls.map(([context]) => context), 'the log says why the note was not saved').toContainEqual(expect.objectContaining({
+			component: 'session', action: 'session_finish', state: 'live_note_write', phase: 'failure',
+			details: { status: 'unavailable', reason: 'Error' },
+		}));
+		await cleanup();
+	}, 30_000);
 });
 
 /** The game connects, plays `SAMPLES` seconds with the addon's real timing and exits. Resolves to the session id. */
