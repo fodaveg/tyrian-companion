@@ -2373,7 +2373,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			state: InventoryPreferencesEditorState, reclassifyReady = true,
 		): Promise<InventoryPreferencesEditorState> => {
 			let settled = state;
-			if (state.status === 'ready' && reclassifyReady) {
+			// Preferences that answer again also lift the block an earlier storage failure left on the
+			// advisor: without this the tab kept saying they were unavailable until a restart.
+			if (state.status === 'ready' && (reclassifyReady || this.inventoryAdvisor.blockedOnPreferences())) {
 				await this.inventoryAdvisor.reclassify();
 				// That reclassification reloads the preferences, which expires every editor session, this
 				// one included. Only the session that caused it is read again here (a plain read: it never
@@ -2646,6 +2648,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const state = await this.inventoryPreferences.loadCached();
 		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
+		// The same as an editor session's load: a block left by a storage failure does not outlive it.
+		else if (state.status === 'ready' && this.inventoryAdvisor.blockedOnPreferences()) await this.inventoryAdvisor.reclassify();
 		this.renderInventoryAdvisorViews();
 	}
 

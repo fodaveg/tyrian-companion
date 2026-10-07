@@ -167,6 +167,15 @@ export class InventoryAdvisorPresentationController {
 		this.contentVersion += 1;
 	}
 
+	/**
+	 * Whether the visible projection is still the block a local preference failure left, by `block()`
+	 * or by a load that found the store unavailable. Whoever sees the preferences answer again asks
+	 * this to know the block is stale and must be reprojected; it never lifts by itself.
+	 */
+	blockedOnPreferences(): boolean {
+		return !this.disposed && this.cached?.status === 'blocked' && this.cached.reason === 'preferences_unavailable';
+	}
+
 	/** Permanently rejects later loads and prevents an outstanding flight from repopulating memory. */
 	dispose(): void {
 		if (this.disposed) return;

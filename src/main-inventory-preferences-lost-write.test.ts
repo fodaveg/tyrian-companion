@@ -287,6 +287,28 @@ describe('inventory preferences: a write of the user is either in the store or v
 		expect((await env.stored()).goalTitles).toEqual(['Uno']);
 	});
 
+	// 7 Oct 2026: after the engine stopped answering, the sale tab kept the "preferences unavailable"
+	// block until the plugin was restarted, although the preferences could be read again.
+	it('once the store answers again, loading the preferences lifts the block the failure left on the advisor', async () => {
+		const env = await analysedAdvisor();
+		const { root } = await env.openView();
+		await click(root, 'Cargar preferencias locales');
+		await submitGoal(root, 'Uno', 10);
+		env.store.unavailable = true;
+		await submitGoal(root, 'Dos', 11);
+		expect(env.controller.current()).toMatchObject({ status: 'blocked', blockedReason: 'preferences_unavailable' });
+
+		env.store.unavailable = false;
+		await click(root, 'Cargar preferencias locales');
+		expect(preferencesStatus(root)).toBe(READY);
+		// The block is gone; what is left is the honest one, that the capture it dropped must be redone.
+		expect(env.controller.blockedOnPreferences()).toBe(false);
+		expect(env.controller.current()).toMatchObject({ status: 'blocked', blockedReason: 'stale_evidence' });
+		await env.controller.refresh();
+		expect(env.controller.current().status).toBe('ready');
+		expect(env.controller.current().blockedReason).toBeUndefined();
+	});
+
 	it('with the store unavailable "Conservar" says it could not save and nothing is written', async () => {
 		const env = await analysedAdvisor();
 		const { root } = await env.openView();
