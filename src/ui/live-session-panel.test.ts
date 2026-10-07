@@ -341,7 +341,7 @@ describe('previous sessions block', () => {
 	const entry = (index: number, patch: Partial<LiveSessionHistoryEntry> = {}): LiveSessionHistoryEntry => ({
 		sessionRef: String(index).padStart(64, '0'), startedAt: new Date(Date.UTC(2026, 9, 5, 8, 0, 0) - index * 3_600_000).toISOString(),
 		endedAt: new Date(Date.UTC(2026, 9, 5, 8, 30, 0) - index * 3_600_000).toISOString(), observationCount: 4,
-		estimatedValueCopper: 12_345, itemCount: 7, items: [], ...patch });
+		estimatedValueCopper: 12_345, itemCount: 7, items: [], currencies: [], ...patch });
 	const entries = (count: number): LiveSessionHistoryEntry[] => Array.from({ length: count }, (_, index) => entry(index));
 	const block = (panel: LiveSessionPanel): HTMLDetailsElement => panel.element.querySelector<HTMLDetailsElement>('details.tyrian-live-session__previous')!;
 	const open = (panel: LiveSessionPanel): void => { block(panel).open = true; block(panel).dispatchEvent(new Event('toggle')); };
@@ -515,6 +515,68 @@ describe('previous sessions block', () => {
 		expect(block(h.panel).open).toBe(true);
 		expect(rowsOf(h.panel)[0]).toBe(first);
 		expect(document.activeElement).toBe(button);
+	});
+
+	describe('coins of each session', () => {
+		const ICON = 'https://render.guildwars2.com/file/hash/2.png';
+		const coinsOf = (row: HTMLElement): HTMLElement[] => Array.from(row.querySelectorAll<HTMLElement>('ul.tyrian-live-session__previous-coins > li'));
+		const named = (known: (id: number) => { name: string; icon: string | null } | null): LiveSessionPanelActions['getLiveSessionEntity'] =>
+			(kind, id) => (kind === 'currency' ? known(id) : { name: 'Mushroom', icon: ICON });
+		const show = async (rows: LiveSessionHistoryEntry[], port = named((id) => ({ name: `Coin ${String(id)}`, icon: ICON }))) => {
+			const h = harness(idleView(), control(), 'en', vi.fn(async () => rows), port);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(rows.length));
+			return rowsOf(h.panel);
+		};
+
+		it('creates no list for a session without coins: an unobserved coin is unknown, not zero', async () => {
+			const [row] = await show([entry(0)]);
+			expect(row!.querySelector('.tyrian-live-session__coins')).toBeNull();
+			expect(row!.textContent).not.toContain('Coin');
+		});
+
+		it('draws one coin, gold as money, with icon, title and accessible name', async () => {
+			const [row] = await show([entry(0, { currencies: [{ idNumber: 1, net: 15_525 }] })]);
+			const coins = coinsOf(row!);
+			expect(coins).toHaveLength(1);
+			expect(coins[0]!.textContent).toBe('1g 55s 25c');
+			expect(coins[0]!.title).toBe('Coin 1');
+			expect(coins[0]!.getAttribute('aria-label')).toBe('Coin 1, 1g 55s 25c');
+			expect(coins[0]!.querySelector('img')!.getAttribute('src')).toBe(ICON);
+			expect(row!.querySelector('ul.tyrian-live-session__previous-coins')!.classList.contains('tyrian-live-session__coins')).toBe(true);
+		});
+
+		it('draws several coins in the given order, the others with sign, negatives included, and no cap', async () => {
+			const currencies = [{ idNumber: 1, net: 100 }, ...Array.from({ length: 15 }, (_, index) => ({ idNumber: 2 + index, net: index === 0 ? -3 : index + 1 }))];
+			const [row] = await show([entry(0, { currencies })]);
+			const coins = coinsOf(row!);
+			expect(coins).toHaveLength(16);
+			expect(coins[0]!.textContent).toBe('0g 1s 0c');
+			expect(coins[1]!.textContent).toBe('-3');
+			expect(coins[1]!.getAttribute('aria-label')).toBe('Coin 2, -3');
+			expect(coins[2]!.textContent).toBe('+2');
+		});
+
+		it('falls back to a generic name when the coin is not resolved', async () => {
+			const [row] = await show([entry(0, { currencies: [{ idNumber: 23, net: 5 }] })], named(() => null));
+			const coin = coinsOf(row!)[0]!;
+			expect(coin.title).toBe('Currency 23');
+			expect(coin.getAttribute('aria-label')).toBe('Currency 23, +5');
+			expect(coin.querySelector('img')).toBeNull();
+		});
+
+		it('draws the coins of a session without objects, and no object grid', async () => {
+			const [row] = await show([entry(0, { itemCount: 0, items: [], currencies: [{ idNumber: 4, net: 2 }] })]);
+			expect(row!.querySelector('ul.tyrian-live-session__grid')).toBeNull();
+			expect(coinsOf(row!)).toHaveLength(1);
+		});
+
+		it('does not mix a coin id with an object id', async () => {
+			const rows = [entry(0, { itemCount: 1, items: [{ idNumber: 4, net: 1 }], currencies: [{ idNumber: 4, net: 2 }] })];
+			const [row] = await show(rows);
+			expect(row!.querySelector('li.tyrian-live-session__tile')!.getAttribute('aria-label')).toBe('Mushroom, 1');
+			expect(coinsOf(row!)[0]!.title).toBe('Coin 4');
+		});
 	});
 
 	describe('objects of each session', () => {

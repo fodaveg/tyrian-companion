@@ -342,8 +342,9 @@ export class LiveSessionPanel {
 				const entity = this.previousEntity(item.idNumber);
 				return { net: item.net, icon: entity?.icon ?? null, name: entity?.name ?? `${this.copy('kindItem')} ${String(item.idNumber)}`, quantity: this.number(item.net) };
 			});
+			const coins = entry.currencies.filter((row) => row.net !== 0).map((row) => this.coinOf(row.idNumber, row.net));
 			const sig = [entry.startedAt, entry.endedAt, entry.estimatedValueCopper, entry.itemCount, this.actions.getLocale(), hidden,
-				...tiles.map((tile) => `${tile.name}|${tile.icon ?? ''}|${tile.quantity}`)].join('|');
+				...tiles.map((tile) => `${tile.name}|${tile.icon ?? ''}|${tile.quantity}`), 'coins', ...coins.map((coin) => coin.sig)].join('|');
 			let cached = this.previousCache.get(entry.sessionRef);
 			if (cached === undefined) { cached = { li: this.node('li', 'tyrian-live-session__previous-row'), sig: '' }; this.previousCache.set(entry.sessionRef, cached); }
 			if (cached.sig !== sig) {
@@ -372,6 +373,16 @@ export class LiveSessionPanel {
 						grid.append(more);
 					}
 					parts.push(grid);
+				}
+				if (coins.length > 0) {
+					const list = this.node('ul', 'tyrian-live-session__coins tyrian-live-session__previous-coins');
+					list.setAttribute('aria-label', this.copy('coins'));
+					for (const coin of coins) {
+						const li = this.node('li');
+						this.paintCoin(li, coin);
+						list.append(li);
+					}
+					parts.push(list);
 				}
 				cached.li.replaceChildren(...parts);
 			}
@@ -528,22 +539,28 @@ export class LiveSessionPanel {
 		return entity;
 	}
 
+	/** What one observed coin shows, live or saved: gold (id 1) as money, the rest as a signed amount; `sig` changes with any of it. */
+	private coinOf(id: number, net: number): { name: string; icon: string | null; text: string; sig: string } {
+		const entity = this.actions.getLiveSessionEntity('currency', id);
+		const name = entity?.name ?? `${this.copy('kindCurrency')} ${String(id)}`;
+		const text = id === 1 ? this.money(net) : this.signed(net);
+		return { name, icon: entity?.icon ?? null, text, sig: `${name}|${entity?.icon ?? ''}|${text}` };
+	}
+
+	private paintCoin(li: HTMLElement, coin: { name: string; icon: string | null; text: string }): void {
+		li.replaceChildren(this.icon(coin.icon), this.node('span', '', coin.text));
+		li.title = coin.name;
+		li.setAttribute('aria-label', `${coin.name}, ${coin.text}`);
+	}
+
 	private renderCoins(view: LiveSessionViewV1): void {
 		const wanted: HTMLElement[] = [];
 		for (const row of view.totals.filter((total) => total.kind === 'currency' && total.net !== 0)) {
 			const key = `currency:${String(row.idNumber)}`;
-			const entity = this.actions.getLiveSessionEntity('currency', row.idNumber);
-			const name = entity?.name ?? `${this.copy('kindCurrency')} ${String(row.idNumber)}`;
-			const text = row.idNumber === 1 ? this.money(row.net) : this.signed(row.net);
-			const sig = `${name}|${entity?.icon ?? ''}|${text}`;
+			const coin = this.coinOf(row.idNumber, row.net);
 			let tile = this.coinCache.get(key);
 			if (tile === undefined) { tile = { li: this.node('li'), sig: '' }; this.coinCache.set(key, tile); }
-			if (tile.sig !== sig) {
-				tile.sig = sig;
-				tile.li.replaceChildren(this.icon(entity?.icon ?? null), this.node('span', '', text));
-				tile.li.title = name;
-				tile.li.setAttribute('aria-label', `${name}, ${text}`);
-			}
+			if (tile.sig !== coin.sig) { tile.sig = coin.sig; this.paintCoin(tile.li, coin); }
 			wanted.push(tile.li);
 		}
 		for (const key of Array.from(this.coinCache.keys())) if (!wanted.includes(this.coinCache.get(key)!.li)) this.coinCache.delete(key);

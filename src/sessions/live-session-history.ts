@@ -15,8 +15,16 @@ export interface LiveSessionHistoryEntry {
 	itemCount: number;
 	/** The session's objects (items only, net quantity other than 0), best first: the order of the panel's own grid. */
 	items: LiveHistoryItem[];
+	/** The session's observed coins (net other than 0): gold first, the rest by id. An unobserved coin is absent, never zero. */
+	currencies: LiveHistoryItem[];
 }
 export interface LiveHistoryItem { idNumber: number; net: number }
+/** The coins of a saved session: currency rows with a net other than 0, gold (id 1) first and the rest by ascending id. */
+export function liveHistoryCurrencies(totals: readonly LiveTotalV1[]): LiveHistoryItem[] {
+	return totals.filter((row) => row.kind === 'currency' && row.net !== 0)
+		.sort((a, b) => (a.idNumber === 1 ? 0 : 1) - (b.idNumber === 1 ? 0 : 1) || a.idNumber - b.idNumber)
+		.map((row) => ({ idNumber: row.idNumber, net: row.net }));
+}
 /** Tiles sort by estimated value; unpriced and negative nets sink to the end. Shared by the live grid and the saved sessions. */
 export function liveItemRank(row: LiveTotalV1, prices: readonly { itemId: number; unitCopper: number | null }[]): number {
 	if (row.net < 0) return Number.NEGATIVE_INFINITY;
@@ -44,6 +52,7 @@ export class LiveSessionHistoryService {
 			items: session.totals.filter((row) => row.kind === 'item' && row.net !== 0)
 				.sort((a,b) => liveItemRank(b,session.valuation.prices) - liveItemRank(a,session.valuation.prices) || b.net - a.net)
 				.map((row) => ({ idNumber: row.idNumber,net: row.net })),
+			currencies: liveHistoryCurrencies(session.totals),
 		})) };
 	}
 

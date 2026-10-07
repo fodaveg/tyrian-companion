@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { liveItemRank } from './live-session-history';
+import { liveHistoryCurrencies, liveItemRank } from './live-session-history';
+
+describe('liveHistoryCurrencies: the coins of a saved session', () => {
+	const row = (kind: 'item' | 'currency', idNumber: number, net: number) => ({ kind, idNumber, positive: Math.max(net, 0), negative: Math.max(-net, 0), net });
+
+	it('keeps only currency rows with a net other than 0, gold first and the rest by ascending id', () => {
+		const totals = [row('currency', 7, 2), row('item', 1, 9), row('currency', 3, -4), row('currency', 1, 500), row('currency', 2, 0)];
+		expect(liveHistoryCurrencies(totals)).toEqual([{ idNumber: 1, net: 500 }, { idNumber: 3, net: -4 }, { idNumber: 7, net: 2 }]);
+	});
+
+	it('is empty when no coin was observed, and does not reorder its input', () => {
+		expect(liveHistoryCurrencies([row('item', 1, 9)])).toEqual([]);
+		const totals = [row('currency', 5, 1), row('currency', 1, 1)];
+		liveHistoryCurrencies(totals);
+		expect(totals.map((entry) => entry.idNumber)).toEqual([5, 1]);
+	});
+});
 
 describe('liveItemRank: the order of the object tiles, live and saved', () => {
 	const row = (idNumber: number, net: number) => ({ kind: 'item' as const, idNumber, positive: Math.max(net, 0), negative: Math.max(-net, 0), net });
