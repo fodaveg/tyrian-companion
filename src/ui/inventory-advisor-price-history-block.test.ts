@@ -109,7 +109,13 @@ describe('the price block of one row', () => {
 		};
 
 		for (const width of [0, 900, 480]) expect(shapes(width)).toEqual({ viewBox: '0 0 800 300', prices: 4, dates: 5, compact: false });
-		for (const width of [280, 390, 479]) expect(shapes(width)).toEqual({ viewBox: '0 0 200 190', prices: 3, dates: 2, compact: true });
+		// The compact frame follows the width the block measured (minus the container's 18 px of padding and border),
+		// clamped to 200..479: about one unit per real pixel. The height stays 190. A block of 214 px is a 280 px panel.
+		expect(shapes(214)).toEqual({ viewBox: '0 0 200 190', prices: 3, dates: 2, compact: true });
+		expect(shapes(280)).toEqual({ viewBox: '0 0 262 190', prices: 3, dates: 2, compact: true });
+		expect(shapes(324)).toEqual({ viewBox: '0 0 306 190', prices: 3, dates: 2, compact: true });
+		// From a 340-unit plot on there is room for a third date mark.
+		expect(shapes(479)).toEqual({ viewBox: '0 0 461 190', prices: 3, dates: 3, compact: true });
 	});
 
 	it('measures the width once, when it first paints, and never again on a repaint', () => {

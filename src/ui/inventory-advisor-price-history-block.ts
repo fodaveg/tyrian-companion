@@ -5,6 +5,8 @@ import { PRICE_HISTORY_CHART_ROW_WINDOWS } from './price-history-chart-model';
 
 /** Below this width of the block, measured once when it is mounted, the chart is drawn compact. */
 export const ROW_PRICE_HISTORY_COMPACT_BELOW_PX = 480;
+/** What the chart container takes off the block's width: 2 × 8 px of padding and 2 × 1 px of border. */
+const CHART_CONTAINER_CHROME_PX = 18;
 
 /**
  * What the Inventory tab hands a row's price-history block. Read at the moment the block paints,
@@ -80,6 +82,7 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 	// Decided once, at the first paint (the host has attached the block by then), never observed again:
 	// closing and reopening «Detalles» builds a new block and decides again.
 	let layout: 'wide' | 'compact' | null = null;
+	let compactWidth = 200;
 
 	const request = (source: InventoryAdvisorRowPriceHistory): void => {
 		requested = true;
@@ -119,6 +122,7 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 		if (layout === null) {
 			const width = (options.measureWidth ?? (() => element.clientWidth))();
 			layout = Number.isFinite(width) && width > 0 && width < ROW_PRICE_HISTORY_COMPACT_BELOW_PX ? 'compact' : 'wide';
+			compactWidth = Math.round(width - CHART_CONTAINER_CHROME_PX);
 		}
 		const translator = options.translator();
 		const state = stateOf(source);
@@ -130,14 +134,14 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 			// The chart container stays; only its contents (and the text around it) are redrawn.
 			mountPriceHistoryChart(chart, translator, {
 				daily: [], side: 'ask', seedDays: state.days,
-				windows: PRICE_HISTORY_CHART_ROW_WINDOWS, initialWindow: '3m', explore: false, layout,
+				windows: PRICE_HISTORY_CHART_ROW_WINDOWS, initialWindow: '3m', explore: false, layout, compactWidth,
 			});
 			const figure = createEl('figure');
 			figure.className = 'tyrian-inventory__price-history-figure';
 			figure.setAttribute('role', 'group');
 			figure.setAttribute('aria-label', translator.t('advisor.priceHistory.chartLabel', { name: options.itemName }));
 			const caption = createEl('figcaption');
-			caption.textContent = translator.t('advisor.priceHistory.legend', { days: state.days.length });
+			caption.textContent = translator.t('advisor.priceHistory.legend');
 			figure.append(chart, caption);
 			body.replaceChildren(figure);
 			if (state.stale) body.append(statusLine(translator.t('priceHistoryNote.state.staleCache'), 'status'));

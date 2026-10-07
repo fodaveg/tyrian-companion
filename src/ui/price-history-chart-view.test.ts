@@ -157,6 +157,11 @@ describe('price history chart widget: the opt-in options of a surface that is fo
 		const all = walk(mount.container);
 
 		expect(all.find((element) => element.tag === 'svg')?.attributes.get('viewBox')).toBe('0 0 200 190');
+		for (const [compactWidth, viewBox] of [[100, '0 0 200 190'], [306, '0 0 306 190'], [900, '0 0 479 190']] as const) {
+			const other = createMount();
+			mountPriceHistoryChart(other.container as unknown as HTMLElement, createTranslator('en'), { daily: [], side: 'ask', seedDays: seedDays(300), ...looking, layout: 'compact', compactWidth });
+			expect(walk(other.container).find((element) => element.tag === 'svg')?.attributes.get('viewBox')).toBe(viewBox);
+		}
 		expect(all.filter((element) => element.className === 'tyrian-price-chart__price-label')).toHaveLength(3);
 		expect(all.filter((element) => element.className.startsWith('tyrian-price-chart__date-label')).map((element) => element.className)).toEqual([
 			'tyrian-price-chart__date-label tyrian-price-chart__date-label--start',

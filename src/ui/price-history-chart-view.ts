@@ -66,6 +66,12 @@ export interface PriceHistoryChartMountOptions {
 	 * default `'wide'`.
 	 */
 	readonly layout?: 'wide' | 'compact';
+	/**
+	 * Compact only: the viewBox width, in user units. The caller passes the pixels it measured for the
+	 * drawing, so one unit is about one real pixel and an 11-unit label reads at ~11 px at any narrow
+	 * width. Clamped to 200..479; default 200. The height stays fixed so the chart does not grow with width.
+	 */
+	readonly compactWidth?: number;
 }
 
 interface ChartZoomState {
@@ -96,13 +102,17 @@ const WIDE_GEOMETRY: ChartGeometry = {
 	priceTickCount: 4, dateTickCount: 5, compact: false,
 };
 /**
- * 200 units wide: at 280 px the block is ~196 px of drawing, so a label of 11 units reads at ~10.8 px
- * (the wide drawing, 800 units, put the same label at 2.9 px). The left margin holds «1g 55s 47c».
+ * The compact frame is `width` units wide (about one per real pixel) and a fixed 190 tall. The left
+ * margin holds «1g 55s 47c». From a 340-unit plot on there is room for a third date mark.
  */
-const COMPACT_GEOMETRY: ChartGeometry = {
-	outerWidth: 200, outerHeight: 190, plotLeft: 74, plotTop: 8, plotWidth: 118, plotHeight: 150,
-	priceTickCount: 3, dateTickCount: 2, compact: true,
-};
+function compactGeometry(requestedWidth: number | undefined): ChartGeometry {
+	const width = Math.min(479, Math.max(200, Math.round(Number.isFinite(requestedWidth) ? requestedWidth! : 200)));
+	const plotWidth = width - 74 - 8;
+	return {
+		outerWidth: width, outerHeight: 190, plotLeft: 74, plotTop: 8, plotWidth, plotHeight: 150,
+		priceTickCount: 3, dateTickCount: plotWidth >= 340 ? 3 : 2, compact: true,
+	};
+}
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 /**
@@ -135,7 +145,7 @@ export function mountPriceHistoryChart(
 	ZOOM_STATE.set(container, state);
 
 	const document = container.ownerDocument;
-	const geometry = options.layout === 'compact' ? COMPACT_GEOMETRY : WIDE_GEOMETRY;
+	const geometry = options.layout === 'compact' ? compactGeometry(options.compactWidth) : WIDE_GEOMETRY;
 	const explore = options.explore !== false;
 	const windows = options.windows ?? PRICE_HISTORY_CHART_WINDOWS;
 	if (geometry.compact && !container.className.split(/\s+/u).includes('tyrian-price-chart--compact')) container.className += ' tyrian-price-chart--compact';
