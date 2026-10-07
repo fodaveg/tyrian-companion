@@ -16,6 +16,8 @@ const coin = (id: number): Record<string, unknown> => ({ id, name: `Coin ${Strin
 function harness(answer: (path: string) => Promise<HttpResponse> = async (path) => ({ status: 200, headers: {}, body: idsOf(path).map(coin) })) {
 	let now = START;
 	const requests: string[] = [];
+	/** What the economy asked the catalog layer for, which the service's own cache may answer without a request. */
+	const asked: number[][] = [];
 	const gateway: PublicCatalogGateway = { requestDetailed: vi.fn(async (path: string) => { requests.push(path); return await answer(path); }) };
 	const cache = new MemoryCatalogCache();
 	const build = () => {
@@ -25,12 +27,12 @@ function harness(answer: (path: string) => Promise<HttpResponse> = async (path) 
 		const economy = new LiveSessionEconomy({
 			lifecycle: lifecycle as never, gateway, rateLimit: new RateLimitCoordinator({ now: () => now }), now: () => now,
 			catalog: async () => ({}), cachedItems: async () => ({}),
-			currencies: async (ids) => await service.resolveCurrencies(ids, 'en'), cachedCurrencies: async (ids) => await service.readCachedCurrencies(ids, 'en'),
+			currencies: async (ids) => { asked.push([...ids]); return await service.resolveCurrencies(ids, 'en'); }, cachedCurrencies: async (ids) => await service.readCachedCurrencies(ids, 'en'),
 			emit: async () => ({ delivered: [], failed: [], rejected: false }), onError, onChange,
 		});
 		return { economy, onError, onChange };
 	};
-	return { ...build(), build, requests, advance: (ms: number) => { now += ms; } };
+	return { ...build(), build, requests, asked, advance: (ms: number) => { now += ms; } };
 }
 function idsOf(path: string): number[] { return (new URL(path, 'https://example.invalid').searchParams.get('ids') ?? '').split(',').filter(Boolean).map(Number); }
 function entry(kinds: ReadonlyArray<['item' | 'currency', number]>): LiveJournalEntryV1 {
@@ -70,7 +72,12 @@ describe('LiveSessionEconomy names the observed coins from the public catalog', 
 		h.advance(60_000);
 		h.economy.observe(entry([['currency', 99]]));
 		await h.economy.drain();
-		expect(h.requests.length).toBe(1);
+		expect(h.asked).toEqual([[99]]);
+		h.advance(5 * 60_000);
+		h.economy.observe(entry([['currency', 99]]));
+		await h.economy.drain();
+		expect(h.asked).toEqual([[99], [99]]);
+		expect(h.requests).toHaveLength(1); // the second ask was answered by the service's negative cache
 	});
 
 	it('survives a network failure: reported, no name, and a later entry retries and names the coin', async () => {

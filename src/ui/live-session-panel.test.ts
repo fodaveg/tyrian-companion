@@ -284,7 +284,7 @@ describe('Session tab: figures, objects and chart', () => {
 
 		it('repaints only the tile that changed: the same nodes survive a tick, and a late name replaces only its own', () => {
 			let named = false;
-			const port: LiveSessionPanelActions['getLiveSessionEntity'] = (kind, id) => kind === 'currency' ? (id === 2 && !named ? null : { name: `Coin ${String(id)}`, icon: ICON }) : known(kind, id);
+			const port: LiveSessionPanelActions['getLiveSessionEntity'] = (kind, id) => kind === 'currency' ? (id === 2 && !named ? { name: 'Draft 2', icon: ICON } : { name: `Coin ${String(id)}`, icon: ICON }) : known(kind, id);
 			const { panel } = harness(withCoins([[1, 100], [2, 5]]), control(), 'en', undefined, port);
 			const before = tiles(panel);
 			const qty = before[0]!.querySelector('.tyrian-live-session__qty')!;
