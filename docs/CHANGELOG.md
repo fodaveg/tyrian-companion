@@ -2,8 +2,13 @@
 
 ## Release beta 0.6.9 - las monedas observadas como teselas
 
-Candidata a release por tag `0.6.9`; nada publicado ni etiquetado, gate pendiente. [ESTADO](ESTADO.md) separa lo
-verificado de lo pendiente (gate, publicación e instalación).
+[Canal 0.6.9 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.9);
+**instalación/runtime pendiente**. Tag `0.6.9` sobre `de2555a` (atestación del candidato `5e121fe`), árbol
+`62520ba6dfdccd7b578b8d4ef153910345110d3e`. Gate local previo, verde a la primera: `check` 8/8 (5134 tests, 324
+archivos, ninguno saltado), guardrails 25/25 y `release:preflight` en verde. El benchmark H6 y su sabotaje no se
+corrieron en local; los corre la CI de `main`. El workflow de release (run 37663104383) terminó en success y
+`release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo pendiente
+(instalación en Hebra y Obsidian, y las teselas de moneda con datos reales).
 
 - Pestaña «Sesión»: las monedas observadas se pintan como teselas con su icono, igual que los objetos, en una
   sección propia «Monedas» con su contador (número de monedas distintas), en la sesión en curso y en «Sesiones
@@ -66,7 +71,8 @@ corrieron en local; los corre la CI de `main`. El workflow de release (run 37656
   el backend de ficheros de Hebra. Una escritura de diagnóstico abandonada por timeout puede completarse tarde con
   datos viejos (solo afecta al diagnóstico). Durante la caída, `live_open` responde `source_conflict` y el addon de
   Nexus 0.7.0 deja de leer inventario hasta cambiar de contexto de juego; el reintento llega con el addon 0.7.1,
-  sin publicar.
+  sin publicar. (Aclaración del 7 oct 2026, posterior: el addon 0.7.1 se integró en el `main` de su repo y se
+  publicó como release `0.7.1` ese mismo día, después de esta versión.)
 - Tests: pruebas nuevas para la reapertura de conexiones, la caída del almacén de sesión, la escritura aplicada y
   contestada como fallida, y el relevo del productor.
 
@@ -89,7 +95,9 @@ corrieron en local; los corre la CI de `main`. El workflow de release (run 37654
   sesión live activa y un addon suscrito; sin esas dos condiciones no hay peticiones por este motivo. A los
   600 s sin refresco viaja como caducada y sin cifras.
 - Compatibilidad: el contrato está en `docs/SPEC-puente-ingame.md`. `farm1` no cambia. Lo pinta el addon de
-  Nexus 0.7.0, que no está publicado en su `main`; un addon anterior ignora el anuncio y no cambia nada.
+  Nexus 0.7.0, que no está publicado en su `main` (aclaración del 7 oct 2026, posterior: el addon se integró en
+  el `main` de su repo y se publicó como release `0.7.1` ese mismo día, después de esta versión); un addon
+  anterior ignora el anuncio y no cambia nada.
 - Sin verificar en el runtime real: el envío del precio no se ha probado en Hebra ni en Obsidian con el juego
   abierto.
 - Fuera de esta versión: la recuperación ante la caída del almacén local (incidente del 7 oct 2026 en Hebra)

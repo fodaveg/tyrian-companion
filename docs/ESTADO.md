@@ -1,11 +1,23 @@
 # Estado
 
-## Candidata 0.6.9: las monedas observadas como teselas (7 oct 2026)
+## Canal 0.6.9 publicado: las monedas observadas como teselas (7 oct 2026)
 
-**Candidata integrada en local; sin publicar ni etiquetar; gate pendiente.** `manifest.version`, `package.json`,
-`package-lock.json` y `versions.json` están alineados a 0.6.9. No hay tag ni release, y no se ha corrido el gate
-sobre este árbol. Parte de `47a2c1b`, cinco commits por delante de `9a8824c` (canal 0.6.8 publicado), solo en
-local; el detalle está en [CHANGELOG](CHANGELOG.md).
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.9](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.9)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.9`. El tag apunta
+a `de2555a` (atestación del candidato `5e121fe`, árbol `62520ba6dfdccd7b578b8d4ef153910345110d3e`). Parte de
+`9a8824c` (canal 0.6.8 publicado); el detalle está en [CHANGELOG](CHANGELOG.md).
+
+- Publicación: el workflow `release.yml` (run 37663104383) terminó en success. La release tiene ocho assets,
+  todos `uploaded`: `hebra-main.mjs` 3327855, `hebra-styles.css` 118275, `hebra.json` 954, `main.js`
+  1887848, `manifest.json` 236, `styles.css` 94809, `tyrian-companion-0.6.9.zip` 1983203 y
+  `tyrian-companion-0.6.9.zip.sha256` 93 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view`: «BRAT release contract: PASS (version=0.6.9; assets=8)». La CI de `main` para
+  `de2555a` (run 37663101900) terminó en success (`check`, `check-guardrails`, `detect-native-changes` y
+  `release-package`; los dos jobs de Rust se saltaron por no haber cambio nativo); corre el benchmark H6 y su
+  sabotaje, que no se corrieron en local.
+- Gate local previo, sobre el árbol atestado (Fedora, Node v22.23.1, 7 oct 2026), verde a la primera: `check`
+  8/8 (5134 tests, 324 ficheros, ninguno saltado), guardrails 25/25 y `release:preflight` en verde. El
+  benchmark H6 y su sabotaje no se corrieron en local porque el juego estaba abierto en la máquina.
 
 - Contenido: en la pestaña «Sesión», las monedas observadas se pintan como teselas con icono en una sección
   «Monedas» con su contador, en la sesión en curso y en «Sesiones anteriores». Nombre e icono salen del
@@ -16,7 +28,6 @@ local; el detalle está en [CHANGELOG](CHANGELOG.md).
 - Verificado hoy en esa máquina: el precio del saco (`price1`) se vio pintado en el panel del juego con el
   addon de Nexus 0.7.1 contra el plugin en Hebra (no se anotó si era la 0.6.7 o la 0.6.8). El addon 0.7.1 está
   integrado en el `main` de su repo, publicado como release `0.7.1` (DLL y su `.sha256`) e instalado ahí.
-- Pendiente: el gate sobre el árbol final, la atestación, la publicación y la verificación de instalación.
 - No verificado: la 0.6.9 instalada en Hebra u Obsidian; el aspecto real de las teselas de moneda en Hebra
   (solo medido en un montaje de navegador con iconos reales); una respuesta real del catálogo de monedas
   dentro del plugin (la forma de la respuesta sí se comprobó a mano contra la API pública); la nota guardada
