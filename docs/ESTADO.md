@@ -1,21 +1,39 @@
 # Estado
 
-## 0.6.6 preparada: monedas en las sesiones anteriores y oro observado en el valor (7 oct 2026)
+## Canal 0.6.6 publicado: monedas en las sesiones anteriores y oro observado en el valor (7 oct 2026)
 
-**Candidata; nada publicado ni etiquetado.** Las sesiones anteriores muestran sus monedas observadas bajo las
-teselas de objetos, y «Valor estimado» y su gráfica incluyen el oro observado si la sesión tuvo el oro
-cubierto. Las monedas llegan del addon de Nexus 0.6.0 (lectura de la cartera del juego); con un addon
-anterior quedan «sin cobertura».
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.6](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.6)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.6`. El tag apunta
+a `89f4532` (atestación del candidato `e02372d`, árbol `40cca5cf2f733a5f0db25bd3b8170af3aebd9e8b`), empujado
+a las 15:23Z. Las sesiones anteriores muestran sus monedas observadas bajo las teselas de objetos, y «Valor
+estimado» y su gráfica incluyen el oro observado si la sesión tuvo el oro cubierto. Las monedas llegan del
+addon de Nexus 0.6.0 (lectura de la cartera del juego); con un addon anterior quedan «sin cobertura».
 
+- Publicación: el workflow `release.yml` (run 37643557499) terminó en success. La release tiene ocho assets,
+  todos `uploaded`: `hebra-main.mjs` 3292173, `hebra-styles.css` 118737, `hebra.json` 954, `main.js`
+  1872131, `manifest.json` 236, `styles.css` 95271, `tyrian-companion-0.6.6.zip` 1967948 y
+  `tyrian-companion-0.6.6.zip.sha256` 93 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view`: «BRAT release contract: PASS (version=0.6.6; assets=8)». La CI de `main` para
+  `89f4532` (run 37643552543) terminó en success; corre el benchmark H6 y su sabotaje, que no se corrieron
+  en local.
+- Gate local previo, sobre el árbol atestado: `check` 8/8 (5004 tests pasados y 1 saltado,
+  `src/host/hebra/bundle.test.ts`, que solo corre con el bundle de Hebra construido), guardrails 25/25 y
+  `release:preflight` en verde. El benchmark H6 y su sabotaje no se corrieron en local porque el juego
+  estaba abierto en la máquina.
 - Cambios de producto: commits `4674478` y `d920bf8`. Documentación y recibo: `7d34cec`. Fixture de wire y
   test de costura: `43778e5`. Metadatos alineados a 0.6.6.
 - Verificado: ruta de cartera validada el 7 oct 2026 con una sonda externa de solo lectura: 55 monedas, mismos
-  IDs que la API, 54 saldos idénticos (recibo en `docs/audit/loot-wallet-probe/`). Entrada de changelog
-  extraíble con `changelog-entry.mjs`.
-- No verificado: addon 0.6.0 con commit en rama propia del repo `tyrian-companion-nexus`, sin integrar ni
-  publicar; DLL instalada en la máquina de David el 7 oct, pero la lectura de cartera DENTRO del juego
-  cargado por Nexus está PENDIENTE de comprobar. Plugin: candidato 0.6.6 sin gate todavía (lo corre la
-  sesión raíz sobre el árbol final), sin publicar ni instalar.
+  IDs que la API, 54 saldos idénticos (recibo en `docs/audit/loot-wallet-probe/`). Verificado en la máquina de
+  David (Fedora, GE-Proton11-7), con el plugin 0.6.5 en Hebra y el addon de Nexus 0.6.0 (DLL de la rama
+  `claude/wallet-reader-20261007` del repo `tyrian-companion-nexus`, sin integrar ni publicar): las opciones
+  del addon dentro del juego muestran «Currencies covered: 55» e «Inventory: observations stored».
+- No verificado: la instalación y carga de la 0.6.6 en Hebra y en Obsidian/BRAT, un cambio de moneda pintado
+  en Hebra durante una sesión real, las monedas de una sesión anterior con datos reales, el oro dentro de
+  «Valor estimado» con datos reales y el addon en Windows.
+- Incidencia abierta, no causada por la 0.6.6: el 7 oct a las 14:54Z, con el plugin 0.6.5 en Hebra, la
+  IndexedDB del plugin dejó de responder tras un error interno de WebKitGTK 2.54.1 y la sesión en vivo quedó
+  en «No se pudo guardar» hasta reiniciar Hebra; se perdieron unos 20 minutos de sesión. El endurecimiento
+  del plugin (reabrir la conexión y salir del error) está en curso y no va en la 0.6.6.
 - Límites: una moneda que la cuenta nunca ha tenido no tiene clave en el juego, y su primera ganancia no se
   cuenta (línea base). El lector solo sirve con el binario del juego del perfil vigente; tras un parche de
   GW2, objetos y monedas quedan sin lectura hasta revalidar.

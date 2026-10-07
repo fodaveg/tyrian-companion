@@ -1,7 +1,7 @@
 # Tyrian Companion
 
 > **Contract update, October 6, 2026:** [live1](docs/SPEC-live-loot.md) supersedes the API-only session
-> design. The 0.6.5 channel is published with its release-tree checks verified; installation and
+> design. The 0.6.6 channel is published with its release-tree checks verified; installation and
 > runtime QA remain pending. H1–H18 descriptions below retain legacy history, not permission to
 > restore automatic authenticated API requests in live sessions.
 
@@ -11,7 +11,7 @@ describe manual actions: the plugin never operates the game account. A connected
 addon can mark session boundaries automatically from game presence.
 
 The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
-our Nexus addon as the source of new sessions. **The 0.6.5 channel is published;
+our Nexus addon as the source of new sessions. **The 0.6.6 channel is published;
 installation and runtime QA remain pending.** This does not prove that an installed older addon supplies it.
 Authenticated GW2 API requests are reserved for explicit manual inventory/wallet operations and
 connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
@@ -33,7 +33,7 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 
 > [!WARNING]
 > `manifest.json` identifies the checkout or installed candidate; it does not by itself prove that
-> version is published or loaded. The [0.6.5 channel](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.5)
+> version is published or loaded. The [0.6.6 channel](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.6)
 > is published; real-client installation/runtime QA remains pending. Use a disposable vault and
 > record the exact Companion and addon versions when testing.
 
@@ -96,7 +96,7 @@ Obsidian plugin assets. Publication does not prove installation or runtime behav
 ## Install the beta
 
 For Obsidian, use desktop `1.11.4` or newer and a disposable vault. BRAT installs published beta
-versions; select the published 0.6.5 release. Game sessions also need the matching Nexus producer.
+versions; select the published 0.6.6 release. Game sessions also need the matching Nexus producer.
 Windows with Blish HUD still needs Nexus locally.
 
 1. From **Settings → Community plugins → Browse**, install and enable
@@ -118,12 +118,12 @@ a new release; that delay proves neither installation success nor failure.
 Developers testing an exact unpublished commit use the existing
 [artifact installation procedure](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores).
 The canonical Hebra host uses the matching external-plugin assets, described in the same
-[beta guide](docs/BETA.md). The 0.6.5 channel is a normal release, not a prerelease,
+[beta guide](docs/BETA.md). The 0.6.6 channel is a normal release, not a prerelease,
 because the Hebra installer omits prereleases. Record installation/loading separately from session QA.
 
 ## First farming session
 
-These steps describe the published 0.6.5 code; they do not certify its behavior in
+These steps describe the published 0.6.6 code; they do not certify its behavior in
 an installed client. The [live QA matrix](docs/QA-MVP.md) records the pending real-client
 checks. Legacy API session controls are not a fallback for missing Nexus observations.
 
@@ -332,13 +332,13 @@ The current published vertical provides:
   available item receives one fresh public price result, while TP/unlock/recipe/skin/mini/achievement
   signals retain identity, coverage and TTL facts without adding UI, persistence or recommendations.
 - H4.15 pure Inventory Advisor classification: every owned physical position is partitioned once,
-	with reservations and keep exceptions first and non-loose positions reviewed. Fresh complete
-	character/shared-inventory, catalog, price, reservation and account evidence can still show manual
-	vendor/TP routes when the latest fully covered pass is changing; curated use/open/salvage remains
-	review-only until the snapshot is stable and its exact rule authority is available.
+  with reservations and keep exceptions first and non-loose positions reviewed. Fresh complete
+  character/shared-inventory, catalog, price, reservation and account evidence can still show manual
+  vendor/TP routes when the latest fully covered pass is changing; curated use/open/salvage remains
+  review-only until the snapshot is stable and its exact rule authority is available.
 - H4.16 pure discard allowlist: it canonically reproduces the H4.15 producer result before changing
-	only a demonstrated `keep/no_supported_route` into review-only `discard_candidate`, with cited rule
-	and knowledge sources; it has no executor, I/O, persistence, or UI.
+  only a demonstrated `keep/no_supported_route` into review-only `discard_candidate`, with cited rule
+  and knowledge sources; it has no executor, I/O, persistence, or UI.
 - H5.11 adds a separate responsive **Inventory advisor** view and explicit Open/Refresh commands.
   Opening is memory-only; Refresh is the sole capture trigger and composes H4.14 → H4.15 → H4.16
   through a latest-wins single-flight cache. H4.18 supplies an immutable, source-backed built-in v2 bundle
@@ -349,16 +349,16 @@ The current published vertical provides:
   vendor). David approved the source-backed rule and economic pack on 2026-08-16: complete fresh evidence
   can now recommend manual `open`, `sell` or `vendor` for 36038 with the fixed 10% margin. Partial or
   incoherent evidence still returns review, and discard remains unavailable.
-	The view captures character bags plus shared inventory with at most two observations per explicit
-	Refresh. A complete first observation is checked once more under the same pinned operation and is
-	stable only when ownership and placement agree. A transient `206`/timeout/network/`5xx` may consume
-	the second observation, but recovery remains unstable; `429` stops immediately so the shared
-	cooldown owns the retry. Each private request has a 30-second timeout and no third or external retry.
-	Bank, materials and Trading Post delivery are captured as optional stores and remain unchecked by
-	default. Each control reports whether its source was read, restricted, missing permission, partial or
-	unavailable; a source-specific 403 degrades only that store, while a 401 still rejects the pinned
-	credential. Plain review rows are opt-in; item rows render trusted official catalog icons.
-	At the bundle's exclusive expiry,
+  The view captures character bags plus shared inventory with at most two observations per explicit
+  Refresh. A complete first observation is checked once more under the same pinned operation and is
+  stable only when ownership and placement agree. A transient `206`/timeout/network/`5xx` may consume
+  the second observation, but recovery remains unstable; `429` stops immediately so the shared
+  cooldown owns the retry. Each private request has a 30-second timeout and no third or external retry.
+  Bank, materials and Trading Post delivery are captured as optional stores and remain unchecked by
+  default. Each control reports whether its source was read, restricted, missing permission, partial or
+  unavailable; a source-specific 403 degrades only that store, while a 401 still rejects the pinned
+  credential. Plain review rows are opt-in; item rows render trusted official catalog icons.
+  At the bundle's exclusive expiry,
   Refresh fails closed with
   `missing_rules` before any API request.
 - H5.12 adds an explicit, foldable Inventory Advisor editor for local reservation goals and keep

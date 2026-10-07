@@ -2,8 +2,14 @@
 
 ## Release beta 0.6.6 - las sesiones anteriores muestran sus monedas y el valor incluye el oro observado
 
-Release por tag `0.6.6`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (gate, publicación e
-instalación).
+[Canal 0.6.6 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.6);
+**instalación/runtime pendiente**. Tag `0.6.6` sobre `89f4532` (atestación del candidato `e02372d`), árbol
+`40cca5cf2f733a5f0db25bd3b8170af3aebd9e8b`. Gate local previo: `check` 8/8 (5004 tests pasados y 1 saltado,
+`src/host/hebra/bundle.test.ts`, que solo corre con el bundle de Hebra construido), guardrails 25/25 y
+`release:preflight` en verde. El benchmark H6 y su sabotaje no se corrieron en local; los corre la CI de
+`main`. El workflow de release (run 37643557499) terminó en success y `release:brat-verify` verificó los
+ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo pendiente (instalación en Hebra y
+Obsidian, y las monedas con datos reales).
 
 - Sesiones anteriores con monedas: en la pestaña Sesión, cada sesión anterior muestra también sus monedas
   observadas, debajo de las teselas de objetos, con el formato de la sesión actual (el oro como dinero, el
@@ -793,6 +799,7 @@ API lo tenga desde 2020, el plugin nunca se lo pide. Confirmado con la nota real
   quitaron varios `append()` redundantes en `sale-view.ts` que no hacían nada en un DOM real (un nodo
   ya adjunto por `createEl`/`createDiv`/`createSpan` no se duplica al reasignarlo) pero que sí
   duplicaban cada fila, la tarjeta del saco y el pie en el doble de pruebas usado por sus tests.
+
 ## Sin publicar (main, 26 sep 2026) - la pestaña Venta ya no se queda en «Leyendo precios del bazar…»
 
 **Bug real (David, 0.2.3 vía BRAT): al abrir Venta con el asesor sin analizar en esa sesión de
@@ -852,7 +859,7 @@ piezas "propuesta"/"decidido, sin implementar" de la lámina 1 (Sesión y Ajuste
 
 - **Barra**: Ajustes pasa a icono (`clickable-icon`) al final de la barra, nunca una cuarta pestaña;
   nueva línea de estado bajo la barra en Sesión (`Nexus conectado`/`sin señal desde HH:MM` · `Cuenta
-  leída a las HH:MM` · `siguiente hacia las HH:MM`).
+leída a las HH:MM` · `siguiente hacia las HH:MM`).
 - **2.1 (en curso)**: la cifra principal dice «Ganado», nunca «en vivo»; nueva cifra «Lectura de la
   cuenta» (hace N min, con la hora y la siguiente); insignia «Laberinto» y sufijo «la marcó Nexus»
   (`IngameSessionMarker.linkFor`, nuevo); la línea del saco de Halloween lee el MISMO veredicto que
@@ -1309,7 +1316,7 @@ Cierra las tareas hijas del audit del 10 sep que quedaron fuera de la 0.1.32 (H1
   entrega salía como `success` (`alert-emitter.ts`, H15.16). Si el servidor in-game no puede abrir el
   puerto (`EADDRINUSE`), queda registrado con el código y la fila de ajustes lo muestra (H15.17).
 - Precios y assets: el sell signal que fallaba dentro de la compactación registra `price_history_compact
-  failure` (H15.18); `previewManagedAssets` corre bajo el runner y registra su fallo (H15.19);
+failure` (H15.18); `previewManagedAssets` corre bajo el runner y registra su fallo (H15.19);
   `PilotMetricsRecorder` registra `storage_failure` en vez de devolver `false`, y `exportPilotMetrics`
   va bajo el runner (H15.23).
 
@@ -1769,14 +1776,14 @@ log), con `check` 7/7 y `check:guardrails` 24/24 en verde. Tareas H14.1 a H14.24
   `calculateTradingPostFees` acertó **6 de 6** y la que aplicaba techo en micro-cobre, **2 de 6**:
 
   | Bruto | Neto real | Ruta de sesión | Ruta del advisor (antes) |
-  |---|---|---|---|
-  | 2 | 0 | 0 | 0 |
-  | 6 | 4 | 4 | 4 |
-  | 12 | 10 | 10 | 9,8 |
-  | 18 | 15 | 15 | 15,2 |
-  | 51 | 43 | 43 | 43,35 |
-  | 68 | 58 | 58 | 57,8 |
-  | 11 | 9 | 9 | 8,9 |
+  | ----- | --------- | -------------- | ------------------------ |
+  | 2     | 0         | 0              | 0                        |
+  | 6     | 4         | 4              | 4                        |
+  | 12    | 10        | 10             | 9,8                      |
+  | 18    | 15        | 15             | 15,2                     |
+  | 51    | 43        | 43             | 43,35                    |
+  | 68    | 58        | 58             | 57,8                     |
+  | 11    | 9         | 9              | 8,9                      |
 
 - **La fórmula real del bazar** es `max(round(precio × tasa), 1)` aplicada **por separado** a la
   comisión de publicación (5 %) y a la de transacción (10 %), cada una con **su propio suelo de un

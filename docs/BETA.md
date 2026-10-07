@@ -2,9 +2,9 @@
 
 ## Estado actual
 
-[0.6.5 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.5) como release
+[0.6.6 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.6) como release
 normal, sin draft ni prerelease: **canal publicado; instalación/runtime pendiente**. Nombre de
-GitHub Release, tag y `manifest.version` son exactamente `0.6.5`, con ocho assets reales subidos,
+GitHub Release, tag y `manifest.version` son exactamente `0.6.6`, con ocho assets reales subidos,
 no vacíos y verificados. El SHA del tag, gates y workflows están en [ESTADO](ESTADO.md).
 `manifest.json` por sí solo identifica un checkout o instalación; no demuestra carga correcta.
 Para volver a verificar los metadatos de la release:
@@ -52,8 +52,8 @@ versión cargada al reabrir. Publicar Companion no sustituye la DLL local de Nex
 La matriz vigente de sesiones requiere Nexus en Fedora/GE-Proton y Windows; en Windows, Blish HUD
 conserva HUD/avisos y necesita ese productor local. Blish por sí solo no aporta objetos; su soporte
 en Fedora no está acreditado. La sesión abarca la conexión al juego y diez minutos de gracia,
-independientemente de los huecos de lectura. El lector nativo de 0.5.0 no cubre cartera/monedas,
-MF verificado ni huecos de bolsas: se muestran desconocidos, nunca cero ni inferidos mediante
+independientemente de los huecos de lectura. El addon 0.6.0 lee la cartera (verificado en el juego:
+55 monedas cubiertas); el lector nativo sigue sin cubrir MF verificado ni huecos de bolsas: se muestran desconocidos, nunca cero ni inferidos mediante
 consultas privadas automáticas. La preparación MF manual conserva su procedencia.
 
 La [matriz live de QA](QA-MVP.md) exige arranque, reapertura, adquisición, huecos, cierre, guardado,
