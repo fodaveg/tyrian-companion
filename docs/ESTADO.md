@@ -1,21 +1,37 @@
 # Estado
 
-## 0.6.4 preparada: histórico de precio de venta en los detalles del asesor de inventario (7 oct 2026)
+## Canal 0.6.4 publicado: histórico de precio de venta en los detalles del asesor de inventario (7 oct 2026)
 
-**Candidata en `main`; nada publicado ni etiquetado.** El gate está pendiente. Añade, dentro de «Detalles» de
-cada fila del asesor de inventario, el bloque «Histórico de precio de venta» con la gráfica de la oferta de
-venta más baja de cada día (3 meses, 1 año y Todo). Sigue siendo opt-in: con el histórico apagado no hay
-ninguna petición.
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.4](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.4)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.4`. El tag
+anotado apunta a `322440a` (atestación). Añade, dentro de «Detalles» de cada fila del asesor de inventario,
+el bloque «Histórico de precio de venta» con la gráfica de la oferta de venta más baja de cada día (3 meses,
+1 año y Todo). Sigue siendo opt-in: con el histórico apagado no hay ninguna petición.
 
+- Publicación: el workflow `release.yml` (run 37597747813) terminó en success y la CI del push
+  (run 37597730183) también. La release tiene ocho assets, todos `uploaded`: `hebra-main.mjs` 3287416,
+  `hebra-styles.css` 118364, `hebra.json` 954, `main.js` 1869503, `manifest.json` 236, `styles.css` 94898,
+  `tyrian-companion-0.6.4.zip` 1964947 y `tyrian-companion-0.6.4.zip.sha256` 93 (bytes).
+  `release:brat-verify` contra la salida real de `gh release view`: «BRAT release contract: PASS
+  (version=0.6.4; assets=8)». El `hebra-main.mjs` descargado contiene `ensurePriceHistorySeed` y el texto
+  «Lowest sell offer of each day»; `hebra-styles.css` contiene las clases `tyrian-inventory__price-history`;
+  `hebra.json` dice `0.6.4`.
+- Gate previo a publicar, sobre el árbol `b8c884c6bec0f4b8f9812d319e988af9dc999b69` (HEAD `8afdd49`,
+  Node 22.23.1): `check` 8/8 (4966 tests, 314 archivos), guardrails 25/25 (320 tests, 29 archivos),
+  benchmark H6 y su sabotaje en rojo PASS, `release:preflight` PASS y `changelog-entry.mjs 0.6.4` con
+  exit 0. Una primera pasada sobre el árbol `a0e98953` salió en rojo por 2 tests de
+  `src/advisor/inventory-advisor-presentation-architecture.test.ts` (el censo revisado de la pantalla del
+  asesor no tenía el fichero nuevo, su import ni la acción nueva) y se corrigió en `8afdd49`.
 - Cambios: `src/ui/inventory-advisor-price-history-block.ts` (nuevo), `src/ui/inventory-advisor-view.ts`,
   `src/ui/inventory-advisor-item-view.ts`, `styles.css` y `src/core/i18n-runtime-catalog.ts`. La gráfica
   compartida (`src/ui/price-history-chart-model.ts` y `src/ui/price-history-chart-view.ts`) deja de repetir
-  etiquetas en el eje de fechas. Metadatos alineados a 0.6.4.
-- Verificado: solo los metadatos de versión y la entrada de changelog de esta preparación (extractor de notas
-  `changelog-entry.mjs`). Los commits de código traen sus tests; no se han reejecutado aquí. La gráfica se
-  midió en Firefox a 900, 390 y 280 px con una serie de prueba y colores sustitutos.
-- No verificado: el gate completo, la publicación, la instalación en Hebra y Obsidian, y la gráfica dentro de
-  Hebra real con datos reales de datawars2. Tampoco qué responde datawars2 para un objeto ligado a cuenta.
+  etiquetas en el eje de fechas. El test `src/advisor/inventory-advisor-presentation-architecture.test.ts`
+  registra el bloque nuevo en el censo. Metadatos alineados a 0.6.4.
+- Verificado: el gate local, la publicación y los ocho assets descritos arriba.
+- No verificado: la instalación y carga de la 0.6.4 en Hebra y en BRAT/Obsidian, la gráfica dentro de Hebra
+  real con datos reales de datawars2 (se midió en Firefox sin cabeza a 900, 390 y 280 px con una serie de
+  prueba y colores sustitutos) y qué responde datawars2 para un objeto ligado a cuenta. De la 0.6.3 siguen
+  sin verificar una sesión real de juego y el bloque «Sesiones anteriores» con la paleta real de Hebra.
 
 ## Canal 0.6.3 publicado: sesiones anteriores en la pestaña Sesión y avisos de drop sin cotización (7 oct 2026)
 

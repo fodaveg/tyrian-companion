@@ -2,8 +2,13 @@
 
 ## Release beta 0.6.4 - el asesor de inventario muestra el histórico de precio de venta de cada objeto
 
-Release por tag `0.6.4`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación en
-Hebra y Obsidian y la gráfica con datos reales de datawars2).
+[Canal 0.6.4 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.4);
+**instalación/runtime pendiente**. Tag `0.6.4` sobre `322440a`, árbol verificado
+`b8c884c6bec0f4b8f9812d319e988af9dc999b69`: `check` 8/8 (4966 tests, 314 archivos), guardrails 25/25
+(320 tests, 29 archivos), benchmark H6 con su sabotaje en rojo, `release:preflight` y
+`changelog-entry.mjs 0.6.4`, todo en verde. El workflow de release (run 37597747813) terminó en success y
+`release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo
+pendiente (instalación en Hebra y Obsidian y la gráfica con datos reales de datawars2).
 
 - Histórico de precio de venta (petición de David del 7 oct 2026: «una gráfica con el precio histórico de
   venta de los últimos meses para decidir visualmente si es buen momento»): al abrir «Detalles» de una fila
