@@ -1,7 +1,7 @@
 # Tyrian Companion
 
 > **Contract update, October 6, 2026:** [live1](docs/SPEC-live-loot.md) supersedes the API-only session
-> design. The 0.6.4 channel is published with its release-tree checks verified; installation and
+> design. The 0.6.5 channel is published with its release-tree checks verified; installation and
 > runtime QA remain pending. H1–H18 descriptions below retain legacy history, not permission to
 > restore automatic authenticated API requests in live sessions.
 
@@ -11,7 +11,7 @@ describe manual actions: the plugin never operates the game account. A connected
 addon can mark session boundaries automatically from game presence.
 
 The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
-our Nexus addon as the source of new sessions. **The 0.6.4 channel is published;
+our Nexus addon as the source of new sessions. **The 0.6.5 channel is published;
 installation and runtime QA remain pending.** This does not prove that an installed older addon supplies it.
 Authenticated GW2 API requests are reserved for explicit manual inventory/wallet operations and
 connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
@@ -33,7 +33,7 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 
 > [!WARNING]
 > `manifest.json` identifies the checkout or installed candidate; it does not by itself prove that
-> version is published or loaded. The [0.6.4 channel](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.4)
+> version is published or loaded. The [0.6.5 channel](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.5)
 > is published; real-client installation/runtime QA remains pending. Use a disposable vault and
 > record the exact Companion and addon versions when testing.
 
@@ -96,7 +96,7 @@ Obsidian plugin assets. Publication does not prove installation or runtime behav
 ## Install the beta
 
 For Obsidian, use desktop `1.11.4` or newer and a disposable vault. BRAT installs published beta
-versions; select the published 0.6.4 release. Game sessions also need the matching Nexus producer.
+versions; select the published 0.6.5 release. Game sessions also need the matching Nexus producer.
 Windows with Blish HUD still needs Nexus locally.
 
 1. From **Settings → Community plugins → Browse**, install and enable
@@ -118,12 +118,12 @@ a new release; that delay proves neither installation success nor failure.
 Developers testing an exact unpublished commit use the existing
 [artifact installation procedure](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores).
 The canonical Hebra host uses the matching external-plugin assets, described in the same
-[beta guide](docs/BETA.md). The 0.6.4 channel is a normal release, not a prerelease,
+[beta guide](docs/BETA.md). The 0.6.5 channel is a normal release, not a prerelease,
 because the Hebra installer omits prereleases. Record installation/loading separately from session QA.
 
 ## First farming session
 
-These steps describe the published 0.6.4 code; they do not certify its behavior in
+These steps describe the published 0.6.5 code; they do not certify its behavior in
 an installed client. The [live QA matrix](docs/QA-MVP.md) records the pending real-client
 checks. Legacy API session controls are not a fallback for missing Nexus observations.
 

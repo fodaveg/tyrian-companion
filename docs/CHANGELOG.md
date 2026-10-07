@@ -2,8 +2,13 @@
 
 ## Release beta 0.6.5 - las sesiones anteriores muestran también sus objetos
 
-Release por tag `0.6.5`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (gate, publicación e
-instalación).
+[Canal 0.6.5 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.5);
+**instalación/runtime pendiente**. Tag `0.6.5` sobre `80cac14`, árbol verificado
+`e60599d46b0f1b8ad6ce8be110f4909271c645b0`: `check` 8/8 (4978 tests, 315 archivos), guardrails 25/25
+(320 tests, 29 archivos), benchmark H6 con su sabotaje en rojo, `release:preflight` y
+`changelog-entry.mjs 0.6.5`, todo en verde. El workflow de release (run 37604343164) terminó en success y
+`release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo
+pendiente (instalación en Hebra y Obsidian y las teselas con iconos reales).
 
 - Sesiones anteriores con objetos (petición de David del 7 oct 2026, tras ver el bloque en la 0.6.4: «en las
   sesiones anteriores quiero ver también los objetos»): en la pestaña Sesión, cada sesión anterior muestra
