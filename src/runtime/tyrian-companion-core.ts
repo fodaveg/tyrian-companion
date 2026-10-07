@@ -26,7 +26,7 @@ import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from '../sessions/live-session-m
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live-session-model';
 import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import type { LiveIngamePort } from '../alerts/live-loot-protocol';
-import { LiveSessionHistoryService, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
+import { LiveSessionHistoryService, type LiveSessionHistoryEntry, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
 import type { StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
 import { prepareLiveSessionExportSnapshot } from '../sessions/live-session-export';
 import { exportLegacyRuntimeArchive } from '../sessions/live-session-legacy-archive';
@@ -3164,7 +3164,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.renderViews();
 	}
 	getSelectedLiveSessionHistory(): string | null { return this.selectedLiveHistory?.payload.sessionRef ?? null; }
-	async listLiveSessionHistory(): Promise<{sessionRef:string;startedAt:string;endedAt:string;observationCount:number}[]> {
+	async listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> {
 		const result = await this.liveHistory?.list(); if (result?.status !== 'ok') throw new Error('Live session history is unavailable.');
 		return result.sessions;
 	}

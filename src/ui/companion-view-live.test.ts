@@ -67,12 +67,13 @@ describe('mounted Companion live consumer (simplified Session tab)', () => {
   view.render(); await Promise.resolve(); await Promise.resolve();
   expect(content.querySelector('.tyrian-product-shell')).not.toBeNull(); expect(content.querySelector('.tyrian-product-shell__attention')).toBeNull();
   expect(pageChildren(content)).toEqual(['tyrian-live-session tyrian-live-session--panel']);
-  // The only controls the tab adds to the shell's nav: the session button and the timeline summary.
+  // The retired pager «Previous» is covered by the exact control list below (the new block is «Previous sessions»).
+  // The only controls the tab adds to the shell's nav: the session button and the two summaries (closed, so nothing is read).
   const panel = content.querySelector('.tyrian-live-session')!;
   const reachable = Array.from(panel.querySelectorAll('button, summary, select, input, a, textarea')).filter((el) => el.closest('[hidden]') === null);
-  expect(reachable.map((el) => el.textContent).filter((text) => text !== 'Show 50 more')).toEqual(['Finish session', 'Timeline (3)']);
+  expect(reachable.map((el) => el.textContent).filter((text) => text !== 'Show 50 more')).toEqual(['Finish session', 'Timeline (3)', 'Previous sessions']);
   for (const retired of [
-   'Previous account session', 'Saved session', 'Refresh history', 'Session summary', 'Coverage', 'Details', 'Previous', 'Next',
+   'Previous account session', 'Saved session', 'Refresh history', 'Session summary', 'Coverage', 'Details', 'Next',
    'Export', 'CSV', 'Chart data', 'Latest 200', 'Reading gaps', 'Valuable', 'Compare', 'Bags observed', 'Prepare the next session',
    'Earlier saved account sessions', 'API key',
   ]) expect(content.textContent).not.toContain(retired);

@@ -9,6 +9,10 @@ import { exportLiveSession, type LiveSessionExportFormat, type LiveSessionExport
 
 export interface LiveSessionHistoryEntry {
 	sessionRef: string; startedAt: string; endedAt: string; observationCount: number;
+	/** The value saved with the session (coins included when observed, else the item subtotal); no current price is applied. */
+	estimatedValueCopper: number;
+	/** Net item quantity saved with the session: the figure the panel shows as «Objetos». */
+	itemCount: number;
 }
 export type LiveSessionHistoryList = { status: 'ok'; sessions: LiveSessionHistoryEntry[]; ignored: number }
 	| { status: 'conflict'; invalid: number; duplicates: number } | { status: 'unavailable' };
@@ -26,6 +30,8 @@ export class LiveSessionHistoryService {
 		if (scan.status !== 'ok') return scan;
 		return { status: 'ok',ignored: scan.ignored,sessions: scan.sessions.map((session) => ({
 			sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: session.observationCount,
+			estimatedValueCopper: session.valuation.knownNetValueCopper ?? session.valuation.netItemValueKnownCopper,
+			itemCount: session.totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0),
 		})) };
 	}
 

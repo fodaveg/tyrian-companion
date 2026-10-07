@@ -1,5 +1,7 @@
 import { formatCopperVisual } from '../core/copper-format';
 import type { LiveGapV1, LiveSessionAlertViewV1, LiveSessionViewV1, LiveTotalV1 } from '../sessions/live-session-model';
+import type { LiveSessionHistoryEntry } from '../sessions/live-session-history';
+import { sha256Text } from '../sessions/session-note-renderer';
 import { reconcileChildren } from './reconcile-children';
 import { liveSessionCopy, type LiveSessionCopyKey } from './live-session-copy';
 
@@ -13,7 +15,7 @@ export interface LiveSessionDataActions {
 	getSelectedLiveSessionHistory?(): string | null;
 	getLiveSessionView(offset?: number, limit?: number): LiveSessionViewV1;
 	getLiveSessionEntity(kind: 'item' | 'currency', id: number): { name: string; icon: string | null } | null;
-	listLiveSessionHistory?(): Promise<{ sessionRef: string; startedAt: string; endedAt: string; observationCount: number }[]>;
+	listLiveSessionHistory?(): Promise<LiveSessionHistoryEntry[]>;
 	selectLiveSessionHistory?(sessionRef: string | null): Promise<void>;
 	exportLiveSession(kind: 'timeline' | 'summary', format: 'csv' | 'json'): Promise<void>;
 }
@@ -31,7 +33,7 @@ export interface LiveSessionControlState {
 	oldSession: { canDiscard: boolean } | null;
 }
 
-export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'getLocale' | 'getLiveSessionView' | 'getLiveSessionEntity'> {
+export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'getLocale' | 'getLiveSessionView' | 'getLiveSessionEntity' | 'listLiveSessionHistory'> {
 	getLiveSessionControl(): LiveSessionControlState;
 	/** Both reject when the session did not start or finish. */
 	startLiveSession(): Promise<void>;
@@ -40,6 +42,7 @@ export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'g
 }
 
 const PAGE_SIZE = 50;
+const HISTORY_PAGE_SIZE = 10;
 const FETCH_CHUNK = 200;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
@@ -66,6 +69,7 @@ export function liveSessionRatePerHour(view: LiveSessionViewV1): number | null {
 
 interface Tile { li: HTMLElement; sig: string }
 interface Row { li: HTMLElement; sig: string }
+type PreviousState = 'idle' | 'loading' | 'ready' | 'failed';
 
 /** The simplified Session tab: one header with one button, three figures, objects, one chart, one timeline. */
 export class LiveSessionPanel {
@@ -106,6 +110,15 @@ export class LiveSessionPanel {
 	private readonly more: HTMLElement;
 	private readonly moreButton: HTMLButtonElement;
 	private readonly moreLabel: HTMLElement;
+	private readonly previous: HTMLDetailsElement | null;
+	private readonly previousStatus: HTMLElement;
+	private readonly previousAlert: HTMLElement;
+	private readonly previousRetry: HTMLButtonElement;
+	private readonly previousRows: HTMLElement;
+	private readonly previousMore: HTMLElement;
+	private readonly previousMoreButton: HTMLButtonElement;
+	private readonly previousMoreLabel: HTMLElement;
+	private readonly previousCache = new Map<string, Row>();
 	private readonly tiles = new Map<string, Tile>();
 	private readonly rowCache = new Map<string, Row>();
 	private readonly coinCache = new Map<string, Tile>();
@@ -114,6 +127,16 @@ export class LiveSessionPanel {
 	private sessionId: string | null = null;
 	private shown = PAGE_SIZE;
 	private chartKey = '';
+	private previousState: PreviousState = 'idle';
+	private previousEntries: readonly LiveSessionHistoryEntry[] = [];
+	private previousShown = HISTORY_PAGE_SIZE;
+	/** A read is in flight: at most one at a time. */
+	private previousReading = false;
+	/** The saved sessions changed (one ended) while a read was in flight or the block was closed. */
+	private previousStale = false;
+	private lastPhase: LiveSessionViewV1['phase'] | null = null;
+	/** `sessionRef` is the SHA-256 of the live `sessionId`, so the session shown above can be told apart in the saved list. */
+	private currentRef: { id: string; ref: string | null } | null = null;
 
 	constructor(private readonly document: Document, private readonly actions: LiveSessionPanelActions) {
 		this.element = this.node('section', 'tyrian-live-session tyrian-live-session--panel');
@@ -193,6 +216,29 @@ export class LiveSessionPanel {
 		this.timeline.addEventListener('toggle', () => { this.refresh(); });
 
 		this.element.append(head, notices, this.stats, this.objects, this.chart, this.timeline);
+
+		this.previousStatus = this.node('p', 'tyrian-live-session__hint');
+		this.previousStatus.setAttribute('role', 'status');
+		this.previousStatus.setAttribute('aria-live', 'polite');
+		this.previousRetry = this.button('tyrian-live-session__retry', () => { void this.loadPrevious(); });
+		this.previousAlert = this.node('div', 'tyrian-live-session__previous-alert');
+		this.previousAlert.setAttribute('role', 'alert');
+		this.previousAlert.append(this.node('p', 'tyrian-live-session__alert'), this.previousRetry);
+		this.previousRows = this.node('ol', 'tyrian-live-session__previous-rows');
+		this.previousMoreButton = this.button('tyrian-live-session__more-button', () => { this.previousShown += HISTORY_PAGE_SIZE; this.renderPrevious(); });
+		this.previousMoreLabel = this.node('span');
+		this.previousMore = this.node('div', 'tyrian-live-session__more');
+		this.previousMore.append(this.previousMoreButton, this.previousMoreLabel);
+		if (this.actions.listLiveSessionHistory === undefined) this.previous = null;
+		else {
+			const previous = this.document.createElementNS(HTML_NS, 'details') as HTMLDetailsElement;
+			previous.className = 'tyrian-live-session__timeline tyrian-live-session__previous';
+			previous.append(this.node('summary', '', this.copy('previous')), this.previousStatus, this.previousAlert, this.previousRows, this.previousMore);
+			// Opening is the only thing that reads the library; a tick never does.
+			previous.addEventListener('toggle', () => { if (previous.open && (this.previousState === 'idle' || this.previousStale)) void this.loadPrevious(); this.renderPrevious(); });
+			this.previous = previous;
+			this.element.append(previous);
+		}
 		this.refresh();
 	}
 
@@ -216,6 +262,97 @@ export class LiveSessionPanel {
 		}
 		if (!this.chart.hidden) this.renderChart(view);
 		if (hasData) this.renderTimeline(view);
+		this.trackPrevious(view);
+	}
+
+	/** Reads the saved sessions. Never called from `refresh()`: it scans every note of the library. */
+	private async loadPrevious(): Promise<void> {
+		const list = this.actions.listLiveSessionHistory;
+		if (list === undefined || this.previousReading) return;
+		this.previousReading = true; this.previousStale = false; this.previousState = 'loading';
+		this.renderPrevious();
+		try {
+			this.previousEntries = await list.call(this.actions);
+			this.previousState = 'ready';
+			this.previousShown = HISTORY_PAGE_SIZE;
+		} catch { this.previousState = 'failed'; }
+		finally { this.previousReading = false; }
+		// A session that finished during the read left it out of date: read once more, still only because it is open.
+		if (this.previousStale && this.previous?.open === true) { void this.loadPrevious(); return; }
+		this.renderPrevious();
+	}
+
+	/** The one reaction to a tick: note the end of a session and hash the id; no read happens here. */
+	private trackPrevious(view: LiveSessionViewV1): void {
+		if (this.previous === null) return;
+		const ended = view.phase === 'complete' && this.lastPhase !== null && this.lastPhase !== 'complete';
+		this.lastPhase = view.phase;
+		if (ended) {
+			this.previousStale = true;
+			if (this.previous.open && !this.previousReading) void this.loadPrevious();
+		}
+		if (view.sessionId !== null && this.currentRef?.id !== view.sessionId) {
+			this.currentRef = { id: view.sessionId, ref: null };
+			void this.hashCurrent(view.sessionId);
+		}
+		this.renderPrevious();
+	}
+
+	/** Hashing is local and cheap. If it ever failed, the session shown above would merely stay in the list too. */
+	private async hashCurrent(id: string): Promise<void> {
+		try {
+			const ref = await sha256Text(id);
+			if (this.currentRef?.id === id) { this.currentRef = { id, ref }; this.renderPrevious(); }
+		} catch { /* No hash, no exclusion: the list is still correct, only one row longer. */ }
+	}
+
+	private renderPrevious(): void {
+		if (this.previous === null) return;
+		const open = this.previous.open;
+		const state = this.previousState;
+		const hiddenRef = this.currentRef?.ref ?? null;
+		const entries = this.previousEntries.filter((entry) => entry.sessionRef !== hiddenRef);
+		const loading = open && state === 'loading';
+		const failed = open && state === 'failed';
+		const empty = open && state === 'ready' && entries.length === 0;
+		this.setText(this.previousStatus, loading ? this.copy('previousLoading') : empty ? this.copy('previousEmpty') : '');
+		this.previousStatus.hidden = !loading && !empty;
+		if (loading) this.previousStatus.setAttribute('aria-busy', 'true'); else this.previousStatus.removeAttribute('aria-busy');
+		this.previousAlert.hidden = !failed;
+		this.setText(this.previousAlert.firstElementChild as HTMLElement, failed ? this.copy('previousFailed') : '');
+		this.setText(this.previousRetry, this.copy('retry'));
+		const listed = open && state === 'ready' && entries.length > 0;
+		this.previousRows.hidden = !listed;
+		this.previousMore.hidden = true;
+		if (!listed) return;
+		const wanted: HTMLElement[] = [];
+		for (const entry of entries.slice(0, this.previousShown)) {
+			const objects = entry.itemCount === 1 ? this.copy('objectsOne') : this.copy('objectsMany').replace('{n}', this.number(entry.itemCount));
+			const sig = [entry.startedAt, entry.endedAt, entry.estimatedValueCopper, entry.itemCount, this.actions.getLocale()].join('|');
+			let cached = this.previousCache.get(entry.sessionRef);
+			if (cached === undefined) { cached = { li: this.node('li', 'tyrian-live-session__previous-row'), sig: '' }; this.previousCache.set(entry.sessionRef, cached); }
+			if (cached.sig !== sig) {
+				cached.sig = sig;
+				const started = this.node('time', '', this.dayOf(entry.startedAt));
+				started.setAttribute('datetime', entry.startedAt);
+				const range = this.node('span', '', `${this.timeOfDay(entry.startedAt, false)}–${this.timeOfDay(entry.endedAt, false)}`);
+				const duration = this.node('span', '', this.clock(Date.parse(entry.endedAt) - Date.parse(entry.startedAt)));
+				const when = this.node('span', 'tyrian-live-session__previous-line');
+				when.append(started, range);
+				const figures = this.node('span', 'tyrian-live-session__previous-line');
+				figures.append(duration, this.node('b', '', this.money(entry.estimatedValueCopper)), this.node('span', '', objects));
+				cached.li.replaceChildren(when, figures);
+			}
+			wanted.push(cached.li);
+		}
+		const keep = new Set(wanted);
+		for (const [key, row] of Array.from(this.previousCache)) if (!keep.has(row.li)) this.previousCache.delete(key);
+		reconcileChildren(this.previousRows, wanted);
+		this.setText(this.previousMoreLabel, this.copy('shownOf').replace('{shown}', String(wanted.length)).replace('{total}', String(entries.length)));
+		this.setText(this.previousMoreButton, this.copy('showMoreSessions'));
+		const exhausted = entries.length <= this.previousShown;
+		if (exhausted && this.document.activeElement === this.previousMoreButton) (this.previous.firstElementChild as HTMLElement).focus();
+		this.previousMore.hidden = exhausted;
 	}
 
 	private headerKind(view: LiveSessionViewV1, control: LiveSessionControlState): HeaderKind {
@@ -491,10 +628,16 @@ export class LiveSessionPanel {
 		const mm = String(minutes).padStart(2, '0'), ss = String(seconds).padStart(2, '0');
 		return hours > 0 ? `${String(hours)}:${mm}:${ss}` : `${mm}:${ss}`;
 	}
-	private timeOfDay(value: string | number): string {
+	private timeOfDay(value: string | number, seconds = true): string {
 		const at = new Date(value);
 		return Number.isFinite(at.getTime())
-			? at.toLocaleTimeString(this.actions.getLocale(), { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }) : '—';
+			? at.toLocaleTimeString(this.actions.getLocale(), { hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}), hourCycle: 'h23' }) : '—';
+	}
+	/** The day of a saved session; the year only when it is not this one. */
+	private dayOf(value: string): string {
+		const at = new Date(value);
+		if (!Number.isFinite(at.getTime())) return '—';
+		return at.toLocaleDateString(this.actions.getLocale(), { day: 'numeric', month: 'short', ...(at.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
 	}
 	private clockOfDay(value: number): string {
 		return new Date(value).toLocaleTimeString(this.actions.getLocale(), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });

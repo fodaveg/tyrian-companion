@@ -67,6 +67,9 @@ const SIMPLE_EN = {
  gapsNone: 'no reading gaps', gapsOne: '1 reading gap', gapsMany: '{n} reading gaps',
  legendOne: 'No reading · 1 gap', legendMany: 'No reading · {n} gaps', since: 'since',
  timeline: 'Timeline', showMore: 'Show 50 more', shownOf: '{shown} of {total}', tileLabel: '{name}, {quantity}',
+ previous: 'Previous sessions', previousLoading: 'Loading sessions…', previousEmpty: 'There are no saved sessions yet.',
+ previousFailed: 'The saved sessions could not be read.', retry: 'Retry', showMoreSessions: 'Show 10 more',
+ objectsOne: '1 object', objectsMany: '{n} objects',
 } as const;
 const SIMPLE_ES: Record<keyof typeof SIMPLE_EN, string> = {
  stateIdle: 'Sin sesión', stateStarting: 'Preparando sesión', stateActive: 'En curso', stateStopping: 'Terminando sesión',
@@ -85,6 +88,9 @@ const SIMPLE_ES: Record<keyof typeof SIMPLE_EN, string> = {
  gapsNone: 'sin huecos de lectura', gapsOne: '1 hueco de lectura', gapsMany: '{n} huecos de lectura',
  legendOne: 'Sin lectura · 1 hueco', legendMany: 'Sin lectura · {n} huecos', since: 'desde',
  timeline: 'Cronología', showMore: 'Ver 50 más', shownOf: '{shown} de {total}', tileLabel: '{name}, {quantity}',
+ previous: 'Sesiones anteriores', previousLoading: 'Cargando sesiones…', previousEmpty: 'Todavía no hay sesiones guardadas.',
+ previousFailed: 'No se han podido leer las sesiones guardadas.', retry: 'Reintentar', showMoreSessions: 'Ver 10 más',
+ objectsOne: '1 objeto', objectsMany: '{n} objetos',
 };
 export type LiveSessionCopyKey = keyof typeof EN | keyof typeof SIMPLE_EN;
 export function liveSessionCopy(locale: 'es' | 'en', key: LiveSessionCopyKey): string {

@@ -1,5 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
+import { formatCopperVisual } from '../core/copper-format';
+import type { LiveSessionHistoryEntry } from '../sessions/live-session-history';
+import { sha256Text } from '../sessions/session-note-renderer';
 import type { LiveGapV1, LiveObservationV1, LiveSessionViewV1 } from '../sessions/live-session-model';
 import {
 	LiveSessionPanel, liveSessionRatePerHour, liveSessionValue,
@@ -31,7 +34,7 @@ const idleView = (): LiveSessionViewV1 => ({ ...liveView(0), sessionId: null, ph
 const control = (patch: Partial<LiveSessionControlState> = {}): LiveSessionControlState => ({
 	gameConnected: true, consult: false, canStart: false, canStop: true, busy: null, oldSession: null, ...patch });
 
-function harness(initial = liveView(), initialControl = control(), locale: 'es' | 'en' = 'en') {
+function harness(initial = liveView(), initialControl = control(), locale: 'es' | 'en' = 'en', list?: LiveSessionPanelActions['listLiveSessionHistory']) {
 	const state = { view: initial, control: initialControl };
 	const start = vi.fn(async () => {});
 	const stop = vi.fn(async () => {});
@@ -43,6 +46,7 @@ function harness(initial = liveView(), initialControl = control(), locale: 'es' 
 		getLocale: () => locale, getLiveSessionView: getView,
 		getLiveSessionEntity: (_kind, id) => ({ name: `Item ${String(id)}`, icon: 'https://render.guildwars2.com/file/hash/1.png' }),
 		getLiveSessionControl: () => state.control, startLiveSession: start, stopLiveSession: stop, discardOldSession: discard,
+		...(list === undefined ? {} : { listLiveSessionHistory: list }),
 	};
 	const panel = new LiveSessionPanel(document, actions);
 	document.body.append(panel.element);
@@ -330,5 +334,162 @@ describe('Session tab: an old session blocks the start', () => {
 	it('paints nothing about an old session when none blocks', () => {
 		const h = harness(idleView(), control({ canStart: true }));
 		expect(h.panel.element.querySelector('.tyrian-live-session__old')!.hasAttribute('hidden')).toBe(true);
+	});
+});
+
+describe('previous sessions block', () => {
+	const entry = (index: number, patch: Partial<LiveSessionHistoryEntry> = {}): LiveSessionHistoryEntry => ({
+		sessionRef: String(index).padStart(64, '0'), startedAt: new Date(Date.UTC(2026, 9, 5, 8, 0, 0) - index * 3_600_000).toISOString(),
+		endedAt: new Date(Date.UTC(2026, 9, 5, 8, 30, 0) - index * 3_600_000).toISOString(), observationCount: 4,
+		estimatedValueCopper: 12_345, itemCount: 7, ...patch });
+	const entries = (count: number): LiveSessionHistoryEntry[] => Array.from({ length: count }, (_, index) => entry(index));
+	const block = (panel: LiveSessionPanel): HTMLDetailsElement => panel.element.querySelector<HTMLDetailsElement>('details.tyrian-live-session__previous')!;
+	const open = (panel: LiveSessionPanel): void => { block(panel).open = true; block(panel).dispatchEvent(new Event('toggle')); };
+	const rowsOf = (panel: LiveSessionPanel): HTMLElement[] => Array.from(block(panel).querySelectorAll<HTMLElement>('.tyrian-live-session__previous-row'));
+	const visible = (el: Element | null): boolean => el !== null && !el.hasAttribute('hidden');
+	const ended = (): LiveSessionViewV1 => ({ ...liveView(2), phase: 'complete', connection: 'disconnected', endedAt: at(30) });
+
+	it('is the last child, closed, titled in both languages, and visible with no session, a live one and a finished one', () => {
+		for (const [locale, title] of [['en', 'Previous sessions'], ['es', 'Sesiones anteriores']] as const) {
+			for (const view of [idleView(), liveView(), ended()]) {
+				const h = harness(view, control(), locale, vi.fn(async () => []));
+				expect(h.panel.element.lastElementChild).toBe(block(h.panel));
+				expect(block(h.panel).open).toBe(false);
+				expect(block(h.panel).querySelector('summary')!.textContent).toBe(title);
+				expect(visible(block(h.panel))).toBe(true);
+			}
+		}
+	});
+
+	it('is not mounted when the action does not exist', () => {
+		const h = harness();
+		expect(h.panel.element.querySelector('.tyrian-live-session__previous')).toBeNull();
+		expect(h.panel.element.querySelectorAll('details')).toHaveLength(1);
+	});
+
+	it('reads nothing while closed and across many ticks, and exactly once after opening', async () => {
+		const list = vi.fn(async () => entries(2));
+		const h = harness(liveView(), control(), 'en', list);
+		for (let tick = 0; tick < 5; tick++) h.panel.refresh();
+		expect(list).toHaveBeenCalledTimes(0);
+		open(h.panel);
+		for (let tick = 0; tick < 5; tick++) h.panel.refresh();
+		await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(2));
+		for (let tick = 0; tick < 5; tick++) h.panel.refresh();
+		expect(list).toHaveBeenCalledTimes(1);
+		// Closing and opening again does not read again either.
+		block(h.panel).open = false; block(h.panel).dispatchEvent(new Event('toggle'));
+		open(h.panel);
+		expect(list).toHaveBeenCalledTimes(1);
+	});
+
+	it('shows a busy status while loading and never runs two reads at once', async () => {
+		let resolve!: (rows: LiveSessionHistoryEntry[]) => void;
+		const list = vi.fn(() => new Promise<LiveSessionHistoryEntry[]>((done) => { resolve = done; }));
+		const h = harness(idleView(), control(), 'es', list);
+		open(h.panel); open(h.panel); h.panel.refresh();
+		const status = block(h.panel).querySelector('[role="status"]')!;
+		expect(status.textContent).toBe('Cargando sesiones…');
+		expect(status.getAttribute('aria-busy')).toBe('true');
+		expect(status.getAttribute('aria-live')).toBe('polite');
+		expect(list).toHaveBeenCalledTimes(1);
+		resolve(entries(1));
+		await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(1));
+		expect(status.hasAttribute('aria-busy')).toBe(false);
+		expect(visible(status)).toBe(false);
+	});
+
+	it('says there are no saved sessions when the list is empty', async () => {
+		for (const [locale, text] of [['es', 'Todavía no hay sesiones guardadas.'], ['en', 'There are no saved sessions yet.']] as const) {
+			const h = harness(idleView(), control(), locale, vi.fn(async () => []));
+			open(h.panel);
+			await vi.waitFor(() => expect(block(h.panel).querySelector('[role="status"]')!.textContent).toBe(text));
+			expect(rowsOf(h.panel)).toHaveLength(0);
+		}
+	});
+
+	it('lists each session in order with day, hours, duration, saved value and objects', async () => {
+		const rows = [entry(0), entry(1, { itemCount: 1, estimatedValueCopper: 0 }), entry(2, { itemCount: 0 }),
+			entry(3, { estimatedValueCopper: 123_456_789 }), entry(4, { startedAt: '2024-03-01T10:00:00.000Z', endedAt: '2024-03-01T12:05:09.000Z' })];
+		const h = harness(idleView(), control(), 'en', vi.fn(async () => rows));
+		open(h.panel);
+		await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(5));
+		const lines = rowsOf(h.panel).map((row) => row.textContent);
+		expect(lines[0]).toContain(formatCopperVisual(12_345)); expect(lines[0]).toContain('7 objects'); expect(lines[0]).toContain('30:00');
+		expect(lines[1]).toContain('1 object'); expect(lines[1]).not.toContain('1 objects'); expect(lines[1]).toContain(formatCopperVisual(0));
+		expect(lines[2]).toContain('0 objects');
+		expect(lines[3]).toContain(formatCopperVisual(123_456_789));
+		expect(lines[4]).toContain('2024'); expect(lines[4]).toContain('2:05:09'); expect(lines[0]).not.toContain('2026');
+		expect(rowsOf(h.panel)[0]!.querySelectorAll('.tyrian-live-session__previous-line')).toHaveLength(2);
+		expect(rowsOf(h.panel)[0]!.querySelector('time')!.getAttribute('datetime')).toBe(rows[0]!.startedAt);
+		// Read-only: no row holds anything pressable, and the only buttons (Retry, Show more) are hidden here.
+		expect(rowsOf(h.panel).flatMap((row) => Array.from(row.querySelectorAll('button, a, [tabindex]')))).toHaveLength(0);
+		expect(Array.from(block(h.panel).querySelectorAll('button')).filter((el) => el.closest('[hidden]') === null)).toHaveLength(0);
+	});
+
+	it('leaves out the session shown above, found by the hash of its id, and keeps the rest', async () => {
+		const current = { ...liveView(), sessionId: 'session-live-1' };
+		const own = entry(0, { sessionRef: await sha256Text('session-live-1') });
+		const h = harness(current, control(), 'en', vi.fn(async () => [own, entry(1)]));
+		open(h.panel);
+		await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(1));
+		expect(block(h.panel).textContent).toContain('1 of 1');
+	});
+
+	it('pages by ten with «Show 10 more» and «{shown} of {total}», in both languages', async () => {
+		for (const [locale, more, label] of [['en', 'Show 10 more', '10 of 25'], ['es', 'Ver 10 más', '10 de 25']] as const) {
+			const h = harness(idleView(), control(), locale, vi.fn(async () => entries(25)));
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(10));
+			const button = block(h.panel).querySelector<HTMLButtonElement>('.tyrian-live-session__more-button')!;
+			expect(button.textContent).toBe(more);
+			expect(block(h.panel).querySelector('.tyrian-live-session__more span')!.textContent).toBe(label);
+			button.click(); expect(rowsOf(h.panel)).toHaveLength(20);
+			button.click(); expect(rowsOf(h.panel)).toHaveLength(25);
+			expect(visible(block(h.panel).querySelector('.tyrian-live-session__more'))).toBe(false);
+		}
+	});
+
+	it('shows a failure as an alert with Retry, which reads again once and recovers', async () => {
+		const list = vi.fn<() => Promise<LiveSessionHistoryEntry[]>>().mockRejectedValueOnce(new Error('conflict')).mockResolvedValue(entries(1));
+		const h = harness(idleView(), control(), 'es', list);
+		open(h.panel);
+		await vi.waitFor(() => expect(visible(block(h.panel).querySelector('[role="alert"]'))).toBe(true));
+		expect(block(h.panel).querySelector('[role="alert"]')!.textContent).toContain('No se han podido leer las sesiones guardadas.');
+		const retry = block(h.panel).querySelector<HTMLButtonElement>('.tyrian-live-session__retry')!;
+		expect(retry.textContent).toBe('Reintentar');
+		h.panel.refresh(); expect(list).toHaveBeenCalledTimes(1);
+		retry.click(); retry.click();
+		await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(1));
+		expect(list).toHaveBeenCalledTimes(2);
+		expect(visible(block(h.panel).querySelector('[role="alert"]'))).toBe(false);
+	});
+
+	it('reads again when a session ends while it is open, and on the next opening if it ended while closed', async () => {
+		const list = vi.fn(async () => entries(1));
+		const h = harness(liveView(), control(), 'en', list);
+		open(h.panel);
+		await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(1));
+		h.state.view = ended(); h.panel.refresh(); h.panel.refresh();
+		await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+		await Promise.resolve(); expect(list).toHaveBeenCalledTimes(2);
+		block(h.panel).open = false; block(h.panel).dispatchEvent(new Event('toggle'));
+		h.state.view = liveView(); h.panel.refresh(); h.state.view = ended(); h.panel.refresh();
+		expect(list).toHaveBeenCalledTimes(2);
+		open(h.panel);
+		await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+	});
+
+	it('keeps the open state, the focus and the very same nodes across a tick', async () => {
+		const h = harness(liveView(), control(), 'en', vi.fn(async () => entries(25)));
+		open(h.panel);
+		await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(10));
+		const first = rowsOf(h.panel)[0]!;
+		const button = block(h.panel).querySelector<HTMLButtonElement>('.tyrian-live-session__more-button')!;
+		button.focus();
+		h.panel.refresh();
+		expect(block(h.panel).open).toBe(true);
+		expect(rowsOf(h.panel)[0]).toBe(first);
+		expect(document.activeElement).toBe(button);
 	});
 });

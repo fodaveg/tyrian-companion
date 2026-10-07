@@ -344,9 +344,11 @@ export class TyrianCompanionView {
 		for (const child of Array.from(surface.children)) if (!retained.has(child as HTMLElement)) surface.removeChild(child);
 		surface.addClass('tyrian-companion-view__page');
 		if (liveSurface) {
-			// The simplified Session tab (6 oct 2026): the one panel and nothing else. The account-era
-			// session, the saved-session history, the comparison and the next-session preparation are
-			// no longer painted here; their data and commands are untouched.
+			// The simplified Session tab (6 oct 2026): the one panel. The account-era
+			// session, the saved-session `<select>`, the comparison and the next-session preparation are
+			// no longer painted here; their data and commands are untouched. The panel itself ends in a
+			// closed «Sesiones anteriores» block (7 oct 2026) that lists the saved live sessions, read-only
+			// and only once opened.
 			this.livePanel ??= new LiveSessionPanel(surface.ownerDocument, this.liveSessionPanelActions());
 			this.livePanelLocale = locale;
 			this.livePanel.refresh();
@@ -374,6 +376,7 @@ export class TyrianCompanionView {
 			getLocale: () => actions.getLocale(),
 			getLiveSessionView: (offset, limit) => actions.getLiveSessionView!(offset, limit),
 			getLiveSessionEntity: (kind, id) => actions.getLiveSessionEntity?.(kind, id) ?? null,
+			...(actions.listLiveSessionHistory === undefined ? {} : { listLiveSessionHistory: () => actions.listLiveSessionHistory!() }),
 			...liveSessionControl(actions, view),
 		};
 	}

@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 519,
+		"catch_clause": 521,
 		"promise_catch": 54,
-		"void_expression": 111,
-		"callback_registration": 205
+		"void_expression": 116,
+		"callback_registration": 206
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -16031,9 +16031,9 @@
 				{
 					"id": "e32d8b128697052fb6551899c75fffca8f753a14",
 					"kind": "void_expression",
-					"line": 128,
+					"line": 151,
 					"column": 68,
-					"endLine": 128,
+					"endLine": 151,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16047,9 +16047,9 @@
 				{
 					"id": "6149a2118a8fae9661b982d35ac393a6da53f1bd",
 					"kind": "void_expression",
-					"line": 136,
+					"line": 159,
 					"column": 70,
-					"endLine": 136,
+					"endLine": 159,
 					"endColumn": 92,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16063,9 +16063,9 @@
 				{
 					"id": "cb726164b914d4713903582c1139522e18e2503d",
 					"kind": "callback_registration",
-					"line": 193,
+					"line": 216,
 					"column": 3,
-					"endLine": 193,
+					"endLine": 216,
 					"endColumn": 70,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -16078,11 +16078,140 @@
 					"reason": "Allowlisted callback_registration: In \"constructor\", the \"addEventListener\" callback repaints the timeline when its native details element opens or closes; it reads the canonical projection synchronously and makes no account request. Verified registration: \"addEventListener\" in \"constructor\"."
 				},
 				{
+					"id": "dcd5f4d9971b0373815cf75c4e6383f5dbebd1f6",
+					"kind": "void_expression",
+					"line": 223,
+					"column": 74,
+					"endLine": 223,
+					"endColumn": 98,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.loadPrevious",
+						"scope": "constructor",
+						"justification": "In \"constructor\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing."
+					},
+					"reason": "Allowlisted void_expression: In \"constructor\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing. Verified target: \"this.loadPrevious\" in \"constructor\"."
+				},
+				{
+					"id": "9c1eaa2c0f968add28446b38ac774d9c43e80e47",
+					"kind": "callback_registration",
+					"line": 238,
+					"column": 4,
+					"endLine": 238,
+					"endColumn": 175,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "constructor",
+						"justification": "In \"constructor\", the \"addEventListener\" callback reads the saved sessions only when the previous-sessions block is opened (first time or after a session ended) and repaints it; it makes no account request."
+					},
+					"reason": "Allowlisted callback_registration: In \"constructor\", the \"addEventListener\" callback reads the saved sessions only when the previous-sessions block is opened (first time or after a session ended) and repaints it; it makes no account request. Verified registration: \"addEventListener\" in \"constructor\"."
+				},
+				{
+					"id": "db703e6d749abaf1af5e12ede0e83a580b5b471d",
+					"kind": "void_expression",
+					"line": 238,
+					"column": 124,
+					"endLine": 238,
+					"endColumn": 148,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.loadPrevious",
+						"scope": "constructor",
+						"justification": "In \"constructor\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing."
+					},
+					"reason": "Allowlisted void_expression: In \"constructor\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing. Verified target: \"this.loadPrevious\" in \"constructor\"."
+				},
+				{
+					"id": "69cd5c32d2d5433d06d9d7490206cd167d022ad9",
+					"kind": "catch_clause",
+					"line": 278,
+					"column": 5,
+					"endLine": 278,
+					"endColumn": 45,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "loadPrevious",
+						"justification": "In \"loadPrevious\", \"local_recovery\" marks the read as failed, shows an alert line with a Retry button and keeps whatever list was shown before; a failed read never presents sessions as saved or missing."
+					},
+					"reason": "Allowlisted catch_clause: In \"loadPrevious\", \"local_recovery\" marks the read as failed, shows an alert line with a Retry button and keeps whatever list was shown before; a failed read never presents sessions as saved or missing. Verified recovery: \"local_recovery\" in \"loadPrevious\"."
+				},
+				{
+					"id": "2e6cd592bf3385c2947fab83a0f14381da36f4e4",
+					"kind": "void_expression",
+					"line": 281,
+					"column": 61,
+					"endLine": 281,
+					"endColumn": 85,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.loadPrevious",
+						"scope": "loadPrevious",
+						"justification": "In \"loadPrevious\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing."
+					},
+					"reason": "Allowlisted void_expression: In \"loadPrevious\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing. Verified target: \"this.loadPrevious\" in \"loadPrevious\"."
+				},
+				{
+					"id": "a4b06fdabfd9276c35203a8c3d8170586e4f2baa",
+					"kind": "void_expression",
+					"line": 292,
+					"column": 53,
+					"endLine": 292,
+					"endColumn": 77,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.loadPrevious",
+						"scope": "trackPrevious",
+						"justification": "In \"trackPrevious\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing."
+					},
+					"reason": "Allowlisted void_expression: In \"trackPrevious\", detached \"this.loadPrevious\" owns its rejection: a failed read of the saved sessions is caught inside it and shown as an alert with a Retry button; it only reads the saved-session list and writes nothing. Verified target: \"this.loadPrevious\" in \"trackPrevious\"."
+				},
+				{
+					"id": "dbd82876f32590ff80131745c5e63b4defd1baf7",
+					"kind": "void_expression",
+					"line": 296,
+					"column": 4,
+					"endLine": 296,
+					"endColumn": 41,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.hashCurrent",
+						"scope": "trackPrevious",
+						"justification": "In \"trackPrevious\", detached \"this.hashCurrent\" owns its rejection: it hashes the session id locally to leave the session already shown out of the saved list, and a failure only leaves that session listed too; it reads and writes nothing."
+					},
+					"reason": "Allowlisted void_expression: In \"trackPrevious\", detached \"this.hashCurrent\" owns its rejection: it hashes the session id locally to leave the session already shown out of the saved list, and a failure only leaves that session listed too; it reads and writes nothing. Verified target: \"this.hashCurrent\" in \"trackPrevious\"."
+				},
+				{
+					"id": "0866ed357ee6ba57fefc3f7a60bb9eefc308f882",
+					"kind": "catch_clause",
+					"line": 306,
+					"column": 5,
+					"endLine": 306,
+					"endColumn": 91,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "hashCurrent",
+						"justification": "In \"hashCurrent\", \"intentional_noop\" keeps the session shown above in the saved list when its id cannot be hashed; the list stays correct and no saved data is hidden or invented."
+					},
+					"reason": "Allowlisted catch_clause: In \"hashCurrent\", \"intentional_noop\" keeps the session shown above in the saved list when its id cannot be hashed; the list stays correct and no saved data is hidden or invented. Verified recovery: \"intentional_noop\" in \"hashCurrent\"."
+				},
+				{
 					"id": "edacb96a69c53b12c87cb28af0cc6919a55c88f4",
 					"kind": "catch_clause",
-					"line": 294,
+					"line": 433,
 					"column": 5,
-					"endLine": 294,
+					"endLine": 433,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16096,9 +16225,9 @@
 				{
 					"id": "0019b13a254654f5cc7426828afb0148d6f87153",
 					"kind": "catch_clause",
-					"line": 302,
+					"line": 441,
 					"column": 51,
-					"endLine": 302,
+					"endLine": 441,
 					"endColumn": 86,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16112,9 +16241,9 @@
 				{
 					"id": "36b02e844fdd780d903b84216364bef4841d1f17",
 					"kind": "catch_clause",
-					"line": 479,
+					"line": 618,
 					"column": 6,
-					"endLine": 479,
+					"endLine": 618,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {

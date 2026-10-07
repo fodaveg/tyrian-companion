@@ -291,7 +291,7 @@ describe('vault live history, exports and privacy', () => {
 	it('recovers the full journal from a synced note without any local store or API', async () => {
 		const {note,session} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,note.content);
 		const service = new LiveSessionHistoryService(historyVault(vault));
-		expect(await service.list()).toEqual({status: 'ok',ignored: 0,sessions: [{sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: 2}]});
+		expect(await service.list()).toEqual({status: 'ok',ignored: 0,sessions: [{sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: 2,estimatedValueCopper: 40,itemCount: session.totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0)}]});
 		expect(await service.select(session.sessionRef)).toEqual({status: 'found',session});
 		expect(await new SessionHistoryService(historyVault(vault)).scan()).toEqual({status: 'ok',sessions: [],ignored: 1});
 	});
