@@ -3191,6 +3191,8 @@
 .tyrian-live-session__more span { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
 .tyrian-live-session__previous-rows { margin: 0; padding: var(--size-4-1) 0 0; list-style: none; }
 .tyrian-live-session__previous-row { display: flex; flex-wrap: wrap; column-gap: var(--size-4-4); padding: var(--size-4-1) 0; font-size: var(--font-ui-small); }
+.tyrian-live-session__previous-grid { flex: 0 0 100%; margin-top: var(--size-4-1); }
+.tyrian-live-session__tile-more { display: grid; place-items: center; color: var(--text-muted); font-size: var(--font-ui-small); font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; }
 .tyrian-live-session__previous-line { display: flex; flex-wrap: wrap; column-gap: var(--size-4-2); min-width: 0; font-variant-numeric: tabular-nums; }
 .tyrian-live-session__previous-line time { color: var(--text-muted); }
 .tyrian-live-session__previous-alert { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-3); }

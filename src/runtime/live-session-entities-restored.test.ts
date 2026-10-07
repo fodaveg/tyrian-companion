@@ -169,4 +169,22 @@ describe('entity names and icons of a live session restored after a plugin reloa
 		expect(cold.catalog.calls).toEqual([]);
 		expect(cold.content.querySelectorAll('.tyrian-live-session__missing')).toHaveLength(3);
 	});
+
+	it('objects of OTHER (saved) sessions are asked in one batched local cache read, never over the network, and a miss is not asked twice', async () => {
+		const read = vi.spyOn(PublicCatalogService.prototype, 'readCachedItems');
+		try {
+			const { core, catalog } = await restoredPlugin(true, { cached: ALL });
+			await settle();
+			const before = read.mock.calls.length;
+			const others = Array.from({ length: 12 }, (_, index) => 777_000 + index);
+			for (let round = 0; round < 3; round++) for (const id of others) expect(core.getLiveSessionEntity('item', id)).toBeNull();
+			await settle();
+			expect(read.mock.calls.length - before).toBe(1);
+			expect([...read.mock.calls.at(-1)![0]].sort()).toEqual(others);
+			for (let round = 0; round < 5; round++) for (const id of others) core.getLiveSessionEntity('item', id);
+			await settle();
+			expect(read.mock.calls.length - before).toBe(1);
+			expect(catalog.calls).toEqual([]);
+		} finally { read.mockRestore(); }
+	});
 });

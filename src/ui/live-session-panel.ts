@@ -1,6 +1,6 @@
 import { formatCopperVisual } from '../core/copper-format';
-import type { LiveGapV1, LiveSessionAlertViewV1, LiveSessionViewV1, LiveTotalV1 } from '../sessions/live-session-model';
-import type { LiveSessionHistoryEntry } from '../sessions/live-session-history';
+import type { LiveGapV1, LiveSessionAlertViewV1, LiveSessionViewV1 } from '../sessions/live-session-model';
+import { liveItemRank, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
 import { sha256Text } from '../sessions/session-note-renderer';
 import { reconcileChildren } from './reconcile-children';
 import { liveSessionCopy, type LiveSessionCopyKey } from './live-session-copy';
@@ -43,6 +43,7 @@ export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'g
 
 const PAGE_SIZE = 50;
 const HISTORY_PAGE_SIZE = 10;
+const HISTORY_TILES = 12;
 const FETCH_CHUNK = 200;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
@@ -119,6 +120,7 @@ export class LiveSessionPanel {
 	private readonly previousMoreButton: HTMLButtonElement;
 	private readonly previousMoreLabel: HTMLElement;
 	private readonly previousCache = new Map<string, Row>();
+	private readonly previousEntities = new Map<number, { name: string; icon: string | null }>();
 	private readonly tiles = new Map<string, Tile>();
 	private readonly rowCache = new Map<string, Row>();
 	private readonly coinCache = new Map<string, Tile>();
@@ -334,7 +336,14 @@ export class LiveSessionPanel {
 		const wanted: HTMLElement[] = [];
 		for (const entry of entries.slice(0, this.previousShown)) {
 			const objects = entry.itemCount === 1 ? this.copy('objectsOne') : this.copy('objectsMany').replace('{n}', this.number(entry.itemCount));
-			const sig = [entry.startedAt, entry.endedAt, entry.estimatedValueCopper, entry.itemCount, this.actions.getLocale()].join('|');
+			const shown = entry.items.filter((item) => item.net !== 0).slice(0, HISTORY_TILES);
+			const hidden = entry.items.filter((item) => item.net !== 0).length - shown.length;
+			const tiles = shown.map((item) => {
+				const entity = this.previousEntity(item.idNumber);
+				return { net: item.net, icon: entity?.icon ?? null, name: entity?.name ?? `${this.copy('kindItem')} ${String(item.idNumber)}`, quantity: this.number(item.net) };
+			});
+			const sig = [entry.startedAt, entry.endedAt, entry.estimatedValueCopper, entry.itemCount, this.actions.getLocale(), hidden,
+				...tiles.map((tile) => `${tile.name}|${tile.icon ?? ''}|${tile.quantity}`)].join('|');
 			let cached = this.previousCache.get(entry.sessionRef);
 			if (cached === undefined) { cached = { li: this.node('li', 'tyrian-live-session__previous-row'), sig: '' }; this.previousCache.set(entry.sessionRef, cached); }
 			if (cached.sig !== sig) {
@@ -347,7 +356,24 @@ export class LiveSessionPanel {
 				when.append(started, range);
 				const figures = this.node('span', 'tyrian-live-session__previous-line');
 				figures.append(duration, this.node('b', '', this.money(entry.estimatedValueCopper)), this.node('span', '', objects));
-				cached.li.replaceChildren(when, figures);
+				const parts: HTMLElement[] = [when, figures];
+				if (tiles.length > 0) {
+					const grid = this.node('ul', 'tyrian-live-session__grid tyrian-live-session__previous-grid');
+					grid.setAttribute('role', 'list');
+					grid.setAttribute('aria-label', this.copy('previousItemsLabel').replace('{when}', `${started.textContent ?? ''} ${range.textContent ?? ''}`));
+					for (const tile of tiles) {
+						const li = this.node('li', 'tyrian-live-session__tile');
+						this.paintTile(li, tile.icon, tile.name, tile.quantity, tile.net < 0);
+						grid.append(li);
+					}
+					if (hidden > 0) {
+						const more = this.node('li', 'tyrian-live-session__tile tyrian-live-session__tile-more', `+${this.number(hidden)}`);
+						more.setAttribute('aria-label', this.copy('moreObjects').replace('{n}', this.number(hidden)));
+						grid.append(more);
+					}
+					parts.push(grid);
+				}
+				cached.li.replaceChildren(...parts);
 			}
 			wanted.push(cached.li);
 		}
@@ -457,7 +483,7 @@ export class LiveSessionPanel {
 
 	private renderObjects(view: LiveSessionViewV1): void {
 		const items = view.totals.filter((row) => row.kind === 'item' && row.net !== 0)
-			.sort((a, b) => rank(b, view) - rank(a, view) || b.net - a.net);
+			.sort((a, b) => liveItemRank(b, view.valuation.prices) - liveItemRank(a, view.valuation.prices) || b.net - a.net);
 		const total = view.totals.filter((row) => row.kind === 'item').reduce((sum, row) => sum + row.net, 0);
 		this.setText(this.objectsTotal, this.number(total));
 		const wanted: HTMLElement[] = [];
@@ -471,10 +497,7 @@ export class LiveSessionPanel {
 			if (tile === undefined) { tile = { li: this.node('li', 'tyrian-live-session__tile'), sig: '' }; this.tiles.set(key, tile); }
 			if (tile.sig !== sig) {
 				tile.sig = sig;
-				tile.li.replaceChildren(this.icon(entity?.icon ?? null), this.node('span', 'tyrian-live-session__qty', quantity));
-				tile.li.title = name;
-				tile.li.setAttribute('aria-label', this.copy('tileLabel').replace('{name}', name).replace('{quantity}', quantity));
-				if (row.net < 0) tile.li.dataset.neg = ''; else delete tile.li.dataset.neg;
+				this.paintTile(tile.li, entity?.icon ?? null, name, quantity, row.net < 0);
 			}
 			wanted.push(tile.li);
 		}
@@ -483,6 +506,26 @@ export class LiveSessionPanel {
 		this.grid.hidden = wanted.length === 0;
 		this.empty.hidden = wanted.length > 0 || view.totals.some((row) => row.kind === 'currency' && row.net !== 0);
 		this.renderCoins(view);
+	}
+
+	/** One object tile: icon (or the placeholder), quantity in the corner, name and quantity as the accessible name and tooltip. */
+	private paintTile(li: HTMLElement, icon: string | null, name: string, quantity: string, negative: boolean): void {
+		li.replaceChildren(this.icon(icon), this.node('span', 'tyrian-live-session__qty', quantity));
+		li.title = name;
+		li.setAttribute('aria-label', this.copy('tileLabel').replace('{name}', name).replace('{quantity}', quantity));
+		if (negative) li.dataset.neg = ''; else delete li.dataset.neg;
+	}
+
+	/**
+	 * Name and icon of a saved session's object. A resolved one is kept here, so a settled list asks the core for nothing;
+	 * only the ones still unknown are asked again (a lookup in memory, the core reads its local cache at most once per id).
+	 */
+	private previousEntity(id: number): { name: string; icon: string | null } | null {
+		const known = this.previousEntities.get(id);
+		if (known !== undefined) return known;
+		const entity = this.actions.getLiveSessionEntity('item', id);
+		if (entity !== null) this.previousEntities.set(id, entity);
+		return entity;
 	}
 
 	private renderCoins(view: LiveSessionViewV1): void {
@@ -672,11 +715,4 @@ export class LiveSessionPanel {
 function openGap(gaps: readonly LiveGapV1[]): LiveGapV1 | null {
 	for (let index = gaps.length - 1; index >= 0; index--) if (gaps[index]!.toAt === null) return gaps[index]!;
 	return null;
-}
-
-/** Tiles sort by estimated value; unpriced and negative nets sink to the end. */
-function rank(row: LiveTotalV1, view: LiveSessionViewV1): number {
-	if (row.net < 0) return Number.NEGATIVE_INFINITY;
-	const price = view.valuation.prices.find((entry) => entry.itemId === row.idNumber)?.unitCopper;
-	return price == null ? -1 : price * row.net;
 }

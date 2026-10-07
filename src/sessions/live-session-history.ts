@@ -13,6 +13,15 @@ export interface LiveSessionHistoryEntry {
 	estimatedValueCopper: number;
 	/** Net item quantity saved with the session: the figure the panel shows as «Objetos». */
 	itemCount: number;
+	/** The session's objects (items only, net quantity other than 0), best first: the order of the panel's own grid. */
+	items: LiveHistoryItem[];
+}
+export interface LiveHistoryItem { idNumber: number; net: number }
+/** Tiles sort by estimated value; unpriced and negative nets sink to the end. Shared by the live grid and the saved sessions. */
+export function liveItemRank(row: LiveTotalV1, prices: readonly { itemId: number; unitCopper: number | null }[]): number {
+	if (row.net < 0) return Number.NEGATIVE_INFINITY;
+	const price = prices.find((entry) => entry.itemId === row.idNumber)?.unitCopper;
+	return price == null ? -1 : price * row.net;
 }
 export type LiveSessionHistoryList = { status: 'ok'; sessions: LiveSessionHistoryEntry[]; ignored: number }
 	| { status: 'conflict'; invalid: number; duplicates: number } | { status: 'unavailable' };
@@ -32,6 +41,9 @@ export class LiveSessionHistoryService {
 			sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: session.observationCount,
 			estimatedValueCopper: session.valuation.knownNetValueCopper ?? session.valuation.netItemValueKnownCopper,
 			itemCount: session.totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0),
+			items: session.totals.filter((row) => row.kind === 'item' && row.net !== 0)
+				.sort((a,b) => liveItemRank(b,session.valuation.prices) - liveItemRank(a,session.valuation.prices) || b.net - a.net)
+				.map((row) => ({ idNumber: row.idNumber,net: row.net })),
 		})) };
 	}
 

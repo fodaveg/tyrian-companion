@@ -34,7 +34,7 @@ const idleView = (): LiveSessionViewV1 => ({ ...liveView(0), sessionId: null, ph
 const control = (patch: Partial<LiveSessionControlState> = {}): LiveSessionControlState => ({
 	gameConnected: true, consult: false, canStart: false, canStop: true, busy: null, oldSession: null, ...patch });
 
-function harness(initial = liveView(), initialControl = control(), locale: 'es' | 'en' = 'en', list?: LiveSessionPanelActions['listLiveSessionHistory']) {
+function harness(initial = liveView(), initialControl = control(), locale: 'es' | 'en' = 'en', list?: LiveSessionPanelActions['listLiveSessionHistory'], entity?: LiveSessionPanelActions['getLiveSessionEntity']) {
 	const state = { view: initial, control: initialControl };
 	const start = vi.fn(async () => {});
 	const stop = vi.fn(async () => {});
@@ -44,7 +44,7 @@ function harness(initial = liveView(), initialControl = control(), locale: 'es' 
 		hasMore: offset + limit < state.view.observationCount }));
 	const actions: LiveSessionPanelActions = {
 		getLocale: () => locale, getLiveSessionView: getView,
-		getLiveSessionEntity: (_kind, id) => ({ name: `Item ${String(id)}`, icon: 'https://render.guildwars2.com/file/hash/1.png' }),
+		getLiveSessionEntity: entity ?? ((_kind, id) => ({ name: `Item ${String(id)}`, icon: 'https://render.guildwars2.com/file/hash/1.png' })),
 		getLiveSessionControl: () => state.control, startLiveSession: start, stopLiveSession: stop, discardOldSession: discard,
 		...(list === undefined ? {} : { listLiveSessionHistory: list }),
 	};
@@ -341,7 +341,7 @@ describe('previous sessions block', () => {
 	const entry = (index: number, patch: Partial<LiveSessionHistoryEntry> = {}): LiveSessionHistoryEntry => ({
 		sessionRef: String(index).padStart(64, '0'), startedAt: new Date(Date.UTC(2026, 9, 5, 8, 0, 0) - index * 3_600_000).toISOString(),
 		endedAt: new Date(Date.UTC(2026, 9, 5, 8, 30, 0) - index * 3_600_000).toISOString(), observationCount: 4,
-		estimatedValueCopper: 12_345, itemCount: 7, ...patch });
+		estimatedValueCopper: 12_345, itemCount: 7, items: [], ...patch });
 	const entries = (count: number): LiveSessionHistoryEntry[] => Array.from({ length: count }, (_, index) => entry(index));
 	const block = (panel: LiveSessionPanel): HTMLDetailsElement => panel.element.querySelector<HTMLDetailsElement>('details.tyrian-live-session__previous')!;
 	const open = (panel: LiveSessionPanel): void => { block(panel).open = true; block(panel).dispatchEvent(new Event('toggle')); };
@@ -515,5 +515,141 @@ describe('previous sessions block', () => {
 		expect(block(h.panel).open).toBe(true);
 		expect(rowsOf(h.panel)[0]).toBe(first);
 		expect(document.activeElement).toBe(button);
+	});
+
+	describe('objects of each session', () => {
+		const ICON = 'https://render.guildwars2.com/file/hash/1.png';
+		const objects = (count: number, from = 900_000): { idNumber: number; net: number }[] => Array.from({ length: count }, (_, index) => ({ idNumber: from + index, net: index + 1 }));
+		const gridOf = (row: HTMLElement): HTMLElement | null => row.querySelector<HTMLElement>('ul.tyrian-live-session__grid');
+		const tilesOf = (row: HTMLElement): HTMLElement[] => Array.from(row.querySelectorAll<HTMLElement>('li.tyrian-live-session__tile'));
+		/** Entity port that counts the asks for the saved sessions' ids (>= 900000) apart from the grid above. */
+		const spy = (known: (id: number) => { name: string; icon: string | null } | null = (id) => ({ name: `Thing ${String(id)}`, icon: ICON })) => {
+			const asked: number[] = [];
+			const port: LiveSessionPanelActions['getLiveSessionEntity'] = (_kind, id) => { if (id >= 900_000) asked.push(id); return id >= 900_000 ? known(id) : { name: 'Mushroom', icon: ICON }; };
+			return { asked, port };
+		};
+
+		it('draws no grid for a session without objects, and the same tiles as the grid above for one with objects', async () => {
+			const { port } = spy();
+			const rows = [entry(0, { items: [] }), entry(1, { itemCount: 1, items: [{ idNumber: 900_000, net: 1 }] })];
+			const h = harness(idleView(), control(), 'en', vi.fn(async () => rows), port);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(2));
+			expect(gridOf(rowsOf(h.panel)[0]!)).toBeNull();
+			const grid = gridOf(rowsOf(h.panel)[1]!)!;
+			expect(grid.getAttribute('aria-label')).toContain('Objects of the session of');
+			expect(grid.getAttribute('role')).toBe('list');
+			const tile = tilesOf(rowsOf(h.panel)[1]!)[0]!;
+			expect(tile.getAttribute('aria-label')).toBe('Thing 900000, 1');
+			expect(tile.title).toBe('Thing 900000');
+			expect(tile.querySelector('.tyrian-live-session__qty')!.textContent).toBe('1');
+			expect(tile.querySelector('img')!.getAttribute('src')).toBe(ICON);
+			expect(tile.hasAttribute('tabindex')).toBe(false);
+		});
+
+		it('caps at 12 tiles: 12 shows none extra, 13 or more adds a «+N» cell readable as «N more objects»', async () => {
+			const { port } = spy();
+			const rows = [entry(0, { items: objects(12) }), entry(1, { items: objects(13) }), entry(2, { items: objects(1_234) })];
+			const h = harness(idleView(), control(), 'en', vi.fn(async () => rows), port);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(3));
+			const [twelve, thirteen, many] = rowsOf(h.panel).map(tilesOf) as [HTMLElement[], HTMLElement[], HTMLElement[]];
+			expect(twelve).toHaveLength(12);
+			expect(twelve.some((tile) => tile.classList.contains('tyrian-live-session__tile-more'))).toBe(false);
+			expect(thirteen).toHaveLength(13);
+			expect(thirteen[12]!.textContent).toBe('+1'); expect(thirteen[12]!.getAttribute('aria-label')).toBe('1 more objects');
+			expect(many).toHaveLength(13);
+			expect(many[12]!.textContent).toBe('+1,222'); expect(many[12]!.getAttribute('aria-label')).toBe('1,222 more objects');
+		});
+
+		it('says «N objetos más» in Spanish and names the grid after its session', async () => {
+			const { port } = spy();
+			const h = harness(idleView(), control(), 'es', vi.fn(async () => [entry(0, { items: objects(14) })]), port);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(1));
+			expect(tilesOf(rowsOf(h.panel)[0]!)[12]!.getAttribute('aria-label')).toBe('2 objetos más');
+			expect(gridOf(rowsOf(h.panel)[0]!)!.getAttribute('aria-label')).toMatch(/^Objetos de la sesión del /u);
+		});
+
+		it('paints the placeholder and «Item <id>» for an object not resolved yet, and a consumed one with the negative mark', async () => {
+			const { port } = spy(() => null);
+			const rows = [entry(0, { items: [{ idNumber: 900_000, net: 3 }, { idNumber: 900_001, net: -2 }] })];
+			const h = harness(idleView(), control(), 'en', vi.fn(async () => rows), port);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(1));
+			const [kept, consumed] = tilesOf(rowsOf(h.panel)[0]!) as [HTMLElement, HTMLElement];
+			expect(kept.querySelector('.tyrian-live-session__missing')!.textContent).toBe('?');
+			expect(kept.getAttribute('aria-label')).toBe('Item 900000, 3');
+			expect(consumed.getAttribute('aria-label')).toBe('Item 900001, -2');
+			expect(consumed.hasAttribute('data-neg')).toBe(true); expect(kept.hasAttribute('data-neg')).toBe(false);
+		});
+
+		it('shows long names and 3 and 4 digit quantities in the tooltip and the corner', async () => {
+			const { port } = spy((id) => ({ name: 'Superior Rune of the Lich with an Unreasonably Long Name', icon: id === 900_001 ? null : ICON }));
+			const rows = [entry(0, { items: [{ idNumber: 900_000, net: 999 }, { idNumber: 900_001, net: 1_234 }] })];
+			const h = harness(idleView(), control(), 'en', vi.fn(async () => rows), port);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(1));
+			const [a, b] = tilesOf(rowsOf(h.panel)[0]!) as [HTMLElement, HTMLElement];
+			expect(a.querySelector('.tyrian-live-session__qty')!.textContent).toBe('999');
+			expect(b.querySelector('.tyrian-live-session__qty')!.textContent).toBe('1,234');
+			expect(b.title).toContain('Unreasonably Long Name');
+		});
+
+		it('asks nothing while closed (0), one pass when opened, and nothing more across 5 ticks once resolved', async () => {
+			const { asked, port } = spy();
+			const rows = [entry(0, { items: objects(15) }), entry(1, { items: objects(3, 906_000) })];
+			const h = harness(liveView(), control(), 'en', vi.fn(async () => rows), port);
+			for (let tick = 0; tick < 5; tick++) h.panel.refresh();
+			expect(asked).toHaveLength(0);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(2));
+			// Only the visible tiles: 12 of the first session (the 13th..15th are behind «+3») and 3 of the second.
+			expect(new Set(asked).size).toBe(15); expect(asked).toHaveLength(15);
+			expect(asked).not.toContain(900_012);
+			const after = asked.length;
+			for (let tick = 0; tick < 5; tick++) h.panel.refresh();
+			expect(asked).toHaveLength(after);
+		});
+
+		it('asks nothing for unresolved objects while the block is closed again, however many ticks pass', async () => {
+			const { asked, port } = spy(() => null);
+			const h = harness(liveView(), control(), 'en', vi.fn(async () => [entry(0, { items: objects(3) })]), port);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(1));
+			block(h.panel).open = false; block(h.panel).dispatchEvent(new Event('toggle'));
+			const closed = asked.length;
+			for (let tick = 0; tick < 5; tick++) h.panel.refresh();
+			expect(asked).toHaveLength(closed);
+		});
+
+		it('asks only the first page of ten sessions, and the next ten only when they are shown', async () => {
+			const { asked, port } = spy();
+			const rows = Array.from({ length: 12 }, (_, index) => entry(index, { items: [{ idNumber: 900_000 + index, net: 1 }] }));
+			const h = harness(idleView(), control(), 'en', vi.fn(async () => rows), port);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(10));
+			expect(asked).toHaveLength(10);
+			block(h.panel).querySelector<HTMLButtonElement>('.tyrian-live-session__more-button')!.click();
+			expect(asked).toHaveLength(12);
+		});
+
+		it('updates the row in place when the icons arrive later, keeping the open state, the node and the focus', async () => {
+			let ready = false;
+			const { port } = spy((id) => ready ? { name: `Thing ${String(id)}`, icon: ICON } : null);
+			const h = harness(liveView(), control(), 'en', vi.fn(async () => Array.from({ length: 12 }, (_, i) => entry(i, { items: objects(2, 900_000 + i * 10) }))), port);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(10));
+			const row = rowsOf(h.panel)[0]!;
+			expect(row.querySelector('img')).toBeNull();
+			const button = block(h.panel).querySelector<HTMLButtonElement>('.tyrian-live-session__more-button')!;
+			button.focus();
+			ready = true; h.panel.refresh();
+			expect(rowsOf(h.panel)[0]).toBe(row);
+			expect(row.querySelectorAll('img')).toHaveLength(2);
+			expect(row.querySelector('li')!.getAttribute('aria-label')).toBe('Thing 900000, 1');
+			expect(block(h.panel).open).toBe(true);
+			expect(document.activeElement).toBe(button);
+		});
 	});
 });
