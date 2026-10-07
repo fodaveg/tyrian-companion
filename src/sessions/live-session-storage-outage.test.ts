@@ -107,7 +107,8 @@ describe('live session across a storage outage', () => {
 		expect(stored).toHaveLength(durable.record.observationCount);
 		expect(liveObservationTotals([], stored)).toEqual(durable.record.totals);
 		expect(durable.record.gaps.filter((gap) => gap.reason === 'storage_unavailable')).toEqual(storageGaps(f.service));
-		expect(f.onError).not.toHaveBeenCalled();
+		// The outage is reported to diagnostics once, not once per refused sample, and nothing else failed.
+		expect(f.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['Live session storage is unavailable.']);
 		await f.service.dispose();
 	});
 
@@ -198,7 +199,7 @@ describe('live session across a storage outage', () => {
 		await expect(f.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
 		f.at(LEASE_TTL_MS + 11_000); await expect(f.service.commit(f.sample(0, 0, bags(30), NEXT_EPOCH))).resolves.toBe('stored');
 		expect(f.service.getView()).toMatchObject({ phase: 'active', observationCount: 0, observedItemsMs: 0 });
-		expect(f.onError).not.toHaveBeenCalled();
+		expect(f.onError).toHaveBeenCalledTimes(1);
 		await f.service.dispose();
 	});
 
@@ -308,7 +309,7 @@ describe('live session across a storage outage, through the real bridge', () => 
 		expect(f.service.getView().observations.map((row) => [row.before, row.after, row.delta])).toEqual([[5, 7, 2], [50, 53, 3]]);
 		const durable = await f.durable();
 		expect(durable.journal.flatMap((entry) => entry.observations)).toHaveLength(durable.record.observationCount);
-		expect(f.onError).not.toHaveBeenCalled();
+		expect(f.onError).toHaveBeenCalledTimes(1);
 		await server.close(); await f.service.dispose();
 	});
 });

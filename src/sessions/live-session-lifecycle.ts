@@ -422,7 +422,11 @@ export class LiveSessionLifecycle {
 	}
 	/** Storage refused a durable step: the view shows the error until the next step it accepts. */
 	private storageLost(): UnsavedLiveState {
-		this.unsaved ??= { gapReason: null, epochEnded: false, sourceDisconnectedAt: null, presence: null };
+		if (this.unsaved === null) {
+			this.unsaved = { gapReason: null, epochEnded: false, sourceDisconnectedAt: null, presence: null };
+			// Reported once per outage, not once per refused step: the heartbeat alone would repeat it every beat.
+			this.options.onError(new Error('Live session storage is unavailable.'));
+		}
 		if (!this.failure) { this.failure = true; this.options.onStateChange(); }
 		return this.unsaved;
 	}
