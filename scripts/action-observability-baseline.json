@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 534,
+		"catch_clause": 536,
 		"promise_catch": 57,
 		"void_expression": 120,
 		"callback_registration": 216
@@ -10155,9 +10155,9 @@
 				{
 					"id": "6da786e576775b7c2e3ed234b8938537bc00c519",
 					"kind": "callback_registration",
-					"line": 56,
+					"line": 71,
 					"column": 19,
-					"endLine": 56,
+					"endLine": 71,
 					"endColumn": 81,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10172,9 +10172,25 @@
 				{
 					"id": "efbf0ddfbe72bb6eacc679d633319116351a2ab4",
 					"kind": "catch_clause",
-					"line": 68,
+					"line": 86,
+					"column": 6,
+					"endLine": 86,
+					"endColumn": 102,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "resolveWanted",
+						"justification": "The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder coin name when the cosmetic local currency-cache read fails; it makes no request, and no measurement or alert depends on it."
+					},
+					"reason": "Allowlisted catch_clause: The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder coin name when the cosmetic local currency-cache read fails; it makes no request, and no measurement or alert depends on it. Verified recovery: \"intentional_noop\" in \"resolveWanted\"."
+				},
+				{
+					"id": "13f11b1f72058fec1ecf4face6a0357a4e0dd50b",
+					"kind": "catch_clause",
+					"line": 95,
 					"column": 5,
-					"endLine": 68,
+					"endLine": 95,
 					"endColumn": 119,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10188,9 +10204,9 @@
 				{
 					"id": "23ce41e36cabde480f26ef553c79938035b83fdd",
 					"kind": "callback_registration",
-					"line": 88,
+					"line": 115,
 					"column": 17,
-					"endLine": 88,
+					"endLine": 115,
 					"endColumn": 78,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10205,9 +10221,9 @@
 				{
 					"id": "6e6f93c2627ab6796b1ca97ce58b1035dd7d9b98",
 					"kind": "promise_catch",
-					"line": 88,
+					"line": 115,
 					"column": 17,
-					"endLine": 89,
+					"endLine": 116,
 					"endColumn": 64,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10222,9 +10238,9 @@
 				{
 					"id": "0a198fd3d0049e30a87db2053bdab4ade0cbe833",
 					"kind": "callback_registration",
-					"line": 88,
+					"line": 115,
 					"column": 17,
-					"endLine": 90,
+					"endLine": 117,
 					"endColumn": 51,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10239,9 +10255,9 @@
 				{
 					"id": "31f0207e3cc1696392baee696c31c33b22067941",
 					"kind": "catch_clause",
-					"line": 96,
+					"line": 123,
 					"column": 3,
-					"endLine": 96,
+					"endLine": 123,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10255,9 +10271,9 @@
 				{
 					"id": "45540b035538247e4cc76dbc9b51d1eb68435de0",
 					"kind": "callback_registration",
-					"line": 110,
+					"line": 137,
 					"column": 17,
-					"endLine": 110,
+					"endLine": 137,
 					"endColumn": 71,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10272,9 +10288,9 @@
 				{
 					"id": "e864f8564a714574d9e79c070e64e7d181e2471c",
 					"kind": "promise_catch",
-					"line": 110,
+					"line": 137,
 					"column": 17,
-					"endLine": 110,
+					"endLine": 137,
 					"endColumn": 131,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10287,11 +10303,27 @@
 					"reason": "Allowlisted promise_catch: The \"observe\" \"intentional_noop\" boundary retains the serial public enrichment flight and forwards rejection to the local diagnostic observer; no measurement is acknowledged by this recovery. Verified recovery: \"intentional_noop\" in \"observe\"."
 				},
 				{
+					"id": "a0a1d6efc36cbc99db32b204cd615bb6eaa07893",
+					"kind": "catch_clause",
+					"line": 161,
+					"column": 5,
+					"endLine": 161,
+					"endColumn": 51,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "enrichCurrencies",
+						"justification": "In \"enrichCurrencies\", \"local_recovery\": a failed public currency lookup is sent to the supplied diagnostic observer (onError); the coin keeps its fallback name, the entry's item enrichment, prices and alerts continue, and no measurement is acknowledged by this recovery."
+					},
+					"reason": "Allowlisted catch_clause: In \"enrichCurrencies\", \"local_recovery\": a failed public currency lookup is sent to the supplied diagnostic observer (onError); the coin keeps its fallback name, the entry's item enrichment, prices and alerts continue, and no measurement is acknowledged by this recovery. Verified recovery: \"local_recovery\" in \"enrichCurrencies\"."
+				},
+				{
 					"id": "be9aef04f0ed3e11926f3cbc3a3e09c0bd96abfd",
 					"kind": "catch_clause",
-					"line": 130,
+					"line": 181,
 					"column": 5,
-					"endLine": 130,
+					"endLine": 181,
 					"endColumn": 116,
 					"classification": "allowlisted",
 					"evidence": {
@@ -15456,6 +15488,11 @@
 			]
 		},
 		"src/ui/live-session-alerts-panel.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/ui/live-session-coin-badge.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
