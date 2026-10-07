@@ -3,6 +3,10 @@ import type { LiveSessionViewV1 } from '../sessions/live-session-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { IngamePresenceSnapshot } from '../alerts/alert-ingame-presence';
 import { emptyFarmingIngameState, type FarmingIngameState } from '../alerts/farming-ingame-state';
+import {
+	PRICE_INGAME_STACK, PRICE_INGAME_STALE_SECONDS, emptyPriceIngameState, type PriceIngameState,
+} from '../alerts/price-ingame-state';
+import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
 import type { LiveSessionLootState } from '../sessions/live-session-loot';
 import { observedRateBand } from '../sessions/observed-rate-band';
 import { sessionUnobservedMs, type SessionState } from '../sessions/session';
@@ -135,4 +139,34 @@ export function projectLiveFarmingIngameState(input: {
 	}
 	output.prep = !input.preparationEnabled ? 'unknown' : output.mf === null || output.slots === null || output.slots <= 5 ? 'attention' : 'partial';
 	return output;
+}
+
+/** Raw public best bid and lowest ask (copper, `null` when that side has no order) with the instant they were read. */
+export interface BagRawQuote { bid: number | null; ask: number | null; capturedAt: number }
+
+/**
+ * Net public price of the Halloween bag for the game (`price1`). Only a live session in `active`
+ * has anything to price; an absent quotation is `pending`, one of 600 s or more is `stale` and
+ * sends no figures. The fees are the plugin's own policy, applied to the whole stack, never 250 x the unit net.
+ */
+export function projectBagPriceIngameState(input: {
+	phase: LiveSessionViewV1['phase']; quote: BagRawQuote | null; now: number;
+}): PriceIngameState {
+	const output = emptyPriceIngameState();
+	if (input.phase !== 'active') return output;
+	if (input.quote === null) return { ...output, st: 'pending' };
+	const age = Math.max(0, Math.floor((input.now - input.quote.capturedAt) / 1_000));
+	if (!Number.isFinite(age)) return { ...output, st: 'pending' };
+	if (age >= PRICE_INGAME_STALE_SECONDS) return { ...output, st: 'stale', age };
+	const net = (kind: 'instant_sell' | 'listing', unit: number | null, quantity: number): number | null => {
+		if (unit === null) return null;
+		const value = createTradingPostValueWithPolicy(kind, unit, quantity);
+		return value.status === 'ok' && value.value.netCopper <= 2_147_483_647 ? value.value.netCopper : null;
+	};
+	const { bid, ask } = input.quote;
+	return {
+		st: 'ok', age,
+		sell: net('instant_sell', bid, 1), sellStack: net('instant_sell', bid, PRICE_INGAME_STACK),
+		list: net('listing', ask, 1), listStack: net('listing', ask, PRICE_INGAME_STACK),
+	};
 }

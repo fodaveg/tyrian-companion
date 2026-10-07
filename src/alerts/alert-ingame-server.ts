@@ -22,6 +22,7 @@ import {
 } from './alert-ingame-protocol';
 
 import { FARMING_INGAME_REFRESH_MS, farmingIngameCapabilityLine, farmingIngameStateLine, type FarmingIngameState } from './farming-ingame-state';
+import { PRICE_INGAME_REFRESH_MS, priceIngameCapabilityLine, priceIngameStateLine, type PriceIngameState } from './price-ingame-state';
 
 export { ALERT_INGAME_MAX_MESSAGE_BYTES };
 
@@ -112,6 +113,8 @@ export interface AlertIngameBridgeOptions {
 	farmingState?(): FarmingIngameState;
 	/** Observes projection failures without placing runtime errors or input on the wire. */
 	onFarmingError?(error: unknown): void;
+	/** Public price of the Halloween bag (`price1`); without it the capability is never announced. Failures go to `onFarmingError`. */
+	priceState?(): PriceIngameState;
 	/** Negotiated Nexus-only live feed; success waits for this owner's durable commit. */
 	readonly live?: LiveIngamePort;
 	readonly helloTimeoutMs?: number;
@@ -134,6 +137,9 @@ interface BridgeConnection {
 	farmingSubscribed: boolean;
 	farmingSeq: number;
 	farmingTimer: unknown;
+	priceSubscribed: boolean;
+	priceSeq: number;
+	priceTimer: unknown;
 	live: LiveIngameChannel | null;
 	lastSeenAtMs: number;
 	deadline: unknown;
@@ -198,6 +204,7 @@ export async function startAlertIngameServer(
 			const liveChannels = [...runtime.liveChannels];
 			for (const connection of [...runtime.pending, ...runtime.authenticated]) {
 				cancelFarmingTimer(connection, runtime);
+				cancelPriceTimer(connection, runtime);
 				connection.live?.close();
 				connection.socket.destroy();
 			}
@@ -284,7 +291,8 @@ function attachClient(socket: TyrianTcpConnection, runtime: BridgeRuntime): void
 	if (runtime.closing || runtime.pending.size >= INGAME_BRIDGE_MAX_PENDING_CONNECTIONS) { socket.destroy(); return; }
 	const connection: BridgeConnection = {
 		socket, phase: 'awaiting_hello', buffered: EMPTY_BYTES, nonce: null, version: 2, client: null,
-		sentAlertSeqs: new Set(), nextSeq: 0, farmingSubscribed: false, farmingSeq: 1, farmingTimer: null, live: null,
+		sentAlertSeqs: new Set(), nextSeq: 0, farmingSubscribed: false, farmingSeq: 1, farmingTimer: null,
+			priceSubscribed: false, priceSeq: 1, priceTimer: null, live: null,
 		lastSeenAtMs: runtime.bridge.now(), deadline: null, endReason: 'lost',
 	};
 	runtime.pending.add(connection);
@@ -353,6 +361,14 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 		}
 		return;
 	}
+	if (message.value.type === 'price_sub') {
+		// Repeating it only consumes `seq`: no second read, no second timer.
+		if (!connection.priceSubscribed && runtime.bridge.priceState) {
+			connection.priceSubscribed = true;
+			sendPriceState(connection, runtime);
+		}
+		return;
+	}
 	if (message.value.type === 'context') {
 		const { state, mapId, character } = message.value;
 		connection.live?.context(message.value.seq, { state, mapId, character });
@@ -376,6 +392,7 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 		connection.live?.close();
 		connection.phase = 'closed';
 		cancelFarmingTimer(connection, runtime);
+		cancelPriceTimer(connection, runtime);
 		cancelDeadline(connection, runtime);
 		runtime.authenticated.delete(connection);
 		emitClosed(connection, runtime);
@@ -407,6 +424,9 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 	connection.socket.write(`${ingameWelcomeLine(runtime.serverInstance, nonce, connection.version)}\n`);
 	if (connection.version === 3 && runtime.bridge.farmingState) {
 		connection.socket.write(`${farmingIngameCapabilityLine(nonce)}\n`);
+	}
+	if (connection.version === 3 && runtime.bridge.priceState) {
+		connection.socket.write(`${priceIngameCapabilityLine(nonce)}\n`);
 	}
 	const live = runtime.bridge.live;
 	if (connection.version === 3 && connection.client === 'nexus' && live !== undefined && runtime.liveChannels.size < INGAME_BRIDGE_MAX_AUTHENTICATED_CONNECTIONS) {
@@ -445,6 +465,7 @@ function reject(connection: BridgeConnection, runtime: BridgeRuntime, code: Inga
 	connection.live?.close();
 	connection.phase = 'closed';
 	cancelFarmingTimer(connection, runtime);
+	cancelPriceTimer(connection, runtime);
 	cancelDeadline(connection, runtime);
 	runtime.pending.delete(connection);
 	runtime.authenticated.delete(connection);
@@ -458,6 +479,7 @@ function reject(connection: BridgeConnection, runtime: BridgeRuntime, code: Inga
 function settleClosed(connection: BridgeConnection, runtime: BridgeRuntime): void {
 	connection.live?.close();
 	cancelFarmingTimer(connection, runtime);
+	cancelPriceTimer(connection, runtime);
 	cancelDeadline(connection, runtime);
 	runtime.pending.delete(connection);
 	const wasAuthenticated = runtime.authenticated.delete(connection);
@@ -516,4 +538,29 @@ function cancelFarmingTimer(connection: BridgeConnection, runtime: BridgeRuntime
 	if (connection.farmingTimer === null) return;
 	runtime.timer.cancel(connection.farmingTimer);
 	connection.farmingTimer = null;
+}
+
+/** Same shape as `sendFarmingState`, with its own sequence and timer; a provider failure consumes no `seq`. */
+function sendPriceState(connection: BridgeConnection, runtime: BridgeRuntime): void {
+	if (connection.phase !== 'authenticated' || !connection.priceSubscribed || connection.nonce === null) return;
+	if (connection.priceSeq > 2_147_483_647) { reject(connection, runtime, 'sequence_mismatch'); return; }
+	try {
+		const state = runtime.bridge.priceState?.();
+		if (state === undefined) return;
+		connection.socket.write(`${priceIngameStateLine(state, connection.nonce, connection.priceSeq)}\n`);
+		connection.priceSeq += 1;
+	} catch (error) {
+		runtime.bridge.onFarmingError?.(error);
+	}
+	if (connection.phase !== 'authenticated') return;
+	connection.priceTimer = runtime.timer.schedule(() => {
+		connection.priceTimer = null;
+		sendPriceState(connection, runtime);
+	}, PRICE_INGAME_REFRESH_MS);
+}
+
+function cancelPriceTimer(connection: BridgeConnection, runtime: BridgeRuntime): void {
+	if (connection.priceTimer === null) return;
+	runtime.timer.cancel(connection.priceTimer);
+	connection.priceTimer = null;
 }

@@ -247,15 +247,15 @@ manuales y Hallazgo mágico parcial; muestras y dispersión no demuestran una re
 «Bolsas observadas» cuenta incrementos positivos entre lecturas disponibles; «bolsas netas al
 cierre» es el delta entre fronteras. Reconciliar el cierre no sustituye la primera por la segunda.
 Las aperturas y otros cambios entre lecturas impiden reconstruir el total obtenido, que permanece
-desconocido. Cada métrica muestra su propia cobertura y antigüedad, sin convertir ausencia en cero.
+desconocido. Cada métrica conserva su cobertura y antigüedad y las muestra cuando no son las esperadas, sin convertir ausencia en cero.
 
 Un objetivo opcional de bolsas o duración se captura para la sesión y conserva su resultado en la
 nota. Bolsas usa progreso observado y estima tiempo restante solo con una muestra suficiente y
 reciente; duración usa cuenta atrás. La preparación es opcional y los recordatorios de comida y
 utilidad son manuales: no certifican buffs, no bloquean la sesión y no crean automatización del juego.
 
-Los addons reciben exclusivamente el resumen agregado de solo lectura `farm1`, negociado sobre
-v3. Una conexión viva no rejuvenece observaciones de la API ni acredita medición activa. Caducidad
+Los addons reciben exclusivamente el resumen agregado de solo lectura `farm1` y el precio público
+del saco `price1`, ambos negociados sobre v3. Una conexión viva no rejuvenece observaciones de la API ni acredita medición activa. Caducidad
 del panel, antigüedad del botín y antigüedad de la capacidad se tratan por separado. El contrato
 normativo de transporte, privacidad y compatibilidad está en `SPEC-puente-ingame.md`.
 

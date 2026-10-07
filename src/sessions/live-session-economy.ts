@@ -2,6 +2,9 @@ import { isPublicCatalogNotFound, type PublicCatalogGateway, type PublicCatalogR
 import type { CatalogItem } from '../catalog/public-catalog-model';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
+import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
+import { PRICE_INGAME_QUOTE_REFRESH_MS } from '../alerts/price-ingame-state';
+import type { BagRawQuote } from '../runtime/farming-runtime-projection';
 import { parsePublicTradingPostPriceBatch } from '../economy/session-price-snapshot';
 import type { AlertDeliveryReport } from '../alerts/alert-emitter';
 import type { LiveAlertOutboxV1, LiveJournalEntryV1 } from './live-session-model';
@@ -26,6 +29,10 @@ export class LiveSessionEconomy {
 	/** Ids a panel asked for and nobody has resolved yet, and ids whose cache read already missed (cleared when `enrich()` resolves something). */
 	private readonly wanted = new Set<number>();
 	private readonly tried = new Set<number>();
+	/** Gross best bid and lowest ask of the Halloween bag from the last public read of THIS process; a restored quote has none. */
+	private bagRaw: BagRawQuote | null = null;
+	private bagAttemptedAt: number | null = null;
+	private bagRefreshing = false;
 	private lookup: Promise<void> | null = null;
 	private flight = Promise.resolve();
 	private disposed = false;
@@ -60,6 +67,44 @@ export class LiveSessionEconomy {
 			if (changed) this.options.onChange();
 		} catch { /* A cosmetic lookup that fails (offline, no catalog) keeps "Item <id>" until `enrich()` resolves it. */ }
 	}
+	/** Raw public quote kept for `price1`; only the Halloween bag is retained, and a restored net quote is not one. */
+	rawQuote(itemId: number): BagRawQuote | null {
+		return itemId === HALLOWEEN_TOT_BAG_ITEM_ID ? this.bagRaw : null;
+	}
+	/**
+	 * Keeps the bag quote at most `PRICE_INGAME_QUOTE_REFRESH_MS` old. It has no timer of its own: the
+	 * in-game bridge calls it from its 5 s state tick, and only for a connection subscribed to `price1`,
+	 * so with no subscriber nothing runs. Requires an `active` live session, an allowed host (not
+	 * consulting, not unloaded) and an inactive rate limit; one request in flight at most. A failure keeps
+	 * the previous quote, and the attempt itself spaces the next one by the same 120 s.
+	 */
+	refreshBagQuote(): void {
+		const now = this.options.now();
+		if (this.disposed || this.bagRefreshing || this.options.canEmit?.() === false) return;
+		if (this.options.lifecycle.getRuntime()?.phase !== 'active' || this.options.rateLimit.status().active) return;
+		const last = Math.max(this.bagRaw?.capturedAt ?? -Infinity, this.bagAttemptedAt ?? -Infinity);
+		if (now - last < PRICE_INGAME_QUOTE_REFRESH_MS) return;
+		this.bagRefreshing = true; this.bagAttemptedAt = now;
+		this.flight = this.flight.then(async () => { await this.fetchBagQuote(); })
+			.catch((error: unknown) => { this.options.onError(error); })
+			.finally(() => { this.bagRefreshing = false; });
+	}
+	private async fetchBagQuote(): Promise<void> {
+		if (this.disposed || this.options.lifecycle.getRuntime()?.phase !== 'active') return;
+		const id = HALLOWEEN_TOT_BAG_ITEM_ID; let response: PublicCatalogResponse;
+		try { response = await this.options.gateway.requestDetailed(`commerce/prices?ids=${String(id)}`,undefined,[id]); }
+		catch (error) { if (!isPublicCatalogNotFound(error)) throw error; response = {status:404,headers:{},body:[]}; }
+		if (response.status === 429) { this.options.rateLimit.recordRateLimited(null); return; }
+		if (![200,206,404].includes(response.status) || !Array.isArray(response.body) || this.disposed) return;
+		this.recordPrice(id,parsePublicTradingPostPriceBatch(response.body,new Set([id])).items.find((price) => price.itemId === id));
+	}
+	/** One place for what a public read of an id means: the net bid for the session, plus the raw sides for the bag. */
+	private recordPrice(id: number, price: {bid: {unitCopper:number}|null; ask: {unitCopper:number}|null}|undefined): void {
+		const capturedAt = this.options.now();
+		const bid = price?.bid; const priced = bid ? createTradingPostValueWithPolicy('instant_sell',bid.unitCopper,1) : null;
+		this.quotes.set(id,{unitCopper:priced?.status === 'ok' ? priced.value.netCopper : null,capturedAt});
+		if (id === HALLOWEEN_TOT_BAG_ITEM_ID) this.bagRaw = {bid: price?.bid?.unitCopper ?? null, ask: price?.ask?.unitCopper ?? null, capturedAt};
+	}
 	observe(entry: LiveJournalEntryV1): void {
 		if (this.disposed || entry.observations.length === 0 && entry.outbox.length === 0) return;
 		this.flight = this.flight.then(async () => await this.enrich(entry)).catch((error: unknown) => { this.options.onError(error); });
@@ -86,11 +131,7 @@ export class LiveSessionEconomy {
 				if (response.status === 429) { this.options.rateLimit.recordRateLimited(null); break; }
 				if (![200,206,404].includes(response.status) || !Array.isArray(response.body)) continue;
 				const parsed = parsePublicTradingPostPriceBatch(response.body,new Set(batch));
-				for (const id of batch) {
-					const bid = parsed.items.find((price) => price.itemId === id)?.bid;
-					const priced = bid ? createTradingPostValueWithPolicy('instant_sell',bid.unitCopper,1) : null;
-					this.quotes.set(id,{unitCopper:priced?.status === 'ok' ? priced.value.netCopper : null,capturedAt:this.options.now()});
-				}
+				for (const id of batch) this.recordPrice(id,parsed.items.find((price) => price.itemId === id));
 			}
 		}
 		if (this.disposed || lifecycle.getRuntime()?.phase !== 'active' || lifecycle.getRuntime()?.sessionId !== entry.sessionId) return;

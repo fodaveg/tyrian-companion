@@ -463,10 +463,11 @@ describe('H13.4 alert channel cabling', () => {
 				}
 			});
 			socket.write(ingameHello(await pluginBridgeSecret(plugin), version));
-			await vi.waitFor(() => { expect(lines).toHaveLength(version === 3 ? 3 : 1); });
+			await vi.waitFor(() => { expect(lines).toHaveLength(version === 3 ? 4 : 1); });
 			if (version === 3) {
 				expect(JSON.parse(lines[1] ?? '{}')).toMatchObject({ type: 'farming_cap', tag: 'farm1' });
-				expect(JSON.parse(lines[2] ?? '{}')).toMatchObject({ type: 'live_cap', tag: 'live1' });
+				expect(JSON.parse(lines[2] ?? '{}')).toMatchObject({ type: 'price_cap', tag: 'price1' });
+				expect(JSON.parse(lines[3] ?? '{}')).toMatchObject({ type: 'live_cap', tag: 'live1' });
 			}
 			const { nonce } = JSON.parse(lines[0] ?? '{}') as { nonce: string };
 			return { socket, lines, nonce };
@@ -479,8 +480,8 @@ describe('H13.4 alert channel cabling', () => {
 			await withBridge(async (plugin, port) => {
 				const addon = await connectAddon(plugin, port, 3);
 				await plugin.emitAlert(VALUABLE);
-				await vi.waitFor(() => { expect(addon.lines).toHaveLength(4); });
-				const alert = JSON.parse(addon.lines[3] ?? '{}') as { v: number; seq: number };
+				await vi.waitFor(() => { expect(addon.lines).toHaveLength(5); });
+				const alert = JSON.parse(addon.lines[4] ?? '{}') as { v: number; seq: number };
 				expect(alert.v).toBe(3);
 				await vi.waitFor(() => {
 					expect([...plugin.getAlertDeliveries().values()]).toMatchObject([{ state: 'pending', sentTo: ['nexus'] }]);
@@ -531,6 +532,98 @@ describe('H13.4 alert channel cabling', () => {
 	});
 
 	/**
+	 * `price1` over the real core: a real loopback socket, the real server, the real live lifecycle and the real
+	 * `LiveSessionEconomy`. Only the public gateway is replaced, by a spy that counts the requests.
+	 */
+	describe('price1 public bag price: real bridge, real core, counted network', () => {
+		async function withPriceBridge(
+			body: (kit: {
+				open: () => Promise<{ socket: Socket; lines: Record<string, unknown>[]; write(record: Record<string, unknown>): void }>;
+				requests: string[]; plugin: AlertWiringHarness;
+			}) => Promise<void>,
+		): Promise<void> {
+			const record = activeSessionRecord();
+			vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+			vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+			vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue({ status: 'idle' } as SessionState);
+			const plugin = alertWiringPlugin(new IDBFactory());
+			const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+			await plugin.initializeRuntime();
+			const requests: string[] = [];
+			const economy = (plugin as unknown as { liveEconomy: { options: { gateway: unknown } } }).liveEconomy;
+			economy.options.gateway = { requestDetailed: vi.fn(async (path: string) => {
+				requests.push(path);
+				return { status: 200, headers: {}, body: [{ id: 36_038, whitelisted: true, buys: { unit_price: 345, quantity: 9 }, sells: { unit_price: 367, quantity: 9 } }] };
+			}) };
+			const port = await freeLoopbackPort();
+			const sockets: Socket[] = [];
+			try {
+				await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: port });
+				await vi.waitFor(() => { expect(server()).not.toBeNull(); });
+				const secret = await pluginBridgeSecret(plugin);
+				await body({ requests, plugin, open: async () => {
+					const socket = await connectLoopback(port);
+					sockets.push(socket);
+					socket.setEncoding('utf8');
+					const lines: Record<string, unknown>[] = [];
+					let buffer = '';
+					socket.on('data', (chunk: string) => {
+						buffer += chunk;
+						for (let newline = buffer.indexOf('\n'); newline !== -1; newline = buffer.indexOf('\n')) {
+							lines.push(JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>);
+							buffer = buffer.slice(newline + 1);
+						}
+					});
+					socket.write(ingameHello(secret, 3));
+					await vi.waitFor(() => { expect(lines.map((line) => line.type)).toEqual(['welcome', 'farming_cap', 'price_cap', 'live_cap']); });
+					const nonce = lines[0]!.nonce;
+					return { socket, lines, write: (frame: Record<string, unknown>) => { socket.write(`${JSON.stringify({ ...frame, nonce })}\n`); } };
+				} });
+			} finally {
+				for (const socket of sockets) socket.destroy();
+				await server()?.close();
+			}
+		}
+		const priceLines = (lines: Record<string, unknown>[]) => lines.filter((line) => line.type === 'price_state');
+
+		it('a subscribed socket gets price_state, a farm1-only socket does not, and the network sees exactly one request', async () => {
+			await withPriceBridge(async ({ open, requests, plugin }) => {
+				const subscribed = await open();
+				subscribed.write({ v: 3, type: 'context', seq: 0, state: 'gameplay', mapId: 866, character: 'Astra Uno' });
+				await vi.waitFor(() => { expect(plugin.getLiveSessionView().phase).toBe('active'); });
+				// Before any subscriber nothing asked the network for a price.
+				expect(requests).toEqual([]);
+				const farmOnly = await open();
+				farmOnly.write({ v: 3, type: 'farming_sub', tag: 'farm1', seq: 0 });
+				await vi.waitFor(() => { expect(farmOnly.lines.some((line) => line.type === 'farming_state')).toBe(true); });
+				expect(requests).toEqual([]);
+
+				subscribed.write({ v: 3, type: 'price_sub', tag: 'price1', seq: 1 });
+				await vi.waitFor(() => { expect(priceLines(subscribed.lines)).toHaveLength(1); });
+				await vi.waitFor(() => { expect(requests).toEqual(['commerce/prices?ids=36038']); });
+
+				// A later subscriber finds the quote fresh (under 120 s): the figures are the contract's, and no second request.
+				const late = await open();
+				late.write({ v: 3, type: 'price_sub', tag: 'price1', seq: 0 });
+				await vi.waitFor(() => { expect(priceLines(late.lines)).toHaveLength(1); });
+				expect(priceLines(late.lines)[0]).toMatchObject({ v: 3, tag: 'price1', seq: 1, ttl: 15, st: 'ok', sell: 293, sellStack: 73_312, list: 312, listStack: 77_987 });
+				expect(requests).toHaveLength(1);
+				expect(priceLines(farmOnly.lines)).toEqual([]);
+			});
+		});
+
+		it('with no live session the subscription answers idle and the network is never asked', async () => {
+			await withPriceBridge(async ({ open, requests }) => {
+				const addon = await open();
+				addon.write({ v: 3, type: 'price_sub', tag: 'price1', seq: 0 });
+				await vi.waitFor(() => { expect(priceLines(addon.lines)).toHaveLength(1); });
+				expect(priceLines(addon.lines)[0]).toMatchObject({ st: 'idle', sell: null, sellStack: null, list: null, listStack: null, age: null });
+				expect(requests).toEqual([]);
+			});
+		});
+	});
+
+	/**
 	 * Addon/plugin seam for wallet currencies. The frames of the shared Nexus fixture travel over a real loopback
 	 * socket, through the real server, assembler and `liveIngamePort` of the plugin core (`kind 0 -> item`,
 	 * `kind 1 -> currency`), into the real lifecycle and reducer; the assertions read the public session view.
@@ -567,7 +660,7 @@ describe('H13.4 alert channel cabling', () => {
 					}
 				});
 				socket.write(ingameHello(await pluginBridgeSecret(plugin), 3));
-				await vi.waitFor(() => { expect(lines).toHaveLength(3); });
+				await vi.waitFor(() => { expect(lines).toHaveLength(4); });
 				const nonce = lines[0]!.nonce as string;
 				const write = (record: Record<string, unknown>) => { socket.write(`${JSON.stringify({ ...record, nonce })}\n`); };
 				const acks = () => lines.filter((line) => line.type === 'live_ack').length;

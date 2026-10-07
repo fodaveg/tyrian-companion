@@ -77,7 +77,7 @@ La frontera autorizada del proyecto describe acciones concretas; no demuestra ap
 - no simula entrada, no pulsa teclas, no automatiza nada dentro del juego;
 - el contexto ordinario usa datos expuestos por el anfitrión; solo el productor Nexus live1 añade la lectura pasiva acotada de [SPEC-live-loot](SPEC-live-loot.md), sin hooks, getters ni escritura;
 - lo que el plugin hace con ese contexto ocurre **fuera** del juego: marcar una sesión en las notas
-  del usuario. Vuelven al juego los avisos y, con suscripción `farm1`, el DTO de medición numérico y cerrado definido abajo.
+  del usuario. Vuelven al juego los avisos y, con suscripción `farm1`, el DTO de medición numérico y cerrado definido abajo y, con suscripción `price1`, el precio público neto del saco de Halloween.
 
 Un mensaje del addon que pidiera una acción (un comando, una consulta, un «empieza la sesión») no
 existe en el protocolo: las claves son cerradas y cualquier campo de más cierra la conexión.
@@ -231,7 +231,7 @@ conexión v2, `alert_ack` es `unexpected_message`, como cualquier tipo desconoci
 ## Versión 3: el acuse de un aviso
 
 Hasta v2 el addon no decía si había enseñado un aviso, y el plugin no podía distinguir «enviado» de
-«visto en el juego». v3 añade `alert_ack` y la extensión opcional negociada `farm1` descrita más abajo.
+«visto en el juego». v3 añade `alert_ack` y las extensiones opcionales negociadas `farm1` y `price1` descritas más abajo.
 
 | | v2 | v3 |
 |---|---|---|
@@ -412,7 +412,7 @@ Lo que lo impide estructuralmente:
 **En cada repo de addon** (`tyrian-companion-nexus`, Rust; `tyrian-companion-blish`, C#): ajustes
 de puerto y token; conectar y reconectar; `hello`; leer líneas; pintar `alert`; enviar `context`
 al cambiar, `heartbeat` en los silencios y `bye` al irse. Cero llamadas a la API de GW2, cero
-escritura hacia el plugin fuera de los tipos documentados; `farm1` solo añade una suscripción, nunca acciones dentro del juego.
+escritura hacia el plugin fuera de los tipos documentados; `farm1` y `price1` solo añaden una suscripción cada una, nunca acciones dentro del juego.
 
 ## Aceptación (auditoría del 24 sep, pruebas 12 a 15)
 
@@ -451,7 +451,7 @@ Pendiente de QA humana en la plataforma real, y no acreditado por lo anterior:
 
 El plugin no lee Mumble Link ni NexusLink: lo leen los addons a través de su anfitrión. No
 inspecciona memoria ni proceso del juego. No automatiza ninguna acción dentro del juego. No
-transporta la cuenta ni una lista de botín o actividad; `farm1` añade únicamente las métricas numéricas cerradas de medición autorizadas el 6 oct 2026. No saca la capa H8 del árbol. No mete binarios en
+transporta la cuenta ni una lista de botín o actividad; `farm1` añade únicamente las métricas numéricas cerradas de medición autorizadas el 6 oct 2026 y `price1` el precio público del saco autorizado el 7 oct 2026, sin cuenta ni identificadores. No saca la capa H8 del árbol. No mete binarios en
 este repo.
 
 ## Fuentes
@@ -471,8 +471,9 @@ este repo.
 
 El encargo Halloween amplía expresamente la salida con un panel de solo lectura. Esta excepción
 mínima al límite anterior de «solo avisos» conserva v3 y sus mensajes `hello`, `welcome` y `alert`
-exactamente iguales. No envía nombres, builds, IDs de cuenta/personaje, precios, oro, secretos,
-listas de objetos, buffs activos ni señales de AFK. H8 continúa aislado.
+exactamente iguales. No envía nombres, builds, IDs de cuenta/personaje, oro, secretos,
+listas de objetos, buffs activos ni señales de AFK. `farm1` sigue sin llevar precios; el precio público
+del saco viaja aparte por `price1`, por petición de David del 7 oct 2026. H8 continúa aislado.
 
 Tras el `welcome` v3, el servidor anuncia una capacidad separada:
 
@@ -525,10 +526,71 @@ int32 positivo. `ttl` vale siempre 15 segundos y describe vigencia del TRANSPORT
 | `prep` | `partial`, `attention` o `unknown`; preparación opcional, sin certificación de buffs ni bloqueo de medición |
 
 El addon muestra conexión y medición como estados distintos. Tras 15 s sin `farming_state` marca el
-transporte como antiguo; conserva la lectura con su antigüedad en vez de sustituirla por cero.
+transporte como antiguo y conserva las cifras en vez de sustituirlas por cero. La antigüedad de la
+lectura se pinta solo cuando informa de un problema: transporte antiguo, `err` no nulo, sin lectura,
+o lectura de 15 s o más con la medición en curso.
 Una observación antigua mantiene sus cifras y retira la ETA de bolsas. En live1 también se retira
 cuando la fuente carece de cobertura vigente; la cota de 15 min no sustituye la caducidad de fuente
 de 5 s definida en [SPEC-live-loot](SPEC-live-loot.md). Desconectar del host no demuestra
 que terminó la sesión: el runtime sigue el contrato de presencia y sus 10 min de gracia.
 La ausencia de incrementos nunca demuestra AFK. El total obtenido entre lecturas es inobservable.
 Posición, visibilidad y escala pertenecen al menú del addon y no introducen botones de juego.
+
+## Extensión opt-in `price1`: precio público del saco (7 oct 2026)
+
+Por petición de David del 7 oct 2026, el panel de farmeo muestra lo que se cobraría por el saco de
+Halloween. El precio es público (sin clave ni cuenta) y viaja en un tipo de trama aparte: `farm1` no
+cambia. No viaja `itemId`, nombre ni cuenta; el objeto lo fija el tag `price1`.
+
+Tras `farming_cap` y antes de `live_cap`, solo en v3 y solo si el host tiene proveedor de precio, el
+servidor anuncia (claves exactas `v,type,nonce,tag`; los clientes no dependen del orden):
+
+```json
+{"v":3,"type":"price_cap","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"price1"}
+```
+
+El addon se suscribe SOLO después de recibir `price_cap` en esa conexión (claves exactas
+`v,type,nonce,seq,tag`):
+
+```json
+{"v":3,"type":"price_sub","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":1,"tag":"price1"}
+```
+
+Consume la misma secuencia de entrada que `context`, `heartbeat`, `bye`, `alert_ack` y `farming_sub`.
+En v2 es `unexpected_message`; otro tag o una clave de más es `frame_schema`. Repetirla consume `seq` y
+no hace nada más. No toca la sesión y es independiente de `farming_sub`. Una conexión no suscrita a
+`price1` nunca recibe `price_state`, aunque tenga `farm1`.
+
+El servidor envía el estado al suscribirse y después cada 5 segundos, sin backlog, con una secuencia de
+salida propia que empieza en 1 por conexión, independiente de `alert.seq` y de `farming_state.seq`. Si
+el proveedor falla, esa secuencia no avanza. Al desconectar, el host cancela el temporizador.
+
+```json
+{"v":3,"type":"price_state","tag":"price1","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":1,"ttl":15,"st":"ok","sell":293,"sellStack":73312,"list":312,"listStack":77987,"age":412}
+```
+
+Exactamente 12 claves, en este orden, y menos de 512 bytes (216 en el extremo int32). `ttl` vale siempre
+15 y describe el TRANSPORTE. Las cifras están en cobre, son int32 no negativos o `null` (un valor fuera
+de rango viaja `null`, nunca 0) y son netas de comisión, calculadas con la política de comisiones del
+plugin (5 % más 10 % sobre el TOTAL, redondeo al cobre, mínimo 1c). El stack lo calcula el host con la
+cantidad 250: con puja de 345c el neto de 250 es 73312c, mientras que 250 por el neto unitario daría 73250c.
+
+| Campo | Significado cerrado |
+|---|---|
+| `st` | `idle`: no hay sesión live en fase `active`. `pending`: sesión activa sin cotización utilizable en memoria. `ok`: cotización de menos de 600 s. `stale`: de 600 s o más |
+| `sell`, `sellStack` | Neto de vender 1 y 250 a la mejor puja; `null` si el bazar no tiene orden de compra |
+| `list`, `listStack` | Neto de publicar 1 y 250 al precio de la oferta de venta más baja; `null` si no hay oferta |
+| `age` | Segundos de edad de la cotización al emitir (`ok` y `stale`); `null` en `idle` y `pending`. El cliente le suma el tiempo local desde la recepción |
+
+Con `st` distinto de `ok` las cuatro cifras van `null`, y un cliente que reciba cifras con otro `st`
+descarta la trama.
+
+Frescura. La API pública `commerce/prices` declara `cache-control: public,max-age=120`, así que 120 s es
+el suelo real. Mientras haya una sesión live en fase `active` Y al menos una conexión suscrita a
+`price1`, el plugin refresca la cotización del saco cada 120 s con una petición pública de un solo id,
+además del refresco que ya hace al observar cambios. Sin sesión activa o sin suscriptores no hay
+peticiones por este motivo, y suscribirse no dispara una si la cotización tiene menos de 120 s. Un fallo
+de red conserva la cotización anterior, que sigue envejeciendo y pasa a `stale` a los 600 s. Una
+cotización restaurada tras recargar no conserva puja y oferta brutas y cuenta como ausente hasta el
+siguiente refresco. El addon no debe presentar el precio como «en vivo» ni «tiempo real»: puede tener
+hasta unos 2 minutos, y más si falla la red.

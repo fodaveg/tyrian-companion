@@ -14,12 +14,14 @@
 
 import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import { provisionalLiveComparison, type LiveSessionComparisonState, type LiveSessionComparisonView } from '../sessions/live-session-comparison';
-import { farmingBagCapacity, farmingGoalForSession, projectFarmingIngameState, projectLiveFarmingIngameState } from './farming-runtime-projection';
+import { farmingBagCapacity, farmingGoalForSession, projectBagPriceIngameState, projectFarmingIngameState, projectLiveFarmingIngameState } from './farming-runtime-projection';
 import { observeFarmingSessionContext, readFarmingSessionContext, type FarmingSessionContext, type FarmingGroupContext } from './farming-session-context';
 import { normalizeFarmingGoal, projectFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
+import type { PriceIngameState } from '../alerts/price-ingame-state';
+import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
 import { LiveSessionLifecycle, emptyLiveSessionView } from '../sessions/live-session-lifecycle';
 import type { LiveSessionViewV1, LiveJournalEntryV1, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from '../sessions/live-session-model';
@@ -3143,6 +3145,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 	}
 
+	/** Public net price of the Halloween bag for `price1`. The bridge calls it only for a subscribed connection, which is what keeps the quote refreshed. */
+	getBagPriceIngameState(): PriceIngameState {
+		this.liveEconomy?.refreshBagQuote();
+		return projectBagPriceIngameState({ phase: this.liveSessions?.getView().phase ?? 'idle',
+			quote: this.liveEconomy?.rawQuote(HALLOWEEN_TOT_BAG_ITEM_ID) ?? null, now: Date.now() });
+	}
+
 	getLiveSessionLoot(): LiveSessionLootState {
 		// H checkpoint 16 (Hebra): `liveSessionLoot` is assigned inside `initializeRuntime`, but a
 		// saved-tab view can mount and read this before that finishes. Answer with the same `idle`
@@ -3732,6 +3741,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				onConnectionEvent: (event) => { this.ingamePresenceTracker().apply(event); },
 				onAlertAck: (ack) => { this.ingameReceipts.acked(ack.alertSeq, ack.client, ack.atMs); },
 				farmingState: () => this.getFarmingIngameState(),
+				priceState: () => this.getBagPriceIngameState(),
 				onFarmingError: (error) => { this.recordIngameSessionFailure(error); },
 				live: this.liveIngamePort(),
 			},
