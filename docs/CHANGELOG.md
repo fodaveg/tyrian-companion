@@ -1,5 +1,30 @@
 # Changelog
 
+## Release beta 0.6.2 - una sesión en vivo real ya guarda su nota y deja de bloquear al addon
+
+Release por tag `0.6.2`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación en
+Hebra y Obsidian y sesión real con Nexus).
+
+- Qué se veía: con el juego abierto y el addon de Nexus conectado, el botón «Iniciar sesión» de la
+  pestaña Sesión seguía deshabilitado y el addon mostraba `Inventory: another source owns the session`.
+- Causa: la nota de una sesión en vivo real se rechazaba siempre como evidencia inválida
+  (`invalid_live_evidence`). El tiempo observado se suma en el reloj del addon, contado desde que lee su
+  línea base, y el validador lo acotaba con los sellos de recepción del plugin sin tolerancia; bastaba 1 ms
+  de diferencia. Sin nota no hay recibo (`summaryReceipt`), y una sesión terminada sin recibo impide iniciar
+  la siguiente y hace que el plugin responda `source_conflict` al addon. Los tests estaban en verde porque
+  sus fixtures sellaban la línea base tan rápido como las muestras.
+- Arreglo: el tiempo observado publicado (nota y exportación) se acota a la ventana fuera de los huecos,
+  y el fin publicado de la sesión es el mayor entre `endedAt` y la última observación. El registro guardado
+  no se reescribe y el validador no cambia.
+- Además: cada cambio de presencia del juego repinta las vistas abiertas (antes el panel parado se quedaba
+  con «Abre Guild Wars 2…» tras conectar el addon); cuando la nota de una sesión en vivo no se guarda, el
+  registro de diagnóstico lleva el `status` y la `reason` del escritor; y un manifiesto de assets gestionados
+  ilegible se reporta por el canal de fallos del adaptador de Hebra en vez de callarse (sigue contando como
+  huella).
+- Efecto en una instalación atascada: al cargar la 0.6.2, la sesión terminada pendiente guarda su nota en
+  la carga o en el siguiente latido y deja de bloquear; no se pierde ni se descarta ningún dato.
+- Límite: «Tiempo con objetos observados» puede salir unos milisegundos por debajo de lo que contó el addon.
+
 ## Release beta 0.6.1 - los objetos de una sesión restaurada recuperan nombre e icono
 
 [Canal 0.6.1 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.1);

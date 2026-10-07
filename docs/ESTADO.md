@@ -1,5 +1,22 @@
 # Estado
 
+## 0.6.2 preparada: la sesión en vivo real guarda su nota (7 oct 2026)
+
+**Candidato en `main`; nada publicado ni etiquetado.** Corrige que, desde
+la 0.6.1 instalada en Hebra, con el juego abierto y el addon de Nexus conectado, «Iniciar sesión» siguiera
+deshabilitado y el addon mostrara `Inventory: another source owns the session`: la nota de la sesión real se
+rechazaba como `invalid_live_evidence` por 1 ms de diferencia entre el reloj del addon y los sellos del plugin.
+
+- Cambios: `src/sessions/live-session-note-model.ts` (tiempo observado y fin publicados acotados a la ventana),
+  `src/runtime/tyrian-companion-core.ts` (repintado al cambiar la presencia y diagnóstico del escritor) y
+  `src/host/hebra/hebra-host.ts` (manifiesto de assets ilegible reportado). Metadatos alineados a 0.6.2.
+- Verificado: solo los metadatos de versión y la entrada de changelog de esta preparación (extractor de notas
+  `changelog-entry.mjs` y `release:identity-contract`). Los cinco commits de arreglo traen sus tests; no se han
+  reejecutado aquí.
+- No verificado: el gate completo (lo corre la raíz), la publicación, la instalación en Hebra y Obsidian, que el
+  registro atascado de la instalación que lo reportó fuera exactamente este caso (su estado guardado no se pudo
+  leer) y una sesión real de juego.
+
 ## Canal 0.6.1 publicado: nombres e iconos de sesiones restauradas (6 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.1](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.1)
