@@ -1,0 +1,21 @@
+test_wrong_buff_manager_vtable_rejects_before_any_bucket_read (test_probe.MagicFindTests.test_wrong_buff_manager_vtable_rejects_before_any_bucket_read) ... FAIL
+
+======================================================================
+FAIL: test_wrong_buff_manager_vtable_rejects_before_any_bucket_read (test_probe.MagicFindTests.test_wrong_buff_manager_vtable_rejects_before_any_bucket_read)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "docs/audit/loot-mf-probe/test_probe.py", line 214, in test_wrong_buff_manager_vtable_rejects_before_any_bucket_read
+    self.assert_unknown(fixture, 'buff_manager_vtable', reader)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "docs/audit/loot-mf-probe/test_probe.py", line 184, in assert_unknown
+    self.assertEqual(result['status'], 'unknown')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'candidate_magic_find' != 'unknown'
+- candidate_magic_find
++ unknown
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)

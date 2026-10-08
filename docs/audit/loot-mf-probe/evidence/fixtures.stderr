@@ -1,0 +1,40 @@
+test_account_luck_bounds_reject (test_probe.MagicFindTests.test_account_luck_bounds_reject) ... ok
+test_boon_modifier_needs_an_applied_category_zero_buff (test_probe.MagicFindTests.test_boon_modifier_needs_an_applied_category_zero_buff) ... ok
+test_bucket_integrity_rejects (test_probe.MagicFindTests.test_bucket_integrity_rejects) ... ok
+test_budget_cannot_be_raised_above_the_declared_limit (test_probe.MagicFindTests.test_budget_cannot_be_raised_above_the_declared_limit) ... ok
+test_byte_budget_rejects_before_more_reads (test_probe.MagicFindTests.test_byte_budget_rejects_before_more_reads) ... ok
+test_cached_player_id_takes_precedence (test_probe.MagicFindTests.test_cached_player_id_takes_precedence) ... ok
+test_changes_between_rereads_reject (test_probe.MagicFindTests.test_changes_between_rereads_reject) ... ok
+test_character_must_be_the_controlled_local_player (test_probe.MagicFindTests.test_character_must_be_the_controlled_local_player) ... ok
+test_definition_bounds_reject (test_probe.MagicFindTests.test_definition_bounds_reject) ... ok
+test_empty_buff_table_still_counts_account_and_pushed (test_probe.MagicFindTests.test_empty_buff_table_still_counts_account_and_pushed) ... ok
+test_invalid_buff_table_rejects (test_probe.MagicFindTests.test_invalid_buff_table_rejects) ... ok
+test_main_new_buff_moves_the_total_and_not_the_account_base (test_probe.MagicFindTests.test_main_new_buff_moves_the_total_and_not_the_account_base) ... ok
+test_main_owner_change_between_samples_does_not_project_delta (test_probe.MagicFindTests.test_main_owner_change_between_samples_does_not_project_delta) ... ok
+test_main_unknown_sample_exits_two_without_a_value (test_probe.MagicFindTests.test_main_unknown_sample_exits_two_without_a_value) ... ok
+test_manager_mode_hides_flagged_definitions (test_probe.MagicFindTests.test_manager_mode_hides_flagged_definitions) ... ok
+test_null_buff_instance_rejects (test_probe.MagicFindTests.test_null_buff_instance_rejects) ... ok
+test_null_pointer_rejects (test_probe.MagicFindTests.test_null_pointer_rejects) ... ok
+test_other_modifier_types_are_ignored_even_when_unsupported (test_probe.MagicFindTests.test_other_modifier_types_are_ignored_even_when_unsupported) ... ok
+test_out_of_mapping_rejects_before_read (test_probe.MagicFindTests.test_out_of_mapping_rejects_before_read) ... ok
+test_pushed_table_integrity_rejects (test_probe.MagicFindTests.test_pushed_table_integrity_rejects) ... ok
+test_pushed_table_sums_every_entry_of_the_type_only (test_probe.MagicFindTests.test_pushed_table_sums_every_entry_of_the_type_only) ... ok
+test_short_read_rejects_without_partial_value (test_probe.MagicFindTests.test_short_read_rejects_without_partial_value) ... ok
+test_stacking_counts_once_per_effect_unless_by_intensity (test_probe.MagicFindTests.test_stacking_counts_once_per_effect_unless_by_intensity) ... ok
+test_static_guard_mutation_fails_then_restoration_passes (test_probe.MagicFindTests.test_static_guard_mutation_fails_then_restoration_passes) ... ok
+test_stop_flag_ends_a_definition_after_its_first_match (test_probe.MagicFindTests.test_stop_flag_ends_a_definition_after_its_first_match) ... ok
+test_supported_zero_is_distinct_from_unknown (test_probe.MagicFindTests.test_supported_zero_is_distinct_from_unknown) ... ok
+test_target_conditioned_modifier_is_skipped_like_the_client (test_probe.MagicFindTests.test_target_conditioned_modifier_is_skipped_like_the_client) ... ok
+test_total_is_account_plus_pushed_plus_buffs_with_full_static_guard (test_probe.MagicFindTests.test_total_is_account_plus_pushed_plus_buffs_with_full_static_guard) ... ok
+test_unmapped_pointer_rejects (test_probe.MagicFindTests.test_unmapped_pointer_rejects) ... ok
+test_unsupported_boon_modifier_only_matters_when_it_counts (test_probe.MagicFindTests.test_unsupported_boon_modifier_only_matters_when_it_counts) ... ok
+test_unsupported_magic_find_modifier_is_unknown_never_a_partial_total (test_probe.MagicFindTests.test_unsupported_magic_find_modifier_is_unknown_never_a_partial_total) ... ok
+test_vtable_changed_at_recheck_rejects (test_probe.MagicFindTests.test_vtable_changed_at_recheck_rejects) ... ok
+test_wrong_buff_manager_vtable_rejects_before_any_bucket_read (test_probe.MagicFindTests.test_wrong_buff_manager_vtable_rejects_before_any_bucket_read) ... ok
+test_wrong_dispatch_slot_rejects (test_probe.MagicFindTests.test_wrong_dispatch_slot_rejects) ... ok
+test_wrong_owner_vtables_reject (test_probe.MagicFindTests.test_wrong_owner_vtables_reject) ... ok
+
+----------------------------------------------------------------------
+Ran 35 tests in 0.133s
+
+OK

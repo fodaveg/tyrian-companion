@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-08",
+  "scope": "isolated Magic Find candidate recomposed from stored inputs, with controlled fixtures; not a production profile and not a verified MF source",
+  "authorization": "David authorized the probe on 2026-10-08 (\"sonda si\") after asking for a real-time Magic Find reading; the live read is reserved to the root session after reviewing this candidate.",
+  "base_commit": "c550bbd0200d077c5c0f42dc8350fac56b0cf401",
+  "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "binary_note": "computed on the installed file on 2026-10-08; static analysis only",
+  "runtime_attempted": false,
+  "process_access": false,
+  "stored_total_found": false,
+  "live_value_proven": false,
+  "total_semantics_proven": false,
+  "game_cap_read": false,
+  "environment": {
+    "platform": "Fedora Linux",
+    "python": "3.14.8",
+    "dependencies": "Python stdlib only; existing x86_64-w64-mingw32-objdump for the static analysis; no installs, build, EXE or game access"
+  },
+  "checks": {
+    "red_guard": {
+      "cwd": "docs/audit/loot-mf-probe",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 prove_guard_red.py",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "failures": 1,
+      "mutation": "Disable both initial/final real buff manager identity guards only in the fixture process",
+      "observed_failure": "candidate_magic_find != unknown",
+      "evidence": "evidence/guard-red.stderr"
+    },
+    "green_fixtures": {
+      "cwd": "docs/audit/loot-mf-probe",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_probe.py",
+      "exit_code": 0,
+      "tests": 35,
+      "evidence": "evidence/fixtures.stderr"
+    },
+    "offline_profile": {
+      "cwd": "docs/audit/loot-mf-probe",
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 check_profile_offline.py",
+      "exit_code": 0,
+      "guards": 19,
+      "slots": 12,
+      "guard_bytes": 6054,
+      "failures": 0,
+      "negative_control": "one guard hash and one slot target altered in memory only: exit 1, failures guard_local_player_getter and slot_controlled_character_getter"
+    }
+  },
+  "bounds": {
+    "process_requested_bytes_per_run": 65536,
+    "samples_max": 2,
+    "static_guard_bytes": 6054,
+    "buff_table_capacity_max": 512,
+    "modifier_records_per_definition_max": 32,
+    "pushed_records_max": 256,
+    "single_request_bytes_max": 1024
+  },
+  "limitations": [
+    "Game process never read; no real Magic Find, buff or luck value observed.",
+    "The client stores no total: the candidate repeats the widget's sum and inherits every rule this analysis may have misread.",
+    "Only the constant formula is evaluated; a counted Magic Find record with another formula, a game mode or a trait/state condition yields unknown.",
+    "The display cap is a content number and is not read; the candidate is emitted uncapped.",
+    "Whether real effects fit the byte budget is an estimate, not a measurement.",
+    "Fixtures use synthetic guard contents; only check_profile_offline.py ties the real hashes to the installed file.",
+    "Snapshots are not atomic; concurrent differences are rejected, not reconstructed.",
+    "The repository gate and plugin suite were not run; this folder is documentation outside the package."
+  ],
+  "evidence_paths": "Repository-relative paths normalized in synthetic test logs; scratch disassembly was temporary and deleted",
+  "files": {
+    "README.md": "3b56930931c7fcebd342635f65a9ad5ab4ec51cac073720aa885ac185e9f3db1",
+    "check_profile_offline.py": "d48ae664d3599b87a11aa2f35ca593d4ea95ecb72e3afd70b8227216c823ece9",
+    "evidence/fixtures.stderr": "f6ac2284c8a9a23e24aa239a500bbc6a923e5aa971921faad3e13c816f10fb69",
+    "evidence/guard-red.stderr": "6cfd731263a3735f4e2c6e699a4f5ebc081cfe087e8ac2c0c5b91af0d693c164",
+    "evidence/static-findings.json": "6486f867143497ecea487c33fd7b5149c1c95463ac76861297a02fef45599ac1",
+    "probe.py": "fe9f327345a2e96efbd7aa2a9c1cea72ec702b97d2ccd5f2d489768a8b4141b2",
+    "profile.json": "98fea5522eafa4434dd71a03a318b2ae46aab4c2133fa2e9333f9692505fffb6",
+    "prove_guard_red.py": "2e1f43217b98f125cfa68767414b9b9e5ba6842b9a0bf65f554fd4e88f07685a",
+    "test_probe.py": "90714e5f52c3681e3735969a85a1a9888883f679b48b2e61a1c67f31978da3c1"
+  }
+}

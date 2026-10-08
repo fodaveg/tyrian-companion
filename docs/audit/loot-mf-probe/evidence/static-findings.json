@@ -1,0 +1,18 @@
+{
+  "method": "Targeted PE string, RIP-relative, call and absolute xrefs over the file on disk; every hop confirmed by bounded objdump disassembly of its own range. Scratch tooling was temporary and is not retained.",
+  "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "process_access": false,
+  "installs": "none; x86_64-w64-mingw32-objdump, strings and Python 3.14.8 stdlib already present",
+  "widget_source": "Game/Ui/Widgets/Attributes/AtAttribute.cpp, value function RVA 0x3E42F0, Magic Find case RVA 0x3E47F8",
+  "attribute_identity": "UI attribute 13 maps to no character attribute (RVA 0x3E3F30) and to modifier type 0x71 (RVA 0x3E3E00); name table index 113 is RewardCreatureAll and 114 is RewardCreatureAllBoon; the base comes from ChCliPlayerStats.cpp, which names accountMagicFindTable and accountMagicFindProgress",
+  "stored_total_found": false,
+  "stored_total_note": "ChCliCoreStats.cpp keeps arrays for the 11 character attributes only (indices 1..11, last is FishingPower). The only code that asks for modifier types 0x71 or 0x72 is the attribute widget; no other consumer caches them.",
+  "stored_inputs": [
+    "account luck level: DWORD at ChCliPlayerStats+0x24 (player+0x9700), written by RVA 0x1208B40",
+    "server-pushed modifiers: sorted 12-byte records {type, float, source} at buff manager +0xD8, count +0xE4, written only by message handlers RVA 0x12C4730 and 0x12C47D0",
+    "applied buffs: hash table at buff manager +0x20 (24-byte buckets), each buff's definition holds 72-byte modifier records"
+  ],
+  "not_read": "the display cap, which is a content number fetched by RVA 0x12DD120(0x1C9, 0x1B5)",
+  "live_value_proven": false,
+  "artifact_format": "Hashes of guarded ranges only in profile.json; no bytes of the binary and no live data retained"
+}
