@@ -29,6 +29,7 @@ import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from '../sessions/live-session-m
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live-session-model';
 import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import type { LiveIngamePort } from '../alerts/live-loot-protocol';
+import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
 import { LiveSessionSummaryService } from '../sessions/live-session-summary-service';
 import { LiveSessionHistoryService, type LiveSessionHistoryEntry, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
 import type { StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
@@ -4130,6 +4131,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * lámina 2.1) read this for the session on screen. Null with no addon marker (bridge disabled,
 	 * or the running session started before this plugin load's marker linked it).
 	 */
+	/** Last known character of the active live session: the context never empties on a loading or selection screen. */
+	getLiveSessionCharacter(): string | null {
+		return currentLiveSessionCharacter(this.liveSessions?.getRuntime() ?? null);
+	}
+
 	getIngameSessionLink(sessionId: string): { owner: 'automatic' | 'adopted'; labyrinthAt: string | null } | null {
 		return this.ingameSessionMarker?.linkFor(sessionId) ?? null;
 	}

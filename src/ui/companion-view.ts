@@ -121,6 +121,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions, Partial<Fa
 	getIngamePresence?(): IngamePresenceSnapshot;
 	/** H18.36: the "Laberinto" badge and "la marcó Nexus" meta suffix (boceto lámina 2.1). */
 	getIngameSessionLink?(sessionId: string): { owner: 'automatic' | 'adopted'; labyrinthAt: string | null } | null;
+	/** The character of the ACTIVE live session right now (its last known one), or null with no active live session. */
+	getLiveSessionCharacter?(): string | null;
 	getManagedAssetsView?(): ManagedAssetsView;
 	/** Relaunches the automatic managed-assets Move blocked by `operation_conflict`. */
 	retryManagedAssetsReconciliation?(): Promise<void>;
@@ -856,7 +858,7 @@ export class TyrianCompanionView {
 				ariaLabel: copy.session, state: copy.active, badge,
 				meta: {
 					clock: formatElapsed(now - Date.parse(observed.baseline.completedAt)),
-					text: `· ${observed.startContext.characterName}${ownerSuffix}`,
+					text: `· ${this.actions.getLiveSessionCharacter?.() ?? observed.startContext.characterName}${ownerSuffix}`,
 				},
 				// `stopManualSession` now rejects when its diagnostics span already logged the cause
 				// (H15.2, 2026-09-10 incident): swallow it here, there is nothing more this button can do.
@@ -896,7 +898,7 @@ export class TyrianCompanionView {
 				// and the cierre's own recorrido (fin marcado · lectura final en curso · nota pendiente).
 				return {
 					ariaLabel: copy.session, state: copy.finishing,
-					meta: { text: `· ${observed.startContext.characterName}` },
+					meta: { text: `· ${this.actions.getLiveSessionCharacter?.() ?? observed.startContext.characterName}` },
 					actions, callout,
 					why: [
 						{ text: this.t('view.settlementWhy') },
