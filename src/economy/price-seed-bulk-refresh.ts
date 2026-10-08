@@ -5,7 +5,7 @@ import {
 } from '../core/local-debug-action-runner';
 import type { SerialTaskRunner, SerialTaskTurn } from '../core/serial-task-queue';
 import type { TyrianPriceHistoryPort, TyrianPriceSeedCache, TyrianPriceSeedNoSeedCache } from '../host/tyrian-host-storage';
-import type { PriceSeedResult, PriceSeedQueueCoverage } from './price-seed-model';
+import type { PriceSeedDayV1, PriceSeedResult, PriceSeedQueueCoverage, PriceSeedV1 } from './price-seed-model';
 
 /** Re-exported for existing callers (`main.ts`, this module's own tests); the type itself now lives in `./price-seed-model`. */
 export type { PriceSeedQueueCoverage } from './price-seed-model';
@@ -273,7 +273,7 @@ export class PriceSeedBulkRefreshService {
 			return;
 		}
 		try {
-			await store.put(this.options.vaultId, itemId, result.seed, nowMs);
+			await store.put(this.options.vaultId, itemId, mergeKeepingOlderDays(cached?.seed ?? null, result.seed), nowMs);
 		} catch (error) {
 			// The download succeeded; only the cache write failed, which costs the next run a
 			// repeated download and nothing else.
@@ -349,4 +349,21 @@ type CoverageKind = 'seeded' | 'noData' | 'pending';
 interface Stores {
 	store: TyrianPriceSeedCache;
 	noSeedStore: TyrianPriceSeedNoSeedCache;
+}
+
+/**
+ * Z12: the pass downloads only the newest `maxDays` (400 outside the festival calendar), and
+ * writing that over a longer copy the panel had downloaded cut the chart short for good, with no
+ * extra request that could repair it inside the 24 h rule (H18.17). So the days the previous copy
+ * has that the new download no longer reaches are kept, and on the days both have, the new one
+ * wins. Days stay ascending and unique, which is what `isPriceSeed` requires.
+ */
+function mergeKeepingOlderDays(previous: PriceSeedV1 | null, fresh: PriceSeedV1): PriceSeedV1 {
+	if (previous === null || previous.days.length === 0 || fresh.days.length === 0) return fresh;
+	const byDay = new Map<string, PriceSeedDayV1>();
+	for (const day of previous.days) byDay.set(day.dayUtc, day);
+	for (const day of fresh.days) byDay.set(day.dayUtc, day);
+	if (byDay.size === fresh.days.length) return fresh;
+	const days = [...byDay.values()].sort((left, right) => (left.dayUtc < right.dayUtc ? -1 : left.dayUtc > right.dayUtc ? 1 : 0));
+	return { ...fresh, days };
 }

@@ -129,6 +129,36 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		service.dispose();
 	});
 
+	it('Z12: a 400-day pass keeps the older days of a longer copy already cached, and its own days win on the overlap', async () => {
+		const dayAt = (index: number): string => new Date(Date.parse('2024-01-01T00:00:00.000Z') + index * 86_400_000).toISOString().slice(0, 10);
+		const seedOf = (from: number, count: number, bid: number): Extract<PriceSeedResult, { status: 'seeded' }>['seed'] => ({
+			version: 1, itemId: 7, source: 'datawars2', retrievedAt: '2026-09-11T00:00:00.000Z',
+			days: Array.from({ length: count }, (_unused, offset) => ({ dayUtc: dayAt(from + offset), bidCopper: bid, askCopper: null })),
+		});
+		const factory = new IDBFactory();
+		const first = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+		await first.put('vault', 7, seedOf(0, 700, 100), NOW_MS - 25 * 60 * 60 * 1000);
+		first.close();
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async () => ({ status: 'seeded', seed: seedOf(400, 400, 200) }),
+		});
+
+		await service.run([7]);
+		service.dispose();
+
+		const cache = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+		const kept = (await cache.get('vault', 7))!.seed.days;
+		cache.close();
+		expect(kept).toHaveLength(800);
+		expect(kept[0]).toMatchObject({ dayUtc: dayAt(0), bidCopper: 100 });
+		expect(kept[399]).toMatchObject({ dayUtc: dayAt(399), bidCopper: 100 });
+		expect(kept[400]).toMatchObject({ dayUtc: dayAt(400), bidCopper: 200 });
+		expect(kept[799]).toMatchObject({ dayUtc: dayAt(799), bidCopper: 200 });
+		expect(new Set(kept.map((day) => day.dayUtc)).size).toBe(800);
+	});
+
 	it('a stale cache entry (past the 24h TTL) is requested again', async () => {
 		const requested: number[] = [];
 		let now = NOW_MS;
