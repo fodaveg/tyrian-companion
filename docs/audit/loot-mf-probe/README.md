@@ -109,10 +109,10 @@ Los registros de otros tipos se ignoran sin evaluarlos.
 
 ## Sin validar
 
-- Que el número del modo normal coincida con el del panel de héroe. El 8 de octubre coincidió
-  (333) el recorrido relajado del diagnóstico; el modo normal con la regla nueva no se ha
-  ejecutado todavía.
-- Que el resto 4 de los punteros de contenido se mantenga en otra sesión o tras un parche.
+- Una bajada del total. El 8 de octubre se vio una subida; ver la validación en vivo, al final.
+- Que el resto 4 de los punteros de contenido se mantenga en otro arranque del juego o tras un
+  parche. Es de una sola sesión.
+- Otro personaje.
 - Que el panel use el personaje de `ChCliContext+0x98`. La sonda sí comprueba que ese personaje
   es del jugador local.
 - Que los efectos reales de hallazgo mágico usen la fórmula 6 y no lleven condiciones. Si no es
@@ -302,9 +302,41 @@ Una sola muestra: con 512 buckets, dos pueden no caber.
 
 La salida normal no cambia: un test fija sus campos.
 
+## Validación en vivo del 8 octubre 2026
+
+Esta sección supera lo dicho arriba sobre «nada se ha leído en vivo» para lo que enumera, y
+solo para eso. La ejecutó la sesión raíz en Fedora con GE-Proton11-7, sobre el binario del
+perfil, en modo normal, una muestra por ejecución y en una misma sesión del juego.
+
+| Ejecución | Total | Suerte | Servidor | Efectos | Bytes | Efectos leídos |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Primera | 333,0 | 300 | 13,0 | 20,0 | 28706 | 81 |
+| Tras cambiar David su hallazgo mágico | 363,0 | 300 | 13,0 | 50,0 | 32814 | 92 |
+
+Los dos totales coincidieron con el panel de héroe, leído por David. Entre una y otra subió
+solo la parte de efectos, de 20 a 50; la suerte y la parte del servidor no se movieron. Las dos
+terminaron con exit 0 y 0 escrituras, y `check_profile_offline.py` con exit 0.
+
+Queda acreditado, para ese binario, esa sesión y ese personaje:
+
+- Que la suma de los tres sumandos es el número del panel de héroe, en dos valores distintos.
+- Que una subida por efectos se refleja en la parte de efectos y no en la base de cuenta.
+
+Sigue sin acreditar:
+
+- Una bajada.
+- Otro arranque del juego: la regla de resto 4 de los punteros de contenido es de una sesión.
+- Otro personaje.
+- El tope, el tipo `0x72` (ninguna de las dos muestras lo incluyó) y las fórmulas distintas de
+  la constante.
+- Windows nativo y el lector dentro del addon.
+
+La sonda sigue emitiendo `live_value_proven: false`: es una herramienta y no sabe si alguien
+comparó su número con el juego. Lo acreditado consta en el recibo, como en la cartera.
+
 ## Recibos
 
 El vigente es [`receipt.json`](receipt.json): cubre los ficheros tal como están hoy.
 [`receipt-diagnose-2026-10-08.json`](receipt-diagnose-2026-10-08.json) y los logs de `evidence/`
-son historia: describen el modo de diagnóstico y el primer candidato (commit `9d6703a`), cuyos
-ficheros han cambiado desde entonces.
+son historia: describen el modo de diagnóstico y el primer candidato (el commit «prepare
+passive Magic Find probe candidate»), cuyos ficheros han cambiado desde entonces.

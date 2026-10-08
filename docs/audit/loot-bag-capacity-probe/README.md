@@ -83,10 +83,9 @@ se validó en vivo el 6 de octubre. Los nuevos son `+0x440`, `+0x380` y los tres
 
 - Que la suma coincida con el total de la ventana. Es la prueba de abajo.
 - Que el tamaño de `carga+0x28` sea el que usa el contador en todos los tipos de bolsa.
-- Que el modo normal dé el total. El 8 de octubre lo dio (414) la suma de diagnóstico; el modo
-  normal con la clase y la alineación corregidas no se ha ejecutado todavía.
-- Que los punteros de definición y de carga terminen en 4. En esta sonda solo consta que no
-  estaban alineados a 8; el resto exacto lo midió la sonda de hallazgo mágico en otro contenido.
+- Un cambio de bolsas y otro personaje. Ver la validación en vivo, al final.
+- Que el resto 4 de los punteros de contenido se mantenga en otro arranque del juego o tras un
+  parche. Es de una sola sesión.
 - El inventario compartido de la cuenta y el banco. No entran en este contador y no se leen.
 - Windows nativo y el lector dentro del addon.
 
@@ -221,12 +220,36 @@ Coste medido en fixture con 16 bolsas rechazadas: 1860 bytes una muestra, 2896 d
 
 La salida normal no cambia: un test fija sus campos.
 
+## Validación en vivo del 8 octubre 2026
+
+Esta sección supera lo dicho arriba sobre «nada se ha leído en vivo» para lo que enumera, y
+solo para eso. La ejecutó la sesión raíz en Fedora con GE-Proton11-7, sobre el binario del
+perfil, en modo normal, una muestra por ejecución y en una misma sesión del juego.
+
+- Dos ejecuciones separadas por unos minutos: `candidate_capacity_slots: 414` en las dos, con
+  16 huecos de bolsa y 16 bolsas. David veía 414 en su ventana de inventario.
+- 1852 bytes cada una, exit 0, 0 escrituras; `check_profile_offline.py` con exit 0.
+- Al pasar el modo normal quedó medido lo que faltaba: los punteros de definición y de carga
+  de las 16 bolsas terminan en 4 módulo 8. Si no, la sonda los habría rechazado.
+
+Queda acreditado, para ese binario, esa sesión y ese personaje, que la suma de los tamaños de
+las bolsas puestas es el total del contador de inventario.
+
+Sigue sin acreditar:
+
+- Un cambio de bolsas y otro personaje: el segundo control no se ha hecho.
+- Otro arranque del juego: la regla de resto 4 de los punteros de contenido es de una sesión.
+- Windows nativo y el lector dentro del addon.
+
+La sonda sigue emitiendo `live_value_proven: false`: es una herramienta y no sabe si alguien
+comparó su número con el juego. Lo acreditado consta en el recibo, como en la cartera.
+
 ## Recibos
 
 El vigente es [`receipt.json`](receipt.json): cubre los ficheros tal como están hoy.
 [`receipt-diagnose-2026-10-08.json`](receipt-diagnose-2026-10-08.json) y `evidence/` son
-historia: describen el modo de diagnóstico y el primer candidato (commit `236cdce`), cuyos
-ficheros han cambiado desde entonces. Lo que `evidence/static-findings.json` dice de la clase
+historia: describen el modo de diagnóstico y el primer candidato (el commit «prepare passive
+bag capacity probe candidate»), cuyos ficheros han cambiado desde entonces. Lo que `evidence/static-findings.json` dice de la clase
 de la bolsa es el error ya corregido arriba.
 
 ## Coste para el lector del addon

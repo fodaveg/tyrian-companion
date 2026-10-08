@@ -1,15 +1,48 @@
 {
   "date": "2026-10-08",
   "scope": "current receipt of the Magic Find candidate: total recomposed from stored inputs, with the content pointer rule taken from the live diagnose run; not a production profile and not a verified MF source",
-  "history": "The first candidate's receipt is this file at commit 9d6703adb9e7da43a9c8e927e5e180cd6f66448c. receipt-diagnose-2026-10-08.json and evidence/ describe earlier states of these files and are kept as history.",
+  "history": "The first candidate's receipt is this file at the commit 'docs(audit): prepare passive Magic Find probe candidate'. receipt-diagnose-2026-10-08.json and evidence/ describe earlier states of these files and are kept as history. Commit hashes quoted in this folder (9d6703a, badb353, c661d71) are from before the branch was rebased on origin/main 6079530; the subjects and trees are the same.",
   "authorization": "David authorized the probe on 2026-10-08 (\"sonda si\"). Every live read was executed by the root session; this work never read the process.",
   "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
   "process_access_by_this_work": false,
   "stored_total_found": false,
-  "live_value_proven": false,
+  "live_value_proven": true,
+  "live_value_scope": "Fedora Linux, GE-Proton11-7, the profile binary, one game session, one character, values below any cap: two normal-mode totals (333.0 and 363.0) equal to the hero panel as read by David, and one rise carried only by the buff addend (20.0 to 50.0) with luck and pushed unchanged. Criterion: the README's discriminating test and its second control.",
+  "probe_output_flag": "probe.py still emits live_value_proven false, as the wallet probe does: the tool cannot know whether anyone compared its number with the game.",
   "total_semantics_proven": false,
+  "total_semantics_gap": "No drop observed, one session only (the content pointer remainder may differ on another launch), one character, cap not read, modifier type 0x72 never included, only the constant formula met.",
   "game_cap_read": false,
   "live_runs_reported_by_root": [
+    {
+      "mode": "normal, 1 sample, tree of pre-rebase commit c661d71",
+      "exit_code": 0,
+      "status": "candidate_magic_find",
+      "candidate_total_percent": 333.0,
+      "account_luck_percent": 300,
+      "pushed_modifier_percent": 13.0,
+      "buff_modifier_percent": 20.0,
+      "boon_modifier_included": false,
+      "bytes_requested": 28706,
+      "buffs_read": 81,
+      "definitions_read": 65,
+      "game_writes": 0,
+      "hero_panel_value_reported": 333
+    },
+    {
+      "mode": "normal, 1 sample, same process and context, after David changed his Magic Find in game",
+      "exit_code": 0,
+      "status": "candidate_magic_find",
+      "candidate_total_percent": 363.0,
+      "account_luck_percent": 300,
+      "pushed_modifier_percent": 13.0,
+      "buff_modifier_percent": 50.0,
+      "boon_modifier_included": false,
+      "bytes_requested": 32814,
+      "buffs_read": 92,
+      "definitions_read": 76,
+      "game_writes": 0,
+      "hero_panel_value_reported": 363
+    },
     {
       "mode": "normal, 2 samples, first candidate",
       "exit_code": 2,
@@ -47,7 +80,7 @@
     "heap_objects": "address % 8 == 0; kept from the wallet Reader; 91 of 91 table nodes observed",
     "game_content": "address % 8 == 4; 278 of 278 content pointers observed; not derived from code",
     "why_not_multiple_of_4": "the narrowest rule the observations satisfy; an 8-aligned content pointer is as anomalous as an odd one",
-    "normal_mode_run_with_this_rule": false
+    "normal_mode_run_with_this_rule": true
   },
   "budget_decision": "No increase: 65536 requested bytes per run stays the hard cap. One run is one full pass (about 26.5 KiB live with 91 buffs, consistency reread included, plus 6054 of guards). --samples 2 remains, but a second pass that cannot fit is refused with byte_budget before any read.",
   "environment": {
@@ -98,7 +131,7 @@
     "fixture_live_shape_bytes_per_sample": 21892
   },
   "limitations": [
-    "The normal mode has not run against the game with the new pointer rule; 333.0 was the diagnostic relaxed walk.",
+    "Not proven: a drop of the total, another launch of the game, another character, native Windows, the in-addon reader.",
     "The content pointer rule is an observation of one session of one build.",
     "Only the constant formula is evaluated; a counted Magic Find record with another formula, a game mode or a trait/state condition yields unknown.",
     "The display cap is a content number and is not read; the candidate is emitted uncapped.",
@@ -107,7 +140,7 @@
     "The repository gate and plugin suite were not run."
   ],
   "files": {
-    "README.md": "eaa1ec943786d94572dcef71748f3af6f0dce33f2ed1616fe7ac45a12870a950",
+    "README.md": "536cb4c77586823cd74c3ec6c390a13418cdc561a01adcc5d66901bf963e43d6",
     "check_profile_offline.py": "70b373205cc6b6d7d52bc66274f5754f4e84dc5fc15d3e1572a619f3e5cd2131",
     "probe.py": "48a0b5b500ec2d97213c917b14e8d1ea9b9a6ca53a96f7c7a1151ec9c70d2a12",
     "profile.json": "8992928d98276dcf667f44fd3442dbfa5260f31a3caf4bc47eda2444ee6cebbf",

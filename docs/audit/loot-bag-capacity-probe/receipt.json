@@ -1,15 +1,39 @@
 {
   "date": "2026-10-08",
   "scope": "current receipt of the bag capacity candidate: capacity summed from equipped bag definitions, with the bag class and the content pointer rule taken from the live diagnose runs; not a production profile",
-  "history": "The first candidate's receipt is this file at commit 236cdce19e4b99f93dcb91eac7f6581f908bdedd. receipt-diagnose-2026-10-08.json and evidence/ describe earlier states of these files and are kept as history; evidence/static-findings.json still names the wrong bag class.",
+  "history": "The first candidate's receipt is this file at the commit 'docs(audit): prepare passive bag capacity probe candidate'. receipt-diagnose-2026-10-08.json and evidence/ describe earlier states of these files and are kept as history; evidence/static-findings.json still names the wrong bag class. Commit hashes quoted in this folder (236cdce, badb353, c661d71) are from before the branch was rebased on origin/main 6079530; the subjects and trees are the same.",
   "authorization": "Relayed by the root session on 2026-10-08: David authorized extending the probe to bag capacity (\"sonda si\"). Every live read was executed by the root session; this work never read the process.",
   "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
   "process_access_by_this_work": false,
   "stored_capacity_found": false,
   "verdict": "sum_of_equipped_bags",
-  "live_value_proven": false,
+  "live_value_proven": true,
+  "live_value_scope": "Fedora Linux, GE-Proton11-7, the profile binary, one game session, one character with 16 bags: two normal-mode runs minutes apart gave 414, the total David saw on his inventory window. Criterion: the README's discriminating test.",
+  "probe_output_flag": "probe.py still emits live_value_proven false, as the wallet probe does: the tool cannot know whether anyone compared its number with the game.",
   "capacity_semantics_proven": false,
+  "capacity_semantics_gap": "The README's second control was not done: no bag change and no other character. One session only; the content pointer remainder may differ on another launch.",
   "live_runs_reported_by_root": [
+    {
+      "mode": "normal, 1 sample, tree of pre-rebase commit c661d71",
+      "exit_code": 0,
+      "status": "candidate_bag_capacity",
+      "candidate_capacity_slots": 414,
+      "bag_slot_count": 16,
+      "bags_equipped": 16,
+      "bytes_requested": 1852,
+      "game_writes": 0,
+      "inventory_total_reported": 414
+    },
+    {
+      "mode": "normal, 1 sample, same process and context, minutes later",
+      "exit_code": 0,
+      "status": "candidate_bag_capacity",
+      "candidate_capacity_slots": 414,
+      "bag_slot_count": 16,
+      "bags_equipped": 16,
+      "bytes_requested": 1852,
+      "game_writes": 0
+    },
     {
       "mode": "normal, 2 samples, first candidate",
       "exit_code": 2,
@@ -46,9 +70,9 @@
   },
   "pointer_rule": {
     "heap_objects": "address % 8 == 0; the 16 bag items observed",
-    "game_content": "address % 8 == 4; borrowed from the Magic Find probe's 278 of 278 content pointers; here only 'not 8-aligned' was observed for the 32",
+    "game_content": "address % 8 == 4; first borrowed from the Magic Find probe's 278 of 278 content pointers, then met by the 32 definition and payload pointers of the two normal-mode runs, which would have been rejected otherwise",
     "why_not_multiple_of_4": "the narrowest rule the observations satisfy; an 8-aligned content pointer is as anomalous as an odd one",
-    "normal_mode_run_with_this_rule": false
+    "normal_mode_run_with_this_rule": true
   },
   "environment": {
     "platform": "Fedora Linux",
@@ -97,15 +121,15 @@
     "fixture_bytes_two_samples_with_16_bags": 2880
   },
   "limitations": [
-    "The normal mode has not run against the game with the corrected class and pointer rule; 414 was the diagnostic sum.",
-    "The content pointer remainder was not measured on bag content; if it is not 4 the normal mode returns unknown and --diagnose now reports the low bits.",
+    "Not proven: a bag change, another character, another launch of the game, native Windows, the in-addon reader.",
+    "The content pointer rule is an observation of one session of one build.",
     "Shared inventory slots and the bank are outside this counter and are not read.",
     "Fixtures use synthetic guard contents; only check_profile_offline.py ties the real hashes to the installed file.",
     "Snapshots are not atomic; concurrent differences are rejected, not reconstructed.",
     "The repository gate and plugin suite were not run."
   ],
   "files": {
-    "README.md": "50fe19e109c0c583d83b9621f2b94cbb053d43c6223c73b400e4a41c49405dc1",
+    "README.md": "6bbbefc7fbfb7492240c820bbc6aceb13dbb3c6fdc8d3751147895609755050f",
     "check_profile_offline.py": "edb8b452f41e8aacabef84f22eb3fa0aa3a7c27c0082c9c91b456b2fff055731",
     "probe.py": "4f30bdf1f81789d8b23e176c5a2da181920dee4fc8668684294caecf1dde558b",
     "profile.json": "35846af3fc57b555d7c64330dae76ee3ac270e3637804372e05ab5e9b5a479c9",
