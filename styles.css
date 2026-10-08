@@ -3199,8 +3199,7 @@
 @container (min-width: 600px) {
 	.tyrian-live-session--panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); column-gap: var(--size-4-8); }
 	.tyrian-live-session__head, .tyrian-live-session__notices, .tyrian-live-session__objects, .tyrian-live-session__timeline { grid-column: 1 / -1; }
-	.tyrian-live-session__head { order: 0; } .tyrian-live-session__notices { order: 1; } .tyrian-live-session__stats { order: 2; align-content: start; }
-	.tyrian-live-session__chart { order: 3; } .tyrian-live-session__objects { order: 4; } .tyrian-live-session__timeline { order: 5; } .tyrian-live-session__previous { order: 6; }
+	.tyrian-live-session__stats { align-content: start; }
 	.tyrian-live-session--panel .tyrian-live-session__rows { columns: 2; column-gap: var(--size-4-8); }
 }
 

@@ -331,6 +331,36 @@ describe('Session tab: figures, objects and chart', () => {
 		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__gap-mask')).toHaveLength(2);
 		expect(gapped.panel.element.querySelector('[role="img"]')!.getAttribute('aria-label')).toContain('2 reading gaps');
 	});
+
+	describe('order of the sections (David, 8 Oct 2026)', () => {
+		const NAMES: Array<[string, string]> = [['tyrian-live-session__head', 'status'], ['tyrian-live-session__notices', 'notices'],
+			['tyrian-live-session__stats', 'figures'], ['tyrian-live-session__chart', 'chart'], ['tyrian-live-session__currencies', 'currencies'],
+			['tyrian-live-session__objects', 'objects'], ['tyrian-live-session__timeline', 'timeline']];
+		/** Every direct child in DOM order (which is also the visual order: no CSS `order`), hidden or not. */
+		const sections = (panel: LiveSessionPanel, onlyShown: boolean): string[] => Array.from(panel.element.children)
+			.filter((el) => !onlyShown || !el.hasAttribute('hidden'))
+			.map((el) => NAMES.find(([cls]) => el.classList.contains(cls) && (cls !== 'tyrian-live-session__objects' || !el.classList.contains('tyrian-live-session__currencies')))?.[1] ?? el.className);
+		const withCoin = (): LiveSessionViewV1 => { const view = liveView(); view.totals.push({ kind: 'currency', idNumber: 1, positive: 5, negative: 0, net: 5 }); return view; };
+
+		it('puts the chart (with its legend) before the objects, the objects before the coins and the coins before the timeline', () => {
+			const { panel } = harness(withCoin());
+			expect(sections(panel, true)).toEqual(['status', 'notices', 'figures', 'chart', 'objects', 'currencies', 'timeline']);
+			const chart = panel.element.querySelector('.tyrian-live-session__chart')!;
+			expect(chart.querySelector('.tyrian-live-session__legend')).not.toBeNull();
+			expect(chart.compareDocumentPosition(panel.element.querySelector('.tyrian-live-session__grid')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		});
+
+		it('keeps the same order with a bare new session, with no chart data, finished and with no session', () => {
+			const fresh = harness({ ...liveView(0), totals: [], chartPoints: [] });
+			expect(sections(fresh.panel, true)).toEqual(['status', 'notices', 'figures', 'objects']);
+			expect(sections(fresh.panel, false)).toEqual(['status', 'notices', 'figures', 'chart', 'objects', 'currencies', 'timeline']);
+			const noChart = harness({ ...liveView(), chartPoints: [] });
+			expect(sections(noChart.panel, true)).toEqual(['status', 'notices', 'figures', 'objects', 'timeline']);
+			const done = harness({ ...withCoin(), phase: 'complete', endedAt: at(3) }, control({ canStop: false }));
+			expect(sections(done.panel, true)).toEqual(['status', 'notices', 'figures', 'chart', 'objects', 'currencies', 'timeline']);
+			expect(sections(harness(idleView(), control({ canStart: true })).panel, true)).toEqual(['status', 'notices']);
+		});
+	});
 });
 
 describe('Session tab: timeline', () => {

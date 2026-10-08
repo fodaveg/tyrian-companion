@@ -231,7 +231,7 @@ export class LiveSessionPanel {
 		this.timeline.append(this.timelineTitle, this.rows, this.more);
 		this.timeline.addEventListener('toggle', () => { this.refresh(); });
 
-		this.element.append(head, notices, this.stats, this.objects, this.currencies, this.chart, this.timeline);
+		this.element.append(head, notices, this.stats, this.chart, this.objects, this.currencies, this.timeline);
 
 		this.previousStatus = this.node('p', 'tyrian-live-session__hint');
 		this.previousStatus.setAttribute('role', 'status');
