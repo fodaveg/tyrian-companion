@@ -69,6 +69,27 @@ describe('PriceHistoryPanelSeedService', () => {
 		expect(state.days).toHaveLength(500);
 	});
 
+	/**
+	 * Z12 (rule H18.17, one request per item per 24 h): a copy under 24 h old is served from the
+	 * cache whatever its length, and opening the panel again never asks the network.
+	 */
+	it('serves a copy under 24 h old without any request, trimmed to 400 days or not, on every open', async () => {
+		const { service, requests, factory } = harness();
+		const cache = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+		const days = Array.from({ length: 400 }, (_unused, index) => ({
+			dayUtc: new Date(Date.parse('2025-01-01T00:00:00.000Z') + index * 86_400_000).toISOString().slice(0, 10),
+			bidCopper: 100, askCopper: null,
+		}));
+		await cache.put('vault', 36_038, {
+			version: 1, itemId: 36_038, source: 'datawars2', retrievedAt: '2026-09-02T23:00:00.000Z', days,
+		}, Date.parse('2026-09-02T23:00:00.000Z'));
+		cache.close();
+
+		expect((await service.ensure(36_038)).days).toHaveLength(400);
+		expect((await service.ensure(36_038)).days).toHaveLength(400);
+		expect(requests).toHaveLength(0);
+	});
+
 	it('shares one in-flight download between concurrent callers of the same item', async () => {
 		const { service, requests } = harness();
 		const [first, second] = await Promise.all([service.ensure(36_038), service.ensure(36_038)]);

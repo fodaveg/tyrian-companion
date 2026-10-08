@@ -42,6 +42,21 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		expect(cached.title).toBe('Inventory advisor');
 	});
 
+	it('hands a read-only reader the analysis itself, with no copy, while the default read stays a detached copy', async () => {
+		const result = {
+			status: 'ready', source: { input: { fixtureName: 'First' }, result: invalidPresentationSource().result, discardContext: {} },
+		} as unknown as InventoryAdvisorWorkflowResult;
+		const controller = new InventoryAdvisorPresentationController({ load: vi.fn(async () => result) });
+		expect(controller.analysis({ readOnly: true })).toBeNull();
+		await controller.refresh();
+
+		const first = controller.analysis({ readOnly: true });
+		expect(first?.source, 'the read-only read made a copy').toBe(controller.analysis({ readOnly: true })?.source);
+		const copy = controller.analysis();
+		expect(copy).toEqual(first);
+		expect(copy?.source).not.toBe(first?.source);
+	});
+
 	it('bumps contentVersion only when the underlying content actually changes, never on a mere re-read', async () => {
 		// `current()` clones on every call, so a UI layer that wants to skip rebuilding
 		// expensive DOM for an unrelated re-render (e.g. a live sync-panel tick) needs a

@@ -1873,7 +1873,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		for (const group of advisorModel.groups) for (const row of group.rows) {
 			if (!rowsByItemId.has(row.itemId)) rowsByItemId.set(row.itemId, row);
 		}
-		const analysis = this.inventoryAdvisor.analysis();
+		const analysis = this.inventoryAdvisor.analysis({ readOnly: true });
 		const bidByItemId = new Map<number, number | null>(
 			(analysis?.source.input.prices.items ?? []).map((entry) => [entry.itemId, entry.bid?.unitCopper ?? null]),
 		);
@@ -1942,7 +1942,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		yearThresholdCopper: number | null;
 		openVsSell: { openCopper: number; sellCopper: number } | null;
 	}) | null {
-		const analysis = this.inventoryAdvisor.analysis();
+		const analysis = this.inventoryAdvisor.analysis({ readOnly: true });
 		const timing = this.saleHeroTiming;
 		const projection = this.getSellSignalState()?.projection ?? null;
 		if (row === null && timing === null) return null;
@@ -2011,13 +2011,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const analysis = this.inventoryAdvisor.analysis();
 		const todayBidCopper = analysis?.source.input.prices.items
 			.find((entry) => entry.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)?.bid?.unitCopper ?? null;
+		// Z8: the bid is as old as the analysis it comes from. A failed refresh keeps the previous
+		// analysis, so dating the verdict `nowMs` would present a stale bid as just read.
+		const analysisCapturedAtMs = todayBidCopper === null ? Number.NaN : Date.parse(analysis?.source.input.prices.capturedAt ?? '');
+		const quotedAtMs = Number.isFinite(analysisCapturedAtMs) ? Math.min(analysisCapturedAtMs, nowMs) : nowMs;
 		const windowDays = this.settings.priceHistoryDailyRetentionDays;
 		const fromDayUtc = new Date(Math.max(0, nowMs - windowDays * 86_400_000)).toISOString().slice(0, 10);
 		const daily = await (this.priceHistory?.readDaily(HALLOWEEN_PRICE_ALERT_ITEM_ID, fromDayUtc) ?? Promise.resolve([]));
 		const seed = this.vaultId === null ? null : await this.readCachedPriceSeed(this.vaultId, HALLOWEEN_PRICE_ALERT_ITEM_ID);
 		const merged = mergePriceHistoryWithSeed(HALLOWEEN_PRICE_ALERT_ITEM_ID, daily, seed);
 		this.saleHeroTiming = recommendPosition({
-			capturedAtMs: nowMs,
+			capturedAtMs: quotedAtMs,
 			priceHistoryEnabled: this.settings.priceHistoryEnabled,
 			// Never read: the Saco always has a calendar entry, so rule (b) (`evaluateSeasonalRule`)
 			// decides before rule (c)'s capital-threshold check ever looks at this value.
@@ -3633,6 +3637,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// attempt in the middle of a run.
 		const webhookTransport = new HostRequestTransport(this.host.http, {
 			maxRetries: 0, timeoutMs: ALERT_WEBHOOK_TIMEOUT_MS, diagnostics: this.localDebugActions ?? undefined,
+			// Z9: Discord answers 204 with no body; any 2xx is a delivery, whatever it says.
+			ignoreResponseBody: true,
 		});
 		return new AlertEmitter([
 			{

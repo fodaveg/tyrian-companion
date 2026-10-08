@@ -510,8 +510,9 @@ describe('durable session history', () => {
 		const json: unknown = JSON.parse(vault.contents.get(`Tyrian Companion/exports/${SESSION_HISTORY_JSON_FILE}`)!);
 		expect(json).toMatchObject({ sessions: [{ observedImmediateCopper: -42_201, observedListingCopper: -4_713 }] });
 		const csv = vault.contents.get(`Tyrian Companion/exports/${SESSION_HISTORY_CSV_FILE}`)!;
-		// Numeric losses retain the existing CSV spreadsheet-formula protection.
-		expect(csv).toContain('"\'-42201","\'-4713"');
+		// Z11: signed numbers stay numbers (a number cannot be a formula); only strings are protected.
+		expect(csv).toContain('"-42201","-4713"');
+		expect(csv).not.toContain('\'-42201');
 		expect(vault.contents.get('Sessions/loss.md')).toBe(source);
 		expect(vault.processes).toBe(0);
 	});
@@ -570,6 +571,14 @@ describe('durable session history', () => {
 		expect(csv.endsWith('\r\n')).toBe(true);
 		expect(csv).not.toContain('\r\n\r\n');
 		expect(csv.split('\r\n')).toHaveLength(2);
+	});
+
+	it('Z11: a negative number is written bare while a string that starts with a minus stays protected', () => {
+		expect(serializeCsvCell(-4)).toBe('"-4"');
+		expect(serializeCsvCell(-0.5)).toBe('"-0.5"');
+		expect(serializeCsvCell(7)).toBe('"7"');
+		expect(serializeCsvCell('-cmd|\' /C calc\'!A0')).toBe('"\'-cmd|\' /C calc\'!A0"');
+		expect(serializeCsvCell('-4')).toBe('"\'-4"');
 	});
 
 	it.each(['=1+1', ' =1+1', '\t=1+1', '\r=1+1', '\u0001@cmd'])('neutralizes CSV formula prefixes after invisible characters: %j', (value) => {

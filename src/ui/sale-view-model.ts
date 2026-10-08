@@ -63,6 +63,8 @@ export interface SaleQuote {
 	quotedAtMs: number | null;
 	/** True once `nowMs` passed the decision's own `until`; null decisions are never stale. */
 	stale: boolean;
+	/** The decision's own `until` as an instant, or null: when a view still showing it fresh must repaint. */
+	staleAtMs?: number | null;
 }
 
 export interface SaleRowViewModel {
@@ -247,7 +249,7 @@ function toRowViewModel(source: SaleSourceRow, isLow: boolean, nowMs: number): S
 		reasonCode: source.decision?.reason ?? null,
 		window,
 		bidCopper: source.bidCopper, instantSellNetCopper: source.instantSellNetCopper, listingNetCopper: source.listingNetCopper,
-		quote: { quotedAtMs, stale: staleAtMs !== null && nowMs > staleAtMs },
+		quote: { quotedAtMs, stale: staleAtMs !== null && nowMs > staleAtMs, staleAtMs },
 	};
 }
 

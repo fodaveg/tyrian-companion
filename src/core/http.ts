@@ -346,7 +346,14 @@ interface HttpDiagnosticFlight {
 	startedAt: number;
 }
 
-type HostTransportOptions = Omit<TransportOptions, 'request'>;
+type HostTransportOptions = Omit<TransportOptions, 'request'> & {
+	/**
+	 * For receivers that answer without JSON (a Discord webhook answers 204 with no body, others a
+	 * plain `ok`): the body is neither size-checked nor parsed and `json` is null, so any 2xx is a
+	 * success and a non-2xx stays an http failure. Off for every other caller (the game's API).
+	 */
+	ignoreResponseBody?: boolean;
+};
 
 /**
  * Wires the resilient transport policy to the host's one HTTP call (`TyrianHost.http`):
@@ -358,7 +365,7 @@ type HostTransportOptions = Omit<TransportOptions, 'request'>;
  * non-JSON answer is the same `network` failure it has always been.
  */
 export class HostRequestTransport extends ResilientHttpTransport {
-	constructor(http: TyrianHttpPort, options: HostTransportOptions = {}) {
+	constructor(http: TyrianHttpPort, { ignoreResponseBody = false, ...options }: HostTransportOptions = {}) {
 		super({
 			...options,
 			request: async (request) => {
@@ -368,6 +375,7 @@ export class HostRequestTransport extends ResilientHttpTransport {
 					...(request.headers === undefined ? {} : { headers: request.headers }),
 					...(request.body === undefined ? {} : { body: request.body }),
 				});
+				if (ignoreResponseBody) return { status: response.status, headers: { ...response.headers }, json: null };
 				refuseOversizedBody(response.text, request.maxResponseBytes);
 				return {
 					status: response.status,

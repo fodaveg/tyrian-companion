@@ -5,7 +5,7 @@ import {
 } from '../core/local-debug-action-runner';
 import type { SerialTaskRunner, SerialTaskTurn } from '../core/serial-task-queue';
 import type { TyrianPriceHistoryPort, TyrianPriceSeedCache, TyrianPriceSeedNoSeedCache } from '../host/tyrian-host-storage';
-import type { PriceSeedResult, PriceSeedQueueCoverage } from './price-seed-model';
+import type { PriceSeedDayV1, PriceSeedResult, PriceSeedQueueCoverage, PriceSeedV1 } from './price-seed-model';
 
 /** Re-exported for existing callers (`main.ts`, this module's own tests); the type itself now lives in `./price-seed-model`. */
 export type { PriceSeedQueueCoverage } from './price-seed-model';
@@ -162,13 +162,15 @@ export class PriceSeedBulkRefreshService {
 		const cap = phase?.budget === undefined
 			? this.maxItemsPerRun
 			: Math.min(this.maxItemsPerRun, Math.max(0, Math.floor(phase.budget)));
+		// What the loop already read for each item, so the coverage below does not read it again.
+		const known = new Map<number, CoverageKind>();
 		for (const itemId of itemIds) {
 			if (this.disposed || outcome.attempted >= cap) break;
 			if (phase?.allowed !== undefined && !phase.allowed()) break;
-			await this.refreshOne(stores, itemId, outcome, parent, phase);
+			await this.refreshOne(stores, itemId, outcome, known, parent, phase);
 		}
 		if (phase?.scope === 'missing') outcome.deferredBudget = Math.max(0, cap - outcome.attempted);
-		if (!this.disposed) outcome.queueCoverage = await this.computeQueueCoverage(stores, itemIds);
+		if (!this.disposed) outcome.queueCoverage = await this.computeQueueCoverage(stores, itemIds, known);
 		return outcome;
 	}
 
@@ -176,6 +178,7 @@ export class PriceSeedBulkRefreshService {
 		stores: Stores,
 		itemId: number,
 		outcome: PriceSeedBulkRefreshOutcome,
+		known: Map<number, CoverageKind>,
 		parent?: ResolvedLocalDebugActionContext,
 		phase?: PriceSeedBulkRefreshPhase,
 	): Promise<void> {
@@ -194,6 +197,7 @@ export class PriceSeedBulkRefreshService {
 			span.failure(error, 'storage_failure', 'store_unavailable');
 			return;
 		}
+		if (cached !== null) known.set(itemId, 'seeded');
 		if (cached !== null && nowMs - cached.cachedAtMs < PRICE_SEED_BULK_REFRESH_CACHE_TTL_MS) {
 			outcome.skippedCached += 1;
 			span.skip('skipped', 'cached');
@@ -207,6 +211,7 @@ export class PriceSeedBulkRefreshService {
 			span.failure(error, 'storage_failure', 'store_unavailable');
 			return;
 		}
+		if (cached === null) known.set(itemId, recentNoSeed !== null ? 'noData' : 'pending');
 		if (recentNoSeed !== null && nowMs - recentNoSeed.failedAtMs < this.noSeedRetryMs) {
 			// H18.17: the item that used to re-spend its slot on every single sync. Spaced, not
 			// infinite: `this.noSeedRetryMs` is exactly what lets it be asked again later.
@@ -262,12 +267,13 @@ export class PriceSeedBulkRefreshService {
 				span.failure(error, 'storage_failure', 'store_unavailable');
 				return;
 			}
+			known.set(itemId, cached !== null ? 'seeded' : 'noData');
 			outcome.noSeed += 1;
 			span.skip('unavailable', `no_seed_${result.reason}`);
 			return;
 		}
 		try {
-			await store.put(this.options.vaultId, itemId, result.seed, nowMs);
+			await store.put(this.options.vaultId, itemId, mergeKeepingOlderDays(cached?.seed ?? null, result.seed), nowMs);
 		} catch (error) {
 			// The download succeeded; only the cache write failed, which costs the next run a
 			// repeated download and nothing else.
@@ -278,6 +284,7 @@ export class PriceSeedBulkRefreshService {
 		// Best-effort: a stale `no_seed` marker left behind is harmless (the positive cache above
 		// is always checked first), so its own failure never turns a successful seed into one.
 		try { await noSeedStore.delete(this.options.vaultId, itemId); } catch { /* see above */ }
+		known.set(itemId, 'seeded');
 		outcome.seeded += 1;
 		span.success('seeded');
 	}
@@ -287,9 +294,14 @@ export class PriceSeedBulkRefreshService {
 	 * means most of it is usually untouched by the loop above, but the point of this pass (H18.17)
 	 * is a caller-visible answer to "how much of the queue is covered", which the cap must never hide.
 	 */
-	private async computeQueueCoverage(stores: Stores, itemIds: readonly number[]): Promise<PriceSeedQueueCoverage> {
+	private async computeQueueCoverage(
+		stores: Stores, itemIds: readonly number[], known: ReadonlyMap<number, CoverageKind>,
+	): Promise<PriceSeedQueueCoverage> {
 		const coverage: PriceSeedQueueCoverage = { total: itemIds.length, seeded: 0, noData: 0, pending: 0 };
 		for (const itemId of itemIds) {
+			// Item 9: the loop read this item already; only the ones it never reached are read here.
+			const seen = known.get(itemId);
+			if (seen !== undefined) { coverage[seen] += 1; continue; }
 			if (await this.hasSeed(stores.store, itemId)) { coverage.seeded += 1; continue; }
 			if (await this.hasNoSeed(stores.noSeedStore, itemId)) { coverage.noData += 1; continue; }
 			coverage.pending += 1;
@@ -331,7 +343,27 @@ export class PriceSeedBulkRefreshService {
 	}
 }
 
+/** Which `PriceSeedQueueCoverage` counter an item falls in. */
+type CoverageKind = 'seeded' | 'noData' | 'pending';
+
 interface Stores {
 	store: TyrianPriceSeedCache;
 	noSeedStore: TyrianPriceSeedNoSeedCache;
+}
+
+/**
+ * Z12: the pass downloads only the newest `maxDays` (400 outside the festival calendar), and
+ * writing that over a longer copy the panel had downloaded cut the chart short for good, with no
+ * extra request that could repair it inside the 24 h rule (H18.17). So the days the previous copy
+ * has that the new download no longer reaches are kept, and on the days both have, the new one
+ * wins. Days stay ascending and unique, which is what `isPriceSeed` requires.
+ */
+function mergeKeepingOlderDays(previous: PriceSeedV1 | null, fresh: PriceSeedV1): PriceSeedV1 {
+	if (previous === null || previous.days.length === 0 || fresh.days.length === 0) return fresh;
+	const byDay = new Map<string, PriceSeedDayV1>();
+	for (const day of previous.days) byDay.set(day.dayUtc, day);
+	for (const day of fresh.days) byDay.set(day.dayUtc, day);
+	if (byDay.size === fresh.days.length) return fresh;
+	const days = [...byDay.values()].sort((left, right) => (left.dayUtc < right.dayUtc ? -1 : left.dayUtc > right.dayUtc ? 1 : 0));
+	return { ...fresh, days };
 }

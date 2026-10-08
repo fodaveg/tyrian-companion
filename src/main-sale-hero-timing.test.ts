@@ -185,7 +185,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 	/** Isolated invocation of the private method, same pattern `main-sell-signal-wiring.test.ts` and `main.test.ts` already use for one-method cabling tests. */
 	async function runComputeSaleHeroTiming(harness: {
 		getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
-		inventoryAdvisor: { analysis(): { source: { input: { prices: { items: { itemId: number; bid: { unitCopper: number } | null }[] } } } } | null };
+		inventoryAdvisor: { analysis(): { source: { input: { prices: { capturedAt?: string; items: { itemId: number; bid: { unitCopper: number } | null }[] } } } } | null };
 		settings: { priceHistoryEnabled: boolean; priceHistoryDailyRetentionDays: number; recommendationCapitalThresholdCopper: number };
 		priceHistory: { readDaily(itemId: number, fromDayUtc: string): Promise<PriceHistoryDailyV1[]> } | null;
 		vaultId: string | null;
@@ -231,6 +231,24 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		const container = makeEl('div');
 		renderSaleView(container as unknown as HTMLElement, icons, model, createTranslator('es'));
 		expect(textOf(container)).toContain('Vender ahora');
+	});
+
+	it('Z8: a bid kept from an older analysis is dated by its own capture, never by the failed refresh that recomputed the verdict', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(SEPT_26_MS);
+		const capturedAt = new Date(SEPT_26_MS - 4 * 3_600_000).toISOString();
+		const harness = {
+			getInventoryAdvisorViewModel: () => advisorModel(2350),
+			inventoryAdvisor: { analysis: () => ({ source: { input: { prices: { capturedAt, items: [{ itemId: 36038, bid: { unitCopper: 342 } }] } } } }) },
+			settings: { priceHistoryEnabled: true, priceHistoryDailyRetentionDays: 400, recommendationCapitalThresholdCopper: 100_000 },
+			priceHistory: { readDaily: async () => heroFixtureDaily() },
+			vaultId: null,
+			saleHeroTiming: null as unknown,
+		};
+		await runComputeSaleHeroTiming(harness);
+
+		expect((harness.saleHeroTiming as { priceQuotedAt: string }).priceQuotedAt).toBe(capturedAt);
+		expect(Date.parse((harness.saleHeroTiming as { until: string }).until)).toBeLessThan(SEPT_26_MS);
 	});
 
 	it('H18.33 (26 sep 2026): says "Todavía no", never "Vender ahora", once the festival has started and the bid sits at its floor', async () => {

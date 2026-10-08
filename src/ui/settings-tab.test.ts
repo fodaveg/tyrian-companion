@@ -31,6 +31,106 @@ describe('essential alert threshold', () => {
 		expect(goldThresholdToCopper('0.00001')).toBe('invalid');
 	});
 
+	it('Z10: accepts every two-decimal amount from 0 to 100, float noise included, and a decimal comma', () => {
+		for (let hundredths = 0; hundredths <= 10_000; hundredths += 1) {
+			const text = (hundredths / 100).toFixed(2);
+			expect(goldThresholdToCopper(text), text).toBe(hundredths * 100);
+		}
+		expect(goldThresholdToCopper('0.07')).toBe(700);
+		expect(goldThresholdToCopper('5,5')).toBe(55_000);
+		expect(goldThresholdToCopper('1,234.5')).toBe('invalid');
+		expect(goldThresholdToCopper('0,00001')).toBe('invalid');
+	});
+
+	it('Z10: typing never saves; the value is saved when the field is left, and an emptied field is not a stray 0', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert me about a drop from');
+		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
+		const control = renderControl(definition, 'text');
+
+		await control.change('');
+		await control.change('7');
+		await control.change('7,5');
+		expect(updates, 'a keystroke saved').toEqual([]);
+
+		await control.commit();
+		expect(updates).toEqual([{ valuableLootThresholdCopper: 75_000 }]);
+	});
+
+	it('Z10: closing the tab saves what was typed once, even when no change event fired', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert me about a drop from');
+		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
+		const control = renderControl(definition, 'text');
+
+		await control.change('42');
+		tab.unmount();
+		for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+		expect(updates, 'closing the tab lost what was typed').toEqual([{ valuableLootThresholdCopper: 420_000 }]);
+		await control.blur();
+		await control.commit();
+		tab.unmount();
+		for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+
+		expect(updates).toEqual([{ valuableLootThresholdCopper: 420_000 }]);
+	});
+
+	it('Z10: leaving the field with blur saves it, and an invalid value is never saved on close', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert me about a drop from');
+		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
+		const control = renderControl(definition, 'text');
+
+		await control.change('3');
+		await control.blur();
+		await control.change('1,230');
+		tab.unmount();
+		for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+
+		expect(updates).toEqual([{ valuableLootThresholdCopper: 30_000 }]);
+	});
+
+	it('Z10: only plain decimal text is a gold amount: 1,230, 0x10 and 1e3 are invalid and -0 is 0', () => {
+		for (const text of ['1,230', '0x10', '1e3', '1,2,3', '+5', '5,555', '1.2.3', ',5']) expect(goldThresholdToCopper(text), text).toBe('invalid');
+		expect(Object.is(goldThresholdToCopper('-0'), 0)).toBe(true);
+		expect(goldThresholdToCopper('1,23')).toBe(12_300);
+		expect(goldThresholdToCopper('5,5')).toBe(55_000);
+		expect(goldThresholdToCopper('.5')).toBe(5_000);
+		expect(goldThresholdToCopper('2.')).toBe(20_000);
+	});
+
+	it('Z10: leaving the field emptied still saves 0, the owner\'s explicit "any priced drop"', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert me about a drop from');
+		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
+		const control = renderControl(definition, 'text');
+
+		await control.change('');
+		await control.commit();
+
+		expect(updates).toEqual([{ valuableLootThresholdCopper: 0 }]);
+	});
+
 	it('reads an empty field as 0 (alert on any priced drop) and still rejects text', () => {
 		expect(goldThresholdToCopper('')).toBe(0);
 		expect(goldThresholdToCopper('  ')).toBe(0);
@@ -302,7 +402,9 @@ describe('settings information architecture', () => {
 			alertIngamePort: plugin.settings.alertIngamePort,
 		});
 
-		await renderControl(definition, 'text').change('250');
+		const control = renderControl(definition, 'text');
+		await control.change('250');
+		await control.commit();
 
 		expect(plugin.settings.valuableLootThresholdCopper).toBe(2_500_000);
 		expect({
@@ -322,7 +424,9 @@ describe('settings information architecture', () => {
 			.find((candidate) => candidate.name === 'Alert me about a drop from');
 		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
 
-		await renderControl(definition, 'text').change('250');
+		const control = renderControl(definition, 'text');
+		await control.change('250');
+		await control.commit();
 
 		expect(updates).toEqual([{ valuableLootThresholdCopper: 2_500_000 }]);
 	});
@@ -687,6 +791,10 @@ interface FakeControl {
 	feedback: string;
 	feedbackRole: string | null;
 	change(value: string): Promise<void>;
+	/** The DOM `change` event: the field was left or confirmed. Resolves once the save it started settled. */
+	commit(): Promise<void>;
+	/** The field losing focus. */
+	blur(): Promise<void>;
 }
 
 interface RenderableSettingDefinition {
@@ -699,6 +807,8 @@ function renderControl(
 	kind: 'dropdown' | 'text',
 ): FakeControl {
 	let listener: (value: string) => Promise<void> | void = () => undefined;
+	const domListeners = new Map<string, () => void>();
+	const fire = async (type: string): Promise<void> => { domListeners.get(type)?.(); for (let turn = 0; turn < 20; turn += 1) await Promise.resolve(); };
 	let selectedValue = '';
 	let feedback = '';
 	const attributes = new Map<string, string>();
@@ -709,6 +819,7 @@ function renderControl(
 		inputEl: {
 			setAttr: (name: string, value: string) => { attributes.set(name, value); },
 			removeAttribute: (name: string) => { attributes.delete(name); },
+			addEventListener: (type: string, next: () => void) => { domListeners.set(type, next); },
 		},
 		addOption: (value: string) => { options.push(value); return component; },
 		setValue: (value: string) => { selectedValue = value; return component; },
@@ -732,5 +843,7 @@ function renderControl(
 		get feedbackRole() { return feedbackAttributes.get('role') ?? null; },
 		options,
 		change: async (value) => { await listener(value); },
+		commit: async () => { await fire('change'); },
+		blur: async () => { await fire('blur'); },
 	};
 }

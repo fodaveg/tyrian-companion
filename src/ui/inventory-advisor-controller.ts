@@ -61,10 +61,21 @@ export class InventoryAdvisorPresentationController {
 	 * (one evidence per analysis, never a second capture). A detached copy; null while there is no
 	 * ready analysis with its contextual source.
 	 */
-	analysis(): { source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 | null } | null {
+	analysis(): { source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 | null } | null;
+	/**
+	 * The same analysis WITHOUT the copy, for a reader that only looks (the Sale tab, on every
+	 * paint: the copy of the whole account was made twice per paint). It is the controller's own
+	 * object: the caller must not write to it. A refresh replaces it wholesale, never edits it, so
+	 * a reference taken earlier keeps describing the analysis it was taken from.
+	 */
+	analysis(options: { readOnly: true }): Readonly<{
+		source: Readonly<InventoryAdvisorContextualPresentationSource>; objects: Readonly<InventoryObjectResultsV1> | null;
+	}> | null;
+	analysis(options?: { readOnly?: boolean }): { source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 | null } | null {
 		if (this.disposed || this.cached === null || this.cached.status !== 'ready'
 			|| !('discardContext' in this.cached.source)) return null;
-		return clone({ source: this.cached.source, objects: this.cached.objects ?? null });
+		const shared = { source: this.cached.source, objects: this.cached.objects ?? null };
+		return options?.readOnly === true ? shared : clone(shared);
 	}
 
 	/** Projects the current memory snapshot. It never performs I/O. */

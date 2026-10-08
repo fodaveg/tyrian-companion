@@ -159,6 +159,35 @@ describe('host port mapping', () => {
 	});
 });
 
+/**
+ * Z9: a webhook receiver answers 2xx with no JSON (Discord: 204 and an empty body; others: `ok`).
+ * That is a delivery, so a transport built to ignore the body accepts it; the default transport
+ * (the game's API) keeps demanding JSON.
+ */
+describe('transport that ignores the response body', () => {
+	const webhook = { url: 'https://discord.com/api/webhooks/1/x', method: 'POST', body: '{}' } as const;
+	const answer = (status: number, text: string): TyrianHttpPort => ({ request: async () => ({ status, headers: {}, text }) });
+
+	it.each([[204, ''], [200, 'ok']])('accepts a %i answer with body %j', async (status, text) => {
+		const transport = new HostRequestTransport(answer(status, text), { ...inertTimer(), ignoreResponseBody: true });
+		const response = await transport.send(webhook);
+		expect(response.status).toBe(status);
+	});
+
+	it('still fails a non-2xx answer as an http error, without retrying', async () => {
+		const transport = new HostRequestTransport(answer(500, ''), { ...inertTimer(), maxRetries: 0, ignoreResponseBody: true });
+		const error = await transport.send(webhook).catch((thrown: unknown) => thrown);
+		expect(error).toBeInstanceOf(HttpTransportError);
+		expect((error as HttpTransportError).kind).toBe('http');
+	});
+
+	it('control: the default transport still turns an empty 204 into a network failure', async () => {
+		const transport = new HostRequestTransport(answer(204, ''), inertTimer());
+		const error = await transport.send(webhook).catch((thrown: unknown) => thrown);
+		expect((error as HttpTransportError).kind).toBe('network');
+	});
+});
+
 async function sendSeedRequest(transport: HostRequestTransport, maxResponseBytes: number) {
 	return await transport.send({
 		url: 'https://api.datawars2.ie/gw2/v1/history?itemID=36038',
