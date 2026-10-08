@@ -429,7 +429,7 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 		connection.socket.write(`${priceIngameCapabilityLine(nonce)}\n`);
 	}
 	const live = runtime.bridge.live;
-	if (connection.version === 3 && connection.client === 'nexus' && live !== undefined && runtime.liveChannels.size < INGAME_BRIDGE_MAX_AUTHENTICATED_CONNECTIONS) {
+	if (connection.version === 3 && connection.client === 'nexus' && live !== undefined && liveSeats(runtime) < INGAME_BRIDGE_MAX_AUTHENTICATED_CONNECTIONS) {
 		connection.live = new LiveIngameChannel({
 			sourceInstance: hello.value.instance, nonce, port: live,
 			now: () => runtime.bridge.now(),
@@ -446,6 +446,7 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 			onDrained: () => { if (connection.live !== null) runtime.liveChannels.delete(connection.live); },
 		});
 		runtime.liveChannels.add(connection.live);
+		boundAbandonedLiveChannels(runtime);
 		connection.socket.write(`${liveIngameCapabilityLine(nonce)}\n`);
 	}
 	armDeadline(connection, runtime, runtime.bridge.livenessTimeoutMs ?? INGAME_BRIDGE_LIVENESS_TIMEOUT_MS, 'liveness_timeout');
@@ -453,6 +454,28 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 		kind: 'authenticated', connectionId: nonce, client: hello.value.client,
 		instance: hello.value.instance, atMs: connection.lastSeenAtMs,
 	});
+}
+
+/**
+ * Live seats in use. A channel that closed with a gap storage refused stays in `liveChannels` so shutdown still
+ * drains that gap, but its connection is gone: counting it would leave later producers without `live1`.
+ */
+function liveSeats(runtime: BridgeRuntime): number {
+	let seats = 0;
+	for (const channel of runtime.liveChannels) if (!channel.isAbandoned()) seats += 1;
+	return seats;
+}
+
+/**
+ * Abandoned channels are kept for one thing, writing their gap at shutdown, and at most as many as there are seats.
+ * Beyond that the oldest gives its gap up, which the channel reports: a gap is never dropped in silence.
+ */
+function boundAbandonedLiveChannels(runtime: BridgeRuntime): void {
+	const abandoned = [...runtime.liveChannels].filter((channel) => channel.isAbandoned());
+	for (const channel of abandoned.slice(0, Math.max(0, abandoned.length - INGAME_BRIDGE_MAX_AUTHENTICATED_CONNECTIONS))) {
+		runtime.liveChannels.delete(channel);
+		channel.forget();
+	}
 }
 
 /**

@@ -349,6 +349,36 @@ describe('live1 authenticated atomic consumer', () => {
 		expect(replacement.lines.at(-1)).toMatchObject({ type: 'live_ready', status: 'ready' }); await h.server.close();
 	});
 
+	/** A producer that opens its epoch and drops while storage refuses its disconnect gap: the channel closes with the gap unwritten. */
+	async function abandon(h: Awaited<ReturnType<typeof bridge>>, round: number): Promise<void> {
+		const client = h.connect(3, 'nexus', `${String.fromCharCode(66 + round)}${'A'.repeat(21)}`); await open(client);
+		expect(client.lines.at(-1), `producer ${String(round)} was offered live1 and opened`).toMatchObject({ type: 'live_ready', status: 'ready' });
+		client.destroy(); await flush();
+	}
+
+	it('a closed channel whose gap cannot be stored gives its live seat back, and shutdown still owes the gap', async () => {
+		vi.useFakeTimers(); const h = await bridge(); h.gap.mockRejectedValue(new Error('gap persistence unavailable'));
+		for (let round = 0; round < 4; round += 1) await abandon(h, round);
+		expect(h.gap).toHaveBeenCalledTimes(4); expect(h.error).toHaveBeenCalledTimes(4); expect(h.server.clientCount()).toBe(0);
+		// The four seats are free again: the next producer is offered live1 and can open.
+		const next = h.connect(3, 'nexus', 'AQEBAQEBAQEBAQEBAQEBAQ'); expect(next.lines.map((l) => l.type)).toEqual(['welcome', 'farming_cap', 'live_cap']);
+		await open(next); expect(next.lines.at(-1)).toMatchObject({ type: 'live_ready', status: 'ready' });
+		// Nothing was dropped: the four gaps are written when storage answers again, at shutdown at the latest.
+		h.gap.mockClear(); h.gap.mockResolvedValue(undefined); await h.server.close();
+		expect(h.gap.mock.calls.map(([gap]) => gap.sourceInstance).sort()).toEqual(['AQEBAQEBAQEBAQEBAQEBAQ', ...[0, 1, 2, 3].map((round) => `${String.fromCharCode(66 + round)}${'A'.repeat(21)}`)]);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('keeps a bounded number of unwritten gaps and reports each one it gives up', async () => {
+		vi.useFakeTimers(); const h = await bridge(); h.gap.mockRejectedValue(new Error('gap persistence unavailable'));
+		for (let round = 0; round < 6; round += 1) await abandon(h, round);
+		const next = h.connect(3, 'nexus', 'AQEBAQEBAQEBAQEBAQEBAQ'); expect(next.lines.map((l) => l.type)).toContain('live_cap');
+		const dropped = h.error.mock.calls.map(([error]) => (error as Error).message).filter((message) => message === 'Live source gap was dropped: it could not be stored.');
+		expect(dropped, 'the oldest ones beyond the bound are given up, never in silence').toHaveLength(2);
+		h.gap.mockClear(); h.gap.mockResolvedValue(undefined); await h.server.close();
+		expect(h.gap.mock.calls.map(([gap]) => gap.sourceInstance).sort(), 'the newest four are still written').toEqual([2, 3, 4, 5].map((round) => `${String.fromCharCode(66 + round)}${'A'.repeat(21)}`));
+	});
+
 	it('answers live_status with a null epoch after a rejected live_open without closing the connection', async () => {
 		vi.useFakeTimers(); const h = await bridge(); const client = h.connect();
 		client.live('live_open', { build: LIVE_INGAME_BUILD, profile: LIVE_INGAME_PROFILE }); await flush();

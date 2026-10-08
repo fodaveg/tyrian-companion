@@ -66,6 +66,19 @@ export class LiveIngameChannel {
 		else this.run(async () => {}); // A gap retained by an earlier failure gets one last attempt; run() frees the lease if it fails again.
 	}
 
+	/**
+	 * Closed with a gap storage refused and nothing in flight: no later message of this connection can retry it. The
+	 * server keeps such a channel only so shutdown still drains the gap; it no longer counts as a live seat.
+	 */
+	isAbandoned(): boolean { return this.closed && !this.busy && this.pendingGap !== null; }
+
+	/** The server stops keeping this abandoned channel: its gap will never be written, and that is said through the diagnostic sink. */
+	forget(): void {
+		if (!this.isAbandoned()) return;
+		this.pendingGap = null;
+		this.report(new Error('Live source gap was dropped: it could not be stored.'));
+	}
+
 	/** Shutdown cannot dispose the store while an accepted sample or its gap is still in flight. */
 	drain(): Promise<void> {
 		if (this.draining !== null) return this.draining;
@@ -203,7 +216,7 @@ export class LiveIngameChannel {
 				this.queuedOpen = null;
 				this.report(error);
 				// A closed channel has no later open to retry its gap: holding the lease would turn every
-				// future producer away. The gap stays pending so shutdown still drains it.
+				// future producer away. The gap stays pending so shutdown still drains it (`isAbandoned`).
 				abandonedGap = this.closed && this.pendingGap !== null;
 			}
 			finally {
