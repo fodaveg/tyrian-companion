@@ -28,6 +28,12 @@ class CurrencyCatalogUnavailableError extends Error { constructor() { super('The
 class CurrencyCatalogMissingError extends Error { constructor() { super('The currency catalog does not know an observed currency.'); this.name = 'CurrencyCatalogMissingError'; } }
 /** A coin that stayed unresolved is asked again at most this often; the catalog service itself caches a 404 for an hour. */
 const CURRENCY_RETRY_MS = 5 * 60_000;
+/** An item the session holds but no read has quoted (a failed request, a rate limit) is asked again at most this often, and at most this many per pass. */
+const UNQUOTED_RETRY_MS = 60_000;
+/** One public price batch carries up to 200 ids; a retry pass adds 50 at most so a long unpriced list never turns into a burst. */
+const UNQUOTED_RETRY_MAX = 50;
+/** Older entries whose alert still awaits a price that are decided per pass; the rest wait for the next one. */
+const AWAITING_ENTRIES_MAX = 20;
 
 /**
  * Public catalog and price requests run only in `enrich()`, after the durable measurement ACK, never
@@ -44,6 +50,7 @@ export class LiveSessionEconomy {
 	private readonly wantedCurrencies = new Set<number>();
 	private readonly triedCurrencies = new Set<number>();
 	private readonly currencyAskedAt = new Map<number,number>();
+	private readonly unquotedAskedAt = new Map<number,number>();
 	/** Gross best bid and lowest ask of the Halloween bag from the last public read of THIS process; a restored quote has none. */
 	private bagRaw: BagRawQuote | null = null;
 	private bagAttemptedAt: number | null = null;
@@ -168,8 +175,12 @@ export class LiveSessionEconomy {
 		const ids = [...new Set(entry.observations.filter((row) => row.kind === 'item').map((row) => row.idNumber))];
 		const now = this.options.now();
 		for (const price of runtime.prices) if (!this.quotes.has(price.itemId) && runtime.priceCapturedAt !== null) this.quotes.set(price.itemId,{unitCopper:price.unitCopper,capturedAt:Date.parse(runtime.priceCapturedAt)});
-		const missing = ids.filter((id) => !this.quotes.has(id) || now - this.quotes.get(id)!.capturedAt > 15 * 60_000);
+		// Held items no read has quoted: a 404 DOES record a (null) quote, so only a failed or skipped request leaves one here.
+		const retry = runtime.totals.filter((total) => total.kind === 'item' && !ids.includes(total.idNumber) && !this.quotes.has(total.idNumber)
+			&& now - (this.unquotedAskedAt.get(total.idNumber) ?? -Infinity) >= UNQUOTED_RETRY_MS).map((total) => total.idNumber).slice(0,UNQUOTED_RETRY_MAX);
+		const missing = [...ids.filter((id) => !this.quotes.has(id) || now - this.quotes.get(id)!.capturedAt > 15 * 60_000),...retry];
 		if (missing.length > 0 && !this.options.rateLimit.status().active) {
+			for (const id of retry) this.unquotedAskedAt.set(id,now);
 			const metadata = await this.options.catalog(ids);
 			for (const item of Object.values(metadata)) this.entities.set(item.id,{name:item.name,icon:item.icon ?? null});
 			for (let offset = 0; offset < missing.length; offset += 200) {
@@ -186,13 +197,15 @@ export class LiveSessionEconomy {
 			}
 		}
 		if (this.disposed || lifecycle.getRuntime()?.phase !== 'active' || lifecycle.getRuntime()?.sessionId !== entry.sessionId) return;
-		const priceIds = new Set([...runtime.prices.map((row) => row.itemId),...ids]);
+		const priceIds = new Set([...runtime.prices.map((row) => row.itemId),...ids,...retry]);
 		const pricedIds = [...priceIds].filter((id) => this.quotes.has(id));
 		if (pricedIds.length > 0) await lifecycle.updatePrices(pricedIds.map((itemId) => ({itemId,unitCopper:this.quotes.get(itemId)!.unitCopper})),
 			new Date(Math.min(...pricedIds.map((id) => this.quotes.get(id)!.capturedAt))).toISOString());
-		for (const candidate of entry.outbox) {
+		// Older entries whose alert is still waiting for a price a failed read never delivered: decided as soon as a later read quotes the item.
+		const waiting = lifecycle.getAwaitingPriceEntries().filter((row) => row.epoch !== entry.epoch || row.cursor !== entry.cursor).slice(0,AWAITING_ENTRIES_MAX);
+		for (const target of [entry,...waiting]) for (const candidate of target.outbox) {
 			if (this.options.canEmit?.() === false) return;
-			const observation = entry.observations.find((row) => row.id === candidate.observationId); if (!observation) continue;
+			const observation = target.observations.find((row) => row.id === candidate.observationId); if (!observation) continue;
 			const quote = this.quotes.get(observation.idNumber);
 			if (candidate.state === 'awaiting_price' && quote) await lifecycle.updateAlert(candidate.outboxId,(prior) =>
 				decideLiveAlert(prior,observation,quote.unitCopper,this.entities.get(observation.idNumber)?.name ?? String(observation.idNumber),new Date(quote.capturedAt).toISOString(),false));

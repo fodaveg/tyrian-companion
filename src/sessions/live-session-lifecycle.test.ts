@@ -228,7 +228,7 @@ describe('passive live session lifecycle', () => {
 
 function economy(f: ReturnType<typeof fixture>, lifecycle = f.service) {
 	const emit = vi.fn(async () => ({delivered:['queue'] as const,failed:[],rejected:false}));
-	const requestDetailed = vi.fn(async () => ({status:200,headers:{},body:[{id:12147,whitelisted:true,
+	const requestDetailed = vi.fn(async (_path?: string) => ({status:200,headers:{},body:[{id:12147,whitelisted:true,
 		buys:{unit_price:100,quantity:100},sells:{unit_price:120,quantity:100}}]}));
 	const service = new LiveSessionEconomy({lifecycle,cachedItems:async () => ({}),currencies:async () => ({currencies:{},coverage:{}}),cachedCurrencies:async () => ({}),gateway:{requestDetailed},rateLimit:new RateLimitCoordinator({now:f.options.now}),
 		now:f.options.now,catalog:async () => ({}),emit,onError:vi.fn(),onChange:vi.fn()});
@@ -367,6 +367,24 @@ describe('durable live alert outbox', () => {
 		await f.service.updatePrices([{itemId:12147,unitCopper:90}],stamp); expect(save).toHaveBeenCalledTimes(1);
 		await f.service.updatePrices([{itemId:12147,unitCopper:90}],new Date(AT+2000).toISOString()); expect(save).toHaveBeenCalledTimes(2);
 		await f.service.dispose();
+	});
+	it('a failed price read is retried by the next entry: the held item gets valued and its alert decided', async () => {
+		const f = fixture(); const first = await positive(f); const e = economy(f);
+		const quote = (ids: string) => ids.split(',').filter((id) => id === '12147').map((id) => ({id:Number(id),whitelisted:true,buys:{unit_price:100,quantity:100},sells:{unit_price:120,quantity:100}}));
+		e.requestDetailed.mockImplementationOnce(async () => ({status:500,headers:{},body:[]}));
+		e.requestDetailed.mockImplementation(async (path?: string) => ({status:200,headers:{},body:quote(path!.split('ids=')[1]!)}));
+		e.service.observe(first); await e.service.drain();
+		expect(f.service.getAlerts()[0]).toMatchObject({state:'awaiting_price'}); expect(f.service.getView().valuation.unpricedItemIds).toEqual([12147]);
+		f.setNow(AT+2000); await f.service.commit(f.sample(2,2,{rows:[{kind:'item',idNumber:999,quantity:1},{kind:'item',idNumber:12147,quantity:2}]}));
+		e.service.observe(f.service.getJournal()[2]!); await e.service.drain();
+		expect(f.service.getView().valuation.unpricedItemIds, 'only the unquoted newcomer stays unpriced').toEqual([999]);
+		expect(f.service.getAlerts().find((row) => row.itemId === 12147), 'the first alert was decided').toMatchObject({totalCopper:170});
+		expect(f.service.getAlerts().find((row) => row.itemId === 12147)?.state).not.toBe('awaiting_price');
+		// A 404 records a null quote, so a later entry does not ask for that id again.
+		const calls = e.requestDetailed.mock.calls.length; f.setNow(AT+3000); await f.service.commit(f.sample(3,2,{rows:[{kind:'item',idNumber:999,quantity:1},{kind:'item',idNumber:12147,quantity:3}]}));
+		e.service.observe(f.service.getJournal()[3]!); await e.service.drain();
+		expect(e.requestDetailed.mock.calls.slice(calls).flatMap(([path]) => String(path).split('ids=')[1]!.split(','))).not.toContain('999');
+		await e.service.dispose(); await f.service.dispose();
 	});
 	it('a crash after claim is unconfirmed on restart and never re-emits', async () => {
 		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;

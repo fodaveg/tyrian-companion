@@ -13,9 +13,9 @@ function harness(options: { phase?: string; canEmit?: boolean; restored?: boolea
 	let answer: () => Promise<unknown> = async () => ({ status: 200, headers: {}, body: [{ id: BAG, whitelisted: true, buys: { unit_price: 345, quantity: 9 }, sells: { unit_price: 367, quantity: 9 } }] });
 	const gateway = { requestDetailed: vi.fn(async (path: string) => { requests.push(path); return await answer(); }) };
 	const lifecycle = {
-		getRuntime: () => ({ phase: state.phase, sessionId: 's1', prices: options.restored ? [{ itemId: BAG, unitCopper: 293 }] : [],
+		getRuntime: () => ({ phase: state.phase, sessionId: 's1', totals: [], prices: options.restored ? [{ itemId: BAG, unitCopper: 293 }] : [],
 			priceCapturedAt: options.restored ? new Date(now - 60_000).toISOString() : null }),
-		updatePrices: vi.fn(async () => {}), updateAlert: vi.fn(async () => null),
+		updatePrices: vi.fn(async () => {}), updateAlert: vi.fn(async () => null), getAwaitingPriceEntries: () => [],
 	};
 	const economy = new LiveSessionEconomy({
 		lifecycle: lifecycle as never, gateway: gateway as never, rateLimit: new RateLimitCoordinator({ now: () => now }),

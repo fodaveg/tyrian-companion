@@ -265,6 +265,10 @@ export class LiveSessionLifecycle {
 		});
 	}
 	getRuntime(): LiveSessionRuntimeRecord | null { return this.record === null ? null : structuredClone(this.record); }
+	/** Journal entries with at least one alert still `awaiting_price` (copies, oldest first): what a late quote can decide. */
+	getAwaitingPriceEntries(): LiveJournalEntryV1[] {
+		return structuredClone(this.journal.filter((entry) => entry.outbox.some((intent) => intent.state === 'awaiting_price')));
+	}
 	getJournal(): LiveJournalEntryV1[] { return structuredClone(this.journal); }
 	/** Export snapshots copy record and full journal at one durable queue boundary. */
 	async capture(): Promise<LiveSessionCaptureV1 | null> {
