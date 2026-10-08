@@ -54,7 +54,7 @@ export function labelledVault(vault: TyrianVault, label: string): TyrianVault {
 export function sessionHistoryVault(vault: TyrianVault): SessionHistoryVault {
 	const notes = labelledVault(vault, 'Session history note');
 	return {
-		markdownFiles: () => notes.markdownFiles().map((file) => ({ path: file.path })),
+		markdownFiles: () => notes.markdownFiles().map((file) => file.mtime === undefined ? { path: file.path } : { path: file.path, mtime: file.mtime }),
 		exists: (path) => notes.exists(path),
 		file: (path) => {
 			const entry = notes.file(path);

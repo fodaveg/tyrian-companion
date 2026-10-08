@@ -21,7 +21,8 @@ export const SESSION_HISTORY_EXPORT_VERSION = 1 as const;
 export const SESSION_HISTORY_JSON_FILE = 'tyrian-companion-sessions-v1.json';
 export const SESSION_HISTORY_CSV_FILE = 'tyrian-companion-sessions-v1.csv';
 
-export interface SessionHistoryFile { path: string }
+/** `mtime` is present only when the host reports it (a real file); a scan may remember an inspection against it. */
+export interface SessionHistoryFile { path: string; readonly mtime?: number }
 
 /** One note the host says was created, modified, deleted or renamed (`oldPath` only on a rename). */
 export interface SessionHistoryNoteChange { readonly path: string; readonly oldPath?: string }

@@ -38,8 +38,12 @@ export type LiveSessionComparisonLoad = { status: 'ok'; comparison: LiveSessionC
 export type LiveSessionHistorySelection = { status: 'found'; session: StoredLiveSessionPayloadV1 }
 	| { status: 'missing' | 'conflict' | 'unavailable' };
 
+type NoteOutcome = { kind: 'invalid' } | { kind: 'ignored' } | { kind: 'live'; session: StoredLiveSessionPayloadV1 };
+
 /** Explicit history actions read synced notes, so a new machine needs no old IDB journal. */
 export class LiveSessionHistoryService {
+	/** What each listed note inspected to, against the mtime it had: an unchanged note is not read again. Never kept for a note without a real mtime. */
+	private readonly inspected = new Map<string,{ mtime: number; outcome: NoteOutcome }>();
 	constructor(private readonly vault: SessionHistoryVault) {}
 
 	async list(): Promise<LiveSessionHistoryList> {
@@ -76,22 +80,33 @@ export class LiveSessionHistoryService {
 		return exportLiveSession(this.vault,folder,kind,format,session);
 	}
 
+	private async inspect(content: string): Promise<NoteOutcome> {
+		const live = await inspectLiveSessionNote(content);
+		if (live.status === 'invalid') return { kind: 'invalid' };
+		if (live.status === 'non_candidate') return (await inspectDurableSessionNote(content)).status === 'invalid' ? { kind: 'invalid' } : { kind: 'ignored' };
+		return { kind: 'live', session: live.session };
+	}
+
 	private async scan(): Promise<{ status: 'ok'; sessions: StoredLiveSessionPayloadV1[]; ignored: number }
 		| Exclude<LiveSessionHistoryList,{ status: 'ok' }>> {
 		try {
 			const sessions: StoredLiveSessionPayloadV1[] = []; let ignored = 0; let invalid = 0; let duplicates = 0;
 			const refs = new Set<string>();
-			for (const file of this.vault.markdownFiles()) {
-				const content = await this.vault.read(file);
-				const live = await inspectLiveSessionNote(content);
-				if (live.status === 'invalid') { invalid += 1; continue; }
-				if (live.status === 'non_candidate') {
-					const legacy = await inspectDurableSessionNote(content);
-					if (legacy.status === 'invalid') invalid += 1; else ignored += 1;
-					continue;
+			const files = this.vault.markdownFiles();
+			const listed = new Set(files.map((file) => file.path));
+			for (const path of this.inspected.keys()) if (!listed.has(path)) this.inspected.delete(path);
+			for (const file of files) {
+				const cacheable = file.mtime !== undefined && file.mtime > 0;
+				let outcome = cacheable ? this.inspected.get(file.path) : undefined;
+				if (outcome === undefined || outcome.mtime !== file.mtime) {
+					outcome = { mtime: file.mtime ?? 0, outcome: await this.inspect(await this.vault.read(file)) };
+					if (cacheable) this.inspected.set(file.path, outcome); else this.inspected.delete(file.path);
 				}
-				if (refs.has(live.session.sessionRef)) duplicates += 1;
-				refs.add(live.session.sessionRef); sessions.push(live.session);
+				const note = outcome.outcome;
+				if (note.kind === 'invalid') { invalid += 1; continue; }
+				if (note.kind === 'ignored') { ignored += 1; continue; }
+				if (refs.has(note.session.sessionRef)) duplicates += 1;
+				refs.add(note.session.sessionRef); sessions.push(note.session);
 			}
 			if (invalid > 0 || duplicates > 0) return { status: 'conflict',invalid,duplicates };
 			return { status: 'ok',ignored,sessions: sessions.sort((a,b) => b.startedAt.localeCompare(a.startedAt) || a.sessionRef.localeCompare(b.sessionRef)) };
