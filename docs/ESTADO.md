@@ -27,10 +27,20 @@ El detalle está en [CHANGELOG](CHANGELOG.md).
   encabezada «Candidato 0.6.10» y el extractor solo lee «Release beta <versión>». No se creó ninguna release.
   Se corrigió el encabezado (`6ab0e0b`), se repitió el gate, se borró el tag remoto y se recreó sobre
   `6ab0e0b`. La CI de `e6c2b3e` (37731898689) sí fue success. Es la misma trampa que la 0.6.0 (`bffb6fa`).
-- No verificado: la 0.6.10 instalada en Hebra u Obsidian; el aspecto real de la pestaña «Sesión» reordenada y del
-  icono de espada; `price2` de punta a punta contra un addon en el juego.
-- Límite de compatibilidad: hace falta el addon de Nexus 0.7.2, que NO está publicado; con el 0.7.1 el panel del
-  juego deja de pintar el bloque de precio hasta actualizar.
+- Addon de Nexus 0.7.2 publicado (8 oct 2026): [release 0.7.2](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.7.2),
+  tag anotado `0.7.2` sobre `c3a7763`, con dos ficheros: `tyrian_companion_nexus.dll` (4234240 bytes, sha256
+  `55b041f5893416455da41fc3961c7a70190009d7f10b8500a4981f991ff9fff3`) y `tyrian_companion_nexus.dll.sha256`
+  (93 bytes); descargados de GitHub y suma comprobada.
+- Evidencia parcial en Hebra (David, 8 oct 2026, Fedora con Proton): Tyrian Companion 0.6.10 cargado en Hebra y
+  addon 0.7.2 en el juego. `price2` de punta a punta: el panel mostró «Pedido» 8g 32s 50c y «Oferta» 10g 45s 0c,
+  las mismas cifras que la API pública del bazar para el objeto 36038 (pedido 333 y oferta 418 por unidad)
+  multiplicadas por 250. Con el plugin 0.6.9 y el addon 0.7.2 el bloque de precio no se pintaba (lo vio David antes
+  de actualizar). Esto no cambia el estado del canal: sigue siendo «canal publicado; instalación/runtime pendiente»
+  mientras no se verifique en el cliente BRAT/Obsidian real.
+- No verificado: la 0.6.10 en Obsidian/BRAT (en el vault de David hay una 0.2.20 antigua); el aspecto real de la
+  pestaña «Sesión» reordenada y del icono de espada (David no ha dicho nada de ellos); Windows.
+- Límite de compatibilidad: hace falta el addon de Nexus 0.7.2; con el 0.7.1 el panel del juego deja de pintar el
+  bloque de precio hasta actualizar.
 - Límite: el denominador de «Por hora» es el tiempo de objetos observado; un hueco de monedas no lo acorta.
 
 ## Canal 0.6.9 publicado: las monedas observadas como teselas (7 oct 2026)

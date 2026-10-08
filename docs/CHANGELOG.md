@@ -9,9 +9,11 @@ previo, sobre el árbol del tag: `check` 8/8 (5136 tests, 324 archivos, ninguno 
 `release:preflight` en verde y `node scripts/changelog-entry.mjs 0.6.10` con exit 0. El benchmark H6 y su
 sabotaje no se corrieron en local; los corre la CI de `main`. El workflow de release (run 37732446768) terminó
 en success y `release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo
-pendiente (instalación en Hebra y Obsidian, la pestaña «Sesión» reordenada, el icono de espada y `price2` contra
-un addon en el juego). El bloque de precio del panel del juego necesita el addon de Nexus 0.7.2, aún sin
-publicar.
+pendiente (instalación en Obsidian/BRAT, la pestaña «Sesión» reordenada, el icono de espada y Windows). El bloque
+de precio del panel del juego necesita el addon de Nexus 0.7.2, ya
+[publicado](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.7.2) el 8 oct 2026. Evidencia
+parcial: David vio `price2` de punta a punta en Hebra (Fedora con Proton, plugin 0.6.10 y addon 0.7.2), con las
+cifras del bazar público por 250; con el plugin 0.6.9 y el addon 0.7.2 el bloque no se pintaba.
 
 - Pestaña «Sesión»: «Por hora» pasa a ser la tasa del mismo valor que «Valor estimado», es decir, objetos más el
   oro observado cuando el oro se ha seguido (solo objetos si nunca estuvo cubierto). Antes contaba solo el valor de
