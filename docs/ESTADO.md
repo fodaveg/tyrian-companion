@@ -1,8 +1,12 @@
 # Estado
 
-## Candidato 0.6.14: cinco arreglos de la nota resumen de sesión (8 oct 2026)
+## Canal 0.6.14 publicado: cinco arreglos de la nota resumen de sesión (8 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `8692853` (main con el canal 0.6.13 publicado). La 0.6.13 se vio
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.14](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.14)
+es una release normal, sin draft, publicada el 2026-10-08T14:06:29Z; nombre, tag y `manifest.version` son `0.6.14`. El
+tag (ligero) apunta a `f65066313d16d0998e6d1b290e0874f635a9b6ef` (commit vacío de atestación, árbol
+`6f21c0d8b1a3a2a39254643dfb8231b6d1648f0c`; candidato `7e488bb`). Parte de `8692853` (main con el canal 0.6.13
+publicado). La 0.6.13 se vio
 cargar en Hebra y escribir una nota resumen real: la de una sesión cerrada bajo la 0.6.12, escrita al cargar la
 0.6.13 por primera vez, cinco horas y media después del cierre. De esa nota salen los cinco arreglos, descritos en
 [CHANGELOG](CHANGELOG.md): los objetos y las monedas salían como número a secas (ahora nombre desde la caché del
@@ -18,13 +22,27 @@ la 0.6.13); `release-identity-contract` y `release-preflight` en verde sobre el 
   252 tests; `tsc --noEmit --skipLibCheck` sin errores; `action-observability-census` en PASS sin tocar su línea
   base; `probar-h8-helper-decision-contract` en PASS. Cada arreglo tiene un test que se vio fallar con el
   comportamiento anterior.
-- Sin medir todavía sobre este candidato: `check`, `check:guardrails` y la suite completa.
+- Publicación: el workflow `release.yml` (run 37789402116) terminó con conclusión `success`, sin ningún paso distinto
+  de `success`. La release tiene ocho assets, todos `uploaded`: `hebra-main.mjs` 2623298, `hebra-styles.css` 118003,
+  `hebra.json` 27745, `main.js` 1927454, `manifest.json` 237, `styles.css` 94537, `tyrian-companion-0.6.14.zip`
+  2022538 y `tyrian-companion-0.6.14.zip.sha256` 94 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view 0.6.14 --json tagName,name,isDraft,assets`: «BRAT release contract: PASS (version=0.6.14; assets=8)».
+- Gate local sobre el árbol del tag (`6f21c0d8…`, commit `7e488bb`): `check` VERDE 8/8 (5376 tests, 334 ficheros),
+  `check:guardrails` VERDE 25/25 (326 tests), `release preflight: pass` y `release package: PASS` con
+  `tyrian-companion-0.6.14.zip` construido en local, sha256
+  `299a4119c968ed3749d18f52d996cbebe4d35d40f07fe1e36040f9e374006821`; no se ha comparado con el sha256 del zip
+  publicado. El benchmark `bench:h6-live-session` no se corrió en local para la 0.6.14.
+- CI de `main` sobre `f650663` (run 37789392571): `success`. Jobs `detect-native-changes`, `check-guardrails`,
+  `check` (con los pasos `bench:h6-performance`, `bench:h6-live-session` y sus pruebas en rojo) y `release-package`
+  en `success`; `rust-portable` y `rust-windows-helper` omitidos (`skipped`).
 - Lo que no cambia: una nota resumen ya escrita no se reescribe (la de la 0.6.13 se queda como está); ninguna clave
   nueva, `tyrian_summary_version` sigue en 3 y la Base «Sesiones» es la misma; ningún host, endpoint ni uso de red
   nuevo (`docs/PLATFORM_POLICY.md` no cambia) y ninguna petición durante la carga del plugin. Los nombres de objetos
   y monedas salen de memoria y de la caché del catálogo, nunca de la red; la única petición de la nota resumen sigue
   siendo `maps`, tras cerrar la sesión.
-- Visto de la 0.6.13 desde su publicación: cargó en Hebra y escribió esa nota resumen.
+- Visto de la 0.6.13 desde su publicación: cargó en Hebra y escribió esa nota resumen (la sesión del 8 oct,
+  09:46–11:42 hora local). Esa nota se corrigió a mano en Hebra el 8 oct con los nombres de la API pública y el texto
+  que escribe la 0.6.14; no la reescribió el plugin.
 - No verificado: ninguno de los cinco arreglos se ha visto en un cliente real. Nadie ha visto todavía una nota
   resumen de una sesión cerrada ya con la 0.6.13 o posterior, ni la Base «Sesiones» pintada, en Obsidian o en Hebra.
 - Sigue sin verse de versiones anteriores (listado en las secciones de abajo, que se conservan): de la 0.6.13, la
@@ -33,7 +51,9 @@ la 0.6.13); `release-identity-contract` y `release-preflight` en verde sobre el 
   Obsidian/BRAT; en el addon de Nexus 0.8.0, 0.8.1 y 0.8.2, una bajada de hallazgo mágico con su aviso, los tooltips,
   plegar y cerrar, el diagnóstico de Opciones, una sesión larga sin parpadeos, el icono nuevo del botón de fondo del
   addon y Windows.
-- Pendiente: el gate, la publicación (tag, release, `release:brat-verify`) y la verificación en clientes reales.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT); la instalación y la carga de la
+  0.6.14 no se han comprobado en ninguno. Tampoco se ha visto nada del addon 0.8.2 dentro del juego (el DLL 0.8.2
+  está instalado).
 
 ## Canal 0.6.13 publicado: nota resumen de sesión, Base «Sesiones» y arreglos de la auditoría (8 oct 2026)
 

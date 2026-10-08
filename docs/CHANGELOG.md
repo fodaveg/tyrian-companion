@@ -2,7 +2,12 @@
 
 ## Release beta 0.6.14 - cinco arreglos de la nota resumen de sesión
 
-Release por tag `0.6.14`. La 0.6.13 se vio cargar en Hebra y escribir una nota resumen real: la de una sesión
+[Canal 0.6.14 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.14); **instalación/runtime
+pendiente**. Tag `0.6.14` sobre `f650663` (commit vacío de atestación), árbol
+`6f21c0d8b1a3a2a39254643dfb8231b6d1648f0c`. Gate local sobre ese árbol: `check` 8/8 (5376 tests, 334 ficheros),
+guardrails 25/25 y `release:preflight` en verde. El workflow de release (run 37789402116) terminó en `success`, sin
+ningún paso distinto de `success`, y `release:brat-verify` contra la salida real de `gh release view` dio PASS con los
+ocho assets. La 0.6.13 se vio cargar en Hebra y escribir una nota resumen real: la de una sesión
 cerrada bajo la 0.6.12, escrita al cargar la 0.6.13 por primera vez, cinco horas y media después del cierre. De esa
 nota salen estos cinco arreglos. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
 
