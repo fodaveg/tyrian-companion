@@ -157,7 +157,7 @@ import {
 } from '../economy/price-seed-bulk-refresh';
 import { fetchPriceSeed, PRICE_SEED_OPERATION_POLICIES } from '../economy/price-seed-source';
 import { sellOrWaitSeedMaxDays } from '../economy/sell-or-wait';
-import { PRICE_SEED_MAX_DAYS, type PriceSeedV1 } from '../economy/price-seed-model';
+import type { PriceSeedV1 } from '../economy/price-seed-model';
 import { safePublicRenderIconUrl } from '../ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from '../inventory/price-history-note-block';
 import { paintPriceHistoryNoteBlock } from '../ui/price-history-note-block-controller';
@@ -1041,12 +1041,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			fetchSeed: async (itemId, actionContext) => {
 				const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
 				const calendar = loaded.status === 'available' ? loaded.bundle.festivalCalendar : null;
-				const maxDays = sellOrWaitSeedMaxDays(calendar, itemId);
-				const fetched = await fetchPriceSeed(itemId, {
-					transport: priceSeedTransport, now: () => Date.now(), actionContext, maxDays,
+				return await fetchPriceSeed(itemId, {
+					transport: priceSeedTransport, now: () => Date.now(), actionContext, maxDays: sellOrWaitSeedMaxDays(calendar, itemId),
 				});
-				// Z12: the cache keeps how many days this download could keep, so the panel can tell it was cut.
-				return { ...fetched, requestedDays: maxDays ?? PRICE_SEED_MAX_DAYS };
 			},
 			// A pass item gives way to a panel or note block load that arrives before its turn.
 			serialize: priceSeedDownloads.runner('background'),

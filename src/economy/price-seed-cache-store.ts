@@ -31,12 +31,6 @@ export interface PriceSeedCacheRecordV1 {
 	seed: PriceSeedV1;
 	/** When this record was written, so the caller can decide it is stale and worth a refresh. */
 	cachedAtMs: number;
-	/**
-	 * How many newest days the download was allowed to keep (`maxDays`). A copy that holds exactly
-	 * that many days was cut by it; the panel, which wants the whole history, downloads again
-	 * instead of serving it. Absent on records written before it existed: read as "not cut".
-	 */
-	requestedDays?: number;
 }
 
 /** One IndexedDB record per `(vaultId, itemId)`. Fail-closed: never substitutes an in-memory copy. */
@@ -72,10 +66,8 @@ export class IndexedDbPriceSeedCacheStore {
 		});
 	}
 
-	put(vaultId: string, itemId: number, seed: PriceSeedV1, cachedAtMs: number, requestedDays?: number): Promise<void> {
-		const record: PriceSeedCacheRecordV1 = {
-			version: 1, vaultId, itemId, seed, cachedAtMs, ...(requestedDays === undefined ? {} : { requestedDays }),
-		};
+	put(vaultId: string, itemId: number, seed: PriceSeedV1, cachedAtMs: number): Promise<void> {
+		const record: PriceSeedCacheRecordV1 = { version: 1, vaultId, itemId, seed, cachedAtMs };
 		parseRecord(record);
 		return this.transaction<void>('readwrite', (store, resolve, reject) => {
 			const request = store.put(record);
@@ -109,7 +101,6 @@ function storeFailure(error: DOMException | null): PriceSeedCacheStoreError {
 function parseRecord(value: unknown): PriceSeedCacheRecordV1 {
 	if (!record(value) || value.version !== 1 || !text(value.vaultId) || !positiveInteger(value.itemId)
 		|| !nonNegativeInteger(value.cachedAtMs) || !isPriceSeed(value.seed)
-		|| (value.requestedDays !== undefined && !positiveInteger(value.requestedDays))
 		|| value.seed.itemId !== value.itemId) {
 		throw new PriceSeedCacheStoreError('corrupt');
 	}

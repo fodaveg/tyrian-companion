@@ -56,18 +56,7 @@ export interface PriceHistoryPanelSeedOptions {
 	diagnostics?: LocalDebugActionPort;
 }
 
-/**
- * Z12: whether a cached copy was cut short of the whole history. The bulk pass keeps only the
- * newest `requestedDays` (400 outside the festival calendar), and a copy that holds exactly that
- * many days hit the cut; one with fewer is complete whatever was asked. Records without the
- * field predate it and are served as before until their 24 h run out.
- */
-function isTrimmedForTheChart(cached: { seed: { days: readonly unknown[] }; requestedDays?: number }): boolean {
-	return cached.requestedDays !== undefined && cached.requestedDays < PRICE_SEED_CHART_MAX_DAYS
-		&& cached.seed.days.length >= cached.requestedDays;
-}
-
-const IDLE_STATE:Omit<PriceHistoryPanelSeedState, 'itemId'> = {
+const IDLE_STATE: Omit<PriceHistoryPanelSeedState, 'itemId'> = {
 	status: 'idle', days: [], failureReason: null, retrievedAt: null,
 };
 
@@ -130,7 +119,7 @@ export class PriceHistoryPanelSeedService {
 			return;
 		}
 		const nowMs = this.options.now();
-		if (cached !== null && nowMs - cached.cachedAtMs < this.cacheTtlMs && !isTrimmedForTheChart(cached)) {
+		if (cached !== null && nowMs - cached.cachedAtMs < this.cacheTtlMs) {
 			this.states.set(itemId, {
 				status: 'seeded', itemId, days: cached.seed.days, failureReason: null, retrievedAt: cached.seed.retrievedAt,
 			});
@@ -172,7 +161,7 @@ export class PriceHistoryPanelSeedService {
 			return;
 		}
 		try {
-			await store.put(this.options.vaultId, itemId, result.seed, nowMs, PRICE_SEED_CHART_MAX_DAYS);
+			await store.put(this.options.vaultId, itemId, result.seed, nowMs);
 		} catch (error) {
 			// The download itself succeeded; a failed write only costs the next open a repeated
 			// download, so the panel still gets to show what was just fetched.

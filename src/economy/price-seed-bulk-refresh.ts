@@ -73,13 +73,6 @@ export type PriceSeedBulkRefreshPhase =
 	| { scope: 'missing'; budget?: number; allowed?: () => boolean }
 	| { scope: 'stale'; budget: number; allowed?: () => boolean };
 
-/**
- * What `fetchSeed` hands back: the seed result, plus how many newest days that download was
- * allowed to keep. The cache records it (Z12) so the panel can tell a copy the pass trimmed from
- * the whole history.
- */
-export type PriceSeedFetched = PriceSeedResult & { requestedDays?: number };
-
 export interface PriceSeedBulkRefreshOptions {
 	priceHistory: Pick<TyrianPriceHistoryPort, 'openSeedCache' | 'openNoSeedCache'>;
 	vaultId: string;
@@ -89,7 +82,7 @@ export interface PriceSeedBulkRefreshOptions {
 	 * this module never imports a transport of its own, so it carries no outbound capability that
 	 * a security review has not already seen on the caller's side.
 	 */
-	fetchSeed: (itemId: number, actionContext?: ResolvedLocalDebugActionContext) => Promise<PriceSeedFetched>;
+	fetchSeed: (itemId: number, actionContext?: ResolvedLocalDebugActionContext) => Promise<PriceSeedResult>;
 	/**
 	 * The turn every request of a pass takes before it is sent (1 oct 2026, task 0812d53e): the
 	 * caller hands the queue it shares with the other seed downloads of the plugin, so a pass and
@@ -236,7 +229,7 @@ export class PriceSeedBulkRefreshService {
 			span.skip('skipped', 'missing_not_deferred');
 			return;
 		}
-		let turn: SerialTaskTurn<PriceSeedFetched | null>;
+		let turn: SerialTaskTurn<PriceSeedResult | null>;
 		try {
 			turn = await this.serialize(async () => {
 				// Asked again now that the turn has come: the item may have waited behind other
@@ -280,7 +273,7 @@ export class PriceSeedBulkRefreshService {
 			return;
 		}
 		try {
-			await store.put(this.options.vaultId, itemId, result.seed, nowMs, result.requestedDays);
+			await store.put(this.options.vaultId, itemId, result.seed, nowMs);
 		} catch (error) {
 			// The download succeeded; only the cache write failed, which costs the next run a
 			// repeated download and nothing else.
