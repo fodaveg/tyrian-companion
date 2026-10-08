@@ -466,7 +466,7 @@ describe('H13.4 alert channel cabling', () => {
 			await vi.waitFor(() => { expect(lines).toHaveLength(version === 3 ? 4 : 1); });
 			if (version === 3) {
 				expect(JSON.parse(lines[1] ?? '{}')).toMatchObject({ type: 'farming_cap', tag: 'farm1' });
-				expect(JSON.parse(lines[2] ?? '{}')).toMatchObject({ type: 'price_cap', tag: 'price1' });
+				expect(JSON.parse(lines[2] ?? '{}')).toMatchObject({ type: 'price_cap', tag: 'price2' });
 				expect(JSON.parse(lines[3] ?? '{}')).toMatchObject({ type: 'live_cap', tag: 'live1' });
 			}
 			const { nonce } = JSON.parse(lines[0] ?? '{}') as { nonce: string };
@@ -532,10 +532,10 @@ describe('H13.4 alert channel cabling', () => {
 	});
 
 	/**
-	 * `price1` over the real core: a real loopback socket, the real server, the real live lifecycle and the real
+	 * `price2` over the real core: a real loopback socket, the real server, the real live lifecycle and the real
 	 * `LiveSessionEconomy`. Only the public gateway is replaced, by a spy that counts the requests.
 	 */
-	describe('price1 public bag price: real bridge, real core, counted network', () => {
+	describe('price2 public bag price: real bridge, real core, counted network', () => {
 		async function withPriceBridge(
 			body: (kit: {
 				open: () => Promise<{ socket: Socket; lines: Record<string, unknown>[]; write(record: Record<string, unknown>): void }>;
@@ -598,15 +598,15 @@ describe('H13.4 alert channel cabling', () => {
 				await vi.waitFor(() => { expect(farmOnly.lines.some((line) => line.type === 'farming_state')).toBe(true); });
 				expect(requests).toEqual([]);
 
-				subscribed.write({ v: 3, type: 'price_sub', tag: 'price1', seq: 1 });
+				subscribed.write({ v: 3, type: 'price_sub', tag: 'price2', seq: 1 });
 				await vi.waitFor(() => { expect(priceLines(subscribed.lines)).toHaveLength(1); });
 				await vi.waitFor(() => { expect(requests).toEqual(['commerce/prices?ids=36038']); });
 
 				// A later subscriber finds the quote fresh (under 120 s): the figures are the contract's, and no second request.
 				const late = await open();
-				late.write({ v: 3, type: 'price_sub', tag: 'price1', seq: 0 });
+				late.write({ v: 3, type: 'price_sub', tag: 'price2', seq: 0 });
 				await vi.waitFor(() => { expect(priceLines(late.lines)).toHaveLength(1); });
-				expect(priceLines(late.lines)[0]).toMatchObject({ v: 3, tag: 'price1', seq: 1, ttl: 15, st: 'ok', sell: 293, sellStack: 73_312, list: 312, listStack: 77_987 });
+				expect(priceLines(late.lines)[0]).toMatchObject({ v: 3, tag: 'price2', seq: 1, ttl: 15, st: 'ok', sell: 345, sellStack: 86_250, list: 367, listStack: 91_750 });
 				expect(requests).toHaveLength(1);
 				expect(priceLines(farmOnly.lines)).toEqual([]);
 			});
@@ -615,7 +615,7 @@ describe('H13.4 alert channel cabling', () => {
 		it('with no live session the subscription answers idle and the network is never asked', async () => {
 			await withPriceBridge(async ({ open, requests }) => {
 				const addon = await open();
-				addon.write({ v: 3, type: 'price_sub', tag: 'price1', seq: 0 });
+				addon.write({ v: 3, type: 'price_sub', tag: 'price2', seq: 0 });
 				await vi.waitFor(() => { expect(priceLines(addon.lines)).toHaveLength(1); });
 				expect(priceLines(addon.lines)[0]).toMatchObject({ st: 'idle', sell: null, sellStack: null, list: null, listStack: null, age: null });
 				expect(requests).toEqual([]);

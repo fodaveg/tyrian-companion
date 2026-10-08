@@ -94,13 +94,13 @@ export class LiveSessionEconomy {
 			if (changed) this.options.onChange();
 		} catch { /* A cosmetic lookup that fails (offline, no catalog) keeps "Item <id>" until `enrich()` resolves it. */ }
 	}
-	/** Raw public quote kept for `price1`; only the Halloween bag is retained, and a restored net quote is not one. */
+	/** Raw public quote kept for `price2`; only the Halloween bag is retained, and a restored net quote is not one (the session valuation keeps its fees; `price2` never uses them). */
 	rawQuote(itemId: number): BagRawQuote | null {
 		return itemId === HALLOWEEN_TOT_BAG_ITEM_ID ? this.bagRaw : null;
 	}
 	/**
 	 * Keeps the bag quote at most `PRICE_INGAME_QUOTE_REFRESH_MS` old. It has no timer of its own: the
-	 * in-game bridge calls it from its 5 s state tick, and only for a connection subscribed to `price1`,
+	 * in-game bridge calls it from its 5 s state tick, and only for a connection subscribed to `price2`,
 	 * so with no subscriber nothing runs. Requires an `active` live session, an allowed host (not
 	 * consulting, not unloaded) and an inactive rate limit; one request in flight at most. A failure keeps
 	 * the previous quote, and the attempt itself spaces the next one by the same 120 s.

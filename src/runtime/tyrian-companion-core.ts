@@ -3153,7 +3153,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 	}
 
-	/** Public net price of the Halloween bag for `price1`. The bridge calls it only for a subscribed connection, which is what keeps the quote refreshed. */
+	/** Public gross price of the Halloween bag for `price2`. The bridge calls it only for a subscribed connection, which is what keeps the quote refreshed. */
 	getBagPriceIngameState(): PriceIngameState {
 		this.liveEconomy?.refreshBagQuote();
 		return projectBagPriceIngameState({ phase: this.liveSessions?.getView().phase ?? 'idle',

@@ -21,7 +21,7 @@ class PriceClient implements TyrianTcpConnection {
 	prices(): Record<string, unknown>[] { return this.lines.filter((line) => line.type === 'price_state'); }
 }
 
-const OK: PriceIngameState = { st: 'ok', sell: 293, sellStack: 73_312, list: 312, listStack: 77_987, age: 412 };
+const OK: PriceIngameState = { st: 'ok', sell: 345, sellStack: 86_250, list: 367, listStack: 91_750, age: 412 };
 
 async function priceBridge(options: { price?: boolean } = {}) {
 	let accept: (socket: TyrianTcpConnection) => void = () => {};
@@ -44,9 +44,9 @@ async function priceBridge(options: { price?: boolean } = {}) {
 		return client;
 	} };
 }
-const sub = (client: PriceClient, seq: number) => { client.send({ v: 3, type: 'price_sub', tag: 'price1', nonce: client.lines[0]?.nonce, seq }); };
+const sub = (client: PriceClient, seq: number) => { client.send({ v: 3, type: 'price_sub', tag: 'price2', nonce: client.lines[0]?.nonce, seq }); };
 
-describe('price1 negotiated bridge consumer', () => {
+describe('price2 negotiated bridge consumer', () => {
 	afterEach(() => vi.useRealTimers());
 
 	it('announces price_cap after farming_cap, only on v3 and only with a provider', async () => {
@@ -54,7 +54,7 @@ describe('price1 negotiated bridge consumer', () => {
 		const harness = await priceBridge();
 		expect(harness.connect(2).types()).toEqual(['welcome']);
 		expect(harness.connect(3).types()).toEqual(['welcome', 'farming_cap', 'price_cap']);
-		expect(harness.connect(3).lines[2]).toEqual({ v: 3, type: 'price_cap', nonce: 'AQEBAQEBAQEBAQEBAQEBAQ', tag: 'price1' });
+		expect(harness.connect(3).lines[2]).toEqual({ v: 3, type: 'price_cap', nonce: 'AQEBAQEBAQEBAQEBAQEBAQ', tag: 'price2' });
 		await harness.server.close();
 		const bare = await priceBridge({ price: false });
 		expect(bare.connect(3).types()).toEqual(['welcome', 'farming_cap']);
@@ -81,7 +81,7 @@ describe('price1 negotiated bridge consumer', () => {
 		client.send({ v: 3, type: 'farming_sub', tag: 'farm1', nonce: client.lines[0]?.nonce, seq: 0 });
 		vi.advanceTimersByTime(5_000);
 		sub(client, 1);
-		expect(client.prices()).toMatchObject([{ seq: 1, tag: 'price1', st: 'ok', sell: 293, sellStack: 73_312 }]);
+		expect(client.prices()).toMatchObject([{ seq: 1, tag: 'price2', st: 'ok', sell: 345, sellStack: 86_250 }]);
 		vi.advanceTimersByTime(10_000);
 		expect(client.prices().map((line) => line.seq)).toEqual([1, 2, 3]);
 		expect(client.lines.filter((line) => line.type === 'farming_state').at(-1)).toMatchObject({ seq: 4 });
@@ -104,7 +104,7 @@ describe('price1 negotiated bridge consumer', () => {
 	const endings: [string, (harness: Awaited<ReturnType<typeof priceBridge>>, client: PriceClient) => unknown][] = [
 		['close', async (harness) => { await harness.server.close(); }],
 		['bye', (_h, client) => { client.send({ v: 3, type: 'bye', nonce: client.lines[0]?.nonce, seq: 1, reason: 'game_exit' }); }],
-		['reject', (_h, client) => { client.send({ v: 3, type: 'price_sub', tag: 'price1', nonce: client.lines[0]?.nonce, seq: 1, command: 'x' }); }],
+		['reject', (_h, client) => { client.send({ v: 3, type: 'price_sub', tag: 'price2', nonce: client.lines[0]?.nonce, seq: 1, command: 'x' }); }],
 		['socket close', (_h, client) => { client.destroy(); }],
 	];
 	it.each(endings)('leaves zero timers after %s', async (_name, end) => {
@@ -139,7 +139,7 @@ describe('price1 negotiated bridge consumer', () => {
 		vi.useFakeTimers();
 		const harness = await priceBridge();
 		const old = harness.connect(2);
-		old.send({ v: 2, type: 'price_sub', tag: 'price1', nonce: old.lines[0]?.nonce, seq: 0 });
+		old.send({ v: 2, type: 'price_sub', tag: 'price2', nonce: old.lines[0]?.nonce, seq: 0 });
 		expect(old.lines.at(-1)).toMatchObject({ type: 'error', code: 'unexpected_message' });
 		const other = harness.connect();
 		other.send({ v: 3, type: 'price_sub', tag: 'farm1', nonce: other.lines[0]?.nonce, seq: 0 });

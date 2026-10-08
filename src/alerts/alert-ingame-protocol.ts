@@ -107,8 +107,8 @@ export type IngameSequencedMessageV2 =
 	| { readonly v: 3; readonly type: 'alert_ack'; readonly nonce: string; readonly seq: number; readonly alertSeq: number }
 	/** farm1 only: opt in to the separate read-only farming stream. */
 	| { readonly v: 3; readonly type: 'farming_sub'; readonly nonce: string; readonly seq: number; readonly tag: 'farm1' }
-	/** price1 only: opt in to the separate public-price stream of the Halloween bag. */
-	| { readonly v: 3; readonly type: 'price_sub'; readonly nonce: string; readonly seq: number; readonly tag: 'price1' };
+	/** price2 only: opt in to the separate public-price stream of the Halloween bag. */
+	| { readonly v: 3; readonly type: 'price_sub'; readonly nonce: string; readonly seq: number; readonly tag: 'price2' };
 
 export type IngameParseResult<T> =
 	| { readonly ok: true; readonly value: T }
@@ -200,8 +200,8 @@ export function parseIngameSequenced(
 		return { ok: true, value: { v: 3, type, nonce: record.nonce, seq: record.seq, tag: 'farm1' } };
 	}
 	if (type === 'price_sub') {
-		if (record.tag !== 'price1') return { ok: false, code: 'frame_schema' };
-		return { ok: true, value: { v: 3, type, nonce: record.nonce, seq: record.seq, tag: 'price1' } };
+		if (record.tag !== 'price2') return { ok: false, code: 'frame_schema' };
+		return { ok: true, value: { v: 3, type, nonce: record.nonce, seq: record.seq, tag: 'price2' } };
 	}
 	if (type === 'alert_ack') {
 		const alertSeq = record.alertSeq;

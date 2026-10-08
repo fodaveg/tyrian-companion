@@ -1,9 +1,9 @@
 import { INGAME_BRIDGE_MAX_LINE_BYTES } from './alert-ingame-protocol';
 
-export const PRICE_INGAME_TAG = 'price1' as const;
+export const PRICE_INGAME_TAG = 'price2' as const;
 /** Cadence of the transport frame, the same as `farm1`; it never refreshes the quotation by itself. */
 export const PRICE_INGAME_REFRESH_MS = 5_000;
-/** The stack whose net the host computes: the commission is charged on the TOTAL, not per unit. */
+/** The stack size the unit prices are multiplied by for `sellStack` and `listStack`. */
 export const PRICE_INGAME_STACK = 250;
 /** A quotation this old (seconds) or older is `stale`: the figures are no longer sent. */
 export const PRICE_INGAME_STALE_SECONDS = 600;
@@ -11,8 +11,8 @@ export const PRICE_INGAME_STALE_SECONDS = 600;
 export const PRICE_INGAME_QUOTE_REFRESH_MS = 120_000;
 
 /**
- * Public net price of the Halloween bag (`docs/SPEC-puente-ingame.md`, `price1`). Copper, net of the
- * Trading Post fees. Neither the item id, nor a name, nor an account ever enters this DTO: the tag fixes the object.
+ * Public gross price of the Halloween bag (`docs/SPEC-puente-ingame.md`, `price2`). Copper, as the
+ * Trading Post shows it, with no fee discounted. Neither the item id, nor a name, nor an account ever enters this DTO: the tag fixes the object.
  */
 export interface PriceIngameState {
 	st: 'ok' | 'idle' | 'pending' | 'stale';

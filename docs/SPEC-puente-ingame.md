@@ -77,7 +77,7 @@ La frontera autorizada del proyecto describe acciones concretas; no demuestra ap
 - no simula entrada, no pulsa teclas, no automatiza nada dentro del juego;
 - el contexto ordinario usa datos expuestos por el anfitrión; solo el productor Nexus live1 añade la lectura pasiva acotada de [SPEC-live-loot](SPEC-live-loot.md), sin hooks, getters ni escritura;
 - lo que el plugin hace con ese contexto ocurre **fuera** del juego: marcar una sesión en las notas
-  del usuario. Vuelven al juego los avisos y, con suscripción `farm1`, el DTO de medición numérico y cerrado definido abajo y, con suscripción `price1`, el precio público neto del saco de Halloween.
+  del usuario. Vuelven al juego los avisos y, con suscripción `farm1`, el DTO de medición numérico y cerrado definido abajo y, con suscripción `price2`, el precio público bruto del saco de Halloween.
 
 Un mensaje del addon que pidiera una acción (un comando, una consulta, un «empieza la sesión») no
 existe en el protocolo: las claves son cerradas y cualquier campo de más cierra la conexión.
@@ -231,7 +231,7 @@ conexión v2, `alert_ack` es `unexpected_message`, como cualquier tipo desconoci
 ## Versión 3: el acuse de un aviso
 
 Hasta v2 el addon no decía si había enseñado un aviso, y el plugin no podía distinguir «enviado» de
-«visto en el juego». v3 añade `alert_ack` y las extensiones opcionales negociadas `farm1` y `price1` descritas más abajo.
+«visto en el juego». v3 añade `alert_ack` y las extensiones opcionales negociadas `farm1` y `price2` descritas más abajo.
 
 | | v2 | v3 |
 |---|---|---|
@@ -412,7 +412,7 @@ Lo que lo impide estructuralmente:
 **En cada repo de addon** (`tyrian-companion-nexus`, Rust; `tyrian-companion-blish`, C#): ajustes
 de puerto y token; conectar y reconectar; `hello`; leer líneas; pintar `alert`; enviar `context`
 al cambiar, `heartbeat` en los silencios y `bye` al irse. Cero llamadas a la API de GW2, cero
-escritura hacia el plugin fuera de los tipos documentados; `farm1` y `price1` solo añaden una suscripción cada una, nunca acciones dentro del juego.
+escritura hacia el plugin fuera de los tipos documentados; `farm1` y `price2` solo añaden una suscripción cada una, nunca acciones dentro del juego.
 
 ## Aceptación (auditoría del 24 sep, pruebas 12 a 15)
 
@@ -451,7 +451,7 @@ Pendiente de QA humana en la plataforma real, y no acreditado por lo anterior:
 
 El plugin no lee Mumble Link ni NexusLink: lo leen los addons a través de su anfitrión. No
 inspecciona memoria ni proceso del juego. No automatiza ninguna acción dentro del juego. No
-transporta la cuenta ni una lista de botín o actividad; `farm1` añade únicamente las métricas numéricas cerradas de medición autorizadas el 6 oct 2026 y `price1` el precio público del saco autorizado el 7 oct 2026, sin cuenta ni identificadores. No saca la capa H8 del árbol. No mete binarios en
+transporta la cuenta ni una lista de botín o actividad; `farm1` añade únicamente las métricas numéricas cerradas de medición autorizadas el 6 oct 2026 y `price2` el precio público del saco autorizado el 7 oct 2026, sin cuenta ni identificadores. No saca la capa H8 del árbol. No mete binarios en
 este repo.
 
 ## Fuentes
@@ -473,7 +473,7 @@ El encargo Halloween amplía expresamente la salida con un panel de solo lectura
 mínima al límite anterior de «solo avisos» conserva v3 y sus mensajes `hello`, `welcome` y `alert`
 exactamente iguales. No envía nombres, builds, IDs de cuenta/personaje, oro, secretos,
 listas de objetos, buffs activos ni señales de AFK. `farm1` sigue sin llevar precios; el precio público
-del saco viaja aparte por `price1`, por petición de David del 7 oct 2026. H8 continúa aislado.
+del saco viaja aparte por `price2`, por petición de David del 7 oct 2026. H8 continúa aislado.
 
 Tras el `welcome` v3, el servidor anuncia una capacidad separada:
 
@@ -536,50 +536,63 @@ que terminó la sesión: el runtime sigue el contrato de presencia y sus 10 min 
 La ausencia de incrementos nunca demuestra AFK. El total obtenido entre lecturas es inobservable.
 Posición, visibilidad y escala pertenecen al menú del addon y no introducen botones de juego.
 
-## Extensión opt-in `price1`: precio público del saco (7 oct 2026)
+## Extensión opt-in `price2`: precio público bruto del saco (8 oct 2026)
 
-Por petición de David del 7 oct 2026, el panel de farmeo muestra lo que se cobraría por el saco de
-Halloween. El precio es público (sin clave ni cuenta) y viaja en un tipo de trama aparte: `farm1` no
-cambia. No viaja `itemId`, nombre ni cuenta; el objeto lo fija el tag `price1`.
+Por petición de David del 7 oct 2026, el panel de farmeo muestra el precio del saco de Halloween. El
+8 oct 2026 pidió: «quiero que en el panel flotante aparezcan los precios brutos, los que se ven en el
+bazar. los netos no sirven de mucho». `price2` sustituye a `price1` (7 oct 2026, cifras netas de
+comisión): la forma de las tramas no cambia, solo el valor del tag y el significado de las cifras. El
+precio es público (sin clave ni cuenta) y viaja en un tipo de trama aparte: `farm1` no cambia. No viaja
+`itemId`, nombre ni cuenta; el objeto lo fija el tag `price2`. Fixture canónico, idéntico byte a byte en
+los tres repos: `src/alerts/__fixtures__/price2.json` (sha256
+`f8dfb3b353b610097110b0ac11d6a7885c6f300a9c27af553c61bfb14fc00950`).
+
+`price1` desaparece: el plugin ya no lo anuncia ni lo acepta (`price_sub` con tag `price1` es
+`frame_schema`, como cualquier otro tag desconocido).
+
+| Combinación | Resultado |
+|---|---|
+| Addon de Nexus 0.7.1 con plugin 0.6.10 | Descarta `price_cap` (el tag no es `price1`) sin cerrar la conexión: no se suscribe y no pinta precio |
+| Blish 0.5.0 con plugin 0.6.10 | `price_cap` cae en `default` del parser y se ignora |
+| Addon nuevo (`price2`) con plugin 0.6.9 | Descarta el `price_cap` `price1` y no pinta precio |
 
 Tras `farming_cap` y antes de `live_cap`, solo en v3 y solo si el host tiene proveedor de precio, el
 servidor anuncia (claves exactas `v,type,nonce,tag`; los clientes no dependen del orden):
 
 ```json
-{"v":3,"type":"price_cap","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"price1"}
+{"v":3,"type":"price_cap","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"price2"}
 ```
 
 El addon se suscribe SOLO después de recibir `price_cap` en esa conexión (claves exactas
 `v,type,nonce,seq,tag`):
 
 ```json
-{"v":3,"type":"price_sub","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":1,"tag":"price1"}
+{"v":3,"type":"price_sub","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":1,"tag":"price2"}
 ```
 
 Consume la misma secuencia de entrada que `context`, `heartbeat`, `bye`, `alert_ack` y `farming_sub`.
 En v2 es `unexpected_message`; otro tag o una clave de más es `frame_schema`. Repetirla consume `seq` y
 no hace nada más. No toca la sesión y es independiente de `farming_sub`. Una conexión no suscrita a
-`price1` nunca recibe `price_state`, aunque tenga `farm1`.
+`price2` nunca recibe `price_state`, aunque tenga `farm1`.
 
 El servidor envía el estado al suscribirse y después cada 5 segundos, sin backlog, con una secuencia de
 salida propia que empieza en 1 por conexión, independiente de `alert.seq` y de `farming_state.seq`. Si
 el proveedor falla, esa secuencia no avanza. Al desconectar, el host cancela el temporizador.
 
 ```json
-{"v":3,"type":"price_state","tag":"price1","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":1,"ttl":15,"st":"ok","sell":293,"sellStack":73312,"list":312,"listStack":77987,"age":412}
+{"v":3,"type":"price_state","tag":"price2","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":1,"ttl":15,"st":"ok","sell":345,"sellStack":86250,"list":367,"listStack":91750,"age":412}
 ```
 
 Exactamente 12 claves, en este orden, y menos de 512 bytes (216 en el extremo int32). `ttl` vale siempre
 15 y describe el TRANSPORTE. Las cifras están en cobre, son int32 no negativos o `null` (un valor fuera
-de rango viaja `null`, nunca 0) y son netas de comisión, calculadas con la política de comisiones del
-plugin (5 % más 10 % sobre el TOTAL, redondeo al cobre, mínimo 1c). El stack lo calcula el host con la
-cantidad 250: con puja de 345c el neto de 250 es 73312c, mientras que 250 por el neto unitario daría 73250c.
+de rango viaja `null`, nunca 0) y son BRUTAS, tal como las enseña el bazar: no se descuenta ninguna comisión. El stack es el precio
+unitario por 250: con puja de 345c y oferta de 367c, el fixture lleva 345, 86250, 367 y 91750.
 
 | Campo | Significado cerrado |
 |---|---|
 | `st` | `idle`: no hay sesión live en fase `active`. `pending`: sesión activa sin cotización utilizable en memoria. `ok`: cotización de menos de 600 s. `stale`: de 600 s o más |
-| `sell`, `sellStack` | Neto de vender 1 y 250 a la mejor puja; `null` si el bazar no tiene orden de compra |
-| `list`, `listStack` | Neto de publicar 1 y 250 al precio de la oferta de venta más baja; `null` si no hay oferta |
+| `sell`, `sellStack` | Precio bruto del pedido de compra más alto (lo que el bazar ofrece al vender al instante), por 1 y por 250; `null` si el bazar no tiene orden de compra |
+| `list`, `listStack` | Precio bruto de la oferta de venta más baja, por 1 y por 250; `null` si no hay oferta |
 | `age` | Segundos de edad de la cotización al emitir (`ok` y `stale`); `null` en `idle` y `pending`. El cliente le suma el tiempo local desde la recepción |
 
 Con `st` distinto de `ok` las cuatro cifras van `null`, y un cliente que reciba cifras con otro `st`
@@ -587,7 +600,7 @@ descarta la trama.
 
 Frescura. La API pública `commerce/prices` declara `cache-control: public,max-age=120`, así que 120 s es
 el suelo real. Mientras haya una sesión live en fase `active` Y al menos una conexión suscrita a
-`price1`, el plugin refresca la cotización del saco cada 120 s con una petición pública de un solo id,
+`price2`, el plugin refresca la cotización del saco cada 120 s con una petición pública de un solo id,
 además del refresco que ya hace al observar cambios. Sin sesión activa o sin suscriptores no hay
 peticiones por este motivo, y suscribirse no dispara una si la cotización tiene menos de 120 s. Un fallo
 de red conserva la cotización anterior, que sigue envejeciendo y pasa a `stale` a los 600 s. Una

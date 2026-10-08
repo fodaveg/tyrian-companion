@@ -32,7 +32,7 @@ function harness(options: { phase?: string; canEmit?: boolean; restored?: boolea
 	};
 }
 
-describe('LiveSessionEconomy bag quote for price1', () => {
+describe('LiveSessionEconomy bag quote for price2', () => {
 	it('keeps the raw bid and ask with their instant from the one request enrichment already makes', async () => {
 		const h = harness();
 		await h.observe();

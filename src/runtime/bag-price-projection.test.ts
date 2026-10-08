@@ -17,13 +17,13 @@ describe('projectBagPriceIngameState', () => {
 		expect(projectBagPriceIngameState({ phase: 'active', quote: null, now: NOW })).toEqual({ st: 'pending', ...NO_FIGURES, age: null });
 	});
 
-	it('computes the stack on the total: bid 345 nets 73312, not 250 x 293', () => {
+	it('computes the stack on the total: bid 345 is 86250 and ask 367 is 91750, with no fee discounted', () => {
 		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(412), now: NOW }))
-			.toEqual({ st: 'ok', sell: 293, sellStack: 73_312, list: 312, listStack: 77_987, age: 412 });
+			.toEqual({ st: 'ok', sell: 345, sellStack: 86_250, list: 367, listStack: 91_750, age: 412 });
 	});
 
 	it('changes from ok to stale exactly at 600 s, and stale carries no figures', () => {
-		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(599), now: NOW })).toMatchObject({ st: 'ok', age: 599, sell: 293 });
+		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(599), now: NOW })).toMatchObject({ st: 'ok', age: 599, sell: 345 });
 		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(600), now: NOW }))
 			.toEqual({ st: 'stale', ...NO_FIGURES, age: 600 });
 		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(1_260), now: NOW })).toMatchObject({ st: 'stale', age: 1_260 });
@@ -31,9 +31,9 @@ describe('projectBagPriceIngameState', () => {
 
 	it('sends null for the side the Trading Post has no order on, and ok with all null when neither has one', () => {
 		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(30, 345, null), now: NOW }))
-			.toEqual({ st: 'ok', sell: 293, sellStack: 73_312, list: null, listStack: null, age: 30 });
+			.toEqual({ st: 'ok', sell: 345, sellStack: 86_250, list: null, listStack: null, age: 30 });
 		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(30, null, 367), now: NOW }))
-			.toEqual({ st: 'ok', sell: null, sellStack: null, list: 312, listStack: 77_987, age: 30 });
+			.toEqual({ st: 'ok', sell: null, sellStack: null, list: 367, listStack: 91_750, age: 30 });
 		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(30, null, null), now: NOW }))
 			.toEqual({ st: 'ok', ...NO_FIGURES, age: 30 });
 	});
@@ -42,8 +42,8 @@ describe('projectBagPriceIngameState', () => {
 		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(-5), now: NOW })).toMatchObject({ st: 'ok', age: 0 });
 	});
 
-	it('sends null instead of an out-of-int32 net', () => {
+	it('sends null instead of an out-of-int32 stack', () => {
 		expect(projectBagPriceIngameState({ phase: 'active', quote: quote(1, 100_000_000, null), now: NOW }))
-			.toMatchObject({ st: 'ok', sell: 85_000_000, sellStack: null });
+			.toMatchObject({ st: 'ok', sell: 100_000_000, sellStack: null });
 	});
 });

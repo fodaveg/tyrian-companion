@@ -5,7 +5,7 @@ export const FARMING_INGAME_REFRESH_MS = 5_000;
 
 /**
  * A read-only projection: names, identifiers, prices and credentials never enter this DTO. The public
- * price of the Halloween bag travels in its own `price1` frame (`price-ingame-state.ts`).
+ * price of the Halloween bag travels in its own `price2` frame (`price-ingame-state.ts`).
  */
 export interface FarmingIngameState {
 	phase: 'idle' | 'starting' | 'active' | 'stopping' | 'provisional' | 'complete' | 'error' | 'abandoned';

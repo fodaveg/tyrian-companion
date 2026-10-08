@@ -113,7 +113,7 @@ export interface AlertIngameBridgeOptions {
 	farmingState?(): FarmingIngameState;
 	/** Observes projection failures without placing runtime errors or input on the wire. */
 	onFarmingError?(error: unknown): void;
-	/** Public price of the Halloween bag (`price1`); without it the capability is never announced. Failures go to `onFarmingError`. */
+	/** Public price of the Halloween bag (`price2`); without it the capability is never announced. Failures go to `onFarmingError`. */
 	priceState?(): PriceIngameState;
 	/** Negotiated Nexus-only live feed; success waits for this owner's durable commit. */
 	readonly live?: LiveIngamePort;

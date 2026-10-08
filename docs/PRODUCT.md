@@ -255,7 +255,7 @@ reciente; duración usa cuenta atrás. La preparación es opcional y los recorda
 utilidad son manuales: no certifican buffs, no bloquean la sesión y no crean automatización del juego.
 
 Los addons reciben exclusivamente el resumen agregado de solo lectura `farm1` y el precio público
-del saco `price1`, ambos negociados sobre v3. Una conexión viva no rejuvenece observaciones de la API ni acredita medición activa. Caducidad
+del saco `price2`, ambos negociados sobre v3. Una conexión viva no rejuvenece observaciones de la API ni acredita medición activa. Caducidad
 del panel, antigüedad del botín y antigüedad de la capacidad se tratan por separado. El contrato
 normativo de transporte, privacidad y compatibilidad está en `SPEC-puente-ingame.md`.
 

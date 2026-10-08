@@ -6,7 +6,6 @@ import { emptyFarmingIngameState, type FarmingIngameState } from '../alerts/farm
 import {
 	PRICE_INGAME_STACK, PRICE_INGAME_STALE_SECONDS, emptyPriceIngameState, type PriceIngameState,
 } from '../alerts/price-ingame-state';
-import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
 import type { LiveSessionLootState } from '../sessions/live-session-loot';
 import { observedRateBand } from '../sessions/observed-rate-band';
 import { sessionUnobservedMs, type SessionState } from '../sessions/session';
@@ -145,9 +144,10 @@ export function projectLiveFarmingIngameState(input: {
 export interface BagRawQuote { bid: number | null; ask: number | null; capturedAt: number }
 
 /**
- * Net public price of the Halloween bag for the game (`price1`). Only a live session in `active`
- * has anything to price; an absent quotation is `pending`, one of 600 s or more is `stale` and
- * sends no figures. The fees are the plugin's own policy, applied to the whole stack, never 250 x the unit net.
+ * Gross public price of the Halloween bag for the game (`price2`), as the Trading Post shows it: the
+ * highest buy order and the lowest sell offer, per unit and times 250, with no fee discounted. Only a
+ * live session in `active` has anything to price; an absent quotation is `pending`, one of 600 s or
+ * more is `stale` and sends no figures.
  */
 export function projectBagPriceIngameState(input: {
 	phase: LiveSessionViewV1['phase']; quote: BagRawQuote | null; now: number;
@@ -158,15 +158,15 @@ export function projectBagPriceIngameState(input: {
 	const age = Math.max(0, Math.floor((input.now - input.quote.capturedAt) / 1_000));
 	if (!Number.isFinite(age)) return { ...output, st: 'pending' };
 	if (age >= PRICE_INGAME_STALE_SECONDS) return { ...output, st: 'stale', age };
-	const net = (kind: 'instant_sell' | 'listing', unit: number | null, quantity: number): number | null => {
-		if (unit === null) return null;
-		const value = createTradingPostValueWithPolicy(kind, unit, quantity);
-		return value.status === 'ok' && value.value.netCopper <= 2_147_483_647 ? value.value.netCopper : null;
+	const gross = (unit: number | null, quantity: number): number | null => {
+		if (unit === null || !Number.isSafeInteger(unit) || unit < 0) return null;
+		const total = unit * quantity;
+		return total <= 2_147_483_647 ? total : null;
 	};
 	const { bid, ask } = input.quote;
 	return {
 		st: 'ok', age,
-		sell: net('instant_sell', bid, 1), sellStack: net('instant_sell', bid, PRICE_INGAME_STACK),
-		list: net('listing', ask, 1), listStack: net('listing', ask, PRICE_INGAME_STACK),
+		sell: gross(bid, 1), sellStack: gross(bid, PRICE_INGAME_STACK),
+		list: gross(ask, 1), listStack: gross(ask, PRICE_INGAME_STACK),
 	};
 }
