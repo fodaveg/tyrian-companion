@@ -349,4 +349,12 @@ describe('live1 authenticated atomic consumer', () => {
 		expect(replacement.lines.at(-1)).toMatchObject({ type: 'live_ready', status: 'ready' }); await h.server.close();
 	});
 
+	it('answers live_status with a null epoch after a rejected live_open without closing the connection', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const client = h.connect();
+		client.live('live_open', { build: LIVE_INGAME_BUILD, profile: LIVE_INGAME_PROFILE }); await flush();
+		expect(client.lines.at(-1)).toMatchObject({ type: 'live_ready', status: 'not_gameplay' });
+		client.live('live_status', { epoch: null, status: 'unavailable', reason: 'root_unavailable' }); await flush();
+		expect(client.lines.some((l) => l.type === 'error')).toBe(false); expect(h.server.clientCount()).toBe(1); await h.server.close();
+	});
+
 });

@@ -85,7 +85,8 @@ export class LiveIngameChannel {
 		if (this.closed) return;
 		if (message.type === 'live_open') { this.open(message); return; }
 		if (message.type === 'live_status') {
-			if (message.epoch !== this.epoch) { this.options.reject('unexpected_message'); return; }
+			// A null epoch means the producer holds no accepted epoch: legitimate whenever none is live, such as after a rejected live_open.
+			if (message.epoch === null ? this.epochValid : message.epoch !== this.epoch) { this.options.reject('unexpected_message'); return; }
 			this.invalidate(statusReason(message.reason), true);
 			return;
 		}
