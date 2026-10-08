@@ -1460,6 +1460,19 @@ describe('ManualSessionStartService', () => {
 			expect(leases.release).toHaveBeenCalledTimes(1);
 			await service.dispose();
 		});
+
+		it('turns an unreadable archive store into a recovery error instead of rejecting initialize()', async () => {
+			const runtimeStore = new MemorySessionRuntimeStore();
+			runtimeStore.listLegacyRuntimeArchives = vi.fn(async () => { throw new Error('Preserved API runtime is unavailable.'); });
+			const changed = vi.fn();
+			const service = new ManualSessionStartService(coordinator(), { capture: vi.fn() },
+				serviceOptions({ automaticAccountCapture: false, runtimeStore, onStateChange: changed }));
+
+			await expect(service.initialize()).resolves.toBeUndefined();
+			expect(service.getRecoveryState()).toMatchObject({ status: 'error', code: 'unavailable' });
+			expect(changed).toHaveBeenCalled();
+			await service.dispose();
+		});
 	});
 
 	/**

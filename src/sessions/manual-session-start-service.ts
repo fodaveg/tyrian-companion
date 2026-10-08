@@ -750,7 +750,23 @@ export class ManualSessionStartService {
 
 	private async initializeInternal(): Promise<void> {
 		if (this.disposed || this.recoveryRecord || this.state.status !== 'idle') return;
-		if (!this.automaticAccountCapture && this.runtimeStore.listLegacyRuntimeArchives) this.preservedLegacyRecords = await this.runtimeStore.listLegacyRuntimeArchives();
+		if (!this.automaticAccountCapture && this.runtimeStore.listLegacyRuntimeArchives) {
+			// Same contract as `load()` below: a store that is down is a recovery state, never a rejection
+			// that keeps the whole plugin from starting.
+			try { this.preservedLegacyRecords = await this.runtimeStore.listLegacyRuntimeArchives(); }
+			catch (error) {
+				const corrupt = error instanceof Error && error.message === 'Preserved API runtime is corrupt.';
+				this.recoveryState = {
+					status: 'error',
+					code: corrupt ? 'corrupt' : 'unavailable',
+					message: corrupt
+						? 'The preserved API runtime is corrupt and was left untouched.'
+						: 'Session recovery storage is unavailable.',
+				};
+				this.onStateChange();
+				return;
+			}
+		}
 		const loaded = await this.runtimeStore.load();
 		if (loaded.status === 'empty' || loaded.status === 'live') {
 			const preserved = this.getPreservedLegacyRuntime();
