@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { parseDocument } from 'yaml';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_FARMING_PREPARATION } from './farming-goal-preparation';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionRuntimeRecord } from './live-session-model';
 import { reduceLiveInventorySample } from './live-session-reducer';
@@ -36,7 +37,7 @@ function fixture(options: FixtureOptions = {}): LiveSessionNoteInput {
 		itemComparable: false, currencyComparable: false, sourceState: 'warming_up', sourceReason: null, observationCount: 0, sampleCount: 0,
 		totals: [], gaps: [], observedItemsMs: 0, observedCurrenciesMs: 0, prices: [], priceCapturedAt: null,
 		magicFind: { value: null, source: 'unknown' }, preparation: { ...DEFAULT_FARMING_PREPARATION }, farmingGoal: { version: 1, kind: 'bags', targetBags: 500 },
-		groupContext: null, mapIntervals: [], mapObservation: null, mapCoveragePartial: false, characters: [{ name: 'Alfa', fromAt: iso(0) }], summaryReceipt: null };
+		groupContext: null, mapIntervals: [], mapObservation: null, mapCoveragePartial: false, summaryReceipt: null };
 	const journal: LiveJournalEntryV1[] = [];
 	for (let cursor = 0; cursor < staple.length; cursor += 1) {
 		const sample: LiveInventorySampleV1 = { epoch: EPOCH, cursor, contextSeq: 0, sourceElapsedMs: cursor * STEP_MS,
@@ -187,7 +188,13 @@ describe('live session summary: figures that must not mislead', () => {
 
 	it('writes no value at all for a session without prices and says why in the list', async () => {
 		const { content } = await render({ itemMeta: META, fixture: { prices: false } });
-		expect(content).toContain('- Neto estimado: 0g 0s 0c');
+		// No item has any price: there is no value to state, not a zero that would also enter the average.
+		expect(content).toContain('Sin precios de bazar: no hay valor estimado.');
+		expect(content).not.toContain('Neto estimado');
+		expect(content).not.toContain('Por hora');
+		expect(content).toContain('tyrian_summary_net_copper: null');
+		expect(content).toContain('tyrian_summary_per_hour_copper: null');
+		expect(content).toContain('tyrian_summary_net_gold: null');
 		expect(content).toContain('Ningún objeto nuevo tiene precio de bazar.');
 		expect(content).toContain('Sin precio de bazar (fuera del valor): Saco grande ×30, Champiñón ×9');
 	});
@@ -236,6 +243,12 @@ describe('live session summary: rules that change the note', () => {
 			totals: [total('item', OTHER, 0, 40), total('currency', 1, 250_000)] }) });
 		const verdict = body(content).split('## Veredicto\n\n')[1]!.split('\n');
 		expect(verdict[0]).toBe('- **Oro ganado: +25g 0s 0c**');
+		// What left the inventory is not a yield: no net and no per-hour figure (nor in the frontmatter).
+		expect(content).not.toContain('Neto estimado');
+		expect(content).not.toContain('Por hora');
+		expect(content).toContain('tyrian_summary_net_copper: null');
+		expect(content).toContain('tyrian_summary_per_hour_copper: null');
+		expect(content).toContain('tyrian_summary_wallet_gold: 25');
 		expect(content).toContain('Salieron del inventario 40 objetos; no se distingue si se vendieron, se consumieron o se depositaron.');
 	});
 
@@ -285,12 +298,37 @@ describe('live session summary: rules that change the note', () => {
 	});
 });
 
+describe('live session summary: main map and unknown maps', () => {
+	it('counts time on no known map in the denominator: 10 ms on a map and 90 ms elsewhere is not a main map', async () => {
+		const { content } = await render({ mutate: (session) => ({ ...session, observedItemsMs: 100, mapIntervals: [{ mapId: 5, fromMs: AT, toMs: AT + 10 }, { mapId: null, fromMs: AT + 10, toMs: AT + 100 }] }) });
+		expect(body(content).startsWith('# Varios mapas')).toBe(true);
+		expect(content).toContain('tyrian_summary_main_map: null');
+	});
+	it('counts observed time that no interval covers, too', async () => {
+		const { content } = await render({ mutate: (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 10 * 60_000 }] }) });
+		expect(content).toContain('tyrian_summary_main_map: null');
+		const main = await render({ mutate: (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 30 * 60_000 }] }) });
+		expect(main.content).toContain('tyrian_summary_main_map: 866');
+	});
+	it('says the map is not known instead of claiming several when there is no interval at all', async () => {
+		const { content } = await render({ mutate: (session) => ({ ...session, mapIntervals: [] }) });
+		expect(body(content).startsWith('# Mapa desconocido')).toBe(true);
+		expect(content).not.toContain('Varios mapas');
+		expect(content).not.toContain('## Mapas');
+		const en = await render({ locale: 'en', mutate: (session) => ({ ...session, mapIntervals: [] }) });
+		expect(body(en.content).startsWith('# Unknown map')).toBe(true);
+	});
+});
+
 describe('live session summary: coverage and character changes', () => {
 	const gap = (fromStep: number, toStep: number, reason: 'disconnect' | 'context_changed', channel: 'items' | 'currencies' = 'items') =>
 		({ version: 1 as const, fromAt: iso(fromStep), toAt: iso(toStep), reason, channels: [channel] });
 	it('folds the coverage into one line while observed time stays at or above 90 %', async () => {
 		const { content } = await render({ mutate: (session) => ({ ...session, observedItemsMs: 38 * 60_000, gaps: [gap(0.2, 0.3, 'disconnect')] }) });
-		expect(content).toContain('1 tramos sin observar, en total 2 min.');
+		expect(content).toContain('1 tramo sin observar, en total 2 min.');
+		// One cut seen by two channels is still one stretch, with the minutes of the union.
+		const both = await render({ mutate: (session) => ({ ...session, observedItemsMs: 38 * 60_000, gaps: [gap(0.2, 0.3, 'disconnect'), gap(0.2, 0.3, 'disconnect', 'currencies')] }) });
+		expect(both.content).toContain('1 tramo sin observar, en total 2 min.');
 		expect(content).not.toContain('Tramos sin observar:');
 	});
 
@@ -308,6 +346,11 @@ describe('live session summary: coverage and character changes', () => {
 		expect(content).toContain('· objetos · cambio de personaje');
 		expect(content).toContain('· objetos · cambio de contexto');
 		expect(body(content).startsWith('# Varios mapas\n')).toBe(true);
+	});
+
+	it('says so when the character list reached its cap', async () => {
+		const { content } = await render({ characters: [{ name: 'Alfa', fromAt: iso(0) }, { name: 'Beta', fromAt: iso(0.5) }], charactersCapped: true });
+		expect(content).toContain('Personajes: Alfa → Beta … y más');
 	});
 
 	it('with a single character the name goes in the heading and there is no characters line', async () => {
@@ -340,8 +383,8 @@ describe('live session summary: the average of similar sessions', () => {
 		await put('a', 1_000, here); await put('b', 2_000, here); await put('c', 3_000, elsewhere); await put('d', 4_000, here);
 		vault.contents.set('Tyrian Companion/Otra nota.md', '# nada');
 		const own = await put('e', 5_000, here);
-		expect(await readComparablePerHour(vault, 'Tyrian Companion', 866, own.sessionRef)).toEqual([71_550, 71_550, 71_550]);
-		expect(await readComparablePerHour(vault, 'Tyrian Companion', null, own.sessionRef)).toEqual([]);
+		expect((await readComparablePerHour(vault, 'Tyrian Companion', 866, own.sessionRef)).perHour).toEqual([71_550, 71_550, 71_550]);
+		expect(await readComparablePerHour(vault, 'Tyrian Companion', null, own.sessionRef)).toEqual({ perHour: [], unreadable: 0 });
 	});
 });
 
@@ -398,17 +441,23 @@ describe('live session summary: file, history and writer', () => {
 });
 
 describe('live session summary service', () => {
-	function harness(overrides: { receipt?: boolean; enabled?: boolean; mapNames?: () => Promise<Record<string, string>>; itemMeta?: () => Promise<never> } = {}) {
+	function harness(overrides: { receipt?: boolean; enabled?: boolean; written?: boolean; network?: boolean; mapNames?: (ids: readonly number[], network: boolean) => Promise<Record<string, string>>;
+		itemMeta?: () => Promise<never>; onFailure?: () => void; characters?: { name: string; fromAt: string }[] } = {}) {
 		const source = fixture(); const vault = new TestVault(); const failures: unknown[] = [];
-		let clock = AT; let enabled = overrides.enabled ?? true;
+		let clock = AT; let enabled = overrides.enabled ?? true; let written = overrides.written ?? false; let network = overrides.network ?? true;
+		const marks: number[] = []; const mapCalls: boolean[] = [];
 		let record: LiveSessionRuntimeRecord | null = { ...source.record, summaryReceipt: overrides.receipt === false ? null
 			: { version: 1, sessionId: source.record.sessionId, path: FULL_NOTE, savedAt: AT } };
 		const service = new LiveSessionSummaryService({ vault, runtime: () => record, journal: () => source.journal, locale: () => 'es',
 			outputFolder: () => 'Tyrian Companion', displayNames: () => source.displayNames ?? {}, enabled: () => enabled, now: () => clock,
-			itemMeta: overrides.itemMeta ?? (async () => META), mapNames: overrides.mapNames ?? (async () => ({ '866': 'Laberinto del Rey Loco' })), mapWaitMs: 20, startTimer: realTimer,
-			onFailure: (details) => { failures.push(details); } });
-		return { service, vault, failures, source, tick: (ms: number) => { clock += ms; },
+			characters: () => overrides.characters ?? [{ name: 'Alfa', fromAt: iso(0) }], charactersCapped: () => false,
+			isWritten: () => written, markWritten: async () => { written = true; marks.push(clock); }, networkAllowed: () => network,
+			itemMeta: overrides.itemMeta ?? (async () => META),
+			mapNames: overrides.mapNames ?? (async (_ids, allowed) => { mapCalls.push(allowed); return { '866': 'Laberinto del Rey Loco' }; }), mapWaitMs: 20, startTimer: realTimer,
+			onFailure: overrides.onFailure ?? ((details) => { failures.push(details); }) });
+		return { service, vault, failures, source, marks, mapCalls, tick: (ms: number) => { clock += ms; },
 			setRecord: (next: LiveSessionRuntimeRecord | null) => { record = next; }, setEnabled: (value: boolean) => { enabled = value; },
+			setNetwork: (value: boolean) => { network = value; }, isWritten: () => written,
 			summaries: () => [...vault.contents.keys()].filter((path) => path.includes('/summaries/')) };
 	}
 	it('writes nothing until the full note has its receipt, then writes the summary', async () => {
@@ -421,7 +470,7 @@ describe('live session summary service', () => {
 		expect(h.summaries()).toHaveLength(1);
 		const text = h.vault.contents.get(h.summaries()[0]!)!;
 		expect(text).toContain(`[[${FULL_NOTE.replace(/\.md$/u, '')}|`);
-		expect(text).toContain('Personajes:'.slice(0, 0) + 'Mapas');
+		expect(text).toContain('## Mapas');
 	});
 	it('writes nothing for an active session, a missing runtime, or consult mode', async () => {
 		const h = harness();
@@ -461,14 +510,114 @@ describe('live session summary service', () => {
 		const text = h.vault.contents.get(h.summaries()[0]!)!;
 		expect(text).toContain('- Mapa 866 · 20 min');
 		expect(text).toContain('como máximo');
-		expect(h.failures).toEqual([]);
+		// Each missing optional part leaves a diagnostic: the error class and which part, nothing from the user.
+		expect(h.failures).toEqual([{ status: 'optional_item_meta', reason: 'Error', attempt: 1 }, { status: 'optional_map_names', reason: 'Error', attempt: 1 }]);
 	});
-	it('never throws to the caller even when reading the runtime fails', async () => {
-		const failures: unknown[] = [];
-		const service = new LiveSessionSummaryService({ vault: new TestVault(), runtime: () => { throw new Error('boom'); }, journal: () => [], locale: () => 'es',
-			outputFolder: () => 'Tyrian Companion', displayNames: () => ({}), itemMeta: async () => ({}), mapNames: async () => ({}), startTimer: realTimer, enabled: () => true, now: () => AT,
-			onFailure: (details) => { failures.push(details); } });
-		await expect(service.observe()).resolves.toBeUndefined();
-		expect(failures).toEqual([{ status: 'unexpected', reason: 'Error', attempt: 0 }]);
+	it('never throws to the caller even when reading the runtime fails, nor when the diagnostics sink throws', async () => {
+		const h = harness({ onFailure: () => { throw new Error('sink'); } });
+		h.setRecord(null);
+		const broken = new LiveSessionSummaryService({ vault: h.vault, runtime: () => { throw new Error('boom'); }, journal: () => [], locale: () => 'es',
+			outputFolder: () => 'Tyrian Companion', displayNames: () => ({}), characters: () => [], charactersCapped: () => false, isWritten: () => false, markWritten: async () => undefined,
+			networkAllowed: () => true, itemMeta: async () => ({}), mapNames: async () => ({}), startTimer: realTimer, enabled: () => true, now: () => AT,
+			onFailure: () => { throw new Error('sink'); } });
+		await expect(broken.observe()).resolves.toBeUndefined();
+	});
+	it('marks the summary as written once and then does nothing on a later load: no reads, no requests, no rewrite of a deleted note', async () => {
+		const h = harness();
+		await h.service.observe();
+		expect(h.marks).toHaveLength(1); expect(h.isWritten()).toBe(true);
+		const path = h.summaries()[0]!; h.vault.contents.delete(path);
+		const reads = vi.spyOn(h.vault, 'read'); const listing = vi.spyOn(h.vault, 'markdownFiles');
+		const load = harness({ written: true }); load.setRecord(h.source.record.summaryReceipt === null ? { ...h.source.record, summaryReceipt: { version: 1, sessionId: h.source.record.sessionId, path: FULL_NOTE, savedAt: AT } } : h.source.record);
+		await load.service.observe();
+		expect(load.vault.creates).toBe(0); expect(load.mapCalls).toEqual([]);
+		h.tick(LIVE_SUMMARY_RETRY_MS * 2); await h.service.observe();
+		expect(h.vault.contents.has(path)).toBe(false);
+		expect(reads).not.toHaveBeenCalled(); expect(listing).not.toHaveBeenCalled();
+	});
+	it('without the mark, a load writes from caches only: no map-name request', async () => {
+		const h = harness({ network: false });
+		await h.service.observe();
+		expect(h.mapCalls).toEqual([false]);
+		expect(h.summaries()).toHaveLength(1);
+		const later = harness({ network: true }); await later.service.observe();
+		expect(later.mapCalls).toEqual([true]);
+	});
+	it('writes nothing, and cancels the map-name wait, once the plugin unloaded', async () => {
+		let release: (names: Record<string, string>) => void = () => undefined;
+		const h = harness({ mapNames: () => new Promise((resolve) => { release = resolve; }) });
+		const running = h.service.observe();
+		await Promise.resolve(); await new Promise((resolve) => setTimeout(resolve, 0));
+		h.service.dispose(); release({ '866': 'Tarde' });
+		await running;
+		expect(h.vault.creates).toBe(0);
+		expect(h.isWritten()).toBe(false);
+	});
+	it('counts the earlier summaries it could not read, so the service can report them', async () => {
+		const vault = new TestVault();
+		vault.contents.set('Tyrian Companion/summaries/rota.md', 'x');
+		vault.contents.set('Tyrian Companion/summaries/otra.md', '# nota cualquiera');
+		vi.spyOn(vault, 'read').mockImplementation(async (file) => { if (file.path.endsWith('rota.md')) throw new Error('io'); return '# nota cualquiera'; });
+		expect(await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).toEqual({ perHour: [], unreadable: 1 });
+	});
+	it('looks the earlier summaries up in the normalized folder the writer uses', async () => {
+		const nfd = 'Tyrian Companion\u0301'.normalize('NFD'); const nfc = nfd.normalize('NFC');
+		const vault = new TestVault(); vault.contents.set(`${nfc}/summaries/a.md`, '---\ntyrian_summary_of: "x"\ntyrian_summary_main_map: 866\ntyrian_summary_per_hour_copper: 5\n---\n');
+		expect((await readComparablePerHour(vault, nfc, 866, 'y')).perHour).toEqual([5]);
+	});
+});
+
+describe('live session summary: frontmatter for a Base', () => {
+	const parse = (content: string): Record<string, unknown> => {
+		const end = content.indexOf('\n---\n', 4);
+		const doc = parseDocument(content.slice(4, end), { strict: true });
+		expect(doc.errors).toEqual([]);
+		return doc.toJS() as Record<string, unknown>;
+	};
+	it('carries the table columns as typed values that agree with the body', async () => {
+		const note = await render({ itemMeta: META, characters: [{ name: 'Alfa', fromAt: iso(0) }, { name: 'Beta', fromAt: iso(0.9) }],
+			mapNames: { '866': 'Laberinto del Rey Loco' }, mutate: (session) => ({ ...GOLD_WALLET_ON(session), mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 40 * 60_000 }] }) });
+		const fm = parse(note.content);
+		expect(fm).toMatchObject({ tyrian_summary_version: 3, tyrian_summary_date: '2026-10-08', tyrian_summary_map: 'Laberinto del Rey Loco',
+			tyrian_summary_characters: ['Alfa', 'Beta'], tyrian_summary_duration_minutes: 40, tyrian_summary_observed_percent: 100,
+			tyrian_summary_net_gold: 4.77, tyrian_summary_per_hour_gold: 7.155, tyrian_summary_wallet_gold: 1.2345,
+			tyrian_summary_top_item: 'Saco grande', tyrian_summary_top_item_count: 30, tyrian_summary_alerts: 0, tyrian_summary_free_slots: 8,
+			tyrian_summary_net_copper: 47700, tyrian_summary_per_hour_copper: 71550, tyrian_summary_main_map: 866 });
+		// The same figures the body states.
+		expect(note.content).toContain('- Neto estimado: 4g 77s 0c');
+		expect(note.content).toContain('- Por hora: 7g 15s 50c');
+		expect(note.content).toContain('- Oro de la cartera: +1g 23s 45c');
+		expect(Object.keys(fm).every((key) => key === 'tags' || key.startsWith('tyrian_summary_'))).toBe(true);
+	});
+	it('writes null exactly where the body leaves the figure out', async () => {
+		const short = parse((await render({ itemMeta: META, mutate: (session) => ({ ...session, observedItemsMs: 10 * 60_000 }) })).content);
+		expect(short.tyrian_summary_per_hour_gold).toBeNull(); expect(short.tyrian_summary_per_hour_copper).toBeNull();
+		expect(short.tyrian_summary_net_gold).toBe(4.77);
+		const noGold = parse((await render({ itemMeta: META, mutate: (session) => ({ ...session, coverage: { ...session.coverage, freeSlots: null } }) })).content);
+		expect(noGold.tyrian_summary_wallet_gold).toBeNull(); expect(noGold.tyrian_summary_free_slots).toBeNull();
+		const nothing = parse((await render({ itemMeta: META, mutate: (session) => ({ ...session, totals: [total('currency', 2, 50)] }) })).content);
+		expect(nothing.tyrian_summary_top_item).toBeNull(); expect(nothing.tyrian_summary_top_item_count).toBeNull(); expect(nothing.tyrian_summary_net_gold).toBeNull();
+	});
+	it('counts the alerts and names the staple as the top item when the container rule holds', async () => {
+		const alert = { kind: 'valuable_loot', itemId: STAPLE, name: 'x', quantity: 1, totalCopper: 1, priceStatus: 'known', reason: 'above_threshold' } as never;
+		const withAlert = await render({ itemMeta: META, mutate: (session) => ({ ...session, journal: session.journal.map((entry, index) => index === 1 ? { ...entry, outbox: [{ state: 'processed', alert } as never] } : entry) }) });
+		expect(parse(withAlert.content).tyrian_summary_alerts).toBe(1);
+	});
+	it('stays valid YAML with quotes, colons, hashes, emoji and newlines in character and item names', async () => {
+		const nasty = ['Dr. "Quote": #1 🔥', "O'Hara: [x] {y}", 'línea\nnueva', '- guion', 'null'];
+		const note = await render({ itemMeta: META, characters: nasty.map((name, index) => ({ name, fromAt: iso(index / 10) })),
+			displayNames: { ...NAMES, [`item:${String(STAPLE)}`]: 'Saco: "grande" #🔥\nx' } });
+		const fm = parse(note.content);
+		expect(fm.tyrian_summary_characters).toEqual(nasty);
+		expect(fm.tyrian_summary_top_item).toBe('Saco: "grande" #🔥\nx');
+	});
+	it('does not change what the history lists: the note and its keys are invisible to it', async () => {
+		const full = new TestVault(); expect((await new SessionNoteWriter(full).writeLive(fixture())).status).toBe('written');
+		const before = await new LiveSessionHistoryService(historyVault(full)).list();
+		const note = await render({ itemMeta: META }); full.contents.set(note.path, note.content);
+		full.contents.set('Tyrian Companion/Session summaries.base', 'filters:\n  and:\n    - file.hasTag("gw2/session-summary")\n');
+		const after = await new LiveSessionHistoryService(historyVault(full)).list();
+		expect(after.status).toBe('ok');
+		expect(after.status === 'ok' && before.status === 'ok' && after.sessions).toEqual(before.status === 'ok' && before.sessions);
 	});
 });

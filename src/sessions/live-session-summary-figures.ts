@@ -35,8 +35,10 @@ export interface SummaryFigures {
 	unpriced: SummaryItemRow[];
 	/** Items whose binding the plugin could not read: the value is then an upper bound. */
 	unknownBindingIds: number[];
-	netCopper: number;
+	/** Null when no item with a quantity has any bazaar price, or in a selling session: there is no value to state. */
+	netCopper: number | null;
 	positiveCopper: number;
+	noPrices: boolean;
 	perHour: { copper: number | null; reason: 'short' | 'coverage' | null };
 	/** Set when ONE item is over half of the value: the per-hour figure without it. */
 	withoutDominant: { itemId: number; perHourCopper: number } | null;
@@ -51,15 +53,17 @@ export interface SummaryFigures {
 	alerts: { at: string; itemId: number; name: string; quantity: number; totalCopper: number | null }[];
 	gaps: { fromAt: string; toAt: string; ms: number; reason: LiveGapV1['reason']; channels: LiveGapV1['channels']; characterChange: boolean }[];
 	gapsMs: number;
+	/** Disjoint unobserved stretches, whatever the channel: the number that goes with `gapsMs`. */
+	gapStretches: number;
 }
 
 export interface SummaryCharacter { name: string; fromAt: string }
 
-/** The map holding more than 70 % of the time on known maps, or null («varios mapas»). */
-export function summaryMainMap(session: Pick<StoredLiveSessionPayloadV1, 'mapIntervals'>): number | null {
-	const times = mapTimes(session.mapIntervals);
-	const total = times.reduce((sum, row) => sum + row.ms, 0);
-	const first = times[0];
+/** The map holding more than 70 % of the observed time, or null (several maps, or none known: see `maps`). */
+export function summaryMainMap(session: Pick<StoredLiveSessionPayloadV1, 'mapIntervals' | 'observedItemsMs'>): number | null {
+	const first = mapTimes(session.mapIntervals)[0];
+	// The share is of the OBSERVED time: time on no known map (null intervals, or none recorded) counts in the denominator.
+	const total = Math.max(session.mapIntervals.reduce((sum, row) => sum + row.toMs - row.fromMs, 0), session.observedItemsMs);
 	return first !== undefined && total > 0 && first.ms / total > SUMMARY_MAIN_MAP_SHARE ? first.mapId : null;
 }
 
@@ -76,7 +80,7 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	const prices = new Map(session.valuation.prices.map((price) => [price.itemId, price.unitCopper]));
 	const itemTotals = session.totals.filter((row) => row.kind === 'item');
 	const sellable: SummaryItemRow[] = []; const unpriced: SummaryItemRow[] = []; const boundItemIds: number[] = []; const unknownBindingIds: number[] = [];
-	let netCopper = 0; let positiveCopper = 0;
+	let netCopper = 0; let positiveCopper = 0; let pricedAny = false;
 	for (const row of itemTotals) {
 		const info = meta[row.idNumber];
 		if (info === undefined && row.net !== 0) unknownBindingIds.push(row.idNumber);
@@ -86,7 +90,7 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 		}
 		const unit = prices.get(row.idNumber);
 		const priced = unit !== undefined && unit !== null;
-		if (priced) netCopper += unit * row.net;
+		if (priced) { netCopper += unit * row.net; if (row.net !== 0) pricedAny = true; }
 		if (row.net <= 0) continue;
 		const entry: SummaryItemRow = { itemId: row.idNumber, quantity: row.net, valueCopper: priced ? unit * row.net : null, container: info?.type === 'Container' };
 		if (priced) { sellable.push(entry); positiveCopper += unit * row.net; } else unpriced.push(entry);
@@ -96,6 +100,13 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 
 	const observedMs = session.observedItemsMs;
 	const rateReason: 'short' | 'coverage' | null = observedMs < SUMMARY_MIN_RATE_MS ? 'short' : session.coverage.items !== 'complete' ? 'coverage' : null;
+	const hasQuantity = itemTotals.some((row) => row.net !== 0);
+	const noPrices = hasQuantity && !pricedAny;
+	const goldNet = session.valuation.coinNetCopper ?? session.totals.find((row) => row.kind === 'currency' && row.idNumber === GOLD_CURRENCY_ID)?.net ?? null;
+	const itemUnitsNet = itemTotals.reduce((sum, row) => sum + row.net, 0);
+	const hasNew = itemTotals.some((row) => row.net > 0);
+	const salesSession = goldNet !== null && goldNet > 0 && itemUnitsNet < 0;
+	const valueless = noPrices || salesSession && !hasNew;
 	const perHour = (copper: number): number | null => rateReason === null ? Math.round(copper * 3_600_000 / observedMs) : null;
 	const top = sellable[0];
 	const withoutDominant = rateReason === null && top !== undefined && top.valueCopper !== null && positiveCopper > 0
@@ -115,8 +126,7 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	const currencies = currencyRows.filter((row) => row.idNumber !== GOLD_CURRENCY_ID && row.net !== 0)
 		.map((row) => ({ id: row.idNumber, net: row.net })).sort((a, b) => a.id - b.id);
 	const gainedCurrency = currencies.filter((row) => row.net > 0).sort((a, b) => b.net - a.net)[0] ?? null;
-	const itemUnitsNet = itemTotals.reduce((sum, row) => sum + row.net, 0);
-	const hasNewItems = itemTotals.some((row) => row.net > 0);
+	const hasNewItems = hasNew;
 
 	const alerts = session.journal.flatMap((entry) => entry.outbox.filter((row) => row.state === 'processed' && row.alert !== null)
 		.map((row) => ({ at: entry.observedAt, itemId: row.alert!.itemId, name: row.alert!.name, quantity: row.alert!.quantity, totalCopper: row.alert!.totalCopper })));
@@ -126,19 +136,21 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 		characterChange: gap.reason === 'context_changed' && characters.slice(1).some((entry) => entry.fromAt >= gap.fromAt && entry.fromAt <= gap.toAt!) }));
 	return { durationMs, observedShare: durationMs > 0 ? Math.min(1, observedMs / durationMs) : 0,
 		mainMapId: summaryMainMap(session), maps: mapTimes(session.mapIntervals), sellable, boundItemIds, unpriced, unknownBindingIds,
-		netCopper, positiveCopper, perHour: { copper: perHour(netCopper), reason: rateReason }, withoutDominant, staple, goldCopper, currencies,
+		netCopper: valueless ? null : netCopper, positiveCopper, noPrices,
+		perHour: { copper: valueless ? null : perHour(netCopper), reason: rateReason }, withoutDominant: valueless ? null : withoutDominant, staple, goldCopper, currencies,
 		dominantCurrency: positiveCopper === 0 ? gainedCurrency : null,
 		outCount: itemTotals.reduce((sum, row) => sum + row.negative, 0), hasNewItems,
-		salesSession: goldCopper !== null && goldCopper > 0 && itemUnitsNet < 0,
-		alerts, gaps, gapsMs: unionMs(session.gaps, session.endedAt) };
+		salesSession,
+		alerts, gaps, ...unionOf(session.gaps, session.endedAt) };
 }
 
-/** Union of the unobserved intervals, whatever the channel: overlaps count once. */
-function unionMs(gaps: readonly LiveGapV1[], endedAt: string): number {
-	let end = Number.NEGATIVE_INFINITY; let ms = 0;
+/** Union of the unobserved intervals, whatever the channel: overlaps count once, and so does a cut seen by two channels. */
+function unionOf(gaps: readonly LiveGapV1[], endedAt: string): { gapsMs: number; gapStretches: number } {
+	let end = Number.NEGATIVE_INFINITY; let ms = 0; let stretches = 0;
 	for (const gap of [...gaps].sort((a, b) => a.fromAt.localeCompare(b.fromAt))) {
 		const from = Date.parse(gap.fromAt); const to = Date.parse(gap.toAt ?? endedAt);
+		if (from > end) stretches += 1;
 		ms += Math.max(0, to - Math.max(from, end)); end = Math.max(end, to);
 	}
-	return ms;
+	return { gapsMs: ms, gapStretches: stretches };
 }

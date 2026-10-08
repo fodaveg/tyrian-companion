@@ -621,7 +621,7 @@ infusions and equipped bags count as owned but not as independently available it
 delivery currency are aggregated by currency id while retaining source subtotals.
 
 `PublicCatalogService` accepts a snapshot without modifying it and calls only public `/v2/items`,
-`/v2/currencies`, and `/v2/materials` endpoints. Requests use `es` or `en`, the same pinned schema,
+`/v2/currencies`, `/v2/materials`, and `/v2/maps` (map names for the session summary note) endpoints. Requests use `es` or `en`, the same pinned schema,
 sorted batches of at most 200 IDs, and at most three simultaneous requests. It never receives an API
 key. Positive item/currency metadata remains fresh for seven days, material categories for one day,
 and missing IDs for one hour; transient failures may use positive entries up to 30 days old. Cache

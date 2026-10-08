@@ -40,6 +40,8 @@ export interface LiveSessionSummaryInput {
 	mapNames?: Readonly<Record<string, string>>;
 	/** «Per hour» of earlier summaries with the same main map; the average is written from three of them. */
 	comparablePerHour?: readonly number[];
+	/** The character list stopped growing at its cap: the line says so. */
+	charactersCapped?: boolean;
 	/** Offset of the machine's time zone from UTC, in minutes, at that instant. Defaults to the system's. */
 	utcOffsetMinutes?: (atMs: number) => number;
 }
@@ -87,11 +89,11 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const characters = input.characters ?? [];
 		const f = computeSummaryFigures(session, input.itemMeta ?? {}, characters);
 		const several = characters.length > 1;
-		const mapHeading = f.mainMapId === null ? label('Varios mapas', 'Several maps') : mapName(f.mainMapId);
+		const mapHeading = f.mainMapId !== null ? mapName(f.mainMapId) : f.maps.length === 0 ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
 		const heading = `${mapHeading}${characters.length === 1 ? ` · ${escapeMarkdown(characters[0]!.name)}` : ''}`;
 		const out: string[] = [`# ${heading}`, '',
 			`${day(session.startedAt)} · ${clock(session.startedAt)}–${clock(session.endedAt)} · ${duration(f.durationMs)} · ${String(Math.round(f.observedShare * 100))} % ${label('observado', 'observed')}`];
-		if (several) out.push('', `${label('Personajes', 'Characters')}: ${characters.map((entry) => escapeMarkdown(entry.name)).join(' → ')}`,
+		if (several) out.push('', `${label('Personajes', 'Characters')}: ${characters.map((entry) => escapeMarkdown(entry.name)).join(' → ')}${input.charactersCapped === true ? label(' … y más', ' … and more') : ''}`,
 			label('Al cambiar de personaje no se mide lo que cambió entre uno y otro: las bolsas del nuevo no cuentan como ganadas ni las del anterior como perdidas.',
 				'Switching character measures nothing across the switch: the new character\'s bags do not count as gained nor the previous one\'s as lost.'));
 
@@ -104,9 +106,12 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const gold = f.goldCopper === null ? null : `${label('Oro de la cartera', 'Wallet gold')}: ${signed(f.goldCopper)}`;
 		if (f.salesSession && gold !== null) verdict.push(`- **${label('Oro ganado', 'Gold gained')}: ${signed(f.goldCopper!)}**`);
 		if (f.dominantCurrency !== null) verdict.push(`- **${currencyName(f.dominantCurrency.id)}: +${String(f.dominantCurrency.net)}** (${label('lo principal de la sesión', 'the main result of the session')})`);
-		if (f.hasNewItems || f.salesSession) {
-			verdict.push(`- ${label('Neto estimado', 'Estimated net')}: ${money(f.netCopper)}${maxNote}`);
-			verdict.push(`- ${label('Por hora', 'Per hour')}: ${f.perHour.copper !== null ? `${money(f.perHour.copper)}${maxNote}`
+		const shownNet = f.hasNewItems && !f.noPrices ? f.netCopper : null;
+		const shownPerHour = shownNet === null ? null : f.perHour.copper;
+		if (f.hasNewItems && f.noPrices) verdict.push(`- ${label('Sin precios de bazar: no hay valor estimado.', 'No bazaar prices: there is no estimated value.')}`);
+		if (shownNet !== null) {
+			verdict.push(`- ${label('Neto estimado', 'Estimated net')}: ${money(shownNet)}${maxNote}`);
+			verdict.push(`- ${label('Por hora', 'Per hour')}: ${shownPerHour !== null ? `${money(shownPerHour)}${maxNote}`
 				: f.perHour.reason === 'short' ? label(`no disponible (menos de ${String(SUMMARY_MIN_RATE_MS / 60_000)} min observados)`, `unavailable (under ${String(SUMMARY_MIN_RATE_MS / 60_000)} observed min)`)
 				: label('no disponible (cobertura de objetos incompleta)', 'unavailable (incomplete item coverage)')}`);
 			if (f.withoutDominant !== null) verdict.push(`- ${label('Por hora sin', 'Per hour without')} ${itemName(f.withoutDominant.itemId)}: ${money(f.withoutDominant.perHourCopper)} (${label('ese objeto es más de la mitad del valor', 'that item is over half the value')})`);
@@ -145,8 +150,9 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 
 		out.push('', `## ${label('Cobertura', 'Coverage')}`, '');
 		if (f.observedShare >= SUMMARY_FOLD_COVERAGE) {
-			out.push(f.gaps.length === 0 ? label('Sin tramos sin observar.', 'No unobserved intervals.')
-				: label(`${String(f.gaps.length)} tramos sin observar, en total ${duration(f.gapsMs)}.`, `${String(f.gaps.length)} unobserved intervals, ${duration(f.gapsMs)} in total.`));
+			out.push(f.gapStretches === 0 ? label('Sin tramos sin observar.', 'No unobserved intervals.')
+				: label(`${String(f.gapStretches)} ${f.gapStretches === 1 ? 'tramo' : 'tramos'} sin observar, en total ${duration(f.gapsMs)}.`,
+					`${String(f.gapStretches)} unobserved ${f.gapStretches === 1 ? 'interval' : 'intervals'}, ${duration(f.gapsMs)} in total.`));
 		} else {
 			out.push(label(`Solo se observó el ${String(Math.round(f.observedShare * 100))} % de la sesión. Tramos sin observar:`, `Only ${String(Math.round(f.observedShare * 100))} % of the session was observed. Unobserved intervals:`));
 			for (const gap of f.gaps.slice(0, MAX_LISTED_GAPS)) out.push(`- ${clock(gap.fromAt)}–${clock(gap.toAt)} · ${gap.channels[0] === 'items' ? label('objetos', 'items') : label('monedas', 'currencies')} · ${gap.characterChange ? label('cambio de personaje', 'character change') : gapReason(gap.reason, es)}`);
@@ -156,11 +162,23 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const link = input.fullNotePath.replace(/\.md$/u, '');
 		out.push('', `${label('Nota completa', 'Full note')}: ${/[[\]|#^]/u.test(link) ? `\`${link}\`` : `[[${link}|${label('Sesión de inventario observado', 'Observed inventory session')}]]`}`);
 
-		const fm = ['---', 'tyrian_summary_version: 2', `tyrian_summary_of: ${JSON.stringify(session.sessionRef)}`,
+		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? (input.mapNames?.[String(id)] ?? `${label('Mapa', 'Map')} ${String(id)}`)
+			: (names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
+		const mapText = f.mainMapId !== null ? raw(f.mainMapId, 'map') : f.maps.length === 0 ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
+		const topItem = f.staple !== null ? { id: f.staple.itemId, count: f.staple.quantity } : f.sellable[0] !== undefined ? { id: f.sellable[0].itemId, count: f.sellable[0].quantity } : null;
+		const goldText = (copper: number | null): string => copper === null ? 'null' : String(Number((copper / 10_000).toFixed(4)));
+		const fm = ['---', 'tyrian_summary_version: 3', `tyrian_summary_of: ${JSON.stringify(session.sessionRef)}`,
 			`tyrian_summary_locale: ${JSON.stringify(input.locale)}`, `tyrian_summary_started_at: ${JSON.stringify(session.startedAt)}`,
 			`tyrian_summary_ended_at: ${JSON.stringify(session.endedAt)}`, `tyrian_summary_main_map: ${f.mainMapId === null ? 'null' : String(f.mainMapId)}`,
-			`tyrian_summary_net_copper: ${String(f.netCopper)}`, `tyrian_summary_per_hour_copper: ${f.perHour.copper === null ? 'null' : String(f.perHour.copper)}`,
-			`tyrian_summary_observed_minutes: ${String(Math.round(session.observedItemsMs / 60_000))}`, 'tags: ["gw2/session-summary"]', '---', ''].join('\n');
+			`tyrian_summary_net_copper: ${shownNet === null ? 'null' : String(shownNet)}`, `tyrian_summary_per_hour_copper: ${shownPerHour === null ? 'null' : String(shownPerHour)}`,
+			`tyrian_summary_observed_minutes: ${String(Math.round(session.observedItemsMs / 60_000))}`,
+			`tyrian_summary_date: ${day(session.startedAt)}`, `tyrian_summary_map: ${JSON.stringify(mapText)}`,
+			`tyrian_summary_characters: ${JSON.stringify(characters.map((entry) => entry.name))}`,
+			`tyrian_summary_duration_minutes: ${String(Math.round(f.durationMs / 60_000))}`, `tyrian_summary_observed_percent: ${String(Math.round(f.observedShare * 100))}`,
+			`tyrian_summary_net_gold: ${goldText(shownNet)}`, `tyrian_summary_per_hour_gold: ${goldText(shownPerHour)}`, `tyrian_summary_wallet_gold: ${goldText(f.goldCopper)}`,
+			`tyrian_summary_top_item: ${topItem === null ? 'null' : JSON.stringify(raw(topItem.id, 'item'))}`, `tyrian_summary_top_item_count: ${topItem === null ? 'null' : String(topItem.count)}`,
+			`tyrian_summary_alerts: ${String(f.alerts.length)}`, `tyrian_summary_free_slots: ${session.coverage.freeSlots === null ? 'null' : String(session.coverage.freeSlots)}`,
+			'tags: ["gw2/session-summary"]', '---', ''].join('\n');
 		return { status: 'ok', note: { sessionRef: session.sessionRef, mainMapId: summaryMainMap(session), content: `${fm}${out.join('\n')}\n`,
 			path: `${folder}/${liveSessionSummaryRelativePath(session.startedAt, session.sessionRef)}` } };
 	} catch { return { status: 'invalid', reason: 'summary_unavailable' }; }
