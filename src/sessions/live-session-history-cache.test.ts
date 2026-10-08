@@ -10,7 +10,7 @@ function countingVault(withMtime = true) {
 		exists: (path: string) => notes.has(path), file: (path: string) => notes.has(path) ? { path } : null,
 		read: async (file: { path: string }) => { reads.push(file.path); return notes.get(file.path)!.content; },
 		createFolder: async () => undefined, create: async (path: string) => ({ path }), process: async () => undefined,
-	} as unknown as SessionHistoryVault;
+	};
 	return { vault, reads, write: (path: string, content: string) => { clock += 1; notes.set(path, { content, mtime: clock }); }, remove: (path: string) => { notes.delete(path); } };
 }
 

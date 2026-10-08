@@ -21,9 +21,10 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 	const onComplete = vi.fn(async () => 'Sessions/live.md'); const onCommitted = vi.fn();
 	const handle = (sessionId: string): ActiveSessionLeaseHandle => ({ machineId: 'machine', instanceId: 'host', sessionId,
 		fence: ++fence, acquiredAt: now, renewedAt: now, expiresAt: now + 120_000 });
+	const renew = vi.fn(async (prior: ActiveSessionLeaseHandle) => ({ status: 'renewed' as const, handle: { ...prior, renewedAt: now, expiresAt: now + 120_000 } }));
 	const coordinator: SessionLeaseCoordinator = { instanceId: 'host',
 		acquire: vi.fn(async (sessionId: string) => ({ status: 'acquired' as const, handle: handle(sessionId) })),
-		renew: vi.fn(async (prior: ActiveSessionLeaseHandle) => ({ status: 'renewed' as const, handle: { ...prior, renewedAt: now, expiresAt: now + 120_000 } })),
+		renew,
 		assertOwned: vi.fn(async () => owned ? { status: 'owned' as const } : { status: 'lost' as const }),
 		release: vi.fn(async () => ({ status: 'released' as const })), dispose: vi.fn(),
 	};
@@ -37,7 +38,7 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 		cursor, contextSeq: 0, sourceElapsedMs: cursor * 1000, mode: cursor === 0 ? 'baseline' : 'sample', itemCoverage: 'complete',
 		currencyCoverage: 'none', unknownPositions: 0, freeSlots: null, rows: [{ kind: 'item', idNumber: 12147, quantity }],
 		observedAt: new Date(now).toISOString(), ...override });
-	return { service, store, source, sample, options, onCommitted, onComplete,
+	return { service, store, source, sample, options, onCommitted, onComplete, renew,
 		setNow: (at: number) => { now = at; }, loseLease: () => { owned = false; }, tick: async () => { interval?.(); await service.presence(false, now); } };
 }
 
@@ -181,7 +182,7 @@ describe('passive live session lifecycle', () => {
 		const svc = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {beat=callback;return 1;}});
 		await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true);
 		f.setNow(AT+30*60_000); await svc.presence(true);
-		vi.mocked(f.options.coordinator.renew).mockResolvedValueOnce({status:'lost'} as never);
+		f.renew.mockResolvedValueOnce({status:'lost'} as never);
 		beat!(); await svc.capture(); beat!(); await svc.capture();
 		expect(svc.getRuntime(), 'reclaimed with the link and the presence the host still knows').toMatchObject({phase:'active',connection:'connected',lastPresenceAt:AT+30*60_000});
 		expect(svc.getRuntime()?.gaps.map((gap) => gap.reason)).not.toContain('host_restart');
