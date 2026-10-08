@@ -232,6 +232,17 @@ describe('passive live session lifecycle', () => {
 		expect(rebuilt, 'built at once = built sample by sample').toEqual(points);
 		await f.service.dispose();
 	});
+	it('a source gap the store answers stale to does not throw: it stays pending and is written by the next save that works', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+		f.setNow(AT+1000); await f.service.commit(f.sample(1,2));
+		const save = vi.spyOn(f.store,'saveLive').mockResolvedValueOnce({ status: 'stale' });
+		f.setNow(AT+2000);
+		await expect(f.service.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'context_changed',observedAt:new Date(AT+2000).toISOString()})).resolves.toBeUndefined();
+		expect(save).toHaveBeenCalledTimes(1); f.setNow(AT+3000); await f.tick();
+		expect(f.service.getRuntime(), 'the hole is not lost').toMatchObject({epoch:null,lastSample:null});
+		expect(f.service.getRuntime()?.gaps.map((gap) => gap.reason)).toContain('context_changed');
+		await f.service.dispose();
+	});
 	it('restores the journal without acquisitions and requires a new baseline after host restart', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));
 		f.setNow(AT + 1000); await f.service.commit(f.sample(1, 4)); await f.service.dispose(); f.setNow(AT + 2000);

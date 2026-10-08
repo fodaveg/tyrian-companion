@@ -205,8 +205,9 @@ export class LiveSessionLifecycle {
 			next.epoch = null; next.lastSample = null; next.fingerprint = null; next.persistedAt = this.options.now();
 			if (disconnectedAt !== null) next.lastSourceDisconnectedAt = disconnectedAt;
 			const saved = await this.persist(next);
-			if (saved === 'unavailable') { unwritten(); return; }
-			if (saved !== 'saved') throw new Error('Could not persist the live source gap.');
+			// `stale` (the store no longer takes this writer's authority) is no reason to throw either: the gap stays pending
+			// like any refused step, and the next beat either writes it or finds the lease lost and reclaims with it.
+			if (saved !== 'saved') { unwritten(); return; }
 			this.record = next; this.options.onStateChange();
 		});
 	}
