@@ -102,23 +102,25 @@
       "cwd": "docs/audit/loot-bag-capacity-probe",
       "command": "PYTHONDONTWRITEBYTECODE=1 python3 check_profile_offline.py",
       "exit_code": 0,
-      "guards": 11,
-      "slots": 9,
+      "guards": 12,
+      "slots": 10,
       "candidates": 1,
       "offline_links": 3,
-      "guard_bytes": 824,
-      "failures": 0
+      "guard_bytes": 883,
+      "failures": 0,
+      "negative_control": "the free_slots_getter digest and its slot altered in memory only: exit 1, failures guard_free_slots_getter and slot_free_slots_getter"
     },
+    "guard_added_after_live_runs": "free_slots_getter (RVA 0x11EE4A0, 59 bytes) and its slot 0x1E0 were added on 2026-10-08 after the live runs listed above, which ran with 11 guards and 9 slots. The probe computes no free count; the guard makes the audited profile cover what the Nexus addon reader uses. Checked against the installed file only; not run against the game.",
     "logs": "Scratch logs were temporary and deleted; their last lines are above"
   },
   "bounds": {
     "process_requested_bytes_per_run": 4096,
     "samples_max": 2,
-    "static_guard_bytes": 824,
+    "static_guard_bytes": 883,
     "bag_slots_max": 16,
     "bag_size_max": 32,
-    "fixture_bytes_per_sample_with_16_bags": 1028,
-    "fixture_bytes_two_samples_with_16_bags": 2880
+    "fixture_bytes_per_sample_with_16_bags": 1036,
+    "fixture_bytes_two_samples_with_16_bags": 2955
   },
   "limitations": [
     "Not proven: a bag change, another character, another launch of the game, native Windows, the in-addon reader.",
@@ -129,10 +131,10 @@
     "The repository gate and plugin suite were not run."
   ],
   "files": {
-    "README.md": "6bbbefc7fbfb7492240c820bbc6aceb13dbb3c6fdc8d3751147895609755050f",
+    "README.md": "0df338dac50734485228f1ad9a1308b2d5f7390af0900fbad2aba552fa6b6fb1",
     "check_profile_offline.py": "edb8b452f41e8aacabef84f22eb3fa0aa3a7c27c0082c9c91b456b2fff055731",
     "probe.py": "4f30bdf1f81789d8b23e176c5a2da181920dee4fc8668684294caecf1dde558b",
-    "profile.json": "35846af3fc57b555d7c64330dae76ee3ac270e3637804372e05ab5e9b5a479c9",
+    "profile.json": "5c2303e379e30c9d18650ea6c15ab40605a12453f7a6c63c165762914a599d81",
     "prove_guard_red.py": "f9b3c1e7afb002d345a1896e33ec0e9bf5a8c015eab9d108c0eae62abbacfc0a",
     "receipt-diagnose-2026-10-08.json": "e031ef490b3d5613e0c493aeee8082f3937b8736a636efd78d19a0d5e8da7b32",
     "test_probe.py": "54578599cfe5258f5f5c4936ff927982efa98934c8d4ac536a25833bb95f7592"

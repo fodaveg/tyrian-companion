@@ -116,9 +116,15 @@ Sale con exit 1 solo si los dos guards retirados hicieron fallar su test. Exit 3
 se quitó un guard y su test siguió pasando.
 
 `profile.json` guarda solo hashes: no hay bytes del juego en el repo. Las fixtures usan
-contenidos de guard sintéticos, y `check_profile_offline.py` ata los 11 hashes y los 9 slots al
+contenidos de guard sintéticos, y `check_profile_offline.py` ata los 12 hashes y los 10 slots al
 fichero real. Su control negativo (un hash y un slot alterados en memoria) termina con exit 1.
 El [recibo](receipt.json) enlaza los hashes y los logs de [evidence](evidence/).
+
+El guard 12 y el slot 10 se añadieron el 8 de octubre, **después** de las ejecuciones en vivo:
+son el método de los libres (`free_slots_getter`, slot `0x1E0` → RVA `0x11EE4A0`, 59 bytes), el
+que resta total menos usados. La sonda no calcula libres; el guard está aquí para que el perfil
+auditado cubra también lo que usa el lector del addon de Nexus, que sí los calcula. Las
+ejecuciones en vivo de más abajo corrieron con 11 guards y 9 slots.
 
 ## Lectura futura mínima
 
@@ -134,7 +140,7 @@ python3 docs/audit/loot-bag-capacity-probe/probe.py \
 
 Antes de abrir `/proc/<pid>/mem` con `O_RDONLY`, la sonda verifica mapas, base, hash del fichero
 mapeado y PE AMD64. El presupuesto es de **4096 bytes pedidos por ejecución**, con dos muestras
-como máximo. Medido en fixture: 824 bytes de guards y 1028 por muestra con 16 bolsas, 2880 en
+como máximo. Medido en fixture: 883 bytes de guards y 1036 por muestra con 16 bolsas, 2955 en
 total. Cada bolsa cuesta 36 bytes.
 
 Cada muestra relee dueños, vtables, el número de huecos y la lista de bolsas. Cualquier

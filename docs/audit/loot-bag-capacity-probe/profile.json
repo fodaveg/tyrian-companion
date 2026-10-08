@@ -106,6 +106,12 @@
     },
     {
       "vtable": "inventory_vtable",
+      "slot": 480,
+      "target": "free_slots_getter",
+      "target_rva": 18801824
+    },
+    {
+      "vtable": "inventory_vtable",
       "slot": 488,
       "target": "used_slots_getter",
       "target_rva": 18801888
@@ -165,6 +171,12 @@
       "rva": 19466944,
       "size": 148,
       "sha256": "587a452b7f33987938235c45fb271fe137fa495019d31b6b492ca5db6f440587"
+    },
+    {
+      "name": "free_slots_getter",
+      "rva": 18801824,
+      "size": 59,
+      "sha256": "a2be789b4f0a47ba795672184770efe43f40f27df46e7fd29635e09a2ba8392a"
     },
     {
       "name": "used_slots_getter",
