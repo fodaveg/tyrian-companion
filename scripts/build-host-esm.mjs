@@ -80,6 +80,9 @@ export async function buildHostEsm({
 		platform: 'browser',
 		target: 'es2021',
 		write,
+		// Whitespace and syntax only: renaming identifiers would hide esbuild's `__require` shim from `outputViolations`.
+		minifyWhitespace: true,
+		minifySyntax: true,
 		metafile: true,
 		logLevel: 'silent',
 		define: Object.fromEntries(FORBIDDEN_GLOBALS.map((name) => [name, `${GLOBAL_MARKER}${name}`])),
