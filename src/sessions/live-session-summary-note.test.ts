@@ -711,23 +711,21 @@ describe('live session summary service', () => {
 	function harness(overrides: { receipt?: boolean; enabled?: boolean; written?: boolean; network?: boolean; mapNames?: (ids: readonly number[], network: boolean) => Promise<Record<string, string>>;
 		itemMeta?: () => Promise<never>; onFailure?: () => void; characters?: { name: string; fromAt: string }[];
 		/** Names in memory (default: all of them, as right after closing). */ memoryNames?: Record<string, string>;
-		/** What the catalog cache and the public API know, by the note's keys. */ cachedNames?: Record<string, string>; publicNames?: Record<string, string> | 'hangs' | 'fails';
+		/** What the catalog cache knows, by the note's keys; `'fails'` is a cache that cannot be read. */ cachedNames?: Record<string, string> | 'fails';
 		fixture?: FixtureOptions } = {}) {
 		const source = fixture(overrides.fixture); const vault = new TestVault(); const failures: unknown[] = [];
 		let clock = AT; let enabled = overrides.enabled ?? true; let written = overrides.written ?? false; let network = overrides.network ?? true;
-		const marks: number[] = []; const mapCalls: boolean[] = []; const nameCalls: { itemIds: number[]; currencyIds: number[]; network: boolean }[] = [];
+		const marks: number[] = []; const mapCalls: boolean[] = []; const nameCalls: { itemIds: number[]; currencyIds: number[] }[] = [];
 		const pick = (from: Record<string, string>, wanted: { itemIds: readonly number[]; currencyIds: readonly number[] }): Record<string, string> => Object.fromEntries(
 			[...wanted.itemIds.map((id) => `item:${String(id)}`), ...wanted.currencyIds.map((id) => `currency:${String(id)}`)].flatMap((key) => from[key] === undefined ? [] : [[key, from[key]]]));
 		let record: LiveSessionRuntimeRecord | null = { ...source.record, summaryReceipt: overrides.receipt === false ? null
 			: { version: 1, sessionId: source.record.sessionId, path: FULL_NOTE, savedAt: AT } };
 		const service = new LiveSessionSummaryService({ vault, runtime: () => record, journal: () => source.journal, locale: () => 'es',
 			outputFolder: () => 'Tyrian Companion', displayNames: () => overrides.memoryNames ?? { ...source.displayNames }, enabled: () => enabled, now: () => clock,
-			entityNames: async (wanted, allowed) => {
-				nameCalls.push({ itemIds: [...wanted.itemIds], currencyIds: [...wanted.currencyIds], network: allowed });
-				if (!allowed) return pick(overrides.cachedNames ?? {}, wanted);
-				if (overrides.publicNames === 'hangs') return await new Promise<Record<string, string>>(() => undefined);
-				if (overrides.publicNames === 'fails') throw new TypeError('offline');
-				return pick(overrides.publicNames ?? {}, wanted);
+			cachedNames: async (wanted) => {
+				nameCalls.push({ itemIds: [...wanted.itemIds], currencyIds: [...wanted.currencyIds] });
+				if (overrides.cachedNames === 'fails') throw new TypeError('no cache');
+				return pick(overrides.cachedNames ?? {}, wanted);
 			},
 			characters: () => overrides.characters ?? [{ name: 'Alfa', fromAt: iso(0) }], charactersCapped: () => false,
 			isWritten: () => written, markWritten: async () => { written = true; marks.push(clock); }, networkAllowed: () => network,
@@ -797,7 +795,7 @@ describe('live session summary service', () => {
 		const h = harness({ onFailure: () => { throw new Error('sink'); } });
 		h.setRecord(null);
 		const broken = new LiveSessionSummaryService({ vault: h.vault, runtime: () => { throw new Error('boom'); }, journal: () => [], locale: () => 'es',
-			outputFolder: () => 'Tyrian Companion', displayNames: () => ({}), entityNames: async () => ({}), characters: () => [], charactersCapped: () => false, isWritten: () => false, markWritten: async () => undefined,
+			outputFolder: () => 'Tyrian Companion', displayNames: () => ({}), cachedNames: async () => ({}), characters: () => [], charactersCapped: () => false, isWritten: () => false, markWritten: async () => undefined,
 			networkAllowed: () => true, itemMeta: async () => ({}), mapNames: async () => ({}), startTimer: realTimer, enabled: () => true, now: () => AT,
 			onFailure: () => { throw new Error('sink'); } });
 		await expect(broken.observe()).resolves.toBeUndefined();
@@ -833,8 +831,8 @@ describe('live session summary service', () => {
 		expect(text).toContain('- Por hora sin Saco grande:');
 		expect(text).toContain('- Karma: +800');
 		expect(text).toContain('tyrian_summary_top_item: "Saco grande"');
-		// One cache read for what the note names (gold is written as money, so it is not asked), and no request.
-		expect(h.nameCalls).toEqual([{ itemIds: [OTHER, STAPLE], currencyIds: [2], network: false }]);
+		// One cache read for what the note names (gold is written as money, so it is not asked).
+		expect(h.nameCalls).toEqual([{ itemIds: [OTHER, STAPLE], currencyIds: [2] }]);
 		expect(h.failures).toEqual([]);
 	});
 	it('writes «Objeto <id>» and «Moneda <id>», never the bare id, when neither memory nor the cache has the name', async () => {
@@ -851,7 +849,6 @@ describe('live session summary service', () => {
 		expect(text).not.toMatch(/^- \d+: /mu);
 		expect(text).not.toMatch(/sin \d+:/u);
 		expect(text).not.toMatch(/tyrian_summary_top_item: "?\d+"?$/mu);
-		expect(h.nameCalls.every((call) => !call.network)).toBe(true);
 	});
 	it('names a partly cached session with what there is and leaves the rest as its fallback', async () => {
 		const h = harness({ network: false, memoryNames: { 'item:12147': 'Champiñón' }, cachedNames: { 'currency:2': 'Karma' }, fixture: { karma: true } });
@@ -860,31 +857,27 @@ describe('live session summary service', () => {
 		expect(h.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
 		expect(h.text()).toContain('- Karma: +800');
 		// Only what memory lacks is read from the cache.
-		expect(h.nameCalls).toEqual([{ itemIds: [STAPLE], currencyIds: [2], network: false }]);
+		expect(h.nameCalls).toEqual([{ itemIds: [STAPLE], currencyIds: [2] }]);
 	});
-	it('after closing, asks the public catalog only for what the cache lacks, under the same rule as the map names', async () => {
-		const h = harness({ network: true, memoryNames: {}, cachedNames: { 'item:12147': 'Champiñón' },
-			publicNames: { [`item:${String(STAPLE)}`]: 'Saco grande', 'currency:2': 'Karma' }, fixture: { karma: true } });
+	it('after closing reads the cache the same way and no further: a name it lacks is the fallback, with the network allowed too', async () => {
+		// The summary may ask the public API for map names only; an item or a currency name is never a request.
+		const h = harness({ network: true, memoryNames: {}, cachedNames: { 'item:12147': 'Champiñón' }, fixture: { karma: true } });
 		await h.service.observe();
-		expect(h.nameCalls).toEqual([{ itemIds: [OTHER, STAPLE], currencyIds: [2], network: false }, { itemIds: [STAPLE], currencyIds: [2], network: true }]);
-		expect(h.text()).toContain('| Saco grande | 30 |');
+		expect(h.nameCalls).toEqual([{ itemIds: [OTHER, STAPLE], currencyIds: [2] }]);
+		expect(h.mapCalls).toEqual([true]);
 		expect(h.text()).toContain('| Champiñón | 9 |');
-		expect(h.text()).toContain('- Karma: +800');
-		// With every name already in memory, as right after a session that named its loot, nothing is asked at all.
+		expect(h.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
+		expect(h.text()).toContain('- Moneda 2: +800');
+		// With every name already in memory, as right after a session that named its loot, not even the cache is read.
 		const named = harness({ network: true }); await named.service.observe();
 		expect(named.nameCalls).toEqual([]);
 	});
-	it('a public catalog that hangs or fails costs the name, not the summary nor the names the cache had', async () => {
-		const hanging = harness({ network: true, memoryNames: {}, cachedNames: { 'item:12147': 'Champiñón' }, publicNames: 'hangs' });
-		await hanging.service.observe();
-		expect(hanging.text()).toContain('| Champiñón | 9 |');
-		expect(hanging.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
-		expect(hanging.failures).toEqual([]);
-		const failing = harness({ network: true, memoryNames: {}, cachedNames: { 'item:12147': 'Champiñón' }, publicNames: 'fails' });
-		await failing.service.observe();
-		expect(failing.text()).toContain('| Champiñón | 9 |');
-		expect(failing.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
-		expect(failing.failures).toEqual([{ status: 'optional_public_names', reason: 'TypeError', attempt: 1 }]);
+	it('a cache that cannot be read costs the names, not the summary, and leaves a diagnostic', async () => {
+		const h = harness({ network: true, memoryNames: { 'item:12147': 'Champiñón' }, cachedNames: 'fails' });
+		await h.service.observe();
+		expect(h.text()).toContain('| Champiñón | 9 |');
+		expect(h.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
+		expect(h.failures).toEqual([{ status: 'optional_cached_names', reason: 'TypeError', attempt: 1 }]);
 	});
 	it('an entity nobody can name gets no key in the note names, never its id as a name', () => {
 		const nameOf = (kind: 'item' | 'currency', id: number): string | null | undefined => kind === 'item' && id === 5 ? 'Cinco' : id === 7 ? '  ' : id === 9 ? undefined : null;

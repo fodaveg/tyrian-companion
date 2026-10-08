@@ -30,7 +30,7 @@ import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live
 import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import type { LiveIngamePort } from '../alerts/live-loot-protocol';
 import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
-import { LiveSessionSummaryService, summaryCatalogNames } from '../sessions/live-session-summary-service';
+import { LiveSessionSummaryService, summaryCachedNames } from '../sessions/live-session-summary-service';
 import { LiveSessionHistoryService, type LiveSessionHistoryEntry, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
 import { knownLiveDisplayNames, type StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
 import { prepareLiveSessionExportSnapshot } from '../sessions/live-session-export';
@@ -3250,9 +3250,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 	/**
 	 * The summary note's wiring. Its names come from memory first (`getLiveSessionEntity`, empty for a
-	 * session closed before this load), then from the catalog cache, and from the public `items` and
-	 * `currencies` lookups only once `liveSummaryNetwork` is set, which the load never does before the
-	 * lifecycle is restored. An entity nobody names gets no key, so the note writes «Objeto <id>».
+	 * session closed before this load) and then from the catalog cache, never from the network: the
+	 * only request the summary may make is `maps`, and only once `liveSummaryNetwork` is set, which the
+	 * load never does before the lifecycle is restored. An entity nobody names gets no key, so the note
+	 * writes «Objeto <id>».
 	 */
 	private createLiveSummaries(vault: ConstructorParameters<typeof LiveSessionSummaryService>[0]['vault']): LiveSessionSummaryService {
 		return new LiveSessionSummaryService({
@@ -3261,7 +3262,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			charactersCapped: () => this.liveSessions?.isCharacterListCapped() ?? false, isWritten: () => this.liveSessions?.isSummaryWritten() ?? false,
 			markWritten: async () => { await this.liveSessions?.markSummaryWritten(); }, networkAllowed: () => this.liveSummaryNetwork, locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
 			displayNames: (record) => knownLiveDisplayNames(record.totals, (kind, id) => this.getLiveSessionEntity(kind, id)?.name),
-			entityNames: async (wanted, network) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await summaryCatalogNames(this.sessionCatalog, wanted, this.settings.language, network); },
+			cachedNames: async (wanted) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await summaryCachedNames(this.sessionCatalog, wanted, this.settings.language); },
 			itemMeta: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedItems(ids, this.settings.language);
 				return Object.fromEntries(Object.values(cached).map((item) => [item.id, { flags: item.flags, type: item.type }])); },
 			mapNames: async (ids, network) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedMaps(ids, this.settings.language);

@@ -69,23 +69,26 @@ class SummaryVault {
  * plugin load leaves it: no entity in memory, the catalog cache as an earlier run left it, and a
  * transport that records every request.
  */
-async function loadedCore(options: { cached?: boolean; network?: boolean; language?: 'es' | 'en' } = {}) {
+async function loadedCore(options: { cached?: boolean; network?: boolean; language?: 'es' | 'en'; /** The session also recorded the map it was on. */ map?: boolean } = {}) {
 	const store = new MemorySessionRuntimeStore();
 	await closedSession(store);
 	const restored = lifecycleOver(store);
 	await restored.initialize();
 	const record = restored.getRuntime()!;
 	// Prices are the session's own, frozen in its record; here they only make the «to sell now» table and the top item appear.
-	vi.spyOn(restored, 'getRuntime').mockImplementation(() => ({ ...structuredClone(record), prices: [{ itemId: 106732, unitCopper: 1105 }, { itemId: 9333, unitCopper: 139 }], priceCapturedAt: new Date(AT).toISOString() }));
+	vi.spyOn(restored, 'getRuntime').mockImplementation(() => ({ ...structuredClone(record), prices: [{ itemId: 106732, unitCopper: 1105 }, { itemId: 9333, unitCopper: 139 }], priceCapturedAt: new Date(AT).toISOString(),
+		...(options.map === true ? { mapIntervals: [{ mapId: 1633, fromMs: AT, toMs: AT + 5000 }] } : {}) }));
 	const core = new TyrianCompanionCore({} as TyrianHost);
 	core.settings.language = options.language ?? 'es';
 	const calls: string[] = [];
+	// With the network allowed the public API would answer every name: whatever the note lacks, it lacks because it did not ask.
 	const gateway: PublicCatalogGateway = { requestDetailed: async (path): Promise<HttpResponse> => {
 		calls.push(path);
 		if (options.network !== true) throw new Error(`unexpected request: ${path}`);
 		const ids = (/\?ids=([\d,]+)/u.exec(path)?.[1] ?? '').split(',').map(Number);
 		if (path.startsWith('items?')) return { status: 200, headers: {}, body: ITEMS.filter((item) => ids.includes(item.id)).map((item) => itemJson(item.id, item.name)) };
 		if (path.startsWith('currencies?')) return { status: 200, headers: {}, body: CURRENCIES.filter((currency) => ids.includes(currency.id)).map((currency) => currencyJson(currency.id, currency.name)) };
+		if (path.startsWith('maps?')) return { status: 200, headers: {}, body: ids.map((id) => ({ id, name: `Mapa de prueba ${String(id)}` })) };
 		return { status: 200, headers: {}, body: [] };
 	} };
 	const cache = new MemoryCatalogCache();
@@ -138,14 +141,27 @@ describe('names in the summary note of a session closed before this plugin load'
 		expect(text).toContain('tyrian_summary_top_item: "Item 106732"');
 	});
 
-	it('once the load is over, asks the public catalog for the names the cache lacks: one `items` and one `currencies` request, and nothing else', async () => {
-		const { text, calls } = await loadedCore({ network: true });
-		expect(text).toContain('| Fragmento brillante | 1 | 0g 11s 5c |');
-		expect(text).toContain('- Karma: +2940');
-		expect(text).toContain('tyrian_summary_top_item: "Fragmento brillante"');
-		// This session recorded no map interval, so there is no `maps` request either.
-		expect(calls.map((path) => path.slice(0, path.indexOf('?'))).sort()).toEqual(['currencies', 'items']);
-		expect(calls.find((path) => path.startsWith('items?'))).toContain('ids=9333,106732&');
-		expect(calls.find((path) => path.startsWith('currencies?'))).toContain('ids=2,23&');
+	it('once the load is over, still makes no request for an item or a currency name: the cache, or the fallback', async () => {
+		// The network is allowed here and the API would answer both names; the summary does not ask.
+		const cold = await loadedCore({ network: true });
+		expect(cold.calls).toEqual([]);
+		expect(cold.text).toContain('| Objeto 106732 | 1 | 0g 11s 5c |');
+		expect(cold.text).toContain('- Moneda 2: +2940');
+		expect(cold.text).toContain('tyrian_summary_top_item: "Objeto 106732"');
+		const warm = await loadedCore({ network: true, cached: true });
+		expect(warm.calls).toEqual([]);
+		expect(warm.text).toContain('| Fragmento brillante | 1 | 0g 11s 5c |');
+		expect(warm.text).toContain('- Karma: +2940');
+		expect(warm.text).toContain('tyrian_summary_top_item: "Fragmento brillante"');
+	});
+
+	it('with a map on record the only request is the approved one, `maps`, and never while loading', async () => {
+		const closed = await loadedCore({ network: true, map: true });
+		expect(closed.calls.map((path) => path.slice(0, path.indexOf('?')))).toEqual(['maps']);
+		expect(closed.text).toContain('# Mapa de prueba 1633');
+		expect(closed.text).toContain('| Objeto 106732 | 1 | 0g 11s 5c |');
+		const loading = await loadedCore({ map: true });
+		expect(loading.calls).toEqual([]);
+		expect(loading.text).toContain('# Mapa 1633');
 	});
 });
