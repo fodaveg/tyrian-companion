@@ -1,5 +1,17 @@
 # Changelog
 
+## Release beta 0.6.12 - el monstruo con borde como icono del plugin en Hebra
+
+Release por tag `0.6.12`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente.
+
+- Icono en Hebra: `iconImage` pasa a la variante con borde del monstruo (borde negro y filo claro), elegida por
+  David el 8 oct 2026 («también quiero que cambies el icono del monstruo en hebra para poner la versión con
+  borde»). La línea negra del dibujo de la 0.6.11 medía alrededor de 1 px a 128 px y no se apreciaba a tamaño de
+  icono; en tema oscuro además se fundía con el fondo. El PNG sigue siendo de 128 px, cuadrado y por debajo de
+  32 KiB (20063 bytes); `icon: "sword"` sigue de respaldo y Obsidian no cambia.
+- Origen y comando del PNG: `assets/README.md`. El validador de `iconImage` del empaquetado no cambia.
+- Sin verificar: el icono nuevo pintado en Hebra y la instalación de la 0.6.12 en Hebra y en Obsidian/BRAT.
+
 ## Release beta 0.6.11 - el monstruo como icono propio del plugin en Hebra
 
 [Canal 0.6.11 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.11);

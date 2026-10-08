@@ -1,5 +1,25 @@
 # Estado
 
+## Candidato 0.6.12: el monstruo con borde como icono en Hebra (8 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `20ec61d` (main tras el addon 0.8.0). Lleva un cambio:
+`assets/hebra-icon.png` pasa a la variante con borde que eligió David («también quiero que cambies el icono del
+monstruo en hebra para poner la versión con borde»; de cuatro variantes sobre tema oscuro y claro eligió «B: negro +
+filo claro»). Motivo medido: la línea negra del dibujo de la 0.6.11 mide alrededor de 1 px a 128 px, no se aprecia a
+tamaño de icono y en tema oscuro se funde con el fondo; David usa tema oscuro en Fedora. El detalle está en
+[CHANGELOG](CHANGELOG.md).
+
+- El PNG nuevo: 128×128 RGBA, 20063 bytes, sha256 `3aaba42b76f92086f7948518ade50b7fc5cd52fe14aa8d7f4845737f8c28669b`,
+  hecho a partir de `monstruo-recorte-limpio.png` (el recorte sin línea) con un borde negro `#141414` de 5 px y un
+  filo claro `#f4f1ea` de 3 px; el comando está en `assets/README.md`. `icon: "sword"` sigue de respaldo y el
+  validador de `iconImage` y sus límites no cambian.
+- Verificado en el candidato: `npm run check:guardrails` en el worktree, «VEREDICTO: VERDE (25/25)» (no se corrió
+  `check` ni el gate completo). El paquete de Hebra se armó una vez: `hebra.json` pesa 27745 bytes, lleva
+  `version` 0.6.12, `icon` `sword` y un `iconImage` que descodifica idéntico byte a byte a `assets/hebra-icon.png`.
+- No verificado: nadie ha visto el icono nuevo pintado en Hebra; la instalación de la 0.6.12 en Hebra y en
+  Obsidian/BRAT.
+- Pendiente: el gate local, la atestación, la publicación y la verificación en Hebra instalada.
+
 ## Addon de Nexus 0.8.0 publicado (8 oct 2026)
 
 [Addon de Nexus 0.8.0](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.0): release normal, tag
@@ -25,9 +45,14 @@ o posterior. El plugin no cambia con este addon.
   cambio, 363 %, iguales que el panel de héroe). El perfil auditado de bolsas ganó la guarda del getter de libres
   (`1620b39`) DESPUÉS de las ejecuciones en vivo, que fueron con 11 guardas.
 - Instalado en la máquina de David (Fedora) con el juego cerrado: el DLL de la carpeta de addons tiene ese sha256.
-- No verificado: nada del 0.8.0 se ha visto dentro del juego (panel, botones, tooltips, las dos lecturas, el recuento
-  de ocupados, si las lecturas caben en su plazo de 250 ms, una bajada de hallazgo mágico, otro arranque del juego)
-  ni en Windows.
+- Visto por David en el juego (8 oct 2026, Fedora con Proton, en un arranque nuevo del juego): el panel se pinta
+  como el boceto con el fondo quitado; «MF: 363%» sin «parcial» (igual que su panel de héroe esa mañana); «Estado:
+  ● Midiendo»; precios 8g 32s 50c y 10g 40s 0c; y «Huecos: 99 libres», que David contrastó con su inventario («los
+  huecos están correctos, son esos numeros»). Con eso quedan verificados en el juego el recuento de ocupados y que
+  la regla de alineación aguanta otro arranque.
+- Sigue sin verse: una bajada de hallazgo mágico con su aviso, los tooltips, plegar y cerrar, el diagnóstico de
+  Opciones, una sesión larga sin parpadeos, y Windows. David pidió además cambiar el icono del botón de fondo del
+  addon (lo veía como un «stop»); va en un addon 0.8.1 aparte, en curso.
 
 ## Canal 0.6.11 publicado: el monstruo como icono propio en Hebra (8 oct 2026)
 
@@ -61,12 +86,15 @@ versionado en `assets/hebra-icon.png`) con `icon: "sword"` de respaldo. El detal
   del menú (`src/ui/session-command-adapter.ts:16,70`). No hay barra de estado. Con otro nombre a propósito, y
   sin tocar: las vistas del asesor (`package-search`) y de venta (`candy`), el icono `inbox` de una entrada de
   menú y los iconos de acción internos.
-- No verificado: nadie ha visto el icono pintado en ninguna Hebra (ni web, ni TestFlight, ni Fedora); la instalación de
-  la 0.6.11 en Hebra y en Obsidian/BRAT; el Hebra instalable hoy en Fedora (rpm 0.2.0-5) ignora el campo y
-  seguirá pintando la espada hasta el rpm 0.2.0-6; la web `app.hebra.pro` y TestFlight ya lo llevan; ningún plugin
-  real había publicado `iconImage` antes; en tema oscuro el contorno oscuro del monstruo se funde con el fondo y lo
-  que se ve es el cuerpo rosa.
-- Pendiente: la verificación en Hebra instalada (con el rpm 0.2.0-6 o la web) y en Obsidian/BRAT.
+- Visto por David (8 oct 2026, Fedora): instaló el rpm de Hebra 0.2.0-6 y la 0.6.11 del plugin (medido en su
+  máquina: `rpm -q hebra` da `hebra-0.2.0-6.x86_64` y existe `~/.local/share/net.fodaveg.hebra/plugins/tyrian-companion/0.6.11/`)
+  y vio el monstruo pintado, lo bastante para pedir que se le viera el borde (ver la 0.6.12). Es evidencia parcial en
+  Hebra sobre Linux; no cambia el estado del canal.
+- No verificado: la instalación de la 0.6.11 en Obsidian/BRAT; el icono en la web `app.hebra.pro`, en TestFlight y en
+  Windows. Antes de esa instalación, el Hebra con rpm 0.2.0-5 ignoraba el campo y pintaba la espada. Ningún plugin
+  real había publicado `iconImage` antes. En tema oscuro la línea negra del dibujo se funde con el fondo (motivo
+  de la 0.6.12).
+- Pendiente: la verificación en Obsidian/BRAT.
 
 ## Canal 0.6.10 publicado: «Por hora» con oro y precio bruto `price2` (8 oct 2026)
 
