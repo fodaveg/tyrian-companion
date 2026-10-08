@@ -13,7 +13,7 @@
 | Ganancia, tasa o valor falso | Baselines sin delta; causa desconocida, huecos por canal, tiempo cubierto y subtotal separado; moneda/MF desconocidos no son cero | Movimientos compensados entre muestras no se ven y no demuestran causalidad |
 | Consulta API privada desde rutas antiguas | Espía HTTP load/presence/start/sample/stop/recovery/render; solo acciones manuales explícitas consultan cuenta/inventario/cartera | H3 histórico no certifica la nueva separación |
 
-Runtime v4/notas 7 preservan datos legacy y texto humano. No hay purga automática para esconder volumen: liberar datos requiere persistencia durable y receipt. El [registro de evidencia](audit/live-loot-evidence-provenance.md) distingue sondas y controles pendientes. La decisión no implica aprobación de ArenaNet.
+Runtime v4/notas 7 preservan datos legacy y texto humano. No hay purga automática para esconder volumen: liberar datos requiere persistencia durable y receipt. La única poda es la del journal de IndexedDB de una sesión en vivo ya sellada (con `summaryReceipt` de su nota) que sale de la retención de 8 sesiones completadas; nunca se borra el de la sesión activa ni el de una sin recibo, y un fallo al podar se reintenta en el siguiente inicio. El [registro de evidencia](audit/live-loot-evidence-provenance.md) distingue sondas y controles pendientes. La decisión no implica aprobación de ArenaNet.
 
 ## Alcance y supuestos
 

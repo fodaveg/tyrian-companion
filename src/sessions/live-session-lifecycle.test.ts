@@ -243,6 +243,31 @@ describe('passive live session lifecycle', () => {
 		expect(f.service.getRuntime()?.gaps.map((gap) => gap.reason)).toContain('context_changed');
 		await f.service.dispose();
 	});
+	it('prunes the journal of a sealed session once it leaves the 8-session retention, never the active one or one without receipt', async () => {
+		const factory = new IDBFactory(); const store = new IndexedDbSessionRuntimeStore(factory,'live-prune');
+		const f = fixture(store as unknown as MemorySessionRuntimeStore); const ids: string[] = [];
+		for (let round = 0; round < 10; round += 1) {
+			const id = await f.service.start('Test'); ids.push(id!); const epoch = `${String.fromCharCode(66+round)}${'A'.repeat(20)}Q`;
+			f.setNow(AT+round*100_000); await f.service.open({...f.source,epoch}); await f.service.commit(f.sample(0,0,{epoch})); f.setNow(AT+round*100_000+1000); await f.service.commit(f.sample(1,2,{epoch}));
+			if (round < 9) { f.setNow(AT+round*100_000+2000); await expect(f.service.stop(AT+round*100_000+2000)).resolves.toBe(true); }
+		}
+		expect(ids).toHaveLength(10);
+		expect(await store.readLiveJournal(ids[0]!), 'the oldest sealed session is pruned').toEqual([]);
+		
+		for (const id of ids.slice(1,9)) expect((await store.readLiveJournal(id)).length, `retained ${id}`).toBe(2);
+		expect((await store.readLiveJournal(ids[9]!)).length, 'the active one is never pruned').toBe(2);
+		await expect(store.pruneLiveJournal(ids[9]!), 'and the store itself refuses the session the runtime key holds').resolves.toBe(false);
+		expect((await store.readLiveJournal(ids[9]!)).length).toBe(2);
+		await f.service.dispose(); store.close();
+	});
+	it('a failed prune breaks nothing and is retried at the next start', async () => {
+		const f = fixture(); let failures = 1; const prune = vi.spyOn(f.store,'pruneLiveJournal').mockImplementation(async (id: string) => { if (failures-- > 0) throw new Error('boom'); for (const entry of await f.store.readLiveJournal(id)) void entry; return true; });
+		for (let round = 0; round < 11; round += 1) {
+			const id = await f.service.start('Test'); expect(id, `start ${round}`).not.toBeNull(); f.setNow(AT+round*100_000); await f.service.open({...f.source,epoch:`${String.fromCharCode(66+round)}${'A'.repeat(20)}Q`});
+			await f.service.stop(AT+round*100_000+1000);
+		}
+		expect(prune).toHaveBeenCalled(); expect(prune.mock.calls.length).toBeGreaterThanOrEqual(2); await f.service.dispose();
+	});
 	it('restores the journal without acquisitions and requires a new baseline after host restart', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));
 		f.setNow(AT + 1000); await f.service.commit(f.sample(1, 4)); await f.service.dispose(); f.setNow(AT + 2000);

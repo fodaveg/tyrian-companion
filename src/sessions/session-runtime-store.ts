@@ -3,7 +3,7 @@ import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-v
 import { canUpdateLiveOutbox } from './live-session-outbox';
 import { archiveLegacyRuntime, prepareLegacyRuntimeArchive, isLegacyRuntimeArchive, LEGACY_RUNTIME_ARCHIVE_PREFIX, type LegacyRuntimeArchiveV1 } from './live-session-legacy-archive';
 import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey, LIVE_SESSION_JOURNAL_STORE_NAME,
-	liveRuntimeLoadResult, markLiveAlertsProcessed, readLiveJournal, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
+	liveRuntimeLoadResult, markLiveAlertsProcessed, pruneLiveJournal, readLiveJournal, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
@@ -216,6 +216,12 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 		this.liveJournal.set(key,structuredClone(next)); return true;
 	}
 
+	async pruneLiveJournal(sessionId: string): Promise<boolean> {
+		if (isLiveSessionRuntimeRecord(this.value) && this.value.sessionId === sessionId) return false;
+		for (const [key, entry] of this.liveJournal) if (entry.sessionId === sessionId) this.liveJournal.delete(key);
+		return true;
+	}
+
 	close(): void {}
 }
 
@@ -392,6 +398,9 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> { return await this.run(async (database) => await readLiveJournal(database, sessionId)); }
 	async markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean> {
 		try { return await this.run(async (database) => await markLiveAlertsProcessed(database, sessionId, epoch, cursor)); } catch { return false; }
+	}
+	async pruneLiveJournal(sessionId: string): Promise<boolean> {
+		try { return await this.run(async (database) => await pruneLiveJournal(database, sessionId)); } catch { return false; }
 	}
 	async replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean> {
 		try { return await this.run(async (database) => await replaceLiveJournal(database,prior,next,owner)); } catch { return false; }
