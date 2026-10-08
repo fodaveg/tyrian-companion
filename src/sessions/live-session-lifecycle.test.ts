@@ -359,6 +359,32 @@ describe('passive live session lifecycle', () => {
 			f.renew.mockResolvedValueOnce({status:'lost'} as never); f.setNow(AT+20*60_000); beat!(); await svc.capture(); beat!(); await svc.capture();
 			expect(svc.getRuntime(), 'the new session keeps its own presence').toMatchObject({phase:'active',connection:'connected'}); await svc.dispose();
 		});
+		describe('held back twice, once by a stale store and once by storage that does not answer', () => {
+			async function reclaimedAfter(report: (svc: LiveSessionLifecycle, f: ReturnType<typeof fixture>, refuse: { stale(): void; unavailable(): void }) => Promise<void>) {
+				const f = fixture(); let beat: (() => void) | null = null;
+				const svc = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {beat=callback;return 1;}});
+				await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true);
+				await report(svc, f, { stale: () => { vi.spyOn(f.store,'saveLive').mockResolvedValueOnce({ status: 'stale' }); },
+					unavailable: () => { vi.mocked(f.options.coordinator.assertOwned).mockResolvedValueOnce({ status: 'error', code: 'unavailable' }); } });
+				f.renew.mockResolvedValueOnce({status:'lost'} as never); f.setNow(AT+3000);
+				beat!(); await svc.capture(); beat!(); await svc.capture();
+				return svc;
+			}
+			it('the connect that came last wins over the disconnect the store had turned away', async () => {
+				const svc = await reclaimedAfter(async (service, f, refuse) => {
+					refuse.stale(); f.setNow(AT+1000); await service.presence(false,AT+1000);
+					refuse.unavailable(); f.setNow(AT+2000); await service.presence(true);
+				});
+				expect(svc.getRuntime(), 'the player is back').toMatchObject({phase:'active',connection:'connected',lastPresenceAt:AT+2000}); await svc.dispose();
+			});
+			it('the disconnect that came last wins over the connect storage had refused, without moving the evidence back', async () => {
+				const svc = await reclaimedAfter(async (service, f, refuse) => {
+					refuse.unavailable(); f.setNow(AT+1000); await service.presence(true);
+					refuse.stale(); f.setNow(AT+2000); await service.presence(false,AT+500);
+				});
+				expect(svc.getRuntime(), 'the player left').toMatchObject({phase:'active',connection:'disconnected',lastPresenceAt:AT+1000}); await svc.dispose();
+			});
+		});
 		it('a connect reported while the reclaim after a host restart was still refused is applied by the reclaim that works', async () => {
 			const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
 			let busy = true; let beat: (() => void) | null = null;

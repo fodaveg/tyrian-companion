@@ -242,13 +242,12 @@ export class LiveSessionLifecycle {
 			const ownership = await this.ready();
 			const evidencedAt = atMs ?? (connected ? this.options.now() : this.record.lastPresenceAt);
 			// Nobody can write it now (lease lost, or the store no longer takes this writer): the reclaim applies the last report.
-			const lose = (): void => { this.lostPresence = { connected, evidencedAt: Math.max(this.lostPresence?.evidencedAt ?? 0, Math.min(this.options.now(), evidencedAt)) }; };
+			// The last report wins, but never moves the evidence of presence backwards. It is held in ONE of the two places:
+			// the reclaim applies both, in a fixed order, so an older report left in the other would be written over this one.
+			const held = Math.max(this.lostPresence?.evidencedAt ?? 0, this.unsaved?.presence?.evidencedAt ?? 0, Math.min(this.options.now(), evidencedAt));
+			const lose = (): void => { this.lostPresence = { connected, evidencedAt: held }; if (this.unsaved !== null) this.unsaved.presence = null; };
 			if (ownership === 'lost') { lose(); return; }
-			// The last report wins, but never moves the evidence of presence backwards.
-			const unwritten = (): void => {
-				const unsaved = this.storageLost();
-				unsaved.presence = { connected, evidencedAt: Math.max(unsaved.presence?.evidencedAt ?? 0, Math.min(this.options.now(), evidencedAt)) };
-			};
+			const unwritten = (): void => { this.storageLost().presence = { connected, evidencedAt: held }; this.lostPresence = null; };
 			if (ownership === 'unavailable') { unwritten(); return; }
 			const next = this.withPresence(this.record, connected, evidencedAt);
 			const saved = await this.persist(next);
