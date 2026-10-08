@@ -275,6 +275,15 @@ export class LiveSessionLifecycle {
 		return structuredClone(this.journal.filter((entry) => (entry.epoch !== skip.epoch || entry.cursor !== skip.cursor) && entry.outbox.some((intent) =>
 			intent.state === 'awaiting_price' && hasQuote(entry.observations.find((row) => row.id === intent.observationId)?.idNumber ?? -1))).slice(0,limit));
 	}
+	/** True while the intent holds its durable `dispatching` claim; walks the live journal from the newest entry without copying it. */
+	hasDispatchingClaim(sessionId: string, outboxId: string): boolean {
+		if (this.record?.sessionId !== sessionId) return false;
+		for (let index = this.journal.length - 1; index >= 0; index -= 1) {
+			const intent = this.journal[index]!.outbox.find((row) => row.outboxId === outboxId);
+			if (intent !== undefined) return intent.state === 'dispatching';
+		}
+		return false;
+	}
 	getJournal(): LiveJournalEntryV1[] { return structuredClone(this.journal); }
 	/** Export snapshots copy record and full journal at one durable queue boundary. */
 	async capture(): Promise<LiveSessionCaptureV1 | null> {

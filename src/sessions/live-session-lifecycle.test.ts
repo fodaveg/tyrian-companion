@@ -448,6 +448,15 @@ describe('durable live alert outbox', () => {
 		expect(f.service.getView().valuation.unpricedItemIds, 'only the item nobody quoted stays unpriced').toEqual([999]);
 		await e.service.dispose(); await f.service.dispose();
 	});
+	it('answers whether an intent holds its dispatching claim without copying the journal', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!; const copy = vi.spyOn(f.service,'getJournal');
+		expect(f.service.hasDispatchingClaim('session',intent.outboxId)).toBe(false);
+		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString()}));
+		expect(f.service.hasDispatchingClaim('session',intent.outboxId)).toBe(true);
+		expect(f.service.hasDispatchingClaim('other',intent.outboxId)).toBe(false); expect(f.service.hasDispatchingClaim('session','nope')).toBe(false);
+		expect(copy).not.toHaveBeenCalled(); await f.service.dispose();
+	});
 	it('a crash after claim is unconfirmed on restart and never re-emits', async () => {
 		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
 		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));

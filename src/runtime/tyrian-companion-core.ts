@@ -3680,8 +3680,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				deliver: async (alert, context) => {
 					requireLiveCollector();
 					if (liveScope) {
-						if (!this.liveSessions?.getJournal().some((entry) => entry.sessionId === liveScope.sessionId
-							&& entry.outbox.some((intent) => intent.outboxId === liveScope.outboxId && intent.state === 'dispatching'))) throw new Error('The durable live alert claim is unavailable.');
+						if (!this.liveSessions?.hasDispatchingClaim(liveScope.sessionId,liveScope.outboxId)) throw new Error('The durable live alert claim is unavailable.');
 						return;
 					}
 					if (!await queue.enqueue(alert, context.emittedAtMs)) throw new Error('The durable alert queue is unavailable.');
