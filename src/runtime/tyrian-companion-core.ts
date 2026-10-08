@@ -29,6 +29,7 @@ import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from '../sessions/live-session-m
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live-session-model';
 import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import type { LiveIngamePort } from '../alerts/live-loot-protocol';
+import { LiveSessionSummaryService } from '../sessions/live-session-summary-service';
 import { LiveSessionHistoryService, type LiveSessionHistoryEntry, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
 import type { StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
 import { prepareLiveSessionExportSnapshot } from '../sessions/live-session-export';
@@ -452,6 +453,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private readonly liveSourceConnections = new LiveSourceConnections();
 	private liveEconomy: LiveSessionEconomy | null = null;
 	private liveHistory: LiveSessionHistoryService | null = null;
+	private liveSummaries: LiveSessionSummaryService | null = null;
 	private liveComparison: LiveSessionComparisonState = { status: 'idle' };
 	private liveComparisonFlight: Promise<void> | null = null;
 	private selectedLiveHistory: {payload:StoredLiveSessionPayloadV1;view:LiveSessionViewV1;observations:LiveSessionViewV1['observations'];alerts:LiveSessionAlertViewV1[]} | null = null;
@@ -1308,12 +1310,20 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.sessionNotes = sessionServices.sessionNotes;
 		this.sessionHistory = sessionServices.sessionHistory;
 		this.liveHistory = new LiveSessionHistoryService(sessionHistoryVault(host.vault));
+		this.liveSummaries = new LiveSessionSummaryService({
+			vault: labelledVault(host.vault, 'Session summary note'), runtime: () => this.liveSessions?.getRuntime() ?? null,
+			journal: () => this.liveSessions?.getJournal() ?? [], locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
+			displayNames: (record) => Object.fromEntries(record.totals.map((row) => [`${row.kind}:${row.idNumber}`, this.getLiveSessionEntity(row.kind, row.idNumber)?.name ?? String(row.idNumber)])),
+			enabled: () => !consulting(this) && !this.unloaded, now: () => Date.now(),
+			onFailure: (details) => { this.localDebugActions?.event({ component: 'session', action: 'session_finish', state: 'live_summary_write',
+				level: 'error', phase: 'failure', code: 'storage_failure', details }); },
+		});
 		this.liveSessions = new LiveSessionLifecycle({
 			coordinator, persistence: sessionServices.runtimeStore, enabled: () => !consulting(this),
 			now: () => Date.now(), sessionId: () => crypto.randomUUID(),
 			setInterval: (callback, intervalMs) => window.setInterval(callback, intervalMs),
 			clearInterval: (handle) => { window.clearInterval(handle as number); },
-			onStateChange: () => { this.renderViews(); void this.ingameSessionMarker?.reconcile(); },
+			onStateChange: () => { this.renderViews(); void this.ingameSessionMarker?.reconcile(); void this.liveSummaries?.observe(); },
 			onError: (error) => { this.recordIngameSessionFailure(error); },
 			preparation: () => this.settings.farmingPreparation,
 			declaredBuild: () => { const declaration = readFarmingDeclaredBuild(this.settings.farmingDeclaredBuild);
