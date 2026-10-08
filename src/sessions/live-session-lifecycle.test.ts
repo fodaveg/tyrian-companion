@@ -419,6 +419,17 @@ describe('durable live alert outbox', () => {
 		expect(points, 'every point is valued with the gold now tracked').toEqual(buildLiveChart(f.service.getJournal(),f.service.getRuntime()).map((point) => point.knownNetValueCopper));
 		expect(points.every((value) => value !== null)).toBe(true); await f.service.dispose();
 	});
+	it('a held item quoted outside the entry in flight enters the valuation', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+		const rows = (bag: number, other: number) => [{kind:'item' as const,idNumber:999,quantity:other},{kind:'item' as const,idNumber:36038,quantity:bag}];
+		f.setNow(AT+1000); await f.service.commit(f.sample(1,0,{rows:rows(1,0)}));
+		const e = economy(f); e.requestDetailed.mockImplementation(async () => ({status:200,headers:{},body:[{id:36038,whitelisted:true,buys:{unit_price:100,quantity:9},sells:{unit_price:120,quantity:9}}]}));
+		e.service.refreshBagQuote(); await e.service.drain();
+		f.setNow(AT+2000); await f.service.commit(f.sample(2,0,{rows:rows(1,1)}));
+		e.service.observe(f.service.getJournal()[2]!); await e.service.drain();
+		expect(f.service.getView().valuation.unpricedItemIds, 'only the item nobody quoted stays unpriced').toEqual([999]);
+		await e.service.dispose(); await f.service.dispose();
+	});
 	it('a crash after claim is unconfirmed on restart and never re-emits', async () => {
 		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
 		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));

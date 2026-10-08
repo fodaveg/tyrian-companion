@@ -197,7 +197,8 @@ export class LiveSessionEconomy {
 			}
 		}
 		if (this.disposed || lifecycle.getRuntime()?.phase !== 'active' || lifecycle.getRuntime()?.sessionId !== entry.sessionId) return;
-		const priceIds = new Set([...runtime.prices.map((row) => row.itemId),...ids,...retry]);
+		const priceIds = new Set([...runtime.prices.map((row) => row.itemId),...ids,...retry,
+			...runtime.totals.filter((total) => total.kind === 'item').map((total) => total.idNumber)]); // a quote read elsewhere (the bag refresh) still values what the session holds
 		const pricedIds = [...priceIds].filter((id) => this.quotes.has(id));
 		if (pricedIds.length > 0) await lifecycle.updatePrices(pricedIds.map((itemId) => ({itemId,unitCopper:this.quotes.get(itemId)!.unitCopper})),
 			new Date(Math.min(...pricedIds.map((id) => this.quotes.get(id)!.capturedAt))).toISOString());
