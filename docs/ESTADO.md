@@ -1,31 +1,31 @@
 # Estado
 
-## Candidato 0.6.14: cuatro arreglos de la nota resumen de sesión (8 oct 2026)
+## Candidato 0.6.14: cinco arreglos de la nota resumen de sesión (8 oct 2026)
 
 **Candidato; no publicado ni etiquetado.** Parte de `8692853` (main con el canal 0.6.13 publicado). La 0.6.13 se vio
 cargar en Hebra y escribir una nota resumen real: la de una sesión cerrada bajo la 0.6.12, escrita al cargar la
-0.6.13 por primera vez, cinco horas y media después del cierre. De esa nota salen los cuatro arreglos, descritos en
+0.6.13 por primera vez, cinco horas y media después del cierre. De esa nota salen los cinco arreglos, descritos en
 [CHANGELOG](CHANGELOG.md): los objetos y las monedas salían como número a secas (ahora nombre desde la caché del
 catálogo, o `Objeto <id>` / `Moneda <id>`), «por hora sin» el objeto dominante enseñaba un ritmo negativo, «La lista
-puede estar incompleta.» quedaba dentro de la última viñeta de «Mapas» y la cabecera decía «100 % observado» con 8
-tramos sin observar. Metadatos de versión alineados en `manifest.json`, `package.json`, la raíz de
-`package-lock.json` y `versions.json` (mínimo de Obsidian 1.11.4, como la 0.6.13); `release-identity-contract` y
-`release-preflight` en verde sobre el commit de metadatos.
+puede estar incompleta.» quedaba dentro de la última viñeta de «Mapas», la cabecera decía «100 % observado» con 8
+tramos sin observar y, con una sola unidad, «Salieron del inventario 1 objetos». Metadatos de versión alineados en
+`manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de Obsidian 1.11.4, como
+la 0.6.13); `release-identity-contract` y `release-preflight` en verde sobre el commit de metadatos.
 
 - Medido en la preparación, sobre el código de los arreglos (verificación dirigida, no es el gate):
-  `src/sessions/live-session-summary-note.test.ts` (70 tests) y `src/runtime/live-session-summary-names.test.ts` (4
+  `src/sessions/live-session-summary-note.test.ts` (71 tests) y `src/runtime/live-session-summary-names.test.ts` (5
   tests, sobre el cableado real del núcleo con una sesión restaurada) en verde, dentro de una pasada de 13 ficheros y
-  250 tests; `tsc --noEmit --skipLibCheck` sin errores; `action-observability-census` en PASS sin tocar su línea
+  252 tests; `tsc --noEmit --skipLibCheck` sin errores; `action-observability-census` en PASS sin tocar su línea
   base; `probar-h8-helper-decision-contract` en PASS. Cada arreglo tiene un test que se vio fallar con el
   comportamiento anterior.
 - Sin medir todavía sobre este candidato: `check`, `check:guardrails` y la suite completa.
 - Lo que no cambia: una nota resumen ya escrita no se reescribe (la de la 0.6.13 se queda como está); ninguna clave
-  nueva, `tyrian_summary_version` sigue en 3 y la Base «Sesiones» es la misma; ningún host ni endpoint nuevo
-  (`docs/PLATFORM_POLICY.md` no cambia) y ninguna petición durante la carga del plugin. Tras cerrar una sesión, la
-  nota puede pedir a `items` y `currencies` los nombres que no estén en la caché, con la misma regla y la misma
-  espera que los nombres de mapa.
+  nueva, `tyrian_summary_version` sigue en 3 y la Base «Sesiones» es la misma; ningún host, endpoint ni uso de red
+  nuevo (`docs/PLATFORM_POLICY.md` no cambia) y ninguna petición durante la carga del plugin. Los nombres de objetos
+  y monedas salen de memoria y de la caché del catálogo, nunca de la red; la única petición de la nota resumen sigue
+  siendo `maps`, tras cerrar la sesión.
 - Visto de la 0.6.13 desde su publicación: cargó en Hebra y escribió esa nota resumen.
-- No verificado: ninguno de los cuatro arreglos se ha visto en un cliente real. Nadie ha visto todavía una nota
+- No verificado: ninguno de los cinco arreglos se ha visto en un cliente real. Nadie ha visto todavía una nota
   resumen de una sesión cerrada ya con la 0.6.13 o posterior, ni la Base «Sesiones» pintada, en Obsidian o en Hebra.
 - Sigue sin verse de versiones anteriores (listado en las secciones de abajo, que se conservan): de la 0.6.13, la
   nota resumen en Obsidian, el sonido de los avisos en Hebra, un cambio de personaje a mitad de sesión en el juego y

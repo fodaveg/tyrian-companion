@@ -1,18 +1,17 @@
 # Changelog
 
-## Release beta 0.6.14 - cuatro arreglos de la nota resumen de sesión
+## Release beta 0.6.14 - cinco arreglos de la nota resumen de sesión
 
 Release por tag `0.6.14`. La 0.6.13 se vio cargar en Hebra y escribir una nota resumen real: la de una sesión
 cerrada bajo la 0.6.12, escrita al cargar la 0.6.13 por primera vez, cinco horas y media después del cierre. De esa
-nota salen estos cuatro arreglos. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+nota salen estos cinco arreglos. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
 
 - Nombres de objetos y monedas: la nota escribía el número a secas (`106732`, `2`) en la tabla, en «otras monedas» y
   en `tyrian_summary_top_item` cuando el plugin no tenía el nombre en memoria, que es lo que pasa siempre que la
   sesión se cerró antes de esta carga. Ahora el nombre que falta se busca en la caché del catálogo público, sin
-  ninguna petición; solo cuando la nota se escribe tras cerrar la sesión, y nunca durante la carga, lo que la caché no
-  tenga se pide con las consultas `items` y `currencies` que la sesión ya hace, con la misma espera de 5 s que los
-  nombres de mapa. Un nombre que nadie conoce se escribe `Objeto <id>` o `Moneda <id>` (`Item <id>`, `Currency <id>`
-  en inglés), nunca el número solo. La nota completa de la sesión usa el mismo respaldo.
+  ninguna petición, ni durante la carga ni tras cerrar la sesión: la nota resumen solo pide a la red los nombres de
+  mapa. Un nombre que no está en memoria ni en la caché se escribe `Objeto <id>` o `Moneda <id>` (`Item <id>`,
+  `Currency <id>` en inglés), nunca el número solo. La nota completa de la sesión usa el mismo respaldo.
 - «Por hora sin» el objeto dominante: cuando ese objeto vale más que el neto entero de la sesión (lo que salió del
   inventario resta), la línea enseñaba un ritmo negativo con el texto «más de la mitad del valor». Si sin ese objeto
   queda cero o menos ya no se escribe ningún «por hora»: la línea dice en cuánto queda la sesión sin él y que ese
@@ -26,11 +25,14 @@ nota salen estos cuatro arreglos. [ESTADO](ESTADO.md) separa lo medido de lo que
   misma cifra en la cabecera, en `tyrian_summary_observed_percent` y en la sección «Cobertura». «Sin tramos sin
   observar» solo se escribe cuando la cabecera dice 100 %; si no hay ningún tramo registrado y el tiempo observado no
   llega a la duración, la línea dice el porcentaje y que ningún tramo quedó registrado.
+- Singular: con una sola unidad la línea decía «Salieron del inventario 1 objetos». Ahora dice «Salió del inventario
+  1 objeto; no se distingue si se vendió, se consumió o se depositó.» («1 item left the inventory; …» en inglés);
+  desde dos unidades el texto es el de antes.
 - Lo que no cambia: una nota resumen ya escrita no se reescribe, así que la de la 0.6.13 se queda como está. No hay
   claves nuevas; `tyrian_summary_version` sigue en 3 y `tyrian_summary_observed_percent` conserva su nombre y su
-  tipo, y la Base «Sesiones» es la misma. No se añade ningún host ni ningún endpoint, y la carga del plugin sigue sin
-  hacer peticiones.
-- Sin verificar: ninguno de los cuatro arreglos se ha visto en un cliente real. Nadie ha visto todavía una nota
+  tipo, y la Base «Sesiones» es la misma. No se añade ningún host, ningún endpoint ni ninguna petición nueva, y la
+  carga del plugin sigue sin hacer peticiones.
+- Sin verificar: ninguno de los cinco arreglos se ha visto en un cliente real. Nadie ha visto todavía una nota
   resumen de una sesión cerrada ya con la 0.6.13 o posterior, ni la Base «Sesiones» pintada. Lo demás que la entrada
   de la 0.6.13 da por no visto sigue igual: la nota resumen en Obsidian, el sonido de los avisos en Hebra, un cambio
   de personaje a mitad de sesión en el juego y la instalación en Obsidian/BRAT.
