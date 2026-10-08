@@ -1,5 +1,32 @@
 # Estado
 
+## Candidato 0.6.13: nota resumen de sesión, Base «Sesiones» y arreglos de la auditoría (8 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `9eb8b3e` (0.6.12 publicada) y recoge la auditoría de
+integración (`8001213`, unos 90 commits). Lo que trae, agrupado por lo que nota el usuario, está en
+[CHANGELOG](CHANGELOG.md): la nota resumen al cerrar una sesión en vivo (frontmatter `tyrian_summary_*` versión 3,
+media propia por mapa principal desde 3 sesiones comparables, nombres de mapa por `/v2/maps`), la Base «Sesiones»
+(`bundleVersion` 7), el personaje actual en el panel en vivo, «por hora» solo desde 15 minutos observados, y los
+arreglos de sesión en vivo, rendimiento, Venta, avisos, semillas de precio y host de Hebra. Metadatos de versión
+alineados en `manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de Obsidian
+1.11.4, como la 0.6.12); `release-identity-contract` y `release-preflight` en verde sobre el commit de metadatos.
+
+- Gate medido por el orquestador sobre `8001213` (es de ese commit, no de los dos commits de esta preparación, que
+  solo tocan metadatos y documentación): `check` VEREDICTO: VERDE (8/8), 5351 tests en 333 ficheros;
+  `check:guardrails` VEREDICTO: VERDE (25/25); el benchmark `bench:h6-live-session` dentro de presupuesto (fin p95
+  44,09 ms de 100; razón fin/inicio 1,052 de 6; cierre 1218,5 ms de 6000; nota 13 059 235 B de 20 MiB).
+- No verificado: nada de la 0.6.13 se ha visto en un cliente real. Ni la nota resumen ni la Base «Sesiones» en
+  Obsidian o en Hebra, ni el sonido de los avisos en Hebra, ni un cambio de personaje a mitad de sesión en el juego;
+  tampoco la instalación de la 0.6.13 en Hebra ni en Obsidian/BRAT.
+- Límites conocidos: los journals de sesiones cerradas antes de la 0.6.13 no se podan; con dos hosts sobre el mismo
+  almacén y sin sesión activa, uno puede podar journals que el otro retiene. Volver a la 0.6.12 deja los activos
+  gestionados en conflicto hasta repararlos (el paquete pasa de 6 a 7).
+- Sigue sin verse de versiones anteriores (listado en las secciones de abajo): el icono con borde de la 0.6.12
+  pintado en Hebra y la instalación de la 0.6.12 en Obsidian/BRAT; en el addon de Nexus 0.8.0 y 0.8.1, una bajada de
+  hallazgo mágico con su aviso, los tooltips, plegar y cerrar, el diagnóstico de Opciones, una sesión larga sin
+  parpadeos, el icono nuevo del botón de fondo del addon y Windows.
+- Pendiente: la publicación (tag, release, `release:brat-verify`) y la verificación en clientes reales.
+
 ## Canal 0.6.12 publicado: el monstruo con borde como icono en Hebra (8 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.12](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.12)

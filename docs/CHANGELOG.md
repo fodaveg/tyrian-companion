@@ -1,5 +1,95 @@
 # Changelog
 
+## Release beta 0.6.13 - nota resumen al cerrar una sesión en vivo, Base «Sesiones» y arreglos de la auditoría
+
+Candidato sobre `8001213` (main tras la auditoría de integración del 8 oct 2026); **no publicado ni etiquetado**.
+[ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Nota resumen: al cerrar una sesión en vivo se escribe una nota corta en `<carpeta de salida>/summaries/`, después
+  de que la nota completa tenga su recibo. Lleva el veredicto (neto, por hora, por hora sin el objeto dominante
+  cuando un objeto pasa de la mitad del valor, oro de la cartera), «para vender ahora» (sin objetos ligados a la
+  cuenta; los sin precio aparte y los contenedores sin abrir marcados), otras monedas, avisos, objetos que salieron,
+  mapas con nombre, personajes en orden si hubo cambio (y qué deja sin medir un cambio de personaje), huecos libres
+  al cerrar y una sección de cobertura que lista los tramos por debajo del 90 % observado. Es idempotente, no pisa
+  una nota que el usuario haya editado y un fallo se registra sin bloquear la sesión (3 intentos como máximo, a un
+  minuto). Lo que no se sabe se dice: sin precios no hay neto ni por hora (no un cero que entre en la media), y una
+  sesión de venta sin objetos nuevos titula por el oro.
+- Frontmatter legible, versión 3, con claves `tyrian_summary_*` tipadas (fecha, mapa, personajes, duraciones, cifras
+  de oro, objeto principal, avisos, huecos libres) sacadas de las mismas cifras que el cuerpo. La nota no lleva claves
+  `tc_*`, así que el historial de sesiones la ignora.
+- Media propia: «tu media en sesiones parecidas» sale en el veredicto desde 3 sesiones comparables en el mismo mapa
+  principal (más del 70 % del tiempo observado), leída de las claves de las notas resumen anteriores.
+- Nombres de mapa: el catálogo público añade `/v2/maps` (API pública, sin clave) con la misma caché, lotes y
+  limitador que objetos y monedas; la espera es acotada y, sin nombre, la nota dice «desconocido». Queda anotado en
+  `docs/PLATFORM_POLICY.md`.
+- Personajes: la sesión registra, por orden, cada personaje que ve y cuándo lo vio por primera vez. La lista vive
+  bajo una clave propia del almacén, con la marca de «resumen ya escrito», para que la 0.6.12 (que valida el registro
+  con una lista cerrada de claves) no rechace el registro si se vuelve a ella.
+- Base «Sesiones»: fichero nuevo `Session summaries.base`, que filtra por la etiqueta `gw2/session-summary` y la clave
+  `tyrian_summary_version`, con las vistas «Sesiones» (más reciente primero: enlace, fecha, mapa, duración, neto, por
+  hora, personajes, parte observada, objeto principal y avisos) y «Por mapa» (agrupada, sin medias). El paquete de
+  Bases gestionadas pasa a `bundleVersion` 7. Una instalación con el manifiesto del paquete 6 recibe la Base nueva
+  como creación (Preview/Apply o Repair) y las existentes no se tocan; volver a la 0.6.12 deja los activos
+  gestionados en conflicto hasta repararlos, como ocurrió con los paquetes 4 y 5.
+- Panel en vivo: la línea de estado enseña el personaje actual, y conserva el último conocido durante las pantallas
+  de carga o de selección de personaje.
+- «Por hora» con una sola regla: solo con 15 minutos observados o más, igual en el panel del juego, la pestaña de
+  sesión, la nota, la comparación y la nota resumen. Un último muestreo parcial, un hueco intermedio o el fin de la
+  sesión ya no la ocultan; los recuentos y totales se siguen enviando y pintando. La nota resumen la calcula sobre el
+  tiempo observado y ya no la pierde cuando la sesión terminó por una desconexión.
+- Sesión en vivo, presencia y cierre: ya no se cierra sola diez minutos después de reiniciar el host cuando la
+  presencia notificada durante la reclamación se descartaba; vale la última presencia cuando hay dos retenidas en
+  sitios distintos; una concesión perdida dentro del mismo proceso no se trata como reinicio; el cierre ya no queda
+  atascado por intervalos de mapa posteriores al fin ni por el recibo de una sesión antigua en la migración desde la
+  era de la API; un archivo de recuperación caído o con evidencia archivada ya no impide arrancar ni anuncia una
+  recuperación pendiente.
+- Canal del addon (live1): un canal cerrado cuyo hueco no se pudo guardar libera la concesión del productor y deja
+  de ocupar plaza (se conservan como mucho cuatro para escribir el hueco al apagar), así que ya no deja sin live1 a
+  las conexiones siguientes; un `live_status` con `epoch: null` tras un `live_open` rechazado ya no cierra la
+  conexión con `unexpected_message`; el nombre de personaje se mide en puntos de código, no en unidades UTF-16 (un
+  nombre con emoji ya no se acepta en el cable y se rechaza al guardar); `farm1` ya no lleva `err observe` tras un
+  cierre limpio.
+- Rendimiento de sesión larga: la gráfica abarca toda la sesión con 600 puntos como máximo (muestras que observaron
+  algo, cortes, el primero y el último, aclarados por zancada) y conserva la ruptura de línea de un corte fundido;
+  deja de revalorar todo el journal en cada muestreo con botín; se poda el journal de IndexedDB de una sesión sellada
+  cuando sale de la retención, con la cola de poda guardada entre reinicios, dos por latido, nunca durante la carga
+  ni sin un registro válido ni mientras otro host tiene la sesión en vivo; una nota de más de 8 MiB se lee sin
+  desbordar la pila; el historial recuerda la inspección de cada nota por `mtime`; y hay un benchmark largo
+  (`bench:h6-live-session`, 90 minutos de sesión con presupuestos y un rojo deliberado) que la CI de `main` corre
+  junto a los pasos H6 existentes y que no forma parte de `npm run check`.
+- Venta: la pestaña abierta se repinta cuando caduca una cifra (antes seguía diciendo «reciente»); el veredicto del
+  Saco se fecha por la captura de la puja y no por el refresco, de modo que una puja de cuatro horas ya no parece
+  recién leída; leer el análisis del asesor no lo copia en cada pintado; y el temporizador se cancela al apagar el
+  runtime.
+- Avisos: el sonido ya no se pierde con el audio en pausa (un contexto suspendido se reanuda antes de juzgar si hay
+  un tono sonando, el primer aviso que lo encuentra así se programa al reanudar, se descarta un tono cuya reanudación
+  llega con más de 5 s de retraso y un `resume()` que lanza ya no deja la fábrica tomada para siempre); se reutiliza
+  un único `AudioContext` y no se apilan tonos; cualquier 2xx del webhook cuenta como entregado (el 204 sin cuerpo de
+  Discord se registraba como fallo); el umbral se guarda al salir del campo y al cerrar la pestaña, solo lee
+  decimales llanos (`1,230` ya no se lee como 1,23 de oro; se rechazan `0x10`, `1e3` y signos) y acepta todo valor
+  válido (`0.07` se rechazaba).
+- Semillas de precio y exportación: la pasada masiva conserva los días más antiguos de una copia más larga de la
+  gráfica en vez de recortarla a 400 días, sin peticiones extra; lee cada semilla una vez; el CSV escribe los
+  números como números y protege con apóstrofo solo las cadenas.
+- Host de Hebra: una nota que el sync edita mientras se recorre la biblioteca ya no se purga del índice por no
+  aparecer en la lista (se confirma antes y se evita una segunda nota en la misma ruta); el log de diagnóstico se
+  añade por trozos de 4 KiB en vez de reescribir el fichero entero (llenar 2 MiB escribía 6226 MiB en IndexedDB); el
+  índice de rutas reabre su conexión y su almacenamiento ya no es fatal (se reconstruye en el siguiente arranque);
+  las conexiones de IndexedDB se cierran al descargar el plugin y cuando el arranque del núcleo falla; y el bundle
+  `hebra-main.mjs` baja de 3 327 783 a 2 556 800 bytes con minificación de espacios y sintaxis.
+- Pasos de cierre: la cola de poda no se guarda sobre una cola guardada que este host no pudo leer; el guardado
+  previo al borrado es un intento y no una garantía (si falla se avisa y se reintenta en el siguiente arranque, y el
+  coste es disco conservado, nunca un journal borrado por error). Los textos de `docs/SPEC-live-loot.md` y
+  `docs/THREAT-MODEL.md` siguen estos comportamientos.
+- Otros: una sesión de la era de la API archivada ya no se anuncia como recuperación pendiente; el indicador de
+  error se limpia al guardar el recibo de la nota; las cotizaciones retenidas obsoletas se piden de nuevo y cada
+  sesión arranca sin las cotizaciones de la anterior; la plantilla de la Base «Sesiones» no repite la columna de mapa
+  en la vista agrupada.
+- Límites: los journals de sesiones cerradas antes de la 0.6.13 no se podan. Con dos hosts sobre el mismo almacén y
+  sin sesión activa, uno puede podar journals que el otro retiene.
+- Sin verificar: ninguna de estas novedades se ha visto en un cliente real (la nota resumen y la Base en Obsidian y en
+  Hebra, el sonido en Hebra, un cambio de personaje a mitad de sesión en el juego) y la instalación de la 0.6.13.
+
 ## Release beta 0.6.12 - el monstruo con borde como icono del plugin en Hebra
 
 [Canal 0.6.12 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.12);
