@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveChartPointV1, LiveJournalEntryV1, LiveObservationV1, LiveSessionRuntimeRecord } from './live-session-model';
-import { buildLiveChart, liveChartPoint, liveObservationTotals } from './live-session-reducer';
+import { buildLiveChart, GOLD_CURRENCY_ID, liveObservationTotals, valueLiveTotals } from './live-session-reducer';
 
 type PricedRecord = Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'>;
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
@@ -10,7 +10,9 @@ function legacyChart(journal: readonly LiveJournalEntryV1[], record: PricedRecor
 	const chart: LiveChartPointV1[] = []; let totals: ReturnType<typeof liveObservationTotals> = [];
 	for (const entry of journal) {
 		totals = liveObservationTotals(totals, entry.observations);
-		chart.push(liveChartPoint(entry, totals, record)); if (chart.length > 600) chart.shift();
+		const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
+		chart.push({ observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
+			netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore }); if (chart.length > 600) chart.shift();
 	}
 	return chart;
 }

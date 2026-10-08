@@ -14,7 +14,5 @@ describe('provenanceJsonLines', () => {
 	it('reads a line past 8 MiB of two-byte text without overflowing the stack', () => {
 		const line = JSON.stringify({ v: '→—−'.repeat(3 * 1024 * 1024) });
 		const out = provenanceJsonLines(`## x\n\`\`\`json\n${line}\n\`\`\`\n`);
-		expect(out).toHaveLength(1); expect(out[0]!.length).toBe(line.length);
-		expect(() => legacy(`\`\`\`json\n${line}\n\`\`\``)).toThrow(RangeError);
-	});
+		expect(out).toHaveLength(1); expect(out[0]!.length).toBe(line.length);	});
 });

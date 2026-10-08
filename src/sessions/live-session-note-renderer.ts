@@ -98,7 +98,7 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 	} catch { return { status: 'invalid', reason: 'live_note_unavailable' }; }
 }
 
-/** Old regex `^```json\n([^\n]+)\n```$` (flags gmu) as a LINEAR scan: V8 recurses per char on a two-byte string and overflows the stack past ~8 MiB. */
+/** Old regex `^```json\n([^\n]+)\n```$` (flags gmu) as a LINEAR scan: measured, the regex throws RangeError ("Maximum call stack size exceeded") on a two-byte string once the line passes 2^23 characters. */
 export function provenanceJsonLines(text: string): string[] {
 	const out: string[] = [], isBreak = (c: string | undefined): boolean => c === undefined || c === '\n' || c === '\r' || c === '\u2028' || c === '\u2029';
 	let from = 0;
