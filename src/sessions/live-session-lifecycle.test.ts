@@ -359,6 +359,32 @@ describe('passive live session lifecycle', () => {
 			f.renew.mockResolvedValueOnce({status:'lost'} as never); f.setNow(AT+20*60_000); beat!(); await svc.capture(); beat!(); await svc.capture();
 			expect(svc.getRuntime(), 'the new session keeps its own presence').toMatchObject({phase:'active',connection:'connected'}); await svc.dispose();
 		});
+		it('a connect reported while the reclaim after a host restart was still refused is applied by the reclaim that works', async () => {
+			const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+			let busy = true; let beat: (() => void) | null = null;
+			const restarted = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {beat=callback;return 2;},
+				coordinator:{...f.options.coordinator,acquire:async (id) => busy
+					? {status:'busy',ownerExpiresAt:AT+120000,ownerInstanceId:'host',ownerMachineId:'machine'} : await f.options.coordinator.acquire(id)}});
+			await restarted.initialize();
+			// The game is running: the tracker reports it once, on the transition, and nobody repeats it.
+			f.setNow(AT+60_000); await restarted.presence(true);
+			await f.service.dispose(); busy = false; f.setNow(AT+61_000); beat!(); await restarted.capture();
+			expect(restarted.getRuntime(), 'the lease is back and the player is connected').toMatchObject({phase:'active',connection:'connected',lastPresenceAt:AT+60_000});
+			expect(restarted.getRuntime()?.gaps.map((gap) => gap.reason), 'the restart is still an unobserved interval').toContain('host_restart');
+			f.setNow(AT+12*60_000); beat!(); await restarted.capture();
+			expect(restarted.getRuntime()?.phase, 'and the session does not close itself ten minutes later').toBe('active'); await restarted.dispose();
+		});
+		it('a disconnect reported while the reclaim after a host restart was still refused keeps its own evidence of presence', async () => {
+			const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+			let busy = true; let beat: (() => void) | null = null;
+			const restarted = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {beat=callback;return 2;},
+				coordinator:{...f.options.coordinator,acquire:async (id) => busy
+					? {status:'busy',ownerExpiresAt:AT+120000,ownerInstanceId:'host',ownerMachineId:'machine'} : await f.options.coordinator.acquire(id)}});
+			await restarted.initialize();
+			f.setNow(AT+60_000); await restarted.presence(false,AT+45_000);
+			await f.service.dispose(); busy = false; f.setNow(AT+61_000); beat!(); await restarted.capture();
+			expect(restarted.getRuntime()).toMatchObject({phase:'active',connection:'disconnected',lastPresenceAt:AT+45_000}); await restarted.dispose();
+		});
 		it('a presence the store refuses as stale does not throw: it is held back like one sent during a loss', async () => {
 			const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
 			vi.spyOn(f.store,'saveLive').mockResolvedValueOnce({ status: 'stale' });

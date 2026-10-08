@@ -433,6 +433,10 @@ export class LiveSessionLifecycle {
 			next = liveSessionGap(this.record, 'host_restart', this.nowIso());
 			next = { ...next, connection: 'disconnected',
 				lastSourceDisconnectedAt:new Date(Math.min(this.options.now(),this.record.lastPresenceAt)).toISOString(),mapCoveragePartial: true, mapObservation: null };
+			// A report held back since the restart was received by THIS process, so it is newer than the disconnection assumed
+			// above. The tracker only reports transitions: dropped here, a player who is connected would stay written as gone
+			// and the beat would close the session ten minutes later.
+			if (this.lostPresence !== null) next = this.withPresence(next, this.lostPresence.connected, this.lostPresence.evidencedAt);
 		} else {
 			// The producer's link and the presence known in memory are still true, so no disconnection
 			// is made up: only the hole storage left, under the cause it started with.
