@@ -40,8 +40,20 @@ El tamaño de una bolsa son tres saltos desde su puntero, los mismos que da el s
 2. `definición+0x2C` tiene que ser 3 (tipo bolsa) y `definición+0x30` → carga de bolsa.
 3. `carga+0x28` → tamaño.
 
-La clase del objeto bolsa es la de `ItCliBag.cpp`: su constructor (RVA `0x13C8CF0`) fija la
-vtable `0x225D070`. La sonda exige esa vtable en cada bolsa.
+**Corrección del 8 de octubre.** La primera versión decía que la clase del objeto bolsa tenía
+la vtable `0x225D070`. Era un error de este análisis: esa vtable es la de los consumibles
+(`ItCliConsumable.cpp`). La ejecución en vivo lo destapó al rechazar la primera bolsa.
+
+La fábrica de objetos (RVA `0x13C6E03`) elige la clase por el tipo de la definición, con una
+tabla de 25 entradas. Para el tipo 3 llama al constructor de RVA `0x13C8C10`, que fija la
+vtable **`0x225CD18`**; en esa vtable, el slot `0x2A8` es la única función de `ItCliBag.cpp`.
+Como el juego exige tipo 3 en cada hueco de bolsa, no hay otra clase posible: bolsas invisibles,
+de caja fuerte, de equipo o la mochila inicial son la misma clase con otra definición.
+
+La sonda **todavía exige la vtable equivocada**, así que seguirá dando `unknown`. La correcta
+está preparada en `profile.json` como candidata inactiva, con su cadena comprobada sobre el
+fichero (tabla → caso → constructor → vtable → getter de definición). Se activa cuando una
+lectura en vivo devuelva ese RVA: es cambiar `bag_item_vtable` a 36031768.
 
 ## La matriz de 512 no basta
 
@@ -72,7 +84,9 @@ se validó en vivo el 6 de octubre. Los nuevos son `+0x440`, `+0x380` y los tres
 
 - Que la suma coincida con el total de la ventana. Es la prueba de abajo.
 - Que el tamaño de `carga+0x28` sea el que usa el contador en todos los tipos de bolsa.
-- Si alguna bolsa real usa otra clase de objeto: daría `bag_item_vtable`, no un número.
+- Que las bolsas reales tengan la vtable `0x225CD18`. Lo dirá el `--diagnose`.
+- Si los punteros de definición y de carga están alineados a 8 bytes. Son contenido del juego;
+  si no lo están, la sonda estricta los rechazará aunque la clase sea la correcta.
 - El inventario compartido de la cuenta y el banco. No entran en este contador y no se leen.
 - Windows nativo y el lector dentro del addon.
 
@@ -87,7 +101,7 @@ cd docs/audit/loot-bag-capacity-probe
 PYTHONDONTWRITEBYTECODE=1 python3 prove_guard_red.py
 # Debe terminar con exit 1: el guard de vtable se retira SOLO en la fixture.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_probe.py
-# Debe terminar con exit 0: 21 tests con el guard real activo.
+# Debe terminar con exit 0: 30 tests con el guard real activo (21 del candidato, 9 del diagnóstico).
 PYTHONDONTWRITEBYTECODE=1 python3 check_profile_offline.py
 # Debe terminar con exit 0: lee el fichero instalado, nunca el proceso.
 ```
@@ -132,6 +146,50 @@ Segundo control: David cambia a un personaje con otras bolsas y la raíz repite 
 contexto nuevo. La capacidad tiene que ser la del contador de ese personaje.
 
 Una discrepancia refuta la suma o el campo de tamaño; no autoriza buscar el número por el heap.
+
+## Primera ejecución en vivo, 8 octubre 2026: `unknown`
+
+La ejecutó la sesión raíz, con la ventana de inventario en `313/414`. Esta carpeta no leyó el
+proceso; los datos son los que la raíz informó.
+
+- Dos muestras, exit 2, las dos `unknown` con `bag_item_vtable`.
+- 1368 bytes pedidos y leídos, 0 bolsas leídas, 0 escrituras.
+
+Son 824 de guards y 272 por muestra: exactamente la ruta hasta la vtable de la primera bolsa.
+Los 11 guards, las vtables, los 9 slots, el dueño del inventario, el número de huecos y la
+lista de punteros pasaron. Lo único rechazado fue la clase del primer objeto, por el error
+descrito arriba.
+
+## Modo `--diagnose`
+
+Mismo `Reader`, mismos guards y mismo presupuesto. Añade a cada muestra:
+
+- `stage`: el paso donde se rechazó (por ejemplo `bag_item_vtable[0]`), y `passed`.
+- `pointer_fault`: `null`, `unaligned`, `out_of_user_range` o `unmapped`. Nunca el valor.
+- `observed_rva` y `observed_in_module`, si lo rechazado fue una vtable o un slot.
+- `survey`: el número de huecos de bolsa y una fila por cada uno de los 16 punteros, con:
+  si hay bolsa, el RVA de su vtable, si es la activa, qué clase candidata es, si su slot `8`
+  despacha al getter de definición guardado, el tipo de la definición, el tamaño y si los
+  punteros de definición y de carga están alineados.
+- `hypothetical_capacity_if_dispatch_accepted`: la suma, **solo** si todas las bolsas contadas
+  despachan al getter guardado, son de tipo 3 y no pasan de 32. Es un número de diagnóstico:
+  el veredicto sigue siendo `unknown` mientras la clase no esté aceptada.
+
+```sh
+python3 docs/audit/loot-bag-capacity-probe/check_profile_offline.py
+python3 docs/audit/loot-bag-capacity-probe/probe.py \
+  --pid "$GW2_LINUX_PID" --module-base "$GW2_MODULE_BASE" --context "$GW2_CONTEXT" \
+  --samples 1 --diagnose
+```
+
+Coste medido en fixture con 16 bolsas rechazadas: 1860 bytes una muestra, 2896 dos. Con las
+16 aceptadas, dos muestras agotan el presupuesto en el segundo sondeo; por eso una sola.
+
+La salida normal no cambia: un test fija sus campos.
+
+Este cambio tiene su propio recibo, [`receipt-diagnose-2026-10-08.json`](receipt-diagnose-2026-10-08.json).
+`receipt.json` y `evidence/` se conservan sin tocar como historia del primer candidato; lo que
+`evidence/static-findings.json` dice de la clase de la bolsa es el error ya corregido arriba.
 
 ## Coste para el lector del addon
 

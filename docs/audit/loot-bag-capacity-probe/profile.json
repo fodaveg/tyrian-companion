@@ -10,6 +10,61 @@
   "character_agent_vtable": 34996688,
   "inventory_vtable": 35004840,
   "bag_item_vtable": 36032624,
+  "bag_item_vtable_note": "Active value is the ItCliConsumable vtable, picked by mistake; the live run of 2026-10-08 rejected the first bag with it. Kept until a live vtable RVA confirms the candidate below.",
+  "bag_item_vtable_candidates": [
+    {
+      "name": "ItCliBag",
+      "vtable": 36031768,
+      "definition_type": 3,
+      "active": false
+    }
+  ],
+  "offline_only_guards": [
+    {
+      "name": "item_factory_type_switch",
+      "rva": 20737539,
+      "size": 40,
+      "sha256": "a461abfdb11f05ee2de3a9ee0603401ac35c692613e5f38ad25ed7133e901f61"
+    },
+    {
+      "name": "item_factory_table_bag_entry",
+      "rva": 20739800,
+      "size": 4,
+      "sha256": "1a6b5a308b0c5ed0908e85ae08f095a4cba8d26b7541daa7e400d6066e73cf9c"
+    },
+    {
+      "name": "item_factory_bag_case",
+      "rva": 20737866,
+      "size": 86,
+      "sha256": "46484198a4575c88c911cc5600f5aa7410ae81230dcca2e4c39db454c0f6d8a2"
+    },
+    {
+      "name": "bag_item_constructor",
+      "rva": 20745232,
+      "size": 44,
+      "sha256": "f527f8d47ef5d0b1c1200a6937de67acacc52a99a09ae9a90e9f6e5d1f059b99"
+    }
+  ],
+  "offline_links": [
+    {
+      "name": "factory_table_entry_3_selects_bag_case",
+      "kind": "u32",
+      "at_rva": 20739800,
+      "target_rva": 20737866
+    },
+    {
+      "name": "bag_case_calls_bag_constructor",
+      "kind": "rel32",
+      "at_rva": 20737943,
+      "target_rva": 20745232
+    },
+    {
+      "name": "bag_constructor_installs_candidate_vtable",
+      "kind": "rel32",
+      "at_rva": 20745249,
+      "target_rva": 36031768
+    }
+  ],
   "slots": [
     {
       "vtable": "char_context_vtable",

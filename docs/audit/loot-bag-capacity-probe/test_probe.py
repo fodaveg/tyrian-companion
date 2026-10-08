@@ -72,9 +72,9 @@ class Fixture:
         self.heap += (size + 15) & ~15
         return address
 
-    def bag(self, index, size, inventory=INVENTORY):
-        item, definition, payload = self.alloc(0x50), self.alloc(0x40), self.alloc(0x30)
-        self.qword(item, BASE + probe.PROFILE['bag_item_vtable'])
+    def bag(self, index, size, inventory=INVENTORY, vtable=None, misalign=0):
+        item, definition, payload = self.alloc(0x50), self.alloc(0x48) + misalign, self.alloc(0x38) + misalign
+        self.qword(item, BASE + (vtable or probe.PROFILE['bag_item_vtable']))
         self.qword(item + 0x40, definition)
         self.write(definition + 0x28, struct.pack('<IIQ', 9000 + index, probe.PROFILE['bag_item_type'], payload))
         self.dword(payload + 0x28, size)
@@ -296,6 +296,140 @@ class BagCapacityTests(unittest.TestCase):
         exit_code, rows = self.run_main(fixture, lambda _delay: fixture.qword(INVENTORY, BASE + 0x123400))
         self.assertEqual(exit_code, 2)
         self.assertEqual((rows[1]['status'], rows[1]['candidate_capacity_slots']), ('unknown', None))
+
+
+CANDIDATE = probe.PROFILE['bag_item_vtable_candidates'][0]
+GETTER = next(slot['target_rva'] for slot in probe.PROFILE['slots'] if slot['target'] == 'item_definition_getter')
+NORMAL_KEYS = {'status', 'candidate_capacity_slots', 'bag_slot_count', 'bags_equipped',
+               'live_value_proven', 'capacity_semantics_proven'}
+UNKNOWN_KEYS = {'status', 'candidate_capacity_slots', 'reason', 'errno',
+                'live_value_proven', 'capacity_semantics_proven'}
+
+
+def candidate_class_fixture(sizes=(20, 32, 32, 28)):
+    """Every bag is of the prepared, not yet accepted, class: what the live run of 8 Oct met."""
+    fixture = Fixture(sizes=(None,) * len(sizes))
+    fixture.qword(BASE + CANDIDATE['vtable'] + 8, BASE + GETTER)
+    for index, size in enumerate(sizes):
+        fixture.bag(index, size, vtable=CANDIDATE['vtable'])
+    return fixture
+
+
+class DiagnoseTests(unittest.TestCase):
+    def diagnose(self, fixture):
+        result, _owner = probe.observe_diagnosed(fixture.reader(), BASE, CONTEXT)
+        return result
+
+    def test_normal_mode_output_is_unchanged(self):
+        result, _owner = probe.observe(Fixture().reader(), BASE, CONTEXT)
+        self.assertEqual(set(result), NORMAL_KEYS)
+        result, _owner = probe.observe(candidate_class_fixture().reader(), BASE, CONTEXT)
+        self.assertEqual(set(result), UNKNOWN_KEYS)
+        self.assertEqual(result['reason'], 'bag_item_vtable')
+        exit_code, rows = BagCapacityTests.run_main(self, Fixture(), lambda _delay: None)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(set(rows[0]), NORMAL_KEYS | {'sample', 'time_ns'})
+        self.assertEqual(set(rows[2]), {'event', 'bytes_requested', 'bytes_read', 'bags_read', 'byte_limit',
+                                        'game_writes', 'live_value_proven'})
+
+    def test_rejected_bag_class_reports_stage_rva_and_survey(self):
+        fixture = candidate_class_fixture()
+        result = self.diagnose(fixture)
+        self.assertEqual((result['status'], result['reason'], result['candidate_capacity_slots']),
+                         ('unknown', 'bag_item_vtable', None))
+        self.assertEqual(result['stage'], 'bag_item_vtable[0]')
+        self.assertEqual((result['observed_rva'], result['observed_in_module']), (CANDIDATE['vtable'], True))
+        for passed in ('context_to_chcli', 'character', 'inventory', 'dispatch_slots', 'bag_slot_count',
+                       'bag_pointers', 'bag_pointer[0]'):
+            self.assertIn(passed, result['passed'])
+        survey = result['survey']
+        self.assertEqual((survey['bag_slot_count'], len(survey['bags']), survey['distinct_vtables']), (4, 16, 1))
+        self.assertEqual(survey['bags'][0], dict(
+            index=0, present=True, pointer='ok', vtable_rva=CANDIDATE['vtable'], vtable_in_module=True,
+            vtable_is_active=False, candidate_class='ItCliBag', definition_getter_dispatch=True,
+            definition_pointer='ok', definition_type=3, payload_pointer='ok', size=20))
+        self.assertEqual(survey['bags'][4], dict(index=4, present=False))
+        self.assertEqual(survey['hypothetical_capacity_if_dispatch_accepted'], 112)
+        text = json.dumps(result)
+        for item, definition, payload in fixture.items.values():
+            for address in (item, definition, payload):
+                self.assertNotIn(str(address), text)
+                self.assertNotIn(hex(address), text)
+
+    def test_accepted_class_keeps_the_normal_verdict(self):
+        result = self.diagnose(Fixture())
+        self.assertEqual((result['status'], result['candidate_capacity_slots']), ('candidate_bag_capacity', 112))
+        self.assertNotIn('stage', result)
+        self.assertIn('bag_size[3]', result['passed'])
+        self.assertTrue(all(row['vtable_is_active'] for row in result['survey']['bags'][:4]))
+        self.assertEqual(result['survey']['hypothetical_capacity_if_dispatch_accepted'], 112)
+
+    def test_pointer_faults_are_named_without_their_value(self):
+        cases = (('null', 'inventory', lambda f: f.qword(CHARACTER + 0x3F0, 0)),
+                 ('unmapped', 'inventory', lambda f: f.qword(CHARACTER + 0x3F0, 0x500000)),
+                 ('unaligned', 'bag_pointer[1]', lambda f: f.qword(INVENTORY + 0x388, f.items[1][0] + 4)),
+                 ('out_of_user_range', 'bag_pointer[1]', lambda f: f.qword(INVENTORY + 0x388, 1 << 60)))
+        for fault, stage, change in cases:
+            with self.subTest(fault=fault):
+                fixture = Fixture()
+                change(fixture)
+                result = self.diagnose(fixture)
+                self.assertEqual((result['status'], result['pointer_fault'], result['stage']),
+                                 ('unknown', fault, stage))
+                self.assertNotIn('observed_rva', result)
+
+    def test_unaligned_definition_stays_unknown_and_is_visible_in_the_survey(self):
+        fixture = Fixture(sizes=(20, None))
+        fixture.bag(1, 32, misalign=4)
+        result = self.diagnose(fixture)
+        self.assertEqual((result['status'], result['reason'], result['stage'], result['pointer_fault']),
+                         ('unknown', 'null_or_invalid_pointer', 'bag_definition[1]', 'unaligned'))
+        row = result['survey']['bags'][1]
+        self.assertEqual((row['definition_pointer'], row['payload_pointer'], row['size']),
+                         ('unaligned', 'unaligned', 32))
+        self.assertEqual(result['survey']['hypothetical_capacity_if_dispatch_accepted'], 52)
+
+    def test_vtable_outside_the_module_is_reported_as_such(self):
+        fixture = Fixture()
+        fixture.qword(fixture.items[0][0], HEAP + 0x8000)
+        result = self.diagnose(fixture)
+        self.assertEqual((result['reason'], result['observed_rva'], result['observed_in_module']),
+                         ('bag_item_vtable', None, False))
+        self.assertEqual(result['survey']['bags'][0]['vtable_in_module'], False)
+        self.assertNotIn('hypothetical_capacity_if_dispatch_accepted', result['survey'])
+
+    def test_class_without_the_guarded_getter_gets_no_size_and_no_hypothetical(self):
+        fixture = Fixture()
+        fixture.qword(fixture.items[2][0], BASE + 0x123400)
+        row = self.diagnose(fixture)['survey']['bags'][2]
+        self.assertEqual((row['vtable_rva'], row['definition_getter_dispatch'], row['candidate_class']),
+                         (0x123400, False, None))
+        self.assertNotIn('size', row)
+        self.assertNotIn('hypothetical_capacity_if_dispatch_accepted', self.diagnose(fixture)['survey'])
+
+    def test_survey_failure_is_reported_and_never_becomes_a_value(self):
+        fixture = Fixture()
+        fixture.qword(INVENTORY, BASE + 0x123400)
+        result = self.diagnose(fixture)
+        self.assertEqual((result['status'], result['stage'], result['observed_rva']), ('unknown', 'inventory', 0x123400))
+        self.assertEqual(result['survey'], dict(bags=[], error='inventory_vtable'))
+
+    def test_main_diagnose_with_sixteen_rejected_bags_fits_the_budget(self):
+        fixture = candidate_class_fixture(sizes=(32,) * 16)
+        output = io.StringIO()
+        arguments = ['probe.py', '--pid', '1', '--module-base', hex(BASE), '--context', hex(CONTEXT), '--diagnose']
+        with (mock.patch('sys.argv', arguments),
+              mock.patch.object(probe, 'prepare_process', return_value=fixture.ranges),
+              mock.patch.object(probe.os, 'open', return_value=123),
+              mock.patch.object(probe.os, 'close'),
+              mock.patch.object(probe.os, 'pread', side_effect=lambda fd, size, address: fixture.read(size, address)),
+              contextlib.redirect_stdout(output)):
+            exit_code = probe.main()
+        rows = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(rows[0]['survey']['hypothetical_capacity_if_dispatch_accepted'], 512)
+        self.assertLessEqual(rows[1]['bytes_requested'], probe.MAX_BYTES)
+        self.assertEqual(rows[1]['game_writes'], 0)
 
 
 if __name__ == '__main__':

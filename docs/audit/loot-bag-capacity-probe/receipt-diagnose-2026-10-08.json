@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-08",
+  "scope": "--diagnose mode for the bag capacity candidate, plus a prepared and inactive bag item class, after the first live run returned unknown; the normal mode's output is unchanged",
+  "supersedes": "The bag item class stated in receipt.json's commit 236cdce19e4b99f93dcb91eac7f6581f908bdedd and in evidence/static-findings.json (vtable 0x225D070), which was wrong. receipt.json and evidence/ are kept unchanged as history.",
+  "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "process_access_by_this_work": false,
+  "live_run_reported_by_root": {
+    "note": "Executed by the root session, not by this work; figures as reported",
+    "platform": "Fedora Linux, GE-Proton11-7",
+    "samples": 2,
+    "exit_code": 2,
+    "status": "unknown",
+    "reason": "bag_item_vtable",
+    "bytes_requested": 1368,
+    "bytes_read": 1368,
+    "bags_read": 0,
+    "game_writes": 0,
+    "inventory_counter_reported": "313/414"
+  },
+  "correction": {
+    "error": "The first analysis took the constructor that follows the ItCliBag.cpp function for that class's own. Vtable 0x225D070 belongs to ItCliConsumable.cpp.",
+    "static_evidence": [
+      "The item factory reads the definition type at +0x2C (RVA 0x13C6E03) and indexes a 25-entry table at RVA 0x13C76CC",
+      "Entry 3 selects the case at RVA 0x13C6F4A, which allocates 0x98 bytes and calls the constructor at RVA 0x13C8C10",
+      "That constructor installs vtable 0x225CD18, whose slot 0x2A8 is the only function referencing ItCliBag.cpp and whose slot 8 is the shared definition getter RVA 0x13C3E10",
+      "Entry 4 selects the constructor at RVA 0x13C8CF0, which installs 0x225D070"
+    ],
+    "active_value_still_wrong": true,
+    "activation": "Set bag_item_vtable to 36031768 once a live --diagnose row reports vtable_rva 36031768; not done here"
+  },
+  "live_value_proven": false,
+  "checks": {
+    "red_guard": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 prove_guard_red.py",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "observed_failure": "candidate_bag_capacity != unknown",
+      "normalized_log_sha256": "cd29ecae4ed8e4c4fb8bb8410cfa858d834f3201530385b21e98c8541d636a91"
+    },
+    "green_fixtures": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_probe.py",
+      "exit_code": 0,
+      "tests": 30,
+      "of_which_diagnose": 9,
+      "tail": "Ran 30 tests in 0.024s / OK",
+      "normalized_log_sha256": "4d6c6a3399302df33a0940f548ef6fa810cdb9bf6ae912de2deafdf9e08149d3"
+    },
+    "offline_profile": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 check_profile_offline.py",
+      "exit_code": 0,
+      "guards": 11,
+      "slots": 9,
+      "candidates": 1,
+      "offline_links": 3,
+      "failures": 0,
+      "negative_control": "one link target and the candidate vtable altered in memory only: exit 1, failures offline_link_factory_table_entry_3_selects_bag_case and candidate_dispatch_ItCliBag"
+    },
+    "logs": "Temporary scratch logs, deleted; only their hashes (worktree prefix stripped) and tails are kept here"
+  },
+  "bounds": {
+    "process_requested_bytes_per_run": 4096,
+    "fixture_diagnose_bytes_16_rejected_bags_one_sample": 1860,
+    "fixture_diagnose_bytes_16_rejected_bags_two_samples": 2896,
+    "fixture_diagnose_16_accepted_bags_two_samples": "second survey stops with byte_budget; the verdict is unaffected"
+  },
+  "limitations": [
+    "The diagnose mode has never run against the game.",
+    "The survey accepts any item class whose slot 8 is the guarded definition getter and follows unaligned definition pointers; its sum is a diagnostic number and never becomes the verdict.",
+    "The candidate class is static evidence only until a live vtable RVA matches it.",
+    "The plugin suite and the gate were not run."
+  ],
+  "files": {
+    "README.md": "90fe4af1f6c3f42272ff76cbc3ca4e1211da7feed1f668403fd926c104d9fa85",
+    "check_profile_offline.py": "edb8b452f41e8aacabef84f22eb3fa0aa3a7c27c0082c9c91b456b2fff055731",
+    "probe.py": "cdb2b9afecb665a98c618910ef4646fe3fba20d4eab8dee341e5938b2f4b1f89",
+    "profile.json": "921c608f8ec13e27ca7d1438589d7a2b9efd6fcb756405e4e92c858afa84b0ab",
+    "prove_guard_red.py": "c2fb05fb76716e3ad7623d357704069af0a17d1a522679c84ae896828ea87565",
+    "test_probe.py": "44b84be37120d48eb661e6d6e3f6bbfea8539af29fa0429c49e3fbd981142f0a"
+  }
+}

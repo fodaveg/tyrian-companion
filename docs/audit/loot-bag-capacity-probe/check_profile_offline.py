@@ -50,8 +50,25 @@ def main():
         stored = file_bytes(profile[slot['vtable']] + slot['slot'], 8)
         if stored != struct.pack('<Q', image_base + slot['target_rva']) or slot['target_rva'] not in guarded:
             failures.append('slot_' + slot['target'])
+    # Static-only evidence for a bag item class that is prepared but not yet accepted.
+    getter = next((slot['target_rva'] for slot in profile['slots']
+                   if slot['target'] == 'item_definition_getter'), None)
+    for guard in profile.get('offline_only_guards', []):
+        if hashlib.sha256(file_bytes(guard['rva'], guard['size'])).hexdigest() != guard['sha256']:
+            failures.append('offline_guard_' + guard['name'])
+    for link in profile.get('offline_links', []):
+        raw = file_bytes(link['at_rva'], 4)
+        value = struct.unpack('<I' if link['kind'] == 'u32' else '<i', raw)[0] if len(raw) == 4 else None
+        reached = value if link['kind'] == 'u32' else None if value is None else link['at_rva'] + 4 + value
+        if reached != link['target_rva']:
+            failures.append('offline_link_' + link['name'])
+    for candidate in profile.get('bag_item_vtable_candidates', []):
+        if getter is None or file_bytes(candidate['vtable'] + 8, 8) != struct.pack('<Q', image_base + getter):
+            failures.append('candidate_dispatch_' + candidate['name'])
     print(json.dumps(dict(event='offline_profile_check', guards=len(profile['guards']),
                           slots=len(profile['slots']),
+                          candidates=len(profile.get('bag_item_vtable_candidates', [])),
+                          offline_links=len(profile.get('offline_links', [])),
                           guard_bytes=sum(guard['size'] for guard in profile['guards']),
                           failures=failures, process_access=False)))
     return 1 if failures else 0

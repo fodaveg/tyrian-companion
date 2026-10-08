@@ -31,7 +31,8 @@ class Reader:
     """Exact bounded reads, injected for fixtures; no scans or writes.
 
     Copied from docs/audit/loot-wallet-probe/probe.py (sha256 f8f090f9...d4009b).
-    Only the counters differ, plus `checked` for pointers read inside a record.
+    Only the counters differ, plus `checked` for pointers read inside a record and
+    the route notes that --diagnose reports. The notes never change a verdict.
     """
 
     def __init__(self, ranges, pread, budget=MAX_BYTES):
@@ -41,6 +42,20 @@ class Reader:
         self.requested = 0
         self.copied = 0
         self.bags = 0
+        self.begin()
+
+    def begin(self):
+        """Forget the previous sample's route notes."""
+        self.stage = None
+        self.passed = []
+        self.fault = None
+        self.observed = None
+
+    def step(self, name):
+        """Name the hop about to be read; the previous one is thereby passed."""
+        if self.stage and self.stage not in self.passed:
+            self.passed.append(self.stage)
+        self.stage = name
 
     def read(self, address, size):
         if not 0x10000 <= address <= MAX_ADDRESS or not 0 < size <= 1024:
@@ -61,12 +76,24 @@ class Reader:
     def scalar(self, address, size):
         return int.from_bytes(self.read(address, size), 'little')
 
+    def classify(self, value):
+        """Why a pointer value is unusable, or None; the value itself is never reported."""
+        if not value:
+            return 'null'
+        if not 0x10000 <= value <= MAX_ADDRESS:
+            return 'out_of_user_range'
+        if value & 7:
+            return 'unaligned'
+        if not any(start <= value < end for start, end in self.ranges):
+            return 'unmapped'
+        return None
+
     def checked(self, value):
         """Validate a pointer value that was already read as part of a larger record."""
-        if not value or value & 7 or not 0x10000 <= value <= MAX_ADDRESS:
-            raise Rejected('null_or_invalid_pointer')
-        if not any(start <= value < end for start, end in self.ranges):
-            raise Rejected('unmapped_pointer')
+        fault = self.classify(value)
+        if fault:
+            self.fault = fault
+            raise Rejected('unmapped_pointer' if fault == 'unmapped' else 'null_or_invalid_pointer')
         return value
 
     def pointer(self, address):
@@ -82,7 +109,9 @@ def guard_profile(reader, base):
 
 
 def require_pointer(reader, address, expected, reason):
-    if reader.pointer(address) != expected:
+    value = reader.pointer(address)
+    if value != expected:
+        reader.observed = value
         raise Rejected(reason)
 
 
@@ -95,22 +124,31 @@ def require_slots(reader, base):
 
 def owner_route(reader, base, context, prefix=''):
     """Context -> controlled character -> its inventory, the route of the inventory reader."""
+    mark = 'recheck_' if prefix else ''
+    reader.step(mark + 'context_to_chcli')
     char_context = reader.pointer(context + 0x98)
     require_pointer(reader, char_context, base + PROFILE['char_context_vtable'], prefix + 'character_context_vtable')
+    reader.step(mark + 'character')
     character = reader.pointer(char_context + 0x98)
     require_pointer(reader, character + 8, base + PROFILE['character_agent_vtable'], prefix + 'character_agent_vtable')
+    reader.step(mark + 'inventory')
     inventory = reader.pointer(character + 0x3F0)
     require_pointer(reader, inventory, base + PROFILE['inventory_vtable'], prefix + 'inventory_vtable')
     return char_context, character, inventory
 
 
-def bag_size(reader, base, item):
+def bag_size(reader, base, item, index):
     """One equipped bag: item -> definition -> bag payload -> size."""
-    require_pointer(reader, reader.checked(item), base + PROFILE['bag_item_vtable'], 'bag_item_vtable')
+    reader.step(f'bag_pointer[{index}]')
+    reader.checked(item)
+    reader.step(f'bag_item_vtable[{index}]')
+    require_pointer(reader, item, base + PROFILE['bag_item_vtable'], 'bag_item_vtable')
+    reader.step(f'bag_definition[{index}]')
     definition = reader.pointer(item + 0x40)
     _type_id, item_type, payload = struct.unpack('<IIQ', reader.read(definition + 0x28, 16))
     if item_type != PROFILE['bag_item_type']:
         raise Rejected('bag_definition_type')
+    reader.step(f'bag_size[{index}]')
     size = reader.scalar(reader.checked(payload) + 0x28, 4)
     if size > PROFILE['bag_size_max']:
         raise Rejected('bag_size_bounds')
@@ -122,21 +160,28 @@ def capacity_snapshot(reader, base, context):
     """Add the equipped bags' sizes, then recheck the owner, the slot count and the bag list."""
     owner = owner_route(reader, base, context)
     _char_context, character, inventory = owner
+    reader.step('dispatch_slots')
     require_slots(reader, base)
+    reader.step('controlled_flag')
     if not reader.scalar(character + 0x178, 4) & 0x10:
         raise Rejected('controlled_character_flag')
+    reader.step('inventory_owner')
     if reader.pointer(inventory + 0x70) != character:
         raise Rejected('inventory_owner_mismatch')
+    reader.step('bag_slot_count')
     slot_count = reader.scalar(inventory + 0x440, 4)
     if slot_count > BAGS:
         raise Rejected('bag_slot_count_bounds')
+    reader.step('bag_pointers')
     bags = reader.read(inventory + 0x380, 8 * BAGS)
-    sizes = [bag_size(reader, base, item) for item in struct.unpack(f'<{BAGS}Q', bags)[:slot_count] if item]
+    sizes = [bag_size(reader, base, item, index)
+             for index, item in enumerate(struct.unpack(f'<{BAGS}Q', bags)[:slot_count]) if item]
     if (owner_route(reader, base, context, 'concurrent_') != owner
             or reader.pointer(inventory + 0x70) != character
             or reader.scalar(inventory + 0x440, 4) != slot_count
             or reader.read(inventory + 0x380, 8 * BAGS) != bags):
         raise Rejected('concurrent_bag_change')
+    reader.step('done')
     return dict(candidate_capacity_slots=sum(sizes), bag_slot_count=slot_count, bags_equipped=len(sizes)), owner
 
 
@@ -149,6 +194,76 @@ def observe(reader, base, context):
         return (dict(status='unknown', candidate_capacity_slots=None,
                      reason=str(error) if isinstance(error, Rejected) else 'read_failed',
                      errno=getattr(error, 'errno', None), **UNPROVEN), None)
+
+
+def module_rva(base, value):
+    """An address inside the game image as an RVA, which names code and not player data."""
+    return value - base if base <= value < base + PROFILE['image_size'] else None
+
+
+def bag_survey(reader, base, context):
+    """Diagnose only: class and size of every bag slot, accepting any item class whose
+    definition getter dispatches to the guarded one. Never feeds the verdict."""
+    survey = dict(bags=[])
+    try:
+        _char_context, _character, inventory = owner_route(reader, base, context)
+        survey['bag_slot_count'] = slot_count = reader.scalar(inventory + 0x440, 4)
+        getter = base + next(slot['target_rva'] for slot in PROFILE['slots']
+                             if slot['target'] == 'item_definition_getter')
+        known = {entry['vtable']: entry['name'] for entry in PROFILE['bag_item_vtable_candidates']}
+        dispatch = {}
+        for index, item in enumerate(struct.unpack(f'<{BAGS}Q', reader.read(inventory + 0x380, 8 * BAGS))):
+            row = dict(index=index, present=bool(item))
+            survey['bags'].append(row)
+            if not item:
+                continue
+            row['pointer'] = reader.classify(item) or 'ok'
+            if row['pointer'] not in ('ok', 'unaligned'):
+                continue
+            vtable = reader.scalar(item, 8)
+            row['vtable_rva'] = rva = module_rva(base, vtable)
+            row['vtable_in_module'] = rva is not None
+            if rva is None:
+                continue
+            row['vtable_is_active'] = rva == PROFILE['bag_item_vtable']
+            row['candidate_class'] = known.get(rva)
+            if vtable not in dispatch:
+                dispatch[vtable] = reader.scalar(vtable + 8, 8) == getter
+            row['definition_getter_dispatch'] = dispatch[vtable]
+            if not dispatch[vtable]:
+                continue
+            definition = reader.scalar(item + 0x40, 8)
+            row['definition_pointer'] = reader.classify(definition) or 'ok'
+            if row['definition_pointer'] not in ('ok', 'unaligned'):
+                continue
+            _type_id, row['definition_type'], payload = struct.unpack('<IIQ', reader.read(definition + 0x28, 16))
+            row['payload_pointer'] = reader.classify(payload) or 'ok'
+            if row['definition_type'] == PROFILE['bag_item_type'] and row['payload_pointer'] in ('ok', 'unaligned'):
+                row['size'] = reader.scalar(payload + 0x28, 4)
+        survey['distinct_vtables'] = len({row['vtable_rva'] for row in survey['bags'] if row.get('vtable_rva')})
+        counted = [row for row in survey['bags'][:slot_count] if row['present']] if slot_count <= BAGS else None
+        if counted is not None and all(row.get('size', BAGS * 99) <= PROFILE['bag_size_max'] for row in counted):
+            survey['hypothetical_capacity_if_dispatch_accepted'] = sum(row['size'] for row in counted)
+    except (Rejected, OSError) as error:
+        survey['error'] = str(error) if isinstance(error, Rejected) else 'read_failed'
+    return survey
+
+
+def observe_diagnosed(reader, base, context):
+    """The normal verdict plus where the route stopped and what the bag slots hold."""
+    reader.begin()
+    result, owner = observe(reader, base, context)
+    result['diagnose'] = True
+    result['passed'] = list(reader.passed)
+    if result['status'] == 'unknown':
+        result['stage'] = reader.stage
+        if reader.fault:
+            result['pointer_fault'] = reader.fault
+        if reader.observed is not None:
+            result['observed_rva'] = module_rva(base, reader.observed)
+            result['observed_in_module'] = result['observed_rva'] is not None
+    result['survey'] = bag_survey(reader, base, context)
+    return result, owner
 
 
 def prepare_process(pid, supplied_base):
@@ -191,6 +306,8 @@ def main():
     parser.add_argument('--context', type=parse_pointer, required=True)
     parser.add_argument('--samples', type=int, default=1, choices=(1, 2))
     parser.add_argument('--interval', type=float, default=1)
+    parser.add_argument('--diagnose', action='store_true',
+                        help='add the route stage, vtable RVAs and a per-bag survey; same reads budget')
     args = parser.parse_args()
     if not 0 < args.pid <= 0x7FFFFFFF or not 0.1 <= args.interval <= 30:
         parser.error('PID or interval outside limits')
@@ -205,7 +322,8 @@ def main():
             previous = None
             previous_owner = None
             for index in range(args.samples):
-                result, owner = observe(reader, args.module_base, args.context)
+                result, owner = (observe_diagnosed if args.diagnose else observe)(
+                    reader, args.module_base, args.context)
                 result['sample'] = index
                 result['time_ns'] = time.time_ns()
                 if result['status'] == 'unknown':
