@@ -31,6 +31,54 @@ describe('essential alert threshold', () => {
 		expect(goldThresholdToCopper('0.00001')).toBe('invalid');
 	});
 
+	it('Z10: accepts every two-decimal amount from 0 to 100, float noise included, and a decimal comma', () => {
+		for (let hundredths = 0; hundredths <= 10_000; hundredths += 1) {
+			const text = (hundredths / 100).toFixed(2);
+			expect(goldThresholdToCopper(text), text).toBe(hundredths * 100);
+		}
+		expect(goldThresholdToCopper('0.07')).toBe(700);
+		expect(goldThresholdToCopper('5,5')).toBe(55_000);
+		expect(goldThresholdToCopper('1,234.5')).toBe('invalid');
+		expect(goldThresholdToCopper('0,00001')).toBe('invalid');
+	});
+
+	it('Z10: typing never saves; the value is saved when the field is left, and an emptied field is not a stray 0', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert me about a drop from');
+		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
+		const control = renderControl(definition, 'text');
+
+		await control.change('');
+		await control.change('7');
+		await control.change('7,5');
+		expect(updates, 'a keystroke saved').toEqual([]);
+
+		await control.commit();
+		expect(updates).toEqual([{ valuableLootThresholdCopper: 75_000 }]);
+	});
+
+	it('Z10: leaving the field emptied still saves 0, the owner\'s explicit "any priced drop"', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert me about a drop from');
+		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
+		const control = renderControl(definition, 'text');
+
+		await control.change('');
+		await control.commit();
+
+		expect(updates).toEqual([{ valuableLootThresholdCopper: 0 }]);
+	});
+
 	it('reads an empty field as 0 (alert on any priced drop) and still rejects text', () => {
 		expect(goldThresholdToCopper('')).toBe(0);
 		expect(goldThresholdToCopper('  ')).toBe(0);
@@ -302,7 +350,9 @@ describe('settings information architecture', () => {
 			alertIngamePort: plugin.settings.alertIngamePort,
 		});
 
-		await renderControl(definition, 'text').change('250');
+		const control = renderControl(definition, 'text');
+		await control.change('250');
+		await control.commit();
 
 		expect(plugin.settings.valuableLootThresholdCopper).toBe(2_500_000);
 		expect({
@@ -322,7 +372,9 @@ describe('settings information architecture', () => {
 			.find((candidate) => candidate.name === 'Alert me about a drop from');
 		if (definition === undefined) throw new Error('Expected the valuable-drop threshold setting.');
 
-		await renderControl(definition, 'text').change('250');
+		const control = renderControl(definition, 'text');
+		await control.change('250');
+		await control.commit();
 
 		expect(updates).toEqual([{ valuableLootThresholdCopper: 2_500_000 }]);
 	});
@@ -687,6 +739,8 @@ interface FakeControl {
 	feedback: string;
 	feedbackRole: string | null;
 	change(value: string): Promise<void>;
+	/** The DOM `change` event: the field was left or confirmed. Resolves once the save it started settled. */
+	commit(): Promise<void>;
 }
 
 interface RenderableSettingDefinition {
@@ -699,6 +753,7 @@ function renderControl(
 	kind: 'dropdown' | 'text',
 ): FakeControl {
 	let listener: (value: string) => Promise<void> | void = () => undefined;
+	let commitListener: () => void = () => undefined;
 	let selectedValue = '';
 	let feedback = '';
 	const attributes = new Map<string, string>();
@@ -709,6 +764,7 @@ function renderControl(
 		inputEl: {
 			setAttr: (name: string, value: string) => { attributes.set(name, value); },
 			removeAttribute: (name: string) => { attributes.delete(name); },
+			addEventListener: (type: string, next: () => void) => { if (type === 'change') commitListener = next; },
 		},
 		addOption: (value: string) => { options.push(value); return component; },
 		setValue: (value: string) => { selectedValue = value; return component; },
@@ -732,5 +788,6 @@ function renderControl(
 		get feedbackRole() { return feedbackAttributes.get('role') ?? null; },
 		options,
 		change: async (value) => { await listener(value); },
+		commit: async () => { commitListener(); for (let turn = 0; turn < 20; turn += 1) await Promise.resolve(); },
 	};
 }

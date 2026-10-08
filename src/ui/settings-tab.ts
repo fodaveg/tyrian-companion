@@ -3,6 +3,7 @@ import type {
 	TyrianSecretControl,
 	TyrianSettingDefinition,
 	TyrianSettingRow,
+	TyrianTextControl,
 	TyrianUiPort,
 	TyrianVault,
 } from '../host/tyrian-host';
@@ -63,9 +64,13 @@ const SETTINGS_FOCUSABLE = 'button, input, select, textarea, summary, [tabindex]
 export function goldThresholdToCopper(value: string): number | 'invalid' {
 	// Empty means "no minimum", the same as 0: the player cleared the field to be told about any priced drop.
 	if (value.trim() === '') return 0;
-	const gold = Number(value);
-	const copper = gold * 10_000;
-	return Number.isFinite(gold) && gold >= 0 && Number.isSafeInteger(copper) ? copper : 'invalid';
+	// A decimal comma is as valid as a point ("5,5"); a thousands separator is not, and fails below.
+	const gold = Number(value.trim().replace(',', '.'));
+	if (!Number.isFinite(gold) || gold < 0) return 'invalid';
+	// `0.07 * 10_000` is 700.0000000000001: round to the copper, then accept only a value that
+	// really was a whole number of copper (so `0.00001` is still refused instead of becoming 0).
+	const copper = Math.round(gold * 10_000);
+	return Number.isSafeInteger(copper) && Math.abs(gold * 10_000 - copper) < 1e-6 ? copper : 'invalid';
 }
 
 /** What the settings panel needs from the host: rows, modals, the folder picker and the config folder. */
@@ -442,21 +447,32 @@ export class TyrianCompanionSettingTab {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status');
 					feedback.setAttr('aria-live', 'polite');
-					setting.addText((text) => text
-						.setValue(String(this.plugin.settings.valuableLootThresholdCopper / 10_000))
-						.onChange(async (value) => {
-							const threshold = goldThresholdToCopper(value);
-							if (threshold === 'invalid') {
-								text.inputEl.setAttr('aria-invalid', 'true');
-								feedback.setAttr('role', 'alert');
-								feedback.setText(this.t('settings.halloween.threshold.invalid'));
-								return;
-							}
+					// Typing only validates; the value is saved when the field is left or confirmed (the
+					// DOM `change` event). Saving per keystroke made an emptied field mean threshold 0 for
+					// an instant, and a sample confirmed in that gap froze 0 into its alerts.
+					let typed = String(this.plugin.settings.valuableLootThresholdCopper / 10_000);
+					const validate = (): number | 'invalid' => {
+						const threshold = goldThresholdToCopper(typed);
+						if (threshold === 'invalid') {
+							text.inputEl.setAttr('aria-invalid', 'true');
+							feedback.setAttr('role', 'alert');
+							feedback.setText(this.t('settings.halloween.threshold.invalid'));
+						} else {
 							text.inputEl.removeAttribute('aria-invalid');
 							feedback.setAttr('role', 'status');
 							feedback.setText('');
-							await save({ valuableLootThresholdCopper: threshold });
-						}));
+						}
+						return threshold;
+					};
+					let text!: TyrianTextControl;
+					setting.addText((control) => {
+						text = control;
+						control.setValue(typed).onChange((value) => { typed = value; validate(); });
+						control.inputEl.addEventListener('change', () => {
+							const threshold = validate();
+							if (threshold !== 'invalid') void save({ valuableLootThresholdCopper: threshold });
+						});
+					});
 				},
 			},
 			{
