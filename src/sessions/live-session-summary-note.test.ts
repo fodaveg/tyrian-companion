@@ -210,7 +210,7 @@ Sin precio de bazar (fuera del valor): Objeto 74328 ×2, Objeto 3376 ×1, Objeto
 - Moneda 2: +2940
 - Moneda 23: +1
 
-Salieron del inventario 1 objetos; no se distingue si se vendieron, se consumieron o se depositaron.
+Salió del inventario 1 objeto; no se distingue si se vendió, se consumió o se depositó.
 
 ## Mapas
 
@@ -408,6 +408,25 @@ describe('live session summary: rules that change the note', () => {
 		expect(content).toContain('tyrian_summary_per_hour_copper: null');
 		expect(content).toContain('tyrian_summary_wallet_gold: 25');
 		expect(content).toContain('Salieron del inventario 40 objetos; no se distingue si se vendieron, se consumieron o se depositaron.');
+	});
+
+	it('counts what left the inventory in the singular for one unit and in the plural from two, in both languages', async () => {
+		const left = (units: number): Mutate => (session) => ({ ...session, totals: [...session.totals, total('item', 777, 0, units)] });
+		const oneEs = body((await render({ mutate: left(1) })).content);
+		expect(oneEs).toContain('\n\nSalió del inventario 1 objeto; no se distingue si se vendió, se consumió o se depositó.\n\n');
+		expect(oneEs).not.toContain('1 objetos');
+		const oneEn = body((await render({ mutate: left(1), locale: 'en' })).content);
+		expect(oneEn).toContain('\n\n1 item left the inventory; it cannot tell whether it was sold, consumed or deposited.\n\n');
+		expect(oneEn).not.toContain('1 items');
+		const twoEs = body((await render({ mutate: left(2) })).content);
+		expect(twoEs).toContain('\n\nSalieron del inventario 2 objetos; no se distingue si se vendieron, se consumieron o se depositaron.\n\n');
+		const twoEn = body((await render({ mutate: left(2), locale: 'en' })).content);
+		expect(twoEn).toContain('\n\n2 items left the inventory; it cannot tell whether they were sold, consumed or deposited.\n\n');
+		// One unit each of two different items is two units: the count is of units, not of kinds.
+		const kinds: Mutate = (session) => ({ ...session, totals: [...session.totals, total('item', 777, 0, 1), total('item', 778, 0, 1)] });
+		expect(body((await render({ mutate: kinds })).content)).toContain('Salieron del inventario 2 objetos;');
+		// Nothing left: no line at all.
+		expect(body((await render()).content)).not.toMatch(/del inventario/u);
 	});
 
 	it('puts a non-gold currency in the verdict when it was the main result', async () => {

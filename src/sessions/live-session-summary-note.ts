@@ -145,7 +145,10 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		if (f.alerts.length > 0) out.push('', `## ${label('Lo bueno', 'The good')}`, '',
 			...f.alerts.map((alert) => `- ${clock(alert.at)} · ${itemName(alert.itemId)} ×${String(alert.quantity)}${alert.totalCopper === null ? '' : ` · ${money(alert.totalCopper)}`}`));
 
-		if (f.outCount > 0) out.push('', label(`Salieron del inventario ${String(f.outCount)} objetos; no se distingue si se vendieron, se consumieron o se depositaron.`,
+		// `outCount` is of units, so exactly one is one object: the sentence agrees with it in both languages.
+		if (f.outCount === 1) out.push('', label('Salió del inventario 1 objeto; no se distingue si se vendió, se consumió o se depositó.',
+			'1 item left the inventory; it cannot tell whether it was sold, consumed or deposited.'));
+		else if (f.outCount > 0) out.push('', label(`Salieron del inventario ${String(f.outCount)} objetos; no se distingue si se vendieron, se consumieron o se depositaron.`,
 			`${String(f.outCount)} items left the inventory; it cannot tell whether they were sold, consumed or deposited.`));
 
 		if (f.maps.length > 0) out.push('', `## ${label('Mapas', 'Maps')}`, '', ...f.maps.map((row) => `- ${mapName(row.mapId)} · ${duration(row.ms)}`),
