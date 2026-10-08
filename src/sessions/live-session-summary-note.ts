@@ -114,7 +114,15 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			verdict.push(`- ${label('Neto estimado', 'Estimated net')}: ${money(shownNet)}${maxNote}`);
 			verdict.push(`- ${label('Por hora', 'Per hour')}: ${shownPerHour !== null ? `${money(shownPerHour)}${maxNote}`
 				: label(`no disponible (menos de ${String(LIVE_RATE_MIN_OBSERVED_MS / 60_000)} min observados)`, `unavailable (under ${String(LIVE_RATE_MIN_OBSERVED_MS / 60_000)} observed min)`)}`);
-			if (f.withoutDominant !== null) verdict.push(`- ${label('Por hora sin', 'Per hour without')} ${itemName(f.withoutDominant.itemId)}: ${money(f.withoutDominant.perHourCopper)} (${label('ese objeto es más de la mitad del valor', 'that item is over half the value')})`);
+			if (f.withoutDominant !== null) {
+				const { itemId, netCopper: rest, perHourCopper: restPerHour } = f.withoutDominant;
+				// With nothing positive left there is no pace to state: the line says what the session comes to without the item, and why.
+				verdict.push(restPerHour !== null
+					? `- ${label('Por hora sin', 'Per hour without')} ${itemName(itemId)}: ${money(restPerHour)} (${label('ese objeto es más de la mitad del valor', 'that item is over half the value')})`
+					: `- ${label('Sin', 'Without')} ${itemName(itemId)} ${label('la sesión queda en', 'the session comes to')} ${money(rest)} (${rest < 0
+						? label('ese objeto vale más que el neto de la sesión', 'that item is worth more than the session\'s net')
+						: label('ese objeto es todo el neto de la sesión', 'that item is the whole net of the session')})`);
+			}
 			if (average !== null) verdict.push(`- ${label('Tu media en sesiones parecidas', 'Your average in similar sessions')}: ${money(average)}/h (${label(`${String(comparables.length)} sesiones en este mapa`, `${String(comparables.length)} sessions on this map`)})`);
 		}
 		if (gold !== null && !f.salesSession) verdict.push(`- ${gold}`);

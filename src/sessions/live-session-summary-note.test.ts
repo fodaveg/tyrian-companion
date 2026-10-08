@@ -197,7 +197,7 @@ describe('live session summary: figures that must not mislead', () => {
 		const figures = computeSummaryFigures(session, META, []);
 		expect(figures.durationMs).toBe(80 * 60_000);
 		expect(figures.perHour).toEqual({ copper: 71_550, reason: null });
-		expect(figures.withoutDominant).toEqual({ itemId: STAPLE, perHourCopper: 4_050 });
+		expect(figures.withoutDominant).toEqual({ itemId: STAPLE, netCopper: 2_700, perHourCopper: 4_050 });
 		expect(figures.staple).toMatchObject({ itemId: STAPLE, quantity: 30, perHour: 45 });
 		expect(computeSummaryFigures({ ...session, observedItemsMs: 10 * 60_000 }, META, []).perHour).toEqual({ copper: null, reason: 'short' });
 
@@ -217,6 +217,45 @@ describe('live session summary: figures that must not mislead', () => {
 		expect(content).toContain('- Por hora sin Saco grande: 0g 40s 50c');
 		const even = await render({ itemMeta: META, mutate: (session) => ({ ...session, valuation: { ...session.valuation, prices: [{ itemId: OTHER, unitCopper: 300 }, { itemId: STAPLE, unitCopper: 90 }] } }) });
 		expect(even.content).not.toContain('Por hora sin');
+	});
+
+	it('writes no per-hour figure without the dominant item when nothing positive is left: what the session comes to, and why', async () => {
+		// As in the first real note: what left the inventory subtracts, so the dominant item is worth more than the whole net.
+		const SOLD = 777;
+		const meta = { ...META, [SOLD]: { flags: [], type: 'Trophy' } };
+		const left: Mutate = (session) => ({ ...session, totals: [...session.totals, total('item', SOLD, 0, 1)],
+			valuation: { ...session.valuation, prices: [...session.valuation.prices, { itemId: SOLD, unitCopper: 3_000 }] } });
+		const figures = computeSummaryFigures(left(await payload()), meta, []);
+		expect(figures.netCopper).toBe(44_700);
+		expect(figures.withoutDominant).toEqual({ itemId: STAPLE, netCopper: -300, perHourCopper: null });
+		const es = await render({ itemMeta: meta, mutate: left });
+		expect(es.content).toContain('- Neto estimado: 4g 47s 0c');
+		expect(es.content).toContain('- Sin Saco grande la sesión queda en -0g 3s 0c (ese objeto vale más que el neto de la sesión)');
+		expect(es.content).not.toContain('Por hora sin');
+		expect(es.content).not.toContain('más de la mitad del valor');
+		// The session's own per-hour figure is untouched.
+		expect(es.content).toContain('- Por hora: 6g 70s 50c');
+		const en = await render({ itemMeta: meta, mutate: left, locale: 'en' });
+		expect(en.content).toContain('- Without Saco grande the session comes to -0g 3s 0c (that item is worth more than the session\'s net)');
+		expect(en.content).not.toContain('Per hour without');
+	});
+
+	it('says the dominant item is the whole net when exactly nothing is left without it', async () => {
+		const only: Mutate = (session) => ({ ...session, valuation: { ...session.valuation, prices: [{ itemId: OTHER, unitCopper: null }, { itemId: STAPLE, unitCopper: 1500 }] } });
+		expect(computeSummaryFigures(only(await payload()), META, []).withoutDominant).toEqual({ itemId: STAPLE, netCopper: 0, perHourCopper: null });
+		const es = await render({ itemMeta: META, mutate: only });
+		expect(es.content).toContain('- Sin Saco grande la sesión queda en 0g 0s 0c (ese objeto es todo el neto de la sesión)');
+		expect(es.content).not.toContain('Por hora sin');
+		const en = await render({ itemMeta: META, mutate: only, locale: 'en' });
+		expect(en.content).toContain('- Without Saco grande the session comes to 0g 0s 0c (that item is the whole net of the session)');
+	});
+
+	it('keeps the per-hour figure without the dominant item, word for word, while something positive is left', async () => {
+		const es = await render({ itemMeta: META });
+		expect(es.content).toContain('- Por hora sin Saco grande: 0g 40s 50c (ese objeto es más de la mitad del valor)');
+		expect(es.content).not.toContain('la sesión queda en');
+		const en = await render({ itemMeta: META, locale: 'en' });
+		expect(en.content).toContain('- Per hour without Saco grande: 0g 40s 50c (that item is over half the value)');
 	});
 
 	it('puts what has no bazaar price on its own line, outside the value', async () => {

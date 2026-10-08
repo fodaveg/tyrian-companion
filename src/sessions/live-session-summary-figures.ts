@@ -39,8 +39,12 @@ export interface SummaryFigures {
 	noPrices: boolean;
 	/** Over the OBSERVED item time, never the session's length. `short`: under the 15 observed minutes every live rate needs. */
 	perHour: { copper: number | null; reason: 'short' | null };
-	/** Set when ONE item is over half of the value: the per-hour figure without it. */
-	withoutDominant: { itemId: number; perHourCopper: number } | null;
+	/**
+	 * Set when ONE item is over half of the value: what the session's net comes to without it, and that as a
+	 * per-hour figure. The rate is null when nothing positive is left (the item is worth the whole net, or more
+	 * than it because what left the inventory subtracts): a rate of nothing, or of a loss, is not a pace.
+	 */
+	withoutDominant: { itemId: number; netCopper: number; perHourCopper: number | null } | null;
 	staple: { itemId: number; quantity: number; entries: number; perHour: number | null } | null;
 	goldCopper: number | null;
 	currencies: { id: number; net: number }[];
@@ -126,7 +130,7 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	const top = sellable[0];
 	const withoutDominant = rateReason === null && top !== undefined && top.valueCopper !== null && positiveCopper > 0
 		&& top.valueCopper / positiveCopper > SUMMARY_DOMINANT_VALUE_SHARE
-		? { itemId: top.itemId, perHourCopper: perHour(netCopper - top.valueCopper)! } : null;
+		? { itemId: top.itemId, netCopper: netCopper - top.valueCopper, perHourCopper: netCopper - top.valueCopper > 0 ? perHour(netCopper - top.valueCopper) : null } : null;
 
 	const entries = new Map<number, number>();
 	for (const entry of session.journal) for (const row of entry.observations) if (row.kind === 'item' && row.delta > 0) entries.set(row.idNumber, (entries.get(row.idNumber) ?? 0) + 1);
