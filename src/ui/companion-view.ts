@@ -121,6 +121,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions, Partial<Fa
 	getIngamePresence?(): IngamePresenceSnapshot;
 	/** H18.36: the "Laberinto" badge and "la marcó Nexus" meta suffix (boceto lámina 2.1). */
 	getIngameSessionLink?(sessionId: string): { owner: 'automatic' | 'adopted'; labyrinthAt: string | null } | null;
+	/** The last known character of the ACTIVE live session, or null with none. */
+	getLiveSessionCharacter?(): string | null;
 	getManagedAssetsView?(): ManagedAssetsView;
 	/** Relaunches the automatic managed-assets Move blocked by `operation_conflict`. */
 	retryManagedAssetsReconciliation?(): Promise<void>;
@@ -376,6 +378,7 @@ export class TyrianCompanionView {
 			getLocale: () => actions.getLocale(),
 			getLiveSessionView: (offset, limit) => actions.getLiveSessionView!(offset, limit),
 			getLiveSessionEntity: (kind, id) => actions.getLiveSessionEntity?.(kind, id) ?? null,
+			...(actions.getLiveSessionCharacter === undefined ? {} : { getLiveSessionCharacter: () => actions.getLiveSessionCharacter!() }),
 			...(actions.listLiveSessionHistory === undefined ? {} : { listLiveSessionHistory: () => actions.listLiveSessionHistory!() }),
 			...liveSessionControl(actions, view),
 		};

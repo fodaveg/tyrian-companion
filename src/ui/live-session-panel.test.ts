@@ -869,3 +869,32 @@ describe('previous sessions block', () => {
 		});
 	});
 });
+
+
+describe('current character in the status line', () => {
+	const characterLine = (panel: LiveSessionPanel): HTMLElement => panel.element.querySelector<HTMLElement>('.tyrian-live-session__character')!;
+	const wire = (panel: LiveSessionPanel, read: () => string | null): void => {
+		(panel as unknown as { actions: LiveSessionPanelActions }).actions.getLiveSessionCharacter = read;
+	};
+	it('shows the character the session is playing now, keeps it through a selection screen and drops it without a session', () => {
+		const h = harness();
+		let current: string | null = 'Alfa';
+		wire(h.panel, () => current);
+		h.panel.refresh();
+		expect(characterLine(h.panel).textContent).toBe('· Alfa');
+		expect(characterLine(h.panel).hidden).toBe(false);
+		current = 'Beta'; h.panel.refresh();
+		expect(characterLine(h.panel).textContent).toBe('· Beta');
+		// A selection or loading screen never empties the core's answer (last known character): the line stays.
+		h.panel.refresh();
+		expect(characterLine(h.panel).textContent).toBe('· Beta');
+		current = null; h.state.view = idleView(); h.panel.refresh();
+		expect(characterLine(h.panel).textContent).toBe('');
+		expect(characterLine(h.panel).hidden).toBe(true);
+	});
+	it('shows no name when the host cannot say one', () => {
+		const h = harness();
+		h.panel.refresh();
+		expect(characterLine(h.panel).textContent).toBe('');
+	});
+});

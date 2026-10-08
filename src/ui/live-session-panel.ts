@@ -36,6 +36,8 @@ export interface LiveSessionControlState {
 
 export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'getLocale' | 'getLiveSessionView' | 'getLiveSessionEntity' | 'listLiveSessionHistory'> {
 	getLiveSessionControl(): LiveSessionControlState;
+	/** The last known character of the active live session; null with none. */
+	getLiveSessionCharacter?(): string | null;
 	/** Both reject when the session did not start or finish. */
 	startLiveSession(): Promise<void>;
 	stopLiveSession(): Promise<void>;
@@ -85,6 +87,7 @@ export class LiveSessionPanel {
 	private readonly dot: HTMLElement;
 	private readonly phase: HTMLElement;
 	private readonly elapsed: HTMLElement;
+	private readonly character: HTMLElement;
 	private readonly toggle: HTMLButtonElement;
 	private readonly hint: HTMLElement;
 	private readonly alert: HTMLElement;
@@ -157,7 +160,8 @@ export class LiveSessionPanel {
 		this.phase = this.node('span', 'tyrian-live-session__phase');
 		this.phase.setAttribute('role', 'status');
 		this.elapsed = this.node('span', 'tyrian-live-session__elapsed');
-		this.statusLine.append(this.dot, this.phase, this.elapsed);
+		this.character = this.node('span', 'tyrian-live-session__character');
+		this.statusLine.append(this.dot, this.phase, this.elapsed, this.character);
 		this.toggle = this.button('tyrian-live-session__toggle', () => { void this.press(); });
 		head.append(this.statusLine, this.toggle);
 
@@ -438,6 +442,10 @@ export class LiveSessionPanel {
 		const timed = (kind === 'active' || kind === 'complete') && view.elapsedMs !== null;
 		this.setText(this.elapsed, timed ? this.clock(view.elapsedMs ?? 0) : '');
 		this.elapsed.hidden = !timed;
+		const name = kind === 'active' || kind === 'stopping' ? this.actions.getLiveSessionCharacter?.() ?? null : null;
+		this.setText(this.character, name === null ? '' : `· ${name}`);
+		this.character.title = name === null ? '' : this.copy('character');
+		this.character.hidden = name === null;
 
 		const busy = kind === 'starting' || kind === 'stopping';
 		const stopMode = kind === 'active' || kind === 'stopping';
