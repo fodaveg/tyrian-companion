@@ -432,7 +432,7 @@ describe('ManagedAssetsManager', () => {
 		const sourceManifestPath = `Previous root/${MANAGED_ASSETS_MANIFEST}`;
 		const sourceManifest = JSON.parse(vault.contents.get(sourceManifestPath)!) as MutableJournal;
 		expect(sourceManifest).toMatchObject({ schemaVersion: 2, bundleVersion: 6, state: 'ready' });
-		expect(sourceManifest.assets).toHaveLength(5);
+		expect(sourceManifest.assets).toHaveLength(6);
 
 		const destinationBytes = new Map<string, string>();
 		for (const entry of sourceManifest.assets) {
@@ -452,7 +452,7 @@ describe('ManagedAssetsManager', () => {
 		for (const [path, bytes] of destinationBytes) expect(vault.contents.get(path)).toBe(bytes);
 		const destinationManifest = JSON.parse(vault.contents.get(`Configured output/${MANAGED_ASSETS_MANIFEST}`)!) as MutableJournal;
 		expect(destinationManifest).toMatchObject({ schemaVersion: 2, bundleVersion: 6, state: 'ready' });
-		expect(destinationManifest.assets).toHaveLength(5);
+		expect(destinationManifest.assets).toHaveLength(6);
 	});
 
 	it('adopts the same markerless Bases on ordinary install by their published semantic hash, but relocation inspection stays strict', async () => {
@@ -460,7 +460,7 @@ describe('ManagedAssetsManager', () => {
 		const { instance } = await stageReserializedRelocation(vault);
 
 		expect((await instance.inspect('Configured output', { adoptPublished: false })).assets.map((entry) => entry.status))
-			.toEqual(Array(5).fill('occupied_unowned'));
+			.toEqual(Array(6).fill('occupied_unowned'));
 		expect(await instance.apply('Configured output', 'install')).toMatchObject({ status: 'applied' });
 		expect(vault.contents.has(`Configured output/${MANAGED_ASSETS_MANIFEST}`)).toBe(true);
 	});
@@ -764,14 +764,14 @@ describe('markerless vault: adoption by published semantic hash and files the us
 
 	it('recovers every markerless Base of the current bundle, writes manifest and markers, then is idempotent', async () => {
 		const { vault, instance, bundle } = await stage();
-		expect(Object.values(statuses(await instance.inspect(ROOT)))).toEqual(Array(5).fill('recoverable'));
+		expect(Object.values(statuses(await instance.inspect(ROOT)))).toEqual(Array(6).fill('recoverable'));
 		expect(await instance.preview(ROOT, 'install')).toMatchObject({ canApply: true, reasons: [] });
 		expect(decideManagedAssetsAutoUpdate(await instance.inspect(ROOT))).toEqual({ action: 'apply' });
 
 		expect((await instance.apply(ROOT, 'install')).status).toBe('applied');
 		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
 		expect(manifest).toMatchObject({ state: 'ready' });
-		expect(manifest.assets).toHaveLength(5);
+		expect(manifest.assets).toHaveLength(6);
 		expect(manifest.excluded).toBeUndefined();
 		for (const asset of bundle) expect(vault.contents.get(pathOf(asset))).toBe(asset.bytes);
 
@@ -816,7 +816,7 @@ describe('markerless vault: adoption by published semantic hash and files the us
 		expect((await instance.apply(ROOT, 'install')).status).toBe('applied');
 		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
 		expect(manifest.assets.map((entry) => entry.id)).not.toContain('inventory-base');
-		expect(manifest.assets).toHaveLength(4);
+		expect(manifest.assets).toHaveLength(5);
 		expect(manifest.excluded).toEqual(['inventory-base']);
 		expect(vault.contents.get(pathOf(inventory))).toBe(mine);
 
@@ -842,7 +842,7 @@ describe('markerless vault: adoption by published semantic hash and files the us
 		expect(statuses(await restored.instance.inspect(ROOT))['inventory-base']).toBe('create');
 		expect((await restored.instance.apply(ROOT, 'upgrade')).status).toBe('applied');
 		const manifest = JSON.parse(restored.vault.contents.get(MANIFEST)!) as MutableJournal;
-		expect(manifest.assets).toHaveLength(5);
+		expect(manifest.assets).toHaveLength(6);
 		expect(manifest.excluded).toBeUndefined();
 
 		const removed = await stageForeign();
@@ -850,7 +850,7 @@ describe('markerless vault: adoption by published semantic hash and files the us
 		const mine = removed.vault.contents.get(inventoryPath)!;
 		expect((await removed.instance.uninstall(ROOT)).status).toBe('detached');
 		expect(removed.vault.contents.get(inventoryPath)).toBe(mine);
-		expect(removed.vault.trashed).toHaveLength(4);
+		expect(removed.vault.trashed).toHaveLength(5);
 		expect((await removed.instance.inspect(ROOT)).manifestStatus).toBe('detached');
 	});
 
@@ -881,7 +881,7 @@ describe('markerless vault: adoption by published semantic hash and files the us
 		expect((await instance.apply(ROOT, 'install')).status).toBe('applied');
 		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
 		expect(manifest).toMatchObject({ state: 'ready', excluded: ['inventory-base'] });
-		expect(manifest.assets).toHaveLength(4);
+		expect(manifest.assets).toHaveLength(5);
 		expect(vault.contents.get(pathOf(bundle.find((asset) => asset.id === 'sessions-base')!))).toBe(bundle.find((asset) => asset.id === 'sessions-base')!.bytes);
 	});
 
@@ -894,7 +894,7 @@ describe('markerless vault: adoption by published semantic hash and files the us
 		const onlyForeign = await stage((assets, memory) => {
 			for (const asset of assets) memory.contents.set(pathOf(asset), `tcUser: ${asset.id}\n`);
 		});
-		expect(Object.values(statuses(await onlyForeign.instance.inspect(ROOT)))).toEqual(Array(5).fill('occupied_unowned'));
+		expect(Object.values(statuses(await onlyForeign.instance.inspect(ROOT)))).toEqual(Array(6).fill('occupied_unowned'));
 		expect(decideManagedAssetsAutoUpdate(await onlyForeign.instance.inspect(ROOT))).toEqual({ action: 'none' });
 
 		const empty = await stage((assets, memory) => { for (const asset of assets) memory.contents.delete(pathOf(asset)); });
@@ -904,7 +904,7 @@ describe('markerless vault: adoption by published semantic hash and files the us
 	it('does not adopt by hash when the caller asks for strict evidence (relocation)', async () => {
 		const { instance } = await stage();
 		expect(Object.values(statuses(await instance.inspect(ROOT, { adoptPublished: false }))))
-			.toEqual(Array(5).fill('occupied_unowned'));
+			.toEqual(Array(6).fill('occupied_unowned'));
 	});
 });
 
@@ -953,7 +953,7 @@ describe('a settings root with adoptable Bases takes over a pointer that names a
 		expect(await pointer.read()).toMatchObject({ status: 'ready', root: NEW, targetRoot: null });
 		const manifest = JSON.parse(vault.contents.get(NEW_MANIFEST)!) as MutableJournal;
 		expect(manifest).toMatchObject({ state: 'ready', excluded: ['inventory-base'] });
-		expect(manifest.assets.map((entry) => entry.id).sort()).toEqual(['halloween-base', 'materials-base', 'sessions-base', 'wallet-base']);
+		expect(manifest.assets.map((entry) => entry.id).sort()).toEqual(['halloween-base', 'materials-base', 'session-summaries-base', 'sessions-base', 'wallet-base']);
 		for (const id of ['halloween-base', 'sessions-base', 'wallet-base']) {
 			expect(vault.contents.get(pathOf(id))).toBe(bundle.find((asset) => asset.id === id)!.bytes);
 		}

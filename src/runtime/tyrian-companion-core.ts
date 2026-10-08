@@ -819,7 +819,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.managedAssets = new ManagedAssetsManager(
 			labelledVault(host.vault, 'Managed asset'),
 			host.vault.configDir,
-			{ bundleVersion: 6, locale: this.settings.language, assets: await managedAssetsBundle() },
+			{ bundleVersion: 7, locale: this.settings.language, assets: await managedAssetsBundle() },
 		);
 		const vaultId = await sha256Text(host.vault.canonicalIdentity().normalize('NFC'));
 		this.vaultId = vaultId;
@@ -4996,7 +4996,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// invalidates local advisor memory but never captures again implicitly.
 			this.invalidateInventoryAdvisor();
 			if (this.managedAssets) {
-				this.managedAssets.setBundle({ bundleVersion: 6, locale: nextSettings.language, assets: await managedAssetsBundle() });
+				this.managedAssets.setBundle({ bundleVersion: 7, locale: nextSettings.language, assets: await managedAssetsBundle() });
 			}
 			this.settingTab.refreshForLocaleChange();
 		}

@@ -165,6 +165,7 @@ describe('inventory Base assets', () => {
 			{ id: 'halloween-base', path: 'Tyrian Companion/Bases/Halloween.base', status: 'unchanged' },
 			{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base', status: 'update' },
 			{ id: 'materials-base', path: 'Tyrian Companion/Bases/Materials.base', status: 'update' },
+			{ id: 'session-summaries-base', path: 'Tyrian Companion/Bases/Session summaries.base', status: 'unchanged' },
 			{ id: 'sessions-base', path: 'Tyrian Companion/Bases/Sessions.base', status: 'unchanged' },
 			{ id: 'wallet-base', path: 'Tyrian Companion/Bases/Wallet.base', status: 'unchanged' },
 		]);

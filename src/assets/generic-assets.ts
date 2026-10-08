@@ -1,6 +1,7 @@
 import { managedAssetMarker, type PackagedAsset } from './managed-assets-model';
 import { halloweenManagedAssets } from './halloween-base';
 import { inventoryManagedAssets } from './inventory-bases';
+import { sessionSummariesManagedAssets } from './session-summaries-base';
 import { walletManagedAssets } from './wallet-base';
 import { sha256Text } from './managed-asset-hash';
 
@@ -37,5 +38,6 @@ export async function managedAssetsBundle(): Promise<PackagedAsset[]> {
 		...await halloweenManagedAssets(),
 		...await inventoryManagedAssets(),
 		...await walletManagedAssets(),
+		...await sessionSummariesManagedAssets(),
 	];
 }

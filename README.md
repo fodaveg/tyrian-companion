@@ -600,6 +600,8 @@ Bundle v5 keeps the generic `.base`, localized
 `Halloween.base`, and localized `Inventory.base`/`Materials.base` through the same manifest/CAS path. The Halloween Base reads only session-note schema v2
 fields, preserves literal zeroes, and excludes incomplete evidence from performance views.
 
+Bundle v7 adds the localized `Session summaries.base` («Sesiones» / «Sessions»): a table of the summary notes written when a live session closes (filter `file.hasTag("gw2/session-summary")` and `tyrian_summary_version >= 2`, never a folder; newest first, with a second «Por mapa» / «By map» view grouped by map, without averages). An installation whose manifest is v6 receives it as a new entry (`create`) through Preview/Apply or Repair; the rest stays `unchanged`. Going back to 0.6.12 afterwards leaves the managed assets in `conflict` (its exact-set check does not know the new entry) until they are repaired; the Base files themselves stay in the vault, the same cost bundles v4 and v5 had.
+
 Durable-history export is an explicit Settings action. It considers only Markdown notes whose
 `tc_kind` is `gw2_farming_session`, validates supported schemas 1/2, hashed references, and all six
 managed blocks before writing fixed JSON and CRLF CSV files below `exports/`. It never exports raw
