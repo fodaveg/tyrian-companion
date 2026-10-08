@@ -1461,6 +1461,23 @@ describe('ManualSessionStartService', () => {
 			await service.dispose();
 		});
 
+		it('does not announce archived API evidence as a recovery, now or after a restart', async () => {
+			const factory = new IDBFactory(); const dbName = 'legacy-no-recovery-banner';
+			await seedUnfinishedWithForeignReceipt(factory, dbName);
+			const options = () => serviceOptions({ automaticAccountCapture: false, runtimeStore: new IndexedDbSessionRuntimeStore(factory, dbName) });
+			const service = new ManualSessionStartService(coordinator(), { capture: vi.fn() }, options());
+			await service.initialize();
+			await expect(service.preserveLegacyForLiveMigration()).resolves.toBe(true);
+			expect(service.getRecoveryState()).toEqual({ status: 'none' });
+			await service.dispose();
+
+			const restarted = new ManualSessionStartService(coordinator(), { capture: vi.fn() }, options());
+			await restarted.initialize();
+			expect(restarted.getRecoveryState()).toEqual({ status: 'none' });
+			expect(restarted.getPreservedLegacyRuntime()).not.toBeNull();
+			await restarted.dispose();
+		});
+
 		it('turns an unreadable archive store into a recovery error instead of rejecting initialize()', async () => {
 			const runtimeStore = new MemorySessionRuntimeStore();
 			runtimeStore.listLegacyRuntimeArchives = vi.fn(async () => { throw new Error('Preserved API runtime is unavailable.'); });
