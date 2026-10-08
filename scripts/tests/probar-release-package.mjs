@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { createHash } from 'node:crypto';
 
@@ -21,18 +22,21 @@ import {
 	ReleasePackageError,
 	RELEASE_FILES,
 	STAGED_RELEASE_FILES,
+	validateHebraIconImage,
 	validateHebraManifest,
 	validateReleaseArchive,
 } from '../release-package.mjs';
 
 const testRoot = mkdtempSync(join(tmpdir(), 'tyrian-release-package-'));
 const failures = [];
+const ICON_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '../../assets/hebra-icon.png');
 
 try {
 	testDeterministicPackage();
 	testHebraManifestIsGenerated();
 	testHebraBuildIsCausal();
 	testHebraManifestValidation();
+	testHebraIconImageRules();
 	testBuildIsCausal();
 	testBuildCannotMutateInputs();
 	testMetadataAndTagFailClosed();
@@ -93,6 +97,7 @@ function testHebraManifestIsGenerated() {
 		main: 'hebra-main.mjs',
 		styles: 'hebra-styles.css',
 		icon: 'sword',
+		iconImage: `data:image/png;base64,${readFileSync(ICON_FILE).toString('base64')}`,
 		capabilities: { required: ['vault.read', 'vault.write', 'editor'], optional: ['http', 'secrets', 'tcp', 'notify.system', 'background'] },
 		network: { hosts: ['api.guildwars2.com', 'api.datawars2.ie'], userHosts: true },
 		shared: {},
@@ -124,6 +129,54 @@ function testHebraBuildIsCausal() {
 	}
 	assert(!existsSync(resolve(root, '.release')), 'failed Hebra build left a release directory');
 	process.stdout.write('PASS: no-op Hebra build sabotage turned red before staging\n');
+}
+
+/** Every `iconImage` limit of Hebra's contract turns red on its own, and the real file passes. */
+function testHebraIconImageRules() {
+	const real = readFileSync(ICON_FILE);
+	const url = (bytes) => `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
+	const withSize = (width, height) => {
+		const bytes = Buffer.from(real);
+		bytes.writeUInt32BE(width, 16);
+		bytes.writeUInt32BE(height, 20);
+		return bytes;
+	};
+	assert(validateHebraIconImage(url(real)) === null, `the real icon was rejected: ${validateHebraIconImage(url(real))}`);
+	assert(real.length <= 32 * 1024 && real.readUInt32BE(16) === 128 && real.readUInt32BE(20) === 128, 'assets/hebra-icon.png is not a 128 px square within 32 KiB');
+	assert(validateHebraIconImage(url(withSize(32, 32))) === null && validateHebraIconImage(url(withSize(128, 128))) === null, 'the 32 and 128 px edges were rejected');
+	const oversized = Buffer.concat([real.subarray(0, real.length - 12), Buffer.alloc(33 * 1024), real.subarray(real.length - 12)]);
+	const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9, 0, 0, 0, 0, 0, 0]);
+	const cases = [
+		['31 px side', url(withSize(31, 31)), '32 to 128'],
+		['129 px side', url(withSize(129, 129)), '32 to 128'],
+		['not square', url(withSize(128, 64)), 'square'],
+		['truncated, no IEND', url(real.subarray(0, real.length - 12)), 'truncated'],
+		['JPEG under the PNG prefix', url(jpeg), 'not a PNG'],
+		['corrupt base64', `${url(real)}!`, 'base64'],
+		['33 KiB', url(oversized), '32 KiB'],
+		['wrong prefix', url(real).replace('image/png', 'image/jpeg'), 'must start with'],
+		['no IHDR', url(Buffer.concat([real.subarray(0, 12), Buffer.from('JUNK'), real.subarray(16)])), 'IHDR'],
+	];
+	for (const [label, value, expected] of cases) {
+		const error = validateHebraIconImage(value);
+		assert(error !== null && error.includes(expected), `${label} was not rejected on «${expected}»: ${String(error)}`);
+		const manifestErrors = validateHebraManifest({ ...hebraBase(), iconImage: value });
+		assert(manifestErrors.some((entry) => entry.startsWith('iconImage')), `${label} slipped through validateHebraManifest`);
+	}
+	const root = fixture('hebra-bad-icon');
+	writeFileSync(resolve(root, 'assets/hebra-icon.png'), withSize(31, 31));
+	assertThrows(() => packageFixture({ root, build: controlledBuild }), 'invalid-hebra-icon', 'a 31 px icon file reached the stage');
+	assert(!existsSync(resolve(root, '.release')), 'a bad icon left a release directory');
+	process.stdout.write(`PASS: ${String(cases.length)} invalid iconImage cases each turned red and the real icon passes\n`);
+}
+
+function hebraBase() {
+	return createHebraManifest({
+		manifest: { id: 'tyrian-companion', name: 'Tyrian Companion', author: 'Test' },
+		packageJson: { repository: { type: 'git', url: 'https://github.com/fodaveg/tyrian-companion.git' } },
+		version: '1.2.3',
+		files: { 'hebra-main.mjs': Buffer.from('a'), 'hebra-styles.css': Buffer.from('b') },
+	});
 }
 
 /** The ported rules of Hebra's `parsePluginManifest` turn red on what Hebra rejects. */
@@ -341,6 +394,8 @@ function fixture(name) {
 	});
 	writeJson(resolve(root, 'versions.json'), { '0.1.0': '1.11.4' });
 	writeFileSync(resolve(root, 'styles.css'), '.tyrian-test { color: red; }\n');
+	mkdirSync(resolve(root, 'assets'), { recursive: true });
+	writeFileSync(resolve(root, 'assets/hebra-icon.png'), readFileSync(ICON_FILE));
 	return root;
 }
 

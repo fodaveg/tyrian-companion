@@ -40,6 +40,12 @@ export const HEBRA_RELEASE_FILES = Object.freeze([
 export const STAGED_RELEASE_FILES = Object.freeze([...RELEASE_FILES, ...HEBRA_RELEASE_FILES]);
 
 const HEBRA_MANIFEST_FILE = 'hebra.json';
+/**
+ * The plugin's own icon for Hebra (`iconImage` of `hebra.json`): the monster, a 128 px square PNG
+ * versioned here and embedded as a data URL when `hebra.json` is generated. Where it comes from and
+ * the command that made it: `assets/README.md`. `icon` (`sword`) stays as the fallback.
+ */
+const HEBRA_ICON_IMAGE_FILE = 'assets/hebra-icon.png';
 const HEBRA_MAIN_FILE = 'hebra-main.mjs';
 const HEBRA_STYLES_FILE = 'hebra-styles.css';
 const HEBRA_GENERATED_FILES = Object.freeze([HEBRA_MANIFEST_FILE, HEBRA_MAIN_FILE, HEBRA_STYLES_FILE]);
@@ -164,6 +170,7 @@ function packageReleaseInCleanOutput({
 		manifest: metadataAfterBuild.manifest,
 		packageJson: metadataAfterBuild.packageJson,
 		version: hebraVersionFromTag(metadataAfterBuild.manifest.version, environment),
+		iconImage: hebraIconImageOf(resolve(absoluteRoot, HEBRA_ICON_IMAGE_FILE)),
 		files: {
 			[HEBRA_MAIN_FILE]: readFileSync(resolve(absoluteRoot, HEBRA_MAIN_FILE)),
 			[HEBRA_STYLES_FILE]: readFileSync(resolve(absoluteRoot, HEBRA_STYLES_FILE)),
@@ -268,7 +275,7 @@ function githubRepoOf(packageJson) {
  * `package.json`: id, name and author from the manifest, the version of the tag, the repository,
  * `HEBRA_PLUGIN_DECLARATION`, and the sha256 of each Hebra file in `files`.
  */
-export function createHebraManifest({ manifest, packageJson, version, files }) {
+export function createHebraManifest({ manifest, packageJson, version, files, iconImage }) {
 	return {
 		schema: 1,
 		id: manifest.id,
@@ -282,6 +289,7 @@ export function createHebraManifest({ manifest, packageJson, version, files }) {
 		main: HEBRA_MAIN_FILE,
 		styles: HEBRA_STYLES_FILE,
 		icon: HEBRA_PLUGIN_DECLARATION.icon,
+		...(iconImage === undefined ? {} : { iconImage }),
 		capabilities: {
 			required: [...HEBRA_PLUGIN_DECLARATION.capabilities.required],
 			optional: [...HEBRA_PLUGIN_DECLARATION.capabilities.optional],
@@ -294,6 +302,52 @@ export function createHebraManifest({ manifest, packageJson, version, files }) {
 		files: Object.fromEntries(Object.entries(files).map(([name, bytes]) => [name, `sha256:${sha256Hex(bytes)}`])),
 		ageRating: HEBRA_PLUGIN_DECLARATION.ageRating,
 	};
+}
+
+export const HEBRA_ICON_IMAGE_PREFIX = 'data:image/png;base64,';
+const HEBRA_ICON_IMAGE_MIN_SIDE = 32;
+const HEBRA_ICON_IMAGE_MAX_SIDE = 128;
+const HEBRA_ICON_IMAGE_MAX_BYTES = 32 * 1024;
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const PNG_IEND = [0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82];
+
+/** The `iconImage` data URL for a PNG file, read from its BYTES; the packaging fails when Hebra would reject it. */
+function hebraIconImageOf(path) {
+	assertReleaseFile(path, HEBRA_ICON_IMAGE_FILE);
+	const iconImage = `${HEBRA_ICON_IMAGE_PREFIX}${readFileSync(path).toString('base64')}`;
+	const error = validateHebraIconImage(iconImage);
+	if (error !== null) throw new ReleasePackageError('invalid-hebra-icon', `release package: ${HEBRA_ICON_IMAGE_FILE} cannot be iconImage (${error})`);
+	return iconImage;
+}
+
+const startsWithBytes = (bytes, offset, expected) => expected.every((value, index) => bytes[offset + index] === value);
+
+/**
+ * Hebra's `iconImage` rules (`src/lib/plugins/icon-image.ts` in Hebra, SPEC-PLUGINS-EXTERNOS.md 3.2,
+ * read 2026-10-08, not imported), applied to the BYTES. Hebra rejects the WHOLE manifest on an invalid
+ * one, so the packaging must fail first. Returns the unmet limit, or null when Hebra would accept it.
+ */
+export function validateHebraIconImage(value) {
+	if (typeof value !== 'string' || !value.startsWith(HEBRA_ICON_IMAGE_PREFIX)) {
+		return `must start with «${HEBRA_ICON_IMAGE_PREFIX}» (PNG only)`;
+	}
+	const text = value.slice(HEBRA_ICON_IMAGE_PREFIX.length);
+	const tooBig = `weighs more than ${String(HEBRA_ICON_IMAGE_MAX_BYTES / 1024)} KiB (limit ${String(HEBRA_ICON_IMAGE_MAX_BYTES / 1024)} KiB)`;
+	if (text.length > Math.ceil(HEBRA_ICON_IMAGE_MAX_BYTES / 3) * 4) return tooBig;
+	if (text.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(text)) return 'the base64 is not valid';
+	const bytes = Buffer.from(text, 'base64');
+	if (bytes.toString('base64') !== text) return 'the base64 is not valid';
+	if (bytes.length > HEBRA_ICON_IMAGE_MAX_BYTES) return tooBig;
+	if (bytes.length < 24 || !startsWithBytes(bytes, 0, PNG_SIGNATURE)) return 'not a PNG (PNG only)';
+	if (!startsWithBytes(bytes, 12, [0x49, 0x48, 0x44, 0x52])) return 'the PNG has no IHDR header';
+	if (bytes.length < PNG_IEND.length + 24 || !startsWithBytes(bytes, bytes.length - 12, PNG_IEND)) return 'the PNG is truncated (no IEND)';
+	const width = bytes.readUInt32BE(16);
+	const height = bytes.readUInt32BE(20);
+	if (width !== height) return `must be square (the image is ${String(width)}x${String(height)} px)`;
+	if (width < HEBRA_ICON_IMAGE_MIN_SIDE || width > HEBRA_ICON_IMAGE_MAX_SIDE) {
+		return `the side must be ${String(HEBRA_ICON_IMAGE_MIN_SIDE)} to ${String(HEBRA_ICON_IMAGE_MAX_SIDE)} px (it is ${String(width)} px)`;
+	}
+	return null;
 }
 
 const HEBRA_PLATFORMS = ['macos', 'ios', 'linux', 'windows', 'android', 'web'];
@@ -354,6 +408,10 @@ export function validateHebraManifest(input) {
 	}
 	if ((input.icon ?? null) !== null && (typeof input.icon !== 'string' || !HEBRA_ICON.test(input.icon) || input.icon.length > 64)) {
 		errors.push('icon: Lucide icon name');
+	}
+	if (input.iconImage !== undefined) {
+		const iconError = validateHebraIconImage(input.iconImage);
+		if (iconError !== null) errors.push(`iconImage: ${iconError}`);
 	}
 	if (input.capabilities !== undefined) {
 		const capabilities = isRecord(input.capabilities) ? input.capabilities : null;
