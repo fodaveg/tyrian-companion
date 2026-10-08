@@ -181,7 +181,7 @@ export class LiveSessionEconomy {
 		const missing = [...ids.filter((id) => !this.quotes.has(id) || now - this.quotes.get(id)!.capturedAt > 15 * 60_000),...retry];
 		if (missing.length > 0 && !this.options.rateLimit.status().active) {
 			for (const id of retry) this.unquotedAskedAt.set(id,now);
-			const metadata = await this.options.catalog(ids);
+			const metadata = await this.options.catalog([...new Set([...ids,...retry])]);
 			for (const item of Object.values(metadata)) this.entities.set(item.id,{name:item.name,icon:item.icon ?? null});
 			for (let offset = 0; offset < missing.length; offset += 200) {
 				if (this.disposed || this.options.rateLimit.status().active) break;
@@ -202,7 +202,7 @@ export class LiveSessionEconomy {
 		if (pricedIds.length > 0) await lifecycle.updatePrices(pricedIds.map((itemId) => ({itemId,unitCopper:this.quotes.get(itemId)!.unitCopper})),
 			new Date(Math.min(...pricedIds.map((id) => this.quotes.get(id)!.capturedAt))).toISOString());
 		// Older entries whose alert is still waiting for a price a failed read never delivered: decided as soon as a later read quotes the item.
-		const waiting = lifecycle.getAwaitingPriceEntries().filter((row) => row.epoch !== entry.epoch || row.cursor !== entry.cursor).slice(0,AWAITING_ENTRIES_MAX);
+		const waiting = lifecycle.getAwaitingPriceEntries((id) => this.quotes.has(id),AWAITING_ENTRIES_MAX,entry);
 		for (const target of [entry,...waiting]) for (const candidate of target.outbox) {
 			if (this.options.canEmit?.() === false) return;
 			const observation = target.observations.find((row) => row.id === candidate.observationId); if (!observation) continue;

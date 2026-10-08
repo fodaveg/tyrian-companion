@@ -177,7 +177,10 @@ export class LiveSessionLifecycle {
 			const saved = await this.persist(reduced.record, reduced.journal);
 			if (saved === 'unavailable') { this.sampleLost(); return 'storage_unavailable'; }
 			if (saved !== 'saved') { this.failure = true; this.options.onStateChange(); return 'not_owner'; }
-			this.record = reduced.record; this.journal.push(reduced.journal); this.observations.push(...reduced.journal.observations); this.appendChart(reduced.journal); this.failure = false;
+			const goldBefore = this.record.currencyTrackedIds.includes(GOLD_CURRENCY_ID);
+			this.record = reduced.record; this.journal.push(reduced.journal); this.observations.push(...reduced.journal.observations); this.failure = false;
+			// Gold starting to be listed revalues the points already charted (the coin joins `knownNetValueCopper`), so they are rebuilt, not just extended.
+			if (goldBefore !== this.record.currencyTrackedIds.includes(GOLD_CURRENCY_ID)) this.rebuildChart(); else this.appendChart(reduced.journal);
 			this.options.onStateChange(); this.options.onCommitted?.(structuredClone(reduced.journal)); return 'stored';
 		});
 	}
@@ -265,9 +268,10 @@ export class LiveSessionLifecycle {
 		});
 	}
 	getRuntime(): LiveSessionRuntimeRecord | null { return this.record === null ? null : structuredClone(this.record); }
-	/** Journal entries with at least one alert still `awaiting_price` (copies, oldest first): what a late quote can decide. */
-	getAwaitingPriceEntries(): LiveJournalEntryV1[] {
-		return structuredClone(this.journal.filter((entry) => entry.outbox.some((intent) => intent.state === 'awaiting_price')));
+	/** Up to `limit` journal entries (copies, oldest first, except `skip`) with an alert still `awaiting_price` whose item `hasQuote`: what a late quote can decide. */
+	getAwaitingPriceEntries(hasQuote: (itemId: number) => boolean, limit: number, skip: Pick<LiveJournalEntryV1,'epoch'|'cursor'>): LiveJournalEntryV1[] {
+		return structuredClone(this.journal.filter((entry) => (entry.epoch !== skip.epoch || entry.cursor !== skip.cursor) && entry.outbox.some((intent) =>
+			intent.state === 'awaiting_price' && hasQuote(entry.observations.find((row) => row.id === intent.observationId)?.idNumber ?? -1))).slice(0,limit));
 	}
 	getJournal(): LiveJournalEntryV1[] { return structuredClone(this.journal); }
 	/** Export snapshots copy record and full journal at one durable queue boundary. */

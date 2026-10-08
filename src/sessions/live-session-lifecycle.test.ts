@@ -7,6 +7,7 @@ import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import { LiveSessionEconomy } from './live-session-economy';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
+import { buildLiveChart } from './live-session-reducer';
 import { decideLiveAlert, isLiveAlertOutbox } from './live-session-outbox';
 import { readFarmingDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
 import { prepareLiveSessionSnapshot } from './live-session-note-model';
@@ -236,13 +237,14 @@ describe('passive live session lifecycle', () => {
 	});
 });
 
-function economy(f: ReturnType<typeof fixture>, lifecycle = f.service) {
+function economy(f: ReturnType<typeof fixture>, lifecycle = f.service, catalog: (ids: readonly number[]) => Promise<Record<string,never>> = async () => ({})) {
 	const emit = vi.fn(async () => ({delivered:['queue'] as const,failed:[],rejected:false}));
 	const requestDetailed = vi.fn(async (_path?: string) => ({status:200,headers:{},body:[{id:12147,whitelisted:true,
 		buys:{unit_price:100,quantity:100},sells:{unit_price:120,quantity:100}}]}));
-	const service = new LiveSessionEconomy({lifecycle,cachedItems:async () => ({}),currencies:async () => ({currencies:{},coverage:{}}),cachedCurrencies:async () => ({}),gateway:{requestDetailed},rateLimit:new RateLimitCoordinator({now:f.options.now}),
-		now:f.options.now,catalog:async () => ({}),emit,onError:vi.fn(),onChange:vi.fn()});
-	return {service,emit,requestDetailed};
+	const rateLimit = new RateLimitCoordinator({now:f.options.now});
+	const service = new LiveSessionEconomy({lifecycle,cachedItems:async () => ({}),currencies:async () => ({currencies:{},coverage:{}}),cachedCurrencies:async () => ({}),gateway:{requestDetailed},rateLimit,
+		now:f.options.now,catalog,emit,onError:vi.fn(),onChange:vi.fn()});
+	return {service,emit,requestDetailed,rateLimit};
 }
 async function positive(f: ReturnType<typeof fixture>) {
 	await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
@@ -368,7 +370,7 @@ describe('durable live alert outbox', () => {
 		expect(f.service.getView().valuation).toMatchObject({coinNetCopper:null,knownNetValueCopper:null});
 		await e.service.dispose(); await f.service.dispose();
 	});
-	it('an unchanged quote neither rewrites the record nor revalues the chart, a changed one does', async () => {
+	it('an unchanged quote does not rewrite the record again, a changed one or a new capturedAt does', async () => {
 		const f = fixture(); await positive(f); const stamp = new Date(AT+1000).toISOString();
 		await f.service.updatePrices([{itemId:12147,unitCopper:85}],stamp);
 		const save = vi.spyOn(f.store,'saveLive');
@@ -395,6 +397,27 @@ describe('durable live alert outbox', () => {
 		e.service.observe(f.service.getJournal()[3]!); await e.service.drain();
 		expect(e.requestDetailed.mock.calls.slice(calls).flatMap(([path]) => String(path).split('ids=')[1]!.split(','))).not.toContain('999');
 		await e.service.dispose(); await f.service.dispose();
+	});
+	it('a late alert decided by a retry carries the item name, not its id', async () => {
+		const f = fixture(); const first = await positive(f);
+		const names = async (ids: readonly number[]) => Object.fromEntries(ids.map((id) => [String(id),{kind:'item',id,name:`Item ${String(id)}`}])) as unknown as Record<string,never>;
+		const e = economy(f,f.service,names); e.rateLimit.recordRateLimited(null);
+		e.service.observe(first); await e.service.drain();
+		expect(f.service.getAlerts()[0]).toMatchObject({state:'awaiting_price'}); expect(e.requestDetailed).not.toHaveBeenCalled();
+		f.setNow(AT+3_600_000); await f.service.commit(f.sample(2,2,{rows:[{kind:'item',idNumber:999,quantity:1},{kind:'item',idNumber:12147,quantity:2}]}));
+		e.service.observe(f.service.getJournal()[2]!); await e.service.drain();
+		expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]).toMatchObject({state:'processed',alert:{name:'Item 12147',totalCopper:170}});
+		await e.service.dispose(); await f.service.dispose();
+	});
+	it('gold starting to be listed revalues the points already charted', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+		f.setNow(AT+1000); await f.service.commit(f.sample(1,2)); await f.service.updatePrices([{itemId:12147,unitCopper:85}],new Date(AT+1000).toISOString());
+		const listed = (cursor: number, quantity: number) => f.sample(cursor,quantity,{currencyCoverage:'listed',rows:[{kind:'item',idNumber:12147,quantity},{kind:'currency',idNumber:1,quantity:1000}]});
+		f.setNow(AT+2000); await f.service.commit(listed(2,4)); f.setNow(AT+3000); await f.service.commit(listed(3,6));
+		const points = f.service.getView().chartPoints.map((point) => point.knownNetValueCopper);
+		expect(f.service.getRuntime()?.currencyTrackedIds).toContain(1);
+		expect(points, 'every point is valued with the gold now tracked').toEqual(buildLiveChart(f.service.getJournal(),f.service.getRuntime()).map((point) => point.knownNetValueCopper));
+		expect(points.every((value) => value !== null)).toBe(true); await f.service.dispose();
 	});
 	it('a crash after claim is unconfirmed on restart and never re-emits', async () => {
 		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
