@@ -529,9 +529,14 @@ El addon muestra conexión y medición como estados distintos. Tras 15 s sin `fa
 transporte como antiguo y conserva las cifras en vez de sustituirlas por cero. La antigüedad de la
 lectura se pinta solo cuando informa de un problema: transporte antiguo, `err` no nulo, sin lectura,
 o lectura de 15 s o más con la medición en curso.
-Una observación antigua mantiene sus cifras y retira la ETA de bolsas. En live1 también se retira
-cuando la fuente carece de cobertura vigente; la cota de 15 min no sustituye la caducidad de fuente
-de 5 s definida en [SPEC-live-loot](SPEC-live-loot.md). Desconectar del host no demuestra
+Una observación antigua mantiene sus cifras y retira la ETA de bolsas. En el ADDON, «observación
+antigua» (para retirar la ETA de bolsas y para marcar el ritmo como último registrado) es una lectura
+de 15 s o más o un transporte antiguo, no los 5 s entre dos tramas (corregido el 8 oct 2026: con
+`farming_state` cada 5 s el texto alternaba entre la ETA y «ETA aún no disponible» en una medición
+normal). En live1 el HOST también retira la ETA, mandando `eta: null`, cuando su fuente carece de
+cobertura vigente; esa caducidad de fuente de 5 s sin muestra (`LIVE_SOURCE_STALE_MS`) es del plugin,
+no un umbral de pintado del addon, y la cota de 15 min no la sustituye
+([SPEC-live-loot](SPEC-live-loot.md)). Desconectar del host no demuestra
 que terminó la sesión: el runtime sigue el contrato de presencia y sus 10 min de gracia.
 La ausencia de incrementos nunca demuestra AFK. El total obtenido entre lecturas es inobservable.
 Posición, visibilidad y escala pertenecen al menú del addon y no introducen botones de juego.
