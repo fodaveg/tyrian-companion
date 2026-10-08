@@ -417,6 +417,47 @@ describe('live session summary: coverage and character changes', () => {
 		expect(content).toContain('- 17:35–17:40 · objetos · desconexión');
 	});
 
+	/** Lines that Markdown would swallow into the list item or the table above them: text right under one, with no blank line between. */
+	const glued = (content: string): string[] => {
+		const lines = body(content).split('\n'); const block = (line: string): boolean => line.startsWith('- ') || line.startsWith('|');
+		return lines.filter((line, index) => index > 0 && line !== '' && !block(line) && block(lines[index - 1]!));
+	};
+	const nineGaps: Mutate = (session) => ({ ...session, observedItemsMs: 20 * 60_000, gaps: Array.from({ length: 9 }, (_, index) => gap(0.1 * index, 0.1 * index + 0.05, 'disconnect')) });
+
+	it('leaves a blank line before «La lista puede estar incompleta.», so it is not part of the last map of the list', async () => {
+		const partial: Mutate = (session) => ({ ...session, mapCoveragePartial: true });
+		const es = await render({ mutate: partial });
+		expect(body(es.content)).toContain('## Mapas\n\n- Mapa 866 · 20 min\n- Mapa 873 · 20 min\n\nLa lista puede estar incompleta.\n\n## Al cerrar');
+		expect(glued(es.content)).toEqual([]);
+		const en = await render({ mutate: partial, locale: 'en' });
+		expect(body(en.content)).toContain('- Map 873 · 20 min\n\nThe list may be incomplete.\n\n## At close');
+		expect(glued(en.content)).toEqual([]);
+	});
+
+	it('leaves a blank line before «… y N más.» under the list of unobserved intervals', async () => {
+		const es = await render({ mutate: nineGaps });
+		expect(body(es.content)).toMatch(/\n- \d\d:\d\d–\d\d:\d\d · objetos · desconexión\n\n… y 1 más\.\n\nNota completa:/u);
+		expect(glued(es.content)).toEqual([]);
+		expect(body((await render({ mutate: nineGaps, locale: 'en' })).content)).toContain(' · items · disconnect\n\n… and 1 more.\n\nFull note:');
+	});
+
+	it('never writes a paragraph right under a list or a table, with every section of the note present', async () => {
+		const alert = { kind: 'valuable_loot', itemId: STAPLE, name: 'Saco grande', quantity: 12, totalCopper: 18_000, priceStatus: 'known', reason: 'above_threshold' } as never;
+		const everything: Mutate = (session) => ({ ...nineGaps(GOLD_WALLET_ON(session)), mapCoveragePartial: true, magicFind: { value: 312, source: 'verified' },
+			totals: [...session.totals, total('item', 101, 3), total('item', 102, 1), total('item', 103, 0, 4), total('currency', 2, 800)],
+			valuation: { ...session.valuation, coinNetCopper: 12_345, prices: [...session.valuation.prices, { itemId: 101, unitCopper: null }, { itemId: 102, unitCopper: 50 }] },
+			journal: session.journal.map((entry, index) => index === 1 ? { ...entry, outbox: [{ state: 'processed', alert } as never] } : entry) });
+		for (const locale of ['es', 'en'] as const) {
+			const note = await render({ locale, mutate: everything, itemMeta: { ...META, 102: { flags: ['AccountBound'], type: 'Trophy' } },
+				characters: [{ name: 'Alfa', fromAt: iso(0) }, { name: 'Beta', fromAt: iso(0.9) }] });
+			const text = body(note.content);
+			// Every section is there, so each of its joints is checked.
+			for (const heading of locale === 'es' ? ['## Veredicto', '## Para vender ahora', 'Sin precio de bazar', 'Ligados a cuenta', '## Otras monedas', '## Lo bueno', 'Salieron del inventario', '## Mapas', 'La lista puede estar incompleta.', '## Al cerrar', '## Cobertura', '… y 1 más.']
+				: ['## Verdict', '## To sell now', 'No bazaar price', 'Account-bound', '## Other currencies', '## The good', 'left the inventory', '## Maps', 'The list may be incomplete.', '## At close', '## Coverage', '… and 1 more.']) expect(text).toContain(heading);
+			expect(glued(note.content)).toEqual([]);
+		}
+	});
+
 	it('names a character change: characters in order, what was not measured, and the gap as such', async () => {
 		const characters = [{ name: 'Alfa', fromAt: iso(0) }, { name: 'Beta', fromAt: iso(0.9) }];
 		const { content } = await render({ characters, mutate: (session) => ({ ...session, observedItemsMs: 20 * 60_000, gaps: [gap(0.7, 1, 'context_changed'), gap(1.2, 1.3, 'context_changed')] }) });

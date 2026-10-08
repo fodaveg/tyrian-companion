@@ -149,7 +149,8 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			`${String(f.outCount)} items left the inventory; it cannot tell whether they were sold, consumed or deposited.`));
 
 		if (f.maps.length > 0) out.push('', `## ${label('Mapas', 'Maps')}`, '', ...f.maps.map((row) => `- ${mapName(row.mapId)} · ${duration(row.ms)}`),
-			...(session.mapCoveragePartial ? [label('La lista puede estar incompleta.', 'The list may be incomplete.')] : []));
+			// A blank line first: text right under a list item is, in Markdown, part of that item.
+			...(session.mapCoveragePartial ? ['', label('La lista puede estar incompleta.', 'The list may be incomplete.')] : []));
 
 		const extra: string[] = [];
 		if (session.magicFind.source === 'verified' && session.magicFind.value !== null) extra.push(`- ${label('Hallazgo mágico', 'Magic find')}: ${String(session.magicFind.value)}`);
@@ -164,7 +165,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		} else {
 			out.push(label(`Solo se observó el ${String(Math.round(f.observedShare * 100))} % de la sesión. Tramos sin observar:`, `Only ${String(Math.round(f.observedShare * 100))} % of the session was observed. Unobserved intervals:`));
 			for (const gap of f.gaps.slice(0, MAX_LISTED_GAPS)) out.push(`- ${clock(gap.fromAt)}–${clock(gap.toAt)} · ${gap.channels[0] === 'items' ? label('objetos', 'items') : label('monedas', 'currencies')} · ${gap.characterChange ? label('cambio de personaje', 'character change') : gapReason(gap.reason, es)}`);
-			if (f.gaps.length > MAX_LISTED_GAPS) out.push(label(`… y ${String(f.gaps.length - MAX_LISTED_GAPS)} más.`, `… and ${String(f.gaps.length - MAX_LISTED_GAPS)} more.`));
+			if (f.gaps.length > MAX_LISTED_GAPS) out.push('', label(`… y ${String(f.gaps.length - MAX_LISTED_GAPS)} más.`, `… and ${String(f.gaps.length - MAX_LISTED_GAPS)} more.`));
 		}
 
 		const link = input.fullNotePath.replace(/\.md$/u, '');
