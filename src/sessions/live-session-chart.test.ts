@@ -60,6 +60,19 @@ describe('incremental live chart', () => {
 		for (const point of chart) expect(point).toEqual(every.find((candidate) => candidate.observedAt === point.observedAt));
 		expect(chart).not.toEqual(buildLiveChart(entries, cheap));
 	});
+	it('never exceeds 600 points nor loses the first, with cuts piling up after a full chart', () => {
+		const loot = (index: number, cut: boolean) => ({ ...journal(index + 1)[index]!, breakBefore: cut, observations: [observation(index, 'item', 30, 1)] });
+		const entries = Array.from({ length: 599 }, (_, index) => loot(index, index === 0));
+		entries.push(loot(599, true), loot(600, true), { ...loot(601, false), observations: [] });
+		const chart = buildLiveChart(entries, null);
+		expect(chart.length).toBeLessThanOrEqual(600); expect(chart[0]).toMatchObject({ observedAt: entries[0]!.observedAt, breakBefore: true });
+		expect(chart.at(-1)?.observedAt).toBe(entries.at(-1)!.observedAt);
+		const cuts = Array.from({ length: 1500 }, (_, index) => loot(index, true)); const many = buildLiveChart(cuts, null);
+		expect(many.length).toBeLessThanOrEqual(600); expect(many[0]?.observedAt).toBe(cuts[0]!.observedAt); expect(many.at(-1)?.observedAt).toBe(cuts.at(-1)!.observedAt);
+		let totals: ReturnType<typeof liveObservationTotals> = []; const incremental = new LiveChartBuilder((entry, cumulative) => liveChartPoint(entry, cumulative, null));
+		for (const entry of cuts) { totals = liveObservationTotals(totals, entry.observations); const now = totals; incremental.push(entry, () => now); }
+		expect(incremental.points(() => totals), 'sample by sample = at once').toEqual(many);
+	});
 	it('keeps the arithmetic overflow guard', () => {
 		const huge = journal(2); huge[0]!.observations = [observation(0, 'item', 1, Number.MAX_SAFE_INTEGER)]; huge[1]!.observations = [observation(1, 'item', 1, 5)];
 		expect(() => buildLiveChart(huge, null)).toThrow('Live session arithmetic overflow.');

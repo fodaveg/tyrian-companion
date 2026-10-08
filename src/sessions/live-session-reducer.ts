@@ -127,7 +127,8 @@ type ChartRecord = Parameters<typeof liveChartPoint>[2];
  * - the first entry and every cut (`breakBefore`) are always points;
  * - an entry that observed something is a point candidate, an empty one (nothing changed) is not;
  * - candidates are thinned by a stride that doubles each time the points would exceed the limit (older points
- *   are dropped, never the first, a cut or the latest entry);
+ *   are dropped, never the first, a cut or the latest entry); if the cuts alone exceed it, the oldest ones after
+ *   the first stop being cuts and merge into the line;
  * - the latest entry is always the last point, so the line ends at the exact current value.
  */
 export class LiveChartBuilder {
@@ -137,15 +138,19 @@ export class LiveChartBuilder {
 	/** `totals` are the cumulative totals AFTER `entry`; only read when the entry becomes a point. */
 	push(entry: ChartEntry, totals: () => readonly LiveTotalV1[]): void {
 		const index = this.count; this.count += 1; this.latest = entry;
-		if (index === 0 || entry.breakBefore) { this.kept.push({ point: this.value(entry, totals()), ordinal: -1, cut: true, index }); return; }
-		if (entry.observations.length === 0) return;
-		const ordinal = this.ordinal; this.ordinal += 1;
-		if (ordinal % this.stride !== 0) return;
-		this.kept.push({ point: this.value(entry, totals()), ordinal, cut: false, index });
+		if (index === 0 || entry.breakBefore) this.kept.push({ point: this.value(entry, totals()), ordinal: -1, cut: true, index });
+		else {
+			if (entry.observations.length === 0) return;
+			const ordinal = this.ordinal; this.ordinal += 1;
+			if (ordinal % this.stride !== 0) return;
+			this.kept.push({ point: this.value(entry, totals()), ordinal, cut: false, index });
+		}
+		// One point of the budget is left for the latest entry, which closes the line.
 		while (this.kept.length > this.limit - 1) {
 			const filtered = this.kept.filter((row) => row.cut || row.ordinal % (this.stride * 2) === 0);
-			if (filtered.length === this.kept.length) break;
-			this.stride *= 2; this.kept = filtered;
+			if (filtered.length < this.kept.length) { this.stride *= 2; this.kept = filtered; continue; }
+			// Only cuts are left: the oldest ones after the first merge into the line (the first and the newest stay).
+			this.kept.splice(1, 1);
 		}
 	}
 	/** The points so far; the latest entry closes the line unless it already is the last point. */
