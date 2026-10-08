@@ -56,6 +56,8 @@ export interface LocalFileBackend {
 	set(key: string, value: string): Promise<void>;
 	delete(key: string): Promise<void>;
 	keys(): Promise<string[]>;
+	/** Closes the held connection (see `TyrianPathIndexKv.close`); a later call opens a new one. */
+	close?(): void;
 }
 
 export function createMemoryFileBackend(): LocalFileBackend {
@@ -127,6 +129,14 @@ export function createIndexedDbFileBackend(factory: IDBFactory, databaseName: st
 		set: async (key, value) => { await run('readwrite', (store) => store.put(value, key)); },
 		delete: async (key) => { await run('readwrite', (store) => store.delete(key)); },
 		keys: async () => (await run('readonly', (store) => store.getAllKeys())).map(String),
+		close: () => {
+			const entry = cached;
+			cached = null;
+			if (entry === null) return;
+			if (entry.database !== null) discard(entry.database);
+			// Still opening: close the connection the moment it exists. A failed open has nothing to close.
+			else entry.opening.then(discard, () => undefined);
+		},
 	};
 }
 

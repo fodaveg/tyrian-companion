@@ -1,5 +1,5 @@
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
 	abortingIndexedDb, closeUnderneath, killStorage, reviveStorage, settlement, trackedIndexedDb,
@@ -29,6 +29,34 @@ describe('createIndexedDbPathIndexKv', () => {
 		const second = createIndexedDbPathIndexKv(factory, 'hebra-tyrian-path-index');
 		expect(await second.get('a')).toBe('two');
 		expect(await createIndexedDbPathIndexKv(factory, 'another-database').get('a')).toBeUndefined();
+	});
+
+	it('close() closes its connection, is harmless twice or before any use, and the kv opens a new one if used again', async () => {
+		const tracked = trackedIndexedDb();
+		const kv = createIndexedDbPathIndexKv(tracked.factory, 'hebra-tyrian-path-index');
+		kv.close?.();
+		await kv.set('a', 'one');
+		expect(tracked.connections).toHaveLength(1);
+		const closed = vi.spyOn(tracked.connections[0]!, 'close');
+
+		kv.close?.();
+		kv.close?.();
+
+		expect(closed).toHaveBeenCalledTimes(1);
+		expect(await kv.get('a')).toBe('one');
+		expect(tracked.connections).toHaveLength(2);
+	});
+
+	it('a close() issued while the connection is still opening closes it as soon as it exists', async () => {
+		const tracked = trackedIndexedDb();
+		const kv = createIndexedDbPathIndexKv(tracked.factory, 'hebra-tyrian-path-index');
+		const pending = kv.get('a');
+		kv.close?.();
+		await pending.catch(() => undefined);
+		await settlement(Promise.resolve());
+
+		expect(tracked.connections).toHaveLength(1);
+		expect(() => tracked.connections[0]!.transaction('index')).toThrow();
 	});
 
 	it('a save whose transaction aborts with no error event rejects instead of staying pending', async () => {

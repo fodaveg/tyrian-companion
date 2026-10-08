@@ -89,6 +89,24 @@ function adapterContract(name: string, backend: () => LocalFileBackend): void {
 adapterContract('memory', () => createMemoryFileBackend());
 adapterContract('IndexedDB', () => createIndexedDbFileBackend(new IDBFactory(), 'hebra-tyrian-local-files'));
 
+describe('createIndexedDbFileBackend close()', () => {
+	it('closes its connection once, and a later call opens a new one', async () => {
+		const tracked = trackedIndexedDb();
+		const backend = createIndexedDbFileBackend(tracked.factory, 'hebra-tyrian-local-files');
+		backend.close?.();
+		await backend.set('a', 'one');
+		expect(tracked.connections).toHaveLength(1);
+		const closed = vi.spyOn(tracked.connections[0]!, 'close');
+
+		backend.close?.();
+		backend.close?.();
+
+		expect(closed).toHaveBeenCalledTimes(1);
+		expect(await backend.get('a')).toBe('one');
+		expect(tracked.connections).toHaveLength(2);
+	});
+});
+
 // 8 Oct 2026: `append` read and rewrote the whole file for every line; filling the 2 MiB log wrote
 // 6 226 MiB. Chunked, a line costs a bounded write however long the log already is.
 describe('appending to a long file', () => {

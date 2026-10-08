@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTyrianTestApi } from '../../test/hebra-plugin-fakes';
+import { trackedIndexedDb } from '../../test/indexed-db-connections';
 import type { TyrianHost, TyrianRuntime } from '../tyrian-host';
 import { activateTyrian, type HebraRuntimeEnvironment } from './hebra-runtime';
 
@@ -61,6 +62,20 @@ describe('activateTyrian', () => {
 		expect(document.body.classList.contains('is-mobile')).toBe(false);
 		expect(env.runtime.stopped).toBe(1);
 		expect(keychain.size).toBe(1);
+	});
+
+	it('the cleanup closes the IndexedDB connections of the path index and the local files, after the core stopped', async () => {
+		const test = createTyrianTestApi({ platform: 'ios' });
+		const tracked = trackedIndexedDb();
+		const env = environment({ indexedDB: tracked.factory });
+		const cleanup = await activateTyrian(test.api, env);
+		const mine = tracked.connections.filter((connection) => /path-index|local-files/.test(connection.name));
+		expect(mine.length, 'the host opened at least one of its own databases').toBeGreaterThan(0);
+		const closes = mine.map((connection) => vi.spyOn(connection, 'close'));
+
+		await cleanup();
+
+		for (const close of closes) expect(close).toHaveBeenCalled();
 	});
 
 	it('runs in consultation mode where Hebra has neither TCP, notifications nor background (iPhone)', async () => {

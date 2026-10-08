@@ -93,6 +93,8 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 		removeMobileClass();
 		return runtime.stop()
 			.then(() => handle.flush())
-			.catch((error: unknown) => report(error, 'stop'));
+			.catch((error: unknown) => report(error, 'stop'))
+			// After the stop and the flush, which still use both databases.
+			.finally(() => handle.closeStorage());
 	};
 }
