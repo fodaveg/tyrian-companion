@@ -29,7 +29,8 @@ alineados en `manifest.json`, `package.json`, la raíz de `package-lock.json` y 
   `tyrian-companion-0.6.13.zip` construido en local, sha256
   `4b18ec13475603430dccd30e9f91a6b011983d54fa6a6a62ab1dc0654a0d6da6`; no se ha comparado con el sha256 del zip
   publicado.
-- CI de `main` sobre `e078ea5` (run 37781711863): en curso (`status: in_progress`, sin conclusión) al escribir esto.
+- CI de `main` sobre `e078ea5` (run 37781711863): `success`. Jobs `check`, `check-guardrails`, `detect-native-changes`
+  y `release-package` en `success`; `rust-portable` y `rust-windows-helper` omitidos (`skipped`).
 - No verificado: nada de la 0.6.13 se ha visto en un cliente real. Ni la nota resumen ni la Base «Sesiones» en
   Obsidian o en Hebra, ni el sonido de los avisos en Hebra, ni un cambio de personaje a mitad de sesión en el juego;
   tampoco la instalación de la 0.6.13 en Hebra ni en Obsidian/BRAT.
