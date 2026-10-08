@@ -76,21 +76,35 @@ class Reader:
     def scalar(self, address, size):
         return int.from_bytes(self.read(address, size), 'little')
 
-    def classify(self, value):
+    @staticmethod
+    def aligned(value, content):
+        """Heap objects sit on 8 bytes; game content sits 4 past a multiple of 8.
+
+        From the live diagnose runs of 2026-10-08 on this build: the 16 bag items passed the
+        8-byte check, their 32 content pointers failed it, and all 278 content pointers the
+        Magic Find probe measured ended in 4. See the README.
+        """
+        return value & 7 == (PROFILE['content_pointer_remainder'] if content else 0)
+
+    def classify(self, value, content=False):
         """Why a pointer value is unusable, or None; the value itself is never reported."""
         if not value:
             return 'null'
         if not 0x10000 <= value <= MAX_ADDRESS:
             return 'out_of_user_range'
-        if value & 7:
+        if not self.aligned(value, content):
             return 'unaligned'
         if not any(start <= value < end for start, end in self.ranges):
             return 'unmapped'
         return None
 
-    def checked(self, value):
+    def content(self, value):
+        """Validate a pointer into game content: an item definition or its bag payload."""
+        return self.checked(value, content=True)
+
+    def checked(self, value, content=False):
         """Validate a pointer value that was already read as part of a larger record."""
-        fault = self.classify(value)
+        fault = self.classify(value, content)
         if fault:
             self.fault = fault
             raise Rejected('unmapped_pointer' if fault == 'unmapped' else 'null_or_invalid_pointer')
@@ -144,12 +158,12 @@ def bag_size(reader, base, item, index):
     reader.step(f'bag_item_vtable[{index}]')
     require_pointer(reader, item, base + PROFILE['bag_item_vtable'], 'bag_item_vtable')
     reader.step(f'bag_definition[{index}]')
-    definition = reader.pointer(item + 0x40)
+    definition = reader.content(reader.scalar(item + 0x40, 8))
     _type_id, item_type, payload = struct.unpack('<IIQ', reader.read(definition + 0x28, 16))
     if item_type != PROFILE['bag_item_type']:
         raise Rejected('bag_definition_type')
     reader.step(f'bag_size[{index}]')
-    size = reader.scalar(reader.checked(payload) + 0x28, 4)
+    size = reader.scalar(reader.content(payload) + 0x28, 4)
     if size > PROFILE['bag_size_max']:
         raise Rejected('bag_size_bounds')
     reader.bags += 1
@@ -233,11 +247,13 @@ def bag_survey(reader, base, context):
             if not dispatch[vtable]:
                 continue
             definition = reader.scalar(item + 0x40, 8)
-            row['definition_pointer'] = reader.classify(definition) or 'ok'
+            row['definition_pointer'] = reader.classify(definition, content=True) or 'ok'
+            row['definition_low_bits'] = definition & 7
             if row['definition_pointer'] not in ('ok', 'unaligned'):
                 continue
             _type_id, row['definition_type'], payload = struct.unpack('<IIQ', reader.read(definition + 0x28, 16))
-            row['payload_pointer'] = reader.classify(payload) or 'ok'
+            row['payload_pointer'] = reader.classify(payload, content=True) or 'ok'
+            row['payload_low_bits'] = payload & 7
             if row['definition_type'] == PROFILE['bag_item_type'] and row['payload_pointer'] in ('ok', 'unaligned'):
                 row['size'] = reader.scalar(payload + 0x28, 4)
         survey['distinct_vtables'] = len({row['vtable_rva'] for row in survey['bags'] if row.get('vtable_rva')})

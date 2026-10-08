@@ -9,16 +9,18 @@
   "char_context_vtable": 34983752,
   "character_agent_vtable": 34996688,
   "inventory_vtable": 35004840,
-  "bag_item_vtable": 36032624,
-  "bag_item_vtable_note": "Active value is the ItCliConsumable vtable, picked by mistake; the live run of 2026-10-08 rejected the first bag with it. Kept until a live vtable RVA confirms the candidate below.",
+  "bag_item_vtable": 36031768,
+  "bag_item_vtable_note": "ItCliBag. The first candidate carried 36032624, the ItCliConsumable vtable, by mistake. The live diagnose run of 2026-10-08 reported 36031768 for all 16 bags, the value the item factory installs for definition type 3.",
   "bag_item_vtable_candidates": [
     {
       "name": "ItCliBag",
       "vtable": 36031768,
       "definition_type": 3,
-      "active": false
+      "active": true
     }
   ],
+  "content_pointer_remainder": 4,
+  "content_pointer_note": "Address modulo 8 required of pointers into game content (item definition and bag payload). Observed live on 2026-10-08: all 32 of these failed the 8-byte check here, and 278 of 278 content pointers measured by the Magic Find probe ended in 4. Not derived from code; this probe's own low bits are first reported by the diagnose survey from now on.",
   "offline_only_guards": [
     {
       "name": "item_factory_type_switch",

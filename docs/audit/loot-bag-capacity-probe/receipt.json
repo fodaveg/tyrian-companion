@@ -1,20 +1,59 @@
 {
   "date": "2026-10-08",
-  "scope": "isolated bag capacity candidate summed from equipped bag definitions, with controlled fixtures; not a production profile",
-  "authorization": "Relayed by the root session on 2026-10-08: David authorized extending the probe to bag capacity (\"sonda si\"). The live read is reserved to the root session after reviewing this candidate.",
-  "base_commit": "c550bbd0200d077c5c0f42dc8350fac56b0cf401",
+  "scope": "current receipt of the bag capacity candidate: capacity summed from equipped bag definitions, with the bag class and the content pointer rule taken from the live diagnose runs; not a production profile",
+  "history": "The first candidate's receipt is this file at commit 236cdce19e4b99f93dcb91eac7f6581f908bdedd. receipt-diagnose-2026-10-08.json and evidence/ describe earlier states of these files and are kept as history; evidence/static-findings.json still names the wrong bag class.",
+  "authorization": "Relayed by the root session on 2026-10-08: David authorized extending the probe to bag capacity (\"sonda si\"). Every live read was executed by the root session; this work never read the process.",
   "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
-  "binary_note": "computed on the installed file on 2026-10-08; static analysis only",
-  "runtime_attempted": false,
-  "process_access": false,
+  "process_access_by_this_work": false,
   "stored_capacity_found": false,
   "verdict": "sum_of_equipped_bags",
   "live_value_proven": false,
   "capacity_semantics_proven": false,
+  "live_runs_reported_by_root": [
+    {
+      "mode": "normal, 2 samples, first candidate",
+      "exit_code": 2,
+      "status": "unknown",
+      "reason": "bag_item_vtable",
+      "bytes_requested": 1368
+    },
+    {
+      "mode": "--diagnose, 1 sample, commit badb353cc4b22f0bae58b2db7fef2553ec7d3712",
+      "exit_code": 2,
+      "strict_status": "unknown",
+      "stage": "bag_item_vtable[0]",
+      "observed_rva": 36031768,
+      "bytes_requested": 1860,
+      "bag_slot_count": 16,
+      "bags_present": 16,
+      "distinct_vtables": 1,
+      "definition_getter_dispatch": "true in 16 of 16",
+      "definition_type": "3 in 16 of 16",
+      "sizes": [18, 32, 24, 20, 20, 20, 20, 20, 20, 28, 32, 32, 32, 32, 32, 32],
+      "hypothetical_capacity": 414,
+      "inventory_counter_reported": "313/414",
+      "item_pointers": "ok (8-aligned) in 16 of 16",
+      "definition_and_payload_pointers": "unaligned to 8 in 32 of 32; their low bits were not recorded by that version",
+      "note": "The 414 is the diagnostic sum, not a normal-mode sample"
+    }
+  ],
+  "bag_class": {
+    "vtable_rva": 36031768,
+    "name": "ItCliBag",
+    "active_since": "2026-10-08",
+    "static_chain": "item factory table entry 3 -> case RVA 0x13C6F4A -> constructor RVA 0x13C8C10 -> vtable 0x225CD18 -> slot 8 is the definition getter; checked by check_profile_offline.py",
+    "live": "reported for all 16 bags by the diagnose run"
+  },
+  "pointer_rule": {
+    "heap_objects": "address % 8 == 0; the 16 bag items observed",
+    "game_content": "address % 8 == 4; borrowed from the Magic Find probe's 278 of 278 content pointers; here only 'not 8-aligned' was observed for the 32",
+    "why_not_multiple_of_4": "the narrowest rule the observations satisfy; an 8-aligned content pointer is as anomalous as an odd one",
+    "normal_mode_run_with_this_rule": false
+  },
   "environment": {
     "platform": "Fedora Linux",
     "python": "3.14.8",
-    "dependencies": "Python stdlib only; existing x86_64-w64-mingw32-objdump for the static analysis; no installs, build, EXE or game access"
+    "dependencies": "Python stdlib only; no installs, build, EXE or game access"
   },
   "checks": {
     "red_guard": {
@@ -22,17 +61,18 @@
       "command": "PYTHONDONTWRITEBYTECODE=1 python3 prove_guard_red.py",
       "exit_code": 1,
       "expected_exit_code": 1,
-      "failures": 1,
-      "mutation": "Disable both initial/final real inventory identity guards only in the fixture process",
-      "observed_failure": "candidate_bag_capacity != unknown",
-      "evidence": "evidence/guard-red.stderr"
+      "mutations": [
+        "both inventory identity guards removed: 1 of 1 case fails (candidate_bag_capacity != unknown)",
+        "content pointer alignment guard removed: 4 of 4 cases fail (remainders 0, 1, 2, 6)"
+      ],
+      "last_line": "removed guards missed by their tests: vtable=True content_alignment=True"
     },
     "green_fixtures": {
       "cwd": "docs/audit/loot-bag-capacity-probe",
       "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_probe.py",
       "exit_code": 0,
-      "tests": 21,
-      "evidence": "evidence/fixtures.stderr"
+      "tests": 34,
+      "last_lines": "Ran 34 tests in 0.025s / OK"
     },
     "offline_profile": {
       "cwd": "docs/audit/loot-bag-capacity-probe",
@@ -40,10 +80,12 @@
       "exit_code": 0,
       "guards": 11,
       "slots": 9,
+      "candidates": 1,
+      "offline_links": 3,
       "guard_bytes": 824,
-      "failures": 0,
-      "negative_control": "one guard hash and one slot target altered in memory only: exit 1, failures guard_controlled_character_getter and slot_controlled_character_getter"
-    }
+      "failures": 0
+    },
+    "logs": "Scratch logs were temporary and deleted; their last lines are above"
   },
   "bounds": {
     "process_requested_bytes_per_run": 4096,
@@ -55,25 +97,20 @@
     "fixture_bytes_two_samples_with_16_bags": 2880
   },
   "limitations": [
-    "Game process never read; no real bag, size or capacity observed.",
-    "The client stores no capacity: the candidate repeats the counter's sum over equipped bags.",
-    "Only the ItCliBag item class is accepted; another class in a bag slot yields unknown.",
+    "The normal mode has not run against the game with the corrected class and pointer rule; 414 was the diagnostic sum.",
+    "The content pointer remainder was not measured on bag content; if it is not 4 the normal mode returns unknown and --diagnose now reports the low bits.",
     "Shared inventory slots and the bank are outside this counter and are not read.",
-    "The 512/640 and 313/414 figures come from the root session's report of David's capture; this folder did not measure them.",
     "Fixtures use synthetic guard contents; only check_profile_offline.py ties the real hashes to the installed file.",
     "Snapshots are not atomic; concurrent differences are rejected, not reconstructed.",
-    "The repository gate and plugin suite were not run; this folder is documentation outside the package."
+    "The repository gate and plugin suite were not run."
   ],
-  "evidence_paths": "Repository-relative paths normalized in synthetic test logs; scratch disassembly was temporary and deleted",
   "files": {
-    "README.md": "4df25e25a7210ba1db8e9add2fc9a2831a1a7826e1374b4b5b3af3a27c6fae50",
-    "check_profile_offline.py": "72ee0b42a1baad7c2ca554f32dda4c2c909d9a5a380fac8b42e1a40f3c7e27cb",
-    "evidence/fixtures.stderr": "4fb94bc916ce613202210fd196af01a49effb41364fc8917a7145569e492c867",
-    "evidence/guard-red.stderr": "cd29ecae4ed8e4c4fb8bb8410cfa858d834f3201530385b21e98c8541d636a91",
-    "evidence/static-findings.json": "f783c99052a332def10beb24b31a5722630ab74f85226fc4310b8779dbf9db7f",
-    "probe.py": "ed5d3275b71bf941a338ef279e6fe34dc96bd02da2168b0aa9d4eb8a38ad3f67",
-    "profile.json": "ed47ec5f2e3ebf9a0cf86c34652aa169c79d992e0847329948806f544338874d",
-    "prove_guard_red.py": "c2fb05fb76716e3ad7623d357704069af0a17d1a522679c84ae896828ea87565",
-    "test_probe.py": "93d93dfe9bd5d7897aa7e03b718f8e2daa7c87c0044dfbfffc0dfe136be9f6d5"
+    "README.md": "50fe19e109c0c583d83b9621f2b94cbb053d43c6223c73b400e4a41c49405dc1",
+    "check_profile_offline.py": "edb8b452f41e8aacabef84f22eb3fa0aa3a7c27c0082c9c91b456b2fff055731",
+    "probe.py": "4f30bdf1f81789d8b23e176c5a2da181920dee4fc8668684294caecf1dde558b",
+    "profile.json": "35846af3fc57b555d7c64330dae76ee3ac270e3637804372e05ab5e9b5a479c9",
+    "prove_guard_red.py": "f9b3c1e7afb002d345a1896e33ec0e9bf5a8c015eab9d108c0eae62abbacfc0a",
+    "receipt-diagnose-2026-10-08.json": "e031ef490b3d5613e0c493aeee8082f3937b8736a636efd78d19a0d5e8da7b32",
+    "test_probe.py": "54578599cfe5258f5f5c4936ff927982efa98934c8d4ac536a25833bb95f7592"
   }
 }

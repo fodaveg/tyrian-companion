@@ -50,10 +50,9 @@ vtable **`0x225CD18`**; en esa vtable, el slot `0x2A8` es la única función de 
 Como el juego exige tipo 3 en cada hueco de bolsa, no hay otra clase posible: bolsas invisibles,
 de caja fuerte, de equipo o la mochila inicial son la misma clase con otra definición.
 
-La sonda **todavía exige la vtable equivocada**, así que seguirá dando `unknown`. La correcta
-está preparada en `profile.json` como candidata inactiva, con su cadena comprobada sobre el
-fichero (tabla → caso → constructor → vtable → getter de definición). Se activa cuando una
-lectura en vivo devuelva ese RVA: es cambiar `bag_item_vtable` a 36031768.
+La vtable correcta está **activa desde el 8 de octubre**: el diagnóstico en vivo devolvió
+`0x225CD18` (36031768) en las 16 bolsas. `check_profile_offline.py` comprueba además su cadena
+sobre el fichero: tabla → caso → constructor → vtable → getter de definición.
 
 ## La matriz de 512 no basta
 
@@ -84,9 +83,10 @@ se validó en vivo el 6 de octubre. Los nuevos son `+0x440`, `+0x380` y los tres
 
 - Que la suma coincida con el total de la ventana. Es la prueba de abajo.
 - Que el tamaño de `carga+0x28` sea el que usa el contador en todos los tipos de bolsa.
-- Que las bolsas reales tengan la vtable `0x225CD18`. Lo dirá el `--diagnose`.
-- Si los punteros de definición y de carga están alineados a 8 bytes. Son contenido del juego;
-  si no lo están, la sonda estricta los rechazará aunque la clase sea la correcta.
+- Que el modo normal dé el total. El 8 de octubre lo dio (414) la suma de diagnóstico; el modo
+  normal con la clase y la alineación corregidas no se ha ejecutado todavía.
+- Que los punteros de definición y de carga terminen en 4. En esta sonda solo consta que no
+  estaban alineados a 8; el resto exacto lo midió la sonda de hallazgo mágico en otro contenido.
 - El inventario compartido de la cuenta y el banco. No entran en este contador y no se leen.
 - Windows nativo y el lector dentro del addon.
 
@@ -99,15 +99,22 @@ no las ha comprobado.
 ```sh
 cd docs/audit/loot-bag-capacity-probe
 PYTHONDONTWRITEBYTECODE=1 python3 prove_guard_red.py
-# Debe terminar con exit 1: el guard de vtable se retira SOLO en la fixture.
+# Debe terminar con exit 1: retira dos guards, de uno en uno y SOLO en la fixture.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_probe.py
-# Debe terminar con exit 0: 30 tests con el guard real activo (21 del candidato, 9 del diagnóstico).
+# Debe terminar con exit 0: 34 tests con los guards reales activos.
 PYTHONDONTWRITEBYTECODE=1 python3 check_profile_offline.py
 # Debe terminar con exit 0: lee el fichero instalado, nunca el proceso.
 ```
 
-El control rojo retira las dos comprobaciones de identidad del inventario. Una fixture con
-vtable incorrecta devuelve entonces una capacidad, y el test falla al exigir `unknown`.
+El control rojo retira dos guards, cada uno por separado:
+
+1. Las dos comprobaciones de identidad del inventario. Una fixture con vtable incorrecta
+   devuelve entonces una capacidad, y el test falla al exigir `unknown`.
+2. La alineación de los punteros de contenido. Fixtures con el contenido en resto 0, 1, 2 y 6
+   devuelven entonces una capacidad, y los cuatro casos fallan.
+
+Sale con exit 1 solo si los dos guards retirados hicieron fallar su test. Exit 3 significa que
+se quitó un guard y su test siguió pasando.
 
 `profile.json` guarda solo hashes: no hay bytes del juego en el repo. Las fixtures usan
 contenidos de guard sintéticos, y `check_profile_offline.py` ata los 11 hashes y los 9 slots al
@@ -160,6 +167,33 @@ Los 11 guards, las vtables, los 9 slots, el dueño del inventario, el número de
 lista de punteros pasaron. Lo único rechazado fue la clase del primer objeto, por el error
 descrito arriba.
 
+## Diagnóstico en vivo, 8 octubre 2026: clase y alineación
+
+Lo ejecutó la sesión raíz con `--diagnose`, una muestra, 1860 bytes, exit 2.
+
+- Veredicto estricto: `unknown`, `bag_item_vtable`, `observed_rva` 36031768.
+- 16 huecos de bolsa, 16 bolsas, una sola clase: `ItCliBag`, con el getter guardado en su
+  slot `8` y definición de tipo 3 en todas.
+- Tamaños 18, 32, 24, 20, 20, 20, 20, 20, 20, 28, 32, 32, 32, 32, 32, 32. Suman **414**, el
+  total de la ventana de David. Es la suma de diagnóstico, no una muestra del modo normal.
+- Los 16 punteros de objeto pasaron la alineación a 8. Los 16 de definición y los 16 de carga
+  no: activar la clase no bastaba.
+
+## Dos alineaciones, una por tipo de puntero
+
+| Puntero | Regla | De dónde sale |
+| --- | --- | --- |
+| Objetos del montículo: contexto, personaje, inventario, objeto bolsa | Resto 0 módulo 8 | Los 16 objetos bolsa en vivo; son objetos de `0x98` bytes del asignador general (caso de la fábrica en RVA `0x13C6F4A`) |
+| Contenido del juego: definición del objeto y carga de bolsa | Resto 4 módulo 8 | Los 32 fallaron la alineación a 8 en vivo; la sonda de hallazgo mágico midió resto 4 en 278 de 278 punteros de contenido |
+
+La regla del contenido es **observada, no derivada del binario**, y aquí además es prestada: el
+diagnóstico de esta sonda decía «no alineado a 8» sin decir el resto. Desde hoy el sondeo
+añade `definition_low_bits` y `payload_low_bits`. Si una bolsa real no termina en 4, el modo
+normal dará `unknown` con `null_or_invalid_pointer` y el diagnóstico dirá el resto.
+
+Elegí «resto 4» y no «múltiplo de 4» porque es la regla más estrecha que cumple lo medido: un
+puntero de contenido alineado a 8 sería tan anómalo como uno impar.
+
 ## Modo `--diagnose`
 
 Mismo `Reader`, mismos guards y mismo presupuesto. Añade a cada muestra:
@@ -187,9 +221,13 @@ Coste medido en fixture con 16 bolsas rechazadas: 1860 bytes una muestra, 2896 d
 
 La salida normal no cambia: un test fija sus campos.
 
-Este cambio tiene su propio recibo, [`receipt-diagnose-2026-10-08.json`](receipt-diagnose-2026-10-08.json).
-`receipt.json` y `evidence/` se conservan sin tocar como historia del primer candidato; lo que
-`evidence/static-findings.json` dice de la clase de la bolsa es el error ya corregido arriba.
+## Recibos
+
+El vigente es [`receipt.json`](receipt.json): cubre los ficheros tal como están hoy.
+[`receipt-diagnose-2026-10-08.json`](receipt-diagnose-2026-10-08.json) y `evidence/` son
+historia: describen el modo de diagnóstico y el primer candidato (commit `236cdce`), cuyos
+ficheros han cambiado desde entonces. Lo que `evidence/static-findings.json` dice de la clase
+de la bolsa es el error ya corregido arriba.
 
 ## Coste para el lector del addon
 

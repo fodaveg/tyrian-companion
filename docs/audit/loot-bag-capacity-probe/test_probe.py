@@ -30,7 +30,9 @@ probe.PROFILE = dict(probe.PROFILE, guards=[
 class Fixture:
     """Owned sparse bytes with a read log and explicit race/short-read injection."""
 
-    def __init__(self, sizes=(20, 32, 32, 28), slot_count=None):
+    def __init__(self, sizes=(20, 32, 32, 28), slot_count=None,
+                 content_remainder=probe.PROFILE['content_pointer_remainder']):
+        self.content_remainder = content_remainder
         self.memory = {}
         self.calls = []
         self.mutate = None
@@ -67,13 +69,15 @@ class Fixture:
         self.qword(inventory, BASE + probe.PROFILE['inventory_vtable'])
         self.qword(inventory + 0x70, address)
 
-    def alloc(self, size):
-        address = self.heap
-        self.heap += (size + 15) & ~15
+    def alloc(self, size, content=False):
+        """Heap objects land on 8 bytes; game content lands 4 past, as the live run showed."""
+        address = self.heap + (self.content_remainder if content else 0)
+        self.heap += (size + 31) & ~15
         return address
 
     def bag(self, index, size, inventory=INVENTORY, vtable=None, misalign=0):
-        item, definition, payload = self.alloc(0x50), self.alloc(0x48) + misalign, self.alloc(0x38) + misalign
+        item = self.alloc(0x98)
+        definition, payload = self.alloc(0x48, True) + misalign, self.alloc(0x38, True) + misalign
         self.qword(item, BASE + (vtable or probe.PROFILE['bag_item_vtable']))
         self.qword(item + 0x40, definition)
         self.write(definition + 0x28, struct.pack('<IIQ', 9000 + index, probe.PROFILE['bag_item_type'], payload))
@@ -150,6 +154,38 @@ class BagCapacityTests(unittest.TestCase):
     def test_supported_zero_is_distinct_from_unknown(self):
         result = self.observe(Fixture(sizes=(None, None), slot_count=2))
         self.assertEqual((result['status'], result['candidate_capacity_slots']), ('candidate_bag_capacity', 0))
+
+    def test_live_shape_of_8_october_gives_414(self):
+        sizes = (18, 32, 24, 20, 20, 20, 20, 20, 20, 28, 32, 32, 32, 32, 32, 32)
+        result = self.observe(Fixture(sizes=sizes))
+        self.assertEqual((result['status'], result['candidate_capacity_slots'], result['bag_slot_count'],
+                          result['bags_equipped']), ('candidate_bag_capacity', 414, 16, 16))
+
+    def test_content_pointers_off_their_observed_alignment_reject(self):
+        for remainder in (0, 1, 2, 6):
+            with self.subTest(remainder=remainder):
+                fixture = Fixture(content_remainder=remainder)
+                reader = fixture.reader()
+                self.assert_unknown(fixture, 'null_or_invalid_pointer', reader)
+                self.assertEqual((reader.fault, reader.stage, reader.bags), ('unaligned', 'bag_definition[0]', 0))
+
+    def test_payload_is_checked_on_its_own(self):
+        fixture = Fixture()
+        _item, definition, payload = fixture.items[2]
+        fixture.dword(payload + 4 + 0x28, 20)
+        fixture.qword(definition + 0x30, payload + 4)
+        reader = fixture.reader()
+        self.assert_unknown(fixture, 'null_or_invalid_pointer', reader)
+        self.assertEqual((reader.fault, reader.stage), ('unaligned', 'bag_size[2]'))
+
+    def test_bag_items_keep_eight_byte_alignment(self):
+        fixture = Fixture()
+        item = fixture.items[1][0]
+        fixture.write(item + 4, bytes(fixture.memory.get(item + offset, 0) for offset in range(0x48)))
+        fixture.qword(INVENTORY + 0x388, item + 4)
+        reader = fixture.reader()
+        self.assert_unknown(fixture, 'null_or_invalid_pointer', reader)
+        self.assertEqual((reader.fault, reader.stage), ('unaligned', 'bag_pointer[1]'))
 
     def test_wrong_inventory_vtable_rejects_before_any_bag_read(self):
         fixture = Fixture()
@@ -298,7 +334,8 @@ class BagCapacityTests(unittest.TestCase):
         self.assertEqual((rows[1]['status'], rows[1]['candidate_capacity_slots']), ('unknown', None))
 
 
-CANDIDATE = probe.PROFILE['bag_item_vtable_candidates'][0]
+FOREIGN = dict(name='ItCliConsumable', vtable=36032624)  # the class the first candidate accepted by mistake
+CANDIDATE = FOREIGN
 GETTER = next(slot['target_rva'] for slot in probe.PROFILE['slots'] if slot['target'] == 'item_definition_getter')
 NORMAL_KEYS = {'status', 'candidate_capacity_slots', 'bag_slot_count', 'bags_equipped',
                'live_value_proven', 'capacity_semantics_proven'}
@@ -307,7 +344,7 @@ UNKNOWN_KEYS = {'status', 'candidate_capacity_slots', 'reason', 'errno',
 
 
 def candidate_class_fixture(sizes=(20, 32, 32, 28)):
-    """Every bag is of the prepared, not yet accepted, class: what the live run of 8 Oct met."""
+    """Every bag is of a class the probe does not accept, though its getter dispatches alike."""
     fixture = Fixture(sizes=(None,) * len(sizes))
     fixture.qword(BASE + CANDIDATE['vtable'] + 8, BASE + GETTER)
     for index, size in enumerate(sizes):
@@ -346,8 +383,9 @@ class DiagnoseTests(unittest.TestCase):
         self.assertEqual((survey['bag_slot_count'], len(survey['bags']), survey['distinct_vtables']), (4, 16, 1))
         self.assertEqual(survey['bags'][0], dict(
             index=0, present=True, pointer='ok', vtable_rva=CANDIDATE['vtable'], vtable_in_module=True,
-            vtable_is_active=False, candidate_class='ItCliBag', definition_getter_dispatch=True,
-            definition_pointer='ok', definition_type=3, payload_pointer='ok', size=20))
+            vtable_is_active=False, candidate_class=None, definition_getter_dispatch=True,
+            definition_pointer='ok', definition_low_bits=4, definition_type=3,
+            payload_pointer='ok', payload_low_bits=4, size=20))
         self.assertEqual(survey['bags'][4], dict(index=4, present=False))
         self.assertEqual(survey['hypothetical_capacity_if_dispatch_accepted'], 112)
         text = json.dumps(result)
