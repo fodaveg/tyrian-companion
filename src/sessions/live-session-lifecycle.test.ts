@@ -472,7 +472,7 @@ describe('passive live session lifecycle', () => {
 				const svc = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {beat=callback;return 1;}});
 				await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true);
 				await report(svc, f, { stale: () => { vi.spyOn(f.store,'saveLive').mockResolvedValueOnce({ status: 'stale' }); },
-					unavailable: () => { vi.mocked(f.options.coordinator.assertOwned).mockResolvedValueOnce({ status: 'error', code: 'unavailable' }); } });
+					unavailable: () => { vi.spyOn(f.options.coordinator,'assertOwned').mockResolvedValueOnce({ status: 'error', code: 'unavailable' }); } });
 				f.renew.mockResolvedValueOnce({status:'lost'} as never); f.setNow(AT+3000);
 				beat!(); await svc.capture(); beat!(); await svc.capture();
 				return svc;
