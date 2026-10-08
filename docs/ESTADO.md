@@ -1,5 +1,26 @@
 # Estado
 
+## Candidato 0.6.11: el monstruo como icono propio en Hebra (8 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `0dfc1b6` (main tras la 0.6.10). Lleva un cambio: `hebra.json`
+declara `iconImage` (PNG de 128 px versionado en `assets/hebra-icon.png`) con `icon: "sword"` de respaldo.
+El detalle está en [CHANGELOG](CHANGELOG.md).
+
+- Verificado: `scripts/tests/probar-release-package.mjs` (incluye 9 casos negativos de `iconImage` y el positivo),
+  las suites de contrato BRAT, plan BRAT, escáner de seguridad e identidad de release, `src/host/hebra` (209
+  tests) y `security-scan`. El paquete de Hebra se armó una vez: `hebra.json` pesa 30793 bytes y su `iconImage`
+  empieza por `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAA`.
+- Sitios donde el plugin pide su icono con el nombre `sword` (el mismo que `icon`): ribbon
+  (`src/runtime/tyrian-companion-core.ts:5201`), vista y pestaña (`src/ui/companion-view.ts:175`), entrada «abrir»
+  del menú (`src/ui/session-command-adapter.ts:16,70`). No hay barra de estado. Con otro nombre a propósito, y
+  sin tocar: las vistas del asesor (`package-search`) y de venta (`candy`), el icono `inbox` de una entrada de
+  menú y los iconos de acción internos.
+- No verificado: nadie ha visto el icono pintado; el Hebra instalable hoy en Fedora (rpm 0.2.0-5) ignora el campo y
+  seguirá pintando la espada hasta el rpm 0.2.0-6; la web `app.hebra.pro` y TestFlight ya lo llevan; ningún plugin
+  real había publicado `iconImage` antes; en tema oscuro el contorno oscuro del monstruo se funde con el fondo y lo
+  que se ve es el cuerpo rosa.
+- Pendiente: el gate local, la atestación, la publicación y la verificación en Hebra instalada.
+
 ## Canal 0.6.10 publicado: «Por hora» con oro y precio bruto `price2` (8 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.10](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.10)

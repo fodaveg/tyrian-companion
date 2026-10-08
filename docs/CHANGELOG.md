@@ -1,5 +1,25 @@
 # Changelog
 
+## Release beta 0.6.11 - el monstruo como icono propio del plugin en Hebra
+
+Candidato; nada publicado ni etiquetado, gate pendiente. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente.
+
+- Icono en Hebra: `hebra.json` lleva ahora `iconImage`, el monstruo como PNG embebido (`data:image/png;base64,…`,
+  128 px, cuadrado, unos 22 KB), con `icon: "sword"` como respaldo. Pedido de David el 8 oct 2026 («si se puede
+  uno custom, me gustaría el monstruo»). Hebra lo pinta donde el nombre de icono pedido es igual al `icon` del
+  manifiesto; una Hebra anterior ignora el campo y pinta la espada. Obsidian no cambia: sigue con la espada.
+- El PNG vive en `assets/hebra-icon.png` (origen y comando en `assets/README.md`) y `hebra.json` lo embebe al
+  generarse, no a mano. El manifiesto pasa de unos 1,3 KB a unos 30 KB.
+- Empaquetado: `scripts/release-package.mjs` valida el PNG leyendo los bytes con los límites del contrato de Hebra
+  (prefijo exacto, base64, firma, IHDR e IEND, cuadrado, lado de 32 a 128 px, 32 KiB) y falla con el límite
+  incumplido. Un `iconImage` inválido haría que Hebra rechazase el manifiesto entero.
+- Tests: casos negativos de cada regla (31 px, 129 px, no cuadrado, sin IEND, JPEG con prefijo PNG, base64
+  corrupto, 33 KiB, prefijo erróneo, sin IHDR) y el positivo con el fichero real.
+- Límites: nadie ha visto el icono pintado todavía; el Hebra instalable hoy en Fedora (rpm 0.2.0-5) ignora el campo
+  y seguirá pintando la espada hasta el rpm 0.2.0-6; la web `app.hebra.pro` y TestFlight ya lo llevan; ningún
+  plugin real había publicado `iconImage` antes; en tema oscuro el contorno oscuro del monstruo se funde con el
+  fondo y lo que se ve es el cuerpo rosa.
+
 ## Release beta 0.6.10 - «Por hora» cuenta el oro, la gráfica va antes que los objetos y el addon recibe el precio bruto
 
 [Canal 0.6.10 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.10);

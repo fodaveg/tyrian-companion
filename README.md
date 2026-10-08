@@ -120,7 +120,9 @@ Developers testing an exact unpublished commit use the existing
 [artifact installation procedure](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores).
 The canonical Hebra host uses the matching external-plugin assets, described in the same
 [beta guide](docs/BETA.md). The 0.6.10 channel is a normal release, not a prerelease,
-because the Hebra installer omits prereleases. Record installation/loading separately from session QA.
+because the Hebra installer omits prereleases. In Hebra the plugin's `hebra.json` carries its own icon (the
+monster, `iconImage`) with the Lucide `sword` as fallback; Obsidian keeps the sword. Hebra builds that predate
+the field ignore it and paint the sword. Record installation/loading separately from session QA.
 
 ## First farming session
 

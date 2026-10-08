@@ -49,6 +49,10 @@ infiere carga correcta de la versión que figure en disco. Nexus no ofrece autoa
 este addon: con GW2 cerrado, sustituir manualmente la DLL por el artifact elegido y comprobar la
 versión cargada al reabrir. Publicar Companion no sustituye la DLL local de Nexus.
 
+Icono en Hebra (candidato 0.6.11): `hebra.json` lleva el monstruo como `iconImage` (PNG de 128 px versionado en
+`assets/hebra-icon.png`, comprobado en el empaquetado contra los límites de Hebra) y `sword` como respaldo en
+`icon`. Una Hebra anterior a ese campo lo ignora y pinta la espada; Obsidian sigue con la espada.
+
 La matriz vigente de sesiones requiere Nexus en Fedora/GE-Proton y Windows. Desde el 8 oct 2026 el
 addon de Nexus es obligatorio para las funciones en vivo en todas las plataformas y el módulo de Blish HUD
 queda congelado en su 0.5.0, sin funciones nuevas; que Windows nativo funcione con Nexus es una expectativa
