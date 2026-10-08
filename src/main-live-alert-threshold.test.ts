@@ -35,17 +35,21 @@ async function runtime() {
 	return {h,access,port:access.liveIngamePort(),source,sample,setNow:(value:number) => {now=value;}};
 }
 /** The real settings panel over the real core: what the user types goes through the row's own handler and `updateSettings`. */
-function typeInThresholdRow(f:Awaited<ReturnType<typeof runtime>>, value:string): Promise<void> {
+async function typeInThresholdRow(f:Awaited<ReturnType<typeof runtime>>, value:string): Promise<void> {
 	const tab = new TyrianCompanionSettingTab({vault:{configDir:'config-dir'}} as never, f.h.core);
 	const definition = (tab.getSettingDefinitions() as unknown as Array<{name:string;render(setting:never):void}>).find((row) => row.name === THRESHOLD_ROW);
 	if (!definition) throw new Error('Expected the valuable-drop threshold setting.');
 	let listener: (value:string) => Promise<void> = async () => undefined;
-	const input = {setAttr:() => undefined,removeAttribute:() => undefined};
+	// The value is saved when the user leaves the field (the DOM `change` event), not per keystroke.
+	const domListeners = new Map<string,() => void>();
+	const input = {setAttr:() => undefined,removeAttribute:() => undefined,addEventListener:(type:string,next:() => void) => { domListeners.set(type,next); }};
 	const component = {inputEl:input,setValue:() => component,onChange:(next:typeof listener) => { listener = next; return component; }};
 	const setting = {descEl:{createDiv:() => ({setAttr:() => undefined,setText:() => undefined})},
 		addText:(build:(control:typeof component) => unknown) => { build(component); return setting; }};
 	definition.render(setting as never);
-	return listener(value);
+	await listener(value);
+	domListeners.get('change')?.();
+	for (let turn = 0; turn < 50; turn += 1) await Promise.resolve();
 }
 async function dropWithPrice(f:Awaited<ReturnType<typeof runtime>>, unitPrice:number) {
 	const options=(f.access.liveEconomy as unknown as {options:{catalog():Promise<Record<string,CatalogItem>>;gateway:PublicCatalogGateway}}).options;

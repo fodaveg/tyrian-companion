@@ -287,6 +287,9 @@ class FakeWindow {
 	cancelAnimationFrame = (handle: number): void => {
 		if (this.frames.delete(handle)) this.cancelled.push(handle);
 	};
+	/** The timers a view arms for its own repaint (Sale tab); real ones, cleared by the view on close. */
+	setTimeout = (callback: () => void, milliseconds: number): number => globalThis.setTimeout(callback, milliseconds) as unknown as number;
+	clearTimeout = (handle: number): void => { globalThis.clearTimeout(handle); };
 	pendingFrames(): number { return this.frames.size; }
 	runFrames(): void {
 		const due = [...this.frames.values()];
@@ -298,6 +301,9 @@ class FakeWindow {
 class FakeDocument {
 	activeElement: FakeElement | null = null;
 	readonly defaultView = new FakeWindow();
+	hidden = false;
+	addEventListener(_type: string, _listener: () => void): void { /* visibilitychange is never fired here */ }
+	removeEventListener(_type: string, _listener: () => void): void { /* see above */ }
 	createElementNS(_namespace: string, tag: string): FakeElement { return new FakeElement(tag, this); }
 }
 
@@ -333,6 +339,8 @@ class FakeElement {
 	}
 	/** Obsidian's `Node.win`: the window this element lives in, a popout's own when it is in one. */
 	get win(): FakeWindow { return this.ownerDocument.defaultView; }
+	/** Obsidian's `Node.doc`: the document this element lives in. */
+	get doc(): FakeDocument { return this.ownerDocument; }
 	empty(): void { this.emptied += 1; this.children.splice(0); this.textContent = null; }
 	append(...children: FakeElement[]): void { this.children.push(...children); }
 	prepend(...children: FakeElement[]): void { this.children.unshift(...children); }
