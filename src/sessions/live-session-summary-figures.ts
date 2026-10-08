@@ -23,6 +23,11 @@ export interface SummaryFigures {
 	durationMs: number;
 	/** 0..1, observed item time over the session's length. */
 	observedShare: number;
+	/**
+	 * The share as the whole percent the note states, truncated and never rounded up: 100 only for a session
+	 * observed in full, and at most 99 while it has any unobserved stretch (23 s in 115 minutes is not 100 %).
+	 */
+	observedPercent: number;
 	mainMapId: number | null;
 	maps: { mapId: number; ms: number }[];
 	/** Sellable items that came in, best value first (priced ones before unpriced). */
@@ -153,14 +158,18 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	const gaps = session.gaps.filter((gap) => gap.toAt !== null).map((gap) => ({ fromAt: gap.fromAt, toAt: gap.toAt!, reason: gap.reason, channels: gap.channels,
 		ms: Date.parse(gap.toAt!) - Date.parse(gap.fromAt),
 		characterChange: gap.reason === 'context_changed' && characters.slice(1).some((entry) => entry.fromAt >= gap.fromAt && entry.fromAt <= gap.toAt!) }));
+	const unobserved = unionOf(session.gaps, session.endedAt);
+	// Integer arithmetic before the division, so an exact share (57 of 100 minutes) is not truncated to the percent below it.
+	const wholePercent = durationMs > 0 ? Math.min(100, Math.floor(observedMs * 100 / durationMs)) : 0;
 	return { durationMs, observedShare: durationMs > 0 ? Math.min(1, observedMs / durationMs) : 0,
+		observedPercent: unobserved.gapStretches > 0 ? Math.min(99, wholePercent) : wholePercent,
 		mainMapId: summaryMainMap(session), maps: mapTimes(session.mapIntervals), sellable, boundItemIds, unpriced, unknownBindingIds,
 		netCopper: valueless ? null : netCopper, positiveCopper, noPrices,
 		perHour: { copper: valueless ? null : perHour(netCopper), reason: rateReason }, withoutDominant: valueless ? null : withoutDominant, staple, goldCopper, currencies,
 		dominantCurrency: positiveCopper === 0 ? gainedCurrency : null,
 		outCount: itemTotals.reduce((sum, row) => sum + row.negative, 0), hasNewItems,
 		salesSession,
-		alerts, gaps, ...unionOf(session.gaps, session.endedAt) };
+		alerts, gaps, ...unobserved };
 }
 
 /** Union of the unobserved intervals, whatever the channel: overlaps count once, and so does a cut seen by two channels. */

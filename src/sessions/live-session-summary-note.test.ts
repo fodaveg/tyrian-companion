@@ -417,6 +417,74 @@ describe('live session summary: coverage and character changes', () => {
 		expect(content).toContain('- 17:35–17:40 · objetos · desconexión');
 	});
 
+	describe('the observed percent of the header against the coverage section', () => {
+		const MIN = 60_000;
+		/** A session of `minutes`, with `observedMs` of them observed and the given unobserved stretches (start and length in ms from the start). */
+		const shaped = (minutes: number, observedMs: number, stretches: readonly [number, number][], channel: 'items' | 'currencies' = 'items'): Mutate => (session) => ({ ...session,
+			endedAt: new Date(AT + minutes * MIN).toISOString(), observedItemsMs: observedMs,
+			gaps: stretches.map(([from, length]) => ({ version: 1 as const, fromAt: new Date(AT + from).toISOString(), toAt: new Date(AT + from + length).toISOString(), reason: 'disconnect' as const, channels: [channel] })) });
+		const percentOf = (content: string): { header: number; frontmatter: number } => ({ header: Number(/· (\d+) % (?:observado|observed)\n/u.exec(body(content))![1]),
+			frontmatter: Number(/^tyrian_summary_observed_percent: (\d+)$/mu.exec(content)![1]) });
+
+		it('does not say 100 % for the first real note: 115 minutes with 8 unobserved stretches, 23 s in all', async () => {
+			const stretches = Array.from({ length: 8 }, (_, index): [number, number] => [index * 10 * MIN, index === 7 ? 2_000 : 3_000]);
+			const { content } = await render({ mutate: shaped(115, 115 * MIN - 23_000, stretches) });
+			expect(body(content)).toContain('· 1 h 55 min · 99 % observado\n');
+			expect(content).toContain('tyrian_summary_observed_percent: 99');
+			expect(content).toContain('8 tramos sin observar, en total 23 s.');
+			expect(content).not.toContain('100 %');
+			expect(body((await render({ mutate: shaped(115, 115 * MIN - 23_000, stretches), locale: 'en' })).content)).toContain('· 99 % observed\n');
+		});
+
+		it('truncates and never rounds up: 89.9 % is 89 %, and the list of intervals says the same figure', async () => {
+			const { content } = await render({ mutate: shaped(100, 100 * MIN - 606_000, [[0, 606_000]]) });
+			expect(percentOf(content)).toEqual({ header: 89, frontmatter: 89 });
+			expect(content).toContain('Solo se observó el 89 % de la sesión. Tramos sin observar:');
+			// An exact share is not pushed down by the division: 57 of 100 minutes is 57 %.
+			expect(percentOf((await render({ mutate: shaped(100, 57 * MIN, [[0, 43 * MIN]]) })).content)).toEqual({ header: 57, frontmatter: 57 });
+		});
+
+		it('is at most 99 % with any unobserved stretch, even one of another channel over fully observed items', async () => {
+			const { content } = await render({ mutate: shaped(40, 40 * MIN, [[5 * MIN, 30_000]], 'currencies') });
+			expect(percentOf(content)).toEqual({ header: 99, frontmatter: 99 });
+			expect(content).toContain('1 tramo sin observar, en total 30 s.');
+		});
+
+		it('is 100 % only for a session observed in full, and only then says there is no unobserved interval', async () => {
+			const full = await render({ mutate: shaped(40, 40 * MIN, []) });
+			expect(percentOf(full.content)).toEqual({ header: 100, frontmatter: 100 });
+			expect(full.content).toContain('## Cobertura\n\nSin tramos sin observar.\n');
+			// Observed time short of the session's length with no stretch on record: the truncated figure, and a line that agrees with it.
+			const short = await render({ mutate: shaped(40, 40 * MIN - 1, []) });
+			expect(percentOf(short.content)).toEqual({ header: 99, frontmatter: 99 });
+			expect(short.content).toContain('## Cobertura\n\nSe observó el 99 % de la sesión; ningún tramo sin observar quedó registrado.\n');
+			expect(short.content).not.toContain('Sin tramos sin observar.');
+			const half = await render({ mutate: shaped(80, 40 * MIN, []), locale: 'en' });
+			expect(percentOf(half.content)).toEqual({ header: 50, frontmatter: 50 });
+			expect(half.content).toContain('## Coverage\n\n50 % of the session was observed; no unobserved interval was recorded.\n');
+			expect(half.content).not.toContain('Unobserved intervals:');
+		});
+
+		it('never lets the header, the frontmatter and the coverage section disagree, whatever was observed', async () => {
+			for (const stretches of [[], [[0, 1]], [[0, 1_000], [MIN, 5_000]], [[0, 10 * MIN]]] as [number, number][][]) {
+				const unobserved = stretches.reduce((sum, [, length]) => sum + length, 0);
+				for (const lost of [0, 1, 999, 23_000, 5 * MIN, 39 * MIN]) {
+					const observedMs = Math.max(0, 40 * MIN - Math.max(unobserved, lost));
+					const { content } = await render({ mutate: shaped(40, observedMs, stretches) });
+					const { header, frontmatter } = percentOf(content);
+					const coverage = body(content).split('## Cobertura\n\n')[1]!;
+					expect(frontmatter).toBe(header);
+					expect(header).toBeLessThanOrEqual(Math.floor(observedMs * 100 / (40 * MIN)));
+					if (stretches.length > 0) expect(header).toBeLessThanOrEqual(99);
+					expect(coverage.startsWith('Sin tramos sin observar.')).toBe(header === 100);
+					expect(header === 100).toBe(stretches.length === 0 && observedMs === 40 * MIN);
+					const stated = /(?:Solo se observó|Se observó) el (\d+) %/u.exec(coverage);
+					if (stated !== null) expect(Number(stated[1])).toBe(header);
+				}
+			}
+		});
+	});
+
 	/** Lines that Markdown would swallow into the list item or the table above them: text right under one, with no blank line between. */
 	const glued = (content: string): string[] => {
 		const lines = body(content).split('\n'); const block = (line: string): boolean => line.startsWith('- ') || line.startsWith('|');

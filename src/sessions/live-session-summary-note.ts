@@ -93,7 +93,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const mapHeading = f.mainMapId !== null ? mapName(f.mainMapId) : f.maps.length === 0 ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
 		const heading = `${mapHeading}${characters.length === 1 ? ` · ${escapeMarkdown(characters[0]!.name)}` : ''}`;
 		const out: string[] = [`# ${heading}`, '',
-			`${day(session.startedAt)} · ${clock(session.startedAt)}–${clock(session.endedAt)} · ${duration(f.durationMs)} · ${String(Math.round(f.observedShare * 100))} % ${label('observado', 'observed')}`];
+			`${day(session.startedAt)} · ${clock(session.startedAt)}–${clock(session.endedAt)} · ${duration(f.durationMs)} · ${String(f.observedPercent)} % ${label('observado', 'observed')}`];
 		if (several) out.push('', `${label('Personajes', 'Characters')}: ${characters.map((entry) => escapeMarkdown(entry.name)).join(' → ')}${input.charactersCapped === true ? label(' … y más', ' … and more') : ''}`,
 			label('Al cambiar de personaje no se mide lo que cambió entre uno y otro: las bolsas del nuevo no cuentan como ganadas ni las del anterior como perdidas.',
 				'Switching character measures nothing across the switch: the new character\'s bags do not count as gained nor the previous one\'s as lost.'));
@@ -158,12 +158,17 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		if (extra.length > 0) out.push('', `## ${label('Al cerrar', 'At close')}`, '', ...extra);
 
 		out.push('', `## ${label('Cobertura', 'Coverage')}`, '');
-		if (f.observedShare >= SUMMARY_FOLD_COVERAGE) {
-			out.push(f.gapStretches === 0 ? label('Sin tramos sin observar.', 'No unobserved intervals.')
-				: label(`${String(f.gapStretches)} ${f.gapStretches === 1 ? 'tramo' : 'tramos'} sin observar, en total ${duration(f.gapsMs)}.`,
-					`${String(f.gapStretches)} unobserved ${f.gapStretches === 1 ? 'interval' : 'intervals'}, ${duration(f.gapsMs)} in total.`));
+		// The same truncated percent as the header, so the two never disagree: «no unobserved interval» alone is said only
+		// of a session observed in full, and any stretch on record keeps the header at 99 % or less.
+		const percent = String(f.observedPercent);
+		if (f.gapStretches === 0) {
+			out.push(f.observedPercent === 100 ? label('Sin tramos sin observar.', 'No unobserved intervals.')
+				: label(`Se observó el ${percent} % de la sesión; ningún tramo sin observar quedó registrado.`, `${percent} % of the session was observed; no unobserved interval was recorded.`));
+		} else if (f.observedShare >= SUMMARY_FOLD_COVERAGE) {
+			out.push(label(`${String(f.gapStretches)} ${f.gapStretches === 1 ? 'tramo' : 'tramos'} sin observar, en total ${duration(f.gapsMs)}.`,
+				`${String(f.gapStretches)} unobserved ${f.gapStretches === 1 ? 'interval' : 'intervals'}, ${duration(f.gapsMs)} in total.`));
 		} else {
-			out.push(label(`Solo se observó el ${String(Math.round(f.observedShare * 100))} % de la sesión. Tramos sin observar:`, `Only ${String(Math.round(f.observedShare * 100))} % of the session was observed. Unobserved intervals:`));
+			out.push(label(`Solo se observó el ${percent} % de la sesión. Tramos sin observar:`, `Only ${percent} % of the session was observed. Unobserved intervals:`));
 			for (const gap of f.gaps.slice(0, MAX_LISTED_GAPS)) out.push(`- ${clock(gap.fromAt)}–${clock(gap.toAt)} · ${gap.channels[0] === 'items' ? label('objetos', 'items') : label('monedas', 'currencies')} · ${gap.characterChange ? label('cambio de personaje', 'character change') : gapReason(gap.reason, es)}`);
 			if (f.gaps.length > MAX_LISTED_GAPS) out.push('', label(`… y ${String(f.gaps.length - MAX_LISTED_GAPS)} más.`, `… and ${String(f.gaps.length - MAX_LISTED_GAPS)} more.`));
 		}
@@ -183,7 +188,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			`tyrian_summary_observed_minutes: ${String(Math.round(session.observedItemsMs / 60_000))}`,
 			`tyrian_summary_date: ${day(session.startedAt)}`, `tyrian_summary_map: ${JSON.stringify(mapText)}`,
 			`tyrian_summary_characters: ${JSON.stringify(characters.map((entry) => entry.name))}`,
-			`tyrian_summary_duration_minutes: ${String(Math.round(f.durationMs / 60_000))}`, `tyrian_summary_observed_percent: ${String(Math.round(f.observedShare * 100))}`,
+			`tyrian_summary_duration_minutes: ${String(Math.round(f.durationMs / 60_000))}`, `tyrian_summary_observed_percent: ${String(f.observedPercent)}`,
 			`tyrian_summary_net_gold: ${goldText(shownNet)}`, `tyrian_summary_per_hour_gold: ${goldText(shownPerHour)}`, `tyrian_summary_wallet_gold: ${goldText(f.goldCopper)}`,
 			`tyrian_summary_top_item: ${topItem === null ? 'null' : JSON.stringify(raw(topItem.id, 'item'))}`, `tyrian_summary_top_item_count: ${topItem === null ? 'null' : String(topItem.count)}`,
 			`tyrian_summary_alerts: ${String(f.alerts.length)}`, `tyrian_summary_free_slots: ${session.coverage.freeSlots === null ? 'null' : String(session.coverage.freeSlots)}`,
