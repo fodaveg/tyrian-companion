@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	alertSoundDurationMs,
@@ -152,6 +152,65 @@ describe('H13.4 sound channel', () => {
 				reject = false;
 				handle.state = 'running';
 				expect(playAlertSound(factory)).toBe('played');
+				expect(scheduled.starts).toEqual([10, 10.15]);
+			});
+
+			it('does not call resume again while the first one is still pending', async () => {
+				const { factory, scheduled, calls } = suspendedContext(() => new Promise<void>(() => {}));
+
+				expect(playAlertSound(factory)).toBe('unavailable');
+				expect(playAlertSound(factory)).toBe('unavailable');
+				await flush();
+
+				expect(calls.resume).toBe(1);
+				expect(scheduled.starts).toEqual([]);
+			});
+
+			describe('a resume that lands late', () => {
+				afterEach(() => { vi.useRealTimers(); });
+
+				function lateResume(landsAfterMs: number) {
+					vi.useFakeTimers();
+					vi.setSystemTime(new Date('2026-10-08T10:00:00Z'));
+					let release: () => void = () => {};
+					const made = suspendedContext(async (handle) => {
+						await new Promise<void>((resolve) => { release = resolve; });
+						handle.state = 'running';
+					});
+					expect(playAlertSound(made.factory)).toBe('unavailable');
+					vi.setSystemTime(Date.now() + landsAfterMs);
+					release();
+					return made;
+				}
+
+				it('sounds once when it resolves after 2 s', async () => {
+					const { scheduled } = lateResume(2_000);
+					await vi.advanceTimersByTimeAsync(0);
+					expect(scheduled.starts).toEqual([10, 10.15]);
+				});
+
+				it('drops the tone when it resolves after 60 s', async () => {
+					const { scheduled } = lateResume(60_000);
+					await vi.advanceTimersByTimeAsync(0);
+					expect(scheduled.starts).toEqual([]);
+				});
+			});
+
+			it('waits for a thenable that is not an instance of Promise', async () => {
+				const { context, scheduled } = fakeAudioContext();
+				const handle = context as unknown as { state: string; resume: () => unknown };
+				handle.state = 'suspended';
+				let finish: () => void = () => {};
+				handle.resume = () => ({ then: (ok: () => void) => { finish = ok; } });
+				const factory = () => context;
+
+				expect(playAlertSound(factory)).toBe('unavailable');
+				await flush();
+				expect(scheduled.starts, 'sounded before the resume resolved').toEqual([]);
+
+				handle.state = 'running';
+				finish();
+				await flush();
 				expect(scheduled.starts).toEqual([10, 10.15]);
 			});
 
