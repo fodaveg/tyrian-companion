@@ -105,6 +105,30 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		expect(second).toMatchObject({ attempted: 1, seeded: 1, skippedCached: 1, failed: 0 });
 	});
 
+	it('reads each cached seed once per pass: the coverage reuses what the loop already read', async () => {
+		const port = indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() });
+		const reads: number[] = [];
+		const counted: typeof port = {
+			...port,
+			openSeedCache: async () => {
+				const cache = await port.openSeedCache();
+				return {
+					get: async (vaultId, itemId) => { reads.push(itemId); return await cache.get(vaultId, itemId); },
+					put: cache.put.bind(cache), close: cache.close.bind(cache),
+				};
+			},
+		};
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued, priceHistory: counted, vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async (itemId) => seeded(itemId),
+		});
+		const outcome = await service.run([1, 2, 3]);
+
+		expect(outcome.queueCoverage).toEqual({ total: 3, seeded: 3, noData: 0, pending: 0 });
+		expect(reads, 'a seed was read twice in one pass').toEqual([1, 2, 3]);
+		service.dispose();
+	});
+
 	it('Z12: records in the cache how many days the download was allowed to keep', async () => {
 		const factory = new IDBFactory();
 		const service = new PriceSeedBulkRefreshService({
