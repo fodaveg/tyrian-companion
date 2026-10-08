@@ -60,13 +60,15 @@ export function liveSessionValue(view: LiveSessionViewV1): number {
 }
 
 /**
- * Item subtotal per hour of covered observation (the rate the panel always rated), or null when
- * it is not eligible: no covered time, unpriced items, or incomplete bag coverage.
+ * Rate of the SAME figure «Valor estimado» shows (`liveSessionValue`: items plus gold when gold was
+ * followed, else the item subtotal) per hour of covered item observation. Spending gold lowers it.
+ * Null when not eligible: no covered item time, unpriced items, or incomplete bag coverage. The
+ * denominator stays `observedItemsMs`: the view has no joint covered time, and a coin gap does not
+ * shorten it (the gold already counted is the observed net; the gap is stored apart).
  */
 export function liveSessionRatePerHour(view: LiveSessionViewV1): number | null {
-	const value = view.valuation;
-	if (view.observedItemsMs <= 0 || value.unpricedItemIds.length > 0 || view.itemCoverage !== 'complete') return null;
-	return value.netItemValueKnownCopper * 3_600_000 / view.observedItemsMs;
+	if (view.observedItemsMs <= 0 || view.valuation.unpricedItemIds.length > 0 || view.itemCoverage !== 'complete') return null;
+	return liveSessionValue(view) * 3_600_000 / view.observedItemsMs;
 }
 
 interface Tile { li: HTMLElement; sig: string }

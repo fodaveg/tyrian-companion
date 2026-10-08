@@ -189,12 +189,25 @@ describe('Session tab: figures, objects and chart', () => {
 		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).not.toContain('—');
 	});
 
-	it('shows the value with gold in «Estimated value» while «Per hour» stays the item subtotal rate', () => {
-		const view = liveView(); view.valuation.coinNetCopper = 100; view.valuation.knownNetValueCopper = view.valuation.netItemValueKnownCopper + 100;
-		expect(liveSessionValue(view)).toBe(view.valuation.netItemValueKnownCopper + 100);
-		expect(liveSessionRatePerHour(view)).toBe(liveSessionRatePerHour(liveView()));
-		const h = harness(view);
-		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).toContain('0g 1s 20c');
+	it('rates the same value as «Estimated value»: gold raises or lowers «Per hour», null gold leaves the item rate', () => {
+		expect(liveSessionRatePerHour(liveView())).toBe(20); // 20c of items over exactly one hour
+		const gain = liveView(); gain.valuation.coinNetCopper = 100; gain.valuation.knownNetValueCopper = 120;
+		expect(liveSessionValue(gain)).toBe(120);
+		expect(liveSessionRatePerHour(gain)).toBe(120);
+		const spent = liveView(); spent.valuation.coinNetCopper = -15; spent.valuation.knownNetValueCopper = 5;
+		expect(liveSessionRatePerHour(spent)).toBe(5);
+		const half = liveView(); half.observedItemsMs = 1_800_000; half.valuation.coinNetCopper = 100; half.valuation.knownNetValueCopper = 120;
+		expect(liveSessionRatePerHour(half)).toBe(240);
+		const neverCovered = liveView(); neverCovered.valuation.coinNetCopper = null; neverCovered.valuation.knownNetValueCopper = null;
+		expect(liveSessionRatePerHour(neverCovered)).toBe(20);
+		const hides: Array<(v: LiveSessionViewV1) => void> = [(v) => { v.observedItemsMs = 0; }, (v) => { v.valuation.unpricedItemIds = [12147]; },
+			(v) => { v.itemCoverage = 'partial'; }];
+		for (const hide of hides) {
+			const hidden = liveView(); hidden.valuation.coinNetCopper = 100; hidden.valuation.knownNetValueCopper = 120; hide(hidden);
+			expect(liveSessionRatePerHour(hidden)).toBeNull();
+		}
+		const h = harness(gain);
+		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).toMatch(/Per hour.*0g 1s 20c/);
 	});
 
 	it('draws the objects as a labelled list with the net quantity on each tile, sorted by value, without a row cap', () => {
