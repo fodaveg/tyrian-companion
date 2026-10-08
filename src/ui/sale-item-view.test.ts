@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SALE_VIEW_TYPE, SaleItemView, saleView, type SaleViewActions } from './sale-item-view';
+import { nextExpiryMs, SALE_VIEW_TYPE, SaleItemView, saleView, type SaleViewActions } from './sale-item-view';
 import { ProductActionController } from './product-action-controller';
 import { buildSaleViewModel, type SaleSourceRow, type SaleViewModel, type SaleViewModelInput } from './sale-view-model';
 
@@ -197,6 +197,77 @@ describe('SaleItemView wiring', () => {
 	});
 });
 
+/**
+ * Z-venta-10: a tab left open kept saying "reciente" after the verdict's `until`, because nothing
+ * repainted a model built once with `Date.now()`.
+ */
+describe('SaleItemView repaints when a figure on screen expires', () => {
+	const UNTIL_MS = NOW_MS + 5 * 60_000;
+	const quoteStates = (view: SaleItemView): string[] => find(view.contentEl as unknown as FakeElement, 'p')
+		.filter((p) => p.className.includes('tyrian-sale__quote')).map((p) => p.attributes.get('data-state') ?? '');
+	const liveModel = (): SaleViewModel => buildSaleViewModel(baseInput({
+		nowMs: Date.now(),
+		rows: [row({
+			itemId: 48805, name: 'Colmillos',
+			decision: {
+				action: 'sell', reason: 'seasonal_sell_window', until: new Date(UNTIL_MS).toISOString(),
+				priceQuotedAt: new Date(NOW_MS).toISOString(), sellWindowFromDay: '2026-09-22', sellWindowToDay: '2026-10-19',
+			},
+		})],
+	}));
+
+	beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW_MS); });
+	afterEach(() => { vi.useRealTimers(); });
+
+	it('repaints as stale once the verdict\'s until has passed', async () => {
+		installDom();
+		const view = new SaleItemView(content(), icons, actions(liveModel));
+		await view.onOpen();
+		expect(quoteStates(view)).toEqual(['fresh']);
+
+		await vi.advanceTimersByTimeAsync(5 * 60_000 + 2_000);
+
+		expect(quoteStates(view), 'still says recent after the until').toEqual(['stale']);
+	});
+
+	it('does not repaint on its own while the window is hidden, and repaints when it becomes visible', async () => {
+		installDom();
+		const view = new SaleItemView(content(), icons, actions(liveModel));
+		await view.onOpen();
+		(view.contentEl as unknown as FakeElement).doc.setHidden(true);
+		expect(vi.getTimerCount()).toBe(0);
+
+		vi.setSystemTime(UNTIL_MS + 60_000);
+		(view.contentEl as unknown as FakeElement).doc.setHidden(false);
+
+		expect(quoteStates(view)).toEqual(['stale']);
+	});
+
+	it('cancels its timer and its listener when the view closes', async () => {
+		installDom();
+		const view = new SaleItemView(content(), icons, actions(liveModel));
+		await view.onOpen();
+		const doc = (view.contentEl as unknown as FakeElement).doc;
+		expect(vi.getTimerCount()).toBe(1);
+		expect(doc.listenerCount('visibilitychange')).toBe(1);
+
+		await view.onClose();
+
+		expect(vi.getTimerCount()).toBe(0);
+		expect(doc.listenerCount('visibilitychange')).toBe(0);
+	});
+
+	it('arms nothing for a model with no verdict deadline, and never re-arms for an instant already past', async () => {
+		installDom();
+		const stale = buildSaleViewModel(baseInput({ nowMs: NOW_MS }));
+		const view = new SaleItemView(content(), icons, actions(() => stale));
+		await view.onOpen();
+		expect(vi.getTimerCount()).toBe(0);
+		expect(nextExpiryMs(liveModel(), UNTIL_MS)).toBe(NOW_MS + 900_000);
+		expect(nextExpiryMs(liveModel(), NOW_MS + 900_000)).toBeNull();
+	});
+});
+
 function installDom(): void {
 	vi.stubGlobal('createEl', (tag: string, options?: FakeOptions) => new FakeElement(tag, activeDocument, options));
 	vi.stubGlobal('createDiv', (options?: FakeOptions) => new FakeElement('div', activeDocument, options));
@@ -233,6 +304,18 @@ function productController(execute: () => Promise<'completed'>): ProductActionCo
 
 class FakeDocument {
 	activeElement: FakeElement | null = null;
+	hidden = false;
+	private readonly listeners = new Map<string, Set<() => void>>();
+	addEventListener(type: string, listener: () => void): void {
+		this.listeners.set(type, (this.listeners.get(type) ?? new Set()).add(listener));
+	}
+	removeEventListener(type: string, listener: () => void): void { this.listeners.get(type)?.delete(listener); }
+	listenerCount(type: string): number { return this.listeners.get(type)?.size ?? 0; }
+	/** The browser's `visibilitychange`, after flipping `hidden`. */
+	setHidden(hidden: boolean): void {
+		this.hidden = hidden;
+		for (const listener of [...(this.listeners.get('visibilitychange') ?? [])]) listener();
+	}
 	createElementNS(_namespace: string, tag: string): FakeElement { return new FakeElement(tag, this); }
 }
 
@@ -268,4 +351,10 @@ class FakeElement {
 		this.listeners.set(type, listeners);
 	}
 	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener(); }
+	/** Obsidian's `contentEl.doc` / `contentEl.win`; the timers are the global ones, so fake timers drive them. */
+	get doc(): FakeDocument { return this.ownerDocument; }
+	readonly win = {
+		setTimeout: (callback: () => void, milliseconds: number): number => globalThis.setTimeout(callback, milliseconds) as unknown as number,
+		clearTimeout: (handle: number): void => { globalThis.clearTimeout(handle); },
+	};
 }
