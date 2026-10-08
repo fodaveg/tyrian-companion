@@ -75,6 +75,34 @@ describe('incremental live chart', () => {
 		for (const entry of cuts) { totals = liveObservationTotals(totals, entry.observations); const now = totals; incremental.push(entry, () => now); }
 		expect(incremental.points(() => totals), 'sample by sample = at once').toEqual(many);
 	});
+	it('a cut merged into the line leaves its break on the next point kept', () => {
+		// Budget of 8: the first entry, a cut, one looting entry and then cuts until the oldest cut has to go.
+		const entries = [loot(0, false), loot(1, true), loot(2, false), ...Array.from({ length: 5 }, (_, index) => loot(3 + index, true))];
+		const chart = buildLiveChart(entries, null, 8);
+		expect(chart.map((point) => point.observedAt), 'the oldest cut after the first is the one merged').not.toContain(entries[1]!.observedAt);
+		expect(chart.find((point) => point.observedAt === entries[2]!.observedAt), 'nothing was observed before it: the line must not reach it from the first point')
+			.toMatchObject({ breakBefore: true });
+		// With no point left to inherit it, the break waits for the next one, the latest entry included.
+		expect(buildLiveChart([loot(0, false), loot(1, true), loot(2, false)], null, 2)).toMatchObject([{ breakBefore: false }, { observedAt: entries[2]!.observedAt, breakBefore: true }]);
+	});
+	it('no point is joined to the one before it across a stretch that had a cut, whatever was merged or thinned', () => {
+		const patterns: [string, (index: number) => boolean][] = [['all cuts', () => true], ['every other', (index) => index % 2 === 0],
+			['runs of cuts', (index) => index % 40 < 30], ['rare cuts', (index) => index % 13 === 0], ['cuts first', (index) => index < 700]];
+		for (const [label, cut] of patterns) for (const limit of [2, 3, 8, 50, 600]) {
+			const entries = Array.from({ length: 1500 }, (_, index) => loot(index, index > 0 && cut(index))); const chart = buildLiveChart(entries, null, limit);
+			expect(chart.length, `${label}/${String(limit)}`).toBeLessThanOrEqual(limit);
+			let from = 0;
+			for (const point of chart.slice(1)) {
+				const index = entries.findIndex((entry) => entry.observedAt === point.observedAt);
+				const crossed = entries.slice(from + 1, index + 1).some((entry) => entry.breakBefore);
+				if (crossed) expect(point.breakBefore, `${label}/${String(limit)}: the point of entry ${String(index)} follows a cut`).toBe(true);
+				from = index;
+			}
+			let totals: ReturnType<typeof liveObservationTotals> = []; const incremental = new LiveChartBuilder((entry, cumulative) => liveChartPoint(entry, cumulative, null), limit);
+			for (const entry of entries) { totals = liveObservationTotals(totals, entry.observations); const now = totals; incremental.push(entry, () => now); }
+			expect(incremental.points(() => totals), `${label}/${String(limit)}: sample by sample = at once`).toEqual(chart);
+		}
+	});
 	it('costs at most linear work however many cuts there are (counted, not timed)', () => {
 		const work = (size: number, cut: (index: number) => boolean) => {
 			const builder = new LiveChartBuilder((entry, cumulative) => liveChartPoint(entry, cumulative, null)); const totals = liveObservationTotals([], [observation(0, 'item', 30, 1)]);

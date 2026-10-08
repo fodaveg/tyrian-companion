@@ -128,7 +128,8 @@ type ChartRecord = Parameters<typeof liveChartPoint>[2];
  * - an entry that observed something is a point candidate, an empty one (nothing changed) is not;
  * - candidates are thinned by a stride that doubles each time the points would exceed the limit (older points
  *   are dropped, never the first, a cut or the latest entry); if the cuts alone exceed it, the oldest ones after
- *   the first stop being cuts and merge into the line;
+ *   the first stop being points, and the next point kept carries their break (`breakBefore`), so the line never
+ *   crosses a stretch nobody observed;
  * - the latest entry is always the last point, so the line ends at the exact current value.
  */
 export class LiveChartBuilder {
@@ -136,18 +137,22 @@ export class LiveChartBuilder {
 	private stride = 1; private ordinal = 0; private count = 0; private latest: ChartEntry | null = null;
 	/** Kept points that are not cuts (the only ones the stride can thin). */
 	private thinnable = 0;
+	/** A cut was merged and no kept point shows its break yet: the next point kept (or the one that closes the line) does. */
+	private mergedBreak = false;
 	/** Work done so far, for tests that bound the cost without a clock: points valued, and points examined while thinning. */
 	readonly work = { valued: 0, examined: 0 };
 	constructor(private readonly value: (entry: ChartEntry, totals: readonly LiveTotalV1[]) => LiveChartPointV1, private readonly limit = 600) {}
 	/** `totals` are the cumulative totals AFTER `entry`; only read when the entry becomes a point. */
 	push(entry: ChartEntry, totals: () => readonly LiveTotalV1[]): void {
 		const index = this.count; this.count += 1; this.latest = entry;
-		if (index === 0 || entry.breakBefore) { this.work.valued += 1; this.kept.push({ point: this.value(entry, totals()), ordinal: -1, cut: true, index }); }
+		if (index === 0 || entry.breakBefore) { this.work.valued += 1; this.mergedBreak = false; this.kept.push({ point: this.value(entry, totals()), ordinal: -1, cut: true, index }); }
 		else {
 			if (entry.observations.length === 0) return;
 			const ordinal = this.ordinal; this.ordinal += 1;
 			if (ordinal % this.stride !== 0) return;
-			this.work.valued += 1; this.thinnable += 1; this.kept.push({ point: this.value(entry, totals()), ordinal, cut: false, index });
+			this.work.valued += 1;
+			if (this.mergedBreak) { this.mergedBreak = false; this.kept.push({ point: { ...this.value(entry, totals()), breakBefore: true }, ordinal, cut: true, index }); }
+			else { this.thinnable += 1; this.kept.push({ point: this.value(entry, totals()), ordinal, cut: false, index }); }
 		}
 		// One point of the budget is left for the latest entry, which closes the line.
 		while (this.kept.length > this.limit - 1) {
@@ -159,14 +164,24 @@ export class LiveChartBuilder {
 			// Only cuts can go: the oldest ones after the first merge into the line (the first and the newest stay). They go in
 			// batches of an eighth of the budget, so a long run of cuts costs the same per entry as a long run of points.
 			this.work.examined += this.kept.length;
-			this.kept.splice(1, Math.max(1, Math.ceil(this.limit / 8)));
+			const merged = this.kept.splice(1, Math.max(1, Math.ceil(this.limit / 8)));
+			// Nothing was observed before a merged cut. The next point kept inherits that break (and so becomes a cut itself, which
+			// thinning never drops): otherwise the line would run from the first point straight across the uncovered stretch.
+			if (merged.some((row) => row.point.breakBefore)) {
+				const heir = this.kept[1];
+				if (heir === undefined) this.mergedBreak = true;
+				else { heir.point = { ...heir.point, breakBefore: true }; heir.cut = true; }
+			}
 			this.thinnable = this.kept.reduce((total, row) => total + (row.cut ? 0 : 1), 0);
 		}
 	}
 	/** The points so far; the latest entry closes the line unless it already is the last point. */
 	points(totals: () => readonly LiveTotalV1[]): LiveChartPointV1[] {
 		const out = this.kept.map((row) => row.point);
-		if (this.latest !== null && this.kept[this.kept.length - 1]?.index !== this.count - 1) out.push(this.value(this.latest, totals()));
+		if (this.latest !== null && this.kept[this.kept.length - 1]?.index !== this.count - 1) {
+			const closing = this.value(this.latest, totals());
+			out.push(this.mergedBreak ? { ...closing, breakBefore: true } : closing);
+		}
 		return out;
 	}
 }
