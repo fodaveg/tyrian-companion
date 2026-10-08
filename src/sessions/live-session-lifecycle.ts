@@ -545,7 +545,8 @@ export class LiveSessionLifecycle {
 		if (path === null) return false;
 		const next = { ...this.record, summaryReceipt: { version: 1 as const, sessionId: this.record.sessionId, path, savedAt: this.options.now() }, persistedAt: this.options.now() };
 		if ((await this.options.persistence.saveLive(next)).status !== 'saved') return false;
-		this.record = next; this.noteNeedsVerification = false; await this.options.coordinator.release(this.handle); this.handle = null;
+		// The receipt is durable: a failure flagged by an earlier attempt (`enqueue` sets it when onComplete throws) no longer describes this session.
+		this.record = next; this.noteNeedsVerification = false; this.failure = false; await this.options.coordinator.release(this.handle); this.handle = null;
 		this.options.onStateChange(); return true;
 	}
 	private observeMap(record: LiveSessionRuntimeRecord, mapId: number | null, atMs: number): LiveSessionRuntimeRecord {

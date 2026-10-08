@@ -165,6 +165,16 @@ describe('passive live session lifecycle', () => {
 		await expect(f.service.stop(AT + 2000)).resolves.toBe(true);
 		expect(f.service.getRuntime()?.summaryReceipt?.path).toBe('Sessions/live.md'); await f.service.dispose();
 	});
+	it('saving the note receipt clears the error a previously failed save left on the view', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+		f.setNow(AT+1000); await f.service.commit(f.sample(1,2));
+		f.onComplete.mockRejectedValueOnce(new Error('write failed')); f.setNow(AT+2000);
+		await expect(f.service.stop(AT+2000)).rejects.toThrow('write failed');
+		expect(f.service.getView().phase).toBe('error'); expect(f.service.getRuntime()?.summaryReceipt).toBeNull();
+		f.setNow(AT+3000); await f.tick();
+		expect(f.service.getRuntime(), 'the next beat saves the note').toMatchObject({ phase: 'complete', summaryReceipt: { path: 'Sessions/live.md' } });
+		expect(f.service.getView().phase, 'and the view is no longer in error').toBe('complete'); await f.service.dispose();
+	});
 	it('restores the journal without acquisitions and requires a new baseline after host restart', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));
 		f.setNow(AT + 1000); await f.service.commit(f.sample(1, 4)); await f.service.dispose(); f.setNow(AT + 2000);
