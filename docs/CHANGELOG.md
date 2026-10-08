@@ -2,7 +2,12 @@
 
 ## Release beta 0.6.12 - el monstruo con borde como icono del plugin en Hebra
 
-Release por tag `0.6.12`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente.
+[Canal 0.6.12 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.12);
+**instalación/runtime pendiente**. Tag `0.6.12` sobre `44fe782` (atestación del candidato `e940769`), árbol
+`a7218823ca381a0f0128060b4f316d1d2b27f2a6`. Gate local previo, verde a la primera: `check` 8/8 (5136 tests, 324
+archivos, ninguno saltado), guardrails 25/25 y `release:preflight` en verde. El benchmark H6 y su sabotaje no se
+corrieron en local; los corre la CI de `main`. El workflow de release (run 37745407456) terminó en success y
+`release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo pendiente.
 
 - Icono en Hebra: `iconImage` pasa a la variante con borde del monstruo (borde negro y filo claro), elegida por
   David el 8 oct 2026 («también quiero que cambies el icono del monstruo en hebra para poner la versión con

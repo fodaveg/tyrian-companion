@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.12: el monstruo con borde como icono en Hebra (8 oct 2026)
+## Canal 0.6.12 publicado: el monstruo con borde como icono en Hebra (8 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `20ec61d` (main tras el addon 0.8.0). Lleva un cambio:
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.12](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.12)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.12`. El tag apunta a
+`44fe782` (commit vacío de atestación del candidato `e940769`, árbol `a7218823ca381a0f0128060b4f316d1d2b27f2a6`).
+Parte de `20ec61d` (main tras el addon 0.8.0). Lleva un cambio:
 `assets/hebra-icon.png` pasa a la variante con borde que eligió David («también quiero que cambies el icono del
 monstruo en hebra para poner la versión con borde»; de cuatro variantes sobre tema oscuro y claro eligió «B: negro +
 filo claro»). Motivo medido: la línea negra del dibujo de la 0.6.11 mide alrededor de 1 px a 128 px, no se aprecia a
@@ -13,12 +16,31 @@ tamaño de icono y en tema oscuro se funde con el fondo; David usa tema oscuro e
   hecho a partir de `monstruo-recorte-limpio.png` (el recorte sin línea) con un borde negro `#141414` de 5 px y un
   filo claro `#f4f1ea` de 3 px; el comando está en `assets/README.md`. `icon: "sword"` sigue de respaldo y el
   validador de `iconImage` y sus límites no cambian.
-- Verificado en el candidato: `npm run check:guardrails` en el worktree, «VEREDICTO: VERDE (25/25)» (no se corrió
-  `check` ni el gate completo). El paquete de Hebra se armó una vez: `hebra.json` pesa 27745 bytes, lleva
-  `version` 0.6.12, `icon` `sword` y un `iconImage` que descodifica idéntico byte a byte a `assets/hebra-icon.png`.
-- No verificado: nadie ha visto el icono nuevo pintado en Hebra; la instalación de la 0.6.12 en Hebra y en
-  Obsidian/BRAT.
-- Pendiente: el gate local, la atestación, la publicación y la verificación en Hebra instalada.
+- Publicación: el workflow `release.yml` (run 37745407456) terminó en success y la CI de `main` (run 37745405121)
+  también. La release tiene ocho assets, todos `uploaded`: `hebra-main.mjs` 3327783, `hebra-styles.css` 118003,
+  `hebra.json` 27745, `main.js` 1887738, `manifest.json` 237, `styles.css` 94537, `tyrian-companion-0.6.12.zip`
+  1982822 y `tyrian-companion-0.6.12.zip.sha256` 94 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view`: «BRAT release contract: PASS (version=0.6.12; assets=8)».
+- `hebra.json` descargado de la release: `version` 0.6.12, `icon` `sword`, `iconImage` de 20063 bytes
+  descodificados, 128×128, sha256 `3aaba42b…`, idéntico byte a byte a `assets/hebra-icon.png` del repo.
+- Gate local previo, sobre el árbol del tag (Fedora, Node v22.23.1, 8 oct 2026), en una sola pasada sin rojos:
+  `check` 8/8 (5136 tests, 324 ficheros, ninguno saltado), guardrails 25/25, `release:preflight` en verde y
+  `node scripts/changelog-entry.mjs 0.6.12` con exit 0. El benchmark H6 y su sabotaje no se corrieron en local; los
+  corre la CI de `main`.
+- No verificado: el icono con borde pintado en Hebra (David aún no ha actualizado a la 0.6.12); la instalación de la
+  0.6.12 en Obsidian/BRAT; la web `app.hebra.pro`, TestFlight y Windows.
+- Pendiente: la verificación en Hebra instalada y en Obsidian/BRAT.
+
+## Addon de Nexus 0.8.1 publicado (8 oct 2026)
+
+[Addon de Nexus 0.8.1](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.1): tag anotado sobre
+`37e48df` (dos commits sobre el 0.8.0), con dos ficheros: `tyrian_companion_nexus.dll` (4324864 bytes, sha256
+`61b3d5781c3abb1bd5ad272ed7f068a04cf83a9b435f5f2d452c20a4b6b3e0a1`) y `tyrian_companion_nexus.dll.sha256` (93 bytes);
+descargados y suma comprobada. Único cambio: el botón de la barra de título que quita o pone el fondo se dibuja como
+el signo de contraste (círculo con la mitad izquierda rellena) en vez de un cuadrado, a petición de David («el icono
+del fondo parece un botón de stop»). 301 tests y las mismas 257 importaciones que el 0.8.0. David lo instaló él
+mismo con el juego cerrado (el DLL de su carpeta de addons tiene ese sha256). No verificado: el icono nuevo visto
+dentro del juego. El plugin no cambia con este addon.
 
 ## Addon de Nexus 0.8.0 publicado (8 oct 2026)
 
@@ -51,8 +73,7 @@ o posterior. El plugin no cambia con este addon.
   huecos están correctos, son esos numeros»). Con eso quedan verificados en el juego el recuento de ocupados y que
   la regla de alineación aguanta otro arranque.
 - Sigue sin verse: una bajada de hallazgo mágico con su aviso, los tooltips, plegar y cerrar, el diagnóstico de
-  Opciones, una sesión larga sin parpadeos, y Windows. David pidió además cambiar el icono del botón de fondo del
-  addon (lo veía como un «stop»); va en un addon 0.8.1 aparte, en curso.
+  Opciones, una sesión larga sin parpadeos, y Windows.
 
 ## Canal 0.6.11 publicado: el monstruo como icono propio en Hebra (8 oct 2026)
 
