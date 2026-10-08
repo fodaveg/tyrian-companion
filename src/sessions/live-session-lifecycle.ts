@@ -64,6 +64,8 @@ export class LiveSessionLifecycle {
 	private recovering = false;
 	/** How the reclaim in course began; null while none is, or once its save has worked. */
 	private reclaimingAs: 'restart' | 'outage' | null = null;
+	/** Raised only by `initialize` (this process started with a saved active session); a lease lost while the host kept running never sets it. */
+	private hostRestarted = false;
 	private noteNeedsVerification = false;
 
 	constructor(private readonly options: LiveSessionLifecycleOptions) {}
@@ -83,7 +85,7 @@ export class LiveSessionLifecycle {
 				throw new Error('Live session journal does not match its committed cursor.');
 			}
 			if (!this.options.enabled()) return;
-			this.recovering = true;
+			this.recovering = true; this.hostRestarted = true;
 			this.noteNeedsVerification = loaded.record.phase === 'complete';
 			this.armHeartbeat();
 			if (loaded.record.phase === 'active' && !await this.reclaim()) return;
@@ -125,7 +127,7 @@ export class LiveSessionLifecycle {
 				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, declaredBuild, summaryReceipt: null };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return null; }
 			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = []; this.failure = false;
-			this.unsaved = null; this.recovering = false; this.reclaimingAs = null; this.noteNeedsVerification = false;
+			this.unsaved = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false; this.noteNeedsVerification = false;
 			this.armHeartbeat(); this.options.onStateChange(); return id;
 		});
 	}
@@ -332,11 +334,11 @@ export class LiveSessionLifecycle {
 	}
 	private async reclaim(): Promise<boolean> {
 		if (this.record?.phase !== 'active' || !this.options.enabled()) return false;
-		// A lease lost while this host kept running and storage was refusing writes is an outage to
-		// recover from, not a restart. Decided on the first attempt and kept until a save works: an
+		// A lease lost while this host kept running (storage refusing writes or not) is an outage to
+		// recover from, not a restart: only `initialize` raises `hostRestarted`. Decided on the first attempt and kept until a save works: an
 		// attempt that fails leaves `recovering` raised and `unsaved` touched, and the next one could
 		// no longer tell how this began.
-		this.reclaimingAs ??= this.recovering || this.unsaved === null ? 'restart' : 'outage';
+		this.reclaimingAs ??= this.hostRestarted ? 'restart' : 'outage';
 		const acquisition = await this.options.coordinator.acquire(this.record.sessionId);
 		if ((acquisition.status !== 'acquired' && acquisition.status !== 'already_owned') || acquisition.handle.sessionId !== this.record.sessionId
 			|| (await this.options.coordinator.assertOwned(acquisition.handle)).status !== 'owned') return false;
@@ -377,7 +379,7 @@ export class LiveSessionLifecycle {
 		// Storage went away again: drop the handle so the next beat reclaims under the lease it finds.
 		if (saved === 'unavailable') { this.handle = null; return false; }
 		if (saved !== 'saved') throw new Error('Live session recovery could not be persisted.');
-		this.record = next; this.unsaved = null; this.reclaimingAs = null; this.failure = false;
+		this.record = next; this.unsaved = null; this.reclaimingAs = null; this.hostRestarted = false; this.failure = false;
 		await this.settleRecovery();
 		this.options.onStateChange(); return true;
 	}

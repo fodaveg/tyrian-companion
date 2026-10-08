@@ -176,6 +176,24 @@ describe('passive live session lifecycle', () => {
 		expect(f.service.getRuntime(), 'the next beat saves the note').toMatchObject({ phase: 'complete', summaryReceipt: { path: 'Sessions/live.md' } });
 		expect(f.service.getView().phase, 'and the view is no longer in error').toBe('complete'); await f.service.dispose();
 	});
+	it('a lease lost inside the running host keeps connection and presence instead of closing the session on old evidence', async () => {
+		const f = fixture(); let beat: (() => void) | null = null;
+		const svc = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {beat=callback;return 1;}});
+		await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true);
+		f.setNow(AT+30*60_000); await svc.presence(true);
+		vi.mocked(f.options.coordinator.renew).mockResolvedValueOnce({status:'lost'} as never);
+		beat!(); await svc.capture(); beat!(); await svc.capture();
+		expect(svc.getRuntime(), 'reclaimed with the link and the presence the host still knows').toMatchObject({phase:'active',connection:'connected',lastPresenceAt:AT+30*60_000});
+		expect(svc.getRuntime()?.gaps.map((gap) => gap.reason)).not.toContain('host_restart');
+		f.setNow(AT+45*60_000); beat!(); await svc.capture();
+		expect(svc.getRuntime()?.phase, 'and the next beats do not close it').toBe('active'); await svc.dispose();
+	});
+	it('a real host restart still reclaims as a restart: gap, disconnected, no map observation', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0)); await f.service.dispose();
+		f.setNow(AT+60_000); const restored = new LiveSessionLifecycle(f.options); await restored.initialize();
+		expect(restored.getRuntime()).toMatchObject({phase:'active',connection:'disconnected',mapObservation:null});
+		expect(restored.getRuntime()?.gaps.map((gap) => gap.reason)).toContain('host_restart'); await restored.dispose();
+	});
 	it('restores the journal without acquisitions and requires a new baseline after host restart', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));
 		f.setNow(AT + 1000); await f.service.commit(f.sample(1, 4)); await f.service.dispose(); f.setNow(AT + 2000);
