@@ -436,8 +436,14 @@ export class ManualSessionStartService {
 		const acquired = await this.coordinator.acquire(sessionId);
 		if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== sessionId) return false;
 		this.currentHandle = acquired.handle;
-		if ((await this.coordinator.assertOwned(acquired.handle)).status !== 'owned') return false;
-		if (!await this.runtimeStore.archiveLegacyRuntime(sessionAuthorityFromLease(acquired.handle))) return false;
+		// A failed attempt must not leave the old session's lease taken for its whole TTL.
+		const releaseUnused = async (): Promise<false> => {
+			this.currentHandle = null;
+			try { await this.coordinator.release(acquired.handle); } catch { /* best effort; the lease expires on its own */ }
+			return false;
+		};
+		if ((await this.coordinator.assertOwned(acquired.handle)).status !== 'owned') return await releaseUnused();
+		if (!await this.runtimeStore.archiveLegacyRuntime(sessionAuthorityFromLease(acquired.handle))) return await releaseUnused();
 		this.preservedLegacyRecords.unshift(record); this.recoveryRecord = null;
 		await this.coordinator.release(acquired.handle); this.currentHandle = null;
 		this.recoveryState = record.state.status === 'complete' ? {status:'none'} : {status:'available',state:record.state,message:'Saved API evidence is preserved locally for reading; Nexus owns new sessions.'};

@@ -1419,6 +1419,49 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
+	describe('legacy migration of an unfinished API session', () => {
+		/** An API-era session left unfinished in the store, next to a receipt that belongs to an earlier one. */
+		async function seedUnfinishedWithForeignReceipt(factory: IDBFactory, dbName: string): Promise<void> {
+			const first = new ManualSessionStartService(coordinator(), { capture: vi.fn(async () => structuredClone(captured)) },
+				serviceOptions({ runtimeStore: new IndexedDbSessionRuntimeStore(factory, dbName) }));
+			await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+			await first.dispose();
+			const store = new IndexedDbSessionRuntimeStore(factory, dbName);
+			await store.saveSummaryReceipt({ version: 1, sessionId: 'older-session', path: 'older.md', savedAt: 1 });
+			store.close();
+		}
+
+		it('archives past the receipt of an older session and keeps that receipt', async () => {
+			const factory = new IDBFactory(); const dbName = 'legacy-foreign-receipt';
+			await seedUnfinishedWithForeignReceipt(factory, dbName);
+			const service = new ManualSessionStartService(coordinator(), { capture: vi.fn() },
+				serviceOptions({ automaticAccountCapture: false, runtimeStore: new IndexedDbSessionRuntimeStore(factory, dbName) }));
+			await service.initialize();
+
+			await expect(service.preserveLegacyForLiveMigration()).resolves.toBe(true);
+			expect(service.getPreservedLegacyRuntime()).not.toBeNull();
+			const store = new IndexedDbSessionRuntimeStore(factory, dbName);
+			await expect(store.loadSummaryReceipt()).resolves.toMatchObject({ sessionId: 'older-session' });
+			expect((await store.readLegacyRuntimeArchive('session-1'))?.receipt).toBeNull();
+			store.close(); await service.dispose();
+		});
+
+		it('releases the old session lease when the archive transfer fails', async () => {
+			const factory = new IDBFactory(); const dbName = 'legacy-failed-transfer';
+			await seedUnfinishedWithForeignReceipt(factory, dbName);
+			const leases = coordinator();
+			const runtimeStore = new IndexedDbSessionRuntimeStore(factory, dbName);
+			vi.spyOn(runtimeStore, 'archiveLegacyRuntime').mockResolvedValue(false);
+			const service = new ManualSessionStartService(leases, { capture: vi.fn() },
+				serviceOptions({ automaticAccountCapture: false, runtimeStore }));
+			await service.initialize();
+
+			await expect(service.preserveLegacyForLiveMigration()).resolves.toBe(false);
+			expect(leases.release).toHaveBeenCalledTimes(1);
+			await service.dispose();
+		});
+	});
+
 	/**
 	 * H14.22 (8 sep 2026): a 30 s lease armed the heartbeat at `min(10 s, ttl/3)`, which floors to
 	 * 10 s regardless of the TTL. Raising the TTL to 300 s only cuts write volume if the `10 s`

@@ -77,7 +77,7 @@ export async function archiveLegacyRuntime(database: IDBDatabase, expected: Sess
 			const receipt = store.get(SESSION_SUMMARY_RECEIPT_KEY);
 			receipt.onsuccess = () => {
 				const current = receipt.result as SessionSummaryReceipt | undefined;
-				if (current !== undefined && (!isSessionSummaryReceipt(current) || current.sessionId !== sessionId)) return;
+				if (current !== undefined && !isSessionSummaryReceipt(current)) return;
 				if (canonicalJson(current?.sessionId === sessionId ? current : null) !== canonicalJson(archive.receipt)) return;
 				const existing = store.get(archiveKey);
 				existing.onsuccess = () => {

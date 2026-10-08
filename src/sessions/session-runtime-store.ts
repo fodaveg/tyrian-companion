@@ -354,7 +354,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 			const original = await this.read(); const normalized = normalizeSessionRuntimeRecord(original);
 			if (!normalized) return false;
 			const savedReceipt = await this.loadSummaryReceipt();
-			if (savedReceipt !== null && savedReceipt.sessionId !== runtimeAuthority(normalized.record.state).sessionId) return false;
+			// A receipt of ANOTHER session stays in its slot untouched; this archive simply carries none.
 			const archive = prepareLegacyRuntimeArchive(original,Date.now(),savedReceipt?.sessionId === runtimeAuthority(normalized.record.state).sessionId ? savedReceipt : null);
 			return await this.run(async (database) => await archiveLegacyRuntime(database,normalized.record,archive,authority));
 		} catch { return false; }
