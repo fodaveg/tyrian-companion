@@ -2,10 +2,11 @@
 
 ## Candidato 0.6.10: «Por hora» con oro y precio bruto `price2` (8 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `c550bbd` (canal 0.6.9 publicado) y lleva tres cambios:
+**Candidato; no publicado ni etiquetado.** Parte de `c550bbd` (canal 0.6.9 publicado) y lleva cuatro cambios:
 «Por hora» de la pestaña «Sesión» pasa a ser la tasa del mismo valor que «Valor estimado» (objetos más oro
 observado), el puente manda al addon el precio bruto del bazar en una trama `price2` que sustituye a `price1`,
-y el icono de Tyrian pasa de la brújula a la espada en Hebra y en Obsidian.
+el icono de Tyrian pasa de la brújula a la espada en Hebra y en Obsidian, y la gráfica de la pestaña «Sesión»
+va antes que los objetos.
 El detalle está en [CHANGELOG](CHANGELOG.md).
 
 - Verificado: `src/ui/live-session-panel.test.ts` (55 tests), los tests de `src/alerts`, la proyección del

@@ -15,6 +15,9 @@ Candidato sin publicar ni etiquetar; sin gate ni release hechos.
   trama cambia de `price1` a `price2`; `price1` ya no se anuncia ni se acepta. Petición de David del 8 oct 2026.
   Límite: hace falta el addon de Nexus 0.7.2; con el 0.7.1 el panel del juego deja de mostrar el bloque de
   precio hasta actualizar. La política de comisiones de Venta, el asesor y la valoración de sesión no cambia.
+- Pestaña «Sesión»: la gráfica («Valor en el tiempo» y su leyenda de huecos) pasa a ir antes que los objetos.
+  Orden: estado, «Valor estimado» y «Por hora», gráfica, objetos, monedas, cronología, «Sesiones anteriores».
+  Pedido por David el 8 oct 2026; el orden del DOM es el visual, sin `order` en CSS.
 - Icono: el icono de Tyrian pasa de la brújula (`compass`) a la espada (`sword`) en Hebra (fila del plugin en
   `hebra.json`, pestaña de la vista, ribbon y menú) y en Obsidian (icono nativo de Lucide). Decisión del 6 oct
   2026, integrada ahora desde `762f63b`, que no había llegado a `main`.
