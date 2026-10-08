@@ -376,7 +376,7 @@ function isCacheKey(value: unknown): value is CatalogCacheKey {
 			'schemaVersion',
 			'normalizerVersion',
 		])) &&
-		(value.kind === 'items' || value.kind === 'currencies' || value.kind === 'materials') &&
+		(value.kind === 'items' || value.kind === 'currencies' || value.kind === 'materials' || value.kind === 'maps') &&
 		(value.locale === 'es' || value.locale === 'en') &&
 		Number.isSafeInteger(value.id) &&
 		(value.id as number) > 0 &&

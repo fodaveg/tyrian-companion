@@ -14,6 +14,7 @@ import {
 	type CatalogItem,
 	type CatalogKind,
 	type CatalogLocale,
+	type CatalogMap,
 	type CatalogResolution,
 	type CatalogWarning,
 	CATALOG_NORMALIZER_VERSION,
@@ -21,6 +22,7 @@ import {
 import {
 	parseCatalogCurrency,
 	parseCatalogItem,
+	parseCatalogMap,
 	parseCatalogMaterial,
 	readCatalogEntryId,
 } from './public-catalog-parsers';
@@ -34,6 +36,7 @@ const POSITIVE_TTL_MS: Record<CatalogKind, number> = {
 	items: 7 * DAY_MS,
 	currencies: 7 * DAY_MS,
 	materials: DAY_MS,
+	maps: 7 * DAY_MS,
 };
 const BATCH_SIZE = 200;
 
@@ -134,7 +137,22 @@ export class PublicCatalogService {
 		return await this.readCached('currencies', currencyIds, locale);
 	}
 
-	private async readCached<K extends 'items' | 'currencies'>(
+	/** Cache-only read of map names, as `readCachedItems` does for items: never touches the gateway. */
+	async readCachedMaps(mapIds: readonly number[], locale: CatalogLocale): Promise<Record<string, CatalogMap>> {
+		return await this.readCached('maps', mapIds, locale);
+	}
+
+	/**
+	 * Resolves public map names (`GET /v2/maps`, no key) through the same cache, batching and limiter
+	 * as the items. A summary note names the maps of a session; the caller falls back to the id.
+	 */
+	async resolveMaps(mapIds: readonly number[], locale: CatalogLocale): Promise<Record<string, CatalogMap>> {
+		const ids = uniqueSorted([...mapIds]);
+		if (ids.length === 0) return {};
+		return mapEntities((await this.resolveKind('maps', ids, locale, parseCatalogMap, this.now())).entities);
+	}
+
+	private async readCached<K extends 'items' | 'currencies' | 'maps'>(
 		kind: K,
 		wanted: readonly number[],
 		locale: CatalogLocale,
@@ -571,6 +589,7 @@ function hasExpectedKind(kind: CatalogKind, entityKind: string): boolean {
 	return (
 		(kind === 'items' && entityKind === 'item') ||
 		(kind === 'currencies' && entityKind === 'currency') ||
-		(kind === 'materials' && entityKind === 'material_category')
+		(kind === 'materials' && entityKind === 'material_category') ||
+		(kind === 'maps' && entityKind === 'map')
 	);
 }

@@ -52,6 +52,7 @@ export function publicCatalogLogicalEndpoint(path: string): HttpLogicalEndpoint 
 	const route = path.split('?', 1)[0]?.replace(/^\/+|\/+$/gu, '') ?? '';
 	if (route === 'items') return 'items';
 	if (route === 'currencies') return 'currencies';
+	if (route === 'maps') return 'maps';
 	if (route === 'materials') return 'material_categories';
 	if (route === 'commerce/prices') return 'commerce_prices';
 	if (route === 'commerce/listings') return 'commerce_listings';

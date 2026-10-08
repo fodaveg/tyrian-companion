@@ -4,6 +4,7 @@ import type {
 	CatalogItem,
 	CatalogItemDetails,
 	CatalogKind,
+	CatalogMap,
 	CatalogMaterialCategory,
 	CatalogUnknownValue,
 } from './public-catalog-model';
@@ -46,6 +47,7 @@ const DETAILS_KEYS = new Set([
 	'unknownDetails',
 ]);
 const CURRENCY_KEYS = new Set(['kind', 'id', 'name', 'description', 'icon', 'order']);
+const MAP_KEYS = new Set(['kind', 'id', 'name']);
 const MATERIAL_KEYS = new Set(['kind', 'id', 'name', 'items', 'order']);
 
 export function isNormalizedCatalogEntity<K extends CatalogKind>(
@@ -54,6 +56,7 @@ export function isNormalizedCatalogEntity<K extends CatalogKind>(
 ): value is CatalogEntityByKind[K] {
 	if (kind === 'items') return isNormalizedCatalogItem(value);
 	if (kind === 'currencies') return isNormalizedCatalogCurrency(value);
+	if (kind === 'maps') return isNormalizedCatalogMap(value);
 	return isNormalizedCatalogMaterial(value);
 }
 
@@ -89,6 +92,10 @@ export function isReportSafeCatalogItemName(value: unknown): value is string {
 		value.length <= 256 &&
 		value.trim() === value
 	);
+}
+
+export function isNormalizedCatalogMap(value: unknown): value is CatalogMap {
+	return isRecord(value) && hasOnlyKeys(value, MAP_KEYS) && value.kind === 'map' && isPositiveId(value.id) && isReportSafeCatalogItemName(value.name);
 }
 
 export function isNormalizedCatalogCurrency(value: unknown): value is CatalogCurrency {

@@ -8,7 +8,7 @@ import type {
 export const HTTP_LOGICAL_ENDPOINTS = [
 	'unknown', 'token_info', 'account', 'characters', 'character_inventory',
 	'account_bank', 'account_materials', 'account_inventory', 'account_wallet',
-	'commerce_delivery', 'commerce_prices', 'commerce_listings', 'items', 'currencies',
+	'commerce_delivery', 'commerce_prices', 'commerce_listings', 'items', 'currencies', 'maps',
 	'material_categories', 'account_skins', 'account_minis', 'account_recipes',
 	'account_achievements', 'recipes_search',
 	'commerce_transactions_current', 'commerce_transactions_history', 'character_build',

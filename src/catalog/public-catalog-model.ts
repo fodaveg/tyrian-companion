@@ -1,7 +1,7 @@
 import type { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 
 export type CatalogLocale = 'es' | 'en';
-export type CatalogKind = 'items' | 'currencies' | 'materials';
+export type CatalogKind = 'items' | 'currencies' | 'materials' | 'maps';
 export const CATALOG_NORMALIZER_VERSION = 3;
 
 export type CatalogUnknownValue =
@@ -62,6 +62,13 @@ export interface CatalogCurrency {
 	order: number;
 }
 
+/** A map's public name (`/v2/maps`): the only field a session summary needs. */
+export interface CatalogMap {
+	kind: 'map';
+	id: number;
+	name: string;
+}
+
 export interface CatalogMaterialCategory {
 	kind: 'material_category';
 	id: number;
@@ -74,6 +81,7 @@ export interface CatalogEntityByKind {
 	items: CatalogItem;
 	currencies: CatalogCurrency;
 	materials: CatalogMaterialCategory;
+	maps: CatalogMap;
 }
 
 export type CatalogEntity = CatalogEntityByKind[CatalogKind];

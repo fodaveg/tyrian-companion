@@ -2,6 +2,8 @@ import {
 	InvalidCatalogPayloadError,
 	type CatalogCurrency,
 	type CatalogItem,
+	type CatalogKind,
+	type CatalogMap,
 	type CatalogItemDetails,
 	type CatalogMaterialCategory,
 	type CatalogUnknownValue,
@@ -59,6 +61,11 @@ export function parseCatalogCurrency(value: unknown): CatalogCurrency {
 		icon: string(record.icon, 'currencies'),
 		order: nonNegativeInteger(record.order, 'currencies'),
 	};
+}
+
+export function parseCatalogMap(value: unknown): CatalogMap {
+	const record = expectRecord(value, 'maps');
+	return { kind: 'map', id: positiveId(record.id, 'maps'), name: nonEmptyString(record.name, 'maps') };
 }
 
 export function parseCatalogMaterial(value: unknown): CatalogMaterialCategory {
@@ -152,28 +159,28 @@ function parseDetails(value: unknown): CatalogItemDetails | undefined {
 	return details;
 }
 
-function expectRecord(value: unknown, kind: 'items' | 'currencies' | 'materials'): Record<string, unknown> {
+function expectRecord(value: unknown, kind: CatalogKind): Record<string, unknown> {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
 		throw new InvalidCatalogPayloadError(kind);
 	}
 	return value as Record<string, unknown>;
 }
 
-function positiveId(value: unknown, kind: 'items' | 'currencies' | 'materials'): number {
+function positiveId(value: unknown, kind: CatalogKind): number {
 	if (!Number.isSafeInteger(value) || (value as number) <= 0) {
 		throw new InvalidCatalogPayloadError(kind);
 	}
 	return value as number;
 }
 
-function nonNegativeInteger(value: unknown, kind: 'items' | 'currencies' | 'materials'): number {
+function nonNegativeInteger(value: unknown, kind: CatalogKind): number {
 	if (!Number.isSafeInteger(value) || (value as number) < 0) {
 		throw new InvalidCatalogPayloadError(kind);
 	}
 	return value as number;
 }
 
-function string(value: unknown, kind: 'items' | 'currencies' | 'materials'): string {
+function string(value: unknown, kind: CatalogKind): string {
 	if (typeof value !== 'string') throw new InvalidCatalogPayloadError(kind);
 	return value;
 }
@@ -184,7 +191,7 @@ function string(value: unknown, kind: 'items' | 'currencies' | 'materials'): str
  * is trimmed instead of rejecting the owned item; blank or oversized names
  * still reject the entry.
  */
-function nonEmptyString(value: unknown, kind: 'items' | 'currencies' | 'materials'): string {
+function nonEmptyString(value: unknown, kind: CatalogKind): string {
 	const parsed = string(value, kind).trim();
 	if (!isReportSafeCatalogItemName(parsed)) throw new InvalidCatalogPayloadError(kind);
 	return parsed;
@@ -192,12 +199,12 @@ function nonEmptyString(value: unknown, kind: 'items' | 'currencies' | 'material
 
 function optionalString(
 	value: unknown,
-	kind: 'items' | 'currencies' | 'materials',
+	kind: CatalogKind,
 ): string | undefined {
 	return value === undefined ? undefined : string(value, kind);
 }
 
-function stringArray(value: unknown, kind: 'items' | 'currencies' | 'materials'): string[] {
+function stringArray(value: unknown, kind: CatalogKind): string[] {
 	if (!Array.isArray(value)) throw new InvalidCatalogPayloadError(kind);
 	const result: string[] = [];
 	for (const entry of value) result.push(string(entry, kind));
