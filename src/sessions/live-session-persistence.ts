@@ -1,3 +1,4 @@
+import type { LiveSessionSummaryState } from './live-session-summary-state';
 import type { LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-session-model';
 import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-validation';
 import type { SessionRuntimeMutationResult, SessionRuntimeLoadResult } from './session-runtime-store';
@@ -19,6 +20,9 @@ export interface LiveSessionPersistence {
 	/** Sealed sessions whose journal is still to be pruned (each with the path of its durable note), so a restart does not forget them. */
 	loadPruneQueue?(): Promise<SealedJournal[]>;
 	savePruneQueue?(queue: readonly SealedJournal[]): Promise<boolean>;
+	/** Local summary facts (characters seen, summary written) under a key apart from the closed runtime record; best effort, never throws. */
+	loadSummaryState?(): Promise<LiveSessionSummaryState | null>;
+	saveSummaryState?(state: LiveSessionSummaryState): Promise<boolean>;
 }
 export interface SealedJournal { sessionId: string; receiptPath: string }
 /** A second key in the runtime object store (like the summary receipt): no schema upgrade, and a 0.6.12 that opens the same database never reads it. */

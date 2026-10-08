@@ -1,3 +1,4 @@
+import { isLiveSessionSummaryState, LIVE_SUMMARY_STATE_KEY, type LiveSessionSummaryState } from './live-session-summary-state';
 import type { LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-session-model';
 import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-validation';
 import { canUpdateLiveOutbox } from './live-session-outbox';
@@ -225,6 +226,9 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 	private pruneQueue: SealedJournal[] = [];
 	async loadPruneQueue(): Promise<SealedJournal[]> { return structuredClone(this.pruneQueue); }
 	async savePruneQueue(queue: readonly SealedJournal[]): Promise<boolean> { this.pruneQueue = structuredClone([...queue]); return true; }
+	private summaryState: LiveSessionSummaryState | null = null;
+	async loadSummaryState(): Promise<LiveSessionSummaryState | null> { return structuredClone(this.summaryState); }
+	async saveSummaryState(state: LiveSessionSummaryState): Promise<boolean> { this.summaryState = structuredClone(state); return true; }
 
 	close(): void {}
 }
@@ -343,6 +347,19 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		await this.mutate<SessionRuntimeMutationResult>(() => queue.length === 0 ? { result: { status: 'cleared' } as const, remove: true }
 			: { result: { status: 'saved' } as const, nextValue: structuredClone([...queue]) }, undefined, LIVE_JOURNAL_PRUNE_QUEUE_KEY);
 		return true;
+	}
+	async loadSummaryState(): Promise<LiveSessionSummaryState | null> {
+		try {
+			const value = await this.read(undefined, LIVE_SUMMARY_STATE_KEY);
+			return isLiveSessionSummaryState(value) ? structuredClone(value) : null;
+		} catch { return null; }
+	}
+	async saveSummaryState(state: LiveSessionSummaryState): Promise<boolean> {
+		if (!isLiveSessionSummaryState(state)) return false;
+		try {
+			await this.mutate<SessionRuntimeMutationResult>(() => ({ result: { status: 'saved' } as const, nextValue: structuredClone(state) }), undefined, LIVE_SUMMARY_STATE_KEY);
+			return true;
+		} catch { return false; }
 	}
 
 	async loadSummaryReceipt(context?: LocalDebugPersistenceContext): Promise<SessionSummaryReceipt | null> {

@@ -455,6 +455,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private liveEconomy: LiveSessionEconomy | null = null;
 	private liveHistory: LiveSessionHistoryService | null = null;
 	private liveSummaries: LiveSessionSummaryService | null = null;
+	/** False while the plugin loads: a summary written then uses caches only (no map-name request). */
+	private liveSummaryNetwork = false;
 	private liveComparison: LiveSessionComparisonState = { status: 'idle' };
 	private liveComparisonFlight: Promise<void> | null = null;
 	private selectedLiveHistory: {payload:StoredLiveSessionPayloadV1;view:LiveSessionViewV1;observations:LiveSessionViewV1['observations'];alerts:LiveSessionAlertViewV1[]} | null = null;
@@ -1313,13 +1315,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.liveHistory = new LiveSessionHistoryService(sessionHistoryVault(host.vault));
 		this.liveSummaries = new LiveSessionSummaryService({
 			vault: labelledVault(host.vault, 'Session summary note'), runtime: () => this.liveSessions?.getRuntime() ?? null,
-			journal: () => this.liveSessions?.getJournal() ?? [], locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
+			journal: () => this.liveSessions?.getJournal() ?? [], characters: () => this.liveSessions?.getCharacters() ?? [],
+			charactersCapped: () => this.liveSessions?.isCharacterListCapped() ?? false, isWritten: () => this.liveSessions?.isSummaryWritten() ?? false,
+			markWritten: async () => { await this.liveSessions?.markSummaryWritten(); }, networkAllowed: () => this.liveSummaryNetwork, locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
 			displayNames: (record) => Object.fromEntries(record.totals.map((row) => [`${row.kind}:${row.idNumber}`, this.getLiveSessionEntity(row.kind, row.idNumber)?.name ?? String(row.idNumber)])),
 			itemMeta: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedItems(ids, this.settings.language);
 				return Object.fromEntries(Object.values(cached).map((item) => [item.id, { flags: item.flags, type: item.type }])); },
-			mapNames: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedMaps(ids, this.settings.language);
+			mapNames: async (ids, network) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedMaps(ids, this.settings.language);
 				const missing = ids.filter((id) => cached[String(id)] === undefined);
-				const fetched = missing.length === 0 ? {} : await this.sessionCatalog.resolveMaps(missing, this.settings.language);
+				const fetched = missing.length === 0 || !network ? {} : await this.sessionCatalog.resolveMaps(missing, this.settings.language);
 				return Object.fromEntries(Object.entries({ ...cached, ...fetched }).map(([id, map]) => [id, map.name])); },
 			enabled: () => !consulting(this) && !this.unloaded, now: () => Date.now(),
 			startTimer: (callback, ms) => { const handle = window.setTimeout(callback, ms); return () => { window.clearTimeout(handle); }; },
@@ -1342,6 +1346,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			onComplete: async (record, journal) => await this.saveLiveSessionNote(record, journal),
 		});
 		await this.liveSessions.initialize();
+		this.liveSummaryNetwork = true;
 		this.liveEconomy = this.createLiveEconomy(this.liveSessions, publicClient, rateLimitCoordinator);
 		for (const entry of this.liveSessions.getJournal()) if (entry.outbox.some((intent) => ['awaiting_price','ready'].includes(intent.state))) this.liveEconomy.observe(entry);
 		this.pendingProposals = sessionServices.pendingProposals;
@@ -1538,6 +1543,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async shutdownRuntime(): Promise<void> {
 		const dispose = async (): Promise<void> => {
 		this.unloaded = true;
+		this.liveSummaries?.dispose();
 		let bridgeDrained = false;
 		// After the durable bridge drain, always release local ownership even if another disposer fails.
 		// A rejected drain retains the handle, renewer and backing store for an observable retry.

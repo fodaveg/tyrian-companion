@@ -1,8 +1,9 @@
-import type { LiveJournalEntryV1, LiveSessionRuntimeRecord } from './live-session-model';
+import type { LiveJournalEntryV1, LiveSessionCharacterV1, LiveSessionRuntimeRecord } from './live-session-model';
 import { prepareLiveSessionPayload } from './live-session-note-model';
 import { summaryMainMap, type SummaryItemMetaMap } from './live-session-summary-figures';
 import { readComparablePerHour, type SummaryHistoryVault } from './live-session-summary-history';
 import { LiveSessionSummaryWriter, type LiveSessionSummaryVault, type LiveSessionSummaryWriteResult } from './live-session-summary-note';
+import { normalizeSessionOutputFolder } from './session-note-model';
 
 /** At most this many attempts per session, at least this far apart: a failing vault is not hammered. */
 export const LIVE_SUMMARY_MAX_ATTEMPTS = 3;
@@ -17,14 +18,22 @@ export interface LiveSessionSummaryServiceOptions {
 	locale(): 'es' | 'en';
 	outputFolder(): string;
 	displayNames(record: LiveSessionRuntimeRecord): Record<string, string>;
+	/** Characters the session saw, in order (kept apart from the closed record); empty when unknown. */
+	characters(): readonly LiveSessionCharacterV1[];
+	charactersCapped(): boolean;
+	/** The persisted «summary already written for this session» mark. With it set nothing is read, asked or written. */
+	isWritten(): boolean;
+	markWritten(): Promise<void>;
 	/** Flags and types of the given items from the catalog CACHE only; never the network. */
 	itemMeta(itemIds: readonly number[]): Promise<SummaryItemMetaMap>;
-	/** Map names by decimal id: cache first, then the public API. The service bounds the wait. */
-	mapNames(mapIds: readonly number[]): Promise<Record<string, string>>;
+	/** Map names by decimal id: the cache, and the public API only when `network` is true. The service bounds the wait. */
+	mapNames(mapIds: readonly number[], network: boolean): Promise<Record<string, string>>;
+	/** False while the plugin is loading: the summary of a session closed earlier is then written from caches only. */
+	networkAllowed(): boolean;
 	/** False in consult mode and after unload: the same gate that governs the full note. */
 	enabled(): boolean;
 	now(): number;
-	/** Diagnostics only; a failure here never reaches the session. */
+	/** Diagnostics only (a class name and what was missing, no user data); a failure here never reaches the session. */
 	onFailure(details: { status: string; reason: string | null; attempt: number }): void;
 	/** Starts a timer and returns how to cancel it (the host's `window` timers; the service owns no global). */
 	startTimer(callback: () => void, ms: number): () => void;
@@ -39,30 +48,46 @@ interface Progress { sessionId: string; attempts: number; lastAttemptAt: number;
  * `observe()` does nothing until the runtime is `complete` and carries its `summaryReceipt`.
  * The host calls it on every lifecycle state change (the receipt itself raises one), so the retry
  * policy is: the first attempt right after the receipt, then at most two more on later state
- * changes at least a minute apart. No timer of its own, no loop; once the session is replaced
- * the summary is not retried (the next start, which still sees the completed session, tries again).
+ * changes at least a minute apart. No timer of its own, no loop. Once written, a persisted mark
+ * stops every later attempt, including the ones a plugin load raises: loading never reads notes,
+ * asks the network or rewrites a note the user deleted. Without the mark, a load writes from caches.
  * A failure is logged and never thrown, so it cannot hold the session, the header or the next start.
- * Everything optional (flags, map names, earlier summaries) degrades to «unknown» instead of failing.
+ * Everything optional (flags, map names, earlier summaries) degrades to «unknown» and leaves a diagnostic.
  */
 export class LiveSessionSummaryService {
 	private progress: Progress | null = null;
 	private readonly writer: LiveSessionSummaryWriter;
+	private cancelWait: (() => void) | null = null;
+	private disposed = false;
 
 	constructor(private readonly options: LiveSessionSummaryServiceOptions) {
 		this.writer = new LiveSessionSummaryWriter(options.vault);
 	}
 
+	/** Cancels the pending map-name wait; whatever is in flight writes nothing once this was called. */
+	dispose(): void {
+		this.disposed = true;
+		this.cancelWait?.(); this.cancelWait = null;
+	}
+
 	async observe(): Promise<void> {
 		try { await this.attempt(); } catch (error) {
-			this.options.onFailure({ status: 'unexpected', reason: error instanceof Error ? error.name : null, attempt: this.progress?.attempts ?? 0 });
+			this.report({ status: 'unexpected', reason: error instanceof Error ? error.name : null, attempt: this.progress?.attempts ?? 0 });
 		}
 	}
 
+	private report(details: { status: string; reason: string | null; attempt: number }): void {
+		try { this.options.onFailure(details); } catch { /* The diagnostics sink failed: nothing else can be done about it here. */ }
+	}
+
+	private live(): boolean { return !this.disposed && this.options.enabled(); }
+
 	private async attempt(): Promise<void> {
-		if (!this.options.enabled()) return;
+		if (!this.live()) return;
 		const record = this.options.runtime();
 		const receipt = record?.summaryReceipt ?? null;
 		if (record === null || record.phase !== 'complete' || receipt === null || receipt.sessionId !== record.sessionId) return;
+		if (this.options.isWritten()) return;
 		if (this.progress?.sessionId !== record.sessionId) this.progress = { sessionId: record.sessionId, attempts: 0, lastAttemptAt: 0, done: false, running: false };
 		const progress = this.progress;
 		const now = this.options.now();
@@ -72,34 +97,47 @@ export class LiveSessionSummaryService {
 		try {
 			const locale = this.options.locale(); const outputFolder = this.options.outputFolder();
 			const session = await prepareLiveSessionPayload({ record, journal: this.options.journal(), locale, outputFolder });
-			if (session === null) { progress.done = true; this.options.onFailure({ status: 'invalid', reason: 'invalid_live_evidence', attempt: progress.attempts }); return; }
+			if (session === null) { progress.done = true; this.report({ status: 'invalid', reason: 'invalid_live_evidence', attempt: progress.attempts }); return; }
 			const itemIds = session.totals.filter((row) => row.kind === 'item' && row.net !== 0).map((row) => row.idNumber);
 			const mapIds = [...new Set(session.mapIntervals.flatMap((interval) => interval.mapId === null ? [] : [interval.mapId]))];
-			const [itemMeta, mapNames, comparablePerHour] = await Promise.all([
-				optional(() => this.options.itemMeta(itemIds), {}),
-				optional(() => this.boundedMapNames(mapIds), {}),
-				optional(() => readComparablePerHour(this.options.vault, outputFolder, summaryMainMap(session), session.sessionRef), []),
+			// The same normalized folder the writer uses, so the earlier summaries are looked up where they were written.
+			const folder = normalizeSessionOutputFolder(outputFolder) ?? outputFolder;
+			const network = this.options.networkAllowed();
+			const [itemMeta, mapNames, comparable] = await Promise.all([
+				this.optional('item_meta', progress.attempts, () => this.options.itemMeta(itemIds), {}),
+				this.optional('map_names', progress.attempts, () => this.boundedMapNames(mapIds, network), {}),
+				this.optional('comparables', progress.attempts, () => readComparablePerHour(this.options.vault, folder, summaryMainMap(session), session.sessionRef), { perHour: [], unreadable: 0 }),
 			]);
+			if (comparable.unreadable > 0) this.report({ status: 'optional_comparables_unreadable', reason: String(comparable.unreadable), attempt: progress.attempts });
+			// The plugin may have unloaded while the lookups ran: then nothing is written.
+			if (!this.live()) return;
 			const result: LiveSessionSummaryWriteResult = await this.writer.write({ session, locale, outputFolder, fullNotePath: receipt.path,
-				displayNames: this.options.displayNames(record), characters: record.characters ?? [], itemMeta, mapNames, comparablePerHour });
-			if (result.status === 'written' || result.status === 'unchanged' || result.status === 'kept') { progress.done = true; return; }
+				displayNames: this.options.displayNames(record), characters: this.options.characters(), charactersCapped: this.options.charactersCapped(),
+				itemMeta, mapNames, comparablePerHour: comparable.perHour });
+			if (result.status === 'written' || result.status === 'unchanged' || result.status === 'kept') {
+				progress.done = true; await this.options.markWritten(); return;
+			}
 			// Invalid input will not heal by itself; a conflict is somebody else's note on our path.
 			if (result.status === 'invalid' || result.status === 'conflict') progress.done = true;
-			this.options.onFailure({ status: result.status, attempt: progress.attempts,
+			this.report({ status: result.status, attempt: progress.attempts,
 				reason: 'reason' in result ? result.reason : 'errorName' in result ? result.errorName ?? null : null });
 		} finally { progress.running = false; }
 	}
 
 	/** Never longer than `mapWaitMs`: a slow API costs the name, not the summary. */
-	private async boundedMapNames(mapIds: readonly number[]): Promise<Record<string, string>> {
+	private async boundedMapNames(mapIds: readonly number[], network: boolean): Promise<Record<string, string>> {
 		if (mapIds.length === 0) return {};
-		let cancel = (): void => undefined;
-		const wait = new Promise<Record<string, string>>((resolve) => { cancel = this.options.startTimer(() => { resolve({}); }, this.options.mapWaitMs ?? LIVE_SUMMARY_MAP_WAIT_MS); });
-		try { return await Promise.race([this.options.mapNames(mapIds), wait]); } finally { cancel(); }
+		const wait = new Promise<Record<string, string>>((resolve) => {
+			this.cancelWait = this.options.startTimer(() => { resolve({}); }, this.options.mapWaitMs ?? LIVE_SUMMARY_MAP_WAIT_MS);
+		});
+		try { return await Promise.race([this.options.mapNames(mapIds, network), wait]); } finally { this.cancelWait?.(); this.cancelWait = null; }
 	}
-}
 
-/** Optional context: whatever fails here is simply absent from the note. */
-async function optional<T>(work: () => Promise<T>, fallback: T): Promise<T> {
-	try { return await work(); } catch { return fallback; }
+	/** Optional context: whatever fails here is absent from the note, and a diagnostic says which part and the error class. */
+	private async optional<T>(what: string, attempt: number, work: () => Promise<T>, fallback: T): Promise<T> {
+		try { return await work(); } catch (error) {
+			this.report({ status: `optional_${what}`, reason: error instanceof Error ? error.name : null, attempt });
+			return fallback;
+		}
+	}
 }

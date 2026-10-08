@@ -13,11 +13,13 @@ import { liveSessionViewFromStored, LiveSessionHistoryService } from './live-ses
 import type { SessionHistoryVault } from './session-history';
 import { currentLiveSessionCharacter } from './live-session-characters';
 import { isLiveSessionRuntimeRecord } from './live-session-validation';
+import { isLiveSessionSummaryState } from './live-session-summary-state';
 import { liveSessionRatePerHour } from '../ui/live-session-panel';
 import { projectLiveFarmingIngameState } from '../runtime/farming-runtime-projection';
 import { decideLiveAlert, isLiveAlertOutbox } from './live-session-outbox';
 import { readFarmingDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
-import { prepareLiveSessionSnapshot } from './live-session-note-model';
+import { prepareLiveSessionPayload, prepareLiveSessionSnapshot } from './live-session-note-model';
+import { renderLiveSessionSummary } from './live-session-summary-note';
 import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
@@ -717,19 +719,28 @@ describe('durable live alert outbox', () => {
 	});
 });
 
+/**
+ * The key list `isLiveSessionRuntimeRecord` of the published 0.6.12 demands, copied from
+ * `git show 0.6.12:src/sessions/live-session-validation.ts` (first `keys(...)` call, plus the optional
+ * `declaredBuild`). A record written by this version must not carry anything else: 0.6.12 refuses a
+ * record with an extra key (`loadLive` answers corrupt, every start fails) until it is deleted by hand.
+ */
+const KEYS_0_6_12 = ['version','kind','sessionId','phase','authority','startedAt','endedAt','persistedAt',
+	'sourceInstance','build','profile','epoch','context','connection','lastPresenceAt','lastObservationAt','lastValidItemsAt','lastValidCurrenciesAt','lastSourceDisconnectedAt','currencyTrackedIds','lastSample','fingerprint','itemComparable','currencyComparable','sourceState',
+	'sourceReason','observationCount','sampleCount','totals','gaps','observedItemsMs','observedCurrenciesMs','prices','priceCapturedAt',
+	'magicFind','preparation','farmingGoal','groupContext','mapIntervals','mapObservation','mapCoveragePartial','summaryReceipt'];
+
 describe('characters seen by a live session', () => {
 	const SECOND_EPOCH = 'BAQEBAQEBAQEBAQEBAQEBA';
+	const names = (service: { getCharacters(): { name: string }[] }): string[] => service.getCharacters().map((entry) => entry.name);
 	it('records the starting character, adds a new one in order and never repeats the last', async () => {
 		const f = fixture(); await f.service.start('Alfa'); await f.service.open({ ...f.source, context: { ...f.source.context, character: 'Alfa' } });
 		await f.service.commit(f.sample(0, 0)); f.setNow(AT + 30_000); await f.service.commit(f.sample(1, 2));
-		expect(f.service.getRuntime()?.characters?.map((entry) => entry.name)).toEqual(['Alfa']);
+		expect(names(f.service)).toEqual(['Alfa']);
 		f.setNow(AT + 60_000);
-		const beta = { ...f.source, epoch: SECOND_EPOCH, context: { ...f.source.context, character: 'Beta' } };
-		await f.service.open(beta);
-		const seen = f.service.getRuntime()?.characters;
-		expect(seen?.map((entry) => entry.name)).toEqual(['Alfa', 'Beta']);
-		expect(seen?.[1]?.fromAt).toBe(new Date(AT + 60_000).toISOString());
-		expect(isLiveSessionRuntimeRecord(f.service.getRuntime())).toBe(true);
+		await f.service.open({ ...f.source, epoch: SECOND_EPOCH, context: { ...f.source.context, character: 'Beta' } });
+		expect(names(f.service)).toEqual(['Alfa', 'Beta']);
+		expect(f.service.getCharacters()[1]?.fromAt).toBe(new Date(AT + 60_000).toISOString());
 		// The tab shows the CURRENT character, not the one the session started with; a selection screen keeps it.
 		expect(currentLiveSessionCharacter(f.service.getRuntime())).toBe('Beta');
 		await expect(f.service.open({ ...f.source, epoch: 'DQQEBAQEBAQEBAQEBAQEBA', context: { state: 'character_select', mapId: null, character: null } })).resolves.toBe('not_gameplay');
@@ -740,14 +751,68 @@ describe('characters seen by a live session', () => {
 		expect(gap).toMatchObject({ fromAt: new Date(AT + 30_000).toISOString(), toAt: new Date(AT + 60_000).toISOString() });
 		f.setNow(AT + 120_000);
 		await f.service.open({ ...f.source, epoch: 'CAQEBAQEBAQEBAQEBAQEBA', context: { ...f.source.context, character: 'Beta', mapId: 873 } });
-		expect(f.service.getRuntime()?.characters?.map((entry) => entry.name)).toEqual(['Alfa', 'Beta']);
+		expect(names(f.service)).toEqual(['Alfa', 'Beta']);
 		await f.service.dispose();
 	});
-	it('keeps the last known character through a character-select screen', async () => {
-		const f = fixture(); await f.service.start('Alfa'); await f.service.open(f.source);
-		await expect(f.service.open({ ...f.source, epoch: SECOND_EPOCH, context: { state: 'character_select', mapId: null, character: null } })).resolves.toBe('not_gameplay');
-		expect(f.service.getRuntime()?.characters?.map((entry) => entry.name)).toEqual(['Alfa', 'Test']);
-		expect(f.service.getRuntime()?.context?.character).toBe('Test');
+	it('keeps A, B, A as three entries', async () => {
+		const f = fixture(); await f.service.start('Alfa'); await f.service.open({ ...f.source, context: { ...f.source.context, character: 'Alfa' } });
+		await f.service.open({ ...f.source, epoch: SECOND_EPOCH, context: { ...f.source.context, character: 'Beta' } });
+		await f.service.open({ ...f.source, epoch: 'CAQEBAQEBAQEBAQEBAQEBA', context: { ...f.source.context, character: 'Alfa' } });
+		expect(names(f.service)).toEqual(['Alfa', 'Beta', 'Alfa']);
 		await f.service.dispose();
+	});
+	it('writes a runtime record the published 0.6.12 validator accepts: no key beyond its closed list', async () => {
+		const f = fixture(); await f.service.start('Alfa'); await f.service.open(f.source);
+		await f.service.open({ ...f.source, epoch: SECOND_EPOCH, context: { ...f.source.context, character: 'Beta' } });
+		const record = f.service.getRuntime()!;
+		expect(Object.keys(record).filter((key) => key !== 'declaredBuild').sort()).toEqual([...KEYS_0_6_12].sort());
+		expect(isLiveSessionRuntimeRecord(record)).toBe(true);
+		const stored = await f.store.loadLive();
+		expect(stored.status === 'loaded' && Object.keys(stored.record).filter((key) => key !== 'declaredBuild').sort()).toEqual([...KEYS_0_6_12].sort());
+		await f.service.dispose();
+	});
+	it('restores the list after a restart, and derives it from the context when the key is missing or belongs to another session', async () => {
+		const f = fixture(); await f.service.start('Alfa'); await f.service.open(f.source);
+		await f.service.open({ ...f.source, epoch: SECOND_EPOCH, context: { ...f.source.context, character: 'Beta' } });
+		const restarted = fixture(f.store); await restarted.service.initialize();
+		expect(names(restarted.service)).toEqual(['Alfa', 'Test', 'Beta']);
+		await f.store.saveSummaryState({ version: 1, sessionId: 'other', characters: [], capped: false, summaryWritten: true });
+		const lost = fixture(f.store); await lost.service.initialize();
+		expect(names(lost.service)).toEqual(['Beta']);
+		expect(lost.service.isSummaryWritten()).toBe(false);
+	});
+	it('says when the list reached its cap', async () => {
+		const f = fixture(); await f.service.start('P0'); await f.service.open(f.source);
+		for (let index = 1; index <= 34; index += 1) {
+			await f.service.open({ ...f.source, epoch: `${String(index).padStart(2, '0')}QEBAQEBAQEBAQEBAQEBA`, context: { ...f.source.context, character: `P${String(index)}` } });
+		}
+		expect(f.service.getCharacters()).toHaveLength(32);
+		expect(f.service.isCharacterListCapped()).toBe(true);
+	});
+	it('names a character change in the summary of a session that really went through the lifecycle', async () => {
+		const f = fixture(); await f.service.start('Alfa'); await f.service.open({ ...f.source, context: { ...f.source.context, character: 'Alfa' } });
+		await f.service.commit(f.sample(0, 0)); f.setNow(AT + 30_000); await f.service.commit(f.sample(1, 2));
+		f.setNow(AT + 60_000);
+		await f.service.open({ ...f.source, epoch: SECOND_EPOCH, context: { ...f.source.context, character: 'Beta' } });
+		await f.service.commit({ ...f.sample(0, 5), epoch: SECOND_EPOCH }); f.setNow(AT + 120_000);
+		await f.service.commit({ ...f.sample(1, 7, { sourceElapsedMs: 1_000 }), epoch: SECOND_EPOCH });
+		await f.service.stop(AT + 120_000);
+		const record = f.service.getRuntime()!; const journal = f.service.getJournal();
+		const session = await prepareLiveSessionPayload({ record, journal, locale: 'es', outputFolder: 'Tyrian Companion' });
+		expect(session).not.toBeNull();
+		const note = await renderLiveSessionSummary({ session: session!, locale: 'es', outputFolder: 'Tyrian Companion', fullNotePath: 'x.md',
+			characters: f.service.getCharacters(), utcOffsetMinutes: () => 0 });
+		expect(note.status === 'ok' && note.note.content).toContain('Personajes: Alfa → Beta');
+		expect(note.status === 'ok' && note.note.content).toContain('· cambio de personaje');
+		expect(note.status === 'ok' && note.note.content).not.toContain('· cambio de contexto');
+	});
+	it('validates the summary state apart from the record', () => {
+		const at = new Date(AT).toISOString();
+		const ok = { version: 1, sessionId: 's', capped: false, summaryWritten: false, characters: [{ name: 'A', fromAt: at }] };
+		expect(isLiveSessionSummaryState(ok)).toBe(true);
+		expect(isLiveSessionSummaryState({ ...ok, characters: Array.from({ length: 33 }, (_, index) => ({ name: `P${String(index)}`, fromAt: at })) })).toBe(false);
+		expect(isLiveSessionSummaryState({ ...ok, characters: [{ name: '', fromAt: at }] })).toBe(false);
+		expect(isLiveSessionSummaryState({ ...ok, extra: 1 })).toBe(false);
+		expect(isLiveSessionSummaryState({ ...ok, characters: [{ name: 'A', fromAt: 'ayer' }] })).toBe(false);
 	});
 });
