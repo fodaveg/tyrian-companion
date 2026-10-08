@@ -118,6 +118,18 @@ describe('passive live session lifecycle', () => {
 		f.setNow(AT+65*60000); await f.service.presence(false); expect(f.service.getView().elapsedMs).toBe(55*60000);
 		await f.tick(); expect(f.service.getView()).toMatchObject({phase:'complete',elapsedMs:55*60000}); await f.service.dispose();
 	});
+	it('a map interval dated after the closing instant still ends in a saved note and frees the next start', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+		f.setNow(AT+1000); await f.service.commit(f.sample(1,2));
+		// The map changes 4 s later (the interval is dated now), then the connection dies before any other frame.
+		f.setNow(AT+5000); await f.service.open({...f.source,epoch:'AwMDAwMDAwMDAwMDAwMDAw',context:{...f.source.context,mapId:900}});
+		await f.service.presence(false);
+		expect(f.service.getRuntime()?.mapIntervals).toMatchObject([{mapId:866,toMs:AT+5000}]);
+		f.onComplete.mockImplementation(async () => (await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),locale:'es',outputFolder:'Tyrian'})).status === 'ok' ? 'Sessions/live.md' : null as unknown as string);
+		f.setNow(AT+1000+600_000); await f.tick();
+		expect(f.service.getRuntime(), 'closes at the last evidence with a receipt').toMatchObject({phase:'complete',endedAt:new Date(AT+1000).toISOString(),summaryReceipt:{path:'Sessions/live.md'}});
+		await expect(f.service.start('Test'), 'and the next session can start').resolves.not.toBeNull(); await f.service.dispose();
+	});
 	it('commits before ACK, deduplicates replay without refreshing evidence, and persists the same ledger', async () => {
 		const f = fixture(); await f.service.start('Test'); await expect(f.service.open(f.source)).resolves.toBe('ready');
 		await expect(f.service.commit(f.sample(0, 0))).resolves.toBe('stored');

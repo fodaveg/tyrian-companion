@@ -125,7 +125,10 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 		preparation: { version: 1, enabled: live.preparation.enabled, manualMagicFindBonus: live.preparation.manualMagicFindBonus,
 			foodReminderMinutes: live.preparation.foodReminderMinutes, utilityReminderMinutes: live.preparation.utilityReminderMinutes },
 		farmingGoal: live.farmingGoal, groupContext: live.groupContext,...declaredBuild,
-		mapIntervals: live.mapIntervals.map((interval) => ({ mapId: interval.mapId, fromMs: interval.fromMs, toMs: interval.toMs })),
+		// `open()` dates a map change with the clock, which can be later than the evidence the session closes on (a connection that
+		// died before the next frame): clip like the gaps, and drop what is left empty. Also heals records already stored that way.
+		mapIntervals: live.mapIntervals.map((interval) => ({ mapId: interval.mapId, fromMs: Math.max(interval.fromMs,Date.parse(live.startedAt)), toMs: Math.min(interval.toMs,Date.parse(boundary)) }))
+			.filter((interval) => interval.toMs > interval.fromMs),
 		mapCoveragePartial: live.mapCoveragePartial,
 	};
 	return payload;
