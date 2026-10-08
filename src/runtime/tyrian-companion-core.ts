@@ -1852,7 +1852,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		for (const group of advisorModel.groups) for (const row of group.rows) {
 			if (!rowsByItemId.has(row.itemId)) rowsByItemId.set(row.itemId, row);
 		}
-		const analysis = this.inventoryAdvisor.analysis();
+		const analysis = this.inventoryAdvisor.analysis({ readOnly: true });
 		const bidByItemId = new Map<number, number | null>(
 			(analysis?.source.input.prices.items ?? []).map((entry) => [entry.itemId, entry.bid?.unitCopper ?? null]),
 		);
@@ -1921,7 +1921,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		yearThresholdCopper: number | null;
 		openVsSell: { openCopper: number; sellCopper: number } | null;
 	}) | null {
-		const analysis = this.inventoryAdvisor.analysis();
+		const analysis = this.inventoryAdvisor.analysis({ readOnly: true });
 		const timing = this.saleHeroTiming;
 		const projection = this.getSellSignalState()?.projection ?? null;
 		if (row === null && timing === null) return null;
