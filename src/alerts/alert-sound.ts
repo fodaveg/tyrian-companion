@@ -81,18 +81,36 @@ export function playAlertSound(createContext: AlertAudioContextFactory): AlertSo
 	}
 }
 
+/** Factories with a tone waiting for their suspended context to resume: at most one each. */
+const resuming = new WeakSet<AlertAudioContextFactory>();
+
 function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutcome {
 	const context = createContext();
 	if (context === null) return 'unavailable';
-	// A context created outside a user gesture can start suspended, and a reused one can be
-	// suspended later. Its clock is stopped, so it must be resumed BEFORE the overlap check below
-	// (a stopped clock would read every later alert as "still sounding" forever). A tone that is
-	// still waiting on a suspended context has not sounded: that is `unavailable`, not `played`.
+	// A context created outside a user gesture can start suspended (likely in Hebra, which is not
+	// Electron), and a reused one can be suspended later. Its clock is stopped, so it is resumed
+	// BEFORE any overlap check (a stopped clock would read every later alert as "still sounding"
+	// forever), and THIS alert's tone is scheduled once the resume lands: the first valuable drop
+	// must not be the one that is lost. The outcome cannot wait for that (`TyrianHost.notify.sound`
+	// is synchronous), so it says `unavailable` (doubtful), never a `played` nobody heard. One tone
+	// waits per factory: alerts arriving meanwhile do not queue more. A rejected resume, or one that
+	// leaves the context suspended, leaves nothing pending, and the next alert starts from scratch.
 	if (context.state === 'suspended') {
-		const resuming: unknown = context.resume?.();
-		if (resuming instanceof Promise) resuming.catch(() => undefined);
-		if (context.state === 'suspended') return 'unavailable';
+		if (resuming.has(createContext)) return 'unavailable';
+		resuming.add(createContext);
+		const pending: unknown = context.resume?.();
+		const settled = pending instanceof Promise ? pending : Promise.resolve();
+		settled.then(() => {
+			resuming.delete(createContext);
+			if (context.state !== 'running') return;
+			try { scheduleTones(createContext, context); } catch { /* the next alert tries again */ }
+		}, () => { resuming.delete(createContext); });
+		return 'unavailable';
 	}
+	return scheduleTones(createContext, context);
+}
+
+function scheduleTones(createContext: AlertAudioContextFactory, context: AlertAudioContext): AlertSoundOutcome {
 	const previous = chimes.get(createContext);
 	if (previous !== undefined && previous.context === context && context.currentTime < previous.endsAt) return 'played';
 	const start = context.currentTime;

@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 537,
-		"promise_catch": 58,
+		"catch_clause": 538,
+		"promise_catch": 57,
 		"void_expression": 121,
-		"callback_registration": 217
+		"callback_registration": 218
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -1670,28 +1670,44 @@
 					"reason": "Allowlisted catch_clause: The \"playAlertSound\" owner treats an audio failure as \"fallback_return\" of the \"unavailable\" outcome, which the alert emitter records as a failed sound channel; an audio device that misbehaves must never cancel the other channels of the alert. Verified recovery: \"fallback_return\" in \"playAlertSound\"."
 				},
 				{
-					"id": "a16d3663ad6edd4c66401ff1e2f3e55dd183eb9c",
-					"kind": "promise_catch",
-					"line": 93,
-					"column": 36,
-					"endLine": 93,
-					"endColumn": 67,
-					"registration": "catch",
+					"id": "218199167a3b5d25b4d725a1009319aa97d5304a",
+					"kind": "callback_registration",
+					"line": 103,
+					"column": 3,
+					"endLine": 107,
+					"endColumn": 48,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "scheduleChime",
+						"justification": "The \"scheduleChime\" owner registers \"then\" to schedule the tone once AudioContext.resume() lands; its outcome was already reported as unavailable and a rejected or ineffective resume leaves nothing pending."
+					},
+					"reason": "Allowlisted callback_registration: The \"scheduleChime\" owner registers \"then\" to schedule the tone once AudioContext.resume() lands; its outcome was already reported as unavailable and a rejected or ineffective resume leaves nothing pending. Verified registration: \"then\" in \"scheduleChime\"."
+				},
+				{
+					"id": "763011227732520e98aed045d538b0632edcc2dd",
+					"kind": "catch_clause",
+					"line": 106,
+					"column": 51,
+					"endLine": 106,
+					"endColumn": 93,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
 						"scope": "scheduleChime",
-						"justification": "The \"scheduleChime\" owner ignores the rejection of AudioContext.resume() as \"intentional_noop\": a context that stays suspended is reported as \"unavailable\" on that same call and on every following alert until it runs, so the failure reaches the emitter as a channel outcome."
+						"justification": "The \"scheduleChime\" owner drops a tone that could not be scheduled after the resume as \"intentional_noop\": that alert already reported \"unavailable\" to the emitter and the next alert starts from scratch."
 					},
-					"reason": "Allowlisted promise_catch: The \"scheduleChime\" owner ignores the rejection of AudioContext.resume() as \"intentional_noop\": a context that stays suspended is reported as \"unavailable\" on that same call and on every following alert until it runs, so the failure reaches the emitter as a channel outcome. Verified recovery: \"intentional_noop\" in \"scheduleChime\"."
+					"reason": "Allowlisted catch_clause: The \"scheduleChime\" owner drops a tone that could not be scheduled after the resume as \"intentional_noop\": that alert already reported \"unavailable\" to the emitter and the next alert starts from scratch. Verified recovery: \"intentional_noop\" in \"scheduleChime\"."
 				},
 				{
 					"id": "906c424046bef91a2ec83ec46ff789f735caa605",
 					"kind": "catch_clause",
-					"line": 147,
+					"line": 165,
 					"column": 40,
-					"endLine": 147,
+					"endLine": 165,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {

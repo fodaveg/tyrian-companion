@@ -85,7 +85,7 @@ describe('H13.4 sound channel', () => {
 		});
 
 		it('resumes a suspended context before the overlap check, and a tone that could not sound is not "played"', async () => {
-			const { context } = fakeAudioContext();
+			const { context, scheduled } = fakeAudioContext();
 			// A suspended context keeps its clock stopped: currentTime never moves.
 			const suspended = context as { state?: string; resume?: () => Promise<void> };
 			suspended.state = 'suspended';
@@ -96,12 +96,78 @@ describe('H13.4 sound channel', () => {
 
 			expect(playAlertSound(factory)).toBe('unavailable');
 			expect(resumed).toBe(1);
+			await flush();
+			expect(scheduled.starts, 'a tone was scheduled on a context that stayed suspended').toEqual([]);
 
 			canResume = true;
 			expect(playAlertSound(factory), 'the resume call did not make it sound').toBe('unavailable');
-			await Promise.resolve();
+			await flush();
 			expect(playAlertSound(factory)).toBe('played');
 			expect(resumed).toBe(2);
+		});
+
+		/** A host whose context is born suspended (Hebra is not Electron): the first alert must still sound. */
+		describe('a context that starts suspended', () => {
+			function suspendedContext(resume: (state: { state: string }) => Promise<void>) {
+				const { context, scheduled } = fakeAudioContext();
+				const handle = context as unknown as { state: string; resume: () => Promise<void> };
+				handle.state = 'suspended';
+				const calls = { resume: 0 };
+				handle.resume = async () => { calls.resume += 1; await resume(handle); };
+				return { factory: () => context, scheduled, handle, calls };
+			}
+
+			it('schedules the tone of the FIRST alert once the resume lands, and reports it as doubtful meanwhile', async () => {
+				const { factory, scheduled, calls } = suspendedContext(async (handle) => { handle.state = 'running'; });
+
+				expect(playAlertSound(factory)).toBe('unavailable');
+				expect(scheduled.starts).toEqual([]);
+				await flush();
+
+				expect(calls.resume).toBe(1);
+				expect(scheduled.starts, 'the first alert was lost').toEqual([10, 10.15]);
+			});
+
+			it('gives one tone for three alerts that arrive while it resumes', async () => {
+				const { factory, scheduled, calls } = suspendedContext(async (handle) => { await Promise.resolve(); handle.state = 'running'; });
+
+				for (let alert = 0; alert < 3; alert += 1) expect(playAlertSound(factory)).toBe('unavailable');
+				await flush();
+
+				expect(calls.resume).toBe(1);
+				expect(scheduled.frequencies).toEqual([880, 1_244.51]);
+			});
+
+			it('leaves nothing pending when resume rejects: no tone, and a later alert on a running context sounds', async () => {
+				let reject = true;
+				const { factory, scheduled, handle } = suspendedContext(async (state) => {
+					if (reject) throw new Error('not allowed to start');
+					state.state = 'running';
+				});
+
+				expect(playAlertSound(factory)).toBe('unavailable');
+				await flush();
+				expect(scheduled.starts).toEqual([]);
+
+				reject = false;
+				handle.state = 'running';
+				expect(playAlertSound(factory)).toBe('played');
+				expect(scheduled.starts).toEqual([10, 10.15]);
+			});
+
+			it('tries again from scratch when a resume leaves the context suspended', async () => {
+				let works = false;
+				const { factory, scheduled, calls } = suspendedContext(async (handle) => { if (works) handle.state = 'running'; });
+
+				playAlertSound(factory);
+				await flush();
+				works = true;
+				playAlertSound(factory);
+				await flush();
+
+				expect(calls.resume).toBe(2);
+				expect(scheduled.starts).toEqual([10, 10.15]);
+			});
 		});
 
 		it('replaces a closed context with a new one', () => {
@@ -193,4 +259,8 @@ function fakeAudioContext() {
 
 function round(value: number): number {
 	return Math.round(value * 1_000) / 1_000;
+}
+
+async function flush(): Promise<void> {
+	for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
 }
