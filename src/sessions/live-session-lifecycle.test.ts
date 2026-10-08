@@ -346,6 +346,16 @@ describe('durable live alert outbox', () => {
 		expect(f.service.getView().valuation).toMatchObject({coinNetCopper:null,knownNetValueCopper:null});
 		await e.service.dispose(); await f.service.dispose();
 	});
+	it('an unchanged quote neither rewrites the record nor revalues the chart, a changed one does', async () => {
+		const f = fixture(); await positive(f); const stamp = new Date(AT+1000).toISOString();
+		await f.service.updatePrices([{itemId:12147,unitCopper:85}],stamp);
+		const save = vi.spyOn(f.store,'saveLive');
+		await expect(f.service.updatePrices([{itemId:12147,unitCopper:85}],stamp)).resolves.toBe(true);
+		expect(save).not.toHaveBeenCalled();
+		await f.service.updatePrices([{itemId:12147,unitCopper:90}],stamp); expect(save).toHaveBeenCalledTimes(1);
+		await f.service.updatePrices([{itemId:12147,unitCopper:90}],new Date(AT+2000).toISOString()); expect(save).toHaveBeenCalledTimes(2);
+		await f.service.dispose();
+	});
 	it('a crash after claim is unconfirmed on restart and never re-emits', async () => {
 		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
 		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));

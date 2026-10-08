@@ -2,7 +2,7 @@ import { sha256CanonicalValue } from '../core/canonical-sha256';
 import { LIVE_GAP_REASONS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveObservationV1,
 	type LiveSessionRuntimeRecord, type LiveGapV1, type LiveTotalV1,
-	type LiveValuationV1, type LivePriceV1 } from './live-session-model';
+	type LiveValuationV1, type LivePriceV1, type LiveChartPointV1 } from './live-session-model';
 
 /** Keeps unknown coverage explicit and invalidates item comparisons across missing intervals. */
 export function liveSessionGap(record: LiveSessionRuntimeRecord, reason: LiveGapV1['reason'], _at: string,
@@ -94,8 +94,8 @@ export function reduceLiveInventorySample(record: LiveSessionRuntimeRecord, samp
 		cursor: sample.cursor, observedAt: sample.observedAt, observations, breakBefore, alertsProcessed: false, outbox: [] } };
 }
 
-export function liveObservationTotals(totals: LiveTotalV1[], observations: readonly LiveObservationV1[]): LiveTotalV1[] {
-	const map = new Map(totals.map((total) => [`${total.kind}:${String(total.idNumber)}`, { ...total }]));
+/** Folds observations into a mutable totals map (key `kind:id`), with the overflow guard shared by every totals path. */
+function accumulateLiveTotals(map: Map<string, LiveTotalV1>, observations: readonly LiveObservationV1[]): void {
 	for (const row of observations) {
 		const key = `${row.kind}:${String(row.idNumber)}`;
 		const total = map.get(key) ?? { kind: row.kind, idNumber: row.idNumber, positive: 0, negative: 0, net: 0 };
@@ -103,7 +103,32 @@ export function liveObservationTotals(totals: LiveTotalV1[], observations: reado
 		if (![total.positive, total.negative, total.net].every(Number.isSafeInteger)) throw new Error('Live session arithmetic overflow.');
 		map.set(key, total);
 	}
+}
+export function liveObservationTotals(totals: LiveTotalV1[], observations: readonly LiveObservationV1[]): LiveTotalV1[] {
+	const map = new Map(totals.map((total) => [`${total.kind}:${String(total.idNumber)}`, { ...total }]));
+	accumulateLiveTotals(map, observations);
 	return [...map.values()].sort((left, right) => left.kind.localeCompare(right.kind) || left.idNumber - right.idNumber);
+}
+
+/** One chart point: the cumulative totals revalued with the record's current prices. */
+export function liveChartPoint(entry: LiveJournalEntryV1, totals: readonly LiveTotalV1[],
+	record: Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> | null): LiveChartPointV1 {
+	const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
+	return { observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
+		netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore };
+}
+
+/**
+ * The last `limit` chart points of a journal. Totals accumulate in one mutable map over the whole journal (no per-entry
+ * copy or sort: sums of integers do not depend on order), but only the retained tail is revalued.
+ */
+export function buildLiveChart(journal: readonly LiveJournalEntryV1[], record: Parameters<typeof liveChartPoint>[2], limit = 600): LiveChartPointV1[] {
+	const map = new Map<string, LiveTotalV1>(); const chart: LiveChartPointV1[] = []; const firstValued = journal.length - limit;
+	journal.forEach((entry, index) => {
+		accumulateLiveTotals(map, entry.observations);
+		if (index >= firstValued) chart.push(liveChartPoint(entry, [...map.values()], record));
+	});
+	return chart;
 }
 
 /** Wallet currency that is valued in copper; every other currency stays unconverted. */

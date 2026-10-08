@@ -9,7 +9,7 @@ import { DEFAULT_FARMING_PREPARATION, normalizeFarmingPreparationSettings, type 
 import { LIVE_SOURCE_STALE_MS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveSessionRuntimeRecord, type LiveJournalEntryV1,
 	type LiveSessionViewV1, type LiveGapV1, type LiveChartPointV1 } from './live-session-model';
-import { liveObservationTotals, liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
+import { buildLiveChart, liveChartPoint, liveObservationTotals,liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
 import type { IngameGameContext } from '../alerts/alert-ingame-protocol';
 import { createLiveAlertIntent, settleLiveAlertRestart } from './live-session-outbox';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } from './live-session-model';
@@ -257,6 +257,8 @@ export class LiveSessionLifecycle {
 	async updatePrices(prices: LiveSessionRuntimeRecord['prices'], capturedAt: string): Promise<boolean> {
 		return await this.enqueue(async () => {
 			if (!this.options.enabled() || this.record?.phase !== 'active' || await this.ready() !== 'owned' || !this.options.enabled()) return false;
+			// Every journalled sample with loot calls this; an unchanged quote must not rewrite the record nor revalue the chart.
+			if (this.record.priceCapturedAt === capturedAt && JSON.stringify(this.record.prices) === JSON.stringify(prices)) return true;
 			const next = { ...this.record, prices: structuredClone(prices), priceCapturedAt: capturedAt, persistedAt: this.options.now() };
 			if (await this.persist(next) !== 'saved') return false;
 			this.record = next; this.rebuildChart(); this.options.onStateChange(); return true;
@@ -550,15 +552,10 @@ export class LiveSessionLifecycle {
 		next.mapObservation = mapId === null ? null : { mapId, fromMs: atMs }; return next;
 	}
 	private appendChart(entry: LiveJournalEntryV1, totals = this.record?.totals ?? []): void {
-		const valuation = valueLiveTotals(totals, this.record?.prices ?? [], this.record?.priceCapturedAt ?? null, this.record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
-		this.chart.push({ observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
-			netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore });
+		this.chart.push(liveChartPoint(entry, totals, this.record));
 		if (this.chart.length > 600) this.chart.shift();
 	}
-	private rebuildChart(): void {
-		this.chart = []; let totals: LiveSessionRuntimeRecord['totals'] = [];
-		for (const entry of this.journal) { totals = liveObservationTotals(totals, entry.observations); this.appendChart(entry, totals); }
-	}
+	private rebuildChart(): void { this.chart = buildLiveChart(this.journal, this.record); }
 
 	private nowIso(): string { return new Date(this.options.now()).toISOString(); }
 	private enqueue<T>(work: () => Promise<T>): Promise<T> {
