@@ -15,6 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { validateBetaChannelContract } from '../beta-channel-contract.mjs';
 import {
@@ -688,6 +689,9 @@ function candidateFromManifest(name, source) {
 	writeFileSync(resolve(root, 'manifest.json'), source);
 	writeJson(resolve(root, 'versions.json'), { [manifest.version]: manifest.minAppVersion });
 	writeFileSync(resolve(root, 'styles.css'), `.candidate-${name} { color: red; }\n`);
+	// The Hebra icon is a packaging input (`assets/hebra-icon.png`): the root carries the real one.
+	mkdirSync(resolve(root, 'assets'), { recursive: true });
+	writeFileSync(resolve(root, 'assets/hebra-icon.png'), readFileSync(fileURLToPath(new URL('../../assets/hebra-icon.png', import.meta.url))));
 	const result = packageRelease({ root, build: controlledBuild, buildHebra: controlledHebraBuild, environment: {} });
 	return { ...result, archiveName: basename(result.archivePath), root };
 }
