@@ -25,13 +25,7 @@ export function liveHistoryCurrencies(totals: readonly LiveTotalV1[]): LiveHisto
 		.sort((a, b) => (a.idNumber === 1 ? 0 : 1) - (b.idNumber === 1 ? 0 : 1) || a.idNumber - b.idNumber)
 		.map((row) => ({ idNumber: row.idNumber, net: row.net }));
 }
-/** Tiles sort by estimated value; unpriced and negative nets sink to the end. Shared by the live grid and the saved sessions. */
-export function liveItemRank(row: LiveTotalV1, prices: readonly { itemId: number; unitCopper: number | null }[]): number {
-	if (row.net < 0) return Number.NEGATIVE_INFINITY;
-	const price = prices.find((entry) => entry.itemId === row.idNumber)?.unitCopper;
-	return price == null ? -1 : price * row.net;
-}
-/** The item rows with a net other than 0, best estimated value first (`liveItemRank`), pricing each id through one Map instead of a scan per comparison. */
+/** The item rows with a net other than 0, best estimated value first (unpriced and negative nets sink; shared by the live grid and the saved sessions), pricing each id through one Map instead of a scan per comparison. */
 export function sortLiveItemsByValue(totals: readonly LiveTotalV1[], prices: readonly { itemId: number; unitCopper: number | null }[]): LiveTotalV1[] {
 	const unit = new Map(prices.map((entry) => [entry.itemId, entry.unitCopper] as const));
 	const rank = (row: LiveTotalV1): number => { if (row.net < 0) return Number.NEGATIVE_INFINITY; const price = unit.get(row.idNumber); return price == null ? -1 : price * row.net; };

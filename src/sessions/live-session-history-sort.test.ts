@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveTotalV1 } from './live-session-model';
-import { liveItemRank, sortLiveItemsByValue } from './live-session-history';
+import { sortLiveItemsByValue } from './live-session-history';
+
+/** The rank the grid used before it priced through a Map: the reference the sort is checked against. */
+function liveItemRank(row: LiveTotalV1, prices: readonly { itemId: number; unitCopper: number | null }[]): number {
+	if (row.net < 0) return Number.NEGATIVE_INFINITY;
+	const price = prices.find((entry) => entry.itemId === row.idNumber)?.unitCopper;
+	return price == null ? -1 : price * row.net;
+}
 
 describe('sortLiveItemsByValue', () => {
 	it('orders exactly like the per-comparison price scan: unpriced and negative sink, ties by net', () => {

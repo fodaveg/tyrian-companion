@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { liveHistoryCurrencies, liveItemRank } from './live-session-history';
+import { liveHistoryCurrencies } from './live-session-history';
+import type { LiveTotalV1 } from './live-session-model';
+
+/** The rank the grid used before it priced through a Map: the reference the sort is checked against. */
+function liveItemRank(row: LiveTotalV1, prices: readonly { itemId: number; unitCopper: number | null }[]): number {
+	if (row.net < 0) return Number.NEGATIVE_INFINITY;
+	const price = prices.find((entry) => entry.itemId === row.idNumber)?.unitCopper;
+	return price == null ? -1 : price * row.net;
+}
 
 describe('liveHistoryCurrencies: the coins of a saved session', () => {
 	const row = (kind: 'item' | 'currency', idNumber: number, net: number) => ({ kind, idNumber, positive: Math.max(net, 0), negative: Math.max(-net, 0), net });

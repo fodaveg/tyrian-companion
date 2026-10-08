@@ -17,6 +17,9 @@
 //   feature test is allowed; the guarded use behind it is not;
 // - `Buffer`, `process` or `require` read off `globalThis`/`window`/`self`/`global`, and any
 //   `require`/`__require` call left in the output (a require esbuild could not resolve);
+//   The output is minified (whitespace and syntax, not identifiers: renaming would hide esbuild's
+//   `__require` shim), so these checks read what survives it: a reference in dead code that esbuild
+//   removes is no longer reported, which is right for the file Hebra loads;
 // - any import left in the output (Hebra resolves none), or a bundled copy of a module Hebra lends
 //   (`@codemirror/*`, `@lezer/*`): two copies of `@codemirror/state` break Hebra's editor;
 // - a CSS import, or a package that is not declared in package.json;
@@ -82,6 +85,8 @@ export async function buildHostEsm({
 		write,
 		// Whitespace and syntax only: renaming identifiers would hide esbuild's `__require` shim from `outputViolations`.
 		minifyWhitespace: true,
+		// Without a line limit the whole bundle is one line of ~2.5 MB and every stack trace points at its column.
+		lineLimit: 200,
 		minifySyntax: true,
 		metafile: true,
 		logLevel: 'silent',
