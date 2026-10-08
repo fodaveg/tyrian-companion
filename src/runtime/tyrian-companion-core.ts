@@ -4126,7 +4126,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private async startIngameSession(character: string | null): Promise<string | null> {
 		if (!this.runtimeReady || !this.ingameSessionView().canStart) return null;
-		if ((this.sessions.getRecoveryState().status !== 'none' || this.sessions.getState().status === 'complete') && this.sessions.getPreservedLegacyRuntime() === null
+		// An older archive must not hide a NEWER unfinished API session: that one still needs its own transfer.
+		const recoveryPending = this.sessions.getRecoveryState().status !== 'none';
+		if ((recoveryPending || this.sessions.getState().status === 'complete') && (recoveryPending || this.sessions.getPreservedLegacyRuntime() === null)
 			&& !await this.sessions.preserveLegacyForLiveMigration()) return null;
 		return await this.liveSessions?.start(character) ?? null;
 	}

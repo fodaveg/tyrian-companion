@@ -376,7 +376,11 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		},
 	};
 
-	const index = await TyrianPathIndex.load(deps.pathIndexKv, pathIndexNamespace(libraryId, rootFolderId));
+	const index = await TyrianPathIndex.load(
+		deps.pathIndexKv,
+		pathIndexNamespace(libraryId, rootFolderId),
+		(error) => deps.report(error, 'path-index.storage'),
+	);
 	// Decided after seeding the index (below) and before the core loads its settings.
 	let adoptManagedAssetsRoot = false;
 	let seed: TyrianSeedResult | null = null;

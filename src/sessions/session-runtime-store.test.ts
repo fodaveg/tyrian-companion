@@ -124,12 +124,15 @@ describe('session runtime persistence', () => {
 		await store.save(record); await expect(store.archiveLegacyRuntime({...authority,sessionId:'other'})).resolves.toBe(false);
 		await expect(store.load()).resolves.toEqual({status:'loaded',record}); await expect(store.listLegacyRuntimeArchives()).resolves.toEqual([]); store.close();
 	});
-	it('a crossed summary receipt blocks transfer rather than being silently erased', async () => {
+	it('a receipt of another session neither blocks the transfer nor is erased by it', async () => {
+		// An earlier completed session leaves its receipt behind for good; blocking on it stranded every
+		// later API-era session, and with it the live migration.
 		const store = new IndexedDbSessionRuntimeStore(new IDBFactory(),databaseName('cross-receipt')); const record = activeRecord();
 		await store.save(record); const receipt = {version:1 as const,sessionId:'other-session',path:'other.md',savedAt:1}; await store.saveSummaryReceipt(receipt);
-		await expect(store.archiveLegacyRuntime({...authority,fence:authority.fence+1})).resolves.toBe(false);
-		await expect(store.load()).resolves.toEqual({status:'loaded',record}); await expect(store.loadSummaryReceipt()).resolves.toEqual(receipt);
-		await expect(store.listLegacyRuntimeArchives()).resolves.toEqual([]); store.close();
+		await expect(store.archiveLegacyRuntime({...authority,fence:authority.fence+1})).resolves.toBe(true);
+		await expect(store.load()).resolves.toEqual({status:'empty'}); await expect(store.loadSummaryReceipt()).resolves.toEqual(receipt);
+		await expect(store.listLegacyRuntimeArchives()).resolves.toEqual([record]);
+		await expect(store.readLegacyRuntimeArchive(authority.sessionId)).resolves.toMatchObject({receipt:null,original:record}); store.close();
 	});
 	it('portable legacy export allows only validated matching evidence and pseudonymous references', () => {
 		const record = activeRecord(); const archive = prepareLegacyRuntimeArchive(record,1); const payload = prepareLegacyRuntimeExport(archive,record);

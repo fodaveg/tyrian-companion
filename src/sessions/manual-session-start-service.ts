@@ -436,11 +436,18 @@ export class ManualSessionStartService {
 		const acquired = await this.coordinator.acquire(sessionId);
 		if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== sessionId) return false;
 		this.currentHandle = acquired.handle;
-		if ((await this.coordinator.assertOwned(acquired.handle)).status !== 'owned') return false;
-		if (!await this.runtimeStore.archiveLegacyRuntime(sessionAuthorityFromLease(acquired.handle))) return false;
+		// A failed attempt must not leave the old session's lease taken for its whole TTL.
+		const releaseUnused = async (): Promise<false> => {
+			this.currentHandle = null;
+			try { await this.coordinator.release(acquired.handle); } catch { /* best effort; the lease expires on its own */ }
+			return false;
+		};
+		if ((await this.coordinator.assertOwned(acquired.handle)).status !== 'owned') return await releaseUnused();
+		if (!await this.runtimeStore.archiveLegacyRuntime(sessionAuthorityFromLease(acquired.handle))) return await releaseUnused();
 		this.preservedLegacyRecords.unshift(record); this.recoveryRecord = null;
 		await this.coordinator.release(acquired.handle); this.currentHandle = null;
-		this.recoveryState = record.state.status === 'complete' ? {status:'none'} : {status:'available',state:record.state,message:'Saved API evidence is preserved locally for reading; Nexus owns new sessions.'};
+		// Preserved evidence is read through `getPreservedLegacyRuntime()`, never offered as a recovery.
+		this.recoveryState = {status:'none'};
 		this.onStateChange(); return true;
 	}
 
@@ -744,11 +751,28 @@ export class ManualSessionStartService {
 
 	private async initializeInternal(): Promise<void> {
 		if (this.disposed || this.recoveryRecord || this.state.status !== 'idle') return;
-		if (!this.automaticAccountCapture && this.runtimeStore.listLegacyRuntimeArchives) this.preservedLegacyRecords = await this.runtimeStore.listLegacyRuntimeArchives();
+		if (!this.automaticAccountCapture && this.runtimeStore.listLegacyRuntimeArchives) {
+			// Same contract as `load()` below: a store that is down is a recovery state, never a rejection
+			// that keeps the whole plugin from starting.
+			try { this.preservedLegacyRecords = await this.runtimeStore.listLegacyRuntimeArchives(); }
+			catch (error) {
+				const corrupt = error instanceof Error && error.message === 'Preserved API runtime is corrupt.';
+				this.recoveryState = {
+					status: 'error',
+					code: corrupt ? 'corrupt' : 'unavailable',
+					message: corrupt
+						? 'The preserved API runtime is corrupt and was left untouched.'
+						: 'Session recovery storage is unavailable.',
+				};
+				this.onStateChange();
+				return;
+			}
+		}
 		const loaded = await this.runtimeStore.load();
 		if (loaded.status === 'empty' || loaded.status === 'live') {
-			const preserved = this.getPreservedLegacyRuntime();
-			this.recoveryState = preserved && preserved.state.status !== 'complete' ? {status:'available',state:preserved.state,message:'Saved API evidence is preserved locally for reading.'} : { status: 'none' };
+			// Archived API evidence is read through `getPreservedLegacyRuntime()`; announcing it as a
+			// recovery would offer an action that can never succeed (recapture is disabled, discard is read-only).
+			this.recoveryState = { status: 'none' };
 		} else if (loaded.status === 'loaded') {
 			if (loaded.record.state.status === 'complete') {
 				if (!this.automaticAccountCapture) this.recoveryRecord = loaded.record;

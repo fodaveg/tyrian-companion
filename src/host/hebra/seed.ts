@@ -31,7 +31,7 @@ import type { TyrianNoteFamily, TyrianPathIndex, TyrianUnadoptedNote } from './p
 export type { TyrianNoteFamily, TyrianUnadoptedNote, TyrianUnadoptedReason } from './path-index';
 
 /** What seeding reads of the library. */
-export type TyrianSeedLibrary = Pick<PluginVault, 'notesPage' | 'noteRead' | 'foldersList' | 'filesPage'>;
+export type TyrianSeedLibrary = Pick<PluginVault, 'notesPage' | 'noteRead' | 'noteSummary' | 'foldersList' | 'filesPage'>;
 
 export interface TyrianSeedResult {
 	/** Notes indexed at the end (already indexed or adopted now). */
@@ -156,6 +156,21 @@ export async function seedTyrianPathIndex(options: {
 		} while (cursor !== null);
 
 		if (reconcile) {
+			// The walk above is not a snapshot: Hebra lists newest first, so a note the sync edits meanwhile
+			// jumps behind the page already served and is never listed. Not listed does not mean gone:
+			// ask for the indexed notes it missed before purging them, or the next dump creates a second
+			// note on that path.
+			const unlisted = index.listNoteFiles()
+				.map((file) => index.getIdForPath(file.path))
+				.filter((id): id is string => id !== undefined && !liveIds.has(id));
+			for (let from = 0; from < unlisted.length; from += SEED_PAGE_SIZE) {
+				for (const summary of await library.noteSummary(unlisted.slice(from, from + SEED_PAGE_SIZE))) {
+					const inside = summary.folderId === rootFolderId || folderPaths.has(summary.folderId);
+					if (!inside || summary.trashedAt !== null || summary.archivedAt !== null) continue;
+					liveIds.add(summary.id);
+					updatedAt.set(summary.id, summary.updatedAt);
+				}
+			}
 			await index.retainOnly(liveIds, new Set(folderPaths.values()));
 			index.refreshMtimes(updatedAt);
 		}

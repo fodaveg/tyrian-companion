@@ -7,6 +7,8 @@
  * index can be tested with an in-memory double.
  */
 
+import { startIndexedDbTransaction, withIndexedDbReopen } from '../../core/indexed-db-open';
+
 export interface TyrianPathIndexKv {
 	get(key: string): Promise<string | undefined>;
 	set(key: string, value: string): Promise<void>;
@@ -35,34 +37,51 @@ const STORE_NAME = 'index';
  * need them.
  */
 export function createIndexedDbPathIndexKv(factory: IDBFactory, databaseName: string): TyrianPathIndexKv {
-	let dbPromise: Promise<IDBDatabase> | undefined;
-	const openDb = (): Promise<IDBDatabase> => (dbPromise ??= new Promise((resolve, reject) => {
-		const request = factory.open(databaseName, 1);
-		request.onupgradeneeded = () => {
-			if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME);
+	// Same shape as the file backend next door (`createIndexedDbFileBackend`): the connection is kept
+	// between calls but not past its death, and an open that failed is not kept at all. One reopen
+	// per call (`withIndexedDbReopen`).
+	let cached: { opening: Promise<IDBDatabase>; database: IDBDatabase | null } | null = null;
+	const forget = (database: IDBDatabase): void => {
+		if (cached?.database === database) cached = null;
+	};
+	const open = (): Promise<IDBDatabase> => {
+		if (cached !== null) return cached.opening;
+		const entry: { opening: Promise<IDBDatabase>; database: IDBDatabase | null } = {
+			database: null,
+			opening: new Promise<IDBDatabase>((resolve, reject) => {
+				const request = factory.open(databaseName, 1);
+				request.onupgradeneeded = () => {
+					if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME);
+				};
+				request.onsuccess = () => {
+					const database = request.result;
+					entry.database = database;
+					database.onclose = () => { forget(database); };
+					resolve(database);
+				};
+				request.onerror = () => reject(request.error ?? new Error('tyrian-path-index-kv: open'));
+			}),
 		};
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error ?? new Error('tyrian-path-index-kv: open'));
-	}));
+		cached = entry;
+		entry.opening.catch(() => { if (cached === entry) cached = null; });
+		return entry.opening;
+	};
+	const discard = (database: IDBDatabase): void => {
+		forget(database);
+		try { database.close(); } catch { /* Already gone, which is the reason it is being dropped. */ }
+	};
+	const run = async <T>(mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> =>
+		await withIndexedDbReopen({ open, discard }, async (db) => await new Promise<T>((resolve, reject) => {
+			// A throw here rejects this promise: the executor runs synchronously inside it.
+			const tx = startIndexedDbTransaction(db, STORE_NAME, mode);
+			const request = operation(tx.objectStore(STORE_NAME));
+			tx.oncomplete = () => resolve(request.result);
+			tx.onerror = () => reject(tx.error ?? new Error('tyrian-path-index-kv: transaction'));
+			// An abort does not always come with an `error` event; without this the save never settles.
+			tx.onabort = () => reject(tx.error ?? new Error('tyrian-path-index-kv: transaction aborted'));
+		}));
 	return {
-		async get(key) {
-			const db = await openDb();
-			return await new Promise((resolve, reject) => {
-				const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(key);
-				request.onsuccess = () => resolve((request.result as string | undefined) ?? undefined);
-				request.onerror = () => reject(request.error ?? new Error('tyrian-path-index-kv: get'));
-			});
-		},
-		async set(key, value) {
-			const db = await openDb();
-			await new Promise<void>((resolve, reject) => {
-				const tx = db.transaction(STORE_NAME, 'readwrite');
-				tx.objectStore(STORE_NAME).put(value, key);
-				tx.oncomplete = () => resolve();
-				tx.onerror = () => reject(tx.error ?? new Error('tyrian-path-index-kv: set'));
-				// An abort does not always come with an `error` event; without this the save never settles.
-				tx.onabort = () => reject(tx.error ?? new Error('tyrian-path-index-kv: set aborted'));
-			});
-		},
+		get: async (key) => (await run('readonly', (store) => store.get(key)) as string | undefined) ?? undefined,
+		set: async (key, value) => { await run('readwrite', (store) => store.put(value, key)); },
 	};
 }

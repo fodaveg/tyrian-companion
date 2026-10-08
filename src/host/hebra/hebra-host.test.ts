@@ -319,6 +319,18 @@ describe('createHebraHost: output folder and index', () => {
 		expect(test.library.writes).toEqual([]);
 	});
 
+	it('activates with the path index storage down at start, seeding from the library and reporting it', async () => {
+		const test = createTyrianTestApi();
+		test.library.addFolder('tc', 'root', 'Tyrian Companion');
+		note(test, 'tc', 'tyrian:Inventory/Positions/1.md\n# One');
+		const down = { get: () => Promise.reject(new Error('down')), set: () => Promise.reject(new Error('down')) };
+		const report = vi.fn();
+		const handle = await createHebraHost(deps(test, { pathIndexKv: down, report }));
+		expect(handle.seed).toMatchObject({ adopted: 1 });
+		expect(handle.host.vault.file('Tyrian Companion/Inventory/Positions/1.md')).not.toBeNull();
+		expect(report).toHaveBeenCalledWith(expect.any(Error), 'path-index.storage');
+	});
+
 	it('unadopted Tyrian notes come out in the handle, are saved, and are reviewed on the next start', async () => {
 		const test = createTyrianTestApi();
 		test.library.addFolder('tc', 'root', 'Tyrian Companion');
@@ -489,7 +501,11 @@ describe('createHebraHost: the other ports', () => {
 		const handle = await createHebraHost(deps(createTyrianTestApi(), { fileBackend }));
 		expect(handle.host.diagnostics.directory).toBe('.hebra/plugins/tyrian-companion/logs');
 		await handle.host.diagnostics.storage.append(`${handle.host.diagnostics.directory}/a`, 'x');
-		expect(await fileBackend.keys()).toEqual(['library-1/.hebra/plugins/tyrian-companion/logs/a']);
+		// An appended file lives in chunks under its own key (see `createLocalFileStorage`).
+		expect(await handle.host.diagnostics.storage.read(`${handle.host.diagnostics.directory}/a`)).toBe('x');
+		const keys = await fileBackend.keys();
+		expect(keys).toHaveLength(1);
+		expect(keys[0]?.startsWith('library-1/.hebra/plugins/tyrian-companion/logs/a')).toBe(true);
 	});
 });
 

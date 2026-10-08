@@ -89,6 +89,62 @@ function adapterContract(name: string, backend: () => LocalFileBackend): void {
 adapterContract('memory', () => createMemoryFileBackend());
 adapterContract('IndexedDB', () => createIndexedDbFileBackend(new IDBFactory(), 'hebra-tyrian-local-files'));
 
+// 8 Oct 2026: `append` read and rewrote the whole file for every line; filling the 2 MiB log wrote
+// 6 226 MiB. Chunked, a line costs a bounded write however long the log already is.
+describe('appending to a long file', () => {
+	function countingBackend(): { backend: LocalFileBackend; written: () => number } {
+		const inner = createMemoryFileBackend();
+		let written = 0;
+		return {
+			written: () => written,
+			backend: { ...inner, set: async (key, value) => { written += value.length; await inner.set(key, value); } },
+		};
+	}
+	const line = (n: number): string => `{"seq":${String(n)},"padding":"${'x'.repeat(300)}"}\n`;
+
+	it('fills a log file writing a small multiple of its size, and it reads back whole', async () => {
+		const { backend, written } = countingBackend();
+		const storage = createLocalFileStorage(backend, 'lib-1');
+		let expected = '';
+		for (let n = 0; expected.length < 512 * 1024; n += 1) {
+			await storage.append('.hebra/logs/a.jsonl', line(n));
+			expected += line(n);
+		}
+		// Whole-file rewrites cost ~400 MB here (~800x the file); one 4 KiB chunk per line costs ~6x.
+		expect(written()).toBeLessThan(expected.length * 10);
+		expect(await storage.read('.hebra/logs/a.jsonl')).toBe(expected);
+	});
+
+	it('keeps appending after a file an older build saved whole, and rename, write and remove see all of it', async () => {
+		const backend = createMemoryFileBackend();
+		await backend.set('lib-1/.hebra/logs/a.jsonl', 'old one\nold two\n');
+		const storage = createLocalFileStorage(backend, 'lib-1');
+		for (let n = 0; n < 100; n += 1) await storage.append('.hebra/logs/a.jsonl', line(n));
+		const text = await storage.read('.hebra/logs/a.jsonl');
+		expect(text.startsWith('old one\nold two\n{"seq":0,')).toBe(true);
+
+		await storage.rename('.hebra/logs/a.jsonl', '.hebra/logs/b.jsonl');
+		expect(await storage.exists('.hebra/logs/a.jsonl')).toBe(false);
+		expect(await storage.read('.hebra/logs/b.jsonl')).toBe(text);
+		await storage.append('.hebra/logs/b.jsonl', 'tail\n');
+		expect(await storage.read('.hebra/logs/b.jsonl')).toBe(`${text}tail\n`);
+
+		await storage.write('.hebra/logs/b.jsonl', 'fresh\n');
+		expect(await storage.read('.hebra/logs/b.jsonl')).toBe('fresh\n');
+		await storage.append('.hebra/logs/b.jsonl', 'more\n');
+		await storage.remove('.hebra/logs/b.jsonl');
+		expect(await storage.exists('.hebra/logs/b.jsonl')).toBe(false);
+		expect(await backend.keys()).toEqual([]);
+	});
+
+	it('a file that only has chunks exists, and so does the directory that holds it', async () => {
+		const storage = createLocalFileStorage(createMemoryFileBackend(), 'lib-1');
+		await storage.append('.hebra/logs/a.jsonl', 'one\n');
+		expect(await storage.exists('.hebra/logs/a.jsonl')).toBe(true);
+		expect(await storage.exists('.hebra/logs')).toBe(true);
+	});
+});
+
 // 7 Oct 2026: these files are the diagnostic log. A write that never settled stopped its queue for
 // good, and a dead connection was kept for the rest of the plugin's life.
 describe('file backend over a dying IndexedDB', () => {

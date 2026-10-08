@@ -77,14 +77,31 @@ export class TyrianPathIndex {
 	#batchDepth = 0;
 	#batchDirty = false;
 
-	private constructor(kv: TyrianPathIndexKv, namespace: string) {
+	/** Where a storage failure is reported: the index never lets it reach its callers. */
+	readonly #onStorageError: ((error: unknown) => void) | undefined;
+
+	private constructor(kv: TyrianPathIndexKv, namespace: string, onStorageError?: (error: unknown) => void) {
 		this.#kv = kv;
 		this.#namespace = namespace;
+		this.#onStorageError = onStorageError;
 	}
 
-	static async load(kv: TyrianPathIndexKv, namespace: string): Promise<TyrianPathIndex> {
-		const index = new TyrianPathIndex(kv, namespace);
-		const raw = await kv.get(kvKey(namespace));
+	/**
+	 * The saved copy is only a per-device cache (SPEC-TYRIAN-EN-HEBRA.md §3): it is rebuilt from the
+	 * library on the next start. So a kv that cannot be read starts the index empty and one that
+	 * cannot be written is reported through `onStorageError` and then ignored; neither may fail the
+	 * library operation that triggered it (a note created in the library but refused by the index
+	 * would be created again by the next attempt).
+	 */
+	static async load(kv: TyrianPathIndexKv, namespace: string, onStorageError?: (error: unknown) => void): Promise<TyrianPathIndex> {
+		const index = new TyrianPathIndex(kv, namespace, onStorageError);
+		let raw: string | undefined;
+		try {
+			raw = await kv.get(kvKey(namespace));
+		} catch (error) {
+			index.#reportStorageError(error);
+			return index;
+		}
 		if (!raw) return index;
 		let snapshot: TyrianPathIndexSnapshot;
 		try {
@@ -114,7 +131,15 @@ export class TyrianPathIndex {
 			entries: [...this.#byPath.values()],
 			unadopted: this.#unadopted,
 		};
-		await this.#kv.set(kvKey(this.#namespace), JSON.stringify(snapshot));
+		try {
+			await this.#kv.set(kvKey(this.#namespace), JSON.stringify(snapshot));
+		} catch (error) {
+			this.#reportStorageError(error);
+		}
+	}
+
+	#reportStorageError(error: unknown): void {
+		try { this.#onStorageError?.(error); } catch { /* A reporter that throws must not undo the point of this. */ }
 	}
 
 	/**
