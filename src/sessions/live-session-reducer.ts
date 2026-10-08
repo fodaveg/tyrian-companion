@@ -231,7 +231,7 @@ export function isLiveInventorySample(value: unknown): value is LiveInventorySam
 export function isLiveContext(value: unknown): value is LiveInventorySampleV1['context'] {
 	return record(value) && keys(value, ['state','mapId','character']) && ['gameplay','loading','character_select'].includes(value.state as string)
 		&& (value.mapId === null || bounded(value.mapId, 1, 2147483647))
-		&& (value.character === null || typeof value.character === 'string' && value.character.length <= 32);
+		&& (value.character === null || typeof value.character === 'string' && [...value.character].length <= 32);
 }
 export function isLiveGap(value: unknown): value is LiveGapV1 {
 	return record(value) && keys(value, ['version','fromAt','toAt','reason','channels']) && value.version === 1

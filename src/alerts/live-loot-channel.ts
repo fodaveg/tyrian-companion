@@ -61,7 +61,9 @@ export class LiveIngameChannel {
 		this.generation += 1;
 		this.invalidate('disconnect');
 		this.queuedOpen = null;
-		if (!this.busy && this.pendingGap === null) { this.options.release(); this.options.onDrained(); }
+		if (this.busy) return;
+		if (this.pendingGap === null) { this.options.release(); this.options.onDrained(); }
+		else this.run(async () => {}); // A gap retained by an earlier failure gets one last attempt; run() frees the lease if it fails again.
 	}
 
 	/** Shutdown cannot dispose the store while an accepted sample or its gap is still in flight. */
@@ -83,7 +85,8 @@ export class LiveIngameChannel {
 		if (this.closed) return;
 		if (message.type === 'live_open') { this.open(message); return; }
 		if (message.type === 'live_status') {
-			if (message.epoch !== this.epoch) { this.options.reject('unexpected_message'); return; }
+			// A null epoch means the producer holds no accepted epoch: legitimate whenever none is live, such as after a rejected live_open.
+			if (message.epoch === null ? this.epochValid : message.epoch !== this.epoch) { this.options.reject('unexpected_message'); return; }
 			this.invalidate(statusReason(message.reason), true);
 			return;
 		}
@@ -188,6 +191,7 @@ export class LiveIngameChannel {
 	private run(action: () => Promise<void>): void {
 		this.busy = true;
 		this.operation = (async () => {
+			let abandonedGap = false;
 			try {
 				await action();
 				while (this.pendingGap !== null) {
@@ -198,10 +202,13 @@ export class LiveIngameChannel {
 			} catch (error) {
 				this.queuedOpen = null;
 				this.report(error);
+				// A closed channel has no later open to retry its gap: holding the lease would turn every
+				// future producer away. The gap stays pending so shutdown still drains it.
+				abandonedGap = this.closed && this.pendingGap !== null;
 			}
 			finally {
 				this.busy = false;
-				if (this.pendingGap === null && (this.closed || this.releasePending)) this.options.release();
+				if (abandonedGap || this.pendingGap === null && (this.closed || this.releasePending)) this.options.release();
 				if (this.closed && this.pendingGap === null) this.options.onDrained();
 				const queued = this.queuedOpen;
 				this.queuedOpen = null;
