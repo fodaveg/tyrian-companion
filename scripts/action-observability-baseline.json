@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 556,
+		"catch_clause": 557,
 		"promise_catch": 58,
 		"void_expression": 122,
 		"callback_registration": 221
@@ -6495,27 +6495,43 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "dbeb68b4bcd0b6e59a4eba9b885cdfc0e1238e9d",
+					"id": "c8913590ad358b66692065c18641ff1caf38248e",
 					"kind": "catch_clause",
 					"line": 78,
 					"column": 4,
-					"endLine": 82,
+					"endLine": 85,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "activateTyrian",
-						"justification": "The \"activateTyrian\" catch (\"rethrow\") undoes the half-done activation (dispose, mobile class) and rethrows the original start failure to the caller, so it is not swallowed."
+						"justification": "The \"activateTyrian\" catch (\"rethrow\") undoes the half-done activation (dispose, mobile class, and the two IndexedDB connections the host opened, since no cleanup is returned for a failed start) and rethrows the original start failure to the caller, so it is not swallowed."
 					},
-					"reason": "Allowlisted catch_clause: The \"activateTyrian\" catch (\"rethrow\") undoes the half-done activation (dispose, mobile class) and rethrows the original start failure to the caller, so it is not swallowed. Verified recovery: \"rethrow\" in \"activateTyrian\"."
+					"reason": "Allowlisted catch_clause: The \"activateTyrian\" catch (\"rethrow\") undoes the half-done activation (dispose, mobile class, and the two IndexedDB connections the host opened, since no cleanup is returned for a failed start) and rethrows the original start failure to the caller, so it is not swallowed. Verified recovery: \"rethrow\" in \"activateTyrian\"."
+				},
+				{
+					"id": "8ece42f8ce86b1fdbaad516dc7b2894f75635a4a",
+					"kind": "catch_clause",
+					"line": 83,
+					"column": 34,
+					"endLine": 83,
+					"endColumn": 85,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "activateTyrian",
+						"justification": "The \"activateTyrian\" inner catch is a \"local_recovery\": a storage close that throws while a failed start is being undone is handed to report(closeError, 'start'), the adapter failure channel, so the error rethrown to Hebra is still the start failure. With the core not started that channel may have no listener yet; the report then waits in its buffer and may never reach the diagnostic log."
+					},
+					"reason": "Allowlisted catch_clause: The \"activateTyrian\" inner catch is a \"local_recovery\": a storage close that throws while a failed start is being undone is handed to report(closeError, 'start'), the adapter failure channel, so the error rethrown to Hebra is still the start failure. With the core not started that channel may have no listener yet; the report then waits in its buffer and may never reach the diagnostic log. Verified recovery: \"local_recovery\" in \"activateTyrian\"."
 				},
 				{
 					"id": "7d6e66e8d19222967ab9c6e499823526951c7a9e",
 					"kind": "callback_registration",
-					"line": 94,
+					"line": 97,
 					"column": 10,
-					"endLine": 95,
+					"endLine": 98,
 					"endColumn": 31,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6530,9 +6546,9 @@
 				{
 					"id": "05239e2c338b4923ff47b4ffa0cdde3cfaa895b2",
 					"kind": "promise_catch",
-					"line": 94,
+					"line": 97,
 					"column": 10,
-					"endLine": 96,
+					"endLine": 99,
 					"endColumn": 53,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6547,9 +6563,9 @@
 				{
 					"id": "1931145d16604d103cdcdb422e969abf354fc03e",
 					"kind": "callback_registration",
-					"line": 94,
+					"line": 97,
 					"column": 10,
-					"endLine": 98,
+					"endLine": 101,
 					"endColumn": 41,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10621,9 +10637,9 @@
 				{
 					"id": "8508cd8935b74c9ffd787fa7a6ef711172d4fa3b",
 					"kind": "catch_clause",
-					"line": 439,
+					"line": 446,
 					"column": 41,
-					"endLine": 439,
+					"endLine": 446,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10637,9 +10653,9 @@
 				{
 					"id": "7c035d4a49139072cc03c37a219deb6a85d1abd2",
 					"kind": "catch_clause",
-					"line": 554,
+					"line": 561,
 					"column": 5,
-					"endLine": 554,
+					"endLine": 561,
 					"endColumn": 56,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10653,9 +10669,9 @@
 				{
 					"id": "91c1d62daec6aad6537ee5cf7bc3e3a60123810c",
 					"kind": "catch_clause",
-					"line": 566,
+					"line": 573,
 					"column": 3,
-					"endLine": 566,
+					"endLine": 573,
 					"endColumn": 30,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10669,9 +10685,9 @@
 				{
 					"id": "9cee5374f79373d1fa55b11959e3854b7b9f688b",
 					"kind": "callback_registration",
-					"line": 607,
+					"line": 614,
 					"column": 16,
-					"endLine": 625,
+					"endLine": 632,
 					"endColumn": 31,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -10686,9 +10702,9 @@
 				{
 					"id": "8b2cd40694b8ceb1fa9fe176438b9a5fbdbeb075",
 					"kind": "void_expression",
-					"line": 607,
+					"line": 614,
 					"column": 49,
-					"endLine": 625,
+					"endLine": 632,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10702,25 +10718,25 @@
 				{
 					"id": "9a0dd42adce53d202a058057a2f5881a3d72e7f2",
 					"kind": "catch_clause",
-					"line": 635,
-					"column": 5,
-					"endLine": 635,
-					"endColumn": 51,
+					"line": 640,
+					"column": 41,
+					"endLine": 640,
+					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "recoverPruneQueue",
-						"justification": "The \"recoverPruneQueue\" catch is a \"local_recovery\": a prune queue that cannot be read is reported through onError and the prune simply runs with what is in memory; nothing about the session depends on it."
+						"justification": "The \"recoverPruneQueue\" catch is a \"local_recovery\": a saved prune queue that cannot be read at load is reported through onError and the load goes on. Nothing is pruned here (the heartbeat does that) and nothing is saved over the unread queue: saveSealedQueue reads it again and merges it before any save. Nothing about the session depends on it."
 					},
-					"reason": "Allowlisted catch_clause: The \"recoverPruneQueue\" catch is a \"local_recovery\": a prune queue that cannot be read is reported through onError and the prune simply runs with what is in memory; nothing about the session depends on it. Verified recovery: \"local_recovery\" in \"recoverPruneQueue\"."
+					"reason": "Allowlisted catch_clause: The \"recoverPruneQueue\" catch is a \"local_recovery\": a saved prune queue that cannot be read at load is reported through onError and the load goes on. Nothing is pruned here (the heartbeat does that) and nothing is saved over the unread queue: saveSealedQueue reads it again and merges it before any save. Nothing about the session depends on it. Verified recovery: \"local_recovery\" in \"recoverPruneQueue\"."
 				},
 				{
 					"id": "7ddd9f475ee93665839cd8b3166da5e8b9e9eb65",
 					"kind": "catch_clause",
-					"line": 653,
+					"line": 666,
 					"column": 92,
-					"endLine": 653,
+					"endLine": 666,
 					"endColumn": 191,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10734,25 +10750,25 @@
 				{
 					"id": "3b957ea797d76ce6bf47810a3c79ca2fa61e2ede",
 					"kind": "catch_clause",
-					"line": 663,
+					"line": 682,
 					"column": 5,
-					"endLine": 663,
+					"endLine": 682,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "saveSealedQueue",
-						"justification": "The \"saveSealedQueue\" catch is a \"local_recovery\": a prune queue that cannot be saved is reported through onError once and stays dirty; the beat stops asking and the next start saves it again; the session is untouched."
+						"justification": "The \"saveSealedQueue\" catch is a \"local_recovery\": a prune queue that cannot be saved, or a saved one that still cannot be read before saving over it, is reported through onError once and nothing is written. The queue stays dirty, the beat stops asking and the next start tries again. A host that ends first never saves it, so those journals stay unpruned; the session is untouched."
 					},
-					"reason": "Allowlisted catch_clause: The \"saveSealedQueue\" catch is a \"local_recovery\": a prune queue that cannot be saved is reported through onError once and stays dirty; the beat stops asking and the next start saves it again; the session is untouched. Verified recovery: \"local_recovery\" in \"saveSealedQueue\"."
+					"reason": "Allowlisted catch_clause: The \"saveSealedQueue\" catch is a \"local_recovery\": a prune queue that cannot be saved, or a saved one that still cannot be read before saving over it, is reported through onError once and nothing is written. The queue stays dirty, the beat stops asking and the next start tries again. A host that ends first never saves it, so those journals stay unpruned; the session is untouched. Verified recovery: \"local_recovery\" in \"saveSealedQueue\"."
 				},
 				{
 					"id": "6cbbb0836dfb071587f2543e51de07446397417b",
 					"kind": "callback_registration",
-					"line": 705,
+					"line": 724,
 					"column": 16,
-					"endLine": 705,
+					"endLine": 724,
 					"endColumn": 147,
 					"registration": "then",
 					"classification": "allowlisted",
