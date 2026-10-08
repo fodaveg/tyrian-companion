@@ -2,7 +2,14 @@
 
 ## Release beta 0.6.11 - el monstruo como icono propio del plugin en Hebra
 
-Release por tag `0.6.11`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación y ver el icono pintado).
+[Canal 0.6.11 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.11);
+**instalación/runtime pendiente**. Tag `0.6.11` sobre `6ce6bb3` (atestación del candidato `bba18ae`), árbol
+`2199a566541f05a82d3fc88121e98a7a0c966afb`. Gate local previo: `check` 8/8 (5136 tests, 324 archivos, ninguno
+saltado), guardrails 25/25, `release:preflight` en verde y `node scripts/changelog-entry.mjs 0.6.11` con exit 0;
+una primera pasada dio guardrails 24/25 y se arregló en `3b6cadb`. El benchmark H6 y su sabotaje no se corrieron
+en local; los corre la CI de `main`. El workflow de release (run 37738916548) terminó en success y
+`release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo pendiente
+(instalación y ver el icono pintado).
 
 - Icono en Hebra: `hebra.json` lleva ahora `iconImage`, el monstruo como PNG embebido (`data:image/png;base64,…`,
   128 px, cuadrado, unos 22 KB), con `icon: "sword"` como respaldo. Pedido de David el 8 oct 2026 («si se puede

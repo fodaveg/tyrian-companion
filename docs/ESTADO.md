@@ -1,12 +1,29 @@
 # Estado
 
-## Candidato 0.6.11: el monstruo como icono propio en Hebra (8 oct 2026)
+## Canal 0.6.11 publicado: el monstruo como icono propio en Hebra (8 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `0dfc1b6` (main tras la 0.6.10). Lleva un cambio: `hebra.json`
-declara `iconImage` (PNG de 128 px versionado en `assets/hebra-icon.png`) con `icon: "sword"` de respaldo.
-El detalle está en [CHANGELOG](CHANGELOG.md).
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.11](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.11)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.11`. El tag apunta a
+`6ce6bb3` (commit vacío de atestación del candidato `bba18ae`, árbol `2199a566541f05a82d3fc88121e98a7a0c966afb`).
+Parte de `0dfc1b6` (main tras la 0.6.10) y lleva un cambio: `hebra.json` declara `iconImage` (PNG de 128 px
+versionado en `assets/hebra-icon.png`) con `icon: "sword"` de respaldo. El detalle está en [CHANGELOG](CHANGELOG.md).
 
-- Verificado: `scripts/tests/probar-release-package.mjs` (incluye 9 casos negativos de `iconImage` y el positivo),
+- Publicación: el workflow Release (run 37738916548) terminó en success y la CI de `main` (run 37738914422)
+  también. La release tiene ocho assets, todos `uploaded`: `hebra-main.mjs` 3327783, `hebra-styles.css` 118003,
+  `hebra.json` 30793, `main.js` 1887738, `manifest.json` 237, `styles.css` 94537, `tyrian-companion-0.6.11.zip`
+  1982822 y `tyrian-companion-0.6.11.zip.sha256` 94 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view`: «BRAT release contract: PASS (version=0.6.11; assets=8)».
+- `hebra.json` descargado de la release: `version` 0.6.11, `icon` `sword`, `iconImage` con prefijo
+  `data:image/png;base64,`, 22350 bytes descodificados, 128×128, firma PNG, IHDR e IEND correctos, e idéntico byte
+  a byte a `assets/hebra-icon.png` del repo.
+- Gate local previo, sobre el árbol del tag (Fedora, Node v22.23.1, 8 oct 2026): `check` 8/8 (5136 tests, 324
+  ficheros, ninguno saltado), guardrails 25/25, `release:preflight` en verde y `node scripts/changelog-entry.mjs
+  0.6.11` con exit 0. El benchmark H6 y su sabotaje no se corrieron en local; los corre la CI de `main`.
+- Rojo intermedio: una primera pasada sobre `95e0eb8` dio guardrails 24/25 (`beta-channel`): el fixture de esa
+  suite no llevaba `assets/hebra-icon.png`. Se arregló en `3b6cadb` dándole el icono real a la raíz de prueba,
+  sin relajar el empaquetado (que falte el icono sigue siendo un error).
+
+- Verificado en el candidato: `scripts/tests/probar-release-package.mjs` (incluye 9 casos negativos de `iconImage` y el positivo),
   las suites de contrato BRAT, plan BRAT, escáner de seguridad e identidad de release, `src/host/hebra` (209
   tests) y `security-scan`. El paquete de Hebra se armó una vez: `hebra.json` pesa 30793 bytes y su `iconImage`
   empieza por `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAA`.
@@ -15,11 +32,12 @@ El detalle está en [CHANGELOG](CHANGELOG.md).
   del menú (`src/ui/session-command-adapter.ts:16,70`). No hay barra de estado. Con otro nombre a propósito, y
   sin tocar: las vistas del asesor (`package-search`) y de venta (`candy`), el icono `inbox` de una entrada de
   menú y los iconos de acción internos.
-- No verificado: nadie ha visto el icono pintado; el Hebra instalable hoy en Fedora (rpm 0.2.0-5) ignora el campo y
+- No verificado: nadie ha visto el icono pintado en ninguna Hebra (ni web, ni TestFlight, ni Fedora); la instalación de
+  la 0.6.11 en Hebra y en Obsidian/BRAT; el Hebra instalable hoy en Fedora (rpm 0.2.0-5) ignora el campo y
   seguirá pintando la espada hasta el rpm 0.2.0-6; la web `app.hebra.pro` y TestFlight ya lo llevan; ningún plugin
   real había publicado `iconImage` antes; en tema oscuro el contorno oscuro del monstruo se funde con el fondo y lo
   que se ve es el cuerpo rosa.
-- Pendiente: el gate local, la atestación, la publicación y la verificación en Hebra instalada.
+- Pendiente: la verificación en Hebra instalada (con el rpm 0.2.0-6 o la web) y en Obsidian/BRAT.
 
 ## Canal 0.6.10 publicado: «Por hora» con oro y precio bruto `price2` (8 oct 2026)
 
