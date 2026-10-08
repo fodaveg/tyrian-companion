@@ -3613,6 +3613,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// attempt in the middle of a run.
 		const webhookTransport = new HostRequestTransport(this.host.http, {
 			maxRetries: 0, timeoutMs: ALERT_WEBHOOK_TIMEOUT_MS, diagnostics: this.localDebugActions ?? undefined,
+			// Z9: Discord answers 204 with no body; any 2xx is a delivery, whatever it says.
+			ignoreResponseBody: true,
 		});
 		return new AlertEmitter([
 			{
