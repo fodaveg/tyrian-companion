@@ -134,23 +134,33 @@ type ChartRecord = Parameters<typeof liveChartPoint>[2];
 export class LiveChartBuilder {
 	private kept: { point: LiveChartPointV1; ordinal: number; cut: boolean; index: number }[] = [];
 	private stride = 1; private ordinal = 0; private count = 0; private latest: ChartEntry | null = null;
+	/** Kept points that are not cuts (the only ones the stride can thin). */
+	private thinnable = 0;
+	/** Work done so far, for tests that bound the cost without a clock: points valued, and points examined while thinning. */
+	readonly work = { valued: 0, examined: 0 };
 	constructor(private readonly value: (entry: ChartEntry, totals: readonly LiveTotalV1[]) => LiveChartPointV1, private readonly limit = 600) {}
 	/** `totals` are the cumulative totals AFTER `entry`; only read when the entry becomes a point. */
 	push(entry: ChartEntry, totals: () => readonly LiveTotalV1[]): void {
 		const index = this.count; this.count += 1; this.latest = entry;
-		if (index === 0 || entry.breakBefore) this.kept.push({ point: this.value(entry, totals()), ordinal: -1, cut: true, index });
+		if (index === 0 || entry.breakBefore) { this.work.valued += 1; this.kept.push({ point: this.value(entry, totals()), ordinal: -1, cut: true, index }); }
 		else {
 			if (entry.observations.length === 0) return;
 			const ordinal = this.ordinal; this.ordinal += 1;
 			if (ordinal % this.stride !== 0) return;
-			this.kept.push({ point: this.value(entry, totals()), ordinal, cut: false, index });
+			this.work.valued += 1; this.thinnable += 1; this.kept.push({ point: this.value(entry, totals()), ordinal, cut: false, index });
 		}
 		// One point of the budget is left for the latest entry, which closes the line.
 		while (this.kept.length > this.limit - 1) {
-			const filtered = this.kept.filter((row) => row.cut || row.ordinal % (this.stride * 2) === 0);
-			if (filtered.length < this.kept.length) { this.stride *= 2; this.kept = filtered; continue; }
-			// Only cuts are left: the oldest ones after the first merge into the line (the first and the newest stay).
-			this.kept.splice(1, 1);
+			if (this.thinnable > 0) {
+				this.work.examined += this.kept.length;
+				const filtered = this.kept.filter((row) => row.cut || row.ordinal % (this.stride * 2) === 0);
+				if (filtered.length < this.kept.length) { this.stride *= 2; this.kept = filtered; this.thinnable = filtered.reduce((total, row) => total + (row.cut ? 0 : 1), 0); continue; }
+			}
+			// Only cuts can go: the oldest ones after the first merge into the line (the first and the newest stay). They go in
+			// batches of an eighth of the budget, so a long run of cuts costs the same per entry as a long run of points.
+			this.work.examined += this.kept.length;
+			this.kept.splice(1, Math.max(1, Math.ceil(this.limit / 8)));
+			this.thinnable = this.kept.reduce((total, row) => total + (row.cut ? 0 : 1), 0);
 		}
 	}
 	/** The points so far; the latest entry closes the line unless it already is the last point. */

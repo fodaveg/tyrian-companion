@@ -60,8 +60,10 @@ describe('incremental live chart', () => {
 		for (const point of chart) expect(point).toEqual(every.find((candidate) => candidate.observedAt === point.observedAt));
 		expect(chart).not.toEqual(buildLiveChart(entries, cheap));
 	});
+	/** A looting entry built directly (`journal(n)` per entry made the test quadratic). */
+	const loot = (index: number, cut: boolean): LiveJournalEntryV1 => ({ version: 1, sessionId: 's', epoch: 'e', cursor: index, observedAt: new Date(AT + index * 1000).toISOString(),
+		observations: [observation(index, 'item', 30, 1)], breakBefore: cut, alertsProcessed: true, outbox: [] });
 	it('never exceeds 600 points nor loses the first, with cuts piling up after a full chart', () => {
-		const loot = (index: number, cut: boolean) => ({ ...journal(index + 1)[index]!, breakBefore: cut, observations: [observation(index, 'item', 30, 1)] });
 		const entries = Array.from({ length: 599 }, (_, index) => loot(index, index === 0));
 		entries.push(loot(599, true), loot(600, true), { ...loot(601, false), observations: [] });
 		const chart = buildLiveChart(entries, null);
@@ -72,6 +74,18 @@ describe('incremental live chart', () => {
 		let totals: ReturnType<typeof liveObservationTotals> = []; const incremental = new LiveChartBuilder((entry, cumulative) => liveChartPoint(entry, cumulative, null));
 		for (const entry of cuts) { totals = liveObservationTotals(totals, entry.observations); const now = totals; incremental.push(entry, () => now); }
 		expect(incremental.points(() => totals), 'sample by sample = at once').toEqual(many);
+	});
+	it('costs at most linear work however many cuts there are (counted, not timed)', () => {
+		const work = (size: number, cut: (index: number) => boolean) => {
+			const builder = new LiveChartBuilder((entry, cumulative) => liveChartPoint(entry, cumulative, null)); const totals = liveObservationTotals([], [observation(0, 'item', 30, 1)]);
+			for (let index = 0; index < size; index += 1) builder.push(loot(index, cut(index)), () => totals);
+			return builder.work.valued + builder.work.examined;
+		};
+		for (const [label, cut] of [['all cuts', () => true], ['every other', (index: number) => index % 2 === 0], ['no cuts', () => false]] as const) {
+			const small = work(3000, cut); const large = work(12000, cut);
+			expect(large, `${label}: x4 the entries is at most x5 the work (${String(small)} -> ${String(large)})`).toBeLessThanOrEqual(small * 5);
+			expect(large / 12000, `${label}: a bounded amount of work per entry, however long the run`).toBeLessThanOrEqual(12);
+		}
 	});
 	it('keeps the arithmetic overflow guard', () => {
 		const huge = journal(2); huge[0]!.observations = [observation(0, 'item', 1, Number.MAX_SAFE_INTEGER)]; huge[1]!.observations = [observation(1, 'item', 1, 5)];
