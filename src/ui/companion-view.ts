@@ -1454,7 +1454,7 @@ export class TyrianCompanionView {
 	}
 
 	private scheduleRefresh(projection: CompanionStatusProjection, retryAt: number | null, now: number): void {
-		const live = this.actions.getLiveSessionView?.();
+		const live = this.actions.getLiveSessionView?.(0, 1); // only the phase is read: no 200 observations
 		const shouldRefresh = live?.phase === 'active' || live?.phase === 'starting' || live?.phase === 'stopping' || projection.refreshEveryMs !== null || isCoolingDown(retryAt) || this.hasFreshPendingProposal(now)
 			|| (this.actions.getFarmingReminders?.().length ?? 0) > 0;
 		// A hidden window (backgrounded, or a popout tucked behind another) gets no ticking

@@ -1,6 +1,6 @@
 import { formatCopperVisual } from '../core/copper-format';
 import type { LiveGapV1, LiveSessionAlertViewV1, LiveSessionViewV1 } from '../sessions/live-session-model';
-import { liveItemRank, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
+import { sortLiveItemsByValue, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
 import { sha256Text } from '../sessions/session-note-renderer';
 import { reconcileChildren } from './reconcile-children';
 import { coinBadge, compareCoins } from './live-session-coin-badge';
@@ -508,8 +508,7 @@ export class LiveSessionPanel {
 	}
 
 	private renderObjects(view: LiveSessionViewV1): void {
-		const items = view.totals.filter((row) => row.kind === 'item' && row.net !== 0)
-			.sort((a, b) => liveItemRank(b, view.valuation.prices) - liveItemRank(a, view.valuation.prices) || b.net - a.net);
+		const items = sortLiveItemsByValue(view.totals, view.valuation.prices);
 		const total = view.totals.filter((row) => row.kind === 'item').reduce((sum, row) => sum + row.net, 0);
 		this.setText(this.objectsTotal, this.number(total));
 		const wanted: HTMLElement[] = [];
