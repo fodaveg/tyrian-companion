@@ -1,0 +1,21 @@
+test_wrong_inventory_vtable_rejects_before_any_bag_read (test_probe.BagCapacityTests.test_wrong_inventory_vtable_rejects_before_any_bag_read) ... FAIL
+
+======================================================================
+FAIL: test_wrong_inventory_vtable_rejects_before_any_bag_read (test_probe.BagCapacityTests.test_wrong_inventory_vtable_rejects_before_any_bag_read)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "docs/audit/loot-bag-capacity-probe/test_probe.py", line 158, in test_wrong_inventory_vtable_rejects_before_any_bag_read
+    self.assert_unknown(fixture, 'inventory_vtable', reader)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "docs/audit/loot-bag-capacity-probe/test_probe.py", line 116, in assert_unknown
+    self.assertEqual(result['status'], 'unknown')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'candidate_bag_capacity' != 'unknown'
+- candidate_bag_capacity
++ unknown
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

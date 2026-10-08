@@ -1,0 +1,26 @@
+test_bag_identity_and_bounds_reject (test_probe.BagCapacityTests.test_bag_identity_and_bounds_reject) ... ok
+test_bag_slot_count_bounds_reject (test_probe.BagCapacityTests.test_bag_slot_count_bounds_reject) ... ok
+test_bags_beyond_the_unlocked_slot_count_are_not_counted (test_probe.BagCapacityTests.test_bags_beyond_the_unlocked_slot_count_are_not_counted) ... ok
+test_budget_cannot_be_raised_above_the_declared_limit (test_probe.BagCapacityTests.test_budget_cannot_be_raised_above_the_declared_limit) ... ok
+test_byte_budget_rejects_before_more_reads (test_probe.BagCapacityTests.test_byte_budget_rejects_before_more_reads) ... ok
+test_capacity_is_the_sum_of_equipped_bag_sizes_with_full_static_guard (test_probe.BagCapacityTests.test_capacity_is_the_sum_of_equipped_bag_sizes_with_full_static_guard) ... ok
+test_changes_between_rereads_reject (test_probe.BagCapacityTests.test_changes_between_rereads_reject) ... ok
+test_empty_bag_slots_add_nothing (test_probe.BagCapacityTests.test_empty_bag_slots_add_nothing) ... ok
+test_main_other_character_reports_its_own_bags_without_a_delta (test_probe.BagCapacityTests.test_main_other_character_reports_its_own_bags_without_a_delta) ... ok
+test_main_swapping_a_bag_moves_the_capacity (test_probe.BagCapacityTests.test_main_swapping_a_bag_moves_the_capacity) ... ok
+test_main_unknown_sample_exits_two_without_a_value (test_probe.BagCapacityTests.test_main_unknown_sample_exits_two_without_a_value) ... ok
+test_null_and_unmapped_owner_pointers_reject (test_probe.BagCapacityTests.test_null_and_unmapped_owner_pointers_reject) ... ok
+test_out_of_mapping_rejects_before_read (test_probe.BagCapacityTests.test_out_of_mapping_rejects_before_read) ... ok
+test_short_read_rejects_without_partial_value (test_probe.BagCapacityTests.test_short_read_rejects_without_partial_value) ... ok
+test_sixteen_full_bags_and_two_samples_fit_the_declared_budget (test_probe.BagCapacityTests.test_sixteen_full_bags_and_two_samples_fit_the_declared_budget) ... ok
+test_static_guard_mutation_fails_then_restoration_passes (test_probe.BagCapacityTests.test_static_guard_mutation_fails_then_restoration_passes) ... ok
+test_supported_zero_is_distinct_from_unknown (test_probe.BagCapacityTests.test_supported_zero_is_distinct_from_unknown) ... ok
+test_vtable_changed_at_recheck_rejects (test_probe.BagCapacityTests.test_vtable_changed_at_recheck_rejects) ... ok
+test_wrong_dispatch_slot_rejects (test_probe.BagCapacityTests.test_wrong_dispatch_slot_rejects) ... ok
+test_wrong_inventory_vtable_rejects_before_any_bag_read (test_probe.BagCapacityTests.test_wrong_inventory_vtable_rejects_before_any_bag_read) ... ok
+test_wrong_owner_identities_reject (test_probe.BagCapacityTests.test_wrong_owner_identities_reject) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.014s
+
+OK

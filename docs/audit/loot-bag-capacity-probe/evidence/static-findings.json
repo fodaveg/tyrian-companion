@@ -1,0 +1,18 @@
+{
+  "method": "Targeted PE string, RIP-relative, call and absolute xrefs over the file on disk; every hop confirmed by bounded objdump disassembly of its own range. Scratch tooling was temporary and is not retained.",
+  "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "process_access": false,
+  "installs": "none; x86_64-w64-mingw32-objdump, strings and Python 3.14.8 stdlib already present",
+  "verdict": "sum_of_equipped_bags",
+  "counter_source": "Game/Ui/Widgets/Inventory/InvButtonBar.cpp, RVA 0x6A2930: inventory slot 0x1F0 for the total, slot 0x1E8 for the used count, then text 0xBCFA with both numbers",
+  "stored_capacity_found": false,
+  "capacity_method": "inventory vtable 0x21621A8 slot 0x1F0 -> RVA 0x11EE520: loops bag index below slot 0x148 and adds slot 0x140",
+  "bag_slot_count": "DWORD at inventory+0x440 (slot 0x148 -> RVA 0x11EE300); the setter at RVA 0x1291130 asserts it is at most 16",
+  "bag_list": "16 item pointers at inventory+0x380 (slot 0x138 -> RVA 0x12908E0), ChCliItemStorageBags.cpp",
+  "bag_size": "slot 0x140 -> RVA 0x1290930: item slot 8 (RVA 0x13C3E10, item+0x40) gives the definition; definition+0x2C must be 3; definition+0x30 is the bag payload; payload+0x28 is the size",
+  "bag_item_class": "ItCliBag.cpp constructor at RVA 0x13C8CF0 installs vtable 0x225D070, whose slot 8 is the shared definition getter",
+  "array_layout": "position = bag index * 32 + slot in bag (RVA 0x1290860 splits with shr 5; RVA 0x1290AC0 accepts a slot only when bag index < slot count and slot in bag < bag size). The layout alone does not give the sizes.",
+  "used_count": "slot 0x1E8 -> RVA 0x11EE4E0: non-null entries of the array at inventory+0xC8 with count inventory+0xD4",
+  "live_value_proven": false,
+  "artifact_format": "Hashes of guarded ranges only in profile.json; no bytes of the binary and no live data retained"
+}
