@@ -104,9 +104,11 @@ function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutco
 	// leaves the context suspended, leaves nothing pending, and the next alert starts from scratch.
 	if (context.state === 'suspended') {
 		if (resuming.has(createContext)) return 'unavailable';
-		resuming.add(createContext);
 		const alertedAt = Date.now();
+		// The factory is taken only once `resume()` has returned: one that throws outright (`playAlertSound` answers
+		// `unavailable`) leaves nothing pending either, or every later alert would find it taken until a reload.
 		const pending: unknown = context.resume?.();
+		resuming.add(createContext);
 		// `Promise.resolve` adopts any thenable: `instanceof Promise` is false for a promise from
 		// another realm (an Obsidian popout window, an iframe) and would resolve at once, suspended.
 		const settled = Promise.resolve(pending);

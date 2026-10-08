@@ -155,6 +155,24 @@ describe('H13.4 sound channel', () => {
 				expect(scheduled.starts).toEqual([10, 10.15]);
 			});
 
+			it('leaves nothing pending when resume throws at once: the next alert asks again, and sounds', async () => {
+				const { factory, scheduled, handle } = suspendedContext(async () => undefined);
+				let attempts = 0;
+				const resumes = async (): Promise<void> => { attempts += 1; handle.state = 'running'; };
+				// Not a rejected promise: a `resume` that throws before returning one (a context the engine already tore down).
+				handle.resume = () => { attempts += 1; throw new Error('InvalidStateError'); };
+
+				expect(playAlertSound(factory), 'never thrown at the alert emitter').toBe('unavailable');
+				await flush();
+				expect(scheduled.starts).toEqual([]);
+
+				handle.resume = resumes;
+				expect(playAlertSound(factory)).toBe('unavailable');
+				await flush();
+				expect(attempts, 'the second alert called resume again instead of finding the factory taken').toBe(2);
+				expect(scheduled.starts, 'the factory stayed mute after one resume that threw').toEqual([10, 10.15]);
+			});
+
 			it('does not call resume again while the first one is still pending', async () => {
 				const { factory, scheduled, calls } = suspendedContext(() => new Promise<void>(() => {}));
 
