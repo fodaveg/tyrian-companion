@@ -356,7 +356,9 @@ interface Stores {
  * writing that over a longer copy the panel had downloaded cut the chart short for good, with no
  * extra request that could repair it inside the 24 h rule (H18.17). So the days the previous copy
  * has that the new download no longer reaches are kept, and on the days both have, the new one
- * wins. Days stay ascending and unique, which is what `isPriceSeed` requires.
+ * wins. Days stay ascending and unique, which is what `isPriceSeed` requires. The result never has
+ * more days than the longer of the two inputs (the oldest are dropped): a copy refreshed every day
+ * would otherwise gain a day per pass for every item the pass covers, without bound.
  */
 function mergeKeepingOlderDays(previous: PriceSeedV1 | null, fresh: PriceSeedV1): PriceSeedV1 {
 	if (previous === null || previous.days.length === 0 || fresh.days.length === 0) return fresh;
@@ -364,6 +366,8 @@ function mergeKeepingOlderDays(previous: PriceSeedV1 | null, fresh: PriceSeedV1)
 	for (const day of previous.days) byDay.set(day.dayUtc, day);
 	for (const day of fresh.days) byDay.set(day.dayUtc, day);
 	if (byDay.size === fresh.days.length) return fresh;
-	const days = [...byDay.values()].sort((left, right) => (left.dayUtc < right.dayUtc ? -1 : left.dayUtc > right.dayUtc ? 1 : 0));
+	const sorted = [...byDay.values()].sort((left, right) => (left.dayUtc < right.dayUtc ? -1 : left.dayUtc > right.dayUtc ? 1 : 0));
+	const cap = Math.max(previous.days.length, fresh.days.length);
+	const days = sorted.length > cap ? sorted.slice(sorted.length - cap) : sorted;
 	return { ...fresh, days };
 }
