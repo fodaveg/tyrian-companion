@@ -7,6 +7,16 @@ import { trackedIndexedDb } from '../../test/indexed-db-connections';
 import type { TyrianHost, TyrianRuntime } from '../tyrian-host';
 import { activateTyrian, type HebraRuntimeEnvironment } from './hebra-runtime';
 
+/** The real path-index store, whose `close` throws while a test says so: nothing else can make the host's storage close fail. */
+const pathIndexClose = vi.hoisted(() => ({ refuses: false }));
+vi.mock('./path-index-kv', async (importOriginal) => {
+	const real = await importOriginal<typeof import('./path-index-kv')>();
+	return { ...real, createIndexedDbPathIndexKv: (...parameters: Parameters<typeof real.createIndexedDbPathIndexKv>) => {
+		const kv = real.createIndexedDbPathIndexKv(...parameters);
+		return { ...kv, close: () => { if (pathIndexClose.refuses) throw new Error('close refused'); kv.close?.(); } };
+	} };
+});
+
 // What `activate(api)` does with the API (Hebra's `tyrian-runtime.ts` before the move, which had
 // no test of its own: Hebra covered it end to end). The core is replaced by a recording runtime;
 // the real one runs in `src/host/hebra/bundle.test.ts`, inside the built `hebra-main.mjs`.
@@ -94,6 +104,39 @@ describe('activateTyrian', () => {
 		await expect(activateTyrian(test.api, env)).rejects.toThrow('boom');
 		expect(document.body.classList.contains('is-mobile')).toBe(false);
 		expect(test.library.listenerCount()).toBe(0);
+	});
+
+	it('a core that fails to start closes the IndexedDB connections of the path index and the local files too', async () => {
+		const test = createTyrianTestApi({ platform: 'ios' });
+		const tracked = trackedIndexedDb();
+		let closes: ReturnType<typeof vi.spyOn>[] = [];
+		const env = environment({
+			indexedDB: tracked.factory,
+			createRuntime: () => ({
+				start: () => {
+					closes = tracked.connections.filter((connection) => /path-index|local-files/.test(connection.name)).map((connection) => vi.spyOn(connection, 'close'));
+					return Promise.reject(new Error('boom'));
+				},
+				stop: async () => undefined,
+			}),
+		});
+		await expect(activateTyrian(test.api, env)).rejects.toThrow('boom');
+		expect(closes.length, 'the host had opened at least one of its own databases before the core started').toBeGreaterThan(0);
+		for (const close of closes) expect(close).toHaveBeenCalled();
+	});
+
+	it('a storage close that fails after a failed start does not hide the start failure, and is reported', async () => {
+		const failures = { report: vi.fn(), subscribe: vi.fn(() => () => undefined) };
+		const env = environment({
+			failures,
+			createRuntime: () => ({ start: () => Promise.reject(new Error('boom')), stop: async () => undefined }),
+		});
+		pathIndexClose.refuses = true;
+		try {
+			await expect(activateTyrian(createTyrianTestApi({ platform: 'ios' }).api, env), 'Hebra is told why the core did not start').rejects.toThrow('boom');
+		} finally { pathIndexClose.refuses = false; }
+		expect(failures.report).toHaveBeenCalledWith(expect.objectContaining({ message: 'close refused' }), 'start');
+		expect(document.body.classList.contains('is-mobile')).toBe(false);
 	});
 
 	it('shows the unadopted notes in the plugin settings, after the core\'s panel', async () => {

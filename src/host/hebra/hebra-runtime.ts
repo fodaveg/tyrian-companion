@@ -78,6 +78,9 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 	} catch (error) {
 		handle.dispose();
 		removeMobileClass();
+		// No cleanup will ever run for this activation, so the two connections the host opened are closed here. A close that
+		// fails is reported apart: the failure Hebra must see is the one that kept the core from starting.
+		try { handle.closeStorage(); } catch (closeError) { report(closeError, 'start'); }
 		throw error;
 	}
 	// After `start()`: the core's panel stays first in the plugin's settings.
