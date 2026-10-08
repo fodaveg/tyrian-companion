@@ -2,8 +2,12 @@
 
 ## Release beta 0.6.13 - nota resumen al cerrar una sesión en vivo, Base «Sesiones» y arreglos de la auditoría
 
-Release por tag `0.6.13`, tras la auditoría de rendimiento y fallos del 8 oct 2026.
-[ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+[Canal 0.6.13 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.13), tras la auditoría de
+rendimiento y fallos del 8 oct 2026; **instalación/runtime pendiente**. Tag `0.6.13` sobre `e078ea5` (commit vacío de
+atestación), árbol `cb830554fed990be8406effb855ec3cc38ef959f`. Gate local sobre ese árbol: `check` 8/8 (5351 tests,
+333 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run 37781724040) terminó con
+todos los pasos en success y `release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa lo
+medido de lo que nadie ha visto en un cliente real.
 
 - Nota resumen: al cerrar una sesión en vivo se escribe una nota corta en `<carpeta de salida>/summaries/`, después
   de que la nota completa tenga su recibo. Lleva el veredicto (neto, por hora, por hora sin el objeto dominante

@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.13: nota resumen de sesión, Base «Sesiones» y arreglos de la auditoría (8 oct 2026)
+## Canal 0.6.13 publicado: nota resumen de sesión, Base «Sesiones» y arreglos de la auditoría (8 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `9eb8b3e` (0.6.12 publicada) y recoge la auditoría de
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.13](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.13)
+es una release normal, sin draft, publicada el 2026-10-08T13:10:29Z; nombre, tag y `manifest.version` son `0.6.13`. El
+tag (ligero) apunta a `e078ea5dea53abf7c959c4a164205db37d5d36cb` (commit vacío de atestación, árbol
+`cb830554fed990be8406effb855ec3cc38ef959f`). Parte de `9eb8b3e` (0.6.12 publicada) y recoge la auditoría de
 integración (`8001213`, unos 90 commits). Lo que trae, agrupado por lo que nota el usuario, está en
 [CHANGELOG](CHANGELOG.md): la nota resumen al cerrar una sesión en vivo (frontmatter `tyrian_summary_*` versión 3,
 media propia por mapa principal desde 3 sesiones comparables, nombres de mapa por `/v2/maps`), la Base «Sesiones»
@@ -15,6 +18,18 @@ alineados en `manifest.json`, `package.json`, la raíz de `package-lock.json` y 
   solo tocan metadatos y documentación): `check` VEREDICTO: VERDE (8/8), 5351 tests en 333 ficheros;
   `check:guardrails` VEREDICTO: VERDE (25/25); el benchmark `bench:h6-live-session` dentro de presupuesto (fin p95
   44,09 ms de 100; razón fin/inicio 1,052 de 6; cierre 1218,5 ms de 6000; nota 13 059 235 B de 20 MiB).
+- Publicación: el workflow `release.yml` (run 37781724040) terminó con todos los pasos en success, incluidos «Gate»,
+  «BRAT contract as a pre-publication gate» y «Confirm the published release against the contract». La release tiene
+  ocho assets, todos `uploaded`: `hebra-main.mjs` 2620309, `hebra-styles.css` 118003, `hebra.json` 27745, `main.js`
+  1925284, `manifest.json` 237, `styles.css` 94537, `tyrian-companion-0.6.13.zip` 2020368 y
+  `tyrian-companion-0.6.13.zip.sha256` 94 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view 0.6.13 --json tagName,name,isDraft,assets`: «BRAT release contract: PASS (version=0.6.13; assets=8)».
+- Gate local sobre el árbol del tag (`cb830554…`, commit `5ffb22d`): `check` VERDE 8/8 (5351 tests, 333 ficheros),
+  `check:guardrails` VERDE 25/25 (326 tests), `release preflight: pass` y `release package: PASS` con
+  `tyrian-companion-0.6.13.zip` construido en local, sha256
+  `4b18ec13475603430dccd30e9f91a6b011983d54fa6a6a62ab1dc0654a0d6da6`; no se ha comparado con el sha256 del zip
+  publicado.
+- CI de `main` sobre `e078ea5` (run 37781711863): en curso (`status: in_progress`, sin conclusión) al escribir esto.
 - No verificado: nada de la 0.6.13 se ha visto en un cliente real. Ni la nota resumen ni la Base «Sesiones» en
   Obsidian o en Hebra, ni el sonido de los avisos en Hebra, ni un cambio de personaje a mitad de sesión en el juego;
   tampoco la instalación de la 0.6.13 en Hebra ni en Obsidian/BRAT.
@@ -22,10 +37,22 @@ alineados en `manifest.json`, `package.json`, la raíz de `package-lock.json` y 
   almacén y sin sesión activa, uno puede podar journals que el otro retiene. Volver a la 0.6.12 deja los activos
   gestionados en conflicto hasta repararlos (el paquete pasa de 6 a 7).
 - Sigue sin verse de versiones anteriores (listado en las secciones de abajo): el icono con borde de la 0.6.12
-  pintado en Hebra y la instalación de la 0.6.12 en Obsidian/BRAT; en el addon de Nexus 0.8.0 y 0.8.1, una bajada de
+  pintado en Hebra y la instalación de la 0.6.12 en Obsidian/BRAT; en el addon de Nexus 0.8.0, 0.8.1 y 0.8.2, una bajada de
   hallazgo mágico con su aviso, los tooltips, plegar y cerrar, el diagnóstico de Opciones, una sesión larga sin
   parpadeos, el icono nuevo del botón de fondo del addon y Windows.
-- Pendiente: la publicación (tag, release, `release:brat-verify`) y la verificación en clientes reales.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
+
+## Addon de Nexus 0.8.2 publicado (8 oct 2026)
+
+[Addon de Nexus 0.8.2](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.2): tag anotado sobre
+`85f5b54c2bea945b3b34e02140f4fb324c911132`, con dos ficheros: `tyrian_companion_nexus.dll` (4384256 bytes, sha256
+`53053578f6353c70171ebbfca603352df1d12a5f480ef3135106b26697bfab3c`) y `tyrian_companion_nexus.dll.sha256`; la
+descarga de la release se comprobó con `sha256sum -c`. Medido sobre `85f5b54`: 383 tests, `check-dead-thread-code: OK`,
+257 importaciones (la misma lista que el 0.8.1), una exportación (`GetAddonDef`) y dos builds limpios con el mismo
+SHA-256. Requiere Tyrian Companion 0.6.10 o posterior; el protocolo con el plugin no cambia. David lo instaló él
+mismo el 8 oct 2026 con el juego cerrado: `~/.local/share/Steam/steamapps/common/Guild Wars 2/addons/TyrianCompanion.dll`
+tiene el sha256 de la release 0.8.2 y la copia del 0.8.1 quedó como `TyrianCompanion.dll.0.8.1.bak`. Instalado no es
+visto funcionando: no verificado, nada del 0.8.2 se ha visto dentro del juego.
 
 ## Canal 0.6.12 publicado: el monstruo con borde como icono en Hebra (8 oct 2026)
 
