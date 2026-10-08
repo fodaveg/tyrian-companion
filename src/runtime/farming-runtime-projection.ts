@@ -114,7 +114,7 @@ export function projectLiveFarmingIngameState(input: {
 	const { view, goal, now } = input;
 	const output = emptyFarmingIngameState();
 	output.phase = view.phase;
-	output.err = view.phase === 'error' ? 'save' : view.phase !== 'idle' && ['stale', 'unavailable', 'conflict', 'missing'].includes(view.sourceState) ? 'observe' : null;
+	output.err = view.phase === 'error' ? 'save' : view.phase === 'active' && ['stale', 'unavailable', 'conflict', 'missing'].includes(view.sourceState) ? 'observe' : null;
 	output.elapsed = view.elapsedMs === null ? null : Math.floor(view.elapsedMs / 1_000);
 	output.age = evidenceAge(view.lastObservationAt, now);
 	const bags = view.totals.find((row) => row.kind === 'item' && row.idNumber === 36038);

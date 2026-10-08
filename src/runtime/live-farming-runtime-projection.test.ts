@@ -25,6 +25,13 @@ describe('Nexus inventory farm1 projection', () => {
 		expect(project(v)).toMatchObject({ observed: 0, net: 0, lo: null, hi: null, age: 0 });
 	});
 
+	it('reports an observation error only while the session is active, never on a normally finished one', () => {
+		const v = view(); v.sessionId = 'session'; v.phase = 'active'; v.sourceState = 'unavailable';
+		expect(project(v)).toMatchObject({ phase: 'active', err: 'observe' });
+		v.phase = 'complete'; expect(project(v)).toMatchObject({ phase: 'complete', err: null });
+		v.phase = 'error'; expect(project(v)).toMatchObject({ err: 'save' });
+	});
+
 	it('keeps signed net separate from positive increases and derives rate only from covered reader duration', () => {
 		const v = view(); v.phase = 'active'; v.sourceState = 'ready'; v.lastObservationAt = at; v.itemCoverage = 'complete';
 		v.totals = [{ kind: 'item', idNumber: 36038, positive: 4, negative: 6, net: -2 }];
