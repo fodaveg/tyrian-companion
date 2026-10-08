@@ -10570,9 +10570,9 @@
 				{
 					"id": "8508cd8935b74c9ffd787fa7a6ef711172d4fa3b",
 					"kind": "catch_clause",
-					"line": 341,
+					"line": 439,
 					"column": 41,
-					"endLine": 341,
+					"endLine": 439,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10586,9 +10586,9 @@
 				{
 					"id": "7c035d4a49139072cc03c37a219deb6a85d1abd2",
 					"kind": "catch_clause",
-					"line": 451,
+					"line": 554,
 					"column": 5,
-					"endLine": 451,
+					"endLine": 554,
 					"endColumn": 56,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10602,9 +10602,9 @@
 				{
 					"id": "91c1d62daec6aad6537ee5cf7bc3e3a60123810c",
 					"kind": "catch_clause",
-					"line": 463,
+					"line": 566,
 					"column": 3,
-					"endLine": 463,
+					"endLine": 566,
 					"endColumn": 30,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10616,11 +10616,11 @@
 					"reason": "Allowlisted catch_clause: The \"persist\" catch is a \"local_recovery\": a save that throws counts as a refusal by storage and goes to storageLost, which reports the outage once through onError and marks the view failed. Verified recovery: \"local_recovery\" in \"persist\"."
 				},
 				{
-					"id": "bce27172696314d0d3be4f156a7d0eeff42bf453",
+					"id": "9cee5374f79373d1fa55b11959e3854b7b9f688b",
 					"kind": "callback_registration",
-					"line": 504,
+					"line": 607,
 					"column": 16,
-					"endLine": 520,
+					"endLine": 625,
 					"endColumn": 31,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -10633,11 +10633,11 @@
 					"reason": "Allowlisted callback_registration: The \"armHeartbeat\" \"setInterval\" boundary retains a disposable timer and enqueues the fenced operation; enqueue retains rejection reporting. Verified registration: \"setInterval\" in \"armHeartbeat\"."
 				},
 				{
-					"id": "84bd258ca06134a72fbfe3a9289a3ca59ab8301c",
+					"id": "8b2cd40694b8ceb1fa9fe176438b9a5fbdbeb075",
 					"kind": "void_expression",
-					"line": 504,
+					"line": 607,
 					"column": 49,
-					"endLine": 520,
+					"endLine": 625,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10649,44 +10649,11 @@
 					"reason": "Allowlisted void_expression: The \"armHeartbeat\" \"this.enqueue\" boundary retains a disposable timer and enqueues the fenced operation; enqueue retains rejection reporting. Verified target: \"this.enqueue\" in \"armHeartbeat\"."
 				},
 				{
-					"id": "7ddd9f475ee93665839cd8b3166da5e8b9e9eb65",
-					"kind": "catch_clause",
-					"line": 565,
-					"column": 126,
-					"endLine": 565,
-					"endColumn": 225,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "pruneSealed",
-						"justification": "The \"pruneSealed\" catch is a \"local_recovery\": a journal prune that throws is reported through onError and its session id stays queued for the next start, so a failed prune never touches the session or blocks start()."
-					},
-					"reason": "Allowlisted catch_clause: The \"pruneSealed\" catch is a \"local_recovery\": a journal prune that throws is reported through onError and its session id stays queued for the next start, so a failed prune never touches the session or blocks start(). Verified recovery: \"local_recovery\" in \"pruneSealed\"."
-				},
-				{
-					"id": "6cbbb0836dfb071587f2543e51de07446397417b",
-					"kind": "callback_registration",
-					"line": 566,
-					"column": 16,
-					"endLine": 566,
-					"endColumn": 147,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "enqueue",
-						"justification": "The \"enqueue\" \"then\" boundary retains rejection recovery, marks the live source failure and forwards error/state observers while returning the original failure to the caller."
-					},
-					"reason": "Allowlisted callback_registration: The \"enqueue\" \"then\" boundary retains rejection recovery, marks the live source failure and forwards error/state observers while returning the original failure to the caller. Verified registration: \"then\" in \"enqueue\"."
-				},
-				{
 					"id": "9a0dd42adce53d202a058057a2f5881a3d72e7f2",
 					"kind": "catch_clause",
-					"line": 573,
+					"line": 635,
 					"column": 5,
-					"endLine": 573,
+					"endLine": 635,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10698,20 +10665,53 @@
 					"reason": "Allowlisted catch_clause: The \"recoverPruneQueue\" catch is a \"local_recovery\": a prune queue that cannot be read is reported through onError and the prune simply runs with what is in memory; nothing about the session depends on it. Verified recovery: \"local_recovery\" in \"recoverPruneQueue\"."
 				},
 				{
-					"id": "fdeb2e239de9f78aa8bf0efc9563dbc9387c22df",
+					"id": "7ddd9f475ee93665839cd8b3166da5e8b9e9eb65",
 					"kind": "catch_clause",
-					"line": 587,
-					"column": 5,
-					"endLine": 587,
-					"endColumn": 51,
+					"line": 653,
+					"column": 92,
+					"endLine": 653,
+					"endColumn": 191,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "pruneSealed",
-						"justification": "The \"pruneSealed\" catch is a \"local_recovery\": a prune queue that cannot be saved is reported through onError and stays dirty, so the next start saves it again; the session is untouched."
+						"justification": "The \"pruneSealed\" catch is a \"local_recovery\": a journal prune that throws is reported through onError and its session id stays queued for the next start, so a failed prune never touches the session or blocks start()."
 					},
-					"reason": "Allowlisted catch_clause: The \"pruneSealed\" catch is a \"local_recovery\": a prune queue that cannot be saved is reported through onError and stays dirty, so the next start saves it again; the session is untouched. Verified recovery: \"local_recovery\" in \"pruneSealed\"."
+					"reason": "Allowlisted catch_clause: The \"pruneSealed\" catch is a \"local_recovery\": a journal prune that throws is reported through onError and its session id stays queued for the next start, so a failed prune never touches the session or blocks start(). Verified recovery: \"local_recovery\" in \"pruneSealed\"."
+				},
+				{
+					"id": "3b957ea797d76ce6bf47810a3c79ca2fa61e2ede",
+					"kind": "catch_clause",
+					"line": 663,
+					"column": 5,
+					"endLine": 663,
+					"endColumn": 74,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "saveSealedQueue",
+						"justification": "The \"saveSealedQueue\" catch is a \"local_recovery\": a prune queue that cannot be saved is reported through onError once and stays dirty; the beat stops asking and the next start saves it again; the session is untouched."
+					},
+					"reason": "Allowlisted catch_clause: The \"saveSealedQueue\" catch is a \"local_recovery\": a prune queue that cannot be saved is reported through onError once and stays dirty; the beat stops asking and the next start saves it again; the session is untouched. Verified recovery: \"local_recovery\" in \"saveSealedQueue\"."
+				},
+				{
+					"id": "6cbbb0836dfb071587f2543e51de07446397417b",
+					"kind": "callback_registration",
+					"line": 705,
+					"column": 16,
+					"endLine": 705,
+					"endColumn": 147,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "enqueue",
+						"justification": "The \"enqueue\" \"then\" boundary retains rejection recovery, marks the live source failure and forwards error/state observers while returning the original failure to the caller."
+					},
+					"reason": "Allowlisted callback_registration: The \"enqueue\" \"then\" boundary retains rejection recovery, marks the live source failure and forwards error/state observers while returning the original failure to the caller. Verified registration: \"then\" in \"enqueue\"."
 				}
 			]
 		},

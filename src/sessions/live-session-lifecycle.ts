@@ -31,6 +31,13 @@ export interface LiveSessionLifecycleOptions {
 	onComplete?(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[]): Promise<string | null>;
 }
 
+/**
+ * Sealed journals deleted in one pass (a start, or one heartbeat beat). A host that starts finds every session the earlier
+ * one sealed in the queue: they go two per beat, never in a sweep while the plugin loads. Each journal goes in one
+ * key-cursor transaction, so the cost of a pass is the length of those two sessions (about one entry per second observed).
+ */
+const LIVE_JOURNAL_PRUNE_BATCH = 2;
+
 /** Whether this host still holds the session lease, or cannot find out because storage does not answer. */
 type LeaseOwnership = 'owned' | 'lost' | 'unavailable';
 
@@ -52,10 +59,22 @@ interface UnsavedLiveState {
 export class LiveSessionLifecycle {
 	private record: LiveSessionRuntimeRecord | null = null;
 	private journal: LiveJournalEntryV1[] = [];
-	/** Sealed sessions (note receipt durable) that left the `completed` retention: their journal is deleted, retried at the next start if that failed. */
+	/**
+	 * Sealed sessions (note receipt durable) that left the runtime key, with the path of their note; saved under the prune-queue
+	 * key so a host that starts again knows them. Their journal is deleted once this host no longer retains them in `completed`.
+	 */
 	private readonly sealedForPrune = new Map<string,string>();
 	/** True from the moment a session joins the prune queue until the queue is saved. */
 	private queueDirty = false;
+	/** Raised once this host has read, or written itself, a session record that validates with its journal: until then nothing says which session the store still needs, and no journal is deleted. */
+	private registryKnown = false;
+	/** A prune or a save of the queue failed: the beat stops asking (it would report the same failure every five seconds), and the next start asks again. */
+	private pruneHeld = false;
+	/**
+	 * The last sessions this host sealed, kept with their journal for one consumer: `updateAlert(…, receiptOnly, sessionId)`, the
+	 * delivery receipt of an alert that arrives after its session closed. It rewrites the stored journal entry and the note, so
+	 * the journal of these sessions is not pruned while this host runs. A host that starts again has none of this.
+	 */
 	private readonly completed = new Map<string, { record: LiveSessionRuntimeRecord; journal: LiveJournalEntryV1[] }>();
 	private observations: LiveSessionViewV1['observations'] = [];
 	private chart = this.newChart();
@@ -99,6 +118,7 @@ export class LiveSessionLifecycle {
 			if (observations.length !== loaded.record.observationCount || JSON.stringify(liveObservationTotals([], observations)) !== JSON.stringify(loaded.record.totals)) {
 				throw new Error('Live session journal does not match its committed cursor.');
 			}
+			this.registryKnown = true;
 			if (!this.options.enabled()) return;
 			this.recovering = true; this.hostRestarted = true;
 			this.noteNeedsVerification = loaded.record.phase === 'complete';
@@ -120,15 +140,16 @@ export class LiveSessionLifecycle {
 		return await this.enqueue(async () => {
 			if (!this.options.enabled() || this.disposed) return null;
 			if (this.record?.phase === 'active') return this.record.sessionId;
+			this.pruneHeld = false;
 			if (this.record !== null) {
 				if (!await this.saveCompletedNote()) return null;
+				// Queued and saved BEFORE the record leaves the runtime key: from then on only the queue says this session was
+				// sealed, and a host that died after the clear would otherwise leave its journal in the store for ever.
+				if (this.record.summaryReceipt !== null) { this.sealedForPrune.set(this.record.sessionId,this.record.summaryReceipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
 				const cleared = await this.options.persistence.clear(this.record.authority);
 				if (cleared.status !== 'cleared') return null;
 				this.completed.set(this.record.sessionId, { record: this.record, journal: this.journal });
-				if (this.completed.size > 8) {
-					const [oldest, evicted] = this.completed.entries().next().value!;
-					this.completed.delete(oldest); if (evicted.record.summaryReceipt !== null) { this.sealedForPrune.set(oldest,evicted.record.summaryReceipt.path); this.queueDirty = true; }
-				}
+				if (this.completed.size > 8) this.completed.delete(this.completed.keys().next().value!);
 			}
 			await this.pruneSealed();
 			const id = this.options.sessionId(); const acquired = await this.options.coordinator.acquire(id);
@@ -148,7 +169,7 @@ export class LiveSessionLifecycle {
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return null; }
 			this.summaryState = { version: 1, sessionId: id, characters: character === null ? [] : [{ name: character, fromAt: at }], capped: false, summaryWritten: false };
 			await this.options.persistence.saveSummaryState?.(this.summaryState);
-			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = this.newChart(); this.failure = false;
+			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = this.newChart(); this.failure = false; this.registryKnown = true;
 			this.unsaved = null; this.lostPresence = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false; this.noteNeedsVerification = false;
 			this.armHeartbeat(); this.options.onStateChange(); return id;
 		});
@@ -585,6 +606,8 @@ export class LiveSessionLifecycle {
 		if (this.timer !== null) return;
 		this.timer = this.options.setInterval(() => { void this.enqueue(async () => {
 			if (!this.options.enabled() || this.disposed || this.record === null) return;
+			// One bounded pass per beat: the queue a host finds when it starts drains over a few beats, never at load.
+			await this.pruneSealed();
 			if (this.record.phase === 'complete') { if (this.record.summaryReceipt === null || this.noteNeedsVerification) await this.saveCompletedNote(); return; }
 			if (this.handle === null || this.recovering) { await this.reclaim(); return; }
 			const renewed = await this.options.coordinator.renew(this.handle);
@@ -601,25 +624,43 @@ export class LiveSessionLifecycle {
 			if (this.record.connection === 'disconnected' && this.options.now() - this.record.lastPresenceAt >= 600_000) await this.stopInternal(this.record.lastPresenceAt);
 		}); }, LIVE_SOURCE_STALE_MS);
 	}
-	/** A restart does not forget the sealed sessions waiting for their prune: they are read back from the runtime store and pruned. */
+	/**
+	 * A restart does not forget the sealed sessions: they are read back from the runtime store. For the host that starts, none
+	 * of them is retained any more (`completed` is empty), so their journals go, but not here: the load only reads the queue,
+	 * and the heartbeat deletes them one bounded pass per beat.
+	 */
 	private async recoverPruneQueue(): Promise<void> {
 		try {
 			for (const row of await this.options.persistence.loadPruneQueue?.() ?? []) if (!this.sealedForPrune.has(row.sessionId)) this.sealedForPrune.set(row.sessionId,row.receiptPath);
 		} catch (error) { this.options.onError(error); }
-		await this.pruneSealed();
 	}
-	/** A failure to prune breaks nothing: the id stays queued (and saved) for the next start. Never touches the active session or one without a receipt. */
+	/**
+	 * One pass over the queue: at most `LIVE_JOURNAL_PRUNE_BATCH` journals deleted. A failure breaks nothing: the id stays
+	 * queued (and saved) for the next start. Never touches the session of the runtime key, one this host still retains, or
+	 * one without a receipt (it is not in the queue). Deletes nothing at all while this host has not read a valid record, nor
+	 * while another host owns the live session: that host may be retaining these journals.
+	 */
 	private async pruneSealed(): Promise<void> {
-		const before = JSON.stringify([...this.sealedForPrune]);
-		for (const sessionId of [...this.sealedForPrune.keys()]) {
-			if (sessionId === this.record?.sessionId || this.completed.has(sessionId)) { this.sealedForPrune.delete(sessionId); continue; }
-			try { if (await this.options.persistence.pruneLiveJournal?.(sessionId) === true) this.sealedForPrune.delete(sessionId); } catch (error) { this.options.onError(error); /* the id stays queued: retried at the next start */ }
+		if (this.pruneHeld) return;
+		let budget = LIVE_JOURNAL_PRUNE_BATCH;
+		const allowed = this.registryKnown && (this.record?.phase !== 'active' || this.handle !== null);
+		for (const sessionId of allowed ? [...this.sealedForPrune.keys()] : []) {
+			// Retained by this host: a late receipt may still rewrite its journal. It stays queued for the host that starts next.
+			if (this.completed.has(sessionId)) continue;
+			if (sessionId === this.record?.sessionId) { this.sealedForPrune.delete(sessionId); this.queueDirty = true; continue; }
+			if (budget === 0) break;
+			budget -= 1; let pruned = false;
+			try { pruned = await this.options.persistence.pruneLiveJournal?.(sessionId) === true; } catch (error) { this.options.onError(error); /* the id stays queued: retried at the next start */ }
+			if (pruned) { this.sealedForPrune.delete(sessionId); this.queueDirty = true; } else this.pruneHeld = true;
 		}
-		if (JSON.stringify([...this.sealedForPrune]) === before && !this.queueDirty) return;
+		if (this.queueDirty) await this.saveSealedQueue();
+	}
+	/** Saves the queue as it is now. A failure is reported once and the queue stays dirty: the next start saves it. */
+	private async saveSealedQueue(): Promise<void> {
 		try {
 			await this.options.persistence.savePruneQueue?.([...this.sealedForPrune].map(([sessionId, receiptPath]) => ({ sessionId, receiptPath })));
 			this.queueDirty = false;
-		} catch (error) { this.options.onError(error); }
+		} catch (error) { this.options.onError(error); this.pruneHeld = true; }
 	}
 	private async saveCompletedNote(): Promise<boolean> {
 		if (this.record?.phase !== 'complete') return false;

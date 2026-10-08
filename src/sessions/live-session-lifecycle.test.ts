@@ -310,22 +310,129 @@ describe('passive live session lifecycle', () => {
 				if (round < 9) { f.setNow(AT+round*100_000+2000); await f.service.stop(AT+round*100_000+2000); }
 			}
 			expect((await store.readLiveJournal(ids[0]!)).length, 'the failed prune left the journal').toBe(2);
-			expect(await store.loadPruneQueue(), 'and the queue is saved').toEqual([{sessionId:ids[0],receiptPath:'Sessions/live.md'}]);
+			// Every sealed session that left the runtime key is in the saved queue, the eight this host still retains included:
+			// a host that starts again has no other way to know they were sealed.
+			expect(await store.loadPruneQueue(), 'and the queue is saved').toEqual(ids.slice(0,9).map((sessionId) => ({sessionId,receiptPath:'Sessions/live.md'})));
 			await f.service.dispose(); failing = false; await seed?.(store, ids); prune.mockClear();
-			const restarted = new LiveSessionLifecycle({...f.options}); await restarted.initialize();
-			return { store, ids, restarted, prune };
+			let interval: (() => void) | null = null;
+			const restarted = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {interval=callback;return 2;}}); await restarted.initialize();
+			return { store, ids, restarted, prune, beat: async () => { interval!(); await restarted.capture(); } };
 		}
 		it.each(['false','throw'] as const)('a prune that %s is done by the next host start', async (failure) => {
-			const { store, ids, restarted } = await sealedAndRestarted(failure);
-			expect(await store.readLiveJournal(ids[0]!), 'pruned after the restart').toEqual([]); expect(await store.loadPruneQueue()).toEqual([]);
+			const { store, ids, restarted, beat } = await sealedAndRestarted(failure);
+			expect((await store.readLiveJournal(ids[0]!)).length, 'the load itself deletes nothing').toBe(2);
+			await beat(); expect(await store.readLiveJournal(ids[0]!), 'pruned after the restart').toEqual([]);
+			for (let beats = 0; beats < 4; beats += 1) await beat();
+			for (const id of ids.slice(0,9)) expect(await store.readLiveJournal(id), `pruned ${id}`).toEqual([]);
+			expect(await store.loadPruneQueue()).toEqual([]);
 			expect((await store.readLiveJournal(ids[9]!)).length, 'the session the runtime holds is untouched').toBe(2);
 			expect(await store.load(), 'and the runtime record reads as before for any version that ignores the queue key').toMatchObject({status:'live'});
 			await restarted.dispose(); store.close();
 		});
 		it('never prunes the session the runtime holds, whatever the queue says', async () => {
-			const { store, ids, restarted, prune } = await sealedAndRestarted('false', async (target, sessionIds) => { await target.savePruneQueue([{sessionId:sessionIds[9]!,receiptPath:'x.md'}]); });
-			expect(prune.mock.calls.map(([id]) => id), 'not even asked').not.toContain(ids[9]);
+			const { store, ids, restarted, prune, beat } = await sealedAndRestarted('false', async (target, sessionIds) => { await target.savePruneQueue([{sessionId:sessionIds[9]!,receiptPath:'x.md'},{sessionId:sessionIds[0]!,receiptPath:'y.md'}]); });
+			await beat(); expect(prune.mock.calls.map(([id]) => id), 'not even asked: only the other one is').toEqual([ids[0]]);
+			expect(await store.loadPruneQueue(), 'and it leaves the queue').toEqual([]);
 			expect((await store.readLiveJournal(ids[9]!)).length).toBe(2); await restarted.dispose(); store.close();
+		});
+	});
+	describe('the journals of the sessions an earlier host closed', () => {
+		/** A first host that ran `closed` sealed sessions and one more (left active unless `closeLast`), each with a two-entry journal. */
+		async function earlierHost(closed: number, closeLast = false) {
+			const f = fixture(); const ids: string[] = []; let firstInterval: (() => void) | null = null;
+			const first = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {firstInterval=callback;return 1;}});
+			for (let round = 0; round <= closed; round += 1) {
+				const epoch = `${String.fromCharCode(66+round)}${'A'.repeat(20)}Q`; ids.push((await first.start('Test'))!);
+				f.setNow(AT+round*100_000); await first.open({...f.source,epoch}); await first.commit(f.sample(0,0,{epoch})); f.setNow(AT+round*100_000+1000); await first.commit(f.sample(1,2,{epoch}));
+				if (round < closed || closeLast) { f.setNow(AT+round*100_000+2000); await expect(first.stop(AT+round*100_000+2000)).resolves.toBe(true); }
+			}
+			const host = (overrides: Partial<typeof f.options> = {}) => {
+				let interval: (() => void) | null = null;
+				const service = new LiveSessionLifecycle({...f.options,...overrides,setInterval:(callback) => {interval=callback;return 2;}});
+				return { service, beat: async () => { interval?.(); await service.capture(); } };
+			};
+			const lengths = async () => await Promise.all(ids.map(async (id) => (await f.store.readLiveJournal(id)).length));
+			const queued = async () => (await f.store.loadPruneQueue()).map((row) => row.sessionId);
+			return { f, ids, first, firstBeat: async () => { firstInterval!(); await first.capture(); }, host, lengths, queued };
+		}
+		it('the host that closed them keeps them while it runs, and saves that they are sealed', async () => {
+			const { ids, first, firstBeat, lengths, queued } = await earlierHost(4);
+			for (let beats = 0; beats < 3; beats += 1) await firstBeat();
+			expect(await lengths(), 'a late receipt can still rewrite a retained journal').toEqual([2,2,2,2,2]);
+			expect(await queued(), 'and a host that starts again will know which ones were sealed').toEqual(ids.slice(0,4)); await first.dispose();
+		});
+		it('a sealed session is in the saved queue before it leaves the runtime key', async () => {
+			const { f, ids, first } = await earlierHost(0, true); const seen: string[][] = [];
+			const clear = f.store.clear.bind(f.store);
+			vi.spyOn(f.store,'clear').mockImplementation(async (authority) => { seen.push((await f.store.loadPruneQueue()).map((row) => row.sessionId)); return await clear(authority); });
+			await first.start('Test');
+			expect(seen, 'a host that died right after the clear would still find it').toEqual([[ids[0]]]); await first.dispose();
+		});
+		it('a host that starts again prunes them two per pass, and never the session the runtime holds', async () => {
+			const { ids, first, host, lengths, queued } = await earlierHost(4); await first.dispose();
+			const next = host(); await next.service.initialize();
+			expect(await lengths(), 'the load deletes nothing').toEqual([2,2,2,2,2]);
+			await next.beat();
+			expect(await lengths(), 'a beat prunes one batch, not the whole queue').toEqual([0,0,2,2,2]); expect(await queued()).toEqual(ids.slice(2,4));
+			await next.beat();
+			expect(await lengths(), 'the next beat prunes the rest').toEqual([0,0,0,0,2]); expect(await queued()).toEqual([]);
+			await next.beat();
+			expect(next.service.getRuntime()).toMatchObject({sessionId:ids[4],phase:'active'}); expect(next.service.getJournal()).toHaveLength(2); await next.service.dispose();
+		});
+		it('prunes them as well when the last session was closed and is still the one the runtime holds', async () => {
+			const { ids, first, host, lengths } = await earlierHost(2, true); await first.dispose();
+			const next = host(); await next.service.initialize(); await next.beat();
+			expect(await lengths()).toEqual([0,0,2]); expect(next.service.getRuntime()).toMatchObject({sessionId:ids[2],phase:'complete'}); await next.service.dispose();
+		});
+		it('prunes nothing while the runtime record is missing', async () => {
+			const { f, ids, first, host, lengths, queued } = await earlierHost(2, true); await first.start('Test'); await first.dispose();
+			await f.store.forceClear();
+			const next = host(); await next.service.initialize(); await next.beat();
+			expect(await lengths(), 'nothing says which session the store still needs').toEqual([2,2,2]); expect(await queued(), 'and the queue waits').toEqual(ids);
+			// Not even the start that follows prunes: only once this host has written the record itself do the beats take the queue up.
+			await expect(next.service.start('Test')).resolves.not.toBeNull();
+			expect(await lengths()).toEqual([2,2,2]);
+			await next.beat(); await next.beat();
+			expect(await lengths()).toEqual([0,0,0]); expect(await queued()).toEqual([]); await next.service.dispose();
+		});
+		it('prunes nothing while the runtime record does not validate, or its journal does not match it', async () => {
+			const corrupt = await earlierHost(2); await corrupt.first.dispose();
+			vi.spyOn(corrupt.f.store,'loadLive').mockResolvedValue({status:'error',code:'corrupt'});
+			const unreadable = corrupt.host(); await unreadable.service.initialize(); await unreadable.beat();
+			await expect(unreadable.service.start('Test'), 'the record in the way refuses the start, which prunes nothing either').resolves.toBeNull();
+			expect(await corrupt.lengths()).toEqual([2,2,2]); expect(await corrupt.queued()).toEqual(corrupt.ids.slice(0,2)); await unreadable.service.dispose();
+
+			const mismatch = await earlierHost(2); await mismatch.first.dispose();
+			vi.spyOn(mismatch.f.store,'readLiveJournal').mockResolvedValueOnce([]);
+			const broken = mismatch.host(); await expect(broken.service.initialize()).rejects.toThrow('Live session journal does not match its committed cursor.'); await broken.beat();
+			expect(await mismatch.lengths()).toEqual([2,2,2]); expect(await mismatch.queued()).toEqual(mismatch.ids.slice(0,2)); await broken.service.dispose();
+		});
+		it('a prune that fails is reported once, not at every beat, and asked again at the next start', async () => {
+			const { f, first, host, lengths } = await earlierHost(2); await first.dispose();
+			const prune = vi.spyOn(f.store,'pruneLiveJournal').mockRejectedValueOnce(new Error('boom'));
+			const next = host(); await next.service.initialize(); await next.beat();
+			expect(await lengths(), 'the other one of the batch still goes').toEqual([2,0,2]);
+			for (let beats = 0; beats < 3; beats += 1) await next.beat();
+			expect(prune).toHaveBeenCalledTimes(2); expect(vi.mocked(f.options.onError).mock.calls.filter(([error]) => (error as Error).message === 'boom')).toHaveLength(1);
+			await expect(next.service.stop(AT+300_000)).resolves.toBe(true); await next.service.start('Test');
+			expect(await lengths(), 'the next start asks again; the session just closed is retained').toEqual([0,0,2]); await next.service.dispose();
+		});
+		it('a queue that cannot be saved is reported once, not at every beat', async () => {
+			const { f, first, host, lengths } = await earlierHost(2); await first.dispose();
+			const save = vi.spyOn(f.store,'savePruneQueue').mockRejectedValue(new Error('queue'));
+			const next = host(); await next.service.initialize();
+			for (let beats = 0; beats < 3; beats += 1) await next.beat();
+			expect(await lengths()).toEqual([0,0,2]); expect(save).toHaveBeenCalledTimes(1);
+			expect(vi.mocked(f.options.onError).mock.calls.filter(([error]) => (error as Error).message === 'queue')).toHaveLength(1); await next.service.dispose();
+		});
+		it('a host that does not own the live session prunes nothing until the lease is its own', async () => {
+			const { f, first, firstBeat, host, lengths } = await earlierHost(2); let busy = true;
+			const next = host({coordinator:{...f.options.coordinator,acquire:async (id) => busy
+				? {status:'busy',ownerExpiresAt:AT+120000,ownerInstanceId:'host',ownerMachineId:'machine'} : await f.options.coordinator.acquire(id)}});
+			await next.service.initialize(); await next.beat(); await firstBeat();
+			expect(await lengths(), 'the owner may still be rewriting the journals it retains').toEqual([2,2,2]);
+			await first.dispose(); busy = false; await next.beat(); await next.beat();
+			expect(await lengths()).toEqual([0,0,2]); await next.service.dispose();
 		});
 	});
 	describe('a presence held back during a loss', () => {
