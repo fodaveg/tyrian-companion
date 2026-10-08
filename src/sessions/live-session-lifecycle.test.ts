@@ -813,6 +813,9 @@ describe('characters seen by a live session', () => {
 		expect(isLiveSessionSummaryState({ ...ok, characters: Array.from({ length: 33 }, (_, index) => ({ name: `P${String(index)}`, fromAt: at })) })).toBe(false);
 		expect(isLiveSessionSummaryState({ ...ok, characters: [{ name: '', fromAt: at }] })).toBe(false);
 		expect(isLiveSessionSummaryState({ ...ok, extra: 1 })).toBe(false);
+		// The same limit as the context the reducer accepts: 32 code points, whatever their UTF-16 length.
+		expect(isLiveSessionSummaryState({ ...ok, characters: [{ name: '🔥'.repeat(32), fromAt: at }] })).toBe(true);
+		expect(isLiveSessionSummaryState({ ...ok, characters: [{ name: '🔥'.repeat(33), fromAt: at }] })).toBe(false);
 		expect(isLiveSessionSummaryState({ ...ok, characters: [{ name: 'A', fromAt: 'ayer' }] })).toBe(false);
 	});
 });

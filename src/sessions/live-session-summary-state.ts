@@ -5,7 +5,7 @@ import { date, keys, record } from './live-session-reducer';
  * Local facts about a live session that the CLOSED runtime record cannot hold (a 0.6.12 plugin that
  * finds an extra key in that record refuses to load it, and no session can start): the characters it
  * saw, and whether its summary note was already written. They live under their own key of the same
- * runtime store, which 0.6.12 never reads. Losing or failing to read it only costs the character line
+ * runtime store, which 0.6.12 never reads. A name is measured in code points, like the context the reducer validates. Losing or failing to read it only costs the character line
  * and one extra attempt at the summary; nothing else depends on it.
  */
 export const LIVE_SUMMARY_STATE_KEY = 'live-session-summary-state';
@@ -25,7 +25,7 @@ export function isLiveSessionSummaryState(value: unknown): value is LiveSessionS
 		&& typeof value.sessionId === 'string' && value.sessionId.length > 0 && typeof value.capped === 'boolean' && typeof value.summaryWritten === 'boolean'
 		&& Array.isArray(value.characters) && value.characters.length <= LIVE_SESSION_MAX_CHARACTERS
 		&& value.characters.every((entry) => record(entry) && keys(entry, ['name', 'fromAt']) && typeof entry.name === 'string'
-			&& entry.name.length > 0 && entry.name.length <= 32 && date(entry.fromAt));
+			&& entry.name.length > 0 && [...entry.name].length <= 32 && date(entry.fromAt));
 }
 
 /** Adds a character seen at `at` when it differs from the last one; at the cap the list stops and says so. */
