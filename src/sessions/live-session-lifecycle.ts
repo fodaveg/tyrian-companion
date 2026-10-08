@@ -234,10 +234,9 @@ export class LiveSessionLifecycle {
 			if (this.record?.phase !== 'active') return;
 			const ownership = await this.ready();
 			const evidencedAt = atMs ?? (connected ? this.options.now() : this.record.lastPresenceAt);
-			if (ownership === 'lost') {
-				this.lostPresence = { connected, evidencedAt: Math.max(this.lostPresence?.evidencedAt ?? 0, Math.min(this.options.now(), evidencedAt)) };
-				return;
-			}
+			// Nobody can write it now (lease lost, or the store no longer takes this writer): the reclaim applies the last report.
+			const lose = (): void => { this.lostPresence = { connected, evidencedAt: Math.max(this.lostPresence?.evidencedAt ?? 0, Math.min(this.options.now(), evidencedAt)) }; };
+			if (ownership === 'lost') { lose(); return; }
 			// The last report wins, but never moves the evidence of presence backwards.
 			const unwritten = (): void => {
 				const unsaved = this.storageLost();
@@ -247,8 +246,9 @@ export class LiveSessionLifecycle {
 			const next = this.withPresence(this.record, connected, evidencedAt);
 			const saved = await this.persist(next);
 			if (saved === 'unavailable') { unwritten(); return; }
-			if (saved !== 'saved') throw new Error('Could not persist live presence.');
-			this.record = next; this.options.onStateChange();
+			if (saved !== 'saved') { lose(); return; }
+			// Written: whatever was held back during an earlier loss is older than this report and must not be applied over it.
+			this.record = next; this.lostPresence = null; this.options.onStateChange();
 		});
 	}
 
@@ -377,8 +377,7 @@ export class LiveSessionLifecycle {
 		// in between, and whoever held it may have written: what is on disk is read again and settled
 		// under the rules of a takeover before anything is saved. The fence says so on every attempt;
 		// `acquired` only says it on the attempt that took the lease, which may have ended before saving.
-		const fenceChanged = acquisition.handle.fence !== this.record.authority.fence;
-		if (fenceChanged) this.recovering = true;
+		if (acquisition.handle.fence !== this.record.authority.fence) this.recovering = true;
 		this.handle = acquisition.handle;
 		// An attempt that ends here keeps no handle, as one that ends at the save below: until the
 		// session is saved under this lease, no queued operation may write under it.
@@ -405,8 +404,6 @@ export class LiveSessionLifecycle {
 			const outage = this.unsaved ?? { gapReason: null, epochEnded: false, sourceDisconnectedAt: null, presence: null };
 			next = this.withUnsaved(this.record, { ...outage, gapReason: outage.gapReason ?? 'storage_unavailable' });
 			if (this.lostPresence !== null) next = this.withPresence(next, this.lostPresence.connected, this.lostPresence.evidencedAt);
-			// The lease changed hands in between: the map the player was on may have changed unobserved.
-			if (fenceChanged) next.mapCoveragePartial = true;
 		}
 		next = { ...next, authority: sessionAuthorityFromLease(acquisition.handle), epoch: null, lastSample: null,
 			fingerprint: null, persistedAt: this.options.now() };

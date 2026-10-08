@@ -44,7 +44,7 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 		currencyCoverage: 'none', unknownPositions: 0, freeSlots: null, rows: [{ kind: 'item', idNumber: 12147, quantity }],
 		observedAt: new Date(now).toISOString(), ...override });
 	return { service, store, source, sample, options, onCommitted, onComplete, renew,
-		setNow: (at: number) => { now = at; }, loseLease: () => { owned = false; }, tick: async () => { interval?.(); await service.presence(false, now); } };
+		setNow: (at: number) => { now = at; }, loseLease: () => { owned = false; }, regainLease: () => { owned = true; }, tick: async () => { interval?.(); await service.presence(false, now); } };
 }
 
 describe('passive live session lifecycle', () => {
@@ -298,6 +298,43 @@ describe('passive live session lifecycle', () => {
 			const { store, ids, restarted, prune } = await sealedAndRestarted('false', async (target, sessionIds) => { await target.savePruneQueue([{sessionId:sessionIds[9]!,receiptPath:'x.md'}]); });
 			expect(prune.mock.calls.map(([id]) => id), 'not even asked').not.toContain(ids[9]);
 			expect((await store.readLiveJournal(ids[9]!)).length).toBe(2); await restarted.dispose(); store.close();
+		});
+	});
+	describe('a presence held back during a loss', () => {
+		async function reclaimed(report: (svc: LiveSessionLifecycle, f: ReturnType<typeof fixture>) => Promise<void>) {
+			const f = fixture(); let beat: (() => void) | null = null;
+			const svc = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {beat=callback;return 1;}});
+			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true);
+			await report(svc,f);
+			f.renew.mockResolvedValueOnce({status:'lost'} as never); f.setNow(AT+20*60_000);
+			beat!(); await svc.capture(); beat!(); await svc.capture();
+			return svc;
+		}
+		it('an old disconnect written over by a later connect is not applied at the next reclaim', async () => {
+			const svc = await reclaimed(async (service, f) => {
+				f.loseLease(); await service.presence(false,AT+1000); f.regainLease(); f.setNow(AT+2000); await service.presence(true);
+			});
+			expect(svc.getRuntime(), 'the game stayed linked').toMatchObject({phase:'active',connection:'connected'}); await svc.dispose();
+		});
+		it('an old connect does not cover a real disconnect that was written afterwards', async () => {
+			const svc = await reclaimed(async (service, f) => {
+				f.loseLease(); await service.presence(true); f.regainLease(); f.setNow(AT+2000); await service.presence(false,AT+1500);
+			});
+			expect(svc.getRuntime(), 'the disconnect stands').toMatchObject({phase:'active',connection:'disconnected'}); await svc.dispose();
+		});
+		it('a presence held back in a finished session is not applied to the next one', async () => {
+			const f = fixture(); let beat: (() => void) | null = null;
+			const svc = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {beat=callback;return 1;}});
+			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true);
+			f.loseLease(); await svc.presence(false,AT+1000); f.regainLease(); f.setNow(AT+2000); await svc.stop(AT+2000);
+			f.setNow(AT+3000); const epoch = 'CAAAAAAAAAAAAAAAAAAAAQ'; await svc.start('Test'); await svc.open({...f.source,epoch}); await svc.commit(f.sample(0,0,{epoch}));
+			f.renew.mockResolvedValueOnce({status:'lost'} as never); f.setNow(AT+20*60_000); beat!(); await svc.capture(); beat!(); await svc.capture();
+			expect(svc.getRuntime(), 'the new session keeps its own presence').toMatchObject({phase:'active',connection:'connected'}); await svc.dispose();
+		});
+		it('a presence the store refuses as stale does not throw: it is held back like one sent during a loss', async () => {
+			const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+			vi.spyOn(f.store,'saveLive').mockResolvedValueOnce({ status: 'stale' });
+			await expect(f.service.presence(false,AT+1000)).resolves.toBeUndefined(); await f.service.dispose();
 		});
 	});
 	describe('after a suspension, with the real lease coordinator', () => {
