@@ -84,6 +84,18 @@ describe('createTyrianVaultPort: create', () => {
 		await expect(vault.create('a.md', 'two')).rejects.toThrow(/already exists/u);
 	});
 
+	it('create(), createFolder() and trashFile() succeed when the index cannot be saved, and a second create() does not see a ghost', async () => {
+		const library = setupLibrary();
+		const down = { get: async () => undefined, set: () => Promise.reject(new Error('down')) };
+		const index = await TyrianPathIndex.load(down, 'lib-1');
+		const vault = createTyrianVaultPort({ library, index, rootFolderId: ROOT });
+		await expect(vault.create('a.md', 'one')).resolves.toMatchObject({ path: 'a.md' });
+		await expect(vault.createFolder('Inventory')).resolves.toBeUndefined();
+		await expect(vault.trashFile({ path: 'a.md' })).resolves.toBeUndefined();
+		await expect(vault.create('a.md', 'two')).resolves.toMatchObject({ path: 'a.md' });
+		expect([...library.notes.values()].filter((row) => row.trashedAt === null)).toHaveLength(1);
+	});
+
 	it('create() of a file already in the folder that the index did not know: adopted and refused, no duplicate', async () => {
 		const library = setupLibrary();
 		library.addFolder('bases', ROOT, 'Bases');
