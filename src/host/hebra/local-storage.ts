@@ -139,32 +139,84 @@ export function createLocalFileStorage(backend: LocalFileBackend, libraryId: str
 	const prefix = `${libraryId}/`;
 	const dirMarker = (path: string): string => `${prefix}${trimSlashes(path)}/`;
 	const fileKey = (path: string): string => `${prefix}${trimSlashes(path)}`;
+	/** The chunk keys of a file, in append order. */
+	const chunkKeysOf = async (path: string): Promise<string[]> => {
+		const start = `${fileKey(path)}${CHUNK_SEPARATOR}`;
+		return (await backend.keys()).filter((key) => key.startsWith(start)).sort();
+	};
+	const chunkKey = (path: string, index: number): string =>
+		`${fileKey(path)}${CHUNK_SEPARATOR}${String(index).padStart(CHUNK_INDEX_DIGITS, '0')}`;
+	/** `undefined` when the file has neither a whole value nor chunks. */
+	const readAll = async (path: string): Promise<string | undefined> => {
+		const whole = await backend.get(fileKey(path));
+		const chunks = await chunkKeysOf(path);
+		if (whole === undefined && chunks.length === 0) return undefined;
+		let text = whole ?? '';
+		for (const key of chunks) text += await backend.get(key) ?? '';
+		return text;
+	};
+	const dropChunks = async (path: string): Promise<void> => {
+		for (const key of await chunkKeysOf(path)) await backend.delete(key);
+	};
 	return {
 		async exists(path) {
 			if (await backend.get(fileKey(path)) !== undefined) return true;
 			const dir = dirMarker(path);
-			return (await backend.keys()).some((key) => key.startsWith(dir));
+			const chunks = `${fileKey(path)}${CHUNK_SEPARATOR}`;
+			return (await backend.keys()).some((key) => key.startsWith(dir) || key.startsWith(chunks));
 		},
 		async read(path) {
-			const value = await backend.get(fileKey(path));
+			const value = await readAll(path);
 			if (value === undefined) throw new Error(`tyrian local: ${path} does not exist`);
 			return value;
 		},
-		write: async (path, data) => { await backend.set(fileKey(path), data); },
+		async write(path, data) {
+			// Chunks first: a file never reads back as the new whole value followed by old chunks.
+			await dropChunks(path);
+			await backend.set(fileKey(path), data);
+		},
 		async append(path, data) {
-			const current = await backend.get(fileKey(path)) ?? '';
-			await backend.set(fileKey(path), `${current}${data}`);
+			// Only the last chunk is rewritten, so a line costs at most `APPEND_CHUNK_CHARS` of writes
+			// however long the log is. A value saved by an older build stays the file's first part.
+			const chunks = await chunkKeysOf(path);
+			const last = chunks.at(-1);
+			if (last === undefined) {
+				await backend.set(chunkKey(path, 0), data);
+				return;
+			}
+			const current = await backend.get(last) ?? '';
+			if (current.length + data.length <= APPEND_CHUNK_CHARS) {
+				await backend.set(last, `${current}${data}`);
+				return;
+			}
+			const lastIndex = Number(last.slice(last.lastIndexOf(CHUNK_SEPARATOR) + 1));
+			await backend.set(chunkKey(path, lastIndex + 1), data);
 		},
 		mkdir: async (path) => { await backend.set(dirMarker(path), ''); },
-		remove: async (path) => { await backend.delete(fileKey(path)); },
+		async remove(path) {
+			await dropChunks(path);
+			await backend.delete(fileKey(path));
+		},
 		async rename(path, destination) {
-			const value = await backend.get(fileKey(path));
+			const value = await readAll(path);
 			if (value === undefined) throw new Error(`tyrian local: ${path} does not exist`);
+			await dropChunks(destination);
 			await backend.set(fileKey(destination), value);
+			await dropChunks(path);
 			await backend.delete(fileKey(path));
 		},
 	};
 }
+
+/**
+ * A file grows in chunks of this many characters under `<file key><separator><index>`: appending a
+ * diagnostic line used to read and write the whole file (filling the 2 MiB log wrote 6 GiB). The
+ * file reads as its whole value (the layout of older builds, and what `write` makes) followed by
+ * its chunks.
+ */
+const APPEND_CHUNK_CHARS = 4096;
+const CHUNK_SEPARATOR = '\u0000';
+const CHUNK_INDEX_DIGITS = 8;
 
 function trimSlashes(path: string): string {
 	return path.replace(/^\/+|\/+$/gu, '');

@@ -501,7 +501,11 @@ describe('createHebraHost: the other ports', () => {
 		const handle = await createHebraHost(deps(createTyrianTestApi(), { fileBackend }));
 		expect(handle.host.diagnostics.directory).toBe('.hebra/plugins/tyrian-companion/logs');
 		await handle.host.diagnostics.storage.append(`${handle.host.diagnostics.directory}/a`, 'x');
-		expect(await fileBackend.keys()).toEqual(['library-1/.hebra/plugins/tyrian-companion/logs/a']);
+		// An appended file lives in chunks under its own key (see `createLocalFileStorage`).
+		expect(await handle.host.diagnostics.storage.read(`${handle.host.diagnostics.directory}/a`)).toBe('x');
+		const keys = await fileBackend.keys();
+		expect(keys).toHaveLength(1);
+		expect(keys[0]?.startsWith('library-1/.hebra/plugins/tyrian-companion/logs/a')).toBe(true);
 	});
 });
 
