@@ -1315,7 +1315,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			vault: labelledVault(host.vault, 'Session summary note'), runtime: () => this.liveSessions?.getRuntime() ?? null,
 			journal: () => this.liveSessions?.getJournal() ?? [], locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
 			displayNames: (record) => Object.fromEntries(record.totals.map((row) => [`${row.kind}:${row.idNumber}`, this.getLiveSessionEntity(row.kind, row.idNumber)?.name ?? String(row.idNumber)])),
+			itemMeta: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedItems(ids, this.settings.language);
+				return Object.fromEntries(Object.values(cached).map((item) => [item.id, { flags: item.flags, type: item.type }])); },
+			mapNames: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedMaps(ids, this.settings.language);
+				const missing = ids.filter((id) => cached[String(id)] === undefined);
+				const fetched = missing.length === 0 ? {} : await this.sessionCatalog.resolveMaps(missing, this.settings.language);
+				return Object.fromEntries(Object.entries({ ...cached, ...fetched }).map(([id, map]) => [id, map.name])); },
 			enabled: () => !consulting(this) && !this.unloaded, now: () => Date.now(),
+			startTimer: (callback, ms) => { const handle = window.setTimeout(callback, ms); return () => { window.clearTimeout(handle); }; },
 			onFailure: (details) => { this.localDebugActions?.event({ component: 'session', action: 'session_finish', state: 'live_summary_write',
 				level: 'error', phase: 'failure', code: 'storage_failure', details }); },
 		});

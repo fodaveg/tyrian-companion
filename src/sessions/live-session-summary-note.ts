@@ -1,35 +1,29 @@
 import { formatCopperVisual } from '../core/copper-format';
 import { errorClassName } from '../core/local-debug-error-details';
 import { ensureFoldersBySegments } from '../core/vault-folders';
-import type { LiveGapV1 } from './live-session-model';
-import { sortLiveItemsByValue } from './live-session-history';
+import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, SUMMARY_MIN_RATE_MS, summaryMainMap,
+	type SummaryCharacter, type SummaryItemMetaMap } from './live-session-summary-figures';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { normalizeSessionOutputFolder } from './session-note-model';
 import type { SessionNoteVault } from './session-note-writer';
 
 /**
- * The short summary note of a closed live session (David, 2026-10-08: «una nota resumen cada vez
- * que se cierra la sesión», in a subfolder of the folder chosen in settings).
- *
- * It is built only from the stored payload the full note already carries, so it invents nothing:
- * the figures follow the Session tab's own validity rules (`liveSessionValue`,
- * `liveSessionRatePerHour`) and a figure that tab would not show is written as unavailable, with
- * its reason, never as a zero.
+ * The short summary note of a closed live session (David, 2026-10-08), in a subfolder of the folder
+ * chosen in settings. It is built only from the stored payload the full note already carries plus
+ * what the caller read from caches (item flags and types, map names, previous summaries): it invents
+ * nothing, and a figure that cannot be trusted is written as unavailable, with its reason.
  *
  * Its frontmatter deliberately has NO key starting with `tc_`. The history reads every note of the
  * vault: `inspectLiveSessionNote` takes `tc_schema`/`tc_kind`/`tc_source` as a session candidate, and
  * `inspectDurableSessionNote` (`hasTcHint`) treats ANY other `tc_*` key without a known `tc_kind` as an
- * invalid session note, which leaves the whole history out of service (measured: a `tc_summary_of`
- * key made `LiveSessionHistoryService.list()` answer `conflict`). Hebra's adoption likewise flags a
- * Tyrian `tc_kind` it cannot map to a path. The keys here are `tyrian_summary_*`.
+ * invalid session note, which leaves the whole history out of service (measured). Hebra's adoption
+ * likewise flags a Tyrian `tc_kind` it cannot map to a path. The keys here are `tyrian_summary_*`.
  */
 
 /** Fixed subfolder of the output folder, next to `sessions/` (the repo's subfolders are not localized). */
 export const LIVE_SESSION_SUMMARY_FOLDER = 'summaries';
-/** The Halloween bag item (`projectLiveFarmingIngameState` reads the same id). */
-const HALLOWEEN_BAG_ITEM_ID = 36038;
 const TOP_ITEMS = 5;
-const TOP_MAPS = 5;
+const MAX_LISTED_GAPS = 8;
 
 export interface LiveSessionSummaryInput {
 	session: StoredLiveSessionPayloadV1;
@@ -38,16 +32,29 @@ export interface LiveSessionSummaryInput {
 	/** Vault path of the full session note, as the receipt records it. */
 	fullNotePath: string;
 	displayNames?: Readonly<Record<string, string>>;
+	/** Characters of the session in order of appearance (the runtime record's list); absent or empty means unknown. */
+	characters?: readonly SummaryCharacter[];
+	/** Item flags and types read from the catalog cache; an item without an entry is one the plugin could not read. */
+	itemMeta?: SummaryItemMetaMap;
+	/** Map names read from the cache or the public API; without one the note writes «Mapa <id>». */
+	mapNames?: Readonly<Record<string, string>>;
+	/** «Per hour» of earlier summaries with the same main map; the average is written from three of them. */
+	comparablePerHour?: readonly number[];
+	/** Offset of the machine's time zone from UTC, in minutes, at that instant. Defaults to the system's. */
+	utcOffsetMinutes?: (atMs: number) => number;
 }
-export interface RenderedLiveSessionSummary { path: string; content: string; sessionRef: string }
+export interface RenderedLiveSessionSummary { path: string; content: string; sessionRef: string; mainMapId: number | null }
 
 export type LiveSessionSummaryWriteResult =
 	| { status: 'written' | 'unchanged' | 'kept'; path: string }
 	| { status: 'invalid'; reason: string }
 	| { status: 'conflict' | 'unavailable'; message: string; errorName?: string };
 
-/** The four vault calls the writer needs; the common vault port satisfies it in Obsidian and in Hebra. */
+/** The vault calls the writer needs; the common vault port satisfies it in Obsidian and in Hebra. */
 export type LiveSessionSummaryVault = Pick<SessionNoteVault, 'file' | 'read' | 'createFolder' | 'create'>;
+
+/** Minimum comparable sessions before «tu media» is written. */
+export const SUMMARY_MIN_COMPARABLES = 3;
 
 /** `summaries/2026-10-08 153000Z - 0123456789abcdef - summary.md`: the full note's UTC stamp and ref prefix, no forbidden character. */
 export function liveSessionSummaryRelativePath(startedAt: string, sessionRef: string): string {
@@ -69,74 +76,92 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const label = (spanish: string, english: string): string => es ? spanish : english;
 		const names = input.displayNames ?? {};
 		const itemName = (id: number): string => escapeMarkdown(names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
+		const currencyName = (id: number): string => escapeMarkdown(names[`currency:${String(id)}`] ?? `${label('Moneda', 'Currency')} ${String(id)}`);
+		const mapName = (id: number): string => escapeMarkdown(input.mapNames?.[String(id)] ?? `${label('Mapa', 'Map')} ${String(id)}`);
+		const offset = input.utcOffsetMinutes ?? ((at: number): number => -new Date(at).getTimezoneOffset());
+		const local = (iso: string): Date => new Date(Date.parse(iso) + offset(Date.parse(iso)) * 60_000);
+		const day = (iso: string): string => local(iso).toISOString().slice(0, 10);
+		const clock = (iso: string): string => local(iso).toISOString().slice(11, 16);
 		const money = (copper: number): string => formatCopperVisual(copper);
-		const start = new Date(session.startedAt); const end = new Date(session.endedAt);
-		const day = (value: Date): string => value.toISOString().slice(0, 10);
-		const clock = (value: Date): string => `${value.toISOString().slice(11, 16)} UTC`;
-		const durationMs = Date.parse(session.endedAt) - Date.parse(session.startedAt);
-		const valuation = session.valuation;
-		const lines: string[] = [`# ${label('Resumen de sesión', 'Session summary')} · ${day(start)}`, '',
-			`- ${label('Fecha', 'Date')}: ${day(start)}`,
-			`- ${label('Inicio', 'Start')}: ${clock(start)} · ${label('Fin', 'End')}: ${clock(end)}`,
-			`- ${label('Duración', 'Duration')}: ${duration(durationMs)}`,
-			`- ${label('Tiempo realmente observado (objetos)', 'Time actually observed (items)')}: ${duration(session.observedItemsMs)}`];
+		const signed = (copper: number): string => `${copper > 0 ? '+' : ''}${money(copper)}`;
+		const characters = input.characters ?? [];
+		const f = computeSummaryFigures(session, input.itemMeta ?? {}, characters);
+		const several = characters.length > 1;
+		const mapHeading = f.mainMapId === null ? label('Varios mapas', 'Several maps') : mapName(f.mainMapId);
+		const heading = `${mapHeading}${characters.length === 1 ? ` · ${escapeMarkdown(characters[0]!.name)}` : ''}`;
+		const out: string[] = [`# ${heading}`, '',
+			`${day(session.startedAt)} · ${clock(session.startedAt)}–${clock(session.endedAt)} · ${duration(f.durationMs)} · ${String(Math.round(f.observedShare * 100))} % ${label('observado', 'observed')}`];
+		if (several) out.push('', `${label('Personajes', 'Characters')}: ${characters.map((entry) => escapeMarkdown(entry.name)).join(' → ')}`,
+			label('Al cambiar de personaje no se mide lo que cambió entre uno y otro: las bolsas del nuevo no cuentan como ganadas ni las del anterior como perdidas.',
+				'Switching character measures nothing across the switch: the new character\'s bags do not count as gained nor the previous one\'s as lost.'));
 
-		const bags = session.totals.find((row) => row.kind === 'item' && row.idNumber === HALLOWEEN_BAG_ITEM_ID);
-		if (bags !== undefined && bags.positive > 0) {
-			const rate = session.observedItemsMs > 0 && session.coverage.items === 'complete'
-				? `${(bags.positive * 3_600_000 / session.observedItemsMs).toFixed(1)}/h`
-				: label('no disponible (cobertura de objetos incompleta o sin tiempo observado)', 'unavailable (incomplete item coverage or no observed time)');
-			lines.push(`- ${label('Bolsas de Halloween', 'Halloween bags')}: ${String(bags.positive)} · ${label('ritmo', 'rate')}: ${rate}`);
+		const comparables = input.comparablePerHour ?? [];
+		const average = comparables.length >= SUMMARY_MIN_COMPARABLES && f.mainMapId !== null
+			? Math.round(comparables.reduce((sum, value) => sum + value, 0) / comparables.length) : null;
+		const bound = f.unknownBindingIds.length > 0;
+		const maxNote = bound ? ` (${label('como máximo: puede incluir objetos ligados a cuenta', 'at most: may include account-bound items')})` : '';
+		const verdict: string[] = [];
+		const gold = f.goldCopper === null ? null : `${label('Oro de la cartera', 'Wallet gold')}: ${signed(f.goldCopper)}`;
+		if (f.salesSession && gold !== null) verdict.push(`- **${label('Oro ganado', 'Gold gained')}: ${signed(f.goldCopper!)}**`);
+		if (f.dominantCurrency !== null) verdict.push(`- **${currencyName(f.dominantCurrency.id)}: +${String(f.dominantCurrency.net)}** (${label('lo principal de la sesión', 'the main result of the session')})`);
+		if (f.hasNewItems || f.salesSession) {
+			verdict.push(`- ${label('Neto estimado', 'Estimated net')}: ${money(f.netCopper)}${maxNote}`);
+			verdict.push(`- ${label('Por hora', 'Per hour')}: ${f.perHour.copper !== null ? `${money(f.perHour.copper)}${maxNote}`
+				: f.perHour.reason === 'short' ? label(`no disponible (menos de ${String(SUMMARY_MIN_RATE_MS / 60_000)} min observados)`, `unavailable (under ${String(SUMMARY_MIN_RATE_MS / 60_000)} observed min)`)
+				: label('no disponible (cobertura de objetos incompleta)', 'unavailable (incomplete item coverage)')}`);
+			if (f.withoutDominant !== null) verdict.push(`- ${label('Por hora sin', 'Per hour without')} ${itemName(f.withoutDominant.itemId)}: ${money(f.withoutDominant.perHourCopper)} (${label('ese objeto es más de la mitad del valor', 'that item is over half the value')})`);
+			if (average !== null) verdict.push(`- ${label('Tu media en sesiones parecidas', 'Your average in similar sessions')}: ${money(average)}/h (${label(`${String(comparables.length)} sesiones en este mapa`, `${String(comparables.length)} sessions on this map`)})`);
+		}
+		if (gold !== null && !f.salesSession) verdict.push(`- ${gold}`);
+		if (f.staple !== null) verdict.push(`- ${label('Lo que más entró', 'Most gained')}: ${itemName(f.staple.itemId)} ×${String(f.staple.quantity)} (${label(`entró ${String(f.staple.entries)} veces`, `came in ${String(f.staple.entries)} times`)}${f.staple.perHour !== null ? ` · ${String(f.staple.perHour)}/h` : ''})`);
+		if (verdict.length > 0) out.push('', `## ${label('Veredicto', 'Verdict')}`, '', ...verdict);
+
+		if (f.hasNewItems) {
+			const top = f.sellable.slice(0, TOP_ITEMS);
+			out.push('', `## ${label('Para vender ahora', 'To sell now')}`, '');
+			if (top.length === 0) out.push(label('Ningún objeto nuevo tiene precio de bazar.', 'No new item has a bazaar price.'));
+			else out.push(`| ${label('Objeto', 'Item')} | ${label('Cantidad', 'Quantity')} | ${label('Valor neto de comisión', 'Value net of fees')} |`, '|---|---:|---:|',
+				...top.map((row) => `| ${itemName(row.itemId)}${row.container ? ` (${label('sin abrir', 'unopened')})` : ''} | ${String(row.quantity)} | ${money(row.valueCopper!)} |`));
+			if (f.unpriced.length > 0) out.push('', `${label('Sin precio de bazar (fuera del valor)', 'No bazaar price (outside the value)')}: ${f.unpriced.map((row) => `${itemName(row.itemId)} ×${String(row.quantity)}${row.container ? ` (${label('sin abrir', 'unopened')})` : ''}`).join(', ')}`);
+			if (f.boundItemIds.length > 0) out.push('', `${label('Ligados a cuenta (fuera de la lista y del valor)', 'Account-bound (outside the list and the value)')}: ${f.boundItemIds.map(itemName).join(', ')}`);
 		}
 
-		const hasItems = session.totals.some((row) => row.kind === 'item' && (row.net !== 0 || row.positive !== 0));
-		if (hasItems && (valuation.capturedAt === null || valuation.prices.length === 0)) {
-			lines.push(`- ${label('Valor estimado', 'Estimated value')}: ${label('no disponible (sin precios)', 'unavailable (no prices)')}`,
-				`- ${label('Valor por hora', 'Value per hour')}: ${label('no disponible (sin precios)', 'unavailable (no prices)')}`);
-		} else {
-			const value = valuation.knownNetValueCopper ?? valuation.netItemValueKnownCopper;
-			const unpriced = valuation.unpricedItemIds.length;
-			lines.push(`- ${label('Valor estimado', 'Estimated value')}: ${money(value)}${unpriced > 0
-				? ` (${label(`parcial: ${String(unpriced)} objetos sin precio`, `partial: ${String(unpriced)} unpriced items`)})` : ''}`);
-			const reason = session.observedItemsMs <= 0 ? label('sin tiempo observado', 'no observed time')
-				: unpriced > 0 ? label('hay objetos sin precio', 'some items have no price')
-				: session.coverage.items !== 'complete' ? label('cobertura de objetos incompleta', 'incomplete item coverage') : null;
-			lines.push(`- ${label('Valor por hora', 'Value per hour')}: ${reason === null
-				? money(Math.round(value * 3_600_000 / session.observedItemsMs)) : `${label('no disponible', 'unavailable')} (${reason})`}`);
-		}
-		if (valuation.coinNetCopper !== null) lines.push(`- ${label('Oro ganado', 'Gold gained')}: ${money(valuation.coinNetCopper)}`);
+		if (f.currencies.length > 0) out.push('', `## ${label('Otras monedas', 'Other currencies')}`, '',
+			...f.currencies.map((row) => `- ${currencyName(row.id)}: ${row.net > 0 ? '+' : ''}${String(row.net)}`));
 
-		const itemRows = session.totals.filter((row) => row.kind === 'item' && row.net !== 0);
-		const prices = new Map(valuation.prices.map((price) => [price.itemId, price.unitCopper]));
-		const top = sortLiveItemsByValue(session.totals, valuation.prices).filter((row) => row.net > 0).slice(0, TOP_ITEMS);
-		lines.push('', `## ${label('Objetos de más valor', 'Most valuable items')}`, '');
-		if (top.length === 0) lines.push(label('No se observaron objetos nuevos.', 'No new items were observed.'));
-		else lines.push(`| ${label('Objeto', 'Item')} | ${label('Cantidad', 'Quantity')} | ${label('Valor', 'Value')} |`, '|---|---:|---:|',
-			...top.map((row) => {
-				const unit = prices.get(row.idNumber);
-				return `| ${itemName(row.idNumber)} | ${String(row.net)} | ${unit === null || unit === undefined ? '—' : money(unit * row.net)} |`;
-			}));
-		lines.push('', `${label('Objetos distintos', 'Distinct items')}: ${String(itemRows.length)}`);
+		if (f.alerts.length > 0) out.push('', `## ${label('Lo bueno', 'The good')}`, '',
+			...f.alerts.map((alert) => `- ${clock(alert.at)} · ${itemName(alert.itemId)} ×${String(alert.quantity)}${alert.totalCopper === null ? '' : ` · ${money(alert.totalCopper)}`}`));
 
-		const maps = mapTimes(session.mapIntervals);
-		if (maps.length > 0) lines.push('', `## ${label('Mapas visitados', 'Maps visited')}`, '',
-			...maps.slice(0, TOP_MAPS).map(([mapId, ms]) => `- ${label('Mapa', 'Map')} ${String(mapId)} · ${duration(ms)}`),
+		if (f.outCount > 0) out.push('', label(`Salieron del inventario ${String(f.outCount)} objetos; no se distingue si se vendieron, se consumieron o se depositaron.`,
+			`${String(f.outCount)} items left the inventory; it cannot tell whether they were sold, consumed or deposited.`));
+
+		if (f.maps.length > 0) out.push('', `## ${label('Mapas', 'Maps')}`, '', ...f.maps.map((row) => `- ${mapName(row.mapId)} · ${duration(row.ms)}`),
 			...(session.mapCoveragePartial ? [label('La lista puede estar incompleta.', 'The list may be incomplete.')] : []));
 
-		const gaps = gapSummary(session.gaps, session.endedAt);
-		lines.push('', `## ${label('Cobertura', 'Coverage')}`, '', gaps.count === 0
-			? label('Sin tramos sin observar.', 'No unobserved intervals.')
-			: label(`${String(gaps.count)} tramos sin observar, en total ${duration(gaps.ms)}.`,
-				`${String(gaps.count)} unobserved intervals, ${duration(gaps.ms)} in total.`));
+		const extra: string[] = [];
+		if (session.magicFind.source === 'verified' && session.magicFind.value !== null) extra.push(`- ${label('Hallazgo mágico', 'Magic find')}: ${String(session.magicFind.value)}`);
+		if (session.coverage.freeSlots !== null) extra.push(`- ${label('Huecos libres al cerrar', 'Free slots at close')}: ${String(session.coverage.freeSlots)}`);
+		if (extra.length > 0) out.push('', `## ${label('Al cerrar', 'At close')}`, '', ...extra);
+
+		out.push('', `## ${label('Cobertura', 'Coverage')}`, '');
+		if (f.observedShare >= SUMMARY_FOLD_COVERAGE) {
+			out.push(f.gaps.length === 0 ? label('Sin tramos sin observar.', 'No unobserved intervals.')
+				: label(`${String(f.gaps.length)} tramos sin observar, en total ${duration(f.gapsMs)}.`, `${String(f.gaps.length)} unobserved intervals, ${duration(f.gapsMs)} in total.`));
+		} else {
+			out.push(label(`Solo se observó el ${String(Math.round(f.observedShare * 100))} % de la sesión. Tramos sin observar:`, `Only ${String(Math.round(f.observedShare * 100))} % of the session was observed. Unobserved intervals:`));
+			for (const gap of f.gaps.slice(0, MAX_LISTED_GAPS)) out.push(`- ${clock(gap.fromAt)}–${clock(gap.toAt)} · ${gap.channels[0] === 'items' ? label('objetos', 'items') : label('monedas', 'currencies')} · ${gap.characterChange ? label('cambio de personaje', 'character change') : gapReason(gap.reason, es)}`);
+			if (f.gaps.length > MAX_LISTED_GAPS) out.push(label(`… y ${String(f.gaps.length - MAX_LISTED_GAPS)} más.`, `… and ${String(f.gaps.length - MAX_LISTED_GAPS)} more.`));
+		}
 
 		const link = input.fullNotePath.replace(/\.md$/u, '');
-		lines.push('', `${label('Nota completa', 'Full note')}: ${/[[\]|#^]/u.test(link) ? `\`${link}\`` : `[[${link}|${label('Sesión de inventario observado', 'Observed inventory session')}]]`}`);
+		out.push('', `${label('Nota completa', 'Full note')}: ${/[[\]|#^]/u.test(link) ? `\`${link}\`` : `[[${link}|${label('Sesión de inventario observado', 'Observed inventory session')}]]`}`);
 
-		const frontmatter = ['---', 'tyrian_summary_version: 1', `tyrian_summary_of: ${JSON.stringify(session.sessionRef)}`,
+		const fm = ['---', 'tyrian_summary_version: 2', `tyrian_summary_of: ${JSON.stringify(session.sessionRef)}`,
 			`tyrian_summary_locale: ${JSON.stringify(input.locale)}`, `tyrian_summary_started_at: ${JSON.stringify(session.startedAt)}`,
-			`tyrian_summary_ended_at: ${JSON.stringify(session.endedAt)}`, 'tags: ["gw2/session-summary"]', '---', ''].join('\n');
-		const content = `${frontmatter}${lines.join('\n')}\n`;
-		return { status: 'ok', note: { sessionRef: session.sessionRef, content,
+			`tyrian_summary_ended_at: ${JSON.stringify(session.endedAt)}`, `tyrian_summary_main_map: ${f.mainMapId === null ? 'null' : String(f.mainMapId)}`,
+			`tyrian_summary_net_copper: ${String(f.netCopper)}`, `tyrian_summary_per_hour_copper: ${f.perHour.copper === null ? 'null' : String(f.perHour.copper)}`,
+			`tyrian_summary_observed_minutes: ${String(Math.round(session.observedItemsMs / 60_000))}`, 'tags: ["gw2/session-summary"]', '---', ''].join('\n');
+		return { status: 'ok', note: { sessionRef: session.sessionRef, mainMapId: summaryMainMap(session), content: `${fm}${out.join('\n')}\n`,
 			path: `${folder}/${liveSessionSummaryRelativePath(session.startedAt, session.sessionRef)}` } };
 	} catch { return { status: 'invalid', reason: 'summary_unavailable' }; }
 }
@@ -187,21 +212,13 @@ function duration(ms: number): string {
 	return parts.join(' ');
 }
 
-/** Time per map, longest first; a null map (unknown place) is not a place. */
-function mapTimes(intervals: StoredLiveSessionPayloadV1['mapIntervals']): [number, number][] {
-	const totals = new Map<number, number>();
-	for (const interval of intervals) if (interval.mapId !== null) totals.set(interval.mapId, (totals.get(interval.mapId) ?? 0) + interval.toMs - interval.fromMs);
-	return [...totals.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
-}
-
-/** Count and union duration of the unobserved intervals, whatever their channel; overlaps count once. */
-function gapSummary(gaps: readonly LiveGapV1[], endedAt: string): { count: number; ms: number } {
-	let end = Number.NEGATIVE_INFINITY; let ms = 0;
-	for (const gap of [...gaps].sort((a, b) => a.fromAt.localeCompare(b.fromAt))) {
-		const from = Date.parse(gap.fromAt); const to = Date.parse(gap.toAt ?? endedAt);
-		ms += Math.max(0, to - Math.max(from, end)); end = Math.max(end, to);
-	}
-	return { count: gaps.length, ms };
+function gapReason(reason: StoredLiveSessionPayloadV1['gaps'][number]['reason'], es: boolean): string {
+	const labels = { disconnect: ['desconexión', 'disconnect'], source_stale: ['fuente sin muestras recientes', 'source stale'],
+		read_failed: ['lectura no disponible', 'read unavailable'], partial_inventory: ['inventario parcial', 'partial inventory'],
+		context_changed: ['cambio de contexto', 'context changed'], host_restart: ['reinicio', 'restart'],
+		storage_unavailable: ['almacenamiento no disponible', 'storage unavailable'], unsupported_build: ['versión no compatible', 'unsupported version'],
+		source_missing: ['fuente ausente', 'source missing'], cursor_gap: ['continuidad perdida', 'continuity lost'] };
+	return labels[reason][es ? 0 : 1]!;
 }
 
 function escapeMarkdown(value: string): string { return value.replace(/[\p{Cc}]/gu, ' ').replace(/[\\|<>]/gu, (match) => `\\${match}`); }
