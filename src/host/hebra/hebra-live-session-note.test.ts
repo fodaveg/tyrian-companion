@@ -91,6 +91,28 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 		await cleanup();
 	}, 30_000);
 
+	it('closing the session also writes its summary note, once, and a later load does not write it again', async () => {
+		const test = collectorHebra();
+		const factory = new IDBFactory();
+		const { core, cleanup } = await activate(test, factory);
+		const first = await playUntilGameExit(core, 'a', FIRST_EPOCH);
+		expect(core.getLiveSessionView(), 'the session is finished').toMatchObject({ phase: 'complete', sessionId: first });
+		await vi.waitFor(() => { expect(summaryNotes(test), 'the summary note follows the full note').toHaveLength(1); });
+		expect(summaryNotes(test)[0]!.body).toContain('tyrian_summary_version: 3');
+		expect(core.liveSessions.isSummaryWritten(), 'the written mark is persisted').toBe(true);
+		const [summary] = summaryNotes(test);
+		await cleanup();
+
+		// A load with the mark set neither writes nor rewrites: delete the note and load again.
+		test.library.notes.delete(summary!.id);
+		now += 60_000;
+		const reloaded = await activate(test, factory);
+		await reloaded.core.liveSessions.capture();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(summaryNotes(test), 'a deleted summary is not recreated at load').toHaveLength(0);
+		await reloaded.cleanup();
+	}, 30_000);
+
 	it('a finished session left without its note is saved when the plugin loads, and the next connection starts a new session', async () => {
 		const test = collectorHebra();
 		const factory = new IDBFactory();
@@ -195,6 +217,12 @@ function sampleOf(source: LiveIngameSource, cursor: number, sourceElapsedMs: num
 }
 
 /** The notes of live sessions (schema 7, source Nexus) the library holds. */
+function summaryNotes(test: TyrianTestApi): { id: string; body: string }[] {
+	return [...test.library.notes.values()]
+		.filter((note) => note.trashedAt === null && /^tyrian_summary_of:/mu.test(note.body))
+		.map((note) => ({ id: note.id, body: note.body }));
+}
+
 function liveNotes(test: TyrianTestApi): string[] {
 	return [...test.library.notes.values()]
 		.filter((note) => note.trashedAt === null && /^tc_source:\s*"?nexus_inventory"?\s*$/mu.test(note.body))
