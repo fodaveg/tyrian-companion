@@ -368,6 +368,32 @@ describe('passive live session lifecycle', () => {
 			await first.start('Test');
 			expect(seen, 'a host that died right after the clear would still find it').toEqual([[ids[0]]]); await first.dispose();
 		});
+		it('a queue save that fails does not hold the start back: the id is saved by the next start, and nothing is deleted meanwhile', async () => {
+			const { f, ids, first, firstBeat, lengths, queued } = await earlierHost(0, true);
+			vi.spyOn(f.store,'savePruneQueue').mockRejectedValueOnce(new Error('queue'));
+			await expect(first.start('Test'), 'the start goes on').resolves.toBe('session-2');
+			await firstBeat();
+			expect(await queued(), 'not saved yet: a host that ended here would leave this journal for ever').toEqual([]); expect(await lengths()).toEqual([2]);
+			await expect(first.stop(AT+300_000)).resolves.toBe(true); await first.start('Test');
+			expect(await queued(), 'the next start saves both').toEqual([ids[0],'session-2']); await first.dispose();
+		});
+		it('a session whose record could not be cleared leaves the queue at the next beat and joins it again when it is', async () => {
+			const { f, ids, first, firstBeat, lengths, queued } = await earlierHost(0, true);
+			vi.spyOn(f.store,'clear').mockResolvedValueOnce({ status: 'stale' });
+			await expect(first.start('Test')).resolves.toBeNull();
+			expect(await queued(), 'queued before the clear was refused').toEqual([ids[0]]);
+			await firstBeat();
+			expect(await queued(), 'it is still the session of the runtime key').toEqual([]); expect(await lengths()).toEqual([2]);
+			await expect(first.start('Test')).resolves.toBe('session-2');
+			expect(await queued()).toEqual([ids[0]]); expect(await lengths(), 'retained by the host that sealed it').toEqual([2]); await first.dispose();
+		});
+		it('a session cleared before a start that then failed stays queued and retained', async () => {
+			const { f, ids, first, firstBeat, lengths, queued } = await earlierHost(0, true);
+			vi.spyOn(f.options.coordinator,'acquire').mockResolvedValueOnce({status:'busy',ownerExpiresAt:AT+120000,ownerInstanceId:'other',ownerMachineId:'machine'});
+			await expect(first.start('Test')).resolves.toBeNull();
+			await firstBeat(); await firstBeat();
+			expect(await queued()).toEqual([ids[0]]); expect(await lengths()).toEqual([2]); await first.dispose();
+		});
 		it('a host that starts again prunes them two per pass, and never the session the runtime holds', async () => {
 			const { ids, first, host, lengths, queued } = await earlierHost(4); await first.dispose();
 			const next = host(); await next.service.initialize();

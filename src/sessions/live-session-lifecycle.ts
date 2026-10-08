@@ -145,8 +145,13 @@ export class LiveSessionLifecycle {
 			this.pruneHeld = false;
 			if (this.record !== null) {
 				if (!await this.saveCompletedNote()) return null;
-				// Queued and saved BEFORE the record leaves the runtime key: from then on only the queue says this session was
-				// sealed, and a host that died after the clear would otherwise leave its journal in the store for ever.
+				// Queued, and a save of the queue ATTEMPTED, before the record leaves the runtime key: from then on only the queue
+				// says this session was sealed. The save is not a condition of the start: if it fails (reported, see
+				// `saveSealedQueue`) the start goes on and the id stays in memory for the next start to save; a host that ends
+				// before that leaves this journal in the store for ever. That is disk kept, never a journal wrongly deleted.
+				// If the `clear` below is refused the session is still the runtime key's: the next beat takes its id out of the
+				// queue (`pruneSealed`) and the start that does clear it queues it again. If only the lease or the new record
+				// fails after the clear, the id stays queued and this host retains the session like any other it sealed.
 				if (this.record.summaryReceipt !== null) { this.sealedForPrune.set(this.record.sessionId,this.record.summaryReceipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
 				const cleared = await this.options.persistence.clear(this.record.authority);
 				if (cleared.status !== 'cleared') return null;
@@ -664,7 +669,8 @@ export class LiveSessionLifecycle {
 		if (this.queueDirty) await this.saveSealedQueue();
 	}
 	/**
-	 * Saves the queue as it is now. A failure is reported once and the queue stays dirty: the next start saves it. A saved
+	 * Saves the queue as it is now. A failure is reported once and swallowed: the queue stays dirty and the next start
+	 * saves it, but a host that ends first never does, and the journals queued meanwhile are then never pruned. A saved
 	 * queue this host could not read is read first and merged: written blind, it would lose the sessions an earlier host
 	 * sealed and leave their journals in the store for ever. While it still cannot be read, nothing is written over it.
 	 */
