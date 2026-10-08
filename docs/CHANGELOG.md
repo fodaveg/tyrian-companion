@@ -1,8 +1,8 @@
 # Changelog
 
-## Candidato 0.6.10 - «Por hora» cuenta también el oro
+## Release beta 0.6.10 - «Por hora» cuenta el oro, la gráfica va antes que los objetos y el addon recibe el precio bruto
 
-Candidato sin publicar ni etiquetar; sin gate ni release hechos.
+Release por tag `0.6.10`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación y sesión real).
 
 - Pestaña «Sesión»: «Por hora» pasa a ser la tasa del mismo valor que «Valor estimado», es decir, objetos más el
   oro observado cuando el oro se ha seguido (solo objetos si nunca estuvo cubierto). Antes contaba solo el valor de
