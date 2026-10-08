@@ -15,6 +15,8 @@
 		"test:h8-crossover-spike": "bash scripts/tests/probar-h8-crossover-spike.sh",
 		"bench:h6-performance": "node --expose-gc node_modules/jiti/lib/jiti-cli.mjs scripts/benchmark-h6-performance.ts",
 		"test:bench:h6-performance-red": "node node_modules/jiti/lib/jiti-cli.mjs scripts/test-h6-performance-red.ts",
+		"bench:h6-live-session": "node node_modules/jiti/lib/jiti-cli.mjs scripts/benchmark-h6-live-session.ts",
+		"bench:h6-live-session-red": "node node_modules/jiti/lib/jiti-cli.mjs scripts/test-h6-live-session-red.ts",
 		"test:release-preflight": "bash scripts/tests/probar-release-preflight.sh",
 		"test:brat-release-contract": "node scripts/tests/probar-brat-release-contract.mjs",
 		"test:security-scan": "node scripts/tests/probar-security-scan.mjs",

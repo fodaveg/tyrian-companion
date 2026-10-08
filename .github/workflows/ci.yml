@@ -36,6 +36,10 @@ jobs:
         run: npm run bench:h6-performance
       - if: github.ref == 'refs/heads/main'
         run: npm run test:bench:h6-performance-red
+      - if: github.ref == 'refs/heads/main'
+        run: npm run bench:h6-live-session
+      - if: github.ref == 'refs/heads/main'
+        run: npm run bench:h6-live-session-red
 
   # The slower half of the H14.16 gate split (release/beta/BRAT/support
   # contracts, the frozen architecture tests, `src/platform`). Runs in CI on
