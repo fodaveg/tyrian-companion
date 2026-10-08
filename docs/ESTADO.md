@@ -1,22 +1,37 @@
 # Estado
 
-## Candidato 0.6.10: «Por hora» con oro y precio bruto `price2` (8 oct 2026)
+## Canal 0.6.10 publicado: «Por hora» con oro y precio bruto `price2` (8 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `c550bbd` (canal 0.6.9 publicado) y lleva cuatro cambios:
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.10](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.10)
+es una release normal, sin draft ni prerelease; nombre, tag y `manifest.version` son `0.6.10`. El tag apunta a
+`6ab0e0b` (árbol `8da538d3ba2a0b1a06c845b2b787887c92c99380`); la atestación del candidato `1566554` es
+`e6c2b3e` (árbol `977a0452fe6525c5f7346339de1a4ddacc32aee0`) y `6ab0e0b`, encima, es solo documentación.
+Parte de `c550bbd` (canal 0.6.9 publicado) y lleva cuatro cambios:
 «Por hora» de la pestaña «Sesión» pasa a ser la tasa del mismo valor que «Valor estimado» (objetos más oro
 observado), el puente manda al addon el precio bruto del bazar en una trama `price2` que sustituye a `price1`,
 el icono de Tyrian pasa de la brújula a la espada en Hebra y en Obsidian, y la gráfica de la pestaña «Sesión»
 va antes que los objetos.
 El detalle está en [CHANGELOG](CHANGELOG.md).
 
-- Verificado: `src/ui/live-session-panel.test.ts` (55 tests), los tests de `src/alerts`, la proyección del
-  precio, la cotización del saco y el cableado del puente, `tsc --noEmit` y el censo de observabilidad, en el
-  worktree del candidato.
-- Límite de compatibilidad: hace falta el addon de Nexus 0.7.2; con el 0.7.1 el panel del juego no muestra
-  precio hasta actualizar.
-- Pendiente: el gate local, la release y la verificación de instalación en Hebra y Obsidian. No se ha corrido
-  `check`, la suite completa ni el preflight sobre este candidato.
-- Límite: el denominador es el tiempo de objetos observado; un hueco de monedas no lo acorta.
+- Publicación: el workflow `release.yml` (run 37732446768) terminó en success y la CI del tag (run 37732422933)
+  también. La release tiene ocho assets, todos `uploaded`: `hebra-main.mjs` 3327783, `hebra-styles.css` 118003,
+  `hebra.json` 953, `main.js` 1887738, `manifest.json` 237, `styles.css` 94537, `tyrian-companion-0.6.10.zip`
+  1982822 y `tyrian-companion-0.6.10.zip.sha256` 94 (bytes). `release:brat-verify` contra la salida real de
+  `gh release view`: «BRAT release contract: PASS (version=0.6.10; assets=8)».
+- Gate local previo, sobre el árbol del tag (Fedora, Node v22.23.1, 8 oct 2026): `check` 8/8 (5136 tests, 324
+  ficheros, ninguno saltado), guardrails 25/25, `release:preflight` en verde y `node scripts/changelog-entry.mjs
+  0.6.10` con exit 0. El gate se corrió cinco veces a lo largo del día, una por árbol candidato, todas verdes.
+  El benchmark H6 y su sabotaje no se corrieron en local porque el juego estaba abierto; los corre la CI de `main`.
+- Incidente de publicación: el primer tag `0.6.10` se empujó sobre `e6c2b3e` y el workflow Release 37731908556
+  falló en Publish con `changelog-entry: version-not-found for version 0.6.10`, porque la entrada estaba
+  encabezada «Candidato 0.6.10» y el extractor solo lee «Release beta <versión>». No se creó ninguna release.
+  Se corrigió el encabezado (`6ab0e0b`), se repitió el gate, se borró el tag remoto y se recreó sobre
+  `6ab0e0b`. La CI de `e6c2b3e` (37731898689) sí fue success. Es la misma trampa que la 0.6.0 (`bffb6fa`).
+- No verificado: la 0.6.10 instalada en Hebra u Obsidian; el aspecto real de la pestaña «Sesión» reordenada y del
+  icono de espada; `price2` de punta a punta contra un addon en el juego.
+- Límite de compatibilidad: hace falta el addon de Nexus 0.7.2, que NO está publicado; con el 0.7.1 el panel del
+  juego deja de pintar el bloque de precio hasta actualizar.
+- Límite: el denominador de «Por hora» es el tiempo de objetos observado; un hueco de monedas no lo acorta.
 
 ## Canal 0.6.9 publicado: las monedas observadas como teselas (7 oct 2026)
 

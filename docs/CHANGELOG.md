@@ -2,7 +2,16 @@
 
 ## Release beta 0.6.10 - «Por hora» cuenta el oro, la gráfica va antes que los objetos y el addon recibe el precio bruto
 
-Release por tag `0.6.10`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación y sesión real).
+[Canal 0.6.10 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.10);
+**instalación/runtime pendiente**. Tag `0.6.10` sobre `6ab0e0b` (atestación del candidato `1566554` en `e6c2b3e`,
+más la corrección del encabezado de esta entrada), árbol `8da538d3ba2a0b1a06c845b2b787887c92c99380`. Gate local
+previo, sobre el árbol del tag: `check` 8/8 (5136 tests, 324 archivos, ninguno saltado), guardrails 25/25,
+`release:preflight` en verde y `node scripts/changelog-entry.mjs 0.6.10` con exit 0. El benchmark H6 y su
+sabotaje no se corrieron en local; los corre la CI de `main`. El workflow de release (run 37732446768) terminó
+en success y `release:brat-verify` verificó los ocho assets reales. [ESTADO](ESTADO.md) separa esa evidencia de lo
+pendiente (instalación en Hebra y Obsidian, la pestaña «Sesión» reordenada, el icono de espada y `price2` contra
+un addon en el juego). El bloque de precio del panel del juego necesita el addon de Nexus 0.7.2, aún sin
+publicar.
 
 - Pestaña «Sesión»: «Por hora» pasa a ser la tasa del mismo valor que «Valor estimado», es decir, objetos más el
   oro observado cuando el oro se ha seguido (solo objetos si nunca estuvo cubierto). Antes contaba solo el valor de
