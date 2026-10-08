@@ -23,6 +23,8 @@ const COPY = {
 function summariesBaseBody(locale: SummariesLocale): string {
 	const copy = COPY[locale];
 	const order = '[formula.session_link, tyrian_summary_date, tyrian_summary_map, tyrian_summary_duration_minutes, tyrian_summary_net_gold, tyrian_summary_per_hour_gold, tyrian_summary_characters, tyrian_summary_observed_percent, tyrian_summary_top_item, tyrian_summary_alerts]';
+	// «Por mapa» groups by the map already: the same column again would be a second «Mapa».
+	const orderByMap = order.replace(' tyrian_summary_map,', '');
 	return `filters:
   and:
     - file.hasTag("gw2/session-summary")
@@ -66,7 +68,7 @@ views:
     groupBy:
       property: formula.map_label
       direction: ASC
-    order: ${order}
+    order: ${orderByMap}
     sort:
       - property: tyrian_summary_started_at
         direction: DESC
