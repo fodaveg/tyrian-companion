@@ -6,16 +6,15 @@ import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
 
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
 
-/** The loop `liveSessionViewFromStored` ran before it reused the shared accumulator. */
+/** The point the old per-entry loop gave every entry of the saved journal (the view now keeps a subset of them, unchanged). */
 function legacy(payload: StoredLiveSessionPayloadV1): LiveChartPointV1[] {
 	const chart: LiveChartPointV1[] = []; let totals: LiveTotalV1[] = [];
-	for (const [index, entry] of payload.journal.entries()) {
+	for (const entry of payload.journal) {
 		totals = liveObservationTotals(totals, entry.observations);
-		if (index < payload.journal.length - 600) continue;
 		const valuation = valueLiveTotals(totals, payload.valuation.prices, payload.valuation.capturedAt, payload.valuation.coinNetCopper !== null);
 		chart.push({ observedAt: entry.observedAt, itemQuantityNet: totals.filter((row) => row.kind === 'item').reduce((sum, row) => sum + row.net, 0),
 			netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper,
-			breakBefore: entry.breakBefore || chart.length === 0 && index > 0 });
+			breakBefore: entry.breakBefore });
 	}
 	return chart;
 }
@@ -33,10 +32,13 @@ function payload(size: number, gold: boolean): StoredLiveSessionPayloadV1 {
 }
 
 describe('saved session chart', () => {
-	it.each([0, 1, 599, 600, 601, 1300])('is identical to the previous per-entry loop for %i entries', (size) => {
+	it.each([0, 1, 599, 600, 601, 1300, 4000])('spans the whole saved session within 600 exact points for %i entries', (size) => {
 		for (const gold of [false, true]) {
-			const stored = payload(size, gold);
-			expect(liveSessionViewFromStored(stored, 0).chartPoints).toEqual(legacy(stored));
+			const stored = payload(size, gold); const every = legacy(stored); const chart = liveSessionViewFromStored(stored, 0).chartPoints;
+			expect(chart.length).toBeLessThanOrEqual(600);
+			if (size === 0) { expect(chart).toEqual([]); continue; }
+			for (const point of chart) expect(point).toEqual(every.find((candidate) => candidate.observedAt === point.observedAt));
+			expect(chart[0]).toEqual(every[0]); expect(chart.at(-1)).toEqual(every.at(-1));
 		}
 	});
 });

@@ -216,6 +216,22 @@ describe('passive live session lifecycle', () => {
 		const unpriced = f.service.getView(); unpriced.valuation.unpricedItemIds = [1]; expect(liveSessionRatePerHour(unpriced)).toBeNull();
 		await f.service.dispose();
 	});
+	it('the chart covers the whole session, not just its last 600 samples', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+		let quantity = 0;
+		for (let cursor = 1; cursor <= 1500; cursor += 1) {
+			f.setNow(AT+cursor*1000); if (cursor % 10 === 0) quantity += 1; await f.service.commit(f.sample(cursor,quantity));
+		}
+		await f.service.updatePrices([{itemId:12147,unitCopper:85}],new Date(AT+1500_000).toISOString());
+		const points = f.service.getView().chartPoints;
+		expect(points[0]?.observedAt, 'starts at the first sample').toBe(new Date(AT).toISOString());
+		expect(points.at(-1), 'ends at the exact current value').toMatchObject({observedAt:new Date(AT+1500_000).toISOString(),itemQuantityNet:150,knownNetValueCopper:null,netItemValueKnownCopper:150*85});
+		expect(points.length).toBeLessThanOrEqual(600);
+		expect(points.map((point) => point.observedAt), 'in order').toEqual([...points.map((point) => point.observedAt)].sort());
+		const rebuilt = buildLiveChart(f.service.getJournal(),f.service.getRuntime());
+		expect(rebuilt, 'built at once = built sample by sample').toEqual(points);
+		await f.service.dispose();
+	});
 	it('restores the journal without acquisitions and requires a new baseline after host restart', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));
 		f.setNow(AT + 1000); await f.service.commit(f.sample(1, 4)); await f.service.dispose(); f.setNow(AT + 2000);

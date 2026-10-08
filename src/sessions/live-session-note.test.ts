@@ -308,8 +308,8 @@ describe('vault live history, exports and privacy', () => {
 		expect(json.session.totals[0]?.net).toBe(2000); expect(json.session.valuation.coinNetCopper).toBeNull();
 		const view = liveSessionViewFromStored(session,AT + 86400000,400,1000);
 		expect(view).toMatchObject({phase: 'complete',connection: 'disconnected',sourceState: 'unavailable',sessionId: session.sessionRef,observationCount: 1000,observationOffset: 400,hasMore: true,elapsedMs: 1000000});
-		expect(view.observations).toHaveLength(200); expect(view.chartPoints).toHaveLength(600);
-		expect(view.chartPoints[0]?.breakBefore).toBe(true); expect(view.chartPoints.at(-1)).toMatchObject({itemQuantityNet: 2000,netItemValueKnownCopper: 20000});
+		expect(view.observations).toHaveLength(200); expect(view.chartPoints.length).toBeLessThanOrEqual(600); expect(view.chartPoints[0]?.observedAt).toBe(session.journal[0]!.observedAt); expect(view.chartPoints.at(-1)?.observedAt).toBe(session.journal.at(-1)!.observedAt);
+		expect(view.chartPoints.at(-1)).toMatchObject({itemQuantityNet: 2000,netItemValueKnownCopper: 20000});
 		expect(view.valuation).toEqual(session.valuation);
 		const csv = serializeLiveSessionExport(session,kind,'csv');
 		expect(csv.match(/^"observation",/gmu)).toHaveLength(1000);

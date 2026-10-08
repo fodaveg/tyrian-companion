@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveChartPointV1, LiveJournalEntryV1, LiveObservationV1, LiveSessionRuntimeRecord } from './live-session-model';
-import { buildLiveChart, GOLD_CURRENCY_ID, liveObservationTotals, valueLiveTotals } from './live-session-reducer';
+import { buildLiveChart, GOLD_CURRENCY_ID, liveChartPoint, LiveChartBuilder, liveObservationTotals, valueLiveTotals } from './live-session-reducer';
 
 type PricedRecord = Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'>;
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
 
-/** The algorithm `rebuildChart` ran before it became incremental: per entry copy and sort every total, revalue, keep the last 600. */
+/** The point the old per-entry rebuild gave EVERY entry (copy and sort every total, revalue); the chart now keeps a subset of them, unchanged. */
 function legacyChart(journal: readonly LiveJournalEntryV1[], record: PricedRecord | null): LiveChartPointV1[] {
-	const chart: LiveChartPointV1[] = []; let totals: ReturnType<typeof liveObservationTotals> = [];
+	const all: LiveChartPointV1[] = []; let totals: ReturnType<typeof liveObservationTotals> = [];
 	for (const entry of journal) {
 		totals = liveObservationTotals(totals, entry.observations);
 		const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
-		chart.push({ observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
-			netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore }); if (chart.length > 600) chart.shift();
+		all.push({ observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
+			netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore });
 	}
-	return chart;
+	return all;
 }
 function observation(index: number, kind: 'item' | 'currency', idNumber: number, delta: number): LiveObservationV1 {
 	return { version: 1, id: `o${String(index)}`, source: 'nexus_inventory', epoch: 'e', cursor: index, kind, idNumber, before: 0, after: delta, delta,
@@ -34,16 +34,31 @@ const record = (gold: boolean, prices: PricedRecord['prices']): PricedRecord => 
 
 describe('incremental live chart', () => {
 	const prices = [{ itemId: 30, unitCopper: 15 }, { itemId: 12147, unitCopper: null }, { itemId: 9, unitCopper: 1234 }];
-	it.each([0, 1, 5, 599, 600, 601, 1500])('is identical point by point to the legacy rebuild for %i entries', (size) => {
+	it.each([0, 1, 5, 599, 600, 601, 1500, 5000])('spans the session within 600 points, each exact, for %i entries', (size) => {
 		for (const rec of [null, record(false, []), record(true, prices), record(false, prices)]) {
-			const entries = journal(size);
-			expect(buildLiveChart(entries, rec)).toEqual(legacyChart(entries, rec));
+			const entries = journal(size); const chart = buildLiveChart(entries, rec); const every = legacyChart(entries, rec);
+			expect(chart.length).toBeLessThanOrEqual(600);
+			if (size === 0) { expect(chart).toEqual([]); continue; }
+			for (const point of chart) expect(point, point.observedAt).toEqual(every.find((candidate) => candidate.observedAt === point.observedAt));
+			expect(chart[0]).toEqual(every[0]); expect(chart.at(-1), 'the latest entry closes the line').toEqual(every.at(-1));
+			const kept = new Set(chart.map((point) => point.observedAt));
+			for (const point of every.filter((candidate) => candidate.breakBefore)) expect(kept.has(point.observedAt), 'cuts are kept').toBe(true);
+			expect(chart.map((point) => point.observedAt)).toEqual([...kept].sort());
 		}
 	});
-	it('revalues the whole retained tail when the prices change', () => {
+	it('built sample by sample gives the same chart as built at once', () => {
+		for (const size of [3, 600, 601, 1500, 5000]) {
+			const entries = journal(size); const rec = record(true, prices); let totals: ReturnType<typeof liveObservationTotals> = [];
+			const incremental = new LiveChartBuilder((entry, cumulative) => liveChartPoint(entry, cumulative, rec));
+			for (const entry of entries) { totals = liveObservationTotals(totals, entry.observations); const now = totals; incremental.push(entry, () => now); }
+			expect(incremental.points(() => totals)).toEqual(buildLiveChart(entries, rec));
+		}
+	});
+	it('revalues every kept point when the prices change', () => {
 		const entries = journal(900); const cheap = record(true, [{ itemId: 30, unitCopper: 1 }]); const dear = record(true, [{ itemId: 30, unitCopper: 99 }]);
-		expect(buildLiveChart(entries, dear)).toEqual(legacyChart(entries, dear));
-		expect(buildLiveChart(entries, dear)).not.toEqual(buildLiveChart(entries, cheap));
+		const chart = buildLiveChart(entries, dear); const every = legacyChart(entries, dear);
+		for (const point of chart) expect(point).toEqual(every.find((candidate) => candidate.observedAt === point.observedAt));
+		expect(chart).not.toEqual(buildLiveChart(entries, cheap));
 	});
 	it('keeps the arithmetic overflow guard', () => {
 		const huge = journal(2); huge[0]!.observations = [observation(0, 'item', 1, Number.MAX_SAFE_INTEGER)]; huge[1]!.observations = [observation(1, 'item', 1, 5)];

@@ -124,10 +124,9 @@ export function liveSessionViewFromStored(payload: StoredLiveSessionPayloadV1, _
 	const all = payload.journal.flatMap((entry) => entry.observations);
 	const start = Math.max(0,Number.isSafeInteger(offset) ? offset : 0);
 	const size = Math.max(1,Math.min(200,Number.isSafeInteger(limit) ? limit : 200));
-	// The displayed tail starts at a break when it is not the whole journal (as the live view does).
+	// Same criterion as the live chart: the whole session in at most 600 points.
 	const chart = buildLiveChart(payload.journal,{ prices: payload.valuation.prices,priceCapturedAt: payload.valuation.capturedAt,
 		currencyTrackedIds: payload.valuation.coinNetCopper !== null ? [GOLD_CURRENCY_ID] : [] });
-	if (chart.length > 0 && payload.journal.length > chart.length) chart[0] = { ...chart[0]!,breakBefore: true };
 	return { version: 1,sessionId: payload.sessionRef,phase: 'complete',connection: 'disconnected',sourceState: 'unavailable',
 		sourceReason: 'source_missing',source: 'nexus_inventory',startedAt: payload.startedAt,endedAt: payload.endedAt,
 		elapsedMs: Date.parse(payload.endedAt) - Date.parse(payload.startedAt),observedItemsMs: payload.observedItemsMs,

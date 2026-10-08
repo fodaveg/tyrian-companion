@@ -118,17 +118,53 @@ export function liveChartPoint(entry: Pick<LiveJournalEntryV1,'observedAt' | 'br
 		netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore };
 }
 
+type ChartEntry = Pick<LiveJournalEntryV1,'observations' | 'observedAt' | 'breakBefore'>;
+type ChartRecord = Parameters<typeof liveChartPoint>[2];
+
 /**
- * The last `limit` chart points of a journal. Totals accumulate in one mutable map over the whole journal (no per-entry
- * copy or sort: sums of integers do not depend on order), but only the retained tail is revalued.
+ * A chart of at most `limit` points that spans the WHOLE session. Which entries become points depends only on the
+ * journal, never on prices, so a bulk build and a sample-by-sample one give the same chart:
+ * - the first entry and every cut (`breakBefore`) are always points;
+ * - an entry that observed something is a point candidate, an empty one (nothing changed) is not;
+ * - candidates are thinned by a stride that doubles each time the points would exceed the limit (older points
+ *   are dropped, never the first, a cut or the latest entry);
+ * - the latest entry is always the last point, so the line ends at the exact current value.
  */
-export function buildLiveChart(journal: readonly Pick<LiveJournalEntryV1,'observations' | 'observedAt' | 'breakBefore'>[], record: Parameters<typeof liveChartPoint>[2], limit = 600): LiveChartPointV1[] {
-	const map = new Map<string, LiveTotalV1>(); const chart: LiveChartPointV1[] = []; const firstValued = journal.length - limit;
-	journal.forEach((entry, index) => {
-		accumulateLiveTotals(map, entry.observations);
-		if (index >= firstValued) chart.push(liveChartPoint(entry, [...map.values()], record));
-	});
-	return chart;
+export class LiveChartBuilder {
+	private kept: { point: LiveChartPointV1; ordinal: number; cut: boolean; index: number }[] = [];
+	private stride = 1; private ordinal = 0; private count = 0; private latest: ChartEntry | null = null;
+	constructor(private readonly value: (entry: ChartEntry, totals: readonly LiveTotalV1[]) => LiveChartPointV1, private readonly limit = 600) {}
+	/** `totals` are the cumulative totals AFTER `entry`; only read when the entry becomes a point. */
+	push(entry: ChartEntry, totals: () => readonly LiveTotalV1[]): void {
+		const index = this.count; this.count += 1; this.latest = entry;
+		if (index === 0 || entry.breakBefore) { this.kept.push({ point: this.value(entry, totals()), ordinal: -1, cut: true, index }); return; }
+		if (entry.observations.length === 0) return;
+		const ordinal = this.ordinal; this.ordinal += 1;
+		if (ordinal % this.stride !== 0) return;
+		this.kept.push({ point: this.value(entry, totals()), ordinal, cut: false, index });
+		while (this.kept.length > this.limit - 1) {
+			const filtered = this.kept.filter((row) => row.cut || row.ordinal % (this.stride * 2) === 0);
+			if (filtered.length === this.kept.length) break;
+			this.stride *= 2; this.kept = filtered;
+		}
+	}
+	/** The points so far; the latest entry closes the line unless it already is the last point. */
+	points(totals: () => readonly LiveTotalV1[]): LiveChartPointV1[] {
+		const out = this.kept.map((row) => row.point);
+		if (this.latest !== null && this.kept[this.kept.length - 1]?.index !== this.count - 1) out.push(this.value(this.latest, totals()));
+		return out;
+	}
+}
+
+/** A builder fed with a whole journal; `totals` of the result are the accumulated ones. */
+export function createLiveChart(journal: readonly ChartEntry[], record: ChartRecord, limit = 600): { builder: LiveChartBuilder; totals: LiveTotalV1[] } {
+	const map = new Map<string, LiveTotalV1>(); const builder = new LiveChartBuilder((entry, totals) => liveChartPoint(entry, totals, record), limit);
+	for (const entry of journal) { accumulateLiveTotals(map, entry.observations); builder.push(entry, () => [...map.values()]); }
+	return { builder, totals: [...map.values()] };
+}
+export function buildLiveChart(journal: readonly ChartEntry[], record: ChartRecord, limit = 600): LiveChartPointV1[] {
+	const { builder, totals } = createLiveChart(journal, record, limit);
+	return builder.points(() => totals);
 }
 
 /** Wallet currency that is valued in copper; every other currency stays unconverted. */

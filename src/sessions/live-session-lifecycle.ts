@@ -9,7 +9,7 @@ import { DEFAULT_FARMING_PREPARATION, normalizeFarmingPreparationSettings, type 
 import { LIVE_SOURCE_STALE_MS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveSessionRuntimeRecord, type LiveJournalEntryV1,
 	type LiveSessionViewV1, type LiveGapV1, type LiveChartPointV1 } from './live-session-model';
-import { buildLiveChart, liveChartPoint, liveObservationTotals,liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
+import { createLiveChart, LiveChartBuilder, liveChartPoint, liveObservationTotals,liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
 import type { IngameGameContext } from '../alerts/alert-ingame-protocol';
 import { createLiveAlertIntent, settleLiveAlertRestart } from './live-session-outbox';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } from './live-session-model';
@@ -53,7 +53,7 @@ export class LiveSessionLifecycle {
 	private journal: LiveJournalEntryV1[] = [];
 	private readonly completed = new Map<string, { record: LiveSessionRuntimeRecord; journal: LiveJournalEntryV1[] }>();
 	private observations: LiveSessionViewV1['observations'] = [];
-	private chart: LiveChartPointV1[] = [];
+	private chart = this.newChart();
 	private handle: ActiveSessionLeaseHandle | null = null;
 	private queue = Promise.resolve();
 	private timer: unknown = null;
@@ -126,7 +126,7 @@ export class LiveSessionLifecycle {
 				farmingGoal: normalizeFarmingGoal(this.options.farmingGoal?.()), groupContext: this.options.groupContext?.() ?? null,
 				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, declaredBuild, summaryReceipt: null };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return null; }
-			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = []; this.failure = false;
+			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = this.newChart(); this.failure = false;
 			this.unsaved = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false; this.noteNeedsVerification = false;
 			this.armHeartbeat(); this.options.onStateChange(); return id;
 		});
@@ -336,7 +336,7 @@ export class LiveSessionLifecycle {
 			currencyIds: row?.lastSample?.rows.filter((item) => item.kind === 'currency').map((item) => item.idNumber) ?? [], freeSlots: row?.lastSample?.freeSlots ?? null,
 			observations: all.slice(start, start + size), observationCount: all.length, observationOffset: start, hasMore: start + size < all.length,
 			gaps: structuredClone(row?.gaps ?? []), totals: structuredClone(row?.totals ?? []), valuation,
-			chartPoints: boundedChart(this.chart), magicFind: row?.magicFind ?? { value: null, source: 'unknown' } };
+			chartPoints: boundedChart(this.chart.points(() => row?.totals ?? [])), magicFind: row?.magicFind ?? { value: null, source: 'unknown' } };
 	}
 
 	async dispose(): Promise<void> {
@@ -574,10 +574,10 @@ export class LiveSessionLifecycle {
 		next.mapObservation = mapId === null ? null : { mapId, fromMs: atMs }; return next;
 	}
 	private appendChart(entry: LiveJournalEntryV1, totals = this.record?.totals ?? []): void {
-		this.chart.push(liveChartPoint(entry, totals, this.record));
-		if (this.chart.length > 600) this.chart.shift();
+		this.chart.push(entry, () => totals);
 	}
-	private rebuildChart(): void { this.chart = buildLiveChart(this.journal, this.record); }
+	private newChart(): LiveChartBuilder { return new LiveChartBuilder((entry, totals) => liveChartPoint(entry, totals, this.record)); }
+	private rebuildChart(): void { this.chart = createLiveChart(this.journal, this.record).builder; }
 
 	private nowIso(): string { return new Date(this.options.now()).toISOString(); }
 	private enqueue<T>(work: () => Promise<T>): Promise<T> {
