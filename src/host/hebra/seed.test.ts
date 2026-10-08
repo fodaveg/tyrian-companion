@@ -172,6 +172,45 @@ describe('seedTyrianPathIndex', () => {
 	});
 });
 
+// 8 Oct 2026 (Z7): Hebra lists notes newest first (`updated_at DESC`) by keyset. A note the sync
+// edits while the seed is walking jumps to the front, behind the page already served, and the
+// walk never sees it. Reconciling used to purge it from the index as "gone".
+describe('seedTyrianPathIndex while the sync moves a note between pages', () => {
+	it('reconcile keeps a note that is still alive but was not listed, instead of purging it', async () => {
+		const fake = library();
+		for (let n = 0; n < 250; n += 1) note(fake, `n-${String(n).padStart(3, '0')}`, `family=inventory path=Inventory/${String(n)}.md`);
+		const index = await freshIndex();
+		await seed(fake, index);
+
+		let pagesServed = 0;
+		let victim = '';
+		const listing = {
+			...fake,
+			async notesPage(cursor: string | null, limit: number, scope?: Parameters<FakeLibrary['notesPage']>[2]) {
+				const all = (await fake.notesPage(null, 100_000, scope)).items
+					.sort((a, b) => b.updatedAt - a.updatedAt || (a.id < b.id ? 1 : -1));
+				const start = cursor === null ? 0 : Number(cursor);
+				const result = { items: all.slice(start, start + limit), nextCursor: start + limit < all.length ? String(start + limit) : null };
+				pagesServed += 1;
+				if (pagesServed === 1) {
+					// The sync edits the oldest note after the first page went out: it now sorts first.
+					victim = all.at(-1)?.id ?? '';
+					fake.touchNote(victim, fake.notes.get(victim)?.body ?? '');
+				}
+				return result;
+			},
+		};
+		const result = await seedTyrianPathIndex({
+			library: listing, index, rootFolderId: ROOT, root: 'Tyrian Companion', canonicalPathFor: fakeCanonicalPathFor, reconcile: true,
+		});
+
+		expect(victim).not.toBe('');
+		expect(index.getPathForId(victim)).toBeDefined();
+		expect(index.size).toBe(250);
+		expect(result.adopted).toBe(250);
+	});
+});
+
 describe('refreshUnadoptedNotes', () => {
 	it('drops trashed, archived and purged notes from the list, and saves', async () => {
 		const kv = createMemoryPathIndexKv();

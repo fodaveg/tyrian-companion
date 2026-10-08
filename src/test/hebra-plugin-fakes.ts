@@ -213,8 +213,15 @@ export function createFakeLibrary(options: { libraryId?: string; rootId?: string
 			const note = notes.get(id);
 			return note ? toNote(note) : null;
 		},
-		async noteSummary() {
-			throw new Error('fake library: noteSummary is not used by Tyrian');
+		async noteSummary(ids) {
+			// What the real one answers: a row per note that exists (trashed and archived included).
+			return ids.flatMap((id) => {
+				const note = notes.get(id);
+				return note ? [{
+					id: note.id, title: note.title, excerpt: '', createdAt: note.createdAt, updatedAt: note.updatedAt,
+					favorite: false, locked: note.locked, folderId: note.folderId, trashedAt: note.trashedAt, archivedAt: note.archivedAt,
+				}] : [];
+			});
 		},
 		async noteCreate({ folderId, body }) {
 			const id = nextId('note');
