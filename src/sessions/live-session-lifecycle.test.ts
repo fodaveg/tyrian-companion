@@ -268,7 +268,7 @@ describe('passive live session lifecycle', () => {
 			const id = await f.service.start('Test'); expect(id, `start ${round}`).not.toBeNull(); f.setNow(AT+round*100_000); await f.service.open({...f.source,epoch:`${String.fromCharCode(66+round)}${'A'.repeat(20)}Q`});
 			await f.service.stop(AT+round*100_000+1000);
 		}
-		expect(prune).toHaveBeenCalled(); expect(prune.mock.calls.length).toBeGreaterThanOrEqual(2); await f.service.dispose();
+		expect(prune).toHaveBeenCalled(); expect(prune.mock.calls.length).toBeGreaterThanOrEqual(2); expect(f.options.onError, 'the failed prune left a trace').toHaveBeenCalledWith(expect.objectContaining({message:'boom'})); await f.service.dispose();
 	});
 	describe('after a suspension, with the real lease coordinator', () => {
 		/** A lifecycle over the REAL coordinator on fake-indexeddb with a clock the test moves: the lease really expires. */

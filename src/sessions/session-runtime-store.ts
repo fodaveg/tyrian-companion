@@ -400,7 +400,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		try { return await this.run(async (database) => await markLiveAlertsProcessed(database, sessionId, epoch, cursor)); } catch { return false; }
 	}
 	async pruneLiveJournal(sessionId: string): Promise<boolean> {
-		try { return await this.run(async (database) => await pruneLiveJournal(database, sessionId)); } catch { return false; }
+		return await this.run(async (database) => await pruneLiveJournal(database, sessionId)); // a failure reaches the lifecycle, which reports it and retries
 	}
 	async replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean> {
 		try { return await this.run(async (database) => await replaceLiveJournal(database,prior,next,owner)); } catch { return false; }

@@ -562,7 +562,7 @@ export class LiveSessionLifecycle {
 	private async pruneSealed(): Promise<void> {
 		for (const sessionId of [...this.sealedForPrune]) {
 			if (sessionId === this.record?.sessionId || this.completed.has(sessionId)) { this.sealedForPrune.delete(sessionId); continue; }
-			try { if (await this.options.persistence.pruneLiveJournal?.(sessionId) === true) this.sealedForPrune.delete(sessionId); } catch { /* retried at the next start */ }
+			try { if (await this.options.persistence.pruneLiveJournal?.(sessionId) === true) this.sealedForPrune.delete(sessionId); } catch (error) { this.options.onError(error); /* the id stays queued: retried at the next start */ }
 		}
 	}
 	private async saveCompletedNote(): Promise<boolean> {

@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 536,
+		"catch_clause": 537,
 		"promise_catch": 57,
 		"void_expression": 120,
 		"callback_registration": 216
@@ -10485,6 +10485,22 @@
 						"justification": "The \"armHeartbeat\" \"this.enqueue\" boundary retains a disposable timer and enqueues the fenced operation; enqueue retains rejection reporting."
 					},
 					"reason": "Allowlisted void_expression: The \"armHeartbeat\" \"this.enqueue\" boundary retains a disposable timer and enqueues the fenced operation; enqueue retains rejection reporting. Verified target: \"this.enqueue\" in \"armHeartbeat\"."
+				},
+				{
+					"id": "7ddd9f475ee93665839cd8b3166da5e8b9e9eb65",
+					"kind": "catch_clause",
+					"line": 565,
+					"column": 126,
+					"endLine": 565,
+					"endColumn": 225,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "pruneSealed",
+						"justification": "The \"pruneSealed\" catch is a \"local_recovery\": a journal prune that throws is reported through onError and its session id stays queued for the next start, so a failed prune never touches the session or blocks start()."
+					},
+					"reason": "Allowlisted catch_clause: The \"pruneSealed\" catch is a \"local_recovery\": a journal prune that throws is reported through onError and its session id stays queued for the next start, so a failed prune never touches the session or blocks start(). Verified recovery: \"local_recovery\" in \"pruneSealed\"."
 				},
 				{
 					"id": "6cbbb0836dfb071587f2543e51de07446397417b",
