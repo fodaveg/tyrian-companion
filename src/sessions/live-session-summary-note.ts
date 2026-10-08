@@ -1,9 +1,10 @@
 import { formatCopperVisual } from '../core/copper-format';
 import { errorClassName } from '../core/local-debug-error-details';
 import { ensureFoldersBySegments } from '../core/vault-folders';
-import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, SUMMARY_MIN_RATE_MS, summaryMainMap,
+import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, summaryMainMap,
 	type SummaryCharacter, type SummaryItemMetaMap } from './live-session-summary-figures';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { LIVE_RATE_MIN_OBSERVED_MS } from './live-session-model';
 import { normalizeSessionOutputFolder } from './session-note-model';
 import type { SessionNoteVault } from './session-note-writer';
 
@@ -112,7 +113,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		if (shownNet !== null) {
 			verdict.push(`- ${label('Neto estimado', 'Estimated net')}: ${money(shownNet)}${maxNote}`);
 			verdict.push(`- ${label('Por hora', 'Per hour')}: ${shownPerHour !== null ? `${money(shownPerHour)}${maxNote}`
-				: f.perHour.reason === 'short' ? label(`no disponible (menos de ${String(SUMMARY_MIN_RATE_MS / 60_000)} min observados)`, `unavailable (under ${String(SUMMARY_MIN_RATE_MS / 60_000)} observed min)`)
+				: f.perHour.reason === 'short' ? label(`no disponible (menos de ${String(LIVE_RATE_MIN_OBSERVED_MS / 60_000)} min observados)`, `unavailable (under ${String(LIVE_RATE_MIN_OBSERVED_MS / 60_000)} observed min)`)
 				: label('no disponible (cobertura de objetos incompleta)', 'unavailable (incomplete item coverage)')}`);
 			if (f.withoutDominant !== null) verdict.push(`- ${label('Por hora sin', 'Per hour without')} ${itemName(f.withoutDominant.itemId)}: ${money(f.withoutDominant.perHourCopper)} (${label('ese objeto es más de la mitad del valor', 'that item is over half the value')})`);
 			if (average !== null) verdict.push(`- ${label('Tu media en sesiones parecidas', 'Your average in similar sessions')}: ${money(average)}/h (${label(`${String(comparables.length)} sesiones en este mapa`, `${String(comparables.length)} sessions on this map`)})`);

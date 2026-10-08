@@ -1,8 +1,6 @@
-import type { LiveGapV1 } from './live-session-model';
+import { liveItemRateEligible, type LiveGapV1 } from './live-session-model';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
 
-/** Below this much observed item time a per-hour figure says nothing; it is not written. */
-export const SUMMARY_MIN_RATE_MS = 15 * 60_000;
 /** The main map is the one that holds more than this share of the time spent on known maps. */
 export const SUMMARY_MAIN_MAP_SHARE = 0.7;
 /** One item above this share of the sellable value makes the per-hour figure misleading on its own. */
@@ -99,7 +97,7 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	unpriced.sort((a, b) => b.quantity - a.quantity || a.itemId - b.itemId);
 
 	const observedMs = session.observedItemsMs;
-	const rateReason: 'short' | 'coverage' | null = observedMs < SUMMARY_MIN_RATE_MS ? 'short' : session.coverage.items !== 'complete' ? 'coverage' : null;
+	const rateReason: 'short' | 'coverage' | null = !liveItemRateEligible({ observedItemsMs: observedMs }) ? 'short' : session.coverage.items !== 'complete' ? 'coverage' : null;
 	const hasQuantity = itemTotals.some((row) => row.net !== 0);
 	const noPrices = hasQuantity && !pricedAny;
 	const goldNet = session.valuation.coinNetCopper ?? session.totals.find((row) => row.kind === 'currency' && row.idNumber === GOLD_CURRENCY_ID)?.net ?? null;
