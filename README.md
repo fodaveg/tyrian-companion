@@ -7,7 +7,7 @@
 
 Tyrian Companion is a desktop-only Obsidian plugin for reviewing Guild Wars 2 farming sessions and
 account inventory context inside a vault, with an independent Hebra host adapter. Recommendations
-describe manual actions: the plugin never operates the game account. A connected Nexus or Blish HUD
+describe manual actions: the plugin never operates the game account. A connected Nexus
 addon can mark session boundaries automatically from game presence.
 
 The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
@@ -15,8 +15,10 @@ our Nexus addon as the source of new sessions. **The 0.6.10 channel is published
 installation and runtime QA remain pending.** This does not prove that an installed older addon supplies it.
 Authenticated GW2 API requests are reserved for explicit manual inventory/wallet operations and
 connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
-is primary. Windows with Blish HUD remains required and needs a local Nexus producer for live
-inventory. AFK detection and game automation are not provided. The separate H8 Mumble Link helper
+is primary. Since October 8, 2026 (David's decision) the Nexus addon is required for the live features on
+every platform; the Blish HUD module is frozen at its published 0.5.0 and receives no new features. Windows
+with Nexus and the same addon is the expected route for Windows players, but the addon's reader has only
+been tested on Fedora with Proton, not on native Windows. AFK detection and game automation are not provided. The separate H8 Mumble Link helper
 retains its existing isolated map/activity policy and is not the live source.
 H8.1 fixes that future contract and its guards. H8.2 adds only a non-production, read-only CrossOver
 probe spike under `spikes/`; no helper, IPC runtime or plugin integration is shipped.
@@ -51,7 +53,7 @@ unimplemented coverage displays unknown, not zero. Economic actions stay manual 
 
 Historical game-reading evidence comes from the external Fedora/GE-Proton 11-7 probe recorded in
 [evidence provenance](docs/audit/live-loot-evidence-provenance.md); candidate code checks are separate.
-Native Nexus bootstrap, a complete game session, canonical Hebra reopen and Windows Nexus+Blish QA
+Native Nexus bootstrap, a complete game session, canonical Hebra reopen and native Windows Nexus QA
 remain pending. The native 0.5.0 reader does not cover wallet/currencies, verified MF or free slots.
 
 ## Halloween farming
@@ -67,10 +69,9 @@ editor and live comparison are integrated with independent review. The published
 passed its combined checks; real-client installation/runtime QA remains pending. See
 [release evidence](docs/ESTADO.md).
 
-Live sessions require the matching **0.5.0 Nexus producer**, including when Blish HUD is the
-Windows overlay. [Nexus 0.5.0](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.5.0)
-and [Blish HUD 0.5.0](https://github.com/fodaveg/tyrian-companion-blish/releases/tag/0.5.0) are
-published with verified package/checksum assets. This Nexus addon has no automatic updater:
+Live sessions require the matching **Nexus producer**. [Nexus 0.5.0](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.5.0)
+and [Blish HUD 0.5.0](https://github.com/fodaveg/tyrian-companion-blish/releases/tag/0.5.0) were
+published with verified package/checksum assets; Blish HUD stays frozen at 0.5.0. This Nexus addon has no automatic updater:
 with GW2 closed, replace its DLL manually and verify the loaded version after reopening the game.
 Publishing Companion does not update that DLL. Older v3 clients retain their compatible alerts/
 panel behavior, but that does not provide the new live source. See the
@@ -97,7 +98,7 @@ Obsidian plugin assets. Publication does not prove installation or runtime behav
 
 For Obsidian, use desktop `1.11.4` or newer and a disposable vault. BRAT installs published beta
 versions; select the published 0.6.10 release. Game sessions also need the matching Nexus producer.
-Windows with Blish HUD still needs Nexus locally.
+The Nexus addon is required on every platform, Windows included; Blish HUD is frozen at 0.5.0.
 
 1. From **Settings → Community plugins → Browse**, install and enable
    [BRAT](https://github.com/TfTHacker/obsidian42-brat).
@@ -128,9 +129,8 @@ an installed client. The [live QA matrix](docs/QA-MVP.md) records the pending re
 checks. Legacy API session controls are not a fallback for missing Nexus observations.
 
 1. Run Tyrian on the collector host, enable the bridge and configure the addon token in Nexus.
-   The bridge token is separate from a GW2 API key. On Windows, configure Blish HUD as a consumer
-   too; Nexus remains the source. Nexus retains the Obsidian/Hebra host selector; Blish needs the
-   host to be available. Startup and reopening with this candidate still require QA.
+   The bridge token is separate from a GW2 API key. Nexus retains the
+   Obsidian/Hebra host selector. Startup and reopening with this candidate still require QA.
 2. Enter gameplay. Presence starts the session automatically without manual review. The first
    valid inventory sample establishes a baseline, not loot; it does not move the session start time.
    Check both the session phase and source state: a connected addon alone is not evidence of items.

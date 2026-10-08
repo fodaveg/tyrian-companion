@@ -49,8 +49,10 @@ infiere carga correcta de la versión que figure en disco. Nexus no ofrece autoa
 este addon: con GW2 cerrado, sustituir manualmente la DLL por el artifact elegido y comprobar la
 versión cargada al reabrir. Publicar Companion no sustituye la DLL local de Nexus.
 
-La matriz vigente de sesiones requiere Nexus en Fedora/GE-Proton y Windows; en Windows, Blish HUD
-conserva HUD/avisos y necesita ese productor local. Blish por sí solo no aporta objetos; su soporte
+La matriz vigente de sesiones requiere Nexus en Fedora/GE-Proton y Windows. Desde el 8 oct 2026 el
+addon de Nexus es obligatorio para las funciones en vivo en todas las plataformas y el módulo de Blish HUD
+queda congelado en su 0.5.0, sin funciones nuevas; que Windows nativo funcione con Nexus es una expectativa
+sin probar (el lector solo está probado en Fedora con Proton). Blish por sí solo no aporta objetos; su soporte
 en Fedora no está acreditado. La sesión abarca la conexión al juego y diez minutos de gracia,
 independientemente de los huecos de lectura. El addon 0.6.0 lee la cartera (verificado en el juego:
 55 monedas cubiertas); el lector nativo sigue sin cubrir MF verificado ni huecos de bolsas: se muestran desconocidos, nunca cero ni inferidos mediante

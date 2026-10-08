@@ -12,7 +12,7 @@ La [política de plataformas](PLATFORM_POLICY.md) fija la frontera autorizada y 
 - Baseline no es botín. La señal es inventario agregado observado, no un evento causal del motor del juego. No se promete observar cambios que ocurren y se compensan entre muestras.
 - Solo lectura pasiva del juego: sin hooks nuevos, inyección de código adicional al addon cargado normalmente por Nexus, llamadas a getters del juego, escritura en su memoria, ptrace, suspensión de hilos ni automatización. Las funciones/vtables del perfil sirven para comprobar identidad y estructura, no para invocarlas.
 - Una fuente Nexus vinculada por sesión. El `instance` del hello identifica un proceso addon, no una cuenta GW2. No asociarlo automáticamente con la cuenta de una clave API configurada.
-- Blish conserva presencia, avisos y HUD en Windows. Para el nuevo feed necesita Nexus local como productor; Blish/Mumble no aportan objetos ni monedas. Mostrar la carencia cuando no exista fuente. La QA Windows sigue siendo necesaria y la nueva dependencia debe explicarse.
+- Blish conserva presencia, avisos y HUD en su 0.5.0 publicada, congelado desde el 8 oct 2026 (Nexus es obligatorio para las funciones en vivo y Blish no recibe funciones nuevas). Para el nuevo feed necesitaba Nexus local como productor; Blish/Mumble no aportan objetos ni monedas. Mostrar la carencia cuando no exista fuente. La QA Windows sigue siendo necesaria y la nueva dependencia debe explicarse.
 - El objetivo completo incluye monedas y MF pendiente del audit. Se permite entregar código que declare falta de cobertura; eso no cierra esas tareas ni el objetivo completo.
 
 ## 2. Negociación y compatibilidad

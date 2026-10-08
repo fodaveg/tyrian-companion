@@ -16,13 +16,19 @@ Describir esta frontera no implica aprobación de ArenaNet ni garantiza compatib
 | --- | --- | --- | --- |
 | Primaria | Linux con Steam/Proton | Nexus como fuente live, presencia automática, recovery y artefactos Hebra/Vault; inventario API manual | La matriz funcional completa es bloqueante. No se publica con pérdida de datos, credenciales expuestas o un flujo obligatorio roto. |
 | Secundaria | macOS con CrossOver | Funciones manuales API existentes; captura live bajo CrossOver todavía no acreditada | Son bloqueantes los fallos de datos, privacidad, conexión, lifecycle o recovery. Una limitación exclusiva de presentación puede documentarse sin prometer paridad visual inmediata. |
-| Beta | Windows | Funciones manuales API existentes; para sesiones live, productor Nexus local y consumidor Blish HUD | Debe pasar instalación, conexión, sesión manual, recovery y escritura segura. Un defecto exclusivamente Windows puede quedar conocido durante la beta; nunca se relajan privacidad, integridad ni la prohibición de operar sobre la cuenta. |
+| Beta | Windows | Funciones manuales API existentes; para sesiones live, addon de Nexus obligatorio (decisión del 8 oct 2026); el módulo de Blish HUD queda congelado en su 0.5.0 y no recibe funciones nuevas | Debe pasar instalación, conexión, sesión manual, recovery y escritura segura. Un defecto exclusivamente Windows puede quedar conocido durante la beta; nunca se relajan privacidad, integridad ni la prohibición de operar sobre la cuenta. |
 
 Excepción decidida por David el 24 sep 2026: el puente con los addons del juego en **Windows con
 Blish HUD** deja de ser beta y tiene que funcionar, porque es la plataforma de los compañeros del
 clan. Su QA propia (sesión automática de principio a fin y aviso visible) es bloqueante para la
 entrega que active la sesión automática. Blish HUD en Linux sigue sin acreditar; en Linux con
 Steam/Proton la vía es Nexus.
+
+Sustituido por decisión de David del 8 oct 2026: Nexus es obligatorio para las funciones en vivo en todas las
+plataformas y el módulo de Blish HUD se congela en su 0.5.0 publicada, sin funciones nuevas (tampoco precios
+ni `price2`); su 0.6.0 no se publica. Los compañeros en Windows usan Nexus con el mismo addon. Que Windows
+nativo funcione con Nexus es una expectativa sin probar: el lector del addon solo está probado en Fedora con
+Proton. La QA propia de la excepción anterior pasa a ser QA de Nexus en Windows nativo, pendiente.
 
 Las métricas se publican separadas por plataforma y versión de Steam/Proton, CrossOver,
 Windows, Obsidian y Tyrian Companion. Un agregado global no puede ocultar una regresión de la

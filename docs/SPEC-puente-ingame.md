@@ -4,7 +4,7 @@
 
 [SPEC-live-loot](SPEC-live-loot.md) fija la captura propia Nexus, implementada en código candidato 0.5.0; **verificación conjunta y QA real pendientes**. Conserva v2/v3, hello/welcome, avisos y farm1 sin nuevas claves; negocia capacidad separada después de autenticar v3. Usa nonce y secuencia existentes, framing cerrado de 512 bytes y commit durable antes de ACK/publicación. ACK live no confirma avisos ni farm1.
 
-El contexto ordinario conserva mapa/personaje/estado; las muestras agregadas viajan solo por live1. Blish consume avisos y farm1 y requiere Nexus local como fuente live en Windows. Plugin→addon sigue sin cuenta/personaje, rutas ni secretos; no hay mensajes para ejecutar acciones del juego.
+El contexto ordinario conserva mapa/personaje/estado; las muestras agregadas viajan solo por live1. Blish (congelado en su 0.5.0 desde el 8 oct 2026, sin funciones nuevas) consume avisos y farm1; la fuente live es Nexus, obligatorio en todas las plataformas. Plugin→addon sigue sin cuenta/personaje, rutas ni secretos; no hay mensajes para ejecutar acciones del juego.
 
 En farm1 legacy, antigüedad y banda proceden de snapshots API; en live1 proceden de observaciones y tiempo cubierto, con huecos y desconocidos explícitos. No se cambia su wire ni se inventa causalidad, monedas o MF. Las descripciones históricas que limitan todos los addons a contexto quedan ampliadas solo para el productor live1.
 
@@ -32,7 +32,7 @@ ventana.» «Voy a necesitar tanto nexus como blishhud.»
 - **El puente pasa a ser bidireccional y autenticado.**
 - **Fuera del Laberinto, una sesión es toda la conexión al juego**; una desconexión de más de
   10 minutos la cierra.
-- **Windows con Blish HUD tiene que funcionar** para los compañeros del clan.
+- **Windows con Blish HUD tiene que funcionar** para los compañeros del clan. *(Sustituido el 8 oct 2026: Nexus es obligatorio para las funciones en vivo y Blish HUD queda congelado en su 0.5.0, sin funciones nuevas; ni `price2` ni lo que venga llega a Blish. Los compañeros en Windows usan Nexus; que Windows nativo funcione es una expectativa sin probar.)*
 
 ## Qué cambia respecto a la v1
 

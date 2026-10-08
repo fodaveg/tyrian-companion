@@ -5,7 +5,7 @@
 David autoriza el lector propio y pasivo de Nexus para el alcance completo del audit: sesiones, timeline, resumen, gráfica, valoración y exportación en Hebra/Obsidian, con HUD y avisos en Nexus/Blish. El contrato canónico es [SPEC-live-loot](SPEC-live-loot.md). **0.5.0 publicada con gate del árbol de release verificado; instalación/runtime pendiente**: esta sección fija el resultado exigido, sin certificar la instalación ni la ejecución del addon.
 
 - La sesión conserva toda la conexión al juego y la gracia de diez minutos. La presencia y la disponibilidad de muestras son independientes; cambiar de mapa o personaje no recorta por sí solo la sesión.
-- Nexus es el único productor. Windows con Blish HUD conserva su obligación de soporte y requiere Nexus local para los objetos. Fuente ausente, parcial, antigua o en conflicto se muestra sin fingir cobertura.
+- Nexus es el único productor. Desde el 8 oct 2026 (decisión de David) Nexus es obligatorio para las funciones en vivo en todas las plataformas, Windows incluido; el módulo de Blish HUD queda congelado en su 0.5.0 publicada y no recibe funciones nuevas. Que Windows nativo funcione con Nexus es una expectativa sin probar (el lector solo está probado en Fedora con Proton). Fuente ausente, parcial, antigua o en conflicto se muestra sin fingir cobertura.
 - La API autenticada queda reservada a acciones manuales de inventario/cartera y comprobación explícita de conexión. La sesión live no requiere clave; no se consulta en carga, presencia, inicio, muestreo, cierre, recovery, comparación, MF o refresco de vista, ni como fallback. Catálogo y precios públicos continúan bajo sus políticas vigentes.
 - Se muestran cambios del inventario observado con causa desconocida. Baselines/rebaselines no son adquisiciones; los huecos no son tiempo medido y lo desconocido no equivale a cero. Un aumento no demuestra un drop; una disminución no demuestra apertura o venta.
 - Timeline, resumen, gráfica y exportación proceden del mismo ledger durable. La UI puede paginar; exportar conserva todas las filas. (Candidato 0.6.0: la pestaña Sesión pinta una gráfica de valor y la cronología plegada, sin pestañas Cronología/Resumen ni control de exportación; la sesión actual y la sesión antigua guardada se exportan con dos comandos, y el historial desde Ajustes → Mantenimiento.) Cantidad positiva observada, neto firmado, subtotal valorado y cobertura monetaria se distinguen. Tasas y objetivos respetan tiempo cubierto y frescura.
@@ -163,8 +163,8 @@ Una conexión que no se autentica no cuenta ni recibe avisos, y el canal falla e
 emisor si no hay ningún addon autenticado. Contrato completo en
 [SPEC del puente](SPEC-puente-ingame.md).
 Linux con Steam/Proton es la plataforma primaria, macOS con CrossOver la secundaria y Windows
-permanece en beta, salvo el puente con Blish HUD: en Windows tiene que funcionar, con su propia QA,
-porque es la plataforma de los compañeros del clan (decisión del 24 sep 2026). La matriz de soporte, los gates y las métricas del piloto se fijan en
+permanece en beta. La excepción del 24 sep 2026 para el puente con Blish HUD queda sustituida por la
+decisión del 8 oct 2026: Nexus es obligatorio en Windows también y Blish HUD se congela en su 0.5.0. La matriz de soporte, los gates y las métricas del piloto se fijan en
 [Política de plataformas e integraciones](PLATFORM_POLICY.md).
 
 Queda fuera de v1 que el plugin lea Mumble Link por sí mismo (el helper H8 sigue en el árbol y no es
