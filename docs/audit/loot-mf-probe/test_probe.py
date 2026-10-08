@@ -43,7 +43,8 @@ def modifier(kind=MF, value=30.0, formula=6, mode=0, target=0, need=0, flags=0):
 class Fixture:
     """Owned sparse bytes with a read log and explicit race/short-read injection."""
 
-    def __init__(self, luck=300, capacity=64):
+    def __init__(self, luck=300, capacity=64, content_remainder=probe.PROFILE['content_pointer_remainder']):
+        self.content_remainder = content_remainder
         self.memory = {}
         self.calls = []
         self.mutate = None
@@ -79,6 +80,9 @@ class Fixture:
     def qword(self, address, value):
         self.write(address, struct.pack('<Q', value))
 
+    def read_qword(self, address):
+        return int.from_bytes(bytes(self.memory.get(address + offset, 0) for offset in range(8)), 'little')
+
     def dword(self, address, value):
         self.write(address, struct.pack('<I', value))
 
@@ -98,18 +102,19 @@ class Fixture:
         self.write(MANAGER + 0x20, struct.pack('<IIQ', self.capacity, self.count, BUCKETS))
         self.write(MANAGER + 0xD8, struct.pack('<QII', PUSHED, 64, len(self.pushed)))
 
-    def alloc(self, size):
-        address = self.heap
-        self.heap += (size + 15) & ~15
+    def alloc(self, size, content=False):
+        """Heap objects land on 8 bytes; game content lands 4 past, as the live run showed."""
+        address = self.heap + (self.content_remainder if content else 0)
+        self.heap += (size + 31) & ~15
         return address
 
     def definition(self, modifiers, stacking=0, category=1, flags=0):
-        records = self.alloc(len(modifiers) * probe.MODIFIER_SIZE or 16)
+        records = self.alloc(len(modifiers) * probe.MODIFIER_SIZE or 16, content=True)
         for index, record in enumerate(modifiers):
             self.write(records + index * probe.MODIFIER_SIZE, struct.pack(probe.MODIFIER_FORMAT, *record))
-        groups = self.alloc(0x20)
+        groups = self.alloc(0x20, content=True)
         self.write(groups + 0x10, struct.pack('<QI', records if modifiers else 0, len(modifiers)))
-        definition = self.alloc(0x30)
+        definition = self.alloc(0x30, content=True)
         self.dword(definition + 0x4, flags)
         self.dword(definition + 0xC, stacking)
         self.dword(definition + 0x18, category)
@@ -119,7 +124,7 @@ class Fixture:
 
     def buff(self, key, effect, definition, misalign=0):
         node = self.alloc(0x30) + misalign
-        instance = self.alloc(0x70)
+        instance = self.alloc(0x70, content=True)
         self.qword(node, BASE + probe.PROFILE['buff_node_vtable'])
         self.qword(node + 0x10, instance)
         self.dword(node + 0x18, key)
@@ -154,9 +159,9 @@ class Fixture:
         return probe.Reader(self.ranges, self.read, budget)
 
 
-def standard():
+def standard(**shape):
     """300 from luck, 7 pushed by the server and one 30 food buff: 337 in the hero panel."""
-    fixture = Fixture()
+    fixture = Fixture(**shape)
     fixture.push(MF, 7.0)
     fixture.food = fixture.buff(1001, 501, fixture.definition([modifier(MF, 30.0)]))
     return fixture
@@ -264,6 +269,55 @@ class MagicFindTests(unittest.TestCase):
         fixture = standard()
         fixture.qword(fixture.food[1] + 0x10, 0)
         self.assert_unknown(fixture, 'null_or_invalid_pointer')
+
+    def test_content_pointers_off_their_observed_alignment_reject(self):
+        for remainder in (0, 1, 2, 6):
+            with self.subTest(remainder=remainder):
+                fixture = standard(content_remainder=remainder)
+                reader = fixture.reader()
+                self.assert_unknown(fixture, 'null_or_invalid_pointer', reader)
+                self.assertEqual((reader.fault, reader.stage, reader.buffs), ('unaligned', 'buff_instance', 0))
+
+    def test_each_content_hop_is_checked_on_its_own(self):
+        """One hop moved to an 8-byte boundary, with valid bytes there, is still rejected."""
+        hops = (('buff_instance', lambda f: (f.food[1] + 0x10, 0x70)),
+                ('buff_definition', lambda f: (f.food[2] + 0x60, 0x30)),
+                ('buff_modifier_group', lambda f: (f.read_qword(f.food[2] + 0x60) + 0x20, 0x20)),
+                ('buff_modifier_records', lambda f: (f.read_qword(f.read_qword(f.food[2] + 0x60) + 0x20) + 0x10, 0x48)))
+        for stage, locate in hops:
+            with self.subTest(stage=stage):
+                fixture = standard()
+                holder, size = locate(fixture)
+                source = fixture.read_qword(holder)
+                fixture.write(source + 4, bytes(fixture.memory.get(source + offset, 0) for offset in range(size)))
+                fixture.qword(holder, source + 4)
+                reader = fixture.reader()
+                self.assert_unknown(fixture, 'null_or_invalid_pointer', reader)
+                self.assertEqual((reader.fault, reader.stage), ('unaligned', stage))
+
+    def test_heap_pointers_keep_eight_byte_alignment(self):
+        fixture = Fixture()
+        fixture.buff(1001, 501, fixture.definition([modifier()]), misalign=4)
+        reader = fixture.reader()
+        self.assert_unknown(fixture, 'null_or_invalid_pointer', reader)
+        self.assertEqual((reader.fault, reader.stage), ('unaligned', 'buff_node'))
+
+    def test_live_shape_of_8_october_gives_333(self):
+        """Luck 300, 13 pushed in 4 records, 91 buffs in 256 buckets, one stacking-4 record of 20."""
+        fixture = Fixture(capacity=256)
+        for kind, value in ((14, 5.0), (MF, 6.0), (MF, 7.0), (126, 1.0)):
+            fixture.push(kind, value)
+        shared = fixture.definition([modifier(14, 3.0)])
+        for key in range(90):
+            fixture.buff(2000 + key, 600 + key, shared if key % 2 else fixture.definition([modifier(5, 1.0)]))
+        fixture.buff(1001, 501, fixture.definition([modifier(MF, 20.0)], stacking=4, category=7))
+        reader = fixture.reader()
+        result = self.observe(fixture, reader)
+        self.assertEqual((result['status'], result['candidate_total_percent']), ('candidate_magic_find', 333.0))
+        self.assertEqual((result['account_luck_percent'], result['pushed_modifier_percent'],
+                          result['buff_modifier_percent'], result['boon_modifier_included']),
+                         (300, 13.0, 20.0, False))
+        self.assertEqual(reader.buffs, 91)
 
     def test_account_luck_bounds_reject(self):
         fixture = standard()
@@ -475,6 +529,19 @@ class MagicFindTests(unittest.TestCase):
         self.assertEqual(rows[1]['status'], 'candidate_magic_find')
         self.assertEqual(rows[1]['continuity'], 'owner_changed')
         self.assertNotIn('candidate_net_change', rows[1])
+
+    def test_main_second_pass_that_cannot_fit_is_refused_before_reading(self):
+        fixture = standard()
+        guards = sum(guard['size'] for guard in probe.PROFILE['guards'])
+        single = fixture.reader()
+        probe.observe(single, BASE, CONTEXT, TABLE)
+        with mock.patch.object(probe, 'MAX_BYTES', guards + single.requested + 1000):
+            exit_code, rows = self.run_main(fixture, lambda _delay: None)
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(rows[0]['candidate_total_percent'], 337.0)
+        self.assertEqual((rows[1]['status'], rows[1]['reason'], rows[1]['candidate_total_percent']),
+                         ('unknown', 'byte_budget', None))
+        self.assertEqual(rows[2]['bytes_requested'], guards + single.requested)
 
     def test_main_unknown_sample_exits_two_without_a_value(self):
         fixture = standard()

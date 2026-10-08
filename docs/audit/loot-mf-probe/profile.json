@@ -6,6 +6,8 @@
   "magic_find_modifier": 113,
   "magic_find_boon_modifier": 114,
   "constant_formula": 6,
+  "content_pointer_remainder": 4,
+  "content_pointer_note": "Address modulo 8 required of pointers into game content (buff reference, definition, modifier group, modifier records). Observed live on 2026-10-08: 278 of 278 ended in 4; the 91 heap nodes ended in 0. Not derived from code.",
   "char_context_vtable": 34983752,
   "character_vtable": 34995040,
   "character_agent_vtable": 34996688,

@@ -98,21 +98,34 @@ class Reader:
     def scalar(self, address, size):
         return int.from_bytes(self.read(address, size), 'little')
 
-    def classify(self, value):
+    @staticmethod
+    def aligned(value, content):
+        """Heap objects sit on 8 bytes; game content sits 4 past a multiple of 8.
+
+        Both come from the live diagnose run of 2026-10-08 on this build: 91 of 91 table
+        nodes ended in 0 and 278 of 278 content pointers ended in 4. See the README.
+        """
+        return value & 7 == (PROFILE['content_pointer_remainder'] if content else 0)
+
+    def classify(self, value, content=False):
         """Why a pointer value is unusable, or None; the value itself is never reported."""
         if not value:
             return 'null'
         if not 0x10000 <= value <= MAX_ADDRESS:
             return 'out_of_user_range'
-        if value & 7:
+        if not self.aligned(value, content):
             return 'unaligned'
         if not any(start <= value < end for start, end in self.ranges):
             return 'unmapped'
         return None
 
-    def checked(self, value):
+    def content(self, value):
+        """Validate a pointer into game content: definitions, their records and references."""
+        return self.checked(value, content=True)
+
+    def checked(self, value, content=False):
         """Validate a pointer value that was already read as part of a larger record."""
-        fault = self.classify(value)
+        fault = self.classify(value, content)
         if fault == 'unaligned' and self.diagnose:
             # Diagnose only: note where alignment first failed and keep walking, so one run
             # shows what a relaxed check would find. The strict verdict stays unknown.
@@ -215,17 +228,17 @@ def require_local_player(reader, base, char_context, character, player):
 def read_definition(reader, definition):
     """Flags, stacking, category and the modifier records of one buff definition."""
     reader.step('buff_definition')
-    head = reader.read(reader.checked(definition), 0x30)
+    head = reader.read(reader.content(definition), 0x30)
     flags, stacking, category = (struct.unpack_from('<I', head, offset)[0] for offset in (0x4, 0xC, 0x18))
     groups, group_count = struct.unpack_from('<QI', head, 0x20)
     if not group_count:
         raise Rejected('buff_definition_bounds')
     reader.step('buff_modifier_group')
-    modifiers, count = struct.unpack('<QI', reader.read(reader.checked(groups) + 0x10, 12))
+    modifiers, count = struct.unpack('<QI', reader.read(reader.content(groups) + 0x10, 12))
     if count > MAX_MODIFIERS:
         raise Rejected('buff_modifier_bounds')
     reader.step('buff_modifier_records')
-    raw = reader.block(reader.checked(modifiers), count * MODIFIER_SIZE) if count else b''
+    raw = reader.block(reader.content(modifiers), count * MODIFIER_SIZE) if count else b''
     reader.definitions += 1
     return flags, stacking, category, [struct.unpack_from(MODIFIER_FORMAT, raw, index * MODIFIER_SIZE)
                                        for index in range(count)]
@@ -414,7 +427,7 @@ def magic_find_snapshot(reader, base, context, table):
         if instance_key != key:
             raise Rejected('buff_instance_key')
         reader.step('buff_instance')
-        effect = reader.scalar(reader.checked(instance) + 0x28, 4)
+        effect = reader.scalar(reader.content(instance) + 0x28, 4)
         state, definition = struct.unpack('<I4xQ', reader.read(instance + 0x58, 16))
         if state != 1:
             raise Rejected('buff_definition_unresolved')
@@ -525,9 +538,17 @@ def main():
             table = guard_profile(reader, args.module_base)
             previous = None
             previous_owner = None
+            sample_bytes = 0
             for index in range(args.samples):
-                result, owner = (observe_diagnosed if args.diagnose else observe)(
-                    reader, args.module_base, args.context, table)
+                before = reader.requested
+                if reader.requested + sample_bytes > reader.budget:
+                    # A further full pass would not fit: say so before reading anything.
+                    result, owner = dict(status='unknown', candidate_total_percent=None, reason='byte_budget',
+                                         errno=None, **UNPROVEN), None
+                else:
+                    result, owner = (observe_diagnosed if args.diagnose else observe)(
+                        reader, args.module_base, args.context, table)
+                sample_bytes = max(sample_bytes, reader.requested - before)
                 result['sample'] = index
                 result['time_ns'] = time.time_ns()
                 if result['status'] == 'unknown':

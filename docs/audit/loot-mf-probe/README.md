@@ -109,7 +109,10 @@ Los registros de otros tipos se ignoran sin evaluarlos.
 
 ## Sin validar
 
-- Que el número coincida con el del panel de héroe. Es la prueba de abajo.
+- Que el número del modo normal coincida con el del panel de héroe. El 8 de octubre coincidió
+  (333) el recorrido relajado del diagnóstico; el modo normal con la regla nueva no se ha
+  ejecutado todavía.
+- Que el resto 4 de los punteros de contenido se mantenga en otra sesión o tras un parche.
 - Que el panel use el personaje de `ChCliContext+0x98`. La sonda sí comprueba que ese personaje
   es del jugador local.
 - Que los efectos reales de hallazgo mágico usen la fórmula 6 y no lleven condiciones. Si no es
@@ -127,15 +130,22 @@ Python 3.11 o superior; solo stdlib:
 ```sh
 cd docs/audit/loot-mf-probe
 PYTHONDONTWRITEBYTECODE=1 python3 prove_guard_red.py
-# Debe terminar con exit 1: el guard de vtable se retira SOLO en la fixture.
+# Debe terminar con exit 1: retira dos guards, de uno en uno y SOLO en la fixture.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_probe.py
-# Debe terminar con exit 0: 46 tests con el guard real activo (35 del candidato, 11 del diagnóstico).
+# Debe terminar con exit 0: 51 tests con los guards reales activos.
 PYTHONDONTWRITEBYTECODE=1 python3 check_profile_offline.py
 # Debe terminar con exit 0: lee el fichero instalado, nunca el proceso.
 ```
 
-El control rojo retira las dos comprobaciones de identidad del gestor de efectos. Una fixture
-con vtable incorrecta devuelve entonces un total, y el test falla al exigir `unknown`.
+El control rojo retira dos guards, cada uno por separado:
+
+1. Las dos comprobaciones de identidad del gestor de efectos. Una fixture con vtable incorrecta
+   devuelve entonces un total, y el test falla al exigir `unknown`.
+2. La alineación de los punteros de contenido. Fixtures con el contenido en resto 0, 1, 2 y 6
+   devuelven entonces un total, y los cuatro casos fallan.
+
+Sale con exit 1 solo si los dos guards retirados hicieron fallar su test. Exit 3 significa que
+se quitó un guard y su test siguió pasando.
 
 `profile.json` guarda solo hashes: no hay bytes del juego en el repo. Por eso las fixtures usan
 contenidos de guard sintéticos, y `check_profile_offline.py` es quien ata los 19 hashes y los 12
@@ -152,18 +162,27 @@ módulo y el contexto actual. No se reutilizan punteros de otra ejecución.
 python3 docs/audit/loot-mf-probe/check_profile_offline.py
 python3 docs/audit/loot-mf-probe/probe.py \
   --pid "$GW2_LINUX_PID" --module-base "$GW2_MODULE_BASE" --context "$GW2_CONTEXT" \
-  --samples 2 --interval 1
+  --samples 1
 ```
 
 Antes de abrir `/proc/<pid>/mem` con `O_RDONLY`, la sonda verifica mapas, base, hash del fichero
 mapeado y PE AMD64. Después comprueba los 19 rangos fijos (6054 bytes) y, en cada muestra, las
 vtables y los 12 slots de la ruta.
 
-El presupuesto es de **65536 bytes pedidos por ejecución**, con dos muestras como máximo. Es 16
-veces el de la cartera porque aquí no hay un campo que leer: hay que recorrer la tabla de
-efectos. Límites: 512 buckets, 32 registros por definición y 256 registros del servidor. Una
-muestra con 40 efectos debería pedir unos 17 KiB; es una estimación, no una medida. Pasarse da
-`byte_budget`, nunca un valor.
+El presupuesto es de **65536 bytes pedidos por ejecución** y no se ha subido. Es 16 veces el de
+la cartera porque aquí no hay un campo que leer: hay que recorrer la tabla de efectos. Límites:
+512 buckets, 32 registros por definición y 256 registros del servidor. Pasarse da `byte_budget`,
+nunca un valor.
+
+**Una ejecución es una pasada completa.** La pasada de diagnóstico del 8 de octubre pidió 33234
+bytes con 91 efectos y 75 definiciones: 6054 de guards, 728 de la lectura extra del diagnóstico
+y unos 26,5 KiB de la muestra, que ya incluye su relectura de consistencia (dueños, vtables,
+cabeceras, suerte y las dos tablas enteras). Dos muestras así suman unos 59 KiB: caben por
+poco y dejan de caber con más efectos.
+
+Por eso el uso previsto es `--samples 1`, y el segundo control se hace con una segunda
+ejecución. `--samples 2` sigue existiendo, pero si la segunda pasada no cabe en lo que queda,
+la sonda lo dice con `byte_budget` **antes de leer nada**, en vez de quedarse a medias.
 
 Cada muestra relee dueños, vtables, cabeceras, el nivel de suerte y las dos tablas enteras.
 Cualquier diferencia da `unknown`. JSONL emite solo el total candidato, sus tres sumandos,
@@ -214,8 +233,43 @@ Los punteros que el juego trata como vacíos ya contaban como 0 y no como `unkno
 - Tabla del servidor vacía: RVA `0x12C2520` compara inicio y fin y devuelve 0 sin leer.
 - Sin efectos: RVA `0x12C28D0` devuelve nulo si el contador `+0x24` es 0.
 
-Con dos muestras y 512 buckets, la sonda normal puede agotar el presupuesto en cuanto el
-recorrido funcione: cada muestra lee la tabla dos veces, unos 25 KiB más los efectos.
+La tabla resultó ser de 256 buckets, no de 512: la inferencia de los bytes acertó el sitio
+(`nodo+0x10`, con 4 registros del servidor) y falló el tamaño.
+
+## Diagnóstico en vivo, 8 octubre 2026: la alineación
+
+Lo ejecutó la sesión raíz con `--diagnose`, una muestra, 33234 bytes, exit 2.
+
+- Veredicto estricto: `unknown`, `stage: buff_instance`, `pointer_fault: unaligned`.
+- Suerte 300; 4 registros del servidor, 13,0 de hallazgo mágico.
+- Tabla de 256 buckets con 91 efectos; 0 hashes que no cuadran; 91 de 91 nodos con la vtable
+  `0x21830D0`; 75 definiciones.
+- Un solo registro de hallazgo mágico: tipo `0x71`, fórmula 6, modo 0, sin condiciones, valor
+  20,0, apilado 4.
+- El recorrido relajado llegó al final: 300 + 13,0 + 20,0 = **333,0**, lo que marcaba el panel
+  de héroe de David. Es un número de diagnóstico, no una muestra del modo normal.
+
+## Dos alineaciones, una por tipo de puntero
+
+El `Reader` heredado de la cartera exigía todo puntero alineado a 8 bytes. Esa regla no salía
+del código del juego y era falsa para el contenido. Ahora hay dos:
+
+| Puntero | Regla | De dónde sale |
+| --- | --- | --- |
+| Objetos del montículo: contexto, personaje, jugador, gestor, tablas, nodos | Resto 0 módulo 8 | 91 de 91 nodos en vivo; el nodo es un objeto de `0x78` bytes del asignador general (RVA `0x12C1890`); la cartera y el inventario ya pasaron así |
+| Contenido del juego: referencia del efecto, definición, grupo y registros | Resto 4 módulo 8 | 278 de 278 punteros en vivo. Por los contadores de la pasada son 91 referencias, 75 definiciones, 75 grupos y 37 listas de registros; el desglose es deducido |
+
+La regla del contenido es **observada, no derivada del binario**. Elegí «resto 4» y no «múltiplo
+de 4» porque es la más estrecha que cumplen los 278 casos: un puntero de contenido alineado a
+8 sería tan anómalo como uno impar, y así se rechazan los dos.
+
+Explicación posible, sin verificar: el contenido se quedaría en el búfer del fichero del que
+se cargó, detrás de una cabecera cuyo tamaño fuera 4 módulo 8. Es un recuerdo mío del formato,
+no un dato de este binario: busqué la comprobación de esa cabecera en el código con un patrón
+simple, no apareció y no seguí.
+
+Si otra versión o otra sesión coloca el contenido en otro resto, la sonda dará `unknown` con
+`pointer_fault: unaligned` en el diagnóstico. No dará un valor.
 
 ## Modo `--diagnose`
 
@@ -248,5 +302,9 @@ Una sola muestra: con 512 buckets, dos pueden no caber.
 
 La salida normal no cambia: un test fija sus campos.
 
-Este cambio tiene su propio recibo, [`receipt-diagnose-2026-10-08.json`](receipt-diagnose-2026-10-08.json).
-`receipt.json` y los logs de `evidence/` se conservan sin tocar como historia del primer candidato.
+## Recibos
+
+El vigente es [`receipt.json`](receipt.json): cubre los ficheros tal como están hoy.
+[`receipt-diagnose-2026-10-08.json`](receipt-diagnose-2026-10-08.json) y los logs de `evidence/`
+son historia: describen el modo de diagnóstico y el primer candidato (commit `9d6703a`), cuyos
+ficheros han cambiado desde entonces.
