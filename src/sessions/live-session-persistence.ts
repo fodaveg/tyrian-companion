@@ -16,6 +16,15 @@ export interface LiveSessionPersistence {
 	replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean>;
 	/** Deletes the journal of a SEALED session (its note receipt is durable). Refuses the session the runtime key still holds. */
 	pruneLiveJournal?(sessionId: string): Promise<boolean>;
+	/** Sealed sessions whose journal is still to be pruned (each with the path of its durable note), so a restart does not forget them. */
+	loadPruneQueue?(): Promise<SealedJournal[]>;
+	savePruneQueue?(queue: readonly SealedJournal[]): Promise<boolean>;
+}
+export interface SealedJournal { sessionId: string; receiptPath: string }
+/** A second key in the runtime object store (like the summary receipt): no schema upgrade, and a 0.6.12 that opens the same database never reads it. */
+export const LIVE_JOURNAL_PRUNE_QUEUE_KEY = 'live-journal-prune-queue';
+export function isSealedJournalQueue(value: unknown): value is SealedJournal[] {
+	return Array.isArray(value) && value.every((row) => typeof row === 'object' && row !== null && typeof (row as SealedJournal).sessionId === 'string' && typeof (row as SealedJournal).receiptPath === 'string');
 }
 
 /** One transaction commits the bounded runtime cursor and appends the sample's ledger together. */
@@ -91,8 +100,9 @@ export async function pruneLiveJournal(database: IDBDatabase, sessionId: string)
 		const current = tx.objectStore(SESSION_RUNTIME_STORE_NAME).get(SESSION_RUNTIME_KEY);
 		current.onsuccess = () => {
 			if (isLiveSessionRuntimeRecord(current.result) && current.result.sessionId === sessionId) return;
-			const request = tx.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME).index('session').openCursor(sessionId);
-			request.onsuccess = () => { const cursor = request.result; if (!cursor) { pruned = true; return; } cursor.delete(); cursor.continue(); };
+			// Keys only: nothing is deserialized, and each entry goes by its primary key.
+			const entries = tx.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME); const request = entries.index('session').openKeyCursor(sessionId);
+			request.onsuccess = () => { const cursor = request.result; if (!cursor) { pruned = true; return; } entries.delete(cursor.primaryKey); cursor.continue(); };
 		};
 		tx.oncomplete = () => resolve(pruned); tx.onerror = tx.onabort = () => resolve(false);
 	});

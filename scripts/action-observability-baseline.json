@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 537,
+		"catch_clause": 539,
 		"promise_catch": 57,
 		"void_expression": 120,
 		"callback_registration": 216
@@ -10518,6 +10518,38 @@
 						"justification": "The \"enqueue\" \"then\" boundary retains rejection recovery, marks the live source failure and forwards error/state observers while returning the original failure to the caller."
 					},
 					"reason": "Allowlisted callback_registration: The \"enqueue\" \"then\" boundary retains rejection recovery, marks the live source failure and forwards error/state observers while returning the original failure to the caller. Verified registration: \"then\" in \"enqueue\"."
+				},
+				{
+					"id": "9a0dd42adce53d202a058057a2f5881a3d72e7f2",
+					"kind": "catch_clause",
+					"line": 573,
+					"column": 5,
+					"endLine": 573,
+					"endColumn": 51,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "recoverPruneQueue",
+						"justification": "The \"recoverPruneQueue\" catch is a \"local_recovery\": a prune queue that cannot be read is reported through onError and the prune simply runs with what is in memory; nothing about the session depends on it."
+					},
+					"reason": "Allowlisted catch_clause: The \"recoverPruneQueue\" catch is a \"local_recovery\": a prune queue that cannot be read is reported through onError and the prune simply runs with what is in memory; nothing about the session depends on it. Verified recovery: \"local_recovery\" in \"recoverPruneQueue\"."
+				},
+				{
+					"id": "fdeb2e239de9f78aa8bf0efc9563dbc9387c22df",
+					"kind": "catch_clause",
+					"line": 587,
+					"column": 5,
+					"endLine": 587,
+					"endColumn": 51,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "pruneSealed",
+						"justification": "The \"pruneSealed\" catch is a \"local_recovery\": a prune queue that cannot be saved is reported through onError and stays dirty, so the next start saves it again; the session is untouched."
+					},
+					"reason": "Allowlisted catch_clause: The \"pruneSealed\" catch is a \"local_recovery\": a prune queue that cannot be saved is reported through onError and stays dirty, so the next start saves it again; the session is untouched. Verified recovery: \"local_recovery\" in \"pruneSealed\"."
 				}
 			]
 		},

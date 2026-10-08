@@ -245,7 +245,7 @@ describe('passive live session lifecycle', () => {
 		expect(f.service.getRuntime()?.gaps.map((gap) => gap.reason)).toContain('context_changed');
 		await f.service.dispose();
 	});
-	it('prunes the journal of a sealed session once it leaves the 8-session retention, never the active one or one without receipt', async () => {
+	it('prunes the journal of a sealed session once it leaves the 8-session retention, never the active one', async () => {
 		const factory = new IDBFactory(); const store = new IndexedDbSessionRuntimeStore(factory,'live-prune');
 		const f = fixture(store as unknown as MemorySessionRuntimeStore); const ids: string[] = [];
 		for (let round = 0; round < 10; round += 1) {
@@ -262,13 +262,43 @@ describe('passive live session lifecycle', () => {
 		expect((await store.readLiveJournal(ids[9]!)).length).toBe(2);
 		await f.service.dispose(); store.close();
 	});
-	it('a failed prune breaks nothing and is retried at the next start', async () => {
-		const f = fixture(); let failures = 1; const prune = vi.spyOn(f.store,'pruneLiveJournal').mockImplementation(async (id: string) => { if (failures-- > 0) throw new Error('boom'); for (const entry of await f.store.readLiveJournal(id)) void entry; return true; });
+	it('a failed prune breaks nothing, leaves a trace, and the SAME id is asked again at the next start', async () => {
+		const f = fixture(); let failures = 1; const prune = vi.spyOn(f.store,'pruneLiveJournal').mockImplementation(async () => { if (failures-- > 0) throw new Error('boom'); return true; });
 		for (let round = 0; round < 11; round += 1) {
 			const id = await f.service.start('Test'); expect(id, `start ${round}`).not.toBeNull(); f.setNow(AT+round*100_000); await f.service.open({...f.source,epoch:`${String.fromCharCode(66+round)}${'A'.repeat(20)}Q`});
 			await f.service.stop(AT+round*100_000+1000);
 		}
-		expect(prune).toHaveBeenCalled(); expect(prune.mock.calls.length).toBeGreaterThanOrEqual(2); expect(f.options.onError, 'the failed prune left a trace').toHaveBeenCalledWith(expect.objectContaining({message:'boom'})); await f.service.dispose();
+		expect(prune.mock.calls.slice(0,3).map(([id]) => id), 'the failed id is asked again, then the next one leaves retention').toEqual(['session','session','session-2']);
+		expect(f.options.onError).toHaveBeenCalledWith(expect.objectContaining({message:'boom'})); await f.service.dispose();
+	});
+	describe('the prune queue survives a host restart', () => {
+		async function sealedAndRestarted(failure: 'false' | 'throw', seed?: (store: IndexedDbSessionRuntimeStore, ids: string[]) => Promise<void>) {
+			const store = new IndexedDbSessionRuntimeStore(new IDBFactory(),'live-prune-queue'); const f = fixture(store as unknown as MemorySessionRuntimeStore); const ids: string[] = [];
+			const real = store.pruneLiveJournal.bind(store); let failing = true;
+			const prune = vi.spyOn(store,'pruneLiveJournal').mockImplementation(async (id: string) => { if (failing) { if (failure === 'throw') throw new Error('boom'); return false; } return await real(id); });
+			for (let round = 0; round < 10; round += 1) {
+				const epoch = `${String.fromCharCode(66+round)}${'A'.repeat(20)}Q`; ids.push((await f.service.start('Test'))!);
+				f.setNow(AT+round*100_000); await f.service.open({...f.source,epoch}); await f.service.commit(f.sample(0,0,{epoch})); f.setNow(AT+round*100_000+1000); await f.service.commit(f.sample(1,2,{epoch}));
+				if (round < 9) { f.setNow(AT+round*100_000+2000); await f.service.stop(AT+round*100_000+2000); }
+			}
+			expect((await store.readLiveJournal(ids[0]!)).length, 'the failed prune left the journal').toBe(2);
+			expect(await store.loadPruneQueue(), 'and the queue is saved').toEqual([{sessionId:ids[0],receiptPath:'Sessions/live.md'}]);
+			await f.service.dispose(); failing = false; await seed?.(store, ids); prune.mockClear();
+			const restarted = new LiveSessionLifecycle({...f.options}); await restarted.initialize();
+			return { store, ids, restarted, prune };
+		}
+		it.each(['false','throw'] as const)('a prune that %s is done by the next host start', async (failure) => {
+			const { store, ids, restarted } = await sealedAndRestarted(failure);
+			expect(await store.readLiveJournal(ids[0]!), 'pruned after the restart').toEqual([]); expect(await store.loadPruneQueue()).toEqual([]);
+			expect((await store.readLiveJournal(ids[9]!)).length, 'the session the runtime holds is untouched').toBe(2);
+			expect(await store.load(), 'and the runtime record reads as before for any version that ignores the queue key').toMatchObject({status:'live'});
+			await restarted.dispose(); store.close();
+		});
+		it('never prunes the session the runtime holds, whatever the queue says', async () => {
+			const { store, ids, restarted, prune } = await sealedAndRestarted('false', async (target, sessionIds) => { await target.savePruneQueue([{sessionId:sessionIds[9]!,receiptPath:'x.md'}]); });
+			expect(prune.mock.calls.map(([id]) => id), 'not even asked').not.toContain(ids[9]);
+			expect((await store.readLiveJournal(ids[9]!)).length).toBe(2); await restarted.dispose(); store.close();
+		});
 	});
 	describe('after a suspension, with the real lease coordinator', () => {
 		/** A lifecycle over the REAL coordinator on fake-indexeddb with a clock the test moves: the lease really expires. */

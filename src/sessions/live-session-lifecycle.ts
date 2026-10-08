@@ -52,7 +52,9 @@ export class LiveSessionLifecycle {
 	private record: LiveSessionRuntimeRecord | null = null;
 	private journal: LiveJournalEntryV1[] = [];
 	/** Sealed sessions (note receipt durable) that left the `completed` retention: their journal is deleted, retried at the next start if that failed. */
-	private readonly sealedForPrune = new Set<string>();
+	private readonly sealedForPrune = new Map<string,string>();
+	/** True from the moment a session joins the prune queue until the queue is saved. */
+	private queueDirty = false;
 	private readonly completed = new Map<string, { record: LiveSessionRuntimeRecord; journal: LiveJournalEntryV1[] }>();
 	private observations: LiveSessionViewV1['observations'] = [];
 	private chart = this.newChart();
@@ -76,6 +78,12 @@ export class LiveSessionLifecycle {
 
 	async initialize(): Promise<void> {
 		return await this.enqueue(async () => {
+			try { await this.initializeRecord(); }
+			finally { await this.recoverPruneQueue(); }
+		});
+	}
+	private async initializeRecord(): Promise<void> {
+		{
 			const loaded = await this.options.persistence.loadLive();
 			if (loaded.status !== 'loaded') {
 				if (loaded.status === 'error') this.failure = true;
@@ -97,7 +105,7 @@ export class LiveSessionLifecycle {
 				await this.saveCompletedNote();
 				return;
 			}
-		});
+		}
 	}
 
 	/** Freezes the declared build at the start request; queued idempotent calls retain the active snapshot. */
@@ -115,7 +123,7 @@ export class LiveSessionLifecycle {
 				this.completed.set(this.record.sessionId, { record: this.record, journal: this.journal });
 				if (this.completed.size > 8) {
 					const [oldest, evicted] = this.completed.entries().next().value!;
-					this.completed.delete(oldest); if (evicted.record.summaryReceipt !== null) this.sealedForPrune.add(oldest);
+					this.completed.delete(oldest); if (evicted.record.summaryReceipt !== null) { this.sealedForPrune.set(oldest,evicted.record.summaryReceipt.path); this.queueDirty = true; }
 				}
 			}
 			await this.pruneSealed();
@@ -558,12 +566,25 @@ export class LiveSessionLifecycle {
 			if (this.record.connection === 'disconnected' && this.options.now() - this.record.lastPresenceAt >= 600_000) await this.stopInternal(this.record.lastPresenceAt);
 		}); }, LIVE_SOURCE_STALE_MS);
 	}
-	/** A failure to prune breaks nothing: the id stays queued for the next start. Never touches the active session or one without a receipt. */
+	/** A restart does not forget the sealed sessions waiting for their prune: they are read back from the runtime store and pruned. */
+	private async recoverPruneQueue(): Promise<void> {
+		try {
+			for (const row of await this.options.persistence.loadPruneQueue?.() ?? []) if (!this.sealedForPrune.has(row.sessionId)) this.sealedForPrune.set(row.sessionId,row.receiptPath);
+		} catch (error) { this.options.onError(error); }
+		await this.pruneSealed();
+	}
+	/** A failure to prune breaks nothing: the id stays queued (and saved) for the next start. Never touches the active session or one without a receipt. */
 	private async pruneSealed(): Promise<void> {
-		for (const sessionId of [...this.sealedForPrune]) {
+		const before = JSON.stringify([...this.sealedForPrune]);
+		for (const sessionId of [...this.sealedForPrune.keys()]) {
 			if (sessionId === this.record?.sessionId || this.completed.has(sessionId)) { this.sealedForPrune.delete(sessionId); continue; }
 			try { if (await this.options.persistence.pruneLiveJournal?.(sessionId) === true) this.sealedForPrune.delete(sessionId); } catch (error) { this.options.onError(error); /* the id stays queued: retried at the next start */ }
 		}
+		if (JSON.stringify([...this.sealedForPrune]) === before && !this.queueDirty) return;
+		try {
+			await this.options.persistence.savePruneQueue?.([...this.sealedForPrune].map(([sessionId, receiptPath]) => ({ sessionId, receiptPath })));
+			this.queueDirty = false;
+		} catch (error) { this.options.onError(error); }
 	}
 	private async saveCompletedNote(): Promise<boolean> {
 		if (this.record?.phase !== 'complete') return false;

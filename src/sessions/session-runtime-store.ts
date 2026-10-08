@@ -3,7 +3,7 @@ import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-v
 import { canUpdateLiveOutbox } from './live-session-outbox';
 import { archiveLegacyRuntime, prepareLegacyRuntimeArchive, isLegacyRuntimeArchive, LEGACY_RUNTIME_ARCHIVE_PREFIX, type LegacyRuntimeArchiveV1 } from './live-session-legacy-archive';
 import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey, LIVE_SESSION_JOURNAL_STORE_NAME,
-	liveRuntimeLoadResult, markLiveAlertsProcessed, pruneLiveJournal, readLiveJournal, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
+	isSealedJournalQueue, LIVE_JOURNAL_PRUNE_QUEUE_KEY, liveRuntimeLoadResult, markLiveAlertsProcessed, pruneLiveJournal, type SealedJournal, readLiveJournal, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
@@ -222,6 +222,10 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 		return true;
 	}
 
+	private pruneQueue: SealedJournal[] = [];
+	async loadPruneQueue(): Promise<SealedJournal[]> { return structuredClone(this.pruneQueue); }
+	async savePruneQueue(queue: readonly SealedJournal[]): Promise<boolean> { this.pruneQueue = structuredClone([...queue]); return true; }
+
 	close(): void {}
 }
 
@@ -329,6 +333,16 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 			attempt.failure(localDebugStorageFailureCode(error), error);
 			return { status: 'error', code: 'unavailable' };
 		}
+	}
+
+	async loadPruneQueue(): Promise<SealedJournal[]> {
+		const value = await this.read(undefined, LIVE_JOURNAL_PRUNE_QUEUE_KEY);
+		return isSealedJournalQueue(value) ? structuredClone(value) : [];
+	}
+	async savePruneQueue(queue: readonly SealedJournal[]): Promise<boolean> {
+		await this.mutate<SessionRuntimeMutationResult>(() => queue.length === 0 ? { result: { status: 'cleared' } as const, remove: true }
+			: { result: { status: 'saved' } as const, nextValue: structuredClone([...queue]) }, undefined, LIVE_JOURNAL_PRUNE_QUEUE_KEY);
+		return true;
 	}
 
 	async loadSummaryReceipt(context?: LocalDebugPersistenceContext): Promise<SessionSummaryReceipt | null> {
