@@ -12,6 +12,11 @@ import { startIndexedDbTransaction, withIndexedDbReopen } from '../../core/index
 export interface TyrianPathIndexKv {
 	get(key: string): Promise<string | undefined>;
 	set(key: string, value: string): Promise<void>;
+	/**
+	 * Closes the connection this kv holds, so a plugin reload does not leave one open per load. A
+	 * later call opens a new one (the core still writes while it stops), so call it last.
+	 */
+	close?(): void;
 }
 
 /** Faithful double for tests: same contract, no IndexedDB. */
@@ -83,5 +88,13 @@ export function createIndexedDbPathIndexKv(factory: IDBFactory, databaseName: st
 	return {
 		get: async (key) => (await run('readonly', (store) => store.get(key)) as string | undefined) ?? undefined,
 		set: async (key, value) => { await run('readwrite', (store) => store.put(value, key)); },
+		close: () => {
+			const entry = cached;
+			cached = null;
+			if (entry === null) return;
+			if (entry.database !== null) discard(entry.database);
+			// Still opening: close the connection the moment it exists. A failed open has nothing to close.
+			else entry.opening.then(discard, () => undefined);
+		},
 	};
 }

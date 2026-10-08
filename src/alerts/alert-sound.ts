@@ -84,6 +84,13 @@ export function playAlertSound(createContext: AlertAudioContextFactory): AlertSo
 /** Factories with a tone waiting for their suspended context to resume: at most one each. */
 const resuming = new WeakSet<AlertAudioContextFactory>();
 
+/**
+ * A tone that waited for `resume()` longer than this is dropped: a suspended context can stay so
+ * until the first click (Hebra, no user gesture), and a chime that sounds hours after the drop is
+ * worse than none. The value is a product choice and can be changed by the owner.
+ */
+export const ALERT_SOUND_MAX_RESUME_WAIT_MS = 5_000;
+
 function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutcome {
 	const context = createContext();
 	if (context === null) return 'unavailable';
@@ -98,11 +105,15 @@ function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutco
 	if (context.state === 'suspended') {
 		if (resuming.has(createContext)) return 'unavailable';
 		resuming.add(createContext);
+		const alertedAt = Date.now();
 		const pending: unknown = context.resume?.();
-		const settled = pending instanceof Promise ? pending : Promise.resolve();
+		// `Promise.resolve` adopts any thenable: `instanceof Promise` is false for a promise from
+		// another realm (an Obsidian popout window, an iframe) and would resolve at once, suspended.
+		const settled = Promise.resolve(pending);
 		settled.then(() => {
 			resuming.delete(createContext);
 			if (context.state !== 'running') return;
+			if (Date.now() - alertedAt > ALERT_SOUND_MAX_RESUME_WAIT_MS) return;
 			try { scheduleTones(createContext, context); } catch { /* the next alert tries again */ }
 		}, () => { resuming.delete(createContext); });
 		return 'unavailable';

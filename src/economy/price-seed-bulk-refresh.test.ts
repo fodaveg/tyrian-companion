@@ -151,12 +151,41 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		const cache = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
 		const kept = (await cache.get('vault', 7))!.seed.days;
 		cache.close();
-		expect(kept).toHaveLength(800);
-		expect(kept[0]).toMatchObject({ dayUtc: dayAt(0), bidCopper: 100 });
-		expect(kept[399]).toMatchObject({ dayUtc: dayAt(399), bidCopper: 100 });
-		expect(kept[400]).toMatchObject({ dayUtc: dayAt(400), bidCopper: 200 });
-		expect(kept[799]).toMatchObject({ dayUtc: dayAt(799), bidCopper: 200 });
-		expect(new Set(kept.map((day) => day.dayUtc)).size).toBe(800);
+		// The union is 800 days, but the copy never grows past the longer input (700): the 100
+		// oldest go, the longer copy is still not cut down to the 400 the pass downloaded.
+		expect(kept).toHaveLength(700);
+		expect(kept[0]).toMatchObject({ dayUtc: dayAt(100), bidCopper: 100 });
+		expect(kept[299]).toMatchObject({ dayUtc: dayAt(399), bidCopper: 100 });
+		expect(kept[300]).toMatchObject({ dayUtc: dayAt(400), bidCopper: 200 });
+		expect(kept[699]).toMatchObject({ dayUtc: dayAt(799), bidCopper: 200 });
+		expect(new Set(kept.map((day) => day.dayUtc)).size).toBe(700);
+	});
+
+	it('a 400-day copy refreshed with a pass shifted one day stays at 400 days and ends on the newest day', async () => {
+		const dayAt = (index: number): string => new Date(Date.parse('2024-01-01T00:00:00.000Z') + index * 86_400_000).toISOString().slice(0, 10);
+		const seedOf = (from: number, count: number, bid: number): Extract<PriceSeedResult, { status: 'seeded' }>['seed'] => ({
+			version: 1, itemId: 7, source: 'datawars2', retrievedAt: '2026-09-11T00:00:00.000Z',
+			days: Array.from({ length: count }, (_unused, offset) => ({ dayUtc: dayAt(from + offset), bidCopper: bid, askCopper: null })),
+		});
+		const factory = new IDBFactory();
+		const first = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+		await first.put('vault', 7, seedOf(0, 400, 100), NOW_MS - 25 * 60 * 60 * 1000);
+		first.close();
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async () => ({ status: 'seeded', seed: seedOf(1, 400, 200) }),
+		});
+
+		await service.run([7]);
+		service.dispose();
+
+		const cache = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+		const kept = (await cache.get('vault', 7))!.seed.days;
+		cache.close();
+		expect(kept).toHaveLength(400);
+		expect(kept[0]).toMatchObject({ dayUtc: dayAt(1) });
+		expect(kept[399]).toMatchObject({ dayUtc: dayAt(400), bidCopper: 200 });
 	});
 
 	it('a stale cache entry (past the 24h TTL) is requested again', async () => {

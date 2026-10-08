@@ -42,9 +42,11 @@ describe('session summaries Base', () => {
 			expect(document.views).toHaveLength(2);
 			for (const view of document.views) {
 				expect(view.type).toBe('table');
-				expect(view.order).toEqual(COLUMNS);
 				expect(view.sort).toEqual([{ property: 'tyrian_summary_started_at', direction: 'DESC' }]);
 			}
+			expect(document.views[0]!.order).toEqual(COLUMNS);
+			// The grouped view already shows the map as its group header: no second «Mapa» column.
+			expect(document.views[1]!.order).toEqual(COLUMNS.filter((column) => column !== 'tyrian_summary_map'));
 			expect(document.views[0]!.groupBy).toBeUndefined();
 			expect(document.views[1]!.groupBy).toEqual({ property: 'formula.map_label', direction: 'ASC' });
 			expect(JSON.stringify(document)).not.toContain('summaries:');

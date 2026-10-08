@@ -58,11 +58,21 @@ export class SaleItemView {
 		// nothing on screen invites. `runRefresh` already no-ops while one is in flight or absent.
 		if (this.actions.getSaleViewModel().status === 'loading') void this.runRefresh(false);
 	}
-	async onClose(): Promise<void> {
+	/**
+	 * Stops the view repainting by itself: drops the expiry timer and the visibility listener, and
+	 * makes a late `render()` a no-op. The runtime calls it on unload because Hebra only unmounts a
+	 * view when it chooses to, and a timer left behind would repaint (and read the core) after the
+	 * plugin is gone. Idempotent; `onClose` does the same plus the shell disposal.
+	 */
+	cancelExpiryRepaint(): void {
 		this.closed = true;
 		this.clearExpiryTimer();
 		this.visibilityCleanup?.();
 		this.visibilityCleanup = null;
+	}
+
+	async onClose(): Promise<void> {
+		this.cancelExpiryRepaint();
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;

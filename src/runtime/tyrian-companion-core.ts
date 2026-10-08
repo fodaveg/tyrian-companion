@@ -406,7 +406,10 @@ export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
 export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
 export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
 /** Commands `onload` registers besides `PRODUCT_ACTION_IDS`; the load journal counts both. */
-const STANDALONE_COMMAND_IDS = [ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID] as const;
+/** Version of the managed-assets bundle the core hands to the manager, at start and on a language change. */
+const MANAGED_ASSETS_BUNDLE_VERSION = 7;
+
+const STANDALONE_COMMAND_IDS =[ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID] as const;
 
 /**
  * `createTyrianRuntime(host)`: Tyrian over any `TyrianHost`, Obsidian's (`src/main.ts`) or
@@ -819,7 +822,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.managedAssets = new ManagedAssetsManager(
 			labelledVault(host.vault, 'Managed asset'),
 			host.vault.configDir,
-			{ bundleVersion: 7, locale: this.settings.language, assets: await managedAssetsBundle() },
+			{ bundleVersion: MANAGED_ASSETS_BUNDLE_VERSION, locale: this.settings.language, assets: await managedAssetsBundle() },
 		);
 		const vaultId = await sha256Text(host.vault.canonicalIdentity().normalize('NFC'));
 		this.vaultId = vaultId;
@@ -1560,6 +1563,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.inventoryVaultSyncRun?.dispose();
 		// A progress report still waiting for its frame must not repaint a tab after the unload.
 		for (const view of this.viewControllers?.inventoryAdvisor.current() ?? []) view.cancelProgressRender();
+		// The Sale tab's expiry timer must not outlive the plugin: Hebra may never unmount the view.
+		for (const view of this.viewControllers?.sale.current() ?? []) view.cancelExpiryRepaint();
 		this.walletVaultSync?.dispose();
 		this.inventoryPreferences?.dispose();
 		this.priceHistory?.dispose();
@@ -5004,7 +5009,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// invalidates local advisor memory but never captures again implicitly.
 			this.invalidateInventoryAdvisor();
 			if (this.managedAssets) {
-				this.managedAssets.setBundle({ bundleVersion: 7, locale: nextSettings.language, assets: await managedAssetsBundle() });
+				this.managedAssets.setBundle({ bundleVersion: MANAGED_ASSETS_BUNDLE_VERSION, locale: nextSettings.language, assets: await managedAssetsBundle() });
 			}
 			this.settingTab.refreshForLocaleChange();
 		}

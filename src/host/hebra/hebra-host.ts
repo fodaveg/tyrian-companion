@@ -142,6 +142,9 @@ export interface HebraHostHandle {
 	/** Drops what this instance left armed (the pending restart, the watch of indexed files, the
 	 *  background holds). The plugin's cleanup calls it before stopping the core. */
 	dispose(): void;
+	/** Closes the IndexedDB connections of the path index and the local files. Last of all: the
+	 *  core still writes its diagnostics while it stops, and a later write would open a new one. */
+	closeStorage(): void;
 }
 
 /** The output folder saved in some Tyrian settings, or the default. With the SAME normalization as
@@ -519,6 +522,10 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			unwatchIndexedFiles();
 			vaultPort?.dispose();
 			background.dispose();
+		},
+		closeStorage: () => {
+			deps.pathIndexKv.close?.();
+			deps.fileBackend.close?.();
 		},
 	};
 }
