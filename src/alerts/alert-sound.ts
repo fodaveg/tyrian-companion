@@ -36,6 +36,8 @@ export interface AlertGainNode {
 export interface AlertAudioContext {
 	readonly currentTime: number;
 	readonly destination: unknown;
+	readonly state?: string;
+	resume?(): unknown;
 	createOscillator(): AlertOscillatorNode;
 	createGain(): AlertGainNode;
 	close(): unknown;
@@ -58,11 +60,36 @@ const PEAK_GAIN = 0.14;
 const ATTACK_SECONDS = 0.012;
 const TAIL_SECONDS = 0.05;
 
-/** Schedules the alert chime. Returns `unavailable` instead of throwing when there is no audio. */
+/**
+ * When the chime each factory last scheduled ends, on its own context's clock. Keyed by the
+ * factory so a host that keeps one factory (`browserAlertAudioContextFactory` does) shares it, and
+ * a test that hands a fresh arrow each time never sees another test's state.
+ */
+const chimes = new WeakMap<AlertAudioContextFactory, { context: AlertAudioContext; endsAt: number }>();
+
+/**
+ * Schedules the alert chime. Returns `unavailable` instead of throwing when there is no audio, and
+ * never throws at all: an audio failure must not reach the alert emitter, which would count the
+ * whole channel as failed. Several alerts of one sample arrive together: while a chime is still
+ * sounding the next one is the same sound, so it is not stacked on top and reports `played`.
+ */
 export function playAlertSound(createContext: AlertAudioContextFactory): AlertSoundOutcome {
+	try {
+		return scheduleChime(createContext);
+	} catch {
+		return 'unavailable';
+	}
+}
+
+function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutcome {
 	const context = createContext();
 	if (context === null) return 'unavailable';
+	const previous = chimes.get(createContext);
+	if (previous !== undefined && previous.context === context && context.currentTime < previous.endsAt) return 'played';
+	// A context created outside a user gesture can start suspended; a reused one can be suspended later.
+	if (context.state === 'suspended') { try { void Promise.resolve(context.resume?.()).catch(() => undefined); } catch { /* still scheduled */ } }
 	const start = context.currentTime;
+	chimes.set(createContext, { context, endsAt: start + alertSoundDurationMs() / 1_000 });
 	for (const tone of TONES) {
 		const oscillator = context.createOscillator();
 		const envelope = context.createGain();
@@ -89,16 +116,30 @@ export function alertSoundDurationMs(): number {
 	return Math.round((last.startsAt + last.duration + TAIL_SECONDS) * 1_000);
 }
 
+const browserFactories = new WeakMap<object, AlertAudioContextFactory>();
+
 /**
  * Builds the browser factory. Kept separate from `playAlertSound` so the pure
  * scheduler above never has to know that `window` exists.
+ *
+ * One factory per host and one `AudioContext` per factory: the hosts call this on every alert, and
+ * a context per alert, never closed, leaves one open audio device handle behind for each of them
+ * (browsers cap how many may exist). A context that could not be built is not remembered, so the
+ * next alert tries again.
  */
 export function browserAlertAudioContextFactory(host: unknown): AlertAudioContextFactory {
-	return () => {
+	const known = typeof host === 'object' && host !== null ? browserFactories.get(host) : undefined;
+	if (known !== undefined) return known;
+	let context: AlertAudioContext | null = null;
+	const factory: AlertAudioContextFactory = () => {
+		if (context !== null) return context;
 		const constructor = audioContextConstructor(host);
 		if (constructor === null) return null;
-		try { return new constructor(); } catch { return null; }
+		try { context = new constructor(); } catch { return null; }
+		return context;
 	};
+	if (typeof host === 'object' && host !== null) browserFactories.set(host, factory);
+	return factory;
 }
 
 type AlertAudioContextConstructor = new () => AlertAudioContext;

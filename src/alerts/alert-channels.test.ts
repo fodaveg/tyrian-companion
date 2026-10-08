@@ -34,6 +34,63 @@ describe('H13.4 sound channel', () => {
 			.toBeNull();
 	});
 
+	/** Z15: the hosts ask for a factory on every alert, so the context must outlive the call. */
+	describe('one context, one chime at a time', () => {
+		function countingHost() {
+			const built: Array<{ currentTime: number }> = [];
+			const oscillators = { count: 0 };
+			class FakeContext implements AlertAudioContext {
+				currentTime = 0;
+				destination = {};
+				constructor() { built.push(this); }
+				createOscillator() {
+					oscillators.count += 1;
+					return {
+						type: '', frequency: { setValueAtTime: () => undefined, linearRampToValueAtTime: () => undefined },
+						connect: () => undefined, start: () => undefined, stop: () => undefined,
+					};
+				}
+				createGain() {
+					return { gain: { setValueAtTime: () => undefined, linearRampToValueAtTime: () => undefined }, connect: () => undefined };
+				}
+				close() { return undefined; }
+			}
+			return { host: { AudioContext: FakeContext }, built, oscillators };
+		}
+
+		it('opens a single AudioContext however many alerts sound', () => {
+			const { host, built } = countingHost();
+			for (let alert = 0; alert < 5; alert += 1) {
+				for (const context of built) context.currentTime += 10;
+				expect(playAlertSound(browserAlertAudioContextFactory(host))).toBe('played');
+			}
+			expect(built).toHaveLength(1);
+		});
+
+		it('does not stack a second chime on one still sounding, then plays again once it ended', () => {
+			const { host, built, oscillators } = countingHost();
+			expect(playAlertSound(browserAlertAudioContextFactory(host))).toBe('played');
+			expect(oscillators.count).toBe(2);
+
+			// Three more alerts of the same sample, 50 ms later: the chime is still going.
+			built[0]!.currentTime = 0.05;
+			for (let alert = 0; alert < 3; alert += 1) {
+				expect(playAlertSound(browserAlertAudioContextFactory(host))).toBe('played');
+			}
+			expect(oscillators.count, 'a second chime was stacked').toBe(2);
+
+			built[0]!.currentTime = alertSoundDurationMs() / 1_000 + 0.01;
+			expect(playAlertSound(browserAlertAudioContextFactory(host))).toBe('played');
+			expect(oscillators.count).toBe(4);
+		});
+
+		it('never throws toward the alert emitter when the audio graph fails', () => {
+			const { context } = fakeAudioContext();
+			context.createOscillator = () => { throw new Error('device lost'); };
+			expect(playAlertSound(() => context)).toBe('unavailable');
+		});
+	});
+
 	it('stays short enough not to talk over the game', () => {
 		expect(alertSoundDurationMs()).toBeLessThanOrEqual(500);
 	});
