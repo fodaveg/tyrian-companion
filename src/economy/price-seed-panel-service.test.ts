@@ -69,6 +69,57 @@ describe('PriceHistoryPanelSeedService', () => {
 		expect(state.days).toHaveLength(500);
 	});
 
+	/**
+	 * Z12: the bulk pass keeps 400 days (`requestedDays` 400) for an item outside the festival
+	 * calendar, and the panel used to serve any copy under 24 h old, so a sync left the chart cut
+	 * at 400 days until the copy aged out. A copy that hit its own cap is cut; one that did not is
+	 * the whole history and is still served from the cache.
+	 */
+	describe('a copy the bulk pass trimmed', () => {
+		function seedOfDays(count: number) {
+			return {
+				version: 1 as const, itemId: 36_038, source: 'datawars2' as const, retrievedAt: '2026-09-02T23:00:00.000Z',
+				days: Array.from({ length: count }, (_unused, index) => ({
+					dayUtc: new Date(Date.parse('2024-01-01T00:00:00.000Z') + index * 86_400_000).toISOString().slice(0, 10),
+					bidCopper: 100 + index, askCopper: null,
+				})),
+			};
+		}
+		async function cacheCopy(factory: IDBFactory, days: number, requestedDays: number): Promise<void> {
+			const cache = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+			await cache.put('vault', 36_038, seedOfDays(days), Date.parse('2026-09-02T23:00:00.000Z'), requestedDays);
+			cache.close();
+		}
+
+		it('downloads the whole history again instead of serving the 400-day copy', async () => {
+			const { service, requests, factory } = harness();
+			await cacheCopy(factory, 400, 400);
+
+			const state = await service.ensure(36_038);
+
+			expect(requests, 'the trimmed copy was served from the cache').toHaveLength(1);
+			expect(state.days).toHaveLength(2);
+		});
+
+		it('still serves a copy that is shorter than what was asked for: nothing was cut', async () => {
+			const { service, requests, factory } = harness();
+			await cacheCopy(factory, 300, 400);
+
+			const state = await service.ensure(36_038);
+
+			expect(requests).toHaveLength(0);
+			expect(state.days).toHaveLength(300);
+		});
+
+		it('records that the panel asked for the whole history', async () => {
+			const { service, factory } = harness();
+			await service.ensure(36_038);
+			const cache = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+			expect((await cache.get('vault', 36_038))?.requestedDays).toBe(Number.MAX_SAFE_INTEGER);
+			cache.close();
+		});
+	});
+
 	it('shares one in-flight download between concurrent callers of the same item', async () => {
 		const { service, requests } = harness();
 		const [first, second] = await Promise.all([service.ensure(36_038), service.ensure(36_038)]);

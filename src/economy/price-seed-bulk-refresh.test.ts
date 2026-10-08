@@ -105,6 +105,20 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		expect(second).toMatchObject({ attempted: 1, seeded: 1, skippedCached: 1, failed: 0 });
 	});
 
+	it('Z12: records in the cache how many days the download was allowed to keep', async () => {
+		const factory = new IDBFactory();
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async (itemId) => ({ ...seeded(itemId), requestedDays: 400 }),
+		});
+		await service.run([7]);
+		service.dispose();
+		const cache = await indexedDbPriceHistoryPort({ indexedDB: factory }).openSeedCache();
+		expect((await cache.get('vault', 7))?.requestedDays).toBe(400);
+		cache.close();
+	});
+
 	it('a stale cache entry (past the 24h TTL) is requested again', async () => {
 		const requested: number[] = [];
 		let now = NOW_MS;
