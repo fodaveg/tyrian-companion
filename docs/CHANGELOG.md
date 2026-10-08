@@ -1,5 +1,29 @@
 # Changelog
 
+## Candidato 0.6.10 - «Por hora» cuenta también el oro
+
+Candidato sin publicar ni etiquetar; sin gate ni release hechos.
+
+- Pestaña «Sesión»: «Por hora» pasa a ser la tasa del mismo valor que «Valor estimado», es decir, objetos más el
+  oro observado cuando el oro se ha seguido (solo objetos si nunca estuvo cubierto). Antes contaba solo el valor de
+  objetos. Gastar oro durante la sesión baja la tasa.
+- Límite: el denominador sigue siendo el tiempo de objetos observado (`observedItemsMs`); un hueco de monedas no lo
+  acorta, y el oro movido durante ese hueco no cuenta. Las condiciones para ocultar la tasa no cambian: sin tiempo
+  de objetos, objetos sin precio o cobertura de bolsas incompleta.
+- Puente del juego: el precio del saco que recibe el addon pasa a ser el BRUTO del bazar, el que se ve en el
+  bazar (pedido de compra más alto y oferta de venta más baja, por unidad y por 250), sin descontar comisión. La
+  trama cambia de `price1` a `price2`; `price1` ya no se anuncia ni se acepta. Petición de David del 8 oct 2026.
+  Límite: hace falta el addon de Nexus 0.7.2; con el 0.7.1 el panel del juego deja de mostrar el bloque de
+  precio hasta actualizar. La política de comisiones de Venta, el asesor y la valoración de sesión no cambia.
+- Contrato: `docs/SPEC-live-loot.md` §7 reescrito; `docs/SPEC-puente-ingame.md` reescribe la extensión como
+  `price2` con su tabla de compatibilidad y el fixture `src/alerts/__fixtures__/price2.json`.
+- Contrato de «Por hora»: `docs/SPEC-live-loot.md` §7 reescrito. No cambian el historial de sesiones, los sacos
+  por hora, las notas Markdown ni el comparador.
+- Tests: casos nuevos en `src/ui/live-session-panel.test.ts` (oro positivo y negativo, `coinNetCopper` nulo y las
+  condiciones de ocultar) y, para `price2`, cifras brutas del fixture (345, 86250, 367, 91750) y rechazo de un
+  `price_sub` con `price1`.
+- Sin verificar: la 0.6.10 instalada en Hebra u Obsidian y el addon 0.7.2 contra este plugin.
+
 ## Release beta 0.6.9 - las monedas observadas como teselas
 
 [Canal 0.6.9 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.9);

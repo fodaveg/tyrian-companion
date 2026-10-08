@@ -1,5 +1,21 @@
 # Estado
 
+## Candidato 0.6.10: «Por hora» con oro y precio bruto `price2` (8 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `c550bbd` (canal 0.6.9 publicado) y lleva dos cambios:
+«Por hora» de la pestaña «Sesión» pasa a ser la tasa del mismo valor que «Valor estimado» (objetos más oro
+observado), y el puente manda al addon el precio bruto del bazar en una trama `price2` que sustituye a `price1`.
+El detalle está en [CHANGELOG](CHANGELOG.md).
+
+- Verificado: `src/ui/live-session-panel.test.ts` (55 tests), los tests de `src/alerts`, la proyección del
+  precio, la cotización del saco y el cableado del puente, `tsc --noEmit` y el censo de observabilidad, en el
+  worktree del candidato.
+- Límite de compatibilidad: hace falta el addon de Nexus 0.7.2; con el 0.7.1 el panel del juego no muestra
+  precio hasta actualizar.
+- Pendiente: el gate local, la release y la verificación de instalación en Hebra y Obsidian. No se ha corrido
+  `check`, la suite completa ni el preflight sobre este candidato.
+- Límite: el denominador es el tiempo de objetos observado; un hueco de monedas no lo acorta.
+
 ## Canal 0.6.9 publicado: las monedas observadas como teselas (7 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.9](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.9)
