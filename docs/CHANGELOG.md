@@ -2,7 +2,7 @@
 
 ## Release beta 0.6.13 - nota resumen al cerrar una sesión en vivo, Base «Sesiones» y arreglos de la auditoría
 
-Candidato sobre `8001213` (main tras la auditoría de integración del 8 oct 2026); **no publicado ni etiquetado**.
+Release por tag `0.6.13`, tras la auditoría de rendimiento y fallos del 8 oct 2026.
 [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
 
 - Nota resumen: al cerrar una sesión en vivo se escribe una nota corta en `<carpeta de salida>/summaries/`, después
