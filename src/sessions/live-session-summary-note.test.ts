@@ -9,6 +9,7 @@ import { LiveSessionHistoryService } from './live-session-history';
 import { SessionHistoryService, type SessionHistoryVault } from './session-history';
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
 import { LiveSessionSummaryWriter, liveSessionSummaryRelativePath, renderLiveSessionSummary, type LiveSessionSummaryInput } from './live-session-summary-note';
+import { computeSummaryFigures } from './live-session-summary-figures';
 import { readComparablePerHour } from './live-session-summary-history';
 import { LIVE_SUMMARY_MAX_ATTEMPTS, LIVE_SUMMARY_RETRY_MS, LiveSessionSummaryService } from './live-session-summary-service';
 
@@ -169,6 +170,32 @@ describe('live session summary: figures that must not mislead', () => {
 		expect(content).not.toContain('Por hora sin');
 		expect(content).toContain('tyrian_summary_per_hour_copper: null');
 		expect((await render({ itemMeta: META, mutate: (session) => ({ ...session, observedItemsMs: 15 * 60_000 }) })).content).toMatch(/- Por hora: \d+g/u);
+	});
+
+	it('a session that ended after a disconnection keeps its per-hour figure, over the observed time and not the length', async () => {
+		// A disconnection clears the last sample, so the closed session reads `coverage.items: 'none'` whatever it observed before.
+		// It also lasts longer than what it observed: 40 minutes covered out of 80.
+		const entries = Array.from({ length: 10 }, (_, index) => ({ version: 1 as const, epoch: EPOCH, cursor: 10 + index, observedAt: iso(1), breakBefore: false, outbox: [],
+			observations: [{ version: 1 as const, id: `x${String(index)}`, source: 'nexus_inventory' as const, epoch: EPOCH, cursor: 10 + index, kind: 'item' as const, idNumber: STAPLE,
+				before: 0, after: 3, delta: 3, observedAt: iso(1), windowStartAt: iso(0), sourceElapsedMs: 0, cause: 'unknown' as const, coverage: 'observed_interval' as const }] }));
+		const disconnected: Mutate = (session) => ({ ...session, endedAt: iso(4), journal: [...session.journal, ...entries], coverage: { ...session.coverage, items: 'none' } });
+		const session = disconnected(await payload());
+		expect(session.observedItemsMs).toBe(40 * 60_000);
+		const figures = computeSummaryFigures(session, META, []);
+		expect(figures.durationMs).toBe(80 * 60_000);
+		expect(figures.perHour).toEqual({ copper: 71_550, reason: null });
+		expect(figures.withoutDominant).toEqual({ itemId: STAPLE, perHourCopper: 4_050 });
+		expect(figures.staple).toMatchObject({ itemId: STAPLE, quantity: 30, perHour: 45 });
+		expect(computeSummaryFigures({ ...session, observedItemsMs: 10 * 60_000 }, META, []).perHour).toEqual({ copper: null, reason: 'short' });
+
+		const { content } = await render({ itemMeta: META, mutate: disconnected });
+		expect(content).toContain('- Por hora: 7g 15s 50c');
+		expect(content).toContain('- Por hora sin Saco grande: 0g 40s 50c');
+		expect(content).toContain('· 45/h)');
+		expect(content).toContain('tyrian_summary_per_hour_copper: 71550');
+		expect(content).toContain('tyrian_summary_per_hour_gold: 7.155');
+		// The coverage line still says how much of the session was observed.
+		expect(content).toContain('50 % observado');
 	});
 
 	it('with one item over half of the value the per-hour figure comes twice, with and without it', async () => {

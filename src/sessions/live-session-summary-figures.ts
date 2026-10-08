@@ -37,7 +37,8 @@ export interface SummaryFigures {
 	netCopper: number | null;
 	positiveCopper: number;
 	noPrices: boolean;
-	perHour: { copper: number | null; reason: 'short' | 'coverage' | null };
+	/** Over the OBSERVED item time, never the session's length. `short`: under the 15 observed minutes every live rate needs. */
+	perHour: { copper: number | null; reason: 'short' | null };
 	/** Set when ONE item is over half of the value: the per-hour figure without it. */
 	withoutDominant: { itemId: number; perHourCopper: number } | null;
 	staple: { itemId: number; quantity: number; entries: number; perHour: number | null } | null;
@@ -97,7 +98,9 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	unpriced.sort((a, b) => b.quantity - a.quantity || a.itemId - b.itemId);
 
 	const observedMs = session.observedItemsMs;
-	const rateReason: 'short' | 'coverage' | null = !liveItemRateEligible({ observedItemsMs: observedMs }) ? 'short' : session.coverage.items !== 'complete' ? 'coverage' : null;
+	// The one rule of every live rate (`liveItemRateEligible`): 15 observed minutes. How the session ended does not enter: a
+	// disconnection clears the last sample, so `coverage.items` closes as 'none' over any amount of covered time.
+	const rateReason: 'short' | null = liveItemRateEligible({ observedItemsMs: observedMs }) ? null : 'short';
 	const hasQuantity = itemTotals.some((row) => row.net !== 0);
 	const noPrices = hasQuantity && !pricedAny;
 	const goldNet = session.valuation.coinNetCopper ?? session.totals.find((row) => row.kind === 'currency' && row.idNumber === GOLD_CURRENCY_ID)?.net ?? null;
