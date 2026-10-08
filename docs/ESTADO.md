@@ -1,5 +1,34 @@
 # Estado
 
+## Addon de Nexus 0.8.0 publicado (8 oct 2026)
+
+[Addon de Nexus 0.8.0](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.0): release normal, tag
+anotado `0.8.0` sobre `ff9702b` (14 commits sobre el 0.7.2, `c3a7763`), con dos ficheros: `tyrian_companion_nexus.dll`
+(4325376 bytes, sha256 `7651c12f0c3a6bcad78c50ee282dd7f900d14d6ced55a368f650247d6b453a8b`) y
+`tyrian_companion_nexus.dll.sha256` (93 bytes); descargados de GitHub y suma comprobada. Pide Tyrian Companion 0.6.10
+o posterior. El plugin no cambia con este addon.
+
+- Contenido: el panel de Laberinto rediseñado según el boceto de David (dos columnas: bolsas y ritmo / stack con
+  pedido y oferta brutos; tres líneas: Huecos, MF y Estado con punto de color; barra de título propia con botón
+  para quitar el fondo; altura fija), y dos lecturas pasivas nuevas dentro del addon: huecos libres reales
+  (capacidad de las bolsas puestas menos posiciones ocupadas) y hallazgo mágico total con desglose (suerte,
+  servidor, efectos) y aviso cuando baja respecto al máximo de la sesión. Retención de 5 s para que un ciclo
+  fallido no haga parpadear cifras ni el punto de estado.
+- Esas dos lecturas NO llegan al plugin en esta versión: `live_begin.slots` sigue en `null` y ninguna trama lleva
+  hallazgo mágico. Lo que el panel del juego muestra de huecos y MF es solo del addon; el plugin sigue tratándolos
+  como desconocidos.
+- Verificación del addon (informada desde su repo): 301 tests (`cargo test --locked`), build Windows x64
+  reproducible con las mismas 257 importaciones que la 0.7.2 y una exportación, y tres revisiones independientes
+  del código, la última sin caminos a pánico ni a bloqueo.
+- Evidencia previa: las sondas externas de solo lectura `docs/audit/loot-mf-probe` y
+  `docs/audit/loot-bag-capacity-probe` (capacidad 414, igual que el inventario; hallazgo mágico 333 % y, tras un
+  cambio, 363 %, iguales que el panel de héroe). El perfil auditado de bolsas ganó la guarda del getter de libres
+  (`1620b39`) DESPUÉS de las ejecuciones en vivo, que fueron con 11 guardas.
+- Instalado en la máquina de David (Fedora) con el juego cerrado: el DLL de la carpeta de addons tiene ese sha256.
+- No verificado: nada del 0.8.0 se ha visto dentro del juego (panel, botones, tooltips, las dos lecturas, el recuento
+  de ocupados, si las lecturas caben en su plazo de 250 ms, una bajada de hallazgo mágico, otro arranque del juego)
+  ni en Windows.
+
 ## Canal 0.6.11 publicado: el monstruo como icono propio en Hebra (8 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.11](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.11)
@@ -78,7 +107,7 @@ El detalle está en [CHANGELOG](CHANGELOG.md).
   mientras no se verifique en el cliente BRAT/Obsidian real.
 - No verificado: la 0.6.10 en Obsidian/BRAT (en el vault de David hay una 0.2.20 antigua); el aspecto real de la
   pestaña «Sesión» reordenada y del icono de espada (David no ha dicho nada de ellos); Windows.
-- Límite de compatibilidad: hace falta el addon de Nexus 0.7.2; con el 0.7.1 el panel del juego deja de pintar el
+- Límite de compatibilidad: hace falta el addon de Nexus 0.7.2 como mínimo (el 0.8.0 es posterior y también vale); con el 0.7.1 el panel del juego deja de pintar el
   bloque de precio hasta actualizar.
 - Límite: el denominador de «Por hora» es el tiempo de objetos observado; un hueco de monedas no lo acorta.
 
