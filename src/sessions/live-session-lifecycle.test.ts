@@ -578,6 +578,21 @@ describe('durable live alert outbox', () => {
 		expect(f.service.hasDispatchingClaim('other',intent.outboxId)).toBe(false); expect(f.service.hasDispatchingClaim('session','nope')).toBe(false);
 		expect(copy).not.toHaveBeenCalled(); await f.service.dispose();
 	});
+	it('a held item whose quote went stale is asked again; a new session does not inherit the previous quotes', async () => {
+		const f = fixture(); const first = await positive(f); const e = economy(f);
+		const asked = () => e.requestDetailed.mock.calls.flatMap(([path]) => String(path).split('ids=')[1]!.split(',')).map(Number);
+		e.service.observe(first); await e.service.drain(); expect(asked()).toEqual([12147]);
+		f.setNow(AT+20*60_000); await f.service.commit(f.sample(2,2,{rows:[{kind:'item',idNumber:999,quantity:1},{kind:'item',idNumber:12147,quantity:2}]}));
+		e.service.observe(f.service.getJournal()[2]!); await e.service.drain();
+		expect(asked().slice(1), 'the stale held item rides along with the entry in flight').toContain(12147);
+		expect(f.service.getRuntime()?.priceCapturedAt, 'and the valuation is not dragged back to the old quote').toBe(new Date(AT+20*60_000).toISOString());
+		const before = asked().length; f.setNow(AT+20*60_000+5000); await f.service.stop(AT+20*60_000+5000);
+		f.setNow(AT+21*60_000); await f.service.start('Test'); const epoch = 'DAAAAAAAAAAAAAAAAAAAAQ';
+		await f.service.open({...f.source,epoch}); await f.service.commit(f.sample(0,0,{epoch})); f.setNow(AT+21*60_000+1000); await f.service.commit(f.sample(1,3,{epoch}));
+		e.service.observe(f.service.getJournal()[1]!); await e.service.drain();
+		expect(asked().slice(before), 'the new session asks for its own quote').toContain(12147);
+		await e.service.dispose(); await f.service.dispose();
+	});
 	it('a crash after claim is unconfirmed on restart and never re-emits', async () => {
 		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
 		await f.service.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));

@@ -28,6 +28,8 @@ class CurrencyCatalogUnavailableError extends Error { constructor() { super('The
 class CurrencyCatalogMissingError extends Error { constructor() { super('The currency catalog does not know an observed currency.'); this.name = 'CurrencyCatalogMissingError'; } }
 /** A coin that stayed unresolved is asked again at most this often; the catalog service itself caches a 404 for an hour. */
 const CURRENCY_RETRY_MS = 5 * 60_000;
+/** A quote older than this is no longer fresh: the entry's own items are asked again, and a held item's is not counted. */
+const QUOTE_FRESH_MS = 15 * 60_000;
 /** An item the session holds but no read has quoted (a failed request, a rate limit) is asked again at most this often, and at most this many per pass. */
 const UNQUOTED_RETRY_MS = 60_000;
 /** One public price batch carries up to 200 ids; a retry pass adds 50 at most so a long unpriced list never turns into a burst. */
@@ -51,6 +53,8 @@ export class LiveSessionEconomy {
 	private readonly triedCurrencies = new Set<number>();
 	private readonly currencyAskedAt = new Map<number,number>();
 	private readonly unquotedAskedAt = new Map<number,number>();
+	/** The session `quotes` were gathered for: a new session starts without the previous one's quotes. */
+	private quotesSession: string | null = null;
 	/** Gross best bid and lowest ask of the Halloween bag from the last public read of THIS process; a restored quote has none. */
 	private bagRaw: BagRawQuote | null = null;
 	private bagAttemptedAt: number | null = null;
@@ -174,11 +178,13 @@ export class LiveSessionEconomy {
 		if (this.disposed || lifecycle.getRuntime()?.phase !== 'active' || lifecycle.getRuntime()?.sessionId !== entry.sessionId) return;
 		const ids = [...new Set(entry.observations.filter((row) => row.kind === 'item').map((row) => row.idNumber))];
 		const now = this.options.now();
+		if (this.quotesSession !== runtime.sessionId) { this.quotes.clear(); this.unquotedAskedAt.clear(); this.quotesSession = runtime.sessionId; }
 		for (const price of runtime.prices) if (!this.quotes.has(price.itemId) && runtime.priceCapturedAt !== null) this.quotes.set(price.itemId,{unitCopper:price.unitCopper,capturedAt:Date.parse(runtime.priceCapturedAt)});
-		// Held items no read has quoted: a 404 DOES record a (null) quote, so only a failed or skipped request leaves one here.
-		const retry = runtime.totals.filter((total) => total.kind === 'item' && !ids.includes(total.idNumber) && !this.quotes.has(total.idNumber)
+		// Held items no read has quoted (a 404 DOES record a null quote, so only a failed or skipped request leaves one here) or
+		// whose quote is older than the criterion for a fresh one: asked again, 60 s apart per id and 50 per pass.
+		const retry = runtime.totals.filter((total) => total.kind === 'item' && !ids.includes(total.idNumber) && (!this.quotes.has(total.idNumber) || now - this.quotes.get(total.idNumber)!.capturedAt > QUOTE_FRESH_MS)
 			&& now - (this.unquotedAskedAt.get(total.idNumber) ?? -Infinity) >= UNQUOTED_RETRY_MS).map((total) => total.idNumber).slice(0,UNQUOTED_RETRY_MAX);
-		const missing = [...ids.filter((id) => !this.quotes.has(id) || now - this.quotes.get(id)!.capturedAt > 15 * 60_000),...retry];
+		const missing = [...ids.filter((id) => !this.quotes.has(id) || now - this.quotes.get(id)!.capturedAt > QUOTE_FRESH_MS),...retry];
 		if (missing.length > 0 && !this.options.rateLimit.status().active) {
 			for (const id of retry) this.unquotedAskedAt.set(id,now);
 			const metadata = await this.options.catalog([...new Set([...ids,...retry])]);
@@ -198,7 +204,7 @@ export class LiveSessionEconomy {
 		}
 		if (this.disposed || lifecycle.getRuntime()?.phase !== 'active' || lifecycle.getRuntime()?.sessionId !== entry.sessionId) return;
 		const priceIds = new Set([...runtime.prices.map((row) => row.itemId),...ids,...retry,
-			...runtime.totals.filter((total) => total.kind === 'item').map((total) => total.idNumber)]); // a quote read elsewhere (the bag refresh) still values what the session holds
+			...runtime.totals.filter((total) => total.kind === 'item' && this.quotes.has(total.idNumber) && now - this.quotes.get(total.idNumber)!.capturedAt <= QUOTE_FRESH_MS).map((total) => total.idNumber)]); // a quote read elsewhere (the bag refresh) still values what the session holds
 		const pricedIds = [...priceIds].filter((id) => this.quotes.has(id));
 		if (pricedIds.length > 0) await lifecycle.updatePrices(pricedIds.map((itemId) => ({itemId,unitCopper:this.quotes.get(itemId)!.unitCopper})),
 			new Date(Math.min(...pricedIds.map((id) => this.quotes.get(id)!.capturedAt))).toISOString());
