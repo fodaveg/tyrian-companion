@@ -297,7 +297,9 @@ export class LiveSessionLifecycle {
 			const target = sessionId !== undefined && this.record?.sessionId !== sessionId ? this.completed.get(sessionId)
 				: this.record === null ? undefined : {record:this.record,journal:this.journal};
 			if (!target || !receiptOnly && (!this.options.enabled() || target.record !== this.record || target.record.phase !== 'active' || !await this.owned() || !this.options.enabled())) return null;
-			const entry = target.journal.find((row) => row.outbox.some((intent) => intent.outboxId === outboxId));
+			// Newest first: the intents that get updated are the latest ones (ids are unique, so the order cannot change the match).
+			let entry: LiveJournalEntryV1 | undefined;
+			for (let index = target.journal.length - 1; index >= 0 && entry === undefined; index -= 1) if (target.journal[index]!.outbox.some((intent) => intent.outboxId === outboxId)) entry = target.journal[index];
 			const prior = entry?.outbox.find((row) => row.outboxId === outboxId); if (!entry || !prior) return null;
 			const intent = update(structuredClone(prior));
 			const next = { ...entry, outbox: entry.outbox.map((row) => row.outboxId === outboxId ? intent : row) };
