@@ -1,5 +1,5 @@
 import { isDeclaredBuild } from './manual-build-model';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, LIVE_GAP_REASONS,
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, LIVE_GAP_REASONS, LIVE_SESSION_MAX_CHARACTERS,
 	type LiveSessionRuntimeRecord, type LiveJournalEntryV1, type LiveObservationV1 } from './live-session-model';
 import { isFarmingGoal } from './farming-goal';
 import { isLiveAlertOutbox } from './live-session-outbox';
@@ -12,7 +12,10 @@ export function isLiveSessionRuntimeRecord(value: unknown): value is LiveSession
 		'sourceInstance','build','profile','epoch','context','connection','lastPresenceAt','lastObservationAt','lastValidItemsAt','lastValidCurrenciesAt','lastSourceDisconnectedAt','currencyTrackedIds','lastSample','fingerprint','itemComparable','currencyComparable','sourceState',
 		'sourceReason','observationCount','sampleCount','totals','gaps','observedItemsMs','observedCurrenciesMs','prices','priceCapturedAt',
 		'magicFind','preparation','farmingGoal','groupContext','mapIntervals','mapObservation','mapCoveragePartial','summaryReceipt',
-		...('declaredBuild' in value ? ['declaredBuild'] : [])])) return false;
+		...('declaredBuild' in value ? ['declaredBuild'] : []),...('characters' in value ? ['characters'] : [])])) return false;
+	if ('characters' in value && !(Array.isArray(value.characters) && value.characters.length <= LIVE_SESSION_MAX_CHARACTERS
+		&& value.characters.every((entry) => record(entry) && keys(entry, ['name','fromAt']) && typeof entry.name === 'string'
+			&& entry.name.length > 0 && entry.name.length <= 32 && date(entry.fromAt)))) return false;
 	if ('declaredBuild' in value && value.declaredBuild !== null && !isDeclaredBuild(value.declaredBuild)) return false;
 	if (value.version !== 4 || value.kind !== 'live_inventory' || typeof value.sessionId !== 'string' || !value.sessionId
 		|| !['active','complete'].includes(value.phase as string) || !date(value.startedAt) || !natural(value.persistedAt)

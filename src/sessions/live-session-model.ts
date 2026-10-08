@@ -89,8 +89,15 @@ export interface LiveSessionRuntimeRecord {
 	mapObservation: { mapId: number | null; fromMs: number } | null; mapCoveragePartial: boolean;
 	/** Captured once at start; historical absence remains unknown. */
 	declaredBuild?: DeclaredBuildV1 | null;
+	/**
+	 * Characters the session saw, in order, each with the instant the plugin first saw it. Local runtime
+	 * only: it never reaches the durable session note. Absent on records stored before it existed.
+	 */
+	characters?: LiveSessionCharacterV1[];
 	summaryReceipt: SessionSummaryReceipt | null;
 }
+export interface LiveSessionCharacterV1 { name: string; fromAt: string }
+export const LIVE_SESSION_MAX_CHARACTERS = 32;
 export interface LiveJournalEntryV1 {
 	version: 1; sessionId: string; epoch: string; cursor: number; observedAt: string;
 	observations: LiveObservationV1[]; breakBefore: boolean; alertsProcessed: boolean; outbox: LiveAlertOutboxV1[];

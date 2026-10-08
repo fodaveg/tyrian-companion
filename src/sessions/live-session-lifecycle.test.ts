@@ -11,6 +11,8 @@ import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { buildLiveChart } from './live-session-reducer';
 import { liveSessionViewFromStored, LiveSessionHistoryService } from './live-session-history';
 import type { SessionHistoryVault } from './session-history';
+import { currentLiveSessionCharacter } from './live-session-characters';
+import { isLiveSessionRuntimeRecord } from './live-session-validation';
 import { liveSessionRatePerHour } from '../ui/live-session-panel';
 import { projectLiveFarmingIngameState } from '../runtime/farming-runtime-projection';
 import { decideLiveAlert, isLiveAlertOutbox } from './live-session-outbox';
@@ -712,5 +714,40 @@ describe('durable live alert outbox', () => {
 		await expect(f.service.updateAlert(intent.outboxId,(prior) => ({...prior,receipt:{state:'pending'}}),true,'session')).resolves.toBeNull();
 		expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]).toMatchObject({state:'processed',receipt:{state:'received'}});
 		expect(f.onComplete).toHaveBeenCalledTimes(2); expect(f.service.getView().sessionId).toBe('session-2'); await f.service.dispose();
+	});
+});
+
+describe('characters seen by a live session', () => {
+	const SECOND_EPOCH = 'BAQEBAQEBAQEBAQEBAQEBA';
+	it('records the starting character, adds a new one in order and never repeats the last', async () => {
+		const f = fixture(); await f.service.start('Alfa'); await f.service.open({ ...f.source, context: { ...f.source.context, character: 'Alfa' } });
+		await f.service.commit(f.sample(0, 0)); f.setNow(AT + 30_000); await f.service.commit(f.sample(1, 2));
+		expect(f.service.getRuntime()?.characters?.map((entry) => entry.name)).toEqual(['Alfa']);
+		f.setNow(AT + 60_000);
+		const beta = { ...f.source, epoch: SECOND_EPOCH, context: { ...f.source.context, character: 'Beta' } };
+		await f.service.open(beta);
+		const seen = f.service.getRuntime()?.characters;
+		expect(seen?.map((entry) => entry.name)).toEqual(['Alfa', 'Beta']);
+		expect(seen?.[1]?.fromAt).toBe(new Date(AT + 60_000).toISOString());
+		expect(isLiveSessionRuntimeRecord(f.service.getRuntime())).toBe(true);
+		// The tab shows the CURRENT character, not the one the session started with; a selection screen keeps it.
+		expect(currentLiveSessionCharacter(f.service.getRuntime())).toBe('Beta');
+		await expect(f.service.open({ ...f.source, epoch: 'DQQEBAQEBAQEBAQEBAQEBA', context: { state: 'character_select', mapId: null, character: null } })).resolves.toBe('not_gameplay');
+		expect(currentLiveSessionCharacter(f.service.getRuntime())).toBe('Beta');
+		// The gap starts at the last instant observed and is closed by the new character's baseline.
+		await f.service.commit({ ...f.sample(0, 5), epoch: SECOND_EPOCH });
+		const gap = f.service.getRuntime()?.gaps.find((entry) => entry.reason === 'context_changed' && entry.channels[0] === 'items');
+		expect(gap).toMatchObject({ fromAt: new Date(AT + 30_000).toISOString(), toAt: new Date(AT + 60_000).toISOString() });
+		f.setNow(AT + 120_000);
+		await f.service.open({ ...f.source, epoch: 'CAQEBAQEBAQEBAQEBAQEBA', context: { ...f.source.context, character: 'Beta', mapId: 873 } });
+		expect(f.service.getRuntime()?.characters?.map((entry) => entry.name)).toEqual(['Alfa', 'Beta']);
+		await f.service.dispose();
+	});
+	it('keeps the last known character through a character-select screen', async () => {
+		const f = fixture(); await f.service.start('Alfa'); await f.service.open(f.source);
+		await expect(f.service.open({ ...f.source, epoch: SECOND_EPOCH, context: { state: 'character_select', mapId: null, character: null } })).resolves.toBe('not_gameplay');
+		expect(f.service.getRuntime()?.characters?.map((entry) => entry.name)).toEqual(['Alfa', 'Test']);
+		expect(f.service.getRuntime()?.context?.character).toBe('Test');
+		await f.service.dispose();
 	});
 });

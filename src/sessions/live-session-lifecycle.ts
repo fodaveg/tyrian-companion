@@ -12,6 +12,7 @@ import { LIVE_SOURCE_STALE_MS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 import { createLiveChart, LiveChartBuilder, liveChartPoint, liveObservationTotals,liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
 import type { IngameGameContext } from '../alerts/alert-ingame-protocol';
 import { createLiveAlertIntent, settleLiveAlertRestart } from './live-session-outbox';
+import { LIVE_SESSION_MAX_CHARACTERS } from './live-session-model';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } from './live-session-model';
 
 export interface LiveSessionSourceInput { sourceInstance: string; epoch: string; build: string; profile: string; context: IngameGameContext }
@@ -140,7 +141,8 @@ export class LiveSessionLifecycle {
 				magicFind: magicFind === null ? { value: null, source: 'unknown' } : { value: magicFind, source: 'manual' },
 				preparation: normalizeFarmingPreparationSettings(this.options.preparation?.() ?? DEFAULT_FARMING_PREPARATION),
 				farmingGoal: normalizeFarmingGoal(this.options.farmingGoal?.()), groupContext: this.options.groupContext?.() ?? null,
-				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, declaredBuild, summaryReceipt: null };
+				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, declaredBuild,
+				characters: character === null ? [] : [{ name: character, fromAt: at }], summaryReceipt: null };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return null; }
 			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = this.newChart(); this.failure = false;
 			this.unsaved = null; this.lostPresence = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false; this.noteNeedsVerification = false;
@@ -156,7 +158,8 @@ export class LiveSessionLifecycle {
 			// `live_ready` has no status for storage: while it is down this answers as before.
 			if (await this.ready() !== 'owned') return 'source_conflict';
 			if (this.record.epoch === source.epoch) return 'ready';
-			let next = this.record;
+			// Before the context is replaced: a record stored without the list starts it from the context it had.
+			let next = noteCharacter(this.record, source.context.character, this.nowIso());
 			if (next.sourceInstance !== null) next = liveSessionGap(next, 'context_changed', this.nowIso());
 			next = { ...next, sourceInstance: source.sourceInstance, build: source.build, profile: NEXUS_LIVE_PROFILE,
 				epoch: source.epoch, context: { ...source.context }, lastSample: null, fingerprint: null, lastSourceDisconnectedAt: null,
@@ -626,6 +629,18 @@ export class LiveSessionLifecycle {
 		this.queue = next.then(() => undefined, (error: unknown) => { this.failure = true; this.options.onError(error); this.options.onStateChange(); });
 		return next;
 	}
+}
+
+/**
+ * Registers the character a new epoch belongs to when it is not the last one seen. A record stored
+ * before this field existed starts its list here, from the context it already had, so the first
+ * name is never lost. Capped: past the cap the list stops growing and the later names are not kept.
+ */
+function noteCharacter(record: LiveSessionRuntimeRecord, character: string | null, at: string): LiveSessionRuntimeRecord {
+	if (character === null) return record;
+	const seen = record.characters ?? (record.context?.character ? [{ name: record.context.character, fromAt: record.startedAt }] : []);
+	if (seen.at(-1)?.name === character || seen.length >= LIVE_SESSION_MAX_CHARACTERS) return { ...record, characters: seen };
+	return { ...record, characters: [...seen, { name: character, fromAt: at }] };
 }
 
 /** Bounds the DOM projection without throwing away journal rows needed for totals or export. */
