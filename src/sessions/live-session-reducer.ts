@@ -111,7 +111,7 @@ export function liveObservationTotals(totals: LiveTotalV1[], observations: reado
 }
 
 /** One chart point: the cumulative totals revalued with the record's current prices. */
-export function liveChartPoint(entry: LiveJournalEntryV1, totals: readonly LiveTotalV1[],
+export function liveChartPoint(entry: Pick<LiveJournalEntryV1,'observedAt' | 'breakBefore'>, totals: readonly LiveTotalV1[],
 	record: Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> | null): LiveChartPointV1 {
 	const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
 	return { observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
@@ -122,7 +122,7 @@ export function liveChartPoint(entry: LiveJournalEntryV1, totals: readonly LiveT
  * The last `limit` chart points of a journal. Totals accumulate in one mutable map over the whole journal (no per-entry
  * copy or sort: sums of integers do not depend on order), but only the retained tail is revalued.
  */
-export function buildLiveChart(journal: readonly LiveJournalEntryV1[], record: Parameters<typeof liveChartPoint>[2], limit = 600): LiveChartPointV1[] {
+export function buildLiveChart(journal: readonly Pick<LiveJournalEntryV1,'observations' | 'observedAt' | 'breakBefore'>[], record: Parameters<typeof liveChartPoint>[2], limit = 600): LiveChartPointV1[] {
 	const map = new Map<string, LiveTotalV1>(); const chart: LiveChartPointV1[] = []; const firstValued = journal.length - limit;
 	journal.forEach((entry, index) => {
 		accumulateLiveTotals(map, entry.observations);

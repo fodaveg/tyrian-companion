@@ -1,7 +1,7 @@
 import { buildLiveSessionComparison, type LiveSessionComparison } from './live-session-comparison';
 import { settlePersistedIngameReceipt } from '../alerts/alert-ingame-receipt';
-import { liveObservationTotals, valueLiveTotals } from './live-session-reducer';
-import type { LiveSessionViewV1, LiveChartPointV1, LiveTotalV1 } from './live-session-model';
+import { buildLiveChart, GOLD_CURRENCY_ID } from './live-session-reducer';
+import type { LiveSessionViewV1, LiveTotalV1 } from './live-session-model';
 import { inspectLiveSessionNote } from './live-session-note-renderer';
 import { inspectDurableSessionNote, type SessionHistoryVault } from './session-history';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
@@ -119,15 +119,10 @@ export function liveSessionViewFromStored(payload: StoredLiveSessionPayloadV1, _
 	const all = payload.journal.flatMap((entry) => entry.observations);
 	const start = Math.max(0,Number.isSafeInteger(offset) ? offset : 0);
 	const size = Math.max(1,Math.min(200,Number.isSafeInteger(limit) ? limit : 200));
-	const chart: LiveChartPointV1[] = []; let totals: LiveTotalV1[] = [];
-	for (const [index,entry] of payload.journal.entries()) {
-		totals = liveObservationTotals(totals,entry.observations);
-		if (index < payload.journal.length - 600) continue;
-		const valuation = valueLiveTotals(totals,payload.valuation.prices,payload.valuation.capturedAt,payload.valuation.coinNetCopper !== null);
-		chart.push({ observedAt: entry.observedAt,itemQuantityNet: totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0),
-			netItemValueKnownCopper: valuation.netItemValueKnownCopper,knownNetValueCopper: valuation.knownNetValueCopper,
-			breakBefore: entry.breakBefore || chart.length === 0 && index > 0 });
-	}
+	// The displayed tail starts at a break when it is not the whole journal (as the live view does).
+	const chart = buildLiveChart(payload.journal,{ prices: payload.valuation.prices,priceCapturedAt: payload.valuation.capturedAt,
+		currencyTrackedIds: payload.valuation.coinNetCopper !== null ? [GOLD_CURRENCY_ID] : [] });
+	if (chart.length > 0 && payload.journal.length > chart.length) chart[0] = { ...chart[0]!,breakBefore: true };
 	return { version: 1,sessionId: payload.sessionRef,phase: 'complete',connection: 'disconnected',sourceState: 'unavailable',
 		sourceReason: 'source_missing',source: 'nexus_inventory',startedAt: payload.startedAt,endedAt: payload.endedAt,
 		elapsedMs: Date.parse(payload.endedAt) - Date.parse(payload.startedAt),observedItemsMs: payload.observedItemsMs,
