@@ -2,7 +2,7 @@
 
 ## Release beta 0.6.11 - el monstruo como icono propio del plugin en Hebra
 
-Candidato; nada publicado ni etiquetado, gate pendiente. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente.
+Release por tag `0.6.11`. [ESTADO](ESTADO.md) separa lo verificado de lo pendiente (instalación y ver el icono pintado).
 
 - Icono en Hebra: `hebra.json` lleva ahora `iconImage`, el monstruo como PNG embebido (`data:image/png;base64,…`,
   128 px, cuadrado, unos 22 KB), con `icon: "sword"` como respaldo. Pedido de David el 8 oct 2026 («si se puede
