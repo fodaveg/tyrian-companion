@@ -262,6 +262,63 @@ describe('inventory sync progress and the open product tabs', () => {
 	});
 });
 
+describe('Sale tab expiry timer and the plugin unload', () => {
+	afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+	it('cancels the timer and the listener on unload without unmounting, and a late render does nothing', async () => {
+		const nowMs = Date.UTC(2026, 8, 26, 7, 38, 0);
+		const runtime = createRuntimeHarness();
+		try {
+			(runtime.core as unknown as { localDebugActions: null }).localDebugActions = null;
+			await runtime.initializeRuntime();
+			// Fake clock only from here: the runtime's own start-up and shutdown run on real timers.
+			vi.useFakeTimers();
+			vi.setSystemTime(nowMs);
+			const document = new FakeDocument();
+			vi.stubGlobal('createEl', (tag: string, options?: FakeOptions) => new FakeElement(tag, document, options));
+			vi.stubGlobal('createDiv', (options?: FakeOptions) => new FakeElement('div', document, options));
+			vi.stubGlobal('createSpan', (options?: FakeOptions) => new FakeElement('span', document, options));
+			const content = new FakeElement('div', document);
+			let modelReads = 0;
+			const sale = new SaleItemView(content as unknown as HTMLElement, icons, {
+				getSaleLocale: () => 'en',
+				getSaleViewModel: () => {
+					modelReads += 1;
+					return buildSaleViewModel({
+						status: 'ready', nowMs: Date.now(), festivalStartMs: null, maxPriceAgeMs: 900_000, hero: null, calendar: [],
+						rows: [{
+							id: '#/row/1', itemId: 1, name: 'Fang', icon: null, ownedQuantity: 1, slotsUsed: 1,
+							materialStorageEligible: false, bidCopper: null, instantSellNetCopper: null, listingNetCopper: null,
+							decision: {
+								action: 'sell', reason: 'seasonal_sell_window', until: new Date(nowMs + 300_000).toISOString(),
+								priceQuotedAt: new Date(nowMs).toISOString(), sellWindowFromDay: '2026-09-22', sellWindowToDay: '2026-10-19',
+							},
+						}],
+					});
+				},
+			});
+			const sales = new MountedViews(() => sale);
+			(runtime.core as unknown as { viewControllers: unknown }).viewControllers = {
+				companion: new MountedViews(() => { throw new Error('No Companion view is mounted in this test.'); }),
+				inventoryAdvisor: new MountedViews(() => { throw new Error('No advisor view is mounted in this test.'); }),
+				sale: sales,
+			};
+			await sales.registration(saleView({ getSaleLocale: () => 'en' })).mount(content as unknown as HTMLElement);
+			expect(vi.getTimerCount(), 'the view armed its expiry timer').toBe(1);
+			const readsBefore = modelReads;
+
+			await runtime.shutdown();
+
+			expect(vi.getTimerCount()).toBe(0);
+			await vi.advanceTimersByTimeAsync(600_000);
+			sale.render();
+			expect(modelReads).toBe(readsBefore);
+		} finally {
+			runtime.dispose();
+		}
+	});
+});
+
 function only<T>(values: readonly T[]): T {
 	if (values.length !== 1) throw new Error(`Expected exactly one element, found ${String(values.length)}.`);
 	return values[0]!;

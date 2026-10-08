@@ -1560,6 +1560,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.inventoryVaultSyncRun?.dispose();
 		// A progress report still waiting for its frame must not repaint a tab after the unload.
 		for (const view of this.viewControllers?.inventoryAdvisor.current() ?? []) view.cancelProgressRender();
+		// The Sale tab's expiry timer must not outlive the plugin: Hebra may never unmount the view.
+		for (const view of this.viewControllers?.sale.current() ?? []) view.cancelExpiryRepaint();
 		this.walletVaultSync?.dispose();
 		this.inventoryPreferences?.dispose();
 		this.priceHistory?.dispose();
