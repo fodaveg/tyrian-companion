@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { TyrianVault } from '../host/tyrian-host-storage';
+import { sessionHistoryVault } from '../runtime/vault-ports';
 import type { SessionHistoryVault } from './session-history';
 import { LiveSessionHistoryService } from './live-session-history';
 
@@ -28,5 +30,11 @@ describe('live session history reads', () => {
 	it('reads every note every time when the host reports no mtime', async () => {
 		const v = countingVault(false); v.write('a.md', '# a'); const service = new LiveSessionHistoryService(v.vault);
 		await service.list(); await service.list(); expect(v.reads).toEqual(['a.md', 'a.md']);
+	});
+	it('hands out an mtime only from a host that reports every change (Hebra edits do not move its mtime)', () => {
+		const base = { markdownFiles: () => [{ path: 'a.md', mtime: 5 }], file: () => ({ path: 'a.md', mtime: 5 }) } as unknown as TyrianVault;
+		expect(sessionHistoryVault(base).markdownFiles()).toEqual([{ path: 'a.md' }]);
+		expect(sessionHistoryVault({ ...base, reportsEveryChange: false }).markdownFiles()).toEqual([{ path: 'a.md' }]);
+		expect(sessionHistoryVault({ ...base, reportsEveryChange: true }).markdownFiles()).toEqual([{ path: 'a.md', mtime: 5 }]);
 	});
 });

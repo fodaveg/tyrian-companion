@@ -54,7 +54,8 @@ export function labelledVault(vault: TyrianVault, label: string): TyrianVault {
 export function sessionHistoryVault(vault: TyrianVault): SessionHistoryVault {
 	const notes = labelledVault(vault, 'Session history note');
 	return {
-		markdownFiles: () => notes.markdownFiles().map((file) => file.mtime === undefined ? { path: file.path } : { path: file.path, mtime: file.mtime }),
+		// `mtime` only where the host reports every change (Obsidian): a Hebra mtime is a cached `updatedAt` that an edit inside Hebra does not move.
+		markdownFiles: () => notes.markdownFiles().map((file) => file.mtime === undefined || vault.reportsEveryChange !== true ? { path: file.path } : { path: file.path, mtime: file.mtime }),
 		exists: (path) => notes.exists(path),
 		file: (path) => {
 			const entry = notes.file(path);

@@ -49,8 +49,19 @@ type NoteOutcome = { kind: 'invalid' } | { kind: 'ignored' } | { kind: 'live'; s
 /** Explicit history actions read synced notes, so a new machine needs no old IDB journal. */
 export class LiveSessionHistoryService {
 	/** What each listed note inspected to, against the mtime it had: an unchanged note is not read again. Never kept for a note without a real mtime. */
-	private readonly inspected = new Map<string,{ mtime: number; outcome: NoteOutcome }>();
-	constructor(private readonly vault: SessionHistoryVault) {}
+	private readonly inspected = new Map<string,{ mtime: number; outcome: NoteOutcome; bytes: number }>();
+	private inspectedBytes = 0;
+	/** `cacheBytes` bounds the note text behind the remembered session payloads; a note that would exceed it is simply not remembered. */
+	constructor(private readonly vault: SessionHistoryVault, private readonly cacheBytes = 32 * 1024 * 1024) {}
+	private forget(path: string): void {
+		const known = this.inspected.get(path); if (known === undefined) return;
+		this.inspectedBytes -= known.bytes; this.inspected.delete(path);
+	}
+	private remember(path: string, entry: { mtime: number; outcome: NoteOutcome; bytes: number }): void {
+		this.forget(path);
+		if (this.inspectedBytes + entry.bytes > this.cacheBytes) return; // over budget: kept notes stay, this one is read again next time
+		this.inspected.set(path, entry); this.inspectedBytes += entry.bytes;
+	}
 
 	async list(): Promise<LiveSessionHistoryList> {
 		const scan = await this.scan();
@@ -99,13 +110,15 @@ export class LiveSessionHistoryService {
 			const refs = new Set<string>();
 			const files = this.vault.markdownFiles();
 			const listed = new Set(files.map((file) => file.path));
-			for (const path of this.inspected.keys()) if (!listed.has(path)) this.inspected.delete(path);
+			for (const path of [...this.inspected.keys()]) if (!listed.has(path)) this.forget(path);
 			for (const file of files) {
 				const cacheable = file.mtime !== undefined && file.mtime > 0;
 				let outcome = cacheable ? this.inspected.get(file.path) : undefined;
 				if (outcome === undefined || outcome.mtime !== file.mtime) {
-					outcome = { mtime: file.mtime ?? 0, outcome: await this.inspect(await this.vault.read(file)) };
-					if (cacheable) this.inspected.set(file.path, outcome); else this.inspected.delete(file.path);
+					const content = await this.vault.read(file);
+					const inspected = await this.inspect(content);
+					outcome = { mtime: file.mtime ?? 0, outcome: inspected, bytes: inspected.kind === 'live' ? content.length : 0 };
+					if (cacheable) this.remember(file.path, outcome); else this.forget(file.path);
 				}
 				const note = outcome.outcome;
 				if (note.kind === 'invalid') { invalid += 1; continue; }

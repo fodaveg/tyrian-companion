@@ -9,7 +9,8 @@ import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import { LiveSessionEconomy } from './live-session-economy';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { buildLiveChart } from './live-session-reducer';
-import { liveSessionViewFromStored } from './live-session-history';
+import { liveSessionViewFromStored, LiveSessionHistoryService } from './live-session-history';
+import type { SessionHistoryVault } from './session-history';
 import { liveSessionRatePerHour } from '../ui/live-session-panel';
 import { projectLiveFarmingIngameState } from '../runtime/farming-runtime-projection';
 import { decideLiveAlert, isLiveAlertOutbox } from './live-session-outbox';
@@ -294,6 +295,25 @@ describe('passive live session lifecycle', () => {
 			for (let index = 0; index < 4; index += 1) { setNow(AT+2*3_600_000+(index+1)*5_000); await beat(); }
 			expect(svc.getRuntime()).toMatchObject({phase:'active',connection:'connected'}); await svc.dispose();
 		});
+	});
+	it('the saved-sessions history keeps the payloads of notes only within its byte budget', async () => {
+		const f = fixture(); const contents = new Map<string,string>();
+		for (const [index, name] of ['a.md','b.md'].entries()) {
+			const t = AT + index * 100_000; f.setNow(t); await f.service.start('Test'); await f.service.open({...f.source,epoch:`${String.fromCharCode(66+index)}${'A'.repeat(20)}Q`});
+			await f.service.commit(f.sample(0,0,{epoch:`${String.fromCharCode(66+index)}${'A'.repeat(20)}Q`})); f.setNow(t+1000);
+			await f.service.commit(f.sample(1,2,{epoch:`${String.fromCharCode(66+index)}${'A'.repeat(20)}Q`})); f.setNow(t+2000); await f.service.stop(t+2000);
+			const rendered = await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),locale:'es',outputFolder:'Tyrian'});
+			if (rendered.status !== 'ok') throw new Error('The note did not render.'); contents.set(name,rendered.note.content);
+		}
+		const size = contents.get('a.md')!.length; const reads: string[] = [];
+		const vault = { markdownFiles: () => [...contents.keys()].map((path) => ({ path, mtime: 10 })), read: async (file: { path: string }) => { reads.push(file.path); return contents.get(file.path)!; } } as unknown as SessionHistoryVault;
+		const roomy = new LiveSessionHistoryService(vault); await roomy.list(); reads.length = 0; await roomy.list();
+		expect(reads, 'with room both stay remembered').toEqual([]);
+		const tight = new LiveSessionHistoryService(vault, Math.floor(size * 1.5)); await tight.list(); reads.length = 0; await tight.list();
+		expect(reads, 'with room for one, the second is not remembered and is read again').toEqual(['b.md']);
+		const none = new LiveSessionHistoryService(vault, size - 1); await none.list(); reads.length = 0; await none.list();
+		expect(reads, 'a note over the budget is never kept').toEqual(['a.md','b.md']);
+		await f.service.dispose();
 	});
 	it('restores the journal without acquisitions and requires a new baseline after host restart', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));
