@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-08",
+  "scope": "--diagnose mode for the Magic Find candidate, after its first live run returned unknown; the normal mode's output is unchanged",
+  "supersedes": "Nothing in receipt.json, which is kept unchanged as the record of the first candidate commit 9d6703adb9e7da43a9c8e927e5e180cd6f66448c. This receipt covers the files as changed for the diagnose mode.",
+  "binary_sha256": "27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c",
+  "process_access_by_this_work": false,
+  "live_run_reported_by_root": {
+    "note": "Executed by the root session, not by this work; figures as reported",
+    "platform": "Fedora Linux, GE-Proton11-7",
+    "samples": 2,
+    "exit_code": 2,
+    "status": "unknown",
+    "reason": "null_or_invalid_pointer",
+    "bytes_requested": 31286,
+    "bytes_read": 31286,
+    "buffs_read": 0,
+    "definitions_read": 0,
+    "game_writes": 0,
+    "hero_panel_value_reported": 333
+  },
+  "inference_from_bytes": {
+    "bytes_per_sample": 12616,
+    "reproduced_in_fixture_by": [
+      "512-bucket table, 5 pushed records, first occupied bucket's node pointer rejected",
+      "512-bucket table, 4 pushed records, first occupied bucket's node+0x10 pointer rejected"
+    ],
+    "not_reproduced_by": [
+      "4 pushed records with the node rejected (12604)",
+      "5 pushed records with node+0x10 rejected (12628)"
+    ],
+    "status": "inference, not an observation; --diagnose is what will tell which"
+  },
+  "static_findings": {
+    "node_object": "0x78 bytes from the general allocator; constructor RVA 0x12C1890 installs vtable 0x21830D0, stores a DWORD at +8 and zeroes +0x10",
+    "empty_tables": "RVA 0x12C2520 returns 0 without dereferencing when the pushed table is empty; RVA 0x12C28D0 returns null when the buff count at +0x24 is 0. The probe already treated both as 0.",
+    "alignment": "The 8-byte alignment check comes from the wallet Reader, not from game code. Whether content pointers are 8-aligned is unknown."
+  },
+  "live_value_proven": false,
+  "checks": {
+    "red_guard": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 prove_guard_red.py",
+      "exit_code": 1,
+      "expected_exit_code": 1,
+      "observed_failure": "candidate_magic_find != unknown",
+      "normalized_log_sha256": "e9391d30f75ffd064f0be4cea787d7b2d0244edc45cc401ba7f5a7ff7e7c1083"
+    },
+    "green_fixtures": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_probe.py",
+      "exit_code": 0,
+      "tests": 46,
+      "of_which_diagnose": 11,
+      "tail": "Ran 46 tests in 0.089s / OK",
+      "normalized_log_sha256": "94501c4a13e2b6833296ee18e748bbaaed1a57ab9744fea5c5ac3ce00e0e991c"
+    },
+    "offline_profile": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 check_profile_offline.py",
+      "exit_code": 0,
+      "guards": 19,
+      "slots": 12,
+      "offline_links": 1,
+      "failures": 0,
+      "negative_control": "the node vtable link target altered in memory only: exit 1, failure offline_link_node_constructor_installs_node_vtable"
+    },
+    "logs": "Temporary scratch logs, deleted; only their hashes (worktree prefix stripped) and tails are kept here"
+  },
+  "bounds": {
+    "process_requested_bytes_per_run": 65536,
+    "diagnose_extra_read": "8 bytes per buff node (its vtable)",
+    "fixture_bytes_one_buff_normal": 3652,
+    "fixture_bytes_one_buff_diagnose": 3660
+  },
+  "limitations": [
+    "The diagnose mode has never run against the game.",
+    "Its relaxed walk follows unaligned pointers; every other check is the strict one. What it finds is labelled diagnostic_only and never becomes the verdict.",
+    "With a 512-bucket table, two samples may not fit the byte budget once the walk works; one sample is recommended.",
+    "The plugin suite and the gate were not run."
+  ],
+  "files": {
+    "README.md": "5647fb36916b6c9e8efebc5dc42bc45ed47fcaf204368580e1b7ec0d326da97f",
+    "check_profile_offline.py": "70b373205cc6b6d7d52bc66274f5754f4e84dc5fc15d3e1572a619f3e5cd2131",
+    "probe.py": "81786d7877eccd556d8b23a4ac4bf939af530b10f9653ca661d7168f5f72a4d0",
+    "profile.json": "7289a702fb5c09d4a2d6dbfe4755036ad9a0c8aca47299afa9b9abb371014ba2",
+    "prove_guard_red.py": "2e1f43217b98f125cfa68767414b9b9e5ba6842b9a0bf65f554fd4e88f07685a",
+    "test_probe.py": "492e41d970d01f3346b3ae20ce2d7de2fbd91051b65ae257a34928845d7e448f"
+  }
+}

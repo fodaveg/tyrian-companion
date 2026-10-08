@@ -129,7 +129,7 @@ cd docs/audit/loot-mf-probe
 PYTHONDONTWRITEBYTECODE=1 python3 prove_guard_red.py
 # Debe terminar con exit 1: el guard de vtable se retira SOLO en la fixture.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_probe.py
-# Debe terminar con exit 0: 35 tests con el guard real activo.
+# Debe terminar con exit 0: 46 tests con el guard real activo (35 del candidato, 11 del diagnóstico).
 PYTHONDONTWRITEBYTECODE=1 python3 check_profile_offline.py
 # Debe terminar con exit 0: lee el fichero instalado, nunca el proceso.
 ```
@@ -189,3 +189,64 @@ petición de David y no debe presentarse como el hallazgo mágico.
 
 Una discrepancia refuta la suma o alguna regla; no autoriza buscar el número por el heap. Un
 `unknown` por fórmula o condición dice qué falta por entender, no que el valor sea cero.
+
+## Primera ejecución en vivo, 8 octubre 2026: `unknown`
+
+La ejecutó la sesión raíz, con David mirando 333 % en el panel de héroe. Esta carpeta no leyó
+el proceso; los datos son los que la raíz informó.
+
+- Dos muestras, exit 2, las dos `unknown` con `null_or_invalid_pointer`.
+- 31286 bytes pedidos y leídos, 0 efectos leídos, 0 escrituras.
+- Los 19 guards y todas las vtables y slots de la ruta pasaron: el fallo llegó después.
+
+De los bytes sale dónde paró. Son 12616 por muestra, y en fixture ese número solo se reproduce
+con una tabla de efectos de 512 buckets y el rechazo en el **primer efecto ocupado**: o el
+puntero del nodo (con 5 registros del servidor) o el puntero `nodo+0x10` (con 4). La suerte,
+la tabla del servidor y la tabla de efectos se leyeron enteras.
+
+Hipótesis, sin validar: el nodo sale del asignador general (objeto de `0x78` bytes, constructor
+en RVA `0x12C1890`) y debería estar alineado. Lo que cuelga de `nodo+0x10` es contenido del
+juego, y el contenido puede no estar alineado a 8 bytes. El `Reader` heredado de la cartera
+rechaza cualquier puntero no alineado a 8; esa regla no sale del código del juego.
+
+Los punteros que el juego trata como vacíos ya contaban como 0 y no como `unknown`:
+
+- Tabla del servidor vacía: RVA `0x12C2520` compara inicio y fin y devuelve 0 sin leer.
+- Sin efectos: RVA `0x12C28D0` devuelve nulo si el contador `+0x24` es 0.
+
+Con dos muestras y 512 buckets, la sonda normal puede agotar el presupuesto en cuanto el
+recorrido funcione: cada muestra lee la tabla dos veces, unos 25 KiB más los efectos.
+
+## Modo `--diagnose`
+
+Mismo `Reader`, mismos guards y mismo presupuesto. Añade a cada muestra:
+
+- `stage`: el paso donde se rechazó, y `passed`: los que pasaron.
+- `pointer_fault`: `null`, `unaligned`, `out_of_user_range` o `unmapped`. Nunca el valor.
+- `observed_rva` y `observed_in_module`, si lo rechazado fue una vtable o un slot.
+- `partial`: lo que sí se leyó. Incluye `account_luck_percent`, `pushed_magic_find_percent`,
+  el tamaño de la tabla de efectos, cuántos efectos se recorrieron y:
+  - `bucket_survey`: buckets ocupados, hashes que no cuadran y los tres bits bajos de cada
+    puntero de nodo, sin el puntero.
+  - `node_vtables`: cuántos nodos tienen la vtable `0x21830D0` que fija su constructor. Es la
+    única lectura añadida: 8 bytes por efecto.
+  - `magic_find_records`: fórmula, modo de juego, condiciones y valor de cada registro de
+    hallazgo mágico de los efectos activos. Es forma del contenido, sin identificadores.
+
+Solo relaja una comprobación: la alineación. Anota el primer puntero no alineado y sigue, para
+que una sola ejecución enseñe hasta dónde llega el recorrido. **El veredicto sigue siendo el
+estricto**: `unknown`, con `stage` en ese primer puntero. Lo que encuentre el recorrido relajado
+va aparte, en `relaxed_alignment`, con `diagnostic_only: true`.
+
+```sh
+python3 docs/audit/loot-mf-probe/probe.py \
+  --pid "$GW2_LINUX_PID" --module-base "$GW2_MODULE_BASE" --context "$GW2_CONTEXT" \
+  --samples 1 --diagnose
+```
+
+Una sola muestra: con 512 buckets, dos pueden no caber.
+
+La salida normal no cambia: un test fija sus campos.
+
+Este cambio tiene su propio recibo, [`receipt-diagnose-2026-10-08.json`](receipt-diagnose-2026-10-08.json).
+`receipt.json` y los logs de `evidence/` se conservan sin tocar como historia del primer candidato.

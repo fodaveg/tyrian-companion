@@ -13,6 +13,16 @@
   "player_vtable": 34986328,
   "player_stats_vtable": 35029304,
   "buff_manager_vtable": 35139864,
+  "buff_node_vtable": 35139792,
+  "buff_node_vtable_note": "Installed by the table node constructor (RVA 0x12C1890, 0x78-byte object). Reported by --diagnose only; not an active guard until a live run confirms it.",
+  "offline_links": [
+    {
+      "name": "node_constructor_installs_node_vtable",
+      "kind": "rel32",
+      "at_rva": 19667145,
+      "target_rva": 35139792
+    }
+  ],
   "slots": [
     {
       "vtable": "char_context_vtable",

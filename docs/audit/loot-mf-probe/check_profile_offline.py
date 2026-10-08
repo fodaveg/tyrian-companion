@@ -48,8 +48,16 @@ def main():
         stored = file_bytes(profile[slot['vtable']] + slot['slot'], 8)
         if stored != struct.pack('<Q', image_base + slot['target_rva']) or slot['target_rva'] not in guarded:
             failures.append('slot_' + slot['target'])
+    # Static-only evidence for identities that --diagnose reports but no guard enforces yet.
+    for link in profile.get('offline_links', []):
+        raw = file_bytes(link['at_rva'], 4)
+        value = struct.unpack('<I' if link['kind'] == 'u32' else '<i', raw)[0] if len(raw) == 4 else None
+        reached = value if link['kind'] == 'u32' else None if value is None else link['at_rva'] + 4 + value
+        if reached != link['target_rva']:
+            failures.append('offline_link_' + link['name'])
     print(json.dumps(dict(event='offline_profile_check', guards=len(profile['guards']),
                           slots=len(profile['slots']),
+                          offline_links=len(profile.get('offline_links', [])),
                           guard_bytes=sum(guard['size'] for guard in profile['guards']),
                           failures=failures, process_access=False)))
     return 1 if failures else 0

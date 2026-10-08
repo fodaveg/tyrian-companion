@@ -117,9 +117,10 @@ class Fixture:
         self.dword(definition + 0x28, 1)
         return definition
 
-    def buff(self, key, effect, definition):
-        node = self.alloc(0x20)
+    def buff(self, key, effect, definition, misalign=0):
+        node = self.alloc(0x30) + misalign
         instance = self.alloc(0x70)
+        self.qword(node, BASE + probe.PROFILE['buff_node_vtable'])
         self.qword(node + 0x10, instance)
         self.dword(node + 0x18, key)
         self.dword(instance + 0x28, effect)
@@ -480,6 +481,154 @@ class MagicFindTests(unittest.TestCase):
         exit_code, rows = self.run_main(fixture, lambda _delay: fixture.qword(MANAGER, BASE + 0x123400))
         self.assertEqual(exit_code, 2)
         self.assertEqual((rows[1]['status'], rows[1]['candidate_total_percent']), ('unknown', None))
+
+
+FLAGS = {'live_value_proven', 'total_semantics_proven', 'game_cap_applied'}
+NORMAL_KEYS = FLAGS | {'status', 'candidate_total_percent', 'account_luck_percent', 'pushed_modifier_percent',
+                       'buff_modifier_percent', 'boon_modifier_included'}
+UNKNOWN_KEYS = FLAGS | {'status', 'candidate_total_percent', 'reason', 'errno'}
+
+
+class DiagnoseTests(unittest.TestCase):
+    def diagnose(self, fixture):
+        result, _owner = probe.observe_diagnosed(fixture.reader(), BASE, CONTEXT, TABLE)
+        return result
+
+    def test_normal_mode_output_is_unchanged(self):
+        result, _owner = probe.observe(standard().reader(), BASE, CONTEXT, TABLE)
+        self.assertEqual(set(result), NORMAL_KEYS)
+        fixture = standard()
+        fixture.buff(1002, 502, fixture.definition([modifier()]), misalign=4)
+        result, _owner = probe.observe(fixture.reader(), BASE, CONTEXT, TABLE)
+        self.assertEqual(set(result), UNKNOWN_KEYS)
+        self.assertEqual(result['reason'], 'null_or_invalid_pointer')
+        exit_code, rows = MagicFindTests.run_main(self, standard(), lambda _delay: None)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(set(rows[0]), NORMAL_KEYS | {'sample', 'time_ns'})
+        self.assertEqual(set(rows[2]), {'event', 'bytes_requested', 'bytes_read', 'buffs_read', 'definitions_read',
+                                        'byte_limit', 'game_writes', 'live_value_proven'})
+
+    def test_diagnose_adds_only_the_node_class_read_and_keeps_the_budget(self):
+        normal, diagnosed = standard().reader(), standard().reader()
+        probe.observe(normal, BASE, CONTEXT, TABLE)
+        result, _owner = probe.observe_diagnosed(diagnosed, BASE, CONTEXT, TABLE)
+        self.assertEqual(diagnosed.requested, normal.requested + 8 * diagnosed.buffs)
+        self.assertEqual(diagnosed.budget, probe.MAX_BYTES)
+        self.assertFalse(diagnosed.diagnose)
+        self.assertEqual(result['partial']['node_vtables'], dict(expected=1, other=0, other_rvas=[]))
+
+    def test_unexpected_node_class_is_reported_by_rva(self):
+        fixture = standard()
+        fixture.qword(fixture.food[1], BASE + 0x123400)
+        result = self.diagnose(fixture)
+        self.assertEqual(result['status'], 'candidate_magic_find')
+        self.assertEqual(result['partial']['node_vtables'], dict(expected=0, other=1, other_rvas=[0x123400]))
+
+    def test_success_keeps_the_normal_verdict_and_adds_notes(self):
+        result = self.diagnose(standard())
+        self.assertEqual((result['status'], result['candidate_total_percent']), ('candidate_magic_find', 337.0))
+        self.assertNotIn('stage', result)
+        self.assertNotIn('relaxed_alignment', result)
+        for passed in ('context_to_chcli', 'character', 'player', 'player_stats', 'effect_manager',
+                       'account_luck', 'pushed_table', 'buff_table', 'buff_node', 'sum', 'recheck_effect_manager'):
+            self.assertIn(passed, result['passed'])
+        self.assertEqual(result['partial']['bucket_survey'], dict(
+            occupied=1, hash_mismatch=0, padding_nonzero=0, node_pointers={'ok': 1}, node_low_bits={'0': 1}))
+        self.assertEqual(result['partial']['magic_find_records'], [dict(
+            type=MF, formula=6, game_mode=0, has_target=False, has_requirement=False, state_flags=0,
+            stops=False, value=30.0, stacking=0, category=1)])
+
+    def test_rejected_vtable_reports_stage_and_rva(self):
+        fixture = standard()
+        fixture.qword(MANAGER, BASE + 0x123400)
+        result = self.diagnose(fixture)
+        self.assertEqual((result['status'], result['reason'], result['stage']),
+                         ('unknown', 'buff_manager_vtable', 'effect_manager'))
+        self.assertEqual((result['observed_rva'], result['observed_in_module']), (0x123400, True))
+        self.assertEqual(result['passed'], ['context_to_chcli', 'character', 'player', 'player_stats'])
+        self.assertEqual(result['partial'], {})
+        fixture.qword(MANAGER, HEAP)
+        result = self.diagnose(fixture)
+        self.assertEqual((result['observed_rva'], result['observed_in_module']), (None, False))
+
+    def test_pointer_faults_are_named_without_their_value(self):
+        cases = (('null', 'effect_manager', lambda f: f.qword(CHARACTER + 0xD0, 0)),
+                 ('unmapped', 'effect_manager', lambda f: f.qword(CHARACTER + 0xD0, 0x500000)),
+                 ('out_of_user_range', 'buff_node', lambda f: f.qword(f.food[0] + 8, 1 << 60)),
+                 ('null', 'buff_instance', lambda f: f.qword(f.food[1] + 0x10, 0)))
+        for fault, stage, change in cases:
+            with self.subTest(fault=fault, stage=stage):
+                fixture = standard()
+                change(fixture)
+                result = self.diagnose(fixture)
+                self.assertEqual((result['status'], result['pointer_fault'], result['stage']),
+                                 ('unknown', fault, stage))
+                self.assertNotIn('observed_rva', result)
+                self.assertNotIn(str(1 << 60), json.dumps(result))
+
+    def test_partial_addends_survive_a_later_rejection(self):
+        fixture = standard()
+        fixture.buff(1002, 502, fixture.definition([modifier(formula=0, value=50.0)]))
+        result = self.diagnose(fixture)
+        self.assertEqual((result['status'], result['candidate_total_percent'], result['reason'], result['stage']),
+                         ('unknown', None, 'modifier_formula_unsupported', 'sum'))
+        partial = result['partial']
+        self.assertEqual((partial['account_luck_percent'], partial['pushed_magic_find_percent'],
+                          partial['pushed_records'], partial['buffs_walked']), (300, 7.0, 1, 2))
+        self.assertEqual(sorted(record['formula'] for record in partial['magic_find_records']), [0, 6])
+
+    def test_luck_alone_is_reported_when_the_buff_walk_fails(self):
+        fixture = standard()
+        fixture.qword(fixture.food[1] + 0x10, 0)
+        partial = self.diagnose(fixture)['partial']
+        self.assertEqual((partial['account_luck_percent'], partial['buff_table_count']), (300, 1))
+        self.assertNotIn('buffs_walked', partial)
+
+    def test_unaligned_node_stays_unknown_and_shows_the_relaxed_walk(self):
+        fixture = Fixture()
+        fixture.push(MF, 7.0)
+        _bucket, node, _instance = fixture.buff(1001, 501, fixture.definition([modifier(MF, 30.0)]), misalign=4)
+        result = self.diagnose(fixture)
+        self.assertEqual((result['status'], result['candidate_total_percent'], result['reason']),
+                         ('unknown', None, 'null_or_invalid_pointer'))
+        self.assertEqual((result['stage'], result['pointer_fault']), ('buff_node', 'unaligned'))
+        relaxed = result['relaxed_alignment']
+        self.assertEqual((relaxed['status'], relaxed['candidate_total_percent'], relaxed['diagnostic_only']),
+                         ('candidate_magic_find', 337.0, True))
+        self.assertEqual((relaxed['unaligned_pointers'], relaxed['unaligned_low_bits']), (1, {'4': 1}))
+        self.assertEqual(result['partial']['bucket_survey']['node_low_bits'], {'4': 1})
+        self.assertFalse(FLAGS & set(relaxed))
+        self.assertNotIn(str(node), json.dumps(result))
+
+    def test_relaxed_walk_reports_its_own_later_rejection(self):
+        fixture = standard()
+        fixture.buff(1002, 502, fixture.definition([modifier(mode=1)]), misalign=4)
+        result = self.diagnose(fixture)
+        self.assertEqual((result['status'], result['stage'], result['pointer_fault']),
+                         ('unknown', 'buff_node', 'unaligned'))
+        relaxed = result['relaxed_alignment']
+        self.assertEqual((relaxed['status'], relaxed['reason'], relaxed['stage']),
+                         ('unknown', 'modifier_game_mode_condition', 'sum'))
+
+    def test_main_diagnose_marks_rows_and_keeps_the_budget(self):
+        fixture = standard()
+        fixture.buff(1002, 502, fixture.definition([modifier()]), misalign=4)
+        output = io.StringIO()
+        arguments = ['probe.py', '--pid', '1', '--module-base', hex(BASE), '--context', hex(CONTEXT), '--diagnose']
+        with (mock.patch('sys.argv', arguments),
+              mock.patch.object(probe, 'prepare_process', return_value=fixture.ranges),
+              mock.patch.object(probe.os, 'open', return_value=123),
+              mock.patch.object(probe.os, 'close'),
+              mock.patch.object(probe.os, 'pread', side_effect=lambda fd, size, address: fixture.read(size, address)),
+              contextlib.redirect_stdout(output)):
+            exit_code = probe.main()
+        rows = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(exit_code, 2)
+        self.assertEqual((rows[0]['status'], rows[0]['diagnose'], rows[0]['stage']), ('unknown', True, 'buff_node'))
+        self.assertEqual(rows[0]['relaxed_alignment']['candidate_total_percent'], 367.0)
+        self.assertNotIn('candidate_net_change', rows[0])
+        self.assertLessEqual(rows[1]['bytes_requested'], probe.MAX_BYTES)
+        self.assertEqual(rows[1]['game_writes'], 0)
 
 
 if __name__ == '__main__':
