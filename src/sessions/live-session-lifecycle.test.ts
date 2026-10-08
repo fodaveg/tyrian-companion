@@ -1,6 +1,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
+import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import { MemorySessionRuntimeStore, IndexedDbSessionRuntimeStore } from './session-runtime-store';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveSessionViewV1 } from './live-session-model';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
@@ -267,6 +268,32 @@ describe('passive live session lifecycle', () => {
 			await f.service.stop(AT+round*100_000+1000);
 		}
 		expect(prune).toHaveBeenCalled(); expect(prune.mock.calls.length).toBeGreaterThanOrEqual(2); await f.service.dispose();
+	});
+	describe('after a suspension, with the real lease coordinator', () => {
+		/** A lifecycle over the REAL coordinator on fake-indexeddb with a clock the test moves: the lease really expires. */
+		function suspended() {
+			const f = fixture(); let beat: (() => void) | null = null; let now = AT;
+			const coordinator = new ActiveSessionLeaseCoordinator({ indexedDb: new IDBFactory(), databaseName: 'lease-suspend', clock: () => now, sleep: async () => undefined, instanceId: 'host' });
+			const svc = new LiveSessionLifecycle({...f.options,coordinator,now:() => now,setInterval:(callback) => {beat=callback;return 1;}});
+			return { f, svc, setNow: (at: number) => { now = at; f.setNow(at); }, beat: async () => { beat!(); await svc.capture(); } };
+		}
+		it('closes on the last evidence with a valid note when the closing events were thrown away during the lost lease', async () => {
+			const { f, svc, setNow, beat } = suspended();
+			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); setNow(AT+1000); await svc.commit(f.sample(1,2)); await svc.presence(true);
+			const T0 = AT+1000; setNow(AT+2*3_600_000);
+			f.onComplete.mockImplementation(async () => (await renderLiveSessionNote({record:svc.getRuntime()!,journal:svc.getJournal(),locale:'es',outputFolder:'Tyrian'})).status === 'ok' ? 'Sessions/live.md' : null as unknown as string);
+			await svc.presence(false,T0); await expect(svc.stop(T0,'session')).resolves.toBe(false); await svc.presence(false,T0);
+			for (let index = 0; index < 4; index += 1) { setNow(AT+2*3_600_000+(index+1)*5_000); await beat(); }
+			setNow(AT+2*3_600_000+700_000); await beat(); await beat();
+			expect(svc.getRuntime()).toMatchObject({phase:'complete',endedAt:new Date(T0).toISOString(),summaryReceipt:{path:'Sessions/live.md'}});
+			await svc.dispose();
+		});
+		it('keeps the session running when the game never stopped being linked', async () => {
+			const { f, svc, setNow, beat } = suspended();
+			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true); setNow(AT+2*3_600_000); await svc.presence(true);
+			for (let index = 0; index < 4; index += 1) { setNow(AT+2*3_600_000+(index+1)*5_000); await beat(); }
+			expect(svc.getRuntime()).toMatchObject({phase:'active',connection:'connected'}); await svc.dispose();
+		});
 	});
 	it('restores the journal without acquisitions and requires a new baseline after host restart', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));

@@ -68,6 +68,8 @@ export class LiveSessionLifecycle {
 	private reclaimingAs: 'restart' | 'outage' | null = null;
 	/** Raised only by `initialize` (this process started with a saved active session); a lease lost while the host kept running never sets it. */
 	private hostRestarted = false;
+	/** The last presence report received while the lease was lost: nobody could write it, so the reclaim applies it (a suspended host's closing events must not be thrown away). */
+	private lostPresence: { connected: boolean; evidencedAt: number } | null = null;
 	private noteNeedsVerification = false;
 
 	constructor(private readonly options: LiveSessionLifecycleOptions) {}
@@ -133,7 +135,7 @@ export class LiveSessionLifecycle {
 				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, declaredBuild, summaryReceipt: null };
 			if ((await this.options.persistence.saveLive(next)).status !== 'saved') { await this.options.coordinator.release(acquired.handle); return null; }
 			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = this.newChart(); this.failure = false;
-			this.unsaved = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false; this.noteNeedsVerification = false;
+			this.unsaved = null; this.lostPresence = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false; this.noteNeedsVerification = false;
 			this.armHeartbeat(); this.options.onStateChange(); return id;
 		});
 	}
@@ -223,8 +225,11 @@ export class LiveSessionLifecycle {
 		return await this.enqueue(async () => {
 			if (this.record?.phase !== 'active') return;
 			const ownership = await this.ready();
-			if (ownership === 'lost') return;
 			const evidencedAt = atMs ?? (connected ? this.options.now() : this.record.lastPresenceAt);
+			if (ownership === 'lost') {
+				this.lostPresence = { connected, evidencedAt: Math.max(this.lostPresence?.evidencedAt ?? 0, Math.min(this.options.now(), evidencedAt)) };
+				return;
+			}
 			// The last report wins, but never moves the evidence of presence backwards.
 			const unwritten = (): void => {
 				const unsaved = this.storageLost();
@@ -364,7 +369,8 @@ export class LiveSessionLifecycle {
 		// in between, and whoever held it may have written: what is on disk is read again and settled
 		// under the rules of a takeover before anything is saved. The fence says so on every attempt;
 		// `acquired` only says it on the attempt that took the lease, which may have ended before saving.
-		if (acquisition.handle.fence !== this.record.authority.fence) this.recovering = true;
+		const fenceChanged = acquisition.handle.fence !== this.record.authority.fence;
+		if (fenceChanged) this.recovering = true;
 		this.handle = acquisition.handle;
 		// An attempt that ends here keeps no handle, as one that ends at the save below: until the
 		// session is saved under this lease, no queued operation may write under it.
@@ -390,6 +396,9 @@ export class LiveSessionLifecycle {
 			// is made up: only the hole storage left, under the cause it started with.
 			const outage = this.unsaved ?? { gapReason: null, epochEnded: false, sourceDisconnectedAt: null, presence: null };
 			next = this.withUnsaved(this.record, { ...outage, gapReason: outage.gapReason ?? 'storage_unavailable' });
+			if (this.lostPresence !== null) next = this.withPresence(next, this.lostPresence.connected, this.lostPresence.evidencedAt);
+			// The lease changed hands in between: the map the player was on may have changed unobserved.
+			if (fenceChanged) next.mapCoveragePartial = true;
 		}
 		next = { ...next, authority: sessionAuthorityFromLease(acquisition.handle), epoch: null, lastSample: null,
 			fingerprint: null, persistedAt: this.options.now() };
@@ -397,7 +406,7 @@ export class LiveSessionLifecycle {
 		// Storage went away again: drop the handle so the next beat reclaims under the lease it finds.
 		if (saved === 'unavailable') { this.handle = null; return false; }
 		if (saved !== 'saved') throw new Error('Live session recovery could not be persisted.');
-		this.record = next; this.unsaved = null; this.reclaimingAs = null; this.hostRestarted = false; this.failure = false;
+		this.record = next; this.unsaved = null; this.lostPresence = null; this.reclaimingAs = null; this.hostRestarted = false; this.failure = false;
 		await this.settleRecovery();
 		this.options.onStateChange(); return true;
 	}
