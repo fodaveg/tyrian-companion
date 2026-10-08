@@ -1987,13 +1987,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const analysis = this.inventoryAdvisor.analysis();
 		const todayBidCopper = analysis?.source.input.prices.items
 			.find((entry) => entry.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)?.bid?.unitCopper ?? null;
+		// Z8: the bid is as old as the analysis it comes from. A failed refresh keeps the previous
+		// analysis, so dating the verdict `nowMs` would present a stale bid as just read.
+		const analysisCapturedAtMs = todayBidCopper === null ? Number.NaN : Date.parse(analysis?.source.input.prices.capturedAt ?? '');
+		const quotedAtMs = Number.isFinite(analysisCapturedAtMs) ? Math.min(analysisCapturedAtMs, nowMs) : nowMs;
 		const windowDays = this.settings.priceHistoryDailyRetentionDays;
 		const fromDayUtc = new Date(Math.max(0, nowMs - windowDays * 86_400_000)).toISOString().slice(0, 10);
 		const daily = await (this.priceHistory?.readDaily(HALLOWEEN_PRICE_ALERT_ITEM_ID, fromDayUtc) ?? Promise.resolve([]));
 		const seed = this.vaultId === null ? null : await this.readCachedPriceSeed(this.vaultId, HALLOWEEN_PRICE_ALERT_ITEM_ID);
 		const merged = mergePriceHistoryWithSeed(HALLOWEEN_PRICE_ALERT_ITEM_ID, daily, seed);
 		this.saleHeroTiming = recommendPosition({
-			capturedAtMs: nowMs,
+			capturedAtMs: quotedAtMs,
 			priceHistoryEnabled: this.settings.priceHistoryEnabled,
 			// Never read: the Saco always has a calendar entry, so rule (b) (`evaluateSeasonalRule`)
 			// decides before rule (c)'s capital-threshold check ever looks at this value.
