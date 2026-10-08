@@ -1950,9 +1950,9 @@
 				{
 					"id": "6f97b9896979ad634416a9b76006c3be69c59472",
 					"kind": "catch_clause",
-					"line": 114,
+					"line": 117,
 					"column": 4,
-					"endLine": 114,
+					"endLine": 117,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1966,9 +1966,9 @@
 				{
 					"id": "1a4ee0035e9c70b5e58663b36d34b4750dafc331",
 					"kind": "catch_clause",
-					"line": 156,
+					"line": 159,
 					"column": 4,
-					"endLine": 156,
+					"endLine": 159,
 					"endColumn": 123,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1980,11 +1980,11 @@
 					"reason": "Allowlisted catch_clause: The \"open\" boundary uses \"fallback_return\" to report failed durable source activation through onError, invalidate the source with storage_unavailable, and suppress a success ready response. Verified recovery: \"fallback_return\" in \"open\"."
 				},
 				{
-					"id": "c48ac3f54bee3cb55b2101633d024156461f9243",
+					"id": "1af027d0cc197d17d5773348989eef38c6fcdc05",
 					"kind": "catch_clause",
-					"line": 198,
+					"line": 202,
 					"column": 6,
-					"endLine": 201,
+					"endLine": 208,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1998,9 +1998,9 @@
 				{
 					"id": "6f20cce9a6ebcf6e5f63546326de6db0a45cc603",
 					"kind": "catch_clause",
-					"line": 226,
+					"line": 233,
 					"column": 3,
-					"endLine": 229,
+					"endLine": 236,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7606,6 +7606,11 @@
 			"boundaries": []
 		},
 		"src/main.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/performance/h6-live-session-contract.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
