@@ -147,6 +147,85 @@ Nota completa: [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789a
 		expect(note.content).not.toMatch(/(?:^|\n)\s*tc_/u);
 	});
 
+	it('writes the first real note (8 Oct 2026, a load with nothing named) without its four defects', async () => {
+		// What 0.6.13 wrote for this session: bare ids for names, «Por hora sin 106732: -0g 1s 66c», the incomplete-list
+		// sentence glued to the last map, and «100 % observado» over 8 unobserved stretches.
+		const START = Date.parse('2026-10-08T07:46:45.000Z'); const LENGTH = 115 * 60_000 + 20_000; const SOLD = 19721;
+		const real: Mutate = (session) => ({ ...session, startedAt: new Date(START).toISOString(), endedAt: new Date(START + LENGTH).toISOString(),
+			observedItemsMs: LENGTH - 23_000, journal: [], mapCoveragePartial: true, coverage: { ...session.coverage, freeSlots: null },
+			mapIntervals: [{ mapId: 1633, fromMs: START, toMs: START + 115 * 60_000 }],
+			gaps: Array.from({ length: 8 }, (_, index) => ({ version: 1 as const, fromAt: new Date(START + index * 600_000).toISOString(),
+				toAt: new Date(START + index * 600_000 + (index === 0 ? 2_000 : 3_000)).toISOString(), reason: index === 0 ? 'source_missing' as const : 'disconnect' as const, channels: ['items' as const] })),
+			totals: [total('item', 106732, 1), total('item', 9333, 1), total('item', 74328, 2), total('item', 3376, 1), total('item', 24875, 1), total('item', SOLD, 0, 1),
+				total('currency', 2, 2940), total('currency', 23, 1)],
+			valuation: { ...session.valuation, prices: [{ itemId: 106732, unitCopper: 1105 }, { itemId: 9333, unitCopper: 139 }, { itemId: SOLD, unitCopper: 457 },
+				{ itemId: 74328, unitCopper: null }, { itemId: 3376, unitCopper: null }, { itemId: 24875, unitCopper: null }] } });
+		const meta = Object.fromEntries([106732, 9333, 74328, 3376, 24875, SOLD].map((id) => [id, { flags: [], type: id === 9333 ? 'Container' : 'Trophy' }]));
+		const note = await render({ mutate: real, itemMeta: meta, displayNames: {}, characters: [{ name: 'Rinopopo', fromAt: new Date(START).toISOString() }] });
+		expect(note.content).toBe(`---
+tyrian_summary_version: 3
+tyrian_summary_of: ${JSON.stringify(note.sessionRef)}
+tyrian_summary_locale: "es"
+tyrian_summary_started_at: "2026-10-08T07:46:45.000Z"
+tyrian_summary_ended_at: "2026-10-08T09:42:05.000Z"
+tyrian_summary_main_map: 1633
+tyrian_summary_net_copper: 787
+tyrian_summary_per_hour_copper: 411
+tyrian_summary_observed_minutes: 115
+tyrian_summary_date: 2026-10-08
+tyrian_summary_map: "Mapa 1633"
+tyrian_summary_characters: ["Rinopopo"]
+tyrian_summary_duration_minutes: 115
+tyrian_summary_observed_percent: 99
+tyrian_summary_net_gold: 0.0787
+tyrian_summary_per_hour_gold: 0.0411
+tyrian_summary_wallet_gold: null
+tyrian_summary_top_item: "Objeto 106732"
+tyrian_summary_top_item_count: 1
+tyrian_summary_alerts: 0
+tyrian_summary_free_slots: null
+tags: ["gw2/session-summary"]
+---
+# Mapa 1633 · Rinopopo
+
+2026-10-08 · 09:46–11:42 · 1 h 55 min · 99 % observado
+
+## Veredicto
+
+- Neto estimado: 0g 7s 87c
+- Por hora: 0g 4s 11c
+- Sin Objeto 106732 la sesión queda en -0g 3s 18c (ese objeto vale más que el neto de la sesión)
+
+## Para vender ahora
+
+| Objeto | Cantidad | Valor neto de comisión |
+|---|---:|---:|
+| Objeto 106732 | 1 | 0g 11s 5c |
+| Objeto 9333 (sin abrir) | 1 | 0g 1s 39c |
+
+Sin precio de bazar (fuera del valor): Objeto 74328 ×2, Objeto 3376 ×1, Objeto 24875 ×1
+
+## Otras monedas
+
+- Moneda 2: +2940
+- Moneda 23: +1
+
+Salieron del inventario 1 objetos; no se distingue si se vendieron, se consumieron o se depositaron.
+
+## Mapas
+
+- Mapa 1633 · 1 h 55 min
+
+La lista puede estar incompleta.
+
+## Cobertura
+
+8 tramos sin observar, en total 23 s.
+
+Nota completa: [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789abcdef|Sesión de inventario observado]]
+`);
+	});
+
 	it('writes the English note and names several maps when none passes 70 %', async () => {
 		const { content } = await render({ locale: 'en', itemMeta: META });
 		expect(body(content).startsWith('# Several maps · Alfa\n\n2026-10-08 · 17:30–18:10 · 40 min · 100 % observed')).toBe(true);
