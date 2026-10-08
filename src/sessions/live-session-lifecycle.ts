@@ -66,6 +66,8 @@ export class LiveSessionLifecycle {
 	private readonly sealedForPrune = new Map<string,string>();
 	/** True from the moment a session joins the prune queue until the queue is saved. */
 	private queueDirty = false;
+	/** Raised once this host has read the saved queue: until then a save would replace entries it never saw. */
+	private queueRead = false;
 	/** Raised once this host has read, or written itself, a session record that validates with its journal: until then nothing says which session the store still needs, and no journal is deleted. */
 	private registryKnown = false;
 	/** A prune or a save of the queue failed: the beat stops asking (it would report the same failure every five seconds), and the next start asks again. */
@@ -630,9 +632,15 @@ export class LiveSessionLifecycle {
 	 * and the heartbeat deletes them one bounded pass per beat.
 	 */
 	private async recoverPruneQueue(): Promise<void> {
-		try {
-			for (const row of await this.options.persistence.loadPruneQueue?.() ?? []) if (!this.sealedForPrune.has(row.sessionId)) this.sealedForPrune.set(row.sessionId,row.receiptPath);
-		} catch (error) { this.options.onError(error); }
+		try { await this.readSealedQueue(); } catch (error) { this.options.onError(error); }
+	}
+	/** Reads the saved queue and puts what this host queued meanwhile after it. Throws when storage cannot read it. */
+	private async readSealedQueue(): Promise<void> {
+		const saved = await this.options.persistence.loadPruneQueue?.() ?? [];
+		const queued = [...this.sealedForPrune]; this.sealedForPrune.clear();
+		for (const row of saved) this.sealedForPrune.set(row.sessionId,row.receiptPath);
+		for (const [sessionId, receiptPath] of queued) this.sealedForPrune.set(sessionId,receiptPath);
+		this.queueRead = true;
 	}
 	/**
 	 * One pass over the queue: at most `LIVE_JOURNAL_PRUNE_BATCH` journals deleted. A failure breaks nothing: the id stays
@@ -655,9 +663,14 @@ export class LiveSessionLifecycle {
 		}
 		if (this.queueDirty) await this.saveSealedQueue();
 	}
-	/** Saves the queue as it is now. A failure is reported once and the queue stays dirty: the next start saves it. */
+	/**
+	 * Saves the queue as it is now. A failure is reported once and the queue stays dirty: the next start saves it. A saved
+	 * queue this host could not read is read first and merged: written blind, it would lose the sessions an earlier host
+	 * sealed and leave their journals in the store for ever. While it still cannot be read, nothing is written over it.
+	 */
 	private async saveSealedQueue(): Promise<void> {
 		try {
+			if (!this.queueRead) await this.readSealedQueue();
 			await this.options.persistence.savePruneQueue?.([...this.sealedForPrune].map(([sessionId, receiptPath]) => ({ sessionId, receiptPath })));
 			this.queueDirty = false;
 		} catch (error) { this.options.onError(error); this.pruneHeld = true; }

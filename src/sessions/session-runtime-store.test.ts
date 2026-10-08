@@ -100,6 +100,25 @@ describe('session runtime persistence', () => {
 		expect(JSON.stringify(write)).not.toContain('baselineSnapshot');
 	});
 
+	it('reads a prune queue that does not validate as empty, says so in the diagnostics, and keeps none of its ids', async () => {
+		const events: LocalDebugPersistenceEvent[] = [];
+		const store = new IndexedDbSessionRuntimeStore(new IDBFactory(), databaseName('prune-queue-corrupt'),
+			new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } }));
+		// One well-formed row next to a broken one: the whole value is distrusted, not half of it.
+		await store.savePruneQueue([{ sessionId: 'sealed', receiptPath: 'Sessions/a.md' }, { sessionId: 7 }] as never);
+		events.length = 0;
+		await expect(store.loadPruneQueue()).resolves.toEqual([]);
+		expect(events.map(({ store: name, operation, phase, code }) => ({ name, operation, phase, code }))).toEqual([
+			{ name: 'session_runtime', operation: 'read', phase: 'start', code: 'ok' },
+			{ name: 'session_runtime', operation: 'read', phase: 'failure', code: 'validation_failed' }]);
+		expect(JSON.stringify(events), 'no id of the queue reaches the diagnostics').not.toContain('sealed');
+		// A queue that validates, or none at all, raises nothing.
+		events.length = 0; await store.savePruneQueue([{ sessionId: 'sealed', receiptPath: 'Sessions/a.md' }]);
+		await expect(store.loadPruneQueue()).resolves.toEqual([{ sessionId: 'sealed', receiptPath: 'Sessions/a.md' }]);
+		await store.savePruneQueue([]); await expect(store.loadPruneQueue()).resolves.toEqual([]);
+		expect(events).toEqual([]); store.close();
+	});
+
 	it('rejects an unknown credential field before the production IndexedDB sink opens', async () => {
 		const credential = ['tyrian-h6', 'runtime-probe', 'not-a-credential'].join('-');
 		const tainted = { ...activeRecord(), apiKey: credential };

@@ -339,9 +339,18 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		}
 	}
 
+	/**
+	 * A storage failure rejects (the caller must not write over a queue it could not read). A value that was read but is
+	 * not a queue is another matter: no id in it can be trusted to name a sealed session, so none is kept and no journal is
+	 * ever deleted on its word. It reads as empty, which leaves the journals it listed in the store, and the next save
+	 * replaces it; the diagnostics say so, without its content.
+	 */
 	async loadPruneQueue(): Promise<SealedJournal[]> {
 		const value = await this.read(undefined, LIVE_JOURNAL_PRUNE_QUEUE_KEY);
-		return isSealedJournalQueue(value) ? structuredClone(value) : [];
+		if (value === undefined) return [];
+		if (isSealedJournalQueue(value)) return structuredClone(value);
+		this.diagnostics.begin('session_runtime', 'read').failure('validation_failed');
+		return [];
 	}
 	async savePruneQueue(queue: readonly SealedJournal[]): Promise<boolean> {
 		await this.mutate<SessionRuntimeMutationResult>(() => queue.length === 0 ? { result: { status: 'cleared' } as const, remove: true }

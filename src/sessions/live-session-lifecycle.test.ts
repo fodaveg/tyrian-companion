@@ -425,6 +425,35 @@ describe('passive live session lifecycle', () => {
 			expect(await lengths()).toEqual([0,0,2]); expect(save).toHaveBeenCalledTimes(1);
 			expect(vi.mocked(f.options.onError).mock.calls.filter(([error]) => (error as Error).message === 'queue')).toHaveLength(1); await next.service.dispose();
 		});
+		it('a saved queue that could not be read at load is read again and merged before anything is saved over it', async () => {
+			const { f, ids, first, host, lengths } = await earlierHost(2); await first.dispose();
+			vi.spyOn(f.store,'loadPruneQueue').mockRejectedValueOnce(new Error('unreadable'));
+			const next = host(); await next.service.initialize();
+			expect(vi.mocked(f.options.onError).mock.calls.filter(([error]) => (error as Error).message === 'unreadable')).toHaveLength(1);
+			const seen: string[][] = []; const clear = f.store.clear.bind(f.store);
+			vi.spyOn(f.store,'clear').mockImplementation(async (authority) => { seen.push((await f.store.loadPruneQueue()).map((row) => row.sessionId)); return await clear(authority); });
+			await expect(next.service.stop(AT+300_000)).resolves.toBe(true); await next.service.start('Test');
+			expect(seen, 'the sessions the earlier host sealed are still queued, with the one just sealed').toEqual([ids]);
+			expect(await lengths(), 'so their journals are pruned instead of staying for ever').toEqual([0,0,2]); await next.service.dispose();
+		});
+		it('a saved queue that still cannot be read is not written over, and that is reported once', async () => {
+			const { f, ids, first, host, lengths, queued } = await earlierHost(2); await first.dispose();
+			const load = f.store.loadPruneQueue.bind(f.store);
+			const failing = vi.spyOn(f.store,'loadPruneQueue').mockRejectedValue(new Error('unreadable'));
+			const save = vi.spyOn(f.store,'savePruneQueue');
+			const next = host(); await next.service.initialize();
+			await expect(next.service.stop(AT+300_000)).resolves.toBe(true); await expect(next.service.start('Test')).resolves.not.toBeNull();
+			for (let beats = 0; beats < 3; beats += 1) await next.beat();
+			expect(save, 'nothing was saved over the queue nobody read').not.toHaveBeenCalled();
+			expect(failing, 'the load and the start asked; the beats did not').toHaveBeenCalledTimes(2);
+			expect(vi.mocked(f.options.onError).mock.calls.filter(([error]) => (error as Error).message === 'unreadable'), 'once at load, once for the start').toHaveLength(2);
+			failing.mockImplementation(load);
+			expect(await queued(), 'the saved queue is as the earlier host left it').toEqual(ids.slice(0,2)); expect(await lengths()).toEqual([2,2,2]);
+			// Storage reads again: the next start merges what was saved with what this host sealed meanwhile.
+			await expect(next.service.stop(AT+400_000)).resolves.toBe(true); await next.service.start('Test');
+			expect(await lengths(), 'the two old ones go; the two this host sealed are retained').toEqual([0,0,2]); expect(await queued()).toEqual([ids[2],'session-4']);
+			await next.service.dispose();
+		});
 		it('a host that does not own the live session prunes nothing until the lease is its own', async () => {
 			const { f, first, firstBeat, host, lengths } = await earlierHost(2); let busy = true;
 			const next = host({coordinator:{...f.options.coordinator,acquire:async (id) => busy

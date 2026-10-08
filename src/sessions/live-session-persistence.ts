@@ -17,7 +17,10 @@ export interface LiveSessionPersistence {
 	replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean>;
 	/** Deletes the journal of a SEALED session (its note receipt is durable). Refuses the session the runtime key still holds. */
 	pruneLiveJournal?(sessionId: string): Promise<boolean>;
-	/** Sealed sessions whose journal is still to be pruned (each with the path of its durable note), so a restart does not forget them. */
+	/**
+	 * Sealed sessions whose journal is still to be pruned (each with the path of its durable note), so a restart does not forget them.
+	 * Rejects when storage cannot read the queue: the lifecycle then saves nothing over it until a read works.
+	 */
 	loadPruneQueue?(): Promise<SealedJournal[]>;
 	savePruneQueue?(queue: readonly SealedJournal[]): Promise<boolean>;
 	/** Local summary facts (characters seen, summary written) under a key apart from the closed runtime record; best effort, never throws. */
