@@ -98,6 +98,19 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 	} catch { return { status: 'invalid', reason: 'live_note_unavailable' }; }
 }
 
+/** Old regex `^```json\n([^\n]+)\n```$` (flags gmu) as a LINEAR scan: V8 recurses per char on a two-byte string and overflows the stack past ~8 MiB. */
+export function provenanceJsonLines(text: string): string[] {
+	const out: string[] = [], isBreak = (c: string | undefined): boolean => c === undefined || c === '\n' || c === '\r' || c === '\u2028' || c === '\u2029';
+	let from = 0;
+	for (;;) {
+		const at = text.indexOf('```json\n', from);
+		if (at < 0) return out;
+		const start = at + 8, end = text.indexOf('\n', start);
+		if (at > 0 && !isBreak(text[at - 1]) || end <= start || !text.startsWith('```', end + 1) || !isBreak(text[end + 4])) { from = at + 1; continue; }
+		out.push(text.slice(start, end)); from = end + 4;
+	}
+}
+
 /** A valid live note is a distinct history source, never an API net-delta compatibility record. */
 export async function inspectLiveSessionNote(content: string): Promise<LiveSessionNoteInspection> {
 	const frontmatter = content.startsWith('---\n') ? content.slice(4,content.indexOf('\n---\n',4)) : '';
@@ -113,11 +126,10 @@ export async function inspectLiveSessionNote(content: string): Promise<LiveSessi
 	if (fm.tc_schema !== 7 || fm.tc_kind !== 'session' || fm.tc_source !== 'nexus_inventory' || fm.tc_account_ref !== null
 		|| fm.tc_payload_version !== 1 || !['es','en'].includes(fm.tc_locale as string)) return { status: 'invalid' };
 	const blocks = await readStoredSessionBlocks(content);
-	const matches = blocks?.provenance.matchAll(/^```json\n([^\n]+)\n```$/gmu);
-	const payloads = matches === undefined ? [] : [...matches];
+	const payloads = blocks === null ? [] : provenanceJsonLines(blocks.provenance);
 	if (payloads.length !== 1) return { status: 'invalid' };
 	try {
-		const serialized = payloads[0]![1]!;
+		const serialized = payloads[0]!;
 		const session: unknown = JSON.parse(serialized);
 		if (!isStoredLiveSessionPayload(session) || canonicalJson(session) !== serialized
 			|| await sha256Text(serialized) !== fm.tc_payload_sha256 || session.sessionRef !== fm.tc_session_ref
