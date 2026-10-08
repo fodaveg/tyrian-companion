@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FARMING_PREPARATION } from './farming-goal-preparation';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveSessionRuntimeRecord } from './live-session-model';
-import { liveSessionGap, liveSampleFingerprint, reduceLiveInventorySample, valueLiveTotals } from './live-session-reducer';
+import { isLiveContext, liveSessionGap, liveSampleFingerprint, reduceLiveInventorySample, valueLiveTotals } from './live-session-reducer';
 import { isLiveSessionRuntimeRecord } from './live-session-validation';
 import { readFarmingDeclaredBuild } from './manual-build-model';
 
@@ -179,6 +179,16 @@ describe('live inventory ledger', () => {
 			const totals = [{ kind: 'currency' as const, idNumber: 1, positive: 1, negative: 0, net: Number.MAX_SAFE_INTEGER },
 				{ kind: 'item' as const, idNumber: 12147, positive: 1, negative: 0, net: 1 }];
 			expect(() => valueLiveTotals(totals, price, null, true)).toThrow('overflow');
+		});
+	});
+
+	describe('character name length', () => {
+		const context = (character: string) => ({ state: 'gameplay', mapId: 866, character });
+		it('counts code points like the bridge protocol, not UTF-16 units', () => {
+			const astral = '\u{1D400}'.repeat(32);
+			expect(astral.length).toBe(64);
+			expect(isLiveContext(context(astral))).toBe(true);
+			expect(isLiveContext(context(astral + '\u{1D400}'))).toBe(false);
 		});
 	});
 });
