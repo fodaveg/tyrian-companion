@@ -33,6 +33,21 @@ export interface LiveSessionNoteInput {
 	locale: 'es' | 'en'; outputFolder: string; displayNames?: Readonly<Record<string, string>>;
 }
 
+/**
+ * The `displayNames` of a live note, keyed `item:<id>` / `currency:<id>`, from whoever can name an
+ * entity right now. One nobody can name gets NO key: its id is not a name, and with the key absent
+ * each note writes its own fallback («Objeto <id>», «Moneda <id>») instead of a bare number.
+ */
+export function knownLiveDisplayNames(totals: readonly Pick<LiveTotalV1, 'kind' | 'idNumber'>[],
+	nameOf: (kind: 'item' | 'currency', id: number) => string | null | undefined): Record<string, string> {
+	const names: Record<string, string> = {};
+	for (const row of totals) {
+		const name = nameOf(row.kind, row.idNumber);
+		if (typeof name === 'string' && name.trim() !== '') names[`${row.kind}:${String(row.idNumber)}`] = name;
+	}
+	return names;
+}
+
 /** An explicit point-in-time export; active sessions retain their real null end boundary. */
 export interface LiveSessionSnapshotV1 extends Omit<StoredLiveSessionPayloadV1,'endedAt'> {
 	endedAt: string | null; capturedAt: string; exportState: 'active_snapshot' | 'completed_session';

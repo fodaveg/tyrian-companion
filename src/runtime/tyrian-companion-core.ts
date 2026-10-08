@@ -30,9 +30,9 @@ import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live
 import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import type { LiveIngamePort } from '../alerts/live-loot-protocol';
 import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
-import { LiveSessionSummaryService } from '../sessions/live-session-summary-service';
+import { LiveSessionSummaryService, summaryCatalogNames } from '../sessions/live-session-summary-service';
 import { LiveSessionHistoryService, type LiveSessionHistoryEntry, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
-import type { StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
+import { knownLiveDisplayNames, type StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
 import { prepareLiveSessionExportSnapshot } from '../sessions/live-session-export';
 import { exportLegacyRuntimeArchive } from '../sessions/live-session-legacy-archive';
 
@@ -1316,23 +1316,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.sessionNotes = sessionServices.sessionNotes;
 		this.sessionHistory = sessionServices.sessionHistory;
 		this.liveHistory = new LiveSessionHistoryService(sessionHistoryVault(host.vault));
-		this.liveSummaries = new LiveSessionSummaryService({
-			vault: labelledVault(host.vault, 'Session summary note'), runtime: () => this.liveSessions?.getRuntime() ?? null,
-			journal: () => this.liveSessions?.getJournal() ?? [], characters: () => this.liveSessions?.getCharacters() ?? [],
-			charactersCapped: () => this.liveSessions?.isCharacterListCapped() ?? false, isWritten: () => this.liveSessions?.isSummaryWritten() ?? false,
-			markWritten: async () => { await this.liveSessions?.markSummaryWritten(); }, networkAllowed: () => this.liveSummaryNetwork, locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
-			displayNames: (record) => Object.fromEntries(record.totals.map((row) => [`${row.kind}:${row.idNumber}`, this.getLiveSessionEntity(row.kind, row.idNumber)?.name ?? String(row.idNumber)])),
-			itemMeta: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedItems(ids, this.settings.language);
-				return Object.fromEntries(Object.values(cached).map((item) => [item.id, { flags: item.flags, type: item.type }])); },
-			mapNames: async (ids, network) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedMaps(ids, this.settings.language);
-				const missing = ids.filter((id) => cached[String(id)] === undefined);
-				const fetched = missing.length === 0 || !network ? {} : await this.sessionCatalog.resolveMaps(missing, this.settings.language);
-				return Object.fromEntries(Object.entries({ ...cached, ...fetched }).map(([id, map]) => [id, map.name])); },
-			enabled: () => !consulting(this) && !this.unloaded, now: () => Date.now(),
-			startTimer: (callback, ms) => { const handle = window.setTimeout(callback, ms); return () => { window.clearTimeout(handle); }; },
-			onFailure: (details) => { this.localDebugActions?.event({ component: 'session', action: 'session_finish', state: 'live_summary_write',
-				level: 'error', phase: 'failure', code: 'storage_failure', details }); },
-		});
+		this.liveSummaries = this.createLiveSummaries(labelledVault(host.vault, 'Session summary note'));
 		this.liveSessions = new LiveSessionLifecycle({
 			coordinator, persistence: sessionServices.runtimeStore, enabled: () => !consulting(this),
 			now: () => Date.now(), sessionId: () => crypto.randomUUID(),
@@ -3264,6 +3248,32 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			onChange: () => { this.renderViews(); },
 		});
 	}
+	/**
+	 * The summary note's wiring. Its names come from memory first (`getLiveSessionEntity`, empty for a
+	 * session closed before this load), then from the catalog cache, and from the public `items` and
+	 * `currencies` lookups only once `liveSummaryNetwork` is set, which the load never does before the
+	 * lifecycle is restored. An entity nobody names gets no key, so the note writes «Objeto <id>».
+	 */
+	private createLiveSummaries(vault: ConstructorParameters<typeof LiveSessionSummaryService>[0]['vault']): LiveSessionSummaryService {
+		return new LiveSessionSummaryService({
+			vault, runtime: () => this.liveSessions?.getRuntime() ?? null,
+			journal: () => this.liveSessions?.getJournal() ?? [], characters: () => this.liveSessions?.getCharacters() ?? [],
+			charactersCapped: () => this.liveSessions?.isCharacterListCapped() ?? false, isWritten: () => this.liveSessions?.isSummaryWritten() ?? false,
+			markWritten: async () => { await this.liveSessions?.markSummaryWritten(); }, networkAllowed: () => this.liveSummaryNetwork, locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
+			displayNames: (record) => knownLiveDisplayNames(record.totals, (kind, id) => this.getLiveSessionEntity(kind, id)?.name),
+			entityNames: async (wanted, network) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await summaryCatalogNames(this.sessionCatalog, wanted, this.settings.language, network); },
+			itemMeta: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedItems(ids, this.settings.language);
+				return Object.fromEntries(Object.values(cached).map((item) => [item.id, { flags: item.flags, type: item.type }])); },
+			mapNames: async (ids, network) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedMaps(ids, this.settings.language);
+				const missing = ids.filter((id) => cached[String(id)] === undefined);
+				const fetched = missing.length === 0 || !network ? {} : await this.sessionCatalog.resolveMaps(missing, this.settings.language);
+				return Object.fromEntries(Object.entries({ ...cached, ...fetched }).map(([id, map]) => [id, map.name])); },
+			enabled: () => !consulting(this) && !this.unloaded, now: () => Date.now(),
+			startTimer: (callback, ms) => { const handle = window.setTimeout(callback, ms); return () => { window.clearTimeout(handle); }; },
+			onFailure: (details) => { this.localDebugActions?.event({ component: 'session', action: 'session_finish', state: 'live_summary_write',
+				level: 'error', phase: 'failure', code: 'storage_failure', details }); },
+		});
+	}
 	getLiveSessionEntity(kind: 'item' | 'currency', id: number): {name:string;icon:string|null}|null {
 		return this.liveEconomy?.entity(kind,id) ?? null;
 	}
@@ -3273,7 +3283,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return await this.buildAlertEmitter(this.alertQueue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
 	}
 	private async saveLiveSessionNote(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[]): Promise<string|null> {
-		const displayNames = Object.fromEntries(record.totals.map((row) => [`${row.kind}:${row.idNumber}`,this.getLiveSessionEntity(row.kind,row.idNumber)?.name ?? String(row.idNumber)]));
+		// An entity nobody has named gets no key: the note then writes «Objeto <id>» / «Moneda <id>», never the bare id.
+		const displayNames = knownLiveDisplayNames(record.totals,(kind,id) => this.getLiveSessionEntity(kind,id)?.name);
 		const result = await this.sessionNotes.writeLive({record,journal,locale:this.settings.language,outputFolder:this.settings.outputFolder,displayNames});
 		const saved = result.status === 'written' || result.status === 'unchanged';
 		if (this.liveSessions?.getRuntime()?.sessionId === record.sessionId) {

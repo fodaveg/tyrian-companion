@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_FARMING_PREPARATION } from './farming-goal-preparation';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionRuntimeRecord } from './live-session-model';
 import { reduceLiveInventorySample } from './live-session-reducer';
-import { prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { knownLiveDisplayNames, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { inspectLiveSessionNote } from './live-session-note-renderer';
 import { LiveSessionHistoryService } from './live-session-history';
 import { SessionHistoryService, type SessionHistoryVault } from './session-history';
@@ -24,7 +24,7 @@ const iso = (step: number): string => new Date(AT + step * STEP_MS).toISOString(
 const OFFSET = (): number => 120;
 const NAMES = { 'item:12147': 'Champiñón', [`item:${String(STAPLE)}`]: 'Saco grande', 'currency:2': 'Karma', 'currency:1': 'Oro' };
 
-interface FixtureOptions { staple?: number[]; other?: number[]; prices?: boolean; gold?: boolean }
+interface FixtureOptions { staple?: number[]; other?: number[]; prices?: boolean; gold?: boolean; /** A second currency (id 2) that grows with every sample. */ karma?: boolean }
 
 /** A closed three-sample session (0 → 40 min): a high-value stack and a cheap item, 20-minute steps. */
 function fixture(options: FixtureOptions = {}): LiveSessionNoteInput {
@@ -42,9 +42,10 @@ function fixture(options: FixtureOptions = {}): LiveSessionNoteInput {
 	const journal: LiveJournalEntryV1[] = [];
 	for (let cursor = 0; cursor < staple.length; cursor += 1) {
 		const sample: LiveInventorySampleV1 = { epoch: EPOCH, cursor, contextSeq: 0, sourceElapsedMs: cursor * STEP_MS,
-			mode: cursor === 0 ? 'baseline' : 'sample', itemCoverage: 'complete', currencyCoverage: options.gold ? 'listed' : 'none', unknownPositions: 0, freeSlots: 8,
+			mode: cursor === 0 ? 'baseline' : 'sample', itemCoverage: 'complete', currencyCoverage: options.gold || options.karma ? 'listed' : 'none', unknownPositions: 0, freeSlots: 8,
 			rows: [{ kind: 'item', idNumber: OTHER, quantity: other[cursor]! }, { kind: 'item', idNumber: STAPLE, quantity: staple[cursor]! },
-				...(options.gold ? [{ kind: 'currency' as const, idNumber: 1, quantity: 1000 + cursor * 250 }] : [])],
+				...(options.gold ? [{ kind: 'currency' as const, idNumber: 1, quantity: 1000 + cursor * 250 }] : []),
+				...(options.karma ? [{ kind: 'currency' as const, idNumber: 2, quantity: 100 + cursor * 400 }] : [])],
 			observedAt: iso(cursor), sourceInstance: INSTANCE, build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE, context: record.context! };
 		const next = reduceLiveInventorySample(record, sample); record = next.record; journal.push(Object.assign({ outbox: [] }, next.journal));
 	}
@@ -155,6 +156,18 @@ Nota completa: [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789a
 		expect(content).toContain('- Map 866 · 20 min');
 		expect(content).toContain('tyrian_summary_main_map: null');
 		expect(content).toContain('tyrian_summary_locale: "en"');
+	});
+
+	it('falls back to «Objeto <id>» / «Moneda <id>» in both languages when a name is not known, also in the frontmatter', async () => {
+		const karma: Mutate = (session) => ({ ...session, totals: [...session.totals, total('currency', 2, 800)] });
+		const es = await render({ itemMeta: META, displayNames: {}, mutate: karma });
+		expect(es.content).toContain(`| Objeto ${String(STAPLE)} | 30 | 4g 50s 0c |`);
+		expect(es.content).toContain('- Moneda 2: +800');
+		expect(es.content).toContain(`tyrian_summary_top_item: "Objeto ${String(STAPLE)}"`);
+		const en = await render({ itemMeta: META, displayNames: {}, locale: 'en', mutate: karma });
+		expect(en.content).toContain(`| Item ${String(STAPLE)} | 30 | 4g 50s 0c |`);
+		expect(en.content).toContain('- Currency 2: +800');
+		expect(en.content).toContain(`tyrian_summary_top_item: "Item ${String(STAPLE)}"`);
 	});
 
 	it('falls back to «Mapa <id>» when no name arrived', async () => {
@@ -469,20 +482,33 @@ describe('live session summary: file, history and writer', () => {
 
 describe('live session summary service', () => {
 	function harness(overrides: { receipt?: boolean; enabled?: boolean; written?: boolean; network?: boolean; mapNames?: (ids: readonly number[], network: boolean) => Promise<Record<string, string>>;
-		itemMeta?: () => Promise<never>; onFailure?: () => void; characters?: { name: string; fromAt: string }[] } = {}) {
-		const source = fixture(); const vault = new TestVault(); const failures: unknown[] = [];
+		itemMeta?: () => Promise<never>; onFailure?: () => void; characters?: { name: string; fromAt: string }[];
+		/** Names in memory (default: all of them, as right after closing). */ memoryNames?: Record<string, string>;
+		/** What the catalog cache and the public API know, by the note's keys. */ cachedNames?: Record<string, string>; publicNames?: Record<string, string> | 'hangs' | 'fails';
+		fixture?: FixtureOptions } = {}) {
+		const source = fixture(overrides.fixture); const vault = new TestVault(); const failures: unknown[] = [];
 		let clock = AT; let enabled = overrides.enabled ?? true; let written = overrides.written ?? false; let network = overrides.network ?? true;
-		const marks: number[] = []; const mapCalls: boolean[] = [];
+		const marks: number[] = []; const mapCalls: boolean[] = []; const nameCalls: { itemIds: number[]; currencyIds: number[]; network: boolean }[] = [];
+		const pick = (from: Record<string, string>, wanted: { itemIds: readonly number[]; currencyIds: readonly number[] }): Record<string, string> => Object.fromEntries(
+			[...wanted.itemIds.map((id) => `item:${String(id)}`), ...wanted.currencyIds.map((id) => `currency:${String(id)}`)].flatMap((key) => from[key] === undefined ? [] : [[key, from[key]]]));
 		let record: LiveSessionRuntimeRecord | null = { ...source.record, summaryReceipt: overrides.receipt === false ? null
 			: { version: 1, sessionId: source.record.sessionId, path: FULL_NOTE, savedAt: AT } };
 		const service = new LiveSessionSummaryService({ vault, runtime: () => record, journal: () => source.journal, locale: () => 'es',
-			outputFolder: () => 'Tyrian Companion', displayNames: () => source.displayNames ?? {}, enabled: () => enabled, now: () => clock,
+			outputFolder: () => 'Tyrian Companion', displayNames: () => overrides.memoryNames ?? { ...source.displayNames }, enabled: () => enabled, now: () => clock,
+			entityNames: async (wanted, allowed) => {
+				nameCalls.push({ itemIds: [...wanted.itemIds], currencyIds: [...wanted.currencyIds], network: allowed });
+				if (!allowed) return pick(overrides.cachedNames ?? {}, wanted);
+				if (overrides.publicNames === 'hangs') return await new Promise<Record<string, string>>(() => undefined);
+				if (overrides.publicNames === 'fails') throw new TypeError('offline');
+				return pick(overrides.publicNames ?? {}, wanted);
+			},
 			characters: () => overrides.characters ?? [{ name: 'Alfa', fromAt: iso(0) }], charactersCapped: () => false,
 			isWritten: () => written, markWritten: async () => { written = true; marks.push(clock); }, networkAllowed: () => network,
 			itemMeta: overrides.itemMeta ?? (async () => META),
 			mapNames: overrides.mapNames ?? (async (_ids, allowed) => { mapCalls.push(allowed); return { '866': 'Laberinto del Rey Loco' }; }), mapWaitMs: 20, startTimer: realTimer,
 			onFailure: overrides.onFailure ?? ((details) => { failures.push(details); }) });
-		return { service, vault, failures, source, marks, mapCalls, tick: (ms: number) => { clock += ms; },
+		return { service, vault, failures, source, marks, mapCalls, nameCalls, tick: (ms: number) => { clock += ms; },
+			text: () => vault.contents.get([...vault.contents.keys()].find((path) => path.includes('/summaries/'))!)!,
 			setRecord: (next: LiveSessionRuntimeRecord | null) => { record = next; }, setEnabled: (value: boolean) => { enabled = value; },
 			setNetwork: (value: boolean) => { network = value; }, isWritten: () => written,
 			summaries: () => [...vault.contents.keys()].filter((path) => path.includes('/summaries/')) };
@@ -544,7 +570,7 @@ describe('live session summary service', () => {
 		const h = harness({ onFailure: () => { throw new Error('sink'); } });
 		h.setRecord(null);
 		const broken = new LiveSessionSummaryService({ vault: h.vault, runtime: () => { throw new Error('boom'); }, journal: () => [], locale: () => 'es',
-			outputFolder: () => 'Tyrian Companion', displayNames: () => ({}), characters: () => [], charactersCapped: () => false, isWritten: () => false, markWritten: async () => undefined,
+			outputFolder: () => 'Tyrian Companion', displayNames: () => ({}), entityNames: async () => ({}), characters: () => [], charactersCapped: () => false, isWritten: () => false, markWritten: async () => undefined,
 			networkAllowed: () => true, itemMeta: async () => ({}), mapNames: async () => ({}), startTimer: realTimer, enabled: () => true, now: () => AT,
 			onFailure: () => { throw new Error('sink'); } });
 		await expect(broken.observe()).resolves.toBeUndefined();
@@ -569,6 +595,73 @@ describe('live session summary service', () => {
 		expect(h.summaries()).toHaveLength(1);
 		const later = harness({ network: true }); await later.service.observe();
 		expect(later.mapCalls).toEqual([true]);
+	});
+	const CACHED = { 'item:12147': 'Champiñón', [`item:${String(STAPLE)}`]: 'Saco grande', 'currency:2': 'Karma' };
+	it('on load, with nothing named in memory, takes the names from the catalog cache and asks nothing else', async () => {
+		const h = harness({ network: false, memoryNames: {}, cachedNames: CACHED, fixture: { gold: true, karma: true } });
+		await h.service.observe();
+		const text = h.text();
+		expect(text).toContain('| Saco grande | 30 | 4g 50s 0c |');
+		expect(text).toContain('| Champiñón | 9 | 0g 27s 0c |');
+		expect(text).toContain('- Por hora sin Saco grande:');
+		expect(text).toContain('- Karma: +800');
+		expect(text).toContain('tyrian_summary_top_item: "Saco grande"');
+		// One cache read for what the note names (gold is written as money, so it is not asked), and no request.
+		expect(h.nameCalls).toEqual([{ itemIds: [OTHER, STAPLE], currencyIds: [2], network: false }]);
+		expect(h.failures).toEqual([]);
+	});
+	it('writes «Objeto <id>» and «Moneda <id>», never the bare id, when neither memory nor the cache has the name', async () => {
+		const h = harness({ network: false, memoryNames: {}, fixture: { karma: true } });
+		await h.service.observe();
+		const text = h.text();
+		expect(text).toContain(`| Objeto ${String(STAPLE)} | 30 | 4g 50s 0c |`);
+		expect(text).toContain(`| Objeto ${String(OTHER)} | 9 | 0g 27s 0c |`);
+		expect(text).toContain(`- Por hora sin Objeto ${String(STAPLE)}:`);
+		expect(text).toContain('- Moneda 2: +800');
+		expect(text).toContain(`tyrian_summary_top_item: "Objeto ${String(STAPLE)}"`);
+		// No line and no frontmatter value is an id on its own.
+		expect(text).not.toMatch(/\| \d+ \| \d+ \|/u);
+		expect(text).not.toMatch(/^- \d+: /mu);
+		expect(text).not.toMatch(/sin \d+:/u);
+		expect(text).not.toMatch(/tyrian_summary_top_item: "?\d+"?$/mu);
+		expect(h.nameCalls.every((call) => !call.network)).toBe(true);
+	});
+	it('names a partly cached session with what there is and leaves the rest as its fallback', async () => {
+		const h = harness({ network: false, memoryNames: { 'item:12147': 'Champiñón' }, cachedNames: { 'currency:2': 'Karma' }, fixture: { karma: true } });
+		await h.service.observe();
+		expect(h.text()).toContain('| Champiñón | 9 |');
+		expect(h.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
+		expect(h.text()).toContain('- Karma: +800');
+		// Only what memory lacks is read from the cache.
+		expect(h.nameCalls).toEqual([{ itemIds: [STAPLE], currencyIds: [2], network: false }]);
+	});
+	it('after closing, asks the public catalog only for what the cache lacks, under the same rule as the map names', async () => {
+		const h = harness({ network: true, memoryNames: {}, cachedNames: { 'item:12147': 'Champiñón' },
+			publicNames: { [`item:${String(STAPLE)}`]: 'Saco grande', 'currency:2': 'Karma' }, fixture: { karma: true } });
+		await h.service.observe();
+		expect(h.nameCalls).toEqual([{ itemIds: [OTHER, STAPLE], currencyIds: [2], network: false }, { itemIds: [STAPLE], currencyIds: [2], network: true }]);
+		expect(h.text()).toContain('| Saco grande | 30 |');
+		expect(h.text()).toContain('| Champiñón | 9 |');
+		expect(h.text()).toContain('- Karma: +800');
+		// With every name already in memory, as right after a session that named its loot, nothing is asked at all.
+		const named = harness({ network: true }); await named.service.observe();
+		expect(named.nameCalls).toEqual([]);
+	});
+	it('a public catalog that hangs or fails costs the name, not the summary nor the names the cache had', async () => {
+		const hanging = harness({ network: true, memoryNames: {}, cachedNames: { 'item:12147': 'Champiñón' }, publicNames: 'hangs' });
+		await hanging.service.observe();
+		expect(hanging.text()).toContain('| Champiñón | 9 |');
+		expect(hanging.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
+		expect(hanging.failures).toEqual([]);
+		const failing = harness({ network: true, memoryNames: {}, cachedNames: { 'item:12147': 'Champiñón' }, publicNames: 'fails' });
+		await failing.service.observe();
+		expect(failing.text()).toContain('| Champiñón | 9 |');
+		expect(failing.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
+		expect(failing.failures).toEqual([{ status: 'optional_public_names', reason: 'TypeError', attempt: 1 }]);
+	});
+	it('an entity nobody can name gets no key in the note names, never its id as a name', () => {
+		const nameOf = (kind: 'item' | 'currency', id: number): string | null | undefined => kind === 'item' && id === 5 ? 'Cinco' : id === 7 ? '  ' : id === 9 ? undefined : null;
+		expect(knownLiveDisplayNames([total('item', 5, 1), total('item', 7, 1), total('item', 9, 1), total('currency', 2, 1)], nameOf)).toEqual({ 'item:5': 'Cinco' });
 	});
 	it('writes nothing, and cancels the map-name wait, once the plugin unloaded', async () => {
 		let release: (names: Record<string, string>) => void = () => undefined;

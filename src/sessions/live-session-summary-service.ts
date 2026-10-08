@@ -1,6 +1,6 @@
 import type { LiveJournalEntryV1, LiveSessionCharacterV1, LiveSessionRuntimeRecord } from './live-session-model';
 import { prepareLiveSessionPayload } from './live-session-note-model';
-import { summaryMainMap, type SummaryItemMetaMap } from './live-session-summary-figures';
+import { summaryMainMap, summaryNamedEntities, type SummaryEntityIds, type SummaryItemMetaMap } from './live-session-summary-figures';
 import { readComparablePerHour, type SummaryHistoryVault } from './live-session-summary-history';
 import { LiveSessionSummaryWriter, type LiveSessionSummaryVault, type LiveSessionSummaryWriteResult } from './live-session-summary-note';
 import { normalizeSessionOutputFolder } from './session-note-model';
@@ -8,8 +8,35 @@ import { normalizeSessionOutputFolder } from './session-note-model';
 /** At most this many attempts per session, at least this far apart: a failing vault is not hammered. */
 export const LIVE_SUMMARY_MAX_ATTEMPTS = 3;
 export const LIVE_SUMMARY_RETRY_MS = 60_000;
-/** Map names are cosmetic: the summary waits this long for the public API and then writes «Mapa <id>». */
+/**
+ * Names are cosmetic: the summary waits this long for the public API and then writes its fallback
+ * («Mapa <id>», «Objeto <id>», «Moneda <id>»).
+ */
 export const LIVE_SUMMARY_MAP_WAIT_MS = 5_000;
+
+/** The catalog calls the entity names need; the public catalog service satisfies it. */
+export interface SummaryNameCatalog {
+	readCachedItems(ids: readonly number[], locale: 'es' | 'en'): Promise<Record<string, { id: number; name: string }>>;
+	readCachedCurrencies(ids: readonly number[], locale: 'es' | 'en'): Promise<Record<string, { id: number; name: string }>>;
+	resolveItems(ids: readonly number[], locale: 'es' | 'en'): Promise<Record<string, { id: number; name: string }>>;
+	resolveCurrencies(ids: readonly number[], locale: 'es' | 'en'): Promise<{ currencies: Record<string, { id: number; name: string }> }>;
+}
+
+/**
+ * Item and currency names keyed `item:<id>` / `currency:<id>`. Without `network` it is the catalog
+ * cache alone (any age, never a request); with it, the catalog's own `items` and `currencies`
+ * lookups, the two the live session already makes. An id nobody knows is absent from the result.
+ */
+export async function summaryCatalogNames(catalog: SummaryNameCatalog, wanted: SummaryEntityIds, locale: 'es' | 'en',
+	network: boolean): Promise<Record<string, string>> {
+	const items = wanted.itemIds.length === 0 ? {} : network ? await catalog.resolveItems(wanted.itemIds, locale) : await catalog.readCachedItems(wanted.itemIds, locale);
+	const currencies = wanted.currencyIds.length === 0 ? {} : network ? (await catalog.resolveCurrencies(wanted.currencyIds, locale)).currencies
+		: await catalog.readCachedCurrencies(wanted.currencyIds, locale);
+	const names: Record<string, string> = {};
+	for (const item of Object.values(items)) names[`item:${String(item.id)}`] = item.name;
+	for (const currency of Object.values(currencies)) names[`currency:${String(currency.id)}`] = currency.name;
+	return names;
+}
 
 export interface LiveSessionSummaryServiceOptions {
 	vault: LiveSessionSummaryVault & SummaryHistoryVault;
@@ -17,7 +44,13 @@ export interface LiveSessionSummaryServiceOptions {
 	journal(): readonly LiveJournalEntryV1[];
 	locale(): 'es' | 'en';
 	outputFolder(): string;
+	/** Names already in memory, keyed `item:<id>` / `currency:<id>`. An entity nobody has named has NO key: never its id as a name. */
 	displayNames(record: LiveSessionRuntimeRecord): Record<string, string>;
+	/**
+	 * Names of the given items and currencies, by the same keys: the catalog cache, and the public API
+	 * (`items`, `currencies`) only when `network` is true. The service bounds that wait.
+	 */
+	entityNames(wanted: SummaryEntityIds, network: boolean): Promise<Record<string, string>>;
 	/** Characters the session saw, in order (kept apart from the closed record); empty when unknown. */
 	characters(): readonly LiveSessionCharacterV1[];
 	charactersCapped(): boolean;
@@ -37,7 +70,7 @@ export interface LiveSessionSummaryServiceOptions {
 	onFailure(details: { status: string; reason: string | null; attempt: number }): void;
 	/** Starts a timer and returns how to cancel it (the host's `window` timers; the service owns no global). */
 	startTimer(callback: () => void, ms: number): () => void;
-	/** Test seam for the map-name wait. */
+	/** Test seam for the wait of the names asked to the public API (maps, items, currencies). */
 	mapWaitMs?: number;
 }
 
@@ -52,22 +85,25 @@ interface Progress { sessionId: string; attempts: number; lastAttemptAt: number;
  * stops every later attempt, including the ones a plugin load raises: loading never reads notes,
  * asks the network or rewrites a note the user deleted. Without the mark, a load writes from caches.
  * A failure is logged and never thrown, so it cannot hold the session, the header or the next start.
- * Everything optional (flags, map names, earlier summaries) degrades to «unknown» and leaves a diagnostic.
+ * Everything optional (flags, names, earlier summaries) degrades to «unknown» and leaves a diagnostic.
+ * An item or a currency is named from memory, then from the catalog cache, and only then (never
+ * while loading) from the public API; one still unnamed is left out, and the note writes its fallback.
  */
 export class LiveSessionSummaryService {
 	private progress: Progress | null = null;
 	private readonly writer: LiveSessionSummaryWriter;
-	private cancelWait: (() => void) | null = null;
+	private readonly cancelWaits = new Set<() => void>();
 	private disposed = false;
 
 	constructor(private readonly options: LiveSessionSummaryServiceOptions) {
 		this.writer = new LiveSessionSummaryWriter(options.vault);
 	}
 
-	/** Cancels the pending map-name wait; whatever is in flight writes nothing once this was called. */
+	/** Cancels the pending name waits; whatever is in flight writes nothing once this was called. */
 	dispose(): void {
 		this.disposed = true;
-		this.cancelWait?.(); this.cancelWait = null;
+		for (const cancel of this.cancelWaits) cancel();
+		this.cancelWaits.clear();
 	}
 
 	async observe(): Promise<void> {
@@ -103,16 +139,18 @@ export class LiveSessionSummaryService {
 			// The same normalized folder the writer uses, so the earlier summaries are looked up where they were written.
 			const folder = normalizeSessionOutputFolder(outputFolder) ?? outputFolder;
 			const network = this.options.networkAllowed();
-			const [itemMeta, mapNames, comparable] = await Promise.all([
+			const known = this.options.displayNames(record);
+			const [itemMeta, mapNames, comparable, displayNames] = await Promise.all([
 				this.optional('item_meta', progress.attempts, () => this.options.itemMeta(itemIds), {}),
 				this.optional('map_names', progress.attempts, () => this.boundedMapNames(mapIds, network), {}),
 				this.optional('comparables', progress.attempts, () => readComparablePerHour(this.options.vault, folder, summaryMainMap(session), session.sessionRef), { perHour: [], unreadable: 0 }),
+				this.entityNames(known, summaryNamedEntities(session), network, progress.attempts),
 			]);
 			if (comparable.unreadable > 0) this.report({ status: 'optional_comparables_unreadable', reason: String(comparable.unreadable), attempt: progress.attempts });
 			// The plugin may have unloaded while the lookups ran: then nothing is written.
 			if (!this.live()) return;
 			const result: LiveSessionSummaryWriteResult = await this.writer.write({ session, locale, outputFolder, fullNotePath: receipt.path,
-				displayNames: this.options.displayNames(record), characters: this.options.characters(), charactersCapped: this.options.charactersCapped(),
+				displayNames, characters: this.options.characters(), charactersCapped: this.options.charactersCapped(),
 				itemMeta, mapNames, comparablePerHour: comparable.perHour });
 			if (result.status === 'written' || result.status === 'unchanged' || result.status === 'kept') {
 				progress.done = true; await this.options.markWritten(); return;
@@ -124,13 +162,40 @@ export class LiveSessionSummaryService {
 		} finally { progress.running = false; }
 	}
 
-	/** Never longer than `mapWaitMs`: a slow API costs the name, not the summary. */
 	private async boundedMapNames(mapIds: readonly number[], network: boolean): Promise<Record<string, string>> {
 		if (mapIds.length === 0) return {};
+		return await this.bounded(() => this.options.mapNames(mapIds, network));
+	}
+
+	/** Never longer than `mapWaitMs`: a slow API costs the names it was asked for, not the summary. */
+	private async bounded(work: () => Promise<Record<string, string>>): Promise<Record<string, string>> {
+		let cancel: () => void = () => undefined;
 		const wait = new Promise<Record<string, string>>((resolve) => {
-			this.cancelWait = this.options.startTimer(() => { resolve({}); }, this.options.mapWaitMs ?? LIVE_SUMMARY_MAP_WAIT_MS);
+			cancel = this.options.startTimer(() => { resolve({}); }, this.options.mapWaitMs ?? LIVE_SUMMARY_MAP_WAIT_MS);
 		});
-		try { return await Promise.race([this.options.mapNames(mapIds, network), wait]); } finally { this.cancelWait?.(); this.cancelWait = null; }
+		this.cancelWaits.add(cancel);
+		try { return await Promise.race([work(), wait]); } finally { cancel(); this.cancelWaits.delete(cancel); }
+	}
+
+	/**
+	 * The names the note is written with. What memory already names is kept; what it lacks is read from
+	 * the catalog cache, and what the cache lacks is asked to the public API only when `network` is true
+	 * (never while the plugin loads), bounded like the map names. An entity still unnamed has no key.
+	 */
+	private async entityNames(known: Readonly<Record<string, string>>, wanted: SummaryEntityIds, network: boolean, attempt: number): Promise<Record<string, string>> {
+		const names: Record<string, string> = {};
+		const add = (found: Readonly<Record<string, string>>): void => {
+			for (const [key, name] of Object.entries(found)) if (names[key] === undefined && typeof name === 'string' && name.trim() !== '') names[key] = name;
+		};
+		const lacking = (): SummaryEntityIds => ({ itemIds: wanted.itemIds.filter((id) => names[`item:${String(id)}`] === undefined),
+			currencyIds: wanted.currencyIds.filter((id) => names[`currency:${String(id)}`] === undefined) });
+		const none = (ids: SummaryEntityIds): boolean => ids.itemIds.length === 0 && ids.currencyIds.length === 0;
+		add(known);
+		const uncached = lacking();
+		if (!none(uncached)) add(await this.optional('cached_names', attempt, () => this.options.entityNames(uncached, false), {}));
+		const unknown = lacking();
+		if (network && !none(unknown)) add(await this.optional('public_names', attempt, () => this.bounded(() => this.options.entityNames(unknown, true)), {}));
+		return names;
 	}
 
 	/** Optional context: whatever fails here is absent from the note, and a diagnostic says which part and the error class. */

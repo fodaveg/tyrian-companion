@@ -58,6 +58,20 @@ export interface SummaryFigures {
 
 export interface SummaryCharacter { name: string; fromAt: string }
 
+/** Ids of the items and currencies a summary writes by name. */
+export interface SummaryEntityIds { readonly itemIds: readonly number[]; readonly currencyIds: readonly number[] }
+
+/**
+ * What the note can name: every item that came in (the list, the unpriced and bound lines, the staple),
+ * the items of the alerts that fired, and every currency that moved except gold, which is written as money.
+ */
+export function summaryNamedEntities(session: Pick<StoredLiveSessionPayloadV1, 'totals' | 'journal'>): SummaryEntityIds {
+	const ascending = (ids: number[]): number[] => [...new Set(ids)].sort((a, b) => a - b);
+	const alerted = session.journal.flatMap((entry) => entry.outbox.flatMap((row) => row.state === 'processed' && row.alert !== null ? [row.alert.itemId] : []));
+	return { itemIds: ascending([...session.totals.filter((row) => row.kind === 'item' && row.net > 0).map((row) => row.idNumber), ...alerted]),
+		currencyIds: ascending(session.totals.filter((row) => row.kind === 'currency' && row.idNumber !== GOLD_CURRENCY_ID && row.net !== 0).map((row) => row.idNumber)) };
+}
+
 /** The map holding more than 70 % of the observed time, or null (several maps, or none known: see `maps`). */
 export function summaryMainMap(session: Pick<StoredLiveSessionPayloadV1, 'mapIntervals' | 'observedItemsMs'>): number | null {
 	const first = mapTimes(session.mapIntervals)[0];
