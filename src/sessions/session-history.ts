@@ -838,10 +838,15 @@ function valueForColumn(session: DurableSessionHistoryRecord, column: typeof CSV
 	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'lootRows' | 'outcome' | 'comparisonMetadata' | 'sackObservation' | 'farmingGoal' | 'farmingGoalResult' | 'legacyPositiveNetSacks'>;
 	return session[key];
 }
-/** RFC-style quoting plus spreadsheet formula protection after invisible prefixes. */
+/**
+ * RFC-style quoting plus spreadsheet formula protection after invisible prefixes. Protection is
+ * for strings only: a `number` cannot be a formula, and prefixing a negative one turned it into
+ * text (`'-4`) that a spreadsheet will not sum.
+ */
 export function serializeCsvCell(value: string | number | null): string {
 	const text = value === null ? '' : String(value);
-	return `"${(/^[\s\p{Cc}]*[=+\-@]/u.test(text) ? `'${text}` : text).replace(/"/gu, '""')}"`;
+	const protectedText = typeof value === 'string' && /^[\s\p{Cc}]*[=+\-@]/u.test(text) ? `'${text}` : text;
+	return `"${protectedText.replace(/"/gu, '""')}"`;
 }
 function compareSessions(a: DurableSessionHistoryRecord, b: DurableSessionHistoryRecord): number {
 	return a.startedAt.localeCompare(b.startedAt) || a.endedAt.localeCompare(b.endedAt) || a.sessionRef.localeCompare(b.sessionRef);
