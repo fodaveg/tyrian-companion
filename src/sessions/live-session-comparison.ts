@@ -1,7 +1,7 @@
 import { GOLD_CURRENCY_ID, valueLiveTotals } from './live-session-reducer';
 import { manualBuildIdentityInput } from './manual-build-model';
 import { canonicalJson, sha256Utf8 } from '../core/canonical-sha256';
-import type { LiveSessionRuntimeRecord } from './live-session-model';
+import { liveItemRateEligible, type LiveSessionRuntimeRecord } from './live-session-model';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
 
 export const LIVE_COMPARISON_MINIMUM_SESSIONS = 2;
@@ -97,7 +97,7 @@ function comparisonRow(session: Evidence, endedAt: string | null, connectionMs: 
 			: maps.every((map) => map === 866) ? 'pure_labyrinth' : 'unknown';
 	return { startedAt: session.startedAt, endedAt, connectionMs, observedItemsMs: session.observedItemsMs,
 		observedCurrenciesMs: session.observedCurrenciesMs, positiveBags, negativeBags: measured ? bags?.negative ?? 0 : null,
-		netBags: measured ? bags?.net ?? 0 : null, bagsPerHourMilli: positiveBags === null ? null
+		netBags: measured ? bags?.net ?? 0 : null, bagsPerHourMilli: positiveBags === null || !liveItemRateEligible(session) ? null
 			: roundedRate(BigInt(positiveBags), BigInt(session.observedItemsMs)), gapCount: session.gaps.length,
 		knownItemValueCopper: measured ? session.valuation.netItemValueKnownCopper : null, unpricedItemCount: session.valuation.unpricedItemIds.length,
 		conditions: { playerBuild: session.declaredBuild == null ? null : { source: 'manual_template', identity: sha256Utf8(manualBuildIdentityInput(session.declaredBuild)),
@@ -110,7 +110,7 @@ function comparisonGroup(rows: readonly LiveComparisonRow[]): LiveComparisonGrou
 	const observedItemsMs = sum(eligible.map((row) => row.observedItemsMs));
 	const positiveBags = eligible.length === 0 ? null : sum(eligible.map((row) => row.positiveBags!));
 	const enough = eligible.length >= LIVE_COMPARISON_MINIMUM_SESSIONS;
-	const rate = enough && positiveBags !== null && observedItemsMs !== null
+	const rate = enough && positiveBags !== null && observedItemsMs !== null && liveItemRateEligible({ observedItemsMs })
 		? roundedRate(BigInt(positiveBags), BigInt(observedItemsMs)) : null;
 	const individual = eligible.map((row) => row.bagsPerHourMilli);
 	const complete = individual.every((value): value is number => value !== null);

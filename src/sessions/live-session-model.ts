@@ -13,12 +13,16 @@ export const NEXUS_LIVE_BUILD = '27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a
 export const NEXUS_LIVE_PROFILE = 'owned-bags-v3' as const;
 export const LIVE_SOURCE_STALE_MS = 5_000;
 /**
- * Whether a view's item time can carry a rate: some covered item time was accumulated and the last coverage
- * known is not `partial`. `none` counts: every gap (and the end of a session) drops `lastSample`, so `none`
- * with observed time means "no sample at hand", not "never covered". Time is only accumulated under `complete`.
+ * The least covered item time a per-hour rate needs (David, 8 oct 2026: the same 15 minutes as the summary note). One
+ * constant for every live rate: «Por hora» in the tab, the `lo`/`hi` of `farm1` and the bags/h of the comparison.
  */
-export function liveItemRateEligible(view: { itemCoverage: 'complete' | 'partial' | 'none'; observedItemsMs: number }): boolean {
-	return view.observedItemsMs > 0 && view.itemCoverage !== 'partial';
+export const LIVE_RATE_MIN_OBSERVED_MS = 15 * 60_000;
+/**
+ * Whether a live session's covered item time can carry a rate: 15 minutes or more. Nothing else matters: neither
+ * a `partial` last sample nor a gap in between (time is only accumulated under `complete` coverage anyway).
+ */
+export function liveItemRateEligible(view: { observedItemsMs: number }): boolean {
+	return view.observedItemsMs >= LIVE_RATE_MIN_OBSERVED_MS;
 }
 
 export interface LiveInventoryRowV1 { kind: 'item' | 'currency'; idNumber: number; quantity: number }

@@ -48,8 +48,8 @@ describe('Nexus inventory comparison metrics', () => {
 	});
 	it('preserves positive 4, decrease 6 and signed observed net −2, without substituting net for increases', () => {
 		const totals = [{ kind: 'item' as const, idNumber: 36038, positive: 4, negative: 6, net: -2 }];
-		expect(buildLiveSessionComparison([session(4, 1000, { totals }), session(4, 1000, { totals })]).groups[0])
-			.toMatchObject({ positiveBags: 8, negativeBags: 12, netBags: -4, bagsPerHourMilli: 14_400_000 });
+		expect(buildLiveSessionComparison([session(4, 900_000, { totals }), session(4, 900_000, { totals })]).groups[0])
+			.toMatchObject({ positiveBags: 8, negativeBags: 12, netBags: -4, bagsPerHourMilli: 16_000 });
 	});
 	it('does not fill gaps or throw away the quantity and time that were actually observed', () => {
 		const gaps = [{ version: 1 as const, fromAt: '2026-10-06T09:00:00Z', toAt: '2026-10-06T10:00:00Z', reason: 'read_failed' as const, channels: ['items' as const] }];

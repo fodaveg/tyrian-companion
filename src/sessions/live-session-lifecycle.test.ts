@@ -200,23 +200,47 @@ describe('passive live session lifecycle', () => {
 		expect(restored.getRuntime()).toMatchObject({phase:'active',connection:'disconnected',mapObservation:null});
 		expect(restored.getRuntime()?.gaps.map((gap) => gap.reason)).toContain('host_restart'); await restored.dispose();
 	});
-	it('keeps «Per hour» and the farm1 rate after a gap, after stop and in the view rebuilt from the saved note', async () => {
-		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0,{rows:[{kind:'item',idNumber:36038,quantity:0}]}));
-		f.setNow(AT+60_000); await f.service.commit(f.sample(1,2,{rows:[{kind:'item',idNumber:36038,quantity:2}]})); await f.service.updatePrices([{itemId:36038,unitCopper:85}],new Date(AT+60_000).toISOString());
-		const farm = (view: LiveSessionViewV1) => projectLiveFarmingIngameState({view,goal:null,now:AT+120_000,preparationEnabled:true});
-		expect(liveSessionRatePerHour(f.service.getView()), 'with a sample at hand').not.toBeNull();
-		f.setNow(AT+70_000); await f.service.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'context_changed',observedAt:new Date(AT+70_000).toISOString()});
-		const gapped = f.service.getView(); expect(gapped.itemCoverage, 'a gap drops the sample').toBe('none');
-		expect(liveSessionRatePerHour(gapped), 'but not the covered time').not.toBeNull();
-		expect(farm(gapped)).toMatchObject({observed:2}); expect(farm(gapped).lo).not.toBeNull();
-		f.setNow(AT+80_000); await expect(f.service.stop(AT+80_000)).resolves.toBe(true);
-		expect(liveSessionRatePerHour(f.service.getView()), 'after stop').not.toBeNull();
-		const rendered = await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),locale:'es',outputFolder:'Tyrian'});
-		if (rendered.status !== 'ok') throw new Error('The note did not render.');
-		const saved = liveSessionViewFromStored(rendered.session,AT+90_000);
-		expect(liveSessionRatePerHour(saved), 'and from the saved note').not.toBeNull(); expect(farm(saved).lo).not.toBeNull();
-		const unpriced = f.service.getView(); unpriced.valuation.unpricedItemIds = [1]; expect(liveSessionRatePerHour(unpriced)).toBeNull();
-		await f.service.dispose();
+	describe('«Por hora» needs 15 observed minutes, whatever the last sample or a gap in between', () => {
+		const farm = (view: LiveSessionViewV1) => projectLiveFarmingIngameState({view,goal:null,now:AT+3_000_000,preparationEnabled:true});
+		const bag = (quantity: number, extra: Partial<LiveInventorySampleV1> = {}) => ({rows:[{kind:'item' as const,idNumber:36038,quantity}],...extra});
+		async function session(observedMs: number, finish: 'complete' | 'gap' | 'partial') {
+			const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0,bag(0)));
+			f.setNow(AT+observedMs); await f.service.commit(f.sample(1,2,bag(2,{sourceElapsedMs:observedMs}))); await f.service.updatePrices([{itemId:36038,unitCopper:85}],new Date(AT+observedMs).toISOString());
+			if (finish === 'gap') { f.setNow(AT+observedMs+10_000); await f.service.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'context_changed',observedAt:new Date(AT+observedMs+10_000).toISOString()}); }
+			if (finish === 'partial') { f.setNow(AT+observedMs+1000); await f.service.commit(f.sample(2,2,{...bag(2),sourceElapsedMs:observedMs+1000,itemCoverage:'partial',unknownPositions:3})); }
+			return f;
+		}
+		async function saved(f: Awaited<ReturnType<typeof session>>) {
+			f.setNow(AT+10_000_000); await f.service.stop(AT+10_000_000);
+			const rendered = await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),locale:'es',outputFolder:'Tyrian'});
+			if (rendered.status !== 'ok') throw new Error('The note did not render.'); return liveSessionViewFromStored(rendered.session,AT+11_000_000);
+		}
+		it('14 min 59 s: no rate in the tab, in farm1 or in the saved note; the counts stay', async () => {
+			const f = await session(899_000, 'gap'); const live = f.service.getView();
+			expect(live.observedItemsMs).toBe(899_000); expect(liveSessionRatePerHour(live)).toBeNull(); expect(farm(live)).toMatchObject({observed:2,lo:null,hi:null});
+			const note = await saved(f); expect(liveSessionRatePerHour(note)).toBeNull(); expect(farm(note)).toMatchObject({observed:2,lo:null,hi:null}); await f.service.dispose();
+		});
+		it('15 min: rate in the tab, in farm1 and in the view rebuilt from the saved note', async () => {
+			const f = await session(900_000, 'complete'); const live = f.service.getView();
+			expect(liveSessionRatePerHour(live)).not.toBeNull(); expect(farm(live).lo).toBe(8);
+			const note = await saved(f); expect(liveSessionRatePerHour(note)).not.toBeNull(); expect(farm(note).lo).toBe(8); await f.service.dispose();
+		});
+		it('20 minutes that end on a partial sample rate exactly like the same 20 minutes with a gap in between', async () => {
+			const partial = await session(1_200_000, 'partial'); const gapped = await session(1_200_000, 'gap');
+			const a = partial.service.getView(); const b = gapped.service.getView();
+			expect(liveSessionRatePerHour(a)).not.toBeNull(); expect(liveSessionRatePerHour(a)).toBe(liveSessionRatePerHour(b));
+			expect(farm(a).lo).toBe(6); expect(farm(b).lo).toBe(6);
+			expect(liveSessionRatePerHour(await saved(partial)), 'also in the saved note').not.toBeNull(); expect(liveSessionRatePerHour(await saved(gapped))).not.toBeNull();
+			await partial.service.dispose(); await gapped.service.dispose();
+		});
+		it('an unpriced item still hides «Por hora»', async () => {
+			const f = await session(1_200_000, 'complete'); const view = f.service.getView(); view.valuation.unpricedItemIds = [1];
+			expect(liveSessionRatePerHour(view)).toBeNull(); await f.service.dispose();
+		});
+		it('an old saved note whose view carried a rate over 5 minutes is painted without it, rewriting nothing', async () => {
+			const f = await session(300_000, 'complete'); const note = await saved(f);
+			expect(note.observedItemsMs).toBe(300_000); expect(liveSessionRatePerHour(note)).toBeNull(); expect(farm(note).lo).toBeNull(); await f.service.dispose();
+		});
 	});
 	it('the chart covers the whole session, not just its last 600 samples', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));

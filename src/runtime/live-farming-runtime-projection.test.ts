@@ -35,9 +35,12 @@ describe('Nexus inventory farm1 projection', () => {
 	it('keeps signed net separate from positive increases and derives rate only from covered reader duration', () => {
 		const v = view(); v.phase = 'active'; v.sourceState = 'ready'; v.lastObservationAt = at; v.itemCoverage = 'complete';
 		v.totals = [{ kind: 'item', idNumber: 36038, positive: 4, negative: 6, net: -2 }];
-		v.observedItemsMs = 60_000; v.elapsedMs = 90_000; v.freeSlots = 8;
-		expect(project(v)).toMatchObject({ observed: 4, net: -2, elapsed: 90, lo: 240, hi: 240, slots: 8, slotSrc: 'ingame', slotAge: 0 });
-		v.itemCoverage = 'partial'; expect(project(v)).toMatchObject({ observed: 4, net: -2, lo: null, hi: null });
+		v.observedItemsMs = 1_200_000; v.elapsedMs = 1_300_000; v.freeSlots = 8;
+		expect(project(v)).toMatchObject({ observed: 4, net: -2, elapsed: 1300, lo: 12, hi: 12, slots: 8, slotSrc: 'ingame', slotAge: 0 });
+		v.itemCoverage = 'partial'; expect(project(v), 'a partial last sample does not matter').toMatchObject({ observed: 4, net: -2, lo: 12, hi: 12 });
+		v.itemCoverage = 'none'; expect(project(v), 'nor a gap that dropped the sample').toMatchObject({ observed: 4, lo: 12, hi: 12 });
+		v.observedItemsMs = 899_999; expect(project(v), 'under 15 minutes there is no rate, only the counts').toMatchObject({ observed: 4, net: -2, lo: null, hi: null });
+		v.observedItemsMs = 900_000; expect(project(v).lo, 'at 15 minutes there is').toBe(16);
 	});
 
 	it('requires covered time and a connected source even when the goal has a certified estimate', () => {

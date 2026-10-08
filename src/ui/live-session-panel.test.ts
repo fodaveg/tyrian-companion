@@ -201,13 +201,17 @@ describe('Session tab: figures, objects and chart', () => {
 		const neverCovered = liveView(); neverCovered.valuation.coinNetCopper = null; neverCovered.valuation.knownNetValueCopper = null;
 		expect(liveSessionRatePerHour(neverCovered)).toBe(20);
 		const hides: Array<(v: LiveSessionViewV1) => void> = [(v) => { v.observedItemsMs = 0; }, (v) => { v.valuation.unpricedItemIds = [12147]; },
-			(v) => { v.itemCoverage = 'partial'; }];
+			(v) => { v.observedItemsMs = 899_999; }];
 		for (const hide of hides) {
 			const hidden = liveView(); hidden.valuation.coinNetCopper = 100; hidden.valuation.knownNetValueCopper = 120; hide(hidden);
 			expect(liveSessionRatePerHour(hidden)).toBeNull();
 		}
+		const fifteen = liveView(); fifteen.observedItemsMs = 900_000; expect(liveSessionRatePerHour(fifteen), 'exactly 15 minutes is enough').toBe(80);
+		const partial = liveView(); partial.itemCoverage = 'partial'; expect(liveSessionRatePerHour(partial), 'a partial last sample does not matter').toBe(20);
 		const h = harness(gain);
 		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).toMatch(/Per hour.*0g 1s 20c/);
+		const young = liveView(); young.observedItemsMs = 899_999; const shown = harness(young).panel.element;
+		expect(Array.from(shown.querySelectorAll('.tyrian-live-session__stats > div')).find((row) => row.textContent?.includes('Per hour'))!.hasAttribute('hidden'), 'no figure under 15 minutes').toBe(true);
 	});
 
 	it('draws the objects as a labelled list with the net quantity on each tile, sorted by value, without a row cap', () => {

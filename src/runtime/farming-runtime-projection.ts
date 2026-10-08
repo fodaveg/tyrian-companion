@@ -118,7 +118,7 @@ export function projectLiveFarmingIngameState(input: {
 	output.elapsed = view.elapsedMs === null ? null : Math.floor(view.elapsedMs / 1_000);
 	output.age = evidenceAge(view.lastObservationAt, now);
 	const bags = view.totals.find((row) => row.kind === 'item' && row.idNumber === 36038);
-	const measured = view.lastObservationAt !== null && (view.itemCoverage === 'complete' || liveItemRateEligible(view));
+	const measured = view.lastObservationAt !== null && (view.itemCoverage === 'complete' || view.itemCoverage === 'none' && view.observedItemsMs > 0);
 	output.observed = bags?.positive ?? (measured ? 0 : null);
 	output.net = bags?.net ?? (measured ? 0 : null);
 	const band = output.observed === null || !liveItemRateEligible(view)
