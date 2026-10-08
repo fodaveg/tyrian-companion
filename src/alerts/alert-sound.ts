@@ -84,10 +84,17 @@ export function playAlertSound(createContext: AlertAudioContextFactory): AlertSo
 function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutcome {
 	const context = createContext();
 	if (context === null) return 'unavailable';
+	// A context created outside a user gesture can start suspended, and a reused one can be
+	// suspended later. Its clock is stopped, so it must be resumed BEFORE the overlap check below
+	// (a stopped clock would read every later alert as "still sounding" forever). A tone that is
+	// still waiting on a suspended context has not sounded: that is `unavailable`, not `played`.
+	if (context.state === 'suspended') {
+		const resuming: unknown = context.resume?.();
+		if (resuming instanceof Promise) resuming.catch(() => undefined);
+		if (context.state === 'suspended') return 'unavailable';
+	}
 	const previous = chimes.get(createContext);
 	if (previous !== undefined && previous.context === context && context.currentTime < previous.endsAt) return 'played';
-	// A context created outside a user gesture can start suspended; a reused one can be suspended later.
-	if (context.state === 'suspended') { try { void Promise.resolve(context.resume?.()).catch(() => undefined); } catch { /* still scheduled */ } }
 	const start = context.currentTime;
 	chimes.set(createContext, { context, endsAt: start + alertSoundDurationMs() / 1_000 });
 	for (const tone of TONES) {
@@ -132,7 +139,9 @@ export function browserAlertAudioContextFactory(host: unknown): AlertAudioContex
 	if (known !== undefined) return known;
 	let context: AlertAudioContext | null = null;
 	const factory: AlertAudioContextFactory = () => {
-		if (context !== null) return context;
+		// A closed context can never sound again: it is dropped and a new one is built.
+		if (context !== null && context.state !== 'closed') return context;
+		context = null;
 		const constructor = audioContextConstructor(host);
 		if (constructor === null) return null;
 		try { context = new constructor(); } catch { return null; }

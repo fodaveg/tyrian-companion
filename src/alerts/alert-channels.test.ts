@@ -84,6 +84,35 @@ describe('H13.4 sound channel', () => {
 			expect(oscillators.count).toBe(4);
 		});
 
+		it('resumes a suspended context before the overlap check, and a tone that could not sound is not "played"', async () => {
+			const { context } = fakeAudioContext();
+			// A suspended context keeps its clock stopped: currentTime never moves.
+			const suspended = context as { state?: string; resume?: () => Promise<void> };
+			suspended.state = 'suspended';
+			let resumed = 0;
+			let canResume = false;
+			suspended.resume = async () => { resumed += 1; await Promise.resolve(); if (canResume) suspended.state = 'running'; };
+			const factory = () => context;
+
+			expect(playAlertSound(factory)).toBe('unavailable');
+			expect(resumed).toBe(1);
+
+			canResume = true;
+			expect(playAlertSound(factory), 'the resume call did not make it sound').toBe('unavailable');
+			await Promise.resolve();
+			expect(playAlertSound(factory)).toBe('played');
+			expect(resumed).toBe(2);
+		});
+
+		it('replaces a closed context with a new one', () => {
+			const { host, built } = countingHost();
+			const factory = browserAlertAudioContextFactory(host);
+			const first = factory() as { state?: string };
+			first.state = 'closed';
+			expect(factory()).not.toBe(first);
+			expect(built).toHaveLength(2);
+		});
+
 		it('never throws toward the alert emitter when the audio graph fails', () => {
 			const { context } = fakeAudioContext();
 			context.createOscillator = () => { throw new Error('device lost'); };
