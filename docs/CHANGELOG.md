@@ -20,7 +20,7 @@ Candidato sobre `8001213` (main tras la auditoría de integración del 8 oct 202
 - Media propia: «tu media en sesiones parecidas» sale en el veredicto desde 3 sesiones comparables en el mismo mapa
   principal (más del 70 % del tiempo observado), leída de las claves de las notas resumen anteriores.
 - Nombres de mapa: el catálogo público añade `/v2/maps` (API pública, sin clave) con la misma caché, lotes y
-  limitador que objetos y monedas; la espera es acotada y, sin nombre, la nota dice «desconocido». Queda anotado en
+  limitador que objetos y monedas; la espera es acotada y, un mapa con id y sin nombre se escribe «Mapa <id>» («Map <id>» en inglés), y «Mapa desconocido» solo sale en el título cuando la sesión no tiene ningún mapa. Queda anotado en
   `docs/PLATFORM_POLICY.md`.
 - Personajes: la sesión registra, por orden, cada personaje que ve y cuándo lo vio por primera vez. La lista vive
   bajo una clave propia del almacén, con la marca de «resumen ya escrito», para que la 0.6.12 (que valida el registro
@@ -46,8 +46,9 @@ Candidato sobre `8001213` (main tras la auditoría de integración del 8 oct 202
 - Canal del addon (live1): un canal cerrado cuyo hueco no se pudo guardar libera la concesión del productor y deja
   de ocupar plaza (se conservan como mucho cuatro para escribir el hueco al apagar), así que ya no deja sin live1 a
   las conexiones siguientes; un `live_status` con `epoch: null` tras un `live_open` rechazado ya no cierra la
-  conexión con `unexpected_message`; el nombre de personaje se mide en puntos de código, no en unidades UTF-16 (un
-  nombre con emoji ya no se acepta en el cable y se rechaza al guardar); `farm1` ya no lleva `err observe` tras un
+  conexión con `unexpected_message`; el límite de 32 caracteres del nombre de personaje se cuenta en puntos de código
+  en el protocolo, el reducer y el estado del resumen (antes un nombre válido de 32 caracteres con emoji lo aceptaba
+  el protocolo y lo rechazaba el guardado; ahora se acepta en los tres sitios); `farm1` ya no lleva `err observe` tras un
   cierre limpio.
 - Rendimiento de sesión larga: la gráfica abarca toda la sesión con 600 puntos como máximo (muestras que observaron
   algo, cortes, el primero y el último, aclarados por zancada) y conserva la ruptura de línea de un corte fundido;
@@ -75,8 +76,9 @@ Candidato sobre `8001213` (main tras la auditoría de integración del 8 oct 202
   aparecer en la lista (se confirma antes y se evita una segunda nota en la misma ruta); el log de diagnóstico se
   añade por trozos de 4 KiB en vez de reescribir el fichero entero (llenar 2 MiB escribía 6226 MiB en IndexedDB); el
   índice de rutas reabre su conexión y su almacenamiento ya no es fatal (se reconstruye en el siguiente arranque);
-  las conexiones de IndexedDB se cierran al descargar el plugin y cuando el arranque del núcleo falla; y el bundle
-  `hebra-main.mjs` baja de 3 327 783 a 2 556 800 bytes con minificación de espacios y sintaxis.
+  las conexiones de IndexedDB se cierran al descargar el plugin y cuando el arranque del núcleo falla; y la minificación de
+  espacios y sintaxis del bundle `hebra-main.mjs` lo bajó de 3 327 783 a 2 556 800 bytes en su commit; con lo
+  añadido después, el bundle medido sobre `8001213` es de 2 620 303 bytes.
 - Pasos de cierre: la cola de poda no se guarda sobre una cola guardada que este host no pudo leer; el guardado
   previo al borrado es un intento y no una garantía (si falla se avisa y se reintenta en el siguiente arranque, y el
   coste es disco conservado, nunca un journal borrado por error). Los textos de `docs/SPEC-live-loot.md` y
