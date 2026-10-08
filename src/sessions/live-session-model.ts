@@ -12,6 +12,14 @@ import type { IngameBridgeClient } from '../alerts/alert-ingame-protocol';
 export const NEXUS_LIVE_BUILD = '27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c';
 export const NEXUS_LIVE_PROFILE = 'owned-bags-v3' as const;
 export const LIVE_SOURCE_STALE_MS = 5_000;
+/**
+ * Whether a view's item time can carry a rate: some covered item time was accumulated and the last coverage
+ * known is not `partial`. `none` counts: every gap (and the end of a session) drops `lastSample`, so `none`
+ * with observed time means "no sample at hand", not "never covered". Time is only accumulated under `complete`.
+ */
+export function liveItemRateEligible(view: { itemCoverage: 'complete' | 'partial' | 'none'; observedItemsMs: number }): boolean {
+	return view.observedItemsMs > 0 && view.itemCoverage !== 'partial';
+}
 
 export interface LiveInventoryRowV1 { kind: 'item' | 'currency'; idNumber: number; quantity: number }
 /** One complete atomic transport sample, never a causal acquisition event. */

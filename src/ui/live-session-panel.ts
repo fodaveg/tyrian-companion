@@ -1,5 +1,5 @@
 import { formatCopperVisual } from '../core/copper-format';
-import type { LiveGapV1, LiveSessionAlertViewV1, LiveSessionViewV1 } from '../sessions/live-session-model';
+import { liveItemRateEligible, type LiveGapV1, type LiveSessionAlertViewV1, type LiveSessionViewV1 } from '../sessions/live-session-model';
 import { sortLiveItemsByValue, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
 import { sha256Text } from '../sessions/session-note-renderer';
 import { reconcileChildren } from './reconcile-children';
@@ -62,12 +62,13 @@ export function liveSessionValue(view: LiveSessionViewV1): number {
 /**
  * Rate of the SAME figure «Valor estimado» shows (`liveSessionValue`: items plus gold when gold was
  * followed, else the item subtotal) per hour of covered item observation. Spending gold lowers it.
- * Null when not eligible: no covered item time, unpriced items, or incomplete bag coverage. The
+ * Null when not eligible: no covered item time, unpriced items, or partial bag coverage (a gap or a finished session
+ * has no sample at hand but keeps its covered time: it stays eligible). The
  * denominator stays `observedItemsMs`: the view has no joint covered time, and a coin gap does not
  * shorten it (the gold already counted is the observed net; the gap is stored apart).
  */
 export function liveSessionRatePerHour(view: LiveSessionViewV1): number | null {
-	if (view.observedItemsMs <= 0 || view.valuation.unpricedItemIds.length > 0 || view.itemCoverage !== 'complete') return null;
+	if (!liveItemRateEligible(view) || view.valuation.unpricedItemIds.length > 0) return null;
 	return liveSessionValue(view) * 3_600_000 / view.observedItemsMs;
 }
 
