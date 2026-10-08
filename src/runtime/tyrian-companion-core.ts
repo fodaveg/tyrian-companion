@@ -16,7 +16,7 @@ import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from 
 import { provisionalLiveComparison, type LiveSessionComparisonState, type LiveSessionComparisonView } from '../sessions/live-session-comparison';
 import { farmingBagCapacity, farmingGoalForSession, projectBagPriceIngameState, projectFarmingIngameState, projectLiveFarmingIngameState } from './farming-runtime-projection';
 import { observeFarmingSessionContext, readFarmingSessionContext, type FarmingSessionContext, type FarmingGroupContext } from './farming-session-context';
-import { normalizeFarmingGoal, projectFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
+import { liveObservedFrom, normalizeFarmingGoal, projectFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
@@ -3111,7 +3111,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const live = this.liveSessions?.getRuntime();
 		if (live) {
 			const view = this.liveSessions!.getView(); const bags = view.totals.find((row) => row.kind === 'item' && row.idNumber === 36038);
-			const covered = view.lastObservationAt === null ? null : new Date(Date.parse(view.lastObservationAt)-view.observedItemsMs).toISOString();
+			const covered = liveObservedFrom(live.startedAt,view.lastObservationAt,view.observedItemsMs);
 			return projectFarmingGoal(live.farmingGoal,{startedAt:live.startedAt,now:new Date(Date.parse(live.startedAt)+(view.elapsedMs ?? 0)).toISOString(),endedAt:live.endedAt,
 				observedBags:live.lastValidItemsAt === null ? null : bags?.positive ?? 0,finalNetBags:live.phase === 'complete' ? bags?.net ?? 0 : null,
 				observedFrom:covered,observedAt:view.lastObservationAt,sampleCount:live.sampleCount,maxObservationAgeMs:5000});

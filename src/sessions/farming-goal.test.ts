@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { migrateSettings, mergeSettingsUpdate } from '../core/settings';
 import {
-	isFarmingGoal, isFarmingGoalProgress, normalizeFarmingGoal, projectFarmingGoal,
+	isFarmingGoal, isFarmingGoalProgress, liveObservedFrom, normalizeFarmingGoal, projectFarmingGoal,
 	type FarmingGoalObservation, type FarmingGoalV1,
 } from './farming-goal';
 import {
@@ -14,6 +14,20 @@ const INPUT: FarmingGoalObservation = {
 	startedAt: '2026-10-06T10:00:00Z', now: '2026-10-06T10:30:00Z',
 	observedFrom: '2026-10-06T10:00:00Z', observedAt: '2026-10-06T10:20:00Z', observedBags: 200, sampleCount: 3,
 };
+
+describe('live observed window with two clocks', () => {
+	it('a 0.1 % faster addon clock over 3 h no longer invalidates the estimate', () => {
+		const started = '2026-10-06T10:00:00.000Z'; const hostMs = 3 * 3_600_000; const lastObservationAt = new Date(Date.parse(started) + hostMs).toISOString();
+		const observedItemsMs = Math.round(hostMs * 1.001); // the addon summed 10.8 s more than the host's clock saw
+		const input = (observedFrom: string | null): FarmingGoalObservation => ({ startedAt: started, now: lastObservationAt, observedFrom, observedAt: lastObservationAt, observedBags: 300, sampleCount: 50, maxObservationAgeMs: 5000 });
+		const before = new Date(Date.parse(lastObservationAt) - observedItemsMs).toISOString(); // what the core computed
+		expect(projectFarmingGoal(BAGS, input(before)).etaUnavailableReason, 'the old formula').toBe('invalid_observation');
+		const result = projectFarmingGoal(BAGS, input(liveObservedFrom(started, lastObservationAt, observedItemsMs)));
+		expect(result).toMatchObject({ status: 'in_progress', etaUnavailableReason: null }); expect(result.remainingMs).toBeGreaterThan(0);
+		expect(liveObservedFrom(started, null, 1)).toBeNull();
+		expect(liveObservedFrom(started, lastObservationAt, 60_000)).toBe(new Date(Date.parse(lastObservationAt) - 60_000).toISOString());
+	});
+});
 
 describe('farming goal projection', () => {
 	it('estimates remaining bags only over the measured window, independent of prices and session wall clock', () => {

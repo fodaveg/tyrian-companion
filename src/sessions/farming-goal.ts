@@ -63,6 +63,19 @@ export function normalizeFarmingGoal(value: unknown): FarmingGoalV1 {
 	return { ...value };
 }
 
+/**
+ * Where the observed window starts: the last observation minus the covered item time. That time is summed on the
+ * addon's clock while `startedAt` and the observation are the host's, so over a long session a slightly faster addon
+ * clock puts the result before the start. It is bounded to `startedAt` (a marginally shorter window) instead of
+ * invalidating the estimate.
+ */
+export function liveObservedFrom(startedAt: string, lastObservationAt: string | null, observedItemsMs: number): string | null {
+	if (lastObservationAt === null) return null;
+	const at = Date.parse(lastObservationAt); const started = Date.parse(startedAt);
+	if (!Number.isFinite(at) || !Number.isFinite(started)) return null;
+	return new Date(Math.max(started, at - observedItemsMs)).toISOString();
+}
+
 /** Projects progress without prices, gameplay operations or assumptions about unobserved loot. */
 export function projectFarmingGoal(goal: FarmingGoalV1, input: FarmingGoalObservation): FarmingGoalProgress {
 	const started = timestamp(input.startedAt);
