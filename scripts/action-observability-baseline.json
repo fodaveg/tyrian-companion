@@ -5,7 +5,7 @@
 		"catch_clause": 556,
 		"promise_catch": 58,
 		"void_expression": 122,
-		"callback_registration": 218
+		"callback_registration": 221
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -1670,11 +1670,11 @@
 					"reason": "Allowlisted catch_clause: The \"playAlertSound\" owner treats an audio failure as \"fallback_return\" of the \"unavailable\" outcome, which the alert emitter records as a failed sound channel; an audio device that misbehaves must never cancel the other channels of the alert. Verified recovery: \"fallback_return\" in \"playAlertSound\"."
 				},
 				{
-					"id": "218199167a3b5d25b4d725a1009319aa97d5304a",
+					"id": "2c68897307f50937c9dca4a2367f4e60db348f6b",
 					"kind": "callback_registration",
-					"line": 103,
+					"line": 113,
 					"column": 3,
-					"endLine": 107,
+					"endLine": 118,
 					"endColumn": 48,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -1682,16 +1682,16 @@
 						"type": "reviewed_registered_callback",
 						"registration": "then",
 						"scope": "scheduleChime",
-						"justification": "The \"scheduleChime\" owner registers \"then\" to schedule the tone once AudioContext.resume() lands; its outcome was already reported as unavailable and a rejected or ineffective resume leaves nothing pending."
+						"justification": "The \"scheduleChime\" \"then\" pair settles the resume() of a suspended context. On fulfilment it frees the per-factory resuming slot, drops the tone when the context is not running or more than 5 s have passed, and schedules the tones inside a try. On rejection it only frees the slot. Neither reports anything: the synchronous call already answered unavailable, and playAlertSound must never throw into the alert emitter."
 					},
-					"reason": "Allowlisted callback_registration: The \"scheduleChime\" owner registers \"then\" to schedule the tone once AudioContext.resume() lands; its outcome was already reported as unavailable and a rejected or ineffective resume leaves nothing pending. Verified registration: \"then\" in \"scheduleChime\"."
+					"reason": "Allowlisted callback_registration: The \"scheduleChime\" \"then\" pair settles the resume() of a suspended context. On fulfilment it frees the per-factory resuming slot, drops the tone when the context is not running or more than 5 s have passed, and schedules the tones inside a try. On rejection it only frees the slot. Neither reports anything: the synchronous call already answered unavailable, and playAlertSound must never throw into the alert emitter. Verified registration: \"then\" in \"scheduleChime\"."
 				},
 				{
 					"id": "763011227732520e98aed045d538b0632edcc2dd",
 					"kind": "catch_clause",
-					"line": 106,
+					"line": 117,
 					"column": 51,
-					"endLine": 106,
+					"endLine": 117,
 					"endColumn": 93,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1705,9 +1705,9 @@
 				{
 					"id": "906c424046bef91a2ec83ec46ff789f735caa605",
 					"kind": "catch_clause",
-					"line": 165,
+					"line": 176,
 					"column": 40,
-					"endLine": 165,
+					"endLine": 176,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6543,6 +6543,23 @@
 						"justification": "The \"activateTyrian\" boundary (\"intentional_noop\") hands the failure to report, the adapter failure channel that logs it, so nothing is dropped."
 					},
 					"reason": "Allowlisted promise_catch: The \"activateTyrian\" boundary (\"intentional_noop\") hands the failure to report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"activateTyrian\"."
+				},
+				{
+					"id": "1931145d16604d103cdcdb422e969abf354fc03e",
+					"kind": "callback_registration",
+					"line": 94,
+					"column": 10,
+					"endLine": 98,
+					"endColumn": 41,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "activateTyrian",
+						"justification": "The \"activateTyrian\" \"finally\" closes the host's two IndexedDB connections (path index and local files) once stop() and flush(), which still use them, have settled. A failure of those two was already handed to report(error, 'stop') by the catch before it. closeStorage() is synchronous; if it threw, the promise the disposer returns would reject to Hebra and nothing here would report it."
+					},
+					"reason": "Allowlisted callback_registration: The \"activateTyrian\" \"finally\" closes the host's two IndexedDB connections (path index and local files) once stop() and flush(), which still use them, have settled. A failure of those two was already handed to report(error, 'stop') by the catch before it. closeStorage() is synchronous; if it threw, the promise the disposer returns would reject to Hebra and nothing here would report it. Verified registration: \"finally\" in \"activateTyrian\"."
 				}
 			]
 		},
@@ -6575,9 +6592,9 @@
 				{
 					"id": "186b5a2e947c400fe948932f6ec097e396b73557",
 					"kind": "promise_catch",
-					"line": 106,
+					"line": 108,
 					"column": 3,
-					"endLine": 106,
+					"endLine": 108,
 					"endColumn": 70,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6592,9 +6609,9 @@
 				{
 					"id": "d03f9608a555c11483c95b728dd9ae5eb96a753b",
 					"kind": "catch_clause",
-					"line": 111,
+					"line": 113,
 					"column": 29,
-					"endLine": 111,
+					"endLine": 113,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6604,6 +6621,23 @@
 						"justification": "The \"discard\" catch is an \"intentional_noop\": closing a connection that is dropped because it is already dead has nothing to report, and the file operation that dropped it still rejects to its caller if the one retry fails."
 					},
 					"reason": "Allowlisted catch_clause: The \"discard\" catch is an \"intentional_noop\": closing a connection that is dropped because it is already dead has nothing to report, and the file operation that dropped it still rejects to its caller if the one retry fails. Verified recovery: \"intentional_noop\" in \"discard\"."
+				},
+				{
+					"id": "9212690ae870c6f0117cee44cc688715d0aa53ec",
+					"kind": "callback_registration",
+					"line": 138,
+					"column": 9,
+					"endLine": 138,
+					"endColumn": 53,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "close",
+						"justification": "The \"close\" \"then\" covers a file backend closed while its connection is still opening: when the open resolves, discard forgets that connection and closes it, so it does not outlive close(). The rejection handler is empty on purpose: a failed open has nothing to close, and open() returned this same promise to the file operation that asked for it, which receives the rejection."
+					},
+					"reason": "Allowlisted callback_registration: The \"close\" \"then\" covers a file backend closed while its connection is still opening: when the open resolves, discard forgets that connection and closes it, so it does not outlive close(). The rejection handler is empty on purpose: a failed open has nothing to close, and open() returned this same promise to the file operation that asked for it, which receives the rejection. Verified registration: \"then\" in \"close\"."
 				}
 			]
 		},
@@ -6619,9 +6653,9 @@
 				{
 					"id": "6dd86925d18ebb3e880e2dfc4fba6d468d70ca3f",
 					"kind": "promise_catch",
-					"line": 66,
+					"line": 71,
 					"column": 3,
-					"endLine": 66,
+					"endLine": 71,
 					"endColumn": 70,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6636,9 +6670,9 @@
 				{
 					"id": "bb0192d98d77a1b747cf6e34228110918a3831cb",
 					"kind": "catch_clause",
-					"line": 71,
+					"line": 76,
 					"column": 29,
-					"endLine": 71,
+					"endLine": 76,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6648,6 +6682,23 @@
 						"justification": "The \"discard\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"discard\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"discard\"."
+				},
+				{
+					"id": "fb3180b1f84270283a5997524e6fffa7c42953f5",
+					"kind": "callback_registration",
+					"line": 97,
+					"column": 9,
+					"endLine": 97,
+					"endColumn": 53,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "close",
+						"justification": "The \"close\" \"then\" covers a path-index store closed while its connection is still opening: when the open resolves, discard forgets that connection and closes it, so it does not outlive close(). The rejection handler is empty on purpose: a failed open has nothing to close, and open() returned this same promise to the get or set that asked for it, which receives the rejection."
+					},
+					"reason": "Allowlisted callback_registration: The \"close\" \"then\" covers a path-index store closed while its connection is still opening: when the open resolves, discard forgets that connection and closes it, so it does not outlive close(). The rejection handler is empty on purpose: a failed open has nothing to close, and open() returned this same promise to the get or set that asked for it, which receives the rejection. Verified registration: \"then\" in \"close\"."
 				}
 			]
 		},
@@ -11075,9 +11126,9 @@
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
 						"scope": "releaseUnused",
-						"justification": "The \"releaseUnused\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"releaseUnused\" catch is an \"intentional_noop\": it swallows a failed coordinator.release() after a legacy migration that did not go through. currentHandle is already cleared, the helper returns false and the lease is left to expire on its own. Nothing records the release failure: no diagnostic, no state change; the caller only sees the false of the migration."
 					},
-					"reason": "Allowlisted catch_clause: The \"releaseUnused\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"releaseUnused\"."
+					"reason": "Allowlisted catch_clause: The \"releaseUnused\" catch is an \"intentional_noop\": it swallows a failed coordinator.release() after a legacy migration that did not go through. currentHandle is already cleared, the helper returns false and the lease is left to expire on its own. Nothing records the release failure: no diagnostic, no state change; the caller only sees the false of the migration. Verified recovery: \"intentional_noop\" in \"releaseUnused\"."
 				},
 				{
 					"id": "5652a96c5b1d1d031a9d99672e92877abc5b7ca3",
@@ -11224,9 +11275,9 @@
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "initializeInternal",
-						"justification": "The \"initializeInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"initializeInternal\" catch is a \"fallback_return\": a failed listLegacyRuntimeArchives() does not reject plugin start. It is shown to the user as recoveryState error (corrupt for the corrupt-archive message, unavailable otherwise) through onStateChange(), and the method returns before load(). The original error is dropped with no diagnostic. Nothing retries on its own; a later initialize() from a start or a recovery runs it again."
 					},
-					"reason": "Allowlisted catch_clause: The \"initializeInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"initializeInternal\"."
+					"reason": "Allowlisted catch_clause: The \"initializeInternal\" catch is a \"fallback_return\": a failed listLegacyRuntimeArchives() does not reject plugin start. It is shown to the user as recoveryState error (corrupt for the corrupt-archive message, unavailable otherwise) through onStateChange(), and the method returns before load(). The original error is dropped with no diagnostic. Nothing retries on its own; a later initialize() from a start or a recovery runs it again. Verified recovery: \"fallback_return\" in \"initializeInternal\"."
 				},
 				{
 					"id": "ed98ff87dacffeb1e44809b46b2f45acf8007ada",
