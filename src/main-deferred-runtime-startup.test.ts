@@ -27,7 +27,7 @@ import {
 	IndexedDbSessionRuntimeStore,
 } from './sessions/session-runtime-store';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
-import { hangStorage, hangTransactions, macrotasks, resumeStorage, trackedIndexedDb } from './test/indexed-db-connections';
+import { hangStorage, hangTransactions, holdNextCommit, macrotasks, resumeStorage, trackedIndexedDb } from './test/indexed-db-connections';
 
 interface RuntimeBootHarness {
 	runtimeReady: boolean;
@@ -103,19 +103,27 @@ describe('deferred runtime startup with persisted terminal state', () => {
 	// bound, so the plugin never became ready and no command, setting or view came up.
 	describe('with a storage engine that takes everything and answers nothing', () => {
 		function manualWindowTimers() {
-			// A virtual clock: `fire` jumps to the earliest pending timer and runs every timer due then, so the time the boot would
-			// take on a clock is `elapsedMs`, without waiting for it.
+			// A virtual clock, shared with the stores through `performance.now`. `step` runs ONE timer, the earliest (the first armed
+			// among equals), as a browser runs timers: tasks one at a time, with the microtasks and the engine's own events between.
+			// Running every due timer in one loop would let the caller's deadline always beat the open's own, which a browser never does.
 			const live = new Map<number, { at: number; callback: () => void }>(); let next = 0; let now = 0;
 			const host = window as unknown as { setTimeout: unknown; clearTimeout: unknown };
 			host.setTimeout = (callback: () => void, milliseconds = 0) => { live.set(++next, { at: now + milliseconds, callback }); return next; };
 			host.clearTimeout = (handle: number) => { live.delete(handle); };
+			vi.spyOn(performance, 'now').mockImplementation(() => now);
 			return {
-				fire() {
-					if (live.size === 0) return;
-					now = Math.min(...[...live.values()].map((timer) => timer.at));
-					for (const [handle, timer] of [...live]) if (timer.at <= now) { live.delete(handle); timer.callback(); }
+				step() {
+					let first: [number, { at: number; callback: () => void }] | null = null;
+					for (const entry of live) if (first === null || entry[1].at < first[1].at) first = entry;
+					if (first === null) return;
+					live.delete(first[0]);
+					now = Math.max(now, first[1].at);
+					first[1].callback();
 				},
+				/** Time passes with no timer due (the heartbeat's turn). */
+				advance(milliseconds: number) { now += milliseconds; },
 				get elapsedMs() { return now; },
+				get pending() { return live.size; },
 			};
 		}
 
@@ -127,18 +135,29 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			return tracked;
 		}
 
-		const bootTiming: { readyAtMs: number | null } = { readyAtMs: null };
+		const QUIET_TURNS = 25;
+		const bootTiming: { readyAtMs: number | null; settledAtMs: number | null } = { readyAtMs: null, settledAtMs: null };
 
 		/** Boots until `initializeRuntime` settles. `readyAtMs` is the virtual time at which `runtimeReady` first read true. */
-		async function bootUntilSettled(plugin: RuntimeBootHarness, timers: { fire(): void; elapsedMs: number }): Promise<boolean> {
+		async function bootUntilSettled(plugin: RuntimeBootHarness, timers: { step(): void; elapsedMs: number; pending: number }): Promise<boolean> {
 			let settled = false;
-			bootTiming.readyAtMs = null;
-			void plugin.initializeRuntime().then(() => { settled = true; }, () => { settled = true; });
+			bootTiming.readyAtMs = null; bootTiming.settledAtMs = null;
+			void plugin.initializeRuntime().then(() => { settled = true; bootTiming.settledAtMs = timers.elapsedMs; }, () => { settled = true; });
 			// Real macrotask turns let fake-indexeddb answer what it can; each turn also lets every 10 s wait run out.
-			for (let turn = 0; turn < 2000 && !settled; turn += 1) {
-				await macrotasks(1);
+			// Time only advances once everything the engine CAN answer has been answered: ten real seconds pass in a browser while a
+			// healthy open answers in milliseconds, and a clock that jumped first would time out answers that were on their way.
+			// A boot that is waiting for something that will never come has no timer pending either: it is stuck, and ends here.
+			for (let turn = 0, idle = 0; turn < 2000 && !settled && idle < 5; turn += 1) {
+				await macrotasks(QUIET_TURNS);
 				if (bootTiming.readyAtMs === null && plugin.runtimeReady) bootTiming.readyAtMs = timers.elapsedMs;
-				timers.fire();
+				idle = timers.pending === 0 ? idle + 1 : 0;
+				timers.step();
+			}
+			// What the boot left running in the background (the waits of the stores nobody awaits) is finished here, so it cannot
+			// arm timers in the NEXT test's clock and move its time.
+			for (let turn = 0, quiet = 0; turn < 3000 && quiet < 30; turn += 1) {
+				await macrotasks(QUIET_TURNS);
+				if (timers.pending === 0) quiet += 1; else { quiet = 0; timers.step(); }
 			}
 			return settled;
 		}
@@ -180,9 +199,54 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			expect(phase(plugin)).toBe('error');
 			// Every start-gating wait is one ten-second deadline: the collector mode, then the saved session (the reads after the
 			// first answer at once, the store having just stayed silent).
-			expect(bootTiming.readyAtMs).toBeLessThanOrEqual(20_000);
 			expect(opened.length).toBeGreaterThan(1);
-			void timers.elapsedMs;
+			expect([bootTiming.readyAtMs, bootTiming.settledAtMs]).toEqual([20_000, 20_000]);
+		});
+
+		// A slow engine, not a silent one: the device saved `consult`, the read of it answers after the start gave up waiting.
+		describe('a saved collector mode whose read answers after the start gave up', () => {
+			type ModeCore = { getCollectorMode(): string; updateCollectorMode(mode: string): Promise<unknown> };
+			/** A plugin whose Settings tab exists: applying a mode refreshes it, and this harness builds none. */
+			function withSettingsTab(factory: IDBFactory): RuntimeBootHarness {
+				return Object.assign(runtimeBootPlugin(factory), { settingTab: { refreshForSettingsChange: vi.fn() } });
+			}
+
+			async function deviceThatSavedConsult() {
+				const tracked = trackedIndexedDb();
+				const first = withSettingsTab(tracked.factory);
+				await first.initializeRuntime();
+				await (first as unknown as ModeCore).updateCollectorMode('consult');
+				expect((first as unknown as ModeCore).getCollectorMode()).toBe('consult');
+				return tracked;
+			}
+
+			it('starts as the seed says after ten seconds, then applies the saved mode when the read finally answers', async () => {
+				const tracked = await deviceThatSavedConsult();
+				const plugin = withSettingsTab(tracked.factory);
+				const timers = manualWindowTimers();
+				const answer = holdNextCommit(tracked, (name) => name === 'tyrian-companion-collector');
+				expect(await bootUntilSettled(plugin, timers)).toBe(true);
+				expect(plugin.runtimeReady).toBe(true);
+				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
+				expect(bootTiming.readyAtMs).toBe(10_000);
+
+				answer();
+				await macrotasks(50);
+				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('consult');
+			});
+
+			it('does not undo a mode chosen in Settings while the read was still out', async () => {
+				const tracked = await deviceThatSavedConsult();
+				const plugin = withSettingsTab(tracked.factory);
+				const timers = manualWindowTimers();
+				const answer = holdNextCommit(tracked, (name) => name === 'tyrian-companion-collector');
+				expect(await bootUntilSettled(plugin, timers)).toBe(true);
+				// The user picks the mode already in use: it is written all the same, or the late answer would flip it.
+				await (plugin as unknown as ModeCore).updateCollectorMode('collector');
+				answer();
+				await macrotasks(50);
+				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
+			});
 		});
 
 		// The other way of staying silent: every open succeeds, and the first read of each database never comes back.
@@ -194,7 +258,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			expect(plugin.runtimeReady).toBe(true);
 			expect(phase(plugin)).toBe('error');
 			// Ten seconds per read that gates the start, and no more than three of them in a row.
-			expect(bootTiming.readyAtMs).toBeLessThanOrEqual(20_000);
+			expect([bootTiming.readyAtMs, bootTiming.settledAtMs]).toEqual([20_000, 20_000]);
 		});
 
 		it('recovers by itself, on the heartbeat, once the engine answers again, without flipping ready or opening twice', async () => {
@@ -209,7 +273,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 
 			resumeStorage(tracked);
 			// The heartbeat comes seconds after the silence, later than the moment the store refuses to ask again.
-			let clock = Date.now() + 10_000; vi.spyOn(Date, 'now').mockImplementation(() => (clock += 100));
+			timers.advance(5_000);
 			heartbeat()();
 			// The engine answers now: the timers are not fired, or a wait would run out before the fake engine got its turn.
 			for (let turn = 0; turn < 500 && phase(plugin) === 'error'; turn += 1) await macrotasks(1);

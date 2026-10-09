@@ -79,3 +79,12 @@ export class StorageDeadline {
 		}
 	}
 }
+
+/**
+ * Milliseconds on a clock that only moves forward (`performance.now()`), for measuring how long ago something happened. The
+ * wall clock can be set back (a sync, a manual change) and a moment measured with it would then lie in the future for the
+ * whole jump. A host without `performance` falls back to the wall clock.
+ */
+export function monotonicNowMs(): number {
+	return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}

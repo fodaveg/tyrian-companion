@@ -18,7 +18,7 @@ import {
 	isSessionPriceSnapshot,
 	type SessionPriceSnapshot,
 } from '../economy/session-price-snapshot';
-import { StorageDeadline, StorageUnansweredError, type StorageDeadlineOptions } from './storage-deadline';
+import { monotonicNowMs, StorageDeadline, StorageUnansweredError, type StorageDeadlineOptions } from './storage-deadline';
 import { isSessionState } from './session-state-machine';
 import {
 	isSessionContaminationReview,
@@ -249,8 +249,11 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
  */
 const SILENCE_RETRY_AFTER_MS = 2_000;
 
+/** What an open is refused with while the pause after a silence lasts: the engine was not asked. */
+class SilencePausedError extends StorageUnansweredError {}
+
 export interface SessionStoreDeadlineOptions extends StorageDeadlineOptions {
-	/** The clock the silence is measured with (`Date.now` when absent). */
+	/** The clock the silence is measured with (a monotonic one, `performance.now`, when absent). */
 	now?: () => number;
 }
 
@@ -281,7 +284,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		private readonly deadlineOptions: SessionStoreDeadlineOptions = {},
 	) {
 		this.deadline = new StorageDeadline(deadlineOptions);
-		this.now = deadlineOptions.now ?? (() => Date.now());
+		this.now = deadlineOptions.now ?? monotonicNowMs;
 	}
 
 	async load(context?: LocalDebugPersistenceContext): Promise<SessionRuntimeLoadResult> {
@@ -521,8 +524,10 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 				discard: (database) => { this.discard(database); },
 			}, operation, this.deadlineOptions);
 		} catch (error) {
-			// `withIndexedDbReopen` bounded the wait and dropped the connection; this is only the memory of the silence.
-			if (error instanceof StorageUnansweredError) this.noteSilence();
+			// `withIndexedDbReopen` bounded the wait and dropped the connection; this is only the memory of the silence. The
+			// refusal of the pause itself is NOT a new silence: counting it would extend the pause at every call, and a session
+			// saving once a second would never reach the engine again.
+			if (error instanceof StorageUnansweredError && !(error instanceof SilencePausedError)) this.noteSilence();
 			throw error;
 		}
 	}
@@ -541,7 +546,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		if (this.database) return this.database;
 		// An engine that has just stayed silent is not asked again for a moment: the boot makes several reads in a row, and
 		// each would otherwise wait its own full time for the same silence. The retry that matters (the heartbeat) comes later.
-		if (this.opening === null && this.now() < this.silentUntil) throw new StorageUnansweredError();
+		if (this.opening === null && this.now() < this.silentUntil) throw new SilencePausedError();
 		const opening = this.opening ?? this.beginOpening(context);
 		// Every caller bounds its OWN wait. One whose wait ran out abandons the opening it was waiting for, if it is still
 		// the shared one: the next call opens again, and the database that arrives from the abandoned one is closed (it
@@ -608,7 +613,10 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 				if (kind === 'upgrade') this.unavailable = true;
 			},
 			onClose: (database) => { this.discard(database); },
-			toError: (reason) => new Error(reason === 'blocked'
+			// One deadline per open: this one (armed first, with the same timer as the caller's) is classified as the silence it is,
+			// so whichever of the two runs out first the store notes it, and a late database is closed here.
+			timeoutMs: this.deadlineOptions.timeoutMs, schedule: this.deadlineOptions.schedule, cancel: this.deadlineOptions.cancel,
+			toError: (reason) => reason === 'timeout' ? new StorageUnansweredError() : new Error(reason === 'blocked'
 				? 'Session recovery storage upgrade was blocked.'
 				: 'Could not open session recovery storage.'),
 		});

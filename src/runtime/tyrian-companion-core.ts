@@ -680,6 +680,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate());
 	/** False until `initializeRuntime` finishes constructing every runtime service. */
 	private runtimeReady = false;
+	/** The mode this device had saved, read after the start gave up waiting for it; applied once the runtime is ready. */
+	private lateCollectorMode: CollectorMode | null = null;
+	/** Whether the Settings selector wrote the mode in this run: a late read of the old value must not undo that. */
+	private collectorModeChosen = false;
+	private collectorModeReadPending = false;
 	/**
 	 * Set only when `initializeRuntime` itself threw (a broken boot), never merely because it has
 	 * not finished yet. `runtimeReady` stays `false` either way (H15.2: without this, every caller
@@ -852,9 +857,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// decides. Without IndexedDB the seed stands for this run and is not stored.
 		const seed = this.collectorMode ?? collectorModeSeed(this.settings);
 		try {
-			this.collectorMode = await loadCollectorMode(indexedDB, vaultId, () => seed);
+			// The start does not wait past the storage deadline. A read that answers later hands over what the device saved, and
+			// `adoptLateCollectorMode` applies it by the path the Settings selector uses when it differs from what the start used.
+			this.collectorMode = await loadCollectorMode(indexedDB, vaultId, () => seed, (stored) => {
+				this.collectorModeReadPending = false;
+				this.lateCollectorMode = stored;
+				if (this.runtimeReady) this.adoptLateCollectorMode();
+			});
 		} catch (error) {
 			this.collectorMode = seed;
+			// A read that only ran out of time may still answer (see `loadCollectorMode`): until it does, a choice made in Settings is
+			// written even when it equals the mode in use, or the late answer would undo it.
+			this.collectorModeReadPending = true;
 			this.localDebugActions?.event({
 				component: 'settings', action: 'settings_load', level: 'warn', phase: 'failure',
 				code: 'storage_failure', state: 'collector_mode', message: error,
@@ -1385,6 +1399,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (this.unloaded) return;
 		this.runtimeReady = true;
 		this.settleRuntimeReadyWaiters();
+		if (this.lateCollectorMode !== null) this.adoptLateCollectorMode();
 		this.startIngameSessionMarking();
 		this.syncAlertIngameServer();
 		if (this.settings.priceHistoryEnabled) {
@@ -1407,6 +1422,25 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.syncCollectorHeartbeat();
 	}
 
+	/**
+	 * The mode the device had saved, when it answered after the start had fallen back on the seed. Applied as the Settings
+	 * selector applies a change (consult is refused with the same notice while a session is open, and the mode in use stays);
+	 * nothing is written, the value is already the stored one. A mode chosen in Settings meanwhile wins.
+	 */
+	private adoptLateCollectorMode(): void {
+		const mode = this.lateCollectorMode;
+		this.lateCollectorMode = null;
+		if (mode === null || this.collectorModeChosen || this.unloaded || mode === this.collectorMode) return;
+		if (mode === 'consult' && (this.liveSessions?.getRuntime()?.phase === 'active' || sessionInProgress(this.sessions.getState()))) {
+			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
+			return;
+		}
+		this.collectorMode = mode;
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'settings', action: 'settings_load', state: 'collector_mode_late' },
+			async () => { await this.applyCollectorModeChange(); });
+	}
+
 	/** R1b: this device's mode, for the Settings selector. */
 	getCollectorMode(): CollectorMode {
 		return this.collectorMode ?? collectorModeSeed(this.settings);
@@ -1424,7 +1458,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				this.notifyRuntimeStarting();
 				return { status: 'blocked', reason: 'runtime_starting' };
 			}
-			if (mode === this.collectorMode) return { status: 'saved', inventoryAdvisor: 'unchanged' };
+			if (mode === this.collectorMode && !this.collectorModeReadPending) return { status: 'saved', inventoryAdvisor: 'unchanged' };
 			if (mode === 'consult' && (this.liveSessions?.getRuntime()?.phase === 'active' || sessionInProgress(this.sessions.getState()))) {
 				this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
 				return { status: 'blocked', reason: 'session_in_progress' };
@@ -1432,6 +1466,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// Published only after the durable write, like `updateSettings`.
 			await saveCollectorMode(this.host.kv.indexedDB, vaultId, mode);
 			this.collectorMode = mode;
+			this.collectorModeChosen = true;
 			await this.applyCollectorModeChange(context);
 			return { status: 'saved', inventoryAdvisor: 'unchanged' };
 		};

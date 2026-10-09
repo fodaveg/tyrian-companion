@@ -681,7 +681,9 @@ describe('session runtime persistence', () => {
 				// The store's clock: firing the timers is ten seconds passing.
 				now: () => time,
 				/** The heartbeat's turn: later than the moment the store refuses to ask again. */
-				later() { time += 5_000; },
+				later(milliseconds = 5_000) { time += milliseconds; },
+				/** One timer, the first armed, as a browser runs them: tasks one at a time, never all at once. */
+				fireOne() { const first = live.entries().next(); if (first.done) return; live.delete(first.value[0]); time += 10_000; first.value[1](); },
 				schedule: (callback: () => void) => { live.set(++next, callback); return next; },
 				cancel: (handle: unknown) => { live.delete(handle as number); },
 				get pending() { return live.size; },
@@ -712,6 +714,41 @@ describe('session runtime persistence', () => {
 			store.close();
 		});
 
+		it('is quiet for the pause when the OPEN\'s own deadline is the one that runs out first, as in a browser', async () => {
+			const tracked = trackedIndexedDb(); const timers = manualTimers();
+			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('open-deadline-first'), undefined, timers);
+			hangStorage(tracked);
+			const load = store.load();
+			await macrotasks();
+			expect(timers.pending).toBe(2);
+			timers.fireOne();
+			await macrotasks();
+			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
+
+			// The second read does not wait its own ten seconds: the pause is on, though the caller's own timer never ran.
+			const opens = vi.spyOn(tracked.factory, 'open');
+			await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
+			expect(opens).not.toHaveBeenCalled();
+		});
+
+		it('recovers within the pause when a session saves once a second: refusing a call is not a new silence', async () => {
+			const tracked = trackedIndexedDb(); const timers = manualTimers();
+			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('one-hertz'), undefined, timers);
+			hangStorage(tracked);
+			const first = store.load();
+			await macrotasks();
+			timers.fire();
+			await expect(first).resolves.toEqual({ status: 'error', code: 'unavailable' });
+			resumeStorage(tracked);
+
+			// The engine is back. One call a second: the first is inside the pause, and the pause is not extended by it.
+			timers.later(1_000);
+			await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
+			timers.later(1_000);
+			await expect(store.load()).resolves.toEqual({ status: 'empty' });
+			store.close();
+		});
+
 		it('answers unavailable when the first read never answers, and does not queue the next one behind it', async () => {
 			const tracked = trackedIndexedDb(); const timers = manualTimers();
 			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('hung-read'), undefined, timers);
@@ -735,7 +772,7 @@ describe('session runtime persistence', () => {
 			const store = new IndexedDbSessionRuntimeStore(tracked.factory, name, undefined, timers);
 			const answer = holdNextOpen(tracked);
 			const load = store.load();
-			await vi.waitFor(() => { expect(timers.pending).toBe(1); });
+			await vi.waitFor(() => { expect(timers.pending).toBe(2); });
 			timers.fire();
 			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
 
@@ -768,7 +805,7 @@ describe('session runtime persistence', () => {
 			const store = new IndexedDbSessionRuntimeStore(tracked.factory, name, undefined, timers);
 			const answer = holdNextOpen(tracked);
 			const load = store.load();
-			await vi.waitFor(() => { expect(timers.pending).toBe(1); });
+			await vi.waitFor(() => { expect(timers.pending).toBe(2); });
 			timers.fire();
 			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
 			const unhandled = vi.fn(); process.on('unhandledRejection', unhandled);

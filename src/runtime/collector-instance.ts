@@ -36,13 +36,18 @@ export async function loadCollectorInstanceId(
  * This device's mode for `vaultId`. The first time there is none, `seed` decides it (the spec's
  * rule, `collectorModeSeed`) and it is stored in the same transaction; from then on the stored
  * mode wins, whatever a synced `data.json` later says. Rejects when IndexedDB is unavailable.
+ *
+ * The caller does not wait past the storage deadline (the plugin does not start until this settles): it is told the store
+ * did not answer. The read itself is NOT abandoned: if it answers later, `onLate` is given the value the store holds, so
+ * a mode saved on this device is not lost to the seed the start fell back on.
  */
 export async function loadCollectorMode(
 	factory: IDBFactory,
 	vaultId: string,
 	seed: () => CollectorMode,
+	onLate?: (stored: CollectorMode) => void,
 ): Promise<CollectorMode> {
-	return await readOrSeed(factory, `mode:${vaultId}`, vaultId, isCollectorMode, seed, false);
+	return await readOrSeed(factory, `mode:${vaultId}`, vaultId, isCollectorMode, seed, false, onLate);
 }
 
 /** Stores this device's mode for `vaultId`; the only way it changes after the seed. */
@@ -69,6 +74,7 @@ async function readOrSeed<T extends string>(
 	valid: (stored: unknown) => stored is T,
 	create: () => T,
 	overwrite: boolean,
+	onLate?: (stored: T) => void,
 ): Promise<T> {
 	if (!/^[a-f0-9]{64}$/u.test(vaultId)) throw new Error('Collector instance vault identity is invalid.');
 	const database = await openIndexedDb({
@@ -80,8 +86,9 @@ async function readOrSeed<T extends string>(
 		toError: () => new Error('Collector instance store could not be opened.'),
 	});
 	// 9 Oct 2026: the plugin does not start until this settles, and a transaction the engine takes and never answers settles
-	// nothing. The wait ends as a failed read does (the caller falls back to its seed); the transaction stays in course and
-	// closes the database whenever it ends. A write that lands late is the same value the caller was going to use.
+	// nothing. The wait of a READ ends as a failed read does (the caller falls back to its seed); the transaction stays in
+	// course, closes the database whenever it ends and hands a late answer to `onLate`. A WRITE the user asked for (`overwrite`)
+	// has no deadline: failing it while it can still land would show a failure for a mode that changes at the next start.
 	const transaction = new Promise<T>((resolve, reject) => {
 		const transaction = database.transaction(STORE, 'readwrite');
 		const store = transaction.objectStore(STORE);
@@ -103,5 +110,9 @@ async function readOrSeed<T extends string>(
 		transaction.onerror = () => { database.close(); reject(new Error('Collector instance value could not be read.')); };
 		transaction.onabort = () => { database.close(); reject(new Error('Collector instance value read was aborted.')); };
 	});
-	return await new StorageDeadline().bounded(() => transaction, () => Promise.reject(new Error('Collector instance store did not answer.')));
+	if (overwrite) return await transaction;
+	return await new StorageDeadline().bounded(() => transaction, () => {
+		if (onLate !== undefined) transaction.then(onLate, () => undefined);
+		return Promise.reject(new Error('Collector instance store did not answer.'));
+	});
 }

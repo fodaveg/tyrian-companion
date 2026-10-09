@@ -17,13 +17,15 @@ export interface TrackedIndexedDb {
 	hangOnly: ((databaseName: string) => boolean) | null;
 	/** While true, `hung` leaves the opens alone: the engine opens fine and answers no transaction (`hangTransactions`). */
 	opensAnswer: boolean;
+	/** Armed by `holdNextCommit`: the next read-write transaction on a matching database is applied and answered only on release. */
+	holdCommit: { matches: (databaseName: string) => boolean; answer: () => void } | null;
 	/** Armed by `holdNextOpen`: the next open is made for real and answered only when its release is called. */
 	holdOpen: { answer: () => void } | null;
 }
 
 export function trackedIndexedDb(): TrackedIndexedDb {
 	const factory = new IDBFactory();
-	const tracked: TrackedIndexedDb = { factory, connections: [], down: false, hung: false, hangOnly: null, opensAnswer: false, holdOpen: null };
+	const tracked: TrackedIndexedDb = { factory, connections: [], down: false, hung: false, hangOnly: null, opensAnswer: false, holdCommit: null, holdOpen: null };
 	const isHung = (databaseName: string): boolean => tracked.hung && (tracked.hangOnly?.(databaseName) ?? true);
 	const open = factory.open.bind(factory);
 	factory.open = (name: string, version?: number) => {
@@ -36,8 +38,19 @@ export function trackedIndexedDb(): TrackedIndexedDb {
 			const database = request.result;
 			tracked.connections.push(database);
 			const start = database.transaction.bind(database);
-			database.transaction = (...parameters: Parameters<IDBDatabase['transaction']>) => isHung(database.name)
-				? unanswered<IDBTransaction>() : start(...parameters);
+			database.transaction = (...parameters: Parameters<IDBDatabase['transaction']>) => {
+				if (isHung(database.name)) return unanswered<IDBTransaction>();
+				const transaction = start(...parameters);
+				const hold = tracked.holdCommit;
+				if (hold === null || parameters[1] !== 'readwrite' || !hold.matches(database.name)) return transaction;
+				tracked.holdCommit = null;
+				let told: IDBTransaction['oncomplete'] = null;
+				// fake-indexeddb reads `oncomplete` when the commit is done: by then the data is on disk.
+				Object.defineProperty(transaction, 'oncomplete', { configurable: true,
+					set: (handler: IDBTransaction['oncomplete']) => { told = handler; },
+					get: () => () => { hold.answer = () => { told?.call(transaction, new Event('complete')); }; } });
+				return transaction;
+			};
 		});
 		return held === null ? request : heldOpen(request, held);
 	};
@@ -232,4 +245,14 @@ function heldOpen(request: IDBOpenDBRequest, hold: { answer: () => void }): IDBO
 /** Lets the fake engine take its turns: it answers through macrotasks, which a microtask flush never reaches. */
 export async function macrotasks(turns = 10): Promise<void> {
 	for (let turn = 0; turn < turns; turn += 1) await new Promise<void>((resolve) => { setImmediate(resolve); });
+}
+
+/**
+ * A SLOW engine, not a silent one: the next read-write transaction on a database whose name matches is applied at once and
+ * its owner is told only when the function returned here is called (the answer that comes after the wait gave up).
+ */
+export function holdNextCommit(tracked: TrackedIndexedDb, matches: (databaseName: string) => boolean): () => void {
+	const hold = { matches, answer: () => undefined as void };
+	tracked.holdCommit = hold;
+	return () => { hold.answer(); };
 }
