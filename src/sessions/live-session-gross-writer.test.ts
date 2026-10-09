@@ -31,9 +31,10 @@ const iso = (second: number): string => new Date(AT + second * 1000).toISOString
 /**
  * The real lifecycle, economy and note writer wired as the core wires them: a committed entry goes to the economy, which
  * reads the public price (a best buy order of 8 c), hands it to the lifecycle and decides the alert; the finished session
- * is rendered as its note with nothing asked of the writer, so the format is the one the constant names.
+ * is rendered as its note with nothing asked of the writer, so the format is the one the constant names. `bids` is the best
+ * buy order of each item the trading post quotes.
  */
-function harness() {
+function harness(bids: Readonly<Record<number, number>> = { [ITEM]: 8 }) {
 	let now = AT; let fence = 0;
 	const store = new MemorySessionRuntimeStore(); const notes: { path: string; content: string }[] = [];
 	const closed: { record: LiveSessionRuntimeRecord; journal: readonly LiveJournalEntryV1[] }[] = [];
@@ -43,8 +44,9 @@ function harness() {
 		renew: vi.fn(async (prior: ActiveSessionLeaseHandle) => ({ status: 'renewed' as const, handle: { ...prior, renewedAt: now, expiresAt: now + 120_000 } })),
 		assertOwned: vi.fn(async () => ({ status: 'owned' as const })), release: vi.fn(async () => ({ status: 'released' as const })), dispose: vi.fn() };
 	const emit = vi.fn(async () => ({ delivered: ['queue'] as const, failed: [], rejected: false }));
-	const requestDetailed = vi.fn(async () => ({ status: 200, headers: {}, body: [{ id: ITEM, whitelisted: true,
-		buys: { unit_price: 8, quantity: 5_000 }, sells: { unit_price: 10, quantity: 5_000 } }] }));
+	const requestDetailed = vi.fn(async (path: string) => ({ status: 200, headers: {}, body: path.slice(path.indexOf('ids=') + 4).split(',').map(Number)
+		.filter((id) => bids[id] !== undefined).map((id) => ({ id, whitelisted: true,
+			buys: { unit_price: bids[id]!, quantity: 5_000 }, sells: { unit_price: bids[id]! + 2, quantity: 5_000 } })) }));
 	const economy: { current: LiveSessionEconomy | null } = { current: null };
 	const lifecycle = new LiveSessionLifecycle({ coordinator, persistence: store, enabled: () => true, now: () => now, sessionId: () => 'session',
 		thresholdCopper: () => 1_600, setInterval: () => 1, clearInterval: () => undefined, onStateChange: vi.fn(), onError: vi.fn(),
@@ -57,9 +59,12 @@ function harness() {
 	economy.current = new LiveSessionEconomy({ lifecycle, gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now: () => now }), now: () => now,
 		catalog: async () => ({}), cachedItems: async () => ({}), currencies: async () => ({ currencies: {}, coverage: {} }), cachedCurrencies: async () => ({}),
 		emit, onError: vi.fn(), onChange: vi.fn() });
-	const sample = (cursor: number, quantity: number): LiveInventorySampleV1 => ({ sourceInstance: INSTANCE, epoch: EPOCH, build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE,
+	/** The sample of a cursor: the quantity held of `ITEM`, or of each item by id. */
+	const sample = (cursor: number, held: number | Readonly<Record<number, number>>): LiveInventorySampleV1 => ({ sourceInstance: INSTANCE, epoch: EPOCH, build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE,
 		context: { state: 'gameplay', mapId: 866, character: 'Test' }, cursor, contextSeq: 0, sourceElapsedMs: cursor * 1000, mode: cursor === 0 ? 'baseline' : 'sample',
-		itemCoverage: 'complete', currencyCoverage: 'none', unknownPositions: 0, freeSlots: null, rows: [{ kind: 'item', idNumber: ITEM, quantity }], observedAt: iso(cursor) });
+		itemCoverage: 'complete', currencyCoverage: 'none', unknownPositions: 0, freeSlots: null, observedAt: iso(cursor),
+		rows: Object.entries(typeof held === 'number' ? { [ITEM]: held } : held).map(([id, quantity]) => ({ kind: 'item' as const, idNumber: Number(id), quantity }))
+			.sort((a, b) => a.idNumber - b.idNumber) });
 	return { lifecycle, economy: economy.current, emit, notes, closed, sample,
 		source: { sourceInstance: INSTANCE, epoch: EPOCH, build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE, context: { state: 'gameplay' as const, mapId: 866, character: 'Test' } },
 		at: (second: number) => { now = AT + second * 1000; } };
@@ -114,6 +119,19 @@ describe('with the version 2 writer on, a live session keeps and saves the gross
 		expect(buildLiveSessionComparison([read.session]).rows[0]).toMatchObject({ knownItemValueCopper: 1_700 });
 		expect(computeSummaryFigures(read.session, {}, [])).toMatchObject({ netCopper: 1_700, positiveCopper: 1_700 });
 		expect(serializeLiveSessionExport(read.session, 'timeline', 'csv')).toContain('"instant_sell_gross"');
+		await h.economy.dispose(); await h.lifecycle.dispose();
+	});
+
+	it('lists the items of a saved session in the order its gross prices give, which is not the order of unit price times quantity', async () => {
+		// One unit at 30 c and 29 units at 1 c net the same 25 c as a sale: a tie, so the larger pile leads. By plain product the single unit would.
+		const SINGLE = 77; const h = harness({ [SINGLE]: 30, [ITEM]: 1 });
+		await h.lifecycle.start('Test'); await h.lifecycle.open(h.source); await h.lifecycle.commit(h.sample(0, { [SINGLE]: 0, [ITEM]: 0 }));
+		h.at(1); await h.lifecycle.commit(h.sample(1, { [SINGLE]: 1, [ITEM]: 29 })); await h.economy.drain();
+		expect(h.lifecycle.getView().valuation).toMatchObject({ priceBasis: 'instant_sell_gross', netItemValueKnownCopper: 50 });
+		h.at(2); expect(await h.lifecycle.stop(AT + 2000)).toBe(true);
+		const listed = await new LiveSessionHistoryService(vaultOf(h.notes)).list(); if (listed.status !== 'ok') throw new Error(listed.status);
+		expect(listed.sessions[0]?.items).toEqual([{ idNumber: ITEM, net: 29 }, { idNumber: SINGLE, net: 1 }]);
+		expect(listed.sessions[0]?.estimatedValueCopper).toBe(50);
 		await h.economy.dispose(); await h.lifecycle.dispose();
 	});
 

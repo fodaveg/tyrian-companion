@@ -126,13 +126,27 @@ describe('a saved live session is read in the price basis it states', () => {
 		expect(written).toEqual(await stored(1, 'instant_sell_net', NET));
 	});
 
-	it('ranks the items of a session by the value its basis gives them', () => {
-		// Ten units at 1 c net 8 c as one sale; one unit at 9 c nets 7 c. Per unit, 1 c nets nothing at all.
-		const totals = [{ kind: 'item' as const, idNumber: 1, positive: 1, negative: 0, net: 1 }, { kind: 'item' as const, idNumber: 2, positive: 10, negative: 0, net: 10 }];
-		const prices = [{ itemId: 1, unitCopper: 9 }, { itemId: 2, unitCopper: 1 }];
+	it('ranks the items of a session by the value its basis gives them, not by unit price times quantity', () => {
+		// What a sale nets never goes down as its total goes up (the two fees never step up at the same copper), so the plain product
+		// and the net over the total can only disagree where two totals net the same: 30 c and 29 c both leave 25 c. There the
+		// larger pile goes first, as in every tie, while the product would put the single 30 c unit ahead of it.
+		const totals = [{ kind: 'item' as const, idNumber: 1, positive: 1, negative: 0, net: 1 }, { kind: 'item' as const, idNumber: 2, positive: 29, negative: 0, net: 29 }];
+		const prices = [{ itemId: 1, unitCopper: 30 }, { itemId: 2, unitCopper: 1 }];
+		expect(liveItemValueCopper('instant_sell_gross', 30, 1)).toBe(25);
+		expect(liveItemValueCopper('instant_sell_gross', 1, 29)).toBe(25);
 		expect(sortLiveItemsByValue(totals, prices, 'instant_sell_gross').map((row) => row.idNumber)).toEqual([2, 1]);
-		expect(sortLiveItemsByValue(totals, [{ itemId: 1, unitCopper: 7 }, { itemId: 2, unitCopper: 0 }], 'instant_sell_net').map((row) => row.idNumber)).toEqual([1, 2]);
-		expect(sortLiveItemsByValue(totals, [{ itemId: 1, unitCopper: 7 }, { itemId: 2, unitCopper: 0 }]).map((row) => row.idNumber)).toEqual([1, 2]);
+		// The same numbers as net prices are worth 30 c and 29 c, and with no basis named they are net.
+		expect(sortLiveItemsByValue(totals, prices, 'instant_sell_net').map((row) => row.idNumber)).toEqual([1, 2]);
+		expect(sortLiveItemsByValue(totals, prices).map((row) => row.idNumber)).toEqual([1, 2]);
+	});
+	it('never ranks a smaller net above a larger one: the net of a sale does not fall as its total rises', () => {
+		let previous = 0; const falls: number[] = [];
+		for (let gross = 1; gross <= 20_000; gross += 1) {
+			const net = liveItemValueCopper('instant_sell_gross', gross, 1)!;
+			if (net - previous !== 0 && net - previous !== 1) falls.push(gross);
+			previous = net;
+		}
+		expect(falls).toEqual([]);
 	});
 });
 

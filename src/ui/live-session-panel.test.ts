@@ -228,6 +228,19 @@ describe('Session tab: figures, objects and chart', () => {
 		expect(panel.element.querySelector('.tyrian-live-session__objects h4 b')!.textContent).toBe(String(820 - 3));
 	});
 
+	it('orders the grid by what each pile is worth in the basis the view states', () => {
+		// One unit at 30 c and 29 units at 1 c both net 25 c as a sale, so with gross prices they tie and the larger pile goes first;
+		// read as net prices they are worth 30 c and 29 c, and the single unit leads.
+		const view = liveView();
+		view.totals = [{ kind: 'item', idNumber: 1, positive: 1, negative: 0, net: 1 }, { kind: 'item', idNumber: 2, positive: 29, negative: 0, net: 29 }];
+		const prices = [{ itemId: 1, unitCopper: 30 }, { itemId: 2, unitCopper: 1 }];
+		const labels = (panel: LiveSessionPanel): (string | null)[] => Array.from(panel.element.querySelectorAll('.tyrian-live-session__grid > li')).map((tile) => tile.getAttribute('aria-label'));
+		const gross = harness({ ...view, valuation: { ...view.valuation, priceBasis: 'instant_sell_gross', prices } });
+		expect(labels(gross.panel)).toEqual(['Item 2, 29', 'Item 1, 1']);
+		const net = harness({ ...view, valuation: { ...view.valuation, priceBasis: 'instant_sell_net', prices } });
+		expect(labels(net.panel)).toEqual(['Item 1, 1', 'Item 2, 29']);
+	});
+
 	it('shows observed coins under the grid and a quiet line while nothing was observed yet', () => {
 		const view = liveView(); view.totals.push({ kind: 'currency', idNumber: 1, positive: 15_525, negative: 0, net: 15_525 });
 		const { panel } = harness(view);
