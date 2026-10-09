@@ -1,9 +1,12 @@
 # Estado
 
-## Candidato 0.6.15: el monstruo en color con un solo contorno como icono en Hebra (9 oct 2026)
+## Canal 0.6.15 publicado: el monstruo en color con un solo contorno como icono en Hebra (9 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `f4f5496` (main con el canal 0.6.14 publicado y el icono «C1»
-ya integrado). Lleva un solo cambio: `assets/hebra-icon.png` pasa de la variante «B» (borde negro y filo claro, de
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.15](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.15)
+es una release normal, sin draft ni prerelease, publicada el 2026-10-09T05:32:22Z; nombre, tag y `manifest.version`
+son `0.6.15`. El tag (ligero) apunta a `d6fbd424613d05b5dd9663198d441676ddce0695` (commit vacío de atestación, árbol
+`38d3d73d75ac0374162cc92d7e38debd85bf3ccd`, padre `4fdf359`). Parte de `f4f5496` (main con el canal 0.6.14 publicado
+y el icono «C1» ya integrado). Lleva un solo cambio: `assets/hebra-icon.png` pasa de la variante «B» (borde negro y filo claro, de
 la 0.6.12) a la variante «C1», que eligió David el 9 oct 2026 («creo que la versión con doble borde no funciona»)
 de una lámina con el icono vigente y ocho variantes a tamaño real en tema oscuro y claro. Motivo: la barra de
 pestañas de Hebra pinta el icono a unos 18 px (estimado de una captura, no medido) y a ese tamaño el borde y el
@@ -19,10 +22,28 @@ alineados en `manifest.json`, `package.json`, la raíz de `package-lock.json` y 
 - Medido en la preparación (no es el gate): `npm run check` sobre `f4f5496`, antes de los metadatos, dio
   «VEREDICTO: VERDE (8/8)» (Fedora, 9 oct 2026); `node scripts/tests/probar-release-package.mjs` en PASS con el icono
   real.
-- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
-- No verificado: nadie ha visto el icono «C1» cargado en Hebra real, y los 18 px son una estimación. Tampoco la
-  instalación de la 0.6.15 en Hebra ni en Obsidian/BRAT.
-- Pendiente: el gate, la publicación (tag, release, `release:brat-verify`) y la verificación en clientes reales.
+- Publicación: el workflow `release.yml` (run 37888702711) terminó con todos los pasos en `success`, incluidos el gate
+  dentro del job, el contrato BRAT previo a publicar y «Confirm the published release against the contract». La
+  release tiene ocho assets, todos `uploaded` y no vacíos: `hebra-main.mjs` 2623298, `hebra-styles.css` 118003,
+  `hebra.json` 32733, `main.js` 1927454, `manifest.json` 237, `styles.css` 94537, `tyrian-companion-0.6.15.zip`
+  2022538 y `tyrian-companion-0.6.15.zip.sha256` 94 (bytes). `release:brat-verify` en local, sobre la salida real de
+  `gh release view 0.6.15 --json tagName,name,isDraft,isPrerelease,publishedAt,url,assets`: «BRAT release contract:
+  PASS (version=0.6.15; assets=8)».
+- Contenido descargado de la release: `hebra.json` con `version` 0.6.15, `icon` `sword` e `iconImage` de 23803 bytes
+  descodificados, sha256 `6a478bd5cd4e1b894c590ecd6f27bf6826476a938ec632c0c1da03fe032fb84e`, idéntico byte a byte a
+  `assets/hebra-icon.png` del repo; `manifest.json` con `version` 0.6.15.
+- Gate local sobre el candidato `4fdf359` (mismo árbol que el tag; Node v22.23.1, árbol limpio antes y después, todo
+  con exit 0): `check` «VEREDICTO: VERDE (8/8)» (5376 tests, 334 ficheros), `check:guardrails` «VEREDICTO: VERDE
+  (25/25)», `release preflight: pass`, `node scripts/changelog-entry.mjs 0.6.15` y `release package: PASS` con
+  `tyrian-companion-0.6.15.zip` construido en local, sha256
+  `f8e545a8a5c53ab9d2aea9e6bfb7ead8e3124945065614bab6aef7cb13e7b069`; no se ha comparado con el sha256 del zip
+  publicado. El benchmark H6 no se corrió en local; lo corre la CI de `main`.
+- CI de `main` sobre `d6fbd42` (run 37888694302): sin concluir (`in_progress` y luego `queued` en dos lecturas seguidas) cuando se escribió esto (9 oct 2026, 05:33 UTC). Su
+  conclusión no se ha leído.
+- Addon de Nexus: sin cambios (0.8.2).
+- No verificado: nadie ha visto el icono «C1» pintado en Hebra real, y los 18 px son una estimación. Tampoco la
+  instalación ni la carga de la 0.6.15 en Hebra ni en Obsidian/BRAT.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT) y la conclusión de la CI de `main`.
 
 ## Canal 0.6.14 publicado: cinco arreglos de la nota resumen de sesión (8 oct 2026)
 

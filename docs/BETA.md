@@ -2,9 +2,9 @@
 
 ## Estado actual
 
-[0.6.14 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.14) como release
+[0.6.15 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.15) como release
 normal, sin draft ni prerelease: **canal publicado; instalación/runtime pendiente**. Nombre de
-GitHub Release, tag y `manifest.version` son exactamente `0.6.14`, con ocho assets reales subidos,
+GitHub Release, tag y `manifest.version` son exactamente `0.6.15`, con ocho assets reales subidos,
 no vacíos y verificados. El SHA del tag, gates y workflows están en [ESTADO](ESTADO.md).
 `manifest.json` por sí solo identifica un checkout o instalación; no demuestra carga correcta.
 Para volver a verificar los metadatos de la release:
@@ -49,7 +49,7 @@ infiere carga correcta de la versión que figure en disco. Nexus no ofrece autoa
 este addon: con GW2 cerrado, sustituir manualmente la DLL por el artifact elegido y comprobar la
 versión cargada al reabrir. Publicar Companion no sustituye la DLL local de Nexus.
 
-Icono en Hebra (desde la 0.6.11; con borde desde la 0.6.12): `hebra.json` lleva el monstruo como `iconImage` (PNG de 128 px versionado en
+Icono en Hebra (desde la 0.6.11; con borde desde la 0.6.12; desde la 0.6.15, el dibujo a color con un solo contorno): `hebra.json` lleva el monstruo como `iconImage` (PNG de 128 px versionado en
 `assets/hebra-icon.png`, comprobado en el empaquetado contra los límites de Hebra) y `sword` como respaldo en
 `icon`. Una Hebra anterior a ese campo lo ignora y pinta la espada; Obsidian sigue con la espada.
 

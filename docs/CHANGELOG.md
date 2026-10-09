@@ -2,7 +2,13 @@
 
 ## Release beta 0.6.15 - el monstruo en color con un solo contorno como icono del plugin en Hebra
 
-Release por tag `0.6.15`. Trae un único cambio, en `assets/hebra-icon.png`, el icono propio del plugin en Hebra
+[Canal 0.6.15 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.15); **instalación/runtime
+pendiente**. Tag `0.6.15` sobre `d6fbd42` (commit vacío de atestación), árbol
+`38d3d73d75ac0374162cc92d7e38debd85bf3ccd`. Gate local sobre el candidato `4fdf359` (mismo árbol): `check` 8/8
+(5376 tests, 334 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run
+37888702711) terminó con todos los pasos en `success`, y `release:brat-verify` contra la salida real de
+`gh release view` dio PASS con los ocho assets. La CI de `main` sobre `d6fbd42` seguía en curso al escribir esto.
+Trae un único cambio, en `assets/hebra-icon.png`, el icono propio del plugin en Hebra
 que `scripts/release-package.mjs` embebe como `iconImage` en `hebra.json`. [ESTADO](ESTADO.md) separa lo medido de lo
 que nadie ha visto en un cliente real.
 
