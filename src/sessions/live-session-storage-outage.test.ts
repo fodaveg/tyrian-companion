@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { IDBDatabase as FakeIDBDatabase } from 'fake-indexeddb';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { startAlertIngameServer } from '../alerts/alert-ingame-server';
 import type { TyrianTcpConnection } from '../host/tyrian-host';
+import { fakeLocks, type FakeLockContext, type FakeLocks } from '../test/fake-lock-manager';
 import { hangStorage, holdNextCommitAnswer, killStorage, killStorageAfterNextCommit, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
@@ -26,23 +28,34 @@ const AT = Date.parse('2026-10-07T14:54:00.000Z');
 const LEASE_TTL_MS = 300_000;
 const iso = (offsetMs: number): string => new Date(AT + offsetMs).toISOString();
 
-function outage(label: string) {
+/**
+ * `locks`: the lock manager every host of this fixture shares, each through a context of its own (absent: none has
+ * one, as on a host without the API). `leaseTtlMs`: the lease the first host's lifecycle asks for instead of its own.
+ */
+function outage(label: string, setup: { locks?: FakeLocks; leaseTtlMs?: number } = {}) {
 	const tracked = trackedIndexedDb();
 	let now = AT; let beat: (() => void) | null = null;
+	const contexts = new Map<string, FakeLockContext>();
 	// Every wait on storage in course, of the lifecycle and of the lease coordinator alike. None runs out by
 	// itself: a test that never calls `timeout()` waits without bound, as before there was a bound.
 	const waits = new Map<number, () => void>(); let lastWait = 0;
 	const arm = (callback: () => void): number => { waits.set(++lastWait, callback); return lastWait; };
 	const disarm = (handle: unknown): void => { waits.delete(handle as number); };
 	const store = new IndexedDbSessionRuntimeStore(tracked.factory, `live-outage-${label}`);
-	const lease = (instanceId: string): ActiveSessionLeaseCoordinator => new ActiveSessionLeaseCoordinator({
-		indexedDb: tracked.factory, databaseName: `live-outage-${label}-lease`, instanceId, machineId: () => 'machine',
-		clock: () => now, sleep: async () => undefined, leaseTtlMs: LEASE_TTL_MS, expiryConfirmDelayMs: 1, schedule: arm, cancel: disarm,
-	});
+	const lease = (instanceId: string): ActiveSessionLeaseCoordinator => {
+		const context = setup.locks?.context();
+		if (context) contexts.set(instanceId, context);
+		return new ActiveSessionLeaseCoordinator({
+			indexedDb: tracked.factory, databaseName: `live-outage-${label}-lease`, instanceId, machineId: () => 'machine',
+			clock: () => now, sleep: async () => undefined, leaseTtlMs: LEASE_TTL_MS, expiryConfirmDelayMs: 1, schedule: arm, cancel: disarm,
+			...(context ? { locks: context } : {}),
+		});
+	};
 	const onError = vi.fn(); const onCommitted = vi.fn(); const onComplete = vi.fn(async () => 'Sessions/live.md');
 	const options = { coordinator: lease('host'), persistence: store, enabled: () => true, now: () => now, sessionId: () => 'session',
 		thresholdCopper: () => 1, setInterval: (callback: () => void) => { beat = callback; return 1; }, clearInterval: () => { beat = null; },
-		setTimeout: arm, clearTimeout: disarm, onStateChange: vi.fn(), onError, onCommitted, onComplete };
+		setTimeout: arm, clearTimeout: disarm, onStateChange: vi.fn(), onError, onCommitted, onComplete,
+		...(setup.leaseTtlMs === undefined ? {} : { leaseTtlMs: setup.leaseTtlMs }) };
 	const service = new LiveSessionLifecycle(options);
 	const source = { sourceInstance: INSTANCE, epoch: EPOCH, build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE,
 		context: { state: 'gameplay' as const, mapId: 866, character: 'Test' } };
@@ -53,6 +66,17 @@ function outage(label: string) {
 		observedAt: new Date(now).toISOString() });
 	return { tracked, store, lease, options, service, source, sample, onError,
 		at: (offsetMs: number) => { now = AT + offsetMs; },
+		/** The first host's process is gone, with nothing released and nothing disposed of: the engine frees the lock it held. */
+		hostDies: () => { contexts.get('host')?.die(); },
+		/**
+		 * Counts the transactions that write started on the lease's database from here on (call it before the first
+		 * one). It spies on the fake engine itself, so whoever calls it restores the spies when its test ends.
+		 */
+		countLeaseWrites: (): (() => number) => {
+			const started = vi.spyOn(FakeIDBDatabase.prototype, 'transaction');
+			return () => started.mock.calls.filter(([, mode], call) => mode === 'readwrite'
+				&& (started.mock.contexts[call] as IDBDatabase).name === `live-outage-${label}-lease`).length;
+		},
 		/** The engine applies the next write of the session store and dies before saying so. */
 		dieAfterNextCommit: () => { killStorageAfterNextCommit(tracked, `live-outage-${label}`); },
 		/** Another host starting on what is on disk now, as the next launch of the plugin would. */
@@ -456,30 +480,54 @@ describe('live session across a storage outage that hid a commit already on disk
 
 /**
  * Hebra or Obsidian closed abruptly: the process dies holding the lease and never releases it. The
- * lease lasts five minutes (H14.22), so the plugin that comes back 70 s later is refused its own
+ * lease lasts five minutes (H14.22), and the plugin that came back 70 s later was refused its own
  * session for the rest of them: `source_conflict` on every `live_open`, and nothing measured meanwhile.
  *
- * KNOWN LIMIT, pinned here as it is today and not fixed by shortening the lease. A lease of 30 s was
- * tried on 9 Oct 2026 and does heal this, but the heartbeat is a timer and the usual way to use the
- * plugin is with the notes application hidden behind the game, where Chromium-based hosts hold timers
- * back to as little as one a minute: a lease shorter than the real beat is lost on every beat with
- * the host alive (see «a heartbeat that fires once a minute» below: 150 of 600 samples stored). The
- * way out is for `renew` to accept a lease that ran out and nobody took, and to renew from the data
- * path as well, which changes the coordinator's contract and needs the real cadence of the beat
- * measured first with the window hidden, in Obsidian and in Hebra. Whoever does that turns the
- * `source_conflict` below into `ready`.
+ * It is not healed by shortening the lease. A lease of 30 s was tried on 9 Oct 2026 and does heal
+ * this, but the heartbeat is a timer and the usual way to use the plugin is with the notes application
+ * hidden behind the game, where Chromium-based hosts hold timers back to as little as one a minute: a
+ * lease shorter than the real beat is lost on every beat with the host alive (see «a heartbeat that
+ * fires once a minute» below: 150 of 600 samples stored).
+ *
+ * It is healed by knowing the owner died (9 Oct 2026, F7): where the host hands over its lock manager,
+ * the owner holds a Web Lock for as long as it lives, and the host that comes back finds that lock free
+ * and takes the lease at once, under the next fence and the rules of a restart. Where there is no lock
+ * manager (a host without the API, or an owner from a build before this one) nothing is known about the
+ * owner, and the five minutes are still waited: that is the first test below, as it always was.
  */
 describe('live session whose host died without releasing the lease', () => {
 	/** A session one host is measuring, beating every five seconds up to `untilMs`. */
-	async function measured(label: string, untilMs: number) {
-		const f = outage(label);
+	async function measured(label: string, untilMs: number, locks?: FakeLocks) {
+		const f = outage(label, locks ? { locks } : {});
 		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
 		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
 		for (let at = 5000; at <= untilMs; at += 5000) { f.at(at); await f.beat(); }
 		return f;
 	}
 
-	it('known limit: the host that starts 70 s later is refused its session until the dead one\'s lease runs out', async () => {
+	it('the host that starts 70 s later takes its session back on its first live_open when the dead one held a life lock', async () => {
+		const f = await measured('abrupt-close-locks', 5000, fakeLocks());
+		expect(f.service.getRuntime()).toMatchObject({ authority: { instanceId: 'wl1:host', fence: 1 } });
+		// The process is gone here: nothing was released and nothing disposed. Its last renewal was at 5 s,
+		// so its lease has 235 s left when the next host starts.
+		f.hostDies();
+		f.at(75_000);
+		const next = f.restarted(); await next.service.initialize();
+		// Taken during `initialize`, before anything was asked: the session is this host's again.
+		expect(next.service.getRuntime()).toMatchObject({ sessionId: 'session', authority: { instanceId: 'wl1:next-host', fence: 2 } });
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		expect(next.service.getView().gaps.map((gap) => gap.reason)).toEqual(['host_restart']);
+		f.at(76_000); await expect(next.service.commit(f.sample(0, 0, bags(20), NEXT_EPOCH))).resolves.toBe('stored');
+		f.at(77_000); await expect(next.service.commit(f.sample(1, 1000, bags(23), NEXT_EPOCH))).resolves.toBe('stored');
+		expect(next.service.getView().observations.map((row) => [row.epoch, row.before, row.after, row.delta])).toEqual([[EPOCH, 5, 7, 2], [NEXT_EPOCH, 20, 23, 3]]);
+		expect(next.onError).not.toHaveBeenCalled();
+		// And were the dead host somehow still running, the store itself refuses what it writes under the old fence.
+		f.at(78_000); await expect(f.service.commit(f.sample(2, 78_000, bags(9)))).resolves.toBe('not_owner');
+		expect((await f.durable()).record).toMatchObject({ authority: { instanceId: 'wl1:next-host', fence: 2 }, observationCount: 2 });
+		await next.dispose();
+	});
+
+	it('without a lock manager (a host without the API) the host that starts 70 s later is refused its session until the dead one\'s lease runs out', async () => {
 		const f = await measured('abrupt-close', 5000);
 		// The process is gone here: nothing was released and nothing disposed. Its last renewal was at 5 s.
 		f.at(75_000);
@@ -512,6 +560,41 @@ describe('live session whose host died without releasing the lease', () => {
 		await expect(f.service.commit(f.sample(2, 125_000, bags(9)))).resolves.toBe('stored');
 		expect(f.service.getRuntime()).toMatchObject({ authority: { instanceId: 'host', fence: 1 } });
 		await second.dispose(); await f.service.dispose();
+	});
+
+	it('nor with a lock manager: the first host holds its lock, so the second one is refused exactly as before', async () => {
+		const locks = fakeLocks();
+		const f = await measured('two-hosts-locks', 120_000, locks);
+		f.at(121_000);
+		const second = f.restarted(); await second.service.initialize();
+		await expect(second.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		f.at(125_000); await second.beat();
+		await expect(second.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		expect(second.service.getRuntime()).toMatchObject({ authority: { instanceId: 'wl1:host', fence: 1 } });
+		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:host', 'tyrian-companion-lease:wl1:next-host']);
+		await expect(f.service.commit(f.sample(2, 125_000, bags(9)))).resolves.toBe('stored');
+		expect(f.service.getRuntime()).toMatchObject({ authority: { instanceId: 'wl1:host', fence: 1 } });
+		// Once the first host is really gone, the second one's next beat takes the session: no five minutes.
+		f.hostDies();
+		f.at(130_000); await second.beat();
+		await expect(second.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		expect(second.service.getRuntime()).toMatchObject({ authority: { instanceId: 'wl1:next-host', fence: 2 } });
+		await second.dispose();
+	});
+
+	it('a plugin reloaded in the same document takes its session back as soon as the old one is disposed of, released or not', async () => {
+		const locks = fakeLocks();
+		const f = await measured('reload-locks', 5000, locks);
+		f.at(6000);
+		const next = f.restarted(); await next.service.initialize();
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		// The old coordinator is disposed of without its lease having been released (an unload cut short).
+		f.options.coordinator.dispose();
+		f.at(10_000); await next.beat();
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		expect(next.service.getRuntime()).toMatchObject({ authority: { instanceId: 'wl1:next-host', fence: 2 } });
+		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:next-host']);
+		await next.dispose();
 	});
 
 	it('a machine suspended for longer than the lease lasts does not close the session: it comes back as after an outage', async () => {
@@ -604,8 +687,11 @@ describe('live session on a host whose heartbeat fires once a minute', () => {
 		return counts;
 	}
 
+	afterEach(() => { vi.restoreAllMocks(); });
+
 	it('stores every sample of ten minutes under the lease it has: no epoch is lost and no live_open refused', async () => {
 		const f = outage('slow-beat');
+		const leaseWrites = f.countLeaseWrites();
 		const counts = await tenMinutes(f, 60);
 		expect(counts).toEqual({ sent: 600, stored: 600, refused: 0, opened: 1, conflicts: 0, secondsInError: 0 });
 		// One baseline and 599 seconds measured after it, all under the lease the session started with.
@@ -614,6 +700,34 @@ describe('live session on a host whose heartbeat fires once a minute', () => {
 		expect(f.service.getRuntime()).toMatchObject({ authority: { fence: 1 } });
 		expect(storageGaps(f.service)).toEqual([]);
 		expect(f.onError).not.toHaveBeenCalled();
+		// What the lease cost the store: the acquisition and one renewal per beat.
+		expect(leaseWrites()).toBe(11);
+		await f.service.dispose();
+	});
+
+	// The life lock is memory of the engine: it costs the hidden window nothing, neither a sample nor a write.
+	it('stores the same 600 of 600 with the same writes to the lease when the host holds its life lock', async () => {
+		const locks = fakeLocks();
+		const f = outage('slow-beat-locks', { locks });
+		const leaseWrites = f.countLeaseWrites();
+		const counts = await tenMinutes(f, 60);
+		expect(counts).toEqual({ sent: 600, stored: 600, refused: 0, opened: 1, conflicts: 0, secondsInError: 0 });
+		expect(f.service.getView()).toMatchObject({ phase: 'active', observationCount: 599, observedItemsMs: 599_000 });
+		expect(f.service.getRuntime()).toMatchObject({ authority: { instanceId: 'wl1:host', fence: 1 } });
+		expect(storageGaps(f.service)).toEqual([]);
+		expect(f.onError).not.toHaveBeenCalled();
+		expect(leaseWrites()).toBe(11);
+		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:host']);
+		await f.service.dispose();
+	});
+
+	// The negative of the table in SPEC-live-loot §4, with the lock held: what heals the abrupt close is
+	// not a shorter lease, and a shorter lease still loses three samples in four behind a slow beat.
+	it('a 30 s lease is still lost on every beat of a minute with the host alive and its lock held', async () => {
+		const f = outage('slow-beat-short-lease', { locks: fakeLocks(), leaseTtlMs: 30_000 });
+		const counts = await tenMinutes(f, 60);
+		// 150 of the 600 seconds stored, `live_open` refused 445 times and half the time in error: the row of the table.
+		expect(counts).toEqual({ sent: 155, stored: 150, refused: 5, opened: 6, conflicts: 445, secondsInError: 300 });
 		await f.service.dispose();
 	});
 
@@ -642,8 +756,8 @@ describe('live session on a host whose heartbeat fires once a minute', () => {
 	 * next beat finds the lease lost and the one after it reclaims it (it is still this host's). At
 	 * the usual beat that is ten seconds; at one beat a minute it is the 108 seconds counted here. No
 	 * loot is miscounted (a gap, a new epoch, a baseline), but nothing is measured meanwhile. Taking the
-	 * lease back in the same beat that finds it lost belongs with the change of contract described at
-	 * `LIVE_SESSION_LEASE_TTL_MS`.
+	 * lease back in the same beat that finds it lost is nobody's plan today: it was filed under renewing a
+	 * lease that ran out, which the detection of a dead owner replaced (F7) without touching this case.
 	 */
 	it('known cost: a renewal that lands after its wait ran out costs the time of two beats, then the session measures again', async () => {
 		const f = outage('slow-beat-late-renewal');

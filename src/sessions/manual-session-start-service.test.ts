@@ -9,6 +9,7 @@ import {
 	twoCharacterSnapshot,
 	unobservedCharacterSnapshot,
 } from '../account/__fixtures__/storage-delta';
+import { fakeLocks, type FakeLockContext } from '../test/fake-lock-manager';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import { prepareLegacyRuntimeArchive } from './live-session-legacy-archive';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
@@ -1619,6 +1620,72 @@ describe('ManualSessionStartService', () => {
 
 		primaryCoordinator.dispose();
 		secondaryCoordinator.dispose();
+	});
+
+	/**
+	 * 9 Oct 2026 (F7): the manual session shares the coordinator, so it shares what the coordinator knows
+	 * of an owner that died. Those 300 s above are still what is waited where nothing is known (no lock
+	 * manager, as in every test before this one); with the host's lock manager a window that died is not
+	 * waited for, and one that is alive is refused as it always was. The real coordinator and the real
+	 * store over one fake IndexedDB, as in the reload test above: this is about the wiring between them.
+	 */
+	describe('recovery of a session whose window held a life lock', () => {
+		const leaseTtlMs = 300_000;
+		function openWindow(factory: IDBFactory, label: string, instanceId: string, locks: FakeLockContext) {
+			const coordinatorOfWindow = new ActiveSessionLeaseCoordinator({
+				indexedDb: factory, databaseName: `coordination-${label}`, clock: () => clock, instanceId, leaseTtlMs,
+				sleep: async () => undefined, locks,
+			});
+			const setInterval = vi.fn((_callback: () => void, _delayMs: number) => 17);
+			const service = new ManualSessionStartService(
+				coordinatorOfWindow,
+				{ capture: vi.fn(async () => structuredClone(captured)) },
+				serviceOptions({ runtimeStore: new IndexedDbSessionRuntimeStore(factory, `runtime-${label}`), setInterval }),
+			);
+			return { coordinator: coordinatorOfWindow, service, setInterval };
+		}
+
+		it('takes the session of a window that died at once, under the next fence, and beats every 100 s as before', async () => {
+			const factory = new IDBFactory(); const locks = fakeLocks();
+			const deadContext = locks.context();
+			const first = openWindow(factory, 'dead-window', 'instance-one', deadContext);
+			await expect(first.service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+				.resolves.toMatchObject({ status: 'started' });
+			expect(first.service.getState()).toMatchObject({ status: 'active', authority: { instanceId: 'wl1:instance-one', fence: 1 } });
+			// The window is gone ten seconds later: no dispose, no release. Its lease has 290 s left.
+			deadContext.die();
+			clock += 10_000;
+
+			const second = openWindow(factory, 'dead-window', 'instance-two', locks.context());
+			await second.service.initialize();
+			expect(second.service.getRecoveryState()).toEqual({ status: 'none' });
+			expect(second.service.getState()).toMatchObject({ status: 'active', authority: { instanceId: 'wl1:instance-two', fence: 2 } });
+			expect(second.setInterval).toHaveBeenCalledTimes(1);
+			expect(second.setInterval.mock.calls[0]?.[1]).toBe(leaseTtlMs / 3);
+			await second.service.dispose();
+		});
+
+		it('is refused the session of a window that is alive, and recovers it on the retry after that window died', async () => {
+			const factory = new IDBFactory(); const locks = fakeLocks();
+			const liveContext = locks.context();
+			const first = openWindow(factory, 'live-window', 'instance-one', liveContext);
+			await expect(first.service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+				.resolves.toMatchObject({ status: 'started' });
+			clock += 10_000;
+
+			const second = openWindow(factory, 'live-window', 'instance-two', locks.context());
+			await second.service.initialize();
+			await expect(second.service.recover()).resolves.toMatchObject({ status: 'busy' });
+			expect(second.service.getRecoveryState()).toMatchObject({ status: 'busy', state: { status: 'active' }, ownerExpiresAt: acquiredAt + 500 + leaseTtlMs });
+			expect(second.service.getState().status).toBe('idle');
+			// The first window still owns what it owned.
+			expect(first.service.getState()).toMatchObject({ status: 'active', authority: { instanceId: 'wl1:instance-one', fence: 1 } });
+
+			liveContext.die();
+			await expect(second.service.recover()).resolves.toMatchObject({ status: 'recovered' });
+			expect(second.service.getState()).toMatchObject({ status: 'active', authority: { instanceId: 'wl1:instance-two', fence: 2 } });
+			await second.service.dispose();
+		});
 	});
 });
 
