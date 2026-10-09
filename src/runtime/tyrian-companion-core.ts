@@ -56,7 +56,7 @@ import {
 	type AlertKind,
 	type AlertV1,
 } from '../alerts/alert-contract';
-import { AlertEmitter, type AlertDeliveryReport } from '../alerts/alert-emitter';
+import { ALERT_CHANNEL_PENDING, AlertEmitter, type AlertDeliveryReport } from '../alerts/alert-emitter';
 import { systemNotificationChannelResult } from '../alerts/alert-system-notification';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { EmittedAlertQueue } from '../alerts/emitted-alert-queue';
@@ -3754,7 +3754,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				id: 'sound',
 				deliver: () => {
 					requireLiveCollector();
-					if (this.host.notify.sound() !== 'played') {
+					const outcome = this.host.notify.sound();
+					// A suspended context still resuming will sound the tone once it lands: accepted, not failed.
+					if (outcome === 'pending') return ALERT_CHANNEL_PENDING;
+					if (outcome !== 'played') {
 						throw new Error('No audio output was available.');
 					}
 				},

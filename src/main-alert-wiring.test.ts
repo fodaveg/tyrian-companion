@@ -208,6 +208,24 @@ describe('H13.4 alert channel cabling', () => {
 		});
 	});
 
+	it('reports the sound channel as pending, not failed, while a suspended context is resuming', async () => {
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		const plugin = alertWiringPlugin(new IDBFactory(), {
+			AudioContext: function AudioContext() {
+				return { ...fakeAudioContext(), state: 'suspended', resume: () => new Promise<void>(() => {}) };
+			},
+		});
+
+		await plugin.initializeRuntime();
+		const report = await plugin.emitAlert(VALUABLE);
+
+		expect(report.failed.map((entry) => entry.id), 'the tone is going to sound: the channel did not fail').not.toContain('sound');
+		expect(report.delivered).toContain('sound');
+		expect(report.pending).toContain('sound');
+	});
+
 	it('still delivers the toast and the queue when the desktop and the speakers are gone', async () => {
 		const record = activeSessionRecord();
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();

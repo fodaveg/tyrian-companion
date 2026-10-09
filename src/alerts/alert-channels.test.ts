@@ -95,13 +95,13 @@ describe('H13.4 sound channel', () => {
 			suspended.resume = async () => { resumed += 1; await Promise.resolve(); if (canResume) suspended.state = 'running'; };
 			const factory = () => context;
 
-			expect(playAlertSound(factory)).toBe('unavailable');
+			expect(playAlertSound(factory)).toBe('pending');
 			expect(resumed).toBe(1);
 			await flush();
 			expect(scheduled.starts, 'a tone was scheduled on a context that stayed suspended').toEqual([]);
 
 			canResume = true;
-			expect(playAlertSound(factory), 'the resume call did not make it sound').toBe('unavailable');
+			expect(playAlertSound(factory), 'the resume call did not make it sound').toBe('pending');
 			await flush();
 			expect(playAlertSound(factory)).toBe('played');
 			expect(resumed).toBe(2);
@@ -118,10 +118,10 @@ describe('H13.4 sound channel', () => {
 				return { factory: () => context, scheduled, handle, calls };
 			}
 
-			it('schedules the tone of the FIRST alert once the resume lands, and reports it as doubtful meanwhile', async () => {
+			it('schedules the tone of the FIRST alert once the resume lands, and reports it as pending meanwhile', async () => {
 				const { factory, scheduled, calls } = suspendedContext(async (handle) => { handle.state = 'running'; });
 
-				expect(playAlertSound(factory)).toBe('unavailable');
+				expect(playAlertSound(factory)).toBe('pending');
 				expect(scheduled.starts).toEqual([]);
 				await flush();
 
@@ -132,7 +132,7 @@ describe('H13.4 sound channel', () => {
 			it('gives one tone for three alerts that arrive while it resumes', async () => {
 				const { factory, scheduled, calls } = suspendedContext(async (handle) => { await Promise.resolve(); handle.state = 'running'; });
 
-				for (let alert = 0; alert < 3; alert += 1) expect(playAlertSound(factory)).toBe('unavailable');
+				for (let alert = 0; alert < 3; alert += 1) expect(playAlertSound(factory)).toBe('pending');
 				await flush();
 
 				expect(calls.resume).toBe(1);
@@ -146,7 +146,7 @@ describe('H13.4 sound channel', () => {
 					state.state = 'running';
 				});
 
-				expect(playAlertSound(factory)).toBe('unavailable');
+				expect(playAlertSound(factory)).toBe('pending');
 				await flush();
 				expect(scheduled.starts).toEqual([]);
 
@@ -168,7 +168,7 @@ describe('H13.4 sound channel', () => {
 				expect(scheduled.starts).toEqual([]);
 
 				handle.resume = resumes;
-				expect(playAlertSound(factory)).toBe('unavailable');
+				expect(playAlertSound(factory)).toBe('pending');
 				await flush();
 				expect(attempts, 'the second alert called resume again instead of finding the factory taken').toBe(2);
 				expect(scheduled.starts, 'the factory stayed mute after one resume that threw').toEqual([10, 10.15]);
@@ -177,8 +177,8 @@ describe('H13.4 sound channel', () => {
 			it('does not call resume again while the first one is still pending', async () => {
 				const { factory, scheduled, calls } = suspendedContext(() => new Promise<void>(() => {}));
 
-				expect(playAlertSound(factory)).toBe('unavailable');
-				expect(playAlertSound(factory)).toBe('unavailable');
+				expect(playAlertSound(factory)).toBe('pending');
+				expect(playAlertSound(factory)).toBe('pending');
 				await flush();
 
 				expect(calls.resume).toBe(1);
@@ -196,7 +196,7 @@ describe('H13.4 sound channel', () => {
 						await new Promise<void>((resolve) => { release = resolve; });
 						handle.state = 'running';
 					});
-					expect(playAlertSound(made.factory)).toBe('unavailable');
+					expect(playAlertSound(made.factory)).toBe('pending');
 					vi.setSystemTime(Date.now() + landsAfterMs);
 					release();
 					return made;
@@ -222,7 +222,7 @@ describe('H13.4 sound channel', () => {
 					vi.useFakeTimers();
 					vi.setSystemTime(new Date('2026-10-09T10:00:00Z'));
 					const { factory, calls, handle } = suspendedContext(() => new Promise<void>(() => {}));
-					playAlertSound(factory);
+					expect(playAlertSound(factory)).toBe('pending');
 					vi.setSystemTime(Date.now() + 4_000);
 					playAlertSound(factory);
 					expect(calls.resume, 'retried inside the margin').toBe(1);
@@ -243,7 +243,7 @@ describe('H13.4 sound channel', () => {
 				handle.resume = () => ({ then: (ok: () => void) => { finish = ok; } });
 				const factory = () => context;
 
-				expect(playAlertSound(factory)).toBe('unavailable');
+				expect(playAlertSound(factory)).toBe('pending');
 				await flush();
 				expect(scheduled.starts, 'sounded before the resume resolved').toEqual([]);
 

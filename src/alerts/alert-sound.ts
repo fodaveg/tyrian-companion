@@ -45,7 +45,8 @@ export interface AlertAudioContext {
 
 export type AlertAudioContextFactory = () => AlertAudioContext | null;
 
-export type AlertSoundOutcome = 'played' | 'unavailable';
+/** `pending`: a suspended context is resuming and this alert's tone sounds once it lands. */
+export type AlertSoundOutcome = 'played' | 'unavailable' | 'pending';
 
 /**
  * Two rising tones. Short enough not to talk over the game, distinct enough to
@@ -103,7 +104,8 @@ function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutco
 	// BEFORE any overlap check (a stopped clock would read every later alert as "still sounding"
 	// forever), and THIS alert's tone is scheduled once the resume lands: the first valuable drop
 	// must not be the one that is lost. The outcome cannot wait for that (`TyrianHost.notify.sound`
-	// is synchronous), so it says `unavailable` (doubtful), never a `played` nobody heard. One tone
+	// is synchronous), so it says `pending` (accepted, not yet heard; the emitter lists it as
+	// pending rather than failed), never a `played` nobody heard. One tone
 	// waits per factory: alerts arriving meanwhile do not queue more. A rejected resume, or one that
 	// leaves the context suspended, leaves nothing pending, and the next alert starts from scratch.
 	if (context.state === 'suspended') {
@@ -111,7 +113,7 @@ function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutco
 		const attempt = resuming.get(createContext);
 		// A tone still inside its margin keeps the slot; one past it is dropped anyway, so its
 		// `resume()` is asked again instead of leaving the factory mute until a reload.
-		if (attempt !== undefined && alertedAt - attempt <= ALERT_SOUND_MAX_RESUME_WAIT_MS) return 'unavailable';
+		if (attempt !== undefined && alertedAt - attempt <= ALERT_SOUND_MAX_RESUME_WAIT_MS) return 'pending';
 		// The factory is taken only once `resume()` has returned: one that throws outright (`playAlertSound` answers
 		// `unavailable`) leaves nothing pending either, or every later alert would find it taken until a reload.
 		const pending: unknown = context.resume?.();
@@ -127,7 +129,7 @@ function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutco
 			if (Date.now() - alertedAt > ALERT_SOUND_MAX_RESUME_WAIT_MS) return;
 			try { scheduleTones(createContext, context); } catch { /* the next alert tries again */ }
 		}, release);
-		return 'unavailable';
+		return 'pending';
 	}
 	return scheduleTones(createContext, context);
 }
