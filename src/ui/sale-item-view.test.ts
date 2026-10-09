@@ -266,6 +266,161 @@ describe('SaleItemView repaints when a figure on screen expires', () => {
 		expect(nextExpiryMs(liveModel(), UNTIL_MS)).toBe(NOW_MS + 900_000);
 		expect(nextExpiryMs(liveModel(), NOW_MS + 900_000)).toBeNull();
 	});
+
+	describe('as a section the host hides without unmounting it', () => {
+		/** A model that counts how many times a paint read it. */
+		const counted = () => {
+			const reads = { count: 0 };
+			return { reads, model: (): SaleViewModel => { reads.count += 1; return liveModel(); } };
+		};
+
+		it('drops its timer while hidden, paints nothing however often it is asked, and repaints once when shown', async () => {
+			installDom();
+			const { reads, model } = counted();
+			const view = new SaleItemView(content(), icons, actions(model));
+			await view.onOpen();
+			expect(vi.getTimerCount()).toBe(1);
+			const paintsWhileVisible = reads.count;
+
+			view.setVisible(false);
+			expect(vi.getTimerCount()).toBe(0);
+			// What the core does while it is hidden: every refresh of the advisor repaints the Sale tab.
+			view.render();
+			view.render();
+			view.render();
+			vi.setSystemTime(UNTIL_MS + 60_000);
+			await vi.advanceTimersByTimeAsync(10 * 60_000);
+			expect(reads.count, 'painted while hidden').toBe(paintsWhileVisible);
+			expect(quoteStates(view), 'the figure on screen is the one from before').toEqual(['fresh']);
+			expect(vi.getTimerCount()).toBe(0);
+
+			view.setVisible(true);
+			expect(reads.count, 'one repaint on being shown').toBe(paintsWhileVisible + 1);
+			expect(quoteStates(view)).toEqual(['stale']);
+			// Shown twice in a row is shown once.
+			view.setVisible(true);
+			expect(reads.count).toBe(paintsWhileVisible + 1);
+		});
+
+		it('arms the timer again when shown, and never while the window itself is hidden', async () => {
+			installDom();
+			const view = new SaleItemView(content(), icons, actions(liveModel));
+			await view.onOpen();
+			const doc = (view.contentEl as unknown as FakeElement).doc;
+
+			view.setVisible(false);
+			view.setVisible(true);
+			expect(vi.getTimerCount()).toBe(1);
+
+			// The window comes back while the section is still hidden: nothing to repaint, nothing armed.
+			view.setVisible(false);
+			doc.setHidden(true);
+			doc.setHidden(false);
+			expect(vi.getTimerCount()).toBe(0);
+			// And the section shown while the window is hidden paints, but arms nothing.
+			doc.setHidden(true);
+			view.setVisible(true);
+			expect(vi.getTimerCount()).toBe(0);
+		});
+
+		it('arms no timer for a hidden section at the arming point itself, where it would for one on screen', async () => {
+			installDom();
+			const view = new SaleItemView(content(), icons, actions(liveModel));
+			await view.onOpen();
+			const arm = (): void => { (view as unknown as { scheduleExpiryRepaint(model: SaleViewModel): void }).scheduleExpiryRepaint(liveModel()); };
+
+			view.setVisible(false);
+			// The same place that looks at the hidden window looks at the hidden section.
+			arm();
+			expect(vi.getTimerCount()).toBe(0);
+
+			(view as unknown as { sectionHidden: boolean }).sectionHidden = false;
+			arm();
+			expect(vi.getTimerCount()).toBe(1);
+		});
+
+		it('repaints once when shown even if nothing asked for it: a figure may have expired meanwhile', async () => {
+			installDom();
+			const { reads, model } = counted();
+			const view = new SaleItemView(content(), icons, actions(model));
+			await view.onOpen();
+			const before = reads.count;
+
+			view.setVisible(false);
+			view.setVisible(true);
+
+			expect(reads.count).toBe(before + 1);
+		});
+
+		it('a refresh that ends while hidden leaves the busy state painted for the next time it is shown', async () => {
+			installDom();
+			let finish!: () => void;
+			const pending = new Promise<void>((resolve) => { finish = resolve; });
+			const { reads, model } = counted();
+			const view = new SaleItemView(content(), icons, actions(model, { refreshSale: async () => { await pending; } }));
+			await view.onOpen();
+			const root = view.contentEl as unknown as FakeElement;
+			find(root, 'button').find((el) => text(el).includes('Actualizar'))!.dispatch('click');
+			const busyPaints = reads.count;
+
+			view.setVisible(false);
+			finish();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(reads.count, 'the end of the refresh painted a hidden section').toBe(busyPaints);
+
+			view.setVisible(true);
+			expect(reads.count).toBe(busyPaints + 1);
+		});
+	});
+});
+
+describe('SaleItemView where the host lists the sections itself', () => {
+	const shellOf = (view: SaleItemView): { shell: FakeElement | undefined; nav: FakeElement | undefined } => {
+		const root = view.contentEl as unknown as FakeElement;
+		return {
+			shell: walk(root).find((el) => el.className.split(' ').includes('tyrian-product-shell')),
+			nav: find(root, 'nav').find((el) => el.className.includes('tyrian-product-shell__nav')),
+		};
+	};
+	const withShell = (extra: Partial<SaleViewActions> = {}): SaleViewActions => actions(() => buildSaleViewModel(baseInput({})), {
+		getProductActionController: () => productController(async () => 'completed'), hasConfiguredApiKey: () => true,
+		openProductSettings: () => undefined, ...extra,
+	});
+
+	it('builds no bar of tabs on the host\'s main screen, and keeps the shell around the content', async () => {
+		installDom();
+		const view = new SaleItemView(content(), icons, withShell({ hostListsSections: () => true }));
+		await view.onOpen();
+
+		const { shell, nav } = shellOf(view);
+		expect(shell).toBeDefined();
+		expect(nav).toBeUndefined();
+		expect(find(view.contentEl as unknown as FakeElement, 'button').some((el) => el.className.includes('tyrian-product-shell__settings'))).toBe(false);
+	});
+
+	it('keeps the bar as a view of its own, and where the core says nothing about it', async () => {
+		installDom();
+		for (const extra of [{ hostListsSections: () => false }, {}]) {
+			const view = new SaleItemView(content(), icons, withShell(extra));
+			await view.onOpen();
+			const { nav } = shellOf(view);
+			const buttons = find(nav!, 'button');
+			expect(buttons.filter((el) => !el.className.includes('tyrian-product-shell__settings')).map((el) => el.textContent))
+				.toEqual(['Sesión', 'Inventario', 'Venta']);
+			expect(buttons.filter((el) => el.className.includes('tyrian-product-shell__settings'))).toHaveLength(1);
+		}
+	});
+
+	it('keeps the missing-key warning, with its way to Settings, where there is no bar', async () => {
+		installDom();
+		const openProductSettings = vi.fn();
+		const view = new SaleItemView(content(), icons, withShell({ hostListsSections: () => true, hasConfiguredApiKey: () => false, openProductSettings }));
+		await view.onOpen();
+
+		const warning = walk(view.contentEl as unknown as FakeElement).find((el) => el.className.includes('tyrian-product-shell__attention'))!;
+		find(warning, 'button')[0]!.dispatch('click');
+		expect(openProductSettings).toHaveBeenCalledOnce();
+	});
 });
 
 function installDom(): void {

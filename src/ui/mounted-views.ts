@@ -1,12 +1,12 @@
-import type { TyrianViewRegistration } from '../host/tyrian-host';
+import type { TyrianSectionsViewRegistration, TyrianViewRegistration } from '../host/tyrian-host';
 
 /** A view controller as the host drives it: opened when mounted, closed when unmounted. */
 export interface MountableView {
 	onOpen(): Promise<void>;
 	onClose(): Promise<void>;
 	/**
-	 * The host showed or hid the container WITHOUT unmounting it. Optional, and no controller has it
-	 * yet: nothing hides a mounted section today (see `TyrianSection.setVisible`).
+	 * The host showed or hid the container WITHOUT unmounting it (see `TyrianSection.setVisible`).
+	 * Hidden, the controller ticks nothing and paints nothing; shown again, it repaints at most once.
 	 */
 	setVisible?(visible: boolean): void;
 }
@@ -20,25 +20,27 @@ export type TyrianSectionId = 'session' | 'inventory' | 'sale';
 /** What a section says about itself, wherever a host shows it; `MountedViews.section` adds how it mounts. */
 export interface TyrianSectionDescriptor {
 	readonly id: TyrianSectionId;
-	/** Localized, so read on every paint. */
+	/** Localized, so read on every paint. The title of the section as a view of its own. */
 	title(): string;
+	/** Localized. Its short name where a host lists the sections together («Sesión», «Inventario», «Venta»). */
+	label(): string;
 	/** Lucide name. */
 	readonly icon: string;
 }
 
 /**
  * One section of the plugin (Session, Inventory, Sale) as a host can show it: what it is and how
- * it is painted into an element, with nothing about WHERE. Where is a separate fact
- * (`TyrianSectionViewSlot`), so the same three sections can be three views of their own, as
- * today, or the parts of one view.
+ * it is painted into an element, with nothing about WHERE. Where is a separate fact, so the same
+ * three sections are three views of their own (`sectionViewRegistration`, each in its
+ * `TyrianSectionViewSlot`) or the parts of one view (`sectionsViewRegistration`).
  */
 export interface TyrianSection extends TyrianSectionDescriptor {
 	mount(container: HTMLElement): void | Promise<void>;
 	unmount(container: HTMLElement): void | Promise<void>;
 	/**
 	 * For a host that keeps a section mounted while another one is on screen: tells the section in
-	 * `container` that it was hidden (false) or shown again (true). Nobody calls it today, since
-	 * every host unmounts what it stops showing.
+	 * `container` that it was hidden (false) or shown again (true). Only the sections view calls it
+	 * (`sectionsViewRegistration`); a section that is a view of its own is unmounted instead.
 	 */
 	setVisible?(container: HTMLElement, visible: boolean): void;
 }
@@ -59,6 +61,33 @@ export function sectionViewDescriptor(section: TyrianSectionDescriptor, slot: Ty
 /** What `TyrianUiPort.registerView` takes for a section registered in `slot`; it mounts as the section does. */
 export function sectionViewRegistration(section: TyrianSection, slot: TyrianSectionViewSlot): TyrianViewRegistration {
 	return viewRegistration(sectionViewDescriptor(section, slot), section);
+}
+
+/** What a sections view says of itself, apart from its sections. */
+export type TyrianSectionsViewDescriptor = Omit<TyrianSectionsViewRegistration, 'sections'>;
+
+/**
+ * What `TyrianUiPort.registerSectionsView` takes for the sections together in ONE view, in the
+ * order given: each listed under its short label and with its own icon, mounted, unmounted and
+ * told of its visibility as the section is.
+ */
+export function sectionsViewRegistration(
+	view: TyrianSectionsViewDescriptor,
+	sections: readonly TyrianSection[],
+): TyrianSectionsViewRegistration {
+	return {
+		type: view.type,
+		title: () => view.title(),
+		icon: view.icon,
+		sections: sections.map((section) => ({
+			id: section.id,
+			title: () => section.label(),
+			icon: section.icon,
+			mount: (container) => section.mount(container),
+			unmount: (container) => section.unmount(container),
+			setVisible: (container, visible) => { section.setVisible?.(container, visible); },
+		})),
+	};
 }
 
 function viewRegistration(
@@ -91,6 +120,7 @@ export class MountedViews<T extends MountableView> {
 		return {
 			id: section.id,
 			title: () => section.title(),
+			label: () => section.label(),
 			icon: section.icon,
 			mount: (container) => this.open(container),
 			unmount: (container) => this.close(container),

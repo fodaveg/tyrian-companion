@@ -174,3 +174,106 @@ describe('mounted Companion live consumer (simplified Session tab)', () => {
   await view.onClose();
  });
 });
+
+describe('mounted Companion as a section the host hides without unmounting it', () => {
+ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(Date.UTC(2026, 9, 6, 8, 0, 0))); });
+ afterEach(() => { vi.useRealTimers(); });
+
+ /** The view opened on an active session (so its one-second tick is armed), with every read of the session and every full repaint counted. */
+ async function opened(extra: Partial<CompanionActions> = {}) {
+  const read = vi.fn((_offset?: number, _limit?: number) => live(3));
+  const mounted = mount({ view: read });
+  Object.assign((mounted.view as unknown as { actions: object }).actions, extra);
+  // `render()` is the only thing that puts this class on the content; the tick never does.
+  const addClass = vi.spyOn(mounted.content as unknown as { addClass(name: string): void }, 'addClass');
+  const repaints = (): number => addClass.mock.calls.filter(([name]) => name === 'tyrian-companion-view').length;
+  await mounted.view.onOpen();
+  return { ...mounted, read, repaints };
+ }
+
+ it('stops its one-second tick while hidden, paints nothing however often the core asks, and repaints once when shown', async () => {
+  const { view, read, repaints } = await opened();
+  expect(vi.getTimerCount()).toBe(1);
+  const before = repaints();
+
+  view.setVisible(false);
+  expect(vi.getTimerCount()).toBe(0);
+  read.mockClear();
+  // What the core does while the section is hidden: full repaints and background refreshes.
+  view.render(); view.render(); view.render();
+  view.refreshBackgroundStatus();
+  vi.advanceTimersByTime(60_000);
+  expect(repaints(), 'repainted while hidden').toBe(before);
+  expect(read, 'read the session while hidden').not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+
+  view.setVisible(true);
+  expect(repaints(), 'the three repaints asked for while hidden are one').toBe(before + 1);
+  expect(vi.getTimerCount()).toBe(1);
+  // Shown twice in a row is shown once.
+  view.setVisible(true);
+  expect(repaints()).toBe(before + 1);
+  await view.onClose();
+  expect(vi.getTimerCount()).toBe(0);
+ });
+
+ it('with no repaint owed, being shown only catches the clock up and arms the tick again', async () => {
+  const { view, read, repaints } = await opened();
+  const before = repaints();
+
+  view.setVisible(false);
+  read.mockClear();
+  view.setVisible(true);
+
+  expect(repaints()).toBe(before);
+  expect(read).toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(1);
+  // The repaint that was not owed is not owed later either.
+  view.setVisible(false);
+  view.setVisible(true);
+  expect(repaints()).toBe(before);
+  await view.onClose();
+ });
+
+ it('the window coming back does not wake a hidden section, and the section shown in a hidden window arms nothing', async () => {
+  const { view, read, repaints } = await opened();
+  const before = repaints();
+  const windowHidden = (hidden: boolean): void => {
+   Object.defineProperty(document, 'hidden', { value: hidden, configurable: true });
+   document.dispatchEvent(new Event('visibilitychange'));
+  };
+  try {
+   view.setVisible(false);
+   read.mockClear();
+   windowHidden(true);
+   windowHidden(false);
+   expect(read).not.toHaveBeenCalled();
+   expect(vi.getTimerCount()).toBe(0);
+
+   windowHidden(true);
+   view.setVisible(true);
+   expect(vi.getTimerCount()).toBe(0);
+   windowHidden(false);
+   expect(vi.getTimerCount()).toBe(1);
+   expect(repaints()).toBe(before);
+  } finally {
+   Reflect.deleteProperty(document, 'hidden');
+  }
+  await view.onClose();
+ });
+
+ it('builds no bar of tabs where the host lists the sections itself, and builds it everywhere else', async () => {
+  const listed = await opened({ hostListsSections: () => true });
+  expect(listed.content.querySelector('.tyrian-product-shell')).not.toBeNull();
+  expect(listed.content.querySelector('.tyrian-product-shell__nav')).toBeNull();
+  expect(listed.content.querySelector('.tyrian-live-session')).not.toBeNull();
+  await listed.view.onClose();
+
+  for (const extra of [{ hostListsSections: () => false }, {}]) {
+   const own = await opened(extra);
+   expect(Array.from(own.content.querySelectorAll('.tyrian-product-shell__nav button:not(.tyrian-product-shell__settings)')).map((tab) => tab.textContent))
+    .toEqual(['Session', 'Inventory', 'Sale']);
+   await own.view.onClose();
+  }
+ });
+});

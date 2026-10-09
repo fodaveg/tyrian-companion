@@ -17,6 +17,8 @@ export interface SaleViewActions {
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
 	openProductSettings?(): void;
+	/** True while the host itself lists the sections (its main screen), so the shell builds no bar of tabs. Absent means false. */
+	hostListsSections?(): boolean;
 }
 
 /** The Sale section, wherever a host shows it. */
@@ -24,6 +26,7 @@ export function saleSection(actions: Pick<SaleViewActions, 'getSaleLocale'>): Ty
 	return {
 		id: 'sale',
 		title: () => createTranslator(actions.getSaleLocale()).t('sale.view.title'),
+		label: () => createTranslator(actions.getSaleLocale()).t('shell.nav.sale'),
 		icon: 'candy',
 	};
 }
@@ -48,6 +51,11 @@ export class SaleItemView {
 	/** The pending repaint for the next instant a figure on screen stops being "recent". */
 	private expiryTimer: number | null = null;
 	private visibilityCleanup: (() => void) | null = null;
+	/**
+	 * True while the host keeps this section mounted but hidden (`setVisible`). A `render()` asked
+	 * for meanwhile needs no mark of its own: being shown again always repaints, once.
+	 */
+	private sectionHidden = false;
 
 	constructor(
 		readonly contentEl: HTMLElement,
@@ -57,6 +65,7 @@ export class SaleItemView {
 
 	async onOpen(): Promise<void> {
 		this.closed = false;
+		this.sectionHidden = false;
 		this.registerVisibilityRepaint();
 		this.render();
 		// H18.38 (David, 0.2.3): opening still only reads the memory snapshot, but a snapshot that
@@ -65,6 +74,20 @@ export class SaleItemView {
 		// nothing on screen invites. `runRefresh` already no-ops while one is in flight or absent.
 		if (this.actions.getSaleViewModel().status === 'loading') void this.runRefresh(false);
 	}
+	/**
+	 * The host hid this section, or showed it again, WITHOUT unmounting it (a host that keeps its
+	 * sections mounted; a view of its own is never told). Hidden, the expiry timer is dropped and a
+	 * `render()` asked for meanwhile paints nothing. Shown again, it repaints once (and re-arms the
+	 * timer) whether or not one was asked for: a figure may have stopped being "recent" while
+	 * nobody looked, as on the return from a hidden window.
+	 */
+	setVisible(visible: boolean): void {
+		if (visible === !this.sectionHidden) return;
+		this.sectionHidden = !visible;
+		if (!visible) { this.clearExpiryTimer(); return; }
+		this.render();
+	}
+
 	/**
 	 * Stops the view repainting by itself: drops the expiry timer and the visibility listener, and
 	 * makes a late `render()` a no-op. The runtime calls it on unload because Hebra only unmounts a
@@ -87,11 +110,14 @@ export class SaleItemView {
 
 	render(): void {
 		if (this.closed) return;
+		// Hidden: nothing is painted. Being shown again repaints (`setVisible`).
+		if (this.sectionHidden) return;
 		const model = this.actions.getSaleViewModel();
 		const locale = this.actions.getSaleLocale();
 		const actionController = this.actions.getProductActionController?.();
 		const missingApiKey = !(this.actions.hasConfiguredApiKey?.() ?? true);
-		const shellKey = `${locale}:${String(missingApiKey)}`;
+		const navigation = !(this.actions.hostListsSections?.() ?? false);
+		const shellKey = `${locale}:${String(missingApiKey)}:${String(navigation)}`;
 		if (actionController !== undefined && (this.productShell === null || this.productShellKey !== shellKey)) {
 			this.productShell?.dispose();
 			this.productShell = renderProductShell(this.contentEl, {
@@ -101,6 +127,7 @@ export class SaleItemView {
 				missingApiKey,
 				openSettings: () => this.actions.openProductSettings?.(),
 				ui: this.ui,
+				navigation,
 			});
 			this.productShellKey = shellKey;
 		}
@@ -121,7 +148,7 @@ export class SaleItemView {
 	 */
 	private scheduleExpiryRepaint(model: SaleViewModel): void {
 		this.clearExpiryTimer();
-		if (this.closed || this.contentEl.doc.hidden) return;
+		if (this.closed || this.contentEl.doc.hidden || this.sectionHidden) return;
 		// After the real clock too: a model that was not rebuilt (nowMs in the past) must not re-arm for an instant already gone.
 		const at = nextExpiryMs(model, Math.max(model.nowMs, Date.now()));
 		if (at === null) return;

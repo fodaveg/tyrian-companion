@@ -13,6 +13,11 @@ export interface ProductShellOptions {
 	readonly openSettings: () => void;
 	/** Paints the Lucide icon of the settings button. */
 	readonly ui: Pick<TyrianUiPort, 'setIcon'>;
+	/**
+	 * False where the host itself lists the sections (its main screen): the bar of tabs, with its
+	 * settings button, is not built at all, since the host's list does that job. Absent means true.
+	 */
+	readonly navigation?: boolean;
 }
 
 export interface ProductShellMount {
@@ -27,6 +32,7 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 	container.empty();
 	container.addClass('tyrian-product-surface');
 	const shell = container.createDiv({ cls: 'tyrian-product-shell' });
+	if (options.navigation !== false) {
 	// One line of tabs and nothing else above the content: the leaf title already names the
 	// product, and every word spent here is a word the panel's own numbers have to scroll past.
 	const nav = shell.createEl('nav', { cls: 'tyrian-product-shell__nav', attr: { 'aria-label': t.t('shell.title') } });
@@ -43,6 +49,7 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 	});
 	options.ui.setIcon(settingsButton, 'settings');
 	settingsButton.addEventListener('click', options.openSettings);
+	}
 
 	if (options.missingApiKey) {
 		const warning = shell.createDiv({ cls: 'tyrian-product-shell__attention' });

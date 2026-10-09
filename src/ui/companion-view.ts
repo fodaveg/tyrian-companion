@@ -159,6 +159,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions, Partial<Fa
 	 */
 	getCollectorMode?(): CollectorMode;
 	openProductSettings?(): void;
+	/** True while the host itself lists the sections (its main screen), so the shell builds no bar of tabs. Absent means false. */
+	hostListsSections?(): boolean;
 	/** Vault path of the note written for the session currently on screen, or null when none is durable. */
 	getSavedSessionNotePath?(): string | null;
 	openSavedSessionNote?(): void;
@@ -174,6 +176,7 @@ export function companionSection(actions: Pick<CompanionActions, 'getLocale'>): 
 	return {
 		id: 'session',
 		title: () => translateRuntime(createTranslator(actions.getLocale()), 'view.displayName'),
+		label: () => translateRuntime(createTranslator(actions.getLocale()), 'shell.nav.companion'),
 		icon: 'sword',
 	};
 }
@@ -208,6 +211,10 @@ export class TyrianCompanionView {
 	private livePanelLocale: Locale | null = null;
 	/** Torn down in `onClose`; set once in `onOpen` so a repeated `render()` never registers twice. */
 	private visibilityCleanup: (() => void) | null = null;
+	/** True while the host keeps this section mounted but hidden (`setVisible`). */
+	private sectionHidden = false;
+	/** A `render()` asked for while hidden, owed once to the moment the section is shown again. */
+	private repaintPending = false;
 	/** The card's ticking clock (`.tyrian-companion-session__clock`), while a session is active. */
 	private headerElapsed: HTMLElement | null = null;
 	/** Retained figure nodes for the two live bands (observed value, sacks), refreshed every second. */
@@ -257,8 +264,24 @@ export class TyrianCompanionView {
 
 	async onOpen(): Promise<void> {
 		this.actions.localDebugViewEvent?.('open');
+		this.sectionHidden = false;
+		this.repaintPending = false;
 		this.registerVisibilityPause();
 		this.render();
+	}
+
+	/**
+	 * The host hid this section, or showed it again, WITHOUT unmounting it (a host that keeps its
+	 * sections mounted; a view of its own is never told). Hidden, nothing ticks and nothing is
+	 * painted: a `render()` asked for meanwhile is only remembered. Shown again, that repaint is
+	 * paid once; with none owed, only the clocks catch up and the tick is armed again.
+	 */
+	setVisible(visible: boolean): void {
+		if (visible === !this.sectionHidden) return;
+		this.sectionHidden = !visible;
+		if (!visible) { this.clearRefresh(); return; }
+		if (this.repaintPending) this.render();
+		else this.refreshDynamicStatus();
 	}
 
 	async onClose(): Promise<void> {
@@ -291,13 +314,16 @@ export class TyrianCompanionView {
 		const doc = this.contentEl.doc;
 		const onVisibilityChange = (): void => {
 			if (doc.hidden) { this.clearRefresh(); return; }
-			this.refreshDynamicStatus();
+			// The window is back, but a hidden section stays quiet until the host shows it.
+			if (!this.sectionHidden) this.refreshDynamicStatus();
 		};
 		doc.addEventListener('visibilitychange', onVisibilityChange);
 		this.visibilityCleanup = () => { doc.removeEventListener('visibilitychange', onVisibilityChange); };
 	}
 
 	render(): void {
+		if (this.sectionHidden) { this.repaintPending = true; return; }
+		this.repaintPending = false;
 		this.clearRefresh();
 		const { contentEl } = this;
 		const connectionState = this.actions.getConnectionState();
@@ -322,7 +348,8 @@ export class TyrianCompanionView {
 		const locale = this.actions.getLocale();
 		const liveSurface = this.actions.getLiveSessionView !== undefined;
 		const missingApiKey = !liveSurface && !(this.actions.hasConfiguredApiKey?.() ?? true);
-		const shellKey = `${locale}:${String(missingApiKey)}`;
+		const navigation = !(this.actions.hostListsSections?.() ?? false);
+		const shellKey = `${locale}:${String(missingApiKey)}:${String(navigation)}`;
 		if (actionController === undefined) {
 			// Without a shell `contentEl` is the surface itself, emptied a few lines below; only a
 			// shell that is going away has anything of its own to clear here.
@@ -340,6 +367,7 @@ export class TyrianCompanionView {
 				missingApiKey,
 				openSettings: () => this.actions.openProductSettings?.(),
 				ui: this.ui,
+				navigation,
 			});
 			this.productShellKey = shellKey;
 		}
@@ -1332,6 +1360,8 @@ export class TyrianCompanionView {
 	}
 
 	refreshBackgroundStatus(): void {
+		// Hidden: nothing to move. Being shown again runs this same refresh (`setVisible`).
+		if (this.sectionHidden) return;
 		this.refreshDynamicStatus();
 	}
 
@@ -1470,8 +1500,9 @@ export class TyrianCompanionView {
 			|| (this.actions.getFarmingReminders?.().length ?? 0) > 0;
 		// A hidden window (backgrounded, or a popout tucked behind another) gets no ticking
 		// interval at all: `registerVisibilityPause` rearms it, with an immediate repaint, the
-		// moment `contentEl.doc` reports visible again.
-		if (!shouldRefresh || this.contentEl.doc.hidden) {
+		// moment `contentEl.doc` reports visible again. Nor does a section the host keeps mounted
+		// but hidden: `setVisible` rearms it when it is shown.
+		if (!shouldRefresh || this.contentEl.doc.hidden || this.sectionHidden) {
 			this.clearRefresh();
 			return;
 		}

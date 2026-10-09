@@ -9,6 +9,7 @@ import {
 } from './inventory-advisor-item-view';
 import {
 	MountedViews,
+	sectionsViewRegistration,
 	sectionViewDescriptor,
 	sectionViewRegistration,
 	type MountableView,
@@ -91,19 +92,19 @@ class HideableView extends RecordingView {
 }
 
 describe('a section, apart from where the host registers it', () => {
-	it('says what it is and nothing about where: an id, a title read on every call, an icon and how it mounts', () => {
+	it('says what it is and nothing about where: an id, a title and a short label read on every call, an icon and how it mounts', () => {
 		let title = 'Equis';
 		const section = new MountedViews((element) => new RecordingView(element))
-			.section({ id: 'sale', title: () => title, icon: 'compass' });
-		expect(Object.keys(section).sort()).toEqual(['icon', 'id', 'mount', 'setVisible', 'title', 'unmount']);
-		expect([section.id, section.title(), section.icon]).toEqual(['sale', 'Equis', 'compass']);
+			.section({ id: 'sale', title: () => title, label: () => `${title} corta`, icon: 'compass' });
+		expect(Object.keys(section).sort()).toEqual(['icon', 'id', 'label', 'mount', 'setVisible', 'title', 'unmount']);
+		expect([section.id, section.title(), section.label(), section.icon]).toEqual(['sale', 'Equis', 'Equis corta', 'compass']);
 		title = 'Otra';
-		expect(section.title()).toBe('Otra');
+		expect([section.title(), section.label()]).toEqual(['Otra', 'Otra corta']);
 	});
 
 	it('mounts one controller per container and closes and forgets it on unmount, like the view it used to be', async () => {
 		const views = new MountedViews((element) => new RecordingView(element));
-		const section = views.section({ id: 'session', title: () => 'Equis', icon: 'compass' });
+		const section = views.section({ id: 'session', title: () => 'Equis', label: () => 'X', icon: 'compass' });
 		const left = container('left');
 		const right = container('right');
 
@@ -122,7 +123,7 @@ describe('a section, apart from where the host registers it', () => {
 
 	it('tells only the controller of that container that it was hidden or shown, and never mounts or unmounts for it', async () => {
 		const views = new MountedViews((element) => new HideableView(element));
-		const section = views.section({ id: 'inventory', title: () => 'Equis', icon: 'compass' });
+		const section = views.section({ id: 'inventory', title: () => 'Equis', label: () => 'X', icon: 'compass' });
 		const left = container('left');
 		const right = container('right');
 		await section.mount(left);
@@ -144,7 +145,7 @@ describe('a section, apart from where the host registers it', () => {
 
 	it('is a no-op to hide or show a controller that does not listen', async () => {
 		const views = new MountedViews((element) => new RecordingView(element));
-		const section = views.section({ id: 'sale', title: () => 'Equis', icon: 'compass' });
+		const section = views.section({ id: 'sale', title: () => 'Equis', label: () => 'X', icon: 'compass' });
 		const only = container('only');
 		await section.mount(only);
 		expect(() => { section.setVisible?.(only, false); }).not.toThrow();
@@ -156,6 +157,7 @@ describe('from a section to the view the host registers', () => {
 	const fakeSection = (calls: string[]): TyrianSection => ({
 		id: 'sale',
 		title: () => 'Equis',
+		label: () => 'X',
 		icon: 'compass',
 		mount: async (element) => { calls.push(`mount:${(element as unknown as { name: string }).name}`); },
 		unmount: async (element) => { calls.push(`unmount:${(element as unknown as { name: string }).name}`); },
@@ -163,11 +165,11 @@ describe('from a section to the view the host registers', () => {
 	});
 
 	it('takes the type and the placement from the slot and the title and the icon from the section', () => {
-		const descriptor = sectionViewDescriptor({ id: 'sale', title: () => 'Equis', icon: 'compass' }, { type: 'tyrian-x', placement: 'dialog' });
+		const descriptor = sectionViewDescriptor({ id: 'sale', title: () => 'Equis', label: () => 'X', icon: 'compass' }, { type: 'tyrian-x', placement: 'dialog' });
 		expect(Object.keys(descriptor).sort()).toEqual(['icon', 'placement', 'title', 'type']);
 		expect([descriptor.type, descriptor.title(), descriptor.icon, descriptor.placement]).toEqual(['tyrian-x', 'Equis', 'compass', 'dialog']);
 		// A slot without a placement leaves it out, so the host applies its own default.
-		expect('placement' in sectionViewDescriptor({ id: 'sale', title: () => 'Y', icon: 'x' }, { type: 'tyrian-y' })).toBe(false);
+		expect('placement' in sectionViewDescriptor({ id: 'sale', title: () => 'Y', label: () => 'y', icon: 'x' }, { type: 'tyrian-y' })).toBe(false);
 	});
 
 	it('registers exactly a view: the six fields of a registration, with the section\'s own mount and unmount behind them', async () => {
@@ -214,6 +216,51 @@ describe('from a section to the view the host registers', () => {
 		];
 		expect(ids('es')).toEqual(['session', 'inventory', 'sale']);
 		expect(ids('en')).toEqual(ids('es'));
+	});
+
+	it('lists the same sections together in ONE view: in the order given, each under its short label and with its own icon', () => {
+		let locale: 'es' | 'en' = 'es';
+		const actions = { getLocale: () => locale, getInventoryAdvisorLocale: () => locale, getSaleLocale: () => locale };
+		const views = new MountedViews((element) => new RecordingView(element));
+		const registration = sectionsViewRegistration({ type: 'tyrian-main', title: () => 'Tyrian', icon: 'sword' }, [
+			views.section(companionSection(actions)), views.section(inventoryAdvisorSection(actions)), views.section(saleSection(actions)),
+		]);
+		const listed = () => registration.sections.map((section) => [section.id, section.title(), section.icon]);
+
+		expect(Object.keys(registration).sort()).toEqual(['icon', 'sections', 'title', 'type']);
+		expect([registration.type, registration.title(), registration.icon]).toEqual(['tyrian-main', 'Tyrian', 'sword']);
+		expect(listed()).toEqual([
+			['session', 'Sesión', 'sword'], ['inventory', 'Inventario', 'package-search'], ['sale', 'Venta', 'candy'],
+		]);
+		locale = 'en';
+		expect(listed().map(([, title]) => title)).toEqual(['Session', 'Inventory', 'Sale']);
+		// The label is for the list only: the title of each section as a view of its own is another.
+		expect(companionSection(actions).title()).toBe('Tyrian companion');
+	});
+
+	it('mounts, unmounts and tells a listed section it is hidden or shown through the same controllers, each in its own container', async () => {
+		const sessions = new MountedViews((element) => new HideableView(element));
+		const sales = new MountedViews((element) => new HideableView(element));
+		const registration = sectionsViewRegistration({ type: 'tyrian-main', title: () => 'Tyrian', icon: 'sword' }, [
+			sessions.section({ id: 'session', title: () => 'S', label: () => 's', icon: 'a' }),
+			sales.section({ id: 'sale', title: () => 'V', label: () => 'v', icon: 'b' }),
+		]);
+		const [session, sale] = registration.sections;
+		const first = container('first');
+		const second = container('second');
+
+		await session!.mount(first);
+		await sale!.mount(second);
+		session!.setVisible?.(first, false);
+		sale!.setVisible?.(second, false);
+		sale!.setVisible?.(second, true);
+		expect(sessions.current()[0]?.events).toEqual(['open', 'hidden']);
+		expect(sales.current()[0]?.events).toEqual(['open', 'hidden', 'shown']);
+
+		const closing = sessions.current()[0];
+		await session!.unmount(first);
+		expect(closing?.events).toEqual(['open', 'hidden', 'close']);
+		expect([sessions.current().length, sales.current().length]).toEqual([0, 1]);
 	});
 
 	it('mounts the derived view through the same controllers the repaints walk', async () => {

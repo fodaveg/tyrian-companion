@@ -557,6 +557,128 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 	});
 });
 
+describe('InventoryAdvisorItemView as a section the host hides without unmounting it', () => {
+	/** The window of the tab, with the frames it was asked for and the ones it cancelled. */
+	function framesOf(view: InventoryAdvisorItemView) {
+		const pending = new Map<number, () => void>();
+		const frames = { asked: 0, cancelled: 0 };
+		Object.assign(view.contentEl, { win: {
+			requestAnimationFrame: (callback: () => void): number => { frames.asked += 1; pending.set(frames.asked, callback); return frames.asked; },
+			cancelAnimationFrame: (handle: number): void => { if (pending.delete(handle)) frames.cancelled += 1; },
+		} });
+		return { frames, pending: () => pending.size, run: (): void => { const due = [...pending.values()]; pending.clear(); for (const frame of due) frame(); } };
+	}
+	/** Actions whose model counts how many times a paint read it. */
+	function counted(sync: Parameters<typeof actions>[1] = {}) {
+		const reads = { count: 0 };
+		const value: InventoryAdvisorViewActions = {
+			...actions(() => 'es', sync).value,
+			getInventoryAdvisorViewModel: () => { reads.count += 1; return readyModel(); },
+		};
+		return { reads, value };
+	}
+
+	it('asks for no frame while hidden, drops the one it was waiting for, and paints the progress once when shown', async () => {
+		installDom();
+		const { reads, value } = counted({ run: async () => undefined });
+		const view = new InventoryAdvisorItemView(content(), icons, value);
+		const window = framesOf(view);
+		await view.onOpen();
+		view.renderProgress();
+		expect(window.pending()).toBe(1);
+		const before = reads.count;
+
+		view.setVisible(false);
+		expect(window.pending(), 'the frame it was waiting for').toBe(0);
+		expect(window.frames.cancelled).toBe(1);
+		// A sync in flight reports once per note written.
+		for (let report = 0; report < 50; report += 1) view.renderProgress();
+		expect(window.frames.asked, 'asked for a frame while hidden').toBe(1);
+		expect(reads.count).toBe(before);
+
+		view.setVisible(true);
+		expect(reads.count, 'one repaint for the fifty reports').toBe(before + 1);
+		expect(window.pending()).toBe(0);
+		// Visible again, a report asks for its frame as always.
+		view.renderProgress();
+		expect(window.pending()).toBe(1);
+	});
+
+	it('paints nothing however often the core asks while hidden, and repaints once when shown', async () => {
+		installDom();
+		const { reads, value } = counted();
+		const view = new InventoryAdvisorItemView(content(), icons, value);
+		await view.onOpen();
+		const before = reads.count;
+
+		view.setVisible(false);
+		view.render(); view.render(); view.render();
+		expect(reads.count).toBe(before);
+
+		view.setVisible(true);
+		expect(reads.count).toBe(before + 1);
+		view.setVisible(true);
+		expect(reads.count).toBe(before + 1);
+	});
+
+	it('repaints nothing when shown with nothing owed', async () => {
+		installDom();
+		const { reads, value } = counted();
+		const view = new InventoryAdvisorItemView(content(), icons, value);
+		await view.onOpen();
+		const before = reads.count;
+
+		view.setVisible(false);
+		view.setVisible(true);
+
+		expect(reads.count).toBe(before);
+	});
+
+	it('keeps telling the shared actions about its busy work while hidden: an analysis that ends there frees them', async () => {
+		installDom();
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => { finish = resolve; });
+		const controller = productController(async () => undefined);
+		const { reads, value } = counted({ productActions: controller, analyze: () => pending });
+		const view = new InventoryAdvisorItemView(content(), icons, value);
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		find(root, 'button').find((candidate) => candidate.textContent === 'Analizar sin escribir')!.dispatch('click');
+		expect(controller.describe('refresh-inventory-advisor').state).toBe('running');
+		const before = reads.count;
+
+		view.setVisible(false);
+		finish();
+		await flush();
+		expect(reads.count, 'the end of the analysis painted a hidden section').toBe(before);
+		expect(controller.describe('refresh-inventory-advisor').state, 'the palette still sees it running').toBe('idle');
+
+		view.setVisible(true);
+		expect(reads.count).toBe(before + 1);
+		expect(find(root, 'button').find((candidate) => candidate.textContent === 'Analizar sin escribir')!.disabled).toBe(false);
+	});
+
+	it('builds no bar of tabs where the host lists the sections itself, and builds it everywhere else', async () => {
+		installDom();
+		const navOf = async (extra: Partial<InventoryAdvisorViewActions>): Promise<FakeElement | undefined> => {
+			const view = new InventoryAdvisorItemView(content(), icons, {
+				...actions(() => 'es', { productActions: productController(async () => undefined) }).value, ...extra,
+			});
+			await view.onOpen();
+			const root = view.contentEl as unknown as FakeElement;
+			expect(walk(root).some((element) => element.className.split(' ').includes('tyrian-product-shell'))).toBe(true);
+			return find(root, 'nav').find((element) => element.className.includes('tyrian-product-shell__nav'));
+		};
+
+		expect(await navOf({ hostListsSections: () => true })).toBeUndefined();
+		for (const extra of [{ hostListsSections: () => false }, {}]) {
+			const nav = await navOf(extra);
+			expect(find(nav!, 'button').filter((tab) => !tab.className.includes('tyrian-product-shell__settings')).map((tab) => tab.textContent))
+				.toEqual(['Sesión', 'Inventario', 'Venta']);
+		}
+	});
+});
+
 /**
  * A host whose settings behave like the plugin's: `enablePriceHistory` and «Ahora no» are one
  * `mergeSettingsUpdate` each, and the offer is `priceHistoryOptInOffered`, the function main uses.

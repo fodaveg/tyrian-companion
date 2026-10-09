@@ -201,6 +201,44 @@ export interface TyrianViewRegistration {
 	unmount(container: HTMLElement): void | Promise<void>;
 }
 
+/**
+ * One section of a `TyrianSectionsViewRegistration`: what the host lists and how it is painted
+ * into the element the host gives it. The host mounts a section the first time it is shown and
+ * then keeps it mounted, hiding it while another one (or something else of the host) is on screen.
+ */
+export interface TyrianViewSectionRegistration {
+	/** Unique in its view; what `revealSection` and `updateSection` name. */
+	readonly id: string;
+	/** Localized. Read when the view registers; `updateSection` changes it afterwards. */
+	title(): string;
+	/** Lucide name. */
+	readonly icon: string;
+	mount(container: HTMLElement): void | Promise<void>;
+	unmount(container: HTMLElement): void | Promise<void>;
+	/** The host hid (false) or showed again (true) the mounted section in `container`. Never called right after `mount` nor before `unmount`. */
+	setVisible?(container: HTMLElement, visible: boolean): void;
+}
+
+/** ONE view on the host's main screen that lists several sections and shows one at a time (`capabilities.mainView`). */
+export interface TyrianSectionsViewRegistration {
+	readonly type: string;
+	/** Localized. Read when the view registers. */
+	title(): string;
+	/** Lucide name. */
+	readonly icon: string;
+	/** In the order the host lists them; the first is the one a first visit opens. */
+	readonly sections: readonly TyrianViewSectionRegistration[];
+}
+
+/** What `updateSection` changes of a listed section; an omitted field stays, null removes the subtitle or the badge. */
+export interface TyrianViewSectionPatch {
+	readonly title?: string;
+	/** A second, quieter line under the title. */
+	readonly subtitle?: string | null;
+	/** A short mark beside the title (a count, a word). */
+	readonly badge?: string | number | null;
+}
+
 export interface TyrianCommandRegistration {
 	readonly id: string;
 	readonly name: string;
@@ -331,6 +369,17 @@ export interface TyrianUiPort {
 	registerView(view: TyrianViewRegistration): TyrianDisposer;
 	/** main.ts:4752-4771 `activateView` and siblings (open or focus the view of that type). */
 	revealView(type: string): Promise<void>;
+	/**
+	 * The three methods of a host that declares `capabilities.mainView`, and only of it: the core
+	 * calls none of them on a host that does not, so Obsidian leaves them out.
+	 * `registerSectionsView` registers the one view of the main screen; its disposer unmounts every
+	 * mounted section and takes the view away, in the same tick.
+	 */
+	registerSectionsView?(view: TyrianSectionsViewRegistration): TyrianDisposer;
+	/** Opens the sections view of that type on that section, or switches to it where it is already open. */
+	revealSection?(type: string, sectionId: string): Promise<void>;
+	/** Changes what the host lists for one section (its title after a language change, a subtitle, a badge). */
+	updateSection?(type: string, sectionId: string, patch: TyrianViewSectionPatch): void;
 	/** ui/product-action-controller.ts:350, ui/session-command-adapter.ts:52, main.ts:3193. */
 	registerCommand(command: TyrianCommandRegistration): TyrianDisposer;
 	/** main.ts:4324 (session ribbon). */
@@ -399,8 +448,9 @@ export interface TyrianHostCapabilities {
 	 * together, besides showing it in its sidebar. The REVERSE of `managedAssets`: an omitted flag
 	 * means NOT supported, because this is a screen a host has to build before it can offer it, so
 	 * a host written before the flag existed must not be taken to have it. Only with true does
-	 * Settings show the row where this device picks between the two (`runtime/view-placement.ts`).
-	 * No host declares it yet, neither Obsidian nor Hebra.
+	 * Settings show the row where this device picks between the two (`runtime/view-placement.ts`),
+	 * and a host that declares it implements `ui.registerSectionsView` and `ui.revealSection`.
+	 * Hebra declares it where its plugin API has the main view (1.3.0); Obsidian never does.
 	 */
 	readonly mainView?: boolean;
 }

@@ -94,7 +94,10 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 				'actions.resolvePriceHistoryItemCatalog', 'actions.getPriceHistorySeedState', 'actions.getSellSignalState',
 				'actions.getPriceSeedQueueCoverage',
 				'actions.getProductActionController', 'actions.hasConfiguredApiKey', 'actions.openProductSettings',
-				'actions.getCollectorMode'],
+				'actions.getCollectorMode',
+				// A read of where the host shows this tab: on its main screen the host lists the sections
+				// itself and the shell builds no bar of tabs. It decides presentation only.
+				'actions.hostListsSections'],
 	}],
 	['src/ui/inventory-advisor-view.ts', {
 		// Locale-independent integer-copper formatting only; no I/O or capability is introduced.

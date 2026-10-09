@@ -415,6 +415,27 @@ describe('Companion background refresh visibility (H14.13)', () => {
 		expect(contentEl.scheduledInterval).not.toBeNull();
 		expect(contentEl.intervalSetCount).toBe(2);
 	});
+
+	it('arms no interval for a section the host keeps mounted but hidden, where it would for one on screen', () => {
+		const document = new RetainedFakeDocument();
+		const contentEl = new RetainedFakeElement('div', document);
+		const projection = { refreshEveryMs: 1_000, items: [], errors: [] };
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {}, contentEl, refreshInterval: null, sectionHidden: true,
+		});
+		const methods = TyrianCompanionView.prototype as unknown as {
+			scheduleRefresh(this: typeof harness, projection: unknown, retryAt: number | null, at: number): void;
+		};
+
+		// The same place that looks at the hidden window looks at the hidden section.
+		methods.scheduleRefresh.call(harness, projection, null, Date.now());
+		expect(contentEl.scheduledInterval).toBeNull();
+		expect(contentEl.intervalSetCount).toBe(0);
+
+		harness.sectionHidden = false;
+		methods.scheduleRefresh.call(harness, projection, null, Date.now());
+		expect(contentEl.intervalSetCount).toBe(1);
+	});
 });
 
 describe('Companion pilot metrics fail-open actions', () => {

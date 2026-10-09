@@ -69,6 +69,8 @@ export interface InventoryAdvisorViewActions {
 	 */
 	getCollectorMode?(): CollectorMode;
 	openProductSettings?(): void;
+	/** True while the host itself lists the sections (its main screen), so the shell builds no bar of tabs. Absent means false. */
+	hostListsSections?(): boolean;
 	/** Same account-level Halloween bag sell/hold verdict the session panel already reads (H14.6/H14.12). */
 	getSellSignalState?(): SellSignalRuntimeState | null;
 }
@@ -78,6 +80,7 @@ export function inventoryAdvisorSection(actions: Pick<InventoryAdvisorViewAction
 	return {
 		id: 'inventory',
 		title: () => createTranslator(actions.getInventoryAdvisorLocale()).t('advisor.view.title'),
+		label: () => createTranslator(actions.getInventoryAdvisorLocale()).t('shell.nav.inventory'),
 		icon: 'package-search',
 	};
 }
@@ -102,6 +105,10 @@ export class InventoryAdvisorItemView {
 	private syncBusy = false;
 	private priceHistoryBusy = false;
 	private closed = false;
+	/** True while the host keeps this section mounted but hidden (`setVisible`). */
+	private sectionHidden = false;
+	/** A `render()` or a progress report asked for while hidden, owed once to the moment the section is shown again. */
+	private repaintPending = false;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
 	private readonly preferenceSession: InventoryPreferencesEditorSession | undefined;
@@ -120,7 +127,25 @@ export class InventoryAdvisorItemView {
 	) {
 		this.preferenceSession = this.actions.createInventoryPreferencesEditorSession?.();
 	}
-	async onOpen(): Promise<void> { this.closed = false; this.render(); }
+	async onOpen(): Promise<void> {
+		this.closed = false;
+		this.sectionHidden = false;
+		this.repaintPending = false;
+		this.render();
+	}
+
+	/**
+	 * The host hid this section, or showed it again, WITHOUT unmounting it (a host that keeps its
+	 * sections mounted; a view of its own is never told). Hidden, no frame is asked for and nothing
+	 * is painted: a `render()` or a progress report meanwhile is only remembered, and paid once when
+	 * the section is shown again. What the shared actions read of this tab's busy work is not paused.
+	 */
+	setVisible(visible: boolean): void {
+		if (visible === !this.sectionHidden) return;
+		this.sectionHidden = !visible;
+		if (!visible) { this.cancelProgressRender(); return; }
+		if (this.repaintPending) this.render();
+	}
 	async onClose(): Promise<void> {
 		this.closed = true;
 		this.cancelProgressRender();
@@ -139,6 +164,8 @@ export class InventoryAdvisorItemView {
 	 */
 	renderProgress(): void {
 		if (this.closed || this.progressFrame !== null) return;
+		// Hidden: no frame. The progress is shown by the repaint owed to the next time it is shown.
+		if (this.sectionHidden) { this.repaintPending = true; return; }
 		const win = this.contentEl.win;
 		const handle = win.requestAnimationFrame(() => {
 			this.progressFrame = null;
@@ -162,6 +189,13 @@ export class InventoryAdvisorItemView {
 
 	render(): void {
 		if (this.closed) return;
+		if (this.sectionHidden) {
+			// Hidden: nothing is painted, but the shared actions still read this tab's busy work.
+			this.actions.getProductActionController?.().setInventorySurfaceBusy(this, this.analysisBusy || this.syncBusy);
+			this.repaintPending = true;
+			return;
+		}
+		this.repaintPending = false;
 		// A full repaint already shows whatever a waiting progress frame was going to show.
 		this.cancelProgressRender();
 		const model = this.actions.getInventoryAdvisorViewModel();
@@ -213,7 +247,8 @@ export class InventoryAdvisorItemView {
 		actionController?.setInventorySurfaceBusy(this, this.analysisBusy || this.syncBusy);
 		const locale = this.actions.getInventoryAdvisorLocale();
 		const missingApiKey = !(this.actions.hasConfiguredApiKey?.() ?? true);
-		const shellKey = `${locale}:${String(missingApiKey)}`;
+		const navigation = !(this.actions.hostListsSections?.() ?? false);
+		const shellKey = `${locale}:${String(missingApiKey)}:${String(navigation)}`;
 		if (actionController !== undefined && (this.productShell === null || this.productShellKey !== shellKey)) {
 			this.productShell?.dispose();
 			this.productShell = renderProductShell(this.contentEl, {
@@ -223,6 +258,7 @@ export class InventoryAdvisorItemView {
 			missingApiKey,
 			openSettings: () => this.actions.openProductSettings?.(),
 			ui: this.ui,
+			navigation,
 			});
 			this.productShellKey = shellKey;
 		}
