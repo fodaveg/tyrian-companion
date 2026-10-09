@@ -7,7 +7,7 @@ pendiente**. Tag `0.6.17` sobre `3bf01ee` (commit vacío de atestación), árbol
 `dc4bf8cd730919a502c9bf3fac3b2dbf5de3d587`. Gate local sobre el candidato `d48f630` (mismo árbol): `check` 8/8
 (5572 tests, 339 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run
 37916791102) terminó con todos los pasos en `success`, y `release:brat-verify` contra la salida real de la release
-dio PASS con los ocho assets. La CI de `main` sobre `3bf01ee` (run 37916781466) seguía en curso al escribir esto.
+dio PASS con los ocho assets. La CI de `main` sobre `3bf01ee` (run 37916781466) terminó en `success`, con el benchmark `bench:h6-live-session` incluido.
 Cambia una cifra visible (el valor de la tarjeta de botín de una sesión de cuenta) y
 endurece cómo se leen las notas de sesión, cuándo sale un aviso, cómo se piden los precios y cómo se guarda y se
 lista en Hebra. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.

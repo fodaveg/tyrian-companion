@@ -33,12 +33,15 @@ del inicio que vence y aterriza después deja una sesión activa que el usuario 
   `tyrian-companion-0.6.17.zip.sha256` 94 (bytes).
 - Revisión: los lotes del audit se pasaron juntos por el gate en `e800a54`; el lote del precio bruto tuvo revisor
   independiente en dos pasadas. Los metadatos, el changelog y los tres textos corregidos los leyó solo el integrador.
-- CI de `main` sobre `3bf01ee` (run 37916781466): `in_progress` al escribir esto (leído con `gh run view` el 9 oct
-  2026, 10:25 UTC): `detect-native-changes` y `check-guardrails` en `success`, `check` en curso, `rust-portable` y
-  `rust-windows-helper` omitidos. La conclusión no se ha leído.
+- CI de `main` sobre `3bf01ee` (run 37916781466): `completed` con conclusión `success` (leído con
+  `gh run view --json jobs` el 9 oct 2026). Jobs `detect-native-changes`, `check-guardrails`, `check` y
+  `release-package` en `success`; `rust-portable` y `rust-windows-helper` omitidos (`skipped`). Dentro de `check`, en
+  `success`: `npm run check`, `npm run bench:h6-performance`, `npm run test:bench:h6-performance-red`,
+  `npm run bench:h6-live-session` y `npm run bench:h6-live-session-red`.
 - Corrección del texto publicado: el cuerpo de la release 0.6.17 llevaba una frase errónea («no guarda muestras
   vacías»); con el escritor de la versión 1, el vigente, cada muestra deja su entrada, y solo la versión 2 omite la
-  que no cambia nada. El changelog queda corregido y el cuerpo de la release se edita con él.
+  que no cambia nada. El changelog queda corregido y el cuerpo de la release se editó con esa frase corregida el
+  9 oct 2026; `release:brat-verify` volvió a dar PASS con los ocho assets tras la edición.
 - No verificado: nadie ha visto la 0.6.17 instalada ni cargada en Obsidian/BRAT ni en Hebra.
 - Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
 - Addon de Nexus 0.8.4, publicado el 9 oct 2026:
