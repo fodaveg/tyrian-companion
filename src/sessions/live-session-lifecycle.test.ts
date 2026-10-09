@@ -606,6 +606,23 @@ describe('passive live session lifecycle', () => {
 			for (let index = 0; index < 4; index += 1) { setNow(AT+2*3_600_000+(index+1)*5_000); await beat(); }
 			expect(svc.getRuntime()).toMatchObject({phase:'active',connection:'connected'}); await svc.dispose();
 		});
+		// Audit of 9 Oct 2026: the beat after a suspension was said to reclaim the lost lease as a host restart, which writes
+		// the player as gone since the last presence, so that the next beat closed the session at that old time. Only
+		// `initialize` marks a restart; this is the sequence the audit gave, with no report of presence after waking.
+		it('thirty minutes without a sample, a renewal answered lost and the beats after it leave the session open', async () => {
+			const { f, svc, setNow, beat } = suspended();
+			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); setNow(AT+1000); await svc.commit(f.sample(1,2)); await svc.presence(true);
+			const woke = AT+1000+30*60_000;
+			setNow(woke); await beat();
+			expect(svc.getView().phase, 'the renewal found the lease lost').toBe('error');
+			setNow(woke+5_000); await beat(); setNow(woke+10_000); await beat();
+			expect(svc.getRuntime()).toMatchObject({phase:'active',endedAt:null,connection:'connected',lastSourceDisconnectedAt:null,authority:{fence:2}});
+			expect(svc.getRuntime()?.gaps.map((gap) => gap.reason), 'an outage, not a restart').toEqual(['storage_unavailable']);
+			// Nor does it close later: the ten minutes of grace run from a disconnection, and nobody reported one.
+			setNow(woke+11*60_000); await beat(); await beat();
+			expect(svc.getView()).toMatchObject({phase:'active',endedAt:null,observationCount:1}); expect(f.onComplete).not.toHaveBeenCalled();
+			await svc.dispose();
+		});
 	});
 	it('the saved-sessions history keeps the payloads of notes only within its byte budget', async () => {
 		const f = fixture(); const contents = new Map<string,string>();
