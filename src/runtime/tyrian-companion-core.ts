@@ -98,7 +98,6 @@ import { ManagedAssetsManager, type ManagedAssetsResult } from '../assets/manage
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
 import {
 	decideManagedAssetsAutoUpdate,
-	decideManagedAssetsOnLoad,
 	planManagedAssets,
 	type ManagedAssetsAutoUpdateDecision,
 	type ManagedAssetsInspection,
@@ -1382,7 +1381,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// the vault root). Non-blocking: boot never waits on a Vault-wide file move.
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'vault', action: 'vault_write', state: 'managed_assets_reconcile' },
-			async () => { await this.reconcileManagedAssetsRoot(); await this.createNewManagedAssetsOnLoad(); });
+			async () => { await this.reconcileManagedAssetsRoot(); await this.updateManagedAssetsOnLoad(); });
 		this.syncCollectorHeartbeat();
 	}
 
@@ -2559,38 +2558,43 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
-	 * David, 9 Oct 2026 («que las cree solo», «borrarlas si no las editaste»): on load the managed Bases
-	 * follow the bundle in exactly two ways, and in no other: a Base the manifest does not register is
-	 * created, and a Base the bundle retired is trashed if it is still as the plugin wrote it (an edited
-	 * one is kept on disk and only stops being managed). Narrower than the after-sync update on purpose:
-	 * `decideManagedAssetsOnLoad` returns nothing unless the manifest is ready and EVERY other asset is
-	 * untouched, so an update, an edited or deleted Base, a conflict or an installation that never applied
-	 * assets writes nothing and warns nobody. It needs the same root as the sync path (installed, equal to
-	 * the output folder, no legacy) and a collector (consult never writes Bases). It runs after
-	 * `runtimeReady`, off the boot path, through the Settings «Aplicar» path.
+	 * David, 9 Oct 2026 («que las cree solo», «borrarlas si no las editaste», «actualizarla también»): on
+	 * load the managed Bases follow the plugin exactly as they do after an inventory sync, with ONE rule
+	 * (`decideManagedAssetsAutoUpdate`): create the new ones, update those the user did not edit, and
+	 * retire those the bundle no longer ships (an unedited file goes to the trash, an edited one stays
+	 * and stops being managed). A Base the user edited, a deleted one, a conflict or a newer manifest
+	 * holds everything back: nothing is written and, unlike the sync, nobody is warned (an edit made on
+	 * purpose would nag at every start). It additionally needs a `ready` manifest (an installation that
+	 * never applied assets gets nothing), the same root as the sync path (installed, equal to the output
+	 * folder, no legacy) and a collector. The «last sync succeeded» condition is the sync's and does not
+	 * apply. It runs after `runtimeReady`, off the boot path, through the Settings «Aplicar» path.
 	 */
-	private async createNewManagedAssetsOnLoad(): Promise<void> {
+	private async updateManagedAssetsOnLoad(): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host) || this.unloaded || !this.runtimeReady || consulting(this)) return;
 		const root = this.settings.managedAssetsRoot;
 		if (root === null || root !== this.settings.outputFolder
 			|| this.settings.legacyManagedAssetsRoot !== null || this.settings.legacyOutputFolder !== null) return;
 		const perform = async () => {
 			// An unreadable manifest throws: `run` records the failure and the boot's fire-and-forget swallows it.
-			const { created, retired } = decideManagedAssetsOnLoad(await this.managedAssets.inspect(root));
-			if (created.length + retired.length === 0) return undefined;
+			const inspection = await this.managedAssets.inspect(root);
+			if (inspection.manifestStatus !== 'ready' || decideManagedAssetsAutoUpdate(inspection).action !== 'apply') return undefined;
+			const pending = (status: string): string[] => inspection.assets.filter((entry) => entry.status === status).map((entry) => entry.asset.relativePath);
+			const created = pending('create'); const updated = pending('update');
+			const retirements = inspection.retirements ?? [];
 			await this.applyManagedAssets();
 			if (this.managedAssetsView.status !== 'ready') return undefined;
 			const translator = createTranslator(this.settings.language);
 			const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
-			if (created.length > 0) this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoCreated',
-				{ names: created.map((entry) => entry.asset.relativePath).join(', ') }), 'managed_assets_updated');
-			const trashed = retired.filter((entry) => entry.status === 'retire').map((entry) => name(entry.path));
-			const kept = retired.filter((entry) => entry.status === 'release' && entry.present).map((entry) => name(entry.path));
-			if (trashed.length > 0) this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoRetired', { names: trashed.join(', ') }), 'managed_assets_updated');
-			if (kept.length > 0) this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoReleased', { names: kept.join(', ') }), 'managed_assets_updated');
+			const say = (key: 'notices.managedAssetsAutoCreated' | 'notices.managedAssetsAutoLoadUpdated' | 'notices.managedAssetsAutoRetired' | 'notices.managedAssetsAutoReleased', names: string[]): void => {
+				if (names.length > 0) this.emitNotice(translateRuntime(translator, key, { names: names.join(', ') }), 'managed_assets_updated');
+			};
+			say('notices.managedAssetsAutoCreated', created);
+			say('notices.managedAssetsAutoLoadUpdated', updated);
+			say('notices.managedAssetsAutoRetired', retirements.filter((entry) => entry.status === 'retire').map((entry) => name(entry.path)));
+			say('notices.managedAssetsAutoReleased', retirements.filter((entry) => entry.status === 'release' && entry.present).map((entry) => name(entry.path)));
 			return undefined;
 		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'on_load_create' }, perform) ?? perform());
+		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'on_load' }, perform) ?? perform());
 	}
 
 	/** Discards a pending destructive plan without writing anything. */

@@ -204,33 +204,6 @@ export function decideManagedAssetsAutoUpdate(inspection: ManagedAssetsInspectio
 	return { action: 'manual', reasons: [...plan.reasons, ...(missing ? ['missing' as const] : [])] };
 }
 
-/**
- * What the plugin may write on LOAD (David, 9 Oct 2026: «que las cree solo» and «borrarlas si no las
- * editaste»), narrower than `decideManagedAssetsAutoUpdate` (which also follows updates, after a sync).
- * Exactly two kinds of step are ever applied by themselves: creating a Base the manifest does not
- * register, and retiring one the bundle no longer ships (the apply trashes it only if unedited and
- * otherwise just stops managing it). Both lists are empty, meaning «write nothing», unless:
- *
- * - the manifest is `ready`, so the installation did apply assets at some point (a bare
- *   `managedAssetsRoot` is not proof: the Hebra host adopts the output folder without installing);
- * - EVERY other asset is `unchanged`, or a file the user owns that the manifest declares `excluded`
- *   (the apply already skips it). An update, an edit, a deleted Base, a conflict, a foreign file or a
- *   newer manifest keeps the whole load quiet, because the apply refuses to run past a blocker and a
- *   pending update is the sync's business, not the load's;
- * - no created asset was declared `excluded` (an excluded asset the user deleted also reads `create`).
- */
-export function decideManagedAssetsOnLoad(inspection: ManagedAssetsInspection): { created: InspectedAsset[]; retired: InspectedRetirement[] } {
-	const none = { created: [], retired: [] };
-	if (inspection.manifestStatus !== 'ready' || inspection.manifest === null) return none;
-	const excluded = new Set(inspection.manifest.excluded ?? []);
-	const created = inspection.assets.filter((entry) => entry.status === 'create');
-	const retired = inspection.retirements ?? [];
-	if (created.length + retired.length === 0 || created.some((entry) => excluded.has(entry.asset.id))) return none;
-	const untouched = inspection.assets.every((entry) => entry.status === 'create' || entry.status === 'unchanged'
-		|| (entry.status === 'occupied_unowned' && excluded.has(entry.asset.id)));
-	return untouched ? { created, retired } : none;
-}
-
 export function isManagedAssetsManifest(value: unknown): value is ManagedAssetsManifest {
 	if (!record(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2) || value.pluginId !== 'tyrian-companion') return false;
 	const schemaVersion = value.schemaVersion;

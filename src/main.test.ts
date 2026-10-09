@@ -1623,8 +1623,8 @@ describe('a new Base of the bundle is created on load, and nothing else (9 Oct 2
 		manager.setBundle({ bundleVersion: 2, locale: language, assets: [sessions, extra] });
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const create = (TyrianCompanionCore.prototype as unknown as {
-			createNewManagedAssetsOnLoad(this: typeof plugin): Promise<void>;
-		}).createNewManagedAssetsOnLoad;
+			updateManagedAssetsOnLoad(this: typeof plugin): Promise<void>;
+		}).updateManagedAssetsOnLoad;
 		return { vault, manager, plugin, messages, sessions, extra, load: () => create.call(plugin) };
 	}
 
@@ -1669,16 +1669,16 @@ describe('a new Base of the bundle is created on load, and nothing else (9 Oct 2
 		expect(messages).toEqual([]);
 	});
 
-	it('writes NOTHING when the same load would also update an existing Base (updates stay behind the sync)', async () => {
+	it('also updates an unedited existing Base in the same load (David, 9 Oct 2026: the load does what the sync does)', async () => {
 		const { vault, manager, sessions, extra, messages, load } = await installedAtPreviousBundle();
 		const bytes = sessions.bytes.replace(/version=\d+/u, 'version=3');
 		manager.setBundle({ bundleVersion: 2, locale: 'es', assets: [{ ...sessions, contentVersion: 3, bytes, contentHash: await sha256Text(bytes) }, extra] });
-		const written = vault.writeCount;
 		await load();
-		expect(vault.contents.has(EXTRA)).toBe(false);
-		expect(vault.contents.get(BASE)).not.toContain('version=3');
-		expect(vault.writeCount).toBe(written);
-		expect(messages).toEqual([]);
+		expect(vault.contents.has(EXTRA)).toBe(true);
+		expect(vault.contents.get(BASE)).toContain('version=3');
+		expect(messages).toHaveLength(2);
+		expect(messages.some((message) => message.includes('Extra.base'))).toBe(true);
+		expect(messages.some((message) => message.includes('Sessions.base'))).toBe(true);
 	});
 
 	it('writes nothing without a managed root, and nothing when the root is set but no assets were ever applied', async () => {
@@ -1689,7 +1689,7 @@ describe('a new Base of the bundle is created on load, and nothing else (9 Oct 2
 		const never = Object.assign(buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' }),
 			{ managedAssets: manager, collectorMode: 'collector', emitNotice: (message: string) => { messages.push(message); } });
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const create = (TyrianCompanionCore.prototype as unknown as { createNewManagedAssetsOnLoad(this: typeof never): Promise<void> }).createNewManagedAssetsOnLoad;
+		const create = (TyrianCompanionCore.prototype as unknown as { updateManagedAssetsOnLoad(this: typeof never): Promise<void> }).updateManagedAssetsOnLoad;
 		await create.call(never);
 		expect(never.settings.managedAssetsRoot).toBeNull();
 		// The Hebra host adopts the output folder as the root without installing anything.
@@ -1726,11 +1726,11 @@ describe('a new Base of the bundle is created on load, and nothing else (9 Oct 2
 
 	it('boot does not wait for it: initializeRuntime resolves while the creation is still pending', async () => {
 		const runtime = createRuntimeHarness();
-		const core = runtime.core as unknown as { settings: TyrianSettings; localDebugActions: LocalDebugActionRunner; createNewManagedAssetsOnLoad(): Promise<void> };
+		const core = runtime.core as unknown as { settings: TyrianSettings; localDebugActions: LocalDebugActionRunner; updateManagedAssetsOnLoad(): Promise<void> };
 		core.localDebugActions = new LocalDebugActionRunner({ diagnostics: { record: vi.fn(() => true) } as unknown as LocalDebugLogger, createId: () => 'boot-create' });
 		core.settings = { ...core.settings, managedAssetsRoot: core.settings.outputFolder };
 		const pending = deferred<undefined>();
-		const create = vi.spyOn(core, 'createNewManagedAssetsOnLoad').mockImplementation(() => pending.promise);
+		const create = vi.spyOn(core, 'updateManagedAssetsOnLoad').mockImplementation(() => pending.promise);
 		try {
 			await runtime.initializeRuntime();
 			await flush();
@@ -1775,10 +1775,10 @@ describe('the load retires the Bases the bundle no longer ships (9 Oct 2026)', (
 		});
 		manager.setBundle({ bundleVersion: 8, locale: 'es', assets: current, retired: RETIRED_MANAGED_ASSETS });
 		const proto = TyrianCompanionCore.prototype as unknown as {
-			createNewManagedAssetsOnLoad(this: typeof plugin): Promise<void>;
+			updateManagedAssetsOnLoad(this: typeof plugin): Promise<void>;
 			updateManagedAssetsAfterInventorySync(this: typeof plugin): Promise<void>;
 		};
-		return { vault, messages, plugin, load: () => proto.createNewManagedAssetsOnLoad.call(plugin),
+		return { vault, messages, plugin, load: () => proto.updateManagedAssetsOnLoad.call(plugin),
 			sync: () => proto.updateManagedAssetsAfterInventorySync.call(plugin) };
 	}
 
@@ -1818,19 +1818,34 @@ describe('the load retires the Bases the bundle no longer ships (9 Oct 2026)', (
 		expect(messages).toEqual([]);
 	});
 
-	it('David\'s 11 Sep install (manifest bundle 6, inventory at 6): the load writes nothing; the sync then does everything', async () => {
+	it('David\'s 11 Sep install (manifest bundle 6, inventory at 6): the load updates, creates and retires, and says so', async () => {
 		const { vault, messages, load, sync } = await installed('david');
 		expect(manifestIds(vault)).toEqual(['halloween-base', 'inventory-base', 'materials-base', 'sessions-base', 'wallet-base']);
-		const before = new Map(vault.contents);
+		expect(vault.contents.get(`${BASES}/Inventory.base`)).toContain('version=6');
 		await load();
-		// An `update` of Inventory.base is pending, so the narrow load rule holds everything back.
-		expect(new Map(vault.contents)).toEqual(before);
-		expect(messages).toEqual([]);
-		await sync();
+		expect(vault.contents.get(`${BASES}/Inventory.base`)).toContain('version=10');
 		expect(vault.contents.has(`${BASES}/Session summaries.base`)).toBe(true);
 		for (const name of GONE) expect(vault.contents.has(`${BASES}/${name}`)).toBe(false);
 		expect(manifestIds(vault)).toEqual(['inventory-base', 'session-summaries-base', 'wallet-base']);
-		expect(messages.at(-1)).toMatch(/^managed_assets_updated/u);
+		expect(messages.some((message) => message.includes('Session summaries.base'))).toBe(true);
+		expect(messages.some((message) => message.includes('Inventory.base'))).toBe(true);
+		expect(messages.some((message) => message.includes('Sessions.base') && message.includes('Halloween.base') && message.includes('Materials.base'))).toBe(true);
+		// A second load and a later sync find nothing left to do.
+		const writes = vault.writeCount; const count = messages.length;
+		await load();
+		await sync();
+		expect(vault.writeCount).toBe(writes);
+		expect(messages).toHaveLength(count);
+	});
+
+	it('David\'s install with Inventory.base edited by him: the load writes nothing and warns nobody', async () => {
+		const { vault, messages, load } = await installed('david');
+		const inventory = `${BASES}/Inventory.base`;
+		vault.contents.set(inventory, vault.contents.get(inventory)!.replace('name: "Todos"', 'name: "Mis cosas"'));
+		const before = new Map(vault.contents);
+		await load();
+		expect(new Map(vault.contents)).toEqual(before);
+		expect(messages).toEqual([]);
 	});
 });
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { managedAssetsBundle } from './generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
-import { decideManagedAssetsOnLoad, MANAGED_ASSETS_MANIFEST } from './managed-assets-model';
+import { decideManagedAssetsAutoUpdate, MANAGED_ASSETS_MANIFEST } from './managed-assets-model';
 import { RETIRED_MANAGED_ASSETS } from './retired-assets';
 import { legacyRetiredBases } from '../test/managed-asset-fixture';
 
@@ -54,7 +54,8 @@ describe('the bundle retires Sessions, Halloween and Materials', () => {
 		expect(vault.contents.has(`${BASES}/Session summaries.base`)).toBe(false);
 		const inspection = await next.inspect(ROOT);
 		expect(inspection.manifestStatus).toBe('ready');
-		expect(decideManagedAssetsOnLoad(inspection).created.map((entry) => entry.asset.id)).toEqual(['session-summaries-base']);
+		expect(inspection.assets.filter((entry) => entry.status === 'create').map((entry) => entry.asset.id)).toEqual(['session-summaries-base']);
+		expect(decideManagedAssetsAutoUpdate(inspection)).toEqual({ action: 'apply' });
 		expect((await next.apply(ROOT, 'upgrade')).status).toBe('applied');
 		expect(vault.contents.has(`${BASES}/Session summaries.base`)).toBe(true);
 		for (const name of GONE) expect(vault.contents.has(`${BASES}/${name}`)).toBe(false);
@@ -103,22 +104,21 @@ describe('the bundle retires Sessions, Halloween and Materials', () => {
 		expect((await next.apply(ROOT, 'upgrade')).status).toBe('applied');
 		const writes = vault.writeCount; const trashed = vault.trashed.length; const manifest = vault.contents.get(`${ROOT}/${MANAGED_ASSETS_MANIFEST}`);
 		const inspection = await next.inspect(ROOT);
-		expect(decideManagedAssetsOnLoad(inspection)).toEqual({ created: [], retired: [] });
+		expect(decideManagedAssetsAutoUpdate(inspection)).toEqual({ action: 'none' });
 		expect((await next.apply(ROOT, 'upgrade')).status).toBe('unchanged');
 		expect(vault.writeCount).toBe(writes);
 		expect(vault.trashed).toHaveLength(trashed);
 		expect(vault.contents.get(`${ROOT}/${MANAGED_ASSETS_MANIFEST}`)).toBe(manifest);
 	});
 
-	it('is decided on load only when nothing else is pending: retirements alone yes, with an update or an edit no', async () => {
+	it('is decided like after a sync: retirements alone apply, an edited Base that stays holds everything back', async () => {
 		const { vault, next } = await installedBefore();
 		const inspection = await next.inspect(ROOT);
-		const decision = decideManagedAssetsOnLoad(inspection);
-		expect(decision.created).toEqual([]);
-		expect(decision.retired.map((entry) => entry.entry.id).sort()).toEqual(['halloween-base', 'materials-base', 'sessions-base']);
+		expect(decideManagedAssetsAutoUpdate(inspection)).toEqual({ action: 'apply' });
+		expect((inspection.retirements ?? []).map((entry) => entry.entry.id).sort()).toEqual(['halloween-base', 'materials-base', 'sessions-base']);
 		const wallet = `${BASES}/Wallet.base`;
 		vault.contents.set(wallet, vault.contents.get(wallet)!.replace('name: "Todas"', 'name: "Mis monedas"'));
-		expect(decideManagedAssetsOnLoad(await next.inspect(ROOT))).toEqual({ created: [], retired: [] });
+		expect(decideManagedAssetsAutoUpdate(await next.inspect(ROOT))).toMatchObject({ action: 'manual' });
 		// A blocked preview writes nothing at all, retirements included.
 		const writes = vault.writeCount;
 		expect((await next.apply(ROOT, 'upgrade')).status).toBe('conflict');
