@@ -130,7 +130,6 @@ export class ActiveSessionLeaseCoordinator {
 	private life: 'none' | 'pending' | 'proven' | 'unmarked' = 'none';
 	private lifeGranted: Promise<boolean> = Promise.resolve(false);
 	private lifeSettled: Promise<void> | null = null;
-	private lifeAbandoned = false;
 	private letLifeLockGo: () => void = () => undefined;
 	private readonly leaseTtlMs: number;
 	private readonly expiryConfirmDelayMs: number;
@@ -285,7 +284,7 @@ export class ActiveSessionLeaseCoordinator {
 		// The lock goes after whatever is still in the queue: an operation in course may yet write under
 		// this instance's id, and everything queued behind it answers `disposed` without writing. A lease
 		// this instance leaves behind without releasing it is then anybody's at once, not in five minutes.
-		void this.queue.then(() => { this.releaseLifeLock(); });
+		void this.queue.then(() => { this.letLifeLockGo(); });
 	}
 
 	private async acquireInternal(sessionId: string, leaseTtlMs: number): Promise<AcquireLeaseResult> {
@@ -294,6 +293,8 @@ export class ActiveSessionLeaseCoordinator {
 		// Before the first lease is written, and before the store is even opened: whether this instance's id
 		// carries the mark. Without a lock manager there is nothing to decide and nothing is waited for.
 		if (this.life === 'pending') await this.settleLife();
+		// Disposed of while the lock was being waited for: said as what it is, not as a store that is down.
+		if (this.disposed) return { status: 'error', code: 'disposed' };
 		// The mark is only ever written by an instance whose lock was shown to be held. An id that was
 		// handed in already looking marked would be taken for one that died the moment anybody asked.
 		if (this.life !== 'proven' && hasLifeMark(this.instanceId)) return { status: 'error', code: 'corrupt' };
@@ -384,8 +385,9 @@ export class ActiveSessionLeaseCoordinator {
 	}
 
 	/**
-	 * Asks for this instance's lock and keeps it until `releaseLifeLock`. Nothing is waited for here: the
-	 * first acquisition waits, bounded, for `lifeGranted`.
+	 * Asks for this instance's lock and keeps it until `letLifeLockGo`. Nothing is waited for here, and
+	 * nothing is thrown: a manager that fails to take the request only leaves the instance unmarked, never
+	 * unbuilt. The first acquisition waits, bounded, for `lifeGranted`.
 	 */
 	private requestLifeLock(locks: SessionLifeLocks, name: string): void {
 		let answer: (granted: boolean) => void = () => undefined;
@@ -393,20 +395,13 @@ export class ActiveSessionLeaseCoordinator {
 		const held = new Promise<void>((resolve) => { this.letLifeLockGo = resolve; });
 		try {
 			// Called on the manager itself, never through a reference to `request` kept apart from it.
-			const request: unknown = locks.request(name, (lock) => {
-				// Granted after it was given up (the wait ran out, or the instance was disposed of): returning lets it go at once.
-				if (lock === null || this.lifeAbandoned) { answer(false); return undefined; }
-				answer(true);
-				return held;
-			});
+			// Held for as long as `held` is pending. Granted after it was given up (the wait ran out, or the
+			// instance was disposed of), `held` is already settled and returning it lets the lock go at once.
+			// Whether what was granted is really a lock is not judged here: the manager is asked afterwards.
+			const request: unknown = locks.request(name, () => { answer(true); return held; });
 			// A request that ends without having been granted is a lock nobody holds, whatever ended it.
 			void Promise.resolve(request).then(() => { answer(false); }, () => { answer(false); });
 		} catch { answer(false); }
-	}
-
-	private releaseLifeLock(): void {
-		this.lifeAbandoned = true;
-		this.letLifeLockGo();
 	}
 
 	/**
@@ -421,7 +416,7 @@ export class ActiveSessionLeaseCoordinator {
 			const granted = await this.lockAnswer(() => this.lifeGranted) === true;
 			if (granted && await this.lifeLockState(lifeLockName(this.instanceId)) === 'held') { this.life = 'proven'; return; }
 			this.life = 'unmarked';
-			this.releaseLifeLock();
+			this.letLifeLockGo();
 		})();
 		return this.lifeSettled;
 	}

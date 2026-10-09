@@ -10185,9 +10185,9 @@
 				{
 					"id": "a4a6b2942726e149e5f952a3f6371a4625a581d3",
 					"kind": "void_expression",
-					"line": 215,
+					"line": 214,
 					"column": 3,
-					"endLine": 217,
+					"endLine": 216,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10201,9 +10201,9 @@
 				{
 					"id": "debe49b1cb597ec91ea6707690090a89ff4e0fbf",
 					"kind": "callback_registration",
-					"line": 215,
+					"line": 214,
 					"column": 8,
-					"endLine": 217,
+					"endLine": 216,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10218,9 +10218,9 @@
 				{
 					"id": "756350def724bebb96d27082347e1fbb0bf22337",
 					"kind": "catch_clause",
-					"line": 240,
+					"line": 239,
 					"column": 6,
-					"endLine": 240,
+					"endLine": 239,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10234,9 +10234,9 @@
 				{
 					"id": "5beb51bb17052d6ed63e5d28aeb971963072f8b6",
 					"kind": "catch_clause",
-					"line": 258,
+					"line": 257,
 					"column": 6,
-					"endLine": 258,
+					"endLine": 257,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10250,9 +10250,9 @@
 				{
 					"id": "a6d9ed61b98ba2b831cb87dc0755bed58f3515ce",
 					"kind": "catch_clause",
-					"line": 277,
+					"line": 276,
 					"column": 6,
-					"endLine": 277,
+					"endLine": 276,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10266,9 +10266,9 @@
 				{
 					"id": "1d4f845f2ae3a8e7f14f7a951d8c0278ee76ee52",
 					"kind": "void_expression",
-					"line": 284,
+					"line": 283,
 					"column": 3,
-					"endLine": 284,
+					"endLine": 283,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10282,9 +10282,9 @@
 				{
 					"id": "de2db3273bd82a7bcc2144445a3a825beb409e80",
 					"kind": "callback_registration",
-					"line": 284,
+					"line": 283,
 					"column": 8,
-					"endLine": 284,
+					"endLine": 283,
 					"endColumn": 74,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10297,12 +10297,12 @@
 					"reason": "Allowlisted callback_registration: The \"dispose\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"dispose\"."
 				},
 				{
-					"id": "642032d5cf061204a547cfa8cad01e7ed143c6ab",
+					"id": "508cff074debe35609ecdbbb2e02bb4119f047e9",
 					"kind": "void_expression",
-					"line": 288,
+					"line": 287,
 					"column": 3,
-					"endLine": 288,
-					"endColumn": 58,
+					"endLine": 287,
+					"endColumn": 56,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
@@ -10313,12 +10313,12 @@
 					"reason": "Allowlisted void_expression: The \"dispose\" owner deliberately detaches \"this.queue.then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.queue.then\" in \"dispose\"."
 				},
 				{
-					"id": "9876c97207b4d28e668a8d0cb3d986ee3be69741",
+					"id": "3a5fc1a2f2feb1cd447f10a9e2650b5f3fb5eace",
 					"kind": "callback_registration",
-					"line": 288,
+					"line": 287,
 					"column": 8,
-					"endLine": 288,
-					"endColumn": 58,
+					"endLine": 287,
+					"endColumn": 56,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
@@ -10332,9 +10332,9 @@
 				{
 					"id": "20d2b88ad4c320a1e7f629afb54ba8546f143e22",
 					"kind": "catch_clause",
-					"line": 336,
+					"line": 337,
 					"column": 5,
-					"endLine": 336,
+					"endLine": 337,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10348,9 +10348,9 @@
 				{
 					"id": "3f502bbc7849f2af5cd8db72d41e63557e88062b",
 					"kind": "catch_clause",
-					"line": 348,
+					"line": 349,
 					"column": 56,
-					"endLine": 348,
+					"endLine": 349,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10364,9 +10364,9 @@
 				{
 					"id": "a8902dd8fa691df49ab067a33d0ce4f11b8a50c4",
 					"kind": "catch_clause",
-					"line": 371,
+					"line": 372,
 					"column": 5,
-					"endLine": 371,
+					"endLine": 372,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10429,9 +10429,9 @@
 				{
 					"id": "0fbb6867bad128555692bf21aacbcd809825c30b",
 					"kind": "catch_clause",
-					"line": 439,
+					"line": 434,
 					"column": 79,
-					"endLine": 439,
+					"endLine": 434,
 					"endColumn": 101,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10445,9 +10445,9 @@
 				{
 					"id": "e8dc69bf877d2a91ecaa6fd0e35faac86043c8cb",
 					"kind": "promise_catch",
-					"line": 449,
+					"line": 444,
 					"column": 4,
-					"endLine": 449,
+					"endLine": 444,
 					"endColumn": 89,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10462,9 +10462,9 @@
 				{
 					"id": "bedbf04d33c1e0424972813b262f946cfd200544",
 					"kind": "void_expression",
-					"line": 457,
+					"line": 452,
 					"column": 5,
-					"endLine": 457,
+					"endLine": 452,
 					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10478,9 +10478,9 @@
 				{
 					"id": "a0ef73c15c92d91877c6a058f71795a3b5967118",
 					"kind": "callback_registration",
-					"line": 457,
+					"line": 452,
 					"column": 10,
-					"endLine": 457,
+					"endLine": 452,
 					"endColumn": 65,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10495,9 +10495,9 @@
 				{
 					"id": "c97df1d837960e33b4f610522aa817ed1e97ad4e",
 					"kind": "catch_clause",
-					"line": 476,
+					"line": 471,
 					"column": 31,
-					"endLine": 476,
+					"endLine": 471,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10511,9 +10511,9 @@
 				{
 					"id": "5035656c978ac8c71b946ce7b0d56f368b1c3e49",
 					"kind": "callback_registration",
-					"line": 484,
+					"line": 479,
 					"column": 16,
-					"endLine": 484,
+					"endLine": 479,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",

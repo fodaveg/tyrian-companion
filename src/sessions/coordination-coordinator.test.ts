@@ -744,6 +744,43 @@ describe('ActiveSessionLeaseCoordinator with the host\'s lock manager', () => {
 		coordinator.dispose();
 	});
 
+	// A manager that cannot even take the request must not stop the plugin loading: the coordinator is
+	// built in the runtime's own start, and an exception there is a plugin that does not start.
+	it.each(['throws', 'rejects'] as const)('is built all the same when asking for its own lock %s, and works without the mark', async (failure) => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		locks.waiting = failure;
+		const waits = manualWaits();
+		const coordinator = fiveMinutes(factory, `own lock ${failure}`, { instanceId: 'alone', locks: locks.context(), schedule: waits.arm, cancel: waits.disarm });
+		expect(coordinator.instanceId).toBe('wl1:alone');
+
+		const acquiring = coordinator.acquire('session-1');
+		// Known as soon as the request said so, with no wait left to run out.
+		await vi.waitFor(() => { expect(coordinator.instanceId).toBe('alone'); });
+		expect(waits.lockWaits()).toBe(0);
+		expect(requireHandle(await acquiring)).toMatchObject({ instanceId: 'alone', fence: 1 });
+		expect(locks.held()).toEqual([]);
+		coordinator.dispose();
+	});
+
+	it('answers disposed, not unavailable, to an acquisition it was disposed of while waiting for its lock', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		locks.grants = false;
+		const waits = manualWaits();
+		let opens = 0;
+		const coordinator = new ActiveSessionLeaseCoordinator({
+			instanceId: 'alone', machineId: () => 'machine', clock: () => 1_000, sleep: async () => undefined, locks: locks.context(),
+			schedule: waits.arm, cancel: waits.disarm,
+			openStore: async () => { opens += 1; return await IndexedDbCoordinationStore.open(factory, databaseName('disposed waiting')); },
+		});
+
+		const acquiring = coordinator.acquire('session-1');
+		await vi.waitFor(() => { expect(waits.lockWaits()).toBe(1); });
+		coordinator.dispose();
+		waits.expire();
+		await expect(acquiring).resolves.toEqual({ status: 'error', code: 'disposed' });
+		expect(opens).toBe(0);
+	});
+
 	// The check at run time: a manager that offers this instance's own lock while it is held cannot be
 	// believed about anybody else's. `always free` is what contexts that do not share their locks look like.
 	it.each(['always free', 'unanswered', 'rejects', 'throws'] as const)('writes no mark, lets its lock go and asks about nobody when the manager, asked about its own lock, answers «%s»', async (answer) => {

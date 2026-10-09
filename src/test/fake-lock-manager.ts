@@ -30,6 +30,11 @@ export interface FakeLocks {
 	ifAvailable: 'honest' | 'always free' | 'unanswered' | 'rejects' | 'throws';
 	/** While false, a request that waits for its lock is never granted it. */
 	grants: boolean;
+	/**
+	 * How a request that waits for its lock (no `ifAvailable`) is taken. `honest` is the API; `throws` does not
+	 * even return and `rejects` settles with an error, both before anything is granted.
+	 */
+	waiting: 'honest' | 'throws' | 'rejects';
 }
 
 type Granted<T> = (lock: Lock | null) => T;
@@ -69,6 +74,7 @@ export function fakeLocks(): FakeLocks {
 	const world: FakeLocks = {
 		ifAvailable: 'honest',
 		grants: true,
+		waiting: 'honest',
 		held: () => [...holders.keys()].sort(),
 		context: () => {
 			const context: FakeLockContext = {
@@ -83,6 +89,8 @@ export function fakeLocks(): FakeLocks {
 						if (world.ifAvailable === 'always free') return answer(callback, lock(name));
 						return holders.has(name) ? answer(callback, null) : hold(name, context, callback);
 					}
+					if (world.waiting === 'throws') throw new Error('The lock manager is not there.');
+					if (world.waiting === 'rejects') return Promise.reject(new Error('The lock manager refused.'));
 					if (world.grants && !holders.has(name)) return hold(name, context, callback);
 					return new Promise<T>((resolve) => {
 						waiting.push({ name, context, grant: () => { resolve(hold(name, context, callback)); } });
