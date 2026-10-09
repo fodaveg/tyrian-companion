@@ -1,8 +1,12 @@
 # Estado
 
-## Candidato 0.6.21: Tyrian Companion en la pantalla principal de Hebra, con sus tres secciones (9 oct 2026)
+## Canal 0.6.21 publicado: Tyrian Companion en la pantalla principal de Hebra, con sus tres secciones (9 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `0eacbe0` (`main` con el canal 0.6.20 publicado). Trae un solo
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.21](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.21)
+es una release normal, sin draft ni prerelease, publicada el 2026-10-09T15:16:10Z; nombre, tag y `manifest.version`
+son `0.6.21`. El tag (ligero) apunta a `b92ea06` (`b92ea06aeba73197a7495472723be92286cb126a`, commit vacío de
+atestación, árbol `4c07ea33bc0d3a4061b962ad112bceb16d46d934`); el candidato fuente es `1bedc91`, con el mismo árbol.
+Parte de `0eacbe0` (`main` con el canal 0.6.20 publicado). Trae un solo
 lote, de la vista principal de Hebra (`18845a5`, `70fc7f1`, `7a9ad41`, `c855785`, `2987258`, `1708c6e`, `1f176df`,
 `44b4018`, `edda5da`, `4d6f6cf`, `5d647c4`, `aa57e00`, `b25525d`, `d683599`, `a1ed477`, `6cc19d0`): en un Hebra con la
 API de plugins 1.3.0 el plugin registra UNA vista en la pantalla principal con las secciones Sesión, Inventario y
@@ -24,17 +28,33 @@ Obsidian 1.11.4).
   (la frase de la fila de Ajustes; `a1ed477`), aplicadas; 27 mutaciones sobre el código, todas cazadas menos una
   equivalente.
 - Medido sobre `d683599` (árbol `585002994a01ce03a0bd2f83ac758563eacb9a53`, el lote ya rebasado sobre `0eacbe0`;
-  Fedora, 9 oct 2026): `tsc --noEmit` sin errores, `lint` con 0 errores, censo de observabilidad PASS, contrato de
-  texto fuente PASS, `i18n-unused` e `i18n-copy-length` sin hallazgos y 1350 tests de 79 ficheros (`src/host/hebra`,
-  `src/ui`, el núcleo, `view-placement` y `live-session-summary-note`; uno más se salta, `bundle.test.ts`), con un solo
-  worker. No es el gate.
+  Fedora, 9 oct 2026), antes del gate: `tsc --noEmit` sin errores, `lint` con 0 errores, censo de observabilidad PASS,
+  contrato de texto fuente PASS, `i18n-unused` e `i18n-copy-length` sin hallazgos y 1350 tests de 79 ficheros
+  (`src/host/hebra`, `src/ui`, el núcleo, `view-placement` y `live-session-summary-note`; uno más se salta,
+  `bundle.test.ts`), con un solo worker.
 - Medido sobre `6cc19d0` (árbol `ccff6521de816b0fec928ef95a442e21c3acb98f`, con las dos correcciones de la segunda
-  pasada; Fedora, 9 oct 2026): las mismas comprobaciones estáticas con el mismo resultado y 326 tests de 24 ficheros
-  (`src/host/hebra`, el núcleo, `settings-page` e `i18n`; uno más se salta, `bundle.test.ts`), con un solo worker. Los
-  1350 tests de `d683599` no se repitieron sobre este árbol. El reindexado del baseline del censo movió 436 coordenadas
-  en once ficheros censados que toca el lote, y ningún id, clasificación, evidencia ni total; en siete de ellos las
-  coordenadas ya iban atrasadas en `0eacbe0` (394 valores), así que el reindexado corrige también ese atraso.
-- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
+  pasada; Fedora, 9 oct 2026), antes del gate: las mismas comprobaciones estáticas con el mismo resultado y 326 tests
+  de 24 ficheros (`src/host/hebra`, el núcleo, `settings-page` e `i18n`; uno más se salta, `bundle.test.ts`), con un
+  solo worker. El reindexado del baseline del censo movió 436 coordenadas en once ficheros censados que toca el lote, y
+  ningún id, clasificación, evidencia ni total; en siete de ellos las coordenadas ya iban atrasadas en `0eacbe0` (394
+  valores), así que el reindexado corrige también ese atraso.
+- Gate local sobre el candidato `1bedc91` (`1bedc9135ed45442acea92c31085dd7cf9f91e8b`; Fedora, Node v22.23.1, 9 oct
+  2026), tras `npm ci` con `hebra-plugin-api` 1.3.0 y a la primera: `npm run check` «VEREDICTO: VERDE (8/8)», 5794
+  tests (342 ficheros); `npm run check:guardrails` «VEREDICTO: VERDE (25/25)»; `release:preflight` pass y
+  `node scripts/changelog-entry.mjs 0.6.21` con salida 0; «host ESM bundle: PASS (396 inputs, 2670538 bytes ->
+  hebra-main.mjs; exports: activate; npm packages: yaml)»; «release package: PASS (tyrian-companion-0.6.21.zip
+  sha256=c8926c7a4eb75f974791cdeb53a64c83f960064bcfb3808cbbe9cfe1773ac953)»; y «BRAT release contract: PASS
+  (version=0.6.21; assets=8)» sobre la release planeada. El zip descargado de la release da el mismo sha256 que el del
+  gate.
+- Publicación: el workflow de release (run 37949980129) terminó en `success`. `release:brat-verify` sobre la salida
+  real de `gh release view`: «BRAT release contract: PASS (version=0.6.21; assets=8)». Los ocho assets están
+  `uploaded`: `hebra-main.mjs` 2670544, `hebra-styles.css` 121333, `hebra.json` 29593, `main.js` 1957755,
+  `manifest.json` 237, `styles.css` 95002, `tyrian-companion-0.6.21.zip` 2053304 y
+  `tyrian-companion-0.6.21.zip.sha256` 94 (bytes). El asset `hebra-main.mjs` descargado ocupa 6 bytes más que la cifra
+  del gate y su texto mide los 2670538 de esa cifra: `scripts/build-host-esm.mjs` informa de la longitud del texto
+  (`text.length`), no de los bytes del fichero.
+- CI de `main` sobre `b92ea06` (run 37949973239): en curso (`in_progress`, sin conclusión) a las 15:21 UTC del 9 oct
+  2026, cuando se escribió esto. No consta que haya terminado en `success`.
 - Comprobado fuera de los tests: el `hebra.json` que genera `scripts/release-package.mjs` con el pin nuevo se comparó
   con el de la release 0.6.20 y solo difieren la versión y los hashes de los ficheros; `build:host-esm` informa de un
   solo paquete de npm en el bundle (`yaml`). Esa comparación se hizo antes de rebasar el lote.
@@ -44,11 +64,10 @@ Obsidian 1.11.4).
   un Hebra 1.2.0 simulado. Inventario y Venta usan en la columna de Hebra sus disposiciones estrechas por debajo de
   760 px. El botón de la barra de Hebra abre el menú del plugin, no la vista. El censo de observabilidad gana dos
   `catch` (la lectura de la preferencia en `getViewPlacement`, observada; `hebraHasMainView`, en lista blanca).
-- No verificado: nada de la 0.6.21 ejecutado en un Hebra real ni visto en pantalla, ni instalada por BRAT o en Hebra;
-  el CSS nuevo no se ha visto en ningún navegador; la sesión de Hebra declara sin probar a mano la vista principal, el
-  motor WebKit y la vista de solo editor. Ningún test graba una sesión en vivo con su sección oculta.
-- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la verificación
-  en clientes reales.
+- No verificado: nada de la 0.6.21 instalado, ejecutado ni visto en un Hebra ni en un Obsidian reales, ni por BRAT ni
+  desde Hebra; el CSS nuevo no se ha visto en ningún navegador; la sesión de Hebra declara sin probar a mano la vista
+  principal, el motor WebKit y la vista de solo editor. Ningún test graba una sesión en vivo con su sección oculta.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
 
 ## Canal 0.6.20 publicado: el mapa en curso tras un reinicio del host y el resumen de sesión por mapa (9 oct 2026)
 

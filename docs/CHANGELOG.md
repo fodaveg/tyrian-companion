@@ -2,8 +2,14 @@
 
 ## Release beta 0.6.21 - en Hebra, Tyrian Companion pasa a la pantalla principal, con Sesión, Inventario y Venta como secciones
 
-Release por tag `0.6.21`. Añade en Hebra una forma nueva de ver el plugin y la opción para elegirla; en Obsidian y en
-un Hebra anterior no cambia nada. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+[Canal 0.6.21 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.21); **instalación/runtime
+pendiente**. Tag `0.6.21` sobre `b92ea06` (commit vacío de atestación), árbol
+`4c07ea33bc0d3a4061b962ad112bceb16d46d934`. Gate local sobre el candidato `1bedc91` (mismo árbol): `check` 8/8
+(5794 tests, 342 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run
+37949980129) terminó en `success`, y `release:brat-verify` contra la salida real de la release dio PASS con los ocho
+assets. La CI de `main` sobre `b92ea06` (run 37949973239) seguía en curso al escribir esto, sin conclusión.
+Añade en Hebra una forma nueva de ver el plugin y la opción para elegirla; en Obsidian y en un Hebra anterior no
+cambia nada. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.21 se ha ejecutado en un Hebra real ni se ha visto
   en pantalla. Los tests corren contra el host falso de `hebra-plugin-api` 1.3.0 con una capa propia alrededor

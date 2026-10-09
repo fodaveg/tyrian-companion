@@ -1,7 +1,7 @@
 # Instalar Tyrian Companion en Windows desde cero
 
-Guía para el plugin **0.6.20** y el addon de Nexus **0.8.4**. Las dos versiones ya están
-publicadas (plugin 0.6.20 y addon 0.8.4); publicadas no es instaladas ni verificadas en Windows.
+Guía para el plugin **0.6.21** y el addon de Nexus **0.8.4**. Las dos versiones ya están
+publicadas (plugin 0.6.21 y addon 0.8.4); publicadas no es instaladas ni verificadas en Windows.
 
 ## Límites de esta guía
 
@@ -30,14 +30,14 @@ publicadas (plugin 0.6.20 y addon 0.8.4); publicadas no es instaladas ni verific
 | Addon Tyrian Companion (Nexus) | 0.8.4                        | Lee el juego y pinta el panel       | [Release 0.8.4](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.4) |
 | Obsidian (escritorio)          | 1.11.4 o más reciente        | App de notas donde corre el plugin  | La web de Obsidian (obsidian.md)                                                      |
 | Hebra (escritorio)             | 0.2.2 para Windows           | App de notas alternativa a Obsidian | Ver [4.2](#42-hebra)                                                                  |
-| Plugin Tyrian Companion        | 0.6.20                       | Sesiones, notas y avisos            | [Release 0.6.20](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.20)     |
+| Plugin Tyrian Companion        | 0.6.21                       | Sesiones, notas y avisos            | [Release 0.6.21](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.21)     |
 | BRAT (solo con Obsidian)       | La que publique su autor     | Instala el plugin beta en Obsidian  | [BRAT](https://github.com/TfTHacker/obsidian42-brat)                                  |
 | Clave de API de Guild Wars 2   | Opcional                     | Solo inventario y cartera manuales  | [Applications de ArenaNet](https://account.arena.net/applications)                    |
 
 Necesitas Obsidian o Hebra. No hace falta tener las dos.
 
 El addon 0.8.4 pide un plugin que hable su protocolo. La release 0.8.3 pedía Tyrian Companion 0.6.10
-o posterior; la 0.6.20 lo cumple. Los requisitos de la 0.8.4 están en las notas de su release.
+o posterior; la 0.6.21 lo cumple. Los requisitos de la 0.8.4 están en las notas de su release.
 
 ## 2. Instalar Nexus
 
@@ -116,7 +116,7 @@ Hebra tiene versión para Windows. Según los documentos del repositorio de Hebr
 
 1. Abre **Settings → Community plugins → Browse** e instala y activa **BRAT**.
 2. En BRAT, elige **Add beta plugin**, escribe `fodaveg/tyrian-companion` y selecciona la versión
-   publicada **0.6.20**.
+   publicada **0.6.21**.
 3. Vuelve a **Settings → Community plugins** y activa **Tyrian Companion**.
 4. Abre la paleta de comandos y ejecuta **Open companion** (en español, **Abrir acompañante**).
 5. El plugin usa una sola página de ajustes, sin pestañas. Las filas de mantenimiento están en un
@@ -133,7 +133,7 @@ instala así:
 3. Instala Tyrian Companion desde el listado de Hebra o, en **Añadir por URL de GitHub**, escribe
    `fodaveg/tyrian-companion` o `https://github.com/fodaveg/tyrian-companion` y pulsa **Buscar**.
 4. Acepta la hoja de consentimiento. Hebra instala la última release normal. No instala
-   prereleases, y la 0.6.20 es una release normal.
+   prereleases, y la 0.6.21 es una release normal.
 5. Los ajustes del plugin están en **Plugins**, en la ficha de Tyrian Companion, con el botón
    **Ajustes…**. Es la misma página de ajustes que en Obsidian.
 
@@ -240,14 +240,14 @@ Qué debes ver:
 | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | La línea de estado no pasa a **connected**                            | Que el puerto sea 47823 en el addon; que el token esté en el campo Token; que Obsidian o Hebra estén abiertos con el plugin activo; que **Aviso dentro del juego** esté activado. Corrige y pulsa **Save** otra vez.                                                                          |
 | El addon avisa de que el token fue rechazado y no vuelve a intentarlo | Es lo previsto: no reintenta tras un rechazo hasta que pegues un token nuevo y guardes. Si rotaste el token en el plugin, copia el nuevo con **Copiar token**.                                                                                                                                |
-| `version_unsupported`                                                 | El plugin es anterior a lo que pide el addon. Esta guía usa el plugin 0.6.20, que cumple lo que pedía la 0.8.3 (0.6.10 o posterior).                                                                                                                                                          |
+| `version_unsupported`                                                 | El plugin es anterior a lo que pide el addon. Esta guía usa el plugin 0.6.21, que cumple lo que pedía la 0.8.3 (0.6.10 o posterior).                                                                                                                                                          |
 | `source_conflict`                                                     | Otra fuente tiene la sesión. El addon vuelve a intentarlo cada 30 segundos. Mientras tanto el panel dice que otra fuente es la dueña.                                                                                                                                                         |
 | `unsupported_build`                                                   | El addon solo lee el ejecutable con SHA-256 `27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c`. Para ver el tuyo, en PowerShell: `Get-FileHash "<carpeta de Guild Wars 2>\Gw2-64.exe" -Algorithm SHA256`. Otro build no se lee hasta que se certifique.                       |
 | Panel sin datos, con «no coverage» y el motivo de límites de lectura  | Es el tope de hilos. En las Opciones de Nexus, despliega **Reader diagnostics** y mira **Own threads: N / 256**. Esa línea cuenta los hilos del propio juego. Los hilos del sistema (tope de 65 536 desde la 0.8.4) no aparecen en pantalla. Con la 0.8.3 o anterior, el tope era 4096 y 128. |
 | Nexus registra `Failed LoadLibrary` con `Error Code 126`              | El DLL no carga sus dependencias. Copia de nuevo el `.dll` de la release y verifica su SHA-256. El `.dll` de la release está enlazado para no necesitar librerías externas. Si persiste, no está resuelto.                                                                                    |
 | Obsidian o Hebra no se abren solos al arrancar el juego               | En Windows nativo el addon solo los abre si la app registró su esquema `obsidian://` o `hebra://` al instalarse. Si no, no hace nada a propósito. Abre la app a mano. La opción se desactiva en las Opciones de Nexus, en **Open Obsidian or Hebra automatically when the game starts**.      |
 | El `.dll` instalado es antiguo                                        | El addon no se actualiza solo. Con el juego cerrado, sustituye el `.dll` y comprueba `Loaded addon` al abrir el juego.                                                                                                                                                                        |
-| BRAT no ofrece la versión 0.6.20                                      | GitHub puede tardar entre 5 y 15 minutos en servir una release. Usa **Check for updates** en BRAT.                                                                                                                                                                                            |
+| BRAT no ofrece la versión 0.6.21                                      | GitHub puede tardar entre 5 y 15 minutos en servir una release. Usa **Check for updates** en BRAT.                                                                                                                                                                                            |
 | El guardado de las opciones aparece en rojo                           | El ajuste no llegó al disco. Pulsa **Save** otra vez.                                                                                                                                                                                                                                         |
 | Error con la clave de API                                             | Consulta la [tabla de errores de la clave](API-KEY.md#errores-habituales).                                                                                                                                                                                                                    |
 
@@ -256,7 +256,7 @@ API, rutas locales ni nombres de cuenta o de personaje.
 
 ## 10. Lo que aún no está verificado
 
-- La instalación de Nexus, del addon 0.8.4 y del plugin 0.6.20 en Windows nativo, y la lectura del
+- La instalación de Nexus, del addon 0.8.4 y del plugin 0.6.21 en Windows nativo, y la lectura del
   juego allí. Se confirma cargando el addon y viendo la línea `Loaded addon` en el log de Nexus y
   la línea de estado en **connected**.
 - Que el arreglo del tope de hilos de la 0.8.4 funcione en Windows. Se confirma con un Windows con
