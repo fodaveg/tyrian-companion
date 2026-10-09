@@ -1,25 +1,41 @@
 # Estado
 
-## En `main`, sin publicar: plazos del almacén de la sesión en vivo (9 oct 2026)
+## Candidato 0.6.18: el resumen de sesión sin excluir NoSell, su enlace en Hebra y los plazos del almacén en vivo (9 oct 2026)
 
-**Integrado en `main` después del tag `0.6.17`; no está en ninguna versión publicada.** Son los 13 commits de
-`claude/ciclo-vida-almacen-20261009` (`fdd0a28`…`a750f79`). Qué cambia: cada llamada al almacén de la sesión en vivo,
-al coordinador de la reserva y al escritor de notas tiene un plazo de 10 s, y al vencer se responde como cuando el
-almacén no está disponible en vez de dejar la cola bloqueada; una carga inicial que falla se reintenta con el latido;
-un `initialize()` que falla ya no tumba el plugin; un inicio que el almacén no confirmó se vuelve a buscar y se
-recobra; una nota que tarda más que el plazo se espera en vez de escribirse otra vez; y una reclamación de aviso
-contestada como rechazada se relee antes de reintentar. La reserva de la sesión en vivo sigue en 5 minutos: la de
-30 s se descartó porque, con la ventana oculta y un latido por minuto, guardaba 150 de 600 muestras.
+**Candidato; no publicado ni etiquetado.** Parte de `ab9d57c` (`main` con el canal 0.6.17 publicado). Trae tres cosas.
+Una cifra visible: la nota resumen de una sesión ya no deja fuera del valor los objetos con la marca `NoSell`
+(`662ae71`, `ab9d57c`), que solo prohíbe la venta a un comerciante; siguen fuera `AccountBound` y `SoulbindOnAcquire`.
+El enlace «Nota completa» del resumen en Hebra, que va por id (`a500ba8`). Y los plazos del almacén de la sesión en
+vivo (los 13 commits de `claude/ciclo-vida-almacen-20261009`, `fdd0a28`…`a750f79`): cada llamada al almacén de la
+sesión en vivo, al coordinador de la reserva y al escritor de notas tiene un plazo de 10 s, y al vencer se responde
+como cuando el almacén no está disponible en vez de dejar la cola bloqueada; una carga inicial que falla se reintenta
+con el latido; un `initialize()` que falla ya no tumba el plugin; un inicio que el almacén no confirmó se vuelve a
+buscar y se recobra; una nota que tarda más que el plazo se espera en vez de escribirse otra vez; y una reclamación
+de aviso contestada como rechazada se relee antes de reintentar. La reserva de la sesión en vivo sigue en 5 minutos
+(la de 30 s se descartó porque, con la ventana oculta y un latido por minuto, guardaba 150 de 600 muestras, y no es un
+cambio de esta versión). Detalle y límites en [CHANGELOG](CHANGELOG.md). Metadatos de versión alineados en
+`manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de Obsidian 1.11.4).
 
-- Revisión: independiente, en tres pasadas («integrar con correcciones» dos veces, con tres obligatorias en total, y
-  después «integrar»). El último commit, solo de tests, lo leyó el integrador.
-- Gate local sobre `a750f79` (árbol `f8889c69b8269e1dae30c712257f9550f64838e5`, Fedora, 9 oct 2026): `npm run check`
-  8/8 (5626 tests, 339 ficheros) y guardrails 25/25.
-- Límites conocidos, en [SPEC-live-loot](SPEC-live-loot.md): un motor de almacén que no contesta al arrancar sigue
-  impidiendo arrancar el plugin; un escritor de nota que no termina nunca bloquea las notas siguientes; tras un cierre
-  brusco de la app de notas siguen pudiendo pasar hasta 5 minutos sin medir; una renovación de reserva que llega a
-  disco después de su plazo cuesta un hueco y una época nueva.
-- No verificado: todo está medido con `fake-indexeddb`; nada se ha visto con un IndexedDB real ni en un cliente real.
+- Revisión de los plazos del almacén: independiente, en tres pasadas («integrar con correcciones» dos veces, con tres
+  obligatorias en total, y después «integrar»). El último commit, solo de tests, lo leyó el integrador.
+- Gates ya pasados sobre `main` (Fedora, 9 oct 2026), todos de commits anteriores al candidato:
+  - `a750f79` (árbol `f8889c69b8269e1dae30c712257f9550f64838e5`): `npm run check` 8/8 (5626 tests, 339 ficheros) y
+    guardrails 25/25.
+  - `a500ba8`: `check` 8/8 (5630 tests) y guardrails 25/25.
+  - `ab9d57c` (árbol `250e7c3b2202a070d048e07af3ef19a0e65a91d4`): `check` 8/8 (5632 tests) y guardrails 25/25.
+- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
+- Límites conocidos de los plazos, en [SPEC-live-loot](SPEC-live-loot.md): un motor de almacén que no contesta al
+  arrancar sigue impidiendo arrancar el plugin; un escritor de nota que no termina nunca bloquea las notas siguientes;
+  tras un cierre brusco de la app de notas siguen pudiendo pasar hasta 5 minutos sin medir; una renovación de reserva
+  que llega a disco después de su plazo cuesta un hueco y una época nueva.
+- Límites del resumen: los resúmenes ya escritos no se recalculan ni se reescriben; «tu media» compara con netos
+  antiguos sesgados a la baja hasta que se renueve el historial; `tyrian_summary_version` sigue en 3.
+- No verificado: nadie ha visto la 0.6.18 en Obsidian ni en Hebra reales, ni su instalación por BRAT o en Hebra. El
+  enlace por id está comprobado a mano en una biblioteca real de Hebra (9 oct 2026) sobre tres resúmenes existentes
+  editados; el resumen que escribe la 0.6.18 con esa forma no se ha visto. Los plazos del almacén están medidos solo
+  con `fake-indexeddb`.
+- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la
+  verificación en clientes reales.
 
 ## Canal 0.6.17 publicado: el valor de un botín sobre el total de la venta y fallos que ya no rompen lo demás (9 oct 2026)
 

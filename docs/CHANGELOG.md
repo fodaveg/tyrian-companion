@@ -1,5 +1,36 @@
 # Changelog
 
+## Release beta 0.6.18 - el resumen de sesión deja de excluir los objetos con NoSell, su enlace funciona en Hebra y el almacén de la sesión en vivo ya no espera para siempre
+
+Release por tag `0.6.18`. Cambia una cifra visible (el neto y las listas de la nota resumen de una sesión), arregla el
+enlace «Nota completa» del resumen en Hebra y pone plazo a las esperas del almacén de la sesión en vivo.
+[ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Resumen de sesión: los objetos con la marca `NoSell` de la API ya no salen del valor ni se listan como «Ligados a
+  cuenta». `NoSell` solo prohíbe la venta a un comerciante; esos objetos se venden en el bazar. Ejemplo medido contra
+  la API el 9 oct 2026: «Trozo de caramelo» (`36041`, marcas `NoSalvage`, `NoSell`, `BulkConsume`). Ahora entran en
+  «Para vender ahora» y en el neto si tienen precio de bazar, y en «Sin precio de bazar» si no. Siguen fuera del valor
+  los `AccountBound` y los `SoulbindOnAcquire`. Límites: los resúmenes ya escritos no se recalculan y conservan su
+  neto a la baja; «tu media» compara con esos netos antiguos, así que una sesión nueva se compara con una media
+  sesgada a la baja hasta que se renueve el historial. `tyrian_summary_version` sigue en 3.
+- Hebra: el enlace «Nota completa» del resumen iba por ruta de fichero y no resolvía, porque Hebra resuelve `[[…]]`
+  por título o por `id:<uuid>`. Ahora va por id (`TyrianVault.linkTarget`). En Obsidian no cambia nada, y los
+  resúmenes ya escritos no se reescriben. El 9 oct 2026 se comprobó en una biblioteca real de Hebra que la forma
+  `[[id:<uuid>|…]]` resuelve y crea el enlace entrante (editando a mano tres resúmenes existentes); el resumen que
+  escribe la 0.6.18 con esa forma no se ha visto todavía.
+- Sesión en vivo y almacén: cada llamada al almacén de la sesión en vivo, al coordinador de la reserva y al escritor
+  de notas tiene un plazo de 10 s; pasado ese plazo se responde como cuando el almacén no está disponible, en vez de
+  dejar bloqueada la cola con la sesión mostrada como activa. Una carga inicial que falla se reintenta con el latido y
+  un `initialize()` que falla ya no tumba el plugin. Un inicio que el almacén no confirmó se vuelve a buscar en vez de
+  quedar huérfano (y la presencia del juego notificada entretanto se conserva), una nota que tarda más que el plazo se espera en vez de escribirse otra vez en cada latido, y una
+  reclamación de aviso contestada como rechazada se relee antes de reintentar. La reserva de la sesión en vivo sigue
+  en 5 minutos. Límites conocidos, en [SPEC-live-loot](SPEC-live-loot.md): un motor de almacén que no contesta al
+  arrancar sigue impidiendo arrancar el plugin; un escritor de nota que no termina nunca bloquea las notas siguientes;
+  tras un cierre brusco de la app de notas pueden pasar hasta 5 minutos sin medir; una renovación de reserva que llega
+  a disco después de su plazo cuesta un hueco y una época nueva.
+- Sin verificar: nada de la 0.6.18 se ha visto en Obsidian ni en Hebra reales, ni la instalación de la 0.6.18 por
+  BRAT o en Hebra. El almacén está medido solo con `fake-indexeddb`.
+
 ## Release beta 0.6.17 - el valor de un botín se calcula sobre el total de la venta, y las notas, los avisos y los precios fallan sin romper lo demás
 
 [Canal 0.6.17 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.17); **instalación/runtime
