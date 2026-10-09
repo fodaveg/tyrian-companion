@@ -10,6 +10,7 @@ import {
 	unobservedCharacterSnapshot,
 } from '../account/__fixtures__/storage-delta';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
+import { prepareLegacyRuntimeArchive } from './live-session-legacy-archive';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import {
@@ -1489,6 +1490,29 @@ describe('ManualSessionStartService', () => {
 			expect(service.getRecoveryState()).toMatchObject({ status: 'error', code: 'unavailable' });
 			expect(changed).toHaveBeenCalled();
 			await service.dispose();
+		});
+
+		it('starts with an archive today\'s validation rejects set aside, and offers the newest valid one', async () => {
+			const factory = new IDBFactory(); const dbName = 'legacy-set-aside-archive';
+			await seedUnfinishedWithForeignReceipt(factory, dbName);
+			const first = new ManualSessionStartService(coordinator(), { capture: vi.fn() },
+				serviceOptions({ automaticAccountCapture: false, runtimeStore: new IndexedDbSessionRuntimeStore(factory, dbName) }));
+			await first.initialize(); await expect(first.preserveLegacyForLiveMigration()).resolves.toBe(true); await first.dispose();
+			// A checksummed archive whose original no longer passes today's validation, sorted before the real one.
+			const database = await new Promise<IDBDatabase>((resolve, reject) => {
+				const request = factory.open(dbName, 2); request.onerror = () => reject(request.error); request.onsuccess = () => resolve(request.result);
+			});
+			const tx = database.transaction('active-session-v1', 'readwrite');
+			tx.objectStore('active-session-v1').add(prepareLegacyRuntimeArchive({ notARuntime: true }, 9_999_999_999_999), 'legacy-api-runtime:aaa-old-evidence');
+			await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error); });
+			database.close();
+
+			const restarted = new ManualSessionStartService(coordinator(), { capture: vi.fn() },
+				serviceOptions({ automaticAccountCapture: false, runtimeStore: new IndexedDbSessionRuntimeStore(factory, dbName) }));
+			await expect(restarted.initialize()).resolves.toBeUndefined();
+			expect(restarted.getRecoveryState()).toEqual({ status: 'none' });
+			expect(restarted.getPreservedLegacyRuntime()?.state).toMatchObject({ sessionId: 'session-1' });
+			await restarted.dispose();
 		});
 	});
 

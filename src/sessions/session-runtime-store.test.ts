@@ -150,7 +150,7 @@ describe('session runtime persistence', () => {
 			const record = activeRecord(); const state = record.state as Extract<SessionState, { status: 'active' }>;
 			return { ...record, state: { ...state, sessionId, authority: { ...state.authority, sessionId } } };
 		}
-		const sessionIdOf = (record: { state: { status: string } }) => (record.state as { sessionId: string }).sessionId;
+		const sessionIdOf = (record: { state: unknown }) => (record.state as { sessionId: string }).sessionId;
 
 		it('lists the newest preserved archive first, whatever the order of their keys', async () => {
 			const store = await seedArchives('archive-order', [
@@ -184,6 +184,30 @@ describe('session runtime persistence', () => {
 			store.close();
 		});
 
+		it('sets aside an archive that today\'s validation rejects, with its reason, instead of failing the listing', async () => {
+			const events: LocalDebugPersistenceEvent[] = [];
+			const factory = new IDBFactory(); const name = databaseName('archive-set-aside');
+			const store = new IndexedDbSessionRuntimeStore(factory, name, new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } }));
+			await store.load(); const database = await openRaw(factory, name, 2);
+			const junk = prepareLegacyRuntimeArchive({ notARuntime: true }, 50);
+			const tx = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readwrite'); const objects = tx.objectStore(SESSION_RUNTIME_STORE_NAME);
+			objects.add(junk, `${LEGACY_RUNTIME_ARCHIVE_PREFIX}ghost`);
+			objects.add({ ...prepareLegacyRuntimeArchive(recordOf('tampered'), 60), sha256: 'bad' }, `${LEGACY_RUNTIME_ARCHIVE_PREFIX}tampered`);
+			objects.add(prepareLegacyRuntimeArchive(recordOf('good'), 70), `${LEGACY_RUNTIME_ARCHIVE_PREFIX}good`);
+			await transactionDone(tx);
+
+			expect((await store.listLegacyRuntimeArchives()).map(sessionIdOf)).toEqual(['good']);
+			expect(store.rejectedLegacyArchives).toEqual([
+				{ key: `${LEGACY_RUNTIME_ARCHIVE_PREFIX}ghost`, reason: 'record_invalid' },
+				{ key: `${LEGACY_RUNTIME_ARCHIVE_PREFIX}tampered`, reason: 'archive_invalid' },
+			]);
+			expect(events.some((event) => event.phase === 'failure' && event.code === 'validation_failed')).toBe(true);
+			// Evidence of the player: nothing is deleted or rewritten.
+			const read = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readonly');
+			const request = read.objectStore(SESSION_RUNTIME_STORE_NAME).get(`${LEGACY_RUNTIME_ARCHIVE_PREFIX}ghost`);
+			await transactionDone(read); expect(request.result).toEqual(junk);
+			database.close(); store.close();
+		});
 	});
 
 	it('archives an unfinished API runtime additively before freeing the canonical slot', async () => {

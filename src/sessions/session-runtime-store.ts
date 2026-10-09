@@ -33,6 +33,8 @@ import type {
 	SessionState,
 } from './session';
 
+export interface RejectedLegacyArchive { key: string; reason: 'archive_invalid' | 'record_invalid' }
+
 export const SESSION_RUNTIME_VERSION = 3 as const;
 export const SESSION_RUNTIME_DB_NAME = 'tyrian-companion-session-runtime';
 export const SESSION_RUNTIME_DB_VERSION = 2;
@@ -241,6 +243,8 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	private database: IDBDatabase | null = null;
 	private opening: Promise<IDBDatabase> | null = null;
 	private unavailable = false;
+	/** Archives the last listing set aside; the rows stay in the store. */
+	rejectedLegacyArchives: readonly RejectedLegacyArchive[] = [];
 
 	/**
 	 * `databaseName` may be how to find the name out on first open instead of the name itself: each
@@ -408,24 +412,37 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 			return await this.run(async (database) => await archiveLegacyRuntime(database,normalized.record,archive,authority));
 		} catch { return false; }
 	}
+	/**
+	 * Newest preserved archive first (`preservedAt` descending, key as the stable tie-break), so `[0]` is the same
+	 * session after a restart. Each archive is checksummed once. One that today's validation rejects is SET ASIDE:
+	 * it stays in the store untouched (it is the player's evidence), is listed in `rejectedLegacyArchives` with its
+	 * reason and never keeps the plugin from starting. Only a storage failure rejects.
+	 */
 	async listLegacyRuntimeArchives(): Promise<SessionRuntimeRecord[]> {
-		return await this.run(async (database) => await new Promise((resolve,reject) => {
+		const rejected: RejectedLegacyArchive[] = [];
+		const found = await this.run(async (database) => await new Promise<Array<{ record: SessionRuntimeRecord; preservedAt: number; key: string }>>((resolve,reject) => {
+			rejected.length = 0;
 			const tx = startIndexedDbTransaction(database,SESSION_RUNTIME_STORE_NAME,'readonly'); const request = tx.objectStore(SESSION_RUNTIME_STORE_NAME).openCursor();
-			const records: Array<{record:SessionRuntimeRecord;preservedAt:number;key:string}> = []; let corrupt = false;
+			const records: Array<{ record: SessionRuntimeRecord; preservedAt: number; key: string }> = [];
 			request.onsuccess = () => {
 				const cursor = request.result; if (!cursor) return;
-				if (typeof cursor.key === 'string' && cursor.key.startsWith(LEGACY_RUNTIME_ARCHIVE_PREFIX)) {
+				const key = cursor.key;
+				if (typeof key === 'string' && key.startsWith(LEGACY_RUNTIME_ARCHIVE_PREFIX)) {
 					const value: unknown = cursor.value;
-					if (!isLegacyRuntimeArchive(value)) { corrupt = true; tx.abort(); return; }
-					const record = legacyRuntimeRecordFromVerifiedArchive(value);
-					if (!record || cursor.key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${runtimeAuthority(record.state).sessionId}`) { corrupt = true; tx.abort(); return; }
-					records.push({record,preservedAt:value.preservedAt,key:cursor.key});
+					if (!isLegacyRuntimeArchive(value)) rejected.push({ key, reason: 'archive_invalid' });
+					else {
+						const record = legacyRuntimeRecordFromVerifiedArchive(value);
+						if (!record || key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${runtimeAuthority(record.state).sessionId}`) rejected.push({ key, reason: 'record_invalid' });
+						else records.push({ record, preservedAt: value.preservedAt, key });
+					}
 				}
 				cursor.continue();
 			};
-			// Newest first, so `[0]` is the same session after a restart; the key only breaks a tie.
-			tx.oncomplete = () => resolve(records.sort((left,right) => right.preservedAt - left.preservedAt || (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)).map(({record}) => record)); tx.onerror = tx.onabort = () => reject(new Error(corrupt ? 'Preserved API runtime is corrupt.' : 'Preserved API runtime is unavailable.'));
+			tx.oncomplete = () => resolve(records); tx.onerror = tx.onabort = () => reject(new Error('Preserved API runtime is unavailable.'));
 		}));
+		this.rejectedLegacyArchives = rejected;
+		if (rejected.length > 0) this.diagnostics.begin('session_runtime', 'read').failure('validation_failed');
+		return found.sort((left,right) => right.preservedAt - left.preservedAt || (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)).map(({ record }) => record);
 	}
 	async readLegacyRuntimeArchive(sessionId:string):Promise<LegacyRuntimeArchiveV1|null> {
 		const value = await this.read(undefined,`${LEGACY_RUNTIME_ARCHIVE_PREFIX}${sessionId}`);
