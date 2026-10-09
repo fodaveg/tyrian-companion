@@ -1802,6 +1802,11 @@ describe('the load retires the Bases the bundle no longer ships (9 Oct 2026)', (
 		expect(manifestIds(vault)).not.toContain('halloween-base');
 		expect(messages).toHaveLength(2);
 		expect(messages.some((message) => /Halloween\.base/u.test(message) && /conservan|kept/u.test(message))).toBe(true);
+		// Each Base is named in ITS notice only: the kept one is not among the removed, nor the removed among the kept.
+		const removed = messages.find((message) => message.includes('were removed'))!;
+		const kept = messages.find((message) => message.includes('no longer managed'))!;
+		expect(removed).toContain('Sessions.base'); expect(removed).toContain('Materials.base'); expect(removed).not.toContain('Halloween.base');
+		expect(kept).toContain('Halloween.base'); expect(kept).not.toContain('Sessions.base'); expect(kept).not.toContain('Materials.base');
 		const writes = vault.writeCount; const count = messages.length;
 		await load();
 		expect(vault.writeCount).toBe(writes);

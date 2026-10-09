@@ -5,7 +5,7 @@ import { managedAssetsBundle } from './generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { decideManagedAssetsAutoUpdate, MANAGED_ASSETS_MANIFEST } from './managed-assets-model';
 import { RETIRED_MANAGED_ASSETS } from './retired-assets';
-import { legacyRetiredBases, publishedRetiredBases } from '../test/managed-asset-fixture';
+import { legacyRetiredBases, publishedRetiredBases, publishedSummariesV1 } from '../test/managed-asset-fixture';
 
 const CONFIG_DIR = 'vault-config';
 const ROOT = 'Tyrian Companion';
@@ -184,6 +184,60 @@ describe('retirement against what 0.6.15 really published', () => {
 		expect((await next.apply(ROOT, 'upgrade')).status).toBe('applied');
 		expect(vault.contents.get(path)).toContain('name: "Mía"');
 		expect(next.retirementReport().kept).toEqual([path]);
+	});
+});
+
+describe('Remove judges a Base by what the manifest recorded', () => {
+	it('with a recorded meaning (schema 2), another PUBLISHED version of the Base is a change: Remove keeps it and says so', async () => {
+		const vault = new MemoryVault();
+		const current = await managedAssetsBundle();
+		const manager = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 8, locale: 'es', assets: current, retired: RETIRED_MANAGED_ASSETS });
+		expect((await manager.apply(ROOT)).status).toBe('applied');
+		const path = `${BASES}/Session summaries.base`;
+		vault.contents.set(path, (await publishedSummariesV1()).bytes);
+		const inspection = await manager.inspect(ROOT);
+		expect(inspection.assets.find((entry) => entry.path === path)?.status).toBe('modified');
+		const removal = await manager.uninstall(ROOT);
+		expect(removal).toMatchObject({ status: 'conflict', message: 'Modified managed assets are preserved.' });
+		expect(vault.contents.get(path)).toBe((await publishedSummariesV1()).bytes);
+		expect(vault.trashed).toEqual([]);
+	});
+});
+
+describe('a retire-only apply with a file of the user\'s where the manifest lists no Base', () => {
+	it('stays a ready manifest, leaves the user\'s file alone and settles on the second apply', async () => {
+		const { vault, next } = await installedBefore({ withoutSummaries: true });
+		const path = `${BASES}/Session summaries.base`;
+		const mine = 'views: []\n# mine\n';
+		vault.contents.set(path, mine);
+		const manifestBefore = manifestOf(vault);
+		expect(manifestBefore.assets.map((entry) => entry.id)).not.toContain('session-summaries-base');
+		const inspection = await next.inspect(ROOT);
+		expect(inspection.assets.find((entry) => entry.path === path)?.status).toBe('occupied_unowned');
+		expect((await next.apply(ROOT, 'upgrade')).status).toBe('applied');
+		for (const name of GONE) expect(vault.contents.has(`${BASES}/${name}`)).toBe(false);
+		expect(vault.contents.get(path)).toBe(mine);
+		const after = await next.inspect(ROOT);
+		expect(after.manifestStatus).toBe('ready');
+		expect((await next.preview(ROOT, 'upgrade')).canApply).toBe(true);
+		// The version is only raised when every Base is registered and unchanged; here one is not, so it stays.
+		expect(manifestOf(vault).bundleVersion).toBe(manifestBefore.bundleVersion);
+		const writes = vault.writeCount; const trashed = vault.trashed.length;
+		expect((await next.apply(ROOT, 'upgrade')).status).toBe('unchanged');
+		expect(vault.writeCount).toBe(writes);
+		expect(vault.trashed).toHaveLength(trashed);
+		expect(vault.contents.get(path)).toBe(mine);
+	});
+});
+
+describe('the retirement report', () => {
+	it('belongs to the apply that made it: an unread report does not leak into the next apply', async () => {
+		const { vault, next } = await installedPublished();
+		expect((await next.apply(ROOT, 'upgrade')).status).toBe('applied');
+		expect(vault.trashed).toHaveLength(3);
+		// Nobody read the report (Settings «Aplicar»), and a later apply retires nothing.
+		expect((await next.apply(ROOT, 'upgrade')).status).toBe('unchanged');
+		expect(next.retirementReport()).toEqual({ trashed: [], kept: [] });
 	});
 });
 

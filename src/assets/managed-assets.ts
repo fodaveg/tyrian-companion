@@ -201,9 +201,14 @@ export class ManagedAssetsManager {
 		return meaning !== null && this.published.some((row) => row.assetId === entry.id && row.locale === entry.locale && row.semanticHash === meaning);
 	}
 
-	/** Remove / uninstall: what the manifest installed, or a published version of it (a schema 1 manifest has no semantic hash to compare). */
+	/**
+	 * Remove / uninstall: what the manifest installed, or, only for an entry that recorded no semantic hash
+	 * (a schema 1 manifest), a published version of it. An entry WITH a recorded hash is judged by it alone:
+	 * a different published version is a change, as `inspect` says.
+	 */
 	private async matchesInstalledOrPublished(content: string, currentHash: string, entry: ManagedAssetEntry, target?: PackagedAsset): Promise<boolean> {
-		return await this.matchesInstalledContent(content, currentHash, entry, target) || await this.matchesPublished(content, entry);
+		if (await this.matchesInstalledContent(content, currentHash, entry, target)) return true;
+		return entry.installedSemanticHash === undefined && await this.matchesPublished(content, entry);
 	}
 
 	private lastRetirement: { trashed: string[]; kept: string[] } = { trashed: [], kept: [] };
@@ -250,8 +255,10 @@ export class ManagedAssetsManager {
 		const next: ManagedAssetsManifest = { ...manifest, generation: manifest.generation + 1, assets: manifest.assets.filter((entry) => !dropped.has(entry.id)) };
 		const excluded = (manifest.excluded ?? []).filter((id) => !droppedExcluded.has(id));
 		if (excluded.length > 0) next.excluded = excluded; else delete next.excluded;
-		// Nothing else pending: the manifest now describes this bundle exactly, so it says so.
-		if (inspection.assets.every((entry) => isSettled(entry.status)) && manifest.locale === this.bundle.locale) next.bundleVersion = this.bundle.bundleVersion;
+		// Nothing else pending: the manifest now describes this bundle exactly, so it says so. Only when every Base
+		// is really registered and unchanged: a user's file on the path of a Base the manifest does not list
+		// (`occupied_unowned`) is neither registered nor excluded, and the exact-set rule would call that a conflict.
+		if (inspection.assets.every((entry) => entry.status === 'unchanged') && manifest.locale === this.bundle.locale) next.bundleVersion = this.bundle.bundleVersion;
 		return await this.casManifest(manifest, next) !== null;
 	}
 
@@ -415,6 +422,8 @@ export class ManagedAssetsManager {
 
 	private async applyInternal(root: string, kind: 'install' | 'upgrade' | 'repair', guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsResult> {
 		try {
+			// Each apply reports its own retirements (an earlier apply nobody read must not leak into this one).
+			this.lastRetirement = { trashed: [], kept: [] };
 			let inspection = await this.inspect(root);
 			if (guard && !guard(inspection)) return { status: 'unchanged', inspection, ownership: 'existing' };
 			const ownership = inspection.manifestStatus === 'missing' ? 'created' as const : 'existing' as const;

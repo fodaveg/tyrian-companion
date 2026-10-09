@@ -49,6 +49,15 @@ export async function legacyRetiredBases(): Promise<PackagedAsset[]> {
  * Their meaning hashes are the ones in `published-base-hashes.ts`; the synthetic ones above can not prove that.
  */
 export async function publishedRetiredBases(): Promise<PackagedAsset[]> {
+	return (await publishedRows()).filter((row) => row.id !== 'session-summaries-base');
+}
+
+/** `Session summaries.base` at `contentVersion` 1 (Spanish), as 0.6.15 published it: a published version that is NOT the current one. */
+export async function publishedSummariesV1(): Promise<PackagedAsset> {
+	return (await publishedRows()).find((row) => row.id === 'session-summaries-base')!;
+}
+
+async function publishedRows(): Promise<PackagedAsset[]> {
 	const rows = JSON.parse(readFileSync(new URL('./published-retired-bases.json', import.meta.url), 'utf8')) as Array<Omit<PackagedAsset, 'contentHash'>>;
 	return await Promise.all(rows.map(async (row) => ({ ...row, contentHash: await sha256Text(row.bytes) })));
 }
