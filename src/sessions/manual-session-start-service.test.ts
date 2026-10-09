@@ -1514,6 +1514,29 @@ describe('ManualSessionStartService', () => {
 			expect(restarted.getPreservedLegacyRuntime()?.state).toMatchObject({ sessionId: 'session-1' });
 			await restarted.dispose();
 		});
+
+		it('still fails closed on a tampered archive: corrupt recovery state, no new session', async () => {
+			const factory = new IDBFactory(); const dbName = 'legacy-tampered-archive';
+			const database = await new Promise<IDBDatabase>((resolve, reject) => {
+				const request = factory.open(dbName, 2);
+				request.onupgradeneeded = () => { request.result.createObjectStore('active-session-v1'); };
+				request.onerror = () => reject(request.error); request.onsuccess = () => resolve(request.result);
+			});
+			const tx = database.transaction('active-session-v1', 'readwrite');
+			tx.objectStore('active-session-v1').add({ ...prepareLegacyRuntimeArchive({ any: 1 }, 1), sha256: 'bad' }, 'legacy-api-runtime:tampered');
+			await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error); });
+			database.close();
+			const leases = coordinator();
+			const service = new ManualSessionStartService(leases, { capture: vi.fn(async () => structuredClone(captured)) },
+				serviceOptions({ automaticAccountCapture: false, runtimeStore: new IndexedDbSessionRuntimeStore(factory, dbName) }));
+			await service.initialize();
+			expect(service.getRecoveryState()).toMatchObject({ status: 'error', code: 'corrupt' });
+			expect(service.getPreservedLegacyRuntime()).toBeNull();
+			await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+				.resolves.toMatchObject({ status: 'failed' });
+			expect(leases.acquire).not.toHaveBeenCalled();
+			await service.dispose();
+		});
 	});
 
 	/**

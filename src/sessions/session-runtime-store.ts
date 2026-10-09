@@ -33,7 +33,7 @@ import type {
 	SessionState,
 } from './session';
 
-export interface RejectedLegacyArchive { key: string; reason: 'archive_invalid' | 'record_invalid' }
+export interface RejectedLegacyArchive { key: string; reason: 'record_invalid' }
 
 export const SESSION_RUNTIME_VERSION = 3 as const;
 export const SESSION_RUNTIME_DB_NAME = 'tyrian-companion-session-runtime';
@@ -414,14 +414,16 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	}
 	/**
 	 * Newest preserved archive first (`preservedAt` descending, key as the stable tie-break), so `[0]` is the same
-	 * session after a restart. Each archive is checksummed once. One that today's validation rejects is SET ASIDE:
-	 * it stays in the store untouched (it is the player's evidence), is listed in `rejectedLegacyArchives` with its
-	 * reason and never keeps the plugin from starting. Only a storage failure rejects.
+	 * session after a restart. Each archive is checksummed once. A bad envelope, a failed checksum or a key that does
+	 * not name its session is corrupt evidence and FAILS CLOSED (the listing rejects). Only an archive whose envelope
+	 * and checksum are valid but whose original today's validation rejects is SET ASIDE: it stays in the store
+	 * untouched (it is the player's evidence), is listed in `rejectedLegacyArchives` and traced in the local
+	 * diagnostics with its key and reason, and never keeps the plugin from starting.
 	 */
 	async listLegacyRuntimeArchives(): Promise<SessionRuntimeRecord[]> {
 		const rejected: RejectedLegacyArchive[] = [];
 		const found = await this.run(async (database) => await new Promise<Array<{ record: SessionRuntimeRecord; preservedAt: number; key: string }>>((resolve,reject) => {
-			rejected.length = 0;
+			rejected.length = 0; let corrupt = false;
 			const tx = startIndexedDbTransaction(database,SESSION_RUNTIME_STORE_NAME,'readonly'); const request = tx.objectStore(SESSION_RUNTIME_STORE_NAME).openCursor();
 			const records: Array<{ record: SessionRuntimeRecord; preservedAt: number; key: string }> = [];
 			request.onsuccess = () => {
@@ -429,19 +431,18 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 				const key = cursor.key;
 				if (typeof key === 'string' && key.startsWith(LEGACY_RUNTIME_ARCHIVE_PREFIX)) {
 					const value: unknown = cursor.value;
-					if (!isLegacyRuntimeArchive(value)) rejected.push({ key, reason: 'archive_invalid' });
-					else {
-						const record = legacyRuntimeRecordFromVerifiedArchive(value);
-						if (!record || key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${runtimeAuthority(record.state).sessionId}`) rejected.push({ key, reason: 'record_invalid' });
-						else records.push({ record, preservedAt: value.preservedAt, key });
-					}
+					if (!isLegacyRuntimeArchive(value)) { corrupt = true; tx.abort(); return; }
+					const record = legacyRuntimeRecordFromVerifiedArchive(value);
+					if (!record) rejected.push({ key, reason: 'record_invalid' });
+					else if (key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${runtimeAuthority(record.state).sessionId}`) { corrupt = true; tx.abort(); return; }
+					else records.push({ record, preservedAt: value.preservedAt, key });
 				}
 				cursor.continue();
 			};
-			tx.oncomplete = () => resolve(records); tx.onerror = tx.onabort = () => reject(new Error('Preserved API runtime is unavailable.'));
+			tx.oncomplete = () => resolve(records); tx.onerror = tx.onabort = () => reject(new Error(corrupt ? 'Preserved API runtime is corrupt.' : 'Preserved API runtime is unavailable.'));
 		}));
 		this.rejectedLegacyArchives = rejected;
-		if (rejected.length > 0) this.diagnostics.begin('session_runtime', 'read').failure('validation_failed');
+		for (const { key, reason } of rejected) this.diagnostics.begin('session_runtime', 'read').failure('validation_failed', undefined, { archiveKey: key, reason });
 		return found.sort((left,right) => right.preservedAt - left.preservedAt || (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)).map(({ record }) => record);
 	}
 	async readLegacyRuntimeArchive(sessionId:string):Promise<LegacyRuntimeArchiveV1|null> {
