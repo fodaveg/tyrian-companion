@@ -380,7 +380,7 @@ describe('createHebraHost: the other ports', () => {
 	it('canonicalIdentity = hebra-library:<libraryId>; managed assets declared like Obsidian', async () => {
 		const handle = await createHebraHost(deps(createTyrianTestApi()));
 		expect(handle.host.vault.canonicalIdentity()).toBe('hebra-library:library-1');
-		expect(handle.host.capabilities).toEqual({ managedAssets: true });
+		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true });
 	});
 
 	it('secrets preloaded from the backend; settings and localStorage through api.storage', async () => {

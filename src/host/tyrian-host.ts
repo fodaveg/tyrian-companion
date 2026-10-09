@@ -386,6 +386,12 @@ export interface TyrianHostCapabilities {
 	 * fresh Obsidian install it is also null and the user needs the Apply button.
 	 */
 	readonly managedAssets?: boolean;
+	/**
+	 * The support package cannot be a file the user can open (no filesystem to land on), so it is
+	 * saved as a note of the vault and opened with `ui.openNote`. Default false: the package is a
+	 * `.json` under `<outputFolder>/diagnostics` written through `vault.adapter`, as in Obsidian.
+	 */
+	readonly supportPackageAsNote?: boolean;
 }
 
 export interface TyrianHost {

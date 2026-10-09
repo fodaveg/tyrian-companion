@@ -459,7 +459,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	const host: TyrianHost = {
 		// Managed assets as in Obsidian: the Bases and their manifest are library files under the
 		// output folder; the settings show the section and the core adopts and upgrades them.
-		capabilities: { managedAssets: true },
+		capabilities: { managedAssets: true, supportPackageAsNote: true },
 		vault,
 		http: createTyrianHttpPort(api),
 		secrets,
