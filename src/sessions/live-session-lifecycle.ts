@@ -890,15 +890,46 @@ function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionL
 		release: (handle) => deadline.bounded(() => options.coordinator.release(handle), unavailable),
 		dispose: () => { options.coordinator.dispose(); },
 	};
-	// A note that is not written in time is one that was not written: the session stays closed without its receipt
-	// and the next beat asks the writer again, which answers `unchanged` if the first attempt did land.
-	const onComplete: NonNullable<LiveSessionLifecycleOptions['onComplete']> = (record, journal) => deadline.bounded(
-		async () => await options.onComplete?.(record, journal) ?? null, () => null);
+	// The note writer is waited for like storage, but a note can take longer than that to write, and it is not storage
+	// that fails then. So the writer's attempt is kept while it is in course: a caller whose wait runs out is told the
+	// note is not written yet (null), and the next one (the following beat, a start) waits for THAT attempt instead
+	// of calling the writer again. Each call here waits at most the deadline; the writer is called once per content.
+	// Without this a note that always took longer was never sealed, was started again on every beat, and kept the
+	// next session from starting.
+	let noteInCourse: NoteInCourse | null = null;
+	const waitedFor = async (note: NoteInCourse): Promise<NoteAnswer | null> => {
+		const answer = await deadline.bounded<NoteAnswer | null>(() => note.answer, () => null);
+		if (answer !== null && noteInCourse === note) noteInCourse = null;
+		return answer;
+	};
+	const onComplete: NonNullable<LiveSessionLifecycleOptions['onComplete']> = async (record, journal) => {
+		// The authority and the time of the last save are not in the note (see `live-session-note-model.ts`): a lease
+		// taken again between two attempts does not make it another note.
+		const { authority: _authority, persistedAt: _persistedAt, ...evidence } = record;
+		const content = JSON.stringify([evidence, journal]);
+		// An attempt with other content (an earlier revision of this note, or another session's) is waited for first:
+		// two writers never work at once.
+		if (noteInCourse !== null && noteInCourse.content !== content && await waitedFor(noteInCourse) === null) return null;
+		const write = async (): Promise<NoteAnswer> => {
+			try { return { path: await options.onComplete?.(record, journal) ?? null }; }
+			catch (error) { return { error }; }
+		};
+		noteInCourse ??= { content, answer: write() };
+		const answer = await waitedFor(noteInCourse);
+		if (answer === null) return null;
+		if ('error' in answer) throw answer.error;
+		return answer.path;
+	};
 	return Object.create(options, {
 		persistence: { value: persistence }, coordinator: { value: coordinator },
 		onComplete: { get: () => options.onComplete === undefined ? undefined : onComplete },
 	}) as LiveSessionLifecycleOptions;
 }
+
+/** What the note writer answered, as a value: an attempt nobody waits for any more must not reject into nothing. */
+type NoteAnswer = { path: string | null } | { error: unknown };
+/** One call to the note writer that has not been answered to anybody yet, and the content it was given. */
+interface NoteInCourse { content: string; answer: Promise<NoteAnswer> }
 
 /** Bounds the DOM projection without throwing away journal rows needed for totals or export. */
 function boundedChart(points: LiveChartPointV1[]): LiveChartPointV1[] {

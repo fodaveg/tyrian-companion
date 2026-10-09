@@ -1059,6 +1059,80 @@ describe('live session while storage does not answer', () => {
 	});
 });
 
+/**
+ * The note writer has the same wait as storage, and a note can take longer than that to write. Each
+ * attempt used to be a new call to the writer: `stop()` answered false, the session stayed closed
+ * without its receipt, every beat started the writer again and gave it up ten seconds later, and no
+ * new session could start, for as long as the writer kept taking that long.
+ */
+describe('live session whose note takes longer to write than the wait for it', () => {
+	/** A session with one observation, and a writer that answers only when the returned `finish` is called. */
+	async function closing(label: string) {
+		const f = outage(label);
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+		let finish: (path: string | null) => void = () => undefined; let fail: (error: Error) => void = () => undefined;
+		f.options.onComplete.mockImplementationOnce(async () => await new Promise<string>((resolve, reject) => { finish = resolve as (path: string | null) => void; fail = reject; }));
+		f.at(2000); const stopping = f.service.stop(AT + 2000);
+		await vi.waitFor(() => { expect(f.options.onComplete).toHaveBeenCalledTimes(1); });
+		return { f, stopping, finish: (path: string | null) => { finish(path); }, fail: (error: Error) => { fail(error); } };
+	}
+	/** One beat that has to wait for the writer and gives the wait up. */
+	async function beatThatWaits(f: ReturnType<typeof outage>): Promise<void> {
+		f.tick(); await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+		await f.timeout(); await f.service.capture();
+	}
+
+	it('the writer is called once: later beats wait for that same attempt, the receipt is saved once it ends, and the next start works', async () => {
+		const { f, stopping, finish } = await closing('slow-note');
+		// The stop does not wait for ever: the note is not written yet, and it says so.
+		expect(await settlement(stopping)).toBe('pending');
+		await f.timeout();
+		expect(await settlement(stopping), 'the wait for the note writer has a deadline').toBe('resolved');
+		await expect(stopping).resolves.toBe(false);
+		expect(f.service.getView()).toMatchObject({ phase: 'complete', endedAt: iso(2000) });
+		expect((await f.durable()).record).toMatchObject({ phase: 'complete', summaryReceipt: null });
+
+		// Two beats go by while the writer is still at it, and a start is asked for: none of them calls it again.
+		f.at(7000); await beatThatWaits(f);
+		f.at(12_000); await beatThatWaits(f);
+		const refused = f.service.start('Test');
+		await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+		await f.timeout();
+		await expect(refused).resolves.toBeNull();
+		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
+		expect((await f.durable()).record).toMatchObject({ summaryReceipt: null });
+
+		// The writer ends between two beats, with nobody waiting. The next beat takes its answer and seals the session.
+		finish('Sessions/slow.md'); await turns();
+		f.at(17_000); await f.beat();
+		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
+		expect((await f.durable()).record).toMatchObject({ phase: 'complete', summaryReceipt: { path: 'Sessions/slow.md', savedAt: AT + 17_000 } });
+		expect(f.service.getView().phase).toBe('complete');
+
+		Object.assign(f.options, { sessionId: () => 'second-session' });
+		f.at(18_000); await expect(f.service.start('Test')).resolves.toBe('second-session');
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'second-session' });
+		await f.service.dispose();
+	});
+
+	it('a writer that fails after its wait ran out is reported by the beat that finds out, and asked again by the next', async () => {
+		const { f, stopping, fail } = await closing('slow-note-fails');
+		await f.timeout();
+		await expect(stopping).resolves.toBe(false);
+		fail(new Error('vault refused the note')); await turns();
+		f.at(7000); await f.beat();
+		expect(f.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['vault refused the note']);
+		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
+		// That attempt is over, so this one is a new call, which the fixture's writer answers at once.
+		f.at(12_000); await f.beat();
+		expect(f.options.onComplete).toHaveBeenCalledTimes(2);
+		expect((await f.durable()).record).toMatchObject({ phase: 'complete', summaryReceipt: { path: 'Sessions/live.md' } });
+		expect(f.service.getView().phase).toBe('complete');
+		await f.service.dispose();
+	});
+});
+
 /** The addon's side of the bridge, one line per frame. */
 class NexusSocket implements TyrianTcpConnection {
 	readonly lines: Record<string, unknown>[] = [];

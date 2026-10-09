@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 562,
+		"catch_clause": 563,
 		"promise_catch": 59,
 		"void_expression": 123,
 		"callback_registration": 222
@@ -10877,6 +10877,22 @@
 						"justification": "The \"enqueue\" \"then\" boundary retains rejection recovery, marks the live source failure and forwards error/state observers while returning the original failure to the caller."
 					},
 					"reason": "Allowlisted callback_registration: The \"enqueue\" \"then\" boundary retains rejection recovery, marks the live source failure and forwards error/state observers while returning the original failure to the caller. Verified registration: \"then\" in \"enqueue\"."
+				},
+				{
+					"id": "adf55f5bc4bd198a84023e136b829c746b3dbc28",
+					"kind": "catch_clause",
+					"line": 915,
+					"column": 4,
+					"endLine": 915,
+					"endColumn": 39,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "write",
+						"justification": "The \"write\" catch is a \"fallback_return\" that turns the note writer's failure into a value kept with the attempt, so a writer nobody waits for any more does not reject into nothing; whoever takes the answer rethrows it and enqueue reports it through onError."
+					},
+					"reason": "Allowlisted catch_clause: The \"write\" catch is a \"fallback_return\" that turns the note writer's failure into a value kept with the attempt, so a writer nobody waits for any more does not reject into nothing; whoever takes the answer rethrows it and enqueue reports it through onError. Verified recovery: \"fallback_return\" in \"write\"."
 				}
 			]
 		},
