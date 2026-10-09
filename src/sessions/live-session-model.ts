@@ -69,7 +69,8 @@ export type LiveSessionPayloadVersion = 1 | 2;
 /**
  * The format this build WRITES, and with it whether the lifecycle keeps the samples that changed nothing (2) or every one (1) and
  * which price basis the runtime keeps (`livePriceBasisOf`). It stays 1 until the readers that understand 2 have been out long
- * enough: with 1, what is written is byte for byte what 0.6.16 wrote.
+ * enough: with 1, the payload written is byte for byte what 0.6.16 wrote. The readable text around it is not part of that: the title
+ * (0.6.19) and the lines of the maps under the summary are presentation, which no reader takes anything from.
  */
 export const LIVE_SESSION_NOTE_WRITE_VERSION: LiveSessionPayloadVersion = 1;
 /**

@@ -43,6 +43,11 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 				`- ${label('Tiempo con objetos observados','Observed item time')}: ${String(session.observedItemsMs / 1000)} s`,
 				`- ${label('Tiempo con monedas cubiertas','Covered currency time')}: ${String(session.observedCurrenciesMs / 1000)} s`,
 				`- MF: ${session.magicFind.value === null ? label('desconocido','unknown') : `${String(session.magicFind.value)} (${session.magicFind.source === 'manual' ? label('declarado','manual') : label('verificado','verified')})`}`,
+				// Every stretch on an identified map, in order: when the map was entered and when it was left, so each change of map has
+				// its hour. They are the intervals the payload below already carries, written as this note writes everything (UTC, ids).
+				// A session with none adds no line, so its block is byte for byte the one it always was.
+				...[...session.mapIntervals].sort((a,b) => a.fromMs - b.fromMs).flatMap((interval) => interval.mapId === null ? []
+					: [`- ${label('Mapa','Map')} ${String(interval.mapId)}: ${new Date(interval.fromMs).toISOString()} → ${new Date(interval.toMs).toISOString()}`]),
 			].join('\n'),
 			evidence: [
 				`## ${label('Cobertura y límites','Coverage and limits')}`,

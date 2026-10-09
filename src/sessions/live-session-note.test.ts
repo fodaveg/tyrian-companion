@@ -284,6 +284,58 @@ describe('the title of the full note', () => {
 	});
 });
 
+describe('the changes of map in the full note', () => {
+	const ON_866 = '- Mapa 866: 2026-10-06T12:00:00.000Z → 2026-10-06T12:00:01.000Z'; const ON_873 = '- Mapa 873: 2026-10-06T12:00:01.000Z → 2026-10-06T12:00:02.000Z';
+	/** The 0→2→4 session, on map 866 for its first second and on 873 for the other. */
+	const mapped = (): LiveSessionNoteInput => { const input = fixture();
+		input.record.mapIntervals = [{mapId: 866,fromMs: AT,toMs: AT + 1000},{mapId: 873,fromMs: AT + 1000,toMs: AT + 2000}]; return input; };
+	/** The note as a plugin up to 0.6.19 wrote it: every block the same, the summary one without the lines of the maps and under the hash of that text. */
+	const asBefore = async (note: Awaited<ReturnType<typeof rendered>>['note']): Promise<string> => {
+		const {content,hash,serialized} = note.blocks.summary;
+		const old = content.split('\n').filter((line) => !/^- (?:Mapa|Map) \d+: /u.test(line)).join('\n');
+		return note.content.replace(serialized,serialized.replace(hash,await sha256Text(old)).replace(content,old));
+	};
+	it('writes each stretch on a map under the summary, in order, in UTC and by id like the rest of the note; a session without maps gains no line', async () => {
+		const {note} = await rendered(mapped());
+		expect(note.blocks.summary.content.endsWith(`\n- MF: desconocido\n${ON_866}\n${ON_873}`)).toBe(true);
+		const english = mapped(); english.locale = 'en';
+		expect((await rendered(english)).note.blocks.summary.content).toContain('\n- Map 866: 2026-10-06T12:00:00.000Z → 2026-10-06T12:00:01.000Z\n- Map 873: ');
+		// Out of order in the record and with a stretch on a map nobody identified: in order, and that stretch is no map to name.
+		const mixed = fixture(); mixed.record.mapIntervals = [{mapId: 873,fromMs: AT + 1000,toMs: AT + 2000},{mapId: null,fromMs: AT + 500,toMs: AT + 1000},{mapId: 866,fromMs: AT,toMs: AT + 500}];
+		expect((await rendered(mixed)).note.blocks.summary.content.split('\n').slice(-2)).toEqual([ON_866.replace('12:00:01.000Z','12:00:00.500Z'),ON_873]);
+		// The golden note of this file has no map: it is still, to the byte, the snapshot it always was.
+		expect((await rendered()).note.blocks.summary.content.endsWith('\n- MF: desconocido')).toBe(true);
+	});
+	it('touches nothing else: the other blocks are the same, and the data block carries the intervals exactly as before', async () => {
+		const plain = await rendered(); const {note,session} = await rendered(mapped());
+		for (const id of ['evidence','results','economy','decision'] as const) expect(note.blocks[id].serialized).toBe(plain.note.blocks[id].serialized);
+		expect(await inspectLiveSessionNote(note.content)).toEqual({status: 'ok',session});
+		expect(session).toEqual({...plain.session,mapIntervals: [{mapId: 866,fromMs: AT,toMs: AT + 1000},{mapId: 873,fromMs: AT + 1000,toMs: AT + 2000}]});
+		// The lines are text of the summary block only: the note without them is the same evidence, under the same payload hash.
+		const old = await asBefore(note);
+		expect(old).not.toContain('- Mapa 8');
+		expect((await readStoredSessionBlocks(old))!.summary).toBe(plain.note.blocks.summary.content);
+		expect((await readStoredSessionBlocks(old))!.provenance).toBe(note.blocks.provenance.content);
+		expect(await inspectLiveSessionNote(old)).toEqual({status: 'ok',session});
+	});
+	it('a note already written gains the lines when its session is written again: no conflict, «Mis notas» and the human frontmatter stay, same data', async () => {
+		const input: LiveSessionNoteInput = {...mapped(),payloadVersion: 1}; const {note,session} = await rendered(input); const path = note.preferredPath;
+		const written = `${await asBefore(note)}\nLo que apunté a mano.\n`.replace('---\n','---\naliases: [Mía]\n');
+		const vault = new TestVault(); vault.contents.set(path,written); const writer = new SessionNoteWriter(vault);
+		expect(await writer.writeLive(input)).toEqual({status: 'written',path});
+		const after = vault.contents.get(path)!;
+		expect(after).toContain(`\n- MF: desconocido\n${ON_866}\n${ON_873}\n<!-- tyrian-companion:managed:end:summary -->`);
+		expect(after.endsWith('## Mis notas\n\nLo que apunté a mano.\n')).toBe(true); expect(after).toContain('aliases: [Mía]');
+		const blocks = await readStoredSessionBlocks(after);
+		expect(blocks).toEqual(Object.fromEntries(Object.entries(note.blocks).map(([id,block]) => [id,block.content])));
+		expect(blocks!.provenance).toBe((await readStoredSessionBlocks(written))!.provenance);
+		expect(await inspectLiveSessionNote(after)).toEqual({status: 'ok',session});
+		// And from then on the same session again changes nothing.
+		expect(await writer.writeLive(input)).toEqual({status: 'unchanged',path});
+		expect(vault.contents.get(path)).toBe(after); expect(vault.contents.size).toBe(1);
+	});
+});
+
 describe('portable payload byte compatibility', () => {
 	it('writes, when nobody names a payload version, exactly the version 1 bytes of the golden fixtures (turning the writer on is a deliberate edit of this test)', async () => {
 		const pinned = await rendered(); const byDefault = await renderLiveSessionNote(fixture());
