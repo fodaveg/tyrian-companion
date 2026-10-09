@@ -776,3 +776,89 @@ describe('createTyrianVaultPort: `synced` with canonicalPathFor (notes from othe
 		expect(index.getIdForPath('A.md')).toBe(first);
 	});
 });
+
+// 9 Oct 2026 (review): the support package is a note with no Tyrian marker, so `reconcileSynced`
+// drops any indexed copy of it, and a rebuilt index never adopts it. `saveNote` therefore finds the
+// note in the library, and exporting twice must never leave two.
+describe('createTyrianVaultPort: saveNote (the support package)', () => {
+	const PATH = 'diagnostics/Tyrian - Paquete de soporte.md';
+	const body = (n: number): string => `# Tyrian - Paquete de soporte\n\nexport ${String(n)}\n`;
+	const fakeCanonical = (text: string): string[] => {
+		const match = /^tyrian:(\S+)/u.exec(text);
+		return match?.[1] ? [match[1]] : [];
+	};
+	const visible = (library: FakeLibrary) => [...library.notes.values()]
+		.filter((note) => note.trashedAt === null && note.archivedAt === null && note.title === 'Tyrian - Paquete de soporte');
+
+	async function open(library: FakeLibrary, index?: TyrianPathIndex) {
+		const emitter = withEmitter(library);
+		const saved: string[] = [];
+		const vault = createTyrianVaultPort({
+			library: emitter.library,
+			index: index ?? await freshIndex(),
+			rootFolderId: ROOT,
+			canonicalPathFor: fakeCanonical,
+			onNoteSaved: (_path, id) => saved.push(id),
+		});
+		vault.onChange('', () => undefined);
+		return { vault, emit: emitter.emit, saved };
+	}
+
+	it('exporting twice leaves one note with the new content', async () => {
+		const library = setupLibrary();
+		const { vault } = await open(library);
+		await vault.saveNote(PATH, body(1));
+		await vault.saveNote(PATH, body(2));
+		expect(visible(library)).toHaveLength(1);
+		expect(visible(library)[0]?.body).toBe(body(2));
+	});
+
+	for (const events of [['synced'], ['moved'], ['archived', 'unarchived']]) {
+		it(`still one note after ${events.join(' + ')} events`, async () => {
+			const library = setupLibrary();
+			const { vault, emit, saved } = await open(library);
+			await vault.saveNote(PATH, body(1));
+			const id = saved[0] ?? '';
+			for (const change of events) {
+				emit(id, change);
+				await vault.whenIdle();
+			}
+			await vault.saveNote(PATH, body(2));
+			expect(visible(library)).toHaveLength(1);
+			expect(visible(library)[0]?.body).toBe(body(2));
+		});
+	}
+
+	it('still one note when the path index is rebuilt from scratch', async () => {
+		const library = setupLibrary();
+		await (await open(library)).vault.saveNote(PATH, body(1));
+		const { vault } = await open(library, await freshIndex());
+		await vault.saveNote(PATH, body(2));
+		expect(visible(library)).toHaveLength(1);
+		expect(visible(library)[0]?.body).toBe(body(2));
+	});
+
+	it('a note in the trash or archived when exporting ends in one visible note, without error', async () => {
+		for (const hide of ['trash', 'archive'] as const) {
+			const library = setupLibrary();
+			const { vault, saved } = await open(library);
+			await vault.saveNote(PATH, body(1));
+			const stored = library.notes.get(saved[0] ?? '');
+			if (stored) {
+				if (hide === 'trash') stored.trashedAt = Date.now();
+				else stored.archivedAt = Date.now();
+			}
+			await expect(vault.saveNote(PATH, body(2))).resolves.toBeUndefined();
+			expect(visible(library)).toHaveLength(1);
+			expect(visible(library)[0]?.body).toBe(body(2));
+		}
+	});
+
+	it('is never indexed, so a Tyrian note of the same folder is left alone', async () => {
+		const library = setupLibrary();
+		const index = await freshIndex();
+		const { vault } = await open(library, index);
+		await vault.saveNote(PATH, body(1));
+		expect(index.size).toBe(0);
+	});
+});

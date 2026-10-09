@@ -70,8 +70,10 @@ parsear y sanear cada record y elimina por completo `message`, `stack`, `errorNa
 solo campos estructurados como componente, acción, fase, código y
 correlación. En Obsidian es un `.json` bajo `<carpeta de salida>/diagnostics/`; en Hebra, que no tiene
 carpeta que abrir, es la nota «Tyrian - Paquete de soporte» de esa misma carpeta (se crea la primera vez,
-se reescribe en cada exportación y se abre al terminar; sin frontmatter ni marcas de Tyrian, y se
-sincroniza como cualquier nota hasta que se borre). Revisa aun así el paquete visualmente antes de adjuntarlo. **Copiar extracto reciente**
+se reescribe ENTERA en cada exportación, también lo que hayas escrito en ella, y se abre al terminar; sin
+frontmatter ni marcas de Tyrian, así que el índice de rutas no la guarda: Hebra la busca en la biblioteca
+por carpeta y título, y si está en la papelera o archivada crea una nueva; se sincroniza como cualquier
+nota hasta que se borre). Revisa aun así el paquete visualmente antes de adjuntarlo. **Copiar extracto reciente**
 puede conservar texto saneado del log local: úsalo solo para líneas imprescindibles y tras revisión
 manual. No publiques el directorio completo ni confundas el saneado automático con una garantía
 frente a datos personales no reconocibles mecánicamente.

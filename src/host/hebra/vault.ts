@@ -126,6 +126,11 @@ export function createHebraTyrianVault(options: CreateHebraTyrianVaultOptions): 
 			const relative = requireInside('create', path);
 			return toVaultFile(await requirePort('create', path).create(relative, content));
 		},
+		async saveNote(path, content) {
+			requireWritable('saveNote', path);
+			const relative = requireInside('saveNote', path);
+			await requirePort('saveNote', path).saveNote(relative, content);
+		},
 		async trashFile(file) {
 			requireWritable('trashFile', file.path);
 			const relative = requireInside('trashFile', file.path);

@@ -22,6 +22,7 @@ function fakePort() {
 		create: vi.fn(async (path: string) => ({ path, mtime: 7 })),
 		trashFile: vi.fn(async () => undefined),
 		trashIfUnchanged: vi.fn(async () => ({ status: 'trashed' as const, guarantee: 'checked' as const })),
+		saveNote: vi.fn(async () => undefined),
 		onChange: vi.fn((_root: string, listener: (change: TyrianVaultChange) => void) => {
 			emit = listener;
 			return () => undefined;
@@ -128,6 +129,14 @@ describe('createHebraTyrianVault', () => {
 		expect(vault.exists('Tyrian Companion')).toBe(false);
 		await expect(vault.createFolder('Tyrian Companion')).rejects.toThrow('is not in the library');
 		await expect(vault.create('Tyrian Companion/a.md', '')).rejects.toThrow('is not in the library');
+	});
+
+	it('saveNote removes the prefix and refuses outside the output folder', async () => {
+		const { port } = fakePort();
+		const vault = await vaultWith(port);
+		await vault.saveNote?.('Tyrian Companion/diagnostics/x.md', '# x');
+		expect(port.saveNote).toHaveBeenCalledWith('diagnostics/x.md', '# x');
+		await expect(vault.saveNote?.('Other/x.md', '# x')).rejects.toThrow('outside the output folder');
 	});
 
 	it('trashIfUnchanged removes the prefix, delegates, and refuses outside or while writes are blocked', async () => {

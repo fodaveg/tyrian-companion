@@ -6338,10 +6338,10 @@ function safeLocalDebugSupportJsonl(value: string): string {
 	return records.length === 0 ? '' : `${records.join('\n')}\n`;
 }
 
-/** Creates each missing portable segment so package writes remain create-only outside log rotation. */
 /**
  * Hebra has no folder to open, so the support package is a note of the library: created the
- * first time and rewritten after that, and opened for the user. It deliberately carries no
+ * first time and rewritten after that (found by the host in the library, not by path), and opened for
+ * the user. It deliberately carries no
  * frontmatter and no Tyrian marker, so neither the session history, the Bases nor the seeding of
  * the path index take it for one of theirs. The package is the allowlisted one built by the caller.
  */
@@ -6356,9 +6356,8 @@ async function saveSupportPackageNote(host: TyrianHost, path: string, supportPac
 		'```',
 		'',
 	].join('\n');
-	const existing = host.vault.file(path);
-	if (existing === null) await host.vault.create(path, body);
-	else await host.vault.process(existing, () => body);
+	if (host.vault.saveNote === undefined) throw new Error('support package: the host declares supportPackageAsNote without vault.saveNote');
+	await host.vault.saveNote(path, body);
 	host.ui.openNote(path);
 	return path;
 }
@@ -6366,6 +6365,7 @@ async function saveSupportPackageNote(host: TyrianHost, path: string, supportPac
 /** Title and file name of the support package when the host keeps it as a note (Hebra). */
 const SUPPORT_PACKAGE_NOTE_NAME = 'Tyrian - Paquete de soporte';
 
+/** Creates each missing portable segment so package writes remain create-only outside log rotation. */
 async function ensureAdapterDirectory(
 	adapter: { exists(path: string): Promise<boolean>; mkdir(path: string): Promise<void> },
 	directory: string,

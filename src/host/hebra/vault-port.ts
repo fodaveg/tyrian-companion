@@ -30,6 +30,7 @@ import { decideAdoption } from './seed';
 export type TyrianVaultLibrary = Pick<PluginVault,
 	| 'foldersList'
 	| 'folderCreate'
+	| 'notesPage'
 	| 'noteRead'
 	| 'noteCreate'
 	| 'notesRewriteBatch'
@@ -60,6 +61,8 @@ export interface CreateTyrianVaultPortOptions {
 	 * changed as `rename`. Without it, a `synced` only gives `modify` for what is indexed.
 	 */
 	canonicalPathFor?: (noteText: string) => readonly string[];
+	/** Told where `saveNote` left a note (path relative to the output folder), so the host can open it. */
+	onNoteSaved?: (path: string, id: string) => void;
 	/** A failure handling an event is reported here and that event dropped; the subscription lives on. */
 	onError?: (error: unknown) => void;
 }
@@ -75,7 +78,15 @@ export type TyrianVaultPort = Pick<TyrianVault,
 	| 'create'
 	| 'trashFile'
 	| 'trashIfUnchanged'
-	| 'onChange'>;
+	| 'onChange'> & {
+	/**
+	 * Creates or replaces the note whose title (its first `# ` heading) is `content`'s, in the folder
+	 * of `path`, looking it up in the LIBRARY. The note is not indexed: the index only keeps notes
+	 * with a Tyrian marker, and `reconcileSynced` would purge this one on its next event. A note in
+	 * the trash or archived is not listed, so a new visible one is created.
+	 */
+	saveNote(path: string, content: string): Promise<void>;
+};
 
 /** The port with its lifecycle. */
 export type TyrianVaultPortHandle = TyrianVaultPort & {
@@ -92,7 +103,7 @@ function readableBody(note: PluginNote | null): string | null {
 }
 
 export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): TyrianVaultPortHandle {
-	const { library, index, rootFolderId, canonicalPathFor, onError } = options;
+	const { library, index, rootFolderId, canonicalPathFor, onError, onNoteSaved } = options;
 
 	async function read(target: TyrianVaultFile): Promise<string> {
 		const kind = idKindFor(target.path);
@@ -212,6 +223,37 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 		const created = await library.fileCreate(folderId, name, blob.sha256);
 		await index.setFile(path, created.id, created.updatedAt);
 		return { path, mtime: created.updatedAt };
+	}
+
+	async function saveNote(path: string, content: string): Promise<void> {
+		const title = /^# (.+)$/mu.exec(content)?.[1]?.trim();
+		if (!title) throw new Error(`tyrian vault: saveNote needs a "# title" heading: ${path}`);
+		const folderId = await ensureFolderPath(library, rootFolderId, folderSegmentsOf(path));
+		let cursor: string | null = null;
+		let id: string | null = null;
+		do {
+			const page = await library.notesPage(cursor, 200, { kind: 'folder', folderId, subfolders: false });
+			id = page.items.find((item) => !item.locked && item.title === title)?.id ?? null;
+			cursor = id === null ? page.nextCursor : null;
+		} while (cursor !== null);
+		for (let attempt = 0; id !== null && attempt < PROCESS_MAX_ATTEMPTS; attempt += 1) {
+			const current = await library.noteRead(id);
+			if (current === null || current.trashedAt !== null || current.archivedAt !== null || current.body === null) break;
+			if (current.body === content) {
+				onNoteSaved?.(path, id);
+				return;
+			}
+			const result = await library.notesRewriteBatch(
+				[{ id, body: content, expected: current.revision }],
+				{ cause: null, touchUpdatedAt: true },
+			);
+			if (result.written.includes(id)) {
+				onNoteSaved?.(path, id);
+				return;
+			}
+		}
+		const created = await library.noteCreate({ folderId, body: content });
+		onNoteSaved?.(path, created.id);
 	}
 
 	async function trashFile(target: TyrianVaultFile): Promise<void> {
@@ -543,6 +585,7 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 		create,
 		trashFile,
 		trashIfUnchanged,
+		saveNote,
 		onChange,
 		dispose,
 		whenIdle,

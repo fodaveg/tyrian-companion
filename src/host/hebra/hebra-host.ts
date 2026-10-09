@@ -415,6 +415,8 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		unadopted = await refreshUnadoptedNotes(api.vault, index);
 	}
 
+	/** Notes `vault.saveNote` left outside the path index (the support package), by relative path. */
+	const savedNotes = new Map<string, string>();
 	const adapter = createLocalFileStorage(deps.fileBackend, libraryId);
 	const vaultPort = rootFolderId
 		? createTyrianVaultPort({
@@ -423,6 +425,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			rootFolderId,
 			canonicalPathFor: (text) => deps.canonicalPathFor(outputFolder, text),
 			onError: (error) => deps.report(error, 'vault.sync'),
+			onNoteSaved: (path, id) => { savedNotes.set(path, id); },
 		})
 		: null;
 	const vault = createHebraTyrianVault({
@@ -493,7 +496,9 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			openNote: (path) => {
 				const relative = relativeToOutputFolder(outputFolder, path);
 				const id = relative === null ? undefined : index.getIdForPath(relative);
+				const saved = relative === null ? undefined : savedNotes.get(relative);
 				if (id !== undefined && index.getKindForId(id) === 'note') api.workspace.openNote(id);
+				else if (saved !== undefined) api.workspace.openNote(saved);
 				else api.ui.notice(`No encuentro «${path}» en la biblioteca.`);
 			},
 			report: deps.report,

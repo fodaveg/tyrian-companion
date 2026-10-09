@@ -57,6 +57,13 @@ export interface TyrianVault {
 	createFolder(path: string): Promise<void>;
 	/** Every writing port; also non-markdown: pilot-metrics-export.ts:137-140 (.json/.csv), session-history.ts:419 (.csv), managed-assets.ts:375 (.base). */
 	create(path: string, content: string): Promise<TyrianVaultFile>;
+	/**
+	 * Optional. Writes the note at `path`, creating it or replacing the one that already holds it,
+	 * and finds that note in the host itself, never in a cache of paths: a host whose path index can
+	 * lose a note (Hebra's sync, a rebuilt index) would otherwise create it twice. Used for the
+	 * support package where `supportPackageAsNote` is declared.
+	 */
+	saveNote?(path: string, content: string): Promise<void>;
 	/** managed-assets.ts:553 (via `fileManager.trashFile` today). */
 	trashFile(file: TyrianVaultFile): Promise<void>;
 	/**

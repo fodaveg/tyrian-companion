@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_SETTINGS } from '../core/settings';
-import type { TyrianVaultFile } from '../host/tyrian-host';
 import { TyrianCompanionCore } from './tyrian-companion-core';
 
 const NOTE_PATH = 'Tyrian Companion/diagnostics/Tyrian - Paquete de soporte.md';
@@ -20,13 +19,7 @@ function hebraHarness(asNote: boolean) {
 		capabilities: { supportPackageAsNote: asNote },
 		environment: { pluginVersion: '0.6.16', platform: 'linux' },
 		vault: {
-			file: (path: string): TyrianVaultFile | null => (notes.has(path) ? { path } : null),
-			create: vi.fn(async (path: string, content: string) => { notes.set(path, content); return { path }; }),
-			process: vi.fn(async (file: TyrianVaultFile, update: (current: string) => string) => {
-				const next = update(notes.get(file.path) ?? '');
-				notes.set(file.path, next);
-				return next;
-			}),
+			saveNote: vi.fn(async (path: string, content: string) => { notes.set(path, content); }),
 			adapter: {
 				exists: async () => false, mkdir: async () => undefined, write: adapterWrite,
 			},
