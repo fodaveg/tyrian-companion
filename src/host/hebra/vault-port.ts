@@ -306,10 +306,16 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 			await index.deleteById(id);
 			return { kind: 'delete', path: oldPath };
 		}
-		if (!known) {
+		if (!known || note.folderId !== rootFolderId) {
 			round.folderPaths ??= folderRelativePaths(await library.foldersList(), rootFolderId);
 			if (disposed) return null;
-			if (note.folderId !== rootFolderId && !round.folderPaths.has(note.folderId)) return null;
+			if (note.folderId !== rootFolderId && !round.folderPaths.has(note.folderId)) {
+				// Outside the output folder: a note never indexed is not Tyrian's to adopt, and one that
+				// was (moved out in Hebra) leaves the index.
+				if (!known) return null;
+				await index.deleteById(id);
+				return { kind: 'delete', path: oldPath };
+			}
 		}
 		const decision = decideAdoption(index, id, candidates);
 		if (decision.outcome === 'ambiguous') {
@@ -450,14 +456,16 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 				if (path !== undefined) deliver({ kind: 'modify', path });
 				return;
 			case 'trashed':
+			case 'archived':
 			case 'purged':
 				if (path === undefined) return;
 				deliver({ kind: 'delete', path });
 				return index.deleteById(id);
 			default:
-				// favorite, moved, archived, unarchived, hidden, unhidden, resolved: unused by the
-				// core. `moved` changes where the note hangs in Hebra, not its canonical path (that
-				// comes from the BODY), and the event carries no previous folder: no `rename`.
+				// favorite, hidden, unhidden, resolved: unused by the core. `moved` and `unarchived`
+				// need a read (see `onLibraryChange`): the event says neither where the note is now nor
+				// what it holds. Moving changes where the note hangs in Hebra, not its canonical path
+				// (that comes from the BODY), so a move inside the output folder is only a `modify`.
 				return;
 		}
 	}
@@ -465,7 +473,10 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 	function onLibraryChange(event: PluginVaultChange): void {
 		if (disposed || event.kind !== 'note-changed') return;
 		const { id, change } = event;
-		if (change === 'synced') {
+		// `moved` (it may have left the output folder) and `unarchived` (it may be back) are read like a
+		// `synced`; without the path function there is nothing to decide with, as before.
+		const rereads = change === 'synced' || ((change === 'moved' || change === 'unarchived') && canonicalPathFor !== undefined);
+		if (rereads) {
 			if (!canonicalPathFor && !draining && events.length === 0) {
 				// No path function, no read to wait for: `modify` of what is indexed, synchronous.
 				void handle(id, 'saved');

@@ -365,6 +365,21 @@ describe('createTyrianVaultPort: onChange', () => {
 		expect(index.getPathForId(id)).toBe('a.md');
 	});
 
+	it('`archived` drops an indexed note even without canonicalPathFor (no read is needed to know it is gone)', async () => {
+		const library = setupLibrary();
+		const index = await freshIndex();
+		const { library: wrapped, emit } = withEmitter(library);
+		const vault = createTyrianVaultPort({ library: wrapped, index, rootFolderId: ROOT });
+		await vault.create('a.md', 'one');
+		const id = index.getIdForPath('a.md') ?? '';
+		const changes: TyrianVaultChange[] = [];
+		vault.onChange('', (change) => changes.push(change));
+		emit(id, 'archived');
+		await vault.whenIdle();
+		expect(changes).toEqual([{ kind: 'delete', path: 'a.md' }]);
+		expect(index.getPathForId(id)).toBeUndefined();
+	});
+
 	it('`synced` of an indexed note is modify without canonicalPathFor; of an unknown one, nothing', async () => {
 		const library = setupLibrary();
 		const index = await freshIndex();
@@ -477,6 +492,51 @@ describe('createTyrianVaultPort: `synced` with canonicalPathFor (notes from othe
 		expect(changes).toEqual([{ kind: 'modify', path: 'A.md' }, { kind: 'rename', path: 'B.md', oldPath: 'A.md' }]);
 		expect(index.getPathForId(id)).toBe('B.md');
 		expect(index.has('A.md')).toBe(false);
+	});
+
+	// 9 Oct 2026: `archived`, `unarchived` and `moved` were dropped, so an archived note (or one moved
+	// out of the output folder) stayed in the index until the plugin restarted.
+	it('archiving a note drops it from the index with delete, and unarchiving it indexes it again as create', async () => {
+		const library = setupLibrary();
+		const { index, changes, emit, vault } = await setup(library);
+		const id = writeForeign(library, 'tyrian:A.md');
+		emit(id, 'synced');
+		await vault.whenIdle();
+		changes.length = 0;
+		const stored = library.notes.get(id);
+		if (stored) stored.archivedAt = Date.now();
+		emit(id, 'archived');
+		await vault.whenIdle();
+		expect(changes).toEqual([{ kind: 'delete', path: 'A.md' }]);
+		expect(index.getPathForId(id)).toBeUndefined();
+		changes.length = 0;
+		if (stored) stored.archivedAt = null;
+		emit(id, 'unarchived');
+		await vault.whenIdle();
+		expect(changes).toEqual([{ kind: 'create', path: 'A.md' }]);
+		expect(index.getIdForPath('A.md')).toBe(id);
+	});
+
+	it('moving a note out of the output folder drops it from the index; moving it inside keeps it', async () => {
+		const library = setupLibrary();
+		library.addFolder('other', 'root', 'Other');
+		library.addFolder('sub', ROOT, 'Sub');
+		const { index, changes, emit, vault } = await setup(library);
+		const id = writeForeign(library, 'tyrian:A.md');
+		emit(id, 'synced');
+		await vault.whenIdle();
+		changes.length = 0;
+		await library.noteMove(id, 'sub');
+		emit(id, 'moved'); // the emitter replaced the library's own `onChange`.
+		await vault.whenIdle();
+		expect(changes).toEqual([{ kind: 'modify', path: 'A.md' }]);
+		expect(index.getPathForId(id)).toBe('A.md');
+		changes.length = 0;
+		await library.noteMove(id, 'other');
+		emit(id, 'moved'); // the emitter replaced the library's own `onChange`.
+		await vault.whenIdle();
+		expect(changes).toEqual([{ kind: 'delete', path: 'A.md' }]);
+		expect(index.getPathForId(id)).toBeUndefined();
 	});
 
 	it('a note that stops being Tyrian\'s leaves the index with delete; a trashed one too', async () => {
