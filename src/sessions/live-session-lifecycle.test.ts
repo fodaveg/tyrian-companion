@@ -204,6 +204,53 @@ describe('passive live session lifecycle', () => {
 		expect(restored.getRuntime()).toMatchObject({phase:'active',connection:'disconnected',mapObservation:null});
 		expect(restored.getRuntime()?.gaps.map((gap) => gap.reason)).toContain('host_restart'); await restored.dispose();
 	});
+	describe('the map under observation when the host restarts', () => {
+		const SECOND = 'AwMDAwMDAwMDAwMDAwMDAw'; const THIRD = 'BAQEBAQEBAQEBAQEBAQEBA'; const MIN = 60_000;
+		const restart = async (f: ReturnType<typeof fixture>, service: LiveSessionLifecycle, at: number): Promise<LiveSessionLifecycle> => {
+			await service.dispose(); f.setNow(at); const restored = new LiveSessionLifecycle(f.options); await restored.initialize(); return restored;
+		};
+		/** The addon comes back on the same map: a new epoch, its baseline, and one more sample `playedMs` later. */
+		const play = async (f: ReturnType<typeof fixture>, service: LiveSessionLifecycle, epoch: string, from: number, playedMs: number): Promise<void> => {
+			f.setNow(from); await service.presence(true); await expect(service.open({...f.source,epoch})).resolves.toBe('ready');
+			await expect(service.commit(f.sample(0,0,{epoch}))).resolves.toBe('stored');
+			f.setNow(from+playedMs); await expect(service.commit(f.sample(1,2,{epoch}))).resolves.toBe('stored');
+		};
+		it('two restarts on the same map leave an interval of that map for what was played before each, and the time the host was gone is on no map', async () => {
+			const f = fixture(); await f.service.start('Test'); await play(f,f.service,EPOCH,AT,MIN);
+			// The host is gone from minute 1 to minute 5, and again from minute 7 to minute 20: up to here both stretches were dropped whole.
+			const first = await restart(f,f.service,AT+5*MIN);
+			expect(first.getRuntime()).toMatchObject({mapObservation:null,mapCoveragePartial:true,mapIntervals:[{mapId:866,fromMs:AT,toMs:AT+MIN}]});
+			await play(f,first,SECOND,AT+5*MIN,2*MIN);
+			const second = await restart(f,first,AT+20*MIN);
+			expect(second.getRuntime()?.mapIntervals).toEqual([{mapId:866,fromMs:AT,toMs:AT+MIN},{mapId:866,fromMs:AT+5*MIN,toMs:AT+7*MIN}]);
+			await play(f,second,THIRD,AT+20*MIN,MIN); await second.stop(AT+21*MIN);
+			const intervals = second.getRuntime()!.mapIntervals;
+			expect(intervals).toEqual([{mapId:866,fromMs:AT,toMs:AT+MIN},{mapId:866,fromMs:AT+5*MIN,toMs:AT+7*MIN},{mapId:866,fromMs:AT+20*MIN,toMs:AT+21*MIN}]);
+			// Four minutes on the map of a session of twenty-one: the seventeen the host was gone are in no interval, and each of them is a restart gap.
+			expect(intervals.reduce((sum,interval) => sum + interval.toMs - interval.fromMs,0)).toBe(4*MIN);
+			expect(second.getRuntime()!.gaps.filter((gap) => gap.reason === 'host_restart' && gap.channels[0] === 'items').map((gap) => [gap.fromAt,gap.toAt]))
+				.toEqual([[new Date(AT+MIN).toISOString(),new Date(AT+5*MIN).toISOString()],[new Date(AT+7*MIN).toISOString(),new Date(AT+20*MIN).toISOString()]]);
+			expect(isLiveSessionRuntimeRecord(second.getRuntime())).toBe(true); await second.dispose();
+		});
+		it('closes at the last sample, not at a presence reported after it: a connection says nothing of the map', async () => {
+			const f = fixture(); await f.service.start('Test'); await play(f,f.service,EPOCH,AT,MIN);
+			f.setNow(AT+3*MIN); await f.service.presence(true);
+			expect(f.service.getRuntime()).toMatchObject({lastPresenceAt:AT+3*MIN,lastObservationAt:new Date(AT+MIN).toISOString()});
+			const restored = await restart(f,f.service,AT+5*MIN);
+			expect(restored.getRuntime()?.mapIntervals).toEqual([{mapId:866,fromMs:AT,toMs:AT+MIN}]); await restored.dispose();
+		});
+		it('makes up no interval: none was open, or no sample arrived since the map was entered', async () => {
+			const never = fixture(); await never.service.start('Test');
+			const bare = await restart(never,never.service,AT+5*MIN);
+			expect(bare.getRuntime()).toMatchObject({mapObservation:null,mapIntervals:[]}); await bare.dispose();
+			// The map was entered and the host died before any sample of it: nothing says how long it was played.
+			const entered = fixture(); await entered.service.start('Test'); await play(entered,entered.service,EPOCH,AT,MIN);
+			entered.setNow(AT+2*MIN); await entered.service.open({...entered.source,epoch:SECOND,context:{...entered.source.context,mapId:900}});
+			expect(entered.service.getRuntime()).toMatchObject({mapObservation:{mapId:900,fromMs:AT+2*MIN},mapIntervals:[{mapId:866,fromMs:AT,toMs:AT+2*MIN}]});
+			const restored = await restart(entered,entered.service,AT+5*MIN);
+			expect(restored.getRuntime()).toMatchObject({mapObservation:null,mapIntervals:[{mapId:866,fromMs:AT,toMs:AT+2*MIN}]}); await restored.dispose();
+		});
+	});
 	describe('«Por hora» needs 15 observed minutes, whatever the last sample or a gap in between', () => {
 		const farm = (view: LiveSessionViewV1) => projectLiveFarmingIngameState({view,goal:null,now:AT+3_000_000,preparationEnabled:true});
 		const bag = (quantity: number, extra: Partial<LiveInventorySampleV1> = {}) => ({rows:[{kind:'item' as const,idNumber:36038,quantity}],...extra});

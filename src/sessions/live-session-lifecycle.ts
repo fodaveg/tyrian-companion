@@ -619,7 +619,13 @@ export class LiveSessionLifecycle {
 		if (this.reclaimingAs === 'restart') {
 			next = liveSessionGap(this.record, 'host_restart', this.nowIso());
 			next = { ...next, connection: 'disconnected',
-				lastSourceDisconnectedAt:new Date(Math.min(this.options.now(),this.record.lastPresenceAt)).toISOString(),mapCoveragePartial: true, mapObservation: null };
+				lastSourceDisconnectedAt:new Date(Math.min(this.options.now(),this.record.lastPresenceAt)).toISOString(),mapCoveragePartial: true };
+			// The map under observation is closed, not dropped: dropping it left every stretch played before a restart on no map at all.
+			// It ends at the last sample the session has, which is the last evidence of that map (an epoch has one map, and a sample
+			// taken after the interval opened belongs to an epoch of that map). `lastPresenceAt` is not that evidence: a connection
+			// reported after the last sample says nothing of the map, and would put time nobody observed on it. So the time the host
+			// was gone is on no map, and with no sample since the map was entered there is nothing to close and none is made up.
+			next = this.observeMap(next, null, this.record.lastObservationAt === null ? 0 : Math.min(this.options.now(),Date.parse(this.record.lastObservationAt)));
 			// A report held back since the restart was received by THIS process, so it is newer than the disconnection assumed
 			// above. The tracker only reports transitions: dropped here, a player who is connected would stay written as gone
 			// and the beat would close the session ten minutes later.
