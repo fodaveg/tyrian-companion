@@ -367,6 +367,10 @@ export class LiveSessionLifecycle {
 		return false;
 	}
 	getJournal(): LiveJournalEntryV1[] { return structuredClone(this.journal); }
+	/** Copies (oldest first) of only the journal entries with an alert still `awaiting_price` or `ready`: what the economy has to look at again after a start or a mode switch, without copying the rest of the journal. */
+	getUnsettledPriceEntries(): LiveJournalEntryV1[] {
+		return structuredClone(this.journal.filter((entry) => entry.outbox.some((intent) => intent.state === 'awaiting_price' || intent.state === 'ready')));
+	}
 	/** Export snapshots copy record and full journal at one durable queue boundary. */
 	async capture(): Promise<LiveSessionCaptureV1 | null> {
 		return await this.enqueue(async () => this.record === null ? null : {record:structuredClone(this.record),

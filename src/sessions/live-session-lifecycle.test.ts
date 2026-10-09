@@ -887,6 +887,20 @@ describe('durable live alert outbox', () => {
 		expect(f.service.hasDispatchingClaim('other',intent.outboxId)).toBe(false); expect(f.service.hasDispatchingClaim('session','nope')).toBe(false);
 		expect(copy).not.toHaveBeenCalled(); await f.service.dispose();
 	});
+	it('lists as copies only the entries whose alert still waits for a price, without cloning the whole journal', async () => {
+		const f = fixture(); const entry = await positive(f); const intent = entry.outbox[0]!;
+		f.setNow(AT+2000); await f.service.commit(f.sample(2,3));
+		const all = f.service.getJournal(); const waiting = all.filter((row) => row.outbox.some((item) => item.state === 'awaiting_price' || item.state === 'ready'));
+		expect(waiting.length, 'the fixture has settled and unsettled entries to tell apart').toBeGreaterThan(0);
+		const clone = vi.spyOn(globalThis,'structuredClone');
+		const listed = f.service.getUnsettledPriceEntries();
+		expect(listed).toEqual(waiting); expect(clone).toHaveBeenCalledTimes(1);
+		expect(clone.mock.calls[0]![0], 'only the matching entries are copied').toHaveLength(waiting.length); clone.mockRestore();
+		listed[0]!.outbox[0]!.state = 'processed'; expect(f.service.getUnsettledPriceEntries()).toEqual(waiting);
+		await f.service.updateAlert(intent.outboxId,(prior) => ({...prior,state:'skipped' as const,skipReason:'below_threshold' as const}));
+		expect(f.service.getUnsettledPriceEntries().some((row) => row.outbox.some((item) => item.outboxId === intent.outboxId)), 'a settled alert leaves the list').toBe(false);
+		await f.service.dispose();
+	});
 	it('a held item whose quote went stale is asked again; a new session does not inherit the previous quotes', async () => {
 		const f = fixture(); const first = await positive(f); const e = economy(f);
 		const asked = () => e.requestDetailed.mock.calls.flatMap(([path]) => String(path).split('ids=')[1]!.split(',')).map(Number);

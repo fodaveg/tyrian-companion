@@ -1335,7 +1335,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.liveSessions.initialize();
 		this.liveSummaryNetwork = true;
 		this.liveEconomy = this.createLiveEconomy(this.liveSessions, publicClient, rateLimitCoordinator);
-		for (const entry of this.liveSessions.getJournal()) if (entry.outbox.some((intent) => ['awaiting_price','ready'].includes(intent.state))) this.liveEconomy.observe(entry);
+		for (const entry of this.liveSessions.getUnsettledPriceEntries()) this.liveEconomy.observe(entry);
 		this.pendingProposals = sessionServices.pendingProposals;
 		this.pendingClaimRenewals = sessionServices.pendingClaimRenewals;
 		fireAndForgetLocal(this.localDebugActions,
@@ -1475,9 +1475,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const collector = !consulting(this);
 		if (collector) this.syncAlertIngameServer();
 		else await this.closeAlertIngameServer();
-		if (collector) for (const entry of this.liveSessions?.getJournal() ?? []) {
-			if (entry.outbox.some((intent) => intent.state === 'awaiting_price' || intent.state === 'ready')) this.liveEconomy?.observe(entry);
-		}
+		if (collector) for (const entry of this.liveSessions?.getUnsettledPriceEntries() ?? []) this.liveEconomy?.observe(entry);
 		if (!collector) this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('mode_off'));
 		if (this.priceHistory !== null && this.settings.priceHistoryEnabled) {
 			const settings = priceHistorySettingsFrom(this.settings);
