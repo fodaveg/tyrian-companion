@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
+import { withFakeMainView } from '../../test/hebra-main-view-fake';
 import { createTyrianTestApi, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
 import { installDomHelpers } from '../dom-polyfill';
 import type { CanonicalPathFor } from '../tyrian-host';
@@ -384,11 +385,31 @@ describe('createHebraHost: the other ports', () => {
 		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true });
 	});
 
-	it('declares no main view yet, so Settings offers no choice between the main screen and the sidebar', async () => {
+	it('declares no main view on a Hebra that has none, so Settings offers no choice between the main screen and the sidebar', async () => {
 		const handle = await createHebraHost(deps(createTyrianTestApi()));
 		// For `mainView`, an omitted flag means the host does not have it.
 		expect(handle.host.capabilities).not.toHaveProperty('mainView');
 		expect(createTyrianRuntime(handle.host).mainViewSupported()).toBe(false);
+		expect(handle.host.ui).not.toHaveProperty('registerSectionsView');
+	});
+
+	it('declares the main view where Hebra says it has it (plugin API 1.3.0), with the port to register it', async () => {
+		const test = createTyrianTestApi();
+		const handle = await createHebraHost(deps(test, { api: withFakeMainView(test.api).api }));
+		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true, mainView: true });
+		expect(createTyrianRuntime(handle.host).mainViewSupported()).toBe(true);
+		expect(handle.host.ui).toHaveProperty('registerSectionsView');
+		expect(handle.host.ui).toHaveProperty('revealSection');
+	});
+
+	it('asks Hebra for the main view as a feature of the host, never as a capability the plugin declares', async () => {
+		const test = createTyrianTestApi();
+		const has = vi.spyOn(test.api, 'has');
+		await createHebraHost(deps(test));
+		// Asked once, when the host is built: the answer decides the capability and the port together.
+		expect(has.mock.calls.filter(([name]) => (name as string) === 'ui.view.main')).toHaveLength(1);
+		// The test API declares exactly what `hebra.json` does, and the host is built over it without the feature among them.
+		expect(test.fake.api.has('ui.view.main' as never)).toBe(false);
 	});
 
 	it('secrets preloaded from the backend; settings and localStorage through api.storage', async () => {

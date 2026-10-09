@@ -48,6 +48,7 @@ import type {
 } from '../tyrian-host';
 import { libraryFolderPaths, resolveFolderPath } from './folder-path';
 import { createHebraTyrianUi } from './hebra-host-ui';
+import { hebraHasMainView } from './hebra-main-view';
 import { createTyrianHttpPort } from './http';
 import {
 	createLocalFileStorage,
@@ -458,11 +459,14 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	const kv: TyrianKvPort = { indexedDB: deps.indexedDB };
 	const background = createBackground(deps);
 	const win = deps.window;
+	// Asked once: the main view of the plugin API 1.3.0. A Hebra before it answers false.
+	const mainView = hebraHasMainView(api);
 
 	const host: TyrianHost = {
 		// Managed assets as in Obsidian: the Bases and their manifest are library files under the
 		// output folder; the settings show the section and the core adopts and upgrades them.
-		capabilities: { managedAssets: true, supportPackageAsNote: true },
+		// `mainView` only where this Hebra has it: omitted, the core takes it as not supported.
+		capabilities: { managedAssets: true, supportPackageAsNote: true, ...(mainView ? { mainView: true } : {}) },
 		vault,
 		http: createTyrianHttpPort(api),
 		secrets,
@@ -491,6 +495,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		shell: { openPath: async () => false },
 		ui: createHebraTyrianUi({
 			api,
+			mainView,
 			secrets,
 			folderPaths: async () => libraryFolderPaths(await api.vault.foldersList(), libraryRootId),
 			openNote: (path) => {

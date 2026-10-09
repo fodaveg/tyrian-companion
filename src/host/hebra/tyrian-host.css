@@ -7,7 +7,10 @@
  * huecos donde Hebra monta contenido de un plugin:
  *
  *   .lv1-context-module-el                pestaña del inspector (LibraryContextPanel.svelte)
- *   .hebra-module-view-content            diálogo de vista (ModuleViewSlot.svelte)
+ *   .hebra-module-view-content            diálogo de vista (ModuleViewSlot.svelte) y, con la
+ *                                         API 1.3.0, cada sección de la vista de la pantalla
+ *                                         principal, que lleva además
+ *                                         `.hebra-module-view-main-content` (PROVISIONAL)
  *   .hebra-module-modal-content           `ui.openModal` (host-ui.ts)
  *   .lv1-modules-panel[data-module-panel] `ui.settingsPanel`, en el modal propio del módulo
  *                                         (LibraryModuleSettingsDialog.svelte)
@@ -106,11 +109,29 @@
    `.hebra-module-view` (ancho explícito, `min(90vw, 960px)`) y el hueco del panel de
    Ajustes, dentro del modal del módulo (54rem en escritorio: más de 480 px de hueco). El modal y el bloque de código NO lo llevan: el ancho del modal sale de su
    contenido (la contención lo colapsaría) y el bloque vive dentro de la nota, donde
-   medir la columna es lo correcto. */
+   medir la columna es lo correcto.
+   La vista de la pantalla principal (API 1.3.0, PROVISIONAL): el padre de cada sección
+   lleva `hebra-module-view hebra-module-view-main` y mide la columna 3 entera (de 593 a
+   852 px en un escritorio normal, de 397 a 756 en tablet, 390 en teléfono), así que la
+   primera clase ya lo hace contenedor; la segunda va escrita para que no dependa de que
+   Hebra conserve las dos. */
 .lv1-context-module,
 .hebra-module-view,
+.hebra-module-view-main,
 .lv1-modules-panel[data-module-panel] {
   container-type: inline-size;
+}
+
+/* En la pantalla principal el hueco de la sección ES el contenedor de scroll y ocupa la
+   columna entera (`position: absolute; inset: 0`). El tope de 84rem que Tyrian pone en
+   `.tyrian-product-surface` (styles.css) acabaría ahí el hueco, con su barra de scroll, a
+   mitad de columna en una ventana muy ancha (columna de más de 1344 px: ventana de más de
+   1932). El tope pasa al contenido, que es lo que quería limitar. */
+.hebra-module-view-main-content.tyrian-product-surface {
+  max-width: none;
+}
+.hebra-module-view-main-content > .tyrian-product-shell {
+  max-width: 84rem;
 }
 
 /* Dentro de la nota el bloque va sobre la hoja (--paper), no sobre --panel. La

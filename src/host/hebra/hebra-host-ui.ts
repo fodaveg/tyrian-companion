@@ -12,7 +12,13 @@
  * - commands: `checkCallback(true)` decides whether it is available and `checkCallback(false)` runs
  *   it, as in Obsidian; the ids carry the plugin prefix, as there;
  * - ribbon: live title and pending flag through the `ribbonItem` handle; the click travels so the
- *   menu opens at that point;
+ *   menu opens at that point. While the main view is registered the button carries its `viewId`:
+ *   Hebra shows it pressed while that view is on screen and still calls `onClick` on every click.
+ *   With the three views it carries none, on purpose: a button tied to a column view that is on
+ *   screen folds the inspector instead of calling `onClick`, and the menu would not open. `viewId`
+ *   cannot be patched, so the button is made again when the main view comes or goes;
+ * - the main view (`hebra-main-view.ts`) exists only where Hebra has it (`deps.mainView`): on any
+ *   other Hebra the three methods of it are not even on the port;
  * - `setIcon` also puts Obsidian's `svg-icon` class on the `<svg>`: Tyrian's selectors look for it
  *   (`docs/HEBRA-CSS-VARIABLES.md` §6).
  *
@@ -22,6 +28,7 @@ import type { HebraPluginApi, PluginMenuEntry } from 'hebra-plugin-api';
 
 import type { TyrianMenuEntry, TyrianSecretsPort, TyrianUiPort, TyrianViewRegistration } from '../tyrian-host';
 import { attachFolderPicker } from './folder-picker';
+import { registerHebraMainView, revealHebraMainViewSection, updateHebraMainViewSection } from './hebra-main-view';
 import { createSecretControl, createSettingRow } from './setting-row';
 
 export { MISSING_FOLDER_SUFFIX } from './folder-picker';
@@ -43,6 +50,8 @@ export interface HebraTyrianUiDeps {
 	/** `pickFolder`: the core's `onSelect` ended (saved or failed), so its settings update is
 	 *  completely over: the clean point to restart the plugin. */
 	onFolderSettled?(): void;
+	/** Whether this Hebra has the main view (`hebraHasMainView`). Absent or false: the port has none of its methods. */
+	mainView?: boolean;
 }
 
 type Step = () => void | Promise<void>;
@@ -109,11 +118,38 @@ function toMenuEntries(entries: readonly TyrianMenuEntry[]): PluginMenuEntry[] {
 export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 	const { ui, editor, env } = deps.api;
 	const settingDeps = { secrets: deps.secrets, host: ui, report: (error: unknown) => deps.report(error, 'setting') };
+	// The main view registered right now, and what makes each ribbon button again when that changes.
+	let mainViewId: string | null = null;
+	const remakeRibbons = new Set<() => void>();
+	const setMainView = (id: string | null): void => {
+		if (mainViewId === id) return;
+		mainViewId = id;
+		for (const remake of remakeRibbons) remake();
+	};
+	const mainView: Pick<TyrianUiPort, 'registerSectionsView' | 'revealSection' | 'updateSection'> = deps.mainView === true
+		? {
+			registerSectionsView: (view) => {
+				const unregister = registerHebraMainView({
+					ui, lane: createLane, report: (error, where) => deps.report(error, where),
+				}, view);
+				setMainView(view.type);
+				return () => {
+					unregister();
+					if (mainViewId === view.type) setMainView(null);
+				};
+			},
+			revealSection: async (type, sectionId) => {
+				revealHebraMainViewSection(ui, type, sectionId);
+			},
+			updateSection: (type, sectionId, patch) => updateHebraMainViewSection(ui, type, sectionId, patch),
+		}
+		: {};
 	return {
 		registerView: (view) => registerTyrianView(deps, view),
 		revealView: async (type) => {
 			ui.revealView(type);
 		},
+		...mainView,
 		registerCommand: (command) => ui.registerCommand({
 			id: `${TYRIAN_COMMAND_PREFIX}${command.id}`,
 			name: command.name,
@@ -127,14 +163,29 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 			},
 		}),
 		ribbon: (ribbon) => {
-			const handle = ui.ribbonItem({
+			// What the button says right now, so one made again says the same.
+			const shown = { title: ribbon.title, pending: false };
+			const make = () => ui.ribbonItem({
 				icon: ribbon.icon,
-				title: ribbon.title,
+				title: shown.title,
 				onClick: (event) => ribbon.onClick(event ?? new MouseEvent('click')),
+				...(shown.pending ? { pending: true } : {}),
+				...(mainViewId === null ? {} : { viewId: mainViewId }),
+			});
+			let handle = make();
+			remakeRibbons.add(() => {
+				handle.remove();
+				handle = make();
 			});
 			return {
-				setTitle: (title) => handle.update({ title }),
-				setPending: (pending) => handle.update({ pending }),
+				setTitle: (title) => {
+					shown.title = title;
+					handle.update({ title });
+				},
+				setPending: (pending) => {
+					shown.pending = pending;
+					handle.update({ pending });
+				},
 			};
 		},
 		registerCodeBlock: (language, render) => editor.registerCodeBlock(language, (el, source, context) => {
