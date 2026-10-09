@@ -143,7 +143,12 @@ export class InventoryAdvisorItemView {
 	setVisible(visible: boolean): void {
 		if (visible === !this.sectionHidden) return;
 		this.sectionHidden = !visible;
-		if (!visible) { this.cancelProgressRender(); return; }
+		if (!visible) {
+			// The frame it was waiting for had a progress report to show: dropped here, it is owed.
+			if (this.progressFrame !== null) this.repaintPending = true;
+			this.cancelProgressRender();
+			return;
+		}
 		if (this.repaintPending) this.render();
 	}
 	async onClose(): Promise<void> {

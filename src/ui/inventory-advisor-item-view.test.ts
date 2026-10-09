@@ -604,6 +604,45 @@ describe('InventoryAdvisorItemView as a section the host hides without unmountin
 		expect(window.pending()).toBe(1);
 	});
 
+	it('owes the progress it was about to paint: a report waiting for its frame when it is hidden is painted when it is shown, with no other report', async () => {
+		installDom();
+		const { reads, value } = counted({ run: async () => undefined });
+		const view = new InventoryAdvisorItemView(content(), icons, value);
+		const window = framesOf(view);
+		await view.onOpen();
+		// The last report of a run: it asked for its frame and no other report will come.
+		view.renderProgress();
+		expect(window.pending()).toBe(1);
+		const before = reads.count;
+
+		view.setVisible(false);
+		expect(window.pending()).toBe(0);
+		expect(reads.count).toBe(before);
+
+		view.setVisible(true);
+		expect(reads.count, 'the progress stayed where it was before the last report').toBe(before + 1);
+		// Paid once: hidden and shown again with nothing new, nothing is painted.
+		view.setVisible(false);
+		view.setVisible(true);
+		expect(reads.count).toBe(before + 1);
+	});
+
+	it('owes nothing when it is hidden with no frame waiting', async () => {
+		installDom();
+		const { reads, value } = counted({ run: async () => undefined });
+		const view = new InventoryAdvisorItemView(content(), icons, value);
+		const window = framesOf(view);
+		await view.onOpen();
+		view.renderProgress();
+		window.run();
+		const before = reads.count;
+
+		view.setVisible(false);
+		view.setVisible(true);
+
+		expect(reads.count).toBe(before);
+	});
+
 	it('paints nothing however often the core asks while hidden, and repaints once when shown', async () => {
 		installDom();
 		const { reads, value } = counted();
