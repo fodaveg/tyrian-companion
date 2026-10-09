@@ -202,7 +202,7 @@ describe('settings page: main screen or sidebar, only where the host can show bo
 		// Under its description, where the plugin is opened from once the main screen is chosen.
 		const row = container.querySelectorAll('.setting-item')[1]!;
 		expect(Array.from(row.querySelectorAll('.setting-item-description .tyrian-companion-settings__hint')).map((hint) => hint.textContent))
-			.toEqual(['On the main screen, open it with the Tyrian Companion button in Hebra\'s bar.']);
+			.toEqual(['On the main screen, open it with "Open companion" in the Tyrian Companion button\'s menu.']);
 		// And no other row gets that line.
 		expect(container.querySelectorAll('.tyrian-companion-settings__hint')).toHaveLength(2);
 	});

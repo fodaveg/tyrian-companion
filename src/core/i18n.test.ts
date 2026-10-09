@@ -40,6 +40,13 @@ describe('i18n catalogue', () => {
 		}
 	});
 
+	// The row that chooses where the plugin shows sends the player to an entry of the host button's
+	// menu, by the name that entry has on screen (`projectSessionMenu` titles it with this key).
+	it('names the menu entry that opens the companion, in each locale, in the hint of where it is shown', () => {
+		expect(createTranslator('es').t('settings.viewPlacement.hint')).toContain(`«${createTranslator('es').t('commands.openCompanion')}»`);
+		expect(createTranslator('en').t('settings.viewPlacement.hint')).toContain(`"${createTranslator('en').t('commands.openCompanion')}"`);
+	});
+
 	it('keeps every H5.11 Inventory Advisor key localized in both central catalogues', () => {
 		const derivedKeys = Object.keys(TRANSLATIONS.es).filter((key) => key.startsWith('advisor.view.')).sort();
 		expect(derivedKeys).toEqual([...H5_11_KEYS].sort());

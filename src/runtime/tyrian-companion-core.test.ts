@@ -312,7 +312,7 @@ describe('main screen or sidebar: this device\'s choice, behind a host capabilit
 		expect(state.shown).toBe('main');
 		// Chosen from the host's Settings, the main screen is not what closing them shows: the row says where it opens.
 		expect(state.hints).toEqual([{
-			cls: 'tyrian-companion-settings__hint', text: 'On the main screen, open it with the Tyrian Companion button in Hebra\'s bar.',
+			cls: 'tyrian-companion-settings__hint', text: 'On the main screen, open it with "Open companion" in the Tyrian Companion button\'s menu.',
 		}]);
 		expect(device.size).toBe(0);
 
