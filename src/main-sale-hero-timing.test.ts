@@ -427,9 +427,9 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 				saleHeroTiming: null as unknown,
 				getSellSignalState: () => null,
 			};
-			const model = runGetSaleViewModel(harness as never);
+			const model = runGetSaleViewModel(harness);
 			renderModel(model);
-			runGetSaleViewModel(harness as never);
+			runGetSaleViewModel(harness);
 
 			expect(reads.length).toBeGreaterThan(0);
 			expect(reads.every((options) => (options as { readOnly?: boolean } | undefined)?.readOnly === true)).toBe(true);
