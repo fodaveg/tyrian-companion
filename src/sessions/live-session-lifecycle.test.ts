@@ -901,6 +901,17 @@ describe('durable live alert outbox', () => {
 		expect(f.service.getUnsettledPriceEntries().some((row) => row.outbox.some((item) => item.outboxId === intent.outboxId)), 'a settled alert leaves the list').toBe(false);
 		await f.service.dispose();
 	});
+	it('updates exactly the alert it names, in an older entry, and leaves every other one untouched', async () => {
+		const f = fixture(); const first = await positive(f); f.setNow(AT+2000); await f.service.commit(f.sample(2,5)); f.setNow(AT+3000); await f.service.commit(f.sample(3,9));
+		const before = f.service.getJournal(); const target = first.outbox[0]!;
+		expect(before.flatMap((row) => row.outbox).length).toBeGreaterThan(1);
+		const updated = await f.service.updateAlert(target.outboxId,(prior) => ({...prior,skipReason:'below_threshold' as const,state:'skipped' as const}));
+		expect(updated).toMatchObject({outboxId:target.outboxId,state:'skipped'});
+		const after = f.service.getJournal();
+		expect(after.map((row) => row.outbox.map((item) => item.outboxId))).toEqual(before.map((row) => row.outbox.map((item) => item.outboxId)));
+		expect(after.flatMap((row) => row.outbox).filter((item) => item.state === 'skipped').map((item) => item.outboxId)).toEqual([target.outboxId]);
+		expect(await f.service.updateAlert('nope',(prior) => prior)).toBeNull(); await f.service.dispose();
+	});
 	it('a held item whose quote went stale is asked again; a new session does not inherit the previous quotes', async () => {
 		const f = fixture(); const first = await positive(f); const e = economy(f);
 		const asked = () => e.requestDetailed.mock.calls.flatMap(([path]) => String(path).split('ids=')[1]!.split(',')).map(Number);
