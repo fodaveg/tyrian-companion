@@ -531,6 +531,87 @@ describe('live session whose host died without releasing the lease', () => {
 });
 
 /**
+ * A gap the producer reports while the lease is lost cannot be written by anybody. It used to be
+ * dropped: no loot slipped through, because the reclaim opens a gap of its own and asks for a new
+ * baseline, but that gap said `storage_unavailable` for what had been, say, the game closing, and
+ * the disconnection the producer reported was never on record.
+ */
+describe('live session whose producer reported a gap while the lease was lost', () => {
+	/** When the machine wakes: long after any lease this session can hold has run out, whatever its length. */
+	const WOKE = 2 * LEASE_TTL_MS;
+	/** A session measured up to one second, then a suspension that outlives the lease, and the beat that finds it lost. */
+	async function lost(label: string) {
+		const f = outage(label);
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7))); await f.service.presence(true, AT + 1000);
+		f.at(WOKE); await f.beat();
+		expect(f.service.getView().phase).toBe('error');
+		return f;
+	}
+
+	it('the gap the reclaim opens carries the cause the producer gave, and the disconnection it reported is written', async () => {
+		const f = await lost('lost-gap');
+		const before = await f.durable();
+		f.at(WOKE + 1000);
+		await expect(f.service.gap({ sourceInstance: INSTANCE, epoch: EPOCH, reason: 'disconnect', observedAt: iso(WOKE + 1000) })).resolves.toBeUndefined();
+		// Nobody holds the lease, so nothing is written yet.
+		expect(await f.durable()).toEqual(before);
+		expect(f.service.getRuntime()).toMatchObject({ epoch: EPOCH, lastSourceDisconnectedAt: null });
+
+		f.at(WOKE + 5000); await f.beat();
+		expect(f.service.getView().phase).toBe('active');
+		expect(f.service.getView().gaps).toEqual([{ version: 1, reason: 'disconnect', fromAt: iso(1000), toAt: null, channels: ['items'] }]);
+		expect(f.service.getRuntime()).toMatchObject({ authority: { fence: 2 }, epoch: null, lastSample: null, lastSourceDisconnectedAt: iso(WOKE + 1000) });
+		expect((await f.durable()).record).toEqual(f.service.getRuntime());
+		// The cause is spent with that gap: the next loss of the lease is an outage of its own.
+		f.at(WOKE + 6000); await expect(f.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		await expect(f.service.commit(f.sample(0, 0, bags(9), NEXT_EPOCH))).resolves.toBe('stored');
+		f.at(2 * WOKE); await f.beat(); f.at(2 * WOKE + 5000); await f.beat();
+		expect(f.service.getView().gaps.map((gap) => [gap.reason, gap.toAt])).toEqual([['disconnect', iso(WOKE + 6000)], ['storage_unavailable', null]]);
+		await f.service.dispose();
+	});
+
+	it.each(['read_failed', 'partial_inventory', 'context_changed'] as const)('a %s gap is kept under its own cause too', async (reason) => {
+		const f = await lost(`lost-gap-${reason}`);
+		f.at(WOKE + 1000); await f.service.gap({ sourceInstance: INSTANCE, epoch: EPOCH, reason, observedAt: iso(WOKE + 1000) });
+		f.at(WOKE + 5000); await f.beat();
+		expect(f.service.getView().gaps).toEqual([{ version: 1, reason, fromAt: iso(1000), toAt: null, channels: ['items'] }]);
+		expect(f.service.getRuntime()).toMatchObject({ epoch: null, lastSourceDisconnectedAt: null });
+		await f.service.dispose();
+	});
+
+	it('the first cause still comes first: a sample storage refused before the lease was lost names the gap', async () => {
+		const f = outage('lost-gap-after-refusal');
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		killStorage(f.tracked);
+		f.at(1000); await expect(f.service.commit(f.sample(1, 1000, bags(8)))).resolves.toBe('storage_unavailable');
+		reviveStorage(f.tracked);
+		f.at(WOKE); await f.beat();
+		f.at(WOKE + 1000); await f.service.gap({ sourceInstance: INSTANCE, epoch: EPOCH, reason: 'disconnect', observedAt: iso(WOKE + 1000) });
+		f.at(WOKE + 5000); await f.beat();
+		expect(f.service.getView().phase).toBe('active');
+		expect(f.service.getView().gaps).toEqual([{ version: 1, reason: 'storage_unavailable', fromAt: iso(0), toAt: null, channels: ['items'] }]);
+		// The disconnection is a fact of its own, whatever the gap is called.
+		expect(f.service.getRuntime()).toMatchObject({ epoch: null, lastSourceDisconnectedAt: iso(WOKE + 1000) });
+		await f.service.dispose();
+	});
+
+	it('after a host restart the gap stays the restart\'s: the restart came first', async () => {
+		const f = outage('lost-gap-restart');
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+		// A second host starts while the first still holds the lease, and is told of a gap it cannot write.
+		const next = f.restarted(); await next.service.initialize();
+		f.at(2000); await next.service.gap({ sourceInstance: INSTANCE, epoch: EPOCH, reason: 'disconnect', observedAt: iso(2000) });
+		await f.service.dispose();
+		f.at(5000); await next.beat();
+		expect(next.service.getView().phase).toBe('active');
+		expect(next.service.getView().gaps.map((gap) => gap.reason)).toEqual(['host_restart']);
+		await next.dispose();
+	});
+});
+
+/**
  * Storage that is down at the moment the host starts. The load of the saved session failed, the view
  * went to `error` and that was all: no heartbeat, nobody asked again, and once storage was back the
  * session on disk stayed where it was, unread, with every start refused until the next restart.

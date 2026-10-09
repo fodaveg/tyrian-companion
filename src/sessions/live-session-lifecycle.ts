@@ -131,6 +131,12 @@ export class LiveSessionLifecycle {
 	private hostRestarted = false;
 	/** The last presence report received while the lease was lost: nobody could write it, so the reclaim applies it (a suspended host's closing events must not be thrown away). */
 	private lostPresence: { connected: boolean; evidencedAt: number } | null = null;
+	/**
+	 * What the producer reported as the end of its epoch while the lease was lost: nobody could write it, and the reclaim
+	 * opens a gap of its own, so that gap takes this cause instead of `storage_unavailable` and the disconnection, when it
+	 * was one, is written with it. Memory only: the cause is one of the reasons a gap already has.
+	 */
+	private lostGap: { reason: LiveGapV1['reason']; sourceDisconnectedAt: string | null } | null = null;
 	private noteNeedsVerification = false;
 	/** Characters seen and the summary-written mark: kept apart from the closed record (see `live-session-summary-state.ts`). */
 	private summaryState: LiveSessionSummaryState | null = null;
@@ -251,7 +257,7 @@ export class LiveSessionLifecycle {
 			this.summaryState = { version: 1, sessionId: id, characters: character === null ? [] : [{ name: character, fromAt: at }], capped: false, summaryWritten: false };
 			await this.options.persistence.saveSummaryState?.(this.summaryState);
 			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = this.newChart(); this.failure = false; this.registryKnown = true;
-			this.unsaved = null; this.lostPresence = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false; this.noteNeedsVerification = false;
+			this.unsaved = null; this.lostPresence = null; this.lostGap = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false; this.noteNeedsVerification = false;
 			this.armHeartbeat(); this.options.onStateChange(); return id;
 		});
 	}
@@ -272,7 +278,8 @@ export class LiveSessionLifecycle {
 				itemComparable: false, currencyComparable: false, sourceState: 'warming_up', sourceReason: null, persistedAt: this.options.now(), connection: 'connected' };
 			next = this.observeMap(next, source.context.mapId, this.options.now());
 			if (await this.persist(next) !== 'saved') return 'source_conflict';
-			this.record = next; await this.registerCharacter(source.context.character, previousCharacter); this.options.onStateChange(); return 'ready';
+			// A new epoch is open under a lease that holds: a gap held back for a reclaim that never had to happen is moot.
+			this.record = next; this.lostGap = null; await this.registerCharacter(source.context.character, previousCharacter); this.options.onStateChange(); return 'ready';
 		});
 	}
 
@@ -328,7 +335,12 @@ export class LiveSessionLifecycle {
 				if (disconnectedAt !== null) unsaved.sourceDisconnectedAt = disconnectedAt;
 			};
 			const ownership = await this.ready();
-			if (ownership === 'lost') return;
+			// Nobody can write it now, and storage is not what failed, so it is not owed to storage: it is held for the
+			// reclaim, which opens a gap anyway and would otherwise have to name it itself. First cause, last disconnection.
+			if (ownership === 'lost') {
+				this.lostGap = { reason: this.lostGap?.reason ?? event.reason, sourceDisconnectedAt: disconnectedAt ?? this.lostGap?.sourceDisconnectedAt ?? null };
+				return;
+			}
 			if (ownership === 'unavailable') { unwritten(); return; }
 			const next = liveSessionGap(this.record, event.reason, event.observedAt);
 			next.epoch = null; next.lastSample = null; next.fingerprint = null; next.persistedAt = this.options.now();
@@ -337,7 +349,8 @@ export class LiveSessionLifecycle {
 			// `stale` (the store no longer takes this writer's authority) is no reason to throw either: the gap stays pending
 			// like any refused step, and the next beat either writes it or finds the lease lost and reclaims with it.
 			if (saved !== 'saved') { unwritten(); return; }
-			this.record = next; this.options.onStateChange();
+			// Written: a gap held back during an earlier loss is older than this one and no longer waits for a reclaim.
+			this.record = next; this.lostGap = null; this.options.onStateChange();
 		});
 	}
 
@@ -548,9 +561,12 @@ export class LiveSessionLifecycle {
 			if (this.lostPresence !== null) next = this.withPresence(next, this.lostPresence.connected, this.lostPresence.evidencedAt);
 		} else {
 			// The producer's link and the presence known in memory are still true, so no disconnection
-			// is made up: only the hole storage left, under the cause it started with.
+			// is made up: only the hole storage left, under the cause it started with. What storage refused
+			// came first; failing that, what the producer reported while the lease was lost; only when
+			// neither says anything is the hole named after the lost writes themselves.
 			const outage = this.unsaved ?? { gapReason: null, epochEnded: false, sourceDisconnectedAt: null, presence: null };
-			next = this.withUnsaved(this.record, { ...outage, gapReason: outage.gapReason ?? 'storage_unavailable' });
+			next = this.withUnsaved(this.record, { ...outage, gapReason: outage.gapReason ?? this.lostGap?.reason ?? 'storage_unavailable',
+				sourceDisconnectedAt: outage.sourceDisconnectedAt ?? this.lostGap?.sourceDisconnectedAt ?? null });
 			if (this.lostPresence !== null) next = this.withPresence(next, this.lostPresence.connected, this.lostPresence.evidencedAt);
 		}
 		next = { ...next, authority: sessionAuthorityFromLease(acquisition.handle), epoch: null, lastSample: null,
@@ -559,7 +575,7 @@ export class LiveSessionLifecycle {
 		// Storage went away again: drop the handle so the next beat reclaims under the lease it finds.
 		if (saved === 'unavailable') { this.handle = null; return false; }
 		if (saved !== 'saved') throw new Error('Live session recovery could not be persisted.');
-		this.record = next; this.unsaved = null; this.lostPresence = null; this.reclaimingAs = null; this.hostRestarted = false; this.failure = false;
+		this.record = next; this.unsaved = null; this.lostPresence = null; this.lostGap = null; this.reclaimingAs = null; this.hostRestarted = false; this.failure = false;
 		await this.settleRecovery();
 		this.options.onStateChange(); return true;
 	}
