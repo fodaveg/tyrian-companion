@@ -7,6 +7,7 @@ import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import {
 	PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN,
 	PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS,
+	PRICE_SEED_BULK_REFRESH_UNREACHABLE_WAIT_MS,
 	PriceSeedBulkRefreshService,
 } from './price-seed-bulk-refresh';
 import type { PriceSeedResult } from './price-seed-model';
@@ -293,7 +294,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 	 * Z13 (audit, 9 oct 2026): a pass made while the host limits (429 -> `unreachable`) used to mark
 	 * all 25 items, and a minute later, with the host healthy, skipped them all for 24 h.
 	 */
-	it('Z13: an unreachable answer writes no cooldown marker, so a healthy host is asked again a minute later', async () => {
+	it('Z13: an unreachable answer writes no 24 h marker, so a healthy host is asked again after the short wait', async () => {
 		const requested: number[] = [];
 		let healthy = false;
 		let now = NOW_MS;
@@ -309,7 +310,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		expect(first).toMatchObject({ attempted: 2, noSeed: 0, failed: 2, skippedNoSeedCooldown: 0 });
 		expect(first.queueCoverage).toEqual({ total: 2, seeded: 0, noData: 0, pending: 2 });
 
-		now += 60_000;
+		now += PRICE_SEED_BULK_REFRESH_UNREACHABLE_WAIT_MS;
 		healthy = true;
 		const second = await service.run([1, 2]);
 		expect(second).toMatchObject({ attempted: 2, seeded: 2, skippedNoSeedCooldown: 0 });
@@ -375,8 +376,75 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		expect(requested).toEqual([1, 2, 3, 4]);
 		expect(first).toMatchObject({ attempted: 4, noSeed: 1, failed: 3 });
 		expect(first.stoppedUnreachable).toBeUndefined();
+		// The 404 sits in its 24 h cooldown and the three 429 in their short wait: nothing is asked.
 		const second = await service.run([1, 2, 3, 4]);
-		expect(second).toMatchObject({ skippedNoSeedCooldown: 1, attempted: 3 });
+		expect(second).toMatchObject({ skippedNoSeedCooldown: 1, attempted: 0 });
+		service.dispose();
+	});
+
+	it('Z13: three items that stay unreachable do not starve the rest of the list across passes', async () => {
+		let now = NOW_MS;
+		const requestedPerPass: number[][] = [];
+		let current: number[] = [];
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => now,
+			fetchSeed: async (itemId) => { current.push(itemId); return itemId <= 3 ? { status: 'no_seed', reason: 'unreachable' } : seeded(itemId); },
+		});
+		const itemIds = Array.from({ length: 30 }, (_unused, index) => index + 1);
+		const seededAfter: number[] = [];
+		for (let pass = 0; pass < 5; pass += 1) {
+			current = [];
+			const outcome = await service.run(itemIds);
+			requestedPerPass.push(current);
+			seededAfter.push(outcome.queueCoverage.seeded);
+			now += 60_000;
+		}
+		// Pass 1 spends 3 requests on the failing ones; every later pass skips them (15 min wait) and serves the next 25.
+		expect(requestedPerPass.map((ids) => ids.length)).toEqual([3, 25, 2, 0, 0]);
+		expect(requestedPerPass[1]).toEqual(itemIds.slice(3, 28));
+		expect(seededAfter).toEqual([0, 25, 27, 27, 27]);
+		service.dispose();
+	});
+
+	it('Z13: with the whole host down a pass costs at most 3 requests, and everything is served as soon as it is back, within the short wait', async () => {
+		let now = NOW_MS;
+		let up = false;
+		const requested: number[] = [];
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => now,
+			fetchSeed: async (itemId) => { requested.push(itemId); return up ? seeded(itemId) : { status: 'no_seed', reason: 'unreachable' }; },
+		});
+		const itemIds = Array.from({ length: 10 }, (_unused, index) => index + 1);
+		const perPass: number[] = [];
+		for (let pass = 0; pass < 4; pass += 1) {
+			requested.length = 0;
+			await service.run(itemIds);
+			perPass.push(requested.length);
+			now += 60_000;
+		}
+		expect(perPass.every((count) => count <= 3)).toBe(true);
+		expect(perPass).toEqual([3, 3, 3, 1]);
+		up = true;
+		now += PRICE_SEED_BULK_REFRESH_UNREACHABLE_WAIT_MS;
+		requested.length = 0;
+		const recovered = await service.run(itemIds);
+		expect(recovered).toMatchObject({ seeded: 10, skippedNoSeedCooldown: 0 });
+		expect(recovered.queueCoverage).toEqual({ total: 10, seeded: 10, noData: 0, pending: 0 });
+		service.dispose();
+	});
+
+	it('Z13: an item inside its short wait is still pending in the coverage', async () => {
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async () => ({ status: 'no_seed', reason: 'unreachable' }),
+		});
+		await service.run([1]);
+		const second = await service.run([1]);
+		expect(second).toMatchObject({ attempted: 0, failed: 0 });
+		expect(second.queueCoverage).toEqual({ total: 1, seeded: 0, noData: 0, pending: 1 });
 		service.dispose();
 	});
 

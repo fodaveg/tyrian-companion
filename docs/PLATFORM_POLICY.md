@@ -178,7 +178,10 @@ escribe cuando no se le pudo alcanzar (fallo de red o de transporte, tiempo agot
 encima del tope, 408, 425, 429 o cualquier 5xx): el siguiente intento no espera 24 horas, y el pase
 termina tras 3 fallos de ese tipo seguidos (`PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE`;
 una respuesta de cualquier otra clase rompe la racha), con lo que un servidor colgado cuesta 3
-peticiones y no 25. El progreso de la cola completa (cuántos ítems tienen
+peticiones y no 25. Para que ese corte no deje sin servir a los objetos de detrás, el objeto que dio
+un fallo de ese tipo espera 15 minutos solo en memoria (`PRICE_SEED_BULK_REFRESH_UNREACHABLE_WAIT_MS`):
+dentro de esa espera se salta sin petición y sin contar para el corte, no se persiste, recargar el
+plugin lo olvida y la cobertura lo sigue contando como pendiente. El progreso de la cola completa (cuántos ítems tienen
 histórico, cuántos siguen pendientes de su turno y cuántos respondieron sin datos) se muestra en el
 panel de «Histórico local de precios» del asesor, como una lectura que nunca dispara trabajo por sí
 misma.

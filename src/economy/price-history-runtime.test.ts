@@ -122,6 +122,26 @@ describe('PriceHistoryRuntime', () => {
 		runtime.dispose();
 	});
 
+	it('Z16: the configure span closes as a failure, not a success, when the capture is parked as http_rejected', async () => {
+		const events: Array<{ phase: string; state?: string }> = [];
+		const diagnostics = {
+			createContext: (context: object) => ({ ...context, actionId: 'a', correlationId: 'c' }),
+			event: (event: { phase: string; state?: string }) => { events.push(event); },
+		} as unknown as ConstructorParameters<typeof PriceHistoryRuntime>[0]['diagnostics'];
+		const scheduler = new FakeScheduler();
+		const runtime = createRuntime(new IDBFactory(), vi.fn(async () => { throw new HttpTransportError('http', 403, null, 'refused'); }),
+			scheduler, () => 1_000, () => undefined, undefined, undefined, diagnostics);
+		await runtime.activate(ENABLED);
+		await scheduler.poll();
+		scheduler.publish('fatal');
+		expect(runtime.getState().status).toBe('http_rejected');
+		events.length = 0;
+		await runtime.configure(ENABLED);
+		expect(events.filter((event) => event.state === 'http_rejected' && event.phase !== 'start'))
+			.toEqual([expect.objectContaining({ phase: 'failure' })]);
+		runtime.dispose();
+	});
+
 	it('fails closed and stops scheduling when the local schema is from a future version', async () => {
 		const factory = new IDBFactory();
 		const request = factory.open(PRICE_HISTORY_DB_NAME, 2);
@@ -338,9 +358,10 @@ function createRuntime(
 	onStateChange: () => void = () => undefined,
 	vaultId = `vault-${crypto.randomUUID()}`,
 	afterCompaction?: ConstructorParameters<typeof PriceHistoryRuntime>[0]['afterCompaction'],
+	diagnostics?: ConstructorParameters<typeof PriceHistoryRuntime>[0]['diagnostics'],
 ): PriceHistoryRuntime {
 	return new PriceHistoryRuntime({
-		priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId, afterCompaction,
+		priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId, afterCompaction, diagnostics,
 		gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now }), now, onStateChange,
 		scheduler: (poll, onStateChange) => {
 			scheduler.poll = poll; scheduler.onStateChange = onStateChange;

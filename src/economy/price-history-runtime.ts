@@ -465,6 +465,7 @@ function finishPriceHistorySpan(span: LocalDebugActionSpan, status: PriceHistory
 	else if (status === 'backoff') span.retry(status);
 	else if (status === 'offline') span.skip('unavailable', status);
 	else if (status === 'invalid_payload') span.failure(new Error('price_history_invalid_payload'), 'validation_failed', status);
+	else if (status === 'http_rejected') span.failure(new Error('price_history_http_rejected'), 'network_failure', status);
 	else if (status.startsWith('store_')) span.failure(new Error(`price_history_${status}`), 'storage_failure', status);
 	else span.success(status);
 }

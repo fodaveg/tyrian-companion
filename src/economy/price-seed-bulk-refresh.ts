@@ -46,9 +46,24 @@ export const PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS = 24 * 60 * 60 * 1000;
  * transport failure, timeout, an oversized body, 408, 425, 429, any 5xx): the host did not say
  * anything about the item, so a pass made while it was limiting or down must not silence 25 items
  * for a day; it heals by itself at the next action. Each of those costs a request (up to the
- * transport's 10 s timeout), so a pass that sees this many `unreachable` in a row ends there.
+ * transport's 10 s timeout), so a pass that sees this many `unreachable` in a row ends there, and each of those items then waits
+ * `PRICE_SEED_BULK_REFRESH_UNREACHABLE_WAIT_MS` in memory so the next pass reaches the ones behind them.
  */
 export const PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE = 3;
+
+/**
+ * The short, memory-only wait of an item that answered `unreachable`. Without it the cut-off above
+ * would starve the list: with no marker written, every pass starts again at the same first items,
+ * and three of them failing for good (a stable 5xx) would keep the rest from ever being asked. An
+ * item inside this wait is skipped with no request and does not count for the cut-off, so the next
+ * pass begins with those behind it. Never persisted (the store and the 24 h marker are untouched)
+ * and forgotten on reload; still `pending` in the coverage. It is also the longest a healthy host
+ * waits to be asked again about an item it failed on.
+ */
+export const PRICE_SEED_BULK_REFRESH_UNREACHABLE_WAIT_MS = 15 * 60 * 1000;
+
+/** Safety bound for the in-memory waits; a pass adds at most its cap, and expired ones are dropped first. */
+const UNREACHABLE_WAIT_MAX_ENTRIES = 500;
 
 export interface PriceSeedBulkRefreshOutcome {
 	/** How many items actually reached a request this run (excludes items skipped for a fresh cache or cooldown). */
@@ -126,6 +141,8 @@ export class PriceSeedBulkRefreshService {
 	private opening: Promise<Stores | null> | null = null;
 	private disposed = false;
 	private pending: Promise<unknown> = Promise.resolve();
+	/** itemId (of this vault) to the instant its short `unreachable` wait ends. See the constant. */
+	private readonly unreachableUntil = new Map<number, number>();
 
 	constructor(private readonly options: PriceSeedBulkRefreshOptions) {
 		this.maxItemsPerRun = options.maxItemsPerRun ?? PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN;
@@ -135,6 +152,7 @@ export class PriceSeedBulkRefreshService {
 
 	dispose(): void {
 		this.disposed = true;
+		this.unreachableUntil.clear();
 		this.store?.close();
 		this.store = null;
 		this.noSeedStore?.close();
@@ -241,6 +259,15 @@ export class PriceSeedBulkRefreshService {
 			span.skip('skipped', `no_seed_cooldown_${recentNoSeed.reason}`);
 			return 'none';
 		}
+		const waitUntil = this.unreachableUntil.get(itemId);
+		if (waitUntil !== undefined) {
+			if (nowMs < waitUntil) {
+				// Failed `unreachable` a moment ago: not asked again yet, and not counted for the cut-off.
+				span.skip('skipped', 'unreachable_wait');
+				return 'none';
+			}
+			this.unreachableUntil.delete(itemId);
+		}
 		if (phase?.scope === 'missing' && cached !== null) {
 			// A copy past its TTL: the analysis reads it as it is, and the `stale` phase refreshes it.
 			outcome.staleSkipped = (outcome.staleSkipped ?? 0) + 1;
@@ -273,6 +300,7 @@ export class PriceSeedBulkRefreshService {
 			return 'none';
 		}
 		const result = turn.value;
+		if (!(result.status === 'no_seed' && result.reason === 'unreachable')) this.unreachableUntil.delete(itemId);
 		if (this.disposed) {
 			// `dispose` closed both stores while this request was in flight: its answer has nowhere to
 			// go, and writing it would only record a storage failure nobody can act on.
@@ -283,6 +311,7 @@ export class PriceSeedBulkRefreshService {
 			// The host did not answer about this item (limiting, down, timed out): nothing is
 			// remembered, so the next action asks again. See the constant above.
 			outcome.failed += 1;
+			this.rememberUnreachable(itemId, nowMs);
 			span.skip('unavailable', 'no_seed_unreachable');
 			return 'unreachable';
 		}
@@ -317,6 +346,18 @@ export class PriceSeedBulkRefreshService {
 		outcome.seeded += 1;
 		span.success('seeded');
 		return 'answered';
+	}
+
+	private rememberUnreachable(itemId: number, nowMs: number): void {
+		if (this.unreachableUntil.size >= UNREACHABLE_WAIT_MAX_ENTRIES) {
+			for (const [id, until] of this.unreachableUntil) if (until <= nowMs) this.unreachableUntil.delete(id);
+			if (this.unreachableUntil.size >= UNREACHABLE_WAIT_MAX_ENTRIES) {
+				const oldest = this.unreachableUntil.keys().next();
+				if (oldest.done !== true) this.unreachableUntil.delete(oldest.value);
+			}
+		}
+		this.unreachableUntil.delete(itemId);
+		this.unreachableUntil.set(itemId, nowMs + PRICE_SEED_BULK_REFRESH_UNREACHABLE_WAIT_MS);
 	}
 
 	/**
