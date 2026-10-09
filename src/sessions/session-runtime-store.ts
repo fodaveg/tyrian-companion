@@ -408,7 +408,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	async listLegacyRuntimeArchives(): Promise<SessionRuntimeRecord[]> {
 		return await this.run(async (database) => await new Promise((resolve,reject) => {
 			const tx = startIndexedDbTransaction(database,SESSION_RUNTIME_STORE_NAME,'readonly'); const request = tx.objectStore(SESSION_RUNTIME_STORE_NAME).openCursor();
-			const records: SessionRuntimeRecord[] = []; let corrupt = false;
+			const records: Array<{record:SessionRuntimeRecord;preservedAt:number;key:string}> = []; let corrupt = false;
 			request.onsuccess = () => {
 				const cursor = request.result; if (!cursor) return;
 				if (typeof cursor.key === 'string' && cursor.key.startsWith(LEGACY_RUNTIME_ARCHIVE_PREFIX)) {
@@ -416,11 +416,12 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 					if (!isLegacyRuntimeArchive(value)) { corrupt = true; tx.abort(); return; }
 					const record = legacyRuntimeRecordFromArchive(value);
 					if (!record || cursor.key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${runtimeAuthority(record.state).sessionId}`) { corrupt = true; tx.abort(); return; }
-					records.push(record);
+					records.push({record,preservedAt:value.preservedAt,key:cursor.key});
 				}
 				cursor.continue();
 			};
-			tx.oncomplete = () => resolve(records); tx.onerror = tx.onabort = () => reject(new Error(corrupt ? 'Preserved API runtime is corrupt.' : 'Preserved API runtime is unavailable.'));
+			// Newest first, so `[0]` is the same session after a restart; the key only breaks a tie.
+			tx.oncomplete = () => resolve(records.sort((left,right) => right.preservedAt - left.preservedAt || (left.key < right.key ? -1 : left.key > right.key ? 1 : 0)).map(({record}) => record)); tx.onerror = tx.onabort = () => reject(new Error(corrupt ? 'Preserved API runtime is corrupt.' : 'Preserved API runtime is unavailable.'));
 		}));
 	}
 	async readLegacyRuntimeArchive(sessionId:string):Promise<LegacyRuntimeArchiveV1|null> {

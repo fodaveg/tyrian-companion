@@ -129,6 +129,44 @@ describe('session runtime persistence', () => {
 		store.close();
 	});
 
+	describe('preserved API archives at startup', () => {
+		/** Seeds archive rows straight into the store, the way an earlier build left them. */
+		async function seedArchives(label: string, rows: Array<[string, unknown]>) {
+			const factory = new IDBFactory(); const name = databaseName(label);
+			const store = new IndexedDbSessionRuntimeStore(factory, name); await store.load();
+			const database = await openRaw(factory, name, 2);
+			const tx = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readwrite');
+			for (const [sessionId, row] of rows) tx.objectStore(SESSION_RUNTIME_STORE_NAME).add(row, `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${sessionId}`);
+			await transactionDone(tx); database.close();
+			return store;
+		}
+		function recordOf(sessionId: string) {
+			const record = activeRecord(); const state = record.state as Extract<SessionState, { status: 'active' }>;
+			return { ...record, state: { ...state, sessionId, authority: { ...state.authority, sessionId } } };
+		}
+		const sessionIdOf = (record: { state: { status: string } }) => (record.state as { sessionId: string }).sessionId;
+
+		it('lists the newest preserved archive first, whatever the order of their keys', async () => {
+			const store = await seedArchives('archive-order', [
+				['a-oldest', prepareLegacyRuntimeArchive(recordOf('a-oldest'), 100)],
+				['b-newest', prepareLegacyRuntimeArchive(recordOf('b-newest'), 300)],
+				['c-middle', prepareLegacyRuntimeArchive(recordOf('c-middle'), 200)],
+			]);
+			expect((await store.listLegacyRuntimeArchives()).map(sessionIdOf)).toEqual(['b-newest', 'c-middle', 'a-oldest']);
+			store.close();
+		});
+
+		it('breaks a preservedAt tie by key so the order is stable', async () => {
+			const store = await seedArchives('archive-tie', [
+				['b-same', prepareLegacyRuntimeArchive(recordOf('b-same'), 100)],
+				['a-same', prepareLegacyRuntimeArchive(recordOf('a-same'), 100)],
+			]);
+			expect((await store.listLegacyRuntimeArchives()).map(sessionIdOf)).toEqual(['a-same', 'b-same']);
+			store.close();
+		});
+
+	});
+
 	it('archives an unfinished API runtime additively before freeing the canonical slot', async () => {
 		const factory = new IDBFactory(); const name = databaseName('archive'); const record = activeRecord();
 		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record);
