@@ -7,7 +7,7 @@ pendiente**. Tag `0.6.21` sobre `b92ea06` (commit vacío de atestación), árbol
 `4c07ea33bc0d3a4061b962ad112bceb16d46d934`. Gate local sobre el candidato `1bedc91` (mismo árbol): `check` 8/8
 (5794 tests, 342 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run
 37949980129) terminó en `success`, y `release:brat-verify` contra la salida real de la release dio PASS con los ocho
-assets. La CI de `main` sobre `b92ea06` (run 37949973239) seguía en curso al escribir esto, sin conclusión.
+assets. La CI de `main` sobre `b92ea06` (run 37949973239) terminó en `success`.
 Añade en Hebra una forma nueva de ver el plugin y la opción para elegirla; en Obsidian y en un Hebra anterior no
 cambia nada. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
 

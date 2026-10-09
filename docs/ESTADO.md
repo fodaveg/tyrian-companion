@@ -53,8 +53,7 @@ Obsidian 1.11.4).
   `tyrian-companion-0.6.21.zip.sha256` 94 (bytes). El asset `hebra-main.mjs` descargado ocupa 6 bytes más que la cifra
   del gate y su texto mide los 2670538 de esa cifra: `scripts/build-host-esm.mjs` informa de la longitud del texto
   (`text.length`), no de los bytes del fichero.
-- CI de `main` sobre `b92ea06` (run 37949973239): en curso (`in_progress`, sin conclusión) a las 15:21 UTC del 9 oct
-  2026, cuando se escribió esto. No consta que haya terminado en `success`.
+- CI de `main` sobre `b92ea06` (run 37949973239): terminó en `success` (2026-10-09T15:23:30Z).
 - Comprobado fuera de los tests: el `hebra.json` que genera `scripts/release-package.mjs` con el pin nuevo se comparó
   con el de la release 0.6.20 y solo difieren la versión y los hashes de los ficheros; `build:host-esm` informa de un
   solo paquete de npm en el bundle (`yaml`). Esa comparación se hizo antes de rebasar el lote.
