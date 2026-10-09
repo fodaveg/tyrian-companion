@@ -459,8 +459,9 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	const kv: TyrianKvPort = { indexedDB: deps.indexedDB };
 	const background = createBackground(deps);
 	const win = deps.window;
-	// Asked once: the main view of the plugin API 1.3.0. A Hebra before it answers false.
-	const mainView = hebraHasMainView(api);
+	// Asked once: the main view of the plugin API 1.3.0. A Hebra before it answers false, and one
+	// that fails to answer is taken as not having it.
+	const mainView = hebraHasMainView(api, (error) => deps.report(error, 'has ui.view.main'));
 
 	const host: TyrianHost = {
 		// Managed assets as in Obsidian: the Bases and their manifest are library files under the

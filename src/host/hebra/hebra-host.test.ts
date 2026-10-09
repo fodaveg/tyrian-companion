@@ -402,6 +402,23 @@ describe('createHebraHost: the other ports', () => {
 		expect(handle.host.ui).toHaveProperty('revealSection');
 	});
 
+	it('still builds the host, without the main view, on a Hebra whose `has` throws for that name', async () => {
+		const test = createTyrianTestApi();
+		const report = vi.fn();
+		const failure = new Error('capacidad desconocida');
+		const has = (capability: Parameters<typeof test.api.has>[0]): boolean => {
+			if ((capability as string) === 'ui.view.main') throw failure;
+			return test.api.has(capability);
+		};
+
+		const handle = await createHebraHost(deps(test, { api: { ...test.api, has }, report }));
+		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true });
+		expect(handle.host.ui).not.toHaveProperty('registerSectionsView');
+		expect(report).toHaveBeenCalledWith(failure, 'has ui.view.main');
+		// The plugin starts on that host as on any Hebra without the main view.
+		expect(createTyrianRuntime(handle.host).mainViewSupported()).toBe(false);
+	});
+
 	it('asks Hebra for the main view as a feature of the host, never as a capability the plugin declares', async () => {
 		const test = createTyrianTestApi();
 		const has = vi.spyOn(test.api, 'has');

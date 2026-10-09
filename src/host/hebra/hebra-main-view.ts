@@ -36,9 +36,20 @@ export interface HebraMainViewDeps {
 	report(error: unknown, where: string): void;
 }
 
-/** Whether this Hebra has the main view. False on any Hebra before 1.3.0, which answers false to a name it does not know. */
-export function hebraHasMainView(api: Pick<HebraPluginApi, 'has'>): boolean {
-	return (api as { has: PluginHasWithHostFeatures }).has(MAIN_VIEW_FEATURE) === true;
+/**
+ * Whether this Hebra has the main view. False on any Hebra before 1.3.0, which answers false to a
+ * name it does not know. And false, never a throw, where `has` is missing or throws for that name:
+ * the host is built on this answer, so a failure here would keep the whole plugin from starting
+ * over a screen it can do without. `report` gets the failure.
+ */
+export function hebraHasMainView(api: Pick<HebraPluginApi, 'has'>, report: (error: unknown) => void = () => undefined): boolean {
+	if (typeof (api as { has?: unknown }).has !== 'function') return false;
+	try {
+		return (api as { has: PluginHasWithHostFeatures }).has(MAIN_VIEW_FEATURE) === true;
+	} catch (error) {
+		report(error);
+		return false;
+	}
 }
 
 const widened = (ui: PluginUi): PluginUiWithMainView => ui as unknown as PluginUiWithMainView;
