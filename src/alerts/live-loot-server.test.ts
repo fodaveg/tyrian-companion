@@ -349,6 +349,17 @@ describe('live1 authenticated atomic consumer', () => {
 		expect(replacement.lines.at(-1)).toMatchObject({ type: 'live_ready', status: 'ready' }); await h.server.close();
 	});
 
+	it('frees the lease when a gap already retained by an OPEN channel fails again as the channel closes', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const first = h.connect(); await open(first);
+		h.gap.mockRejectedValue(new Error('gap persistence unavailable'));
+		first.live('live_status', { epoch, status: 'unavailable', reason: 'read_failed' }); await flush();
+		first.destroy(); await flush();
+		h.gap.mockResolvedValue(undefined);
+		const replacement = h.connect(3, 'nexus', 'AQEBAQEBAQEBAQEBAQEBAQ'); await open(replacement);
+		expect(replacement.lines.at(-1), 'a retained gap kept the lease: source_conflict until reload').toMatchObject({ type: 'live_ready', status: 'ready' });
+		await h.server.close();
+	});
+
 	/** A producer that opens its epoch and drops while storage refuses its disconnect gap: the channel closes with the gap unwritten. */
 	async function abandon(h: Awaited<ReturnType<typeof bridge>>, round: number): Promise<void> {
 		const client = h.connect(3, 'nexus', `${String.fromCharCode(66 + round)}${'A'.repeat(21)}`); await open(client);
