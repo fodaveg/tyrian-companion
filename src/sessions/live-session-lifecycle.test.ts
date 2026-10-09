@@ -249,6 +249,49 @@ describe('passive live session lifecycle', () => {
 			expect(entered.service.getRuntime()).toMatchObject({mapObservation:{mapId:900,fromMs:AT+2*MIN},mapIntervals:[{mapId:866,fromMs:AT,toMs:AT+2*MIN}]});
 			const restored = await restart(entered,entered.service,AT+5*MIN);
 			expect(restored.getRuntime()).toMatchObject({mapObservation:null,mapIntervals:[{mapId:866,fromMs:AT,toMs:AT+2*MIN}]}); await restored.dispose();
+			// The same with a session that never took a sample at all: there is no last sample to close at, and the time the host was gone is not one.
+			const unsampled = fixture(); await unsampled.service.start('Test'); await unsampled.service.open(unsampled.source);
+			expect(unsampled.service.getRuntime()).toMatchObject({mapObservation:{mapId:866,fromMs:AT},lastObservationAt:null});
+			const back = await restart(unsampled,unsampled.service,AT+5*MIN);
+			expect(back.getRuntime()).toMatchObject({mapObservation:null,mapIntervals:[]}); await back.dispose();
+		});
+		it('a second restart with nothing played since the first adds nothing', async () => {
+			const f = fixture(); await f.service.start('Test'); await play(f,f.service,EPOCH,AT,MIN);
+			const first = await restart(f,f.service,AT+5*MIN); const once = structuredClone(first.getRuntime()!.mapIntervals);
+			const second = await restart(f,first,AT+10*MIN);
+			expect(once).toEqual([{mapId:866,fromMs:AT,toMs:AT+MIN}]);
+			expect(second.getRuntime()).toMatchObject({mapObservation:null,mapIntervals:once}); await second.dispose();
+		});
+		it('never ends the interval after the host\'s present: a last sample stamped ahead of the clock closes it at the clock', async () => {
+			// The store takes no record saved before the one it has, so a host whose clock is behind the last save recovers nothing. What
+			// can be ahead of the clock is the stamp of the last sample: here it says minute 2 and was stored at minute 1.
+			const f = fixture(); await f.service.start('Test'); await f.service.presence(true); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
+			f.setNow(AT+MIN); await expect(f.service.commit(f.sample(1,2,{observedAt:new Date(AT+2*MIN).toISOString()}))).resolves.toBe('stored');
+			expect(f.service.getRuntime()).toMatchObject({lastObservationAt:new Date(AT+2*MIN).toISOString(),persistedAt:AT+MIN});
+			const restored = await restart(f,f.service,AT+90_000);
+			expect(restored.getRuntime()?.mapIntervals).toEqual([{mapId:866,fromMs:AT,toMs:AT+90_000}]);
+			expect(isLiveSessionRuntimeRecord(restored.getRuntime())).toBe(true); await restored.dispose();
+		});
+		it('keeps the last 256 intervals when restarts alone fill the record, which stays valid and marked as partial, and its note is still written', async () => {
+			const epoch = (index: number): string => `E${String(index).padStart(20,'0')}A`; const CYCLE = 10*MIN; const CYCLES = 260;
+			const f = fixture(); await f.service.start('Test'); let service = f.service;
+			// Every cycle: a minute played on the map, then the host is gone until the next one. Each restart closes one interval.
+			for (let index = 0; index < CYCLES; index += 1) {
+				await play(f,service,epoch(index),AT+index*CYCLE,MIN);
+				service = await restart(f,service,AT+index*CYCLE+5*MIN);
+			}
+			const record = service.getRuntime()!;
+			expect(record.mapIntervals).toHaveLength(256); expect(record.mapCoveragePartial).toBe(true); expect(isLiveSessionRuntimeRecord(record)).toBe(true);
+			// The oldest four were dropped; what is kept is whole and in order.
+			expect(record.mapIntervals[0]).toEqual({mapId:866,fromMs:AT+4*CYCLE,toMs:AT+4*CYCLE+MIN});
+			expect(record.mapIntervals[255]).toEqual({mapId:866,fromMs:AT+(CYCLES-1)*CYCLE,toMs:AT+(CYCLES-1)*CYCLE+MIN});
+			// One more stretch and the end of the session: still 256, and the evidence is one a note can carry.
+			await play(f,service,epoch(CYCLES),AT+CYCLES*CYCLE,MIN); await service.stop(AT+CYCLES*CYCLE+MIN);
+			const ended = service.getRuntime()!;
+			expect(ended.mapIntervals).toHaveLength(256); expect(ended.mapIntervals[255]).toEqual({mapId:866,fromMs:AT+CYCLES*CYCLE,toMs:AT+CYCLES*CYCLE+MIN});
+			expect(isLiveSessionRuntimeRecord(ended)).toBe(true);
+			const payload = await prepareLiveSessionPayload({record:ended,journal:service.getJournal(),locale:'es',outputFolder:'Tyrian'});
+			expect(payload?.mapIntervals).toHaveLength(256); expect(payload?.mapCoveragePartial).toBe(true); await service.dispose();
 		});
 	});
 	describe('«Por hora» needs 15 observed minutes, whatever the last sample or a gap in between', () => {
@@ -747,6 +790,25 @@ describe('passive live session lifecycle', () => {
 		expect(rendered, 'the finished session renders its note').toMatchObject({ status: 'ok', session: { endedAt: new Date(AT + 1000).toISOString(), observationCount: 1 } });
 		if (rendered.status !== 'ok') throw new Error('unreachable');
 		await expect(inspectLiveSessionNote(rendered.note.content), 'and the note reads back as valid evidence').resolves.toMatchObject({ status: 'ok' });
+		await f.service.dispose();
+	});
+	it.each([1, 5, 400])('keeps that last observation on its map in the summary, with the map closed %d ms before it was stamped', async (late) => {
+		// The same session, on map 866 from start to end, its one change worth 20 s: the map is closed at the presence's last frame
+		// and the change is stamped after it. One map and all the value on it, not a row of no identified map holding the value.
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));
+		f.setNow(AT + 1000); await f.service.commit(f.sample(1, 2));
+		await f.service.updatePrices([{ itemId: 12147, unitCopper: 1000 }], new Date(AT + 1000).toISOString());
+		f.setNow(AT + 5000); await expect(f.service.stop(AT + 1000 - late)).resolves.toBe(true);
+		const record = f.service.getRuntime()!;
+		expect(record).toMatchObject({ endedAt: new Date(AT + 1000 - late).toISOString(), mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 1000 - late }] });
+		const session = await prepareLiveSessionPayload({ record, journal: f.service.getJournal(), locale: 'es', outputFolder: 'Tyrian' });
+		if (session === null) throw new Error('No payload.');
+		expect(session).toMatchObject({ endedAt: new Date(AT + 1000).toISOString(), mapIntervals: [{ mapId: 866, toMs: AT + 1000 - late }] });
+		const summary = await renderLiveSessionSummary({ session, locale: 'es', outputFolder: 'Tyrian', fullNotePath: 'Tyrian/sessions/live.md', itemMeta: { 12147: { flags: [], type: 'CraftingMaterial' } }, utcOffsetMinutes: () => 120 });
+		if (summary.status !== 'ok') throw new Error(summary.reason);
+		expect(summary.note.content).toContain('- Valor neto de objetos observados: 0g 20s 0c\n');
+		expect(summary.note.content).toContain('\n## Mapas\n\nMapa 866 · tiempo observado: 1 s\n');
+		expect(summary.note.content).not.toContain('identificado');
 		await f.service.dispose();
 	});
 });
