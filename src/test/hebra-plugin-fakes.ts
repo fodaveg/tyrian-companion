@@ -220,6 +220,8 @@ export function createFakeLibrary(options: { libraryId?: string; rootId?: string
 				return note ? [{
 					id: note.id, title: note.title, excerpt: '', createdAt: note.createdAt, updatedAt: note.updatedAt,
 					favorite: false, locked: note.locked, folderId: note.folderId, trashedAt: note.trashedAt, archivedAt: note.archivedAt,
+					// Since API 1.1: the stored revision and the hash of the body, without reading it.
+					revision: revisionOf(note), bodySha256: revisionOf(note).bodySha256,
 				}] : [];
 			});
 		},
@@ -246,6 +248,8 @@ export function createFakeLibrary(options: { libraryId?: string; rootId?: string
 		async notesRewriteBatch(entries) {
 			const written: string[] = [];
 			const stale: string[] = [];
+			// What was written, with the revision it left: confirmed in the same write (a later API adds it).
+			const committed: Array<{ id: string; body: string; revision: { localSeq: number; bodySha256: string } }> = [];
 			for (const entry of entries) {
 				writes.push(`notesRewriteBatch:${entry.id}`);
 				const current = notes.get(entry.id);
@@ -259,11 +263,12 @@ export function createFakeLibrary(options: { libraryId?: string; rootId?: string
 					continue;
 				}
 				const derived = titleOf(entry.body);
-				store(entry.body, current.folderId, entry.id, false, derived === '' ? current.title : derived);
+				const saved = store(entry.body, current.folderId, entry.id, false, derived === '' ? current.title : derived);
 				written.push(entry.id);
+				committed.push({ id: entry.id, body: saved.body, revision: revisionOf(saved) });
 			}
 			for (const id of written) emit({ kind: 'note-changed', id, change: 'saved' });
-			return { written, stale };
+			return { written, stale, committed };
 		},
 		async noteMove(id, folderId) {
 			const current = notes.get(id);
@@ -348,12 +353,25 @@ export function createFakeLibrary(options: { libraryId?: string; rootId?: string
 			putBlob(bytes);
 			return { sha256: hash, byteLength: bytes.length, alreadyPresent };
 		},
+		// `PluginVault` gained these after the API the adapter was written against (1.0.0). The
+		// adapter calls none of them, so this fake models none: a call fails the test that makes it.
+		noteMoveIfUnchanged: () => notModelled('noteMoveIfUnchanged'),
+		noteTrashIfUnchanged: () => notModelled('noteTrashIfUnchanged'),
+		noteRestore: () => notModelled('noteRestore'),
+		noteRestoreIfUnchanged: () => notModelled('noteRestoreIfUnchanged'),
+		folderMoveIfUnchanged: () => notModelled('folderMoveIfUnchanged'),
+		folderRenameIfUnchanged: () => notModelled('folderRenameIfUnchanged'),
+		folderTrashEmpty: () => notModelled('folderTrashEmpty'),
 		onChange(listener) {
 			listeners.add(listener);
 			return () => { listeners.delete(listener); };
 		},
 	};
 	return library;
+}
+
+function notModelled(what: string): never {
+	throw new Error(`fake library: «${what}» is not modelled; the adapter was never expected to call it.`);
 }
 
 /** Hebra's localStorage key prefix for module and plugin data. */
@@ -432,6 +450,40 @@ export interface TyrianTestApiOptions {
 	confirmUserHost?: (host: string) => boolean | Promise<boolean>;
 	appleMobile?: boolean;
 	version?: string;
+	/**
+	 * True: a Hebra with the main view (plugin API 1.3.0), which is what the package's fake is.
+	 * Default false: a Hebra before it (`asHebraWithoutMainView`), where the plugin has its three
+	 * views of always. Every test that is not about the main view runs there, so that path keeps
+	 * being tested against the API it has to keep working on.
+	 */
+	mainView?: boolean;
+}
+
+/**
+ * `api` as a Hebra before the main view gives it (plugin API 1.2.0): that `apiVersion`, `has` answers
+ * false to `'ui.view.main'`, as it does to any name it does not know, and `ui.updateView` and
+ * `ui.updateViewSection` do not exist. Such a Hebra takes a `placement: 'main'` view without a word
+ * and shows it nowhere, and ignores what follows the id in `revealView`; here both THROW, because
+ * the plugin must never send either without the feature and a silent test would not say so.
+ */
+export function asHebraWithoutMainView(api: HebraPluginApi): HebraPluginApi {
+	const ui = { ...api.ui };
+	Reflect.deleteProperty(ui, 'updateView');
+	Reflect.deleteProperty(ui, 'updateViewSection');
+	ui.registerView = (view) => {
+		if (view.placement === 'main') throw new Error(`A Hebra before 1.3.0 was sent the main view «${view.id}».`);
+		return api.ui.registerView(view);
+	};
+	ui.revealView = (id: string, ...rest: unknown[]) => {
+		if (rest.some((argument) => argument !== undefined)) throw new Error(`A Hebra before 1.3.0 was asked for a section of «${id}».`);
+		api.ui.revealView(id);
+	};
+	return {
+		...api,
+		apiVersion: '1.2.0',
+		has: (capability) => (capability as string) !== 'ui.view.main' && api.has(capability),
+		ui,
+	};
 }
 
 export interface TyrianTestApi {
@@ -467,9 +519,10 @@ export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianT
 	const openedNotes: string[] = [];
 	const restarts = { count: 0, result: true };
 	const secretsAvailable = keychain !== null && capabilities.includes('secrets');
+	const hebra = options.mainView === true ? fake.api : asHebraWithoutMainView(fake.api);
 	const api: HebraPluginApi = {
-		...fake.api,
-		has: (capability) => (capability === 'secrets' ? secretsAvailable : fake.api.has(capability)),
+		...hebra,
+		has: (capability) => (capability === 'secrets' ? secretsAvailable : hebra.has(capability)),
 		vault: library,
 		storage: createHebraStorage(local, 'tyrian-companion', library.libraryId()),
 		secrets: keychain === null ? fake.api.secrets : createFakeSecrets(keychain),

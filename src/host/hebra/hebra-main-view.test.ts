@@ -3,6 +3,7 @@ import { createFakePluginApi } from 'hebra-plugin-api/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { withFakeMainView } from '../../test/hebra-main-view-fake';
+import { asHebraWithoutMainView } from '../../test/hebra-plugin-fakes';
 import type { TyrianSectionsViewRegistration, TyrianViewSectionRegistration } from '../tyrian-host';
 import { createHebraTyrianUi } from './hebra-host-ui';
 import { hebraHasMainView } from './hebra-main-view';
@@ -16,12 +17,13 @@ import { createMemorySecretsBackend, createPreloadedSecrets } from './secrets';
 /** The id every test here registers its main view with. */
 const MAIN = 'tyrian-main-view';
 
-/** A Hebra before the main view: the package's fake, which is the 1.0.0 API. */
+/** A Hebra before the main view (plugin API 1.2.0 and earlier): `has` says no and the newer methods are not there. */
 async function olderHebra() {
 	const fake = createFakePluginApi({ id: 'tyrian-companion', capabilities: ['editor'] });
-	const mainView = hebraHasMainView(fake.api);
-	const ui = createHebraTyrianUi({ api: fake.api, mainView, ...await rest() });
-	return { fake, ui, mainView };
+	const api = asHebraWithoutMainView(fake.api);
+	const mainView = hebraHasMainView(api);
+	const ui = createHebraTyrianUi({ api, mainView, ...await rest() });
+	return { fake, api, ui, mainView };
 }
 
 /** A Hebra with the main view. */
@@ -380,7 +382,7 @@ describe('the fake of the main view, against the contract it was written from', 
 			...extra,
 		};
 	}
-	const hebraUi = (widened: Awaited<ReturnType<typeof hebra>>['widened']): PluginUiWithMainView => widened.api.ui as unknown as PluginUiWithMainView;
+	const hebraUi = (widened: Awaited<ReturnType<typeof hebra>>['widened']): PluginUiWithMainView => widened.api.ui;
 
 	it('hands `mountSection` an element already in the document, and keeps no wrapper once nothing is mounted', async () => {
 		const { widened } = await hebra();

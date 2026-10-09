@@ -71,9 +71,11 @@ describe('createTyrianHttpPort', () => {
 		expect(calls).toEqual([]);
 	});
 
-	it('where this Hebra has no plugin HTTP (the web) every request refuses at once, webhook included', async () => {
+	it('where this Hebra has no plugin HTTP (the web before Hebra\'s relay) every request refuses at once, webhook included', async () => {
 		const { calls, http } = recordingHttp();
-		const { api, fake } = createTyrianTestApi({ http, platform: 'web', confirmUserHost: () => true });
+		const { api: web, fake } = createTyrianTestApi({ http, platform: 'web', confirmUserHost: () => true });
+		// The package's fake is a Hebra that already has HTTP on the web, through its relay; one before it says no.
+		const api = { ...web, has: (capability: Parameters<typeof web.has>[0]) => capability !== 'http' && web.has(capability) };
 		expect(api.has('http')).toBe(false);
 		const port = createTyrianHttpPort(api);
 		await expect(port.request({ url: 'https://api.guildwars2.com/v2/build', method: 'GET' })).rejects.toThrow(HTTP_UNAVAILABLE);

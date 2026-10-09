@@ -890,7 +890,7 @@ describe('createTyrianVaultPort: saveNote (the support package)', () => {
 		const library = setupLibrary();
 		const first = await open(library);
 		await first.vault.saveNote(PATH, body(1));
-		const rewrite = vi.fn(async () => ({ written: [] as string[], stale: ['x'] }));
+		const rewrite = vi.fn(async () => ({ written: [] as string[], stale: ['x'], committed: [] }));
 		const create = vi.fn(library.noteCreate.bind(library));
 		const emitter = withEmitter(library, { notesRewriteBatch: rewrite, noteCreate: create });
 		const vault = createTyrianVaultPort({ library: emitter.library, index: await freshIndex(), rootFolderId: ROOT });

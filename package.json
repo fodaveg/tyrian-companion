@@ -78,7 +78,7 @@
 		"fake-indexeddb": "^6.2.5",
 		"globals": "^17.6.0",
 		"happy-dom": "^20.14.5",
-		"hebra-plugin-api": "github:fodaveg/hebra-plugin-api#v1.0.0",
+		"hebra-plugin-api": "github:fodaveg/hebra-plugin-api#v1.3.0",
 		"jiti": "^2.6.1",
 		"obsidian": "1.13.1",
 		"typescript": "^5.8.3",

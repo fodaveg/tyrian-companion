@@ -425,8 +425,10 @@ describe('createHebraHost: the other ports', () => {
 		await createHebraHost(deps(test));
 		// Asked once, when the host is built: the answer decides the capability and the port together.
 		expect(has.mock.calls.filter(([name]) => (name as string) === 'ui.view.main')).toHaveLength(1);
-		// The test API declares exactly what `hebra.json` does, and the host is built over it without the feature among them.
-		expect(test.fake.api.has('ui.view.main' as never)).toBe(false);
+		// And it is asked, not declared: a Hebra that has it says yes with the very same declared capabilities.
+		const newer = createTyrianTestApi({ mainView: true });
+		expect(newer.api.has('ui.view.main')).toBe(true);
+		expect((await createHebraHost(deps(newer))).host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true, mainView: true });
 	});
 
 	it('secrets preloaded from the backend; settings and localStorage through api.storage', async () => {
@@ -531,7 +533,7 @@ describe('createHebraHost: the other ports', () => {
 		const onOnlineChange = vi.spyOn(test.api.env, 'onOnlineChange');
 		const handle = await createHebraHost(deps(test));
 		const env = handle.host.environment;
-		expect([env.platform, env.hostVersion, env.pluginId, env.pluginVersion, env.isOnline()]).toEqual(['macos', '1.0.0', 'tyrian-companion', '0.2.21', true]);
+		expect([env.platform, env.hostVersion, env.pluginId, env.pluginVersion, env.isOnline()]).toEqual(['macos', '1.2.0', 'tyrian-companion', '0.2.21', true]);
 		const listener = vi.fn();
 		env.onConnectivityChange(listener);
 		expect(onOnlineChange).toHaveBeenCalledWith(listener);
