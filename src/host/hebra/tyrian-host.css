@@ -134,6 +134,43 @@
   max-width: 84rem;
 }
 
+/* El panel de Sesión a dos columnas desde 560 px en la pantalla principal (en `styles.css`
+   pasa a dos desde 600, pensado para una hoja de Obsidian). La columna 3 mide 593 px en la
+   ventana mínima de escritorio y nunca menos, así que en escritorio sale siempre a dos; un
+   teléfono (390) sigue en una, y una tablet cambia al cruzar 560.
+   La consulta va contra un contenedor CON NOMBRE, el padre de la sección, que mide lo que
+   la columna: así no depende de qué contenedor sin nombre quede más cerca de cada elemento
+   ni del relleno de la carcasa, que es de 8 px por debajo de 600 y de 16 por encima (ese
+   relleno se mide contra el hueco de la sección, que mide lo mismo: a 593 de columna el
+   panel dispone de 577 px). Las cuatro reglas son las del bloque de 600 de `styles.css`,
+   con el hueco delante para ganarle por especificidad a la disposición en una columna. */
+.hebra-module-view-main {
+  container-name: tyrian-main-view;
+}
+@container tyrian-main-view (min-width: 560px) {
+  .hebra-module-view-main .tyrian-live-session--panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    column-gap: var(--size-4-8);
+  }
+  .hebra-module-view-main
+    :is(
+      .tyrian-live-session__head,
+      .tyrian-live-session__notices,
+      .tyrian-live-session__objects,
+      .tyrian-live-session__timeline
+    ) {
+    grid-column: 1 / -1;
+  }
+  .hebra-module-view-main .tyrian-live-session__stats {
+    align-content: start;
+  }
+  .hebra-module-view-main .tyrian-live-session--panel .tyrian-live-session__rows {
+    columns: 2;
+    column-gap: var(--size-4-8);
+  }
+}
+
 /* Dentro de la nota el bloque va sobre la hoja (--paper), no sobre --panel. La
    tarjeta usa la misma superficie que el bloque de código de Hebra (app.css). */
 .markdown-editor .cm-hebra-module-code-block {
