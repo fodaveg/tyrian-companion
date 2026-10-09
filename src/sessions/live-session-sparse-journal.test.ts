@@ -218,6 +218,39 @@ describe('which journals a payload of each version accepts', () => {
 		const withCut = clone(sparse); withCut.journal.splice(at, 0, empty(previous, previous.cursor + 1, true));
 		expect(isStoredLiveSessionPayload(withCut)).toBe(true);
 	});
+	// `sampleCount` is kept <= the journal length in these, so the length rule is not what rejects them: only the cursor and window rules are.
+	it('version 1 keeps its cursor rule: a hole, or an empty entry out of sequence, is invalid even when the sample count fits', async () => {
+		const dense = await settle(1);
+		const at = dense.journal.findIndex((entry, index) => index > 5 && entry.observations.length === 0 && dense.journal[index + 1]?.observations.length === 0 && dense.journal[index + 1]?.epoch === entry.epoch);
+		expect(at).toBeGreaterThan(5);
+		const hole = clone(dense); hole.journal.splice(at, 1); hole.sampleCount = hole.journal.length;
+		expect(isStoredLiveSessionPayload(hole)).toBe(false);
+		const last = dense.journal.at(-1)!; const outOfSequence = clone(dense);
+		outOfSequence.journal.push(empty(last, last.cursor + 2)); outOfSequence.sampleCount = outOfSequence.journal.length;
+		expect(isStoredLiveSessionPayload(outOfSequence)).toBe(false);
+		const inSequence = clone(dense); inSequence.journal.push(empty(last, last.cursor + 1)); inSequence.sampleCount = inSequence.journal.length;
+		expect(isStoredLiveSessionPayload(inSequence)).toBe(true);
+	});
+	it('version 1 keeps its window rule: an observation whose window starts a second late is invalid', async () => {
+		const shifted = clone(await settle(1)); const row = shifted.journal.flatMap((entry) => entry.observations).find((observation) => observation.cursor === 10)!;
+		expect(Date.parse(row.observedAt) - Date.parse(row.windowStartAt)).toBe(1000);
+		row.windowStartAt = row.observedAt;
+		expect(shifted.sampleCount).toBeLessThanOrEqual(shifted.journal.length);
+		expect(isStoredLiveSessionPayload(shifted)).toBe(false);
+	});
+	it('version 2 asks for its baseline: no epoch starts anywhere but at cursor 0, and a counted session has an entry', async () => {
+		const sparse = await settle(2);
+		const headless = clone(sparse); const baseline = headless.journal.find((entry) => entry.epoch === EPOCH_2 && entry.cursor === 0)!;
+		baseline.cursor = 5; // still a cut, so no longer an empty sample either: only "an epoch starts at 0" can reject it
+		expect(baseline.breakBefore).toBe(true);
+		expect(isStoredLiveSessionPayload(headless)).toBe(false);
+		const bare = clone(sparse);
+		Object.assign(bare, { journal: [], observationCount: 0, totals: [], sampleCount: 0 });
+		Object.assign(bare.valuation, { positiveItemValueKnownCopper: 0, netItemValueKnownCopper: 0, coinNetCopper: null, knownNetValueCopper: null, unpricedItemIds: [] });
+		expect(isStoredLiveSessionPayload(bare)).toBe(true);
+		bare.sampleCount = 101;
+		expect(isStoredLiveSessionPayload(bare)).toBe(false);
+	});
 	it('a dense journal labelled version 2 is invalid for the same reason', async () => {
 		const dense = clone(await settle(1)); dense.version = 2;
 		expect(isStoredLiveSessionPayload(dense)).toBe(false);

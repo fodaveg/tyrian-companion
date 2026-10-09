@@ -225,7 +225,9 @@ function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 		|| (value.magicFind.source === 'unknown') !== (value.magicFind.value === null)) return false;
 	const journal = value.journal;
 	const sparse = value.version === 2;
-	if (!Array.isArray(journal) || !sparse && journal.length < value.sampleCount) return false;
+	// Version 2 cannot bound `sampleCount` from above (the samples that changed nothing have no entry), but a session that counted
+	// samples has at least its baseline: the entry of cursor 0 is never dropped.
+	if (!Array.isArray(journal) || !sparse && journal.length < value.sampleCount || sparse && value.sampleCount > 0 && journal.length === 0) return false;
 	const ids = new Set<string>(); const cursors = new Set<string>(); const observations: LiveObservationV1[] = [];
 	const lastInEpoch = new Map<string,{cursor: number;observedAt: string}>();
 	let previousAt = value.startedAt;

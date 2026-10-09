@@ -224,6 +224,13 @@ describe('live note write verification and CAS', () => {
 });
 
 describe('portable payload byte compatibility', () => {
+	it('writes, when nobody names a payload version, exactly the version 1 bytes of the golden fixtures (turning the writer on is a deliberate edit of this test)', async () => {
+		const pinned = await rendered(); const byDefault = await renderLiveSessionNote(fixture());
+		if (byDefault.status !== 'ok') throw new Error(byDefault.reason);
+		expect(byDefault.note.content).toContain('tc_payload_version: 1\n');
+		expect(byDefault.note.content).toBe(pinned.note.content);
+		expect(byDefault.session.version).toBe(1);
+	});
 	it('keeps payload and export bytes for notes that predate a manual build descriptor', async () => {
 		const input = fixture(); const {session,note} = await rendered(input);
 		expect(session).not.toHaveProperty('declaredBuild');
