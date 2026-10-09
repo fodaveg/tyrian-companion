@@ -49,7 +49,7 @@ infiere carga correcta de la versión que figure en disco. Nexus no ofrece autoa
 este addon: con GW2 cerrado, sustituir manualmente la DLL por el artifact elegido y comprobar la
 versión cargada al reabrir. Publicar Companion no sustituye la DLL local de Nexus.
 
-Icono en Hebra (desde la 0.6.11; con borde desde la 0.6.12; desde la 0.6.15, el dibujo a color con un solo contorno): `hebra.json` lleva el monstruo como `iconImage` (PNG de 128 px versionado en
+Icono en Hebra (desde la 0.6.11; con borde desde la 0.6.12; desde la 0.6.15, el dibujo a color con un solo contorno; desde la 0.6.17, recorte nuevo desde la acuarela con un borde negro): `hebra.json` lleva el monstruo como `iconImage` (PNG de 128 px versionado en
 `assets/hebra-icon.png`, comprobado en el empaquetado contra los límites de Hebra) y `sword` como respaldo en
 `icon`. Una Hebra anterior a ese campo lo ignora y pinta la espada; Obsidian sigue con la espada.
 
