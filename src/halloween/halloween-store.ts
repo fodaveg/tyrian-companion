@@ -36,8 +36,12 @@ export const HALLOWEEN_DB_NAME = 'tyrian-companion-halloween';
  * `meta-v1`. Purely additive: no existing store is read or rewritten.
  * v8 adds `alert-deliveries-v1` (H18.38: what became of each alert on its way to the game), keyed
  * like `emitted-alerts-v1`. Same rule: purely additive, no existing row is read or rewritten.
+ * v9 changes NO store, index or row. Notices may now carry `bidUnitCopper`/`vendorUnitCopper` instead
+ * of `netUnitCopper` (F6); a 0.6.16 client would reject that shape by exact keys and report
+ * `store_corrupt`. Raising the version makes it fail on open with `VersionError`, which it already
+ * maps to `future_schema` / `store_future`, before reading any row.
  */
-export const HALLOWEEN_DB_VERSION = 8;
+export const HALLOWEEN_DB_VERSION = 9;
 export const HALLOWEEN_OBSERVATION_STORE = 'observations-v1';
 export const HALLOWEEN_SEEN_STORE = 'seen-items-v1';
 export const HALLOWEEN_NOTICE_STORE = 'notices-v1';

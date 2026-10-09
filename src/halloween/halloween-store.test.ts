@@ -254,6 +254,42 @@ describe('IndexedDbHalloweenStore', () => {
 		store.close();
 	});
 
+	it('upgrades a v8 database with 0.6.16 notices to v9 without touching them, and keeps reading and writing', async () => {
+		const factory = new IDBFactory(); const name = dbName('v8-to-v9');
+		const raw = await new Promise<IDBDatabase>((resolve, reject) => {
+			const request = factory.open(name, 8);
+			request.onupgradeneeded = () => {
+				const db = request.result;
+				const notices = db.createObjectStore(HALLOWEEN_NOTICE_STORE, { keyPath: ['vaultId', 'accountRef', 'noticeId'] });
+				notices.createIndex('by-scope-observed', ['vaultId', 'accountRef', 'observedAt']);
+			};
+			request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+		});
+		const legacy = { ...notice('legacy-v8', [5]),
+			items: [{ itemId: 5, quantity: 250, name: null, netUnitCopper: 6, priceStatus: 'quote' as const,
+				reasons: [{ code: 'first_seen' as const }] }] };
+		const tx = raw.transaction(HALLOWEEN_NOTICE_STORE, 'readwrite');
+		tx.objectStore(HALLOWEEN_NOTICE_STORE).put(legacy);
+		await transactionDone(tx); raw.close();
+
+		const store = await IndexedDbHalloweenStore.open(factory, name);
+		expect(HALLOWEEN_DB_VERSION).toBe(9);
+		expect(await store.readNotices('vault', 'account')).toEqual([legacy]);
+		await store.enqueueNotice({ ...notice('new-v9', [6]), episodeId: 'episode-v9',
+			items: [{ itemId: 6, quantity: 1, name: null, bidUnitCopper: 8, vendorUnitCopper: null, priceStatus: 'quote' as const,
+				reasons: [{ code: 'first_seen' as const }] }] });
+		expect((await store.readNotices('vault', 'account')).map(({ noticeId }) => noticeId).sort()).toEqual(['legacy-v8', 'new-v9']);
+		store.close();
+		const check = await openRaw(factory, name, HALLOWEEN_DB_VERSION);
+		expect(check.version).toBe(9); check.close();
+	});
+
+	it('a client that only knows version 8 gets a VersionError on a v9 database and nothing is read or rewritten', async () => {
+		const factory = new IDBFactory(); const name = dbName('old-client');
+		(await IndexedDbHalloweenStore.open(factory, name)).close();
+		await expect(IndexedDbHalloweenStore.open(factory, name, 8)).rejects.toMatchObject({ failure: 'future_schema' });
+	});
+
 	it('fails closed for a future database, corruption and a closed/versionchanged adapter', async () => {
 		const factory = new IDBFactory();
 		const future = dbName('future');
