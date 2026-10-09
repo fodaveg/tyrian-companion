@@ -12,6 +12,8 @@ export const SUMMARY_STAPLE_MIN_ENTRIES = 10;
 export const SUMMARY_FOLD_COVERAGE = 0.9;
 /** An unobserved stretch shorter than this is a cut: the note counts the cuts together instead of writing each one. */
 export const SUMMARY_SHORT_GAP_MS = 30_000;
+/** Observed time on no identified map counts as a stretch from this much on; under it, it is two clocks disagreeing at an edge. */
+export const SUMMARY_MIN_UNIDENTIFIED_MS = 1_000;
 const GOLD_CURRENCY_ID = 1;
 /**
  * `/v2/items` flags that take an item out of «sell now» and out of the value: the ones that forbid TRADING it, which is what the
@@ -48,6 +50,41 @@ export interface SummaryGapStretch {
 	currencyOnlyMs: number;
 }
 
+/** One row of the map breakdown: an identified map, or (`mapId` null) what was observed on no identified map. */
+export interface SummaryMapRow {
+	mapId: number | null;
+	/** Item time observed there: the map's intervals cut to the observed stretches, each instant once. */
+	observedMs: number;
+	/** Net value of the item changes observed there, valued and excluded exactly as `netCopper`. Null when the summary has no value to state. */
+	netCopper: number | null;
+	/** That value per hour observed THERE. Null under the 15 observed minutes every live rate needs, or without a value. */
+	perHourCopper: number | null;
+	/** When the session first entered it; for no identified map, the first instant observed on none. Null when there is none. */
+	firstAt: string | null;
+}
+/** One step of the session's route: the map entered (null: a stretch observed on no identified map) and when. */
+export interface SummaryMapVisit { mapId: number | null; at: string }
+/**
+ * The session by map. One definition for every figure in it:
+ * - time is OBSERVED item time, the same the session's pace is over: a map's intervals less the unobserved stretches of items,
+ *   so `rows` and `unidentified` add up to `observedItemsMs` (see `unidentified`);
+ * - value is `netCopper` split by where each change was observed, so `rows` and `unidentified` add up to it exactly;
+ * - an item change belongs to the map whose interval holds its hour (after the interval's start, up to its end: a sample stamped at
+ *   the instant the map changed is the last one of the map left), and to no identified map when none does.
+ */
+export interface SummaryMapBreakdown {
+	/** The identified maps, one row each however many times it was entered, in the order they were first entered. */
+	rows: SummaryMapRow[];
+	/**
+	 * What was observed on no identified map: the observed time the rows leave (never under zero: where the intervals on record hold
+	 * more than the observed time counted, the rows are what the records say) and the value no interval holds. Always present; the
+	 * note writes it when it has something to say.
+	 */
+	unidentified: SummaryMapRow;
+	/** Every entry in order, returns to a map already visited included; a new interval of the map the session was already on is no entry. */
+	visits: SummaryMapVisit[];
+}
+
 export interface SummaryFigures {
 	durationMs: number;
 	/** 0..1, observed item time over the session's length. */
@@ -61,6 +98,8 @@ export interface SummaryFigures {
 	maps: { mapId: number; ms: number }[];
 	/** Time on the maps of `maps` together: what the session spent on a map the plugin could identify. */
 	mapsMs: number;
+	/** Observed time, value and pace by map, and the order the maps were entered in. */
+	mapBreakdown: SummaryMapBreakdown;
 	/** Sellable items that came in, best value first (priced ones before unpriced). */
 	sellable: SummaryItemRow[];
 	/** Items that came in and are bound to the account (or soulbound on acquire): out of the list and out of the value. */
@@ -145,6 +184,8 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	const itemTotals = session.totals.filter((row) => row.kind === 'item');
 	const sellable: SummaryItemRow[] = []; const unpriced: SummaryItemRow[] = []; const boundItemIds: number[] = []; const unknownBindingIds: number[] = [];
 	let netCopper = 0; let positiveCopper = 0; let pricedAny = false;
+	// Every item that enters `netCopper`, with what it adds: the map breakdown splits exactly this, and nothing else.
+	const counted = new Map<number, CountedItem>();
 	for (const row of itemTotals) {
 		const info = meta[row.idNumber];
 		if (info === undefined && row.net !== 0) unknownBindingIds.push(row.idNumber);
@@ -157,7 +198,7 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 		// whole pile less the commission on its total for a gross one. Null is an item the session could not price.
 		const value = unit === undefined || unit === null ? null : basis === 'instant_sell_net' ? unit * row.net : liveItemValueCopper(basis, unit, row.net);
 		const priced = value !== null;
-		if (priced) { netCopper += value; if (row.net !== 0) pricedAny = true; }
+		if (priced) { netCopper += value; counted.set(row.idNumber, { unitCopper: unit!, net: row.net, valueCopper: value }); if (row.net !== 0) pricedAny = true; }
 		if (row.net <= 0) continue;
 		const entry: SummaryItemRow = { itemId: row.idNumber, quantity: row.net, valueCopper: value, container: info?.type === 'Container' };
 		if (priced) { sellable.push(entry); positiveCopper += value; } else unpriced.push(entry);
@@ -206,7 +247,8 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	const wholePercent = durationMs > 0 ? Math.min(100, Math.floor(observedMs * 100 / durationMs)) : 0;
 	return { durationMs, observedShare: durationMs > 0 ? Math.min(1, observedMs / durationMs) : 0,
 		observedPercent: stretches.length > 0 ? Math.min(99, wholePercent) : wholePercent,
-		mainMapId: summaryMainMap(session), maps, mapsMs: maps.reduce((sum, row) => sum + row.ms, 0), sellable, boundItemIds, unpriced, unknownBindingIds,
+		mainMapId: summaryMainMap(session), maps, mapsMs: maps.reduce((sum, row) => sum + row.ms, 0),
+		mapBreakdown: mapBreakdown(session, counted, !valueless), sellable, boundItemIds, unpriced, unknownBindingIds,
 		netCopper: valueless ? null : netCopper, positiveCopper, noPrices,
 		perHour: { copper: valueless ? null : perHour(netCopper), reason: rateReason }, withoutDominant: valueless ? null : withoutDominant, staple, goldCopper, currencies,
 		dominantCurrency: positiveCopper === 0 ? gainedCurrency : null,
@@ -214,6 +256,82 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 		salesSession,
 		alerts, stretches, gapsMs: stretches.reduce((sum, stretch) => sum + stretch.ms, 0), gapStretches: stretches.length,
 		gapsCurrencyOnlyMs: stretches.reduce((sum, stretch) => sum + stretch.currencyOnlyMs, 0) };
+}
+
+/** An item that enters the summary's net value: its unit price, its net quantity and what that quantity is worth in the session's basis. */
+interface CountedItem { unitCopper: number; net: number; valueCopper: number }
+
+/**
+ * The session by map (see `SummaryMapBreakdown`). `counted` are the items of the net value and `valued` says the summary states
+ * one: without it every value here is null, like the summary's own.
+ */
+function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<number, CountedItem>, valued: boolean): SummaryMapBreakdown {
+	const start = Date.parse(session.startedAt); const end = Date.parse(session.endedAt);
+	const iso = (ms: number): string => new Date(ms).toISOString();
+	// What was observed of items: the session less the union of its unobserved item records.
+	const observed: { from: number; to: number }[] = []; let seen = start;
+	for (const gap of session.gaps.filter((row) => row.channels.includes('items')).map((row) => ({ from: Date.parse(row.fromAt), to: Date.parse(row.toAt ?? session.endedAt) })).sort((a, b) => a.from - b.from)) {
+		if (gap.from > seen) observed.push({ from: seen, to: Math.min(gap.from, end) });
+		seen = Math.max(seen, gap.to);
+	}
+	if (end > seen) observed.push({ from: seen, to: end });
+	const observedIn = (from: number, to: number): number => observed.reduce((sum, stretch) => sum + Math.max(0, Math.min(to, stretch.to) - Math.max(from, stretch.from)), 0);
+	const firstObservedIn = (from: number, to: number): number | null => {
+		for (const stretch of observed) { const at = Math.max(from, stretch.from); if (at < Math.min(to, stretch.to)) return at; }
+		return null;
+	};
+	// The identified intervals in order, each instant once: one that starts before the previous ended starts where that one ended.
+	const intervals: { mapId: number; from: number; to: number }[] = []; let until = start;
+	for (const row of [...session.mapIntervals].sort((a, b) => a.fromMs - b.fromMs || a.toMs - b.toMs)) {
+		const from = Math.max(row.fromMs, until); const to = Math.min(row.toMs, end);
+		if (row.mapId === null || to <= from) continue;
+		intervals.push({ mapId: row.mapId, from, to }); until = to;
+	}
+
+	const rows = new Map<number, SummaryMapRow>(); const visits: SummaryMapVisit[] = [];
+	const enter = (mapId: number | null, at: number): void => { if (visits.at(-1)?.mapId !== mapId) visits.push({ mapId, at: iso(at) }); };
+	// Between two intervals the session was on no identified map: a step of the route when something was observed there.
+	const between = (from: number, to: number): void => { if (observedIn(from, to) >= SUMMARY_MIN_UNIDENTIFIED_MS) enter(null, firstObservedIn(from, to)!); };
+	let edge = start;
+	for (const interval of intervals) {
+		between(edge, interval.from); enter(interval.mapId, interval.from);
+		const row = rows.get(interval.mapId) ?? { mapId: interval.mapId, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null, firstAt: iso(interval.from) };
+		row.observedMs += observedIn(interval.from, interval.to); rows.set(interval.mapId, row); edge = interval.to;
+	}
+	between(edge, end);
+	const unidentified: SummaryMapRow = { mapId: null, netCopper: valued ? 0 : null, perHourCopper: null, firstAt: visits.find((visit) => visit.mapId === null)?.at ?? null,
+		observedMs: Math.max(0, session.observedItemsMs - [...rows.values()].reduce((sum, row) => sum + row.observedMs, 0)) };
+
+	if (valued) {
+		// Units of each counted item by where they were observed. What no entry of the journal accounts for is on no identified map.
+		const units = new Map<number, Map<number | null, number>>();
+		for (const entry of session.journal) {
+			const at = Date.parse(entry.observedAt);
+			const mapId = intervals.find((interval) => at > interval.from && at <= interval.to)?.mapId ?? null;
+			for (const row of entry.observations) {
+				if (row.kind !== 'item' || !counted.has(row.idNumber)) continue;
+				const byMap = units.get(row.idNumber) ?? new Map<number | null, number>();
+				byMap.set(mapId, (byMap.get(mapId) ?? 0) + row.delta); units.set(row.idNumber, byMap);
+			}
+		}
+		const basis = session.valuation.priceBasis;
+		for (const [itemId, item] of counted) {
+			const byMap = units.get(itemId) ?? new Map<number | null, number>();
+			const placed = [...byMap.values()].reduce((sum, quantity) => sum + quantity, 0);
+			if (placed !== item.net) byMap.set(null, (byMap.get(null) ?? 0) + item.net - placed);
+			// Each map's units valued in the session's basis. A net price is per unit, so the parts add up to the item's value; a gross
+			// one takes the commission over each sale's total and they need not: what is left over goes where most units were observed.
+			const parts = [...byMap].map(([mapId, quantity]) => ({ mapId, quantity, copper: basis === 'instant_sell_net' ? item.unitCopper * quantity : liveItemValueCopper(basis, item.unitCopper, quantity) ?? 0 }));
+			const largest = parts.reduce<typeof parts[number] | null>((best, part) => best === null || Math.abs(part.quantity) > Math.abs(best.quantity) ? part : best, null);
+			if (largest !== null) largest.copper += item.valueCopper - parts.reduce((sum, part) => sum + part.copper, 0);
+			for (const part of parts) { const row = part.mapId === null ? unidentified : rows.get(part.mapId)!; row.netCopper = (row.netCopper ?? 0) + part.copper; }
+		}
+		// The pace of a map is over the time observed on THAT map, under the one rule of every live rate.
+		for (const row of [...rows.values(), unidentified]) {
+			if (liveItemRateEligible({ observedItemsMs: row.observedMs })) row.perHourCopper = Math.round((row.netCopper ?? 0) * 3_600_000 / row.observedMs);
+		}
+	}
+	return { rows: [...rows.values()], unidentified, visits };
 }
 
 /**
