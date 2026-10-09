@@ -427,6 +427,25 @@ describe('createHebraHost: the other ports', () => {
 		expect(handle.host.notify.sound()).toBe('unavailable');
 	});
 
+	it('dispose closes the AudioContext the sound channel opened', async () => {
+		const closed: number[] = [];
+		const param = { setValueAtTime: () => undefined, linearRampToValueAtTime: () => undefined };
+		class FakeAudioContext {
+			currentTime = 0; destination = {}; state = 'running';
+			createOscillator() { return { type: '', frequency: param, connect: () => undefined, start: () => undefined, stop: () => undefined }; }
+			createGain() { return { gain: param, connect: () => undefined }; }
+			close() { closed.push(1); }
+		}
+		const test = createTyrianTestApi();
+		const handle = await createHebraHost(deps(test, {
+			window: Object.assign(Object.create(window) as Window, { AudioContext: FakeAudioContext }),
+		}));
+		expect(handle.host.notify.sound()).toBe('played');
+		expect(closed).toEqual([]);
+		handle.dispose();
+		expect(closed, 'the AudioContext stayed open after dispose').toEqual([1]);
+	});
+
 	it('notify.system without Hebra notifications (iPhone, the web) uses the browser Notification', async () => {
 		const created: string[] = [];
 		class FakeNotification {

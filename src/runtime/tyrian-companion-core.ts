@@ -3755,7 +3755,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				deliver: () => {
 					requireLiveCollector();
 					const outcome = this.host.notify.sound();
-					// A suspended context still resuming will sound the tone once it lands: accepted, not failed.
+					// A suspended context still resuming: accepted, not failed. The report counts it as delivered
+					// and is not corrected later; if the resume rejects or lands past its margin, no tone sounds.
 					if (outcome === 'pending') return ALERT_CHANNEL_PENDING;
 					if (outcome !== 'played') {
 						throw new Error('No audio output was available.');

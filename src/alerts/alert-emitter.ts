@@ -28,7 +28,10 @@ export interface AlertDeliveryContext {
 
 /**
  * What a channel returns (directly or resolved) to say "accepted, delivery completes later".
- * The emitter counts it as delivered, lists it in `pending` and never marks it failed.
+ * The emitter counts it as delivered, lists it in `pending` and never marks it failed. It is not
+ * resolved afterwards: if the delivery then does not happen (a sound whose `resume()` rejects or
+ * settles past its margin never sounds), the report already said delivered. The system
+ * notification has the same treatment.
  */
 export const ALERT_CHANNEL_PENDING = 'pending' as const;
 

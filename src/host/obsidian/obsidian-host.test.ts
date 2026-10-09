@@ -340,3 +340,30 @@ describe('host-neutral vault ports', () => {
 		expect(offref).toHaveBeenCalledTimes(4);
 	});
 });
+
+describe('ObsidianHost sound', () => {
+	it('registers one unload callback that closes the AudioContext the first sound opened', () => {
+		const closed: number[] = [];
+		const param = { setValueAtTime: () => undefined, linearRampToValueAtTime: () => undefined };
+		class FakeAudioContext {
+			currentTime = 0; destination = {}; state = 'running';
+			createOscillator() { return { type: '', frequency: param, connect: () => undefined, start: () => undefined, stop: () => undefined }; }
+			createGain() { return { gain: param, connect: () => undefined }; }
+			close() { closed.push(1); }
+		}
+		vi.stubGlobal('window', { AudioContext: FakeAudioContext });
+		const { plugin } = fakePlugin();
+		const registered: Array<() => void> = [];
+		(plugin as unknown as { register: (callback: () => void) => void }).register = (callback) => { registered.push(callback); };
+		const { notify } = createObsidianHost(plugin);
+
+		expect(registered, 'nothing opened yet, nothing to close').toHaveLength(0);
+		expect(notify.sound()).toBe('played');
+		notify.sound();
+		expect(registered, 'registered once, not once per alert').toHaveLength(1);
+		expect(closed).toEqual([]);
+
+		registered[0]!();
+		expect(closed, 'the AudioContext stayed open after unload').toEqual([1]);
+	});
+});

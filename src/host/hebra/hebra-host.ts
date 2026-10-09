@@ -518,11 +518,15 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		flush: () => secrets.flush(),
 		dispose: () => {
 			disposed = true;
-			disarmRestart();
-			unwatchIndexedFiles();
-			vaultPort?.dispose();
-			background.dispose();
-			closeBrowserAlertAudio(win);
+			try {
+				disarmRestart();
+				unwatchIndexedFiles();
+				vaultPort?.dispose();
+				background.dispose();
+			} finally {
+				// Last, but not skipped when an earlier dispose throws: a live AudioContext outlives a reload.
+				closeBrowserAlertAudio(win);
+			}
 		},
 		closeStorage: () => {
 			deps.pathIndexKv.close?.();

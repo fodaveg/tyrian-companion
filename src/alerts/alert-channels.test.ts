@@ -235,6 +235,30 @@ describe('H13.4 sound channel', () => {
 				});
 			});
 
+			describe('an abandoned resume that settles late', () => {
+				afterEach(() => { vi.useRealTimers(); });
+
+				it('does not free the slot of the newer attempt, nor sound a second tone', async () => {
+					vi.useFakeTimers();
+					vi.setSystemTime(new Date('2026-10-09T10:00:00Z'));
+					const settles: Array<() => void> = [];
+					const { factory, calls, scheduled } = suspendedContext(() => new Promise<void>((resolve) => { settles.push(resolve); }));
+
+					playAlertSound(factory);
+					vi.setSystemTime(Date.now() + 6_000);
+					playAlertSound(factory);
+					expect(calls.resume, 'the second alert did not retry').toBe(2);
+
+					// The first attempt finally settles, long past its margin, context still suspended.
+					settles[0]!();
+					await vi.advanceTimersByTimeAsync(0);
+					vi.setSystemTime(Date.now() + 1_000);
+					expect(playAlertSound(factory)).toBe('pending');
+					expect(calls.resume, 'the old attempt freed the newer attempt\'s slot').toBe(2);
+					expect(scheduled.starts).toEqual([]);
+				});
+			});
+
 			it('waits for a thenable that is not an instance of Promise', async () => {
 				const { context, scheduled } = fakeAudioContext();
 				const handle = context as unknown as { state: string; resume: () => unknown };
