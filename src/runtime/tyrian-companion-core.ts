@@ -93,11 +93,12 @@ import { PublicCatalogService } from '../catalog/public-catalog-service';
 import { createCatalogCacheAdapter } from '../catalog/persistent-catalog-cache';
 import type { StorageDelta } from '../account/storage-delta-model';
 import { managedAssetsBundle, sha256Text } from '../assets/generic-assets';
+import { RETIRED_MANAGED_ASSETS } from '../assets/retired-assets';
 import { ManagedAssetsManager, type ManagedAssetsResult } from '../assets/managed-assets';
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
 import {
 	decideManagedAssetsAutoUpdate,
-	decideManagedAssetsLoadCreate,
+	decideManagedAssetsOnLoad,
 	planManagedAssets,
 	type ManagedAssetsAutoUpdateDecision,
 	type ManagedAssetsInspection,
@@ -408,7 +409,7 @@ export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
 export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
 /** Commands `onload` registers besides `PRODUCT_ACTION_IDS`; the load journal counts both. */
 /** Version of the managed-assets bundle the core hands to the manager, at start and on a language change. */
-const MANAGED_ASSETS_BUNDLE_VERSION = 7;
+const MANAGED_ASSETS_BUNDLE_VERSION = 8;
 
 const STANDALONE_COMMAND_IDS =[ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID] as const;
 
@@ -823,7 +824,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.managedAssets = new ManagedAssetsManager(
 			labelledVault(host.vault, 'Managed asset'),
 			host.vault.configDir,
-			{ bundleVersion: MANAGED_ASSETS_BUNDLE_VERSION, locale: this.settings.language, assets: await managedAssetsBundle() },
+			{ bundleVersion: MANAGED_ASSETS_BUNDLE_VERSION, locale: this.settings.language, assets: await managedAssetsBundle(), retired: RETIRED_MANAGED_ASSETS },
 		);
 		const vaultId = await sha256Text(host.vault.canonicalIdentity().normalize('NFC'));
 		this.vaultId = vaultId;
@@ -2558,13 +2559,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
-	 * David, 9 Oct 2026 («que las cree solo»): on load, a Base the bundle added since the installed
-	 * manifest is created, and nothing else. Narrower than the after-sync update on purpose: the
-	 * decision (`decideManagedAssetsLoadCreate`) returns nothing unless the manifest is ready, at least
-	 * one asset is a pure `create` and every other asset is untouched, so an update, an edited or
-	 * deleted Base, a conflict or an installation that never applied assets writes nothing and warns
-	 * nobody. It needs the same root as the sync path (installed, equal to the output folder, no legacy)
-	 * and a collector (consult never writes Bases). It runs after `runtimeReady`, off the boot path.
+	 * David, 9 Oct 2026 («que las cree solo», «borrarlas si no las editaste»): on load the managed Bases
+	 * follow the bundle in exactly two ways, and in no other: a Base the manifest does not register is
+	 * created, and a Base the bundle retired is trashed if it is still as the plugin wrote it (an edited
+	 * one is kept on disk and only stops being managed). Narrower than the after-sync update on purpose:
+	 * `decideManagedAssetsOnLoad` returns nothing unless the manifest is ready and EVERY other asset is
+	 * untouched, so an update, an edited or deleted Base, a conflict or an installation that never applied
+	 * assets writes nothing and warns nobody. It needs the same root as the sync path (installed, equal to
+	 * the output folder, no legacy) and a collector (consult never writes Bases). It runs after
+	 * `runtimeReady`, off the boot path, through the Settings «Aplicar» path.
 	 */
 	private async createNewManagedAssetsOnLoad(): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host) || this.unloaded || !this.runtimeReady || consulting(this)) return;
@@ -2573,13 +2576,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			|| this.settings.legacyManagedAssetsRoot !== null || this.settings.legacyOutputFolder !== null) return;
 		const perform = async () => {
 			// An unreadable manifest throws: `run` records the failure and the boot's fire-and-forget swallows it.
-			const creates = decideManagedAssetsLoadCreate(await this.managedAssets.inspect(root));
-			if (creates.length === 0) return undefined;
+			const { created, retired } = decideManagedAssetsOnLoad(await this.managedAssets.inspect(root));
+			if (created.length + retired.length === 0) return undefined;
 			await this.applyManagedAssets();
-			if (this.managedAssetsView.status === 'ready') {
-				this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.managedAssetsAutoCreated',
-					{ names: creates.map((entry) => entry.asset.relativePath).join(', ') }), 'managed_assets_updated');
-			}
+			if (this.managedAssetsView.status !== 'ready') return undefined;
+			const translator = createTranslator(this.settings.language);
+			const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
+			if (created.length > 0) this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoCreated',
+				{ names: created.map((entry) => entry.asset.relativePath).join(', ') }), 'managed_assets_updated');
+			const trashed = retired.filter((entry) => this.host.vault.file(entry.path) === null).map((entry) => name(entry.path));
+			const kept = retired.filter((entry) => this.host.vault.file(entry.path) !== null).map((entry) => name(entry.path));
+			if (trashed.length > 0) this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoRetired', { names: trashed.join(', ') }), 'managed_assets_updated');
+			if (kept.length > 0) this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoReleased', { names: kept.join(', ') }), 'managed_assets_updated');
 			return undefined;
 		};
 		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'on_load_create' }, perform) ?? perform());
@@ -5048,7 +5056,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// invalidates local advisor memory but never captures again implicitly.
 			this.invalidateInventoryAdvisor();
 			if (this.managedAssets) {
-				this.managedAssets.setBundle({ bundleVersion: MANAGED_ASSETS_BUNDLE_VERSION, locale: nextSettings.language, assets: await managedAssetsBundle() });
+				this.managedAssets.setBundle({ bundleVersion: MANAGED_ASSETS_BUNDLE_VERSION, locale: nextSettings.language, assets: await managedAssetsBundle(), retired: RETIRED_MANAGED_ASSETS });
 			}
 			this.settingTab.refreshForLocaleChange();
 		}

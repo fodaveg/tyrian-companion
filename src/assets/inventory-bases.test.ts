@@ -18,13 +18,11 @@ import {
 const CONFIG_DIR = 'vault-config';
 
 describe('inventory Base assets', () => {
-	it('packages Inventory and Materials once per locale in the single managed bundle', async () => {
+	it('packages Inventory once per locale in the single managed bundle', async () => {
 		const assets = await inventoryManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
 			{ id: 'inventory-base', kind: 'base', contentVersion: 10, locale: 'es', relativePath: 'Inventory.base' },
 			{ id: 'inventory-base', kind: 'base', contentVersion: 10, locale: 'en', relativePath: 'Inventory.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 10, locale: 'es', relativePath: 'Materials.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 10, locale: 'en', relativePath: 'Materials.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) {
@@ -40,7 +38,7 @@ describe('inventory Base assets', () => {
 			return { asset, document: parse(asset.bytes) as BaseDocument };
 		});
 		for (const { document } of documents) validateBaseDocument(document);
-		for (const basename of ['Inventory.base', 'Materials.base']) {
+		for (const basename of ['Inventory.base']) {
 			const localized = documents.filter(({ asset }) => asset.relativePath === basename);
 			expect(baseShape(localized[0]!.document)).toEqual(baseShape(localized[1]!.document));
 		}
@@ -103,7 +101,7 @@ describe('inventory Base assets', () => {
 			const document = parse(asset.bytes) as BaseDocument;
 			const keys = Object.keys(document.properties ?? {});
 			expect(keys.filter((key) => !/^(?:note|formula|file)\./u.test(key)), asset.relativePath).toEqual([]);
-			if (asset.id === 'inventory-base' || asset.id === 'materials-base') {
+			if (asset.id === 'inventory-base') {
 				expect(keys.filter((key) => key.startsWith('note.'))).toEqual([
 					'note.tc_source', 'note.tc_character', 'note.tc_quantity', 'note.tc_free_quantity',
 					'note.tc_actionable_quantity', 'note.tc_item_type', 'note.tc_item_rarity',
@@ -125,7 +123,7 @@ describe('inventory Base assets', () => {
 		}
 	});
 
-	it('provides account-wide and source-specific inventory views plus a materials-only view', async () => {
+	it('provides account-wide and source-specific inventory views, the materials one included', async () => {
 		for (const asset of await inventoryManagedAssets()) {
 			const document = parse(asset.bytes) as BaseDocument;
 			const filters = document.views.flatMap((view) => flatFilters(view.filters));
@@ -141,8 +139,6 @@ describe('inventory Base assets', () => {
 					'tc_actionable_quantity > 0',
 					'tc_recommendation == "sell_at_season"',
 				]));
-			} else {
-				expect(flatFilters(document.filters)).toContain('tc_source == "materials"');
 			}
 		}
 	});
@@ -151,7 +147,7 @@ describe('inventory Base assets', () => {
 		const vault = new MemoryBaseVault();
 		const current = await managedAssetsBundle();
 		const legacy = await Promise.all(current.map(async (asset) => {
-			if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
+			if (asset.id !== 'inventory-base') return asset;
 			const bytes = asset.bytes
 				.replace('version=10', 'version=1')
 				.replace(/^ {2}note\.(tc_[a-z0-9_]+):$/gmu, '  $1:');
@@ -162,21 +158,15 @@ describe('inventory Base assets', () => {
 
 		const v5 = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 5, locale: 'es', assets: current });
 		expect((await v5.preview('Tyrian Companion', 'upgrade')).steps).toEqual([
-			{ id: 'halloween-base', path: 'Tyrian Companion/Bases/Halloween.base', status: 'unchanged' },
 			{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base', status: 'update' },
-			{ id: 'materials-base', path: 'Tyrian Companion/Bases/Materials.base', status: 'update' },
 			{ id: 'session-summaries-base', path: 'Tyrian Companion/Bases/Session summaries.base', status: 'unchanged' },
-			{ id: 'sessions-base', path: 'Tyrian Companion/Bases/Sessions.base', status: 'unchanged' },
 			{ id: 'wallet-base', path: 'Tyrian Companion/Bases/Wallet.base', status: 'unchanged' },
 		]);
 		expect((await v5.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
 		const inspection = await v5.inspect('Tyrian Companion');
 		expect(inspection.manifest).toMatchObject({ bundleVersion: 5, state: 'ready' });
-		expect(inspection.manifest?.assets.filter(({ id }) => id === 'inventory-base' || id === 'materials-base'))
-			.toEqual(expect.arrayContaining([
-				expect.objectContaining({ id: 'inventory-base', contentVersion: 10 }),
-				expect.objectContaining({ id: 'materials-base', contentVersion: 10 }),
-			]));
+		expect(inspection.manifest?.assets.filter(({ id }) => id === 'inventory-base'))
+			.toEqual([expect.objectContaining({ id: 'inventory-base', contentVersion: 10 })]);
 		const installed = parse(vault.contents.get('Tyrian Companion/Bases/Inventory.base')!) as BaseDocument;
 		expect(installed.properties['formula.item_link']).toBeDefined();
 		expect(installed.properties.tc_item_name).toBeUndefined();
@@ -418,7 +408,7 @@ function mutateRecommendationLabel(bytes: string): string {
 async function selfConsistentBundleAt(contentVersion: number, transform: (bytes: string) => string): Promise<PackagedAsset[]> {
 	const current = await managedAssetsBundle();
 	return await Promise.all(current.map(async (asset) => {
-		if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
+		if (asset.id !== 'inventory-base') return asset;
 		const bytes = transform(asset.bytes).replace(`version=${String(asset.contentVersion)}`, `version=${String(contentVersion)}`);
 		return { ...asset, contentVersion, bytes, contentHash: await sha256Text(bytes) };
 	}));

@@ -1,0 +1,30 @@
+import { sha256Text } from '../assets/managed-asset-hash';
+import { managedAssetMarker, type PackagedAsset } from '../assets/managed-assets-model';
+
+const SAMPLE_BASE_BODY = `filters:
+  and:
+    - file.hasTag("gw2/session")
+    - tc_schema >= 1
+    - tc_kind == "gw2_farming_session"
+views:
+  - type: table
+    name: Sessions
+    order:
+      - tc_started_at
+      - tc_duration_ms
+      - tc_classification
+`;
+
+/**
+ * A single-asset sample for the tests that exercise the generic managed-assets engine (H5.6). It is the
+ * Base the plugin shipped as `Sessions.base` until the 0.6.16 bundle retired it; it is no longer in the
+ * packaged bundle, which is why it lives with the tests.
+ */
+export async function genericManagedAssets(): Promise<PackagedAsset[]> {
+	const draft = {
+		id: 'sessions-base', kind: 'base', contentVersion: 2, locale: 'neutral',
+		relativePath: 'Sessions.base',
+	} as const;
+	const bytes = `${managedAssetMarker(draft)}\n${SAMPLE_BASE_BODY}`;
+	return [{ ...draft, bytes, contentHash: await sha256Text(bytes) }];
+}

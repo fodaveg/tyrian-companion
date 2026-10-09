@@ -205,7 +205,7 @@ the Vault. The command palette additionally exposes the same preview/apply pair 
 explicit commands, **Preview inventory Vault sync** and **Sync inventory to the Vault**, for scripting
 or running the write without opening the view. Opening the view performs none of these actions.
 
-Managed assets bundle v4 introduced localized `Inventory.base` and `Materials.base`; bundle v5 writes
+Managed assets bundle v4 introduced localized `Inventory.base` and `Materials.base` (the latter retired in bundle 8); bundle v5 writes
 frontmatter display labels under Obsidian's canonical `note.tc_*` property namespace. Their filters
 still use stable `tc_*` marker/schema keys instead of a folder predicate, and their value formula
 remains numeric so sorting is based on copper rather than formatted text. See the [activation and migration guide](docs/INVENTORY-VAULT-SYNC.md).
@@ -597,8 +597,7 @@ when the old ready v2 manifest proves ownership and the new root contains the ex
 semantically equivalent set with no foreign file; a durable relocation journal is written before the
 pointer changes or the origin is detached. Ordinary install remains unable to adopt markerless files.
 Bundle v5 keeps the generic `.base`, localized
-`Halloween.base`, and localized `Inventory.base`/`Materials.base` through the same manifest/CAS path. The Halloween Base reads only session-note schema v2
-fields, preserves literal zeroes, and excludes incomplete evidence from performance views.
+`Halloween.base`, and localized `Inventory.base`/`Materials.base` through the same manifest/CAS path (bundle 8 retires `Sessions.base`, `Halloween.base` and `Materials.base`: an unedited installed file is trashed on update, an edited one is kept unmanaged).
 
 Bundle v7 adds the localized `Session summaries.base` («Sesiones» / «Sessions»): a table of the summary notes written when a live session closes (filter `file.hasTag("gw2/session-summary")` and `tyrian_summary_version >= 2`, never a folder; newest first, with a second «Por mapa» / «By map» view grouped by map, without averages). An installation whose manifest is v6 receives it as a new entry (`create`) through Preview/Apply or Repair; the rest stays `unchanged`. Going back to 0.6.12 afterwards leaves the managed assets in `conflict` (its exact-set check does not know the new entry) until they are repaired; the Base files themselves stay in the vault, the same cost bundles v4 and v5 had.
 

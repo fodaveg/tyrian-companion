@@ -1,6 +1,6 @@
 # Inventario durable y Bases
 
-Tyrian Companion puede generar notas de inventario que consumen `Inventory.base` y `Materials.base`.
+Tyrian Companion puede generar notas de inventario que consumen `Inventory.base` (su vista «Materiales» cubre lo que hacía la antigua `Materials.base`, retirada del paquete en la 0.6.16).
 La operación es manual: abrir el plugin o el Inventory Advisor no consulta la cuenta ni modifica el
 vault.
 
@@ -10,7 +10,7 @@ vault.
    `inventories`.
 2. En Ajustes de Tyrian Companion, elige una carpeta de salida portable.
 3. En **Assets gestionados**, ejecuta **Vista previa** y después **Aplicar**. El bundle instala
-   `Bases/Inventory.base` y `Bases/Materials.base` en el idioma activo.
+   `Bases/Inventory.base` (y las demás Bases del paquete) en el idioma activo.
 4. Abre **Asesor de inventario** y localiza **Inventario durable**.
 
 ## Sincronizar
@@ -43,7 +43,7 @@ vault.
 4. Abre `Bases/Inventory.base`. Comprueba las vistas Todos, Personajes, Compartido, Banco y
    Materiales. Filtra `Personaje` para verificar que la cantidad y el valor corresponden solo a esa
    fila.
-5. Abre `Bases/Materials.base` y comprueba la vista agregada por objeto del almacén de materiales.
+5. Abre `Bases/Inventory.base`, vista «Materiales», y comprueba la vista agregada por objeto del almacén de materiales.
 
 **Vía alternativa (paleta de comandos).** Fuera del Asesor, la paleta expone por separado
 **Previsualizar inventario en el vault** y **Sincronizar inventario con el vault**

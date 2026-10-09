@@ -17,7 +17,8 @@ import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
-import { genericManagedAssets, sha256Text } from './assets/generic-assets';
+import { sha256Text } from './assets/generic-assets';
+import { genericManagedAssets } from './test/managed-asset-fixture';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
 import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
 import { managedAssetMarker } from './assets/managed-assets-model';
@@ -1616,7 +1617,7 @@ describe('a new Base of the bundle is created on load, and nothing else (9 Oct 2
 		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' });
 		await harness.applyManagedAssets();
 		const messages: string[] = [];
-		const plugin = Object.assign(harness, { managedAssets: manager, collectorMode: 'collector' as 'collector' | 'consult',
+		const plugin = Object.assign(harness, { managedAssets: manager, collectorMode: 'collector',
 			emitNotice: (message: string, source: string) => { messages.push(`${source}: ${message}`); } });
 		manager.setBundle({ bundleVersion: 2, locale: language, assets: [sessions, extra] });
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.

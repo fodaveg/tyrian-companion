@@ -13,6 +13,7 @@ import {
 	normalizeManagedAssetPath,
 	planManagedAssets,
 	type InspectedAsset,
+	type InspectedRetirement,
 	type ManagedAssetEntry,
 	type ManagedAssetsInspection,
 	type ManagedAssetsManifest,
@@ -20,6 +21,7 @@ import {
 	type ManagedOperationKind,
 	type ManagedOperationStep,
 	type PackagedAsset,
+	type RetiredAsset,
 } from './managed-assets-model';
 
 export interface ManagedAssetFile { path: string }
@@ -43,6 +45,8 @@ export interface ManagedAssetsBundle {
 	bundleVersion: number;
 	locale: 'es' | 'en';
 	assets: PackagedAsset[];
+	/** Assets an earlier bundle shipped and this one does not: recognised in the manifest and retired, never created. */
+	retired?: readonly RetiredAsset[];
 }
 
 /** Explicit, journaled Vault-only asset lifecycle. Construction and inspection setup have no I/O. */
@@ -144,7 +148,54 @@ export class ManagedAssetsManager {
 		const manifestStatus = manifestRead.status === 'missing' ? 'missing'
 			: manifestRead.status === 'unsupported' ? 'unsupported_manifest'
 			: manifestRead.status === 'conflict' || !manifestMatchesRoot ? 'conflict' : manifest!.state;
-		return { root: validatedRoot, manifestPath: targetManifestPath, manifest, manifestStatus, bundleVersion: this.bundle.bundleVersion, locale: this.bundle.locale, assets };
+		const retirements = manifest === null || manifest.state !== 'ready' ? [] : await this.inspectRetirements(manifest);
+		return { root: validatedRoot, manifestPath: targetManifestPath, manifest, manifestStatus, bundleVersion: this.bundle.bundleVersion, locale: this.bundle.locale, assets,
+			...(retirements.length > 0 ? { retirements } : {}) };
+	}
+
+	/**
+	 * Registered entries of a retired asset. A file the plugin wrote and nobody edited (same bytes, same
+	 * meaning once Obsidian reformatted it, or any published version of that Base) is `retire`; an edited
+	 * or already deleted one is `release`: it is only unregistered, never a conflict.
+	 */
+	private async inspectRetirements(manifest: ManagedAssetsManifest): Promise<InspectedRetirement[]> {
+		const retiredIds = new Set((this.bundle.retired ?? []).map((asset) => asset.id));
+		const live = new Set(this.bundle.assets.map((asset) => asset.id));
+		const found: InspectedRetirement[] = [];
+		for (const entry of manifest.assets) {
+			if (!retiredIds.has(entry.id) || live.has(entry.id)) continue;
+			const file = this.vault.file(entry.path);
+			found.push({ entry, path: entry.path, status: file !== null && await this.isAsWritten(file, entry) ? 'retire' : 'release' });
+		}
+		return found;
+	}
+
+	private async isAsWritten(file: ManagedAssetFile, entry: ManagedAssetEntry): Promise<boolean> {
+		const content = normalizeLf(await this.vault.read(file));
+		if (await this.matchesInstalledContent(content, await sha256Text(content), entry)) return true;
+		if (entry.kind !== 'base') return false;
+		const meaning = await baseSemanticHash(content);
+		return meaning !== null && this.published.some((row) => row.assetId === entry.id && row.locale === entry.locale && row.semanticHash === meaning);
+	}
+
+	/**
+	 * Retires what `inspectRetirements` found: trashes the unedited files (re-checked right before, then the
+	 * host's own trash, which is reversible in Obsidian and in Hebra) and then drops every retired entry from
+	 * the manifest in one compare-and-swap. Files first: a crash in between leaves entries whose file is gone,
+	 * which the next inspection reads as `release`.
+	 */
+	private async retire(inspection: ManagedAssetsInspection): Promise<boolean> {
+		const manifest = inspection.manifest;
+		const retirements = inspection.retirements ?? [];
+		if (manifest === null || manifest.state !== 'ready' || retirements.length === 0) return true;
+		for (const retirement of retirements) {
+			if (retirement.status !== 'retire') continue;
+			const file = this.vault.file(retirement.path);
+			if (file !== null && await this.isAsWritten(file, retirement.entry)) await this.vault.trashFile(file);
+		}
+		const dropped = new Set(retirements.map(({ entry }) => entry.id));
+		const next: ManagedAssetsManifest = { ...manifest, generation: manifest.generation + 1, assets: manifest.assets.filter((entry) => !dropped.has(entry.id)) };
+		return await this.casManifest(manifest, next) !== null;
 	}
 
 	/** Reads an old managed root only while an explicit removal/move is in progress; it never creates there. */
@@ -328,7 +379,12 @@ export class ManagedAssetsManager {
 			}
 			const plan = planManagedAssets(inspection, kind);
 			if (!plan.canApply) return { status: inspection.manifestStatus === 'applying' ? 'busy' : 'conflict', message: plan.reasons.join(', ') };
-			if (plan.steps.every((step) => isSettled(step.status))) {
+			const retiredAny = (inspection.retirements?.length ?? 0) > 0;
+			if (retiredAny) {
+				if (!await this.retire(inspection)) return { status: 'conflict', message: 'The managed-assets manifest changed.' };
+				inspection = await this.inspect(root);
+			}
+			if (planManagedAssets(inspection, kind).steps.every((step) => isSettled(step.status))) {
 				// Nothing to adopt or create and no manifest: an all-foreign folder must not become "managed".
 				if (inspection.manifestStatus === 'missing') return { status: 'conflict', message: 'No managed asset can be created or adopted.' };
 				if (inspection.manifest?.schemaVersion === 1) {
@@ -338,7 +394,7 @@ export class ManagedAssetsManager {
 					if (inspection.assets.some((entry) => !isSettled(entry.status))) return { status: 'conflict', message: 'A managed asset changed during manifest migration.' };
 					return { status: 'applied', inspection, ownership: 'existing' };
 				}
-				return { status: 'unchanged', inspection, ownership: 'existing' };
+				return { status: retiredAny ? 'applied' : 'unchanged', inspection, ownership: 'existing' };
 			}
 			const operation = await this.operation(inspection, kind);
 			let journal = await this.begin(inspection, operation);
@@ -620,6 +676,10 @@ export class ManagedAssetsManager {
 		} catch { return { status: 'conflict' }; }
 	}
 
+	private retiredAsPackaged(): PackagedAsset[] {
+		return (this.bundle.retired ?? []).map((asset) => ({ ...asset, contentVersion: 0, bytes: '', contentHash: '' }));
+	}
+
 	private async validManifestRelations(manifest: ManagedAssetsManifest, root: string, legacy = false): Promise<boolean> {
 		if (manifest.root !== root) return false;
 		const assetIds = new Set<string>();
@@ -629,7 +689,8 @@ export class ManagedAssetsManager {
 		const relatedAssets = finalState ? assetsForManifestLocale : this.bundle.assets;
 		for (const entry of manifest.assets) {
 			const folded = entry.path.normalize('NFC').toLocaleLowerCase();
-			const asset = relatedAssets.find((candidate) => candidate.id === entry.id && candidate.kind === entry.kind &&
+			// A retired asset may still be registered by a manifest of an older bundle until the next apply drops it.
+			const asset = [...relatedAssets, ...(finalState ? this.retiredAsPackaged() : [])].find((candidate) => candidate.id === entry.id && candidate.kind === entry.kind &&
 				candidate.locale === entry.locale && entry.path === managedAssetPath(root, candidate));
 			if (assetIds.has(entry.id) || assetPaths.has(folded) || !asset ||
 				(finalState && entry.locale !== 'neutral' && entry.locale !== manifest.locale) ||

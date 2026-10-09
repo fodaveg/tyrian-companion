@@ -99,6 +99,7 @@ function managedAssetsStatusKey(status: ManagedAssetsVisualStatus): TranslationK
 		occupied_unowned: 'settings.assets.status.occupied_unowned', newer_than_plugin: 'settings.assets.status.newer_than_plugin',
 		unsupported_manifest: 'settings.assets.status.unsupported_manifest', conflict: 'settings.assets.status.conflict',
 		detached: 'settings.assets.status.detached',
+		retire: 'settings.assets.status.retire', release: 'settings.assets.status.release',
 	};
 	return keys[status];
 }

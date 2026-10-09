@@ -318,7 +318,7 @@ encima de 250 se muestran con el mínimo observado, no como la capacidad exacta 
   asumido.
 
 **Evidencia mínima:** captura de Ajustes con y sin capacidad configurada; captura de
-`Bases/Materials.base` mostrando el mínimo observado.
+`Bases/Inventory.base` (vista «Materiales») mostrando el mínimo observado.
 
 **Versión probada:** ______________
 

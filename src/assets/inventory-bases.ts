@@ -240,29 +240,11 @@ function inventoryBody(locale: InventoryBaseLocale): string {
 `;
 }
 
-function materialsBody(locale: InventoryBaseLocale): string {
-	const copy = COPY[locale];
-	return `${commonBody(locale).replace('    - tc_active == true\n', '    - tc_active == true\n    - tc_source == "materials"\n')}views:
-  - type: table
-    name: "${copy.materials}"
-    order: [formula.item_icon, formula.item_link, formula.recommendation_label, formula.reason_label, tc_price_quoted_at, tc_recommendation_until, tc_sell_window_from, tc_sell_window_to, tc_quantity, tc_free_quantity, tc_actionable_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
-    sort:
-      - property: tc_total_sell_copper
-        direction: DESC
-      - property: tc_item_name
-        direction: ASC
-    rowHeight: medium
-    columnSize:
-      formula.item_icon: 52
-`;
-}
-
 /** Locale variants share stable paths and are installed by the managed-assets engine. */
 export async function inventoryManagedAssets(): Promise<PackagedAsset[]> {
 	const assets: PackagedAsset[] = [];
 	for (const [id, relativePath, body] of [
 		['inventory-base', 'Inventory.base', inventoryBody],
-		['materials-base', 'Materials.base', materialsBody],
 	] as const) {
 		for (const locale of ['es', 'en'] as const) {
 			// H14.8: the `note.tc_captured_at` → `file.mtime` column swap shipped in 0.1.30 without

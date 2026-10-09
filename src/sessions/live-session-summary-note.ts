@@ -263,7 +263,7 @@ function gapReason(reason: StoredLiveSessionPayloadV1['gaps'][number]['reason'],
  */
 function iconText(icon: string | undefined): string {
 	// A path must follow the host directly (so no `user@` or `.evil` suffix) and nothing may need escaping.
-	return icon !== undefined && /^https:\/\/render\.guildwars2\.com\/[^\s"\\@\u0000-\u001f]*$/u.test(icon) ? JSON.stringify(icon) : 'null';
+	return icon !== undefined && /^https:\/\/render\.guildwars2\.com\/[^\s"\\@\p{Cc}]*$/u.test(icon) ? JSON.stringify(icon) : 'null';
 }
 
 function escapeMarkdown(value: string): string { return value.replace(/[\p{Cc}]/gu, ' ').replace(/[\\|<>]/gu, (match) => `\\${match}`); }

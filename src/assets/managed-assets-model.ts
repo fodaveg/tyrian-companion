@@ -8,7 +8,11 @@ export type AssetLocale = 'neutral' | 'es' | 'en';
 export type ManagedAssetKind = 'base' | 'template';
 export type ManagedAssetStatus =
 	| 'create' | 'unchanged' | 'update' | 'missing' | 'recoverable' | 'modified'
-	| 'occupied_unowned' | 'newer_than_plugin' | 'unsupported_manifest' | 'conflict';
+	| 'occupied_unowned' | 'newer_than_plugin' | 'unsupported_manifest' | 'conflict'
+	/** A retired asset (the bundle no longer ships it): its installed file is unedited, so it is trashed and unregistered. */
+	| 'retire'
+	/** A retired asset whose file the user edited or deleted: left as it is, only unregistered. Never a conflict. */
+	| 'release';
 export type ManagedAssetsBlockerReason = Extract<ManagedAssetStatus,
 	'modified' | 'occupied_unowned' | 'newer_than_plugin' | 'unsupported_manifest' | 'conflict'> | 'detached';
 export type ManagedOperationKind = 'install' | 'upgrade' | 'repair' | 'relocate' | 'uninstall';
@@ -22,6 +26,15 @@ export interface PackagedAsset {
 	/** Complete LF-normalized bytes, including the compatible ownership marker. */
 	bytes: string;
 	contentHash: string;
+}
+
+/** A Base the plugin shipped once and no longer does; kept only to recognise (and retire) what it installed. */
+export type RetiredAsset = Pick<PackagedAsset, 'id' | 'kind' | 'locale' | 'relativePath'>;
+
+export interface InspectedRetirement {
+	entry: ManagedAssetEntry;
+	path: string;
+	status: 'retire' | 'release';
 }
 
 export interface ManagedAssetEntry {
@@ -87,6 +100,8 @@ export interface ManagedAssetsInspection {
 	bundleVersion: number;
 	locale: 'es' | 'en';
 	assets: InspectedAsset[];
+	/** Registered assets the bundle retired; absent (or empty) when there are none. */
+	retirements?: InspectedRetirement[];
 }
 
 export interface ManagedAssetsPlan {
@@ -141,7 +156,10 @@ export function planManagedAssets(inspection: ManagedAssetsInspection, kind: Man
 		root: inspection.root,
 		canApply: reasons.length === 0,
 		reasons: [...new Set(reasons)].sort(),
-		steps: inspection.assets.map(({ asset, path, status }) => ({ id: asset.id, path, status })),
+		steps: [
+			...inspection.assets.map(({ asset, path, status }) => ({ id: asset.id, path, status })),
+			...(inspection.retirements ?? []).map(({ entry, path, status }) => ({ id: entry.id, path, status })),
+		],
 	};
 }
 
@@ -177,7 +195,7 @@ export function decideManagedAssetsAutoUpdate(inspection: ManagedAssetsInspectio
 	const pending = inspection.assets.some((entry) => entry.status === 'update' || entry.status === 'create'
 		|| entry.status === 'recoverable'
 		|| (entry.status === 'modified' && (installedVersion.get(entry.asset.id) ?? 0) < entry.asset.contentVersion));
-	if (!pending) return { action: 'none' };
+	if (!pending && (inspection.retirements?.length ?? 0) === 0) return { action: 'none' };
 	const plan = planManagedAssets(inspection, 'upgrade');
 	const missing = inspection.assets.some((entry) => entry.status === 'missing');
 	if (plan.canApply && !missing) return { action: 'apply' };
@@ -185,27 +203,30 @@ export function decideManagedAssetsAutoUpdate(inspection: ManagedAssetsInspectio
 }
 
 /**
- * David, 9 Oct 2026 («que las cree solo»): what the plugin may write on LOAD, narrower than
- * `decideManagedAssetsAutoUpdate` (which also follows updates, after a sync). It answers with the
- * assets to create, or `[]` for «write nothing»:
+ * What the plugin may write on LOAD (David, 9 Oct 2026: «que las cree solo» and «borrarlas si no las
+ * editaste»), narrower than `decideManagedAssetsAutoUpdate` (which also follows updates, after a sync).
+ * Exactly two kinds of step are ever applied by themselves: creating a Base the manifest does not
+ * register, and retiring one the bundle no longer ships (the apply trashes it only if unedited and
+ * otherwise just stops managing it). Both lists are empty, meaning «write nothing», unless:
  *
  * - the manifest is `ready`, so the installation did apply assets at some point (a bare
  *   `managedAssetsRoot` is not proof: the Hebra host adopts the output folder without installing);
- * - at least one asset is `create`: not registered in the manifest and not on disk (a new Base of
- *   the bundle);
  * - EVERY other asset is `unchanged`, or a file the user owns that the manifest declares `excluded`
- *   (the apply already skips it). Anything else (an update, an edit, a deleted Base, a conflict, a
- *   foreign file, a newer manifest) writes nothing at all and warns nobody.
+ *   (the apply already skips it). An update, an edit, a deleted Base, a conflict, a foreign file or a
+ *   newer manifest keeps the whole load quiet, because the apply refuses to run past a blocker and a
+ *   pending update is the sync's business, not the load's;
+ * - no created asset was declared `excluded` (an excluded asset the user deleted also reads `create`).
  */
-export function decideManagedAssetsLoadCreate(inspection: ManagedAssetsInspection): ManagedAssetsInspection['assets'] {
-	if (inspection.manifestStatus !== 'ready' || inspection.manifest === null) return [];
+export function decideManagedAssetsOnLoad(inspection: ManagedAssetsInspection): { created: InspectedAsset[]; retired: InspectedRetirement[] } {
+	const none = { created: [], retired: [] };
+	if (inspection.manifestStatus !== 'ready' || inspection.manifest === null) return none;
 	const excluded = new Set(inspection.manifest.excluded ?? []);
-	const creates = inspection.assets.filter((entry) => entry.status === 'create');
-	// An excluded asset the user has since deleted also reads `create`: the apply would write it back.
-	if (creates.length === 0 || creates.some((entry) => excluded.has(entry.asset.id))) return [];
+	const created = inspection.assets.filter((entry) => entry.status === 'create');
+	const retired = inspection.retirements ?? [];
+	if (created.length + retired.length === 0 || created.some((entry) => excluded.has(entry.asset.id))) return none;
 	const untouched = inspection.assets.every((entry) => entry.status === 'create' || entry.status === 'unchanged'
 		|| (entry.status === 'occupied_unowned' && excluded.has(entry.asset.id)));
-	return untouched ? creates : [];
+	return untouched ? { created, retired } : none;
 }
 
 export function isManagedAssetsManifest(value: unknown): value is ManagedAssetsManifest {
