@@ -1,11 +1,11 @@
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-import { managedAssetsBundle, sha256Text } from './generic-assets';
+import { managedAssetsBundle } from './generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
-import { decideManagedAssetsOnLoad, managedAssetMarker, MANAGED_ASSETS_MANIFEST, type PackagedAsset } from './managed-assets-model';
+import { decideManagedAssetsOnLoad, MANAGED_ASSETS_MANIFEST } from './managed-assets-model';
 import { RETIRED_MANAGED_ASSETS } from './retired-assets';
-import { genericManagedAssets } from '../test/managed-asset-fixture';
+import { legacyRetiredBases } from '../test/managed-asset-fixture';
 
 const CONFIG_DIR = 'vault-config';
 const ROOT = 'Tyrian Companion';
@@ -13,22 +13,10 @@ const BASES = `${ROOT}/Bases`;
 const GONE = ['Sessions.base', 'Halloween.base', 'Materials.base'] as const;
 const STAYS = ['Inventory.base', 'Session summaries.base', 'Wallet.base'] as const;
 
-/** What 0.6.13 to 0.6.15 shipped besides the three Bases that stay: the three that this bundle retires. */
-async function retiredBases(): Promise<PackagedAsset[]> {
-	const [sessions] = await genericManagedAssets();
-	const body = sessions!.bytes.slice(sessions!.bytes.indexOf('\n') + 1);
-	const make = async (id: string, locale: 'es' | 'neutral', relativePath: string): Promise<PackagedAsset> => {
-		const draft = { id, kind: 'base', contentVersion: 1, locale, relativePath } as const;
-		const bytes = `${managedAssetMarker(draft)}\n${body}`;
-		return { ...draft, bytes, contentHash: await sha256Text(bytes) };
-	};
-	return [sessions!, await make('halloween-base', 'es', 'Halloween.base'), await make('materials-base', 'es', 'Materials.base')];
-}
-
 async function installedBefore(options: { withoutSummaries?: boolean } = {}) {
 	const vault = new MemoryVault();
 	const current = await managedAssetsBundle();
-	const previous = [...current.filter((asset) => !options.withoutSummaries || asset.id !== 'session-summaries-base'), ...await retiredBases()];
+	const previous = [...current.filter((asset) => !options.withoutSummaries || asset.id !== 'session-summaries-base'), ...await legacyRetiredBases()];
 	const old = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: options.withoutSummaries ? 6 : 7, locale: 'es', assets: previous });
 	expect((await old.apply(ROOT)).status).toBe('applied');
 	const next = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 8, locale: 'es', assets: current, retired: RETIRED_MANAGED_ASSETS });

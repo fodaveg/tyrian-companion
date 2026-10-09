@@ -2584,8 +2584,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
 			if (created.length > 0) this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoCreated',
 				{ names: created.map((entry) => entry.asset.relativePath).join(', ') }), 'managed_assets_updated');
-			const trashed = retired.filter((entry) => this.host.vault.file(entry.path) === null).map((entry) => name(entry.path));
-			const kept = retired.filter((entry) => this.host.vault.file(entry.path) !== null).map((entry) => name(entry.path));
+			const trashed = retired.filter((entry) => entry.status === 'retire').map((entry) => name(entry.path));
+			const kept = retired.filter((entry) => entry.status === 'release' && entry.present).map((entry) => name(entry.path));
 			if (trashed.length > 0) this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoRetired', { names: trashed.join(', ') }), 'managed_assets_updated');
 			if (kept.length > 0) this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoReleased', { names: kept.join(', ') }), 'managed_assets_updated');
 			return undefined;

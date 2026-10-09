@@ -28,3 +28,15 @@ export async function genericManagedAssets(): Promise<PackagedAsset[]> {
 	const bytes = `${managedAssetMarker(draft)}\n${SAMPLE_BASE_BODY}`;
 	return [{ ...draft, bytes, contentHash: await sha256Text(bytes) }];
 }
+
+/** What 0.6.13 to 0.6.15 shipped besides the three Bases that stay: the three that this bundle retires. */
+export async function legacyRetiredBases(): Promise<PackagedAsset[]> {
+	const [sessions] = await genericManagedAssets();
+	const body = sessions!.bytes.slice(sessions!.bytes.indexOf('\n') + 1);
+	const make = async (id: string, locale: 'es' | 'neutral', relativePath: string): Promise<PackagedAsset> => {
+		const draft = { id, kind: 'base', contentVersion: 1, locale, relativePath } as const;
+		const bytes = `${managedAssetMarker(draft)}\n${body}`;
+		return { ...draft, bytes, contentHash: await sha256Text(bytes) };
+	};
+	return [sessions!, await make('halloween-base', 'es', 'Halloween.base'), await make('materials-base', 'es', 'Materials.base')];
+}

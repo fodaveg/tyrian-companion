@@ -35,6 +35,8 @@ export interface InspectedRetirement {
 	entry: ManagedAssetEntry;
 	path: string;
 	status: 'retire' | 'release';
+	/** The file exists now: a `release` that is present is an edited one the plugin leaves in place. */
+	present: boolean;
 }
 
 export interface ManagedAssetEntry {

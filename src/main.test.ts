@@ -17,11 +17,12 @@ import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
-import { sha256Text } from './assets/generic-assets';
-import { genericManagedAssets } from './test/managed-asset-fixture';
+import { managedAssetsBundle, sha256Text } from './assets/generic-assets';
+import { RETIRED_MANAGED_ASSETS } from './assets/retired-assets';
+import { genericManagedAssets, legacyRetiredBases } from './test/managed-asset-fixture';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
 import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
-import { managedAssetMarker } from './assets/managed-assets-model';
+import { managedAssetMarker, type PackagedAsset } from './assets/managed-assets-model';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { LocalDebugActionRunner, type LocalDebugActionPort } from './core/local-debug-action-runner';
@@ -1736,6 +1737,100 @@ describe('a new Base of the bundle is created on load, and nothing else (9 Oct 2
 			expect(create).toHaveBeenCalledTimes(1);
 			pending.resolve(undefined);
 		} finally { pending.resolve(undefined); await runtime.shutdown(); runtime.dispose(); }
+	});
+});
+
+describe('the load retires the Bases the bundle no longer ships (9 Oct 2026)', () => {
+	const BASES = 'Home/Bases';
+	const GONE = ['Sessions.base', 'Halloween.base', 'Materials.base'];
+	const manifestIds = (vault: MemoryAssetVault): string[] =>
+		(JSON.parse(vault.contents.get('Home/Tyrian Companion Assets.json')!) as { assets: Array<{ id: string }> }).assets.map((entry) => entry.id).sort();
+
+	/** `david`: the manifest of the 11 Sep install (bundle 6; halloween 1, inventory 6, materials 6, sessions 2, wallet 1; no summaries). */
+	async function installed(shape: 'bundle7' | 'david') {
+		const current = await managedAssetsBundle();
+		const legacy = await legacyRetiredBases();
+		let previous = [...current, ...legacy];
+		if (shape === 'david') {
+			const relabel = async (asset: PackagedAsset, contentVersion: number): Promise<PackagedAsset> => {
+				const draft = { ...asset, contentVersion };
+				const bytes = `${managedAssetMarker(draft)}\n${asset.bytes.slice(asset.bytes.indexOf('\n') + 1)}`;
+				return { ...draft, bytes, contentHash: await sha256Text(bytes) };
+			};
+			previous = [];
+			for (const asset of [...current.filter((entry) => entry.id !== 'session-summaries-base'), ...legacy]) {
+				previous.push(asset.id === 'inventory-base' ? await relabel(asset, 6) : asset.id === 'materials-base' ? await relabel(asset, 6) : asset);
+			}
+		}
+		const vault = new MemoryAssetVault();
+		const manager = new ManagedAssetsManager(vault, 'test-config-dir', { bundleVersion: shape === 'david' ? 6 : 7, locale: 'es', assets: previous });
+		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' });
+		await harness.applyManagedAssets();
+		const messages: string[] = [];
+		const plugin = Object.assign(harness, {
+			managedAssets: manager, collectorMode: 'collector',
+			emitNotice: (message: string, source: string) => { messages.push(`${source}: ${message}`); },
+			inventoryVaultSyncRun: { invalidate: () => undefined, current: () => ({ status: 'idle' as const, lastRun: {
+				status: 'success' as const, finishedAt: '2026-10-09T10:00:00.000Z', durationMs: 1, summary: null, error: null } }) },
+		});
+		manager.setBundle({ bundleVersion: 8, locale: 'es', assets: current, retired: RETIRED_MANAGED_ASSETS });
+		const proto = TyrianCompanionCore.prototype as unknown as {
+			createNewManagedAssetsOnLoad(this: typeof plugin): Promise<void>;
+			updateManagedAssetsAfterInventorySync(this: typeof plugin): Promise<void>;
+		};
+		return { vault, messages, plugin, load: () => proto.createNewManagedAssetsOnLoad.call(plugin),
+			sync: () => proto.updateManagedAssetsAfterInventorySync.call(plugin) };
+	}
+
+	it('trashes the three untouched Bases on load, keeps the others, and says which', async () => {
+		const { vault, messages, load } = await installed('bundle7');
+		await load();
+		for (const name of GONE) expect(vault.contents.has(`${BASES}/${name}`)).toBe(false);
+		for (const name of ['Inventory.base', 'Wallet.base', 'Session summaries.base']) expect(vault.contents.has(`${BASES}/${name}`)).toBe(true);
+		expect(manifestIds(vault)).toEqual(['inventory-base', 'session-summaries-base', 'wallet-base']);
+		expect(messages).toHaveLength(1);
+		for (const name of GONE) expect(messages[0]).toContain(name);
+	});
+
+	it('keeps an edited one on disk, unregisters it, and notices it apart; a second load does nothing', async () => {
+		const { vault, messages, load } = await installed('bundle7');
+		const path = `${BASES}/Halloween.base`;
+		vault.contents.set(path, vault.contents.get(path)!.replace('name: Sessions', 'name: Mine'));
+		await load();
+		expect(vault.contents.get(path)).toContain('name: Mine');
+		expect(vault.contents.has(`${BASES}/Sessions.base`)).toBe(false);
+		expect(manifestIds(vault)).not.toContain('halloween-base');
+		expect(messages).toHaveLength(2);
+		expect(messages.some((message) => /Halloween\.base/u.test(message) && /conservan|kept/u.test(message))).toBe(true);
+		const writes = vault.writeCount; const count = messages.length;
+		await load();
+		expect(vault.writeCount).toBe(writes);
+		expect(messages).toHaveLength(count);
+	});
+
+	it('writes nothing and warns nobody when a Base that stays was edited', async () => {
+		const { vault, messages, load } = await installed('bundle7');
+		const wallet = `${BASES}/Wallet.base`;
+		vault.contents.set(wallet, vault.contents.get(wallet)!.replace('name: "Todas"', 'name: "Mis monedas"'));
+		const before = new Map(vault.contents);
+		await load();
+		expect(new Map(vault.contents)).toEqual(before);
+		expect(messages).toEqual([]);
+	});
+
+	it('David\'s 11 Sep install (manifest bundle 6, inventory at 6): the load writes nothing; the sync then does everything', async () => {
+		const { vault, messages, load, sync } = await installed('david');
+		expect(manifestIds(vault)).toEqual(['halloween-base', 'inventory-base', 'materials-base', 'sessions-base', 'wallet-base']);
+		const before = new Map(vault.contents);
+		await load();
+		// An `update` of Inventory.base is pending, so the narrow load rule holds everything back.
+		expect(new Map(vault.contents)).toEqual(before);
+		expect(messages).toEqual([]);
+		await sync();
+		expect(vault.contents.has(`${BASES}/Session summaries.base`)).toBe(true);
+		for (const name of GONE) expect(vault.contents.has(`${BASES}/${name}`)).toBe(false);
+		expect(manifestIds(vault)).toEqual(['inventory-base', 'session-summaries-base', 'wallet-base']);
+		expect(messages.at(-1)).toMatch(/^managed_assets_updated/u);
 	});
 });
 

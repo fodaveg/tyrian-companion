@@ -165,7 +165,7 @@ export class ManagedAssetsManager {
 		for (const entry of manifest.assets) {
 			if (!retiredIds.has(entry.id) || live.has(entry.id)) continue;
 			const file = this.vault.file(entry.path);
-			found.push({ entry, path: entry.path, status: file !== null && await this.isAsWritten(file, entry) ? 'retire' : 'release' });
+			found.push({ entry, path: entry.path, present: file !== null, status: file !== null && await this.isAsWritten(file, entry) ? 'retire' : 'release' });
 		}
 		return found;
 	}
