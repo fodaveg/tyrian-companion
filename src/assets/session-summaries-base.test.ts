@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { managedAssetsBundle } from './generic-assets';
 import { sessionSummariesManagedAssets } from './session-summaries-base';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
-import { hasCompatibleMarker } from './managed-assets-model';
+import { sha256Text } from './managed-asset-hash';
+import { decideManagedAssetsAutoUpdate, hasCompatibleMarker, managedAssetMarker } from './managed-assets-model';
 import { renderLiveSessionSummary } from '../sessions/live-session-summary-note';
 import type { StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
 import { moduleBoundaryFacts, moduleBoundaryViolations, type ModuleBoundary } from '../test/module-boundary';
@@ -17,20 +18,20 @@ const BOUNDARY: ModuleBoundary = {
 const CONFIG_DIR = 'vault-config';
 const PATH = 'Tyrian Companion/Bases/Session summaries.base';
 const COLUMNS = ['formula.session_link', 'tyrian_summary_date', 'tyrian_summary_map', 'tyrian_summary_duration_minutes', 'tyrian_summary_net_gold',
-	'tyrian_summary_per_hour_gold', 'tyrian_summary_characters', 'tyrian_summary_observed_percent', 'tyrian_summary_top_item', 'tyrian_summary_alerts'];
+	'tyrian_summary_per_hour_gold', 'tyrian_summary_characters', 'tyrian_summary_observed_percent', 'formula.top_item_icon', 'tyrian_summary_top_item', 'tyrian_summary_alerts'];
 
 describe('session summaries Base', () => {
 	it('packages one Base per locale in the managed bundle, at its own path', async () => {
 		const assets = await sessionSummariesManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'session-summaries-base', kind: 'base', contentVersion: 1, locale: 'es', relativePath: 'Session summaries.base' },
-			{ id: 'session-summaries-base', kind: 'base', contentVersion: 1, locale: 'en', relativePath: 'Session summaries.base' },
+			{ id: 'session-summaries-base', kind: 'base', contentVersion: 2, locale: 'es', relativePath: 'Session summaries.base' },
+			{ id: 'session-summaries-base', kind: 'base', contentVersion: 2, locale: 'en', relativePath: 'Session summaries.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) expect(bundle).toContainEqual(expected);
 	});
 
-	it('parses as real YAML in both locales: tag and version filter (no folder), the ten columns in order, newest first', async () => {
+	it('parses as real YAML in both locales: tag and version filter (no folder), the eleven columns in order, newest first', async () => {
 		const documents = (await sessionSummariesManagedAssets()).map((asset) => {
 			expect(asset.bytes.includes('\r')).toBe(false);
 			expect(hasCompatibleMarker(asset.bytes, asset)).toBe(true);
@@ -54,7 +55,43 @@ describe('session summaries Base', () => {
 		expect(documents[0]!.views.map((view) => view.name)).toEqual(['Sesiones', 'Por mapa']);
 		expect(documents[1]!.views.map((view) => view.name)).toEqual(['Sessions', 'By map']);
 		expect(documents[0]!.formulas).toEqual({ session_link: 'file.asLink()',
-			map_label: 'if(tyrian_summary_map != null && tyrian_summary_map != "", tyrian_summary_map, "Sin mapa")' });
+			map_label: 'if(tyrian_summary_map != null && tyrian_summary_map != "", tyrian_summary_map, "Sin mapa")',
+			top_item_icon: 'if(tyrian_summary_top_item_icon != null, image(tyrian_summary_top_item_icon), null)' });
+	});
+
+	it('shows the top item icon through image() beside the top item, in both views and both locales', async () => {
+		const [es, en] = (await sessionSummariesManagedAssets()).map((asset) => parse(asset.bytes) as BaseDocument);
+		expect(es!.properties['formula.top_item_icon']!.displayName).toBe('Icono');
+		expect(en!.properties['formula.top_item_icon']!.displayName).toBe('Icon');
+		for (const document of [es!, en!]) {
+			expect(document.formulas.top_item_icon).toBe('if(tyrian_summary_top_item_icon != null, image(tyrian_summary_top_item_icon), null)');
+			for (const view of document.views) {
+				const order = view.order;
+				expect(order.indexOf('formula.top_item_icon') + 1).toBe(order.indexOf('tyrian_summary_top_item'));
+				expect((view as { columnSize?: Record<string, number> }).columnSize).toEqual({ 'formula.top_item_icon': 52 });
+			}
+		}
+	});
+
+	it('updates an installation whose manifest already lists the Base at content version 1, without a new bundle version', async () => {
+		const vault = new MemoryBaseVault();
+		const bundle = await managedAssetsBundle();
+		const [current] = bundle.filter((asset) => asset.id === 'session-summaries-base' && asset.locale === 'es');
+		const draft = { ...current!, contentVersion: 1 };
+		const bytes = `${managedAssetMarker(draft)}\n${current!.bytes.slice(current!.bytes.indexOf('\n') + 1).replaceAll('top_item_icon', 'top_item_old')}`;
+		const previous = bundle.map((asset) => asset === current ? { ...draft, bytes, contentHash: '' } : asset);
+		previous.find((asset) => asset.id === 'session-summaries-base' && asset.locale === 'es')!.contentHash = await sha256Text(bytes);
+		const old = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 7, locale: 'es', assets: previous });
+		expect((await old.apply('Tyrian Companion')).status).toBe('applied');
+		expect(vault.contents.get(PATH)).not.toContain('top_item_icon');
+
+		const next = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 7, locale: 'es', assets: bundle });
+		const preview = await next.preview('Tyrian Companion', 'upgrade');
+		expect(preview.steps.find((step) => step.id === 'session-summaries-base')?.status).toBe('update');
+		expect(preview.canApply).toBe(true);
+		expect(decideManagedAssetsAutoUpdate(await next.inspect('Tyrian Companion'))).toEqual({ action: 'apply' });
+		expect((await next.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
+		expect(vault.contents.get(PATH)).toContain('top_item_icon');
 	});
 
 	it('names every display property with the canonical Obsidian namespace and translates it', async () => {

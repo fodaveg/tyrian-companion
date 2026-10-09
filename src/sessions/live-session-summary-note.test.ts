@@ -182,6 +182,7 @@ tyrian_summary_per_hour_gold: 0.0411
 tyrian_summary_wallet_gold: null
 tyrian_summary_top_item: "Objeto 106732"
 tyrian_summary_top_item_count: 1
+tyrian_summary_top_item_icon: null
 tyrian_summary_alerts: 0
 tyrian_summary_free_slots: null
 tags: ["gw2/session-summary"]
@@ -247,6 +248,33 @@ Nota completa: [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789a
 		expect(en.content).toContain(`| Item ${String(STAPLE)} | 30 | 4g 50s 0c |`);
 		expect(en.content).toContain('- Currency 2: +800');
 		expect(en.content).toContain(`tyrian_summary_top_item: "Item ${String(STAPLE)}"`);
+	});
+
+	describe('the top item icon in the frontmatter', () => {
+		const ICON = 'https://render.guildwars2.com/file/E6017363449406DEE3DD3B80263AA2A91716F1DE/499375.png';
+		const iconOf = async (icon: string | undefined, meta: Record<number, { flags: string[]; type: string; icon?: string }> | undefined = undefined) => {
+			const { content } = await render({ itemMeta: meta ?? { ...META, [STAPLE]: { flags: [], type: 'Trophy', ...(icon === undefined ? {} : { icon }) } } });
+			const front = parseDocument(content.slice(4, content.indexOf('\n---\n', 4)));
+			expect(front.errors).toEqual([]);
+			return { line: /^tyrian_summary_top_item_icon: .*$/mu.exec(content)?.[0], value: (front.toJS() as Record<string, unknown>).tyrian_summary_top_item_icon };
+		};
+
+		it('is the quoted URL of the top item when the cache record has one on the GW2 render host', async () => {
+			expect(await iconOf(ICON)).toEqual({ line: `tyrian_summary_top_item_icon: "${ICON}"`, value: ICON });
+		});
+
+		it('is null when the cache has no record or no icon for the item, like the top item itself without data', async () => {
+			expect((await iconOf(undefined)).value).toBeNull();
+			expect((await iconOf(undefined, { [OTHER]: { flags: [], type: 'CraftingMaterial' } })).value).toBeNull();
+			expect((await render({ mutate: (session) => ({ ...session, totals: [] }) })).content).toContain('tyrian_summary_top_item_icon: null');
+		});
+
+		it('is null for any other origin, scheme or credentials, and for text that is not a URL', async () => {
+			for (const icon of ['https://evil.example/file/x.png', 'http://render.guildwars2.com/file/x.png', 'https://render.guildwars2.com.evil.example/x.png',
+				'https://user:pass@render.guildwars2.com/x.png', 'javascript:alert(1)', 'not a url', '']) {
+				expect((await iconOf(icon)).value, icon).toBeNull();
+			}
+		});
 	});
 
 	it('falls back to «Mapa <id>» when no name arrived', async () => {

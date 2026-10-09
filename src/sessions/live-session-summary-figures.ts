@@ -14,7 +14,11 @@ const GOLD_CURRENCY_ID = 1;
 const UNSELLABLE_FLAGS = ['AccountBound', 'SoulbindOnAcquire', 'NoSell'] as const;
 
 /** What the plugin knows of an item from the public catalog; an absent entry means it does not know. */
-export interface SummaryItemMeta { readonly flags: readonly string[]; readonly type: string }
+export interface SummaryItemMeta {
+	readonly flags: readonly string[]; readonly type: string;
+	/** Icon URL from the same catalog cache record; the note keeps it only if it is on the GW2 render host. */
+	readonly icon?: string;
+}
 export type SummaryItemMetaMap = Readonly<Record<number, SummaryItemMeta | undefined>>;
 
 export interface SummaryItemRow { itemId: number; quantity: number; valueCopper: number | null; container: boolean }

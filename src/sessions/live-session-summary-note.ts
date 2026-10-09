@@ -194,6 +194,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			`tyrian_summary_duration_minutes: ${String(Math.round(f.durationMs / 60_000))}`, `tyrian_summary_observed_percent: ${String(f.observedPercent)}`,
 			`tyrian_summary_net_gold: ${goldText(shownNet)}`, `tyrian_summary_per_hour_gold: ${goldText(shownPerHour)}`, `tyrian_summary_wallet_gold: ${goldText(f.goldCopper)}`,
 			`tyrian_summary_top_item: ${topItem === null ? 'null' : JSON.stringify(raw(topItem.id, 'item'))}`, `tyrian_summary_top_item_count: ${topItem === null ? 'null' : String(topItem.count)}`,
+			`tyrian_summary_top_item_icon: ${topItem === null ? 'null' : iconText(input.itemMeta?.[topItem.id]?.icon)}`,
 			`tyrian_summary_alerts: ${String(f.alerts.length)}`, `tyrian_summary_free_slots: ${session.coverage.freeSlots === null ? 'null' : String(session.coverage.freeSlots)}`,
 			'tags: ["gw2/session-summary"]', '---', ''].join('\n');
 		return { status: 'ok', note: { sessionRef: session.sessionRef, mainMapId: summaryMainMap(session), content: `${fm}${out.join('\n')}\n`,
@@ -254,6 +255,19 @@ function gapReason(reason: StoredLiveSessionPayloadV1['gaps'][number]['reason'],
 		storage_unavailable: ['almacenamiento no disponible', 'storage unavailable'], unsupported_build: ['versión no compatible', 'unsupported version'],
 		source_missing: ['fuente ausente', 'source missing'], cursor_gap: ['continuidad perdida', 'continuity lost'] };
 	return labels[reason][es ? 0 : 1]!;
+}
+
+/**
+ * The top item's icon as a YAML scalar: the URL quoted when it is on the public GW2 render host with
+ * no credentials, `null` otherwise (no cache record, no icon, another origin). Same check as the UI's.
+ */
+function iconText(icon: string | undefined): string {
+	if (icon === undefined) return 'null';
+	try {
+		const url = new URL(icon);
+		return url.protocol === 'https:' && url.origin === 'https://render.guildwars2.com' && url.username === '' && url.password === ''
+			? JSON.stringify(url.href) : 'null';
+	} catch { return 'null'; }
 }
 
 function escapeMarkdown(value: string): string { return value.replace(/[\p{Cc}]/gu, ' ').replace(/[\\|<>]/gu, (match) => `\\${match}`); }
