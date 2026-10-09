@@ -785,6 +785,7 @@ durable session history.
 - [Live session contract](docs/SPEC-live-loot.md) and [historical evidence provenance](docs/audit/live-loot-evidence-provenance.md).
 
 - [`docs/BETA.md`](docs/BETA.md)
+- [`docs/INSTALAR-WINDOWS.md`](docs/INSTALAR-WINDOWS.md)
 - [`docs/API-KEY.md`](docs/API-KEY.md)
 - [`docs/SUPPORT.md`](docs/SUPPORT.md)
 - [`docs/PRODUCT.md`](docs/PRODUCT.md)
