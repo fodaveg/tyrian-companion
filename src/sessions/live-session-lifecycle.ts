@@ -649,7 +649,9 @@ export class LiveSessionLifecycle {
 		const saved = await this.persist(next, undefined, read);
 		// Storage went away again: drop the handle so the next beat reclaims under the lease it finds.
 		if (saved === 'unavailable') { this.handle = null; return false; }
-		if (saved !== 'saved') throw new Error('Live session recovery could not be persisted.');
+		// Refused: what is in memory is not what is stored, and it still carries the LAST owner's authority. With the handle
+		// kept, a `live_open` before the next beat found the lease owned and saved from that memory. Nothing may until it is read again.
+		if (saved !== 'saved') { this.handle = null; throw new Error('Live session recovery could not be persisted.'); }
 		this.record = next; this.unsaved = null; this.lostPresence = null; this.lostGap = null; this.reclaimingAs = null; this.hostRestarted = false; this.failure = false;
 		await this.settleRecovery();
 		this.options.onStateChange(); return true;

@@ -687,6 +687,13 @@ describe('live session whose host died without releasing the lease', () => {
 		await expect(committing).resolves.toBe('stored');
 		// The takeover was not saved over what it had not read, and says so; the next beat reads again and takes the session.
 		expect(next.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['Live session recovery could not be persisted.']);
+		// The producer does not wait for the beat: it opens as soon as it connects. Until the session has been read
+		// again this host has nothing it may write from, so it holds no lease to answer with. Answering `ready` here
+		// saved the older count under the LAST owner's authority, which the store still accepted.
+		f.at(21_500);
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		await expect(next.service.commit(f.sample(0, 0, bags(20), NEXT_EPOCH))).resolves.not.toBe('stored');
+		expect((await f.durable()).record).toMatchObject({ authority: { instanceId: 'wl1:host', fence: 1 }, observationCount: 2 });
 		f.at(26_000); await next.beat();
 		const durable = await f.durable();
 		expect(durable.record).toMatchObject({ authority: { instanceId: 'wl1:next-host', fence: 2 }, observationCount: 2 });
