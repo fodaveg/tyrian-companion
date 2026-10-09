@@ -1,5 +1,47 @@
 # Changelog
 
+## Release beta 0.6.16 - las Bases se mantienen solas al cargar y el icono del objeto principal en los resúmenes
+
+Release por tag `0.6.16`. Trae dos cosas: el icono del objeto principal en la nota resumen de sesión y la gestión de
+las Bases al cargar el plugin, y tres ajustes de rendimiento de la auditoría del 8 oct 2026. [ESTADO](ESTADO.md)
+separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Icono en el resumen de sesión: la nota resumen guarda el icono del objeto principal en la clave
+  `tyrian_summary_top_item_icon`, y la Base de resúmenes de sesión (`session-summaries-base`, `contentVersion` 2)
+  gana una columna «Icono».
+- Bases al cargar el plugin: David pidió el 9 oct 2026 «también necesito una base con las sesiones de juego» y eligió
+  «Sí, que las cree solo» y «Actualizarla también»; sobre qué Bases quitar eligió «Sessions.base, Halloween.base,
+  Materials.base» y sobre los ficheros ya instalados «Borrarlos si no los editaste». En conjunto, al cargar el plugin
+  crea las Bases nuevas del paquete, actualiza las que el usuario no ha editado y retira `Sessions.base`,
+  `Halloween.base` y `Materials.base` si no se editaron. `MANAGED_ASSETS_BUNDLE_VERSION` pasa de 7 a 8.
+- Cómo se retira: las Bases retiradas se eliminan según el ajuste de archivos eliminados de la aplicación (en
+  Obsidian, `FileManager.trashFile`; en Hebra, su papelera), así que no se promete que sean recuperables. Una
+  retirada que el usuario editó se conserva y deja de gestionarse.
+- Aviso y bloqueo (elecciones técnicas, no de David): el plugin avisa nombrando los ficheros creados, actualizados,
+  eliminados y conservados. Una Base viva editada por el usuario lo bloquea todo: no se escribe nada, la sincronización
+  avisa una vez por carga y la carga se queda en silencio. Si solo quedan retiradas y hay un bloqueo, no se hace nada
+  ni se avisa. Solo escribe con assets aplicados antes (manifiesto `ready`); nunca instala el paquete por sí sola.
+- «Quitar» solo acepta una versión publicada distinta de la registrada en instalaciones antiguas sin huella
+  semántica (manifiesto de esquema 1).
+- Límites conocidos, sin mitigación en el código: al arrancar, el estado local puede ir por detrás del remoto, y un
+  equipo que cargue el plugin antes de recibir una edición hecha en otro puede eliminar o actualizar esa Base; dos
+  equipos en modo recolector pueden crear la misma Base; en Hebra, un manifiesto importado `ready` hace que la carga
+  escriba aunque ese host nunca aplicara assets. Además, con una Base viva editada o borrada las retiradas siguen en
+  disco sin aviso, si un apply falla después del paso de retirada ningún aviso nombra los ficheros ya eliminados, y
+  si el manifiesto se pierde las retiradas quedan huérfanas. Detalle: `docs/ARCHITECTURE.md`, «Assets gestionados H5.6».
+- Rendimiento: al empezar sesión y al cambiar de modo se copian solo las entradas del diario sin liquidar (antes se
+  clonaba el diario entero; el mensaje del commit mide 54 ms con 10 000 entradas). El servicio de semillas de precios
+  del panel acota sus estados en memoria con un LRU de 64, sin evictar los que tienen una carga en curso. En el
+  asesor de inventario, marcar un objeto como conservado construye solo esa fila; si hay reclasificación se
+  reconstruyen todas.
+- Tests sin cambio de producto: fijan que `updateAlert` apunta a la alerta que nombra en una entrada antigua del
+  diario y que pintar una Venta lee el análisis del asesor sin copiarlo ni escribirlo.
+- No entra: los iconos de objetos dentro del texto de las notas de sesión. Hebra no pinta imágenes Markdown remotas
+  dentro de una nota; queda pendiente de Hebra.
+- Sin verificar: nada de la 0.6.16 se ha visto en Obsidian ni en Hebra reales (la creación, actualización y retirada
+  de Bases al cargar, la columna «Icono» pintada, el ajuste de archivos eliminados), ni la instalación de la 0.6.16
+  por BRAT o en Hebra.
+
 ## Release beta 0.6.15 - el monstruo en color con un solo contorno como icono del plugin en Hebra
 
 [Canal 0.6.15 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.15); **instalación/runtime

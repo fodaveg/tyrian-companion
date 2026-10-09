@@ -1,5 +1,26 @@
 # Estado
 
+## Candidato 0.6.16: las Bases se mantienen solas al cargar y el icono del objeto principal en los resúmenes (9 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `a8cf5cc` (main con el canal 0.6.15 publicado y la documentación
+de las Bases ya integrada). Trae el icono del objeto principal en la nota resumen de sesión y la columna «Icono» de
+su Base, la creación, actualización y retirada de Bases al cargar el plugin (`MANAGED_ASSETS_BUNDLE_VERSION` de 7 a
+8; retira `Sessions.base`, `Halloween.base` y `Materials.base` si no se editaron, según el ajuste de archivos
+eliminados de la aplicación) y tres ajustes de rendimiento de la auditoría del 8 oct 2026. El detalle y los límites
+conocidos están en [CHANGELOG](CHANGELOG.md) y en `docs/ARCHITECTURE.md`. Metadatos de versión alineados en
+`manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de Obsidian 1.11.4, como la
+0.6.15). No entran los iconos de objetos dentro del texto de las notas de sesión: Hebra no pinta imágenes Markdown
+remotas dentro de una nota.
+
+- Medido en la preparación (no es el gate de release): sobre `a8cf5cc` (árbol
+  `6c9bf6971045c0ca412be738cd96fb23ba4e9781`), antes de los metadatos, `npm run check` dio «VEREDICTO: VERDE (8/8)»
+  con 5422 tests en 334 ficheros, y `npm run check:guardrails` «VEREDICTO: VERDE (25/25)» (Fedora, 9 oct 2026).
+- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
+- No verificado: nadie ha visto la 0.6.16 en Obsidian ni en Hebra reales: ni la creación, actualización y retirada de
+  Bases al cargar, ni la columna «Icono» pintada, ni el ajuste de archivos eliminados. Tampoco la instalación de la
+  0.6.16 por BRAT ni en Hebra.
+- Pendiente: el gate, la publicación (tag, release, `release:brat-verify`) y la verificación en clientes reales.
+
 ## Canal 0.6.15 publicado: el monstruo en color con un solo contorno como icono en Hebra (9 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.15](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.15)
