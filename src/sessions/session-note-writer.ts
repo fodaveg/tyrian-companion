@@ -140,6 +140,10 @@ export class SessionNoteWriter {
 	private async update(file: SessionNoteFile, initial: string, note: RenderedSessionNote<string | null>): Promise<SessionNoteWriteResult> {
 		let existing = initial;
 		for (let attempt = 0; attempt < 3; attempt += 1) {
+			// A live note in a payload format this build cannot read is not ours to rewrite with an older one: it stays as it is.
+			if (note.frontmatter.tc_schema === 7 && (await inspectLiveSessionNote(existing)).status === 'unsupported') {
+				return { status: 'conflict', message: 'The existing session note was written by a newer version of the plugin.' };
+			}
 			const merged = await mergeRenderedSessionNote(existing, note);
 			if (merged.status !== 'ok') {
 				return { status: 'conflict', message: 'The existing session note has modified or ambiguous managed blocks.' };

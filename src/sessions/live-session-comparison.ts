@@ -57,9 +57,14 @@ export interface LiveSessionComparison {
 	groups: readonly LiveComparisonGroup[];
 	rows: readonly LiveComparisonRow[];
 }
+/**
+ * A live note the history could not use and left exactly where it was: `newer_version` is a payload format later than this build
+ * reads (a newer plugin wrote it), `unreadable` a candidate that is broken (or edited inside its managed blocks).
+ */
+export interface LiveSessionSetAside { path: string; reason: 'newer_version' | 'unreadable' }
 export type LiveSessionComparisonState = { status: 'idle' | 'loading' | 'unavailable' }
 	| { status: 'conflict'; invalid: number; duplicates: number }
-	| { status: 'ready'; comparison: LiveSessionComparison; ignored: number };
+	| { status: 'ready'; comparison: LiveSessionComparison; ignored: number; setAside: readonly LiveSessionSetAside[] };
 export interface LiveSessionComparisonView {
 	history: LiveSessionComparisonState;
 	/** Always the actual active runtime, independent of a selected saved session. */

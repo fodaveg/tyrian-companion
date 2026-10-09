@@ -1,7 +1,7 @@
 /** Live comparison copy shares the existing component-local EN/ES convention. */
 const EN = {
 	title: 'Compare Nexus sessions', load: 'Load comparisons', loading: 'Loading saved observations…', idle: 'Load saved Nexus sessions to compare them.',
-	unavailable: 'Could not load comparisons. Saved evidence is kept; try again.', conflict: 'Saved evidence conflicts or is invalid. Resolve the notes before comparing.',
+	unavailable: 'Could not load comparisons. Saved evidence is kept; try again.', conflict: 'Saved evidence conflicts: two notes belong to the same session. Keep only one before comparing.',
 	limit: 'Observed increases have an unknown cause. These comparisons show association, not the effect of a build or group.',
 	buildTemplate: 'Captured GW2 template', buildManual: 'manual template · activity/equipment unverified', buildUnknown: 'Player build unknown', conditions: 'Captured conditions', groupUnknown: 'Group undeclared', with_bosses: 'With bosses (declared)', without_bosses: 'Without bosses (declared)',
 	pure_labyrinth: 'Labyrinth only', mixed: 'Mixed maps', unknown: 'Map coverage unknown', magicFind: 'Magic Find', manualBonus: 'Declared bonus',
@@ -13,7 +13,7 @@ const EN = {
 } as const;
 const ES: Record<keyof typeof EN, string> = {
 	title: 'Comparar tandas Nexus', load: 'Cargar comparaciones', loading: 'Cargando observaciones guardadas…', idle: 'Carga las tandas Nexus guardadas para compararlas.',
-	unavailable: 'No se pudieron cargar las comparaciones. La evidencia se conserva; vuelve a intentarlo.', conflict: 'La evidencia guardada tiene conflictos o datos inválidos. Resuelve las notas antes de comparar.',
+	unavailable: 'No se pudieron cargar las comparaciones. La evidencia se conserva; vuelve a intentarlo.', conflict: 'La evidencia guardada tiene conflictos: hay dos notas de la misma sesión. Deja solo una antes de comparar.',
 	limit: 'Los aumentos observados tienen causa desconocida. Estas comparaciones muestran asociación, no el efecto de una build o un grupo.',
 	buildTemplate: 'Plantilla GW2 capturada', buildManual: 'plantilla manual · activa/equipo sin verificar', buildUnknown: 'Build del jugador desconocida', conditions: 'Condiciones capturadas', groupUnknown: 'Grupo sin declarar', with_bosses: 'Con jefes (declarado)', without_bosses: 'Sin jefes (declarado)',
 	pure_labyrinth: 'Solo laberinto', mixed: 'Mapas mixtos', unknown: 'Cobertura de mapa desconocida', magicFind: 'Hallazgo mágico', manualBonus: 'Bonus declarado',

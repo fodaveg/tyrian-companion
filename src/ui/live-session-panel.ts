@@ -1,3 +1,5 @@
+import { paintLiveSessionSetAside } from './live-session-set-aside-notice';
+import type { LiveSessionSetAside } from '../sessions/live-session-comparison';
 import { formatCopperVisual } from '../core/copper-format';
 import { liveItemRateEligible, type LiveGapV1, type LiveSessionAlertViewV1, type LiveSessionViewV1 } from '../sessions/live-session-model';
 import { sortLiveItemsByValue, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
@@ -17,6 +19,8 @@ export interface LiveSessionDataActions {
 	getLiveSessionView(offset?: number, limit?: number): LiveSessionViewV1;
 	getLiveSessionEntity(kind: 'item' | 'currency', id: number): { name: string; icon: string | null } | null;
 	listLiveSessionHistory?(): Promise<LiveSessionHistoryEntry[]>;
+	/** The notes the last read of the saved sessions left aside (newer format, unreadable); named in the list. */
+	getLiveSessionSetAside?(): readonly LiveSessionSetAside[];
 	selectLiveSessionHistory?(sessionRef: string | null): Promise<void>;
 	exportLiveSession(kind: 'timeline' | 'summary', format: 'csv' | 'json'): Promise<void>;
 }
@@ -34,7 +38,7 @@ export interface LiveSessionControlState {
 	oldSession: { canDiscard: boolean } | null;
 }
 
-export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'getLocale' | 'getLiveSessionView' | 'getLiveSessionEntity' | 'listLiveSessionHistory'> {
+export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'getLocale' | 'getLiveSessionView' | 'getLiveSessionEntity' | 'listLiveSessionHistory' | 'getLiveSessionSetAside'> {
 	getLiveSessionControl(): LiveSessionControlState;
 	/** The last known character of the active live session; null with none. */
 	getLiveSessionCharacter?(): string | null;
@@ -125,6 +129,8 @@ export class LiveSessionPanel {
 	private readonly previous: HTMLDetailsElement | null;
 	private readonly previousStatus: HTMLElement;
 	private readonly previousAlert: HTMLElement;
+	private readonly previousAside: HTMLElement;
+	private previousSetAside: readonly LiveSessionSetAside[] = [];
 	private readonly previousRetry: HTMLButtonElement;
 	private readonly previousRows: HTMLElement;
 	private readonly previousMore: HTMLElement;
@@ -245,6 +251,8 @@ export class LiveSessionPanel {
 		this.previousAlert = this.node('div', 'tyrian-live-session__previous-alert');
 		this.previousAlert.setAttribute('role', 'alert');
 		this.previousAlert.append(this.node('p', 'tyrian-live-session__alert'), this.previousRetry);
+		this.previousAside = this.node('div', 'tyrian-live-session__hint tyrian-live-session__previous-aside');
+		this.previousAside.setAttribute('role', 'status'); this.previousAside.hidden = true;
 		this.previousRows = this.node('ol', 'tyrian-live-session__previous-rows');
 		this.previousMoreButton = this.button('tyrian-live-session__more-button', () => { this.previousShown += HISTORY_PAGE_SIZE; this.renderPrevious(); });
 		this.previousMoreLabel = this.node('span');
@@ -254,7 +262,7 @@ export class LiveSessionPanel {
 		else {
 			const previous = this.document.createElementNS(HTML_NS, 'details') as HTMLDetailsElement;
 			previous.className = 'tyrian-live-session__timeline tyrian-live-session__previous';
-			previous.append(this.node('summary', '', this.copy('previous')), this.previousStatus, this.previousAlert, this.previousRows, this.previousMore);
+			previous.append(this.node('summary', '', this.copy('previous')), this.previousStatus, this.previousAlert, this.previousAside, this.previousRows, this.previousMore);
 			// Opening is the only thing that reads the library; a tick never does.
 			previous.addEventListener('toggle', () => { if (previous.open && (this.previousState === 'idle' || this.previousStale)) void this.loadPrevious(); this.renderPrevious(); });
 			this.previous = previous;
@@ -295,6 +303,7 @@ export class LiveSessionPanel {
 		this.renderPrevious();
 		try {
 			this.previousEntries = await list.call(this.actions);
+			this.previousSetAside = this.actions.getLiveSessionSetAside?.() ?? [];
 			this.previousState = 'ready';
 			this.previousShown = HISTORY_PAGE_SIZE;
 		} catch { this.previousState = 'failed'; }
@@ -349,6 +358,8 @@ export class LiveSessionPanel {
 		this.previousAlert.hidden = !failed;
 		this.setText(this.previousAlert.firstElementChild as HTMLElement, failed ? this.copy('previousFailed') : '');
 		this.setText(this.previousRetry, this.copy('retry'));
+		// Named whether or not any session is listed: the notes that are not in the list are the reason it may look short.
+		paintLiveSessionSetAside(this.document, this.previousAside, this.actions.getLocale(), open && state === 'ready' ? this.previousSetAside : []);
 		const listed = open && state === 'ready' && entries.length > 0;
 		this.previousRows.hidden = !listed;
 		this.previousMore.hidden = true;

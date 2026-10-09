@@ -110,6 +110,15 @@ export function liveObservationTotals(totals: LiveTotalV1[], observations: reado
 	return [...map.values()].sort((left, right) => left.kind.localeCompare(right.kind) || left.idNumber - right.idNumber);
 }
 
+/**
+ * A sample that changed nothing and marks no boundary: no observation, no cut before it and not the baseline of its
+ * epoch (cursor 0, which opens the epoch in every journal). Note payload version 2 and a lifecycle that writes it keep
+ * no journal entry for such a sample; its time survives as `lastObservationAt`.
+ */
+export function isEmptySample(entry: Pick<LiveJournalEntryV1,'cursor' | 'observations' | 'breakBefore'>): boolean {
+	return entry.observations.length === 0 && !entry.breakBefore && entry.cursor !== 0;
+}
+
 /** One chart point: the cumulative totals revalued with the record's current prices. */
 export function liveChartPoint(entry: Pick<LiveJournalEntryV1,'observedAt' | 'breakBefore'>, totals: readonly LiveTotalV1[],
 	record: Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> | null): LiveChartPointV1 {
@@ -186,14 +195,23 @@ export class LiveChartBuilder {
 	}
 }
 
-/** A builder fed with a whole journal; `totals` of the result are the accumulated ones. */
-export function createLiveChart(journal: readonly ChartEntry[], record: ChartRecord, limit = 600): { builder: LiveChartBuilder; totals: LiveTotalV1[] } {
+/**
+ * A builder fed with a whole journal; `totals` of the result are the accumulated ones. `lastObservationAt` is the time of
+ * the last sample the session took: when it is later than the last journal entry (the samples after it changed nothing and
+ * a version 2 journal keeps none of them), an empty entry stands for it, so the line still ends where the session did.
+ */
+export function createLiveChart(journal: readonly ChartEntry[], record: ChartRecord, limit = 600,
+	lastObservationAt: string | null = null): { builder: LiveChartBuilder; totals: LiveTotalV1[] } {
 	const map = new Map<string, LiveTotalV1>(); const builder = new LiveChartBuilder((entry, totals) => liveChartPoint(entry, totals, record), limit);
 	for (const entry of journal) { accumulateLiveTotals(map, entry.observations); builder.push(entry, () => [...map.values()]); }
+	const last = journal[journal.length - 1];
+	if (last !== undefined && lastObservationAt !== null && lastObservationAt > last.observedAt) {
+		builder.push({ observations: [], observedAt: lastObservationAt, breakBefore: false }, () => [...map.values()]);
+	}
 	return { builder, totals: [...map.values()] };
 }
-export function buildLiveChart(journal: readonly ChartEntry[], record: ChartRecord, limit = 600): LiveChartPointV1[] {
-	const { builder, totals } = createLiveChart(journal, record, limit);
+export function buildLiveChart(journal: readonly ChartEntry[], record: ChartRecord, limit = 600, lastObservationAt: string | null = null): LiveChartPointV1[] {
+	const { builder, totals } = createLiveChart(journal, record, limit, lastObservationAt);
 	return builder.points(() => totals);
 }
 

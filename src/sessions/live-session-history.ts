@@ -1,4 +1,5 @@
-import { buildLiveSessionComparison, type LiveSessionComparison } from './live-session-comparison';
+import { buildLiveSessionComparison, type LiveSessionComparison, type LiveSessionSetAside } from './live-session-comparison';
+export type { LiveSessionSetAside } from './live-session-comparison';
 import { settlePersistedIngameReceipt } from '../alerts/alert-ingame-receipt';
 import { buildLiveChart, GOLD_CURRENCY_ID } from './live-session-reducer';
 import type { LiveSessionViewV1, LiveTotalV1 } from './live-session-model';
@@ -31,14 +32,14 @@ export function sortLiveItemsByValue(totals: readonly LiveTotalV1[], prices: rea
 	const rank = (row: LiveTotalV1): number => { if (row.net < 0) return Number.NEGATIVE_INFINITY; const price = unit.get(row.idNumber); return price == null ? -1 : price * row.net; };
 	return totals.filter((row) => row.kind === 'item' && row.net !== 0).sort((a, b) => rank(b) - rank(a) || b.net - a.net);
 }
-export type LiveSessionHistoryList = { status: 'ok'; sessions: LiveSessionHistoryEntry[]; ignored: number }
+export type LiveSessionHistoryList = { status: 'ok'; sessions: LiveSessionHistoryEntry[]; ignored: number; setAside: LiveSessionSetAside[] }
 	| { status: 'conflict'; invalid: number; duplicates: number } | { status: 'unavailable' };
-export type LiveSessionComparisonLoad = { status: 'ok'; comparison: LiveSessionComparison; ignored: number }
+export type LiveSessionComparisonLoad = { status: 'ok'; comparison: LiveSessionComparison; ignored: number; setAside: LiveSessionSetAside[] }
 	| Exclude<LiveSessionHistoryList, { status: 'ok' }>;
 export type LiveSessionHistorySelection = { status: 'found'; session: StoredLiveSessionPayloadV1 }
 	| { status: 'missing' | 'conflict' | 'unavailable' };
 
-type NoteOutcome = { kind: 'invalid' } | { kind: 'ignored' } | { kind: 'live'; session: StoredLiveSessionPayloadV1 };
+type NoteOutcome = { kind: 'invalid' } | { kind: 'unsupported' } | { kind: 'ignored' } | { kind: 'live'; session: StoredLiveSessionPayloadV1 };
 
 /** Explicit history actions read synced notes, so a new machine needs no old IDB journal. */
 export class LiveSessionHistoryService {
@@ -60,7 +61,7 @@ export class LiveSessionHistoryService {
 	async list(): Promise<LiveSessionHistoryList> {
 		const scan = await this.scan();
 		if (scan.status !== 'ok') return scan;
-		return { status: 'ok',ignored: scan.ignored,sessions: scan.sessions.map((session) => ({
+		return { status: 'ok',ignored: scan.ignored,setAside: scan.setAside,sessions: scan.sessions.map((session) => ({
 			sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: session.observationCount,
 			estimatedValueCopper: session.valuation.knownNetValueCopper ?? session.valuation.netItemValueKnownCopper,
 			itemCount: session.totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0),
@@ -73,7 +74,7 @@ export class LiveSessionHistoryService {
 	/** One explicit comparison load reuses the validated scan; no per-session rereads or API fallback. */
 	async loadComparison(): Promise<LiveSessionComparisonLoad> {
 		const scan = await this.scan();
-		return scan.status === 'ok' ? { status: 'ok', comparison: buildLiveSessionComparison(scan.sessions), ignored: scan.ignored } : scan;
+		return scan.status === 'ok' ? { status: 'ok', comparison: buildLiveSessionComparison(scan.sessions), ignored: scan.ignored, setAside: scan.setAside } : scan;
 	}
 
 	/** No source freshness is reconstructed here; the caller projects saved evidence as historical. */
@@ -93,14 +94,15 @@ export class LiveSessionHistoryService {
 	private async inspect(content: string): Promise<NoteOutcome> {
 		const live = await inspectLiveSessionNote(content);
 		if (live.status === 'invalid') return { kind: 'invalid' };
+		if (live.status === 'unsupported') return { kind: 'unsupported' };
 		if (live.status === 'non_candidate') return (await inspectDurableSessionNote(content)).status === 'invalid' ? { kind: 'invalid' } : { kind: 'ignored' };
 		return { kind: 'live', session: live.session };
 	}
 
-	private async scan(): Promise<{ status: 'ok'; sessions: StoredLiveSessionPayloadV1[]; ignored: number }
+	private async scan(): Promise<{ status: 'ok'; sessions: StoredLiveSessionPayloadV1[]; ignored: number; setAside: LiveSessionSetAside[] }
 		| Exclude<LiveSessionHistoryList,{ status: 'ok' }>> {
 		try {
-			const sessions: StoredLiveSessionPayloadV1[] = []; let ignored = 0; let invalid = 0; let duplicates = 0;
+			const sessions: StoredLiveSessionPayloadV1[] = []; let ignored = 0; let invalid = 0; let duplicates = 0; const setAside: LiveSessionSetAside[] = [];
 			const refs = new Set<string>();
 			const files = this.vault.markdownFiles();
 			const listed = new Set(files.map((file) => file.path));
@@ -115,13 +117,16 @@ export class LiveSessionHistoryService {
 					if (cacheable) this.remember(file.path, outcome); else this.forget(file.path);
 				}
 				const note = outcome.outcome;
-				if (note.kind === 'invalid') { invalid += 1; continue; }
+				// A note this build cannot use is set aside with its path, never moved or rewritten, and never costs the others their listing.
+				if (note.kind === 'invalid') { invalid += 1; setAside.push({ path: file.path, reason: 'unreadable' }); continue; }
+				if (note.kind === 'unsupported') { setAside.push({ path: file.path, reason: 'newer_version' }); continue; }
 				if (note.kind === 'ignored') { ignored += 1; continue; }
 				if (refs.has(note.session.sessionRef)) duplicates += 1;
 				refs.add(note.session.sessionRef); sessions.push(note.session);
 			}
-			if (invalid > 0 || duplicates > 0) return { status: 'conflict',invalid,duplicates };
-			return { status: 'ok',ignored,sessions: sessions.sort((a,b) => b.startedAt.localeCompare(a.startedAt) || a.sessionRef.localeCompare(b.sessionRef)) };
+			// Two notes of one session stay a conflict: nothing decides which of them is the session.
+			if (duplicates > 0) return { status: 'conflict',invalid,duplicates };
+			return { status: 'ok',ignored,setAside: setAside.sort((a,b) => a.path.localeCompare(b.path)),sessions: sessions.sort((a,b) => b.startedAt.localeCompare(a.startedAt) || a.sessionRef.localeCompare(b.sessionRef)) };
 		} catch { return { status: 'unavailable' }; }
 	}
 }
@@ -132,8 +137,9 @@ export function liveSessionViewFromStored(payload: StoredLiveSessionPayloadV1, _
 	const start = Math.max(0,Number.isSafeInteger(offset) ? offset : 0);
 	const size = Math.max(1,Math.min(200,Number.isSafeInteger(limit) ? limit : 200));
 	// Same criterion as the live chart: the whole session in at most 600 points.
+	// The line ends at the session's last sample, which a version 2 journal may not have an entry for.
 	const chart = buildLiveChart(payload.journal,{ prices: payload.valuation.prices,priceCapturedAt: payload.valuation.capturedAt,
-		currencyTrackedIds: payload.valuation.coinNetCopper !== null ? [GOLD_CURRENCY_ID] : [] });
+		currencyTrackedIds: payload.valuation.coinNetCopper !== null ? [GOLD_CURRENCY_ID] : [] },600,payload.coverage.lastObservationAt);
 	return { version: 1,sessionId: payload.sessionRef,phase: 'complete',connection: 'disconnected',sourceState: 'unavailable',
 		sourceReason: 'source_missing',source: 'nexus_inventory',startedAt: payload.startedAt,endedAt: payload.endedAt,
 		elapsedMs: Date.parse(payload.endedAt) - Date.parse(payload.startedAt),observedItemsMs: payload.observedItemsMs,

@@ -31,7 +31,7 @@ import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import type { LiveIngamePort } from '../alerts/live-loot-protocol';
 import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
 import { LiveSessionSummaryService, summaryCachedNames } from '../sessions/live-session-summary-service';
-import { LiveSessionHistoryService, type LiveSessionHistoryEntry, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
+import { LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
 import { knownLiveDisplayNames, type StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
 import { prepareLiveSessionExportSnapshot } from '../sessions/live-session-export';
 import { exportLegacyRuntimeArchive } from '../sessions/live-session-legacy-archive';
@@ -458,6 +458,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private readonly liveSourceConnections = new LiveSourceConnections();
 	private liveEconomy: LiveSessionEconomy | null = null;
 	private liveHistory: LiveSessionHistoryService | null = null;
+	private liveSetAside: readonly LiveSessionSetAside[] = [];
 	private liveSummaries: LiveSessionSummaryService | null = null;
 	/** False while the plugin loads: a summary written then uses caches only (no map-name request). */
 	private liveSummaryNetwork = false;
@@ -3275,7 +3276,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async loadLiveComparisonNotes(): Promise<void> {
 		try {
 			const result = await this.liveHistory?.loadComparison();
-			this.liveComparison = result?.status === 'ok' ? { status: 'ready', comparison: result.comparison, ignored: result.ignored }
+			if (result?.status === 'ok') this.liveSetAside = result.setAside;
+			this.liveComparison = result?.status === 'ok' ? { status: 'ready', comparison: result.comparison, ignored: result.ignored, setAside: result.setAside }
 				: result?.status === 'conflict' ? result : { status: 'unavailable' };
 		} catch { this.liveComparison = { status: 'unavailable' }; }
 		this.renderViews();
@@ -3283,8 +3285,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	getSelectedLiveSessionHistory(): string | null { return this.selectedLiveHistory?.payload.sessionRef ?? null; }
 	async listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> {
 		const result = await this.liveHistory?.list(); if (result?.status !== 'ok') throw new Error('Live session history is unavailable.');
+		this.liveSetAside = result.setAside;
 		return result.sessions;
 	}
+	/** The notes the last read of the saved sessions (list or comparison) left aside; the panels name them by path. */
+	getLiveSessionSetAside(): readonly LiveSessionSetAside[] { return this.liveSetAside; }
 	async selectLiveSessionHistory(sessionRef: string | null): Promise<void> {
 		if (sessionRef === null) { this.selectedLiveHistory = null; this.renderViews(); return; }
 		const result = await this.liveHistory?.select(sessionRef);

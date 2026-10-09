@@ -1,6 +1,7 @@
 import { formatCopperVisual } from '../core/copper-format';
 import type { LiveComparisonConditions, LiveComparisonGroup, LiveComparisonRow, LiveSessionComparisonView } from '../sessions/live-session-comparison';
 import { formatFarmingTime } from './farming-goal-copy';
+import { paintLiveSessionSetAside } from './live-session-set-aside-notice';
 import { liveComparisonCopy, type LiveComparisonCopyKey } from './live-session-comparison-copy';
 
 export interface LiveSessionComparisonActions {
@@ -17,6 +18,7 @@ export class LiveSessionComparisonPanel {
 	private readonly status: HTMLElement;
 	private readonly content: HTMLElement;
 	private readonly provisional: HTMLElement;
+	private readonly aside: HTMLElement;
 	private readonly previous: HTMLButtonElement;
 	private readonly next: HTMLButtonElement;
 	private readonly pageLabel: HTMLElement;
@@ -31,11 +33,12 @@ export class LiveSessionComparisonPanel {
 		this.loadButton = this.button(this.copy('load'), () => { void this.load(); });
 		this.status = this.node('p'); this.status.setAttribute('role', 'status');
 		this.provisional = this.node('div'); this.content = this.node('div');
+		this.aside = this.node('div'); this.aside.setAttribute('role', 'status'); this.aside.hidden = true;
 		const toolbar = this.node('div'); toolbar.className = 'tyrian-live-session__toolbar';
 		this.previous = this.button(this.copy('previous'), () => { this.page = Math.max(0, this.page - 1); this.historyKey = ''; this.refresh(); });
 		this.next = this.button(this.copy('next'), () => { this.page++; this.historyKey = ''; this.refresh(); });
 		this.pageLabel = this.node('span'); toolbar.append(this.loadButton, this.previous, this.pageLabel, this.next);
-		this.element.append(toolbar, this.status, this.provisional, this.content); this.refresh();
+		this.element.append(toolbar, this.status, this.aside, this.provisional, this.content); this.refresh();
 	}
 	refresh(): void {
 		const { history, provisional } = this.actions.getLiveSessionComparison();
@@ -45,6 +48,7 @@ export class LiveSessionComparisonPanel {
 		this.status.setAttribute('role', this.failed || history.status === 'conflict' || history.status === 'unavailable' ? 'alert' : 'status');
 		this.status.textContent = this.failed ? this.copy('unavailable') : history.status === 'ready'
 			? `${this.copy('finalCount')}: ${String(history.comparison.completedSessions)}` : this.copy(history.status === 'loading' ? 'loading' : history.status);
+		paintLiveSessionSetAside(this.document, this.aside, this.actions.getLocale(), history.status === 'ready' ? history.setAside : []);
 		this.provisional.replaceChildren();
 		if (provisional) this.renderProvisional(provisional);
 		const key = JSON.stringify([history, this.page]);

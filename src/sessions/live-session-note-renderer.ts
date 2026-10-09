@@ -1,13 +1,15 @@
 import { canonicalJson } from '../core/canonical-sha256';
 import { normalizeSessionOutputFolder, type SessionNoteBlockId } from './session-note-model';
 import { assembleNote, inspectStoredSessionNote, readStoredSessionBlocks, sha256Text, type RenderedSessionNote } from './session-note-renderer';
-import { isStoredLiveSessionPayload, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { isStoredLiveSessionPayload, LIVE_SESSION_MAX_PAYLOAD_VERSION, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { keys } from './live-session-reducer';
 
 const LIVE_NOTE_KEYS = ['tc_schema','tc_kind','tc_source','tc_session_ref','tc_account_ref','tc_locale','tc_started_at',
 	'tc_ended_at','tc_payload_version','tc_payload_sha256'];
 export type LiveSessionNoteInspection =
 	| { status: 'ok'; session: StoredLiveSessionPayloadV1 }
+	/** A live note of a payload format newer than this reader knows (`version`): set aside, neither read nor invalid, and never touched. */
+	| { status: 'unsupported'; version: number }
 	| { status: 'non_candidate' } | { status: 'invalid' };
 
 /** Six established managed regions, with portable full evidence under the provenance hash. */
@@ -22,7 +24,7 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 		const es = input.locale === 'es';
 		const frontmatter = { tc_schema: 7, tc_kind: 'session', tc_source: 'nexus_inventory', tc_session_ref: session.sessionRef,
 			tc_account_ref: null, tc_locale: input.locale, tc_started_at: session.startedAt, tc_ended_at: session.endedAt,
-			tc_payload_version: 1, tc_payload_sha256: await sha256Text(payload),
+			tc_payload_version: session.version, tc_payload_sha256: await sha256Text(payload),
 			descripcion: es ? 'Cambios de inventario observados durante la conexión al juego.' : 'Inventory changes observed during the game connection.' };
 		const label = (spanish: string, english: string): string => es ? spanish : english;
 		const money = (value: number | null): string => value === null ? '—' : `${String(value)} c`;
@@ -121,10 +123,15 @@ export async function inspectLiveSessionNote(content: string): Promise<LiveSessi
 	if (note === null) return { status: 'invalid' };
 	if (note.frontmatter.tc_kind !== 'session' && note.frontmatter.tc_schema !== 7
 		&& note.frontmatter.tc_source !== 'nexus_inventory') return { status: 'non_candidate' };
-	if (note.hasInvalidScalar || !note.managedBlocksValid || !keys(note.frontmatter,LIVE_NOTE_KEYS)) return { status: 'invalid' };
 	const fm = note.frontmatter;
+	// Decided before anything else about the note is checked: a later format may well change the keys and the blocks too.
+	if (fm.tc_schema === 7 && fm.tc_kind === 'session' && fm.tc_source === 'nexus_inventory' && typeof fm.tc_payload_version === 'number'
+		&& Number.isSafeInteger(fm.tc_payload_version) && fm.tc_payload_version > LIVE_SESSION_MAX_PAYLOAD_VERSION) {
+		return { status: 'unsupported', version: fm.tc_payload_version };
+	}
+	if (note.hasInvalidScalar || !note.managedBlocksValid || !keys(note.frontmatter,LIVE_NOTE_KEYS)) return { status: 'invalid' };
 	if (fm.tc_schema !== 7 || fm.tc_kind !== 'session' || fm.tc_source !== 'nexus_inventory' || fm.tc_account_ref !== null
-		|| fm.tc_payload_version !== 1 || !['es','en'].includes(fm.tc_locale as string)) return { status: 'invalid' };
+		|| fm.tc_payload_version !== 1 && fm.tc_payload_version !== 2 || !['es','en'].includes(fm.tc_locale as string)) return { status: 'invalid' };
 	const blocks = await readStoredSessionBlocks(content);
 	const payloads = blocks === null ? [] : provenanceJsonLines(blocks.provenance);
 	if (payloads.length !== 1) return { status: 'invalid' };
@@ -132,7 +139,7 @@ export async function inspectLiveSessionNote(content: string): Promise<LiveSessi
 		const serialized = payloads[0]!;
 		const session: unknown = JSON.parse(serialized);
 		if (!isStoredLiveSessionPayload(session) || canonicalJson(session) !== serialized
-			|| await sha256Text(serialized) !== fm.tc_payload_sha256 || session.sessionRef !== fm.tc_session_ref
+			|| session.version !== fm.tc_payload_version || await sha256Text(serialized) !== fm.tc_payload_sha256 || session.sessionRef !== fm.tc_session_ref
 			|| session.startedAt !== fm.tc_started_at || session.endedAt !== fm.tc_ended_at) return { status: 'invalid' };
 		return { status: 'ok', session };
 	} catch { return { status: 'invalid' }; }

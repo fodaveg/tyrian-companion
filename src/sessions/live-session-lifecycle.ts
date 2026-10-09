@@ -9,8 +9,9 @@ import { DEFAULT_FARMING_PREPARATION, normalizeFarmingPreparationSettings, type 
 import { LIVE_SOURCE_STALE_MS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveSessionRuntimeRecord, type LiveJournalEntryV1,
 	type LiveSessionViewV1, type LiveGapV1, type LiveChartPointV1 } from './live-session-model';
-import { createLiveChart, LiveChartBuilder, liveChartPoint, liveObservationTotals,liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
+import { createLiveChart, isEmptySample, LiveChartBuilder, liveChartPoint, liveObservationTotals,liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
 import type { IngameGameContext } from '../alerts/alert-ingame-protocol';
+import { LIVE_SESSION_NOTE_WRITE_VERSION, type LiveSessionPayloadVersion } from './live-session-note-model';
 import { createLiveAlertIntent, settleLiveAlertRestart } from './live-session-outbox';
 import { withCharacter, type LiveSessionSummaryState } from './live-session-summary-state';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } from './live-session-model';
@@ -25,6 +26,11 @@ export interface LiveSessionLifecycleOptions {
 	/** Only a valid declaration is captured; an invalid/unsupported editor draft remains unknown. */
 	declaredBuild?(): DeclaredBuildV1 | null;
 	thresholdCopper?(): number;
+	/**
+	 * The note payload format this lifecycle keeps its journal for (`LIVE_SESSION_NOTE_WRITE_VERSION` when absent). With 2 a sample
+	 * that changed nothing is committed in the record (cursor, time, fingerprint) but adds no journal entry.
+	 */
+	noteVersion?: LiveSessionPayloadVersion;
 	/** Receives only newly committed journal entries. Public enrichment cannot block measurement ACK. */
 	onCommitted?(entry: LiveJournalEntryV1): void;
 	/** Durable note writer; a failed write keeps the terminal record and its lease recoverable. */
@@ -227,14 +233,18 @@ export class LiveSessionLifecycle {
 			const sessionId = this.record.sessionId;
 			reduced.journal.outbox = reduced.journal.observations.filter((row) => row.kind === 'item' && row.delta > 0)
 				.map((row) => createLiveAlertIntent(sessionId, row, this.options.thresholdCopper?.() ?? 50000));
-			const saved = await this.persist(reduced.record, reduced.journal);
+			// Version 2 keeps no entry for a sample that changed nothing: the record alone carries it (cursor, fingerprint and
+			// `lastObservationAt`), in the same single write, so a replay and a restart find the same state as with the entry.
+			const unlogged = (this.options.noteVersion ?? LIVE_SESSION_NOTE_WRITE_VERSION) === 2 && isEmptySample(reduced.journal);
+			const saved = await this.persist(reduced.record, unlogged ? undefined : reduced.journal);
 			if (saved === 'unavailable') { this.sampleLost(); return 'storage_unavailable'; }
 			if (saved !== 'saved') { this.failure = true; this.options.onStateChange(); return 'not_owner'; }
 			const goldBefore = this.record.currencyTrackedIds.includes(GOLD_CURRENCY_ID);
-			this.record = reduced.record; this.journal.push(reduced.journal); this.observations.push(...reduced.journal.observations); this.failure = false;
+			this.record = reduced.record; if (!unlogged) this.journal.push(reduced.journal); this.observations.push(...reduced.journal.observations); this.failure = false;
 			// Gold starting to be listed revalues the points already charted (the coin joins `knownNetValueCopper`), so they are rebuilt, not just extended.
 			if (goldBefore !== this.record.currencyTrackedIds.includes(GOLD_CURRENCY_ID)) this.rebuildChart(); else this.appendChart(reduced.journal);
-			this.options.onStateChange(); this.options.onCommitted?.(structuredClone(reduced.journal)); return 'stored';
+			// The chart still takes the sample: its line ends at the last one taken, entry or not.
+			this.options.onStateChange(); if (!unlogged) this.options.onCommitted?.(structuredClone(reduced.journal)); return 'stored';
 		});
 	}
 
@@ -720,7 +730,7 @@ export class LiveSessionLifecycle {
 		this.chart.push(entry, () => totals);
 	}
 	private newChart(): LiveChartBuilder { return new LiveChartBuilder((entry, totals) => liveChartPoint(entry, totals, this.record)); }
-	private rebuildChart(): void { this.chart = createLiveChart(this.journal, this.record).builder; }
+	private rebuildChart(): void { this.chart = createLiveChart(this.journal, this.record, 600, this.record?.lastObservationAt ?? null).builder; }
 
 	private nowIso(): string { return new Date(this.options.now()).toISOString(); }
 	private enqueue<T>(work: () => Promise<T>): Promise<T> {

@@ -898,3 +898,31 @@ describe('current character in the status line', () => {
 		expect(characterLine(h.panel).textContent).toBe('');
 	});
 });
+
+describe('Session tab: notes the saved sessions list had to set aside', () => {
+	const aside = [{ path: 'Sessions/newer.md', reason: 'newer_version' as const }, { path: 'Sessions/broken.md', reason: 'unreadable' as const }];
+	const mount = (locale: 'es' | 'en', setAside: typeof aside) => {
+		const actions: LiveSessionPanelActions = {
+			getLocale: () => locale, getLiveSessionView: () => idleView(), getLiveSessionEntity: () => null, getLiveSessionControl: () => control({ canStart: true, canStop: false }),
+			startLiveSession: async () => {}, stopLiveSession: async () => {}, discardOldSession: async () => {},
+			listLiveSessionHistory: async () => [], getLiveSessionSetAside: () => setAside };
+		const panel = new LiveSessionPanel(document, actions); document.body.append(panel.element);
+		const block = panel.element.querySelector<HTMLDetailsElement>('details.tyrian-live-session__previous')!;
+		return { panel, block, open: () => { block.open = true; block.dispatchEvent(new Event('toggle')); } };
+	};
+	it('names each by its path, in the user language, once the list is read, and hides the notice when nothing was set aside', async () => {
+		const en = mount('en', aside); const notice = en.block.querySelector<HTMLElement>('.tyrian-live-session__previous-aside')!;
+		expect(notice.hidden).toBe(true);
+		en.open();
+		await vi.waitFor(() => expect(notice.hidden).toBe(false));
+		expect(notice.textContent).toContain('Sessions/newer.md'); expect(notice.textContent).toContain('update the plugin');
+		expect(notice.textContent).toContain('Sessions/broken.md'); expect(notice.textContent).toContain('left untouched');
+		const es = mount('es', aside); es.open();
+		const noticeEs = es.block.querySelector<HTMLElement>('.tyrian-live-session__previous-aside')!;
+		await vi.waitFor(() => expect(noticeEs.hidden).toBe(false));
+		expect(noticeEs.textContent).toContain('versión más nueva del plugin'); expect(noticeEs.textContent).toContain('Sessions/broken.md');
+		const none = mount('en', []); none.open();
+		await vi.waitFor(() => expect(none.block.querySelector('.tyrian-live-session__previous-status, p')).not.toBeNull());
+		expect(none.block.querySelector<HTMLElement>('.tyrian-live-session__previous-aside')!.hidden).toBe(true);
+	});
+});

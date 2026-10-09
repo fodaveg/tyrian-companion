@@ -505,6 +505,8 @@ export class SessionHistoryService {
 			let content: string;
 			try { content = await this.vault.read(file); } catch { invalid += 1; continue; }
 			const live = await inspectLiveSessionNote(content);
+			// A note of a newer payload format cannot be scrubbed by a build that cannot read it: the plan fails closed, as for an unreadable one.
+			if (live.status === 'unsupported') { invalid += 1; continue; }
 			const decoded = live.status === 'ok' ? live : await decodeDurableSession(content);
 			if (decoded.status !== 'ok') {
 				if (decoded.status === 'invalid') invalid += 1;
@@ -586,6 +588,8 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	const live = await inspectLiveSessionNote(content);
 	if (live.status === 'ok') return { status: 'non_candidate' };
 	if (live.status === 'invalid') return { status: 'invalid' };
+	// A live note of a newer payload format is none of the durable (API) history's business, and no reason to fail it.
+	if (live.status === 'unsupported') return { status: 'non_candidate' };
 	const note = await inspectStoredSessionNote(content);
 	if (note === null) return { status: hasTcHint(content) ? 'invalid' : 'non_candidate' };
 	const fm = note.frontmatter;

@@ -5,13 +5,28 @@ import { isFarmingGoal, type FarmingGoalV1 } from './farming-goal';
 import { isFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveGapV1, type LiveJournalEntryV1,
 	type LiveObservationV1, type LiveSessionRuntimeRecord, type LivePriceV1, type LiveTotalV1, type LiveValuationV1 } from './live-session-model';
-import { bounded, date, GOLD_CURRENCY_ID, isLiveGap, keys, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
+import { bounded, date, GOLD_CURRENCY_ID, isEmptySample, isLiveGap, keys, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
 import { isLiveObservation } from './live-session-validation';
 import { sha256Text } from './session-note-renderer';
 
+/**
+ * Payload formats a live session note can carry (`tc_payload_version`, `version` of the payload):
+ * - 1: one journal entry per sample the session took, empty ones included (cursors consecutive in an epoch);
+ * - 2: no entry for a sample that changed nothing and marks no boundary (see `isEmptySample`); cursors only grow, and the
+ *   time of the last sample is `coverage.lastObservationAt`.
+ * A reader accepts every version up to `LIVE_SESSION_MAX_PAYLOAD_VERSION`; a note of a later one is set aside, never invalid.
+ */
+export type LiveSessionPayloadVersion = 1 | 2;
+export const LIVE_SESSION_MAX_PAYLOAD_VERSION = 2;
+/**
+ * The format this build WRITES, and with it whether the lifecycle keeps the samples that changed nothing (2) or every one (1).
+ * It stays 1 until the readers that understand 2 have been out long enough: with 1, what is written is byte for byte what 0.6.16 wrote.
+ */
+export const LIVE_SESSION_NOTE_WRITE_VERSION: LiveSessionPayloadVersion = 1;
+
 /** Synced evidence excludes local authority, source process identity, account and raw snapshots. */
 export interface StoredLiveSessionPayloadV1 {
-	version: 1; source: 'nexus_inventory'; sessionRef: string; accountRef: null;
+	version: LiveSessionPayloadVersion; source: 'nexus_inventory'; sessionRef: string; accountRef: null;
 	build: string | null; profile: typeof NEXUS_LIVE_PROFILE | null;
 	startedAt: string; endedAt: string; observationCount: number; sampleCount: number;
 	observedItemsMs: number; observedCurrenciesMs: number;
@@ -31,6 +46,8 @@ export interface StoredLiveJournalEntryV1 {
 export interface LiveSessionNoteInput {
 	record: LiveSessionRuntimeRecord; journal: readonly LiveJournalEntryV1[];
 	locale: 'es' | 'en'; outputFolder: string; displayNames?: Readonly<Record<string, string>>;
+	/** The payload format to write; `LIVE_SESSION_NOTE_WRITE_VERSION` when absent. */
+	payloadVersion?: LiveSessionPayloadVersion;
 }
 
 /**
@@ -88,7 +105,7 @@ function observedWithin(observedMs: number, gaps: readonly LiveGapV1[], channel:
 }
 
 /** The caller supplies one coherent durable record/journal capture and its actual host timestamp. */
-export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInput,'record' | 'journal'>,
+export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInput,'record' | 'journal' | 'payloadVersion'>,
 	capturedAt: string): Promise<LiveSessionSnapshotV1 | null> {
 	if (!date(capturedAt) || (input.record.phase === 'active') !== (input.record.endedAt === null)) return null;
 	const endedAt = publishedEnd(input.record);
@@ -104,7 +121,7 @@ export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInpu
  * `boundary` is where the published window closes: the session's end, or the capture of a
  * snapshot taken while it runs.
  */
-async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'record' | 'journal'>, boundary: string): Promise<Omit<StoredLiveSessionPayloadV1,'endedAt'> | null> {
+async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'record' | 'journal' | 'payloadVersion'>, boundary: string): Promise<Omit<StoredLiveSessionPayloadV1,'endedAt'> | null> {
 	const live = input.record;
 	let declaredBuild: Pick<StoredLiveSessionPayloadV1,'declaredBuild'> = {};
 	if ('declaredBuild' in live) {
@@ -112,10 +129,13 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 		else if (isDeclaredBuild(live.declaredBuild)) declaredBuild = {declaredBuild: structuredClone(live.declaredBuild)};
 		else return null;
 	}
-	const entries = input.journal as readonly (LiveJournalEntryV1 & {outbox: LiveNoteOutboxInput[]})[];
+	const version = input.payloadVersion ?? LIVE_SESSION_NOTE_WRITE_VERSION;
+	// Version 2 keeps no entry for a sample that changed nothing, whether or not the journal at hand still has it.
+	const entries = (input.journal as readonly (LiveJournalEntryV1 & {outbox: LiveNoteOutboxInput[]})[])
+		.filter((entry) => version === 1 || !isEmptySample(entry));
 	if (live.version !== 4 || live.kind !== 'live_inventory' || !['active','complete'].includes(live.phase)
 		|| !entries.every((entry) => entry.sessionId === live.sessionId && Array.isArray(entry.outbox) && entry.observations.every(isLiveObservation))
-		|| live.sampleCount > input.journal.length) return null;
+		|| version === 1 && live.sampleCount > input.journal.length) return null;
 	const sessionRef = await sha256Text(live.sessionId);
 	const journal = await Promise.all(entries.map(async (entry) => {
 		const outbox = await prepareLiveNoteOutbox(entry.outbox,live.sessionId,sessionRef);
@@ -125,7 +145,7 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 	if (journal.some((entry) => entry === null)) return null;
 	const gaps: LiveGapV1[] = live.gaps.map((gap) => ({ version: 1, fromAt: gap.fromAt, toAt: gap.toAt, reason: gap.reason, channels: [...gap.channels] }));
 	const payload: Omit<StoredLiveSessionPayloadV1,'endedAt'> = {
-		version: 1, source: 'nexus_inventory', sessionRef, accountRef: null,
+		version, source: 'nexus_inventory', sessionRef, accountRef: null,
 		build: live.build, profile: live.profile, startedAt: live.startedAt,
 		observationCount: live.observationCount, sampleCount: live.sampleCount,
 		observedItemsMs: observedWithin(live.observedItemsMs,gaps,'items',live.startedAt,boundary),
@@ -160,11 +180,15 @@ function copyObservation(row: LiveObservationV1): LiveObservationV1 {
 export function isStoredLiveSessionPayload(value: unknown): value is StoredLiveSessionPayloadV1 { return validPublicLiveSession(value,false); }
 export function isLiveSessionSnapshot(value: unknown): value is LiveSessionSnapshotV1 { return validPublicLiveSession(value,true); }
 
-/** Closed, source-specific decoder also checks journal sums against the saved summary. */
+/**
+ * Closed, source-specific decoder also checks journal sums against the saved summary. Version 1 is checked exactly as it always was;
+ * version 2 differs only in the journal: cursors grow without having to be consecutive, an observation's window may start at a sample
+ * no entry remembers, no entry is empty, and the session's last sample (`coverage.lastObservationAt`) is not before the last entry.
+ */
 function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 	if (!record(value) || !keys(value, ['version','source','sessionRef','accountRef','build','profile','startedAt','endedAt',
 		'observationCount','sampleCount','observedItemsMs','observedCurrenciesMs','coverage','journal','gaps','totals','valuation','magicFind',
-		'preparation','farmingGoal','groupContext','mapIntervals','mapCoveragePartial',...('declaredBuild' in value ? ['declaredBuild'] : []),...(snapshot ? ['capturedAt','exportState'] : [])]) || value.version !== 1
+		'preparation','farmingGoal','groupContext','mapIntervals','mapCoveragePartial',...('declaredBuild' in value ? ['declaredBuild'] : []),...(snapshot ? ['capturedAt','exportState'] : [])]) || value.version !== 1 && value.version !== 2
 		|| value.source !== 'nexus_inventory' || value.accountRef !== null || typeof value.sessionRef !== 'string'
 		|| !/^[a-f0-9]{64}$/u.test(value.sessionRef) || !date(value.startedAt)
 		|| value.build !== null && value.build !== NEXUS_LIVE_BUILD || value.profile !== null && value.profile !== NEXUS_LIVE_PROFILE
@@ -200,7 +224,8 @@ function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 		|| value.magicFind.value !== null && !bounded(value.magicFind.value,0,100000)
 		|| (value.magicFind.source === 'unknown') !== (value.magicFind.value === null)) return false;
 	const journal = value.journal;
-	if (!Array.isArray(journal) || journal.length < value.sampleCount) return false;
+	const sparse = value.version === 2;
+	if (!Array.isArray(journal) || !sparse && journal.length < value.sampleCount) return false;
 	const ids = new Set<string>(); const cursors = new Set<string>(); const observations: LiveObservationV1[] = [];
 	const lastInEpoch = new Map<string,{cursor: number;observedAt: string}>();
 	let previousAt = value.startedAt;
@@ -210,12 +235,16 @@ function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 			|| entry.observedAt < previousAt || typeof entry.breakBefore !== 'boolean' || !Array.isArray(entry.observations)
 			|| entry.observations.length > 4096 || cursors.has(`${entry.epoch}/${String(entry.cursor)}`)) return false;
 		const previous = lastInEpoch.get(entry.epoch);
-		if (entry.cursor !== (previous === undefined ? 0 : previous.cursor + 1) || entry.cursor === 0 && entry.observations.length !== 0) return false;
+		if (sparse ? previous === undefined ? entry.cursor !== 0 : entry.cursor <= previous.cursor
+			: entry.cursor !== (previous === undefined ? 0 : previous.cursor + 1)) return false;
+		if (entry.cursor === 0 && entry.observations.length !== 0 || sparse && isEmptySample(entry as unknown as Parameters<typeof isEmptySample>[0])) return false;
 		previousAt = entry.observedAt; cursors.add(`${entry.epoch}/${String(entry.cursor)}`);
 		lastInEpoch.set(entry.epoch,{cursor: entry.cursor,observedAt: entry.observedAt});
 		for (const row of entry.observations) {
 			if (!isLiveObservation(row) || row.epoch !== entry.epoch || row.cursor !== entry.cursor || row.observedAt !== entry.observedAt
-				|| ids.has(row.id) || !inside(row.windowStartAt,value.startedAt,boundary) || row.windowStartAt !== previous?.observedAt
+				|| ids.has(row.id) || !inside(row.windowStartAt,value.startedAt,boundary)
+					|| (sparse ? previous === undefined || row.windowStartAt < previous.observedAt || row.windowStartAt > row.observedAt
+						: row.windowStartAt !== previous?.observedAt)
 				// A currencies gap means incomplete aggregate coverage; individually covered IDs can still change.
 				|| row.kind === 'item' && (value.gaps as LiveGapV1[]).some((gap) => gap.channels.includes('items')
 					&& row.windowStartAt < (gap.toAt ?? boundary) && row.observedAt > gap.fromAt)) return false;
@@ -223,6 +252,8 @@ function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 		}
 		if (!isStoredLiveNoteOutbox(entry.outbox,value.sessionRef,entry.observations as LiveObservationV1[])) return false;
 	}
+	const lastEntry = journal[journal.length - 1] as { observedAt: string } | undefined;
+	if (sparse && lastEntry !== undefined && (coverage.lastObservationAt === null || coverage.lastObservationAt < lastEntry.observedAt)) return false;
 	if (observations.length !== value.observationCount || !Array.isArray(value.totals) || !value.totals.every((total) =>
 		record(total) && keys(total,['kind','idNumber','positive','negative','net']) && ['item','currency'].includes(total.kind as string)
 		&& bounded(total.idNumber,1,2147483647) && natural(total.positive) && natural(total.negative) && Number.isSafeInteger(total.net)

@@ -380,6 +380,7 @@ export class TyrianCompanionView {
 			getLiveSessionEntity: (kind, id) => actions.getLiveSessionEntity?.(kind, id) ?? null,
 			...(actions.getLiveSessionCharacter === undefined ? {} : { getLiveSessionCharacter: () => actions.getLiveSessionCharacter!() }),
 			...(actions.listLiveSessionHistory === undefined ? {} : { listLiveSessionHistory: () => actions.listLiveSessionHistory!() }),
+			...(actions.getLiveSessionSetAside === undefined ? {} : { getLiveSessionSetAside: () => actions.getLiveSessionSetAside!() }),
 			...liveSessionControl(actions, view),
 		};
 	}

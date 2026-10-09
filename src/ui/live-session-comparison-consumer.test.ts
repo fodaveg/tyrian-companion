@@ -115,13 +115,20 @@ describe('actual Nexus comparison consumer', () => {
 		expect(harness!.core.hasConfiguredApiKey()).toBe(false);
 		expect(harness!.requests().filter((request) => /\/v2\/(account|characters)/u.test(request.url))).toHaveLength(0);
 	});
-	it('rejects a modified schema7 managed block through the actual note scan', async () => {
-		const { panel, content } = await mount(); const one = await completedNote('one');
+	// Used to fix `conflict` for the WHOLE history as soon as one candidate note was invalid. Now the broken note is set aside by path,
+	// the valid ones are still compared, and the notice is on the panel; only duplicates of one session remain a `conflict`.
+	it('sets aside a modified schema7 managed block, names it, and still compares the valid notes', async () => {
+		const { panel, content } = await mount(); const one = await completedNote('one'); const two = await completedNote('two');
 		const modified = one.replace('<!-- tyrian-companion:managed:end:', 'modified evidence\n<!-- tyrian-companion:managed:end:');
 		await harness!.plugin.app.vault.create('Sessions/modified.md', modified);
+		await harness!.plugin.app.vault.create('Sessions/two.md', two);
 		await harness!.core.loadLiveSessionComparison(); panel.refresh();
-		expect(harness!.core.getLiveSessionComparison().history).toMatchObject({ status: 'conflict', invalid: 1 });
-		expect(content.querySelectorAll('.tyrian-live-comparison section')).toHaveLength(0);
+		expect(harness!.core.getLiveSessionComparison().history).toMatchObject({ status: 'ready', comparison: { completedSessions: 1 },
+			setAside: [{ path: 'Sessions/modified.md', reason: 'unreadable' }] });
+		expect(content.querySelector('.tyrian-live-comparison [role="status"]:not([hidden])')?.textContent).toBeTruthy();
+		expect(content.querySelector('.tyrian-live-comparison')?.textContent).toContain('Sessions/modified.md');
+		expect(content.querySelectorAll('.tyrian-live-comparison section').length).toBeGreaterThan(0);
+		expect(harness!.vaultNotes.get('Sessions/modified.md')).toBe(modified);
 	});
 	it('presents invalid or duplicate saved evidence as a conflict and never counts it as a comparison', async () => {
 		const { panel, content } = await mount(); const one = await completedNote('one');
