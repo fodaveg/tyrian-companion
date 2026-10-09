@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 564,
+		"catch_clause": 565,
 		"promise_catch": 59,
 		"void_expression": 123,
 		"callback_registration": 222
@@ -8380,6 +8380,20 @@
 						"justification": "The \"onStateChange\" owner deliberately detaches \"this.liveSummaries.observe\"; that named operation never rejects, because its own try/catch reports every failure through onFailure."
 					},
 					"reason": "Allowlisted void_expression: The \"onStateChange\" owner deliberately detaches \"this.liveSummaries.observe\"; that named operation never rejects, because its own try/catch reports every failure through onFailure. Verified target: \"this.liveSummaries.observe\" in \"onStateChange\"."
+				},
+				{
+					"id": "d4fd3c7c921b4aedcfafe128fd5f0840cd1027cc",
+					"kind": "catch_clause",
+					"line": 1461,
+					"column": 6,
+					"endLine": 1467,
+					"endColumn": 5,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.localDebugActions.event"
+					},
+					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
 				},
 				{
 					"id": "1f40e4851a1e017ed7b9a6ecdd8416721c4466b6",

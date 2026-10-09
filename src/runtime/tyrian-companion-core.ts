@@ -40,6 +40,7 @@ import { installDomHelpers } from '../host/dom-polyfill';
 import type {
 	CreateTyrianRuntime,
 	TyrianCodeBlockContext,
+	TyrianDisposer,
 	TyrianHost,
 	TyrianMenuEntry,
 	TyrianPriceSeedCache,
@@ -152,7 +153,7 @@ import { SELL_SIGNAL_REFERENCE_DAYS } from '../economy/sell-signal';
 import { assemblePriceHistory } from './assemble-price-history';
 import { CollectorHeartbeat } from './collector-status';
 import { loadCollectorInstanceId, loadCollectorMode, saveCollectorMode } from './collector-instance';
-import { loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
+import { DEFAULT_VIEW_PLACEMENT, loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import {
 	PriceSeedBulkRefreshService,
@@ -316,7 +317,7 @@ import {
 	InventoryAdvisorItemView,
 	inventoryAdvisorSection,
 } from '../ui/inventory-advisor-item-view';
-import { MountedViews, sectionViewRegistration } from '../ui/mounted-views';
+import { MountedViews, sectionsViewRegistration, sectionViewRegistration, type TyrianSectionId } from '../ui/mounted-views';
 import { SALE_VIEW_SLOT, SALE_VIEW_TYPE, SaleItemView, saleSection } from '../ui/sale-item-view';
 import {
 	buildSaleViewModel,
@@ -409,6 +410,10 @@ export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
 /** Palette commands that export what the simplified Session tab no longer offers (0.6.0 candidate). */
 export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
 export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
+/** The ONE view of a host's main screen that lists the three sections (`TyrianUiPort.registerSectionsView`). */
+export const TYRIAN_MAIN_VIEW_TYPE = 'tyrian-main-view';
+/** What undoes a registration that registered nothing. */
+const NO_VIEW: TyrianDisposer = () => undefined;
 /** Commands `onload` registers besides `PRODUCT_ACTION_IDS`; the load journal counts both. */
 /** Version of the managed-assets bundle the core hands to the manager, at start and on a language change. */
 const MANAGED_ASSETS_BUNDLE_VERSION = 8;
@@ -454,6 +459,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		};
 		return this.viewControllers;
 	}
+	/**
+	 * What is registered with the host right now: the three sections in ONE view of its main screen
+	 * (`'main'`) or as three views of their own (`'sidebar'`, the only way before the main view and
+	 * still Obsidian's). Null until `onload` registers. `registeredViews` undoes it, so a change of
+	 * the choice swaps one for the other without reloading the plugin.
+	 */
+	private registeredPlacement: ViewPlacement | null = null;
+	private registeredViews: TyrianDisposer[] = [];
 	private connection!: ConnectionService;
 	private sessions!: ManualSessionStartService;
 	private liveSessions: LiveSessionLifecycle | null = null;
@@ -640,8 +653,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	collectorMode: CollectorMode | undefined;
 	/**
 	 * Where this DEVICE shows the plugin (`runtime/view-placement.ts`), kept in the host's local
-	 * storage, never in `data.json`. Null until it is first read. Nothing acts on it yet: no host
-	 * declares `capabilities.mainView`, so the three views register as always.
+	 * storage, never in `data.json`. Null until it is first read (`getViewPlacement`). It decides
+	 * what registers only on a host with a main screen (`wantedPlacement`).
 	 */
 	private viewPlacement: ViewPlacement | null = null;
 	private settingTab!: TyrianCompanionSettingTab;
@@ -713,29 +726,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		);
 		// A settings load that failed is recorded, flushed and rethrown by `start()`: nothing registers.
 		if (boot.settingsLoadFailure !== null) await runtime.start();
-		// What each section is and how it mounts, apart from where the host shows it.
-		const views = this.mountedViews;
-		const sections = {
-			session: views.companion.section(companionSection(this)),
-			inventory: views.inventoryAdvisor.section(inventoryAdvisorSection(this)),
-			sale: views.sale.section(saleSection(this)),
-		};
-		// Today each section is a view of its own, in its slot. One source for both the registration
-		// loop and the journal count, so they cannot drift apart.
-		const viewRegistrations = [
-			sectionViewRegistration(sections.session, COMPANION_VIEW_SLOT),
-			sectionViewRegistration(sections.inventory, INVENTORY_ADVISOR_VIEW_SLOT),
-			sectionViewRegistration(sections.sale, SALE_VIEW_SLOT),
-		];
+		// One view on the host's main screen or three of their own, decided once. One source for
+		// both the registration and the journal count, so they cannot drift apart.
+		const placement = this.wantedPlacement();
+		const viewRegistrars = this.productViewRegistrars(placement);
 		await this.localDebugActions.run({
 			component: 'plugin', action: 'plugin_load',
 			details: {
 				commandCount: PRODUCT_ACTION_IDS.length + STANDALONE_COMMAND_IDS.length,
-				viewCount: viewRegistrations.length,
+				viewCount: viewRegistrars.length,
 			},
 		}, async () => {
 
-		for (const view of viewRegistrations) this.host.ui.registerView(view);
+		this.registerProductViews(placement, viewRegistrars);
 		// Registration itself is inert: it hands the host a callback, nothing runs until a note
 		// with this block is actually rendered. `docs/PLATFORM_POLICY.md` H9.2 covers the request
 		// that callback may then make.
@@ -1440,21 +1443,36 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/**
 	 * Whether Settings offers the choice between the host's main screen and its sidebar: only when
 	 * the host declared `capabilities.mainView: true`. An omitted capability means false, the reverse
-	 * of `managedAssetsSupported`, and no host declares it yet.
+	 * of `managedAssetsSupported`: Obsidian never declares it, Hebra only where it has the main view.
 	 */
 	mainViewSupported(): boolean {
 		return hostSupportsMainView(this.host);
 	}
 
-	/** This device's choice, for the Settings selector; the main screen until it picks the sidebar. */
+	/**
+	 * This device's choice, for the Settings selector and for the registration of the views; the
+	 * main screen until it picks the sidebar. A device storage that cannot be read is no reason to
+	 * leave the plugin without views: the default stands for this run and the failure reaches the log.
+	 */
 	getViewPlacement(): ViewPlacement {
-		this.viewPlacement ??= loadViewPlacement(this.host.localStorage);
+		if (this.viewPlacement === null) {
+			try {
+				this.viewPlacement = loadViewPlacement(this.host.localStorage);
+			} catch (error) {
+				this.viewPlacement = DEFAULT_VIEW_PLACEMENT;
+				this.localDebugActions?.event({
+					component: 'settings', action: 'settings_load', level: 'warn', phase: 'failure',
+					code: 'storage_failure', state: 'view_placement', message: error,
+				});
+			}
+		}
 		return this.viewPlacement;
 	}
 
 	/**
 	 * The Settings selector's write. Stores the choice in this device's local storage only, so no
-	 * synced `data.json` carries it to another device. It changes nothing else yet.
+	 * synced `data.json` carries it to another device, then applies it without a reload: what was
+	 * registered goes and the other placement registers, in the same tick.
 	 */
 	async updateViewPlacement(placement: ViewPlacement): Promise<SettingsUpdateResult> {
 		const perform = async (): Promise<SettingsUpdateResult> => {
@@ -1462,12 +1480,86 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				// Published only after the write, like `updateCollectorMode`.
 				saveViewPlacement(this.host.localStorage, placement);
 				this.viewPlacement = placement;
+				this.applyViewPlacement();
 			}
 			return { status: 'saved', inventoryAdvisor: 'unchanged' };
 		};
 		return await (this.localDebugActions?.run(
 			{ component: 'settings', action: 'settings_save', state: 'view_placement' }, perform,
 		) ?? perform());
+	}
+
+	/**
+	 * Where the sections go right now: the host's main screen only on a host that has one
+	 * (`capabilities.mainView`, with the port to register it) AND with that choice on this device.
+	 * Anything else is the three views of their own, which is all Obsidian ever gets.
+	 */
+	private wantedPlacement(): ViewPlacement {
+		return this.mainViewSupported() && this.host.ui.registerSectionsView !== undefined && this.getViewPlacement() === 'main'
+			? 'main' : 'sidebar';
+	}
+
+	/** True while the three sections are ONE view of the host's main screen, which lists them itself. */
+	hostListsSections(): boolean {
+		return this.registeredPlacement === 'main';
+	}
+
+	/**
+	 * What registers the sections with the host in that placement, one per view: what each section
+	 * is and how it mounts is the same in both (`MountedViews.section`), only where it is shown
+	 * changes. On the main screen, ONE view lists the three in order, under their short labels; as
+	 * views of their own, each goes in its slot under its own title.
+	 */
+	private productViewRegistrars(placement: ViewPlacement): Array<() => TyrianDisposer> {
+		const views = this.mountedViews;
+		const ui = this.host.ui;
+		const session = views.companion.section(companionSection(this));
+		const inventory = views.inventoryAdvisor.section(inventoryAdvisorSection(this));
+		const sale = views.sale.section(saleSection(this));
+		if (placement === 'main') {
+			const mainView = sectionsViewRegistration({
+				type: TYRIAN_MAIN_VIEW_TYPE,
+				title: () => translateRuntime(createTranslator(this.settings.language), 'shell.title'),
+				icon: 'sword',
+			}, [session, inventory, sale]);
+			// `wantedPlacement` only answers 'main' on a host that has the method.
+			return [() => ui.registerSectionsView?.(mainView) ?? NO_VIEW];
+		}
+		return [
+			() => ui.registerView(sectionViewRegistration(session, COMPANION_VIEW_SLOT)),
+			() => ui.registerView(sectionViewRegistration(inventory, INVENTORY_ADVISOR_VIEW_SLOT)),
+			() => ui.registerView(sectionViewRegistration(sale, SALE_VIEW_SLOT)),
+		];
+	}
+
+	private registerProductViews(placement: ViewPlacement, registrars = this.productViewRegistrars(placement)): void {
+		// Set first: a host that mounts on registration already paints for this placement.
+		this.registeredPlacement = placement;
+		this.registeredViews = registrars.map((register) => register());
+	}
+
+	/**
+	 * After a language change: the host read each section's label when the view registered, so on
+	 * its main screen it still lists them in the old language until it is told the new ones.
+	 */
+	private relabelListedSections(): void {
+		if (this.registeredPlacement !== 'main') return;
+		for (const section of [companionSection(this), inventoryAdvisorSection(this), saleSection(this)]) {
+			this.host.ui.updateSection?.(TYRIAN_MAIN_VIEW_TYPE, section.id, { title: section.label() });
+		}
+	}
+
+	/**
+	 * Swaps what is registered for what the choice now asks for, synchronously: every view of the
+	 * old placement is taken away (the host unmounts what it had mounted) before the new one
+	 * registers, since a host refuses a view type it already has. Nothing is opened: the change is
+	 * made from the host's Settings, which on Hebra already left the main screen.
+	 */
+	private applyViewPlacement(): void {
+		const wanted = this.wantedPlacement();
+		if (this.registeredPlacement === null || wanted === this.registeredPlacement || this.unloaded) return;
+		for (const unregister of this.registeredViews) unregister();
+		this.registerProductViews(wanted);
 	}
 
 	/** R1b: what `refusedInConsult` shows when an action only the collector may take is refused. */
@@ -5227,6 +5319,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 		this.renderViews();
 		if (previousLanguage !== this.settings.language || secretChanged) this.renderInventoryAdvisorViews();
+		if (previousLanguage !== this.settings.language) this.relabelListedSections();
 		// An explicit folder change takes Bases/templates with it, so the selector stays the
 		// single source of truth without a separate manual step.
 		if (previousOutputFolder !== this.settings.outputFolder) await this.reconcileManagedAssetsRoot(context);
@@ -5864,15 +5957,26 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** Opens the Companion, or focuses it where it is already open (`host.ui.revealView`). */
 	private async activateView(): Promise<void> {
-		await this.host.ui.revealView(COMPANION_VIEW_TYPE);
+		await this.revealSection('session', COMPANION_VIEW_TYPE);
 	}
 
 	private async activateInventoryAdvisorView(): Promise<void> {
-		await this.host.ui.revealView(INVENTORY_ADVISOR_VIEW_TYPE);
+		await this.revealSection('inventory', INVENTORY_ADVISOR_VIEW_TYPE);
 	}
 
 	private async activateSaleView(): Promise<void> {
-		await this.host.ui.revealView(SALE_VIEW_TYPE);
+		await this.revealSection('sale', SALE_VIEW_TYPE);
+	}
+
+	/**
+	 * Everything that opens a section from outside it (a command, the ribbon menu, a notice, the
+	 * end of a sync) comes here: on the host's main screen it enters that section of the one view;
+	 * otherwise it opens the section's own view.
+	 */
+	private async revealSection(section: TyrianSectionId, viewType: string): Promise<void> {
+		const reveal = this.registeredPlacement === 'main' ? this.host.ui.revealSection?.(TYRIAN_MAIN_VIEW_TYPE, section) : undefined;
+		if (reveal !== undefined) await reveal;
+		else await this.host.ui.revealView(viewType);
 	}
 
 }

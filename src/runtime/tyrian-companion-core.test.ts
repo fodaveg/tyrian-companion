@@ -11,10 +11,12 @@ import type {
 	TyrianMenuEntry,
 	TyrianPanelRegistration,
 	TyrianRibbonRegistration,
+	TyrianSectionsViewRegistration,
 	TyrianUiPort,
 	TyrianVault,
 	TyrianVaultFile,
 	TyrianViewRegistration,
+	TyrianViewSectionPatch,
 } from '../host/tyrian-host';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from '../inventory/price-history-note-block';
 import { COMPANION_VIEW_TYPE } from '../ui/companion-view';
@@ -22,7 +24,12 @@ import { INVENTORY_ADVISOR_VIEW_TYPE } from '../ui/inventory-advisor-item-view';
 import { PRODUCT_ACTION_IDS } from '../ui/product-action-controller';
 import { SALE_VIEW_TYPE } from '../ui/sale-item-view';
 import { createTyrianRuntime } from './index';
-import { ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID } from './tyrian-companion-core';
+import {
+	ALERT_INGAME_SECRET_COMMAND_ID,
+	EXPORT_LEGACY_SESSION_COMMAND_ID,
+	EXPORT_LIVE_SESSION_COMMAND_ID,
+	TYRIAN_MAIN_VIEW_TYPE,
+} from './tyrian-companion-core';
 import { VIEW_PLACEMENT_KEY } from './view-placement';
 
 /**
@@ -311,7 +318,8 @@ describe('main screen or sidebar: this device\'s choice, behind a host capabilit
 				component: 'settings', action: 'settings_save', state: 'view_placement', phase: 'success',
 			}));
 		});
-		// Saving the choice is all it does: the three views stay registered where they were.
+		// This host declares the main view but has no port to register one: saving the choice is
+		// all it does, and the three views stay registered where they were.
 		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual(threeViews);
 
 		await state.change('main');
@@ -335,5 +343,159 @@ describe('main screen or sidebar: this device\'s choice, behind a host capabilit
 		expect(await stored('main')).toBe('main');
 		expect(await stored('floating')).toBe('main');
 		expect(await stored(null)).toBe('main');
+	});
+});
+
+describe('the three sections on a host with a main screen', () => {
+	/** The neutral host, declaring a main view and recording what the core does with it. */
+	function mainScreenHost(options: { load?: (key: string) => unknown; withoutPort?: boolean } = {}) {
+		const neutral = neutralHost();
+		const device = new Map<string, unknown>();
+		const sectionsViews: TyrianSectionsViewRegistration[] = [];
+		const disposed: string[] = [];
+		const revealed: Array<[string, string]> = [];
+		const patched: Array<[string, string, TyrianViewSectionPatch]> = [];
+		const revealedViews: string[] = [];
+		const host: TyrianHost = {
+			...neutral.host,
+			capabilities: { mainView: true },
+			localStorage: {
+				load: options.load ?? ((key) => device.get(key) ?? null),
+				save: (key, value) => { device.set(key, value); },
+			},
+			ui: {
+				...neutral.host.ui,
+				registerView: (view) => {
+					neutral.registered.views.push(view);
+					return () => { disposed.push(view.type); };
+				},
+				revealView: async (type) => { revealedViews.push(type); },
+				...(options.withoutPort === true ? {} : {
+					registerSectionsView: (view: TyrianSectionsViewRegistration) => {
+						sectionsViews.push(view);
+						return () => { disposed.push(view.type); };
+					},
+					revealSection: async (type: string, sectionId: string) => { revealed.push([type, sectionId]); },
+					updateSection: (type: string, sectionId: string, patch: TyrianViewSectionPatch) => { patched.push([type, sectionId, patch]); },
+				}),
+			},
+		};
+		return { ...neutral, host, device, sectionsViews, disposed, revealed, revealedViews, patched };
+	}
+
+	it('registers ONE view that lists Session, Inventory and Sale under their short labels, and counts one view in the load journal', async () => {
+		const { host, registered, sectionsViews, records } = mainScreenHost();
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+
+		expect(registered.views).toEqual([]);
+		expect(sectionsViews).toHaveLength(1);
+		const view = sectionsViews[0]!;
+		expect([view.type, view.title(), view.icon]).toEqual([TYRIAN_MAIN_VIEW_TYPE, 'Tyrian Companion', 'sword']);
+		expect(view.sections.map((section) => [section.id, section.title(), section.icon])).toEqual([
+			['session', 'Session', 'sword'], ['inventory', 'Inventory', 'package-search'], ['sale', 'Sale', 'candy'],
+		]);
+		for (const section of view.sections) {
+			expect(Object.keys(section).sort()).toEqual(['icon', 'id', 'mount', 'setVisible', 'title', 'unmount']);
+		}
+		expect(runtime.hostListsSections()).toBe(true);
+		await vi.waitFor(() => {
+			const loaded = records().find((record) => record.action === 'plugin_load' && record.phase === 'success');
+			expect((loaded?.details as { viewCount?: number } | undefined)?.viewCount).toBe(1);
+		});
+	});
+
+	it('a device storage that throws when the choice is read is the main screen, and the failure reaches the log', async () => {
+		const { host, registered, sectionsViews, records } = mainScreenHost({
+			load: (key) => {
+				if (key === VIEW_PLACEMENT_KEY) throw new Error('The device storage cannot be read.');
+				return null;
+			},
+		});
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+
+		expect(runtime.getViewPlacement()).toBe('main');
+		expect(sectionsViews).toHaveLength(1);
+		expect(registered.views).toEqual([]);
+		// Read once: the default stands for this run instead of asking a broken storage on every paint.
+		runtime.getViewPlacement();
+		await vi.waitFor(() => {
+			expect(records().filter((record) => record.action === 'settings_load' && record.state === 'view_placement')).toEqual([
+				expect.objectContaining({ component: 'settings', phase: 'failure', level: 'warn', code: 'storage_failure' }),
+			]);
+		});
+	});
+
+	it('a host that declares the main view but has no way to register it gets the three views', async () => {
+		const { host, registered } = mainScreenHost({ withoutPort: true });
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+
+		expect(registered.views.map(({ type }) => type)).toEqual([COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE]);
+		expect(runtime.hostListsSections()).toBe(false);
+	});
+
+	it('swaps the one view for the three, and back, when the device changes its choice; the same choice again swaps nothing', async () => {
+		const { host, registered, sectionsViews, disposed } = mainScreenHost();
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+
+		await runtime.updateViewPlacement('sidebar');
+		expect(disposed).toEqual([TYRIAN_MAIN_VIEW_TYPE]);
+		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual([
+			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'],
+		]);
+		expect(registered.views.map((view) => view.title())).toEqual(['Tyrian companion', 'Inventory advisor', 'Halloween sale']);
+		expect(runtime.hostListsSections()).toBe(false);
+
+		await runtime.updateViewPlacement('sidebar');
+		expect(disposed).toHaveLength(1);
+		expect(registered.views).toHaveLength(3);
+
+		await runtime.updateViewPlacement('main');
+		expect(disposed).toEqual([TYRIAN_MAIN_VIEW_TYPE, COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE]);
+		expect(sectionsViews).toHaveLength(2);
+		expect(runtime.hostListsSections()).toBe(true);
+	});
+
+	it('opens a section of the one view from the commands, and the view of its own once the sidebar is chosen', async () => {
+		const { host, registered, revealed, revealedViews } = mainScreenHost();
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		const run = async (id: string): Promise<void> => {
+			registered.commands.find((candidate) => candidate.id === id)!.checkCallback?.(false);
+			await vi.waitFor(() => expect(revealed.length + revealedViews.length).toBeGreaterThan(0));
+		};
+
+		await run('open-inventory-advisor');
+		expect(revealed).toEqual([[TYRIAN_MAIN_VIEW_TYPE, 'inventory']]);
+		expect(revealedViews).toEqual([]);
+
+		await runtime.updateViewPlacement('sidebar');
+		revealed.length = 0;
+		await run('open-sale');
+		expect(revealed).toEqual([]);
+		expect(revealedViews).toEqual([SALE_VIEW_TYPE]);
+	});
+
+	it('tells the host the new labels of the listed sections after a language change, and nothing while they are views of their own', async () => {
+		const { host, patched } = mainScreenHost();
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		const core = runtime as unknown as { relabelListedSections(): void; settings: { language: string } };
+
+		core.settings = { ...core.settings, language: 'es' };
+		core.relabelListedSections();
+		expect(patched).toEqual([
+			[TYRIAN_MAIN_VIEW_TYPE, 'session', { title: 'Sesión' }],
+			[TYRIAN_MAIN_VIEW_TYPE, 'inventory', { title: 'Inventario' }],
+			[TYRIAN_MAIN_VIEW_TYPE, 'sale', { title: 'Venta' }],
+		]);
+
+		await runtime.updateViewPlacement('sidebar');
+		patched.length = 0;
+		core.relabelListedSections();
+		expect(patched).toEqual([]);
 	});
 });
