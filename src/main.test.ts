@@ -1856,6 +1856,42 @@ describe('the load retires the Bases the bundle no longer ships (9 Oct 2026)', (
 		expect(messages).toEqual([]);
 	});
 
+	it('writes nothing if the plugin unloaded between its decision and the apply\'s own inspection', async () => {
+		const { vault, messages, plugin, load } = await installed('bundle7');
+		const inspect = plugin.managedAssets.inspect.bind(plugin.managedAssets);
+		let calls = 0;
+		plugin.managedAssets.inspect = async (...args: Parameters<typeof inspect>) => {
+			const inspection = await inspect(...args);
+			calls += 1;
+			if (calls === 1) (plugin as unknown as { unloaded: boolean }).unloaded = false;
+			if (calls === 2) (plugin as unknown as { unloaded: boolean }).unloaded = true;
+			return inspection;
+		};
+		const before = new Map(vault.contents);
+		await load();
+		expect(calls).toBeGreaterThanOrEqual(2);
+		expect(new Map(vault.contents)).toEqual(before);
+		expect(messages).toEqual([]);
+	});
+
+	it('never acts on a root without a ready manifest, even when its Bases are recognisable (the Hebra adoption)', async () => {
+		const { vault, messages, load } = await installed('bundle7');
+		vault.contents.delete('Home/Tyrian Companion Assets.json');
+		const before = new Map(vault.contents);
+		await load();
+		expect(new Map(vault.contents)).toEqual(before);
+		expect(messages).toEqual([]);
+	});
+
+	it('after a sync, a deleted Base that stays with only retirements pending is no news either', async () => {
+		const { vault, messages, sync } = await installed('bundle7');
+		vault.contents.delete(`${BASES}/Wallet.base`);
+		const before = new Map(vault.contents);
+		await sync();
+		expect(new Map(vault.contents)).toEqual(before);
+		expect(messages).toEqual([]);
+	});
+
 	it('writes nothing if the plugin unloaded while the load was deciding', async () => {
 		const { vault, messages, plugin, load } = await installed('bundle7');
 		const inspect = plugin.managedAssets.inspect.bind(plugin.managedAssets);

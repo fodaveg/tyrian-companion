@@ -271,7 +271,8 @@ Nota completa: [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789a
 
 		it('is null for any other origin, scheme or credentials, and for text that is not a URL', async () => {
 			for (const icon of ['https://evil.example/file/x.png', 'http://render.guildwars2.com/file/x.png', 'https://render.guildwars2.com.evil.example/x.png',
-				'https://user:pass@render.guildwars2.com/x.png', 'javascript:alert(1)', 'not a url', '']) {
+				'https://user:pass@render.guildwars2.com/x.png', 'javascript:alert(1)', 'not a url', '',
+				'https://render.guildwars2.com/file/a.png\nevil: true', 'https://render.guildwars2.com/file/a"b.png', 'https://render.guildwars2.com/file/a\\b.png']) {
 				expect((await iconOf(icon)).value, icon).toBeNull();
 			}
 		});

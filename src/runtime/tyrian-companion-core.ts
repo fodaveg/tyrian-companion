@@ -2562,7 +2562,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
-	 * David, 9 Oct 2026 («que las cree solo», «borrarlas si no las editaste», «actualizarla también»): on
+	 * David, 9 Oct 2026 (his choices «Sí, que las cree solo», «Actualizarla también» and «Borrarlos si no los editaste»): on
 	 * load the managed Bases follow the plugin exactly as they do after an inventory sync, with ONE rule
 	 * (`decideManagedAssetsAutoUpdate`): create the new ones, update those the user did not edit, and
 	 * retire those the bundle no longer ships (an unedited file is removed as the host's deleted-files setting says, an edited one stays
