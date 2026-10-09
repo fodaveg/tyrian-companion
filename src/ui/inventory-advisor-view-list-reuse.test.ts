@@ -147,6 +147,45 @@ describe('Inventory Advisor list: equivalence of what is visible', () => {
 		expect(pressedAndDisabled().filter((state) => state === 'true:true')).toHaveLength(1);
 	});
 
+	/**
+	 * Z16-d: marking one item kept (and the busy flag around the write) used to discard every row
+	 * element. Now the row whose keep state changed is the only one built again, the busy flag is
+	 * set on the buttons already built, and what is shown is what a full rebuild shows. Sabotage:
+	 * putting the keep set and `busy` back in `rowElementsKey` makes the counts below 60-wide.
+	 */
+	it('Z16-d: marking one item kept builds that row alone, and shows what a full rebuild shows', () => {
+		const model = { ...fixtureModel(ACCOUNT_SIZE), contentVersion: 1 };
+		// The full rebuilds to compare with come first: `render` points the view's globals at its own document.
+		const fresh = (interactions: InventoryAdvisorViewInteractions): string => fullTree(render(model, 'es', interactions).results);
+		const states = {
+			busy: { ...keepInteractions([]), preferencesBusy: true },
+			kept: keepInteractions([1_000]),
+			second: keepInteractions([1_000, 1_002]),
+			released: keepInteractions([1_002]),
+		};
+		const expected = Object.fromEntries(Object.entries(states).map(([name, interactions]) => [name, fresh(interactions)]));
+		const mount = render(model, 'es', keepInteractions([]));
+		const controls = filterControls(mount);
+		expect(listRows(mount.results).length).toBeGreaterThan(100);
+		const next = (interactions: InventoryAdvisorViewInteractions): { rowsCreated: number; tree: string } => {
+			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, model, createTranslator('es'), undefined, interactions);
+			mount.document.recordCreated();
+			// A key of the search that changes nothing is the repaint the new keep state reaches.
+			controls.search.dispatch('input');
+			return { rowsCreated: mount.document.created.filter(isListRow).length, tree: fullTree(mount.results) };
+		};
+
+		const busy = next(states.busy);
+		expect({ rowsCreated: busy.rowsCreated, same: busy.tree === expected.busy }).toEqual({ rowsCreated: 0, same: true });
+		const kept = next(states.kept);
+		expect({ rowsCreated: kept.rowsCreated, same: kept.tree === expected.kept }).toEqual({ rowsCreated: 1, same: true });
+		const second = next(states.second);
+		expect({ rowsCreated: second.rowsCreated, same: second.tree === expected.second }).toEqual({ rowsCreated: 1, same: true });
+		const released = next(states.released);
+		expect({ rowsCreated: released.rowsCreated, same: released.tree === expected.released }).toEqual({ rowsCreated: 1, same: true });
+		expect(next(states.released).rowsCreated).toBe(0);
+	});
+
 	it('filters the new data on the next key when an update brings other groups under the same content version', () => {
 		const labels = (mount: Mount): Array<string | undefined> => listRows(mount.results).map((row) => row.attributes.get('aria-label'));
 		const mount = render({ ...fixtureModel(60), contentVersion: 1 });

@@ -672,6 +672,7 @@ function mountInventoryAdvisorView(
 		ui,
 		kept: keptExceptionsByItemId(interactions.preferences),
 		busy: interactions.preferencesBusy === true,
+		track: (row, button) => { keepButtons.set(row, button); },
 		onKeep: (row) => {
 			pendingKeep = { itemId: row.itemId, name: row.name, mode: 'keep' };
 			keepStatus.hidden = false;
@@ -797,6 +798,11 @@ function mountInventoryAdvisorView(
 	let projection: InventoryListProjection | null = null;
 	const rowElements = new Map<InventoryAdvisorViewRow, HTMLLIElement>();
 	let rowElementsKey = '';
+	// What the keep control of each built row shows, so marking one item kept rebuilds that row alone
+	// (Z16-d): the exception id its button was built with, and the button, whose `disabled` follows `busy`.
+	const rowKeptIds = new Map<InventoryAdvisorViewRow, string | null>();
+	const keepButtons = new Map<InventoryAdvisorViewRow, HTMLButtonElement>();
+	const clearRowElements = (): void => { rowElements.clear(); rowKeptIds.clear(); keepButtons.clear(); };
 	const mountedDetails = new Set<RowDetailDisclosure>();
 	// The price blocks of the details that are open: a repaint of the tab reaches them through here.
 	const mountedPriceHistory = new Set<RowPriceHistoryBlock>();
@@ -811,7 +817,7 @@ function mountInventoryAdvisorView(
 		// of the search must not filter and order the rows the previous groups left.
 		if (dataChanged || projection === null || projection.groups !== model.groups || projection.scopeKey !== scopeKey) {
 			projection = { groups: model.groups, scopeKey, scoped: scopeInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), filters), orderKey: '', ordered: [] };
-			rowElements.clear();
+			clearRowElements();
 		}
 		const order = filters.sort ?? 'value_desc';
 		const orderKey = `${order}:${translator.locale}`;
@@ -861,7 +867,7 @@ function mountInventoryAdvisorView(
 		for (const detail of [...mountedDetails]) detail.collapse();
 		if (!visible) {
 			projection = null;
-			rowElements.clear();
+			clearRowElements();
 		}
 		const ordered = visible ? orderedRows(dataChanged) : null;
 		// H18.15: only the value order yields to space; an explicit quantity or name order stands.
@@ -889,12 +895,16 @@ function mountInventoryAdvisorView(
 			},
 		};
 		// Whatever `renderInventoryListRow` reads besides the row itself must enter this key, or a
-		// kept row element shows a stale value after that input changes.
-		const nextRowElementsKey = JSON.stringify([rowContext.showSlotsFreed, rowContext.bagCharacter, keep === null ? null : [keep.busy, [...keep.kept]]]);
+		// kept row element shows a stale value after that input changes. The keep state does not: it
+		// is per row (`rowKeptIds`, checked as each row is asked for) and `busy` is applied to the
+		// built buttons below, so marking one item kept builds that one row again, not the list (Z16-d).
+		const nextRowElementsKey = JSON.stringify([rowContext.showSlotsFreed, rowContext.bagCharacter, keep === null]);
 		if (nextRowElementsKey !== rowElementsKey) {
 			rowElementsKey = nextRowElementsKey;
-			rowElements.clear();
+			clearRowElements();
 		}
+		if (keep !== null) for (const button of keepButtons.values()) button.disabled = keep.busy;
+		const keptIdOf = (row: InventoryAdvisorViewRow): string | null => keep?.kept.get(row.itemId) ?? null;
 		const filteredEmpty = visible && rows.length === 0 && hasActiveFilter(filters);
 		results.replaceChildren();
 		if (ordered !== null) results.append(renderResults(
@@ -911,9 +921,15 @@ function mountInventoryAdvisorView(
 				storageSpace: model.storageSpace ?? null,
 				rowElement: (row) => {
 					let element = rowElements.get(row);
+					// A row the advisor already keeps shows a note, whatever the exceptions say.
+					if (element !== undefined && row.action !== 'keep' && rowKeptIds.get(row) !== keptIdOf(row)) {
+						element = undefined;
+						keepButtons.delete(row);
+					}
 					if (element === undefined) {
 						element = renderInventoryListRow(row, translator, rowContext);
 						rowElements.set(row, element);
+						rowKeptIds.set(row, keptIdOf(row));
 					}
 					return element;
 				},
@@ -1660,6 +1676,11 @@ interface RowKeepContext {
 	/** Items an active whole-stack keep exception already covers, mapped to that exception's id. */
 	readonly kept: ReadonlyMap<number, string>;
 	readonly busy: boolean;
+	/**
+	 * Told of the button each row builds, so a change of `busy` reaches the rows already built by
+	 * setting `disabled` on that button instead of building every row again.
+	 */
+	readonly track: (row: InventoryAdvisorViewRow, button: HTMLButtonElement) => void;
 	readonly onKeep: (row: InventoryAdvisorViewRow) => void;
 	/**
 	 * H18.37 (David, 25 sep 2026, question 5): "Conservar" is reversible from the same row
@@ -1684,6 +1705,7 @@ function keepControl(row: InventoryAdvisorViewRow, translator: Translator, keep:
 	const button = createEl('button');
 	button.type = 'button';
 	button.disabled = keep.busy;
+	keep.track(row, button);
 	const icon = createSpan();
 	icon.className = 'svg-icon is-small';
 	keep.ui.setIcon(icon, 'pin');
