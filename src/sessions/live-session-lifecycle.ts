@@ -99,6 +99,11 @@ export class LiveSessionLifecycle {
 	private beating = false;
 	private disposed = false;
 	private failure = false;
+	/**
+	 * Storage did not answer when this host asked for the saved session, and has not answered since: nobody knows whether
+	 * one is saved, or in which phase. Lowered by the first load storage answers, whatever the answer.
+	 */
+	private unread = false;
 	/** Not null from the first durable step storage refused until the first one it accepts again. */
 	private unsaved: UnsavedLiveState | null = null;
 	private recovering = false;
@@ -125,6 +130,16 @@ export class LiveSessionLifecycle {
 	private async initializeRecord(): Promise<void> {
 		{
 			const loaded = await this.options.persistence.loadLive();
+			if (loaded.status === 'error' && loaded.code === 'unavailable') {
+				// Storage that does not answer the load says nothing about what is saved. Unlike a record that does not
+				// validate, it may answer later: the heartbeat asks again, and so does the next start. Reported once.
+				if (!this.unread) this.options.onError(new Error('Live session storage is unavailable.'));
+				this.unread = true; this.failure = true;
+				if (this.options.enabled()) this.armHeartbeat();
+				return;
+			}
+			// The load was answered: the error shown since the first attempt no longer describes anything.
+			if (this.unread) { this.unread = false; this.failure = false; }
 			if (loaded.status !== 'loaded') {
 				if (loaded.status === 'error') this.failure = true;
 				return;
@@ -157,6 +172,10 @@ export class LiveSessionLifecycle {
 		const declaredBuild = isDeclaredBuild(declaration) ? structuredClone(declaration) : null;
 		return await this.enqueue(async () => {
 			if (!this.options.enabled() || this.disposed) return null;
+			// A saved session nobody has read yet is asked for here too. While it stays unread nothing is started: it
+			// would be a new session over one that may be active on disk.
+			if (this.unread) { await this.initializeRecord(); this.options.onStateChange(); }
+			if (this.unread) return null;
 			if (this.record?.phase === 'active') return this.record.sessionId;
 			this.pruneHeld = false;
 			if (this.record !== null) {
@@ -645,6 +664,9 @@ export class LiveSessionLifecycle {
 		}, LIVE_SOURCE_STALE_MS);
 	}
 	private async beat(): Promise<void> {
+			// The saved session could not be read when this host started: one more attempt per beat, which goes on as the
+			// start would have (a session found active is reclaimed as after a restart, which is what this is).
+			if (this.unread) { if (this.options.enabled() && !this.disposed) { await this.initializeRecord(); this.options.onStateChange(); } return; }
 			if (!this.options.enabled() || this.disposed || this.record === null) return;
 			// One bounded pass per beat: the queue a host finds when it starts drains over a few beats, never at load.
 			await this.pruneSealed();

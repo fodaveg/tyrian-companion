@@ -57,9 +57,14 @@ function outage(label: string) {
 		/** Another host starting on what is on disk now, as the next launch of the plugin would. */
 		restarted: () => {
 			const persistence = new IndexedDbSessionRuntimeStore(tracked.factory, `live-outage-${label}`); const failed = vi.fn();
-			const next = new LiveSessionLifecycle({ ...options, coordinator: lease('next-host'), persistence, onError: failed,
-				setInterval: () => 1, clearInterval: () => undefined });
-			return { service: next, onError: failed, dispose: async () => { await next.dispose(); persistence.close(); } };
+			let nextBeat: (() => void) | null = null;
+			// A session this host starts itself gets an id of its own, as every real one does.
+			const next = new LiveSessionLifecycle({ ...options, coordinator: lease('next-host'), persistence, onError: failed, sessionId: () => 'next-session',
+				setInterval: (callback: () => void) => { nextBeat = callback; return 1; }, clearInterval: () => { nextBeat = null; } });
+			return { service: next, store: persistence, onError: failed, dispose: async () => { await next.dispose(); persistence.close(); },
+				/** Whether this host armed a heartbeat at all. */
+				beats: () => nextBeat !== null,
+				beat: async () => { nextBeat?.(); await next.capture(); } };
 		},
 		/** One heartbeat, awaited through the lifecycle's own queue. */
 		beat: async () => { beat?.(); await service.capture(); },
@@ -445,6 +450,91 @@ describe('live session across a storage outage that hid a commit already on disk
 		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
 		expect((await f.durable()).record).toMatchObject({ phase: 'complete', summaryReceipt: { path: 'Sessions/live.md' } });
 		await f.service.dispose();
+	});
+});
+
+/**
+ * Storage that is down at the moment the host starts. The load of the saved session failed, the view
+ * went to `error` and that was all: no heartbeat, nobody asked again, and once storage was back the
+ * session on disk stayed where it was, unread, with every start refused until the next restart.
+ */
+describe('live session that could not be read when the host started', () => {
+	/** A session with one observation on disk, and its host gone without releasing the lease. */
+	async function orphaned(label: string) {
+		const f = outage(label);
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+		return { f, before: await f.durable() };
+	}
+
+	it('storage that was down at the start is asked again by the heartbeat, and the saved session goes on as after any restart', async () => {
+		const { f, before } = await orphaned('load-unavailable');
+		killStorage(f.tracked);
+		f.at(LEASE_TTL_MS + 60_000);
+		const next = f.restarted();
+		await expect(next.service.initialize()).resolves.toBeUndefined();
+		expect(next.service.getView()).toMatchObject({ phase: 'error', sessionId: null });
+		expect(next.onError.mock.calls.map(([error]) => (error as Error).message)).toContain('Live session storage is unavailable.');
+		// Nothing is started while nobody knows what is saved, and a beat that finds storage still down changes nothing.
+		await expect(next.service.start('Test')).resolves.toBeNull();
+		f.at(LEASE_TTL_MS + 65_000); await next.beat();
+		expect(next.service.getView()).toMatchObject({ phase: 'error', sessionId: null });
+		const reported = next.onError.mock.calls.filter(([error]) => (error as Error).message === 'Live session storage is unavailable.');
+		expect(reported, 'the outage is reported once, not once per beat').toHaveLength(1);
+
+		reviveStorage(f.tracked);
+		expect(await f.durable(), 'the session on disk was never touched').toEqual(before);
+		f.at(LEASE_TTL_MS + 70_000); await next.beat();
+		expect(next.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', observationCount: 1, observedItemsMs: 1000 });
+		expect(next.service.getRuntime()).toMatchObject({ authority: { instanceId: 'next-host', fence: 2 }, epoch: null });
+		expect(next.service.getView().gaps.map((gap) => gap.reason)).toEqual(['host_restart']);
+		// It is the saved session that goes on, not a new one over it.
+		await expect(next.service.start('Test')).resolves.toBe('session');
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		f.at(LEASE_TTL_MS + 71_000); await expect(next.service.commit(f.sample(0, 0, bags(20), NEXT_EPOCH))).resolves.toBe('stored');
+		f.at(LEASE_TTL_MS + 72_000); await expect(next.service.commit(f.sample(1, 1000, bags(23), NEXT_EPOCH))).resolves.toBe('stored');
+		expect(next.service.getView().observations.map((row) => [row.epoch, row.before, row.after, row.delta])).toEqual([[EPOCH, 5, 7, 2], [NEXT_EPOCH, 20, 23, 3]]);
+		await next.dispose();
+	});
+
+	it('a start that finds storage back reads the saved session first, instead of waiting for the next beat', async () => {
+		const { f } = await orphaned('load-unavailable-start');
+		killStorage(f.tracked);
+		f.at(LEASE_TTL_MS + 60_000);
+		const next = f.restarted(); await next.service.initialize();
+		reviveStorage(f.tracked);
+		await expect(next.service.start('Test')).resolves.toBe('session');
+		expect(next.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', observationCount: 1 });
+		expect((await f.durable()).record).toEqual(next.service.getRuntime());
+		await next.dispose();
+	});
+
+	it('with nothing saved, a start works as soon as storage is back', async () => {
+		const f = outage('load-unavailable-empty');
+		killStorage(f.tracked);
+		const next = f.restarted(); await next.service.initialize();
+		expect(next.service.getView().phase).toBe('error');
+		await expect(next.service.start('Test')).resolves.toBeNull();
+		reviveStorage(f.tracked);
+		f.at(5000); await next.beat();
+		expect(next.service.getView().phase).toBe('idle');
+		await expect(next.service.start('Test')).resolves.toBe('next-session');
+		expect(next.service.getView()).toMatchObject({ phase: 'active', sessionId: 'next-session' });
+		await next.dispose();
+	});
+
+	it('a saved record that does not validate is not a passing outage: nobody asks again and nothing is started over it', async () => {
+		const { f, before } = await orphaned('load-corrupt');
+		f.at(LEASE_TTL_MS + 60_000);
+		const next = f.restarted();
+		const load = vi.spyOn(next.store, 'loadLive').mockResolvedValue({ status: 'error', code: 'corrupt' });
+		await next.service.initialize();
+		expect(next.service.getView()).toMatchObject({ phase: 'error', sessionId: null });
+		expect(next.beats()).toBe(false);
+		await expect(next.service.start('Test')).resolves.toBeNull();
+		expect(load).toHaveBeenCalledTimes(1);
+		expect(await f.durable()).toEqual(before);
+		await next.dispose();
 	});
 });
 
