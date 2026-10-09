@@ -8,8 +8,9 @@ texto y orden, ninguna cifra. [ESTADO](ESTADO.md) separa lo medido de lo que nad
 - Rótulos que dicen qué cuenta cada cifra: «Veredicto» pasa a «Balance observado», «Neto estimado» a «Valor neto de
   objetos observados», «Por hora» a «Objetos por hora observada», «Oro de la cartera» y «Oro ganado» a «Cambio de oro
   observado», «Para vender ahora» a «Objetos observados de más valor» y «Otras monedas» a «Cambios de otras monedas».
-  Lo que salió del inventario se cuenta en unidades y en tipos de objeto. En Mapas, «Tiempo con mapa identificado» y el
-  aviso de lista incompleta salen solo cuando hay hueco en el registro de mapas y ese tiempo no cubre lo observado.
+  Lo que salió del inventario se cuenta en unidades y en tipos de objeto. En Mapas, «Tiempo con mapa identificado» sale
+  cuando hay más de un mapa, y el aviso de lista incompleta solo cuando el registro de mapas tiene un hueco y ese
+  tiempo no cubre lo observado (antes bastaba el hueco).
 - Títulos con la fecha y la hora local del inicio en las dos notas: el resumen es «2026-10-09 08.42 · Resumen · Varios
   mapas · Rinopopo» y la nota completa «2026-10-09 08.42 · Sesión completa» (antes todas las completas se titulaban
   «Sesión de inventario observado»). Las notas ya escritas conservan su título: reescribir una existente no lo cambia
