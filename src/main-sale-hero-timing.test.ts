@@ -393,6 +393,49 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 			expect(model.status).toBe('ready');
 		});
 
+		function deepFreeze<T>(value: T): T {
+			if (typeof value === 'object' && value !== null) {
+				for (const child of Object.values(value)) deepFreeze(child);
+				Object.freeze(value);
+			}
+			return value;
+		}
+
+		/**
+		 * Z16-a: a Sale paint only READS the advisor's analysis, so it asks for the shared object
+		 * (`readOnly: true`, no copy) and never for a detached one. The analysis handed over is deeply
+		 * frozen: a paint that wrote to it would throw (modules are strict) and the snapshot below
+		 * would differ. Sabotage: asking `analysis()` without `readOnly` in `getSaleViewModel` makes
+		 * the first expectation fail.
+		 */
+		it('Z16-a: paints from the advisor analysis without copying it and without writing to it', () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) - 1);
+			const frozen = deepFreeze({
+				source: { input: { prices: {
+					capturedAt: new Date(Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) - 60_000).toISOString(),
+					items: [{ itemId: 36038, bid: { unitCopper: 342 }, ask: { unitCopper: 400 } }],
+				} } },
+				objects: null,
+			});
+			const before = JSON.stringify(frozen);
+			const reads: unknown[] = [];
+			const harness = {
+				runtimeReady: true,
+				getInventoryAdvisorViewModel: () => advisorModel(2350),
+				inventoryAdvisor: { analysis: (options?: unknown) => { reads.push(options); return frozen as never; } },
+				saleHeroTiming: null as unknown,
+				getSellSignalState: () => null,
+			};
+			const model = runGetSaleViewModel(harness as never);
+			renderModel(model);
+			runGetSaleViewModel(harness as never);
+
+			expect(reads.length).toBeGreaterThan(0);
+			expect(reads.every((options) => (options as { readOnly?: boolean } | undefined)?.readOnly === true)).toBe(true);
+			expect(JSON.stringify(frozen)).toBe(before);
+		});
+
 		/**
 		 * Sabotage: reverting the caducity check to trust only the cached `advisorModel.status` (the
 		 * pre-fix behaviour) makes this fail on `expect(model.status).toBe('blocked')` — it stays
