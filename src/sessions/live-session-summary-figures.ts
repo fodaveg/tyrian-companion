@@ -1,5 +1,6 @@
 import { liveItemRateEligible, type LiveGapV1 } from './live-session-model';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { liveItemValueCopper } from './live-session-reducer';
 
 /** The main map is the one that holds more than this share of the time spent on known maps. */
 export const SUMMARY_MAIN_MAP_SHARE = 0.7;
@@ -104,6 +105,7 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	characters: readonly SummaryCharacter[]): SummaryFigures {
 	const durationMs = Math.max(0, Date.parse(session.endedAt) - Date.parse(session.startedAt));
 	const prices = new Map(session.valuation.prices.map((price) => [price.itemId, price.unitCopper]));
+	const basis = session.valuation.priceBasis;
 	const itemTotals = session.totals.filter((row) => row.kind === 'item');
 	const sellable: SummaryItemRow[] = []; const unpriced: SummaryItemRow[] = []; const boundItemIds: number[] = []; const unknownBindingIds: number[] = [];
 	let netCopper = 0; let positiveCopper = 0; let pricedAny = false;
@@ -115,11 +117,14 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 			continue;
 		}
 		const unit = prices.get(row.idNumber);
-		const priced = unit !== undefined && unit !== null;
-		if (priced) { netCopper += unit * row.net; if (row.net !== 0) pricedAny = true; }
+		// What the row's net quantity is worth in the basis the session saved: unit x quantity for a net price, the sale of the
+		// whole pile less the commission on its total for a gross one. Null is an item the session could not price.
+		const value = unit === undefined || unit === null ? null : basis === 'instant_sell_net' ? unit * row.net : liveItemValueCopper(basis, unit, row.net);
+		const priced = value !== null;
+		if (priced) { netCopper += value; if (row.net !== 0) pricedAny = true; }
 		if (row.net <= 0) continue;
-		const entry: SummaryItemRow = { itemId: row.idNumber, quantity: row.net, valueCopper: priced ? unit * row.net : null, container: info?.type === 'Container' };
-		if (priced) { sellable.push(entry); positiveCopper += unit * row.net; } else unpriced.push(entry);
+		const entry: SummaryItemRow = { itemId: row.idNumber, quantity: row.net, valueCopper: value, container: info?.type === 'Container' };
+		if (priced) { sellable.push(entry); positiveCopper += value; } else unpriced.push(entry);
 	}
 	sellable.sort((a, b) => (b.valueCopper ?? 0) - (a.valueCopper ?? 0) || b.quantity - a.quantity || a.itemId - b.itemId);
 	unpriced.sort((a, b) => b.quantity - a.quantity || a.itemId - b.itemId);

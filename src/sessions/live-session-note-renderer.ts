@@ -2,7 +2,7 @@ import { canonicalJson } from '../core/canonical-sha256';
 import { normalizeSessionOutputFolder, type SessionNoteBlockId } from './session-note-model';
 import { assembleNote, inspectStoredSessionNote, readStoredSessionBlocks, sha256Text, type RenderedSessionNote } from './session-note-renderer';
 import { isStoredLiveSessionPayload, LIVE_SESSION_MAX_PAYLOAD_VERSION, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
-import { keys } from './live-session-reducer';
+import { keys, liveItemValueCopper } from './live-session-reducer';
 
 const LIVE_NOTE_KEYS = ['tc_schema','tc_kind','tc_source','tc_session_ref','tc_account_ref','tc_locale','tc_started_at',
 	'tc_ended_at','tc_payload_version','tc_payload_sha256'];
@@ -59,7 +59,9 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 				'|---|---|---:|---:|---:|---:|',
 				...rows.map((row) => {
 					const unit = row.kind === 'item' ? prices.get(row.idNumber) : null;
-					const value = unit !== undefined && unit !== null && Number.isSafeInteger(unit * row.delta) ? unit * row.delta : null;
+					// Each change is valued on its own in the basis the valuation states; with a gross price the commission is
+					// taken over that change's total, so the column does not have to add up to the session's subtotal.
+					const value = unit !== undefined && unit !== null ? liveItemValueCopper(valuation.priceBasis,unit,row.delta) : null;
 					return `| ${row.observedAt} | ${entity(row.kind,row.idNumber)} | ${String(row.before)} | ${String(row.after)} | ${String(row.delta)} | ${money(value)} |`;
 				}),
 				...(rows.length === 0 ? [label('No se observaron cambios de cantidad.','No quantity changes were observed.')] : []),
@@ -89,7 +91,9 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 			provenance: [
 				`## ${label('Procedencia','Provenance')}`,
 				`- ${label('Fuente','Source')}: Nexus · ${label('observación de inventario','inventory observation')}`,
-				`- ${label('Precios capturados','Price snapshot')}: ${valuation.capturedAt ?? '—'} · ${label('venta inmediata neta','net instant selling')}`,
+				`- ${label('Precios capturados','Price snapshot')}: ${valuation.capturedAt ?? '—'} · ${valuation.priceBasis === 'instant_sell_gross'
+					? label('venta inmediata, precio bruto por unidad; la comisión se descuenta sobre el total de cada venta','instant selling, gross price per unit; the commission is taken over the total of each sale')
+					: label('venta inmediata neta','net instant selling')}`,
 				label('El siguiente registro conserva la sesión completa para recuperarla y exportarla en otra instalación.',
 					'The following record preserves the complete session for recovery and export on another installation.'),
 				'```json',payload,'```',

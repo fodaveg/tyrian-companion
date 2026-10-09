@@ -3,26 +3,15 @@ import { isStoredLiveNoteOutbox, prepareLiveNoteOutbox, type LiveNoteOutboxInput
 import { canonicalJson } from '../core/canonical-sha256';
 import { isFarmingGoal, type FarmingGoalV1 } from './farming-goal';
 import { isFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveGapV1, type LiveJournalEntryV1,
-	type LiveObservationV1, type LiveSessionRuntimeRecord, type LivePriceV1, type LiveTotalV1, type LiveValuationV1 } from './live-session-model';
+import { LIVE_SESSION_NOTE_WRITE_VERSION, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveGapV1, type LiveJournalEntryV1,
+	type LiveObservationV1, type LivePriceBasis, type LiveSessionPayloadVersion, type LiveSessionRuntimeRecord, type LivePriceV1, type LiveTotalV1, type LiveValuationV1 } from './live-session-model';
 import { bounded, date, GOLD_CURRENCY_ID, isEmptySample, isLiveGap, keys, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
 import { isLiveObservation } from './live-session-validation';
 import { sha256Text } from './session-note-renderer';
 
-/**
- * Payload formats a live session note can carry (`tc_payload_version`, `version` of the payload):
- * - 1: one journal entry per sample the session took, empty ones included (cursors consecutive in an epoch);
- * - 2: no entry for a sample that changed nothing and marks no boundary (see `isEmptySample`); cursors only grow, and the
- *   time of the last sample is `coverage.lastObservationAt`.
- * A reader accepts every version up to `LIVE_SESSION_MAX_PAYLOAD_VERSION`; a note of a later one is set aside, never invalid.
- */
-export type LiveSessionPayloadVersion = 1 | 2;
+/** The payload formats and the one this build writes are defined with the model, which the reducer reads too; they are used from here. */
+export { LIVE_SESSION_NOTE_WRITE_VERSION, type LiveSessionPayloadVersion } from './live-session-model';
 export const LIVE_SESSION_MAX_PAYLOAD_VERSION = 2;
-/**
- * The format this build WRITES, and with it whether the lifecycle keeps the samples that changed nothing (2) or every one (1).
- * It stays 1 until the readers that understand 2 have been out long enough: with 1, what is written is byte for byte what 0.6.16 wrote.
- */
-export const LIVE_SESSION_NOTE_WRITE_VERSION: LiveSessionPayloadVersion = 1;
 
 /** Synced evidence excludes local authority, source process identity, account and raw snapshots. */
 export interface StoredLiveSessionPayloadV1 {
@@ -156,7 +145,7 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 		journal: journal as StoredLiveJournalEntryV1[],
 		gaps,
 		totals: orderTotals(live.totals.map((total) => ({ kind: total.kind, idNumber: total.idNumber, positive: total.positive, negative: total.negative, net: total.net }))),
-		valuation: valueLiveTotals(orderTotals(live.totals), live.prices, live.priceCapturedAt, live.currencyTrackedIds.includes(GOLD_CURRENCY_ID)), magicFind: { value: live.magicFind.value, source: live.magicFind.source },
+		valuation: valueLiveTotals(orderTotals(live.totals), live.prices, live.priceCapturedAt, live.currencyTrackedIds.includes(GOLD_CURRENCY_ID), 'instant_sell_net'), magicFind: { value: live.magicFind.value, source: live.magicFind.source },
 		preparation: { version: 1, enabled: live.preparation.enabled, manualMagicFindBonus: live.preparation.manualMagicFindBonus,
 			foodReminderMinutes: live.preparation.foodReminderMinutes, utilityReminderMinutes: live.preparation.utilityReminderMinutes },
 		farmingGoal: live.farmingGoal, groupContext: live.groupContext,...declaredBuild,
@@ -265,7 +254,7 @@ function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 	const duration = Date.parse(boundary) - Date.parse(value.startedAt);
 	if (value.observedItemsMs > duration - gapDuration(value.gaps as LiveGapV1[],'items',boundary)
 		|| value.observedCurrenciesMs > duration - gapDuration(value.gaps as LiveGapV1[],'currencies',boundary)) return false;
-	return validValuation(value.valuation, expectedTotals);
+	return validValuation(value.valuation, expectedTotals, value.version);
 }
 
 /** Signed arithmetic shared by validation and export; a missing observation is never a zero. */
@@ -283,9 +272,20 @@ export function totalsForObservations(observations: readonly LiveObservationV1[]
 function orderTotals(totals: readonly LiveTotalV1[]): LiveTotalV1[] {
 	return [...totals].sort((a,b) => a.kind.localeCompare(b.kind) || a.idNumber - b.idNumber);
 }
-function validValuation(value: unknown, totals: readonly LiveTotalV1[]): boolean {
+/**
+ * The price bases a payload of `version` may state. Version 1 is net per unit and nothing else: that is all a 0.6.16 accepts, and it
+ * has to keep reading every version 1 note. Version 2 states either, one for the whole valuation.
+ */
+function statesKnownBasis(version: LiveSessionPayloadVersion, basis: unknown): basis is LivePriceBasis {
+	return basis === 'instant_sell_net' || version === 2 && basis === 'instant_sell_gross';
+}
+/**
+ * The saved subtotals have to be the ones the stated basis gives for the saved prices and totals. A price row carries an id and a
+ * unit price and no basis of its own, so a valuation cannot mix bases: the one it states covers every row.
+ */
+function validValuation(value: unknown, totals: readonly LiveTotalV1[], version: LiveSessionPayloadVersion): boolean {
 	if (!record(value) || !keys(value,['priceBasis','capturedAt','prices','positiveItemValueKnownCopper','netItemValueKnownCopper',
-		'coinNetCopper','knownNetValueCopper','unpricedItemIds']) || value.priceBasis !== 'instant_sell_net'
+		'coinNetCopper','knownNetValueCopper','unpricedItemIds']) || !statesKnownBasis(version,value.priceBasis)
 		|| value.capturedAt !== null && !date(value.capturedAt) || !Array.isArray(value.prices)) return false;
 	const ids = new Set<number>();
 	for (const price of value.prices) {
@@ -293,7 +293,7 @@ function validValuation(value: unknown, totals: readonly LiveTotalV1[]): boolean
 			|| price.unitCopper !== null && !natural(price.unitCopper) || ids.has(price.itemId)) return false;
 		ids.add(price.itemId);
 	}
-	try { return canonicalJson(value) === canonicalJson(valueLiveTotals(totals,value.prices as LivePriceV1[],value.capturedAt,value.coinNetCopper !== null)); }
+	try { return canonicalJson(value) === canonicalJson(valueLiveTotals(totals,value.prices as LivePriceV1[],value.capturedAt,value.coinNetCopper !== null,value.priceBasis)); }
 	catch { return false; }
 }
 function inside(value: unknown, start: string, end: string): value is string { return date(value) && value >= start && value <= end; }

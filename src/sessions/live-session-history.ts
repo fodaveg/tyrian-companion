@@ -1,8 +1,8 @@
 import { buildLiveSessionComparison, type LiveSessionComparison, type LiveSessionSetAside } from './live-session-comparison';
 export type { LiveSessionSetAside } from './live-session-comparison';
 import { settlePersistedIngameReceipt } from '../alerts/alert-ingame-receipt';
-import { buildLiveChart, GOLD_CURRENCY_ID } from './live-session-reducer';
-import type { LiveSessionViewV1, LiveTotalV1 } from './live-session-model';
+import { buildLiveChart, GOLD_CURRENCY_ID, liveItemValueCopper } from './live-session-reducer';
+import type { LivePriceBasis, LiveSessionViewV1, LiveTotalV1 } from './live-session-model';
 import { inspectLiveSessionNote } from './live-session-note-renderer';
 import { inspectDurableSessionNote, type SessionHistoryVault } from './session-history';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
@@ -26,10 +26,18 @@ export function liveHistoryCurrencies(totals: readonly LiveTotalV1[]): LiveHisto
 		.sort((a, b) => (a.idNumber === 1 ? 0 : 1) - (b.idNumber === 1 ? 0 : 1) || a.idNumber - b.idNumber)
 		.map((row) => ({ idNumber: row.idNumber, net: row.net }));
 }
-/** The item rows with a net other than 0, best estimated value first (unpriced and negative nets sink; shared by the live grid and the saved sessions), pricing each id through one Map instead of a scan per comparison. */
-export function sortLiveItemsByValue(totals: readonly LiveTotalV1[], prices: readonly { itemId: number; unitCopper: number | null }[]): LiveTotalV1[] {
+/**
+ * The item rows with a net other than 0, best estimated value first (unpriced and negative nets sink; shared by the live grid and the saved sessions), pricing each id through one Map instead of a scan per comparison.
+ * `basis` is the one the valuation of those prices states: the value that ranks a row is the one the session shows for it.
+ */
+export function sortLiveItemsByValue(totals: readonly LiveTotalV1[], prices: readonly { itemId: number; unitCopper: number | null }[],
+	basis: LivePriceBasis = 'instant_sell_net'): LiveTotalV1[] {
 	const unit = new Map(prices.map((entry) => [entry.itemId, entry.unitCopper] as const));
-	const rank = (row: LiveTotalV1): number => { if (row.net < 0) return Number.NEGATIVE_INFINITY; const price = unit.get(row.idNumber); return price == null ? -1 : price * row.net; };
+	const rank = (row: LiveTotalV1): number => {
+		if (row.net < 0) return Number.NEGATIVE_INFINITY; const price = unit.get(row.idNumber);
+		// The net basis ranks by the plain product, as it always did; only the gross one needs the commission worked out.
+		return price == null ? -1 : basis === 'instant_sell_net' ? price * row.net : liveItemValueCopper(basis, price, row.net) ?? -1;
+	};
 	return totals.filter((row) => row.kind === 'item' && row.net !== 0).sort((a, b) => rank(b) - rank(a) || b.net - a.net);
 }
 export type LiveSessionHistoryList = { status: 'ok'; sessions: LiveSessionHistoryEntry[]; ignored: number; setAside: LiveSessionSetAside[] }
@@ -65,7 +73,7 @@ export class LiveSessionHistoryService {
 			sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: session.observationCount,
 			estimatedValueCopper: session.valuation.knownNetValueCopper ?? session.valuation.netItemValueKnownCopper,
 			itemCount: session.totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0),
-			items: sortLiveItemsByValue(session.totals,session.valuation.prices)
+			items: sortLiveItemsByValue(session.totals,session.valuation.prices,session.valuation.priceBasis)
 				.map((row) => ({ idNumber: row.idNumber,net: row.net })),
 			currencies: liveHistoryCurrencies(session.totals),
 		})) };
@@ -138,8 +146,9 @@ export function liveSessionViewFromStored(payload: StoredLiveSessionPayloadV1, _
 	const size = Math.max(1,Math.min(200,Number.isSafeInteger(limit) ? limit : 200));
 	// Same criterion as the live chart: the whole session in at most 600 points.
 	// The line ends at the session's last sample, which a version 2 journal may not have an entry for.
+	// Every point is valued in the basis the saved valuation states, so the last one is the value saved with the session.
 	const chart = buildLiveChart(payload.journal,{ prices: payload.valuation.prices,priceCapturedAt: payload.valuation.capturedAt,
-		currencyTrackedIds: payload.valuation.coinNetCopper !== null ? [GOLD_CURRENCY_ID] : [] },600,payload.coverage.lastObservationAt);
+		currencyTrackedIds: payload.valuation.coinNetCopper !== null ? [GOLD_CURRENCY_ID] : [],priceBasis: payload.valuation.priceBasis },600,payload.coverage.lastObservationAt);
 	return { version: 1,sessionId: payload.sessionRef,phase: 'complete',connection: 'disconnected',sourceState: 'unavailable',
 		sourceReason: 'source_missing',source: 'nexus_inventory',startedAt: payload.startedAt,endedAt: payload.endedAt,
 		elapsedMs: Date.parse(payload.endedAt) - Date.parse(payload.startedAt),observedItemsMs: payload.observedItemsMs,

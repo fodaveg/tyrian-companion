@@ -528,7 +528,7 @@ export class LiveSessionPanel {
 	}
 
 	private renderObjects(view: LiveSessionViewV1): void {
-		const items = sortLiveItemsByValue(view.totals, view.valuation.prices);
+		const items = sortLiveItemsByValue(view.totals, view.valuation.prices, view.valuation.priceBasis);
 		const total = view.totals.filter((row) => row.kind === 'item').reduce((sum, row) => sum + row.net, 0);
 		this.setText(this.objectsTotal, this.number(total));
 		const wanted: HTMLElement[] = [];

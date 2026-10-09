@@ -1,8 +1,9 @@
 import { sha256CanonicalValue } from '../core/canonical-sha256';
-import { LIVE_GAP_REASONS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
+import { bestSaleNetCopper } from '../economy/gw2-fees';
+import { LIVE_GAP_REASONS, LIVE_SESSION_NOTE_WRITE_VERSION, livePriceBasisOf, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveObservationV1,
 	type LiveSessionRuntimeRecord, type LiveGapV1, type LiveTotalV1,
-	type LiveValuationV1, type LivePriceV1, type LiveChartPointV1 } from './live-session-model';
+	type LiveValuationV1, type LivePriceBasis, type LivePriceV1, type LiveChartPointV1 } from './live-session-model';
 
 /** Keeps unknown coverage explicit and invalidates item comparisons across missing intervals. */
 export function liveSessionGap(record: LiveSessionRuntimeRecord, reason: LiveGapV1['reason'], _at: string,
@@ -119,10 +120,13 @@ export function isEmptySample(entry: Pick<LiveJournalEntryV1,'cursor' | 'observa
 	return entry.observations.length === 0 && !entry.breakBefore && entry.cursor !== 0;
 }
 
-/** One chart point: the cumulative totals revalued with the record's current prices. */
+/**
+ * One chart point: the cumulative totals revalued with the record's current prices. `priceBasis` is what a saved valuation states;
+ * a runtime record has no such field and its prices are in the runtime's basis (`liveRuntimePriceBasis`).
+ */
 export function liveChartPoint(entry: Pick<LiveJournalEntryV1,'observedAt' | 'breakBefore'>, totals: readonly LiveTotalV1[],
-	record: Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> | null): LiveChartPointV1 {
-	const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
+	record: Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> & { priceBasis?: LivePriceBasis } | null): LiveChartPointV1 {
+	const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false, record?.priceBasis);
 	return { observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
 		netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore };
 }
@@ -219,25 +223,50 @@ export function buildLiveChart(journal: readonly ChartEntry[], record: ChartReco
 export const GOLD_CURRENCY_ID = 1;
 
 /**
+ * The basis this build's runtime keeps its prices in: `LiveSessionRuntimeRecord.prices`, the quotes the economy hands to the
+ * lifecycle and every figure valued from them before a note exists. The record has no field to say it, so it is the one of the note
+ * format this build writes (`LIVE_SESSION_NOTE_WRITE_VERSION`): what the panel shows of a running session is valued exactly like
+ * the note it will be saved as.
+ */
+export function liveRuntimePriceBasis(): LivePriceBasis { return livePriceBasisOf(LIVE_SESSION_NOTE_WRITE_VERSION); }
+
+/**
+ * Copper a signed `quantity` of one item is worth at `unitCopper` under `basis`; null when the arithmetic leaves the safe-integer range.
+ * - `instant_sell_net`: the unit price already is what one unit nets, so the value is the plain product, as it always was.
+ * - `instant_sell_gross`: the commission is taken once over the total of the sale (`bestSaleNetCopper`, the same function Halloween
+ *   and the loot alerts use), never per unit. What left the inventory is worth the same as what came in, with the sign changed.
+ *   The value is therefore not additive: two piles valued apart can come to less than the same units valued together.
+ */
+export function liveItemValueCopper(basis: LivePriceBasis, unitCopper: number, quantity: number): number | null {
+	if (basis === 'instant_sell_net') { const value = unitCopper * quantity; return Number.isSafeInteger(value) ? value : null; }
+	if (quantity === 0 || unitCopper === 0) return 0;
+	const sale = bestSaleNetCopper(unitCopper, null, Math.abs(quantity));
+	return sale === null ? null : quantity < 0 ? 0 - sale : sale;
+}
+
+/**
  * Revalues the whole ledger with one public price snapshot. `goldTracked` says the gold currency (id 1) was ever covered by the
  * session: only then the observed net gold (0 when unchanged) is added; otherwise wallet coverage remains unknown (null).
+ * `basis` says what the unit prices are (see `LivePriceBasis`) and is stated back in the result; every price is in that one basis.
+ * A caller that values a saved session passes the basis that session states; one that values the runtime record leaves it out.
  */
-export function valueLiveTotals(totals: readonly LiveTotalV1[], prices: readonly LivePriceV1[], capturedAt: string | null, goldTracked: boolean): LiveValuationV1 {
+export function valueLiveTotals(totals: readonly LiveTotalV1[], prices: readonly LivePriceV1[], capturedAt: string | null, goldTracked: boolean,
+	basis: LivePriceBasis = liveRuntimePriceBasis()): LiveValuationV1 {
 	const quotes = new Map(prices.map((row) => [row.itemId, row.unitCopper]));
 	let positive = 0; let net = 0; const unpricedItemIds: number[] = [];
 	for (const total of totals) {
 		if (total.kind !== 'item') continue;
 		const unit = quotes.get(total.idNumber);
-		if (unit === null || unit === undefined || !Number.isSafeInteger(unit * total.positive) || !Number.isSafeInteger(unit * total.net)) {
-			unpricedItemIds.push(total.idNumber); continue;
-		}
-		positive += unit * total.positive; net += unit * total.net;
+		const gained = unit === null || unit === undefined ? null : liveItemValueCopper(basis, unit, total.positive);
+		const kept = unit === null || unit === undefined ? null : liveItemValueCopper(basis, unit, total.net);
+		if (gained === null || kept === null) { unpricedItemIds.push(total.idNumber); continue; }
+		positive += gained; net += kept;
 	}
 	if (!Number.isSafeInteger(positive) || !Number.isSafeInteger(net)) throw new Error('Live valuation arithmetic overflow.');
 	const coinNet = goldTracked ? totals.find((total) => total.kind === 'currency' && total.idNumber === GOLD_CURRENCY_ID)?.net ?? 0 : null;
 	const known = coinNet === null ? null : net + coinNet;
 	if (coinNet !== null && (!Number.isSafeInteger(coinNet) || !Number.isSafeInteger(known))) throw new Error('Live valuation arithmetic overflow.');
-	return { priceBasis: 'instant_sell_net', capturedAt, prices: [...prices], positiveItemValueKnownCopper: positive,
+	return { priceBasis: basis, capturedAt, prices: [...prices], positiveItemValueKnownCopper: positive,
 		netItemValueKnownCopper: net, coinNetCopper: coinNet, knownNetValueCopper: known, unpricedItemIds };
 }
 

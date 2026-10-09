@@ -48,9 +48,42 @@ export interface LiveGapV1 {
 	reason: typeof LIVE_GAP_REASONS[number]; channels: ('items' | 'currencies')[];
 }
 export interface LiveTotalV1 { kind: 'item' | 'currency'; idNumber: number; positive: number; negative: number; net: number }
+/**
+ * What `unitCopper` of a live price means, and with it how a quantity is valued:
+ * - `instant_sell_net`: what ONE unit nets after the trading-post commission; a quantity is worth that times the quantity. The only
+ *   basis up to 0.6.16, and the only one a note of payload version 1 can carry.
+ * - `instant_sell_gross`: the best buy order per unit, before commission; a quantity is worth its total (quantity x gross) less the
+ *   commission on that total. The commission has a minimum of one copper per tranche, so netting one unit and multiplying
+ *   undervalues cheap piles: 250 units at 8 c net 1 700 c, not 250 x 6 c = 1 500 c.
+ */
+export type LivePriceBasis = 'instant_sell_net' | 'instant_sell_gross';
+/**
+ * Payload formats a live session note can carry (`tc_payload_version`, `version` of the payload):
+ * - 1: one journal entry per sample the session took, empty ones included (cursors consecutive in an epoch); prices are
+ *   `instant_sell_net` and nothing else;
+ * - 2: no entry for a sample that changed nothing and marks no boundary (see `isEmptySample`); cursors only grow, and the
+ *   time of the last sample is `coverage.lastObservationAt`. Its valuation states either price basis.
+ * A reader accepts every version up to `LIVE_SESSION_MAX_PAYLOAD_VERSION`; a note of a later one is set aside, never invalid.
+ */
+export type LiveSessionPayloadVersion = 1 | 2;
+/**
+ * The format this build WRITES, and with it whether the lifecycle keeps the samples that changed nothing (2) or every one (1) and
+ * which price basis the runtime keeps (`livePriceBasisOf`). It stays 1 until the readers that understand 2 have been out long
+ * enough: with 1, what is written is byte for byte what 0.6.16 wrote.
+ */
+export const LIVE_SESSION_NOTE_WRITE_VERSION: LiveSessionPayloadVersion = 1;
+/**
+ * The price basis of a build that writes notes of `version`: what its runtime record keeps in `prices` (the record has no field to
+ * say it, and its key set is closed) and what the note it writes states. Net per unit for 1, the only basis a version 1 note can
+ * carry; gross per unit for 2.
+ */
+export function livePriceBasisOf(version: LiveSessionPayloadVersion): LivePriceBasis {
+	return version === 2 ? 'instant_sell_gross' : 'instant_sell_net';
+}
+/** A price row has no basis of its own: every row of a valuation or of a runtime record is in the same one. */
 export interface LivePriceV1 { itemId: number; unitCopper: number | null }
 export interface LiveValuationV1 {
-	priceBasis: 'instant_sell_net'; capturedAt: string | null; prices: LivePriceV1[];
+	priceBasis: LivePriceBasis; capturedAt: string | null; prices: LivePriceV1[];
 	positiveItemValueKnownCopper: number; netItemValueKnownCopper: number;
 	coinNetCopper: number | null; knownNetValueCopper: number | null; unpricedItemIds: number[];
 }
