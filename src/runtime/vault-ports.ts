@@ -42,6 +42,7 @@ export function labelledVault(vault: TyrianVault, label: string): TyrianVault {
 		// `conflict`, and the guarantee it reports is never upgraded here.
 		trashIfUnchanged: async (file, expectedContent) => await vault.trashIfUnchanged(file, expectedContent),
 		onChange: (root, listener) => vault.onChange(root, listener),
+		...(vault.linkTarget === undefined ? {} : { linkTarget: (path: string) => vault.linkTarget!(path) }),
 		get configDir() { return vault.configDir; },
 		canonicalIdentity: () => vault.canonicalIdentity(),
 		basePath: () => vault.basePath(),

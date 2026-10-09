@@ -169,3 +169,27 @@ describe('relativeToOutputFolder', () => {
 		expect(relativeToOutputFolder('/GW2/', '/GW2/a.md')).toBe('a.md');
 	});
 });
+
+describe('createHebraTyrianVault linkTarget', () => {
+	async function vaultWithIndex() {
+		const index = await TyrianPathIndex.load(createMemoryPathIndexKv(), 'lib-1');
+		const vault = createHebraTyrianVault({ port: fakePort().port, index, outputFolder: 'Tyrian Companion', libraryId: 'lib-1',
+			adapter: createLocalFileStorage(createMemoryFileBackend(), 'lib-1') });
+		return { index, vault };
+	}
+
+	it('names an indexed note by its id, because Hebra resolves a wikilink by title or id, not by file name', async () => {
+		const { index, vault } = await vaultWithIndex();
+		await index.setNote('sessions/2026/2026-10-09 064207Z - 5cf90cda42c067ed.md', 'f27d387d-7245-430a-bb8d-ffda023154c4', 1);
+		expect(vault.linkTarget?.('Tyrian Companion/sessions/2026/2026-10-09 064207Z - 5cf90cda42c067ed.md')).toBe('id:f27d387d-7245-430a-bb8d-ffda023154c4');
+	});
+
+	it('answers null for a path it cannot name: unindexed, a file that is not a note, a folder, or outside the output folder', async () => {
+		const { index, vault } = await vaultWithIndex();
+		await index.setFile('Inventory/export.json', 'file-1', 1);
+		expect(vault.linkTarget?.('Tyrian Companion/sessions/unknown.md')).toBeNull();
+		expect(vault.linkTarget?.('Tyrian Companion/Inventory/export.json')).toBeNull();
+		expect(vault.linkTarget?.('Tyrian Companion')).toBeNull();
+		expect(vault.linkTarget?.('Elsewhere/a.md')).toBeNull();
+	});
+});

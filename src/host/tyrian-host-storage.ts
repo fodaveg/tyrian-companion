@@ -64,6 +64,13 @@ export interface TyrianVault {
 	 * support package where `supportPackageAsNote` is declared.
 	 */
 	saveNote?(path: string, content: string): Promise<void>;
+	/**
+	 * Optional. What goes inside `[[…|label]]` to link the note at `path` in THIS host, when its
+	 * resolution is not by vault path (Hebra resolves a wikilink by note title or by `id:<uuid>`,
+	 * never by the file name Obsidian shows). `null`: the host cannot name that note, so the caller
+	 * links by path. Absent: the host resolves a path, as Obsidian does.
+	 */
+	linkTarget?(path: string): string | null;
 	/** managed-assets.ts:553 (via `fileManager.trashFile` today). */
 	trashFile(file: TyrianVaultFile): Promise<void>;
 	/**

@@ -32,6 +32,8 @@ export interface LiveSessionSummaryInput {
 	outputFolder: string;
 	/** Vault path of the full session note, as the receipt records it. */
 	fullNotePath: string;
+	/** The host's own link target for the full note (`TyrianVault.linkTarget`); absent, the link is by `fullNotePath`. */
+	fullNoteLinkTarget?: string | null;
 	displayNames?: Readonly<Record<string, string>>;
 	/** Characters of the session in order of appearance (the runtime record's list); absent or empty means unknown. */
 	characters?: readonly SummaryCharacter[];
@@ -54,7 +56,7 @@ export type LiveSessionSummaryWriteResult =
 	| { status: 'conflict' | 'unavailable'; message: string; errorName?: string };
 
 /** The vault calls the writer needs; the common vault port satisfies it in Obsidian and in Hebra. */
-export type LiveSessionSummaryVault = Pick<SessionNoteVault, 'file' | 'read' | 'createFolder' | 'create'>;
+export type LiveSessionSummaryVault = Pick<SessionNoteVault, 'file' | 'read' | 'createFolder' | 'create'> & { linkTarget?(path: string): string | null };
 
 /** Minimum comparable sessions before «tu media» is written. */
 export const SUMMARY_MIN_COMPARABLES = 3;
@@ -176,7 +178,9 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			if (f.gaps.length > MAX_LISTED_GAPS) out.push('', label(`… y ${String(f.gaps.length - MAX_LISTED_GAPS)} más.`, `… and ${String(f.gaps.length - MAX_LISTED_GAPS)} more.`));
 		}
 
-		const link = input.fullNotePath.replace(/\.md$/u, '');
+		// The host's own target (Hebra: `id:<uuid>`) when it gave one; otherwise the vault path, which Obsidian resolves.
+		const hostTarget = input.fullNoteLinkTarget !== undefined && input.fullNoteLinkTarget !== '' ? input.fullNoteLinkTarget : null;
+		const link = hostTarget ?? input.fullNotePath.replace(/\.md$/u, '');
 		out.push('', `${label('Nota completa', 'Full note')}: ${/[[\]|#^]/u.test(link) ? `\`${link}\`` : `[[${link}|${label('Sesión de inventario observado', 'Observed inventory session')}]]`}`);
 
 		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? (input.mapNames?.[String(id)] ?? `${label('Mapa', 'Map')} ${String(id)}`)

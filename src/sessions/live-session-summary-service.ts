@@ -139,6 +139,7 @@ export class LiveSessionSummaryService {
 			// The plugin may have unloaded while the lookups ran: then nothing is written.
 			if (!this.live()) return;
 			const result: LiveSessionSummaryWriteResult = await this.writer.write({ session, locale, outputFolder, fullNotePath: receipt.path,
+				fullNoteLinkTarget: this.options.vault.linkTarget?.(receipt.path) ?? null,
 				displayNames, characters: this.options.characters(), charactersCapped: this.options.charactersCapped(),
 				itemMeta, mapNames, comparablePerHour: comparable.perHour });
 			if (result.status === 'written' || result.status === 'unchanged' || result.status === 'kept') {

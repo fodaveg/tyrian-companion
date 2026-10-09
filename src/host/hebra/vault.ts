@@ -131,6 +131,14 @@ export function createHebraTyrianVault(options: CreateHebraTyrianVaultOptions): 
 			const relative = requireInside('saveNote', path);
 			await requirePort('saveNote', path).saveNote(relative, content);
 		},
+		linkTarget(path) {
+			// Hebra resolves `[[x]]` by the note's TITLE (`parseLinkRef` keeps only the last path segment) and
+			// `[[id:<uuid>|label]]` by id, so a note whose title is shared (every session note) is named by id.
+			const relative = toRelative(path);
+			if (!port || relative === null || relative === '') return null;
+			const id = index.getIdForPath(relative);
+			return id !== undefined && index.getKindForId(id) === 'note' ? `id:${id}` : null;
+		},
 		async trashFile(file) {
 			requireWritable('trashFile', file.path);
 			const relative = requireInside('trashFile', file.path);

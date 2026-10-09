@@ -227,6 +227,17 @@ Nota completa: [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789a
 `);
 	});
 
+	it('links the full note by the host target when the host gives one, and by path otherwise (Obsidian stays byte for byte)', async () => {
+		const byPath = (await render()).content;
+		const lastLine = (content: string): string => content.trimEnd().split('\n').at(-1)!;
+		expect(lastLine(byPath)).toBe('Nota completa: [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789abcdef|Sesión de inventario observado]]');
+		expect((await render({ fullNoteLinkTarget: null })).content).toBe(byPath);
+		const hebra = (await render({ fullNoteLinkTarget: 'id:f27d387d-7245-430a-bb8d-ffda023154c4' })).content;
+		expect(lastLine(hebra)).toBe('Nota completa: [[id:f27d387d-7245-430a-bb8d-ffda023154c4|Sesión de inventario observado]]');
+		expect(hebra.replace(lastLine(hebra), lastLine(byPath))).toBe(byPath);
+		expect(lastLine((await render({ locale: 'en', fullNoteLinkTarget: 'id:abc' })).content)).toBe('Full note: [[id:abc|Observed inventory session]]');
+	});
+
 	it('writes the English note and names several maps when none passes 70 %', async () => {
 		const { content } = await render({ locale: 'en', itemMeta: META });
 		expect(body(content).startsWith('# Several maps · Alfa\n\n2026-10-08 · 17:30–18:10 · 40 min · 100 % observed')).toBe(true);
@@ -797,6 +808,16 @@ describe('live session summary service', () => {
 		const text = h.vault.contents.get(h.summaries()[0]!)!;
 		expect(text).toContain(`[[${FULL_NOTE.replace(/\.md$/u, '')}|`);
 		expect(text).toContain('## Mapas');
+	});
+	it('links the full note by the vault\'s own target when the host offers one', async () => {
+		const h = harness();
+		const asked: string[] = [];
+		(h.vault as { linkTarget?: (path: string) => string | null }).linkTarget = (path) => { asked.push(path); return 'id:f27d387d-7245-430a-bb8d-ffda023154c4'; };
+		await h.service.observe();
+		expect(asked).toEqual([FULL_NOTE]);
+		const text = h.vault.contents.get(h.summaries()[0]!)!;
+		expect(text).toContain('[[id:f27d387d-7245-430a-bb8d-ffda023154c4|Sesión de inventario observado]]');
+		expect(text).not.toContain(FULL_NOTE.replace(/\.md$/u, ''));
 	});
 	it('writes nothing for an active session, a missing runtime, or consult mode', async () => {
 		const h = harness();
