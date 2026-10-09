@@ -2,7 +2,13 @@
 
 ## Release beta 0.6.20 - el mapa en curso ya no se pierde al reiniciarse el host, y el resumen de sesión reparte por mapa el tiempo observado y el valor
 
-Release por tag `0.6.20`. Corrige un fallo del registro de mapas de la sesión en vivo y cambia la sección «Mapas» de
+[Canal 0.6.20 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.20); **instalación/runtime
+pendiente**. Tag `0.6.20` sobre `2be1736` (commit vacío de atestación), árbol
+`d63294db9d543c945bd38c9896dabdafda798f82`. Gate local sobre el candidato `2974358` (mismo árbol): `check` 8/8
+(5681 tests, 339 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run
+37942397254) terminó en `success`, y `release:brat-verify` contra la salida real de la release dio PASS con los ocho
+assets. La CI de `main` sobre `2be1736` (run 37942387681) terminó en `success`.
+Corrige un fallo del registro de mapas de la sesión en vivo y cambia la sección «Mapas» de
 la nota resumen y el bloque de resumen de la nota completa. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha
 visto en un cliente real.
 

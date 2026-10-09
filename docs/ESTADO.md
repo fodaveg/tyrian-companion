@@ -1,8 +1,12 @@
 # Estado
 
-## Candidato 0.6.20: el mapa en curso tras un reinicio del host y el resumen de sesión por mapa (9 oct 2026)
+## Canal 0.6.20 publicado: el mapa en curso tras un reinicio del host y el resumen de sesión por mapa (9 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `b0c07cd` (`main` con el canal 0.6.19 publicado). Trae un solo
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.20](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.20)
+es una release normal, sin draft ni prerelease, publicada el 2026-10-09T14:15:33Z; nombre, tag y `manifest.version`
+son `0.6.20`. El tag (ligero) apunta a `2be1736` (`2be1736eb154fddcfd6c7aab42828d18cec4c008`, commit vacío de
+atestación, árbol `d63294db9d543c945bd38c9896dabdafda798f82`); el candidato fuente es `2974358`, con el mismo árbol.
+Parte de `b0c07cd` (`main` con el canal 0.6.19 publicado). Trae un solo
 lote, de mapas en las notas de sesión (`52ffeb3`, `49ebf59`, `8065aa6`, `72fdce8`, `fcf3e7d`, `6e1658e`, `1e736ba`,
 `2375f1c`): al recuperar una sesión en vivo tras un reinicio del host, el mapa en curso se cierra en la última muestra
 en vez de descartarse; la sección «Mapas» de la nota resumen pasa a tabla (tiempo observado, valor neto de objetos y
@@ -19,11 +23,22 @@ parte la sesión (decisión de David del 9 oct 2026). Detalle y límites en [CHA
 - Revisión: independiente, dos pasadas. La primera, sobre `b0c07cd..fcf3e7d`: «integrar con correcciones», una
   obligatoria (el último cambio de una sesión caía en «Sin mapa identificado»), aplicada en `6e1658e`. La segunda,
   sobre `fcf3e7d..2375f1c`: «integrar»; 23 de 25 mutaciones mueren y las 2 que sobreviven son equivalentes o
-  inobservables en la nota.
-- Medido sobre `2375f1c` (árbol `2e3fc5538a35182dd1f0ac53bb007d743bdf0a9e`; Fedora, 9 oct 2026): `tsc --noEmit` sin
-  errores, `lint` con 0 errores, censo de observabilidad PASS, contrato de texto fuente PASS y 724 tests de los 30
-  ficheros afectados, con un solo worker. No es el gate.
-- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
+  inobservables en la nota. Los metadatos, el changelog y el test abaratado (`2974358`) los leyó solo el integrador.
+- Medido sobre `2375f1c` (árbol `2e3fc5538a35182dd1f0ac53bb007d743bdf0a9e`; Fedora, 9 oct 2026), antes del gate:
+  `tsc --noEmit` sin errores, `lint` con 0 errores, censo de observabilidad PASS, contrato de texto fuente PASS y 724
+  tests de los 30 ficheros afectados, con un solo worker.
+- Primer intento del gate, sobre `455020e`: ROJO por un solo test. El que jugaba 260 reinicios para llegar al tope de
+  256 intervalos agotó sus 5 s dentro de la suite completa (9 s con la máquina cargada). `2974358` lo abarata sin
+  subir ningún plazo; el gate verde es el segundo intento, sobre el árbol nuevo.
+- Gate local sobre el candidato `2974358` (Fedora, Node v22.23.1, 9 oct 2026): `npm run check` «VEREDICTO: VERDE
+  (8/8)», 5681 tests (339 ficheros); `npm run check:guardrails` «VEREDICTO: VERDE (25/25)»; `release preflight: pass`
+  y `release package: PASS` (`tyrian-companion-0.6.20.zip` construido en local). El zip descargado de la release da el
+  mismo sha256 que el del paquete local: `d8f067c56b82f9d42176cfa1b742e434977c655b64aa4f2b18decbc4a1505058`.
+- Publicación: el workflow de release (run 37942397254) terminó en `success`. `release:brat-verify` sobre la release
+  real: «BRAT release contract: PASS (version=0.6.20; assets=8)». Los ocho assets están `uploaded`: `hebra-main.mjs`
+  2660601, `hebra-styles.css` 118003, `hebra.json` 29593, `main.js` 1951744, `manifest.json` 237, `styles.css` 94537,
+  `tyrian-companion-0.6.20.zip` 2046828 y `tyrian-companion-0.6.20.zip.sha256` 94 (bytes).
+- CI de `main` sobre `2be1736` (run 37942387681): conclusión `success`.
 - Comprobado con datos reales: se renderizó con el código nuevo el resumen de la sesión real del 9 oct 2026 (96 min,
   84 % observado): Hondonadas del Manantial de Ley 24 min 55 s y 0g 47s 82c, Resplandor del Fuego 58 s y 0g 37s 40c,
   Litoral del Naufragio 12 min 52 s y 0g 0s 0c, sin mapa identificado 42 min 27 s y 0g 6s 44c. Suman los 81 min 12 s
@@ -37,8 +52,7 @@ parte la sesión (decisión de David del 9 oct 2026). Detalle y límites en [CHA
 - No verificado: nada de la 0.6.20 visto pintado en Obsidian ni en Hebra, ni instalada por BRAT o en Hebra; ninguna
   sesión real grabada con el arreglo del reinicio. El resumen de la sesión real se renderizó fuera de cualquier
   cliente.
-- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la verificación
-  en clientes reales.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
 
 ## Canal 0.6.19 publicado: la presentación de la nota resumen de sesión y los títulos con fecha (9 oct 2026)
 
