@@ -150,6 +150,10 @@
   .hebra-module-view-main .tyrian-live-session__stat-value dd {
     font-size: clamp(1.25rem, 8cqi, 2rem);
   }
+  /* Las cifras no se estiran a todo el ancho: la fila «Por hora» reparte etiqueta y valor a los dos extremos. */
+  .hebra-module-view-main .tyrian-live-session__stats {
+    max-width: 24rem;
+  }
 }
 
 /* Dentro de la nota el bloque va sobre la hoja (--paper), no sobre --panel. La

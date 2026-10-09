@@ -11,8 +11,10 @@ David. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto pintado.
   y 1300 px, está por ver.
 - En la pantalla principal de Hebra la Sesión va a una columna a cualquier ancho: el valor estimado arriba, la gráfica
   debajo a todo el ancho del contenido, y después Objetos, Monedas, Cronología y Sesiones anteriores. Deshace las dos
-  columnas de la 0.6.21, que David vio en su Hebra y prefirió en una. Obsidian conserva sus dos columnas desde 600 px;
-  Inventario y Venta no cambian.
+  columnas de la 0.6.21, que David vio en su Hebra y prefirió en una. Las cifras («Valor estimado» y «Por hora») no
+  pasan de 24rem de ancho, para que la fila «Por hora» no separe etiqueta y valor a los dos extremos de la pantalla. Las
+  filas de la Cronología siguen a dos columnas desde 600 px. Obsidian conserva sus dos columnas desde 600 px; Inventario
+  y Venta no cambian.
 - «Valor estimado» pasa a cifra destacada en todos los hosts: la etiqueta pequeña encima y el valor grande debajo, a la
   izquierda, con cifras tabulares (hasta 2rem en la pantalla principal, menos en una columna estrecha, donde las tres
   monedas pasan a otra línea antes que desbordar).
