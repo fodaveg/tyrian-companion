@@ -6,6 +6,7 @@ import { sortLiveItemsByValue, type LiveSessionHistoryEntry } from '../sessions/
 import { sha256Text } from '../sessions/session-note-renderer';
 import { reconcileChildren } from './reconcile-children';
 import { coinBadge, compareCoins } from './live-session-coin-badge';
+import { CoinFigure, speakCopper } from './live-session-money';
 import { liveSessionCopy, type LiveSessionCopyKey } from './live-session-copy';
 
 /**
@@ -102,7 +103,7 @@ export class LiveSessionPanel {
 	private readonly gapNoticeText: HTMLElement;
 	private readonly gapNoticeTime: HTMLElement;
 	private readonly stats: HTMLElement;
-	private readonly valueFigure: HTMLElement;
+	private readonly valueFigure: CoinFigure;
 	private readonly rateRow: HTMLElement;
 	private readonly rateFigure: HTMLElement;
 	private readonly objects: HTMLElement;
@@ -186,9 +187,11 @@ export class LiveSessionPanel {
 		notices.append(this.hint, this.alert, this.oldLine, this.gapNotice);
 
 		this.stats = this.node('dl', 'tyrian-live-session__stats');
-		const valueRow = this.node('div');
-		this.valueFigure = this.node('dd');
-		valueRow.append(this.node('dt', '', this.copy('statValue')), this.valueFigure);
+		const valueRow = this.node('div', 'tyrian-live-session__stat-value');
+		this.valueFigure = new CoinFigure(this.document);
+		const valueCell = this.node('dd', 'tyrian-live-session__value');
+		valueCell.append(this.valueFigure.element);
+		valueRow.append(this.node('dt', '', this.copy('statValue')), valueCell);
 		this.rateRow = this.node('div');
 		this.rateFigure = this.node('dd');
 		this.rateRow.append(this.node('dt', '', this.copy('statRate')), this.rateFigure);
@@ -521,7 +524,8 @@ export class LiveSessionPanel {
 	}
 
 	private renderStats(view: LiveSessionViewV1): void {
-		this.setText(this.valueFigure, this.money(liveSessionValue(view)));
+		const value = Math.round(liveSessionValue(view));
+		this.valueFigure.set(value, speakCopper(value, this.copy('moneySpoken'), this.copy('moneySpokenLoss')));
 		const rate = liveSessionRatePerHour(view);
 		this.rateRow.hidden = rate === null;
 		if (rate !== null) this.setText(this.rateFigure, this.money(rate));

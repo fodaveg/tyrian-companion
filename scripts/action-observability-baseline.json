@@ -5,7 +5,7 @@
 		"catch_clause": 566,
 		"promise_catch": 59,
 		"void_expression": 123,
-		"callback_registration": 222
+		"callback_registration": 224
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -16249,6 +16249,46 @@
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
+		},
+		"src/ui/live-session-money.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "64a02b2b156140359c655b0d402fbd2522304362",
+					"kind": "callback_registration",
+					"line": 54,
+					"column": 4,
+					"endLine": 54,
+					"endColumn": 70,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "constructor",
+						"justification": "In \"constructor\", the \"addEventListener\" callback marks a coin icon as loaded so its letter hides; it only sets a data attribute and makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"constructor\", the \"addEventListener\" callback marks a coin icon as loaded so its letter hides; it only sets a data attribute and makes no request. Verified registration: \"addEventListener\" in \"constructor\"."
+				},
+				{
+					"id": "ba9c6efbb465207a65e1c2ef96b9bb3c222433e8",
+					"kind": "callback_registration",
+					"line": 55,
+					"column": 4,
+					"endLine": 55,
+					"endColumn": 60,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "constructor",
+						"justification": "In \"constructor\", the \"addEventListener\" callback removes a coin icon that failed to load so the letter stays; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"constructor\", the \"addEventListener\" callback removes a coin icon that failed to load so the letter stays; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"constructor\"."
+				}
+			]
 		},
 		"src/ui/live-session-panel.ts": {
 			"classification": "production_source",

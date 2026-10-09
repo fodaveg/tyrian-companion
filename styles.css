@@ -3165,6 +3165,18 @@
 .tyrian-live-session__stats > div { display: flex; justify-content: space-between; gap: var(--size-4-4); }
 .tyrian-live-session__stats dt { color: var(--text-muted); }
 .tyrian-live-session__stats dd { margin: 0; color: var(--text-normal); font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; text-align: end; white-space: nowrap; }
+/* «Valor estimado» como cifra destacada: la etiqueta encima y el valor debajo, a la izquierda. El tamaño sigue al
+   contenedor (de 1.25rem en una columna estrecha de ~280 px a 2rem desde ~400); con un valor largo las tres monedas
+   pasan a otra línea en vez de desbordar. Cada moneda es número + icono oficial + letra: la letra solo se esconde
+   cuando SU icono ha cargado (`data-icon`), así que sin red o con la imagen rota queda el texto de siempre. */
+.tyrian-live-session__stats > .tyrian-live-session__stat-value { flex-direction: column; justify-content: flex-start; align-items: flex-start; gap: var(--size-4-1); }
+.tyrian-live-session__stat-value dd { text-align: start; white-space: normal; font-size: clamp(1.25rem, 8cqi, 2rem); line-height: 1.15; }
+.tyrian-money { display: inline-flex; flex-wrap: wrap; align-items: center; column-gap: 0.4em; max-width: 100%; font-variant-numeric: tabular-nums; }
+.tyrian-money__part { display: inline-flex; align-items: center; gap: 0.12em; white-space: nowrap; }
+.tyrian-money__icon { display: none; flex: none; width: 0.8em; height: 0.8em; object-fit: contain; }
+.tyrian-money__part[data-icon] .tyrian-money__icon { display: inline-block; }
+.tyrian-money__part[data-icon] .tyrian-money__letter { display: none; }
+.tyrian-money__letter { color: var(--text-muted); font-size: 0.6em; }
 .tyrian-live-session__section { display: flex; justify-content: space-between; gap: var(--size-4-2); margin: 0 0 var(--size-4-2); color: var(--text-muted); font-size: var(--font-smallest); font-weight: var(--font-semibold); letter-spacing: 0.04em; text-transform: uppercase; }
 .tyrian-live-session__section b { font-variant-numeric: tabular-nums; }
 .tyrian-live-session__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--tyrian-tile), 1fr)); gap: var(--size-4-1); margin: 0; padding: 0; list-style: none; }
@@ -3213,6 +3225,7 @@
 	.tyrian-live-session--panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); column-gap: var(--size-4-8); }
 	.tyrian-live-session__head, .tyrian-live-session__notices, .tyrian-live-session__objects, .tyrian-live-session__timeline { grid-column: 1 / -1; }
 	.tyrian-live-session__stats { align-content: start; }
+	.tyrian-live-session__stat-value dd { font-size: 1.25rem; }
 	.tyrian-live-session--panel .tyrian-live-session__rows { columns: 2; column-gap: var(--size-4-8); }
 }
 

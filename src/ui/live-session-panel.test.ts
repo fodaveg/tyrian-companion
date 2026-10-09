@@ -189,6 +189,22 @@ describe('Session tab: figures, objects and chart', () => {
 		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).not.toContain('—');
 	});
 
+	it('draws «Estimated value» as a highlighted figure: the label above, the amount below with its coin icons and a spoken name', () => {
+		const h = harness(liveView());
+		const row = h.panel.element.querySelector('.tyrian-live-session__stats > .tyrian-live-session__stat-value')!;
+		expect(Array.from(row.children).map((child) => child.tagName.toLowerCase())).toEqual(['dt', 'dd']);
+		expect(row.querySelector('dt')!.textContent).toBe('Estimated value');
+		const figure = row.querySelector('dd.tyrian-live-session__value > .tyrian-money[role="img"]')!;
+		expect(figure.textContent).toBe('0g 0s 20c');
+		expect(figure.getAttribute('aria-label')).toBe('0 gold, 0 silver, 20 copper');
+		expect(figure.querySelectorAll('img[alt=""][aria-hidden="true"]')).toHaveLength(3);
+		const loss = liveView(); loss.valuation.coinNetCopper = -123_456; loss.valuation.knownNetValueCopper = -123_456;
+		h.state.view = loss; h.panel.refresh();
+		expect(row.querySelector('dd')!.textContent).toBe('-12g 34s 56c');
+		expect(row.querySelector('.tyrian-money')!.getAttribute('aria-label')).toBe('minus 12 gold, 34 silver, 56 copper');
+		expect(row.querySelector('.tyrian-money')).toBe(figure);
+	});
+
 	it('rates the same value as «Estimated value»: gold raises or lowers «Per hour», null gold leaves the item rate', () => {
 		expect(liveSessionRatePerHour(liveView())).toBe(20); // 20c of items over exactly one hour
 		const gain = liveView(); gain.valuation.coinNetCopper = 100; gain.valuation.knownNetValueCopper = 120;
@@ -332,8 +348,8 @@ describe('Session tab: figures, objects and chart', () => {
 
 	it('draws one chart with a summary label, and the legend only when there are reading gaps', () => {
 		const clean = harness();
-		expect(clean.panel.element.querySelectorAll('[role="img"]')).toHaveLength(1);
-		expect(clean.panel.element.querySelector('[role="img"]')!.getAttribute('aria-label')).toMatch(/^Value over time: Estimated value from 0g 0s 0c to 0g 0s 20c, .+ to .+, no reading gaps$/);
+		expect(clean.panel.element.querySelectorAll('.tyrian-live-session__chart [role="img"]')).toHaveLength(1);
+		expect(clean.panel.element.querySelector('.tyrian-live-session__chart [role="img"]')!.getAttribute('aria-label')).toMatch(/^Value over time: Estimated value from 0g 0s 0c to 0g 0s 20c, .+ to .+, no reading gaps$/);
 		expect(clean.panel.element.querySelector('.tyrian-live-session__legend')!.hasAttribute('hidden')).toBe(true);
 		const view = liveView();
 		view.gaps = [{ version: 1, fromAt: at(1), toAt: at(2), reason: 'disconnect', channels: ['items'] }, { version: 1, fromAt: at(2), toAt: at(3), reason: 'source_stale', channels: ['items'] }];
@@ -346,7 +362,7 @@ describe('Session tab: figures, objects and chart', () => {
 		// One whole step line (the value is constant across a gap); each gap is a mask plus a tinted band over it.
 		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__line')).toHaveLength(1);
 		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__gap-mask')).toHaveLength(2);
-		expect(gapped.panel.element.querySelector('[role="img"]')!.getAttribute('aria-label')).toContain('2 reading gaps');
+		expect(gapped.panel.element.querySelector('.tyrian-live-session__chart [role="img"]')!.getAttribute('aria-label')).toContain('2 reading gaps');
 	});
 
 	describe('order of the sections (David, 8 Oct 2026)', () => {
