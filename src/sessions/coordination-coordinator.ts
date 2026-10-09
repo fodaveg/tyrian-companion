@@ -101,9 +101,10 @@ export class ActiveSessionLeaseCoordinator {
 	/**
 	 * `leaseTtlMs` is how long the lease lasts when this call grants one; the coordinator's own when
 	 * absent. It is the caller's to choose because it follows the caller's heartbeat: a lease has to
-	 * outlive a few missed beats and nothing more, since whoever comes back after its owner died
-	 * waits it out. It changes nothing about WHAT is leased: there is one lease, whatever its length,
-	 * and an acquisition in flight for the same session is joined as it is.
+	 * outlive the longest the caller may really go without beating (a timer a hidden host holds
+	 * back, not the interval it was asked for), and whoever comes back after its owner died waits
+	 * it out. It changes nothing about WHAT is leased: there is one lease, whatever its length, and
+	 * an acquisition in flight for the same session is joined as it is.
 	 */
 	acquire(sessionId: string, leaseTtlMs: number = this.leaseTtlMs): Promise<AcquireLeaseResult> {
 		if (!validId(this.instanceId) || !validId(sessionId)) {

@@ -354,7 +354,7 @@ describe('ActiveSessionLeaseCoordinator', () => {
 	});
 
 	// H14.22: the default is five minutes and the manual session's heartbeat derives from it. A caller
-	// that beats on its own cadence (the live session, every five seconds) asks for a shorter lease.
+	// may ask for another length; nobody asks for a shorter one today (see `LIVE_SESSION_LEASE_TTL_MS`).
 	it('grants and renews a lease for as long as the caller asks, and for five minutes when it does not ask', async () => {
 		const factory = new IDBFactory();
 		let now = 1_000;

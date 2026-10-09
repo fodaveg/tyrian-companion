@@ -64,8 +64,8 @@ export interface SessionLeaseCoordinator {
 	readonly instanceId: string;
 	/**
 	 * `leaseTtlMs`, on both, is how long the lease lasts from that call; the coordinator's own (five minutes, H14.22)
-	 * when absent, which is what this service uses and derives its heartbeat from. The live session, which beats
-	 * every five seconds, asks for a shorter one.
+	 * when absent, which is what this service uses and derives its heartbeat from. The live session names its own
+	 * (`LIVE_SESSION_LEASE_TTL_MS`, the same five minutes today, and why it is not shorter).
 	 */
 	acquire(sessionId: string, leaseTtlMs?: number): Promise<AcquireLeaseResult>;
 	renew(handle: ActiveSessionLeaseHandle, leaseTtlMs?: number): Promise<RenewLeaseResult>;

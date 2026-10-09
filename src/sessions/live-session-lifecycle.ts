@@ -19,21 +19,25 @@ import { StorageDeadline, StorageUnansweredError } from './storage-deadline';
 
 export interface LiveSessionSourceInput { sourceInstance: string; epoch: string; build: string; profile: string; context: IngameGameContext }
 /**
- * How long the live session's lease lasts without a renewal. The coordinator's five minutes (H14.22) are sized for the
- * manual session, whose heartbeat derives from them; this lifecycle beats every `LIVE_SOURCE_STALE_MS` whatever the
- * lease lasts, so a long one buys it nothing and costs this: a host that died without releasing (Hebra or Obsidian
- * closed abruptly) left the plugin that came back refused its own session, `source_conflict` on every `live_open`,
- * until the five minutes ran out.
+ * How long the live session's lease lasts without a renewal: the coordinator's own five minutes (H14.22), asked for
+ * by name so that the day it changes it changes here.
  *
- * Thirty seconds are six beats: a renewal that waits out a whole storage deadline (10 s) and the beat skipped behind it
- * still leave the lease valid. A host kept from beating for longer (a suspended machine) finds the lease lost when it
- * returns and takes it again as after an outage: a gap and a new epoch, never the end of the session.
+ * Known limit: a host that dies without releasing (Hebra or Obsidian closed abruptly) leaves the plugin that comes
+ * back refused its own session, `source_conflict` on every `live_open`, until these five minutes run out.
  *
- * Known limit, not verified on a real client: a host that stays alive but whose timers fire less often than this (a
- * hidden window with its timers held back to one a minute) loses the lease on every beat and measures only part of
- * the time, where the five-minute lease rode it out. Measured figures and the way out are in SPEC-live-loot §4.
+ * It is NOT shortened, although this lifecycle beats every `LIVE_SOURCE_STALE_MS` and a short lease would heal that
+ * (tried at 30 s on 9 Oct 2026). The beat is a timer, and the usual way to use this plugin is with the notes
+ * application hidden behind the game, where Chromium-based hosts hold a hidden page's timers back to as little as one
+ * a minute. A lease shorter than the real beat is lost on every beat with the host alive: measured over ten minutes
+ * at one sample a second, a beat every 60 s stores 150 of 600 samples under a 30 s lease and all 600 under this one.
+ * A rare five minutes without measuring is not traded for three quarters of the samples in the common case.
+ *
+ * The way out is not a number: `renew` has to accept a lease that ran out and nobody took, and the lease has to be
+ * renewed from the data path as well (samples arrive on the addon's socket, not on a timer). That changes the
+ * coordinator's contract and needs the real cadence of the beat measured first, with the window hidden, in Obsidian
+ * and in Hebra. Figures and reasoning in SPEC-live-loot §4.
  */
-export const LIVE_SESSION_LEASE_TTL_MS = 30_000;
+export const LIVE_SESSION_LEASE_TTL_MS = 300_000;
 export interface LiveSessionLifecycleOptions {
 	coordinator: SessionLeaseCoordinator; persistence: LiveSessionPersistence & Pick<SessionRuntimeStore, 'clear'>;
 	/** How long the lease this lifecycle asks the coordinator for lasts (`LIVE_SESSION_LEASE_TTL_MS` when absent). */

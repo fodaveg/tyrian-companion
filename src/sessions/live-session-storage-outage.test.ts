@@ -455,9 +455,18 @@ describe('live session across a storage outage that hid a commit already on disk
 
 /**
  * Hebra or Obsidian closed abruptly: the process dies holding the lease and never releases it. The
- * lease lasted the coordinator's five minutes (H14.22, sized for the manual session, whose heartbeat
- * derives from it), so the plugin that came back 70 s later was refused its own session for the rest
- * of them: `source_conflict` on every `live_open`, and nothing measured meanwhile.
+ * lease lasts five minutes (H14.22), so the plugin that comes back 70 s later is refused its own
+ * session for the rest of them: `source_conflict` on every `live_open`, and nothing measured meanwhile.
+ *
+ * KNOWN LIMIT, pinned here as it is today and not fixed by shortening the lease. A lease of 30 s was
+ * tried on 9 Oct 2026 and does heal this, but the heartbeat is a timer and the usual way to use the
+ * plugin is with the notes application hidden behind the game, where Chromium-based hosts hold timers
+ * back to as little as one a minute: a lease shorter than the real beat is lost on every beat with
+ * the host alive (see «a heartbeat that fires once a minute» below: 150 of 600 samples stored). The
+ * way out is for `renew` to accept a lease that ran out and nobody took, and to renew from the data
+ * path as well, which changes the coordinator's contract and needs the real cadence of the beat
+ * measured first with the window hidden, in Obsidian and in Hebra. Whoever does that turns the
+ * `source_conflict` below into `ready`.
  */
 describe('live session whose host died without releasing the lease', () => {
 	/** A session one host is measuring, beating every five seconds up to `untilMs`. */
@@ -469,16 +478,24 @@ describe('live session whose host died without releasing the lease', () => {
 		return f;
 	}
 
-	it('the host that starts 70 s later takes its session back at once', async () => {
+	it('known limit: the host that starts 70 s later is refused its session until the dead one\'s lease runs out', async () => {
 		const f = await measured('abrupt-close', 5000);
-		// The process is gone here: nothing was released and nothing disposed.
+		// The process is gone here: nothing was released and nothing disposed. Its last renewal was at 5 s.
 		f.at(75_000);
 		const next = f.restarted(); await next.service.initialize();
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		// It keeps asking on every beat and is refused for as long as the lease lasts.
+		for (let at = 80_000; at <= LEASE_TTL_MS; at += 5000) { f.at(at); await next.beat(); }
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		expect(next.service.getRuntime()).toMatchObject({ authority: { instanceId: 'host', fence: 1 } });
+
+		// Five minutes after the last renewal the lease is nobody's, and the first beat takes the session back.
+		f.at(LEASE_TTL_MS + 5000); await next.beat();
 		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
 		expect(next.service.getRuntime()).toMatchObject({ sessionId: 'session', authority: { instanceId: 'next-host', fence: 2 } });
 		expect(next.service.getView().gaps.map((gap) => gap.reason)).toEqual(['host_restart']);
-		f.at(76_000); await expect(next.service.commit(f.sample(0, 0, bags(20), NEXT_EPOCH))).resolves.toBe('stored');
-		f.at(77_000); await expect(next.service.commit(f.sample(1, 1000, bags(23), NEXT_EPOCH))).resolves.toBe('stored');
+		f.at(LEASE_TTL_MS + 6000); await expect(next.service.commit(f.sample(0, 0, bags(20), NEXT_EPOCH))).resolves.toBe('stored');
+		f.at(LEASE_TTL_MS + 7000); await expect(next.service.commit(f.sample(1, 1000, bags(23), NEXT_EPOCH))).resolves.toBe('stored');
 		expect(next.service.getView().observations.map((row) => [row.epoch, row.before, row.after, row.delta])).toEqual([[EPOCH, 5, 7, 2], [NEXT_EPOCH, 20, 23, 3]]);
 		await next.dispose();
 	});
@@ -518,14 +535,126 @@ describe('live session whose host died without releasing the lease', () => {
 		await f.service.dispose();
 	});
 
-	it('nor does a suspension just longer than the short lease, which the five-minute one used to ride out', async () => {
+	it('a pause shorter than the lease is ridden out: the same lease, no gap, the epoch still open', async () => {
 		const f = await measured('short-suspension', 10_000);
 		await f.service.presence(true, AT + 10_000);
 		f.at(70_000); await f.beat();
-		f.at(75_000); await f.beat();
-		f.at(80_000); await f.beat();
-		expect(f.service.getView()).toMatchObject({ phase: 'active', endedAt: null, connection: 'connected' });
+		expect(f.service.getView()).toMatchObject({ phase: 'active', endedAt: null, connection: 'connected', gaps: [] });
+		expect(f.service.getRuntime()).toMatchObject({ authority: { fence: 1 }, epoch: EPOCH });
+		f.at(71_000); await expect(f.service.commit(f.sample(2, 71_000, bags(9)))).resolves.toBe('stored');
 		expect(f.options.onComplete).not.toHaveBeenCalled();
+		await f.service.dispose();
+	});
+});
+
+/**
+ * The heartbeat is a timer, and a host may fire it far less often than every five seconds while it
+ * stays alive: a hidden window whose timers are held back to one a minute, which is how this plugin
+ * is mostly used (the notes application behind the game). Samples do not depend on any timer: they
+ * arrive on the addon's socket, one a second. The lease has to outlast the beat the host really
+ * gives, or the session loses it on every beat while it is being fed.
+ */
+describe('live session on a host whose heartbeat fires once a minute', () => {
+	const epochOf = (index: number): string => {
+		const bytes = new Uint8Array(16).fill(index & 255); bytes[0] = index >> 8;
+		return btoa(String.fromCharCode(...bytes)).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '');
+	};
+	/**
+	 * Ten minutes of a producer as the addon behaves: a sample every second, each one waited for, and
+	 * a new epoch opened whenever one is refused. The heartbeat fires every `beatEveryS` seconds and at
+	 * no other time. `renewalAt120` makes the beat of the second minute wait for a renewal that is not
+	 * answered within the storage deadline (ten seconds, during which the producer waits for its ACK),
+	 * and either never reaches storage or reaches it after the wait ran out.
+	 */
+	async function tenMinutes(f: ReturnType<typeof outage>, beatEveryS: number, renewalAt120?: 'never lands' | 'lands late') {
+		const counts = { sent: 0, stored: 0, refused: 0, opened: 0, conflicts: 0, secondsInError: 0 };
+		let epochs = 0; let epoch: string | null = null; let cursor = 0; let quantity = 5;
+		const feed = async (pending?: () => Promise<void>): Promise<void> => {
+			if (epoch === null) {
+				const next = epochOf(++epochs);
+				if (await f.service.open({ ...f.source, epoch: next }) === 'ready') { epoch = next; cursor = 0; counts.opened += 1; } else counts.conflicts += 1;
+			}
+			if (epoch === null) return;
+			quantity += 1; counts.sent += 1;
+			const answer = f.service.commit(f.sample(cursor, cursor * 1000, bags(quantity), epoch));
+			await pending?.();
+			if (await answer === 'stored') { counts.stored += 1; cursor += 1; } else { counts.refused += 1; epoch = null; }
+		};
+		await f.service.start('Test');
+		for (let second = 1; second <= 600; second += 1) {
+			f.at(second * 1000);
+			if (second === 120 && renewalAt120 !== undefined) {
+				const renew = f.options.coordinator.renew.bind(f.options.coordinator);
+				let land: () => void = () => undefined; const held = new Promise<void>((resolve) => { land = resolve; });
+				let landed = false;
+				vi.spyOn(f.options.coordinator, 'renew').mockImplementationOnce(async (handle, leaseTtlMs) => {
+					await held; const answer = await renew(handle, leaseTtlMs); landed = true; return answer;
+				});
+				f.tick(); await turns();
+				// The sample of this second is queued behind the beat; its ACK comes when the wait runs out.
+				await feed(async () => { await turns(); second += 10; f.at(second * 1000); await f.timeout(); });
+				if (renewalAt120 === 'lands late') { land(); await vi.waitFor(() => { expect(landed).toBe(true); }); }
+			} else {
+				if (second % beatEveryS === 0) await f.beat();
+				await feed();
+			}
+			if (f.service.getView().phase === 'error') counts.secondsInError += 1;
+		}
+		return counts;
+	}
+
+	it('stores every sample of ten minutes under the lease it has: no epoch is lost and no live_open refused', async () => {
+		const f = outage('slow-beat');
+		const counts = await tenMinutes(f, 60);
+		expect(counts).toEqual({ sent: 600, stored: 600, refused: 0, opened: 1, conflicts: 0, secondsInError: 0 });
+		// One baseline and 599 seconds measured after it, all under the lease the session started with.
+		expect(f.service.getView()).toMatchObject({ phase: 'active', observationCount: 599, observedItemsMs: 599_000 });
+		expect(f.service.getView().totals).toEqual([{ kind: 'item', idNumber: 12147, positive: 599, negative: 0, net: 599 }]);
+		expect(f.service.getRuntime()).toMatchObject({ authority: { fence: 1 } });
+		expect(storageGaps(f.service)).toEqual([]);
+		expect(f.onError).not.toHaveBeenCalled();
+		await f.service.dispose();
+	});
+
+	it('a renewal that is not answered in time leaves the lease with room for the next beat: the handle is kept and nothing is refused', async () => {
+		const f = outage('slow-beat-unanswered-renewal');
+		const counts = await tenMinutes(f, 60, 'never lands');
+		// The producer waited ten seconds for one ACK, so it sent ten samples fewer; none was refused.
+		expect(counts).toEqual({ sent: 590, stored: 590, refused: 0, opened: 1, conflicts: 0, secondsInError: 0 });
+		// The lease renewed at 60 s ran to 360 s, 240 s past the beat that was not answered: the beat at 180 s renewed
+		// it as usual and so did every one after, none skipped. The last renewal is the one of the tenth minute.
+		const other = f.lease('other-host');
+		await expect(other.acquire('other-session')).resolves.toMatchObject({ status: 'busy', ownerInstanceId: 'host', ownerExpiresAt: AT + 600_000 + LEASE_TTL_MS });
+		other.dispose();
+		expect(f.service.getRuntime()).toMatchObject({ authority: { fence: 1 } });
+		// The outage is reported, but no sample was refused, so no interval went unobserved: no gap, and the sample
+		// that waited is measured against the one before it.
+		expect(storageGaps(f.service)).toEqual([]);
+		expect(f.service.getView()).toMatchObject({ phase: 'active', observationCount: 589 });
+		expect(f.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['Live session storage is unavailable.']);
+		await f.service.dispose();
+	});
+
+	/**
+	 * KNOWN COST, pinned as it is today. The renewal that was given up reaches storage after all and
+	 * changes the lease, so the handle this host kept no longer matches: the next sample is refused, the
+	 * next beat finds the lease lost and the one after it reclaims it (it is still this host's). At
+	 * the usual beat that is ten seconds; at one beat a minute it is the 108 seconds counted here. No
+	 * loot is miscounted (a gap, a new epoch, a baseline), but nothing is measured meanwhile. Taking the
+	 * lease back in the same beat that finds it lost belongs with the change of contract described at
+	 * `LIVE_SESSION_LEASE_TTL_MS`.
+	 */
+	it('known cost: a renewal that lands after its wait ran out costs the time of two beats, then the session measures again', async () => {
+		const f = outage('slow-beat-late-renewal');
+		const counts = await tenMinutes(f, 60, 'lands late');
+		// Refused at 131 s; `live_open` refused from 132 s until the beat of 240 s takes the lease back.
+		expect(counts).toEqual({ sent: 482, stored: 481, refused: 1, opened: 2, conflicts: 108, secondsInError: 60 });
+		expect(f.service.getView().phase).toBe('active');
+		// The lease was never anybody else's: same fence, and nothing on disk went back.
+		expect(f.service.getRuntime()).toMatchObject({ authority: { instanceId: 'host', fence: 1 } });
+		const durable = await f.durable();
+		expect(durable.record).toEqual(f.service.getRuntime());
+		expect(durable.journal.flatMap((entry) => entry.observations)).toHaveLength(durable.record.observationCount);
 		await f.service.dispose();
 	});
 });
