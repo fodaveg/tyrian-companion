@@ -127,10 +127,14 @@ describe('live session summary: a normal session', () => {
 
 ## Mapas
 
-- Laberinto del Rey Loco · 30 min
-- Bosque de Caledon · 10 min
+| Mapa | Tiempo observado | Valor neto de objetos | Por hora observada |
+|---|---:|---:|---:|
+| Laberinto del Rey Loco | 30 min | 1g 95s 0c | 3g 90s 0c |
+| Bosque de Caledon | 10 min | 2g 82s 0c | — |
 
-Tiempo con mapa identificado: 40 min.
+17:30 Laberinto del Rey Loco → 18:00 Bosque de Caledon
+
+Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente, cuenta en el mapa donde se observó.
 
 ## Al cerrar
 
@@ -153,8 +157,14 @@ Sin tramos sin observar.
 		// What 0.6.13 wrote for this session: bare ids for names, «Por hora sin 106732: -0g 1s 66c», the incomplete-list
 		// sentence glued to the last map, and «100 % observado» over 8 unobserved stretches.
 		const START = Date.parse('2026-10-08T07:46:45.000Z'); const LENGTH = 115 * 60_000 + 20_000; const SOLD = 19721;
+		// Its item changes in one entry of the journal, five minutes in: the map breakdown places each change by its hour.
+		const seenAt = new Date(START + 5 * 60_000).toISOString();
+		const changes = ([[106732, 1], [9333, 1], [74328, 2], [3376, 1], [24875, 1], [SOLD, -1]] as const).map(([idNumber, delta]) => ({ version: 1 as const, id: `real/${String(idNumber)}`,
+			source: 'nexus_inventory' as const, epoch: EPOCH, cursor: 1, kind: 'item' as const, idNumber, before: delta < 0 ? 1 : 0, after: delta < 0 ? 0 : delta, delta,
+			observedAt: seenAt, windowStartAt: seenAt, sourceElapsedMs: 0, cause: 'unknown' as const, coverage: 'observed_interval' as const }));
 		const real: Mutate = (session) => ({ ...session, startedAt: new Date(START).toISOString(), endedAt: new Date(START + LENGTH).toISOString(),
-			observedItemsMs: LENGTH - 23_000, journal: [], mapCoveragePartial: true, coverage: { ...session.coverage, freeSlots: null },
+			observedItemsMs: LENGTH - 23_000, journal: [{ version: 1, epoch: EPOCH, cursor: 1, observedAt: seenAt, observations: changes, breakBefore: false, outbox: [] }],
+			mapCoveragePartial: true, coverage: { ...session.coverage, freeSlots: null },
 			mapIntervals: [{ mapId: 1633, fromMs: START, toMs: START + 115 * 60_000 }],
 			gaps: Array.from({ length: 8 }, (_, index) => ({ version: 1 as const, fromAt: new Date(START + index * 600_000).toISOString(),
 				toAt: new Date(START + index * 600_000 + (index === 0 ? 2_000 : 3_000)).toISOString(), reason: index === 0 ? 'source_missing' as const : 'disconnect' as const, channels: ['items' as const] })),
@@ -217,7 +227,14 @@ Salió del inventario 1 unidad de un objeto; no se distingue si se vendió, se c
 
 ## Mapas
 
-- Mapa 1633 · 1 h 55 min
+| Mapa | Tiempo observado | Valor neto de objetos | Por hora observada |
+|---|---:|---:|---:|
+| Mapa 1633 | 1 h 54 min | 0g 7s 87c | 0g 4s 12c |
+| Sin mapa identificado | 20 s | 0g 0s 0c | — |
+
+09:46 Mapa 1633 → 11:41 sin mapa identificado
+
+Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente, cuenta en el mapa donde se observó.
 
 ## Cobertura
 
@@ -225,9 +242,10 @@ Salió del inventario 1 unidad de un objeto; no se distingue si se vendió, se c
 
 [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789abcdef|Sesión completa]]
 `);
-		// The map record has a hole (`mapCoveragePartial`), but the 115 minutes on the map cover the 114 min 57 s observed: nothing is missing
-		// from the list, so it does not say it may be incomplete (up to 0.6.18 the flag alone wrote that sentence).
-		expect(note.content).not.toContain('La lista puede estar incompleta.');
+		// The map's 115 minutes less the 23 s unobserved inside them, and the 20 s the session went on after its interval: the two rows
+		// are the 114 min 57 s observed. That last row is all the note says of what the map record lacks; the sentence that the list
+		// may be incomplete (written up to 0.6.19 from `mapCoveragePartial`, which never goes back to false) is gone.
+		expect(note.content).not.toContain('incompleta');
 	});
 
 	it('opens the title with the local day and hour of the start, the same ones as the line below, and never with a colon', async () => {
@@ -269,9 +287,10 @@ Salió del inventario 1 unidad de un objeto; no se distingue si se vendió, se c
 		expect(content).toContain('## Observed balance\n\n- Net value of observed items: 4g 77s 0c\n- Items per observed hour: 7g 15s 50c\n'
 			+ '- Items per observed hour without Saco grande: 0g 40s 50c (that item is over half the value)\n- Observed gold change: +1g 23s 45c\n');
 		expect(content).toContain('## Most valuable observed items');
-		expect(content).toContain('\n\nTime on an identified map: 40 min.\n');
+		expect(content).toContain('## Maps\n\n| Map | Observed time | Net item value | Per observed hour |\n|---|---:|---:|---:|\n'
+			+ '| Map 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n| Map 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n\n17:30 Map 866 → 17:50 Map 873\n\n'
+			+ 'What arrives while a map loads, or is opened on the next map, counts on the map where it was observed.\n');
 		expect(content.trimEnd().split('\n').at(-1)).toMatch(/^\[\[.+\|Full session\]\]$/u);
-		expect(content).toContain('- Map 866 · 20 min');
 		expect(content).toContain('tyrian_summary_main_map: null');
 		expect(content).toContain('tyrian_summary_locale: "en"');
 	});
@@ -505,7 +524,9 @@ describe('live session summary: figures that must not mislead', () => {
 	it('lists at most five items by value', async () => {
 		const many = await render({ itemMeta: META, mutate: (session) => ({ ...session, totals: [...session.totals, ...[101, 102, 103, 104, 105].map((id) => total('item', id, 1))],
 			valuation: { ...session.valuation, prices: [...session.valuation.prices, ...[101, 102, 103, 104, 105].map((id) => ({ itemId: id, unitCopper: id }))] } }) });
-		expect(many.content.split('\n').filter((line) => line.startsWith('| ') && !line.startsWith('| Objeto |') && !line.startsWith('|---')).length).toBe(5);
+		// The rows of the items table alone: the note has another table, the one of the maps.
+		const items = body(many.content).split('## Objetos observados de más valor\n\n')[1]!.split('\n\n')[0]!;
+		expect(items.split('\n').filter((line) => line.startsWith('| ') && !line.startsWith('| Objeto |') && !line.startsWith('|---')).length).toBe(5);
 	});
 });
 
@@ -712,6 +733,10 @@ describe('live session summary: the figures of the session by map', () => {
 			expect(run.visits).toEqual([{ mapId: null, at: at(0) }]);
 			adds(run);
 		}
+		// Units no entry of the journal accounts for (a payload cut short by hand: a saved one always has them) have no hour: no map either.
+		const bare = await byMap((session) => ({ ...trip(session), journal: [] }));
+		expect([...bare.rows.map((row) => row.netCopper), bare.unidentified.netCopper]).toEqual([0, 0, 62_700]);
+		adds(bare);
 	});
 
 	it('values and excludes exactly as the net value: bound items stay out, what left a map subtracts there, and no prices means no value', async () => {
@@ -1045,41 +1070,75 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 	/** Nine one-minute stretches, two minutes apart from the start: more than the list takes. */
 	const nineGaps: Mutate = (session) => ({ ...session, observedItemsMs: 20 * 60_000, gaps: Array.from({ length: 9 }, (_, index) => gap(0.1 * index, 0.1 * index + 0.05, 'disconnect')) });
 
-	describe('the time on identified maps and the warning that the list may be incomplete', () => {
+	describe('the maps as a table: observed time, value and pace of each, and the order they were entered in', () => {
 		const MIN = 60_000;
 		/** A 40-minute session, all observed: `first` minutes on map 866, then `second` on map 873 (0 leaves one map), with or without a hole in the map record. */
 		const maps = (first: number, second: number, partial: boolean): Mutate => (session) => ({ ...session, mapCoveragePartial: partial,
 			mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + first * MIN }, ...(second > 0 ? [{ mapId: 873, fromMs: AT + first * MIN, toMs: AT + (first + second) * MIN }] : [])] });
 		const mapsOf = (content: string, heading = 'Mapas'): string => body(content).split(`## ${heading}\n\n`)[1]!.split('\n\n## ')[0]!;
+		const HEAD = '| Mapa | Tiempo observado | Valor neto de objetos | Por hora observada |\n|---|---:|---:|---:|\n';
+		const LIMIT = 'Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente, cuenta en el mapa donde se observó.';
 
-		it('adds the time on identified maps under the list, after a blank line so it is not part of the last map', async () => {
-			const es = await render({ mutate: maps(20, 10, false) });
-			expect(mapsOf(es.content)).toBe('- Mapa 866 · 20 min\n- Mapa 873 · 10 min\n\nTiempo con mapa identificado: 30 min.');
+		it('writes one row per map, then the route and the limit of the split, each in its own paragraph', async () => {
+			// The changes of minute 20 (1g 95s) fall on 866 and those of minute 40 (2g 82s) on 873: the two rows are the 4g 77s of the balance.
+			const es = await render({ mutate: maps(20, 20, false) });
+			expect(mapsOf(es.content)).toBe(`${HEAD}| Mapa 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n| Mapa 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n\n17:30 Mapa 866 → 17:50 Mapa 873\n\n${LIMIT}`);
 			expect(glued(es.content)).toEqual([]);
-			const en = await render({ mutate: maps(20, 10, false), locale: 'en' });
-			expect(mapsOf(en.content, 'Maps')).toBe('- Map 866 · 20 min\n- Map 873 · 10 min\n\nTime on an identified map: 30 min.');
+			const en = await render({ mutate: maps(20, 20, false), locale: 'en' });
+			expect(mapsOf(en.content, 'Maps')).toBe('| Map | Observed time | Net item value | Per observed hour |\n|---|---:|---:|---:|\n| Map 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n'
+				+ '| Map 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n\n17:30 Map 866 → 17:50 Map 873\n\nWhat arrives while a map loads, or is opened on the next map, counts on the map where it was observed.');
 			expect(glued(en.content)).toEqual([]);
 		});
 
-		it('says the list may be incomplete only when the map record has a hole AND that time falls short of the observed time', async () => {
-			// 30 minutes identified of 40 observed, with a hole in the record: some map may be missing.
-			expect(mapsOf((await render({ mutate: maps(20, 10, true) })).content)).toBe('- Mapa 866 · 20 min\n- Mapa 873 · 10 min\n\nTiempo con mapa identificado: 30 min. La lista puede estar incompleta.');
-			expect(mapsOf((await render({ mutate: maps(20, 10, true), locale: 'en' })).content, 'Maps')).toBe('- Map 866 · 20 min\n- Map 873 · 10 min\n\nTime on an identified map: 30 min. The list may be incomplete.');
-			// The hole is there, but the 40 minutes identified cover the 40 observed: nothing can be missing from the list.
-			expect(mapsOf((await render({ mutate: maps(20, 20, true) })).content)).toBe('- Mapa 866 · 20 min\n- Mapa 873 · 20 min\n\nTiempo con mapa identificado: 40 min.');
-			// One millisecond short is short.
-			const justShort: Mutate = (session) => ({ ...maps(20, 20, true)(session), observedItemsMs: 40 * MIN + 1 });
-			expect(mapsOf((await render({ mutate: justShort })).content)).toContain('La lista puede estar incompleta.');
-			// Without a hole in the record the time not identified was time on no known map, not a map that went unrecorded.
-			expect(mapsOf((await render({ mutate: maps(20, 10, false) })).content)).not.toContain('La lista puede estar incompleta.');
+		it('adds the row of no identified map from one observed second on it, and says nothing else of a map that may be missing', async () => {
+			// 30 minutes on two maps of 40 observed: the other 10 are a row, with what was observed in them (the changes of minute 40).
+			for (const partial of [true, false]) {
+				expect(mapsOf((await render({ mutate: maps(20, 10, partial) })).content)).toBe(`${HEAD}| Mapa 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n| Mapa 873 | 10 min | 0g 0s 0c | — |\n`
+					+ `| Sin mapa identificado | 10 min | 2g 82s 0c | — |\n\n17:30 Mapa 866 → 17:50 Mapa 873 → 18:00 sin mapa identificado\n\n${LIMIT}`);
+			}
+			const en = mapsOf((await render({ mutate: maps(20, 10, true), locale: 'en' })).content, 'Maps');
+			expect(en).toContain('\n| No identified map | 10 min | 2g 82s 0c | — |\n\n17:30 Map 866 → 17:50 Map 873 → 18:00 no identified map\n\n');
+			// Under a second it is two clocks disagreeing, not a stretch: no row and no step of the route.
+			const late = (ms: number): Mutate => (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT + ms, toMs: AT + 20 * MIN }, { mapId: 873, fromMs: AT + 20 * MIN, toMs: AT + 40 * MIN }] });
+			expect(mapsOf((await render({ mutate: late(999) })).content)).not.toContain('identificado');
+			expect(mapsOf((await render({ mutate: late(1_000) })).content)).toContain('\n| Sin mapa identificado | 1 s | 0g 0s 0c | — |\n\n17:30 sin mapa identificado → 17:30 Mapa 866 → 17:50 Mapa 873\n\n');
+			// The sentence that the list may be incomplete is gone whatever the hole in the map record: the row is what says it.
+			for (const partial of [true, false]) for (const locale of ['es', 'en'] as const) {
+				expect((await render({ mutate: maps(20, 10, partial), locale })).content).not.toMatch(/incompleta|incomplete|Tiempo con mapa identificado|Time on an identified map/u);
+			}
 		});
 
-		it('with a single map writes no total, which would repeat its line, and keeps the warning on its own paragraph', async () => {
-			expect(mapsOf((await render({ mutate: maps(40, 0, false) })).content)).toBe('- Mapa 866 · 40 min');
-			expect(mapsOf((await render({ mutate: maps(40, 0, true) })).content)).toBe('- Mapa 866 · 40 min');
+		it('does not count on a map the time nobody observed there, so the rows add up to the observed time of the coverage', async () => {
+			// Minutes 10 to 16 unobserved, inside the first map: 14 observed minutes of its 20, and so no pace of its own.
+			const cut: Mutate = (session) => ({ ...maps(20, 20, false)(session), observedItemsMs: 34 * MIN, gaps: [gap(0.5, 0.8, 'disconnect')] });
+			const { content } = await render({ mutate: cut });
+			expect(mapsOf(content)).toContain('| Mapa 866 | 14 min | 1g 95s 0c | — |\n| Mapa 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n');
+			expect(content).toContain('Objetos observados durante 34 min de una sesión de 40 min: 85 %.');
+		});
+
+		it('with one map and nothing outside it writes one line: the table would repeat the balance', async () => {
+			for (const partial of [true, false]) expect(mapsOf((await render({ mutate: maps(40, 0, partial) })).content)).toBe('Mapa 866 · tiempo observado: 40 min');
+			expect(mapsOf((await render({ mutate: maps(40, 0, false), locale: 'en' })).content, 'Maps')).toBe('Map 866 · observed time: 40 min');
+			// One map and time outside it is two rows: a table, with its route.
 			const short = await render({ mutate: maps(25, 0, true) });
-			expect(mapsOf(short.content)).toBe('- Mapa 866 · 25 min\n\nLa lista puede estar incompleta.');
+			expect(mapsOf(short.content)).toBe(`${HEAD}| Mapa 866 | 25 min | 1g 95s 0c | 4g 68s 0c |\n| Sin mapa identificado | 15 min | 2g 82s 0c | 11g 28s 0c |\n\n17:30 Mapa 866 → 17:55 sin mapa identificado\n\n${LIMIT}`);
 			expect(glued(short.content)).toEqual([]);
+		});
+
+		it('writes the time alone, with no value columns and no limit, when the note states no net value of items', async () => {
+			const { content } = await render({ fixture: { prices: false }, mutate: maps(20, 20, false) });
+			expect(content).toContain('Sin precios de bazar: no hay valor neto de objetos observados.');
+			expect(mapsOf(content)).toBe('| Mapa | Tiempo observado |\n|---|---:|\n| Mapa 866 | 20 min |\n| Mapa 873 | 20 min |\n\n17:30 Mapa 866 → 17:50 Mapa 873');
+			expect(glued(content)).toEqual([]);
+		});
+
+		it('gives a map entered twice one row and both entries in the route, with the local hour of each', async () => {
+			const back: Mutate = (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 10 * MIN }, { mapId: 873, fromMs: AT + 10 * MIN, toMs: AT + 25 * MIN },
+				{ mapId: 866, fromMs: AT + 25 * MIN, toMs: AT + 40 * MIN }] });
+			const { content } = await render({ mutate: back, mapNames: { '866': 'Laberinto | del Rey Loco' }, utcOffsetMinutes: () => -480 });
+			// 866 holds minutes 0 to 10 and 25 to 40 (the changes of minute 40); 873 holds the changes of minute 20. A name cannot break the table.
+			expect(mapsOf(content)).toBe(`${HEAD}| Laberinto \\| del Rey Loco | 25 min | 2g 82s 0c | 6g 76s 80c |\n| Mapa 873 | 15 min | 1g 95s 0c | 7g 80s 0c |\n\n`
+				+ `07:30 Laberinto \\| del Rey Loco → 07:40 Mapa 873 → 07:55 Laberinto \\| del Rey Loco\n\n${LIMIT}`);
 		});
 	});
 
@@ -1093,7 +1152,7 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 	it('never writes a paragraph right under a list or a table, with every section of the note present', async () => {
 		const alert = { kind: 'valuable_loot', itemId: STAPLE, name: 'Saco grande', quantity: 12, totalCopper: 18_000, priceStatus: 'known', reason: 'above_threshold' } as never;
 		const everything: Mutate = (session) => ({ ...nineGaps(GOLD_WALLET_ON(session)), mapCoveragePartial: true, magicFind: { value: 312, source: 'verified' },
-			// Ten minutes on two maps against twenty observed: the total and the warning are both written.
+			// Ten minutes on two maps, five of them observed, against twenty observed: the table, its row of no identified map, the route and the limit.
 			mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 5 * 60_000 }, { mapId: 873, fromMs: AT + 5 * 60_000, toMs: AT + 10 * 60_000 }],
 			totals: [...session.totals, total('item', 101, 3), total('item', 102, 1), total('item', 103, 0, 4), total('currency', 2, 800)],
 			valuation: { ...session.valuation, coinNetCopper: 12_345, prices: [...session.valuation.prices, { itemId: 101, unitCopper: null }, { itemId: 102, unitCopper: 50 }] },
@@ -1104,9 +1163,9 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 			const text = body(note.content);
 			// Every section is there, so each of its joints is checked.
 			for (const heading of locale === 'es' ? ['## Balance observado', '## Objetos observados de más valor', 'Sin precio de bazar', 'Ligados a cuenta', '## Cambios de otras monedas', '## Lo bueno', 'Salieron del inventario', '## Mapas',
-				'Tiempo con mapa identificado: 10 min. La lista puede estar incompleta.', '## Al cerrar', '## Cobertura', 'Sin observar: 9 min, en 9 tramos.', 'Y 4 tramos más, en total 4 min.', '|Sesión completa]]']
+				'| Sin mapa identificado | 15 min |', 'cuenta en el mapa donde se observó.', '## Al cerrar', '## Cobertura', 'Sin observar: 9 min, en 9 tramos.', 'Y 4 tramos más, en total 4 min.', '|Sesión completa]]']
 				: ['## Observed balance', '## Most valuable observed items', 'No bazaar price', 'Account-bound', '## Other currency changes', '## The good', 'left the inventory', '## Maps',
-					'Time on an identified map: 10 min. The list may be incomplete.', '## At close', '## Coverage', 'Unobserved: 9 min, in 9 intervals.', 'And 4 more intervals, 4 min in total.', '|Full session]]']) expect(text).toContain(heading);
+					'| No identified map | 15 min |', 'counts on the map where it was observed.', '## At close', '## Coverage', 'Unobserved: 9 min, in 9 intervals.', 'And 4 more intervals, 4 min in total.', '|Full session]]']) expect(text).toContain(heading);
 			expect(glued(note.content)).toEqual([]);
 			// With more bound types than are named and cuts next to the long stretches, the joints of those two forms hold as well.
 			const more = await render({ locale, itemMeta: { ...META, ...Object.fromEntries([201, 202, 203, 204, 205, 206].map((id) => [id, { flags: ['AccountBound'], type: 'Trophy' }])) },
@@ -1304,13 +1363,13 @@ describe('live session summary service', () => {
 		const h = harness({ mapNames: () => new Promise(() => undefined) });
 		await h.service.observe();
 		expect(h.summaries()).toHaveLength(1);
-		expect(h.vault.contents.get(h.summaries()[0]!)).toContain('- Mapa 866 · 20 min');
+		expect(h.vault.contents.get(h.summaries()[0]!)).toContain('| Mapa 866 | 20 min |');
 	});
 	it('writes the note without names or flags when those lookups fail', async () => {
 		const h = harness({ mapNames: async () => { throw new Error('offline'); }, itemMeta: async () => { throw new Error('no cache'); } });
 		await h.service.observe();
 		const text = h.vault.contents.get(h.summaries()[0]!)!;
-		expect(text).toContain('- Mapa 866 · 20 min');
+		expect(text).toContain('| Mapa 866 | 20 min |');
 		expect(text).toContain('como máximo');
 		// Each missing optional part leaves a diagnostic: the error class and which part, nothing from the user.
 		expect(h.failures).toEqual([{ status: 'optional_item_meta', reason: 'Error', attempt: 1 }, { status: 'optional_map_names', reason: 'Error', attempt: 1 }]);

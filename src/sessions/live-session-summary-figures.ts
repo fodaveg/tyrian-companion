@@ -94,10 +94,8 @@ export interface SummaryFigures {
 	 * observed in full, and at most 99 while it has any unobserved stretch (23 s in 115 minutes is not 100 %).
 	 */
 	observedPercent: number;
+	/** The map of the title and of `tyrian_summary_main_map` (see `summaryMainMap`); it is not read from `mapBreakdown`. */
 	mainMapId: number | null;
-	maps: { mapId: number; ms: number }[];
-	/** Time on the maps of `maps` together: what the session spent on a map the plugin could identify. */
-	mapsMs: number;
 	/** Observed time, value and pace by map, and the order the maps were entered in. */
 	mapBreakdown: SummaryMapBreakdown;
 	/** Sellable items that came in, best value first (priced ones before unpriced). */
@@ -161,7 +159,11 @@ export function summaryNamedEntities(session: Pick<StoredLiveSessionPayloadV1, '
 		currencyIds: ascending(session.totals.filter((row) => row.kind === 'currency' && row.idNumber !== GOLD_CURRENCY_ID && row.net !== 0).map((row) => row.idNumber)) };
 }
 
-/** The map holding more than 70 % of the observed time, or null (several maps, or none known: see `maps`). */
+/**
+ * The map holding more than 70 % of the observed time, or null (several maps, or none known). It is a SAVED figure
+ * (`tyrian_summary_main_map`, which the average by map reads) and so it keeps its own arithmetic: the time of each map is the
+ * whole length of its intervals, unobserved stretches inside them included, not the observed time of `mapBreakdown`.
+ */
 export function summaryMainMap(session: Pick<StoredLiveSessionPayloadV1, 'mapIntervals' | 'observedItemsMs'>): number | null {
 	const first = mapTimes(session.mapIntervals)[0];
 	// The share is of the OBSERVED time: time on no known map (null intervals, or none recorded) counts in the denominator.
@@ -242,13 +244,11 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 		.map((row) => ({ at: entry.observedAt, itemId: row.alert!.itemId, name: row.alert!.name, quantity: row.alert!.quantity, totalCopper: row.alert!.totalCopper })));
 
 	const stretches = unobservedStretches(session.gaps, session.endedAt, characters);
-	const maps = mapTimes(session.mapIntervals);
 	// Integer arithmetic before the division, so an exact share (57 of 100 minutes) is not truncated to the percent below it.
 	const wholePercent = durationMs > 0 ? Math.min(100, Math.floor(observedMs * 100 / durationMs)) : 0;
 	return { durationMs, observedShare: durationMs > 0 ? Math.min(1, observedMs / durationMs) : 0,
 		observedPercent: stretches.length > 0 ? Math.min(99, wholePercent) : wholePercent,
-		mainMapId: summaryMainMap(session), maps, mapsMs: maps.reduce((sum, row) => sum + row.ms, 0),
-		mapBreakdown: mapBreakdown(session, counted, !valueless), sellable, boundItemIds, unpriced, unknownBindingIds,
+		mainMapId: summaryMainMap(session), mapBreakdown: mapBreakdown(session, counted, !valueless), sellable, boundItemIds, unpriced, unknownBindingIds,
 		netCopper: valueless ? null : netCopper, positiveCopper, noPrices,
 		perHour: { copper: valueless ? null : perHour(netCopper), reason: rateReason }, withoutDominant: valueless ? null : withoutDominant, staple, goldCopper, currencies,
 		dominantCurrency: positiveCopper === 0 ? gainedCurrency : null,

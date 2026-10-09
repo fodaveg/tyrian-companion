@@ -1,8 +1,8 @@
 import { formatCopperVisual } from '../core/copper-format';
 import { errorClassName } from '../core/local-debug-error-details';
 import { ensureFoldersBySegments } from '../core/vault-folders';
-import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, SUMMARY_SHORT_GAP_MS, summaryMainMap,
-	type SummaryCharacter, type SummaryItemMetaMap } from './live-session-summary-figures';
+import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, SUMMARY_MIN_UNIDENTIFIED_MS, SUMMARY_SHORT_GAP_MS, summaryMainMap,
+	type SummaryCharacter, type SummaryItemMetaMap, type SummaryMapRow } from './live-session-summary-figures';
 import { liveSessionLocalTime, liveSessionTitleStamp, systemUtcOffsetMinutes, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { LIVE_RATE_MIN_OBSERVED_MS } from './live-session-model';
 import { normalizeSessionOutputFolder } from './session-note-model';
@@ -95,7 +95,9 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const characters = input.characters ?? [];
 		const f = computeSummaryFigures(session, input.itemMeta ?? {}, characters);
 		const several = characters.length > 1;
-		const mapHeading = f.mainMapId !== null ? mapName(f.mainMapId) : f.maps.length === 0 ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
+		// Read from the intervals as they are saved, like the main map: the title and `tyrian_summary_map` do not move with the breakdown.
+		const noMapKnown = !session.mapIntervals.some((interval) => interval.mapId !== null);
+		const mapHeading = f.mainMapId !== null ? mapName(f.mainMapId) : noMapKnown ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
 		// The local day and hour of the start first (the same ones as the line below), so one summary is told from another in a list.
 		const heading = `${liveSessionTitleStamp(session.startedAt, offset)} · ${label('Resumen', 'Summary')} · ${mapHeading}${characters.length === 1 ? ` · ${escapeMarkdown(characters[0]!.name)}` : ''}`;
 		const out: string[] = [`# ${heading}`, '',
@@ -168,14 +170,33 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		else if (f.outCount > 0) out.push('', label(`Salieron del inventario ${String(f.outCount)} unidades de ${String(f.outKinds)} ${f.outKinds === 1 ? 'tipo' : 'tipos'} de objeto; no se distingue si se vendieron, se consumieron o se depositaron.`,
 			`${String(f.outCount)} units of ${String(f.outKinds)} item ${f.outKinds === 1 ? 'type' : 'types'} left the inventory; it cannot tell whether they were sold, consumed or deposited.`));
 
-		if (f.maps.length > 0) {
-			// The total is written when it adds something (with one map it is that map's line), and the warning only when it is true of
-			// this session: the map record has a hole AND the identified time falls short of the observed time.
-			const under = [...(f.maps.length > 1 ? [`${label('Tiempo con mapa identificado', 'Time on an identified map')}: ${duration(f.mapsMs)}.`] : []),
-				...(session.mapCoveragePartial && f.mapsMs < session.observedItemsMs ? [label('La lista puede estar incompleta.', 'The list may be incomplete.')] : [])];
-			out.push('', `## ${label('Mapas', 'Maps')}`, '', ...f.maps.map((row) => `- ${mapName(row.mapId)} · ${duration(row.ms)}`),
-				// A blank line first: text right under a list item is, in Markdown, part of that item.
-				...(under.length > 0 ? ['', under.join(' ')] : []));
+		const byMap = f.mapBreakdown;
+		if (byMap.rows.length > 0) {
+			// The value columns go with the balance: a note that states no net value of items states none by map either.
+			const valued = shownNet !== null;
+			const unidentified = (capital: boolean): string => capital ? label('Sin mapa identificado', 'No identified map') : label('sin mapa identificado', 'no identified map');
+			// What was observed on no identified map is a row when it is a stretch, or holds value the rows above would not add up without.
+			// It is what says the maps above are not the whole session: nothing else is written about a map that may be missing.
+			const rows = [...byMap.rows, ...(byMap.unidentified.observedMs >= SUMMARY_MIN_UNIDENTIFIED_MS || valued && byMap.unidentified.netCopper !== 0 ? [byMap.unidentified] : [])];
+			// The table as data: a column is its heading, its alignment and how it writes a row, so a label, the order or a column is one
+			// line to change. Every time is observed item time and every value a part of the net value above: each column adds up to it.
+			const columns: { heading: string; align: '---' | '---:'; cell: (row: SummaryMapRow) => string }[] = [
+				{ heading: label('Mapa', 'Map'), align: '---', cell: (row) => row.mapId === null ? unidentified(true) : mapName(row.mapId) },
+				{ heading: label('Tiempo observado', 'Observed time'), align: '---:', cell: (row) => duration(row.observedMs) },
+				...(valued ? [
+					{ heading: label('Valor neto de objetos', 'Net item value'), align: '---:' as const, cell: (row: SummaryMapRow): string => row.netCopper === null ? '—' : money(row.netCopper) },
+					// No pace under the 15 minutes observed on that map every live rate needs.
+					{ heading: label('Por hora observada', 'Per observed hour'), align: '---:' as const, cell: (row: SummaryMapRow): string => row.perHourCopper === null ? '—' : money(row.perHourCopper) }] : [])];
+			out.push('', `## ${label('Mapas', 'Maps')}`, '');
+			// One map and nothing outside it: its value and its pace are the balance's own, so one line says all the table would.
+			if (rows.length === 1) out.push(`${columns[0]!.cell(rows[0]!)} · ${label('tiempo observado', 'observed time')}: ${columns[1]!.cell(rows[0]!)}`);
+			else out.push(`| ${columns.map((column) => column.heading).join(' | ')} |`, `|${columns.map((column) => column.align).join('|')}|`,
+				...rows.map((row) => `| ${columns.map((column) => column.cell(row)).join(' | ')} |`));
+			// The route: every entry with its local hour, returns to a map included. A blank line first, as before every paragraph under a table.
+			if (byMap.visits.length > 1) out.push('', byMap.visits.map((visit) => `${clock(visit.at)} ${visit.mapId === null ? unidentified(false) : mapName(visit.mapId)}`).join(' → '));
+			// The limit of the split, only where there is a split of value to misread.
+			if (valued && rows.length > 1) out.push('', label('Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente, cuenta en el mapa donde se observó.',
+				'What arrives while a map loads, or is opened on the next map, counts on the map where it was observed.'));
 		}
 
 		const extra: string[] = [];
@@ -234,7 +255,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 
 		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? (input.mapNames?.[String(id)] ?? `${label('Mapa', 'Map')} ${String(id)}`)
 			: (names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
-		const mapText = f.mainMapId !== null ? raw(f.mainMapId, 'map') : f.maps.length === 0 ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
+		const mapText = f.mainMapId !== null ? raw(f.mainMapId, 'map') : noMapKnown ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
 		const topItem = f.staple !== null ? { id: f.staple.itemId, count: f.staple.quantity } : f.sellable[0] !== undefined ? { id: f.sellable[0].itemId, count: f.sellable[0].quantity } : null;
 		const goldText = (copper: number | null): string => copper === null ? 'null' : String(Number((copper / 10_000).toFixed(4)));
 		const fm = ['---', 'tyrian_summary_version: 3', `tyrian_summary_of: ${JSON.stringify(session.sessionRef)}`,
