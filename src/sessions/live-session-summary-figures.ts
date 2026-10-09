@@ -40,10 +40,12 @@ export interface SummaryGapStretch {
 	fromAt: string; toAt: string; ms: number;
 	/** The reason of the longest record in the stretch: what the stretch is named after. */
 	reason: LiveGapV1['reason'];
-	/** A `context_changed` stretch that holds the instant a later character took over. */
+	/** One of its `context_changed` records holds the instant a later character took over, whatever the reason of its longest record. */
 	characterChange: boolean;
-	/** The one channel that went unobserved, when the other was observed all along the stretch; null when both were hit. */
+	/** The one channel its records name; null when they name both, or when one of them names none. */
 	onlyChannel: 'items' | 'currencies' | null;
+	/** Time of the stretch that went unobserved in currencies while items were observed: no items record covers it. */
+	currencyOnlyMs: number;
 }
 
 export interface SummaryFigures {
@@ -96,6 +98,12 @@ export interface SummaryFigures {
 	gapsMs: number;
 	/** How many they are: the number that goes with `gapsMs`. */
 	gapStretches: number;
+	/**
+	 * The part of `gapsMs` that is of currencies alone. `gapsMs` is of either channel and the observed time is of items, so
+	 * this is what separates them: the session's length less the observed item time is `gapsMs` less this, while the
+	 * observed time and the records agree.
+	 */
+	gapsCurrencyOnlyMs: number;
 }
 
 export interface SummaryCharacter { name: string; fromAt: string }
@@ -204,7 +212,8 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 		dominantCurrency: positiveCopper === 0 ? gainedCurrency : null,
 		outCount: itemTotals.reduce((sum, row) => sum + row.negative, 0), outKinds: itemTotals.filter((row) => row.negative > 0).length, hasNewItems,
 		salesSession,
-		alerts, stretches, gapsMs: stretches.reduce((sum, stretch) => sum + stretch.ms, 0), gapStretches: stretches.length };
+		alerts, stretches, gapsMs: stretches.reduce((sum, stretch) => sum + stretch.ms, 0), gapStretches: stretches.length,
+		gapsCurrencyOnlyMs: stretches.reduce((sum, stretch) => sum + stretch.currencyOnlyMs, 0) };
 }
 
 /**
@@ -216,25 +225,31 @@ function unobservedStretches(gaps: readonly LiveGapV1[], endedAt: string, charac
 	const records = gaps.map((gap) => ({ from: Date.parse(gap.fromAt), to: Date.parse(gap.toAt ?? endedAt), reason: gap.reason, channels: gap.channels }))
 		.sort((a, b) => a.from - b.from || a.to - b.to);
 	const takeovers = characters.slice(1).map((entry) => Date.parse(entry.fromAt));
-	const open: { from: number; to: number; reason: LiveGapV1['reason']; longestMs: number;
-		covered: Record<'items' | 'currencies', number>; until: Record<'items' | 'currencies', number> }[] = [];
+	type Sweep = Record<'items' | 'either', number>;
+	const open: { from: number; to: number; reason: LiveGapV1['reason']; longestMs: number; characterChange: boolean;
+		items: boolean; currencies: boolean; unlabelled: boolean; covered: Sweep; until: Sweep }[] = [];
 	for (const record of records) {
 		let stretch = open.at(-1);
 		if (stretch === undefined || record.from > stretch.to) {
-			stretch = { from: record.from, to: record.from, reason: record.reason, longestMs: -1, covered: { items: 0, currencies: 0 },
-				until: { items: Number.NEGATIVE_INFINITY, currencies: Number.NEGATIVE_INFINITY } };
+			stretch = { from: record.from, to: record.from, reason: record.reason, longestMs: -1, characterChange: false, items: false, currencies: false, unlabelled: false,
+				covered: { items: 0, either: 0 }, until: { items: Number.NEGATIVE_INFINITY, either: Number.NEGATIVE_INFINITY } };
 			open.push(stretch);
 		}
-		if (record.to - record.from > stretch.longestMs) { stretch.longestMs = record.to - record.from; stretch.reason = record.reason; }
-		// Time each channel went unobserved inside the stretch, each instant once: it says whether the stretch is of one channel alone.
-		for (const channel of record.channels) {
-			stretch.covered[channel] += Math.max(0, record.to - Math.max(record.from, stretch.until[channel]));
-			stretch.until[channel] = Math.max(stretch.until[channel], record.to);
+		const current = stretch;
+		if (record.to - record.from > current.longestMs) { current.longestMs = record.to - record.from; current.reason = record.reason; }
+		// Decided record by record, as before the records were joined: the longest record of the stretch may well be of another reason.
+		if (record.reason === 'context_changed' && takeovers.some((at) => at >= record.from && at <= record.to)) current.characterChange = true;
+		const items = record.channels.includes('items'); const currencies = record.channels.includes('currencies');
+		current.items ||= items; current.currencies ||= currencies; current.unlabelled ||= !items && !currencies;
+		// Time unobserved inside the stretch, each instant once: in items, and in either channel. The difference is of currencies alone.
+		for (const sweep of [...(items ? ['items' as const] : []), ...(items || currencies ? ['either' as const] : [])]) {
+			current.covered[sweep] += Math.max(0, record.to - Math.max(record.from, current.until[sweep]));
+			current.until[sweep] = Math.max(current.until[sweep], record.to);
 		}
-		stretch.to = Math.max(stretch.to, record.to);
+		current.to = Math.max(current.to, record.to);
 	}
 	return open.map((stretch) => ({ fromAt: new Date(stretch.from).toISOString(), toAt: new Date(stretch.to).toISOString(), ms: stretch.to - stretch.from,
-		reason: stretch.reason,
-		characterChange: stretch.reason === 'context_changed' && takeovers.some((at) => at >= stretch.from && at <= stretch.to),
-		onlyChannel: stretch.covered.currencies === 0 ? 'items' : stretch.covered.items === 0 ? 'currencies' : null }));
+		reason: stretch.reason, characterChange: stretch.characterChange, currencyOnlyMs: stretch.covered.either - stretch.covered.items,
+		// A record that names no channel leaves its stretch without a channel to name.
+		onlyChannel: stretch.unlabelled ? null : stretch.items && !stretch.currencies ? 'items' : stretch.currencies && !stretch.items ? 'currencies' : null }));
 }

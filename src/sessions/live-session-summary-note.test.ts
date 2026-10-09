@@ -676,18 +676,18 @@ Unobserved: 5 min, in 1 interval.
 			observedItemsMs: observedMinutes * MIN, observedCurrenciesMs: observedMinutes * MIN, gaps: records });
 
 		it('counts and writes ONCE a stretch that both channels record, and says so when it is of one channel alone', async () => {
-			const { content } = await render({ mutate: session([...both(10 * MIN, 12 * MIN), record(40 * MIN, 5 * MIN, 'currencies'), record(60 * MIN, 3 * MIN, 'items')]) });
-			expect(coverageOf(content)).toBe(`Objetos observados durante 80 min de una sesión de 100 min: 80 %.
-Sin observar: 20 min, en 3 tramos.
+			const { content } = await render({ mutate: session([...both(10 * MIN, 12 * MIN), record(40 * MIN, 5 * MIN, 'currencies'), record(60 * MIN, 3 * MIN, 'items')], 85) });
+			expect(coverageOf(content)).toBe(`Objetos observados durante 85 min de una sesión de 100 min: 85 %.
+Sin observar: 20 min, en 3 tramos; 5 min de ellos solo de monedas.
 - 17:40–17:52 · 12 min · desconexión
 - 18:10–18:15 · 5 min · desconexión · solo monedas
 - 18:30–18:33 · 3 min · desconexión · solo objetos`);
 			// Both figures are of the union: 12 minutes once, not 24 for the two records.
 			const figures = computeSummaryFigures(session([...both(10 * MIN, 12 * MIN)])(await payload()), META, []);
 			expect({ stretches: figures.gapStretches, ms: figures.gapsMs, list: figures.stretches.map((stretch) => [stretch.ms, stretch.onlyChannel]) }).toEqual({ stretches: 1, ms: 12 * MIN, list: [[12 * MIN, null]] });
-			const en = await render({ locale: 'en', mutate: session([...both(10 * MIN, 12 * MIN), record(40 * MIN, 5 * MIN, 'currencies'), record(60 * MIN, 3 * MIN, 'items')]) });
-			expect(coverageOf(en.content, 'Coverage')).toBe(`Items observed for 80 min of a session of 100 min: 80 %.
-Unobserved: 20 min, in 3 intervals.
+			const en = await render({ locale: 'en', mutate: session([...both(10 * MIN, 12 * MIN), record(40 * MIN, 5 * MIN, 'currencies'), record(60 * MIN, 3 * MIN, 'items')], 85) });
+			expect(coverageOf(en.content, 'Coverage')).toBe(`Items observed for 85 min of a session of 100 min: 85 %.
+Unobserved: 20 min, in 3 intervals; 5 min of it of currencies only.
 - 17:40–17:52 · 12 min · disconnect
 - 18:10–18:15 · 5 min · disconnect · currencies only
 - 18:30–18:33 · 3 min · disconnect · items only`);
@@ -703,11 +703,63 @@ Sin observar: 20 min, en 2 tramos.
 
 		it('joins records that touch or overlap into one stretch, named after its longest record', async () => {
 			// Items cut at 10:00 for 5 min as a restart; currencies from 14:00 to 21:00 as a disconnection: one stretch 10:00–21:00, of both channels in part.
-			const { content } = await render({ mutate: session([record(10 * MIN, 5 * MIN, 'items', 'host_restart'), record(14 * MIN, 7 * MIN, 'currencies'), ...both(21 * MIN, 30 * SEC, 'context_changed'), ...both(50 * MIN, 9 * MIN, 'host_restart')]) });
-			expect(coverageOf(content)).toBe(`Objetos observados durante 80 min de una sesión de 100 min: 80 %.
-Sin observar: 20 min 30 s, en 2 tramos.
+			// Items went unobserved for 5 min + 30 s + 9 min, so 85 min 30 s were observed; the six minutes from 15:00 to 21:00 are of currencies alone.
+			const joined = session([record(10 * MIN, 5 * MIN, 'items', 'host_restart'), record(14 * MIN, 7 * MIN, 'currencies'), ...both(21 * MIN, 30 * SEC, 'context_changed'), ...both(50 * MIN, 9 * MIN, 'host_restart')], 85.5);
+			const { content } = await render({ mutate: joined });
+			expect(coverageOf(content)).toBe(`Objetos observados durante 85 min 30 s de una sesión de 100 min: 85 %.
+Sin observar: 20 min 30 s, en 2 tramos; 6 min de ellos solo de monedas.
 - 17:40–17:51 · 11 min 30 s · desconexión
 - 18:20–18:29 · 9 min · reinicio`);
+			// The stretch that is of currencies only in part carries no channel label on its line: the clause above is where its six minutes are said.
+			const figures = computeSummaryFigures(joined(await payload()), META, []);
+			expect(figures.stretches.map((stretch) => [stretch.ms, stretch.onlyChannel, stretch.currencyOnlyMs])).toEqual([[11.5 * MIN, null, 6 * MIN], [9 * MIN, null, 0]]);
+			expect(figures.durationMs - joined(await payload()).observedItemsMs).toBe(figures.gapsMs - figures.gapsCurrencyOnlyMs);
+		});
+
+		it('says how much of the unobserved time is of currencies alone, so the two lines add up to the session\'s length', async () => {
+			// 15 minutes of items unobserved (8 + 4 + 3) and 3 more of currencies only: 100 − 85 is 15, and 18 − 3 is 15.
+			const mixed = session([...both(10 * MIN, 8 * MIN), ...both(30 * MIN, 4 * MIN), record(60 * MIN, 3 * MIN, 'items'), record(80 * MIN, 3 * MIN, 'currencies')], 85);
+			expect(coverageOf((await render({ mutate: mixed })).content)).toBe(`Objetos observados durante 85 min de una sesión de 100 min: 85 %.
+Sin observar: 18 min, en 4 tramos; 3 min de ellos solo de monedas.
+- 17:40–17:48 · 8 min · desconexión
+- 18:00–18:04 · 4 min · desconexión
+- 18:30–18:33 · 3 min · desconexión · solo objetos
+- 18:50–18:53 · 3 min · desconexión · solo monedas`);
+			expect(coverageOf((await render({ mutate: mixed, locale: 'en' })).content, 'Coverage').split('\n')[1]).toBe('Unobserved: 18 min, in 4 intervals; 3 min of it of currencies only.');
+			const figures = computeSummaryFigures(mixed(await payload()), META, []);
+			expect({ unobserved: figures.gapsMs, currencyOnly: figures.gapsCurrencyOnlyMs, itemsLost: figures.durationMs - 85 * MIN }).toEqual({ unobserved: 18 * MIN, currencyOnly: 3 * MIN, itemsLost: 15 * MIN });
+			// Without any time of currencies alone the line is the one it was, and a cut of currencies under a second is not worth the clause.
+			const plain = session([...both(10 * MIN, 8 * MIN), ...both(30 * MIN, 4 * MIN), record(60 * MIN, 3 * MIN, 'items')], 85);
+			expect(coverageOf((await render({ mutate: plain })).content).split('\n')[1]).toBe('Sin observar: 15 min, en 3 tramos.');
+			const blink = session([...both(10 * MIN, 8 * MIN), ...both(30 * MIN, 7 * MIN), record(80 * MIN, 400, 'currencies')], 85);
+			expect(coverageOf((await render({ mutate: blink })).content).split('\n')[1]).toBe('Sin observar: 15 min, en 3 tramos.');
+		});
+
+		it('gives no channel label to a stretch with a record that names no channel', async () => {
+			const none = { ...record(10 * MIN, 12 * MIN), channels: [] as Channel[] };
+			// Alone, and joined to a record of items that touches it: neither is «solo objetos», in a session that did follow currencies.
+			const { content } = await render({ mutate: session([none, record(60 * MIN, 5 * MIN, 'items'), { ...record(65 * MIN, 3 * MIN), channels: [] as Channel[] }]) });
+			expect(coverageOf(content)).toBe(`Objetos observados durante 80 min de una sesión de 100 min: 80 %.
+Sin observar: 20 min, en 2 tramos.
+- 17:40–17:52 · 12 min · desconexión
+- 18:30–18:38 · 8 min · desconexión`);
+			const figures = computeSummaryFigures(session([none, record(60 * MIN, 5 * MIN, 'items')])(await payload()), META, []);
+			expect(figures.stretches.map((stretch) => [stretch.onlyChannel, stretch.currencyOnlyMs])).toEqual([[null, 0], ['items', 0]]);
+		});
+
+		it('names a stretch after the character change one of its context changes holds, though its longest record is of another reason', async () => {
+			// Ten minutes disconnected, then the minute in which the context changed and Beta took over (at 20:30): one stretch, its longest record a disconnection.
+			const characters = [{ name: 'Alfa', fromAt: new Date(AT).toISOString() }, { name: 'Beta', fromAt: new Date(AT + 20 * MIN + 30 * SEC).toISOString() }];
+			const change = session([record(10 * MIN, 10 * MIN, 'items'), ...both(20 * MIN, MIN, 'context_changed')], 89);
+			expect(coverageOf((await render({ mutate: change, characters })).content)).toBe(`Objetos observados durante 89 min de una sesión de 100 min: 89 %.
+Sin observar: 11 min, en 1 tramo.
+- 17:40–17:51 · 11 min · cambio de personaje`);
+			expect(coverageOf((await render({ mutate: change, characters, locale: 'en' })).content, 'Coverage').split('\n')[2]).toBe('- 17:40–17:51 · 11 min · character change');
+			// Without a second character it is the disconnection it mostly was; and a change of character is said of a context change only, as before:
+			// a disconnection that holds the instant stays a disconnection.
+			expect(coverageOf((await render({ mutate: change })).content).split('\n')[2]).toBe('- 17:40–17:51 · 11 min · desconexión');
+			const disconnected = session(both(10 * MIN, 11 * MIN), 89);
+			expect(coverageOf((await render({ mutate: disconnected, characters })).content).split('\n')[2]).toBe('- 17:40–17:51 · 11 min · desconexión');
 		});
 
 		it('writes the longest stretches first, each with its length, and one inside a single minute with that minute once', async () => {

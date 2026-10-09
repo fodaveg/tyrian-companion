@@ -200,7 +200,10 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			const total = (stretches: readonly { ms: number }[]): string => minutesSeconds(stretches.reduce((sum, stretch) => sum + stretch.ms, 0));
 			out.push(label(`Objetos observados durante ${minutesSeconds(session.observedItemsMs)} de una sesión de ${minutesSeconds(f.durationMs)}: ${percent} %.`,
 				`Items observed for ${minutesSeconds(session.observedItemsMs)} of a session of ${minutesSeconds(f.durationMs)}: ${percent} %.`),
-			label(`Sin observar: ${minutesSeconds(f.gapsMs)}, en ${count(f.gapStretches, 'tramo', 'tramos')}.`, `Unobserved: ${minutesSeconds(f.gapsMs)}, in ${count(f.gapStretches, 'interval', 'intervals')}.`));
+			// The time above is of items and this one is of either channel: what is of currencies alone is said here, so that the
+			// reader can take it off and see the two lines add up to the session's length. Under a second it is not worth a clause.
+			`${label(`Sin observar: ${minutesSeconds(f.gapsMs)}, en ${count(f.gapStretches, 'tramo', 'tramos')}`, `Unobserved: ${minutesSeconds(f.gapsMs)}, in ${count(f.gapStretches, 'interval', 'intervals')}`)}${
+				Math.round(f.gapsCurrencyOnlyMs / 1000) > 0 ? label(`; ${minutesSeconds(f.gapsCurrencyOnlyMs)} de ellos solo de monedas`, `; ${minutesSeconds(f.gapsCurrencyOnlyMs)} of it of currencies only`) : ''}.`);
 			const long = f.stretches.filter((stretch) => stretch.ms >= SUMMARY_SHORT_GAP_MS).sort((a, b) => b.ms - a.ms || Date.parse(a.fromAt) - Date.parse(b.fromAt));
 			const cuts = f.stretches.filter((stretch) => stretch.ms < SUMMARY_SHORT_GAP_MS);
 			const listed = long.slice(0, MAX_LISTED_GAPS); const unlisted = long.slice(MAX_LISTED_GAPS);
