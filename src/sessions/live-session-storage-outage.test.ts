@@ -523,6 +523,70 @@ describe('live session that could not be read when the host started', () => {
 		await next.dispose();
 	});
 
+	/**
+	 * The runtime awaits `initialize()` before it declares the plugin ready, so whatever it rejected with
+	 * was the whole plugin not starting: sessions, inventory, prices and settings, for a live session that
+	 * could not be brought back.
+	 */
+	describe('and the failure comes after the record was read', () => {
+		it('a journal storage cannot read does not stop the start: nothing of the session is kept, and it is asked for again', async () => {
+			const { f, before } = await orphaned('journal-unavailable');
+			f.at(LEASE_TTL_MS + 60_000);
+			const next = f.restarted();
+			const read = vi.spyOn(next.store, 'readLiveJournal').mockRejectedValueOnce(new Error('Live session journal is unavailable.'));
+			await expect(next.service.initialize()).resolves.toBeUndefined();
+			expect(read).toHaveBeenCalledTimes(1);
+			// A record without its journal is not a session anybody may write on: none of it is in memory.
+			expect(next.service.getView()).toMatchObject({ phase: 'error', sessionId: null, observationCount: 0 });
+			expect(next.service.getRuntime()).toBeNull();
+			expect(next.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['Live session journal is unavailable.']);
+			await expect(next.service.commit(f.sample(2, 2000, bags(9)))).resolves.toBe('not_owner');
+			await expect(next.service.stop(AT + LEASE_TTL_MS + 60_000)).resolves.toBe(false);
+			expect(await f.durable()).toEqual(before);
+
+			f.at(LEASE_TTL_MS + 65_000); await next.beat();
+			expect(next.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', observationCount: 1, observedItemsMs: 1000 });
+			expect(next.service.getView().gaps.map((gap) => gap.reason)).toEqual(['host_restart']);
+			expect(next.onError).toHaveBeenCalledTimes(1);
+			await next.dispose();
+		});
+
+		it('a journal that does not match its record does not stop the start either, and is never taken for a session', async () => {
+			const { f, before } = await orphaned('journal-mismatch');
+			f.at(LEASE_TTL_MS + 60_000);
+			const next = f.restarted();
+			// The record counts one observation and the journal brings none.
+			const read = vi.spyOn(next.store, 'readLiveJournal').mockResolvedValue([]);
+			await expect(next.service.initialize()).resolves.toBeUndefined();
+			expect(next.service.getView()).toMatchObject({ phase: 'error', sessionId: null, observationCount: 0 });
+			expect(next.service.getRuntime()).toBeNull();
+			expect(next.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['Live session journal does not match its committed cursor.']);
+			// It is evidence that contradicts itself, not an outage: no beat asks again, and no session is started over it.
+			expect(next.beats()).toBe(false);
+			await expect(next.service.start('Test')).resolves.toBeNull();
+			await expect(next.service.stop(AT + LEASE_TTL_MS + 60_000)).resolves.toBe(false);
+			expect(read).toHaveBeenCalledTimes(1);
+			// No note is written for a session whose journal was not the one its record counts.
+			expect(f.options.onComplete).not.toHaveBeenCalled();
+			expect(await f.durable()).toEqual(before);
+			await next.dispose();
+		});
+
+		it('a reclaim that cannot be saved does not stop the start: the next beat tries again', async () => {
+			const { f } = await orphaned('reclaim-refused-at-start');
+			f.at(LEASE_TTL_MS + 60_000);
+			const next = f.restarted();
+			vi.spyOn(next.store, 'saveLive').mockResolvedValueOnce({ status: 'stale' });
+			await expect(next.service.initialize()).resolves.toBeUndefined();
+			expect(next.service.getView()).toMatchObject({ phase: 'error', sessionId: 'session', observationCount: 1 });
+			expect(next.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['Live session recovery could not be persisted.']);
+			f.at(LEASE_TTL_MS + 65_000); await next.beat();
+			expect(next.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', observationCount: 1 });
+			expect((await f.durable()).record).toEqual(next.service.getRuntime());
+			await next.dispose();
+		});
+	});
+
 	it('a saved record that does not validate is not a passing outage: nobody asks again and nothing is started over it', async () => {
 		const { f, before } = await orphaned('load-corrupt');
 		f.at(LEASE_TTL_MS + 60_000);

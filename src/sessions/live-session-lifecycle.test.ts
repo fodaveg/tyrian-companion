@@ -430,7 +430,9 @@ describe('passive live session lifecycle', () => {
 
 			const mismatch = await earlierHost(2); await mismatch.first.dispose();
 			vi.spyOn(mismatch.f.store,'readLiveJournal').mockResolvedValueOnce([]);
-			const broken = mismatch.host(); await expect(broken.service.initialize()).rejects.toThrow('Live session journal does not match its committed cursor.'); await broken.beat();
+			const broken = mismatch.host(); await expect(broken.service.initialize(), 'reported, never thrown at the runtime that awaits the start').resolves.toBeUndefined();
+			expect(mismatch.f.options.onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Live session journal does not match its committed cursor.' }));
+			expect(broken.service.getRuntime(), 'and a record without the journal it counts is not kept as a session').toBeNull(); await broken.beat();
 			expect(await mismatch.lengths()).toEqual([2,2,2]); expect(await mismatch.queued()).toEqual(mismatch.ids.slice(0,2)); await broken.service.dispose();
 		});
 		it('a prune that fails is reported once, not at every beat, and asked again at the next start', async () => {

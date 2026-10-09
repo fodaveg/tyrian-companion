@@ -121,42 +121,63 @@ export class LiveSessionLifecycle {
 
 	constructor(options: LiveSessionLifecycleOptions) { this.options = withStorageDeadline(options); }
 
+	/**
+	 * Never rejects. The runtime awaits this before it declares the plugin ready, so a saved live session that cannot be
+	 * brought back must not be the reason nothing else starts. See `loadSaved` for what a failure leaves behind.
+	 */
 	async initialize(): Promise<void> {
 		return await this.enqueue(async () => {
-			try { await this.initializeRecord(); }
+			try { await this.loadSaved(); }
 			finally { await this.recoverPruneQueue(); }
 		});
 	}
+	/**
+	 * The saved session, read and brought back as far as it can be right now. Never throws: a failure is reported, shown
+	 * as `error`, and leaves in memory only what was read AND found consistent, so no operation writes on evidence nobody
+	 * could read. A session that is in memory and could not be reclaimed is tried again by the heartbeat, as always.
+	 */
+	private async loadSaved(): Promise<void> {
+		try { await this.initializeRecord(); }
+		catch (error) { this.failure = true; this.options.onError(error); }
+		this.options.onStateChange();
+	}
 	private async initializeRecord(): Promise<void> {
 		{
-			const loaded = await this.options.persistence.loadLive();
-			if (loaded.status === 'error' && loaded.code === 'unavailable') {
-				// Storage that does not answer the load says nothing about what is saved. Unlike a record that does not
-				// validate, it may answer later: the heartbeat asks again, and so does the next start. Reported once.
-				if (!this.unread) this.options.onError(new Error('Live session storage is unavailable.'));
+			// Storage that does not answer says nothing about what is saved. Unlike evidence that does not validate, it may
+			// answer later: the heartbeat asks again, and so does the next start. Reported once.
+			const unanswered = (error: unknown): void => {
+				if (!this.unread) this.options.onError(error);
 				this.unread = true; this.failure = true;
 				if (this.options.enabled()) this.armHeartbeat();
-				return;
-			}
-			// The load was answered: the error shown since the first attempt no longer describes anything.
-			if (this.unread) { this.unread = false; this.failure = false; }
+			};
+			const loaded = await this.options.persistence.loadLive();
+			if (loaded.status === 'error' && loaded.code === 'unavailable') { unanswered(new Error('Live session storage is unavailable.')); return; }
 			if (loaded.status !== 'loaded') {
+				// The load was answered: the error shown since the first attempt no longer describes anything.
+				if (this.unread) { this.unread = false; this.failure = false; }
 				if (loaded.status === 'error') this.failure = true;
 				return;
 			}
-			this.record = loaded.record;
-			this.journal = await this.options.persistence.readLiveJournal(loaded.record.sessionId);
-			const observations = this.journal.flatMap((entry) => entry.observations);
-			this.observations = observations; this.rebuildChart();
+			// The record alone is not the session: until its journal is read and found to be the one it counts, none of it
+			// is kept, so nothing (a note, a stop, a new start) is ever written from a record without its evidence. The
+			// store rejects a journal it cannot read and one with an entry that does not validate with the same error, so
+			// both are asked for again; neither is ever written over.
+			let journal: LiveJournalEntryV1[];
+			try { journal = await this.options.persistence.readLiveJournal(loaded.record.sessionId); }
+			catch (error) { unanswered(error); return; }
+			if (this.unread) { this.unread = false; this.failure = false; }
+			const observations = journal.flatMap((entry) => entry.observations);
 			if (observations.length !== loaded.record.observationCount || JSON.stringify(liveObservationTotals([], observations)) !== JSON.stringify(loaded.record.totals)) {
 				throw new Error('Live session journal does not match its committed cursor.');
 			}
+			this.record = loaded.record; this.journal = journal; this.observations = observations; this.rebuildChart();
 			this.registryKnown = true;
 			if (!this.options.enabled()) return;
 			this.recovering = true; this.hostRestarted = true;
 			this.noteNeedsVerification = loaded.record.phase === 'complete';
-			await this.restoreSummaryState(loaded.record);
+			// Armed before anything else can fail: a session that is in memory is what the beat brings back.
 			this.armHeartbeat();
+			await this.restoreSummaryState(loaded.record);
 			if (loaded.record.phase === 'active' && !await this.reclaim()) return;
 			if (loaded.record.phase === 'complete') {
 				await this.saveCompletedNote();
@@ -174,7 +195,7 @@ export class LiveSessionLifecycle {
 			if (!this.options.enabled() || this.disposed) return null;
 			// A saved session nobody has read yet is asked for here too. While it stays unread nothing is started: it
 			// would be a new session over one that may be active on disk.
-			if (this.unread) { await this.initializeRecord(); this.options.onStateChange(); }
+			if (this.unread) await this.loadSaved();
 			if (this.unread) return null;
 			if (this.record?.phase === 'active') return this.record.sessionId;
 			this.pruneHeld = false;
@@ -666,7 +687,7 @@ export class LiveSessionLifecycle {
 	private async beat(): Promise<void> {
 			// The saved session could not be read when this host started: one more attempt per beat, which goes on as the
 			// start would have (a session found active is reclaimed as after a restart, which is what this is).
-			if (this.unread) { if (this.options.enabled() && !this.disposed) { await this.initializeRecord(); this.options.onStateChange(); } return; }
+			if (this.unread) { if (this.options.enabled() && !this.disposed) await this.loadSaved(); return; }
 			if (!this.options.enabled() || this.disposed || this.record === null) return;
 			// One bounded pass per beat: the queue a host finds when it starts drains over a few beats, never at load.
 			await this.pruneSealed();
