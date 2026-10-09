@@ -41,7 +41,10 @@ export const SESSION_RUNTIME_STORE_NAME = 'active-session-v1';
 export const SESSION_RUNTIME_KEY = 'active-session';
 /** Normalize retained API evidence without writing it, querying an account or changing its phase. */
 export function legacyRuntimeRecordFromArchive(value:LegacyRuntimeArchiveV1):SessionRuntimeRecord|null {
-	if (!isLegacyRuntimeArchive(value)) return null;
+	return isLegacyRuntimeArchive(value) ? legacyRuntimeRecordFromVerifiedArchive(value) : null;
+}
+/** Same as above for an archive whose envelope and checksum the caller has just verified: no second SHA-256. */
+function legacyRuntimeRecordFromVerifiedArchive(value:LegacyRuntimeArchiveV1):SessionRuntimeRecord|null {
 	const normalized = normalizeSessionRuntimeRecord(value.original); if (normalized === null) return null;
 	if (value.receipt !== null && value.receipt.sessionId !== runtimeAuthority(normalized.record.state).sessionId) return null;
 	return structuredClone(normalized.record);
@@ -414,7 +417,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 				if (typeof cursor.key === 'string' && cursor.key.startsWith(LEGACY_RUNTIME_ARCHIVE_PREFIX)) {
 					const value: unknown = cursor.value;
 					if (!isLegacyRuntimeArchive(value)) { corrupt = true; tx.abort(); return; }
-					const record = legacyRuntimeRecordFromArchive(value);
+					const record = legacyRuntimeRecordFromVerifiedArchive(value);
 					if (!record || cursor.key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${runtimeAuthority(record.state).sessionId}`) { corrupt = true; tx.abort(); return; }
 					records.push({record,preservedAt:value.preservedAt,key:cursor.key});
 				}

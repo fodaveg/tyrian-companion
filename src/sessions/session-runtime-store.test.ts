@@ -2,6 +2,7 @@ import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { readFileSync } from 'node:fs';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
+import * as canonicalSha256 from '../core/canonical-sha256';
 import { archiveLegacyRuntime, LEGACY_RUNTIME_ARCHIVE_PREFIX, prepareLegacyRuntimeArchive, prepareLegacyRuntimeExport } from './live-session-legacy-archive';
 
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
@@ -25,6 +26,11 @@ import {
 } from './session-runtime-store';
 import type { SessionStartContext } from './session-start-capture';
 import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
+
+vi.mock('../core/canonical-sha256', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../core/canonical-sha256')>();
+	return { ...actual, sha256CanonicalValue: vi.fn(actual.sha256CanonicalValue) };
+});
 
 const requestedAt = '2026-08-13T07:59:59.500Z';
 const authority: SessionAuthority = {
@@ -162,6 +168,19 @@ describe('session runtime persistence', () => {
 				['a-same', prepareLegacyRuntimeArchive(recordOf('a-same'), 100)],
 			]);
 			expect((await store.listLegacyRuntimeArchives()).map(sessionIdOf)).toEqual(['a-same', 'b-same']);
+			store.close();
+		});
+
+		it('computes the SHA-256 of each preserved archive once per listing', async () => {
+			const store = await seedArchives('archive-hash-count', [
+				['a', prepareLegacyRuntimeArchive(recordOf('a'), 1)],
+				['b', prepareLegacyRuntimeArchive(recordOf('b'), 2)],
+				['c', prepareLegacyRuntimeArchive(recordOf('c'), 3)],
+			]);
+			const hash = vi.mocked(canonicalSha256.sha256CanonicalValue);
+			hash.mockClear();
+			await expect(store.listLegacyRuntimeArchives()).resolves.toHaveLength(3);
+			expect(hash).toHaveBeenCalledTimes(3);
 			store.close();
 		});
 
