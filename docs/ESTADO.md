@@ -1,8 +1,12 @@
 # Estado
 
-## Candidato 0.6.18: el resumen de sesión sin excluir NoSell, su enlace en Hebra y los plazos del almacén en vivo (9 oct 2026)
+## Canal 0.6.18 publicado: el resumen de sesión sin excluir NoSell, su enlace en Hebra y los plazos del almacén en vivo (9 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `ab9d57c` (`main` con el canal 0.6.17 publicado). Trae tres cosas.
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.18](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.18)
+es una release normal, sin draft ni prerelease, publicada el 2026-10-09T11:29:04Z; nombre, tag y `manifest.version`
+son `0.6.18`. El tag (ligero) apunta a `06dd070` (commit vacío de atestación, árbol
+`1fe91ad729b6e416ccc0d680ee8ab9ea50fa2801`); el candidato fuente es `c0c6cfc`, con el mismo árbol. Parte de `ab9d57c`
+(`main` con el canal 0.6.17 publicado). Trae tres cosas.
 Una cifra visible: la nota resumen de una sesión ya no deja fuera del valor los objetos con la marca `NoSell`
 (`662ae71`, `ab9d57c`), que solo prohíbe la venta a un comerciante; siguen fuera `AccountBound` y `SoulbindOnAcquire`.
 El enlace «Nota completa» del resumen en Hebra, que va por id (`a500ba8`). Y los plazos del almacén de la sesión en
@@ -23,7 +27,18 @@ cambio de esta versión). Detalle y límites en [CHANGELOG](CHANGELOG.md). Metad
     guardrails 25/25.
   - `a500ba8`: `check` 8/8 (5630 tests) y guardrails 25/25.
   - `ab9d57c` (árbol `250e7c3b2202a070d048e07af3ef19a0e65a91d4`): `check` 8/8 (5632 tests) y guardrails 25/25.
-- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
+- Gate local sobre el candidato `c0c6cfc` (Fedora, Node v22.23.1, 9 oct 2026): `npm run check` 8/8 (5632 tests, 339
+  ficheros), `npm run check:guardrails` 25/25, `release preflight: pass` y `release package: PASS`
+  (`tyrian-companion-0.6.18.zip` construido en local, sha256
+  `393e962ff0e5ac7a64a5d5a44d2d8a82f64f024ecac654e3ac6893647d25a0ba`). Sobre la release planeada, `BRAT release
+  contract: PASS` con 8 assets.
+- Publicación: el workflow de release (run 37923642523) terminó en `success`. `release:brat-verify` sobre la release
+  real: «BRAT release contract: PASS (version=0.6.18; assets=8)». Los ocho assets están `uploaded`: `hebra-main.mjs`
+  2650387, `hebra-styles.css` 118003, `hebra.json` 29593, `main.js` 1944601, `manifest.json` 237, `styles.css` 94537,
+  `tyrian-companion-0.6.18.zip` 2039685 y `tyrian-companion-0.6.18.zip.sha256` 94 (bytes).
+- CI de `main` sobre `06dd070` (run 37923631982): `completed` con conclusión `success` (leído con
+  `gh run view --json jobs` el 9 oct 2026). Jobs `detect-native-changes`, `check-guardrails`, `check` y
+  `release-package` en `success`; `rust-portable` y `rust-windows-helper` omitidos (`skipped`).
 - Límites conocidos de los plazos, en [SPEC-live-loot](SPEC-live-loot.md): un motor de almacén que no contesta al
   arrancar sigue impidiendo arrancar el plugin; un escritor de nota que no termina nunca bloquea las notas siguientes;
   tras un cierre brusco de la app de notas siguen pudiendo pasar hasta 5 minutos sin medir; una renovación de reserva
@@ -34,8 +49,7 @@ cambio de esta versión). Detalle y límites en [CHANGELOG](CHANGELOG.md). Metad
   enlace por id está comprobado a mano en una biblioteca real de Hebra (9 oct 2026) sobre tres resúmenes existentes
   editados; el resumen que escribe la 0.6.18 con esa forma no se ha visto. Los plazos del almacén están medidos solo
   con `fake-indexeddb`.
-- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la
-  verificación en clientes reales.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
 
 ## Canal 0.6.17 publicado: el valor de un botín sobre el total de la venta y fallos que ya no rompen lo demás (9 oct 2026)
 

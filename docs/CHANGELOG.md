@@ -2,7 +2,14 @@
 
 ## Release beta 0.6.18 - el resumen de sesión deja de excluir los objetos con NoSell, su enlace funciona en Hebra y el almacén de la sesión en vivo ya no espera para siempre
 
-Release por tag `0.6.18`. Cambia una cifra visible (el neto y las listas de la nota resumen de una sesión), arregla el
+[Canal 0.6.18 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.18); **instalación/runtime
+pendiente**. Tag `0.6.18` sobre `06dd070` (commit vacío de atestación), árbol
+`1fe91ad729b6e416ccc0d680ee8ab9ea50fa2801`. Gate local sobre el candidato `c0c6cfc` (mismo árbol): `check` 8/8
+(5632 tests, 339 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run
+37923642523) terminó en `success`, y `release:brat-verify` contra la salida real de la release dio PASS con los ocho
+assets. La CI de `main` sobre `06dd070` (run 37923631982) terminó en `success`, con sus jobs `detect-native-changes`,
+`check-guardrails`, `check` y `release-package` en `success`.
+Cambia una cifra visible (el neto y las listas de la nota resumen de una sesión), arregla el
 enlace «Nota completa» del resumen en Hebra y pone plazo a las esperas del almacén de la sesión en vivo.
 [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
 
