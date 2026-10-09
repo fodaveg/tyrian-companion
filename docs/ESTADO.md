@@ -1,5 +1,70 @@
 # Estado
 
+## Candidato 0.6.23: el arranque con el almacenamiento mudo y la sesión en vivo tras un cierre brusco (9 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `efe671f` (`main` con el canal 0.6.22 publicado). Trae dos lotes
+de robustez, sin cambios de interfaz, y los metadatos de versión (`bc41145`: `manifest.json`, `package.json`, la raíz
+de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md), en
+[SPEC-live-loot](SPEC-live-loot.md) §4 y en [ARCHITECTURE](ARCHITECTURE.md) («Coordinación de sesión activa»).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.23 se ha ejecutado en un Hebra ni en un Obsidian
+  reales. Todas las cifras de abajo salen de tests sobre un IndexedDB falso, un gestor de candados en memoria y un reloj
+  simulado. Ningún almacén se ha quedado mudo de verdad, ninguna aplicación se ha cerrado de golpe de verdad, y no se ha
+  comprobado en ningún host que `navigator.locks` exista, que su candado muera con el proceso ni qué procesos lo
+  comparten.
+- La 0.6.22 sigue sin verse pintada: no hay noticia nueva de David desde la captura de la 0.6.21.
+- Lote 1, arranque con el almacenamiento mudo (tarea Z3: `39caa31`, `b202e6a`, `593bff9`, `c3d3d5b`, `5e9f966`,
+  `d137e8f`). Si el motor de almacenamiento del navegador no contesta, el plugin arranca igualmente: peor caso medido
+  hasta `runtimeReady`, 20 s (10 s del modo de colector y 10 s de la sesión guardada), con las sesiones en error, y se
+  recupera solo cuando el almacén vuelve. Cada apertura (`openIndexedDb`) y cada operación de los almacenes que pasan
+  por `withIndexedDbReopen` vencen a los 10 s (`STORAGE_ANSWER_TIMEOUT_MS`).
+- Límites del lote 1: una operación legítima de más de 10 s contesta fallo aunque la escritura termine después; tras un
+  silencio, el almacén de la sesión rechaza durante 2 s aunque el motor haya vuelto; los almacenes secundarios
+  (catálogo, historial de precios, Halloween, cola de confirmaciones, calidad de detección, métricas, semillas, puntero
+  de recursos) no acotan sus transacciones una vez abiertos; un equipo en `consult` cuyo modo tarda más de 10 s en
+  leerse arranca como `collector` hasta que la lectura contesta; el arranque de Hebra con el motor mudo no se probó.
+- Lote 2, cierre brusco con una sesión en vivo (tarea F7: `d8de3b1`, `55a19fe`, `3044c12`, `bf9efcd`, `b4a5863`,
+  `6f560b1`, `77a5c18`, `79e0d56`, `8a54901`, `2cd794a`, `3f0053f`, `ed3aae9`, `6810905`, `e9cb55b`). El plugin vivo
+  mantiene un candado Web Locks con nombre derivado de su `instanceId` y lleva en él la marca `wl1:`. Quien vuelve toma
+  la reserva de sesión sin esperar a que caduque si el propietario lleva marca, su candado está libre y lleva al menos
+  15 s sin renovar. Medido: vuelta a los 75 s, sesión recuperada en `initialize()` y `ready` al primer `live_open`
+  (antes, `ready` a los 305 s). No se acorta la reserva ni cambia el latido; `renew`, `assertOwned` y `release` no se
+  tocan. Ventana oculta: 600 de 600 muestras y 11 escrituras de la reserva en diez minutos, con candados y sin ellos.
+- Cuándo rige lo de antes (5 minutos): host sin `navigator.locks`; instancia cuya autocomprobación falla (candado no
+  concedido en 1 s, gestor que no contesta, que lanza, que contesta `null` a todo o que da por libre el candado propio);
+  propietario de un build anterior, sin marca.
+- Límites del lote 2. Reinicio a menos de 15 s del cierre: `source_conflict` al primer `live_open` y, como el addon
+  espera 30 s tras un conflicto, hasta unos 30 s sin medir. Los 15 s comparan el reloj de pared con el `renewedAt` del
+  propietario: un salto de 20 s adelante o una suspensión pueden hacer pasar por callado a un propietario vivo. La
+  sesión manual renueva cada 100 s y los 15 s no la cubren. Host sin temporizador con candado nunca concedido: la
+  primera adquisición y la cola quedan colgadas. Ventana del almacén: acotada para la sesión activa (el primer guardado
+  de un recobro dice qué leyó y, si se le rechaza, el host suelta el handle), abierta para la sesión encontrada ya
+  `complete`.
+- Dónde es peor que sin candados: dos procesos vivos sobre los mismos datos que no se ven los candados. Garantía de
+  proceso único solo en macOS; en Hebra sobre Linux puede fallar (sin bus de sesión D-Bus, o una Hebra colgada al
+  salir); Windows, sin verificar. Con los dos procesos latiendo cada 5 s, 120 de 120 (igual que sin candados; sin la
+  regla de los 15 s, 40 de 120 y valla 18). Con un propietario que late cada 15 s o más, 14 de 120; con el propietario
+  oculto (latido de 60 s) frente a otro a 5 s, 14 de 600, frente a 600 de 600 sin candados (las tres últimas cifras son
+  de la revisión independiente, con su propio montaje). Hebra está activado por decisión del integrador, leyendo su
+  código y sin sonda en cliente real; se apaga con `locks: null` en `src/host/hebra/entry.ts`.
+- Diagnóstico: el registro local (`session` / `session_lease`, almacén `coordination`) apunta una vez qué es cada
+  instancia (`life_lock_proven`, `life_lock_unmarked`, `life_lock_absent`) y cada toma (`taken`) o rechazo (`refused`)
+  por candado no visto tomado, sin identificadores.
+- Revisión: independiente, dos pasadas por lote («integrar con correcciones» las cuatro veces; correcciones aplicadas).
+  El último delta de Z3 (`5e9f966..d137e8f`) y el de las últimas correcciones de F7 (`3f0053f`, `ed3aae9`, `6810905`,
+  `e9cb55b`) los lee solo el integrador.
+- Medido sobre `bc41145` más los cambios de documentación sin commitear al medir (Fedora, Node v22.23.1, 9 oct 2026),
+  un solo worker y ficheros sueltos: `tsc --noEmit` sin errores; `lint` con 0 errores y 117 avisos; censo de
+  observabilidad PASS (totales 574, 59, 125 y 229); contrato de texto fuente PASS (`frozen=17; scanned=375`);
+  `i18n-unused` e `i18n-copy-length` sin hallazgos; `build:host-esm`: «host ESM bundle: PASS (397 inputs, 2681494 bytes
+  -> hebra-main.mjs; exports: activate; npm packages: yaml)»; y 103 ficheros de test con 1887 tests en verde (todo
+  `src/sessions`, `src/host`, `src/test`, los de diagnóstico y `indexed-db-open`, y nueve `main-*`). No es el gate.
+- Sin medir: el gate, los guardarraíles, `release:preflight` y el paquete. No se ha probado bajo Node 24.
+- Cómo se comprobará el lote 2 en un cliente: matar la aplicación con una sesión en vivo, reabrirla y leer en el
+  registro de diagnóstico local los eventos `life_lock_*` y `taken`.
+- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la verificación en
+  clientes reales.
+
 ## Canal 0.6.22 publicado: Sesión a una columna en la pantalla principal de Hebra y «Valor estimado» en grande con los iconos de oro, plata y cobre (9 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.22](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.22)

@@ -1,5 +1,57 @@
 # Changelog
 
+## Release beta 0.6.23 - el plugin arranca aunque el almacenamiento del navegador no conteste, y una sesión en vivo vuelve al reabrir tras un cierre brusco sin esperar cinco minutos
+
+Candidato; no publicado ni etiquetado. Dos arreglos de robustez: mientras todo va bien no cambia nada de lo que se ve.
+Cambia qué pasa cuando el almacenamiento local deja de contestar al arrancar, y qué pasa con la sesión en vivo cuando
+la aplicación de notas se cierra de golpe. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente
+real.
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.23 se ha ejecutado en un Hebra ni en un Obsidian
+  reales. Todo lo que sigue está medido en tests, con un almacenamiento y un reloj simulados. Ningún almacenamiento se
+  ha quedado mudo de verdad y ninguna aplicación se ha cerrado de golpe de verdad. Tampoco se ha comprobado en ningún
+  host que los candados del navegador (`navigator.locks`), en los que se apoya el segundo arreglo, existan y se suelten
+  al morir el proceso. La 0.6.22 sigue sin haberse visto pintada.
+- Arranque con el almacenamiento mudo. Si el almacenamiento local del navegador no contesta al arrancar, el plugin ya
+  no se queda sin arrancar: arranca igualmente, con las sesiones en error, y se recupera solo cuando el almacenamiento
+  vuelve. En los tests tarda como mucho 20 s: 10 s esperando el modo de este equipo y 10 s esperando la sesión guardada.
+  Cada apertura y cada operación de los almacenes que pasan por el camino común se da por fallida a los 10 s, en vez de
+  esperar para siempre.
+- Límites de ese arranque. Una operación que de verdad tarde más de 10 s se da por fallida aunque la escritura termine
+  después. Tras un silencio, el almacén de la sesión rechaza todo durante 2 s, también si ya ha vuelto. Los almacenes
+  secundarios (catálogo, historial de precios, Halloween, cola de confirmaciones, calidad de detección, métricas,
+  semillas de precio y puntero de recursos) no ponen plazo a sus operaciones una vez abiertos: si una no contesta, esa
+  función queda colgada hasta reiniciar. Un equipo en modo «consulta» cuyo modo tarde más de 10 s en leerse arranca como
+  «colector» hasta que la lectura contesta. El arranque de Hebra con el almacenamiento mudo no se probó.
+- Cierre brusco con una sesión en vivo. Si la aplicación de notas se cierra de golpe (un cuelgue, un cierre forzado, un
+  corte de luz) con una sesión en vivo abierta, al reabrirla el plugin recupera la sesión al arrancar, en vez de pasar
+  hasta 5 minutos sin medir. Lo hace solo cuando puede comprobar que el plugin anterior ha muerto: su candado del
+  navegador está libre y llevaba al menos 15 s sin renovar su reserva de la sesión. Medido en tests: volviendo a los
+  75 s, mide desde el primer intento del addon; antes no medía hasta los 305 s. La sesión es la misma, con un hueco de
+  reinicio, como tras cualquier reinicio.
+- Cuándo sigue como antes. Si el host no tiene candados del navegador, si la comprobación que el plugin se hace a sí
+  mismo al arrancar falla, o si el plugin que murió era de una versión anterior, se esperan los 5 minutos de siempre.
+  No añade escrituras a disco: con la ventana oculta, 600 de 600 muestras guardadas y las mismas 11 escrituras de la
+  reserva en diez minutos, con candados y sin ellos.
+- Límites del cierre brusco. Quien reabre a menos de 15 s del cierre recibe un primer rechazo, y como el addon espera
+  30 s antes de volver a pedirlo, son hasta unos 30 s sin medir, no 15. La sesión manual renueva su reserva cada 100 s,
+  así que los 15 s no la protegen: para ella solo decide el candado. Un cambio de hora de 20 s hacia delante, o una
+  suspensión del equipo, puede hacer pasar por callado a un plugin que acababa de renovar. Un host sin temporizadores
+  cuyo candado no llega nunca deja colgada la primera reserva. Si la sesión que se encuentra ya estaba terminada, sigue
+  abierta una ventana en la que una escritura tardía del plugin anterior puede quedar pisada.
+- Dónde puede ser peor que antes, y hay que decirlo así. Todo descansa en que dos aplicaciones abiertas sobre los mismos
+  datos se vean los candados. En Hebra sobre macOS no puede haber dos: la que arranca espera a que muera la anterior. En
+  Obsidian tampoco debería, por cómo se comporta, sin haberlo comprobado. En Hebra sobre Linux sí: sin bus de sesión, o
+  si una Hebra se cuelga al cerrarse, puede arrancar otra, y cada una vería libre el candado de la otra. Con las dos a
+  la vista no se molestan (120 de 120 muestras en tests, igual que sin candados). Con una de ellas oculta, que renueva
+  una vez por minuto, la otra le quita la sesión: 14 de 600 muestras guardadas, frente a 600 de 600 sin candados (cifras
+  de la revisión independiente). En Windows no está verificado que los procesos compartan los candados. En Hebra se
+  desactiva con una línea del código del plugin y vuelve el límite de 5 minutos.
+- Cómo se comprobará en un cliente: matar la aplicación con una sesión en vivo, reabrirla y leer en el registro de
+  diagnóstico local los eventos `life_lock_proven` (o `life_lock_unmarked`, o `life_lock_absent`) y `taken`.
+- Revisión: independiente, dos pasadas por cada uno de los dos arreglos («integrar con correcciones» las cuatro veces;
+  correcciones aplicadas). Las últimas correcciones de cada uno las ha leído solo el integrador.
+
 ## Release beta 0.6.22 - la Sesión a una columna en la pantalla principal de Hebra y el valor estimado en grande, con las monedas de oro, plata y cobre
 
 [Canal 0.6.22 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.22); **instalación/runtime
