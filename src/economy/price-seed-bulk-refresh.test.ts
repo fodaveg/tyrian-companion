@@ -228,7 +228,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
 			fetchSeed: async (itemId) => {
 				requested.push(itemId);
-				return itemId === 2 ? { status: 'no_seed', reason: 'unreachable' } : seeded(itemId);
+				return itemId === 2 ? { status: 'no_seed', reason: 'empty' } : seeded(itemId);
 			},
 		});
 		const outcome = await service.run([1, 2, 3]);
@@ -252,7 +252,7 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 			fetchSeed: async (itemId) => {
 				requested.push(itemId);
 				return itemId <= PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN
-					? { status: 'no_seed', reason: 'unreachable' }
+					? { status: 'no_seed', reason: 'empty' }
 					: seeded(itemId);
 			},
 		});
@@ -267,6 +267,96 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		expect(second.skippedNoSeedCooldown).toBe(PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN);
 		expect(second.attempted).toBe(5);
 		expect(requested).toEqual(itemIds.slice(PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN));
+	});
+
+	/**
+	 * Z13 (audit, 9 oct 2026): a pass made while the host limits (429 -> `unreachable`) used to mark
+	 * all 25 items, and a minute later, with the host healthy, skipped them all for 24 h.
+	 */
+	it('Z13: an unreachable answer writes no cooldown marker, so a healthy host is asked again a minute later', async () => {
+		const requested: number[] = [];
+		let healthy = false;
+		let now = NOW_MS;
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => now,
+			fetchSeed: async (itemId) => {
+				requested.push(itemId);
+				return healthy ? seeded(itemId) : { status: 'no_seed', reason: 'unreachable' };
+			},
+		});
+		const first = await service.run([1, 2]);
+		expect(first).toMatchObject({ attempted: 2, noSeed: 0, failed: 2, skippedNoSeedCooldown: 0 });
+		expect(first.queueCoverage).toEqual({ total: 2, seeded: 0, noData: 0, pending: 2 });
+
+		now += 60_000;
+		healthy = true;
+		const second = await service.run([1, 2]);
+		expect(second).toMatchObject({ attempted: 2, seeded: 2, skippedNoSeedCooldown: 0 });
+		expect(requested).toEqual([1, 2, 1, 2]);
+		service.dispose();
+	});
+
+	it('Z13: the pass ends after 3 unreachable answers in a row instead of spending all 25 requests', async () => {
+		const requested: number[] = [];
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async (itemId) => { requested.push(itemId); return { status: 'no_seed', reason: 'unreachable' }; },
+		});
+		const itemIds = Array.from({ length: PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN }, (_unused, index) => index + 1);
+		const outcome = await service.run(itemIds);
+		expect(requested).toEqual([1, 2, 3]);
+		expect(outcome).toMatchObject({ attempted: 3, failed: 3, stoppedUnreachable: true });
+		service.dispose();
+	});
+
+	it('Z13: an answer in between breaks the streak, so two failures, a seed and two more do not stop the pass', async () => {
+		const requested: number[] = [];
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: async (itemId) => {
+				requested.push(itemId);
+				return itemId === 3 ? seeded(itemId) : { status: 'no_seed', reason: 'unreachable' };
+			},
+		});
+		const outcome = await service.run([1, 2, 3, 4, 5]);
+		expect(requested).toEqual([1, 2, 3, 4, 5]);
+		expect(outcome.stoppedUnreachable).toBeUndefined();
+		service.dispose();
+	});
+
+	it('Z13: with a host that hangs for 10 s per request, the pass lasts 30 s instead of 250 s', async () => {
+		vi.useFakeTimers();
+		try {
+			let requests = 0;
+			const service = new PriceSeedBulkRefreshService({
+				serialize: runSerialTaskUnqueued,
+				priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => Date.now(),
+				fetchSeed: async () => {
+					requests += 1;
+					await new Promise<void>((resolve) => { setTimeout(resolve, 10_000); });
+					return { status: 'no_seed', reason: 'unreachable' };
+				},
+			});
+			const itemIds = Array.from({ length: PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN }, (_unused, index) => index + 1);
+			const startedAt = Date.now();
+			const run = service.run(itemIds);
+			let finished = false;
+			void run.then(() => { finished = true; });
+			let elapsedMs = 0;
+			while (!finished && elapsedMs < 300_000) { await vi.advanceTimersByTimeAsync(100); elapsedMs += 100; }
+			await run;
+			// The polling step above is 0.1 s, so the measured time is 30 s to within that step.
+			const seconds = (Date.now() - startedAt) / 1000;
+			expect(requests).toBe(3);
+			expect(seconds).toBeGreaterThanOrEqual(30);
+			expect(seconds).toBeLessThanOrEqual(30.1);
+			service.dispose();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('a no_seed answer is retried after its spaced cooldown elapses, but not before', async () => {

@@ -38,6 +38,16 @@ export const PRICE_SEED_BULK_REFRESH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
  */
 export const PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * 9 oct 2026 (audit Z13): the 24 h cooldown above records what the host ANSWERED (`empty`,
+ * `malformed`: it has no history for that item), never that the host could not be reached. An
+ * `unreachable` answer (429, 5xx, timeout) writes no marker, so a pass made while the host was
+ * limiting does not silence 25 items for a day; it only counts as a failure of this run. And since
+ * every one of those costs a request (up to the transport's 10 s timeout), a pass that sees this
+ * many in a row ends there: the host is down or limiting, and the next action tries again.
+ */
+export const PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE = 3;
+
 export interface PriceSeedBulkRefreshOutcome {
 	/** How many items actually reached a request this run (excludes items skipped for a fresh cache or cooldown). */
 	attempted: number;
@@ -50,6 +60,8 @@ export interface PriceSeedBulkRefreshOutcome {
 	/** A real failure this run: a thrown download, or a storage read/write that itself failed. */
 	failed: number;
 	queueCoverage: PriceSeedQueueCoverage;
+	/** Present (true) only when the pass ended early after `PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE` unreachable answers in a row. */
+	stoppedUnreachable?: true;
 	/** `missing` phase only: copies past their TTL this run left untouched, for the `stale` phase to refresh. */
 	staleSkipped?: number;
 	/** `missing` phase only: what this run left of the per-action cap, the most the `stale` phase may request. */
@@ -164,10 +176,18 @@ export class PriceSeedBulkRefreshService {
 			: Math.min(this.maxItemsPerRun, Math.max(0, Math.floor(phase.budget)));
 		// What the loop already read for each item, so the coverage below does not read it again.
 		const known = new Map<number, CoverageKind>();
+		let unreachableStreak = 0;
 		for (const itemId of itemIds) {
 			if (this.disposed || outcome.attempted >= cap) break;
 			if (phase?.allowed !== undefined && !phase.allowed()) break;
-			await this.refreshOne(stores, itemId, outcome, known, parent, phase);
+			const answer = await this.refreshOne(stores, itemId, outcome, known, parent, phase);
+			// Only a request that went out and was not answered counts; skips and answers break the streak.
+			if (answer === 'unreachable') unreachableStreak += 1;
+			else if (answer !== 'none') unreachableStreak = 0;
+			if (unreachableStreak >= PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE) {
+				outcome.stoppedUnreachable = true;
+				break;
+			}
 		}
 		if (phase?.scope === 'missing') outcome.deferredBudget = Math.max(0, cap - outcome.attempted);
 		if (!this.disposed) outcome.queueCoverage = await this.computeQueueCoverage(stores, itemIds, known);
@@ -181,7 +201,7 @@ export class PriceSeedBulkRefreshService {
 		known: Map<number, CoverageKind>,
 		parent?: ResolvedLocalDebugActionContext,
 		phase?: PriceSeedBulkRefreshPhase,
-	): Promise<void> {
+	): Promise<RefreshAnswer> {
 		const { store, noSeedStore } = stores;
 		const span = startLocalDebugAction(this.options.diagnostics, {
 			component: 'price_history', action: 'price_history_load_series',
@@ -195,13 +215,13 @@ export class PriceSeedBulkRefreshService {
 		} catch (error) {
 			outcome.failed += 1;
 			span.failure(error, 'storage_failure', 'store_unavailable');
-			return;
+			return 'none';
 		}
 		if (cached !== null) known.set(itemId, 'seeded');
 		if (cached !== null && nowMs - cached.cachedAtMs < PRICE_SEED_BULK_REFRESH_CACHE_TTL_MS) {
 			outcome.skippedCached += 1;
 			span.skip('skipped', 'cached');
-			return;
+			return 'none';
 		}
 		let recentNoSeed: Awaited<ReturnType<TyrianPriceSeedNoSeedCache['get']>>;
 		try {
@@ -209,7 +229,7 @@ export class PriceSeedBulkRefreshService {
 		} catch (error) {
 			outcome.failed += 1;
 			span.failure(error, 'storage_failure', 'store_unavailable');
-			return;
+			return 'none';
 		}
 		if (cached === null) known.set(itemId, recentNoSeed !== null ? 'noData' : 'pending');
 		if (recentNoSeed !== null && nowMs - recentNoSeed.failedAtMs < this.noSeedRetryMs) {
@@ -217,17 +237,17 @@ export class PriceSeedBulkRefreshService {
 			// infinite: `this.noSeedRetryMs` is exactly what lets it be asked again later.
 			outcome.skippedNoSeedCooldown += 1;
 			span.skip('skipped', `no_seed_cooldown_${recentNoSeed.reason}`);
-			return;
+			return 'none';
 		}
 		if (phase?.scope === 'missing' && cached !== null) {
 			// A copy past its TTL: the analysis reads it as it is, and the `stale` phase refreshes it.
 			outcome.staleSkipped = (outcome.staleSkipped ?? 0) + 1;
 			span.skip('skipped', 'stale_deferred');
-			return;
+			return 'none';
 		}
 		if (phase?.scope === 'stale' && cached === null) {
 			span.skip('skipped', 'missing_not_deferred');
-			return;
+			return 'none';
 		}
 		let turn: SerialTaskTurn<PriceSeedResult | null>;
 		try {
@@ -242,20 +262,27 @@ export class PriceSeedBulkRefreshService {
 			// The download itself throwing (rather than answering `no_seed`) never stops item k+1.
 			outcome.failed += 1;
 			span.failure(error, 'unknown_failure', 'no_seed');
-			return;
+			return 'none';
 		}
 		if (turn.status === 'dropped' || turn.value === null) {
 			// Never asked for: the queue was let go, or the turn came too late. Nothing is counted
 			// and nothing is written, so the item is as missing or as stale as it was.
 			span.skip('skipped', turn.status === 'dropped' || this.disposed ? 'disposed' : 'not_allowed');
-			return;
+			return 'none';
 		}
 		const result = turn.value;
 		if (this.disposed) {
 			// `dispose` closed both stores while this request was in flight: its answer has nowhere to
 			// go, and writing it would only record a storage failure nobody can act on.
 			span.skip('skipped', 'disposed');
-			return;
+			return 'none';
+		}
+		if (result.status === 'no_seed' && result.reason === 'unreachable') {
+			// The host did not answer about this item (limiting, down, timed out): nothing is
+			// remembered, so the next action asks again. See the constant above.
+			outcome.failed += 1;
+			span.skip('unavailable', 'no_seed_unreachable');
+			return 'unreachable';
 		}
 		if (result.status === 'no_seed') {
 			try {
@@ -265,12 +292,12 @@ export class PriceSeedBulkRefreshService {
 				// run a repeated (free, no-network-hiding-behind-it) attempt and nothing else.
 				outcome.failed += 1;
 				span.failure(error, 'storage_failure', 'store_unavailable');
-				return;
+				return 'none';
 			}
 			known.set(itemId, cached !== null ? 'seeded' : 'noData');
 			outcome.noSeed += 1;
 			span.skip('unavailable', `no_seed_${result.reason}`);
-			return;
+			return 'answered';
 		}
 		try {
 			await store.put(this.options.vaultId, itemId, mergeKeepingOlderDays(cached?.seed ?? null, result.seed), nowMs);
@@ -279,7 +306,7 @@ export class PriceSeedBulkRefreshService {
 			// repeated download and nothing else.
 			outcome.failed += 1;
 			span.failure(error, 'storage_failure', 'store_unavailable');
-			return;
+			return 'none';
 		}
 		// Best-effort: a stale `no_seed` marker left behind is harmless (the positive cache above
 		// is always checked first), so its own failure never turns a successful seed into one.
@@ -287,6 +314,7 @@ export class PriceSeedBulkRefreshService {
 		known.set(itemId, 'seeded');
 		outcome.seeded += 1;
 		span.success('seeded');
+		return 'answered';
 	}
 
 	/**
@@ -345,6 +373,8 @@ export class PriceSeedBulkRefreshService {
 
 /** Which `PriceSeedQueueCoverage` counter an item falls in. */
 type CoverageKind = 'seeded' | 'noData' | 'pending';
+/** What one item's turn tells the loop: `unreachable` is the host not answering, `answered` any answer it gave, `none` no request that settled. */
+type RefreshAnswer = 'unreachable' | 'answered' | 'none';
 
 interface Stores {
 	store: TyrianPriceSeedCache;
