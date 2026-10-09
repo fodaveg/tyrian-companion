@@ -1,7 +1,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
-import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
+import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import {
@@ -352,6 +352,97 @@ describe('ActiveSessionLeaseCoordinator', () => {
 		await expect(coordinator.assertOwned(handle)).resolves.toEqual({ status: 'lost' });
 		coordinator.dispose();
 	});
+
+	// 9 Oct 2026: one transaction the engine never answered held this queue for the rest of the
+	// plugin's life, and behind it every lease operation of the manual and of the live session.
+	it('answers unavailable when the store does not answer in time, and serves the next operation', async () => {
+		const factory = new IDBFactory();
+		const controlled = new ControlledCoordinationStore(await IndexedDbCoordinationStore.open(factory, databaseName('unanswered')));
+		const waits = manualWaits();
+		const coordinator = new ActiveSessionLeaseCoordinator({
+			store: controlled, instanceId: 'instance', machineId: () => 'machine', clock: () => 1_000, sleep: async () => undefined,
+			schedule: waits.arm, cancel: waits.disarm,
+		});
+		const handle = requireHandle(await coordinator.acquire('session-1'));
+		controlled.beforeTransaction = () => new Promise<void>(() => undefined);
+		const renewing = coordinator.renew(handle);
+		const asserting = coordinator.assertOwned(handle);
+		expect(await settlement(renewing)).toBe('pending');
+		expect(await settlement(asserting)).toBe('pending');
+
+		waits.expire();
+		await expect(renewing).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		// The read queued behind it was only waiting for its turn.
+		await expect(asserting).resolves.toEqual({ status: 'owned' });
+		controlled.beforeTransaction = undefined;
+		await expect(coordinator.renew(handle)).resolves.toMatchObject({ status: 'renewed' });
+		expect(waits.pending()).toBe(0);
+		coordinator.dispose();
+	});
+
+	it('does nothing more with an acquisition whose store answers after its wait ran out', async () => {
+		const factory = new IDBFactory();
+		let now = 1_000;
+		// Another instance left a lease that has expired: taking it is two transactions with a pause between them.
+		const other = createCoordinator(factory, 'late answer', { instanceId: 'other', clock: () => now });
+		requireHandle(await other.acquire('session-other'));
+		now = 5_000;
+		const raw = await IndexedDbCoordinationStore.open(factory, databaseName('late answer'));
+		const controlled = new ControlledCoordinationStore(raw);
+		const waits = manualWaits();
+		const sleep = vi.fn(async () => undefined);
+		const coordinator = new ActiveSessionLeaseCoordinator({
+			store: controlled, instanceId: 'instance', machineId: () => 'machine', clock: () => now, sleep,
+			leaseTtlMs: 100, expiryConfirmDelayMs: 1, schedule: waits.arm, cancel: waits.disarm,
+		});
+		let answer: () => void = () => undefined;
+		controlled.beforeTransaction = () => new Promise<void>((resolve) => { answer = resolve; });
+		const acquiring = coordinator.acquire('session-1');
+		expect(await settlement(acquiring)).toBe('pending');
+		waits.expire();
+		await expect(acquiring).resolves.toEqual({ status: 'error', code: 'unavailable' });
+
+		// The first transaction is let through only now, and reports the lease it found expired.
+		controlled.beforeTransaction = undefined;
+		answer();
+		await vi.waitFor(() => { expect(controlled.transactions).toBe(1); });
+		await raw.read(); await raw.read();
+		// Nobody was waiting for that answer: no pause, no second transaction, and the lease is not taken.
+		expect(sleep).not.toHaveBeenCalled();
+		expect(controlled.transactions).toBe(1);
+		expect(await raw.read()).toMatchObject({ fenceCounter: 1, lease: { instanceId: 'other', sessionId: 'session-other' } });
+		// The next acquisition is a whole one of its own.
+		await expect(coordinator.acquire('session-1')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		coordinator.dispose(); other.dispose();
+	});
+
+	it('does not keep an open that never answers: the next operation opens again and the store that arrives late is closed', async () => {
+		const factory = new IDBFactory();
+		let opens = 0;
+		let arrive: (store: CoordinationStore) => void = () => undefined;
+		const never = new Promise<CoordinationStore>((resolve) => { arrive = resolve; });
+		const waits = manualWaits();
+		const coordinator = new ActiveSessionLeaseCoordinator({
+			instanceId: 'instance', machineId: () => 'machine', clock: () => 1_000, sleep: async () => undefined,
+			schedule: waits.arm, cancel: waits.disarm,
+			openStore: async () => {
+				opens += 1;
+				return opens === 1 ? await never : await IndexedDbCoordinationStore.open(factory, databaseName('unanswered open'));
+			},
+		});
+		const first = coordinator.acquire('session-1');
+		expect(await settlement(first)).toBe('pending');
+		waits.expire();
+		await expect(first).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		await expect(coordinator.acquire('session-1')).resolves.toMatchObject({ status: 'acquired' });
+		expect(opens).toBe(2);
+
+		const late = await IndexedDbCoordinationStore.open(factory, databaseName('unanswered open'));
+		const close = vi.spyOn(late, 'close');
+		arrive(late);
+		await vi.waitFor(() => { expect(close).toHaveBeenCalledTimes(1); });
+		coordinator.dispose();
+	});
 });
 
 describe('IndexedDbCoordinationStore', () => {
@@ -466,9 +557,27 @@ function openRaw(factory: IDBFactory, name: string, version: number): Promise<ID
 	});
 }
 
+/** The waits on storage a coordinator armed, run out only when the test says so. */
+function manualWaits() {
+	const waits = new Map<number, () => void>();
+	let last = 0;
+	return {
+		arm: (callback: () => void): number => { waits.set(++last, callback); return last; },
+		disarm: (handle: unknown): void => { waits.delete(handle as number); },
+		pending: (): number => waits.size,
+		expire: (): void => {
+			const pending = [...waits.values()];
+			waits.clear();
+			for (const expire of pending) expire();
+		},
+	};
+}
+
 class ControlledCoordinationStore implements CoordinationStore {
 	beforeTransaction?: () => Promise<void>;
 	beforeRead?: () => Promise<void>;
+	/** Transactions that reached the store behind this one, held ones included once let through. */
+	transactions = 0;
 
 	constructor(private readonly delegate: CoordinationStore) {}
 
@@ -481,6 +590,7 @@ class ControlledCoordinationStore implements CoordinationStore {
 		mutator: (current: unknown) => CoordinationTransactionResult<T>,
 	): Promise<T> {
 		await this.beforeTransaction?.();
+		this.transactions += 1;
 		return this.delegate.transaction(mutator);
 	}
 

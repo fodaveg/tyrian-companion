@@ -14,6 +14,7 @@ import {
 	type CoordinationStore,
 } from './coordination-store';
 import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
+import { StorageDeadline, StorageUnansweredError } from './storage-deadline';
 
 export interface ActiveSessionLeaseCoordinatorOptions {
 	store?: CoordinationStore;
@@ -31,11 +32,26 @@ export interface ActiveSessionLeaseCoordinatorOptions {
 	leaseTtlMs?: number;
 	expiryConfirmDelayMs?: number;
 	diagnostics?: LocalDebugPersistenceProbe;
+	/** How long the store may take to open or to answer one call (`STORAGE_ANSWER_TIMEOUT_MS` when absent). */
+	storageTimeoutMs?: number;
+	/** One-shot timer for that wait (the host's own when absent). A host that cannot arm one waits without bound. */
+	schedule?: (callback: () => void, milliseconds: number) => unknown;
+	cancel?: (handle: unknown) => void;
 }
 
 type CommonErrorCode = Exclude<Extract<AcquireLeaseResult, { status: 'error' }>['code'], 'fence_overflow'>;
 
-/** Cross-window/process active-session lease with durable fencing and fail-closed storage. */
+/**
+ * Cross-window/process active-session lease with durable fencing and fail-closed storage.
+ *
+ * No operation waits on the store without bound (9 Oct 2026): an open or a call the engine does not
+ * answer in time is answered `unavailable`, like one it refused, and the queue goes on to the next
+ * operation. The operation that waited ends there, inside the queue, so nothing of it is left to run
+ * when the engine answers after all. What such a late answer may have WRITTEN is a lease this
+ * instance was never told about: every operation compares the exact stored lease before it writes,
+ * so a handle the late write changed is answered `lost`, and a lease it took is found `already_owned`
+ * by the next acquisition of the same session or runs out on its own.
+ */
 export class ActiveSessionLeaseCoordinator {
 	/** Public so a caller that observes `busy` can log which instance is asking, not only which owns it. */
 	readonly instanceId: string;
@@ -45,6 +61,7 @@ export class ActiveSessionLeaseCoordinator {
 	private readonly sleep: (milliseconds: number) => Promise<void>;
 	private readonly machineIdFactory: () => string;
 	private readonly openStore: () => Promise<CoordinationStore>;
+	private readonly deadline: StorageDeadline;
 	private storePromise: Promise<CoordinationStore> | null = null;
 	private acquireFlights = new Map<string, Promise<AcquireLeaseResult>>();
 	private queue: Promise<void> = Promise.resolve();
@@ -62,7 +79,8 @@ export class ActiveSessionLeaseCoordinator {
 		this.clock = options.clock ?? Date.now;
 		this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds)));
 		this.machineIdFactory = options.machineId ?? (() => crypto.randomUUID());
-		this.openStore = options.store
+		this.deadline = new StorageDeadline({ timeoutMs: options.storageTimeoutMs, schedule: options.schedule, cancel: options.cancel });
+		const open = options.store
 			? async () => options.store as CoordinationStore
 			: options.openStore ?? (async () => {
 				const factory = options.indexedDb ?? window.indexedDB;
@@ -77,6 +95,7 @@ export class ActiveSessionLeaseCoordinator {
 					options.diagnostics,
 				);
 			});
+		this.openStore = async () => this.answeredInTime(await open());
 	}
 
 	acquire(sessionId: string): Promise<AcquireLeaseResult> {
@@ -243,7 +262,26 @@ export class ActiveSessionLeaseCoordinator {
 			// instead of answering `unavailable` for the rest of the plugin's life.
 			opening.catch(() => { if (this.storePromise === opening) this.storePromise = null; });
 		}
-		return this.storePromise;
+		const opening = this.storePromise;
+		// Nor is an open that does not answer: whoever waited for it is told so, the next operation
+		// opens again, and the store that arrives after that is closed instead of leaked.
+		return this.deadline.bounded(() => opening, () => {
+			if (this.storePromise === opening) {
+				this.storePromise = null;
+				void opening.then((store) => store.close(), () => undefined);
+			}
+			return Promise.reject(new StorageUnansweredError());
+		});
+	}
+
+	/** The store with the wait for each of its answers bounded: one it does not answer in time rejects, as one it refused. */
+	private answeredInTime(store: CoordinationStore): CoordinationStore {
+		const unanswered = (): Promise<never> => Promise.reject(new StorageUnansweredError());
+		return {
+			read: (context) => this.deadline.bounded(() => store.read(context), unanswered),
+			transaction: (mutator, context) => this.deadline.bounded(() => store.transaction(mutator, context), unanswered),
+			close: () => { store.close(); },
+		};
 	}
 
 	private safeNow(): number | CommonErrorCode {

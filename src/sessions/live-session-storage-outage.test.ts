@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { startAlertIngameServer } from '../alerts/alert-ingame-server';
 import type { TyrianTcpConnection } from '../host/tyrian-host';
-import { killStorage, killStorageAfterNextCommit, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
+import { hangStorage, holdNextCommitAnswer, killStorage, killStorageAfterNextCommit, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventoryRowV1, type LiveInventorySampleV1, type LiveJournalEntryV1 } from './live-session-model';
@@ -28,15 +28,20 @@ const iso = (offsetMs: number): string => new Date(AT + offsetMs).toISOString();
 function outage(label: string) {
 	const tracked = trackedIndexedDb();
 	let now = AT; let beat: (() => void) | null = null;
+	// Every wait on storage in course, of the lifecycle and of the lease coordinator alike. None runs out by
+	// itself: a test that never calls `timeout()` waits without bound, as before there was a bound.
+	const waits = new Map<number, () => void>(); let lastWait = 0;
+	const arm = (callback: () => void): number => { waits.set(++lastWait, callback); return lastWait; };
+	const disarm = (handle: unknown): void => { waits.delete(handle as number); };
 	const store = new IndexedDbSessionRuntimeStore(tracked.factory, `live-outage-${label}`);
 	const lease = (instanceId: string): ActiveSessionLeaseCoordinator => new ActiveSessionLeaseCoordinator({
 		indexedDb: tracked.factory, databaseName: `live-outage-${label}-lease`, instanceId, machineId: () => 'machine',
-		clock: () => now, sleep: async () => undefined, leaseTtlMs: LEASE_TTL_MS, expiryConfirmDelayMs: 1,
+		clock: () => now, sleep: async () => undefined, leaseTtlMs: LEASE_TTL_MS, expiryConfirmDelayMs: 1, schedule: arm, cancel: disarm,
 	});
 	const onError = vi.fn(); const onCommitted = vi.fn(); const onComplete = vi.fn(async () => 'Sessions/live.md');
 	const options = { coordinator: lease('host'), persistence: store, enabled: () => true, now: () => now, sessionId: () => 'session',
 		thresholdCopper: () => 1, setInterval: (callback: () => void) => { beat = callback; return 1; }, clearInterval: () => { beat = null; },
-		onStateChange: vi.fn(), onError, onCommitted, onComplete };
+		setTimeout: arm, clearTimeout: disarm, onStateChange: vi.fn(), onError, onCommitted, onComplete };
 	const service = new LiveSessionLifecycle(options);
 	const source = { sourceInstance: INSTANCE, epoch: EPOCH, build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE,
 		context: { state: 'gameplay' as const, mapId: 866, character: 'Test' } };
@@ -58,6 +63,18 @@ function outage(label: string) {
 		},
 		/** One heartbeat, awaited through the lifecycle's own queue. */
 		beat: async () => { beat?.(); await service.capture(); },
+		/** The interval fires and nobody waits for what it queued. */
+		tick: () => { beat?.(); },
+		/** Every call to storage still unanswered runs out of time, and whoever waited for it goes on. */
+		timeout: async () => {
+			const pending = [...waits.values()]; waits.clear();
+			for (const expire of pending) expire();
+			await turns();
+		},
+		/** How many calls to storage are being waited for right now. */
+		waiting: () => waits.size,
+		/** The engine applies the next write of the session store and answers it only when the returned function is called. */
+		answerNextCommitLate: () => holdNextCommitAnswer(tracked, `live-outage-${label}`),
 		/** What a host starting now would find on disk, read through a connection of its own. */
 		durable: async () => {
 			const reader = new IndexedDbSessionRuntimeStore(tracked.factory, `live-outage-${label}`);
@@ -65,6 +82,10 @@ function outage(label: string) {
 			if (loaded.status !== 'loaded') throw new Error(`Expected a stored live session, found ${loaded.status}.`);
 			return { record: loaded.record, journal };
 		} };
+}
+/** Lets everything that can go on without a timer or the engine go on: what is still pending after this is waiting for one of them. */
+async function turns(): Promise<void> {
+	for (let turn = 0; turn < 64; turn += 1) await Promise.resolve();
 }
 const bags = (quantity: number): LiveInventoryRowV1[] => [{ kind: 'item', idNumber: 12147, quantity }];
 const bagsAndGold = (quantity: number, copper: number): LiveInventoryRowV1[] => [...bags(quantity), { kind: 'currency', idNumber: 1, quantity: copper }];
@@ -424,6 +445,176 @@ describe('live session across a storage outage that hid a commit already on disk
 		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
 		expect((await f.durable()).record).toMatchObject({ phase: 'complete', summaryReceipt: { path: 'Sessions/live.md' } });
 		await f.service.dispose();
+	});
+});
+
+/**
+ * The third way storage fails, and the one that was never answered at all (9 Oct 2026, probe of the
+ * audit): the engine takes the transaction and fires no event. Nothing was refused, so nothing took
+ * the path of a refusal: the operation waited for ever inside the lifecycle's queue, every later one
+ * behind it, with the session shown as active and no error reported.
+ */
+describe('live session while storage does not answer', () => {
+	/** Two samples stored, then the engine stops answering. */
+	async function hung(label: string) {
+		const f = outage(label);
+		await f.service.start('Test'); await expect(f.service.open(f.source)).resolves.toBe('ready');
+		await expect(f.service.commit(f.sample(0, 0, bags(5)))).resolves.toBe('stored');
+		f.at(1000); await expect(f.service.commit(f.sample(1, 1000, bags(7)))).resolves.toBe('stored');
+		hangStorage(f.tracked);
+		return f;
+	}
+
+	it('a sample storage never answers is told so once its wait runs out: the session shows the outage and reports it', async () => {
+		const f = await hung('unanswered-sample');
+		f.at(2000); const stuck = f.service.commit(f.sample(2, 2000, bags(20)));
+		expect(await settlement(stuck)).toBe('pending');
+		// Until the wait runs out this is still a slow answer, not an outage.
+		expect(f.service.getView().phase).toBe('active');
+		expect(f.onError).not.toHaveBeenCalled();
+
+		await f.timeout();
+		await expect(stuck).resolves.toBe('storage_unavailable');
+		expect(f.service.getView()).toMatchObject({ phase: 'error', observationCount: 1, observedItemsMs: 1000 });
+		expect(f.service.getRuntime()?.lastSample).toMatchObject({ cursor: 1 });
+		expect(f.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['Live session storage is unavailable.']);
+		// Nobody is left waiting, and the queue serves what does not need storage.
+		expect(f.waiting()).toBe(0);
+		expect(await settlement(f.service.capture())).toBe('resolved');
+		resumeStorage(f.tracked); await f.service.dispose();
+	});
+
+	it('when storage answers again the session comes back behind one gap and records what is looted from then on', async () => {
+		const f = await hung('unanswered-then-back');
+		f.at(2000); const stuck = f.service.commit(f.sample(2, 2000, bags(20)));
+		await turns(); await f.timeout();
+		await expect(stuck).resolves.toBe('storage_unavailable');
+		// The heartbeat finds the same silence, and keeps the lease it could not renew.
+		f.at(5000); f.tick(); await turns(); await f.timeout();
+		expect(f.service.getView().phase).toBe('error');
+
+		resumeStorage(f.tracked);
+		f.at(15_000); await expect(f.service.commit(f.sample(2, 15_000, bags(50)))).resolves.toBe('stored');
+		expect(f.service.getView().phase).toBe('active');
+		// The 43 bags that arrived while nobody could store them are not an acquisition.
+		expect(storageGaps(f.service)).toEqual([{ version: 1, reason: 'storage_unavailable', fromAt: iso(1000), toAt: iso(15_000), channels: ['items'] }]);
+		f.at(16_000); await expect(f.service.commit(f.sample(3, 16_000, bags(53)))).resolves.toBe('stored');
+		expect(f.service.getView().observations.map((row) => [row.cursor, row.before, row.after, row.delta])).toEqual([[1, 5, 7, 2], [3, 50, 53, 3]]);
+		expect(f.service.getView()).toMatchObject({ phase: 'active', observedItemsMs: 2000 });
+		expect(f.service.getRuntime()).toMatchObject({ authority: { fence: 1 } });
+
+		const durable = await f.durable();
+		expect(durable.record).toEqual(f.service.getRuntime());
+		expect(durable.journal.map((entry) => entry.cursor)).toEqual([0, 1, 2, 3]);
+		expect(durable.journal.flatMap((entry) => entry.observations)).toHaveLength(durable.record.observationCount);
+		// One outage, reported once.
+		expect(f.onError).toHaveBeenCalledTimes(1);
+		await f.service.dispose();
+	});
+
+	it('the plugin can be shut down while an operation is still waiting for storage', async () => {
+		const f = await hung('unanswered-dispose');
+		f.at(2000); const stuck = f.service.commit(f.sample(2, 2000, bags(20)));
+		const disposing = f.service.dispose();
+		expect(await settlement(disposing)).toBe('pending');
+		// One wait for the sample in course, one for the release of the lease: neither holds the unload for ever.
+		await f.timeout();
+		await expect(stuck).resolves.toBe('storage_unavailable');
+		await f.timeout();
+		expect(await settlement(disposing)).toBe('resolved');
+		expect(f.waiting()).toBe(0);
+	});
+
+	it('a heartbeat that finds the last one still waiting adds no wait of its own', async () => {
+		const f = await hung('unanswered-beats');
+		const renew = vi.spyOn(f.options.coordinator, 'renew');
+		f.at(5000); f.tick(); await turns();
+		f.at(10_000); f.tick(); f.at(15_000); f.tick(); await turns();
+		expect(renew).toHaveBeenCalledTimes(1);
+		await f.timeout();
+		// The beats that fired meanwhile are not queued behind it, each with a wait of its own to run out.
+		expect(renew).toHaveBeenCalledTimes(1);
+		expect(f.waiting()).toBe(0);
+		expect(await settlement(f.service.capture())).toBe('resolved');
+		// The next one asks again.
+		f.at(20_000); f.tick(); await turns();
+		expect(renew).toHaveBeenCalledTimes(2);
+		await f.timeout();
+		resumeStorage(f.tracked); await f.service.dispose();
+	});
+
+	/**
+	 * A wait that runs out cancels nothing: the engine may still answer, or still write, long after the
+	 * lifecycle moved on. Whatever comes that late must find nobody to take it.
+	 */
+	describe('and the call that was given up answers after all', () => {
+		it('a commit applied at once and answered late is counted once: nothing of the abandoned wait runs when the answer comes', async () => {
+			const f = outage('late-answer');
+			await f.service.start('Test'); await f.service.open(f.source);
+			await f.service.commit(f.sample(0, 0, bags(5)));
+			f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+			const answer = f.answerNextCommitLate();
+			f.at(2000); const stuck = f.service.commit(f.sample(2, 2000, bags(10)));
+			await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+			await f.timeout();
+			await expect(stuck).resolves.toBe('storage_unavailable');
+			expect(f.service.getView()).toMatchObject({ phase: 'error', observationCount: 1 });
+
+			// The producer sends the sample again; what is on disk is adopted before anything is written.
+			f.at(3000); await expect(f.service.commit(f.sample(2, 2000, bags(10)))).resolves.toBe('stored');
+			f.at(4000); await expect(f.service.commit(f.sample(3, 3000, bags(25)))).resolves.toBe('stored');
+			const before = { view: f.service.getView(), runtime: f.service.getRuntime(), journal: f.service.getJournal(), durable: await f.durable() };
+			expect(before.view).toMatchObject({ phase: 'active', observationCount: 2, observedItemsMs: 2000 });
+
+			// Only now does the engine say the first attempt was stored.
+			answer(); await turns();
+			expect(f.service.getView()).toEqual(before.view);
+			expect(f.service.getRuntime()).toEqual(before.runtime);
+			expect(f.service.getJournal()).toEqual(before.journal);
+			expect(f.service.getJournal().map((entry) => entry.cursor)).toEqual([0, 1, 2, 3]);
+			expect(f.service.getView().observations.map((row) => [row.cursor, row.delta])).toEqual([[1, 2], [2, 3]]);
+			// One alert per acquisition: the entry of cursor 2 was published when it was adopted, and not again.
+			expect(f.options.onCommitted.mock.calls.map(([entry]) => (entry as LiveJournalEntryV1).cursor)).toEqual([0, 1, 2, 3]);
+			expect(await f.durable()).toEqual(before.durable);
+			expect(f.onError).toHaveBeenCalledTimes(1);
+			await f.service.dispose();
+		});
+
+		it('a write that reaches storage after newer work is refused by it: neither disk nor memory go back', async () => {
+			const f = outage('late-write');
+			await f.service.start('Test'); await f.service.open(f.source);
+			await f.service.commit(f.sample(0, 0, bags(5)));
+			f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+			// The write of cursor 2 is held before the engine sees it, and let through only at the end.
+			const write = f.store.saveLive.bind(f.store);
+			let land: () => void = () => undefined; const held = new Promise<void>((resolve) => { land = resolve; });
+			let landed: unknown = null;
+			vi.spyOn(f.store, 'saveLive').mockImplementationOnce(async (record, journal) => {
+				await held; landed = await write(record, journal); return landed as Awaited<ReturnType<typeof write>>;
+			});
+			f.at(2000); const stuck = f.service.commit(f.sample(2, 2000, bags(10)));
+			await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+			await f.timeout();
+			await expect(stuck).resolves.toBe('storage_unavailable');
+
+			// The session goes on meanwhile: a baseline behind the gap, then three bags more.
+			f.at(3000); await expect(f.service.commit(f.sample(2, 3000, bags(25)))).resolves.toBe('stored');
+			f.at(4000); await expect(f.service.commit(f.sample(3, 4000, bags(28)))).resolves.toBe('stored');
+			const before = { view: f.service.getView(), runtime: f.service.getRuntime(), journal: f.service.getJournal(), durable: await f.durable() };
+			expect(before.view.observations.map((row) => [row.cursor, row.before, row.after, row.delta])).toEqual([[1, 5, 7, 2], [3, 25, 28, 3]]);
+
+			land(); await vi.waitFor(() => { expect(landed).not.toBeNull(); });
+			await turns();
+			// The store itself turned the older record down, and with it the journal entry it carried.
+			expect(landed).toEqual({ status: 'stale' });
+			expect(await f.durable()).toEqual(before.durable);
+			expect(f.service.getView()).toEqual(before.view);
+			expect(f.service.getRuntime()).toEqual(before.runtime);
+			expect(f.service.getJournal()).toEqual(before.journal);
+			expect(f.options.onCommitted.mock.calls.map(([entry]) => (entry as LiveJournalEntryV1).cursor)).toEqual([0, 1, 2, 3]);
+			expect(storageGaps(f.service)).toEqual([{ version: 1, reason: 'storage_unavailable', fromAt: iso(1000), toAt: iso(3000), channels: ['items'] }]);
+			await f.service.dispose();
+		});
 	});
 });
 

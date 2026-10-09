@@ -15,12 +15,18 @@ import { LIVE_SESSION_NOTE_WRITE_VERSION, type LiveSessionPayloadVersion } from 
 import { createLiveAlertIntent, settleLiveAlertRestart } from './live-session-outbox';
 import { withCharacter, type LiveSessionSummaryState } from './live-session-summary-state';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } from './live-session-model';
+import { StorageDeadline, StorageUnansweredError } from './storage-deadline';
 
 export interface LiveSessionSourceInput { sourceInstance: string; epoch: string; build: string; profile: string; context: IngameGameContext }
 export interface LiveSessionLifecycleOptions {
 	coordinator: SessionLeaseCoordinator; persistence: LiveSessionPersistence & Pick<SessionRuntimeStore, 'clear'>;
 	enabled(): boolean; now(): number; sessionId(): string;
 	setInterval(callback: () => void, intervalMs: number): unknown; clearInterval(handle: unknown): void;
+	/**
+	 * One-shot timer for the wait on storage (the host's own when absent), and how long that wait may last
+	 * (`STORAGE_ANSWER_TIMEOUT_MS` when absent). A host that cannot arm one waits without bound: see `withStorageDeadline`.
+	 */
+	setTimeout?(callback: () => void, timeoutMs: number): unknown; clearTimeout?(handle: unknown): void; storageTimeoutMs?: number;
 	onStateChange(): void; onError(error: unknown): void;
 	preparation?(): FarmingPreparationSettingsV1; farmingGoal?(): FarmingGoalV1; groupContext?(): 'with_bosses' | 'without_bosses' | null;
 	/** Only a valid declaration is captured; an invalid/unsupported editor draft remains unknown. */
@@ -89,6 +95,8 @@ export class LiveSessionLifecycle {
 	private handle: ActiveSessionLeaseHandle | null = null;
 	private queue = Promise.resolve();
 	private timer: unknown = null;
+	/** A heartbeat is queued or running: the interval adds no other until it ends. */
+	private beating = false;
 	private disposed = false;
 	private failure = false;
 	/** Not null from the first durable step storage refused until the first one it accepts again. */
@@ -104,7 +112,9 @@ export class LiveSessionLifecycle {
 	/** Characters seen and the summary-written mark: kept apart from the closed record (see `live-session-summary-state.ts`). */
 	private summaryState: LiveSessionSummaryState | null = null;
 
-	constructor(private readonly options: LiveSessionLifecycleOptions) {}
+	private readonly options: LiveSessionLifecycleOptions;
+
+	constructor(options: LiveSessionLifecycleOptions) { this.options = withStorageDeadline(options); }
 
 	async initialize(): Promise<void> {
 		return await this.enqueue(async () => {
@@ -625,7 +635,16 @@ export class LiveSessionLifecycle {
 	}
 	private armHeartbeat(): void {
 		if (this.timer !== null) return;
-		this.timer = this.options.setInterval(() => { void this.enqueue(async () => {
+		// A beat that finds the last one still queued or running adds nothing. Each wait on storage is bounded, but by
+		// more than the interval: beats queued one behind the other while storage does not answer would each take a wait
+		// of their own to run out, and everything queued after them (a sample's answer, the end of the plugin) with them.
+		this.timer = this.options.setInterval(() => {
+			if (this.beating) return;
+			this.beating = true;
+			void this.enqueue(async () => { try { await this.beat(); } finally { this.beating = false; } });
+		}, LIVE_SOURCE_STALE_MS);
+	}
+	private async beat(): Promise<void> {
 			if (!this.options.enabled() || this.disposed || this.record === null) return;
 			// One bounded pass per beat: the queue a host finds when it starts drains over a few beats, never at load.
 			await this.pruneSealed();
@@ -643,7 +662,6 @@ export class LiveSessionLifecycle {
 			// that records the hole and clears the error once storage answers again.
 			if (this.unsaved !== null && await this.ready() !== 'owned') return;
 			if (this.record.connection === 'disconnected' && this.options.now() - this.record.lastPresenceAt >= 600_000) await this.stopInternal(this.record.lastPresenceAt);
-		}); }, LIVE_SOURCE_STALE_MS);
 	}
 	/**
 	 * A restart does not forget the sealed sessions: they are read back from the runtime store. For the host that starts, none
@@ -738,6 +756,62 @@ export class LiveSessionLifecycle {
 		this.queue = next.then(() => undefined, (error: unknown) => { this.failure = true; this.options.onError(error); this.options.onStateChange(); });
 		return next;
 	}
+}
+
+/**
+ * The caller's options with every wait on storage, on the lease coordinator and on the note writer bounded
+ * (9 Oct 2026: one IndexedDB call the engine never answered held the lifecycle's queue for ever, with the session
+ * shown as active and nothing reported).
+ *
+ * A call that is not answered in time is answered here as that port answers when storage is unavailable, so the
+ * operation that made it goes on down the path it already has for a refusal (`storageLost`) and ENDS, still inside
+ * the queue. The queue is never handed to the next operation while an earlier one is suspended on storage, which is
+ * what a deadline on the whole operation would do: its continuation would wake up later, beside newer work, and
+ * write memory back or store an older record. Here nothing is left to wake up.
+ *
+ * The call itself is not cancelled and may still write. A record that lands late is refused by the store (older
+ * `persistedAt`, or another authority or session), and one that landed while nobody was told is adopted before
+ * memory is written again (`adoptLanded`): `storageLost` leaves the session owing that check.
+ *
+ * Everything else is read from the caller's own object each time it is used (it is this one's prototype), so an
+ * option the caller changes later is still the one in force.
+ */
+function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionLifecycleOptions {
+	const deadline = new StorageDeadline({ timeoutMs: options.storageTimeoutMs,
+		schedule: options.setTimeout === undefined ? undefined : (callback, milliseconds) => options.setTimeout?.(callback, milliseconds),
+		cancel: options.clearTimeout === undefined ? undefined : (handle) => { options.clearTimeout?.(handle); } });
+	const unavailable = (): { status: 'error'; code: 'unavailable' } => ({ status: 'error', code: 'unavailable' });
+	const rejected = (): Promise<never> => Promise.reject(new StorageUnansweredError());
+	const persistence: LiveSessionLifecycleOptions['persistence'] = {
+		loadLive: () => deadline.bounded(() => options.persistence.loadLive(), unavailable),
+		saveLive: (record, journal) => deadline.bounded(() => options.persistence.saveLive(record, journal), unavailable),
+		readLiveJournal: (sessionId) => deadline.bounded(() => options.persistence.readLiveJournal(sessionId), rejected),
+		markLiveAlertsProcessed: (sessionId, epoch, cursor) => deadline.bounded(() => options.persistence.markLiveAlertsProcessed(sessionId, epoch, cursor), () => false),
+		replaceLiveJournal: (prior, next, owner) => deadline.bounded(() => options.persistence.replaceLiveJournal(prior, next, owner), () => false),
+		clear: (authority) => deadline.bounded(() => options.persistence.clear(authority), unavailable),
+		// A store without one of the optional steps answers as the lifecycle already read its absence.
+		pruneLiveJournal: (sessionId) => deadline.bounded(async () => await options.persistence.pruneLiveJournal?.(sessionId) === true, rejected),
+		loadPruneQueue: () => deadline.bounded(async () => await options.persistence.loadPruneQueue?.() ?? [], rejected),
+		savePruneQueue: (queue) => deadline.bounded(async () => await options.persistence.savePruneQueue?.(queue) === true, rejected),
+		loadSummaryState: () => deadline.bounded(async () => await options.persistence.loadSummaryState?.() ?? null, () => null),
+		saveSummaryState: (state) => deadline.bounded(async () => await options.persistence.saveSummaryState?.(state) === true, () => false),
+	};
+	const coordinator: SessionLeaseCoordinator = {
+		get instanceId() { return options.coordinator.instanceId; },
+		acquire: (sessionId) => deadline.bounded(() => options.coordinator.acquire(sessionId), unavailable),
+		renew: (handle) => deadline.bounded(() => options.coordinator.renew(handle), unavailable),
+		assertOwned: (handle) => deadline.bounded(() => options.coordinator.assertOwned(handle), unavailable),
+		release: (handle) => deadline.bounded(() => options.coordinator.release(handle), unavailable),
+		dispose: () => { options.coordinator.dispose(); },
+	};
+	// A note that is not written in time is one that was not written: the session stays closed without its receipt
+	// and the next beat asks the writer again, which answers `unchanged` if the first attempt did land.
+	const onComplete: NonNullable<LiveSessionLifecycleOptions['onComplete']> = (record, journal) => deadline.bounded(
+		async () => await options.onComplete?.(record, journal) ?? null, () => null);
+	return Object.create(options, {
+		persistence: { value: persistence }, coordinator: { value: coordinator },
+		onComplete: { get: () => options.onComplete === undefined ? undefined : onComplete },
+	}) as LiveSessionLifecycleOptions;
 }
 
 /** Bounds the DOM projection without throwing away journal rows needed for totals or export. */
