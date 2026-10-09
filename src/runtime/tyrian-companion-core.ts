@@ -97,6 +97,7 @@ import { ManagedAssetsManager, type ManagedAssetsResult } from '../assets/manage
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
 import {
 	decideManagedAssetsAutoUpdate,
+	decideManagedAssetsLoadCreate,
 	planManagedAssets,
 	type ManagedAssetsAutoUpdateDecision,
 	type ManagedAssetsInspection,
@@ -1380,7 +1381,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// the vault root). Non-blocking: boot never waits on a Vault-wide file move.
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'vault', action: 'vault_write', state: 'managed_assets_reconcile' },
-			() => this.reconcileManagedAssetsRoot());
+			async () => { await this.reconcileManagedAssetsRoot(); await this.createNewManagedAssetsOnLoad(); });
 		this.syncCollectorHeartbeat();
 	}
 
@@ -2554,6 +2555,34 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		};
 		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'after_inventory_sync' }, perform)
 			?? perform());
+	}
+
+	/**
+	 * David, 9 Oct 2026 («que las cree solo»): on load, a Base the bundle added since the installed
+	 * manifest is created, and nothing else. Narrower than the after-sync update on purpose: the
+	 * decision (`decideManagedAssetsLoadCreate`) returns nothing unless the manifest is ready, at least
+	 * one asset is a pure `create` and every other asset is untouched, so an update, an edited or
+	 * deleted Base, a conflict or an installation that never applied assets writes nothing and warns
+	 * nobody. It needs the same root as the sync path (installed, equal to the output folder, no legacy)
+	 * and a collector (consult never writes Bases). It runs after `runtimeReady`, off the boot path.
+	 */
+	private async createNewManagedAssetsOnLoad(): Promise<void> {
+		if (!hostSupportsManagedAssets(this.host) || this.unloaded || !this.runtimeReady || consulting(this)) return;
+		const root = this.settings.managedAssetsRoot;
+		if (root === null || root !== this.settings.outputFolder
+			|| this.settings.legacyManagedAssetsRoot !== null || this.settings.legacyOutputFolder !== null) return;
+		const perform = async () => {
+			// An unreadable manifest throws: `run` records the failure and the boot's fire-and-forget swallows it.
+			const creates = decideManagedAssetsLoadCreate(await this.managedAssets.inspect(root));
+			if (creates.length === 0) return undefined;
+			await this.applyManagedAssets();
+			if (this.managedAssetsView.status === 'ready') {
+				this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.managedAssetsAutoCreated',
+					{ names: creates.map((entry) => entry.asset.relativePath).join(', ') }), 'managed_assets_updated');
+			}
+			return undefined;
+		};
+		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'on_load_create' }, perform) ?? perform());
 	}
 
 	/** Discards a pending destructive plan without writing anything. */

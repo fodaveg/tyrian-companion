@@ -20,6 +20,7 @@ import { createTranslator } from './core/i18n';
 import { genericManagedAssets, sha256Text } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
 import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
+import { managedAssetMarker } from './assets/managed-assets-model';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { LocalDebugActionRunner, type LocalDebugActionPort } from './core/local-debug-action-runner';
@@ -1597,6 +1598,144 @@ describe('automatic Base update behind the inventory sync (H18.18)', () => {
 		const bytes = asset.bytes.replace(/version=\d+/u, 'version=99');
 		return { bundleVersion: 99, locale: 'es' as const, assets: [{ ...asset, contentVersion: 99, bytes, contentHash: await sha256Text(bytes) }] };
 	}
+});
+
+describe('a new Base of the bundle is created on load, and nothing else (9 Oct 2026)', () => {
+	const EXTRA = 'Home/Bases/Extra.base';
+	const BASE = 'Home/Bases/Sessions.base';
+
+	/** Bundle 1 = the Sessions Base alone, installed; bundle 2 = the same plus a Base the manifest does not know. */
+	async function installedAtPreviousBundle(language: 'es' = 'es') {
+		const [sessions] = await genericManagedAssets();
+		if (!sessions) throw new Error('missing generic-assets fixture');
+		const draft = { id: 'extra-base', kind: 'base', contentVersion: 1, locale: 'neutral', relativePath: 'Extra.base' } as const;
+		const bytes = `${managedAssetMarker(draft)}\n${sessions.bytes.slice(sessions.bytes.indexOf('\n') + 1)}`;
+		const extra = { ...draft, bytes, contentHash: await sha256Text(bytes) };
+		const vault = new MemoryAssetVault();
+		const manager = new ManagedAssetsManager(vault, 'test-config-dir', { bundleVersion: 1, locale: language, assets: [sessions] });
+		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' });
+		await harness.applyManagedAssets();
+		const messages: string[] = [];
+		const plugin = Object.assign(harness, { managedAssets: manager, collectorMode: 'collector' as 'collector' | 'consult',
+			emitNotice: (message: string, source: string) => { messages.push(`${source}: ${message}`); } });
+		manager.setBundle({ bundleVersion: 2, locale: language, assets: [sessions, extra] });
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const create = (TyrianCompanionCore.prototype as unknown as {
+			createNewManagedAssetsOnLoad(this: typeof plugin): Promise<void>;
+		}).createNewManagedAssetsOnLoad;
+		return { vault, manager, plugin, messages, sessions, extra, load: () => create.call(plugin) };
+	}
+
+	it('creates the Base the installed manifest lacks, says which, and leaves the existing one byte for byte', async () => {
+		const { vault, plugin, messages, load } = await installedAtPreviousBundle();
+		const before = vault.contents.get(BASE);
+		await load();
+		expect(vault.contents.get(EXTRA)).toContain('extra-base');
+		expect(vault.contents.get(BASE)).toBe(before);
+		expect(plugin.settings.managedAssetsRoot).toBe('Home');
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toMatch(/^managed_assets_updated: .*Extra\.base/u);
+	});
+
+	it('writes nothing a second time: two loads in a row create it once and notice once', async () => {
+		const { vault, messages, load } = await installedAtPreviousBundle();
+		await load();
+		const written = vault.writeCount;
+		await load();
+		expect(vault.writeCount).toBe(written);
+		expect(messages).toHaveLength(1);
+	});
+
+	it('does not bring the Base back after the user deletes it', async () => {
+		const { vault, load } = await installedAtPreviousBundle();
+		await load();
+		vault.contents.delete(EXTRA);
+		const written = vault.writeCount;
+		await load();
+		expect(vault.contents.has(EXTRA)).toBe(false);
+		expect(vault.writeCount).toBe(written);
+	});
+
+	it('writes NOTHING and warns nobody when another Base was edited by the user', async () => {
+		const { vault, messages, load } = await installedAtPreviousBundle();
+		vault.contents.set(BASE, `${vault.contents.get(BASE)!}\nhuman edit`);
+		const written = vault.writeCount;
+		await load();
+		expect(vault.contents.has(EXTRA)).toBe(false);
+		expect(vault.writeCount).toBe(written);
+		expect(vault.contents.get(BASE)).toContain('human edit');
+		expect(messages).toEqual([]);
+	});
+
+	it('writes NOTHING when the same load would also update an existing Base (updates stay behind the sync)', async () => {
+		const { vault, manager, sessions, extra, messages, load } = await installedAtPreviousBundle();
+		const bytes = sessions.bytes.replace(/version=\d+/u, 'version=3');
+		manager.setBundle({ bundleVersion: 2, locale: 'es', assets: [{ ...sessions, contentVersion: 3, bytes, contentHash: await sha256Text(bytes) }, extra] });
+		const written = vault.writeCount;
+		await load();
+		expect(vault.contents.has(EXTRA)).toBe(false);
+		expect(vault.contents.get(BASE)).not.toContain('version=3');
+		expect(vault.writeCount).toBe(written);
+		expect(messages).toEqual([]);
+	});
+
+	it('writes nothing without a managed root, and nothing when the root is set but no assets were ever applied', async () => {
+		const [sessions] = await genericManagedAssets();
+		const vault = new MemoryAssetVault();
+		const manager = new ManagedAssetsManager(vault, 'test-config-dir', { bundleVersion: 2, locale: 'es', assets: [sessions!] });
+		const messages: string[] = [];
+		const never = Object.assign(buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' }),
+			{ managedAssets: manager, collectorMode: 'collector', emitNotice: (message: string) => { messages.push(message); } });
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const create = (TyrianCompanionCore.prototype as unknown as { createNewManagedAssetsOnLoad(this: typeof never): Promise<void> }).createNewManagedAssetsOnLoad;
+		await create.call(never);
+		expect(never.settings.managedAssetsRoot).toBeNull();
+		// The Hebra host adopts the output folder as the root without installing anything.
+		never.settings = { ...never.settings, managedAssetsRoot: 'Home' };
+		await create.call(never);
+		expect(vault.writeCount).toBe(0);
+		expect(vault.contents.size).toBe(0);
+		expect(messages).toEqual([]);
+	});
+
+	it('writes nothing in consult mode, with a legacy root, or when the root differs from the output folder', async () => {
+		for (const change of [
+			(plugin: Awaited<ReturnType<typeof installedAtPreviousBundle>>['plugin']) => { plugin.collectorMode = 'consult'; },
+			(plugin: Awaited<ReturnType<typeof installedAtPreviousBundle>>['plugin']) => { plugin.settings = { ...plugin.settings, legacyManagedAssetsRoot: 'Old' }; },
+			(plugin: Awaited<ReturnType<typeof installedAtPreviousBundle>>['plugin']) => { plugin.settings = { ...plugin.settings, outputFolder: 'Elsewhere' }; },
+		]) {
+			const { vault, plugin, messages, load } = await installedAtPreviousBundle();
+			change(plugin);
+			const written = vault.writeCount;
+			await load();
+			expect(vault.writeCount).toBe(written);
+			expect(vault.contents.has(EXTRA)).toBe(false);
+			expect(messages).toEqual([]);
+		}
+	});
+
+	it('writes nothing in a host that declares no managed assets', async () => {
+		const { vault, plugin, load } = await installedAtPreviousBundle();
+		Object.defineProperty(plugin, 'host', { value: { ...(plugin as unknown as { host: object }).host, capabilities: { managedAssets: false } } });
+		const written = vault.writeCount;
+		await load();
+		expect(vault.writeCount).toBe(written);
+	});
+
+	it('boot does not wait for it: initializeRuntime resolves while the creation is still pending', async () => {
+		const runtime = createRuntimeHarness();
+		const core = runtime.core as unknown as { settings: TyrianSettings; localDebugActions: LocalDebugActionRunner; createNewManagedAssetsOnLoad(): Promise<void> };
+		core.localDebugActions = new LocalDebugActionRunner({ diagnostics: { record: vi.fn(() => true) } as unknown as LocalDebugLogger, createId: () => 'boot-create' });
+		core.settings = { ...core.settings, managedAssetsRoot: core.settings.outputFolder };
+		const pending = deferred<undefined>();
+		const create = vi.spyOn(core, 'createNewManagedAssetsOnLoad').mockImplementation(() => pending.promise);
+		try {
+			await runtime.initializeRuntime();
+			await flush();
+			expect(create).toHaveBeenCalledTimes(1);
+			pending.resolve(undefined);
+		} finally { pending.resolve(undefined); await runtime.shutdown(); runtime.dispose(); }
+	});
 });
 
 async function flush(): Promise<void> {

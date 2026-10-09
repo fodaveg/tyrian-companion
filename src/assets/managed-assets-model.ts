@@ -184,6 +184,30 @@ export function decideManagedAssetsAutoUpdate(inspection: ManagedAssetsInspectio
 	return { action: 'manual', reasons: [...plan.reasons, ...(missing ? ['missing' as const] : [])] };
 }
 
+/**
+ * David, 9 Oct 2026 («que las cree solo»): what the plugin may write on LOAD, narrower than
+ * `decideManagedAssetsAutoUpdate` (which also follows updates, after a sync). It answers with the
+ * assets to create, or `[]` for «write nothing»:
+ *
+ * - the manifest is `ready`, so the installation did apply assets at some point (a bare
+ *   `managedAssetsRoot` is not proof: the Hebra host adopts the output folder without installing);
+ * - at least one asset is `create`: not registered in the manifest and not on disk (a new Base of
+ *   the bundle);
+ * - EVERY other asset is `unchanged`, or a file the user owns that the manifest declares `excluded`
+ *   (the apply already skips it). Anything else (an update, an edit, a deleted Base, a conflict, a
+ *   foreign file, a newer manifest) writes nothing at all and warns nobody.
+ */
+export function decideManagedAssetsLoadCreate(inspection: ManagedAssetsInspection): ManagedAssetsInspection['assets'] {
+	if (inspection.manifestStatus !== 'ready' || inspection.manifest === null) return [];
+	const excluded = new Set(inspection.manifest.excluded ?? []);
+	const creates = inspection.assets.filter((entry) => entry.status === 'create');
+	// An excluded asset the user has since deleted also reads `create`: the apply would write it back.
+	if (creates.length === 0 || creates.some((entry) => excluded.has(entry.asset.id))) return [];
+	const untouched = inspection.assets.every((entry) => entry.status === 'create' || entry.status === 'unchanged'
+		|| (entry.status === 'occupied_unowned' && excluded.has(entry.asset.id)));
+	return untouched ? creates : [];
+}
+
 export function isManagedAssetsManifest(value: unknown): value is ManagedAssetsManifest {
 	if (!record(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2) || value.pluginId !== 'tyrian-companion') return false;
 	const schemaVersion = value.schemaVersion;

@@ -262,12 +262,8 @@ function gapReason(reason: StoredLiveSessionPayloadV1['gaps'][number]['reason'],
  * no credentials, `null` otherwise (no cache record, no icon, another origin). Same check as the UI's.
  */
 function iconText(icon: string | undefined): string {
-	if (icon === undefined) return 'null';
-	try {
-		const url = new URL(icon);
-		return url.protocol === 'https:' && url.origin === 'https://render.guildwars2.com' && url.username === '' && url.password === ''
-			? JSON.stringify(url.href) : 'null';
-	} catch { return 'null'; }
+	// A path must follow the host directly (so no `user@` or `.evil` suffix) and nothing may need escaping.
+	return icon !== undefined && /^https:\/\/render\.guildwars2\.com\/[^\s"\\@\u0000-\u001f]*$/u.test(icon) ? JSON.stringify(icon) : 'null';
 }
 
 function escapeMarkdown(value: string): string { return value.replace(/[\p{Cc}]/gu, ' ').replace(/[\\|<>]/gu, (match) => `\\${match}`); }
