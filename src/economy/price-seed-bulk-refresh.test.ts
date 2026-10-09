@@ -24,7 +24,7 @@ function sourceAnswering(statusOf: (itemId: number) => number, requested: number
 			if (status >= 200 && status < 300) return { status, headers: {}, body: [] };
 			throw new HttpTransportError('http', status, null, 'status');
 		},
-	} as HttpTransport;
+	};
 	// A 2xx answer is not what these tests are about: it only has to count as an answered item.
 	return async (itemId: number) => {
 		const result = await fetchPriceSeed(itemId, { transport, now: () => NOW_MS });

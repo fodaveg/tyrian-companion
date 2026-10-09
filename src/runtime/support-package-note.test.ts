@@ -37,7 +37,7 @@ function hebraHarness(asNote: boolean) {
 		localDebugActions: null,
 	};
 	const exportPackage = (TyrianCompanionCore.prototype as unknown as {
-		exportLocalDebugPackage(this: typeof harness): Promise<string | null>;
+		exportLocalDebugPackage: (this: typeof harness) => Promise<string | null>;
 	}).exportLocalDebugPackage;
 	return { harness, notes, adapterWrite, openNote, run: () => exportPackage.call(harness) };
 }

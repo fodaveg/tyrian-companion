@@ -1500,11 +1500,11 @@ describe('ManualSessionStartService', () => {
 			await first.initialize(); await expect(first.preserveLegacyForLiveMigration()).resolves.toBe(true); await first.dispose();
 			// A checksummed archive whose original no longer passes today's validation, sorted before the real one.
 			const database = await new Promise<IDBDatabase>((resolve, reject) => {
-				const request = factory.open(dbName, 2); request.onerror = () => reject(request.error); request.onsuccess = () => resolve(request.result);
+				const request = factory.open(dbName, 2); request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed')); request.onsuccess = () => resolve(request.result);
 			});
 			const tx = database.transaction('active-session-v1', 'readwrite');
 			tx.objectStore('active-session-v1').add(prepareLegacyRuntimeArchive({ notARuntime: true }, 9_999_999_999_999), 'legacy-api-runtime:aaa-old-evidence');
-			await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error); });
+			await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction failed')); });
 			database.close();
 
 			const restarted = new ManualSessionStartService(coordinator(), { capture: vi.fn() },
@@ -1520,11 +1520,11 @@ describe('ManualSessionStartService', () => {
 			const database = await new Promise<IDBDatabase>((resolve, reject) => {
 				const request = factory.open(dbName, 2);
 				request.onupgradeneeded = () => { request.result.createObjectStore('active-session-v1'); };
-				request.onerror = () => reject(request.error); request.onsuccess = () => resolve(request.result);
+				request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed')); request.onsuccess = () => resolve(request.result);
 			});
 			const tx = database.transaction('active-session-v1', 'readwrite');
 			tx.objectStore('active-session-v1').add({ ...prepareLegacyRuntimeArchive({ any: 1 }, 1), sha256: 'bad' }, 'legacy-api-runtime:tampered');
-			await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error); });
+			await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction failed')); });
 			database.close();
 			const leases = coordinator();
 			const service = new ManualSessionStartService(leases, { capture: vi.fn(async () => structuredClone(captured)) },

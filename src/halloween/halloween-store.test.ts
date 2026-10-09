@@ -263,7 +263,7 @@ describe('IndexedDbHalloweenStore', () => {
 				const notices = db.createObjectStore(HALLOWEEN_NOTICE_STORE, { keyPath: ['vaultId', 'accountRef', 'noticeId'] });
 				notices.createIndex('by-scope-observed', ['vaultId', 'accountRef', 'observedAt']);
 			};
-			request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+			request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
 		});
 		const legacy = { ...notice('legacy-v8', [5]),
 			items: [{ itemId: 5, quantity: 250, name: null, netUnitCopper: 6, priceStatus: 'quote' as const,
