@@ -2,8 +2,13 @@
 
 ## Release beta 0.6.22 - la Sesión a una columna en la pantalla principal de Hebra y el valor estimado en grande, con las monedas de oro, plata y cobre
 
-Candidato; no publicado ni etiquetado. Cambia el aspecto del panel de Sesión tras ver la 0.6.21 en el Hebra real de
-David. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto pintado.
+[Canal 0.6.22 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.22); **instalación/runtime
+pendiente**. Tag `0.6.22` sobre `67cbac6` (commit vacío de atestación). Gate local sobre el candidato `6676408`
+(árbol `038ceb46a3b11b7185b78ab135cf4284348b9bc6`): `check` 8/8 (5812 tests, 344 ficheros), guardrails 25/25 y
+`release:preflight` en verde. El workflow de release (run 37959786333) terminó en `success`, y `release:brat-verify`
+contra la salida real de la release dio PASS con los ocho assets. La CI de `main` sobre `67cbac6` (run 37959777928)
+terminó en `success`. Cambia el aspecto del panel de Sesión tras ver la 0.6.21 en el Hebra real de David.
+[ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto pintado.
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.22 se ha visto pintado en ningún host. Los tests
   comprueban la estructura del DOM, el texto, el nombre accesible y el texto de las reglas de CSS; ninguno calcula un

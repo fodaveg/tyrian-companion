@@ -1,11 +1,16 @@
 # Estado
 
-## Candidato 0.6.22: Sesión a una columna en la pantalla principal de Hebra y «Valor estimado» en grande con los iconos de oro, plata y cobre (9 oct 2026)
+## Canal 0.6.22 publicado: Sesión a una columna en la pantalla principal de Hebra y «Valor estimado» en grande con los iconos de oro, plata y cobre (9 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `b516be4` (`main` con el canal 0.6.21 publicado). Trae dos
-cambios de interfaz sobre la captura de la 0.6.21 en el Hebra real de David (`02a29c1`, `ae9054e`) y los metadatos de
-versión (`57e1448`: `manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de
-Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md) («Capas»).
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.22](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.22)
+es una release normal, sin draft ni prerelease, publicada el 2026-10-09T16:35:10Z; nombre, tag y `manifest.version`
+son `0.6.22`. El tag (ligero) apunta a `67cbac6` (`67cbac693e463d24e16bc59221febcedb78dde27`, commit vacío de
+atestación); el candidato fuente es `6676408` (`6676408b141da4965423d261e04c2221859d7ba8`, árbol
+`038ceb46a3b11b7185b78ab135cf4284348b9bc6`). Parte de `b516be4` (`main` con el canal 0.6.21 publicado). Trae dos
+cambios de interfaz sobre la captura de la 0.6.21 en el Hebra real de David (`02a29c1`, `ae9054e`, y `6676408`, que
+limita el ancho de las cifras) y los metadatos de versión (`57e1448`: `manifest.json`, `package.json`, la raíz de
+`package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en
+[ARCHITECTURE](ARCHITECTURE.md) («Capas»).
 
 - Origen: petición de David del 9 oct 2026, con la captura de la 0.6.21 en su Hebra: «puedes dejarlo a 1 columna? y
   que el valor de valor estimado se vea en grande y si puede ser con los iconos oficiales de oro plata y cobre?». Deshace
@@ -19,7 +24,11 @@ Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHI
   de 560 px de `5d647c4` y, como la regla de dos columnas desde 600 px de `styles.css` también llegaba a la pantalla
   principal (el hueco es su contenedor más cercano), `tyrian-host.css` devuelve la columna bajo
   `.hebra-module-view-main` desde esos 600 px. Obsidian conserva sus dos columnas desde 600 px; Inventario y Venta no se
-  tocan. Las dos columnas de las filas de la Cronología siguen igual.
+  tocan. Las dos columnas de las filas de la Cronología siguen igual. `6676408` añade `max-width: 24rem` a las cifras
+  («Valor estimado» y «Por hora») en ese bloque de 600 px, para que la fila «Por hora» no reparta etiqueta y valor a
+  los dos extremos de la pantalla.
+- Revisión: leída solo por el integrador, sin pasada independiente; el último commit (`6676408`) lo escribió el
+  integrador.
 - Valor estimado: etiqueta pequeña encima y cifra debajo, a la izquierda, con cifras tabulares. Tamaño
   `clamp(1.25rem, 8cqi, 2rem)` sobre el contenedor: 22 px (1.4rem) con 280 px, 2rem desde 400 px; dentro de las dos
   columnas de Obsidian, 1.25rem. Cada moneda es número, icono y letra; las tres pasan a otra línea en vez de desbordar.
@@ -43,11 +52,25 @@ Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHI
   fichero nuevo y sus dos `addEventListener` de imagen, revisados, y el total de 222 a 224), `i18n-unused` e
   `i18n-copy-length` sin hallazgos, contrato de texto fuente PASS, y `build:host-esm`: «host ESM bundle: PASS (397
   inputs, 2673225 bytes -> hebra-main.mjs; exports: activate; npm packages: yaml)». No es el gate.
-- Sin medir: el gate, los guardarraíles, `release:preflight` y el paquete.
-- No verificado: la interfaz pintada en cualquier host; que los iconos carguen en el Hebra y el Obsidian reales; el
-  aspecto a 280, 593, 852 y 1300 px; una lectura con un lector de pantalla; Windows.
-- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la verificación en
-  clientes reales.
+- Gate local sobre el candidato `6676408` (`6676408b141da4965423d261e04c2221859d7ba8`, árbol
+  `038ceb46a3b11b7185b78ab135cf4284348b9bc6`; Fedora, Node v22.23.1, 9 oct 2026), con las dependencias existentes y a
+  la primera: `npm run check` «VEREDICTO: VERDE (8/8)», «Test Files 344 passed (344)», «Tests 5812 passed (5812)»;
+  `npm run check:guardrails` «VEREDICTO: VERDE (25/25)»; `release:preflight` pass y
+  `node scripts/changelog-entry.mjs 0.6.22` con salida 0; «host ESM bundle: PASS (397 inputs, 2673225 bytes ->
+  hebra-main.mjs; exports: activate; npm packages: yaml)»; «release package: PASS (tyrian-companion-0.6.22.zip
+  sha256=dc0776590239f5a84c52429806bb94f20ed8115c8ed16babf2144630936b7e99)»; y «BRAT release contract: PASS
+  (version=0.6.22; assets=8)» sobre la release planeada. El zip descargado de la release da el mismo sha256 que el del
+  gate.
+- Publicación: el workflow de release (run 37959786333) terminó en `success`. `release:brat-verify` sobre la salida
+  real de `gh release view`: «BRAT release contract: PASS (version=0.6.22; assets=8)». Los ocho assets están
+  `uploaded`: `hebra-main.mjs` 2673231, `hebra-styles.css` 122387, `hebra.json` 29593, `main.js` 1959915,
+  `manifest.json` 237, `styles.css` 96405, `tyrian-companion-0.6.22.zip` 2056867 y
+  `tyrian-companion-0.6.22.zip.sha256` 94 (bytes).
+- CI de `main` sobre `67cbac6` (run 37959777928): `completed` / `success` (2026-10-09T16:40:17Z).
+- No verificado: nada de la 0.6.22 se ha visto pintado en ningún host, ni instalado ni ejecutado en un Hebra o un
+  Obsidian reales, ni por BRAT ni desde Hebra; que los iconos carguen en el Hebra y el Obsidian reales; el aspecto a
+  280, 593, 852 y 1300 px; una lectura con un lector de pantalla; Windows.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
 
 ## Canal 0.6.21 publicado: Tyrian Companion en la pantalla principal de Hebra, con sus tres secciones (9 oct 2026)
 
