@@ -1,5 +1,32 @@
 # Estado
 
+## Candidato 0.6.19: la presentación de la nota resumen de sesión y los títulos con fecha (9 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `446844d` (`main` con el canal 0.6.18 publicado). Trae un solo
+lote, de presentación (`c6ba44b`, `ffc177b`, `716363d`): los rótulos de la nota resumen dicen qué cuenta cada cifra
+(«Balance observado», «Valor neto de objetos observados», «Objetos por hora observada», «Cambio de oro observado»,
+«Objetos observados de más valor», «Cambios de otras monedas»), lo que salió del inventario se cuenta en unidades y
+tipos, los títulos de las dos notas llevan la fecha y la hora local del inicio, la cobertura por debajo del 90 %
+agrupa los tramos, los ligados a cuenta pasan a recuento con más de 5 tipos y el enlace se llama «Sesión completa».
+No cambia ninguna cifra, el frontmatter, el payload, los nombres de fichero ni `tyrian_summary_version` (3). Detalle y
+límites en [CHANGELOG](CHANGELOG.md) y en [SPEC-live-loot](SPEC-live-loot.md) §6. Metadatos de versión alineados en
+`manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de Obsidian 1.11.4).
+
+- Origen: revisión independiente de dos notas reales del 9 oct 2026; aprobado por David ese día.
+- Revisión: independiente sobre `446844d..ffc177b` («integrar con correcciones», una obligatoria de texto, aplicada en
+  `716363d`); `716363d` lo leyó solo el integrador.
+- Gate local sobre `ffc177b` (árbol `97ef3808d67dc6b0c87147ac58cf2ee78fcb4538`): `check` 8/8 (5648 tests) y
+  guardrails 25/25.
+- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
+- Comprobado con datos reales: se renderizó con el código nuevo el resumen de una sesión real del 9 oct 2026 (96 min,
+  84 % observado): 14 tramos sin observar, 3 listados y 11 cortes de menos de 30 s.
+- Límites: los resúmenes ya escritos no se reescriben y las notas ya escritas conservan su título. Las columnas de la
+  Base de resúmenes siguen llamándose «Neto» y «Por hora» y ya no coinciden con los rótulos de la nota.
+- No verificado: nada visto pintado en Obsidian ni en Hebra; el título usa la zona horaria del equipo en el momento de
+  escribir.
+- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la verificación
+  en clientes reales.
+
 ## Canal 0.6.18 publicado: el resumen de sesión sin excluir NoSell, su enlace en Hebra y los plazos del almacén en vivo (9 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.18](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.18)

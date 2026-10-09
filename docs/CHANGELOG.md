@@ -1,5 +1,31 @@
 # Changelog
 
+## Release beta 0.6.19 - la nota resumen de sesión dice qué cuenta cada cifra, agrupa su cobertura y se titula con la fecha y la hora
+
+Release por tag `0.6.19`. Cambia solo la presentación de la nota resumen de una sesión y los títulos de las dos notas:
+texto y orden, ninguna cifra. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Rótulos que dicen qué cuenta cada cifra: «Veredicto» pasa a «Balance observado», «Neto estimado» a «Valor neto de
+  objetos observados», «Por hora» a «Objetos por hora observada», «Oro de la cartera» y «Oro ganado» a «Cambio de oro
+  observado», «Para vender ahora» a «Objetos observados de más valor» y «Otras monedas» a «Cambios de otras monedas».
+  Lo que salió del inventario se cuenta en unidades y en tipos de objeto. En Mapas, «Tiempo con mapa identificado» y el
+  aviso de lista incompleta salen solo cuando hay hueco en el registro de mapas y ese tiempo no cubre lo observado.
+- Títulos con la fecha y la hora local del inicio en las dos notas: el resumen es «2026-10-09 08.42 · Resumen · Varios
+  mapas · Rinopopo» y la nota completa «2026-10-09 08.42 · Sesión completa» (antes todas las completas se titulaban
+  «Sesión de inventario observado»). Las notas ya escritas conservan su título: reescribir una existente no lo cambia
+  ni da conflicto. El título usa la zona horaria del equipo en el momento de escribir.
+- Cobertura por debajo del 90 % observado: tiempo observado y sin observar, tramos unidos (uno que afecta a objetos y
+  a monedas a la vez cuenta una vez), los de 30 s o más de más largo a más corto (hasta 5) con su duración y motivo, los
+  cortes más cortos sumados en una línea y cuánto del tiempo sin observar es solo de monedas.
+- Ligados a cuenta: con más de 5 tipos, un recuento y los tres primeros nombres. El enlace a la nota completa lleva la
+  etiqueta «Sesión completa».
+- No cambia: el frontmatter `tyrian_summary_*`, ninguna cifra, el payload de la nota completa, los nombres de fichero,
+  las rutas ni `tyrian_summary_version` (3). Los resúmenes ya escritos no se reescriben. Las columnas de la Base de
+  resúmenes siguen llamándose «Neto» y «Por hora» y ya no coinciden con los rótulos de la nota (límite conocido).
+- Sin verificar: nada de la 0.6.19 se ha visto pintado en Obsidian ni en Hebra, ni su instalación por BRAT o en Hebra.
+  Sí se renderizó con el código nuevo el resumen de una sesión real del 9 oct 2026 (96 min, 84 % observado: 14 tramos
+  sin observar, 3 listados y 11 cortes de menos de 30 s).
+
 ## Release beta 0.6.18 - el resumen de sesión deja de excluir los objetos con NoSell, su enlace funciona en Hebra y el almacén de la sesión en vivo ya no espera para siempre
 
 [Canal 0.6.18 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.18); **instalación/runtime
