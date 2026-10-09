@@ -13,7 +13,7 @@ import {
 	IndexedDbCoordinationStore,
 	type CoordinationStore,
 } from './coordination-store';
-import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
+import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import { StorageDeadline, StorageUnansweredError } from './storage-deadline';
 
 export interface ActiveSessionLeaseCoordinatorOptions {
@@ -130,6 +130,15 @@ export class ActiveSessionLeaseCoordinator {
 	private life: 'none' | 'pending' | 'proven' | 'unmarked' = 'none';
 	private lifeGranted: Promise<boolean> = Promise.resolve(false);
 	private lifeSettled: Promise<void> | null = null;
+	/**
+	 * Where what this instance decided about locks is recorded, so it can be read off a real client: what it
+	 * is (once) and each lease it took or declined to take from an owner whose lock it found free. Outcomes
+	 * and reasons only: never an id, a session or a time.
+	 */
+	private readonly diagnostics: LocalDebugPersistenceProbe;
+	private lifeReported = false;
+	/** The last refusal recorded, so that an owner refused on every beat is recorded once per lease and reason. */
+	private lastRefusal: string | null = null;
 	private letLifeLockGo: () => void = () => undefined;
 	private readonly leaseTtlMs: number;
 	private readonly expiryConfirmDelayMs: number;
@@ -146,6 +155,7 @@ export class ActiveSessionLeaseCoordinator {
 
 	constructor(options: ActiveSessionLeaseCoordinatorOptions = {}) {
 		this.baseInstanceId = options.instanceId ?? crypto.randomUUID();
+		this.diagnostics = options.diagnostics ?? new LocalDebugPersistenceProbe();
 		this.locks = options.locks ?? null;
 		this.lockDeadline = new StorageDeadline({
 			timeoutMs: options.lockTimeoutMs ?? LIFE_LOCK_ANSWER_TIMEOUT_MS, schedule: options.schedule, cancel: options.cancel,
@@ -293,6 +303,7 @@ export class ActiveSessionLeaseCoordinator {
 		// Before the first lease is written, and before the store is even opened: whether this instance's id
 		// carries the mark. Without a lock manager there is nothing to decide and nothing is waited for.
 		if (this.life === 'pending') await this.settleLife();
+		else if (!this.lifeReported) this.reportLifeAbsent();
 		// Disposed of while the lock was being waited for: said as what it is, not as a store that is down.
 		if (this.disposed) return { status: 'error', code: 'disposed' };
 		// The mark is only ever written by an instance whose lock was shown to be held. An id that was
@@ -341,11 +352,29 @@ export class ActiveSessionLeaseCoordinator {
 		// further; held, no answer, a late one or an error leave the owner where it is until its lease runs out.
 		const ownerGone = first.status === 'held';
 		if (first.status === 'held') {
-			if (await this.lifeLockState(lifeLockName(observed.instanceId)) !== 'free') return busyUnder(observed);
+			const lock = await this.lifeLockState(lifeLockName(observed.instanceId));
+			// Held is the ordinary case of another window that is alive, and whoever asked already records it.
+			if (lock === 'held') return busyUnder(observed);
+			if (lock === null) { this.reportRefusal(observed, 'unavailable', 'owner_lock_unanswered'); return busyUnder(observed); }
 			// Free, and still not enough: an owner that renewed this recently is taken for alive whatever the
-			// manager says of its lock (`DEAD_OWNER_SILENCE_MS`). The next attempt asks again.
-			if (first.silentMs < DEAD_OWNER_SILENCE_MS) return busyUnder(observed);
+			// manager says of its lock (`DEAD_OWNER_SILENCE_MS`). The next attempt asks again. Recorded, because
+			// seen again and again it is what two live owners that cannot see each other's locks look like.
+			if (first.silentMs < DEAD_OWNER_SILENCE_MS) {
+				this.reportRefusal(observed, 'precondition_failed', 'owner_renewed_recently', String(DEAD_OWNER_SILENCE_MS - first.silentMs));
+				return busyUnder(observed);
+			}
 		}
+		const taking = ownerGone ? this.diagnostics.begin('coordination', 'recover') : null;
+		const taken = await this.confirmAndTake(sessionId, leaseTtlMs, observed, ownerGone);
+		if (taken.status === 'acquired') taking?.success('ok', { result: 'taken', reason: 'owner_lock_free' });
+		// The lease was not the one observed any more: somebody, perhaps the owner shown to be gone, wrote in the pause.
+		else if (taken.status === 'busy') taking?.skip('precondition_failed', { result: 'refused', reason: 'lease_changed_in_confirmation' });
+		else taking?.failure(taken.status === 'error' && taken.code === 'unavailable' ? 'unavailable' : 'precondition_failed');
+		return taken;
+	}
+
+	/** The pause and the second transaction of an acquisition that found a lease it may take. */
+	private async confirmAndTake(sessionId: string, leaseTtlMs: number, observed: ActiveSessionLease, ownerGone: boolean): Promise<AcquireLeaseResult> {
 		try { await this.sleep(this.expiryConfirmDelayMs); } catch { return { status: 'error', code: 'unavailable' }; }
 		try {
 			return await (await this.getStore()).transaction<AcquireLeaseResult>((raw) => {
@@ -413,12 +442,33 @@ export class ActiveSessionLeaseCoordinator {
 	private settleLife(): Promise<void> {
 		this.lifeSettled ??= (async () => {
 			if (this.life !== 'pending') return;
+			const attempt = this.diagnostics.begin('coordination', 'open');
+			this.lifeReported = true;
 			const granted = await this.lockAnswer(() => this.lifeGranted) === true;
-			if (granted && await this.lifeLockState(lifeLockName(this.instanceId)) === 'held') { this.life = 'proven'; return; }
+			if (granted && await this.lifeLockState(lifeLockName(this.instanceId)) === 'held') {
+				this.life = 'proven';
+				attempt.success('ok', { state: 'life_lock_proven' });
+				return;
+			}
 			this.life = 'unmarked';
 			this.letLifeLockGo();
+			attempt.skip('unavailable', { state: 'life_lock_unmarked', reason: granted ? 'lock_not_seen_held' : 'lock_not_granted' });
 		})();
 		return this.lifeSettled;
+	}
+
+	/** What an instance that never asked for a lock is, recorded once: there was no manager, or its id could not carry the mark. */
+	private reportLifeAbsent(): void {
+		this.lifeReported = true;
+		this.diagnostics.begin('coordination', 'open').skip('skipped', { state: 'life_lock_absent' });
+	}
+
+	/** A lease left with its owner although that owner's lock was not shown to be held; once per lease and reason. */
+	private reportRefusal(observed: ActiveSessionLease, code: 'unavailable' | 'precondition_failed', reason: string, retryAfterMs?: string): void {
+		const refusal = `${reason}/${observed.instanceId}/${String(observed.fence)}`;
+		if (this.lastRefusal === refusal) return;
+		this.lastRefusal = refusal;
+		this.diagnostics.begin('coordination', 'recover').skip(code, { result: 'refused', reason, ...(retryAfterMs === undefined ? {} : { retryAfterMs }) });
 	}
 
 	/** What the manager says of `name`, when it says it in time: `null` is every other outcome, and proves nothing. */

@@ -1,7 +1,8 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
-import { fakeLocks } from '../test/fake-lock-manager';
+import { LocalDebugPersistenceProbe, type LocalDebugPersistenceEvent } from '../core/local-debug-persistence';
+import { fakeLocks, type FakeLocks } from '../test/fake-lock-manager';
 import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 import { ActiveSessionLeaseCoordinator, LIFE_LOCK_ANSWER_TIMEOUT_MS } from './coordination-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
@@ -635,7 +636,8 @@ describe('ActiveSessionLeaseCoordinator with the host\'s lock manager', () => {
 			now += 5;
 			current = requireHandle(await owner.renew(current));
 		});
-		const contender = fiveMinutes(factory, 'lying manager', { instanceId: 'contender', locks: locks.context(), clock: () => now, sleep });
+		const recorded = recordedDecisions();
+		const contender = fiveMinutes(factory, 'lying manager', { instanceId: 'contender', locks: locks.context(), clock: () => now, sleep, diagnostics: recorded.probe });
 		// Its own lock is shown to be held while the manager is still honest; from here on it lies.
 		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'busy' });
 		locks.ifAvailable = 'always free';
@@ -659,6 +661,12 @@ describe('ActiveSessionLeaseCoordinator with the host\'s lock manager', () => {
 		now = SILENT + 5 + 15_000;
 		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
 		await expect(owner.assertOwned(current)).resolves.toEqual({ status: 'lost' });
+		// And the log of that host reads as what happened: an owner shown to be gone that wrote in the pause.
+		expect(recorded.decisions().filter((decision) => decision.operation === 'recover').map((decision) => decision.detail)).toEqual([
+			{ result: 'refused', reason: 'lease_changed_in_confirmation' },
+			{ result: 'refused', reason: 'owner_renewed_recently', retryAfterMs: '15000' },
+			{ result: 'taken', reason: 'owner_lock_free' },
+		]);
 		owner.dispose(); contender.dispose();
 	});
 
@@ -742,6 +750,73 @@ describe('ActiveSessionLeaseCoordinator with the host\'s lock manager', () => {
 		// Decided once: the next acquisition does not wait for the lock again.
 		await expect(coordinator.acquire('session-1')).resolves.toMatchObject({ status: 'already_owned', handle: { instanceId: 'alone' } });
 		coordinator.dispose();
+	});
+
+	// What lets any of this be checked on a real client: the local diagnostic log says what the instance
+	// is and what it did with each owner whose lock it did not find held. Outcomes and reasons, no ids.
+	it.each([
+		['its lock was granted and seen held', (_locks: FakeLocks): void => undefined, { phase: 'success', code: 'ok', detail: { state: 'life_lock_proven' } }, 'wl1:alone'],
+		['its lock is never granted', (locks: FakeLocks): void => { locks.grants = false; }, { phase: 'skip', code: 'unavailable', detail: { state: 'life_lock_unmarked', reason: 'lock_not_granted' } }, 'alone'],
+		['the manager calls its own held lock free', (locks: FakeLocks): void => { locks.ifAvailable = 'always free'; }, { phase: 'skip', code: 'unavailable', detail: { state: 'life_lock_unmarked', reason: 'lock_not_seen_held' } }, 'alone'],
+	] as const)('records once what the instance is when %s', async (_case, arrange, outcome, instanceId) => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		arrange(locks);
+		const waits = manualWaits(); const recorded = recordedDecisions();
+		const coordinator = fiveMinutes(factory, `recorded ${outcome.detail.state} ${outcome.code}`, {
+			instanceId: 'alone', locks: locks.context(), schedule: waits.arm, cancel: waits.disarm, diagnostics: recorded.probe,
+		});
+		expect(recorded.decisions()).toEqual([]);
+
+		const acquiring = coordinator.acquire('session-1');
+		if (!locks.grants) { await vi.waitFor(() => { expect(waits.lockWaits()).toBe(1); }); waits.expire(); }
+		expect(requireHandle(await acquiring).instanceId).toBe(instanceId);
+		await expect(coordinator.acquire('session-1')).resolves.toMatchObject({ status: 'already_owned' });
+		expect(recorded.decisions()).toEqual([{ operation: 'open', ...outcome }]);
+		coordinator.dispose();
+	});
+
+	it('records once that an instance without a lock manager has no life lock', async () => {
+		const factory = new IDBFactory(); const recorded = recordedDecisions();
+		const coordinator = fiveMinutes(factory, 'recorded absent', { instanceId: 'alone', diagnostics: recorded.probe });
+
+		requireHandle(await coordinator.acquire('session-1'));
+		await expect(coordinator.acquire('session-1')).resolves.toMatchObject({ status: 'already_owned' });
+		expect(recorded.decisions()).toEqual([{ operation: 'open', phase: 'skip', code: 'skipped', detail: { state: 'life_lock_absent' } }]);
+		coordinator.dispose();
+	});
+
+	it('records each lease it takes from a dead owner and each one it leaves to an owner whose lock it did not find held, once per lease and reason', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = BORN;
+		const ownerContext = locks.context();
+		const owner = fiveMinutes(factory, 'recorded takeover', { instanceId: 'owner', locks: ownerContext, clock: () => now });
+		requireHandle(await owner.acquire('session-1'));
+		const recorded = recordedDecisions();
+		const contender = fiveMinutes(factory, 'recorded takeover', { instanceId: 'contender', locks: locks.context(), clock: () => now, diagnostics: recorded.probe });
+		const proven = { operation: 'open', phase: 'success', code: 'ok', detail: { state: 'life_lock_proven' } };
+
+		// Alive and holding its lock: an ordinary busy, which whoever asked records for itself.
+		await expect(contender.acquire('session-1')).resolves.toMatchObject({ status: 'busy' });
+		expect(recorded.decisions()).toEqual([proven]);
+		ownerContext.die();
+		now = BORN + 1;
+		await expect(contender.acquire('session-1')).resolves.toMatchObject({ status: 'busy' });
+		now = BORN + 5_000;
+		await expect(contender.acquire('session-1')).resolves.toMatchObject({ status: 'busy' });
+		const recently = { operation: 'recover', phase: 'skip', code: 'precondition_failed', detail: { result: 'refused', reason: 'owner_renewed_recently', retryAfterMs: '14999' } };
+		expect(recorded.decisions()).toEqual([proven, recently]);
+		locks.ifAvailable = 'rejects';
+		await expect(contender.acquire('session-1')).resolves.toMatchObject({ status: 'busy' });
+		await expect(contender.acquire('session-1')).resolves.toMatchObject({ status: 'busy' });
+		const unanswered = { operation: 'recover', phase: 'skip', code: 'unavailable', detail: { result: 'refused', reason: 'owner_lock_unanswered' } };
+		expect(recorded.decisions()).toEqual([proven, recently, unanswered]);
+		locks.ifAvailable = 'honest';
+		now = SILENT;
+		await expect(contender.acquire('session-1')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		expect(recorded.decisions()).toEqual([proven, recently, unanswered, { operation: 'recover', phase: 'success', code: 'ok', detail: { result: 'taken', reason: 'owner_lock_free' } }]);
+		// Nothing of what was recorded names an instance, a session or a machine, the store's own attempts included.
+		expect(JSON.stringify(recorded.events)).not.toMatch(/wl1:|contender|session-1|machine-/u);
+		owner.dispose(); contender.dispose();
 	});
 
 	// A manager that cannot even take the request must not stop the plugin loading: the coordinator is
@@ -1005,6 +1080,22 @@ function openRaw(factory: IDBFactory, name: string, version: number): Promise<ID
 		request.onerror = () => reject(request.error ?? new Error('open failed'));
 		request.onsuccess = () => resolve(request.result);
 	});
+}
+
+/**
+ * A diagnostics probe that keeps everything it is told, and what the coordinator itself decided out of
+ * it: what the instance is, and each takeover it made or declined. The store's own reads and writes go
+ * through the same probe and are left out of `decisions`.
+ */
+function recordedDecisions() {
+	const events: LocalDebugPersistenceEvent[] = [];
+	return {
+		events,
+		probe: new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } }),
+		decisions: () => events
+			.filter((event) => event.phase !== 'start' && (event.operation === 'recover' || event.detail?.state !== undefined))
+			.map(({ operation, phase, code, detail }) => ({ operation, phase, code, detail })),
+	};
 }
 
 /**

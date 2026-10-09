@@ -57,11 +57,12 @@ export interface LocalDebugPersistenceProbeOptions {
 }
 
 export interface LocalDebugPersistenceAttempt {
-	success(code?: LocalDebugCode): void;
+	/** `detail`, here and on `skip`, is the same bounded string facts a failure may carry: an outcome is not always a failure. */
+	success(code?: LocalDebugCode, detail?: Readonly<Record<string, string>>): void;
 	/** `error`, when given, never crosses further than this attempt: only its structural fingerprint
 	 * (class name) reaches the log, via the sink (`createLocalDebugPersistenceSink`). */
 	failure(code?: LocalDebugCode, error?: unknown, detail?: Readonly<Record<string, string>>): void;
-	skip(code?: LocalDebugCode): void;
+	skip(code?: LocalDebugCode, detail?: Readonly<Record<string, string>>): void;
 	recover(code?: LocalDebugCode): void;
 }
 
@@ -121,9 +122,9 @@ export class LocalDebugPersistenceProbe {
 			}
 		};
 		return {
-			success: (code = 'ok') => finish('success', code),
+			success: (code = 'ok', detail?: Readonly<Record<string, string>>) => finish('success', code, undefined, detail),
 			failure: (code = 'storage_failure', error?: unknown, detail?: Readonly<Record<string, string>>) => finish('failure', code, error, detail),
-			skip: (code = 'skipped') => finish('skip', code),
+			skip: (code = 'skipped', detail?: Readonly<Record<string, string>>) => finish('skip', code, undefined, detail),
 			recover: (code = 'ok') => finish('success', code),
 		};
 	}

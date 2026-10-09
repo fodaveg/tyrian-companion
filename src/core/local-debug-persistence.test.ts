@@ -70,6 +70,37 @@ describe('local debug persistence port', () => {
 		});
 	});
 
+	// 9 Oct 2026 (F7): an outcome that is not a failure has facts worth keeping too. The session lease says
+	// what it decided about its life lock through these two, and they are what is read off a real client.
+	it('carries the detail of a success and of a skip to the log, at the level each already had', () => {
+		const records: LocalDebugRecordInput[] = [];
+		const runner = new LocalDebugActionRunner({
+			diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		const probe = new LocalDebugPersistenceProbe({
+			sink: createLocalDebugPersistenceSink(runner, 'session', 'session_lease'),
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		probe.begin('coordination', 'open').success('ok', { state: 'life_lock_proven' });
+		probe.begin('coordination', 'recover').skip('precondition_failed', {
+			result: 'refused', reason: 'owner_renewed_recently', retryAfterMs: '5000', instanceId: 'must-not-survive',
+		});
+		probe.begin('coordination', 'open').skip('skipped', { state: 'life_lock_absent' });
+
+		const logged = records.filter((record) => record.phase !== 'start')
+			.map((record) => sanitizeLocalDebugRecord(record, { timestampMs: 0, sequence: 1, pluginVersion: '0.1.14' }))
+			.map(({ level, phase, code, details }) => ({ level, phase, code, details }));
+		expect(logged).toEqual([
+			{ level: 'debug', phase: 'success', code: 'ok', details: { operation: 'open', state: 'life_lock_proven', store: 'coordination' } },
+			{ level: 'warn', phase: 'skip', code: 'precondition_failed', details: {
+				operation: 'recover', reason: 'owner_renewed_recently', result: 'refused', retryAfterMs: '5000', store: 'coordination',
+			} },
+			{ level: 'debug', phase: 'skip', code: 'skipped', details: { operation: 'open', state: 'life_lock_absent', store: 'coordination' } },
+		]);
+		expect(JSON.stringify(logged)).not.toContain('must-not-survive');
+	});
+
 	// H15.20: 8 stores called `attempt.failure()` pelado and lost `error.name` (a `QuotaExceededError`
 	// logged the exact same way as any other storage failure). `failure(code, error)` plus the sink
 	// now carry the error's class to the log, and only that: never its message.
