@@ -666,10 +666,17 @@ describe('live session summary: the figures of the session by map', () => {
 		const session = mutate(await payload(fixture(options))); const figures = computeSummaryFigures(session, meta, []);
 		return { session, figures, ...figures.mapBreakdown };
 	};
-	/** Both sums the breakdown has to give, whatever the session: the observed item time and the net value of the summary. */
-	const adds = (run: Awaited<ReturnType<typeof byMap>>): void => {
-		expect(run.rows.reduce((sum, row) => sum + row.observedMs, run.unidentified.observedMs)).toBe(run.session.observedItemsMs);
+	/**
+	 * What the breakdown has to give, whatever the session: its times add up to the session's length less its unobserved item records
+	 * (which is the saved observed time, unless `shortBy` says the session saved that much less than its records hold), its values add
+	 * up to the net value of the summary, and it has time on no identified map exactly when the route steps on none.
+	 */
+	const adds = (run: Awaited<ReturnType<typeof byMap>>, shortBy = 0): void => {
+		const { session } = run; const time = run.rows.reduce((sum, row) => sum + row.observedMs, run.unidentified.observedMs);
+		expect(time).toBe(Date.parse(session.endedAt) - Date.parse(session.startedAt) - session.gaps.reduce((sum, gap) => sum + Date.parse(gap.toAt!) - Date.parse(gap.fromAt), 0));
+		expect(time - session.observedItemsMs).toBe(shortBy);
 		expect(run.rows.reduce((sum, row) => sum + row.netCopper!, run.unidentified.netCopper!)).toBe(run.figures.netCopper);
+		expect(run.unidentified.observedMs > 0).toBe(run.visits.some((visit) => visit.mapId === null));
 	};
 	/** 866 for 30 min, 873 for 20, no identified map for 20, 866 again for 10. Minutes 25 to 35 went unobserved, across the change of map. */
 	const trip: Mutate = (session) => ({ ...session, observedItemsMs: 70 * MIN, gaps: [unobserved(25, 35)], mapIntervals: [on(866, 0, 30), on(873, 30, 50), on(866, 70, 80)] });
@@ -678,10 +685,10 @@ describe('live session summary: the figures of the session by map', () => {
 		const run = await byMap(trip);
 		expect(run.rows).toEqual([
 			// 25 observed minutes of the first 30 and the last 10: the changes of minutes 20 and 80.
-			{ mapId: 866, observedMs: 35 * MIN, netCopper: 33_000, perHourCopper: Math.round(33_000 * 60 / 35), firstAt: at(0) },
+			{ mapId: 866, observedMs: 35 * MIN, netCopper: 33_000, perHourCopper: Math.round(33_000 * 60 / 35) },
 			// 15 observed minutes of its 20: the change of minute 40.
-			{ mapId: 873, observedMs: 15 * MIN, netCopper: 28_200, perHourCopper: 112_800, firstAt: at(30) }]);
-		expect(run.unidentified).toEqual({ mapId: null, observedMs: 20 * MIN, netCopper: 1_500, perHourCopper: 4_500, firstAt: at(50) });
+			{ mapId: 873, observedMs: 15 * MIN, netCopper: 28_200, perHourCopper: 112_800 }]);
+		expect(run.unidentified).toEqual({ mapId: null, observedMs: 20 * MIN, netCopper: 1_500, perHourCopper: 4_500 });
 		expect(run.visits).toEqual([{ mapId: 866, at: at(0) }, { mapId: 873, at: at(30) }, { mapId: null, at: at(50) }, { mapId: 866, at: at(70) }]);
 		expect(run.figures.netCopper).toBe(62_700);
 		adds(run);
@@ -701,7 +708,7 @@ describe('live session summary: the figures of the session by map', () => {
 		const short: Mutate = (session) => ({ ...session, mapIntervals: [on(866, 0, 20), on(873, 20, 35), on(866, 35, 80)], gaps: [unobserved(34, 35)], observedItemsMs: 79 * MIN });
 		const run = await byMap(short);
 		// 14 observed minutes on 873, where nothing came in: no pace, and with the 15th observed (below) the pace of nothing is zero.
-		expect(run.rows[1]).toEqual({ mapId: 873, observedMs: 14 * MIN, netCopper: 0, perHourCopper: null, firstAt: at(20) });
+		expect(run.rows[1]).toEqual({ mapId: 873, observedMs: 14 * MIN, netCopper: 0, perHourCopper: null });
 		expect(run.rows[0]).toMatchObject({ mapId: 866, observedMs: 65 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 65) });
 		const exact = await byMap((session) => ({ ...short(session), gaps: [], observedItemsMs: 80 * MIN }));
 		expect(exact.rows[1]).toMatchObject({ observedMs: 15 * MIN, perHourCopper: 0 });
@@ -712,14 +719,56 @@ describe('live session summary: the figures of the session by map', () => {
 		// The fixture as it comes: 866 up to minute 20 and 873 from there to the end, changes observed exactly at minutes 20 and 40.
 		const run = await byMap((session) => session, {});
 		expect(run.rows.map((row) => [row.mapId, row.netCopper])).toEqual([[866, 19_500], [873, 28_200]]);
-		expect(run.unidentified).toEqual({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null, firstAt: null });
+		expect(run.unidentified).toEqual({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null });
 		expect(run.visits).toEqual([{ mapId: 866, at: at(0) }, { mapId: 873, at: at(20) }]);
+		adds(run);
+	});
+
+	it('keeps the last change of a session on its map when the map was closed a clock read before that change was stamped', async () => {
+		// What `stop` leaves: the map closed on the presence's last frame, and the sample that frame carried stamped 1, 5 or 400 ms later,
+		// which is where the published session ends. That edge is the map's, with the change in it: one row, all the value, no other step.
+		for (const late of [1, 5, 400]) {
+			const run = await byMap((session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 40 * MIN - late }] }), {});
+			expect(run.rows, String(late)).toEqual([{ mapId: 866, observedMs: 40 * MIN, netCopper: 47_700, perHourCopper: 71_550 }]);
+			expect(run.unidentified, String(late)).toEqual({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null });
+			expect(run.visits).toEqual([{ mapId: 866, at: at(0) }]);
+			adds(run);
+		}
+		// A whole second observed after the map closed is no edge: it is a stretch on no identified map, with what was observed in it.
+		const stretch = await byMap((session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 40 * MIN - 1_000 }] }), {});
+		expect(stretch.rows).toEqual([{ mapId: 866, observedMs: 40 * MIN - 1_000, netCopper: 19_500, perHourCopper: Math.round(19_500 * 3_600_000 / (40 * MIN - 1_000)) }]);
+		expect(stretch.unidentified).toEqual({ mapId: null, observedMs: 1_000, netCopper: 28_200, perHourCopper: null });
+		expect(stretch.visits).toEqual([{ mapId: 866, at: at(0) }, { mapId: null, at: new Date(AT + 40 * MIN - 1_000).toISOString() }]);
+		adds(stretch);
+	});
+
+	it('gives an edge under a second to the map before it, and the one that opens the session to the first map, with the hour each map was entered', async () => {
+		// 999 ms before the first map and half a second between the two: no stretch, so no time and no change on no identified map.
+		// The change of minute 20 is stamped in that half second and belongs to the map that was left.
+		const edges: Mutate = (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT + 999, toMs: AT + 20 * MIN - 500 }, { mapId: 873, fromMs: AT + 20 * MIN, toMs: AT + 40 * MIN }] });
+		const run = await byMap(edges, {});
+		expect(run.rows.map((row) => [row.mapId, row.observedMs, row.netCopper])).toEqual([[866, 20 * MIN, 19_500], [873, 20 * MIN, 28_200]]);
+		expect(run.unidentified).toEqual({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null });
+		expect(run.visits).toEqual([{ mapId: 866, at: new Date(AT + 999).toISOString() }, { mapId: 873, at: at(20) }]);
+		adds(run);
+		// One millisecond more at each and both are stretches: one measure for the row and for the route, which now steps on them.
+		const stretches = await byMap((session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT + 1_000, toMs: AT + 20 * MIN - 1_000 }, { mapId: 873, fromMs: AT + 20 * MIN, toMs: AT + 40 * MIN }] }), {});
+		expect(stretches.unidentified).toMatchObject({ observedMs: 2_000, netCopper: 19_500 });
+		expect(stretches.visits.map((visit) => visit.mapId)).toEqual([null, 866, null, 873]);
+		adds(stretches);
+	});
+
+	it('dates a step on no identified map at the first instant observed there, not at the instant the map before it was left', async () => {
+		// 866 is left at minute 30 inside an unobserved stretch that runs to minute 45: the 15 minutes observed on no map start there.
+		const run = await byMap((session) => ({ ...session, observedItemsMs: 60 * MIN, gaps: [unobserved(25, 45)], mapIntervals: [on(866, 0, 30), on(873, 60, 80)] }));
+		expect(run.visits).toEqual([{ mapId: 866, at: at(0) }, { mapId: null, at: at(45) }, { mapId: 873, at: at(60) }]);
+		expect([run.rows[0]!.observedMs, run.unidentified.observedMs, run.rows[1]!.observedMs]).toEqual([25 * MIN, 15 * MIN, 20 * MIN]);
 		adds(run);
 	});
 
 	it('takes two intervals of one map with nothing observed between them as one visit: what a restart leaves', async () => {
 		const run = await byMap((session) => ({ ...session, observedItemsMs: 64 * MIN, gaps: [unobserved(42, 58)], mapIntervals: [on(866, 0, 42), on(866, 58, 80)] }));
-		expect(run.rows).toEqual([{ mapId: 866, observedMs: 64 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 64), firstAt: at(0) }]);
+		expect(run.rows).toEqual([{ mapId: 866, observedMs: 64 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 64) }]);
 		expect(run.unidentified.observedMs).toBe(0);
 		expect(run.visits).toEqual([{ mapId: 866, at: at(0) }]);
 		adds(run);
@@ -729,7 +778,7 @@ describe('live session summary: the figures of the session by map', () => {
 		for (const mapIntervals of [[], [on(null, 0, 80)]]) {
 			const run = await byMap((session) => ({ ...session, mapIntervals }));
 			expect(run.rows).toEqual([]);
-			expect(run.unidentified).toEqual({ mapId: null, observedMs: 80 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 80), firstAt: at(0) });
+			expect(run.unidentified).toEqual({ mapId: null, observedMs: 80 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 80) });
 			expect(run.visits).toEqual([{ mapId: null, at: at(0) }]);
 			adds(run);
 		}
@@ -737,6 +786,11 @@ describe('live session summary: the figures of the session by map', () => {
 		const bare = await byMap((session) => ({ ...trip(session), journal: [] }));
 		expect([...bare.rows.map((row) => row.netCopper), bare.unidentified.netCopper]).toEqual([0, 0, 62_700]);
 		adds(bare);
+		// It is the one way no identified map holds value with no time: both maps cover the session, and the units still have no hour.
+		const covered = await byMap((session) => ({ ...session, journal: [] }), {});
+		expect(covered.unidentified).toEqual({ mapId: null, observedMs: 0, netCopper: 47_700, perHourCopper: null });
+		expect(covered.visits.map((visit) => visit.mapId)).toEqual([866, 873]);
+		adds(covered);
 	});
 
 	it('values and excludes exactly as the net value: bound items stay out, what left a map subtracts there, and no prices means no value', async () => {
@@ -772,16 +826,22 @@ describe('live session summary: the figures of the session by map', () => {
 
 	it('counts each instant once when two intervals overlap, and writes what the records say when they hold more than the observed time', async () => {
 		const overlapped = await byMap((session) => ({ ...session, mapIntervals: [on(866, 0, 50), on(873, 30, 80)] }));
-		expect(overlapped.rows.map((row) => [row.mapId, row.observedMs, row.firstAt])).toEqual([[866, 50 * MIN, at(0)], [873, 30 * MIN, at(50)]]);
+		expect(overlapped.rows.map((row) => [row.mapId, row.observedMs])).toEqual([[866, 50 * MIN], [873, 30 * MIN]]);
+		expect(overlapped.visits).toEqual([{ mapId: 866, at: at(0) }, { mapId: 873, at: at(50) }]);
 		adds(overlapped);
-		// The observed time is added up on the addon's clock: 300 ms under what the intervals hold is not time on another map.
-		const jitter = await byMap((session) => ({ ...session, observedItemsMs: 80 * MIN - 300, mapIntervals: [on(866, 0, 80)] }));
-		expect(jitter.rows[0]!.observedMs).toBe(80 * MIN);
-		expect(jitter.unidentified.observedMs).toBe(0);
-		// Observed time the intervals do not hold is time on no identified map, from the first instant observed outside them.
-		const hole = await byMap((session) => ({ ...session, mapIntervals: [on(866, 0, 40)] }));
-		expect([hole.rows[0]!.observedMs, hole.unidentified.observedMs, hole.unidentified.firstAt]).toEqual([40 * MIN, 40 * MIN, at(40)]);
-		adds(hole);
+		// The observed time is saved on the addon's clock and can come short of what the records hold. The rows are what the records say:
+		// they add up to that much more than the saved time (`adds`), on the maps where it was, never on a map of their own.
+		for (const shortBy of [300, 1_500]) {
+			const jitter = await byMap((session) => ({ ...session, observedItemsMs: 80 * MIN - shortBy, mapIntervals: [on(866, 0, 50), on(873, 50, 80)] }));
+			expect(jitter.rows.map((row) => row.observedMs)).toEqual([50 * MIN, 30 * MIN]);
+			expect(jitter.unidentified.observedMs).toBe(0);
+			adds(jitter, shortBy);
+		}
+		// Time the intervals do not hold is time on no identified map, and it does not shrink with the saved observed time either.
+		const hole = await byMap((session) => ({ ...session, observedItemsMs: 80 * MIN - 1_500, mapIntervals: [on(866, 0, 40)] }));
+		expect([hole.rows[0]!.observedMs, hole.unidentified.observedMs]).toEqual([40 * MIN, 40 * MIN]);
+		expect(hole.visits).toEqual([{ mapId: 866, at: at(0) }, { mapId: null, at: at(40) }]);
+		adds(hole, 1_500);
 	});
 });
 
@@ -1125,6 +1185,32 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 			expect(glued(short.content)).toEqual([]);
 		});
 
+		it('keeps one line for one map when its interval was closed a clock read before the last change was stamped', async () => {
+			for (const late of [1, 5, 400]) {
+				const { content } = await render({ mutate: (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 40 * MIN - late }] }) });
+				expect(mapsOf(content), String(late)).toBe('Mapa 866 · tiempo observado: 40 min');
+			}
+		});
+
+		it('writes the row of no identified map for value alone when units have no hour, and the route does not step on it', async () => {
+			// Both maps cover the session and the journal is gone (no saved session is like this): the value has no map to go to, and
+			// without that row the column would not add up to the balance.
+			const { content } = await render({ mutate: (session) => ({ ...maps(20, 20, false)(session), journal: [] }) });
+			expect(mapsOf(content)).toBe(`${HEAD}| Mapa 866 | 20 min | 0g 0s 0c | 0g 0s 0c |\n| Mapa 873 | 20 min | 0g 0s 0c | 0g 0s 0c |\n`
+				+ `| Sin mapa identificado | 0 s | 4g 77s 0c | — |\n\n17:30 Mapa 866 → 17:50 Mapa 873\n\n${LIMIT}`);
+		});
+
+		it('names a map whose name arrived empty by its id, in the table, in the route, in the title and in the frontmatter', async () => {
+			const { content } = await render({ mutate: maps(20, 20, false), mapNames: { '866': '', '873': '   ' } });
+			expect(mapsOf(content)).toContain('| Mapa 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n| Mapa 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n\n17:30 Mapa 866 → 17:50 Mapa 873\n\n');
+			expect(mapsOf(content)).not.toMatch(/ {2}|\| \|/u);
+			const main = await render({ mutate: maps(40, 0, false), mapNames: { '866': '' } });
+			expect(body(main.content).startsWith('# 2026-10-08 17.30 · Resumen · Mapa 866 · Alfa\n')).toBe(true);
+			expect(main.content).toContain('tyrian_summary_map: "Mapa 866"');
+			expect(mapsOf(main.content)).toBe('Mapa 866 · tiempo observado: 40 min');
+			expect(mapsOf((await render({ mutate: maps(40, 0, false), mapNames: { '866': '' }, locale: 'en' })).content, 'Maps')).toBe('Map 866 · observed time: 40 min');
+		});
+
 		it('writes the time alone, with no value columns and no limit, when the note states no net value of items', async () => {
 			const { content } = await render({ fixture: { prices: false }, mutate: maps(20, 20, false) });
 			expect(content).toContain('Sin precios de bazar: no hay valor neto de objetos observados.');
@@ -1152,7 +1238,8 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 	it('never writes a paragraph right under a list or a table, with every section of the note present', async () => {
 		const alert = { kind: 'valuable_loot', itemId: STAPLE, name: 'Saco grande', quantity: 12, totalCopper: 18_000, priceStatus: 'known', reason: 'above_threshold' } as never;
 		const everything: Mutate = (session) => ({ ...nineGaps(GOLD_WALLET_ON(session)), mapCoveragePartial: true, magicFind: { value: 312, source: 'verified' },
-			// Ten minutes on two maps, five of them observed, against twenty observed: the table, its row of no identified map, the route and the limit.
+			// Ten minutes on two maps, five of them observed, in a session whose records leave 31 observed (it saved 20: the rows are what
+			// the records say): the table, its row of no identified map, the route and the limit.
 			mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 5 * 60_000 }, { mapId: 873, fromMs: AT + 5 * 60_000, toMs: AT + 10 * 60_000 }],
 			totals: [...session.totals, total('item', 101, 3), total('item', 102, 1), total('item', 103, 0, 4), total('currency', 2, 800)],
 			valuation: { ...session.valuation, coinNetCopper: 12_345, prices: [...session.valuation.prices, { itemId: 101, unitCopper: null }, { itemId: 102, unitCopper: 50 }] },
@@ -1163,9 +1250,9 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 			const text = body(note.content);
 			// Every section is there, so each of its joints is checked.
 			for (const heading of locale === 'es' ? ['## Balance observado', '## Objetos observados de más valor', 'Sin precio de bazar', 'Ligados a cuenta', '## Cambios de otras monedas', '## Lo bueno', 'Salieron del inventario', '## Mapas',
-				'| Sin mapa identificado | 15 min |', 'cuenta en el mapa donde se observó.', '## Al cerrar', '## Cobertura', 'Sin observar: 9 min, en 9 tramos.', 'Y 4 tramos más, en total 4 min.', '|Sesión completa]]']
+				'| Sin mapa identificado | 26 min |', 'cuenta en el mapa donde se observó.', '## Al cerrar', '## Cobertura', 'Sin observar: 9 min, en 9 tramos.', 'Y 4 tramos más, en total 4 min.', '|Sesión completa]]']
 				: ['## Observed balance', '## Most valuable observed items', 'No bazaar price', 'Account-bound', '## Other currency changes', '## The good', 'left the inventory', '## Maps',
-					'| No identified map | 15 min |', 'counts on the map where it was observed.', '## At close', '## Coverage', 'Unobserved: 9 min, in 9 intervals.', 'And 4 more intervals, 4 min in total.', '|Full session]]']) expect(text).toContain(heading);
+					'| No identified map | 26 min |', 'counts on the map where it was observed.', '## At close', '## Coverage', 'Unobserved: 9 min, in 9 intervals.', 'And 4 more intervals, 4 min in total.', '|Full session]]']) expect(text).toContain(heading);
 			expect(glued(note.content)).toEqual([]);
 			// With more bound types than are named and cuts next to the long stretches, the joints of those two forms hold as well.
 			const more = await render({ locale, itemMeta: { ...META, ...Object.fromEntries([201, 202, 203, 204, 205, 206].map((id) => [id, { flags: ['AccountBound'], type: 'Trophy' }])) },

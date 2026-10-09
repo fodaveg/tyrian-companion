@@ -1,7 +1,7 @@
 import { formatCopperVisual } from '../core/copper-format';
 import { errorClassName } from '../core/local-debug-error-details';
 import { ensureFoldersBySegments } from '../core/vault-folders';
-import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, SUMMARY_MIN_UNIDENTIFIED_MS, SUMMARY_SHORT_GAP_MS, summaryMainMap,
+import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, SUMMARY_SHORT_GAP_MS, summaryMainMap,
 	type SummaryCharacter, type SummaryItemMetaMap, type SummaryMapRow } from './live-session-summary-figures';
 import { liveSessionLocalTime, liveSessionTitleStamp, systemUtcOffsetMinutes, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { LIVE_RATE_MIN_OBSERVED_MS } from './live-session-model';
@@ -86,7 +86,9 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const names = input.displayNames ?? {};
 		const itemName = (id: number): string => escapeMarkdown(names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
 		const currencyName = (id: number): string => escapeMarkdown(names[`currency:${String(id)}`] ?? `${label('Moneda', 'Currency')} ${String(id)}`);
-		const mapName = (id: number): string => escapeMarkdown(input.mapNames?.[String(id)] ?? `${label('Mapa', 'Map')} ${String(id)}`);
+		// A name that arrived empty is no name: the map gets the reserve one, like a map nobody could name, never an empty cell or title.
+		const rawMapName = (id: number): string => { const name = input.mapNames?.[String(id)]; return name !== undefined && name.trim() !== '' ? name : `${label('Mapa', 'Map')} ${String(id)}`; };
+		const mapName = (id: number): string => escapeMarkdown(rawMapName(id));
 		const offset = input.utcOffsetMinutes ?? systemUtcOffsetMinutes;
 		const day = (iso: string): string => liveSessionLocalTime(iso, offset).day;
 		const clock = (iso: string): string => liveSessionLocalTime(iso, offset).clock;
@@ -175,9 +177,10 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			// The value columns go with the balance: a note that states no net value of items states none by map either.
 			const valued = shownNet !== null;
 			const unidentified = (capital: boolean): string => capital ? label('Sin mapa identificado', 'No identified map') : label('sin mapa identificado', 'no identified map');
-			// What was observed on no identified map is a row when it is a stretch, or holds value the rows above would not add up without.
+			// What was observed on no identified map is a row when there is any (the figures give it time only for a stretch, the same one
+			// the route steps on), or when it holds value the rows above would not add up without: units no journal entry accounts for.
 			// It is what says the maps above are not the whole session: nothing else is written about a map that may be missing.
-			const rows = [...byMap.rows, ...(byMap.unidentified.observedMs >= SUMMARY_MIN_UNIDENTIFIED_MS || valued && byMap.unidentified.netCopper !== 0 ? [byMap.unidentified] : [])];
+			const rows = [...byMap.rows, ...(byMap.unidentified.observedMs > 0 || valued && byMap.unidentified.netCopper !== 0 ? [byMap.unidentified] : [])];
 			// The table as data: a column is its heading, its alignment and how it writes a row, so a label, the order or a column is one
 			// line to change. Every time is observed item time and every value a part of the net value above: each column adds up to it.
 			const columns: { heading: string; align: '---' | '---:'; cell: (row: SummaryMapRow) => string }[] = [
@@ -253,8 +256,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const fullSession = label('Sesión completa', 'Full session');
 		out.push('', /[[\]|#^]/u.test(link) ? `${fullSession}: \`${link}\`` : `[[${link}|${fullSession}]]`);
 
-		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? (input.mapNames?.[String(id)] ?? `${label('Mapa', 'Map')} ${String(id)}`)
-			: (names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
+		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? rawMapName(id) : (names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
 		const mapText = f.mainMapId !== null ? raw(f.mainMapId, 'map') : noMapKnown ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
 		const topItem = f.staple !== null ? { id: f.staple.itemId, count: f.staple.quantity } : f.sellable[0] !== undefined ? { id: f.sellable[0].itemId, count: f.sellable[0].quantity } : null;
 		const goldText = (copper: number | null): string => copper === null ? 'null' : String(Number((copper / 10_000).toFixed(4)));

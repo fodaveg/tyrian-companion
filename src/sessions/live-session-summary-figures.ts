@@ -12,7 +12,10 @@ export const SUMMARY_STAPLE_MIN_ENTRIES = 10;
 export const SUMMARY_FOLD_COVERAGE = 0.9;
 /** An unobserved stretch shorter than this is a cut: the note counts the cuts together instead of writing each one. */
 export const SUMMARY_SHORT_GAP_MS = 30_000;
-/** Observed time on no identified map counts as a stretch from this much on; under it, it is two clocks disagreeing at an edge. */
+/**
+ * What lies between two map intervals is time on no identified map from this much OBSERVED time on. Under it, it is the edge of the
+ * map next to it: the two ends of an interval and the samples around them are stamped by different reads of the clock.
+ */
 export const SUMMARY_MIN_UNIDENTIFIED_MS = 1_000;
 const GOLD_CURRENCY_ID = 1;
 /**
@@ -59,26 +62,31 @@ export interface SummaryMapRow {
 	netCopper: number | null;
 	/** That value per hour observed THERE. Null under the 15 observed minutes every live rate needs, or without a value. */
 	perHourCopper: number | null;
-	/** When the session first entered it; for no identified map, the first instant observed on none. Null when there is none. */
-	firstAt: string | null;
 }
 /** One step of the session's route: the map entered (null: a stretch observed on no identified map) and when. */
 export interface SummaryMapVisit { mapId: number | null; at: string }
 /**
- * The session by map. One definition for every figure in it:
- * - time is OBSERVED item time, the same the session's pace is over: a map's intervals less the unobserved stretches of items,
- *   so `rows` and `unidentified` add up to `observedItemsMs` (see `unidentified`);
+ * The session by map. The session's length is cut ONCE, into the map intervals and the holes between them, and every figure comes
+ * from that one cut, so the table, its last row and the route cannot disagree:
+ * - a hole with `SUMMARY_MIN_UNIDENTIFIED_MS` or more observed in it is a stretch on no identified map; one with less is the edge of
+ *   the map before it (of the one after it, at the start of the session) and that map takes it, its time and its changes. That is
+ *   what puts the last change of a session on its map: the session's end is closed on the presence's last frame, and the sample that
+ *   frame carried is stamped one clock read later;
+ * - time is OBSERVED item time: each piece of the cut less the unobserved stretches of items. `rows` and `unidentified` add up,
+ *   exactly, to the session's length less those stretches. That is `observedItemsMs` whenever the saved observed time agrees with
+ *   the records; it is saved on the addon's clock and bounded by them, so where it is shorter the rows are what the records say and
+ *   add up to that much more;
  * - value is `netCopper` split by where each change was observed, so `rows` and `unidentified` add up to it exactly;
- * - an item change belongs to the map whose interval holds its hour (after the interval's start, up to its end: a sample stamped at
- *   the instant the map changed is the last one of the map left), and to no identified map when none does.
+ * - an item change belongs to the piece that holds its hour, after the piece's start and up to its end: a sample stamped at the
+ *   instant the map changed is the last one of the map left.
  */
 export interface SummaryMapBreakdown {
 	/** The identified maps, one row each however many times it was entered, in the order they were first entered. */
 	rows: SummaryMapRow[];
 	/**
-	 * What was observed on no identified map: the observed time the rows leave (never under zero: where the intervals on record hold
-	 * more than the observed time counted, the rows are what the records say) and the value no interval holds. Always present; the
-	 * note writes it when it has something to say.
+	 * What was observed on no identified map. Next to a map its time is zero or a stretch (`SUMMARY_MIN_UNIDENTIFIED_MS` or more),
+	 * and it is not zero exactly when `visits` has a step on no identified map. Its value is that of the changes observed there, plus
+	 * units no journal entry accounts for (none in a saved session: only then can it hold value with no time). Always present.
 	 */
 	unidentified: SummaryMapRow;
 	/** Every entry in order, returns to a map already visited included; a new interval of the map the session was already on is no entry. */
@@ -281,33 +289,46 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 		return null;
 	};
 	// The identified intervals in order, each instant once: one that starts before the previous ended starts where that one ended.
-	const intervals: { mapId: number; from: number; to: number }[] = []; let until = start;
+	// `enteredAt` is the hour the map was entered, which the route writes; `from` and `to` are what the piece covers.
+	type Piece = { mapId: number | null; enteredAt: number; from: number; to: number };
+	const intervals: Piece[] = []; let until = start;
 	for (const row of [...session.mapIntervals].sort((a, b) => a.fromMs - b.fromMs || a.toMs - b.toMs)) {
 		const from = Math.max(row.fromMs, until); const to = Math.min(row.toMs, end);
 		if (row.mapId === null || to <= from) continue;
-		intervals.push({ mapId: row.mapId, from, to }); until = to;
+		intervals.push({ mapId: row.mapId, enteredAt: from, from, to }); until = to;
 	}
+	// The one cut of the session: the intervals and the holes between them. A hole with a stretch observed in it is a piece on no
+	// identified map, entered at its first observed instant; one with less is the edge of the map next to it, which takes it.
+	const pieces: Piece[] = [];
+	const hole = (from: number, to: number, before: Piece | undefined, after: Piece | undefined): void => {
+		const first = to > from ? firstObservedIn(from, to) : null;
+		// With no map next to it (a session with no identified map at all) whatever was observed is on none, however short.
+		if (first !== null && (observedIn(from, to) >= SUMMARY_MIN_UNIDENTIFIED_MS || before === undefined && after === undefined)) pieces.push({ mapId: null, enteredAt: first, from, to });
+		else if (to > from && before !== undefined) before.to = to;
+		else if (to > from && after !== undefined) after.from = from;
+	};
+	if (intervals.length === 0) hole(start, end, undefined, undefined);
+	intervals.forEach((interval, index) => {
+		hole(index === 0 ? start : intervals[index - 1]!.to, interval.from, intervals[index - 1], interval);
+		pieces.push(interval);
+		if (index === intervals.length - 1) hole(interval.to, end, interval, undefined);
+	});
 
 	const rows = new Map<number, SummaryMapRow>(); const visits: SummaryMapVisit[] = [];
-	const enter = (mapId: number | null, at: number): void => { if (visits.at(-1)?.mapId !== mapId) visits.push({ mapId, at: iso(at) }); };
-	// Between two intervals the session was on no identified map: a step of the route when something was observed there.
-	const between = (from: number, to: number): void => { if (observedIn(from, to) >= SUMMARY_MIN_UNIDENTIFIED_MS) enter(null, firstObservedIn(from, to)!); };
-	let edge = start;
-	for (const interval of intervals) {
-		between(edge, interval.from); enter(interval.mapId, interval.from);
-		const row = rows.get(interval.mapId) ?? { mapId: interval.mapId, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null, firstAt: iso(interval.from) };
-		row.observedMs += observedIn(interval.from, interval.to); rows.set(interval.mapId, row); edge = interval.to;
+	const unidentified: SummaryMapRow = { mapId: null, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null };
+	for (const piece of pieces) {
+		if (visits.at(-1)?.mapId !== piece.mapId) visits.push({ mapId: piece.mapId, at: iso(piece.enteredAt) });
+		const row = piece.mapId === null ? unidentified : rows.get(piece.mapId) ?? { mapId: piece.mapId, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null };
+		row.observedMs += observedIn(piece.from, piece.to);
+		if (piece.mapId !== null) rows.set(piece.mapId, row);
 	}
-	between(edge, end);
-	const unidentified: SummaryMapRow = { mapId: null, netCopper: valued ? 0 : null, perHourCopper: null, firstAt: visits.find((visit) => visit.mapId === null)?.at ?? null,
-		observedMs: Math.max(0, session.observedItemsMs - [...rows.values()].reduce((sum, row) => sum + row.observedMs, 0)) };
 
 	if (valued) {
 		// Units of each counted item by where they were observed. What no entry of the journal accounts for is on no identified map.
 		const units = new Map<number, Map<number | null, number>>();
 		for (const entry of session.journal) {
 			const at = Date.parse(entry.observedAt);
-			const mapId = intervals.find((interval) => at > interval.from && at <= interval.to)?.mapId ?? null;
+			const mapId = pieces.find((piece) => at > piece.from && at <= piece.to)?.mapId ?? null;
 			for (const row of entry.observations) {
 				if (row.kind !== 'item' || !counted.has(row.idNumber)) continue;
 				const byMap = units.get(row.idNumber) ?? new Map<number | null, number>();
