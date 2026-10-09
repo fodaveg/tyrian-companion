@@ -2,7 +2,7 @@ import { apiVersion, getLanguage, Platform, type App, type Plugin } from 'obsidi
 // @ts-expect-error Electron is provided by Obsidian desktop and externalized by the bundle.
 import { shell } from 'electron';
 
-import { browserAlertAudioContextFactory, playAlertSound } from '../../alerts/alert-sound';
+import { browserAlertAudioContextFactory, closeBrowserAlertAudio, playAlertSound } from '../../alerts/alert-sound';
 import {
 	hostSystemNotificationConstructor,
 	showSystemNotification,
@@ -28,6 +28,7 @@ import { createObsidianVault } from './obsidian-vault';
 export function createObsidianHost(plugin: Plugin): TyrianHost {
 	const vault = createObsidianVault(plugin);
 	const kv: TyrianKvPort = { get indexedDB() { return window.indexedDB; } };
+	let soundCloseRegistered = false;
 	return {
 		vault,
 		http: createObsidianHttpPort(),
@@ -62,7 +63,15 @@ export function createObsidianHost(plugin: Plugin): TyrianHost {
 			system: (input) => showSystemNotification(hostSystemNotificationConstructor(window), {
 				...input, platform: Platform?.isLinux ? 'linux' : 'other',
 			}),
-			sound: () => playAlertSound(browserAlertAudioContextFactory(window)),
+			sound: () => {
+				// The context exists only once something sounded, so the close is registered then,
+				// once: a reload would otherwise leave one live AudioContext behind each time.
+				if (!soundCloseRegistered && typeof (plugin as Partial<Plugin>).register === 'function') {
+					soundCloseRegistered = true;
+					plugin.register(() => { closeBrowserAlertAudio(window); });
+				}
+				return playAlertSound(browserAlertAudioContextFactory(window));
+			},
 		},
 		clipboard: { writeText: async (text) => { await navigator.clipboard.writeText(text); } },
 		shell: {

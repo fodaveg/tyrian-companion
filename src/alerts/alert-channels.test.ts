@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	alertSoundDurationMs,
 	browserAlertAudioContextFactory,
+	closeBrowserAlertAudio,
 	playAlertSound,
 	type AlertAudioContext,
 } from './alert-sound';
@@ -245,6 +246,28 @@ describe('H13.4 sound channel', () => {
 				expect(calls.resume).toBe(2);
 				expect(scheduled.starts).toEqual([10, 10.15]);
 			});
+		});
+
+		it('closes the context it opened when the host is torn down, and only once', () => {
+			const { host, built } = countingHost();
+			const closed: number[] = [];
+			const factory = browserAlertAudioContextFactory(host);
+			factory();
+			const first = built[0] as unknown as { close(): unknown };
+			first.close = () => { closed.push(1); };
+			closeBrowserAlertAudio(host);
+			closeBrowserAlertAudio(host);
+			expect(closed, 'the AudioContext stayed open after unload').toEqual([1]);
+			// Nothing to close for a host that never sounded, and no throw for a non-object.
+			expect(() => closeBrowserAlertAudio({})).not.toThrow();
+			expect(() => closeBrowserAlertAudio(undefined)).not.toThrow();
+		});
+
+		it('survives a close() that throws', () => {
+			const { host, built } = countingHost();
+			browserAlertAudioContextFactory(host)();
+			(built[0] as unknown as { close(): unknown }).close = () => { throw new Error('already closed'); };
+			expect(() => closeBrowserAlertAudio(host)).not.toThrow();
 		});
 
 		it('replaces a closed context with a new one', () => {

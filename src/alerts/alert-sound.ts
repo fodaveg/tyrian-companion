@@ -155,6 +155,19 @@ export function alertSoundDurationMs(): number {
 }
 
 const browserFactories = new WeakMap<object, AlertAudioContextFactory>();
+/** Closes the context a host's browser factory opened, if any. Keyed like `browserFactories`. */
+const browserClosers = new WeakMap<object, () => void>();
+
+/**
+ * Closes the `AudioContext` the host's browser factory built, for the host's dispose: a plugin
+ * reload otherwise leaves one open context behind and Chromium caps how many may exist. Safe to
+ * call twice, for a host that never sounded, and never throws. A later alert would build a new
+ * context, which is what a host that outlives the call wants.
+ */
+export function closeBrowserAlertAudio(host: unknown): void {
+	if (typeof host !== 'object' || host === null) return;
+	browserClosers.get(host)?.();
+}
 
 /**
  * Builds the browser factory. Kept separate from `playAlertSound` so the pure
@@ -178,7 +191,18 @@ export function browserAlertAudioContextFactory(host: unknown): AlertAudioContex
 		try { context = new constructor(); } catch { return null; }
 		return context;
 	};
-	if (typeof host === 'object' && host !== null) browserFactories.set(host, factory);
+	if (typeof host === 'object' && host !== null) {
+		browserFactories.set(host, factory);
+		browserClosers.set(host, () => {
+			const open = context;
+			context = null;
+			if (open === null || open.state === 'closed') return;
+			try {
+				// `close()` answers a promise that rejects on an already closed context.
+				Promise.resolve(open.close()).catch(() => undefined);
+			} catch { /* the context is gone either way */ }
+		});
+	}
 	return factory;
 }
 

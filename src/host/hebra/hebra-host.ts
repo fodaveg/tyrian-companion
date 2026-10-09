@@ -31,7 +31,7 @@
  */
 import type { HebraPluginApi } from 'hebra-plugin-api';
 
-import { browserAlertAudioContextFactory, playAlertSound } from '../../alerts/alert-sound';
+import { browserAlertAudioContextFactory, closeBrowserAlertAudio, playAlertSound } from '../../alerts/alert-sound';
 import { hostSystemNotificationConstructor, showSystemNotification } from '../../alerts/alert-system-notification';
 import { MANAGED_ASSETS_MANIFEST } from '../../assets/managed-assets-model';
 import { localDebugDirectory } from '../../core/local-debug-contract';
@@ -522,6 +522,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			unwatchIndexedFiles();
 			vaultPort?.dispose();
 			background.dispose();
+			closeBrowserAlertAudio(win);
 		},
 		closeStorage: () => {
 			deps.pathIndexKv.close?.();
