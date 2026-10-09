@@ -70,12 +70,13 @@ export interface PriceSeedV1 {
 /**
  * Why there is no seed.
  *
- * `unreachable` is the network answering badly, `malformed` is it answering
- * something that is not a daily history, `empty` is a well-formed answer with
- * no usable day in it. They are separated because only the first is worth
- * retrying on a later session.
+ * `unreachable` is the network or the host failing to answer (offline, timeout, 408, 425, 429,
+ * 5xx), `unavailable` is the host answering with a non-2xx status that says there is nothing (404,
+ * 400, 403, 410...), `malformed` is it answering something that is not a daily history, `empty` is
+ * a well-formed answer with no usable day in it. They are separated because only the first is
+ * worth retrying at once: the others are remembered for 24 h (`price-seed-bulk-refresh`).
  */
-export type PriceSeedFailureReason = 'unreachable' | 'malformed' | 'empty';
+export type PriceSeedFailureReason = 'unreachable' | 'unavailable' | 'malformed' | 'empty';
 
 export type PriceSeedResult =
 	| { status: 'seeded'; seed: PriceSeedV1 }

@@ -89,6 +89,14 @@ describe('price seed download policy: one attempt, never a retry', () => {
 		expect(sleeps).toEqual([]);
 	});
 
+	it.each([
+		[408, 'unreachable'], [425, 'unreachable'], [429, 'unreachable'], [500, 'unreachable'], [503, 'unreachable'], [520, 'unreachable'],
+		[400, 'unavailable'], [403, 'unavailable'], [404, 'unavailable'], [410, 'unavailable'],
+	] as const)('Z13: status %i is answered "no seed" for the reason %s', async (status, reason) => {
+		const { transport } = retryingTransport(status, {});
+		expect(await fetchPriceSeed(36_038, { transport, now: () => NOW_MS })).toEqual({ status: 'no_seed', reason });
+	});
+
 	it('names the seed endpoint and nothing else, so no ArenaNet route loses its retries', () => {
 		expect(PRICE_SEED_OPERATION_POLICIES).toEqual({ price_history_seed: { maxRetries: 0 } });
 	});

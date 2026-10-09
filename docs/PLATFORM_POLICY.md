@@ -171,11 +171,14 @@ Corregido el 24 de septiembre de 2026 (H18.17, auditoría §3.E): una respuesta 
 recuerda aparte, en `tyrian-companion-price-seed-no-seed-cache`, con el mismo espaciado de 24 horas
 antes de volver a intentarla (`PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS`); antes de esto, un ítem sin
 semilla volvía a gastar uno de los 25 huecos en cada sincronización y, con más de 25 ítems en la
-lista, los últimos podían no atenderse nunca. Precisión del 9 de octubre de 2026 (auditoría Z13): ese
-recuerdo solo se escribe cuando el servidor contestó que no hay histórico; si no se le pudo alcanzar
-(429, 5xx, tiempo agotado) no se guarda nada y el siguiente intento no espera 24 horas, y el pase
-termina tras 3 fallos de ese tipo seguidos (`PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE`),
-con lo que un servidor colgado cuesta 3 peticiones y no 25. El progreso de la cola completa (cuántos ítems tienen
+lista, los últimos podían no atenderse nunca. Precisión del 9 de octubre de 2026 (auditoría Z13): el recuerdo de 24 horas se escribe cuando el
+servidor contestó que no hay histórico (estado no 2xx que no es pasajero, como 404, 400, 403 o 410;
+cuerpo vacío o malformado), de modo que un objeto sin histórico no desplaza a sus vecinos. No se
+escribe cuando no se le pudo alcanzar (fallo de red o de transporte, tiempo agotado, cuerpo por
+encima del tope, 408, 425, 429 o cualquier 5xx): el siguiente intento no espera 24 horas, y el pase
+termina tras 3 fallos de ese tipo seguidos (`PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE`;
+una respuesta de cualquier otra clase rompe la racha), con lo que un servidor colgado cuesta 3
+peticiones y no 25. El progreso de la cola completa (cuántos ítems tienen
 histórico, cuántos siguen pendientes de su turno y cuántos respondieron sin datos) se muestra en el
 panel de «Histórico local de precios» del asesor, como una lectura que nunca dispara trabajo por sí
 misma.

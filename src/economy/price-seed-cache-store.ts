@@ -114,7 +114,7 @@ function text(value: unknown): value is string { return typeof value === 'string
 function positiveInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) > 0; }
 function nonNegativeInteger(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) >= 0; }
 
-const PRICE_SEED_FAILURE_REASONS: readonly PriceSeedFailureReason[] = ['unreachable', 'malformed', 'empty'];
+const PRICE_SEED_FAILURE_REASONS: readonly PriceSeedFailureReason[] = ['unreachable', 'unavailable', 'malformed', 'empty'];
 
 /**
  * H18.17: a SEPARATE database from `PRICE_SEED_CACHE_DB_NAME`, not a second store bolted onto it.

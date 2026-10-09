@@ -10,6 +10,26 @@ import {
 	PriceSeedBulkRefreshService,
 } from './price-seed-bulk-refresh';
 import type { PriceSeedResult } from './price-seed-model';
+import { fetchPriceSeed } from './price-seed-source';
+import { HttpTransportError, type HttpTransport } from '../core/http';
+
+/** `fetchSeed` through the real source, with a transport that answers each item with `statusOf(itemId)` (non-2xx throws, as the real one does). */
+function sourceAnswering(statusOf: (itemId: number) => number, requested: number[]) {
+	const transport: HttpTransport = {
+		send: async (request) => {
+			const itemId = Number(new URL(request.url).searchParams.get('itemID'));
+			requested.push(itemId);
+			const status = statusOf(itemId);
+			if (status >= 200 && status < 300) return { status, headers: {}, body: [] };
+			throw new HttpTransportError('http', status, null, 'status');
+		},
+	} as HttpTransport;
+	// A 2xx answer is not what these tests are about: it only has to count as an answered item.
+	return async (itemId: number) => {
+		const result = await fetchPriceSeed(itemId, { transport, now: () => NOW_MS });
+		return result.status === 'no_seed' && result.reason === 'empty' ? seeded(itemId) : result;
+	};
+}
 
 const NOW_MS = Date.parse('2026-09-11T00:00:00.000Z');
 
@@ -308,6 +328,55 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		const outcome = await service.run(itemIds);
 		expect(requested).toEqual([1, 2, 3]);
 		expect(outcome).toMatchObject({ attempted: 3, failed: 3, stoppedUnreachable: true });
+		service.dispose();
+	});
+
+	it('Z13 (a): 25 items the host answers 404 for are all requested and marked, the pass is not cut, and a minute later all 25 are skipped', async () => {
+		const requested: number[] = [];
+		let now = NOW_MS;
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => now,
+			fetchSeed: sourceAnswering(() => 404, requested),
+		});
+		const itemIds = Array.from({ length: PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN }, (_unused, index) => index + 1);
+		const first = await service.run(itemIds);
+		expect(first).toMatchObject({ attempted: 25, noSeed: 25, failed: 0 });
+		expect(first.stoppedUnreachable).toBeUndefined();
+		now += 60_000;
+		const second = await service.run(itemIds);
+		expect(second).toMatchObject({ attempted: 0, skippedNoSeedCooldown: 25 });
+		expect(requested).toHaveLength(25);
+		service.dispose();
+	});
+
+	it('Z13 (b): three 404 at the start of the list do not keep the healthy items behind them from being requested', async () => {
+		const requested: number[] = [];
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: sourceAnswering((itemId) => (itemId <= 3 ? 404 : 200), requested),
+		});
+		const outcome = await service.run([1, 2, 3, 4, 5]);
+		expect(requested).toEqual([1, 2, 3, 4, 5]);
+		expect(outcome).toMatchObject({ attempted: 5, noSeed: 3 });
+		expect(outcome.stoppedUnreachable).toBeUndefined();
+		service.dispose();
+	});
+
+	it('Z13 (c): 429, 404, 429, 429 does not cut the pass (the 404 breaks the streak) and only the 404 is marked', async () => {
+		const requested: number[] = [];
+		const service = new PriceSeedBulkRefreshService({
+			serialize: runSerialTaskUnqueued,
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault', now: () => NOW_MS,
+			fetchSeed: sourceAnswering((itemId) => (itemId === 2 ? 404 : 429), requested),
+		});
+		const first = await service.run([1, 2, 3, 4]);
+		expect(requested).toEqual([1, 2, 3, 4]);
+		expect(first).toMatchObject({ attempted: 4, noSeed: 1, failed: 3 });
+		expect(first.stoppedUnreachable).toBeUndefined();
+		const second = await service.run([1, 2, 3, 4]);
+		expect(second).toMatchObject({ skippedNoSeedCooldown: 1, attempted: 3 });
 		service.dispose();
 	});
 

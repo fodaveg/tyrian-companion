@@ -14,7 +14,7 @@
  * does not depend on.
  */
 
-import type { HttpOperationPolicies, HttpTransport } from '../core/http';
+import { HttpTransportError, type HttpOperationPolicies, type HttpTransport } from '../core/http';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import {
 	parseDatawars2History,
@@ -88,15 +88,29 @@ export async function fetchPriceSeed(itemId: number, options: PriceSeedSourceOpt
 			endpoint: 'price_history_seed',
 			maxResponseBytes: PRICE_SEED_MAX_RESPONSE_BYTES,
 		}, options.actionContext);
-		if (response.status < 200 || response.status >= 300) return { status: 'no_seed', reason: 'unreachable' };
+		if (response.status < 200 || response.status >= 300) return { status: 'no_seed', reason: reasonForStatus(response.status) };
 		body = response.body;
-	} catch {
+	} catch (error) {
+		// The transport throws the non-2xx statuses it will not retry, carrying the status.
+		if (error instanceof HttpTransportError && error.kind === 'http' && error.status !== null) {
+			return { status: 'no_seed', reason: reasonForStatus(error.status) };
+		}
 		// Every throw is caught, not just `HttpTransportError`: a bug inside the
 		// transport must not be able to fail activation for a service the plugin
 		// does not depend on. "No seed" is a working state.
 		return { status: 'no_seed', reason: 'unreachable' };
 	}
 	return parseDatawars2History(body, itemId, retrievedAt, options.maxDays ?? PRICE_SEED_MAX_DAYS);
+}
+
+/**
+ * Z13 (9 oct 2026): which statuses mean "the host could not answer now" and which mean "the host
+ * answered that there is nothing". Only the first are `unreachable` (no negative marker, they count
+ * towards the pass's cut-off); any other non-2xx (404, 400, 403, 410...) is `unavailable`, which
+ * does get the 24 h marker so an item without history does not crowd out its neighbours (H18.17).
+ */
+function reasonForStatus(status: number): 'unreachable' | 'unavailable' {
+	return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599) ? 'unreachable' : 'unavailable';
 }
 
 function isoNow(now: () => number): string | null {

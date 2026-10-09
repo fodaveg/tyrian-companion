@@ -39,12 +39,14 @@ export const PRICE_SEED_BULK_REFRESH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * 9 oct 2026 (audit Z13): the 24 h cooldown above records what the host ANSWERED (`empty`,
- * `malformed`: it has no history for that item), never that the host could not be reached. An
- * `unreachable` answer (429, 5xx, timeout) writes no marker, so a pass made while the host was
- * limiting does not silence 25 items for a day; it only counts as a failure of this run. And since
- * every one of those costs a request (up to the transport's 10 s timeout), a pass that sees this
- * many in a row ends there: the host is down or limiting, and the next action tries again.
+ * 9 oct 2026 (audit Z13), what keeps H18.17's purpose. The 24 h marker above is written when the
+ * host ANSWERED that there is nothing: `unavailable` (a non-2xx status that is not transient: 404,
+ * 400, 403, 410...), `empty` and `malformed`. Such an item does not crowd out its neighbours, and
+ * those answers break the run of failures below. It is NOT written for `unreachable` (network or
+ * transport failure, timeout, an oversized body, 408, 425, 429, any 5xx): the host did not say
+ * anything about the item, so a pass made while it was limiting or down must not silence 25 items
+ * for a day; it heals by itself at the next action. Each of those costs a request (up to the
+ * transport's 10 s timeout), so a pass that sees this many `unreachable` in a row ends there.
  */
 export const PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE = 3;
 
