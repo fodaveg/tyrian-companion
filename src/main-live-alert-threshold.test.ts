@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({shell:{openPath:vi.fn(async () => '')}}));
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';
 import type { LiveIngamePort, LiveIngameSample, LiveIngameSource } from './alerts/live-loot-protocol';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from './sessions/live-session-model';
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveJournalEntryV1 } from './sessions/live-session-model';
 import type { LiveSessionLifecycle } from './sessions/live-session-lifecycle';
 import type { LiveSessionEconomy } from './sessions/live-session-economy';
 import type { PublicCatalogGateway } from './catalog/public-catalog-client';
@@ -69,6 +69,27 @@ describe('valuable-drop threshold typed in the real settings panel during a live
 		const intent=f.access.liveSessions.getJournal()[1]!.outbox[0]!;
 		expect(intent.thresholdCopper).toBe(0);
 		expect(intent).toMatchObject({state:'processed',skipReason:null});
+		expect(notice).toHaveBeenCalledOnce(); expect(system).toHaveBeenCalledOnce();
+	});
+});
+
+describe('an alert whose claim storage refused, in the assembled runtime', () => {
+	it('sounds once on the next state change of the session after storage takes the claim, with no new drop, and never again', async () => {
+		const f=await dropWithPrice(await runtime(),21);
+		await typeInThresholdRow(f,'0');
+		const notice=vi.spyOn(f.access.host.ui,'notice'); const system=vi.spyOn(f.access.host.notify,'system');
+		const persistence=(f.access.liveSessions as unknown as {options:{persistence:{replaceLiveJournal(prior:LiveJournalEntryV1,next:LiveJournalEntryV1,owner?:unknown):Promise<boolean>}}}).options.persistence;
+		const replace=persistence.replaceLiveJournal.bind(persistence); let refusing=true;
+		vi.spyOn(persistence,'replaceLiveJournal').mockImplementation(async (prior,next,owner) =>
+			refusing && next.outbox.some((intent) => intent.state === 'dispatching') ? false : await replace(prior,next,owner));
+		const state=() => f.access.liveSessions.getJournal()[1]!.outbox[0]!.state;
+		f.setNow(AT+1000); await f.port.commit(f.sample(1,[[0,12334,2]])); await f.access.liveEconomy.drain();
+		expect(state()).toBe('ready'); expect(notice).not.toHaveBeenCalled();
+		refusing=false;
+		// The next sample changes nothing: no entry with loot reaches the economy, only the state change of the session.
+		f.setNow(AT+2000); await f.port.commit(f.sample(2,[[0,12334,2]])); await f.access.liveEconomy.drain();
+		expect(state()).toBe('processed'); expect(notice).toHaveBeenCalledOnce(); expect(system).toHaveBeenCalledOnce();
+		f.setNow(AT+3000); await f.port.commit(f.sample(3,[[0,12334,2]])); await f.access.liveEconomy.drain();
 		expect(notice).toHaveBeenCalledOnce(); expect(system).toHaveBeenCalledOnce();
 	});
 });

@@ -35,8 +35,10 @@ const QUOTE_FRESH_MS = 15 * 60_000;
 const UNQUOTED_RETRY_MS = 60_000;
 /** One public price batch carries up to 200 ids; a retry pass adds 50 at most so a long unpriced list never turns into a burst. */
 const UNQUOTED_RETRY_MAX = 50;
-/** Older entries whose alert still awaits a price that are decided per pass; the rest wait for the next one. */
+/** Older entries whose alert still awaits a price, or a claim, that are looked at per pass; the rest wait for the next one. */
 const AWAITING_ENTRIES_MAX = 20;
+/** A journal entry's identity within its session. */
+function journalKey(entry: Pick<LiveJournalEntryV1,'epoch' | 'cursor'>): string { return `${entry.epoch}/${String(entry.cursor)}`; }
 
 /**
  * Public catalog and price requests run only in `enrich()`, after the durable measurement ACK, never
@@ -61,6 +63,14 @@ export class LiveSessionEconomy {
 	private bagRaw: BagRawQuote | null = null;
 	private bagAttemptedAt: number | null = null;
 	private bagRefreshing = false;
+	/**
+	 * Alerts a pass decided (`ready`) or was about to decide and could not carry through, by outbox id, with the entry each belongs
+	 * to: the claim is a durable write, and storage or the lease can refuse it. Without this list such an alert was looked at again
+	 * only on a start or a mode switch, and closing the session skipped it. Every pass tries them, and so does `retryUnclaimedAlerts()`.
+	 */
+	private readonly unclaimed = new Map<string,LiveJournalEntryV1>();
+	/** The entry of the pass `retryUnclaimedAlerts()` asked for while that pass waits in the queue: asking again adds nothing. */
+	private retryQueued: LiveJournalEntryV1 | null = null;
 	private lookup: Promise<void> | null = null;
 	private flight = Promise.resolve();
 	private disposed = false;
@@ -155,6 +165,19 @@ export class LiveSessionEconomy {
 		if (this.disposed || entry.observations.length === 0 && entry.outbox.length === 0) return;
 		this.flight = this.flight.then(async () => await this.enrich(entry)).catch((error: unknown) => { this.options.onError(error); });
 	}
+	/**
+	 * Looks again at the alerts a pass decided and could not claim (`unclaimed`). The lifecycle has no signal of its own for
+	 * «storage is back»; what it does when a refused write finally lands is report a state change, so the host calls this from
+	 * there. With nothing owed it does nothing, and at most one such pass waits in the queue however often it is called.
+	 * It goes through `observe`, the path a start or a mode switch already use for the alerts left unsettled: one pass over
+	 * one owed entry, which tries every other owed alert too.
+	 */
+	retryUnclaimedAlerts(): void {
+		if (this.disposed || this.retryQueued !== null || this.unclaimed.size === 0) return;
+		const [owed] = this.unclaimed.values();
+		if (owed === undefined) return;
+		this.retryQueued = owed; this.observe(owed);
+	}
 	async dispose(): Promise<void> { this.disposed = true; await this.flight; await this.lookup; }
 	async drain(): Promise<void> { await this.flight; await this.lookup; }
 	/**
@@ -181,6 +204,9 @@ export class LiveSessionEconomy {
 	}
 	private async enrich(entry: LiveJournalEntryV1): Promise<void> {
 		const lifecycle = this.options.lifecycle; const runtime = lifecycle.getRuntime();
+		if (entry === this.retryQueued) this.retryQueued = null;
+		// An alert of a session that is over is owed to nobody: closing it skipped every alert still `ready`.
+		for (const [outboxId,row] of this.unclaimed) if (runtime?.phase !== 'active' || row.sessionId !== runtime.sessionId) this.unclaimed.delete(outboxId);
 		if (this.disposed || runtime?.phase !== 'active' || runtime.sessionId !== entry.sessionId) return;
 		await this.enrichCurrencies(entry);
 		if (this.disposed || lifecycle.getRuntime()?.phase !== 'active' || lifecycle.getRuntime()?.sessionId !== entry.sessionId) return;
@@ -218,14 +244,26 @@ export class LiveSessionEconomy {
 			new Date(Math.min(...pricedIds.map((id) => this.quotes.get(id)!.capturedAt))).toISOString());
 		// Older entries whose alert is still waiting for a price a failed read never delivered: decided as soon as a later read quotes the item.
 		const waiting = lifecycle.getAwaitingPriceEntries((id) => this.quotes.has(id),AWAITING_ENTRIES_MAX,entry);
-		for (const target of [entry,...waiting]) for (const candidate of target.outbox) {
+		// And the entries with an alert an earlier pass decided and could not claim (see `unclaimed`): this pass tries them again.
+		const visited = new Set([entry,...waiting].map((row) => journalKey(row)));
+		const owed = [...new Map([...this.unclaimed.values()].map((row) => [journalKey(row),row])).values()]
+			.filter((row) => !visited.has(journalKey(row))).slice(0,AWAITING_ENTRIES_MAX);
+		for (const target of [entry,...waiting,...owed]) for (const candidate of target.outbox) {
 			if (this.options.canEmit?.() === false) return;
 			const observation = target.observations.find((row) => row.id === candidate.observationId); if (!observation) continue;
 			const quote = this.quotes.get(observation.idNumber);
 			if (candidate.state === 'awaiting_price' && quote) await lifecycle.updateAlert(candidate.outboxId,(prior) =>
 				decideLiveAlert(prior,observation,quote.unitCopper,this.entities.get(observation.idNumber)?.name ?? String(observation.idNumber),new Date(quote.capturedAt).toISOString(),false,liveRuntimePriceBasis()));
-			const claimed = await lifecycle.updateAlert(candidate.outboxId,(prior) => prior.state === 'ready'
-				? {...prior,state:'dispatching',claimedAt:new Date(this.options.now()).toISOString()} : prior);
+			// The claim is the one durable step that lets an alert sound, and only a `ready` one can take it: an alert already
+			// `dispatching` or `processed` comes back unchanged, so looking at it again can never make it sound twice.
+			const found: {state: LiveAlertOutboxV1['state'] | null} = {state: null};
+			if (candidate.state === 'ready' || candidate.state === 'awaiting_price' && quote) this.unclaimed.set(candidate.outboxId,target);
+			const claimed = await lifecycle.updateAlert(candidate.outboxId,(prior) => { found.state = prior.state; return prior.state === 'ready'
+				? {...prior,state:'dispatching',claimedAt:new Date(this.options.now()).toISOString()} : prior; });
+			// Still owed while it is `ready` (storage refused the claim), while its decision could not be written either (still
+			// awaiting a price this pass has), or while the lifecycle could not look at all (no lease, no storage). Otherwise it is settled.
+			const owedStill = claimed?.state !== 'dispatching' && (found.state === null || found.state === 'ready' || found.state === 'awaiting_price' && quote !== undefined);
+			if (!owedStill) this.unclaimed.delete(candidate.outboxId);
 			if (claimed?.state !== 'dispatching' || claimed.alert === null || this.disposed) continue;
 			if (this.options.canEmit?.() === false) return;
 			const report = await this.options.emit(claimed);

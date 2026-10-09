@@ -694,6 +694,10 @@ function economy(f: ReturnType<typeof fixture>, lifecycle = f.service, catalog: 
 		now:f.options.now,catalog,emit,onError:vi.fn(),onChange:vi.fn()});
 	return {service,emit,requestDetailed,rateLimit};
 }
+/** The quantity of every alert the economy handed to its emitter, in order: one number per time something sounded. */
+function emittedQuantities(emit: { mock: { calls: unknown[][] } }): number[] {
+	return emit.mock.calls.map((call) => (call[0] as { alert: { quantity: number } }).alert.quantity);
+}
 async function positive(f: ReturnType<typeof fixture>) {
 	await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0));
 	f.setNow(AT+1000); await f.service.commit(f.sample(1,2));
@@ -805,6 +809,73 @@ describe('durable live alert outbox', () => {
 			next.outbox.some((intent) => intent.state === 'dispatching') ? false : await replace(prior,next,owner));
 		e.service.observe(entry); await e.service.drain(); expect(e.emit).not.toHaveBeenCalled();
 		expect(f.service.getAlerts()[0]?.state).toBe('ready'); await e.service.dispose(); await f.service.dispose();
+	});
+	it('an alert left ready by a refused claim sounds on a later pass once storage takes the claim, not only on a mode switch', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const replace = f.store.replaceLiveJournal.bind(f.store); let refusing = true;
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) =>
+			refusing && next.outbox.some((intent) => intent.state === 'dispatching') ? false : await replace(prior,next,owner));
+		e.service.observe(entry); await e.service.drain();
+		expect(e.emit).not.toHaveBeenCalled(); expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		refusing = false;
+		// Storage is back. What the economy hears of next is another sample with loot, never again the entry it could not claim.
+		f.setNow(AT+2000); await f.service.commit(f.sample(2,5));
+		e.service.observe(f.service.getJournal()[2]!); await e.service.drain();
+		expect(f.service.getAlerts().map((alert) => alert.state)).toEqual(['processed','processed']);
+		expect(e.emit).toHaveBeenCalledTimes(2);
+		expect(emittedQuantities(e.emit).sort()).toEqual([2,3]);
+		await e.service.dispose(); await f.service.dispose();
+	});
+	it('retries the unclaimed alert when the host asks, with no sample in between, and does nothing while nothing is owed', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const update = vi.spyOn(f.service,'updateAlert');
+		// Nothing was ever refused: asking is free, it does not even reach the lifecycle.
+		e.service.retryUnclaimedAlerts(); await e.service.drain(); expect(update).not.toHaveBeenCalled();
+		const replace = f.store.replaceLiveJournal.bind(f.store); let refusing = true;
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) =>
+			refusing && next.outbox.some((intent) => intent.state === 'dispatching') ? false : await replace(prior,next,owner));
+		e.service.observe(entry); await e.service.drain();
+		expect(e.emit).not.toHaveBeenCalled(); expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		// Still refused: the retry leaves it ready and owed.
+		e.service.retryUnclaimedAlerts(); await e.service.drain();
+		expect(e.emit).not.toHaveBeenCalled(); expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		refusing = false; e.service.retryUnclaimedAlerts(); await e.service.drain();
+		expect(e.emit).toHaveBeenCalledTimes(1); expect(f.service.getAlerts()[0]).toMatchObject({state:'processed',totalCopper:170});
+		update.mockClear(); e.service.retryUnclaimedAlerts(); await e.service.drain();
+		expect(update).not.toHaveBeenCalled(); expect(e.emit).toHaveBeenCalledTimes(1);
+		// The quote the first pass read is still fresh: no retry asked the network again.
+		expect(e.requestDetailed).toHaveBeenCalledTimes(1);
+		await e.service.dispose(); await f.service.dispose();
+	});
+	it('an alert the lifecycle could not even look at, for want of the lease, is decided and sounds once the lease is back', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		f.loseLease(); e.service.observe(entry); await e.service.drain();
+		expect(e.emit).not.toHaveBeenCalled(); expect(f.service.getAlerts()[0]?.state).toBe('awaiting_price');
+		f.regainLease(); e.service.retryUnclaimedAlerts(); await e.service.drain();
+		expect(e.emit).toHaveBeenCalledTimes(1); expect(f.service.getAlerts()[0]).toMatchObject({state:'processed',totalCopper:170});
+		e.service.retryUnclaimedAlerts(); e.service.observe(entry); await e.service.drain(); expect(e.emit).toHaveBeenCalledTimes(1);
+		await e.service.dispose(); await f.service.dispose();
+	});
+	it('an alert already dispatching never sounds again, however often and by whatever path it is looked at', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const replace = f.store.replaceLiveJournal.bind(f.store); let refusing = true;
+		// The claim is refused once; after it lands, the write that would record the delivery is refused for good, so the alert stays `dispatching`.
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) =>
+			refusing && next.outbox.some((intent) => intent.state === 'dispatching') || next.outbox.some((intent) => intent.state === 'processed') ? false : await replace(prior,next,owner));
+		e.service.observe(entry); await e.service.drain();
+		expect(e.emit).not.toHaveBeenCalled(); expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		refusing = false;
+		// Every path at once, before the first of them has claimed anything: two retries and two replays of the entry.
+		e.service.retryUnclaimedAlerts(); e.service.retryUnclaimedAlerts(); e.service.observe(entry); e.service.observe(f.service.getJournal()[1]!);
+		await e.service.drain();
+		expect(e.emit).toHaveBeenCalledTimes(1); expect(f.service.getAlerts()[0]?.state).toBe('dispatching');
+		// And again afterwards: a retry, the mode-switch path, a replay, and a later sample with loot of its own.
+		e.service.retryUnclaimedAlerts(); for (const unsettled of f.service.getUnsettledPriceEntries()) e.service.observe(unsettled);
+		e.service.observe(f.service.getJournal()[1]!); await e.service.drain();
+		f.setNow(AT+2000); await f.service.commit(f.sample(2,5)); e.service.observe(f.service.getJournal()[2]!); e.service.retryUnclaimedAlerts(); await e.service.drain();
+		expect(emittedQuantities(e.emit).filter((quantity) => quantity === 2)).toHaveLength(1);
+		expect(f.service.getAlerts()[0]?.state).toBe('dispatching');
+		await e.service.dispose(); await f.service.dispose();
 	});
 	it('claims once before fanout, caches public quotes, and replay never emits twice', async () => {
 		const f = fixture(); const entry = await positive(f); const e = economy(f);

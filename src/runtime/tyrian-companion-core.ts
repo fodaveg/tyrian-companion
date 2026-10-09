@@ -1324,7 +1324,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			now: () => Date.now(), sessionId: () => crypto.randomUUID(),
 			setInterval: (callback, intervalMs) => window.setInterval(callback, intervalMs),
 			clearInterval: (handle) => { window.clearInterval(handle as number); },
-			onStateChange: () => { this.renderViews(); void this.ingameSessionMarker?.reconcile(); void this.liveSummaries?.observe(); },
+			// A state change is the only word the lifecycle gives when a write storage had refused finally lands, so the alerts a
+			// refused claim left `ready` are looked at again here (nothing happens while none is owed) instead of waiting for a mode switch.
+			onStateChange: () => { this.renderViews(); void this.ingameSessionMarker?.reconcile(); void this.liveSummaries?.observe(); this.liveEconomy?.retryUnclaimedAlerts(); },
 			onError: (error) => { this.recordIngameSessionFailure(error); },
 			preparation: () => this.settings.farmingPreparation,
 			declaredBuild: () => { const declaration = readFarmingDeclaredBuild(this.settings.farmingDeclaredBuild);
