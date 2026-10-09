@@ -93,6 +93,11 @@ export function valueInstantSellDepth(
  * exact bigint multiplication, so it introduces no rounding of its own: all
  * rounding happens once, inside the shared per-unit formula.
  *
+ * This is an EXPECTED commission per unit, deliberately: an expectation over fractional units is not a real
+ * sale with a whole total, so there is nothing to apply `total_sale_price` to. The rule "the commission is over
+ * the total of the sale" governs sales of a real quantity (`valueInstantSellDepth`,
+ * `createTradingPostValueWithPolicy`).
+ *
  * This also means a rare drop is priced as if each unit sold on its own,
  * never as if it conveniently joined an existing large stack to dilute the
  * one-copper floor: nothing here knows whether that stack exists.

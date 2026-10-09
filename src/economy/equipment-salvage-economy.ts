@@ -308,6 +308,8 @@ function instantSellOutputValue(
 	| { status: 'review'; reason: 'output_price_missing' | 'arithmetic_overflow' } {
 	if (output.instantSellUnitCopper === null) return { status: 'review', reason: 'output_price_missing' };
 	if (output.instantSellLevels === null) return { status: 'review', reason: 'output_price_missing' };
+	// Expected commission per unit, on purpose: the quantity is a fractional expectation, not a real sale with a
+	// whole total. "Over the total of the sale" governs real quantities (`marketAlternatives` above).
 	let remaining = BigInt(expectedOutputMicroQuantity);
 	let total = 0n;
 	for (const level of output.instantSellLevels) {
@@ -331,6 +333,7 @@ function listingOutputValue(
 ): { status: 'ready'; grossOutputMicroCopper: number }
 	| { status: 'review'; reason: 'output_price_missing' | 'arithmetic_overflow' } {
 	if (unitCopper === null) return { status: 'review', reason: 'output_price_missing' };
+	// Expected commission per unit (fractional expected quantity), see `instantSellOutputValue`.
 	const value = createTradingPostValueWithPolicy('listing', unitCopper, 1);
 	if (value.status !== 'ok') return { status: 'review', reason: 'arithmetic_overflow' };
 	const grossOutputMicroCopper = safeBigInt(BigInt(value.value.netCopper) * BigInt(expectedOutputMicroQuantity));
