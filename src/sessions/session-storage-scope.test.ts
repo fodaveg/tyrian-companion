@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { openIndexedDb } from '../core/indexed-db-open';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import { COORDINATION_DB_NAME } from './coordination-store';
+import { StorageDeadline } from './storage-deadline';
 import {
 	SESSION_RUNTIME_DB_NAME,
 	SESSION_RUNTIME_DB_VERSION,
@@ -199,6 +200,31 @@ async function seedLegacy(factory: IDBFactory, values: { record?: unknown; owner
 	});
 	database.close();
 }
+
+// 9 Oct 2026 (Z3): `databases()` answers through a promise, not an event; an engine that never settles it left the decision
+// pending, pinned in `this.pending`, so every later ask waited on the same promise.
+describe('a scope whose engine does not answer', () => {
+	it('refuses the ask at its deadline, forgets the pending decision and decides again on the next ask', async () => {
+		const factory = new IDBFactory();
+		let silent = true;
+		const databases = factory.databases.bind(factory);
+		factory.databases = () => silent ? new Promise<never>(() => undefined) : databases();
+		const live = new Map<number, () => void>(); let next = 0;
+		const deadline = new StorageDeadline({
+			schedule: (callback) => { live.set(++next, callback); return next; },
+			cancel: (handle) => { live.delete(handle as number); },
+		});
+		const scope = new SessionStorageScope(factory, VAULT_A, () => CLAIMED_AT, deadline);
+
+		const first = scope.names().then(() => 'names', (error: Error) => error.name);
+		await Promise.resolve(); await Promise.resolve();
+		for (const [handle, callback] of [...live]) { live.delete(handle); callback(); }
+		await expect(first).resolves.toBe('TimeoutError');
+
+		silent = false;
+		await expect(scope.names()).resolves.toEqual(vaultSessionStorageNames(VAULT_A));
+	});
+});
 
 async function readLegacy(factory: IDBFactory): Promise<{ record: unknown; owner: unknown }> {
 	const database = await openRuntime(factory, SESSION_RUNTIME_DB_NAME);

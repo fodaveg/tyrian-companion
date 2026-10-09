@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 567,
+		"catch_clause": 571,
 		"promise_catch": 59,
 		"void_expression": 123,
-		"callback_registration": 224
+		"callback_registration": 226
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -2860,11 +2860,43 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "ba4299d606d5457bd1aaefb9c16b8102d94cc24a",
+					"kind": "catch_clause",
+					"line": 121,
+					"column": 27,
+					"endLine": 121,
+					"endColumn": 111,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "stopTimer",
+						"justification": "The \"stopTimer\" catch is an \"intentional_noop\": a timer that cannot be cancelled fires into an open that already settled, where it does nothing, so there is nothing to report."
+					},
+					"reason": "Allowlisted catch_clause: The \"stopTimer\" catch is an \"intentional_noop\": a timer that cannot be cancelled fires into an open that already settled, where it does nothing, so there is nothing to report. Verified recovery: \"intentional_noop\" in \"stopTimer\"."
+				},
+				{
+					"id": "458b51bffa7f959190e2eba6b37102ce8ff11594",
+					"kind": "catch_clause",
+					"line": 131,
+					"column": 3,
+					"endLine": 131,
+					"endColumn": 119,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "openIndexedDb",
+						"justification": "The \"openIndexedDb\" catch is a \"local_recovery\": a host with no timer (a unit test under Node) gets the open unbounded, as every open was before, and the open's own events still decide its outcome."
+					},
+					"reason": "Allowlisted catch_clause: The \"openIndexedDb\" catch is a \"local_recovery\": a host with no timer (a unit test under Node) gets the open unbounded, as every open was before, and the open's own events still decide its outcome. Verified recovery: \"local_recovery\" in \"openIndexedDb\"."
+				},
+				{
 					"id": "4ba20a6027dd8a98e960483fc1a53b234b48ef36",
 					"kind": "catch_clause",
-					"line": 162,
+					"line": 187,
 					"column": 4,
-					"endLine": 164,
+					"endLine": 189,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2878,9 +2910,9 @@
 				{
 					"id": "4dd783a097e1d34b949a5b61116fcbfe3d64c1e0",
 					"kind": "catch_clause",
-					"line": 191,
+					"line": 225,
 					"column": 4,
-					"endLine": 194,
+					"endLine": 228,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2894,9 +2926,9 @@
 				{
 					"id": "7fdcb0d18f6180c58695cb2f35059d445809d3f3",
 					"kind": "catch_clause",
-					"line": 198,
+					"line": 232,
 					"column": 4,
-					"endLine": 201,
+					"endLine": 235,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6661,11 +6693,28 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "12376db8f3f2a22d0fb7a1558b71c191e1f2876b",
+					"kind": "callback_registration",
+					"line": 96,
+					"column": 13,
+					"endLine": 100,
+					"endColumn": 74,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "open",
+						"justification": "The \"open\" \"then\" callback only records the connection the shared open handed over, so that closing can find it; the failures of the open are handled by the \"catch\" registered next to it."
+					},
+					"reason": "Allowlisted callback_registration: The \"open\" \"then\" callback only records the connection the shared open handed over, so that closing can find it; the failures of the open are handled by the \"catch\" registered next to it. Verified registration: \"then\" in \"open\"."
+				},
+				{
 					"id": "186b5a2e947c400fe948932f6ec097e396b73557",
 					"kind": "promise_catch",
-					"line": 110,
+					"line": 103,
 					"column": 3,
-					"endLine": 110,
+					"endLine": 103,
 					"endColumn": 70,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6680,9 +6729,9 @@
 				{
 					"id": "d03f9608a555c11483c95b728dd9ae5eb96a753b",
 					"kind": "catch_clause",
-					"line": 115,
+					"line": 108,
 					"column": 29,
-					"endLine": 115,
+					"endLine": 108,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6696,9 +6745,9 @@
 				{
 					"id": "9212690ae870c6f0117cee44cc688715d0aa53ec",
 					"kind": "callback_registration",
-					"line": 143,
+					"line": 136,
 					"column": 9,
-					"endLine": 143,
+					"endLine": 136,
 					"endColumn": 53,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6722,11 +6771,28 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "c63ec03c799bb65cbef3010f5e30234ee72a4622",
+					"kind": "callback_registration",
+					"line": 57,
+					"column": 13,
+					"endLine": 61,
+					"endColumn": 74,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "open",
+						"justification": "The \"open\" \"then\" callback only records the connection the shared open handed over, so that closing can find it; the failures of the open are handled by the \"catch\" registered next to it."
+					},
+					"reason": "Allowlisted callback_registration: The \"open\" \"then\" callback only records the connection the shared open handed over, so that closing can find it; the failures of the open are handled by the \"catch\" registered next to it. Verified registration: \"then\" in \"open\"."
+				},
+				{
 					"id": "6dd86925d18ebb3e880e2dfc4fba6d468d70ca3f",
 					"kind": "promise_catch",
-					"line": 71,
+					"line": 64,
 					"column": 3,
-					"endLine": 71,
+					"endLine": 64,
 					"endColumn": 70,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6741,9 +6807,9 @@
 				{
 					"id": "bb0192d98d77a1b747cf6e34228110918a3831cb",
 					"kind": "catch_clause",
-					"line": 76,
+					"line": 69,
 					"column": 29,
-					"endLine": 76,
+					"endLine": 69,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6757,9 +6823,9 @@
 				{
 					"id": "fb3180b1f84270283a5997524e6fffa7c42953f5",
 					"kind": "callback_registration",
-					"line": 97,
+					"line": 90,
 					"column": 9,
-					"endLine": 97,
+					"endLine": 90,
 					"endColumn": 53,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -13356,9 +13422,9 @@
 				{
 					"id": "c813ae35e2e59af105405d02da227260709470fd",
 					"kind": "catch_clause",
-					"line": 286,
+					"line": 304,
 					"column": 5,
-					"endLine": 289,
+					"endLine": 307,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13372,9 +13438,9 @@
 				{
 					"id": "520d83415f2af1e13913349cc5f2a77301744fee",
 					"kind": "catch_clause",
-					"line": 312,
+					"line": 330,
 					"column": 5,
-					"endLine": 315,
+					"endLine": 333,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13388,9 +13454,9 @@
 				{
 					"id": "fbd0cf8aad03f79ab1914a184406d96499bde340",
 					"kind": "catch_clause",
-					"line": 336,
+					"line": 354,
 					"column": 5,
-					"endLine": 339,
+					"endLine": 357,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13404,9 +13470,9 @@
 				{
 					"id": "be88ca61842476f044619b1cd9866d699980e15c",
 					"kind": "catch_clause",
-					"line": 352,
+					"line": 370,
 					"column": 5,
-					"endLine": 355,
+					"endLine": 373,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13420,9 +13486,9 @@
 				{
 					"id": "741050ee92445fca3a9597e1d9c785fe4642e85f",
 					"kind": "catch_clause",
-					"line": 380,
+					"line": 398,
 					"column": 5,
-					"endLine": 380,
+					"endLine": 398,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13436,9 +13502,9 @@
 				{
 					"id": "87ffc19f808126f2b1271bbd6553ebd7783ef25c",
 					"kind": "catch_clause",
-					"line": 387,
+					"line": 405,
 					"column": 5,
-					"endLine": 387,
+					"endLine": 405,
 					"endColumn": 28,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13452,9 +13518,9 @@
 				{
 					"id": "d5a3e83e03a8fc55feaaa9df53e5f5b785b0120b",
 					"kind": "catch_clause",
-					"line": 394,
+					"line": 412,
 					"column": 5,
-					"endLine": 396,
+					"endLine": 414,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13468,9 +13534,9 @@
 				{
 					"id": "bbdd764f7d485361100ece9bddc72d4a37c0c728",
 					"kind": "catch_clause",
-					"line": 408,
+					"line": 426,
 					"column": 5,
-					"endLine": 410,
+					"endLine": 428,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13484,9 +13550,9 @@
 				{
 					"id": "09ec9447ac1a1b357e27b2e7622b3eaba2cc4218",
 					"kind": "catch_clause",
-					"line": 422,
+					"line": 440,
 					"column": 5,
-					"endLine": 422,
+					"endLine": 440,
 					"endColumn": 28,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13500,9 +13566,9 @@
 				{
 					"id": "08ceea7f5824daa6f85bf5cd8bf072f437c9191f",
 					"kind": "catch_clause",
-					"line": 470,
+					"line": 488,
 					"column": 3,
-					"endLine": 470,
+					"endLine": 488,
 					"endColumn": 61,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13516,9 +13582,9 @@
 				{
 					"id": "42bbd3ddadec197102fdc73273ca57ff79aa1cb1",
 					"kind": "catch_clause",
-					"line": 477,
+					"line": 495,
 					"column": 121,
-					"endLine": 477,
+					"endLine": 495,
 					"endColumn": 144,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13532,9 +13598,9 @@
 				{
 					"id": "e4f2eecd2812d2933a213b9b3415d499b9c2f207",
 					"kind": "catch_clause",
-					"line": 483,
+					"line": 501,
 					"column": 107,
-					"endLine": 483,
+					"endLine": 501,
 					"endColumn": 130,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13546,11 +13612,27 @@
 					"reason": "Allowlisted catch_clause: The \"replaceLiveJournal\" \"fallback_return\" boundary returns false on a failed durable CAS, preventing the claim and every emitter effect. Verified recovery: \"fallback_return\" in \"replaceLiveJournal\"."
 				},
 				{
+					"id": "912c96560dfa9c6b374bc272452cbab161a27693",
+					"kind": "catch_clause",
+					"line": 523,
+					"column": 5,
+					"endLine": 527,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "run",
+						"justification": "The \"run\" catch is a \"rethrow\": it only remembers that the engine stayed silent, so the next open is refused for a moment, and rethrows the same error to the caller of the operation, which answers unavailable as for any failed operation."
+					},
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"rethrow\": it only remembers that the engine stayed silent, so the next open is refused for a moment, and rethrows the same error to the caller of the operation, which answers unavailable as for any failed operation. Verified recovery: \"rethrow\" in \"run\"."
+				},
+				{
 					"id": "db97233658a9585d18c5587fec4b52d9c63a9bd3",
 					"kind": "catch_clause",
-					"line": 515,
+					"line": 536,
 					"column": 29,
-					"endLine": 515,
+					"endLine": 536,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13562,11 +13644,27 @@
 					"reason": "Allowlisted catch_clause: The \"discard\" catch is an \"intentional_noop\": closing a connection that is dropped because it is already dead has nothing to report, and the session store operation that dropped it still answers its caller with the outcome of the one retry. Verified recovery: \"intentional_noop\" in \"discard\"."
 				},
 				{
+					"id": "9055d317925b95d7be9091a4a0da22d4f1f452ef",
+					"kind": "catch_clause",
+					"line": 554,
+					"column": 5,
+					"endLine": 557,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "open",
+						"justification": "The \"open\" catch is a \"rethrow\": it only remembers that the engine stayed silent, so the next open is refused for a moment, and rethrows the same error to whoever waited for the open, which answers unavailable as for any failed open."
+					},
+					"reason": "Allowlisted catch_clause: The \"open\" catch is a \"rethrow\": it only remembers that the engine stayed silent, so the next open is refused for a moment, and rethrows the same error to whoever waited for the open, which answers unavailable as for any failed open. Verified recovery: \"rethrow\" in \"open\"."
+				},
+				{
 					"id": "7291ea0c3fa284a7efc57ea2fc32409657a45634",
 					"kind": "catch_clause",
-					"line": 539,
+					"line": 568,
 					"column": 32,
-					"endLine": 539,
+					"endLine": 568,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13580,9 +13678,9 @@
 				{
 					"id": "d6e7962592145212dac67be01594f9a7f9a1536f",
 					"kind": "catch_clause",
-					"line": 545,
+					"line": 574,
 					"column": 6,
-					"endLine": 548,
+					"endLine": 577,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13596,9 +13694,9 @@
 				{
 					"id": "541bbc3f0c15cae2d05afcb6d5ecd5c5f620f8ee",
 					"kind": "catch_clause",
-					"line": 626,
+					"line": 655,
 					"column": 7,
-					"endLine": 629,
+					"endLine": 658,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13742,9 +13840,9 @@
 				{
 					"id": "5e0fa83cfa9500bf7eff5d09eebfff009f6d96d0",
 					"kind": "callback_registration",
-					"line": 33,
+					"line": 35,
 					"column": 3,
-					"endLine": 39,
+					"endLine": 41,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -13759,9 +13857,9 @@
 				{
 					"id": "fc7dfb67d249769db99dcda387d869eba459b187",
 					"kind": "callback_registration",
-					"line": 145,
+					"line": 153,
 					"column": 4,
-					"endLine": 145,
+					"endLine": 153,
 					"endColumn": 107,
 					"registration": "queueMicrotask",
 					"classification": "allowlisted",
@@ -13776,9 +13874,9 @@
 				{
 					"id": "a9cbc56c770646cf2b2d888278e5962e32107896",
 					"kind": "callback_registration",
-					"line": 153,
+					"line": 161,
 					"column": 4,
-					"endLine": 153,
+					"endLine": 161,
 					"endColumn": 85,
 					"registration": "queueMicrotask",
 					"classification": "allowlisted",
@@ -13793,9 +13891,9 @@
 				{
 					"id": "39260b17edb090ce4a451c4446bbed553d8dcc4e",
 					"kind": "void_expression",
-					"line": 166,
+					"line": 174,
 					"column": 2,
-					"endLine": 166,
+					"endLine": 174,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13809,9 +13907,9 @@
 				{
 					"id": "dd042ba4e5e9a203ce178cfca50caf58a9d30a76",
 					"kind": "callback_registration",
-					"line": 166,
+					"line": 174,
 					"column": 7,
-					"endLine": 166,
+					"endLine": 174,
 					"endColumn": 81,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -13826,9 +13924,9 @@
 				{
 					"id": "3dbdbfa41d2ee5d470db0df4b7629b0cd3d914d4",
 					"kind": "callback_registration",
-					"line": 189,
+					"line": 197,
 					"column": 2,
-					"endLine": 189,
+					"endLine": 197,
 					"endColumn": 79,
 					"registration": "queueMicrotask",
 					"classification": "allowlisted",

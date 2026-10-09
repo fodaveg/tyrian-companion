@@ -242,6 +242,18 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 	close(): void {}
 }
 
+/**
+ * How long, after the engine stayed silent, the store refuses to open again without asking. Short on purpose: it only has to
+ * cover the reads one after the other that the boot makes (each of which would wait its own ten seconds for the same
+ * silence), and be over before the heartbeat, which is the retry (5 s).
+ */
+const SILENCE_RETRY_AFTER_MS = 2_000;
+
+export interface SessionStoreDeadlineOptions extends StorageDeadlineOptions {
+	/** The clock the silence is measured with (`Date.now` when absent). */
+	now?: () => number;
+}
+
 /** The open in course, shared by whoever asks meanwhile; `abandon` is how a waiter whose time ran out disowns it. */
 interface OpeningDatabase { readonly promise: Promise<IDBDatabase>; abandon(): void }
 
@@ -251,6 +263,9 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	private opening: OpeningDatabase | null = null;
 	private unavailable = false;
 	private readonly deadline: StorageDeadline;
+	private readonly now: () => number;
+	/** Until when an open is refused without asking the engine, after it stayed silent. */
+	private silentUntil = 0;
 	/** Archives the last listing set aside; the rows stay in the store. */
 	rejectedLegacyArchives: readonly RejectedLegacyArchive[] = [];
 
@@ -263,8 +278,11 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		private readonly factory: IDBFactory,
 		private readonly databaseName: string | (() => Promise<string>) = SESSION_RUNTIME_DB_NAME,
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
-		deadline: StorageDeadlineOptions = {},
-	) { this.deadline = new StorageDeadline(deadline); }
+		private readonly deadlineOptions: SessionStoreDeadlineOptions = {},
+	) {
+		this.deadline = new StorageDeadline(deadlineOptions);
+		this.now = deadlineOptions.now ?? (() => Date.now());
+	}
 
 	async load(context?: LocalDebugPersistenceContext): Promise<SessionRuntimeLoadResult> {
 		const attempt = this.diagnostics.begin('session_runtime', 'read', context);
@@ -497,17 +515,20 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	 * `startIndexedDbTransaction`, which is what marks a dead connection as one.
 	 */
 	private async run<T>(operation: (database: IDBDatabase) => Promise<T>, context?: LocalDebugPersistenceContext): Promise<T> {
-		return await withIndexedDbReopen({
-			open: async () => await this.open(context),
-			discard: (database) => { this.discard(database); },
-		}, async (database) => await this.deadline.bounded(() => operation(database), () => {
-			// An engine that took the transaction and never answers: the connection is dropped (the engine finishes what it
-			// holds and closes it) so the next operation opens anew instead of queueing behind it, and this one is refused
-			// as any unavailable store is. The transaction itself is not cancelled and may still write; see `StorageDeadline`.
-			this.discard(database);
-			return Promise.reject(new StorageUnansweredError());
-		}));
+		try {
+			return await withIndexedDbReopen({
+				open: async () => await this.open(context),
+				discard: (database) => { this.discard(database); },
+			}, operation, this.deadlineOptions);
+		} catch (error) {
+			// `withIndexedDbReopen` bounded the wait and dropped the connection; this is only the memory of the silence.
+			if (error instanceof StorageUnansweredError) this.noteSilence();
+			throw error;
+		}
 	}
+
+	/** The engine has just failed to answer: for a moment the calls that follow are refused without asking it again. */
+	private noteSilence(): void { this.silentUntil = this.now() + SILENCE_RETRY_AFTER_MS; }
 
 	/** Forgets a connection the engine closed or that no longer starts transactions; the next `open()` opens anew. */
 	private discard(database: IDBDatabase): void {
@@ -518,14 +539,22 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	private async open(context?: LocalDebugPersistenceContext): Promise<IDBDatabase> {
 		if (this.unavailable) throw new Error('Session recovery storage is unavailable.');
 		if (this.database) return this.database;
+		// An engine that has just stayed silent is not asked again for a moment: the boot makes several reads in a row, and
+		// each would otherwise wait its own full time for the same silence. The retry that matters (the heartbeat) comes later.
+		if (this.opening === null && this.now() < this.silentUntil) throw new StorageUnansweredError();
 		const opening = this.opening ?? this.beginOpening(context);
 		// Every caller bounds its OWN wait. One whose wait ran out abandons the opening it was waiting for, if it is still
 		// the shared one: the next call opens again, and the database that arrives from the abandoned one is closed (it
 		// would otherwise stay open and unreferenced, and block any later upgrade of this database).
-		return await this.deadline.bounded(() => opening.promise, () => {
-			opening.abandon();
-			return Promise.reject(new StorageUnansweredError());
-		});
+		try {
+			return await this.deadline.bounded(() => opening.promise, () => {
+				opening.abandon();
+				return Promise.reject(new StorageUnansweredError());
+			});
+		} catch (error) {
+			if (error instanceof StorageUnansweredError) this.noteSilence();
+			throw error;
+		}
 	}
 
 	private beginOpening(context?: LocalDebugPersistenceContext): OpeningDatabase {

@@ -15,7 +15,7 @@
  */
 import type { PluginStorage } from 'hebra-plugin-api';
 
-import { startIndexedDbTransaction, withIndexedDbReopen } from '../../core/indexed-db-open';
+import { openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen } from '../../core/indexed-db-open';
 import type { LocalDebugStoragePort } from '../../core/local-debug-writer';
 import type { TyrianLocalStoragePort, TyrianSettingsPort } from '../tyrian-host';
 
@@ -92,19 +92,12 @@ export function createIndexedDbFileBackend(factory: IDBFactory, databaseName: st
 		if (cached !== null) return cached.opening;
 		const entry: { opening: Promise<IDBDatabase>; database: IDBDatabase | null } = {
 			database: null,
-			opening: new Promise<IDBDatabase>((resolve, reject) => {
-				const request = factory.open(databaseName, 1);
-				request.onupgradeneeded = () => {
-					if (!request.result.objectStoreNames.contains(FILE_STORE_NAME)) request.result.createObjectStore(FILE_STORE_NAME);
-				};
-				request.onsuccess = () => {
-					const database = request.result;
-					entry.database = database;
-					database.onclose = () => { forget(database); };
-					resolve(database);
-				};
-				request.onerror = () => reject(request.error ?? new Error('tyrian-local-files: open'));
-			}),
+			// The shared open: it also gives up on an engine that never answers, and closes a database that arrives after that.
+			opening: openIndexedDb({
+				factory, databaseName, databaseVersion: 1, schema: [{ name: FILE_STORE_NAME }],
+				onClose: forget,
+				toError: () => new Error('tyrian-local-files: open'),
+			}).then((database) => { entry.database = database; return database; }),
 		};
 		cached = entry;
 		entry.opening.catch(() => { if (cached === entry) cached = null; });

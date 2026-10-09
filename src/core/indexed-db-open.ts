@@ -15,6 +15,10 @@
  * and this module only says which handler ended the attempt.
  */
 
+import {
+	STORAGE_ANSWER_TIMEOUT_MS, StorageDeadline, StorageUnansweredError, type StorageDeadlineOptions,
+} from '../sessions/storage-deadline';
+
 /** An index as the upgrade handlers declare it today: name plus key path, nothing else. */
 export interface IndexedDbIndexSchema {
 	name: string;
@@ -36,7 +40,7 @@ export interface IndexedDbStoreSchema {
  * `error` may be a `VersionError` from a database written by a newer build.
  * `refused` means the open itself succeeded and `accept` turned it down.
  */
-export type IndexedDbOpenFailureReason = 'error' | 'blocked' | 'refused';
+export type IndexedDbOpenFailureReason = 'error' | 'blocked' | 'refused' | 'timeout';
 
 /**
  * Why a connection was asked to step aside.
@@ -86,6 +90,14 @@ export interface OpenIndexedDbOptions {
 	 * store drops a handle that will throw on every later `transaction()`.
 	 */
 	onClose?: (database: IDBDatabase) => void;
+	/**
+	 * How long the engine may leave the open without any event (`STORAGE_ANSWER_TIMEOUT_MS` when absent). Past it the open
+	 * fails as `timeout`, the way a refusal does; a database the engine hands over later is closed, never kept.
+	 */
+	timeoutMs?: number;
+	/** The timer, for a test; the host's `window.setTimeout` when absent. A host that has none gets the open unbounded. */
+	schedule?: (callback: () => void, milliseconds: number) => unknown;
+	cancel?: (handle: unknown) => void;
 }
 
 /**
@@ -99,12 +111,24 @@ export function openIndexedDb(options: OpenIndexedDbOptions): Promise<IDBDatabas
 	return new Promise<IDBDatabase>((resolve, reject) => {
 		const request = options.factory.open(options.databaseName, options.databaseVersion);
 		let settled = false;
+		// 9 Oct 2026: an engine that takes the open and fires nothing left every store waiting for ever. Only the WAIT is
+		// bounded: the request stays in course, and `onsuccess` below closes whatever arrives after `settled`.
+		let timer: unknown;
+		const schedule = options.schedule ?? ((callback: () => void, milliseconds: number) => window.setTimeout(callback, milliseconds));
+		const cancel = options.cancel ?? ((handle: unknown) => { window.clearTimeout(handle as number); });
+		const stopTimer = (): void => {
+			if (timer === undefined) return;
+			try { cancel(timer); } catch { /* A timer that cannot be cancelled fires into an open already settled. */ }
+		};
 
 		const fail = (reason: IndexedDbOpenFailureReason, error: DOMException | null): void => {
 			if (settled) return;
 			settled = true;
+			stopTimer();
 			reject(options.toError(reason, error));
 		};
+		try { timer = schedule(() => { fail('timeout', null); }, options.timeoutMs ?? STORAGE_ANSWER_TIMEOUT_MS); }
+		catch { timer = undefined; /* No timer in this host (a unit test under Node): the open is unbounded, as before. */ }
 
 		request.onupgradeneeded = () => {
 			applyIndexedDbSchema(request.result, options.schema);
@@ -123,6 +147,7 @@ export function openIndexedDb(options: OpenIndexedDbOptions): Promise<IDBDatabas
 				return;
 			}
 			settled = true;
+			stopTimer();
 			const versionChange = options.onVersionChange;
 			if (versionChange !== undefined) {
 				database.onversionchange = (event) => {
@@ -183,8 +208,17 @@ export interface ReopenableIndexedDb {
  */
 export async function withIndexedDbReopen<T>(
 	connection: ReopenableIndexedDb,
-	run: (database: IDBDatabase) => Promise<T>,
+	operation: (database: IDBDatabase) => Promise<T>,
+	deadlineOptions: StorageDeadlineOptions = {},
 ): Promise<T> {
+	// 9 Oct 2026: a transaction the engine takes and never answers. Only the WAIT is bounded (the transaction stays in
+	// course and may still write; each store guards its writes). The connection it ran on is dropped, so the next
+	// operation opens anew instead of queueing behind it, and this one is refused as any failed operation is.
+	const deadline = new StorageDeadline(deadlineOptions);
+	const run = (database: IDBDatabase): Promise<T> => deadline.bounded(() => operation(database), () => {
+		connection.discard(database);
+		return Promise.reject(new StorageUnansweredError());
+	});
 	const database = await connection.open();
 	try {
 		return await run(database);

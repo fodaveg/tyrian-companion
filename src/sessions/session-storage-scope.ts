@@ -28,6 +28,7 @@
 
 import { openIndexedDb } from '../core/indexed-db-open';
 import { COORDINATION_DB_NAME } from './coordination-store';
+import { StorageDeadline, StorageUnansweredError } from './storage-deadline';
 import {
 	SESSION_RUNTIME_DB_NAME,
 	SESSION_RUNTIME_DB_VERSION,
@@ -165,6 +166,7 @@ export class SessionStorageScope {
 		private readonly factory: IDBFactory,
 		private readonly vaultId: string,
 		private readonly now: () => number = Date.now,
+		private readonly deadline = new StorageDeadline(),
 	) {}
 
 	async names(): Promise<SessionStorageNames> {
@@ -172,7 +174,13 @@ export class SessionStorageScope {
 		const pending = this.pending ?? resolveSessionStorageNames(this.factory, this.vaultId, this.now);
 		this.pending = pending;
 		try {
-			const names = await pending;
+			// 9 Oct 2026: `databases()` and the legacy claim have no event to wait on if the engine is silent. A decision
+			// that does not come in time is not kept (nor is one that failed): whoever asked is refused, the next ask
+			// decides again, and what the abandoned one finds later is dropped.
+			const names = await this.deadline.bounded(() => pending, () => {
+				if (this.pending === pending) this.pending = null;
+				return Promise.reject(new StorageUnansweredError());
+			});
 			this.resolved ??= names;
 			return { ...this.resolved };
 		} finally {

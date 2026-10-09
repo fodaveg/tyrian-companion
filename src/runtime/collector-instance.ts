@@ -13,6 +13,7 @@
 
 import { openIndexedDb } from '../core/indexed-db-open';
 import type { CollectorMode } from '../core/settings';
+import { StorageDeadline } from '../sessions/storage-deadline';
 
 export const COLLECTOR_INSTANCE_DB = 'tyrian-companion-collector';
 const STORE = 'instance-v1';
@@ -78,7 +79,10 @@ async function readOrSeed<T extends string>(
 		onVersionChange: 'close',
 		toError: () => new Error('Collector instance store could not be opened.'),
 	});
-	return await new Promise<T>((resolve, reject) => {
+	// 9 Oct 2026: the plugin does not start until this settles, and a transaction the engine takes and never answers settles
+	// nothing. The wait ends as a failed read does (the caller falls back to its seed); the transaction stays in course and
+	// closes the database whenever it ends. A write that lands late is the same value the caller was going to use.
+	const transaction = new Promise<T>((resolve, reject) => {
 		const transaction = database.transaction(STORE, 'readwrite');
 		const store = transaction.objectStore(STORE);
 		const request = store.get(key);
@@ -99,4 +103,5 @@ async function readOrSeed<T extends string>(
 		transaction.onerror = () => { database.close(); reject(new Error('Collector instance value could not be read.')); };
 		transaction.onabort = () => { database.close(); reject(new Error('Collector instance value read was aborted.')); };
 	});
+	return await new StorageDeadline().bounded(() => transaction, () => Promise.reject(new Error('Collector instance store did not answer.')));
 }

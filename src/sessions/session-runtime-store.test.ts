@@ -25,7 +25,7 @@ import {
 	SESSION_RUNTIME_STORE_NAME,
 } from './session-runtime-store';
 import type { SessionStartContext } from './session-start-capture';
-import { closeUnderneath, emitEngineClose, hangStorage, holdNextOpen, killStorage, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
+import { closeUnderneath, emitEngineClose, hangStorage, holdNextOpen, macrotasks, killStorage, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 
 vi.mock('../core/canonical-sha256', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('../core/canonical-sha256')>();
@@ -676,12 +676,16 @@ describe('session runtime persistence', () => {
 	// ever reached `catch`, and `await sessions.initialize()` at plugin start waited for ever. Timers are the test's own.
 	describe('an engine that does not answer', () => {
 		function manualTimers() {
-			const live = new Map<number, () => void>(); let next = 0;
+			const live = new Map<number, () => void>(); let next = 0; let time = 1_000_000;
 			return {
+				// The store's clock: firing the timers is ten seconds passing.
+				now: () => time,
+				/** The heartbeat's turn: later than the moment the store refuses to ask again. */
+				later() { time += 5_000; },
 				schedule: (callback: () => void) => { live.set(++next, callback); return next; },
 				cancel: (handle: unknown) => { live.delete(handle as number); },
 				get pending() { return live.size; },
-				fire() { for (const [handle, callback] of [...live]) { live.delete(handle); callback(); } },
+				fire() { time += 10_000; for (const [handle, callback] of [...live]) { live.delete(handle); callback(); } },
 			};
 		}
 
@@ -694,8 +698,15 @@ describe('session runtime persistence', () => {
 			timers.fire();
 			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
 
+			// For a moment the engine is not asked again: a second read right after answers at once, not after its own ten seconds.
+			const opens = vi.spyOn(tracked.factory, 'open');
+			await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
+			expect(opens).not.toHaveBeenCalled();
+			expect(timers.pending).toBe(0);
+
 			// The hung open is not kept: the call after it makes its own attempt, which now succeeds.
 			resumeStorage(tracked);
+			timers.later();
 			await expect(store.load()).resolves.toEqual({ status: 'empty' });
 			expect(tracked.connections).toHaveLength(1);
 			store.close();
@@ -712,6 +723,7 @@ describe('session runtime persistence', () => {
 			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
 
 			resumeStorage(tracked);
+			timers.later();
 			await expect(store.load()).resolves.toEqual({ status: 'empty' });
 			expect(tracked.connections).toHaveLength(2);
 			store.close();
@@ -728,11 +740,12 @@ describe('session runtime persistence', () => {
 			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
 
 			// The next call opens its own connection and works on it.
+			timers.later();
 			await expect(store.save(activeRecord())).resolves.toEqual({ status: 'saved' });
 			expect(tracked.connections).toHaveLength(2);
 			const [late, current] = tracked.connections as [IDBDatabase, IDBDatabase];
 			answer();
-			await new Promise((resolve) => setTimeout(resolve, 20));
+			await macrotasks();
 			// The late one is closed (its transactions throw); the cached one keeps serving; no third open took its place.
 			expect(() => late.transaction(SESSION_RUNTIME_STORE_NAME, 'readonly')).toThrow();
 			expect(() => current.transaction(SESSION_RUNTIME_STORE_NAME, 'readonly')).not.toThrow();
@@ -760,7 +773,7 @@ describe('session runtime persistence', () => {
 			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
 			const unhandled = vi.fn(); process.on('unhandledRejection', unhandled);
 			answer();
-			await new Promise((resolve) => setTimeout(resolve, 20));
+			await macrotasks();
 			process.off('unhandledRejection', unhandled);
 			expect(unhandled).not.toHaveBeenCalled();
 			// The store is not left in a stuck state: the next call tries by itself and gets the engine's own refusal.

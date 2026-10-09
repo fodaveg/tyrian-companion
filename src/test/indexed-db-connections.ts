@@ -15,17 +15,19 @@ export interface TrackedIndexedDb {
 	hung: boolean;
 	/** When set, `hung` applies only to the databases it names: the rest of the plugin's storage keeps answering. */
 	hangOnly: ((databaseName: string) => boolean) | null;
+	/** While true, `hung` leaves the opens alone: the engine opens fine and answers no transaction (`hangTransactions`). */
+	opensAnswer: boolean;
 	/** Armed by `holdNextOpen`: the next open is made for real and answered only when its release is called. */
 	holdOpen: { answer: () => void } | null;
 }
 
 export function trackedIndexedDb(): TrackedIndexedDb {
 	const factory = new IDBFactory();
-	const tracked: TrackedIndexedDb = { factory, connections: [], down: false, hung: false, hangOnly: null, holdOpen: null };
+	const tracked: TrackedIndexedDb = { factory, connections: [], down: false, hung: false, hangOnly: null, opensAnswer: false, holdOpen: null };
 	const isHung = (databaseName: string): boolean => tracked.hung && (tracked.hangOnly?.(databaseName) ?? true);
 	const open = factory.open.bind(factory);
 	factory.open = (name: string, version?: number) => {
-		if (isHung(name)) return unanswered<IDBOpenDBRequest>();
+		if (isHung(name) && !tracked.opensAnswer) return unanswered<IDBOpenDBRequest>();
 		if (tracked.down) return refusedOpen();
 		const request = open(name, version);
 		const held = tracked.holdOpen;
@@ -49,6 +51,12 @@ export function trackedIndexedDb(): TrackedIndexedDb {
  * one of them waits for ever, which neither `killStorage` nor an abort produces: both answer.
  */
 export function hangStorage(tracked: TrackedIndexedDb): void {
+	tracked.hung = true;
+}
+
+/** The opens succeed, but from now on every transaction is accepted and answered with nothing (the first read that never comes back). */
+export function hangTransactions(tracked: TrackedIndexedDb): void {
+	tracked.opensAnswer = true;
 	tracked.hung = true;
 }
 
@@ -219,4 +227,9 @@ function heldOpen(request: IDBOpenDBRequest, hold: { answer: () => void }): IDBO
 	request.onblocked = (event) => { tell(() => { stub.onblocked?.call(request, event); }); };
 	hold.answer = () => { answered = true; for (const fire of owed.splice(0)) fire(); };
 	return stub as unknown as IDBOpenDBRequest;
+}
+
+/** Lets the fake engine take its turns: it answers through macrotasks, which a microtask flush never reaches. */
+export async function macrotasks(turns = 10): Promise<void> {
+	for (let turn = 0; turn < turns; turn += 1) await new Promise<void>((resolve) => { setImmediate(resolve); });
 }

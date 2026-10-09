@@ -475,7 +475,8 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		// The advisor yields to the event loop between its passes (`yieldToEventLoop`), on a timer
 		// this harness never fires: they resume on the next macrotask instead (a microtask would also
 		// fire every request's timeout before its answer).
-		(window as unknown as { setTimeout: unknown }).setTimeout = (callback: () => void) => setImmediate(callback);
+		// Only the zero-delay yields run: a storage wait (ten seconds) must not fire the moment it is armed.
+		(window as unknown as { setTimeout: unknown }).setTimeout = (callback: () => void, milliseconds = 0) => milliseconds === 0 ? setImmediate(callback) : 0;
 		const actions = world.plugin as unknown as ConsultConnectionActions;
 		const notify = vi.spyOn(world.plugin, 'notifyConsultMode');
 

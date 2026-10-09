@@ -9,7 +9,7 @@ import {
 	type IndexedDbOpenFailureReason,
 	type IndexedDbVersionChangeKind,
 } from './indexed-db-open';
-import { closeUnderneath, emitEngineClose, trackedIndexedDb, type TrackedIndexedDb } from '../test/indexed-db-connections';
+import { closeUnderneath, emitEngineClose, hangStorage, holdNextOpen, macrotasks, trackedIndexedDb, type TrackedIndexedDb } from '../test/indexed-db-connections';
 
 /**
  * The shared open handshake, proved once instead of ten times.
@@ -272,6 +272,89 @@ describe('openIndexedDb', () => {
 		expect(closed).toEqual([]);
 		emitEngineClose(database);
 		expect(closed).toEqual([database]);
+	});
+});
+
+// 9 Oct 2026 (Z3): an engine that takes the open and fires no event. The helper is every store's open, so it carries the bound.
+describe('openIndexedDb against an engine that does not answer', () => {
+	function timers() {
+		const live = new Map<number, () => void>(); let next = 0;
+		return {
+			schedule: (callback: () => void) => { live.set(++next, callback); return next; },
+			cancel: (handle: unknown) => { live.delete(handle as number); },
+			get pending() { return live.size; },
+			fire() { for (const [handle, callback] of [...live]) { live.delete(handle); callback(); } },
+		};
+	}
+
+	it('rejects as a timeout, with the store\'s own error, when the open never answers', async () => {
+		const tracked = trackedIndexedDb(); const clock = timers(); const reasons: IndexedDbOpenFailureReason[] = [];
+		hangStorage(tracked);
+		const opening = openIndexedDb({
+			factory: tracked.factory, databaseName: databaseName('never'), databaseVersion: 1, schema: [{ name: 'records' }],
+			toError: (reason) => { reasons.push(reason); return new Error(`store: ${reason}`); }, ...clock,
+		});
+		const outcome = opening.then(() => 'opened', (error: Error) => error.message);
+		await Promise.resolve();
+		clock.fire();
+		await expect(outcome).resolves.toBe('store: timeout');
+		expect(reasons).toEqual(['timeout']);
+	});
+
+	it('closes a database the engine hands over after the wait ran out', async () => {
+		const tracked = trackedIndexedDb(); const clock = timers();
+		const name = databaseName('late');
+		const answer = holdNextOpen(tracked);
+		const opening = openIndexedDb({
+			factory: tracked.factory, databaseName: name, databaseVersion: 1, schema: [{ name: 'records' }],
+			toError: (reason) => new Error(reason), ...clock,
+		});
+		const outcome = opening.then(() => 'opened', (error: Error) => error.message);
+		await macrotasks();
+		clock.fire();
+		await expect(outcome).resolves.toBe('timeout');
+		answer();
+		await macrotasks();
+		expect(() => tracked.connections[0]!.transaction('records', 'readonly')).toThrow();
+		// Nothing holds the orphan: another context deletes the database without being blocked.
+		await new Promise<void>((resolve, reject) => {
+			const request = tracked.factory.deleteDatabase(name);
+			request.onsuccess = () => resolve(); request.onblocked = () => reject(new Error('blocked by an orphan'));
+			request.onerror = () => reject(request.error ?? new Error('delete failed'));
+		});
+	});
+
+	it('leaves no timer behind when the open answers in time', async () => {
+		const tracked = trackedIndexedDb(); const clock = timers();
+		const database = await openIndexedDb({
+			factory: tracked.factory, databaseName: databaseName('prompt'), databaseVersion: 1, schema: [{ name: 'records' }],
+			toError: () => new Error('unused'), ...clock,
+		});
+		expect(clock.pending).toBe(0);
+		database.close();
+	});
+});
+
+describe('withIndexedDbReopen against a transaction that does not answer', () => {
+	it('refuses the operation at its deadline and drops the connection it ran on', async () => {
+		const tracked = trackedIndexedDb(); const discarded: IDBDatabase[] = [];
+		let cached: IDBDatabase | null = null;
+		const live = new Map<number, () => void>(); let next = 0;
+		const connection = {
+			open: async () => cached ??= await openIndexedDb({
+				factory: tracked.factory, databaseName: databaseName('silent-tx'), databaseVersion: 1, schema: [{ name: 'records' }],
+				toError: () => new Error('open failed'),
+			}),
+			discard: (database: IDBDatabase) => { discarded.push(database); if (cached === database) cached = null; },
+		};
+		const clock = { schedule: (callback: () => void) => { live.set(++next, callback); return next; }, cancel: (handle: unknown) => { live.delete(handle as number); } };
+		await connection.open();
+		const never = async (): Promise<number> => await new Promise<number>(() => undefined);
+		const outcome = withIndexedDbReopen(connection, never, clock).then(() => 'done', (error: Error) => error.name);
+		await Promise.resolve(); await Promise.resolve();
+		for (const [handle, callback] of [...live]) { live.delete(handle); callback(); }
+		await expect(outcome).resolves.toBe('TimeoutError');
+		expect(discarded).toEqual([tracked.connections[0]]);
 	});
 });
 
