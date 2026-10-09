@@ -935,7 +935,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const sessionStorage = new SessionStorageScope(indexedDB, vaultId);
 		const coordinator = new ActiveSessionLeaseCoordinator({
 			databaseName: async () => await sessionStorage.coordinationDatabaseName(),
-			diagnostics: this.persistenceDiagnostics('session', 'session_lease'),
+			diagnostics: this.persistenceDiagnostics('session', 'session_lease'), locks: host.kv.locks ?? null,
 		});
 		// One shared cooldown: a 429 seen by session capture, assisted detection,
 		// inventory advisor, or price history blocks every other caller until it clears.
