@@ -654,6 +654,9 @@ export class TyrianCompanionSettingTab {
 				group: 'main',
 				name: this.t('settings.viewPlacement.name'), desc: this.t('settings.viewPlacement.desc'),
 				render: (setting, save) => {
+					// Choosing the main screen from the host's Settings leaves the player on the notes
+					// when they close: the row says where the plugin is opened from.
+					setting.descEl.createDiv({ cls: 'tyrian-companion-settings__hint', text: this.t('settings.viewPlacement.hint') });
 					setting.addDropdown((dropdown) =>
 						dropdown
 							.addOption('main', this.t('settings.viewPlacement.main'))

@@ -246,14 +246,21 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 
 /** A recording dropdown for a settings row rendered outside a page, as the host's settings search does. */
 function recordingDropdown() {
-	const state = { options: [] as Array<[string, string]>, shown: null as string | null, change: async (_value: string): Promise<void> => undefined };
+	const state = {
+		options: [] as Array<[string, string]>, shown: null as string | null, change: async (_value: string): Promise<void> => undefined,
+		/** The lines the row appends under its description, with their class. */
+		hints: [] as Array<{ cls?: string; text?: string }>,
+	};
 	const dropdown = {
 		addOption: (value: string, display: string) => { state.options.push([value, display]); return dropdown; },
 		setValue: (value: string) => { state.shown = value; return dropdown; },
 		setDisabled: () => dropdown,
 		onChange: (callback: (value: string) => Promise<void>) => { state.change = callback; return dropdown; },
 	};
-	const row = { addDropdown: (build: (control: typeof dropdown) => unknown) => { build(dropdown); return row; } };
+	const row = {
+		descEl: { createDiv: (options: { cls?: string; text?: string }) => { state.hints.push(options); return {}; } },
+		addDropdown: (build: (control: typeof dropdown) => unknown) => { build(dropdown); return row; },
+	};
 	return { state, row };
 }
 
@@ -303,6 +310,10 @@ describe('main screen or sidebar: this device\'s choice, behind a host capabilit
 		definition.render(row as never);
 		expect(state.options).toEqual([['main', 'Main screen'], ['sidebar', 'Sidebar']]);
 		expect(state.shown).toBe('main');
+		// Chosen from the host's Settings, the main screen is not what closing them shows: the row says where it opens.
+		expect(state.hints).toEqual([{
+			cls: 'tyrian-companion-settings__hint', text: 'On the main screen, open it with the Tyrian Companion button in Hebra\'s bar.',
+		}]);
 		expect(device.size).toBe(0);
 
 		const settingsSavesBefore = saveSettings.mock.calls.length;
@@ -477,6 +488,70 @@ describe('the three sections on a host with a main screen', () => {
 		await run('open-sale');
 		expect(revealed).toEqual([]);
 		expect(revealedViews).toEqual([SALE_VIEW_TYPE]);
+	});
+
+	it.each([
+		['open-companion', 'Open companion', 'session'],
+		['open-inventory-advisor', 'Open inventory advisor', 'inventory'],
+		['open-sale', 'Open Halloween sale', 'sale'],
+	])('has a palette command for each section that enters it on the main screen: %s', async (id, name, section) => {
+		const { host, registered, revealed, revealedViews } = mainScreenHost();
+		await createTyrianRuntime(host).start();
+		const command = registered.commands.find((candidate) => candidate.id === id)!;
+		expect(command.name).toBe(name);
+		// Available with nothing started: a way into the section in any layout of the host.
+		expect(command.checkCallback?.(true)).toBe(true);
+
+		command.checkCallback?.(false);
+
+		await vi.waitFor(() => expect(revealed).toEqual([[TYRIAN_MAIN_VIEW_TYPE, section]]));
+		expect(revealedViews).toEqual([]);
+	});
+
+	it('relabels the listed sections when the language is changed in Settings, and only then', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered, patched, records } = mainScreenHost();
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		// `updateSettings` is refused until the runtime is ready.
+		registered.ready[0]!();
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({ action: 'plugin_load', state: 'runtime_initialize', phase: 'success' }));
+		}, { timeout: 10_000 });
+		expect(runtime.settings.language).toBe('en');
+
+		// A save that leaves the language alone relabels nothing.
+		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 20_000 })).resolves.toMatchObject({ status: 'saved' });
+		expect(patched).toEqual([]);
+
+		await expect(runtime.updateSettings({ language: 'es' })).resolves.toMatchObject({ status: 'saved' });
+		expect(patched).toEqual([
+			[TYRIAN_MAIN_VIEW_TYPE, 'session', { title: 'Sesión' }],
+			[TYRIAN_MAIN_VIEW_TYPE, 'inventory', { title: 'Inventario' }],
+			[TYRIAN_MAIN_VIEW_TYPE, 'sale', { title: 'Venta' }],
+		]);
+		await runtime.stop();
+	});
+
+	it('keeps the choice it had, and what it had registered, when the device storage refuses the write', async () => {
+		const failure = new Error('The device storage is full.');
+		const { host, registered, sectionsViews, disposed } = mainScreenHost();
+		const refusing: TyrianHost = {
+			...host,
+			localStorage: { load: () => null, save: () => { throw failure; } },
+		};
+		const runtime = createTyrianRuntime(refusing);
+		await runtime.start();
+
+		await expect(runtime.updateViewPlacement('sidebar')).rejects.toBe(failure);
+
+		expect(runtime.getViewPlacement()).toBe('main');
+		expect(runtime.hostListsSections()).toBe(true);
+		expect(disposed).toEqual([]);
+		expect(sectionsViews).toHaveLength(1);
+		expect(registered.views).toEqual([]);
 	});
 
 	it('tells the host the new labels of the listed sections after a language change, and nothing while they are views of their own', async () => {
