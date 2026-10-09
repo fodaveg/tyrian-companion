@@ -403,7 +403,26 @@ describe('live session summary: figures that must not mislead', () => {
 		expect(content).not.toContain('| Saco grande |');
 		expect(content).toContain('Ligados a cuenta (fuera de la lista y del valor): Saco grande');
 		expect((await render({ itemMeta: { ...META, [STAPLE]: { flags: ['SoulbindOnAcquire'], type: 'Trophy' } } })).content).not.toContain('| Saco grande |');
-		expect((await render({ itemMeta: { ...META, [STAPLE]: { flags: ['NoSell'], type: 'Trophy' } } })).content).not.toContain('| Saco grande |');
+	});
+
+	it('values an item flagged NoSell (no vendor sale) like any other: it is traded on the bazaar', async () => {
+		const noSell = { flags: ['NoSalvage', 'NoSell', 'BulkConsume'], type: 'Trophy' };
+		const { content } = await render({ itemMeta: { ...META, [STAPLE]: noSell } });
+		expect(content).toContain('| Saco grande |');
+		// The same net as the item with no flags at all.
+		expect(content.match(/- Neto estimado: (.+)/u)?.[1]).toBe((await render({ itemMeta: META })).content.match(/- Neto estimado: (.+)/u)?.[1]);
+		expect(content).not.toContain('Ligados a cuenta');
+	});
+
+	it('keeps an item that binds on use in the value, and sends a NoSell item without a price to «sin precio»', async () => {
+		for (const flag of ['AccountBindOnUse', 'SoulBindOnUse']) {
+			const { content } = await render({ itemMeta: { ...META, [STAPLE]: { flags: [flag], type: 'Trophy' } } });
+			expect(content).toContain('| Saco grande |');
+			expect(content).not.toContain('Ligados a cuenta');
+		}
+		const { content } = await render({ fixture: { prices: false }, itemMeta: { ...META, [STAPLE]: { flags: ['NoSell'], type: 'Trophy' } } });
+		expect(content).not.toContain('Ligados a cuenta');
+		expect(content).toContain('Sin precio de bazar (fuera del valor): Saco grande ×30');
 	});
 
 	it('marks the value as an upper bound when the binding of an item is unknown', async () => {

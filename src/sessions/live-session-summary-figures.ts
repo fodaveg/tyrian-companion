@@ -11,8 +11,13 @@ export const SUMMARY_STAPLE_MIN_ENTRIES = 10;
 /** Below this observed share the unobserved intervals are listed instead of folded into one line. */
 export const SUMMARY_FOLD_COVERAGE = 0.9;
 const GOLD_CURRENCY_ID = 1;
-/** `/v2/items` flags that take an item out of «sell now» and out of the value. */
-const UNSELLABLE_FLAGS = ['AccountBound', 'SoulbindOnAcquire', 'NoSell'] as const;
+/**
+ * `/v2/items` flags that take an item out of «sell now» and out of the value: the ones that forbid TRADING it, which is what the
+ * value is (a bazaar price). `NoSell` is not one of them: it forbids selling to a VENDOR (NPC), and such items (a candy
+ * piece, a mechanical gear) are traded on the bazaar. `AccountBindOnUse` and `SoulBindOnUse` are not either: the item binds
+ * when it is used, so until then it still sells. An item with any of those three is valued like any other.
+ */
+const UNSELLABLE_FLAGS = ['AccountBound', 'SoulbindOnAcquire'] as const;
 
 /** What the plugin knows of an item from the public catalog; an absent entry means it does not know. */
 export interface SummaryItemMeta {
@@ -37,7 +42,7 @@ export interface SummaryFigures {
 	maps: { mapId: number; ms: number }[];
 	/** Sellable items that came in, best value first (priced ones before unpriced). */
 	sellable: SummaryItemRow[];
-	/** Items that came in and are bound to the account (or cannot be sold): out of the list and out of the value. */
+	/** Items that came in and are bound to the account (or soulbound on acquire): out of the list and out of the value. */
 	boundItemIds: number[];
 	/** Sellable items without a bazaar price: apart, out of the value. */
 	unpriced: SummaryItemRow[];
