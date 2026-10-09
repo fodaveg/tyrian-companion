@@ -22,12 +22,55 @@ describe('LiveSessionLootTracker', () => {
 
 		expect(tracker.getState()).toMatchObject({
 			status: 'observing', knownTotalCopper: 51_000,
-			rows: [{ itemId: 19722, name: 'Pimpollo de madera ancestral', quantity: 3, unitCopper: 17_000, totalCopper: 51_000 }],
+			rows: [{ itemId: 19722, name: 'Pimpollo de madera ancestral', quantity: 3, unitCopper: 20_000, totalCopper: 51_000 }],
 		});
 		expect(onAlert).toHaveBeenCalledOnce();
 		expect(onAlert).toHaveBeenCalledWith({ kind: 'valuable_loot', itemId: 19722, name: 'Pimpollo de madera ancestral',
 			quantity: 2, totalCopper: 34_000, priceStatus: 'known', reason: 'valuable' });
 		expect(tracker.displayNames()).toEqual({ 'item:19722': 'Pimpollo de madera ancestral' });
+	});
+
+	it('takes the commission over the total of a cheap pile: 250 units at 8 c are 1 700 c, in the row, the total and the alert', async () => {
+		const onAlert = vi.fn();
+		const gateway = {
+			requestDetailed: vi.fn(async (path: string) => path.startsWith('items?')
+				? { status: 200, headers: {}, body: [{ id: 24, name: 'Mena de cobre' }] }
+				: { status: 200, headers: {}, body: [{ id: 24, whitelisted: true,
+					buys: { quantity: 9_000, unit_price: 8 }, sells: { quantity: 9_000, unit_price: 10 } }] }),
+		};
+		// One unit nets 6 c (each of the two fees has a minimum of 1 c), so 250 times that is 1 500 c: under this threshold.
+		const tracker = new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 1_600, onAlert });
+		tracker.begin('session');
+		await tracker.observe('session', delta(24, 250));
+
+		expect(tracker.getState()).toMatchObject({
+			knownTotalCopper: 1_700, hasUnknownValue: false,
+			rows: [{ itemId: 24, quantity: 250, unitCopper: 8, totalCopper: 1_700, priceStatus: 'known' }],
+		});
+		expect(onAlert).toHaveBeenCalledOnce();
+		expect(onAlert).toHaveBeenCalledWith({ kind: 'valuable_loot', itemId: 24, name: 'Mena de cobre',
+			quantity: 250, totalCopper: 1_700, priceStatus: 'known', reason: 'valuable' });
+	});
+
+	it('orders the rows by what each pile nets, and values at zero a sale the two minimum fees swallow', async () => {
+		const gateway = {
+			requestDetailed: vi.fn(async (path: string) => path.startsWith('items?')
+				? { status: 200, headers: {}, body: [{ id: 1, name: 'Uno' }, { id: 2, name: 'Diez' }, { id: 3, name: 'Nada' }] }
+				: { status: 200, headers: {}, body: [
+					{ id: 1, whitelisted: true, buys: { quantity: 9, unit_price: 9 }, sells: { quantity: 9, unit_price: 10 } },
+					{ id: 2, whitelisted: true, buys: { quantity: 9, unit_price: 1 }, sells: { quantity: 9, unit_price: 2 } },
+					{ id: 3, whitelisted: true, buys: { quantity: 9, unit_price: 1 }, sells: { quantity: 9, unit_price: 2 } }] }),
+		};
+		const tracker = new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 1_000_000 });
+		tracker.begin('session');
+		await tracker.observe('session', { ...delta(1, 1), itemChanges: [
+			{ id: 1, before: 0, after: 1, delta: 1 }, { id: 2, before: 0, after: 10, delta: 10 }, { id: 3, before: 0, after: 1, delta: 1 }] });
+
+		// Ten units at 1 c are one sale of 10 c that nets 8 c; one unit at 9 c nets 7 c; one unit at 1 c nets nothing, and is still priced.
+		expect(tracker.getState()).toMatchObject({
+			knownTotalCopper: 15, hasUnknownValue: false,
+			rows: [{ itemId: 2, totalCopper: 8 }, { itemId: 1, totalCopper: 7 }, { itemId: 3, totalCopper: 0, priceStatus: 'known' }],
+		});
 	});
 
 	it('reconciles the accumulated feed against the final session net without emitting a second alert', async () => {

@@ -4,6 +4,7 @@ import type { StorageDelta } from '../account/storage-delta-model';
 import type { AlertPriceStatus, AlertV1 } from '../alerts/alert-contract';
 import { decideLootAlert } from '../alerts/loot-alert-criteria';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
+import { bestSaleNetCopper } from '../economy/gw2-fees';
 import { parsePublicTradingPostPriceBatch } from '../economy/session-price-snapshot';
 import { SESSION_SACK_ITEM_IDS } from './session-economy-evidence';
 
@@ -11,7 +12,9 @@ export interface LiveSessionLootRow {
 	readonly itemId: number;
 	readonly name: string;
 	readonly quantity: number;
+	/** The best buy order per unit as the trading post gave it, before commission. */
 	readonly unitCopper: number | null;
+	/** What selling the whole pile to that buy order nets: the commission is taken once over quantity x unit price. */
 	readonly totalCopper: number | null;
 	/** Whether `unitCopper` is a real quote, a confirmed absence of one, or a lookup that never completed. */
 	readonly priceStatus: AlertPriceStatus;
@@ -185,7 +188,8 @@ export class LiveSessionLootTracker {
 		const unique = [...new Set(ids)].sort((left, right) => left - right);
 		if (unique.length === 0) return { names: new Map(), prices: new Map(), priceStatuses: new Map(), error: null };
 		const names = new Map<number, string>();
-		const netPrices = new Map<number, number>();
+		// The bid as read. What a pile nets is worked out where its quantity is known, over the total of the sale.
+		const bidPrices = new Map<number, number>();
 		const priceStatuses = new Map<number, AlertPriceStatus>();
 		for (let offset = 0; offset < unique.length; offset += PUBLIC_BATCH_SIZE) {
 			const batch = unique.slice(offset, offset + PUBLIC_BATCH_SIZE);
@@ -215,7 +219,7 @@ export class LiveSessionLootTracker {
 				const parsed = parsePublicTradingPostPriceBatch(prices.value.body, new Set(batch));
 				for (const quote of parsed.items) {
 					if (quote.bid !== null) {
-						netPrices.set(quote.itemId, Math.floor(quote.bid.unitCopper * 0.85));
+						bidPrices.set(quote.itemId, quote.bid.unitCopper);
 						priceStatuses.set(quote.itemId, 'known');
 					} else {
 						priceStatuses.set(quote.itemId, 'unquoted');
@@ -227,10 +231,10 @@ export class LiveSessionLootTracker {
 			}
 		}
 		const catalogUnavailable = names.size < unique.length;
-		const pricesUnavailable = netPrices.size < unique.length;
+		const pricesUnavailable = bidPrices.size < unique.length;
 		return {
 			names,
-			prices: netPrices,
+			prices: bidPrices,
 			priceStatuses,
 			error: catalogUnavailable ? 'catalog_unavailable' : pricesUnavailable ? 'prices_unavailable' : null,
 		};
@@ -264,7 +268,7 @@ export class LiveSessionLootTracker {
 			const pending = this.pendingValuableGains[index];
 			if (!pending) continue;
 			const row = this.rows.get(pending.itemId);
-			const observedValue = safeProduct(row?.unitCopper ?? null, pending.quantity);
+			const observedValue = saleNetCopper(row?.unitCopper ?? null, pending.quantity);
 			if (observedValue === null) continue;
 			this.pendingValuableGains.splice(index, 1);
 			const alert = decideLootAlert({
@@ -290,7 +294,7 @@ export class LiveSessionLootTracker {
 		const sessionId = this.state.status === 'idle' ? '' : this.state.sessionId;
 		const rows = [...this.rows.values()].map((row): LiveSessionLootRow => ({
 			...row,
-			totalCopper: safeProduct(row.unitCopper, row.quantity),
+			totalCopper: saleNetCopper(row.unitCopper, row.quantity),
 		})).sort((left, right) => (right.totalCopper ?? -1) - (left.totalCopper ?? -1) || left.name.localeCompare(right.name));
 		this.state = {
 			status, sessionId, restored, rows,
@@ -312,10 +316,13 @@ export class LiveSessionLootTracker {
 	}
 }
 
-function safeProduct(unitCopper: number | null, quantity: number): number | null {
-	if (unitCopper === null) return null;
-	const value = unitCopper * quantity;
-	return Number.isSafeInteger(value) && value >= 0 ? value : null;
+/**
+ * What `quantity` units net sold at once to a buy order of `bidUnitCopper`: the trading-post commission over the total of
+ * the sale (`bestSaleNetCopper`, with no vendor route: this tracker has no vendor value), never one unit's net multiplied.
+ * Null without a quote or when the arithmetic leaves the safe-integer range.
+ */
+function saleNetCopper(bidUnitCopper: number | null, quantity: number): number | null {
+	return bidUnitCopper === null ? null : bestSaleNetCopper(bidUnitCopper, null, quantity);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

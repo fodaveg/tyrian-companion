@@ -36,7 +36,7 @@ import { obsidianPluginCore } from './test/obsidian-host-harness';
 import { DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER } from './alerts/alert-contract';
 import type { EmittedAlertRecordV1 } from './alerts/alert-queue-record';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
-import { createTradingPostValueWithPolicy } from './economy/gw2-fees';
+import { bestSaleNetCopper, createTradingPostValueWithPolicy } from './economy/gw2-fees';
 import { HALLOWEEN_PRICE_ALERT_ITEM_ID } from './halloween/halloween-price-alert';
 import type { HalloweenPriceAlertRuntime } from './halloween/halloween-price-alert-runtime';
 import type { PriceHistoryDailyV1 } from './economy/price-history-model';
@@ -66,10 +66,10 @@ interface AssembledRuntimeHarness {
 	liveSessionLoot: LiveSessionLootTracker;
 }
 
-/** A quote whose net value clears the shipped threshold on three copies, and not on one. */
+/** A quote whose net value clears the shipped threshold on three copies, and not on one. The commission is taken over the total of the three. */
 const BID_COPPER = 30_000;
 const GAINED = 3;
-const NET_TOTAL_COPPER = Math.floor(BID_COPPER * 0.85) * GAINED;
+const NET_TOTAL_COPPER = bestSaleNetCopper(BID_COPPER, null, GAINED) ?? Number.NaN;
 
 describe('H13.10 valuable loot cabling', () => {
 	afterEach(() => {
