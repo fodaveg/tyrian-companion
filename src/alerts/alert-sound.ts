@@ -81,8 +81,12 @@ export function playAlertSound(createContext: AlertAudioContextFactory): AlertSo
 	}
 }
 
-/** Factories with a tone waiting for their suspended context to resume: at most one each. */
-const resuming = new WeakSet<AlertAudioContextFactory>();
+/**
+ * Factories with a tone waiting for their suspended context to resume: at most one each. The value
+ * is when that attempt began, so one that never settles (neither resolved nor rejected) stops
+ * counting after `ALERT_SOUND_MAX_RESUME_WAIT_MS` and the next alert asks again.
+ */
+const resuming = new WeakMap<AlertAudioContextFactory, number>();
 
 /**
  * A tone that waited for `resume()` longer than this is dropped: a suspended context can stay so
@@ -103,21 +107,26 @@ function scheduleChime(createContext: AlertAudioContextFactory): AlertSoundOutco
 	// waits per factory: alerts arriving meanwhile do not queue more. A rejected resume, or one that
 	// leaves the context suspended, leaves nothing pending, and the next alert starts from scratch.
 	if (context.state === 'suspended') {
-		if (resuming.has(createContext)) return 'unavailable';
 		const alertedAt = Date.now();
+		const attempt = resuming.get(createContext);
+		// A tone still inside its margin keeps the slot; one past it is dropped anyway, so its
+		// `resume()` is asked again instead of leaving the factory mute until a reload.
+		if (attempt !== undefined && alertedAt - attempt <= ALERT_SOUND_MAX_RESUME_WAIT_MS) return 'unavailable';
 		// The factory is taken only once `resume()` has returned: one that throws outright (`playAlertSound` answers
 		// `unavailable`) leaves nothing pending either, or every later alert would find it taken until a reload.
 		const pending: unknown = context.resume?.();
-		resuming.add(createContext);
+		resuming.set(createContext, alertedAt);
+		// A late settle of an abandoned attempt must not free the slot of the newer one.
+		const release = (): void => { if (resuming.get(createContext) === alertedAt) resuming.delete(createContext); };
 		// `Promise.resolve` adopts any thenable: `instanceof Promise` is false for a promise from
 		// another realm (an Obsidian popout window, an iframe) and would resolve at once, suspended.
 		const settled = Promise.resolve(pending);
 		settled.then(() => {
-			resuming.delete(createContext);
+			release();
 			if (context.state !== 'running') return;
 			if (Date.now() - alertedAt > ALERT_SOUND_MAX_RESUME_WAIT_MS) return;
 			try { scheduleTones(createContext, context); } catch { /* the next alert tries again */ }
-		}, () => { resuming.delete(createContext); });
+		}, release);
 		return 'unavailable';
 	}
 	return scheduleTones(createContext, context);

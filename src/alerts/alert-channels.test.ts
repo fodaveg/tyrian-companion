@@ -215,6 +215,26 @@ describe('H13.4 sound channel', () => {
 				});
 			});
 
+			describe('a resume that never settles', () => {
+				afterEach(() => { vi.useRealTimers(); });
+
+				it('is asked again once the 5 s margin has passed, instead of muting the factory until a reload', async () => {
+					vi.useFakeTimers();
+					vi.setSystemTime(new Date('2026-10-09T10:00:00Z'));
+					const { factory, calls, handle } = suspendedContext(() => new Promise<void>(() => {}));
+					playAlertSound(factory);
+					vi.setSystemTime(Date.now() + 4_000);
+					playAlertSound(factory);
+					expect(calls.resume, 'retried inside the margin').toBe(1);
+
+					vi.setSystemTime(Date.now() + 2_000);
+					handle.resume = async () => { calls.resume += 1; handle.state = 'running'; };
+					playAlertSound(factory);
+					await vi.advanceTimersByTimeAsync(0);
+					expect(calls.resume, 'never retried after the margin').toBe(2);
+				});
+			});
+
 			it('waits for a thenable that is not an instance of Promise', async () => {
 				const { context, scheduled } = fakeAudioContext();
 				const handle = context as unknown as { state: string; resume: () => unknown };
