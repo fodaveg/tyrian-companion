@@ -1,6 +1,6 @@
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale } from '../core/i18n';
-import type { TyrianViewDescriptor } from './mounted-views';
+import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
 import type { ProductActionController } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
 import { renderSaleView } from './sale-view';
@@ -19,14 +19,21 @@ export interface SaleViewActions {
 	openProductSettings?(): void;
 }
 
-/** The Sale tab for `TyrianUiPort.registerView`: in Hebra, the 960×720 dialog (agreed with Hebra, R1c). */
-export function saleView(actions: Pick<SaleViewActions, 'getSaleLocale'>): TyrianViewDescriptor {
+/** The Sale section, wherever a host shows it. */
+export function saleSection(actions: Pick<SaleViewActions, 'getSaleLocale'>): TyrianSectionDescriptor {
 	return {
-		type: SALE_VIEW_TYPE,
+		id: 'sale',
 		title: () => createTranslator(actions.getSaleLocale()).t('sale.view.title'),
 		icon: 'candy',
-		placement: 'dialog',
 	};
+}
+
+/** Where the Sale section is a view of its own: in Hebra, the 960×720 dialog (agreed with Hebra, R1c). */
+export const SALE_VIEW_SLOT: TyrianSectionViewSlot = { type: SALE_VIEW_TYPE, placement: 'dialog' };
+
+/** The Sale tab for `TyrianUiPort.registerView`: its section in its slot. */
+export function saleView(actions: Pick<SaleViewActions, 'getSaleLocale'>): TyrianViewDescriptor {
+	return sectionViewDescriptor(saleSection(actions), SALE_VIEW_SLOT);
 }
 
 /**

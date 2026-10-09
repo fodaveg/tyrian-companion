@@ -72,7 +72,7 @@ import {
 } from './session-history-panel';
 import { formatDecimal } from './format-number';
 import { relativeTimeLabel } from './inventory-advisor-view';
-import type { TyrianViewDescriptor } from './mounted-views';
+import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
 import { TyrianModal, type TyrianModalUi } from './tyrian-modal';
 import {
 	renderSessionCard,
@@ -169,14 +169,21 @@ export interface CompanionActions extends HalloweenAlertPanelActions, Partial<Fa
 	copyLastErrorDetail?(detail: string): Promise<void>;
 }
 
-/** The Companion tab for `TyrianUiPort.registerView`: in Hebra, a tab of the right column (agreed with Hebra, R1c). */
-export function companionView(actions: Pick<CompanionActions, 'getLocale'>): TyrianViewDescriptor {
+/** The Session section (the Companion tab's content), wherever a host shows it. */
+export function companionSection(actions: Pick<CompanionActions, 'getLocale'>): TyrianSectionDescriptor {
 	return {
-		type: COMPANION_VIEW_TYPE,
+		id: 'session',
 		title: () => translateRuntime(createTranslator(actions.getLocale()), 'view.displayName'),
 		icon: 'sword',
-		placement: 'column',
 	};
+}
+
+/** Where the Session section is a view of its own: in Hebra, a tab of the right column (agreed with Hebra, R1c). */
+export const COMPANION_VIEW_SLOT: TyrianSectionViewSlot = { type: COMPANION_VIEW_TYPE, placement: 'column' };
+
+/** The Companion tab for `TyrianUiPort.registerView`: its section in its slot. */
+export function companionView(actions: Pick<CompanionActions, 'getLocale'>): TyrianViewDescriptor {
+	return sectionViewDescriptor(companionSection(actions), COMPANION_VIEW_SLOT);
 }
 
 /** One line of the Botín gaveto, kept by item id, with the two texts it shows right now. */

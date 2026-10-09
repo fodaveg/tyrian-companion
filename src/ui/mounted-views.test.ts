@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { COMPANION_VIEW_TYPE, companionView } from './companion-view';
-import { INVENTORY_ADVISOR_VIEW_TYPE, inventoryAdvisorView } from './inventory-advisor-item-view';
-import { MountedViews, type MountableView } from './mounted-views';
-import { SALE_VIEW_TYPE, saleView } from './sale-item-view';
+import { COMPANION_VIEW_SLOT, COMPANION_VIEW_TYPE, companionSection, companionView } from './companion-view';
+import {
+	INVENTORY_ADVISOR_VIEW_SLOT,
+	INVENTORY_ADVISOR_VIEW_TYPE,
+	inventoryAdvisorSection,
+	inventoryAdvisorView,
+} from './inventory-advisor-item-view';
+import {
+	MountedViews,
+	sectionViewDescriptor,
+	sectionViewRegistration,
+	type MountableView,
+	type TyrianSection,
+	type TyrianViewDescriptor,
+} from './mounted-views';
+import { SALE_VIEW_SLOT, SALE_VIEW_TYPE, saleSection, saleView } from './sale-item-view';
 
 class RecordingView implements MountableView {
 	readonly events: string[] = [];
@@ -70,5 +82,154 @@ describe('the product views as the host registers them', () => {
 		expect(spanish[2]).toBe('Venta de Halloween');
 		expect(english[2]).toBe('Halloween sale');
 		expect(spanish).not.toEqual(english);
+	});
+});
+
+/** A view that also listens to being hidden and shown without being unmounted. */
+class HideableView extends RecordingView {
+	setVisible(visible: boolean): void { this.events.push(visible ? 'shown' : 'hidden'); }
+}
+
+describe('a section, apart from where the host registers it', () => {
+	it('says what it is and nothing about where: an id, a title read on every call, an icon and how it mounts', () => {
+		let title = 'Equis';
+		const section = new MountedViews((element) => new RecordingView(element))
+			.section({ id: 'sale', title: () => title, icon: 'compass' });
+		expect(Object.keys(section).sort()).toEqual(['icon', 'id', 'mount', 'setVisible', 'title', 'unmount']);
+		expect([section.id, section.title(), section.icon]).toEqual(['sale', 'Equis', 'compass']);
+		title = 'Otra';
+		expect(section.title()).toBe('Otra');
+	});
+
+	it('mounts one controller per container and closes and forgets it on unmount, like the view it used to be', async () => {
+		const views = new MountedViews((element) => new RecordingView(element));
+		const section = views.section({ id: 'session', title: () => 'Equis', icon: 'compass' });
+		const left = container('left');
+		const right = container('right');
+
+		await section.mount(left);
+		await section.mount(right);
+		const [first, second] = views.current();
+		expect([first?.container, second?.container]).toEqual([left, right]);
+		expect(first?.events).toEqual(['open']);
+
+		await section.unmount(left);
+		await section.unmount(left);
+		await section.unmount(container('other'));
+		expect(first?.events).toEqual(['open', 'close']);
+		expect(views.current()).toEqual([second]);
+	});
+
+	it('tells only the controller of that container that it was hidden or shown, and never mounts or unmounts for it', async () => {
+		const views = new MountedViews((element) => new HideableView(element));
+		const section = views.section({ id: 'inventory', title: () => 'Equis', icon: 'compass' });
+		const left = container('left');
+		const right = container('right');
+		await section.mount(left);
+		await section.mount(right);
+		const [first, second] = views.current();
+
+		section.setVisible?.(left, false);
+		section.setVisible?.(left, true);
+		expect(first?.events).toEqual(['open', 'hidden', 'shown']);
+		expect(second?.events).toEqual(['open']);
+		expect(views.current()).toEqual([first, second]);
+
+		// A container that is not mounted has nobody to tell.
+		await section.unmount(left);
+		section.setVisible?.(left, false);
+		section.setVisible?.(container('other'), false);
+		expect(first?.events).toEqual(['open', 'hidden', 'shown', 'close']);
+	});
+
+	it('is a no-op to hide or show a controller that does not listen', async () => {
+		const views = new MountedViews((element) => new RecordingView(element));
+		const section = views.section({ id: 'sale', title: () => 'Equis', icon: 'compass' });
+		const only = container('only');
+		await section.mount(only);
+		expect(() => { section.setVisible?.(only, false); }).not.toThrow();
+		expect(views.current()[0]?.events).toEqual(['open']);
+	});
+});
+
+describe('from a section to the view the host registers', () => {
+	const fakeSection = (calls: string[]): TyrianSection => ({
+		id: 'sale',
+		title: () => 'Equis',
+		icon: 'compass',
+		mount: async (element) => { calls.push(`mount:${(element as unknown as { name: string }).name}`); },
+		unmount: async (element) => { calls.push(`unmount:${(element as unknown as { name: string }).name}`); },
+		setVisible: () => { calls.push('setVisible'); },
+	});
+
+	it('takes the type and the placement from the slot and the title and the icon from the section', () => {
+		const descriptor = sectionViewDescriptor({ id: 'sale', title: () => 'Equis', icon: 'compass' }, { type: 'tyrian-x', placement: 'dialog' });
+		expect(Object.keys(descriptor).sort()).toEqual(['icon', 'placement', 'title', 'type']);
+		expect([descriptor.type, descriptor.title(), descriptor.icon, descriptor.placement]).toEqual(['tyrian-x', 'Equis', 'compass', 'dialog']);
+		// A slot without a placement leaves it out, so the host applies its own default.
+		expect('placement' in sectionViewDescriptor({ id: 'sale', title: () => 'Y', icon: 'x' }, { type: 'tyrian-y' })).toBe(false);
+	});
+
+	it('registers exactly a view: the six fields of a registration, with the section\'s own mount and unmount behind them', async () => {
+		const calls: string[] = [];
+		const registration = sectionViewRegistration(fakeSection(calls), { type: 'tyrian-x', placement: 'column' });
+		// Nothing of the section leaks into what `registerView` takes: no id, no visibility entry.
+		expect(Object.keys(registration).sort()).toEqual(['icon', 'mount', 'placement', 'title', 'type', 'unmount']);
+		expect([registration.type, registration.title(), registration.icon, registration.placement]).toEqual(['tyrian-x', 'Equis', 'compass', 'column']);
+		expect('placement' in sectionViewRegistration(fakeSection(calls), { type: 'tyrian-y' })).toBe(false);
+
+		await registration.mount(container('left'));
+		await registration.unmount(container('left'));
+		expect(calls).toEqual(['mount:left', 'unmount:left']);
+	});
+
+	it('gives the three product views the same type, title, icon and placement they registered with before', () => {
+		let locale: 'es' | 'en' = 'es';
+		const actions = { getLocale: () => locale, getInventoryAdvisorLocale: () => locale, getSaleLocale: () => locale };
+		const views = new MountedViews((element) => new RecordingView(element));
+		const derived = [
+			sectionViewRegistration(views.section(companionSection(actions)), COMPANION_VIEW_SLOT),
+			sectionViewRegistration(views.section(inventoryAdvisorSection(actions)), INVENTORY_ADVISOR_VIEW_SLOT),
+			sectionViewRegistration(views.section(saleSection(actions)), SALE_VIEW_SLOT),
+		];
+		const say = (view: TyrianViewDescriptor) => ({ type: view.type, title: view.title(), icon: view.icon, placement: view.placement });
+		const facts = () => derived.map(say);
+
+		expect(facts()).toEqual([
+			{ type: 'tyrian-companion-view', title: 'Acompañante de Tyria', icon: 'sword', placement: 'column' },
+			{ type: 'tyrian-inventory-advisor-view', title: 'Asesor de inventario', icon: 'package-search', placement: 'dialog' },
+			{ type: 'tyrian-sale-view', title: 'Venta de Halloween', icon: 'candy', placement: 'dialog' },
+		]);
+		locale = 'en';
+		expect(facts().map(({ title }) => title)).toEqual(['Tyrian companion', 'Inventory advisor', 'Halloween sale']);
+		// The descriptor each view still exports is the same derivation.
+		expect([companionView(actions), inventoryAdvisorView(actions), saleView(actions)].map(say)).toEqual(facts());
+	});
+
+	it('names the three sections with ids that do not change with the language', () => {
+		const ids = (locale: 'es' | 'en') => [
+			companionSection({ getLocale: () => locale }).id,
+			inventoryAdvisorSection({ getInventoryAdvisorLocale: () => locale }).id,
+			saleSection({ getSaleLocale: () => locale }).id,
+		];
+		expect(ids('es')).toEqual(['session', 'inventory', 'sale']);
+		expect(ids('en')).toEqual(ids('es'));
+	});
+
+	it('mounts the derived view through the same controllers the repaints walk', async () => {
+		const views = new MountedViews((element) => new RecordingView(element));
+		const registration = sectionViewRegistration(
+			views.section(saleSection({ getSaleLocale: () => 'es' })), SALE_VIEW_SLOT,
+		);
+		const leaf = container('leaf');
+
+		await registration.mount(leaf);
+		const [mounted] = views.current();
+		expect(mounted?.container).toBe(leaf);
+		expect(mounted?.events).toEqual(['open']);
+
+		await registration.unmount(leaf);
+		expect(mounted?.events).toEqual(['open', 'close']);
+		expect(views.current()).toEqual([]);
 	});
 });

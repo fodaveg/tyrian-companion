@@ -270,8 +270,9 @@ import { SESSION_STATE_VERSION, type SessionState } from '../sessions/session';
 import type { SessionStartInput } from '../sessions/session-start-capture';
 import { assembleSessions } from './assemble-sessions';
 import {
+	COMPANION_VIEW_SLOT,
 	COMPANION_VIEW_TYPE,
-	companionView,
+	companionSection,
 	ConfirmAbandonSessionModal,
 	ConfirmClearCompletedSessionModal,
 	ConfirmDiscardSessionModal,
@@ -309,12 +310,13 @@ import {
 	type InventoryAdvisorViewRow,
 } from '../ui/inventory-advisor-view-model';
 import {
+	INVENTORY_ADVISOR_VIEW_SLOT,
 	INVENTORY_ADVISOR_VIEW_TYPE,
 	InventoryAdvisorItemView,
-	inventoryAdvisorView,
+	inventoryAdvisorSection,
 } from '../ui/inventory-advisor-item-view';
-import { MountedViews } from '../ui/mounted-views';
-import { SALE_VIEW_TYPE, SaleItemView, saleView } from '../ui/sale-item-view';
+import { MountedViews, sectionViewRegistration } from '../ui/mounted-views';
+import { SALE_VIEW_SLOT, SALE_VIEW_TYPE, SaleItemView, saleSection } from '../ui/sale-item-view';
 import {
 	buildSaleViewModel,
 	computeListingNetCopper,
@@ -704,12 +706,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		);
 		// A settings load that failed is recorded, flushed and rethrown by `start()`: nothing registers.
 		if (boot.settingsLoadFailure !== null) await runtime.start();
-		// One source for both the registration loop and the journal count, so they cannot drift apart.
+		// What each section is and how it mounts, apart from where the host shows it.
 		const views = this.mountedViews;
+		const sections = {
+			session: views.companion.section(companionSection(this)),
+			inventory: views.inventoryAdvisor.section(inventoryAdvisorSection(this)),
+			sale: views.sale.section(saleSection(this)),
+		};
+		// Today each section is a view of its own, in its slot. One source for both the registration
+		// loop and the journal count, so they cannot drift apart.
 		const viewRegistrations = [
-			views.companion.registration(companionView(this)),
-			views.inventoryAdvisor.registration(inventoryAdvisorView(this)),
-			views.sale.registration(saleView(this)),
+			sectionViewRegistration(sections.session, COMPANION_VIEW_SLOT),
+			sectionViewRegistration(sections.inventory, INVENTORY_ADVISOR_VIEW_SLOT),
+			sectionViewRegistration(sections.sale, SALE_VIEW_SLOT),
 		];
 		await this.localDebugActions.run({
 			component: 'plugin', action: 'plugin_load',

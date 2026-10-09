@@ -13,7 +13,7 @@ import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-ser
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
 import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
-import type { TyrianViewDescriptor } from './mounted-views';
+import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
 import type { ProductActionController } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
 
@@ -73,14 +73,21 @@ export interface InventoryAdvisorViewActions {
 	getSellSignalState?(): SellSignalRuntimeState | null;
 }
 
-/** The Inventory tab for `TyrianUiPort.registerView`: in Hebra, the 960×720 dialog (agreed with Hebra, R1c). */
-export function inventoryAdvisorView(actions: Pick<InventoryAdvisorViewActions, 'getInventoryAdvisorLocale'>): TyrianViewDescriptor {
+/** The Inventory section, wherever a host shows it. */
+export function inventoryAdvisorSection(actions: Pick<InventoryAdvisorViewActions, 'getInventoryAdvisorLocale'>): TyrianSectionDescriptor {
 	return {
-		type: INVENTORY_ADVISOR_VIEW_TYPE,
+		id: 'inventory',
 		title: () => createTranslator(actions.getInventoryAdvisorLocale()).t('advisor.view.title'),
 		icon: 'package-search',
-		placement: 'dialog',
 	};
+}
+
+/** Where the Inventory section is a view of its own: in Hebra, the 960×720 dialog (agreed with Hebra, R1c). */
+export const INVENTORY_ADVISOR_VIEW_SLOT: TyrianSectionViewSlot = { type: INVENTORY_ADVISOR_VIEW_TYPE, placement: 'dialog' };
+
+/** The Inventory tab for `TyrianUiPort.registerView`: its section in its slot. */
+export function inventoryAdvisorView(actions: Pick<InventoryAdvisorViewActions, 'getInventoryAdvisorLocale'>): TyrianViewDescriptor {
+	return sectionViewDescriptor(inventoryAdvisorSection(actions), INVENTORY_ADVISOR_VIEW_SLOT);
 }
 
 /**
