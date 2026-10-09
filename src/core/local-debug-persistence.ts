@@ -165,7 +165,8 @@ export function createLocalDebugPersistenceSink(
 			// Structural fingerprint only (never `message` or stack): `unmappedErrorLogDetails`'s
 			// `reason` is the error's class name, computed without ever reading its message.
 			errorName: event.error === undefined ? undefined : String(unmappedErrorLogDetails(event.error).reason),
-			details: { store: event.store, operation: event.operation, ...event.detail },
+			// `detail` goes first so it can never overwrite `store` or `operation`.
+			details: { ...event.detail, store: event.store, operation: event.operation },
 		});
 	};
 }

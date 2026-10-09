@@ -211,6 +211,10 @@ describe('session runtime persistence', () => {
 			['a failed checksum', 'tampered', { ...prepareLegacyRuntimeArchive(recordOf('tampered'), 60), sha256: 'bad' }],
 			['a malformed envelope', 'malformed', { version: 1 }],
 			['a key that does not name its session', 'wrong-key', prepareLegacyRuntimeArchive(recordOf('another-session'), 60)],
+			['a receipt that is another session\'s', 'foreign-receipt',
+				prepareLegacyRuntimeArchive(recordOf('foreign-receipt'), 60, { version: 1, sessionId: 'someone-else', path: 'note.md', savedAt: 1 })],
+			['a key that does not name the session of a content that no longer validates', 'wrong-key-junk',
+				prepareLegacyRuntimeArchive({ state: { status: 'active', sessionId: 'the-real-one' } }, 60)],
 		])('fails closed on %s instead of setting it aside', async (_label, key, row) => {
 			const store = await seedArchives(`archive-closed-${key}`, [
 				[key, row],

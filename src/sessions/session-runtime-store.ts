@@ -415,9 +415,9 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	/**
 	 * Newest preserved archive first (`preservedAt` descending, key as the stable tie-break), so `[0]` is the same
 	 * session after a restart. Each archive is checksummed once. A bad envelope, a failed checksum or a key that does
-	 * not name its session is corrupt evidence and FAILS CLOSED (the listing rejects). Only an archive whose envelope
-	 * and checksum are valid but whose original today's validation rejects is SET ASIDE: it stays in the store
-	 * untouched (it is the player's evidence), is listed in `rejectedLegacyArchives` and traced in the local
+	 * not name its session, or a receipt that is another session's, is corrupt evidence and FAILS CLOSED (the listing
+	 * rejects). Only an archive that passes all of those but whose original today's validation rejects is SET ASIDE:
+	 * it stays in the store untouched (it is the player's evidence), is listed in `rejectedLegacyArchives` and traced in the local
 	 * diagnostics with its key and reason, and never keeps the plugin from starting.
 	 */
 	async listLegacyRuntimeArchives(): Promise<SessionRuntimeRecord[]> {
@@ -432,9 +432,12 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 				if (typeof key === 'string' && key.startsWith(LEGACY_RUNTIME_ARCHIVE_PREFIX)) {
 					const value: unknown = cursor.value;
 					if (!isLegacyRuntimeArchive(value)) { corrupt = true; tx.abort(); return; }
+					// Integrity first, in this order: the key names the session the archive holds, and its receipt is that
+					// session's. Either failing is corrupt evidence, whatever today's validation says of the content.
+					const sessionId = archivedSessionId(value.original);
+					if (sessionId !== null && (key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${sessionId}` || value.receipt !== null && value.receipt.sessionId !== sessionId)) { corrupt = true; tx.abort(); return; }
 					const record = legacyRuntimeRecordFromVerifiedArchive(value);
 					if (!record) rejected.push({ key, reason: 'record_invalid' });
-					else if (key !== `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${runtimeAuthority(record.state).sessionId}`) { corrupt = true; tx.abort(); return; }
 					else records.push({ record, preservedAt: value.preservedAt, key });
 				}
 				cursor.continue();
@@ -608,6 +611,13 @@ export function createSessionRuntimeRecord(
 		persistedAt,
 	};
 	return isSessionRuntimeRecord(candidate) ? candidate : null;
+}
+
+/** The session an archived original names, read without trusting the rest of it; null when it names none. */
+function archivedSessionId(original: unknown): string | null {
+	if (!isRecord(original) || !isRecord(original.state)) return null;
+	const state = original.state.status === 'error' && isRecord(original.state.failedState) ? original.state.failedState : original.state;
+	return typeof state.sessionId === 'string' && state.sessionId.length > 0 ? state.sessionId : null;
 }
 
 export function isSessionRuntimeRecord(value: unknown): value is SessionRuntimeRecord {

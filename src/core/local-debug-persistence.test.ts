@@ -48,6 +48,28 @@ describe('local debug persistence port', () => {
 		expect(sanitized.details).toEqual({ operation: 'read', store: 'session_runtime' });
 	});
 
+	it('carries a failure detail through the sink and the sanitizer, without letting it overwrite store or operation', () => {
+		const records: LocalDebugRecordInput[] = [];
+		const runner = new LocalDebugActionRunner({
+			diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		const probe = new LocalDebugPersistenceProbe({
+			sink: createLocalDebugPersistenceSink(runner, 'session', 'session_recover'),
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		probe.begin('session_runtime', 'read').failure('validation_failed', undefined, {
+			archiveKey: 'legacy-api-runtime:session-1', reason: 'record_invalid', store: 'forged', operation: 'forged',
+		});
+
+		const sanitized = sanitizeLocalDebugRecord(records.find((record) => record.phase === 'failure')!, {
+			timestampMs: 0, sequence: 1, pluginVersion: '0.1.14',
+		});
+		expect(sanitized.details).toEqual({
+			archiveKey: 'legacy-api-runtime:session-1', reason: 'record_invalid', store: 'session_runtime', operation: 'read',
+		});
+	});
+
 	// H15.20: 8 stores called `attempt.failure()` pelado and lost `error.name` (a `QuotaExceededError`
 	// logged the exact same way as any other storage failure). `failure(code, error)` plus the sink
 	// now carry the error's class to the log, and only that: never its message.

@@ -46,7 +46,9 @@ export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, 
 	// account that dropped them. `http.ts` already caps how many a single failure carries
 	// before this allowlist ever runs.
 	http: [...COMMON_DETAIL_FIELDS, 'statusCode', 'responseKind', 'endpoint', 'itemIds'],
-	session: [...COMMON_DETAIL_FIELDS, 'phase', 'evidenceQuality', 'itemCount'],
+	// `archiveKey` is the IndexedDB key of a preserved API archive (`legacy-api-runtime:<sessionId>`): a
+	// local session id, no account data. The sanitizer truncates its value to MAX_STRING_LENGTH.
+	session: [...COMMON_DETAIL_FIELDS, 'phase', 'evidenceQuality', 'itemCount', 'archiveKey'],
 	detection: [...COMMON_DETAIL_FIELDS, 'armed', 'proposalKind', 'continuity', 'intervalMs'],
 	// `written` is a count: a failed vault sync keeps how far it got. Its `errorName` stays out, BLOCKED_KEY drops every `*name*` key.
 	inventory: [...COMMON_DETAIL_FIELDS, 'itemCount', 'locationCount', 'coverage', 'operationCount', 'written'],
