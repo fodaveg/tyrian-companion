@@ -29,10 +29,6 @@ lista en Hebra. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en
 - Avisos: un aviso que quedó listo y cuya reserva fue rechazada se reintenta en los pases siguientes y en cada
   cambio de estado de la sesión, sin esperar a un cambio de modo; nunca suena dos veces. Las peticiones de precio de
   ese reintento van espaciadas 60 s. La identidad de un aviso pendiente incluye su sesión.
-- Sesión en vivo y almacenamiento: cada llamada al almacén de la sesión en vivo, del coordinador de reserva y del
-  escritor de notas tiene un plazo de 10 s; pasado ese plazo se responde como cuando el almacén no está
-  disponible, en vez de dejar bloqueada la cola. Una carga inicial que falla se reintenta con el latido, y un
-  fallo de `initialize()` no tumba el plugin.
 - Avisos de sonido: se cierra el `AudioContext` al liberar el anfitrión, un `resume()` que no se resolvió se
   reintenta a los 5 s y el canal figura como pendiente mientras el contexto se reanuda.
 - Precios: «sin semilla» tiene dos motivos. `unreachable` (red, 408, 425, 429, 5xx): no deja marca de 24 h, guarda

@@ -7,18 +7,20 @@ la tarjeta de botín de una sesión de cuenta calculado con la comisión sobre e
 versión 2 de la nota de sesión (el escritor v2 sigue apagado), el reintento de un aviso cuya reserva se rechazó, el
 cierre del `AudioContext` y el reintento de `resume()`, los dos motivos de «sin semilla» en los precios, la base de
 datos de Halloween en la versión 9, el paquete de soporte como nota de Hebra con el almacén local listando por
-prefijo, el icono nuevo de Hebra, la guía de instalación en Windows y tres textos corregidos. También se integrará la
-rama `claude/ciclo-vida-almacen-20261009` (plazo de 10 s por llamada al almacén de la sesión en vivo, reintento de la
-carga inicial y un `initialize()` fallido que no tumba el plugin); su reserva de 30 s se revierte a 300 000 ms y no es
-un cambio de esta versión. El detalle y los límites conocidos están en [CHANGELOG](CHANGELOG.md). Metadatos de versión
-alineados en `manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de Obsidian
-1.11.4, como la 0.6.16).
+prefijo, el icono nuevo de Hebra, la guía de instalación en Windows y tres textos corregidos. El detalle y los
+límites conocidos están en [CHANGELOG](CHANGELOG.md). Metadatos de versión alineados en `manifest.json`,
+`package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de Obsidian 1.11.4, como la 0.6.16).
+
+No entra en esta versión la rama `claude/ciclo-vida-almacen-20261009` (plazo de 10 s por llamada al almacén de la
+sesión en vivo, reintento de la carga inicial y un `initialize()` fallido que no tumba el plugin). Su revisión
+independiente del 9 oct 2026 pidió dos correcciones obligatorias, las dos sobre un almacén lento que sí contesta: una
+nota de sesión que tarda más de 10 s en escribirse no llega a sellarse y bloquea el inicio siguiente, y un guardado
+del inicio que vence y aterriza después deja una sesión activa que el usuario no vio empezar. Sigue en su rama.
 
 - Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
 - No verificado: nadie ha visto la 0.6.17 en Obsidian ni en Hebra reales, ni la instalación de la 0.6.17 por BRAT o
   en Hebra.
-- Pendiente: integrar la rama del ciclo de vida del almacén, el gate, la publicación (tag, release,
-  `release:brat-verify`) y la verificación en clientes reales.
+- Pendiente: el gate, la publicación (tag, release, `release:brat-verify`) y la verificación en clientes reales.
 - Addon de Nexus 0.8.4, publicado el 9 oct 2026:
   [release 0.8.4](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.4), tag anotado sobre `37a73a2`.
   Asset `tyrian_companion_nexus.dll` de 4 447 744 bytes, sha256
