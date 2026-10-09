@@ -30,6 +30,7 @@ import {
 	createHebraHost,
 	createHostFailureChannel,
 	tyrianPlatform,
+	type HebraHostDeps,
 	type HebraHostWindow,
 	type HostFailureChannel,
 } from './hebra-host';
@@ -42,6 +43,8 @@ import { registerUnadoptedNotes } from './unadopted-panel';
 /** What the plugin reads of the page besides the API (injectable for tests). */
 export interface HebraRuntimeEnvironment {
 	readonly indexedDB: IDBFactory;
+	/** The lock manager of the same page as `indexedDB` (`HebraHostDeps.locks`); absent, the session lease asks for no lock. */
+	readonly locks?: HebraHostDeps['locks'];
 	readonly window: HebraHostWindow & MobileClassWindow;
 	readonly document: Document;
 	/** The URL this module was loaded from (`import.meta.url`: a `blob:` URL inside Hebra). */
@@ -61,6 +64,7 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 	const handle = await createHebraHost({
 		api,
 		indexedDB: environment.indexedDB,
+		locks: environment.locks ?? null,
 		pathIndexKv: createIndexedDbPathIndexKv(environment.indexedDB, api.storage.indexedDbName(PATH_INDEX_DATABASE)),
 		fileBackend: createIndexedDbFileBackend(environment.indexedDB, api.storage.indexedDbName(LOCAL_FILES_DATABASE)),
 		secretsBackend: await hebraSecretsBackend(api, report),

@@ -112,6 +112,17 @@ export interface HebraHostDeps {
 	api: HebraPluginApi;
 	/** The core's `kv`: its own IndexedDB databases, opened with the names they always had. */
 	indexedDB: IDBFactory;
+	/**
+	 * `navigator.locks` of the page `indexedDB` is from, or `null`/absent where the webview has none
+	 * (`TyrianKvPort.locks`). It may be handed over because one Hebra runs at a time over a data directory and
+	 * only its main window loads plugins: no second context ever opens these databases. Read at Hebra `ea14cd06`
+	 * (9 Oct 2026): `tauri-plugin-single-instance` on Linux and Windows (`src-tauri/Cargo.toml`, `lib.rs`), its
+	 * own instance lock on macOS (`macos_single_instance.rs`), and `startPlugins()` leaving at once in an
+	 * `editor-*` window (`LibraryApp.svelte`; `capabilities/plugins.json` lists `main` alone). On the web the
+	 * tabs of one browser do share their locks. If Hebra ever loads plugins in a second window or lets a second
+	 * process open the same data, this has to be asked again before it is kept.
+	 */
+	locks?: TyrianKvPort['locks'];
 	pathIndexKv: TyrianPathIndexKv;
 	fileBackend: LocalFileBackend;
 	secretsBackend: TyrianSecretsBackend;
@@ -456,7 +467,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		})
 		: () => undefined;
 	const secrets = await createPreloadedSecrets(deps.secretsBackend, (error) => deps.report(error, 'keychain.write'));
-	const kv: TyrianKvPort = { indexedDB: deps.indexedDB };
+	const kv: TyrianKvPort = { indexedDB: deps.indexedDB, locks: deps.locks ?? null };
 	const background = createBackground(deps);
 	const win = deps.window;
 	// Asked once: the main view of the plugin API 1.3.0. A Hebra before it answers false, and one

@@ -88,6 +88,21 @@ describe('activateTyrian', () => {
 		for (const close of closes) expect(close).toHaveBeenCalled();
 	});
 
+	// 9 Oct 2026 (F7): `entry.ts` reads `navigator.locks` off the same page as `indexedDB`, and it reaches the core as it is.
+	it('hands the core the lock manager of the page with its IndexedDB, and none on a webview without Web Locks', async () => {
+		const locks = { request: vi.fn() };
+		const withLocks = environment({ locks });
+		const cleanup = await activateTyrian(createTyrianTestApi({ platform: 'linux' }).api, withLocks);
+		expect(withLocks.runtime.host?.kv.indexedDB).toBe(withLocks.indexedDB);
+		expect(withLocks.runtime.host?.kv.locks).toBe(locks);
+		await cleanup();
+
+		const without = environment();
+		const cleanupWithout = await activateTyrian(createTyrianTestApi({ platform: 'linux' }).api, without);
+		expect(without.runtime.host?.kv.locks).toBeNull();
+		await cleanupWithout();
+	});
+
 	it('runs in consultation mode where Hebra has neither TCP, notifications nor background (iPhone)', async () => {
 		const env = environment();
 		const cleanup = await activateTyrian(createTyrianTestApi({ platform: 'ios' }).api, env);

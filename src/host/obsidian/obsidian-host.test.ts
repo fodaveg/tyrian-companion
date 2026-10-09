@@ -245,6 +245,21 @@ describe('ObsidianHost secrets, settings and environment', () => {
 		expect(seen).toHaveLength(2);
 	});
 
+	// 9 Oct 2026 (F7): the session lease may only be handed the lock manager that goes with its IndexedDB.
+	it('hands over the lock manager of the window its IndexedDB is from, read when asked, and none where that window has no Web Locks', () => {
+		const host = createObsidianHost(fakePlugin().plugin);
+		const locks = { request: vi.fn() };
+		const indexedDB = {};
+		vi.stubGlobal('window', { indexedDB, navigator: { locks } });
+		expect(host.kv.indexedDB).toBe(indexedDB);
+		expect(host.kv.locks).toBe(locks);
+		vi.stubGlobal('window', { indexedDB, navigator: {} });
+		expect(host.kv.locks).toBeNull();
+		// A stand-in for the window with no `navigator` at all, as every runtime harness of this suite has.
+		vi.stubGlobal('window', { indexedDB });
+		expect(host.kv.locks).toBeNull();
+	});
+
 	it('reports connectivity changes as a boolean', () => {
 		const { plugin, domEvents } = fakePlugin();
 		vi.stubGlobal('window', {});

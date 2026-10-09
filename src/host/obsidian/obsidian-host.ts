@@ -27,7 +27,13 @@ import { createObsidianVault } from './obsidian-vault';
  */
 export function createObsidianHost(plugin: Plugin): TyrianHost {
 	const vault = createObsidianVault(plugin);
-	const kv: TyrianKvPort = { get indexedDB() { return window.indexedDB; } };
+	const kv: TyrianKvPort = {
+		get indexedDB() { return window.indexedDB; },
+		// The manager of the window whose IndexedDB that is. Every window of the app is the same origin in
+		// one Chromium storage partition, so they share its locks as they share its databases. A window
+		// without the API (or a test's stand-in for one) hands over none, and the lease waits as it always did.
+		get locks() { return (window as Partial<Pick<Window, 'navigator'>>).navigator?.locks ?? null; },
+	};
 	let soundCloseRegistered = false;
 	return {
 		vault,

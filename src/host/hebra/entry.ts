@@ -15,6 +15,8 @@ import { activateTyrian } from './hebra-runtime';
 export function activate(api: HebraPluginApi): Promise<PluginCleanup> {
 	return activateTyrian(api, {
 		indexedDB: window.indexedDB,
+		// Of the same page as the IndexedDB above. A webview without Web Locks hands over none.
+		locks: (window.navigator as Partial<Pick<Navigator, 'locks'>>).locks ?? null,
 		window,
 		document,
 		moduleUrl: import.meta.url,

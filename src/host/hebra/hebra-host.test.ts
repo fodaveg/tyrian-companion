@@ -384,6 +384,18 @@ describe('createHebraHost: the other ports', () => {
 		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true });
 	});
 
+	// 9 Oct 2026 (F7): the lock manager is the page's, handed over next to its IndexedDB, never looked up by the host.
+	it('kv carries the lock manager it was handed with the IndexedDB, and none when it was handed none', async () => {
+		const locks = { request: vi.fn() };
+		const indexedDB = new IDBFactory();
+		const withLocks = await createHebraHost(deps(createTyrianTestApi(), { indexedDB, locks }));
+		expect(withLocks.host.kv.indexedDB).toBe(indexedDB);
+		expect(withLocks.host.kv.locks).toBe(locks);
+		const without = await createHebraHost(deps(createTyrianTestApi()));
+		expect(without.host.kv.locks).toBeNull();
+		expect(locks.request).not.toHaveBeenCalled();
+	});
+
 	it('declares no main view on a Hebra that has none, so Settings offers no choice between the main screen and the sidebar', async () => {
 		const handle = await createHebraHost(deps(createTyrianTestApi()));
 		// For `mainView`, an omitted flag means the host does not have it.
