@@ -1,5 +1,25 @@
 # Changelog
 
+## Release beta 0.6.15 - el monstruo en color con un solo contorno como icono del plugin en Hebra
+
+Release por tag `0.6.15`. Trae un único cambio, en `assets/hebra-icon.png`, el icono propio del plugin en Hebra
+que `scripts/release-package.mjs` embebe como `iconImage` en `hebra.json`. [ESTADO](ESTADO.md) separa lo medido de lo
+que nadie ha visto en un cliente real.
+
+- Icono en Hebra: `iconImage` pasa de la variante «B» de la 0.6.12 (borde negro y filo claro) a la variante «C1»,
+  elegida por David el 9 oct 2026 de una lámina con el icono vigente y ocho variantes a tamaño real, en tema oscuro y
+  claro. «C1» es el dibujo a color del monstruo con un solo contorno ciruela `#3a1430` de unos 3,5 px a 128 px, con
+  el recorte más cerrado (120 de 128 px), un 45 % más de saturación y contraste sigmoidal. El PNG sigue siendo de
+  128 px, cuadrado y por debajo de 32 KiB (23803 bytes).
+- Motivo: la barra de pestañas de Hebra pinta el icono a unos 18 px (estimado de una captura, no medido), y a ese
+  tamaño el borde negro y el filo claro de la variante «B» quedaban en unos 0,7 px y 0,4 px y no se distinguían.
+  David: «creo que la versión con doble borde no funciona».
+- Lo que no cambia: ningún código. El validador de `iconImage` del empaquetado y sus límites son los mismos,
+  `icon: "sword"` sigue de respaldo y Obsidian sigue con la espada. No hay claves, hosts ni peticiones nuevas.
+- Origen y comandos del PNG: `assets/README.md`.
+- Sin verificar: el icono nuevo pintado en Hebra (los 18 px son una estimación) y la instalación de la 0.6.15 en
+  Hebra y en Obsidian/BRAT.
+
 ## Release beta 0.6.14 - cinco arreglos de la nota resumen de sesión
 
 [Canal 0.6.14 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.14); **instalación/runtime

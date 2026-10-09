@@ -1,5 +1,29 @@
 # Estado
 
+## Candidato 0.6.15: el monstruo en color con un solo contorno como icono en Hebra (9 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `f4f5496` (main con el canal 0.6.14 publicado y el icono «C1»
+ya integrado). Lleva un solo cambio: `assets/hebra-icon.png` pasa de la variante «B» (borde negro y filo claro, de
+la 0.6.12) a la variante «C1», que eligió David el 9 oct 2026 («creo que la versión con doble borde no funciona»)
+de una lámina con el icono vigente y ocho variantes a tamaño real en tema oscuro y claro. Motivo: la barra de
+pestañas de Hebra pinta el icono a unos 18 px (estimado de una captura, no medido) y a ese tamaño el borde y el
+filo de «B» quedaban en unos 0,7 px y 0,4 px. El detalle está en [CHANGELOG](CHANGELOG.md). Metadatos de versión
+alineados en `manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de Obsidian
+1.11.4, como la 0.6.14).
+
+- El PNG nuevo: 23803 bytes, sha256 `6a478bd5cd4e1b894c590ecd6f27bf6826476a938ec632c0c1da03fe032fb84e`, el dibujo a
+  color del monstruo con un contorno ciruela `#3a1430` de unos 3,5 px a 128 px, recorte de 120 de 128 px, un 45 %
+  más de saturación y contraste sigmoidal; el origen y los comandos están en `assets/README.md`. El fichero del
+  repo es copia byte a byte de la variante elegida. `icon: "sword"` sigue de respaldo, el validador de `iconImage`
+  y sus límites no cambian, y Obsidian sigue con la espada.
+- Medido en la preparación (no es el gate): `npm run check` sobre `f4f5496`, antes de los metadatos, dio
+  «VEREDICTO: VERDE (8/8)» (Fedora, 9 oct 2026); `node scripts/tests/probar-release-package.mjs` en PASS con el icono
+  real.
+- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
+- No verificado: nadie ha visto el icono «C1» cargado en Hebra real, y los 18 px son una estimación. Tampoco la
+  instalación de la 0.6.15 en Hebra ni en Obsidian/BRAT.
+- Pendiente: el gate, la publicación (tag, release, `release:brat-verify`) y la verificación en clientes reales.
+
 ## Canal 0.6.14 publicado: cinco arreglos de la nota resumen de sesión (8 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.14](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.14)
