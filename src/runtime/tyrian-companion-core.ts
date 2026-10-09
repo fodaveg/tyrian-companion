@@ -152,7 +152,7 @@ import type { SellSignalRuntime, SellSignalRuntimeState } from '../economy/sell-
 import { SELL_SIGNAL_REFERENCE_DAYS } from '../economy/sell-signal';
 import { assemblePriceHistory } from './assemble-price-history';
 import { CollectorHeartbeat } from './collector-status';
-import { loadCollectorInstanceId, loadCollectorMode, saveCollectorMode } from './collector-instance';
+import { CollectorReadUnansweredError, loadCollectorInstanceId, loadCollectorMode, saveCollectorMode } from './collector-instance';
 import { DEFAULT_VIEW_PLACEMENT, loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import {
@@ -685,6 +685,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Whether the Settings selector wrote the mode in this run: a late read of the old value must not undo that. */
 	private collectorModeChosen = false;
 	private collectorModeReadPending = false;
+	/** The late mode being applied: a Settings choice waits for it, so the two applications never overlap. */
+	private lateCollectorApplying: Promise<void> | null = null;
 	/**
 	 * Set only when `initializeRuntime` itself threw (a broken boot), never merely because it has
 	 * not finished yet. `runtimeReady` stays `false` either way (H15.2: without this, every caller
@@ -867,8 +869,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		} catch (error) {
 			this.collectorMode = seed;
 			// A read that only ran out of time may still answer (see `loadCollectorMode`): until it does, a choice made in Settings is
-			// written even when it equals the mode in use, or the late answer would undo it.
-			this.collectorModeReadPending = true;
+			// written even when it equals the mode in use, or the late answer would undo it. Any other failure leaves nothing to wait for.
+			this.collectorModeReadPending = error instanceof CollectorReadUnansweredError;
 			this.localDebugActions?.event({
 				component: 'settings', action: 'settings_load', level: 'warn', phase: 'failure',
 				code: 'storage_failure', state: 'collector_mode', message: error,
@@ -1278,6 +1280,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
 				if (session.status !== 'complete') this.lootPresentation.invalidate();
 				this.renderViews();
+				this.adoptLateCollectorMode(false);
 				// H18.26: a presence that could not open its session yet (the previous one was still
 				// finishing) opens it as soon as the session side allows, without another game event.
 				if (this.ingameSessionMarker) void this.ingameSessionMarker.reconcile();
@@ -1359,7 +1362,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			clearInterval: (handle) => { window.clearInterval(handle as number); },
 			// A state change is the only word the lifecycle gives when a write storage had refused finally lands, so the alerts a
 			// refused claim left `ready` are looked at again here (nothing happens while none is owed) instead of waiting for a mode switch.
-			onStateChange: () => { this.renderViews(); void this.ingameSessionMarker?.reconcile(); void this.liveSummaries?.observe(); this.liveEconomy?.retryUnclaimedAlerts(); },
+			onStateChange: () => { this.adoptLateCollectorMode(false); this.renderViews(); void this.ingameSessionMarker?.reconcile(); void this.liveSummaries?.observe(); this.liveEconomy?.retryUnclaimedAlerts(); },
 			onError: (error) => { this.recordIngameSessionFailure(error); },
 			preparation: () => this.settings.farmingPreparation,
 			declaredBuild: () => { const declaration = readFarmingDeclaredBuild(this.settings.farmingDeclaredBuild);
@@ -1424,21 +1427,26 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/**
 	 * The mode the device had saved, when it answered after the start had fallen back on the seed. Applied as the Settings
-	 * selector applies a change (consult is refused with the same notice while a session is open, and the mode in use stays);
-	 * nothing is written, the value is already the stored one. A mode chosen in Settings meanwhile wins.
+	 * selector applies a change; nothing is written, the value is already the stored one. A mode chosen in Settings wins.
+	 * With a session open `consult` is refused as Settings refuses it (the notice only when `announce`), but stays PENDING:
+	 * the session state callbacks call this again, so it lands when the session ends.
 	 */
-	private adoptLateCollectorMode(): void {
+	private adoptLateCollectorMode(announce = true): void {
 		const mode = this.lateCollectorMode;
-		this.lateCollectorMode = null;
-		if (mode === null || this.collectorModeChosen || this.unloaded || mode === this.collectorMode) return;
+		if (mode === null || !this.runtimeReady) return;
+		if (this.collectorModeChosen || this.unloaded || mode === this.collectorMode) { this.lateCollectorMode = null; return; }
 		if (mode === 'consult' && (this.liveSessions?.getRuntime()?.phase === 'active' || sessionInProgress(this.sessions.getState()))) {
-			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
+			if (announce) this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
 			return;
 		}
+		this.lateCollectorMode = null;
 		this.collectorMode = mode;
+		const applying = (async () => {
+			try { await this.applyCollectorModeChange(); } finally { this.lateCollectorApplying = null; }
+		})();
+		this.lateCollectorApplying = applying;
 		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'settings', action: 'settings_load', state: 'collector_mode_late' },
-			async () => { await this.applyCollectorModeChange(); });
+			{ component: 'settings', action: 'settings_load', state: 'collector_mode_late' }, async () => { await applying; });
 	}
 
 	/** R1b: this device's mode, for the Settings selector. */
@@ -1458,15 +1466,21 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				this.notifyRuntimeStarting();
 				return { status: 'blocked', reason: 'runtime_starting' };
 			}
-			if (mode === this.collectorMode && !this.collectorModeReadPending) return { status: 'saved', inventoryAdvisor: 'unchanged' };
+			await this.lateCollectorApplying;
+			if (mode === this.collectorMode && !this.collectorModeReadPending && this.lateCollectorMode === null) return { status: 'saved', inventoryAdvisor: 'unchanged' };
 			if (mode === 'consult' && (this.liveSessions?.getRuntime()?.phase === 'active' || sessionInProgress(this.sessions.getState()))) {
 				this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
 				return { status: 'blocked', reason: 'session_in_progress' };
 			}
 			// Published only after the durable write, like `updateSettings`.
-			await saveCollectorMode(this.host.kv.indexedDB, vaultId, mode);
-			this.collectorMode = mode;
+			// The choice is marked when it STARTS: a real engine answers the late read before this queued write, and the read
+			// must find the choice made. A failed write takes the mark back.
+			const before = { chosen: this.collectorModeChosen, late: this.lateCollectorMode };
 			this.collectorModeChosen = true;
+			this.lateCollectorMode = null;
+			try { await saveCollectorMode(this.host.kv.indexedDB, vaultId, mode); }
+			catch (error) { this.collectorModeChosen = before.chosen; this.lateCollectorMode = before.late; throw error; }
+			this.collectorMode = mode;
 			await this.applyCollectorModeChange(context);
 			return { status: 'saved', inventoryAdvisor: 'unchanged' };
 		};

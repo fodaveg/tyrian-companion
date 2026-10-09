@@ -27,6 +27,7 @@ import {
 	IndexedDbSessionRuntimeStore,
 } from './sessions/session-runtime-store';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
+import { loadCollectorMode } from './runtime/collector-instance';
 import { hangStorage, hangTransactions, holdNextCommit, macrotasks, resumeStorage, trackedIndexedDb } from './test/indexed-db-connections';
 
 interface RuntimeBootHarness {
@@ -235,17 +236,91 @@ describe('deferred runtime startup with persisted terminal state', () => {
 				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('consult');
 			});
 
-			it('does not undo a mode chosen in Settings while the read was still out', async () => {
+			/** The core as these tests drive it: the mode changes it applied, in order, and a way to say a session is running. */
+			function instrument(plugin: RuntimeBootHarness) {
+				const core = plugin as unknown as {
+					applyCollectorModeChange(): Promise<void>; emitNotice(text: string, id: string): void;
+					liveSessions: { getRuntime(): unknown; options: { onStateChange(): void } };
+					vaultId: string;
+				};
+				const applied: string[] = [];
+				const apply = core.applyCollectorModeChange.bind(core);
+				core.applyCollectorModeChange = async () => { applied.push((plugin as unknown as ModeCore).getCollectorMode()); await apply(); };
+				const notices = vi.spyOn(core, 'emitNotice').mockImplementation(() => undefined);
+				let running = false;
+				vi.spyOn(core.liveSessions, 'getRuntime').mockImplementation(() => (running ? { phase: 'active' } : null));
+				return {
+					applied, notices, core,
+					setSessionRunning(value: boolean) { running = value; },
+					/** What the live lifecycle does when its state changes, e.g. when the session ends. */
+					sessionStateChanged() { core.liveSessions.options.onStateChange(); },
+				};
+			}
+
+			async function bootWithReadHeld() {
 				const tracked = await deviceThatSavedConsult();
 				const plugin = withSettingsTab(tracked.factory);
 				const timers = manualWindowTimers();
 				const answer = holdNextCommit(tracked, (name) => name === 'tyrian-companion-collector');
 				expect(await bootUntilSettled(plugin, timers)).toBe(true);
-				// The user picks the mode already in use: it is written all the same, or the late answer would flip it.
-				await (plugin as unknown as ModeCore).updateCollectorMode('collector');
+				return { tracked, plugin, answer, probe: instrument(plugin) };
+			}
+
+			it('does not undo a mode chosen in Settings while the read was still out, even when the read answers first', async () => {
+				const { plugin, answer, probe } = await bootWithReadHeld();
+				// A real engine answers the read before the write queued behind it: the choice must already be marked when it does.
+				const choosing = (plugin as unknown as ModeCore).updateCollectorMode('collector');
+				answer();
+				await choosing;
+				await macrotasks(50);
+				expect(probe.applied).toEqual(['collector']);
+				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
+			});
+
+			it('keeps a saved consult pending while a session is running, and applies it when the session ends', async () => {
+				const { plugin, answer, probe } = await bootWithReadHeld();
+				probe.setSessionRunning(true);
+
 				answer();
 				await macrotasks(50);
 				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
+				expect(probe.notices).toHaveBeenCalledTimes(1);
+				probe.sessionStateChanged();
+				expect(probe.notices).toHaveBeenCalledTimes(1);
+
+				probe.setSessionRunning(false);
+				probe.sessionStateChanged();
+				await macrotasks(50);
+				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('consult');
+				expect(probe.applied).toEqual(['consult']);
+			});
+
+			it('lets a mode chosen by hand win over a saved one still pending behind a running session', async () => {
+				const { tracked, plugin, answer, probe } = await bootWithReadHeld();
+				probe.setSessionRunning(true);
+				answer();
+				await macrotasks(50);
+
+				// Choosing the mode in use is written (the saved one differs) and drops the pending one.
+				await expect((plugin as unknown as ModeCore).updateCollectorMode('collector')).resolves.toMatchObject({ status: 'saved' });
+				probe.setSessionRunning(false);
+				probe.sessionStateChanged();
+				await macrotasks(50);
+				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
+				await expect(loadCollectorMode(tracked.factory, probe.core.vaultId, () => 'consult')).resolves.toBe('collector');
+			});
+
+			it('does not wait for a read that failed outright: choosing the mode in use answers saved without touching storage', async () => {
+				const tracked = trackedIndexedDb();
+				tracked.down = true;
+				const plugin = withSettingsTab(tracked.factory);
+				const timers = manualWindowTimers();
+				expect(await bootUntilSettled(plugin, timers)).toBe(true);
+				expect(plugin.runtimeReady).toBe(true);
+				tracked.down = false;
+				const attempts = vi.spyOn(tracked.factory, 'open');
+				await expect((plugin as unknown as ModeCore).updateCollectorMode('collector')).resolves.toEqual({ status: 'saved', inventoryAdvisor: 'unchanged' });
+				expect(attempts).not.toHaveBeenCalled();
 			});
 		});
 

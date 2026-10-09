@@ -15,6 +15,11 @@ import { openIndexedDb } from '../core/indexed-db-open';
 import type { CollectorMode } from '../core/settings';
 import { StorageDeadline } from '../sessions/storage-deadline';
 
+/** The read ran out of time and is still in course: the one failure of a read that can still answer. */
+export class CollectorReadUnansweredError extends Error {
+	constructor() { super('Collector instance store did not answer.'); }
+}
+
 export const COLLECTOR_INSTANCE_DB = 'tyrian-companion-collector';
 const STORE = 'instance-v1';
 const INSTANCE_ID = /^[A-Za-z0-9-]{8,64}$/u;
@@ -45,7 +50,7 @@ export async function loadCollectorMode(
 	factory: IDBFactory,
 	vaultId: string,
 	seed: () => CollectorMode,
-	onLate?: (stored: CollectorMode) => void,
+	onLate?: (stored: CollectorMode | null) => void,
 ): Promise<CollectorMode> {
 	return await readOrSeed(factory, `mode:${vaultId}`, vaultId, isCollectorMode, seed, false, onLate);
 }
@@ -74,7 +79,7 @@ async function readOrSeed<T extends string>(
 	valid: (stored: unknown) => stored is T,
 	create: () => T,
 	overwrite: boolean,
-	onLate?: (stored: T) => void,
+	onLate?: (stored: T | null) => void,
 ): Promise<T> {
 	if (!/^[a-f0-9]{64}$/u.test(vaultId)) throw new Error('Collector instance vault identity is invalid.');
 	const database = await openIndexedDb({
@@ -87,7 +92,7 @@ async function readOrSeed<T extends string>(
 	});
 	// 9 Oct 2026: the plugin does not start until this settles, and a transaction the engine takes and never answers settles
 	// nothing. The wait of a READ ends as a failed read does (the caller falls back to its seed); the transaction stays in
-	// course, closes the database whenever it ends and hands a late answer to `onLate`. A WRITE the user asked for (`overwrite`)
+	// course, closes the database whenever it ends and hands a late answer (or `null`, if it ends without one) to `onLate`. A WRITE the user asked for (`overwrite`)
 	// has no deadline: failing it while it can still land would show a failure for a mode that changes at the next start.
 	const transaction = new Promise<T>((resolve, reject) => {
 		const transaction = database.transaction(STORE, 'readwrite');
@@ -112,7 +117,8 @@ async function readOrSeed<T extends string>(
 	});
 	if (overwrite) return await transaction;
 	return await new StorageDeadline().bounded(() => transaction, () => {
-		if (onLate !== undefined) transaction.then(onLate, () => undefined);
-		return Promise.reject(new Error('Collector instance store did not answer.'));
+		// `null`: the read ended without a value, so nothing is left that could still answer.
+		if (onLate !== undefined) transaction.then(onLate, () => { onLate(null); });
+		return Promise.reject(new CollectorReadUnansweredError());
 	});
 }
