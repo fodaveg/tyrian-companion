@@ -247,9 +247,14 @@ Avisos:
 ## 2.6. Primera sesión
 
 1. Abre Hebra con el plugin activo.
-2. Abre Guild Wars 2 y entra a jugar. La sesión empieza sola al detectar que estás en el juego.
+2. Abre la vista del plugin: pulsa el botón de Tyrian Companion de la barra de Hebra y elige
+   **Abrir acompañante** (en inglés, **Open companion**), o ejecuta ese mismo comando desde la
+   paleta. En Hebra 0.2.3 de Windows la sesión se abre en la columna derecha (ver 2.8).
+3. Abre Guild Wars 2 y entra a jugar. La sesión empieza sola al detectar que estás en el juego.
    No hay botón de inicio.
-3. Opcional: en las Opciones de Nexus, activa **Show Labyrinth farming panel / Mostrar panel de
+4. Opcional: en las Opciones de Nexus, en **App to open**, elige **Hebra**. Viene en Obsidian, y
+   es la app que el addon intenta abrir al arrancar el juego (ver 1.4).
+5. Opcional: en las Opciones de Nexus, activa **Show Labyrinth farming panel / Mostrar panel de
    Laberinto** (ver 1.4).
 
 Qué debes ver:
