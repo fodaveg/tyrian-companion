@@ -56,7 +56,7 @@ describe('0.2.1 "Copy in-game bridge token" command', () => {
 
 		await plugin.copyAlertIngameSecretFromCommand();
 
-		expect(surfaces.notices).toEqual(['Turn on “In-game alert” in Settings → Advanced first.']);
+		expect(surfaces.notices).toEqual(['Turn on “In-game alert” in the plugin settings first.']);
 		expect(secrets.size).toBe(0);
 		expect(saved).toEqual([]);
 		expect(clipboard.writes).toEqual([]);

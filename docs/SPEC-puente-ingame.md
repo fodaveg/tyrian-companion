@@ -111,7 +111,7 @@ máquina por no haber un Windows real disponible.
 | Qué | Valor |
 |---|---|
 | Quién escucha | El plugin. Servidor TCP en `127.0.0.1` exclusivamente; nunca otra interfaz |
-| Puerto | El de los ajustes del plugin, 1024-65535, por defecto **47823**. El addon lo tiene en sus propios ajustes con el mismo valor por defecto |
+| Puerto | El guardado en `alertIngamePort` de los datos del plugin (1024-65535), por defecto **47823**; los ajustes del plugin ya no tienen fila de puerto. El addon lo tiene en sus propios ajustes con el mismo valor por defecto |
 | Quién conecta | El addon, en cuanto carga, y de nuevo tras cada desconexión |
 | Reintento | Backoff saturado `[250, 500, 1000, 2000, 5000]` ms; tras el último, cada 5 s. Se reinicia al recibir un `welcome`. **No se reintenta** tras `auth_rejected` o `version_unsupported` hasta que el usuario cambie los ajustes del addon |
 | Codificación | Cada mensaje es **un objeto JSON en UTF-8 en una sola línea** terminada en `\n` |

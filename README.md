@@ -588,7 +588,7 @@ explicit replacement, move or removal. Those legacy paths cannot become current 
 alter the durable managed-assets pointer.
 
 Optional managed assets live below the configured output folder in `Bases/` with ownership recorded
-in `Tyrian Companion Assets.json`. Loading the plugin does not inspect or write them. Preview is
+in `Tyrian Companion Assets.json`. Once assets have been applied, loading the plugin creates the package's new Bases, updates those you have not edited and removes three retired ones if unedited. Preview is
 read-only; Apply/Repair/Move/Remove are explicit, journaled Vault operations. Modified or foreign
 files are preserved, and uninstall moves byte-exact templates or semantically equivalent owned YAML Bases through Obsidian's trash API. A lazy
 IndexedDB pointer, namespaced by a SHA-256 vault identity, uses generation and operation state to arbitrate install/move/remove across windows;
