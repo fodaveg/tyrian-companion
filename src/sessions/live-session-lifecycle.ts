@@ -127,11 +127,13 @@ export class LiveSessionLifecycle {
 	 */
 	private unread = false;
 	/**
-	 * The id of a session `start` tried to save and storage did not say whether it did. The write is not cancelled, so it
-	 * may be on disk already or land later: while this is not null a saved session with this id is this process's own
-	 * start, found late. Forgotten once it is found, once a later start is saved, or once something else holds the place.
+	 * The ids of the sessions `start` tried to save and storage did not say whether it did. None of those writes is
+	 * cancelled, so any of them may be on disk already or land later: a saved session with one of these ids, and only with
+	 * one of these, is this process's own start, found late. More than one when a second start goes unanswered after a load
+	 * that said nothing was saved. All forgotten once one is found, once a later start is saved, or once something else is
+	 * known to hold the place: from then on none of them can land, and a start the store refuses is explained.
 	 */
-	private ownStart: string | null = null;
+	private readonly ownStarts = new Set<string>();
 	/** Not null from the first durable step storage refused until the first one it accepts again. */
 	private unsaved: UnsavedLiveState | null = null;
 	private recovering = false;
@@ -191,7 +193,7 @@ export class LiveSessionLifecycle {
 				if (this.unread) { this.unread = false; this.failure = false; }
 				// Something this host cannot read holds the place: a start of its own still in course can no longer land
 				// there. With nothing saved it still can, so it stays remembered.
-				if (loaded.status !== 'empty') this.ownStart = null;
+				if (loaded.status !== 'empty') this.ownStarts.clear();
 				if (loaded.status === 'error') this.failure = true;
 				return;
 			}
@@ -212,7 +214,7 @@ export class LiveSessionLifecycle {
 			// A session this same process started and storage did not acknowledge is not one left by a host that is gone:
 			// the presence it was started with still holds, so it is taken back as after an outage, not as after a restart
 			// (which would write the player as gone since the start, and close the session ten minutes later).
-			const own = loaded.record.sessionId === this.ownStart; this.ownStart = null;
+			const own = this.ownStarts.has(loaded.record.sessionId); this.ownStarts.clear();
 			if (!this.options.enabled()) return;
 			this.recovering = true; this.hostRestarted = !own;
 			this.noteNeedsVerification = loaded.record.phase === 'complete';
@@ -278,16 +280,18 @@ export class LiveSessionLifecycle {
 				// as a saved session nobody has read: reported, shown as an error, and asked for by the heartbeat and by
 				// the next start, which go on with it if it is there.
 				if (started.status === 'error' && started.code === 'unavailable') {
-					this.ownStart = id; this.unread = true; this.failure = true;
+					// A report of presence held back from an earlier loss is about another session, not about this start.
+					if (this.ownStarts.size === 0) this.lostPresence = null;
+					this.ownStarts.add(id); this.unread = true; this.failure = true;
 					this.options.onError(new Error('Live session storage is unavailable.'));
 					this.armHeartbeat(); this.options.onStateChange();
 				}
 				// Refused because something is saved, with a start of this host's still unaccounted for: it may be that one,
 				// landed after a load had answered that nothing was there. Read again before anything else.
-				else if (started.status === 'stale' && this.ownStart !== null) { this.unread = true; this.armHeartbeat(); }
+				else if (started.status === 'stale' && this.ownStarts.size > 0) { this.unread = true; this.armHeartbeat(); }
 				return null;
 			}
-			this.ownStart = null;
+			this.ownStarts.clear();
 			this.summaryState = { version: 1, sessionId: id, characters: character === null ? [] : [{ name: character, fromAt: at }], capped: false, summaryWritten: false };
 			await this.options.persistence.saveSummaryState?.(this.summaryState);
 			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = this.newChart(); this.failure = false; this.registryKnown = true;
@@ -391,7 +395,15 @@ export class LiveSessionLifecycle {
 	/** Presence remains independent from source freshness; disconnect only closes after the marker's grace. */
 	async presence(connected: boolean, atMs?: number): Promise<void> {
 		return await this.enqueue(async () => {
-			if (this.record?.phase !== 'active') return;
+			if (this.record?.phase !== 'active') {
+				// No session in memory, but a start of this host's is unaccounted for and may be on disk: the report is about
+				// that session if it turns up. The tracker reports a transition once, so one dropped here would leave a session
+				// found later as connected as it was started, with nobody behind it, for ever: the beat closes only from
+				// `disconnected`. It is kept as a report received during a loss is, for the reclaim that finds the session.
+				if (this.ownStarts.size > 0) this.lostPresence = { connected,
+					evidencedAt: Math.max(this.lostPresence?.evidencedAt ?? 0, Math.min(this.options.now(), atMs ?? this.options.now())) };
+				return;
+			}
 			const ownership = await this.ready();
 			const evidencedAt = atMs ?? (connected ? this.options.now() : this.record.lastPresenceAt);
 			// Nobody can write it now (lease lost, or the store no longer takes this writer): the reclaim applies the last report.

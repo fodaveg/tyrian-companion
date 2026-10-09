@@ -879,6 +879,21 @@ describe('durable live alert outbox', () => {
 		expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]?.state).toBe('dispatching');
 		await e.service.dispose(); await f.service.dispose();
 	});
+	it('what is read back after a refused write is taken only when it is the same measurement: another entry under that key changes nothing', async () => {
+		const f = fixture(); const entry = await positive(f); const id = entry.outbox[0]!.outboxId;
+		await f.service.updateAlert(id,(prior) => decideLiveAlert(prior,entry.observations[0]!,85,'Item',new Date(AT+1000).toISOString(),false));
+		const before = f.service.getJournal();
+		// Storage refuses the claim, and what it holds under the entry's key is not this entry: five bags where two were measured.
+		const ready = before[1]!; const claimedAt = new Date(AT+1000).toISOString();
+		const other = {...ready,observations:[{...ready.observations[0]!,delta:5,after:ready.observations[0]!.before+5}],outbox:[{...ready.outbox[0]!,state:'dispatching' as const,claimedAt}]};
+		vi.spyOn(f.store,'replaceLiveJournal').mockResolvedValueOnce(false);
+		const read = vi.spyOn(f.store,'readLiveJournalEntry').mockResolvedValueOnce(other);
+		await expect(f.service.updateAlert(id,(prior) => ({...prior,state:'dispatching',claimedAt}))).resolves.toBeNull();
+		expect(read).toHaveBeenCalledTimes(1);
+		expect(f.service.getJournal()).toEqual(before); expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		expect(f.service.getView().observations.map((row) => row.delta)).toEqual([2]);
+		await f.service.dispose();
+	});
 	it('an alert left ready by a refused claim sounds on a later pass once storage takes the claim, not only on a mode switch', async () => {
 		const f = fixture(); const entry = await positive(f); const e = economy(f);
 		const replace = f.store.replaceLiveJournal.bind(f.store); let refusing = true;

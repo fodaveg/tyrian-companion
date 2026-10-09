@@ -1143,6 +1143,148 @@ describe('live session whose start storage did not answer', () => {
 		expect(load).not.toHaveBeenCalled();
 		await f.service.dispose();
 	});
+
+	/** A start whose save the store is asked for and never answers; `land()` lets it reach storage, when the test says so. */
+	function heldStart(f: ReturnType<typeof outage>) {
+		const write = f.store.saveLive.bind(f.store);
+		let land: () => void = () => undefined; const held = new Promise<void>((resolve) => { land = resolve; });
+		const landed: { answer: unknown } = { answer: null };
+		vi.spyOn(f.store, 'saveLive').mockImplementationOnce(async (record, journal) => {
+			await held; const answer = await write(record, journal); landed.answer = answer; return answer;
+		});
+		return { land: async (expected: string) => { land(); await vi.waitFor(() => { expect(landed.answer).toEqual({ status: expected }); }); } };
+	}
+	/** One start that waits for storage and gives the wait up. */
+	async function unansweredStart(f: ReturnType<typeof outage>): Promise<void> {
+		const starting = f.service.start('Test');
+		await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+		await f.timeout();
+		await expect(starting).resolves.toBeNull();
+	}
+
+	// The tracker reports a transition once. With the session not in memory the report had nowhere to go, and the
+	// session found afterwards was `connected` with nobody behind it, for ever: the beat only closes from `disconnected`.
+	it('a report of presence that arrives while the start is unaccounted for is kept: the session is found as the player left it, and closes ten minutes later', async () => {
+		const f = outage('late-start-presence');
+		await f.service.initialize();
+		const answer = f.answerNextCommitLate();
+		await unansweredStart(f);
+		// The game exits three seconds in, and the tracker says so, once.
+		f.at(3000); await f.service.presence(false, AT + 3000);
+		answer(); await turns();
+		f.at(5000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', connection: 'disconnected' });
+		expect(f.service.getRuntime()).toMatchObject({ lastPresenceAt: AT + 3000 });
+		// Still its own start, not a restart: the gap it was born with, and no disconnection of a producer it never had.
+		expect(f.service.getView().gaps.map((gap) => gap.reason)).toEqual(['source_missing']);
+		for (let minute = 1; minute <= 10; minute += 1) { f.at(minute * 60_000); await f.beat(); }
+		expect(f.service.getView().phase, 'ten minutes of grace from the report, not from the start').toBe('active');
+		f.at(11 * 60_000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'complete', endedAt: iso(3000) });
+		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
+		expect((await f.durable()).record).toMatchObject({ phase: 'complete', endedAt: iso(3000), summaryReceipt: { path: 'Sessions/live.md' } });
+		await f.service.dispose();
+	});
+
+	it('a report from before the start is not about it: only what arrives while the start is unaccounted for is kept', async () => {
+		const f = outage('late-start-earlier-presence');
+		await f.service.initialize();
+		// Nothing is saved and no start is in course: this report is about no session at all.
+		await f.service.presence(false, AT);
+		const answer = f.answerNextCommitLate();
+		f.at(1000); await unansweredStart(f);
+		answer(); await turns();
+		f.at(5000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', connection: 'connected' });
+		await f.service.dispose();
+	});
+
+	it('two starts in a row that storage did not answer are both this host\'s: whichever lands is found as its own', async () => {
+		const f = outage('two-late-starts');
+		const first = heldStart(f);
+		await unansweredStart(f);
+		// The beat is told nothing is saved, so the next start is a new session, and its save is not answered either.
+		f.at(5000); await f.beat();
+		Object.assign(f.options, { sessionId: () => 'second-session' });
+		const second = heldStart(f);
+		f.at(6000); await unansweredStart(f);
+		// The first one lands, and the second is refused by it.
+		await first.land('saved'); await second.land('stale');
+		f.at(10_000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', startedAt: iso(0), connection: 'connected' });
+		for (let minute = 1; minute <= 12; minute += 1) { f.at(minute * 60_000); await f.beat(); }
+		expect(f.service.getView()).toMatchObject({ phase: 'active', endedAt: null });
+		expect(f.options.onComplete).not.toHaveBeenCalled();
+		await f.service.dispose();
+	});
+
+	it('a session of another host found while a start is unaccounted for is not this host\'s start: it is taken over as after a restart', async () => {
+		const f = outage('late-start-other-session');
+		heldStart(f);
+		await unansweredStart(f);
+		// Another host starts a session of its own and goes away. This host's start never reaches storage.
+		const other = f.restarted();
+		f.at(2000); await expect(other.service.start('Test')).resolves.toBe('next-session');
+		await other.dispose();
+		f.at(5000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'next-session', connection: 'disconnected' });
+		expect(f.service.getRuntime()).toMatchObject({ lastSourceDisconnectedAt: iso(2000), authority: { instanceId: 'host' } });
+		await f.service.dispose();
+	});
+
+	it('a report held back from an earlier session is dropped when a start goes unanswered: it was never about that start', async () => {
+		const f = outage('late-start-stale-presence');
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		// The finish of the first session lands unseen, and the report that follows finds the session already closed:
+		// nobody can write it, so it is held back, and no reclaim ever comes to spend it.
+		f.dieAfterNextCommit();
+		f.at(2000); await expect(f.service.stop(AT + 2000)).resolves.toBe(false);
+		reviveStorage(f.tracked);
+		f.at(3000); await f.service.presence(false, AT + 3000);
+		f.at(5000); await f.beat();
+		expect((await f.durable()).record).toMatchObject({ phase: 'complete', summaryReceipt: { path: 'Sessions/live.md' } });
+
+		Object.assign(f.options, { sessionId: () => 'second-session' });
+		const second = heldStart(f);
+		f.at(6000); await unansweredStart(f);
+		await second.land('saved');
+		f.at(10_000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'second-session', connection: 'connected' });
+		expect(f.service.getRuntime()).toMatchObject({ lastPresenceAt: AT + 6000 });
+		await f.service.dispose();
+	});
+
+	it('once something else is known to hold the place the unanswered start is forgotten: a later refusal is explained, and nothing is read again', async () => {
+		const f = outage('late-start-forgotten-held');
+		heldStart(f);
+		await unansweredStart(f);
+		const load = vi.spyOn(f.store, 'loadLive').mockResolvedValueOnce({ status: 'error', code: 'corrupt' });
+		f.at(5000); await f.beat();
+		expect(load).toHaveBeenCalledTimes(1);
+		Object.assign(f.options, { sessionId: () => 'second-session' });
+		vi.spyOn(f.store, 'saveLive').mockResolvedValueOnce({ status: 'stale' });
+		f.at(6000); await expect(f.service.start('Test')).resolves.toBeNull();
+		f.at(10_000); await f.beat();
+		expect(load).toHaveBeenCalledTimes(1);
+		await f.service.dispose();
+	});
+
+	it('and it is forgotten once a later start is saved: a refusal long after is not a reason to read again', async () => {
+		const f = outage('late-start-forgotten-saved');
+		heldStart(f);
+		await unansweredStart(f);
+		f.at(5000); await f.beat();
+		Object.assign(f.options, { sessionId: () => 'second-session' });
+		f.at(6000); await expect(f.service.start('Test')).resolves.toBe('second-session');
+		f.at(7000); await expect(f.service.stop(AT + 7000)).resolves.toBe(true);
+		const load = vi.spyOn(f.store, 'loadLive');
+		Object.assign(f.options, { sessionId: () => 'third-session' });
+		vi.spyOn(f.store, 'saveLive').mockResolvedValueOnce({ status: 'stale' });
+		f.at(8000); await expect(f.service.start('Test')).resolves.toBeNull();
+		f.at(10_000); await f.beat();
+		expect(load).not.toHaveBeenCalled();
+		await f.service.dispose();
+	});
 });
 
 /**
@@ -1202,6 +1344,49 @@ describe('live session whose note takes longer to write than the wait for it', (
 		await f.service.dispose();
 	});
 
+	it('the lease taken again while the writer is at it does not make it another note: the same attempt is waited for, and its answer is the receipt', async () => {
+		const { f, stopping, finish } = await closing('slow-note-lease');
+		await f.timeout();
+		await expect(stopping).resolves.toBe(false);
+		// Nobody renews the lease of a closed session: by the time the writer ends it has run out, and the beat takes it again.
+		finish('Sessions/slow.md'); await turns();
+		f.at(LEASE_TTL_MS + 10_000); await f.beat();
+		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
+		expect((await f.durable()).record).toMatchObject({ phase: 'complete', authority: { fence: 2 }, summaryReceipt: { path: 'Sessions/slow.md' } });
+		await f.service.dispose();
+	});
+
+	it('a later revision of the note waits for the one being written and is then written itself: one note never gets the answer of another', async () => {
+		const f = outage('slow-note-revisions');
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+		const entry = f.service.getJournal()[1]!; const id = entry.outbox[0]!.outboxId;
+		await f.service.updateAlert(id, (prior) => decideLiveAlert(prior, entry.observations[0]!, 85, 'Item', iso(1000), false));
+		await f.service.updateAlert(id, (prior) => ({ ...prior, state: 'dispatching', claimedAt: iso(1000), receipt: { state: 'pending' } }));
+		f.at(2000); await expect(f.service.stop(AT + 2000)).resolves.toBe(true);
+		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
+
+		// The alert is settled after the close, which rewrites the note; that rewrite takes longer than its wait.
+		let finish: (path: string) => void = () => undefined;
+		f.options.onComplete.mockImplementationOnce(async () => await new Promise<string>((resolve) => { finish = resolve; }));
+		const settling = f.service.updateAlert(id, (prior) => ({ ...prior, state: 'processed' }), true);
+		await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+		await f.timeout(); await settling;
+		expect(f.options.onComplete).toHaveBeenCalledTimes(2);
+		// Its receipt arrives while that rewrite is still in course: a newer note, which waits its turn instead of starting a second writer.
+		const receiving = f.service.updateAlert(id, (prior) => ({ ...prior, receipt: { state: 'received', client: 'nexus', atMs: AT + 3000 } }), true);
+		await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+		await f.timeout(); await receiving;
+		expect(f.options.onComplete).toHaveBeenCalledTimes(2);
+		// The rewrite ends. The next revision is written with what the session holds now, not answered with the old one's result.
+		finish('Sessions/live.md'); await turns();
+		await f.service.updateAlert(id, (prior) => ({ ...prior, deliveryReport: { delivered: ['queue'], failed: [], rejected: false } }), true);
+		expect(f.options.onComplete).toHaveBeenCalledTimes(3);
+		const written = (f.options.onComplete.mock.calls as unknown as [unknown, LiveJournalEntryV1[]][])[2]![1];
+		expect(written[1]?.outbox[0]).toMatchObject({ state: 'processed', receipt: { state: 'received' }, deliveryReport: { delivered: ['queue'] } });
+		await f.service.dispose();
+	});
+
 	it('a writer that fails after its wait ran out is reported by the beat that finds out, and asked again by the next', async () => {
 		const { f, stopping, fail } = await closing('slow-note-fails');
 		await f.timeout();
@@ -1250,6 +1435,25 @@ describe('live session whose alert claim storage did not answer', () => {
 		killStorage(f.tracked);
 		await expect(f.store.readLiveJournalEntry('session', EPOCH, 1)).rejects.toThrow();
 		reviveStorage(f.tracked); await f.service.dispose();
+	});
+
+	it('the read back has the same wait as every other call: unanswered, the claim stays refused and the queue goes on', async () => {
+		const f = outage('late-claim-unread');
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+		const entry = f.service.getJournal()[1]!; const id = entry.outbox[0]!.outboxId;
+		await f.service.updateAlert(id, (prior) => decideLiveAlert(prior, entry.observations[0]!, 85, 'Item', iso(1000), false));
+		vi.spyOn(f.store, 'replaceLiveJournal').mockResolvedValueOnce(false);
+		vi.spyOn(f.store, 'readLiveJournalEntry').mockImplementationOnce(async () => await new Promise<LiveJournalEntryV1 | null>(() => undefined));
+		const claiming = f.service.updateAlert(id, (prior) => ({ ...prior, state: 'dispatching', claimedAt: iso(1000) }));
+		await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+		expect(await settlement(claiming)).toBe('pending');
+		await f.timeout();
+		expect(await settlement(claiming), 'the read back has a deadline').toBe('resolved');
+		await expect(claiming).resolves.toBeNull();
+		expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		expect(await settlement(f.service.capture())).toBe('resolved');
+		await f.service.dispose();
 	});
 });
 
