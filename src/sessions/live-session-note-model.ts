@@ -5,7 +5,7 @@ import { isFarmingGoal, type FarmingGoalV1 } from './farming-goal';
 import { isFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
 import { LIVE_SESSION_NOTE_WRITE_VERSION, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveGapV1, type LiveJournalEntryV1,
 	type LiveObservationV1, type LivePriceBasis, type LiveSessionPayloadVersion, type LiveSessionRuntimeRecord, type LivePriceV1, type LiveTotalV1, type LiveValuationV1 } from './live-session-model';
-import { bounded, date, GOLD_CURRENCY_ID, isEmptySample, isLiveGap, keys, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
+import { bounded, date, GOLD_CURRENCY_ID, isEmptySample, isLiveGap, keys, liveRuntimePriceBasis, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
 import { isLiveObservation } from './live-session-validation';
 import { sha256Text } from './session-note-renderer';
 
@@ -35,7 +35,10 @@ export interface StoredLiveJournalEntryV1 {
 export interface LiveSessionNoteInput {
 	record: LiveSessionRuntimeRecord; journal: readonly LiveJournalEntryV1[];
 	locale: 'es' | 'en'; outputFolder: string; displayNames?: Readonly<Record<string, string>>;
-	/** The payload format to write; `LIVE_SESSION_NOTE_WRITE_VERSION` when absent. */
+	/**
+	 * The payload format to write; `LIVE_SESSION_NOTE_WRITE_VERSION` when absent. It does not convert prices: 1 states the record's
+	 * prices as net per unit (the only basis that format has) and 2 states them in the basis the runtime keeps (`liveRuntimePriceBasis`).
+	 */
 	payloadVersion?: LiveSessionPayloadVersion;
 }
 
@@ -119,6 +122,9 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 		else return null;
 	}
 	const version = input.payloadVersion ?? LIVE_SESSION_NOTE_WRITE_VERSION;
+	// The valuation states the basis the record's prices are in, which is the runtime's. Version 1 has one basis only, the net price
+	// per unit a 0.6.16 accepts, so asking for that format is saying the prices at hand are net.
+	const basis: LivePriceBasis = version === 1 ? 'instant_sell_net' : liveRuntimePriceBasis();
 	// Version 2 keeps no entry for a sample that changed nothing, whether or not the journal at hand still has it.
 	const entries = (input.journal as readonly (LiveJournalEntryV1 & {outbox: LiveNoteOutboxInput[]})[])
 		.filter((entry) => version === 1 || !isEmptySample(entry));
@@ -145,7 +151,7 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 		journal: journal as StoredLiveJournalEntryV1[],
 		gaps,
 		totals: orderTotals(live.totals.map((total) => ({ kind: total.kind, idNumber: total.idNumber, positive: total.positive, negative: total.negative, net: total.net }))),
-		valuation: valueLiveTotals(orderTotals(live.totals), live.prices, live.priceCapturedAt, live.currencyTrackedIds.includes(GOLD_CURRENCY_ID), 'instant_sell_net'), magicFind: { value: live.magicFind.value, source: live.magicFind.source },
+		valuation: valueLiveTotals(orderTotals(live.totals), live.prices, live.priceCapturedAt, live.currencyTrackedIds.includes(GOLD_CURRENCY_ID), basis), magicFind: { value: live.magicFind.value, source: live.magicFind.source },
 		preparation: { version: 1, enabled: live.preparation.enabled, manualMagicFindBonus: live.preparation.manualMagicFindBonus,
 			foodReminderMinutes: live.preparation.foodReminderMinutes, utilityReminderMinutes: live.preparation.utilityReminderMinutes },
 		farmingGoal: live.farmingGoal, groupContext: live.groupContext,...declaredBuild,

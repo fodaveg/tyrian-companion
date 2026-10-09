@@ -1,8 +1,8 @@
 import { isAlert, type AlertV1 } from '../alerts/alert-contract';
 import { ALERT_CHANNEL_IDS } from '../alerts/alert-emitter';
 import { sha256CanonicalValue } from '../core/canonical-sha256';
-import type { LiveAlertOutboxV1, LiveObservationV1, LiveJournalEntryV1 } from './live-session-model';
-import { bounded, date, keys, natural, record } from './live-session-reducer';
+import type { LiveAlertOutboxV1, LiveObservationV1, LiveJournalEntryV1, LivePriceBasis } from './live-session-model';
+import { bounded, date, keys, liveItemValueCopper, natural, record } from './live-session-reducer';
 
 /** A durable positive observation is the only source of a candidate, regardless of its unknown cause. */
 export function createLiveAlertIntent(sessionId: string, observation: LiveObservationV1, thresholdCopper: number): LiveAlertOutboxV1 {
@@ -10,11 +10,14 @@ export function createLiveAlertIntent(sessionId: string, observation: LiveObserv
 		outboxId: sha256CanonicalValue([sessionId, observation.id, 1]), state: 'awaiting_price', skipReason: null,
 		alert: null, priceCapturedAt: null, thresholdCopper, claimedAt: null, deliveryReport: null, sentTo: [], receipt: null };
 }
-/** Freeze the first complete pricing decision; later prices never rewrite an already decided effect. */
+/**
+ * Freeze the first complete pricing decision; later prices never rewrite an already decided effect. `basis` is what `unitCopper`
+ * means (net per unit when absent): the observed pile is valued like every other figure of its session.
+ */
 export function decideLiveAlert(intent: LiveAlertOutboxV1, observation: LiveObservationV1, unitCopper: number | null,
-	name: string, capturedAt: string, closed: boolean): LiveAlertOutboxV1 {
+	name: string, capturedAt: string, closed: boolean, basis: LivePriceBasis = 'instant_sell_net'): LiveAlertOutboxV1 {
 	if (intent.state !== 'awaiting_price') return structuredClone(intent);
-	const total = unitCopper === null ? null : unitCopper * observation.delta;
+	const total = unitCopper === null ? null : basis === 'instant_sell_net' ? unitCopper * observation.delta : liveItemValueCopper(basis,unitCopper,observation.delta);
 	const skipReason = closed ? 'session_closed' : total === null || !Number.isSafeInteger(total) ? 'no_price'
 		: total < intent.thresholdCopper ? 'below_threshold' : null;
 	const alert: AlertV1 | null = skipReason === null ? {kind:'valuable_loot', itemId: observation.idNumber,

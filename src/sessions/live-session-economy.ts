@@ -10,6 +10,7 @@ import type { AlertDeliveryReport } from '../alerts/alert-emitter';
 import type { LiveAlertOutboxV1, LiveJournalEntryV1 } from './live-session-model';
 import type { LiveSessionLifecycle } from './live-session-lifecycle';
 import { decideLiveAlert } from './live-session-outbox';
+import { liveRuntimePriceBasis } from './live-session-reducer';
 
 interface LiveEconomyOptions {
 	lifecycle: LiveSessionLifecycle; gateway: PublicCatalogGateway; rateLimit: RateLimitCoordinator;
@@ -43,6 +44,7 @@ const AWAITING_ENTRIES_MAX = 20;
  */
 export class LiveSessionEconomy {
 	private readonly entities = new Map<number,{name:string;icon:string|null}>();
+	/** Unit prices in the runtime's basis (`liveRuntimePriceBasis`), the same one the record they are saved to and restored from is in. */
 	private readonly quotes = new Map<number,{unitCopper:number|null;capturedAt:number}>();
 	/** Ids a panel asked for and nobody has resolved yet, and ids whose cache read already missed (cleared when `enrich()` resolves something). */
 	private readonly wanted = new Set<number>();
@@ -136,11 +138,17 @@ export class LiveSessionEconomy {
 		if (![200,206,404].includes(response.status) || !Array.isArray(response.body) || this.disposed) return;
 		this.recordPrice(id,parsePublicTradingPostPriceBatch(response.body,new Set([id])).items.find((price) => price.itemId === id));
 	}
-	/** One place for what a public read of an id means: the net bid for the session, plus the raw sides for the bag. */
+	/**
+	 * One place for what a public read of an id means: the bid for the session, in the basis the runtime keeps (`liveRuntimePriceBasis`),
+	 * plus the raw sides for the bag. Net per unit: what one unit nets, or no price when the commission leaves nothing of it. Gross per
+	 * unit: the bid as read, and the commission is worked out later over each total that is valued.
+	 */
 	private recordPrice(id: number, price: {bid: {unitCopper:number}|null; ask: {unitCopper:number}|null}|undefined): void {
 		const capturedAt = this.options.now();
-		const bid = price?.bid; const priced = bid ? createTradingPostValueWithPolicy('instant_sell',bid.unitCopper,1) : null;
-		this.quotes.set(id,{unitCopper:priced?.status === 'ok' ? priced.value.netCopper : null,capturedAt});
+		const bid = price?.bid; let unitCopper: number | null = null;
+		if (bid && liveRuntimePriceBasis() === 'instant_sell_gross') unitCopper = Number.isSafeInteger(bid.unitCopper) && bid.unitCopper > 0 ? bid.unitCopper : null;
+		else if (bid) { const priced = createTradingPostValueWithPolicy('instant_sell',bid.unitCopper,1); unitCopper = priced.status === 'ok' ? priced.value.netCopper : null; }
+		this.quotes.set(id,{unitCopper,capturedAt});
 		if (id === HALLOWEEN_TOT_BAG_ITEM_ID) this.bagRaw = {bid: price?.bid?.unitCopper ?? null, ask: price?.ask?.unitCopper ?? null, capturedAt};
 	}
 	observe(entry: LiveJournalEntryV1): void {
@@ -215,7 +223,7 @@ export class LiveSessionEconomy {
 			const observation = target.observations.find((row) => row.id === candidate.observationId); if (!observation) continue;
 			const quote = this.quotes.get(observation.idNumber);
 			if (candidate.state === 'awaiting_price' && quote) await lifecycle.updateAlert(candidate.outboxId,(prior) =>
-				decideLiveAlert(prior,observation,quote.unitCopper,this.entities.get(observation.idNumber)?.name ?? String(observation.idNumber),new Date(quote.capturedAt).toISOString(),false));
+				decideLiveAlert(prior,observation,quote.unitCopper,this.entities.get(observation.idNumber)?.name ?? String(observation.idNumber),new Date(quote.capturedAt).toISOString(),false,liveRuntimePriceBasis()));
 			const claimed = await lifecycle.updateAlert(candidate.outboxId,(prior) => prior.state === 'ready'
 				? {...prior,state:'dispatching',claimedAt:new Date(this.options.now()).toISOString()} : prior);
 			if (claimed?.state !== 'dispatching' || claimed.alert === null || this.disposed) continue;
