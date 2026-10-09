@@ -1,5 +1,54 @@
 # Estado
 
+## Candidato 0.6.22: Sesión a una columna en la pantalla principal de Hebra y «Valor estimado» en grande con los iconos de oro, plata y cobre (9 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `b516be4` (`main` con el canal 0.6.21 publicado). Trae dos
+cambios de interfaz sobre la captura de la 0.6.21 en el Hebra real de David (`02a29c1`, `ae9054e`) y los metadatos de
+versión (`57e1448`: `manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de
+Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md) («Capas»).
+
+- Origen: petición de David del 9 oct 2026, con la captura de la 0.6.21 en su Hebra: «puedes dejarlo a 1 columna? y
+  que el valor de valor estimado se vea en grande y si puede ser con los iconos oficiales de oro plata y cobre?». Deshace
+  su petición anterior de dos columnas («sesión se debería ver a 2 columnas, no?»): al verlo prefiere una.
+- Sin verificar, y es lo primero que hay que saber: nada de esto se ha visto pintado. No hay captura de la 0.6.22 ni se
+  ha abierto en ningún navegador, en Hebra ni en Obsidian; las cifras de ancho de abajo salen de leer el CSS, no de
+  medir una interfaz. Los tests de DOM corren en happy-dom, que no calcula consultas de contenedor ni carga imágenes: lo
+  que prueban es la estructura, el texto, el nombre accesible y que cada letra solo se esconde con su `load` (el evento
+  se lanza a mano); las reglas de CSS se comprueban como texto.
+- Una columna: en la pantalla principal de Hebra el panel de Sesión va en columna a cualquier ancho. Se quita la regla
+  de 560 px de `5d647c4` y, como la regla de dos columnas desde 600 px de `styles.css` también llegaba a la pantalla
+  principal (el hueco es su contenedor más cercano), `tyrian-host.css` devuelve la columna bajo
+  `.hebra-module-view-main` desde esos 600 px. Obsidian conserva sus dos columnas desde 600 px; Inventario y Venta no se
+  tocan. Las dos columnas de las filas de la Cronología siguen igual.
+- Valor estimado: etiqueta pequeña encima y cifra debajo, a la izquierda, con cifras tabulares. Tamaño
+  `clamp(1.25rem, 8cqi, 2rem)` sobre el contenedor: 22 px (1.4rem) con 280 px, 2rem desde 400 px; dentro de las dos
+  columnas de Obsidian, 1.25rem. Cada moneda es número, icono y letra; las tres pasan a otra línea en vez de desbordar.
+  Cálculo por escrito (no medido): a 280 px de contenedor (unos 248 de contenido) `1234g 56s 78c` ocupa unos 190 px
+  (8 cifras de 0,6 em, tres iconos de 0,8 em y los huecos, a 22 px); a 593, 852 y 1300 px el tamaño es 2rem y la cifra
+  cabe en una línea de unos 270 px.
+- Iconos: `ui_coin_gold`, `ui_coin_silver` y `ui_coin_copper` de `GET https://api.guildwars2.com/v2/files?ids=all`
+  (`render.guildwars2.com/file/090A980A.../156904.png`, `.../E5A2197D.../156907.png` y `.../6CF8F96A.../156902.png`),
+  respondieron 200 `image/png` de 32 × 32 el 9 oct 2026 y se miraron a mano: moneda de oro, de plata y de cobre. Son
+  constantes del código (los demás iconos llegan del catálogo, cacheado, y el catálogo de monedas no trae estos tres:
+  `/v2/currencies/1` da una sola moneda) en el mismo origen de siempre, sin host nuevo, sin pedir `/v2/files` desde el
+  plugin y sin empaquetar ninguna imagen. Cada `<img>` es decorativa (`alt=""`, `aria-hidden`) y la carga la hace el
+  navegador, con su caché. Sin red o con la imagen rota la letra no se esconde y queda `0g 37s 1c`; el valor entero es
+  un `role="img"` con «0 de oro, 37 de plata, 1 de cobre» (`0 gold, 37 silver, 1 copper`; con signo, «menos …») en
+  claves `moneySpoken` y `moneySpokenLoss` de `live-session-copy.ts`.
+- Sin sesión no hay panel de cifras (la fila se oculta como antes); con la sesión sin lecturas vale 0 y se pinta
+  `0g 0s 0c`; negativo, `-12g 34s 56c` con el signo delante de la primera moneda.
+- No cambia: la etiqueta de la gráfica, la cronología, las notas Markdown, Inventario y Venta siguen con letras.
+- Medido sobre `57e1448` más los cambios de documentación sin commitear al medir (Fedora, 9 oct 2026), un solo worker y
+  ficheros sueltos: `tsc --noEmit` sin errores, `lint` con 0 errores, censo de observabilidad PASS (la baseline gana el
+  fichero nuevo y sus dos `addEventListener` de imagen, revisados, y el total de 222 a 224), `i18n-unused` e
+  `i18n-copy-length` sin hallazgos, contrato de texto fuente PASS, y `build:host-esm`: «host ESM bundle: PASS (397
+  inputs, 2673225 bytes -> hebra-main.mjs; exports: activate; npm packages: yaml)». No es el gate.
+- Sin medir: el gate, los guardarraíles, `release:preflight` y el paquete.
+- No verificado: la interfaz pintada en cualquier host; que los iconos carguen en el Hebra y el Obsidian reales; el
+  aspecto a 280, 593, 852 y 1300 px; una lectura con un lector de pantalla; Windows.
+- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la verificación en
+  clientes reales.
+
 ## Canal 0.6.21 publicado: Tyrian Companion en la pantalla principal de Hebra, con sus tres secciones (9 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.21](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.21)
@@ -63,9 +112,15 @@ Obsidian 1.11.4).
   un Hebra 1.2.0 simulado. Inventario y Venta usan en la columna de Hebra sus disposiciones estrechas por debajo de
   760 px. El botón de la barra de Hebra abre el menú del plugin, no la vista. El censo de observabilidad gana dos
   `catch` (la lectura de la preferencia en `getViewPlacement`, observada; `hebraHasMainView`, en lista blanca).
+- Visto por David en su Hebra real (9 oct 2026, Fedora, rpm de Hebra `0.2.0-15`): la captura de las 18:17 muestra la
+  vista del plugin en la pantalla principal, con Sesión, Inventario y Venta en la lista de secciones, la sección Sesión
+  pintada a dos columnas con una sesión terminada, y el botón de Ajustes arriba a la derecha. Solo eso: no se han visto
+  Inventario ni Venta, ni el cambio de la opción «Dónde se muestra», ni Obsidian, ni Windows. Sobre esa captura David
+  pidió una columna y el valor estimado en grande con los iconos de oro, plata y cobre (candidato 0.6.22, abajo).
 - No verificado: nada de la 0.6.21 instalado, ejecutado ni visto en un Hebra ni en un Obsidian reales, ni por BRAT ni
-  desde Hebra; el CSS nuevo no se ha visto en ningún navegador; la sesión de Hebra declara sin probar a mano la vista
-  principal, el motor WebKit y la vista de solo editor. Ningún test graba una sesión en vivo con su sección oculta.
+  desde Hebra, salvo lo que recoge el punto anterior; el CSS nuevo no se ha visto en ningún navegador salvo esa captura
+  de la Sesión; la sesión de Hebra declara sin probar a mano la vista principal, el motor WebKit y la vista de solo
+  editor. Ningún test graba una sesión en vivo con su sección oculta.
 - Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
 
 ## Canal 0.6.20 publicado: el mapa en curso tras un reinicio del host y el resumen de sesión por mapa (9 oct 2026)

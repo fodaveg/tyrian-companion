@@ -1,5 +1,27 @@
 # Changelog
 
+## Release beta 0.6.22 - la Sesión a una columna en la pantalla principal de Hebra y el valor estimado en grande, con las monedas de oro, plata y cobre
+
+Candidato; no publicado ni etiquetado. Cambia el aspecto del panel de Sesión tras ver la 0.6.21 en el Hebra real de
+David. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto pintado.
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.22 se ha visto pintado en ningún host. Los tests
+  comprueban la estructura del DOM, el texto, el nombre accesible y el texto de las reglas de CSS; ninguno calcula un
+  contenedor ni carga una imagen. Que los iconos carguen en el Hebra o el Obsidian reales, y cómo queda a 280, 593, 852
+  y 1300 px, está por ver.
+- En la pantalla principal de Hebra la Sesión va a una columna a cualquier ancho: el valor estimado arriba, la gráfica
+  debajo a todo el ancho del contenido, y después Objetos, Monedas, Cronología y Sesiones anteriores. Deshace las dos
+  columnas de la 0.6.21, que David vio en su Hebra y prefirió en una. Obsidian conserva sus dos columnas desde 600 px;
+  Inventario y Venta no cambian.
+- «Valor estimado» pasa a cifra destacada en todos los hosts: la etiqueta pequeña encima y el valor grande debajo, a la
+  izquierda, con cifras tabulares (hasta 2rem en la pantalla principal, menos en una columna estrecha, donde las tres
+  monedas pasan a otra línea antes que desbordar).
+- El valor lleva los iconos oficiales de oro, plata y cobre: `0 [oro] 37 [plata] 1 [cobre]`. Salen del servicio de
+  render oficial (`render.guildwars2.com`, el origen de los demás iconos) y no se empaqueta ninguna imagen. Sin red o con
+  la imagen rota queda el texto de siempre, `0g 37s 1c`. Un lector de pantalla lo lee entero («0 de oro, 37 de plata, 1
+  de cobre»; en inglés «0 gold, 37 silver, 1 copper») y los iconos son decorativos.
+- No cambia: la etiqueta de la gráfica, la cronología, las notas Markdown, Inventario y Venta siguen con letras.
+
 ## Release beta 0.6.21 - en Hebra, Tyrian Companion pasa a la pantalla principal, con Sesión, Inventario y Venta como secciones
 
 [Canal 0.6.21 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.21); **instalación/runtime
