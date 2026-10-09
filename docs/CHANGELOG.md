@@ -1,17 +1,22 @@
 # Changelog
 
-## Release beta 0.6.23 - el plugin arranca aunque el almacenamiento del navegador no conteste, y una sesión en vivo vuelve al reabrir tras un cierre brusco sin esperar cinco minutos
+## Release beta 0.6.24 - el plugin arranca aunque el almacenamiento del navegador no conteste, y una sesión en vivo vuelve al reabrir tras un cierre brusco sin esperar cinco minutos
 
 Candidato; no publicado ni etiquetado. Dos arreglos de robustez: mientras todo va bien no cambia nada de lo que se ve.
 Cambia qué pasa cuando el almacenamiento local deja de contestar al arrancar, y qué pasa con la sesión en vivo cuando
 la aplicación de notas se cierra de golpe. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente
 real.
 
-- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.23 se ha ejecutado en un Hebra ni en un Obsidian
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.24 se ha ejecutado en un Hebra ni en un Obsidian
   reales. Todo lo que sigue está medido en tests, con un almacenamiento y un reloj simulados. Ningún almacenamiento se
   ha quedado mudo de verdad y ninguna aplicación se ha cerrado de golpe de verdad. Tampoco se ha comprobado en ningún
   host que los candados del navegador (`navigator.locks`), en los que se apoya el segundo arreglo, existan y se suelten
   al morir el proceso. La 0.6.22 sigue sin haberse visto pintada.
+- Por qué es la 0.6.24 y no la 0.6.23. La 0.6.23 se etiquetó el 9 oct 2026 y su release no llegó a publicarse: el gate
+  de GitHub falló en dos tests del arranque que en local pasaban. Los tests medían con un número fijo de turnos y
+  dependían de la velocidad de la máquina; `a734137` los hace esperar a que el motor simulado termine. La etiqueta
+  `0.6.23` existe sin release y no se instala por ningún canal. No hay ningún cambio de producto entre la 0.6.23
+  etiquetada y la 0.6.24: solo tests y metadatos.
 - Arranque con el almacenamiento mudo. Si el almacenamiento local del navegador no contesta al arrancar, el plugin ya
   no se queda sin arrancar: arranca igualmente, con las sesiones en error, y se recupera solo cuando el almacenamiento
   vuelve. En los tests tarda como mucho 20 s: 10 s esperando el modo de este equipo y 10 s esperando la sesión guardada.

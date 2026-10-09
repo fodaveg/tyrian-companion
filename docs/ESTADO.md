@@ -1,17 +1,28 @@
 # Estado
 
-## Candidato 0.6.23: el arranque con el almacenamiento mudo y la sesión en vivo tras un cierre brusco (9 oct 2026)
+## Candidato 0.6.24: el arranque con el almacenamiento mudo y la sesión en vivo tras un cierre brusco (9 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `efe671f` (`main` con el canal 0.6.22 publicado). Trae dos lotes
-de robustez, sin cambios de interfaz, y los metadatos de versión (`bc41145`: `manifest.json`, `package.json`, la raíz
+**Candidato; no publicado ni etiquetado.** Es la 0.6.23 que no llegó a publicarse, con los tests del arranque arreglados (ver abajo). Parte de `efe671f` (`main` con el canal 0.6.22 publicado). Trae dos lotes
+de robustez, sin cambios de interfaz, y los metadatos de versión (`bc41145` para la 0.6.23 y, para la 0.6.24, el commit de metadatos que la sigue: `manifest.json`, `package.json`, la raíz
 de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md), en
 [SPEC-live-loot](SPEC-live-loot.md) §4 y en [ARCHITECTURE](ARCHITECTURE.md) («Coordinación de sesión activa»).
 
-- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.23 se ha ejecutado en un Hebra ni en un Obsidian
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.24 se ha ejecutado en un Hebra ni en un Obsidian
   reales. Todas las cifras de abajo salen de tests sobre un IndexedDB falso, un gestor de candados en memoria y un reloj
   simulado. Ningún almacén se ha quedado mudo de verdad, ninguna aplicación se ha cerrado de golpe de verdad, y no se ha
   comprobado en ningún host que `navigator.locks` exista, que su candado muera con el proceso ni qué procesos lo
   comparten.
+- Por qué 0.6.24 y no 0.6.23. La etiqueta `0.6.23` se empujó sobre `969d874` y su release no se publicó: el gate del
+  workflow de release (run `37979072442`) y el CI (run `37979062119`) fallaron siempre en los mismos 2 tests del
+  arranque («Tests 2 failed | 5879 passed | 1 skipped (5882)»). La etiqueta se queda sin release y sin mover. Entre la
+  0.6.23 etiquetada y la 0.6.24 no hay cambio de producto: solo tests (`a734137`) y metadatos.
+- Un gate local verde no acredita el de GitHub para tests con temporizadores. El gate local sobre `dd2bbce` dio
+  «VEREDICTO: VERDE (8/8)», «VEREDICTO: VERDE (25/25)» y «Tests 5882 passed (5882)», y GitHub dio rojo. Los tests
+  medían con un número fijo de turnos y dependían de la velocidad. Reproducción local antes del arreglo: con 48 bucles
+  de CPU en 24 hilos, 4 de 5 corridas rojas; con un motor simulado que contesta cada apertura con 30 ms de retraso, 5 de
+  15 tests rojos con el instrumento viejo. Tras el arreglo: 10 de 10 sin lentitud; 10 de 10 con carga y latencia (antes
+  del último retoque) y 3 de 3 después.
+- Pendiente: el CI de GitHub sobre `a734137` y la publicación de la 0.6.24.
 - La 0.6.22 sigue sin verse pintada: no hay noticia nueva de David desde la captura de la 0.6.21.
 - Lote 1, arranque con el almacenamiento mudo (tarea Z3: `39caa31`, `b202e6a`, `593bff9`, `c3d3d5b`, `5e9f966`,
   `d137e8f`). Si el motor de almacenamiento del navegador no contesta, el plugin arranca igualmente: peor caso medido
