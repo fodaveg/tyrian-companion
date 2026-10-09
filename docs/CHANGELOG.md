@@ -1,5 +1,48 @@
 # Changelog
 
+## Release beta 0.6.21 - en Hebra, Tyrian Companion pasa a la pantalla principal, con Sesión, Inventario y Venta como secciones
+
+Release por tag `0.6.21`. Añade en Hebra una forma nueva de ver el plugin y la opción para elegirla; en Obsidian y en
+un Hebra anterior no cambia nada. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.21 se ha ejecutado en un Hebra real ni se ha visto
+  en pantalla. Los tests corren contra el host falso de `hebra-plugin-api` 1.3.0 con una capa propia alrededor
+  (`src/test/hebra-real-host.ts`) para lo que el host real hace y ese falso no. La sesión de Hebra declara sin probar a
+  mano la vista principal, el motor WebKit y la vista de solo editor. El CSS nuevo (Sesión a dos columnas, la fila del
+  botón de Ajustes) no se ha visto en ningún navegador.
+- En un Hebra con la API de plugins 1.3.0 (app 0.2.0-15 o posterior, según la sesión de Hebra), el plugin se ve por
+  defecto en la pantalla principal: una vista «Tyrian Companion» con «Sesión», «Inventario» y «Venta» en la lista de
+  secciones de Hebra, y el contenido de la sección elegida al lado. Se llega desde el botón de Tyrian Companion de la
+  barra de Hebra, cuyo menú lleva «Abrir acompañante» (entra en Sesión), y desde los comandos de paleta. Mientras esa
+  vista ocupa la pantalla, Hebra muestra el botón como pulsado.
+- Opción nueva en los Ajustes del plugin, «Dónde se muestra»: «Pantalla principal» o «Barra lateral». Es de cada
+  dispositivo (y, en Hebra, de cada biblioteca), no se sincroniza y por defecto es la pantalla principal. Cambiarla se
+  aplica en el acto, sin recargar el plugin: lo que estuviera abierto se cierra y no se abre nada. Con «Barra lateral»
+  quedan las tres vistas de antes: Sesión en la columna derecha, Inventario y Venta en diálogo. Decisión del dueño del
+  9 oct 2026: «quiero que en las opciones del plugin haya una opción para verlo en la sidebar o en la pantalla
+  principal. por defecto se verá en la principal.»
+- En un Hebra anterior y en Obsidian nada cambia y la opción no aparece. El plugin pregunta a Hebra si tiene la vista
+  principal (`api.has('ui.view.main')`) y, si no la tiene, o si esa pregunta falla, se queda con sus tres vistas.
+  `hebra.json` sigue pidiendo `apiVersion ^1.0.0` y no declara la función nueva.
+- En la pantalla principal no salen las tres pestañas propias del plugin (las sustituye la lista de Hebra); el botón
+  de Ajustes se conserva, solo, al final de su fila. El panel de Sesión pasa a dos columnas desde 560 px de columna (en
+  el resto sigue siendo desde 600). Una sección que Hebra deja montada pero oculta no trabaja: Sesión para su tic de un
+  segundo, Venta suelta su temporizador de caducidad e Inventario no pide repintados de progreso; lo que cambie
+  mientras tanto se pinta una sola vez al volver a verla. La sesión en vivo no depende de que su sección esté abierta:
+  la lleva el plugin, no la vista (leído en el código; ningún test graba una sesión con la sección oculta).
+- Los comandos de paleta «Abrir acompañante», «Abrir asesor de inventario» y «Abrir venta de Halloween» abren su
+  sección de la pantalla principal (o su vista propia, con «Barra lateral»). Son la vía en la vista de solo editor de
+  Hebra, donde la lista de secciones no se ve.
+- Dependencia de tipos: `hebra-plugin-api` pasa de 1.0.0 a 1.3.0. Al bundle de Hebra solo entran tipos (`npm packages:
+  yaml` en `build:host-esm`).
+- Límites: Inventario y Venta se diseñaron para un diálogo de 960 px; en la columna de Hebra (de 593 a 852 px en un
+  escritorio normal, según Hebra) usan sus disposiciones para contenedor estrecho por debajo de 760 px. El contenido
+  no pasa de 84rem de ancho, así que en una ventana muy ancha queda a la izquierda. Al elegir «Pantalla principal»
+  desde los Ajustes de Hebra, al cerrarlos se vuelve a las notas, no al plugin (la fila dice desde dónde se abre). El botón de la
+  barra de Hebra no abre la vista directamente: abre su menú. El host falso de Hebra no rechaza un id de vista
+  repetido y el real sí; el plugin usa ids distintos para la vista principal y para las tres propias. Los comandos de
+  paleta conservan sus nombres de antes, que no son «Sesión», «Inventario» y «Venta».
+
 ## Release beta 0.6.20 - el mapa en curso ya no se pierde al reiniciarse el host, y el resumen de sesión reparte por mapa el tiempo observado y el valor
 
 [Canal 0.6.20 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.20); **instalación/runtime
