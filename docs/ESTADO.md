@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.16: las Bases se mantienen solas al cargar y el icono del objeto principal en los resúmenes (9 oct 2026)
+## Canal 0.6.16 publicado: las Bases se mantienen solas al cargar y el icono del objeto principal en los resúmenes (9 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `a8cf5cc` (main con el canal 0.6.15 publicado y la documentación
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.16](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.16)
+es una release normal, sin draft ni prerelease, publicada el 2026-10-09T07:07:24Z; nombre, tag y `manifest.version`
+son `0.6.16`. El tag (ligero) apunta a `c6a10f5` (commit vacío de atestación, árbol
+`226d534605f49a76e4684fc3ebc9ab2afe35004f`); el candidato fuente es `25bd731`, con el mismo árbol. Parte de `a8cf5cc` (main con el canal 0.6.15 publicado y la documentación
 de las Bases ya integrada). Trae el icono del objeto principal en la nota resumen de sesión y la columna «Icono» de
 su Base, la creación, actualización y retirada de Bases al cargar el plugin (`MANAGED_ASSETS_BUNDLE_VERSION` de 7 a
 8; retira `Sessions.base`, `Halloween.base` y `Materials.base` si no se editaron, según el ajuste de archivos
@@ -15,11 +18,42 @@ remotas dentro de una nota.
 - Medido en la preparación (no es el gate de release): sobre `a8cf5cc` (árbol
   `6c9bf6971045c0ca412be738cd96fb23ba4e9781`), antes de los metadatos, `npm run check` dio «VEREDICTO: VERDE (8/8)»
   con 5422 tests en 334 ficheros, y `npm run check:guardrails` «VEREDICTO: VERDE (25/25)» (Fedora, 9 oct 2026).
-- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
-- No verificado: nadie ha visto la 0.6.16 en Obsidian ni en Hebra reales: ni la creación, actualización y retirada de
-  Bases al cargar, ni la columna «Icono» pintada, ni el ajuste de archivos eliminados. Tampoco la instalación de la
-  0.6.16 por BRAT ni en Hebra.
-- Pendiente: el gate, la publicación (tag, release, `release:brat-verify`) y la verificación en clientes reales.
+- Gate local sobre el árbol del tag (Fedora, Node v22.23.1, 9 oct 2026): `npm run check` «VEREDICTO: VERDE (8/8)»
+  (5422 tests, 334 ficheros), `npm run check:guardrails` «VEREDICTO: VERDE (25/25)», `release preflight: pass`,
+  `node scripts/changelog-entry.mjs 0.6.16` con salida 0 y `release package: PASS`
+  (`tyrian-companion-0.6.16.zip` construido en local, sha256
+  `dcc05c42ca5ea3ef775816eca04632dcf9432f715f1c35c7287dc66431c982fc`). Sobre la release planeada, `BRAT release
+  contract: PASS (version=0.6.16; assets=8)`.
+- Publicación: el workflow de release (run 37896818717) terminó con todos los pasos en `success`. Contrato sobre la
+  release real (salida de `gh api repos/fodaveg/tyrian-companion/releases/tags/0.6.16` normalizada con
+  `brat-release-plan.mjs --from-github`): «BRAT release contract: PASS (version=0.6.16; assets=8)». Los ocho assets
+  están `uploaded` y no vacíos: `hebra-main.mjs` 2626291, `hebra-styles.css` 118003, `hebra.json` 32733, `main.js`
+  1928725, `manifest.json` 237, `styles.css` 94537, `tyrian-companion-0.6.16.zip` 2023809 y
+  `tyrian-companion-0.6.16.zip.sha256` 94 (bytes).
+- Revisión: el lote de las Bases tuvo un revisor independiente en tres pasadas («integrar con correcciones» dos veces
+  y después «integrar»). Los metadatos de versión y la entrada de changelog los leyó solo el integrador.
+- CI de `main` sobre `c6a10f5` (run 37896808682): `in_progress` al escribir esto (leído con `gh run view` el 9 oct 2026, 07:09 UTC): `detect-native-changes` y `check-guardrails` en `success`, `check` en curso, `rust-portable` y `rust-windows-helper` omitidos. La conclusión, y si incluye el benchmark `bench:h6-live-session`, no se han leído.
+- Addon de Nexus: 0.8.3 publicado el mismo día (sección siguiente); no cambia el protocolo con el plugin.
+- No verificado: nadie ha visto la 0.6.16 instalada ni cargada en Obsidian/BRAT ni en Hebra: ni la creación,
+  actualización y retirada de Bases al cargar, ni la columna «Icono» pintada, ni el ajuste de archivos eliminados.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
+
+## Addon de Nexus 0.8.3 publicado (9 oct 2026)
+
+[Addon de Nexus 0.8.3](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.3), publicado el
+2026-10-09T06:22:17Z, con el tag sobre `9c94dba`. DLL de 4448256 bytes, sha256
+`c0e6880223aa6e0185b11b8dc8d12ba28a197504718ba89fe8d49133ef28ad8b`. Requiere Tyrian Companion 0.6.10 o posterior; el
+protocolo con el plugin no cambia. Es la segunda ronda de rendimiento de la auditoría del 8 oct 2026: tramas escritas
+desde estructuras, ajustes guardados en un hilo propio, caché del hallazgo mágico y hilo del juego guardado.
+Verificación del addon: 398 tests, las mismas 257 importaciones que la 0.8.2, una exportación (`GetAddonDef`) y dos
+builds limpios con el mismo SHA-256.
+
+- Instalado en el equipo de David el 9 oct 2026. Visto por David en el juego (captura, 9 oct 2026): `Status:
+  connected`; el panel «Tyrian · Laberinto» muestra 102 huecos libres y MF 333 %, iguales a la pantalla de opciones
+  del addon (`102 free`, `333% = luck 300 + server 13 + effects 20`, `Currencies covered: 55`, `Reader: last pass 0 s
+  ago`).
+- Sin ver: el número de versión 0.8.3 en pantalla, un cambio de mapa, un cambio de personaje, un cambio de mejora de
+  hallazgo mágico, el panel del plugin en Hebra recibiendo esos datos, y Windows.
 
 ## Canal 0.6.15 publicado: el monstruo en color con un solo contorno como icono en Hebra (9 oct 2026)
 

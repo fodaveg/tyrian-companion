@@ -2,7 +2,13 @@
 
 ## Release beta 0.6.16 - las Bases se mantienen solas al cargar y el icono del objeto principal en los resúmenes
 
-Release por tag `0.6.16`. Trae dos cosas: el icono del objeto principal en la nota resumen de sesión y la gestión de
+[Canal 0.6.16 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.16); **instalación/runtime
+pendiente**. Tag `0.6.16` sobre `c6a10f5` (commit vacío de atestación), árbol
+`226d534605f49a76e4684fc3ebc9ab2afe35004f`. Gate local sobre el candidato `25bd731` (mismo árbol): `check` 8/8
+(5422 tests, 334 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run
+37896818717) terminó con todos los pasos en `success`, y `release:brat-verify` contra la salida real de la release
+dio PASS con los ocho assets. La CI de `main` sobre `c6a10f5` (run 37896808682) seguía en curso al escribir esto.
+Trae dos cosas: el icono del objeto principal en la nota resumen de sesión y la gestión de
 las Bases al cargar el plugin, y tres ajustes de rendimiento de la auditoría del 8 oct 2026. [ESTADO](ESTADO.md)
 separa lo medido de lo que nadie ha visto en un cliente real.
 
