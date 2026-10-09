@@ -43,7 +43,8 @@ function fixture(quantities = [0,2,4], currencies?: readonly {one: number;two: n
 }
 function iso(seconds: number): string { return new Date(AT + seconds * 1000).toISOString(); }
 async function rendered(input = fixture()) {
-	const result = await renderLiveSessionNote(input);
+	// Pinned to the format these fixtures and their snapshots were written in, whatever LIVE_SESSION_NOTE_WRITE_VERSION says.
+	const result = await renderLiveSessionNote({...input,payloadVersion: 1});
 	if (result.status !== 'ok') throw new Error(result.reason);
 	return result;
 }
@@ -231,7 +232,7 @@ describe('portable payload byte compatibility', () => {
 			fingerprints[`${kind}_${format}`] = await sha256Text(serializeLiveSessionExport(session,kind,format));
 		}
 		input.record.phase = 'active'; input.record.endedAt = null;
-		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)});
+		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3),payloadVersion: 1});
 		if (snapshot === null) throw new Error('fixture');
 		expect(snapshot).not.toHaveProperty('declaredBuild');
 		for (const format of ['json','csv'] as const) fingerprints[`active_${format}`] = await sha256Text(serializeLiveSessionExport(snapshot,'timeline',format));

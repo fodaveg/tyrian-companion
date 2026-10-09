@@ -16,6 +16,10 @@ import type { ActiveSessionLeaseHandle } from "../src/sessions/coordination-mode
 import { LiveSessionEconomy } from "../src/sessions/live-session-economy";
 import { LiveSessionLifecycle } from "../src/sessions/live-session-lifecycle";
 import {
+	LIVE_SESSION_NOTE_WRITE_VERSION,
+	type LiveSessionPayloadVersion,
+} from "../src/sessions/live-session-note-model";
+import {
 	inspectLiveSessionNote,
 	renderLiveSessionNote,
 } from "../src/sessions/live-session-note-renderer";
@@ -52,6 +56,8 @@ const sabotageJournalClone = process.argv.includes("--sabotage-journal-clone");
 const sabotageSink: number[] = [];
 const SABOTAGE_JOURNAL_COPIES = 3;
 const sampleCount = readLimit("--samples", H6_LIVE_SESSION_SAMPLES_LONG);
+/** `--note-version=1|2` measures the other note format; absent, the one this build writes. */
+const noteVersion = readNoteVersion();
 
 await main();
 
@@ -97,6 +103,7 @@ async function main(): Promise<void> {
 		clearInterval: () => undefined,
 		onStateChange: () => undefined,
 		onError: (error) => errors.push(error),
+		noteVersion,
 		onCommitted: (entry) => {
 			committed = entry;
 		},
@@ -106,6 +113,7 @@ async function main(): Promise<void> {
 				journal,
 				locale: "es",
 				outputFolder: "Tyrian",
+				payloadVersion: noteVersion,
 			});
 			if (rendered.status !== "ok") return null;
 			const content = rendered.note.content;
@@ -211,6 +219,7 @@ async function main(): Promise<void> {
 	}
 	const sessionMs = performance.now() - sessionStartedAt;
 
+	const journalEntries = lifecycle.getJournal().length;
 	const closeStartedAt = performance.now();
 	const closed = await lifecycle.stop(now);
 	await economy.drain();
@@ -243,6 +252,7 @@ async function main(): Promise<void> {
 					windowSamples: H6_LIVE_SESSION_WINDOW_SAMPLES,
 					budget,
 					sabotageJournalClone,
+					noteVersion,
 					outOfScope: [
 						"real IndexedDB (an in-memory store is used)",
 						"Electron / Obsidian host and the vault write",
@@ -251,6 +261,7 @@ async function main(): Promise<void> {
 					],
 				},
 				metrics,
+				journalEntries,
 				sessionMs,
 			},
 			null,
@@ -298,6 +309,14 @@ function readBudget(): H6LiveSessionBudget {
 		maxNoteBytes:
 			readLimit("--max-note-mib", H6_LIVE_SESSION_BUDGET.maxNoteBytes / MEBIBYTE) * MEBIBYTE,
 	};
+}
+
+function readNoteVersion(): LiveSessionPayloadVersion {
+	const value = process.argv.find((argument) => argument.startsWith("--note-version="));
+	if (value === undefined) return LIVE_SESSION_NOTE_WRITE_VERSION;
+	if (value !== "--note-version=1" && value !== "--note-version=2")
+		throw new Error("--note-version must be 1 or 2.");
+	return value === "--note-version=1" ? 1 : 2;
 }
 
 function readLimit(name: string, fallback: number): number {

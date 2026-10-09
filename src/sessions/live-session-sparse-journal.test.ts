@@ -6,7 +6,7 @@ import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import { buildLiveSessionComparison } from './live-session-comparison';
 import { LiveSessionHistoryService, liveSessionViewFromStored } from './live-session-history';
-import { SessionHistoryService, type SessionHistoryVault } from './session-history';
+import { SessionHistoryRuntimeAuthority, SessionHistoryService, type SessionHistoryVault } from './session-history';
 import { isEmptySample } from './live-session-reducer';
 import { isStoredLiveSessionPayload, LIVE_SESSION_NOTE_WRITE_VERSION, prepareLiveSessionPayload, prepareLiveSessionSnapshot,
 	type LiveSessionPayloadVersion, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
@@ -203,6 +203,11 @@ describe('which journals a payload of each version accepts', () => {
 	it('version 1 relaxes nothing: a journal with holes in its cursors is still invalid', async () => {
 		const payload = clone(await settle(2)); payload.version = 1;
 		expect(isStoredLiveSessionPayload(payload)).toBe(false);
+		// ... and a version 1 note still owes one entry per sample it counted, which version 2 does not.
+		const dense = clone(await settle(1)); dense.sampleCount = dense.journal.length + 1;
+		expect(isStoredLiveSessionPayload(dense)).toBe(false);
+		const sparse = clone(await settle(2)); expect(sparse.sampleCount).toBeGreaterThan(sparse.journal.length);
+		expect(isStoredLiveSessionPayload(sparse)).toBe(true);
 	});
 	it('version 2 has no empty entries: one inside is invalid, exactly as the same entry at a boundary is not', async () => {
 		const sparse = await settle(2); const at = sparse.journal.findIndex((entry, index) => index > 0 && entry.cursor - sparse.journal[index - 1]!.cursor > 1);
@@ -219,8 +224,12 @@ describe('which journals a payload of each version accepts', () => {
 	});
 	it('version 2 needs its cursors to grow and the last sample to be at or after its last entry', async () => {
 		const sparse = await settle(2);
-		const repeated = clone(sparse); repeated.journal[2]!.cursor = repeated.journal[1]!.cursor;
-		expect(isStoredLiveSessionPayload(repeated)).toBe(false);
+		// The sale (no alert depends on its id): its cursor moves to before the entry that precedes it.
+		const backwards = clone(sparse); const at = backwards.journal.findIndex((row) => row.observations.some((observation) => observation.delta < 0));
+		const entry = backwards.journal[at]!; entry.cursor = backwards.journal[at - 1]!.cursor - 1;
+		for (const row of entry.observations) { row.cursor = entry.cursor; row.id = `${row.epoch}/${String(row.cursor)}/${row.kind}/${String(row.idNumber)}`; }
+		expect(entry.cursor).toBeGreaterThan(0); expect(entry.observations.length).toBeGreaterThan(0);
+		expect(isStoredLiveSessionPayload(backwards)).toBe(false);
 		const dead = clone(sparse); dead.coverage.lastObservationAt = sparse.journal.at(-1)!.observedAt.replace(/\d\d\.\d{3}Z$/u, '00.000Z');
 		expect(dead.coverage.lastObservationAt < sparse.journal.at(-1)!.observedAt).toBe(true);
 		expect(isStoredLiveSessionPayload(dead)).toBe(false);
@@ -284,6 +293,13 @@ describe('the note: what is written, what is read, what is set aside', () => {
 		// The API history does not take a future live note for a broken one.
 		vault.contents.delete('Sessions/broken.md');
 		expect(await new SessionHistoryService(vault.asHistory()).scan()).toMatchObject({ status: 'ok' });
+	});
+	it('does not scrub a library it cannot fully read: a note of a newer format makes the plan a conflict', async () => {
+		const { note } = await finished(2); const vault = new MapVault(); vault.contents.set('Sessions/a.md', note);
+		const authority = new SessionHistoryRuntimeAuthority(() => ({ sessionStatus: 'idle', recoveryStatus: 'none', detectorStatus: 'disarmed' }));
+		expect((await new SessionHistoryService(vault.asHistory()).previewScrub(authority)).status).toBe('ready');
+		vault.contents.set('Sessions/b.md', note.replace('tc_payload_version: 2', 'tc_payload_version: 3').replace(/tc_session_ref: "[a-f0-9]+"/u, 'tc_session_ref: "' + 'a'.repeat(64) + '"'));
+		expect((await new SessionHistoryService(vault.asHistory()).previewScrub(authority)).status).toBe('conflict');
 	});
 	it('still refuses two notes of one session: nothing says which of them is the session', async () => {
 		const { note } = await finished(2); const vault = new MapVault();
