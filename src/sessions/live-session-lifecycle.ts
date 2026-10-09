@@ -33,8 +33,8 @@ export interface LiveSessionSourceInput { sourceInstance: string; epoch: string;
  * A rare five minutes without measuring is not traded for three quarters of the samples in the common case.
  *
  * The way out was not a number: the coordinator knows when the owner died (9 Oct 2026, F7). With the host's lock
- * manager the owner holds a Web Lock while it lives, and whoever finds its lease with that lock free takes it at
- * once: `initialize` has the session back before the first `live_open`, with nothing changed here. That replaced
+ * manager the owner holds a Web Lock while it lives, and whoever finds its lease with that lock free and 15 s old takes
+ * it: `initialize` has the session back before the first `live_open`, with nothing changed here. That replaced
  * renewing a lease that ran out and renewing from the data path, no longer planned. Reasoning in SPEC-live-loot §4.
  */
 export const LIVE_SESSION_LEASE_TTL_MS = 300_000;

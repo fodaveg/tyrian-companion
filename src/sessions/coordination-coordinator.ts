@@ -293,7 +293,7 @@ export class ActiveSessionLeaseCoordinator {
 		void this.storePromise?.then((store) => store.close(), () => undefined);
 		// The lock goes after whatever is still in the queue: an operation in course may yet write under
 		// this instance's id, and everything queued behind it answers `disposed` without writing. A lease
-		// this instance leaves behind without releasing it is then anybody's at once, not in five minutes.
+		// this instance leaves behind without releasing it is then anybody's after 15 s of silence, not five minutes.
 		void this.queue.then(() => { this.letLifeLockGo(); });
 	}
 

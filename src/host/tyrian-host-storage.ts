@@ -132,10 +132,11 @@ export interface TyrianKvPort {
 	 * The Web Locks manager of the SAME storage as `indexedDB` (`navigator.locks` of the document those
 	 * databases belong to), or `null`/absent where there is none. The session lease holds one lock for as
 	 * long as the plugin lives, so that whoever finds its lease after it died need not wait for it to run
-	 * out (`ActiveSessionLeaseCoordinator`). A host may only hand it over if every context that can open
-	 * these databases shares this manager's locks: where two of them might not (two processes over one
-	 * data directory in an engine that keeps its locks per process), a live owner would be taken for
-	 * dead, and the host hands over `null`.
+	 * out (`ActiveSessionLeaseCoordinator`). What it is worth depends on every context that can open
+	 * these databases sharing this manager's locks. Where two of them might not (two processes over one
+	 * data directory in an engine that keeps its locks per process), an owner that is alive but has not
+	 * renewed for 15 s is taken for dead. A host that cannot rule that out hands over `null`, or hands
+	 * the manager over knowing it: which host does which, and why, is in SPEC-live-loot §4.
 	 */
 	readonly locks?: Pick<LockManager, 'request'> | null;
 }

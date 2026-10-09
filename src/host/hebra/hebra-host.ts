@@ -114,13 +114,13 @@ export interface HebraHostDeps {
 	indexedDB: IDBFactory;
 	/**
 	 * `navigator.locks` of the page `indexedDB` is from, or `null`/absent where the webview has none
-	 * (`TyrianKvPort.locks`). It may be handed over because one Hebra runs at a time over a data directory and
-	 * only its main window loads plugins: no second context ever opens these databases. Read at Hebra `ea14cd06`
-	 * (9 Oct 2026): `tauri-plugin-single-instance` on Linux and Windows (`src-tauri/Cargo.toml`, `lib.rs`), its
-	 * own instance lock on macOS (`macos_single_instance.rs`), and `startPlugins()` leaving at once in an
-	 * `editor-*` window (`LibraryApp.svelte`; `capabilities/plugins.json` lists `main` alone). On the web the
-	 * tabs of one browser do share their locks. If Hebra ever loads plugins in a second window or lets a second
-	 * process open the same data, this has to be asked again before it is kept.
+	 * (`TyrianKvPort.locks`). Only the main window loads plugins (`startPlugins()` leaves at once in an `editor-*`
+	 * window; read at Hebra `ea14cd06`), so no second WINDOW opens these databases. A second PROCESS is ruled out
+	 * for certain only on macOS, which waits for the old one to die. On Linux `tauri-plugin-single-instance` fails
+	 * open without a D-Bus session bus and gives its name up before the process is gone, and WebKitGTK keeps its
+	 * locks per process: two live Hebras would each see the other's lock free. The coordinator's 15 s of silence
+	 * are what covers that. Handed over by the integrator's decision of 9 Oct 2026, from reading the code and with
+	 * no probe on a real client; `locks: null` in `entry.ts` turns it off. What is unverified: SPEC-live-loot §4.
 	 */
 	locks?: TyrianKvPort['locks'];
 	pathIndexKv: TyrianPathIndexKv;

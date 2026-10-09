@@ -15,7 +15,7 @@ import { activateTyrian } from './hebra-runtime';
 export function activate(api: HebraPluginApi): Promise<PluginCleanup> {
 	return activateTyrian(api, {
 		indexedDB: window.indexedDB,
-		// Of the same page as the IndexedDB above. A webview without Web Locks hands over none.
+		// Of the same page as the IndexedDB above; a webview without Web Locks hands over none. `locks: null` here turns the life lock off in Hebra.
 		locks: (window.navigator as Partial<Pick<Navigator, 'locks'>>).locks ?? null,
 		window,
 		document,

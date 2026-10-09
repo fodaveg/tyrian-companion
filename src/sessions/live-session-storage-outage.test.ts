@@ -499,7 +499,7 @@ describe('live session across a storage outage that hid a commit already on disk
  *
  * It is healed by knowing the owner died (9 Oct 2026, F7): where the host hands over its lock manager,
  * the owner holds a Web Lock for as long as it lives, and the host that comes back finds that lock free
- * and takes the lease at once, under the next fence and the rules of a restart. Where there is no lock
+ * and, 15 s after the last renewal, takes the lease under the next fence and the rules of a restart. Where there is no lock
  * manager (a host without the API, or an owner from a build before this one) nothing is known about the
  * owner, and the five minutes are still waited: that is the first test below, as it always was.
  */
