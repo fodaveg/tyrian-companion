@@ -98,6 +98,16 @@ describe('PriceHistoryCaptureService', () => {
 		store.close();
 	});
 
+	it.each([400, 401, 403, 408, 418, 501, 520])('Z16: an HTTP %i outside the listed statuses is a transient failure, not an invalid payload', async (status) => {
+		const store = await opened(`unlisted-${String(status)}`);
+		const requestDetailed = vi.fn(async () => { throw new HttpTransportError('http', status, null, 'unlisted'); });
+		const result = await new PriceHistoryCaptureService({ requestDetailed }, new RateLimitCoordinator(), 'owner', () => 100)
+			.capture(store, 'vault', 0, 15);
+		expect(result.status).toBe('transient_failure');
+		expect(await store.readSnapshots('vault')).toEqual([]);
+		store.close();
+	});
+
 	it('is single-flight for the same vault slot', async () => {
 		const store = await opened('single-flight');
 		let release!: () => void;

@@ -80,10 +80,10 @@ export class PriceHistoryCaptureService {
 						batch.forEach((id) => missing.add(id));
 						continue;
 					}
-					if (error instanceof HttpTransportError && (error.kind === 'network' || error.kind === 'timeout'
-						|| (error.status !== null && [500, 502, 503, 504].includes(error.status)))) {
-						return { status: 'transient_failure' };
-					}
+					// Any other HTTP status the server answered (a 400, a 403, a 520 from a proxy...) says
+					// nothing about the payload: it is retried like the listed ones, not parked as
+					// `invalid_payload`, which stops the scheduler until the plugin is reloaded (Z16).
+					if (error instanceof HttpTransportError) return { status: 'transient_failure' };
 					return { status: 'invalid_payload' };
 				}
 				if (response.status !== 200 && response.status !== 206) {
