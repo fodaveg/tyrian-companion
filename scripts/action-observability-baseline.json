@@ -2,8 +2,8 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 557,
-		"promise_catch": 58,
+		"catch_clause": 558,
+		"promise_catch": 59,
 		"void_expression": 122,
 		"callback_registration": 221
 	},
@@ -1656,9 +1656,9 @@
 				{
 					"id": "5a06163cbe8c85cab09ab0bf6d4539cc36e97478",
 					"kind": "catch_clause",
-					"line": 79,
+					"line": 80,
 					"column": 4,
-					"endLine": 81,
+					"endLine": 82,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1670,12 +1670,12 @@
 					"reason": "Allowlisted catch_clause: The \"playAlertSound\" owner treats an audio failure as \"fallback_return\" of the \"unavailable\" outcome, which the alert emitter records as a failed sound channel; an audio device that misbehaves must never cancel the other channels of the alert. Verified recovery: \"fallback_return\" in \"playAlertSound\"."
 				},
 				{
-					"id": "2c68897307f50937c9dca4a2367f4e60db348f6b",
+					"id": "ee407b59b3eb3244e5679972921d989d43c20b28",
 					"kind": "callback_registration",
-					"line": 113,
+					"line": 126,
 					"column": 3,
-					"endLine": 118,
-					"endColumn": 48,
+					"endLine": 131,
+					"endColumn": 14,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
@@ -1689,9 +1689,9 @@
 				{
 					"id": "763011227732520e98aed045d538b0632edcc2dd",
 					"kind": "catch_clause",
-					"line": 117,
+					"line": 130,
 					"column": 51,
-					"endLine": 117,
+					"endLine": 130,
 					"endColumn": 93,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1705,9 +1705,9 @@
 				{
 					"id": "906c424046bef91a2ec83ec46ff789f735caa605",
 					"kind": "catch_clause",
-					"line": 176,
+					"line": 202,
 					"column": 40,
-					"endLine": 176,
+					"endLine": 202,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1717,6 +1717,39 @@
 						"justification": "The \"factory\" owner treats a constructor that throws as \"fallback_return\" of null, which the scheduler reports as an unavailable channel; a machine with no audio device must still get the toast and the banner."
 					},
 					"reason": "Allowlisted catch_clause: The \"factory\" owner treats a constructor that throws as \"fallback_return\" of null, which the scheduler reports as an unavailable channel; a machine with no audio device must still get the toast and the banner. Verified recovery: \"fallback_return\" in \"factory\"."
+				},
+				{
+					"id": "0f5b406d5d702afa94838170b60b261907ed80ba",
+					"kind": "promise_catch",
+					"line": 213,
+					"column": 5,
+					"endLine": 213,
+					"endColumn": 57,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "browserAlertAudioContextFactory",
+						"justification": "The \"browserAlertAudioContextFactory\" close hook discards a context on purpose and `close()` rejects when it is already closed; that rejection is dropped as \"intentional_noop\" because the context is gone either way and nothing can repair a close during teardown."
+					},
+					"reason": "Allowlisted promise_catch: The \"browserAlertAudioContextFactory\" close hook discards a context on purpose and `close()` rejects when it is already closed; that rejection is dropped as \"intentional_noop\" because the context is gone either way and nothing can repair a close during teardown. Verified recovery: \"intentional_noop\" in \"browserAlertAudioContextFactory\"."
+				},
+				{
+					"id": "2cda30873d4537ac447b773002063e41525be73a",
+					"kind": "catch_clause",
+					"line": 214,
+					"column": 6,
+					"endLine": 214,
+					"endColumn": 52,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "browserAlertAudioContextFactory",
+						"justification": "The \"browserAlertAudioContextFactory\" close hook discards a context on purpose; a `close()` that throws synchronously is dropped as \"intentional_noop\" because the context is gone either way and teardown must not throw into the host."
+					},
+					"reason": "Allowlisted catch_clause: The \"browserAlertAudioContextFactory\" close hook discards a context on purpose; a `close()` that throws synchronously is dropped as \"intentional_noop\" because the context is gone either way and teardown must not throw into the host. Verified recovery: \"intentional_noop\" in \"browserAlertAudioContextFactory\"."
 				}
 			]
 		},
@@ -3911,9 +3944,9 @@
 				{
 					"id": "57d1c09be575630758bda0458b951cb1a802a8d8",
 					"kind": "callback_registration",
-					"line": 45,
+					"line": 47,
 					"column": 18,
-					"endLine": 46,
+					"endLine": 48,
 					"endColumn": 87,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -3926,36 +3959,36 @@
 					"reason": "Allowlisted callback_registration: The \"capture\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"capture\"."
 				},
 				{
-					"id": "8825f675c6048bd96f06ba67b198e4e39d0f937e",
+					"id": "b924022abf44d5adb3be779f8445cff2128e159f",
 					"kind": "catch_clause",
-					"line": 74,
+					"line": 76,
 					"column": 7,
-					"endLine": 88,
+					"endLine": 96,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "captureInternal",
-						"justification": "The \"captureInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"captureInternal\" owner handles \"fallback_return\" for a failed gateway request as a typed result instead of a throw: 429 records the rate limit (\"rate_limited\"), 404 marks the batch missing and continues, a transient error is \"transient_failure\", another HTTP status is \"http_rejected\", the rest \"invalid_payload\". The caller gets that result; the error is not logged."
 					},
-					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"captureInternal\"."
+					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner handles \"fallback_return\" for a failed gateway request as a typed result instead of a throw: 429 records the rate limit (\"rate_limited\"), 404 marks the batch missing and continues, a transient error is \"transient_failure\", another HTTP status is \"http_rejected\", the rest \"invalid_payload\". The caller gets that result; the error is not logged. Verified recovery: \"fallback_return\" in \"captureInternal\"."
 				},
 				{
 					"id": "8fd1d21b5bc909ad4c90c836199eb04bffe2b21a",
 					"kind": "catch_clause",
-					"line": 114,
+					"line": 122,
 					"column": 5,
-					"endLine": 116,
+					"endLine": 124,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "captureInternal",
-						"justification": "The \"captureInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged."
 					},
-					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"captureInternal\"."
+					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged. Verified recovery: \"fallback_return\" in \"captureInternal\"."
 				}
 			]
 		},
@@ -4535,9 +4568,9 @@
 				{
 					"id": "050d1601a39eb63c86b3b534d42b16abfb8fb4f7",
 					"kind": "callback_registration",
-					"line": 143,
+					"line": 175,
 					"column": 18,
-					"endLine": 143,
+					"endLine": 175,
 					"endColumn": 85,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4552,9 +4585,9 @@
 				{
 					"id": "222863fe557a117178af7447f76f286600bfe194",
 					"kind": "promise_catch",
-					"line": 144,
+					"line": 176,
 					"column": 18,
-					"endLine": 144,
+					"endLine": 176,
 					"endColumn": 47,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4567,11 +4600,11 @@
 					"reason": "Allowlisted promise_catch: The \"intentional_noop\" recovery in \"run\" repairs only the internal queue tail after rejection so later explicit actions can run. The original flight is separately awaited and returned to the caller, so the action error is not swallowed. Verified recovery: \"intentional_noop\" in \"run\"."
 				},
 				{
-					"id": "d46dff02b04cf063be71f5a21b244415134c6345",
+					"id": "aa4e7879a93c20af720e33ed7a33ec610bc04409",
 					"kind": "catch_clause",
-					"line": 192,
+					"line": 235,
 					"column": 5,
-					"endLine": 196,
+					"endLine": 239,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4581,11 +4614,11 @@
 					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				},
 				{
-					"id": "cd11ddd4b6471f7ccc434abadbdda94dae1672d8",
+					"id": "266beb16de54553194b0c843f6da04efa9fe12e7",
 					"kind": "catch_clause",
-					"line": 205,
+					"line": 249,
 					"column": 5,
-					"endLine": 209,
+					"endLine": 253,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4595,11 +4628,11 @@
 					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				},
 				{
-					"id": "299e5c42121db6b2f52ebd7a165daa8d671eac59",
+					"id": "2c9f75d0687cbce71b179809bb4ef256609145ef",
 					"kind": "catch_clause",
-					"line": 236,
+					"line": 290,
 					"column": 5,
-					"endLine": 241,
+					"endLine": 295,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4609,11 +4642,11 @@
 					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				},
 				{
-					"id": "8a5053ad4fe2f9896c667b31f0403fbfa9b17c7e",
+					"id": "73d562524acd9270a8d9667908a0866bd15c2575",
 					"kind": "catch_clause",
-					"line": 258,
+					"line": 321,
 					"column": 6,
-					"endLine": 264,
+					"endLine": 327,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -4623,11 +4656,11 @@
 					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				},
 				{
-					"id": "c7e0d7a1c1e47857216d279dde8ecbbe878235b0",
+					"id": "88c05a0860ef9bfc8ae4cbabcb33aa5829719de5",
 					"kind": "catch_clause",
-					"line": 271,
+					"line": 335,
 					"column": 5,
-					"endLine": 277,
+					"endLine": 341,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4639,9 +4672,9 @@
 				{
 					"id": "30254a702574a97988b75ddeac776f6c061e5c5b",
 					"kind": "catch_clause",
-					"line": 280,
+					"line": 344,
 					"column": 67,
-					"endLine": 280,
+					"endLine": 344,
 					"endColumn": 92,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4655,9 +4688,9 @@
 				{
 					"id": "730312ea9b7875938ad1bdce48441863cdbdcaa4",
 					"kind": "catch_clause",
-					"line": 302,
+					"line": 385,
 					"column": 3,
-					"endLine": 302,
+					"endLine": 385,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4671,9 +4704,9 @@
 				{
 					"id": "1728edfd4acf54bd2ed01d7b79878d3080ad466a",
 					"kind": "catch_clause",
-					"line": 307,
+					"line": 390,
 					"column": 3,
-					"endLine": 307,
+					"endLine": 390,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4687,9 +4720,9 @@
 				{
 					"id": "2eb3eafaf19e12f4bfc16aeea65bf5560a3a1bdf",
 					"kind": "catch_clause",
-					"line": 324,
+					"line": 407,
 					"column": 5,
-					"endLine": 328,
+					"endLine": 411,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4869,27 +4902,27 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "7bf31d7d37af247b2fae43f018a61782f2d2ca7a",
+					"id": "aabf1f4bb67ae561828fa32d569e2baa7389c915",
 					"kind": "catch_clause",
 					"line": 93,
 					"column": 4,
-					"endLine": 98,
+					"endLine": 102,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "fetchPriceSeed",
-						"justification": "The \"fetchPriceSeed\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"fetchPriceSeed\" owner handles \"fallback_return\" of every transport throw as a typed no_seed result: an HTTP status is classified by it (408, 425, 429 and 5xx are unreachable, others unavailable) and any other throw is unreachable on purpose, so a transport bug never fails activation. The bulk refresh that consumes the result counts it in its own action span."
 					},
-					"reason": "Allowlisted catch_clause: The \"fetchPriceSeed\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"fetchPriceSeed\"."
+					"reason": "Allowlisted catch_clause: The \"fetchPriceSeed\" owner handles \"fallback_return\" of every transport throw as a typed no_seed result: an HTTP status is classified by it (408, 425, 429 and 5xx are unreachable, others unavailable) and any other throw is unreachable on purpose, so a transport bug never fails activation. The bulk refresh that consumes the result counts it in its own action span. Verified recovery: \"fallback_return\" in \"fetchPriceSeed\"."
 				},
 				{
 					"id": "c247c9f97638354569f7934bdeed1f660f4e8b05",
 					"kind": "catch_clause",
-					"line": 107,
+					"line": 121,
 					"column": 4,
-					"endLine": 107,
+					"endLine": 121,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
