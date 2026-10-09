@@ -11,6 +11,7 @@ import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-no
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
 import { inspectDurableSessionNote, SessionHistoryService, SessionHistoryRuntimeAuthority, type SessionHistoryVault } from './session-history';
 import { LiveSessionHistoryService, liveSessionViewFromStored, liveSessionAlertsFromStored } from './live-session-history';
+import { renderLiveSessionSummary } from './live-session-summary-note';
 import { serializeLiveSessionExport, prepareLiveSessionExportSnapshot } from './live-session-export';
 import { readStoredSessionBlocks, sessionNotePathIdentity, sha256Text, assembleNote } from './session-note-renderer';
 import { canonicalPathFor } from '../runtime/canonical-path';
@@ -39,7 +40,8 @@ function fixture(quantities = [0,2,4], currencies?: readonly {one: number;two: n
 		const next = reduceLiveInventorySample(record,sample); record = next.record; const entry = Object.assign({outbox: []},next.journal); journal.push(entry);
 	}
 	record = { ...record,phase: 'complete',endedAt: iso(quantities.length - 1),prices: [{ itemId: 12147,unitCopper: 10 }],priceCapturedAt: iso(0) };
-	return { record,journal,locale: 'es',outputFolder: 'Tyrian Companion',displayNames: { 'item:12147': 'Champiñón' } };
+	// Madrid in October (UTC+2), fixed: the title carries the local hour of the start, and the snapshot must not depend on the machine's zone.
+	return { record,journal,locale: 'es',outputFolder: 'Tyrian Companion',displayNames: { 'item:12147': 'Champiñón' },utcOffsetMinutes: () => 120 };
 }
 function iso(seconds: number): string { return new Date(AT + seconds * 1000).toISOString(); }
 async function rendered(input = fixture()) {
@@ -220,6 +222,65 @@ describe('live note write verification and CAS', () => {
 		expect(result).toEqual({status: 'written',path: note.collisionPath});
 		expect(vault.contents.get(note.preferredPath)).toBe('Unrelated note.');
 		vault.contents.set(note.collisionPath,'Another note.'); expect((await writer.writeLive(fixture())).status).toBe('conflict');
+	});
+});
+
+describe('the title of the full note', () => {
+	const OLD_TITLE = '# Sesión de inventario observado';
+	const h1 = (content: string): string => content.slice(content.indexOf('\n---\n',4) + 5).split('\n')[0]!;
+	it('opens with the local day and hour of the start and reads «Sesión completa», the same stamp as the summary of that session', async () => {
+		const {note,session} = await rendered();
+		expect(h1(note.content)).toBe('# 2026-10-06 14.00 · Sesión completa');
+		// 12:00 UTC is 04:00 in Los Angeles and 01:00 of the NEXT day in Auckland: the title follows the machine, not UTC, and takes no colon.
+		const west = fixture(); west.locale = 'en'; west.utcOffsetMinutes = () => -480;
+		expect(h1((await rendered(west)).note.content)).toBe('# 2026-10-06 04.00 · Full session');
+		const east = fixture(); east.utcOffsetMinutes = () => 780; const eastNote = (await rendered(east)).note;
+		expect(h1(eastNote.content)).toBe('# 2026-10-07 01.00 · Sesión completa');
+		for (const content of [note.content,eastNote.content]) expect(h1(content)).not.toContain(':');
+		const summary = await renderLiveSessionSummary({session,locale: 'es',outputFolder: 'Tyrian Companion',fullNotePath: note.preferredPath,utcOffsetMinutes: () => 120});
+		if (summary.status !== 'ok') throw new Error(summary.reason);
+		expect(h1(summary.note.content).startsWith('# 2026-10-06 14.00 · Resumen · ')).toBe(true);
+		// Nothing else of the note moves with the title: same path, same frontmatter, same managed blocks, to the byte.
+		expect(eastNote.preferredPath).toBe(note.preferredPath); expect(eastNote.collisionPath).toBe(note.collisionPath);
+		expect(eastNote.content.replace(h1(eastNote.content),h1(note.content))).toBe(note.content);
+	});
+	it('is read by nobody: a note with the title every note had until 0.6.18 gives the same session and the same path', async () => {
+		const {note,session} = await rendered(); const old = note.content.replace(h1(note.content),OLD_TITLE);
+		expect(h1(old)).toBe(OLD_TITLE);
+		expect(await inspectLiveSessionNote(old)).toEqual(await inspectLiveSessionNote(note.content));
+		expect((await inspectLiveSessionNote(old)).status).toBe('ok');
+		expect(sessionNotePathIdentity(old)).toEqual(sessionNotePathIdentity(note.content));
+		expect(canonicalPathFor('Tyrian Companion',old)).toEqual(canonicalPathFor('Tyrian Companion',note.content));
+		expect(await readStoredSessionBlocks(old)).toEqual(await readStoredSessionBlocks(note.content));
+		const vault = new TestVault(); vault.contents.set(note.preferredPath,old);
+		const listed = await new LiveSessionHistoryService(historyVault(vault)).list();
+		expect(listed.status === 'ok' && { refs: listed.sessions.map((entry) => entry.sessionRef),setAside: listed.setAside }).toEqual({refs: [session.sessionRef],setAside: []});
+	});
+	it('leaves a note already written with the title it has: the same session again is unchanged, and an update replaces only the blocks', async () => {
+		const input: LiveSessionNoteInput = {...fixture(),payloadVersion: 1}; const {note} = await rendered(input); const path = note.preferredPath;
+		const bodyOf = (content: string): string => content.slice(content.indexOf('\n---\n',4));
+		// A note of 0.6.18 exactly as it was created.
+		const created = note.content.replace(h1(note.content),OLD_TITLE);
+		const vault = new TestVault(); vault.contents.set(path,created); const writer = new SessionNoteWriter(vault);
+		// The first write over a note as created moves its `descripcion` line ahead of the managed keys. It always did, whatever the
+		// title (the same happens below with today's): that line is the whole change, the body stays to the byte, title included.
+		expect(await writer.writeLive(input)).toEqual({status: 'written',path});
+		const settled = vault.contents.get(path)!;
+		expect(bodyOf(settled)).toBe(bodyOf(created)); expect(h1(settled)).toBe(OLD_TITLE);
+		expect(settled.split('\n').sort()).toEqual(created.split('\n').sort());
+		const today = new TestVault(); today.contents.set(path,note.content);
+		expect((await new SessionNoteWriter(today).writeLive(input)).status).toBe('written');
+		expect(bodyOf(today.contents.get(path)!)).toBe(bodyOf(note.content));
+		// From then on the same session again is neither a conflict nor a rewrite: the title of an existing note is not the writer's to change.
+		expect(await writer.writeLive(input)).toEqual({status: 'unchanged',path});
+		expect(vault.contents.get(path)).toBe(settled);
+		// A later write that does change a managed block (a name learned since) replaces the block and keeps the old title.
+		expect(await writer.writeLive({...input,displayNames: {'item:12147': 'Champiñón silvestre'}})).toEqual({status: 'written',path});
+		const after = vault.contents.get(path)!;
+		expect(h1(after)).toBe(OLD_TITLE);
+		expect(after).toContain('Champiñón silvestre'); expect(after).not.toContain('Sesión completa');
+		expect((await inspectLiveSessionNote(after)).status).toBe('ok');
+		expect(vault.contents.size).toBe(1);
 	});
 });
 

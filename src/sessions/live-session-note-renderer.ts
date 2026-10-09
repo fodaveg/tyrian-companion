@@ -1,7 +1,7 @@
 import { canonicalJson } from '../core/canonical-sha256';
 import { normalizeSessionOutputFolder, type SessionNoteBlockId } from './session-note-model';
 import { assembleNote, inspectStoredSessionNote, readStoredSessionBlocks, sha256Text, type RenderedSessionNote } from './session-note-renderer';
-import { isStoredLiveSessionPayload, LIVE_SESSION_MAX_PAYLOAD_VERSION, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { isStoredLiveSessionPayload, LIVE_SESSION_MAX_PAYLOAD_VERSION, liveSessionTitleStamp, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { keys, liveItemValueCopper } from './live-session-reducer';
 
 const LIVE_NOTE_KEYS = ['tc_schema','tc_kind','tc_source','tc_session_ref','tc_account_ref','tc_locale','tc_started_at',
@@ -99,8 +99,10 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 				'```json',payload,'```',
 			].join('\n'),
 		};
+		// The title sits outside the managed blocks: no reader takes anything from it, and a note already written keeps the one it has
+		// (the writer only replaces the blocks of an existing note), so this names the notes created from here on.
 		return { status: 'ok', session, note: await assembleNote(session.sessionRef,null,session.startedAt,folder,input.locale,frontmatter,contents,
-			{ heading: label('Sesión de inventario observado','Observed inventory session'), notes: label('Mis notas','My notes') }) };
+			{ heading: `${liveSessionTitleStamp(session.startedAt,input.utcOffsetMinutes)} · ${label('Sesión completa','Full session')}`, notes: label('Mis notas','My notes') }) };
 	} catch { return { status: 'invalid', reason: 'live_note_unavailable' }; }
 }
 

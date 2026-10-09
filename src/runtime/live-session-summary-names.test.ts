@@ -158,10 +158,12 @@ describe('names in the summary note of a session closed before this plugin load'
 	it('with a map on record the only request is the approved one, `maps`, and never while loading', async () => {
 		const closed = await loadedCore({ network: true, map: true });
 		expect(closed.calls.map((path) => path.slice(0, path.indexOf('?')))).toEqual(['maps']);
-		expect(closed.text).toContain('# Mapa de prueba 1633');
+		// The title opens with the local day and hour of the start, which is the machine's zone here: only its shape is fixed.
+		const titled = (map: string): RegExp => new RegExp(`^# \\d{4}-\\d\\d-\\d\\d \\d\\d\\.\\d\\d · Resumen · ${map}(?: · |$)`, 'mu');
+		expect(closed.text).toMatch(titled('Mapa de prueba 1633'));
 		expect(closed.text).toContain('| Objeto 106732 | 1 | 0g 11s 5c |');
 		const loading = await loadedCore({ map: true });
 		expect(loading.calls).toEqual([]);
-		expect(loading.text).toContain('# Mapa 1633');
+		expect(loading.text).toMatch(titled('Mapa 1633'));
 	});
 });

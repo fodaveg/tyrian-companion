@@ -1,9 +1,9 @@
 import { formatCopperVisual } from '../core/copper-format';
 import { errorClassName } from '../core/local-debug-error-details';
 import { ensureFoldersBySegments } from '../core/vault-folders';
-import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, summaryMainMap,
+import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, SUMMARY_SHORT_GAP_MS, summaryMainMap,
 	type SummaryCharacter, type SummaryItemMetaMap } from './live-session-summary-figures';
-import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { liveSessionLocalTime, liveSessionTitleStamp, systemUtcOffsetMinutes, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { LIVE_RATE_MIN_OBSERVED_MS } from './live-session-model';
 import { normalizeSessionOutputFolder } from './session-note-model';
 import type { SessionNoteVault } from './session-note-writer';
@@ -24,7 +24,11 @@ import type { SessionNoteVault } from './session-note-writer';
 /** Fixed subfolder of the output folder, next to `sessions/` (the repo's subfolders are not localized). */
 export const LIVE_SESSION_SUMMARY_FOLDER = 'summaries';
 const TOP_ITEMS = 5;
-const MAX_LISTED_GAPS = 8;
+/** Below 90 % observed, this many unobserved stretches are written one per line, the longest first; the rest are counted. */
+const MAX_LISTED_GAPS = 5;
+/** Up to this many account-bound item types are named, all of them; with more the line counts them and names the first three. */
+const MAX_NAMED_BOUND = 5;
+const BOUND_NAMED_WHEN_COUNTED = 3;
 
 export interface LiveSessionSummaryInput {
 	session: StoredLiveSessionPayloadV1;
@@ -83,17 +87,17 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const itemName = (id: number): string => escapeMarkdown(names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
 		const currencyName = (id: number): string => escapeMarkdown(names[`currency:${String(id)}`] ?? `${label('Moneda', 'Currency')} ${String(id)}`);
 		const mapName = (id: number): string => escapeMarkdown(input.mapNames?.[String(id)] ?? `${label('Mapa', 'Map')} ${String(id)}`);
-		const offset = input.utcOffsetMinutes ?? ((at: number): number => -new Date(at).getTimezoneOffset());
-		const local = (iso: string): Date => new Date(Date.parse(iso) + offset(Date.parse(iso)) * 60_000);
-		const day = (iso: string): string => local(iso).toISOString().slice(0, 10);
-		const clock = (iso: string): string => local(iso).toISOString().slice(11, 16);
+		const offset = input.utcOffsetMinutes ?? systemUtcOffsetMinutes;
+		const day = (iso: string): string => liveSessionLocalTime(iso, offset).day;
+		const clock = (iso: string): string => liveSessionLocalTime(iso, offset).clock;
 		const money = (copper: number): string => formatCopperVisual(copper);
 		const signed = (copper: number): string => `${copper > 0 ? '+' : ''}${money(copper)}`;
 		const characters = input.characters ?? [];
 		const f = computeSummaryFigures(session, input.itemMeta ?? {}, characters);
 		const several = characters.length > 1;
 		const mapHeading = f.mainMapId !== null ? mapName(f.mainMapId) : f.maps.length === 0 ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
-		const heading = `${mapHeading}${characters.length === 1 ? ` · ${escapeMarkdown(characters[0]!.name)}` : ''}`;
+		// The local day and hour of the start first (the same ones as the line below), so one summary is told from another in a list.
+		const heading = `${liveSessionTitleStamp(session.startedAt, offset)} · ${label('Resumen', 'Summary')} · ${mapHeading}${characters.length === 1 ? ` · ${escapeMarkdown(characters[0]!.name)}` : ''}`;
 		const out: string[] = [`# ${heading}`, '',
 			`${day(session.startedAt)} · ${clock(session.startedAt)}–${clock(session.endedAt)} · ${duration(f.durationMs)} · ${String(f.observedPercent)} % ${label('observado', 'observed')}`];
 		if (several) out.push('', `${label('Personajes', 'Characters')}: ${characters.map((entry) => escapeMarkdown(entry.name)).join(' → ')}${input.charactersCapped === true ? label(' … y más', ' … and more') : ''}`,
@@ -105,57 +109,74 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			? Math.round(comparables.reduce((sum, value) => sum + value, 0) / comparables.length) : null;
 		const bound = f.unknownBindingIds.length > 0;
 		const maxNote = bound ? ` (${label('como máximo: puede incluir objetos ligados a cuenta', 'at most: may include account-bound items')})` : '';
-		const verdict: string[] = [];
-		const gold = f.goldCopper === null ? null : `${label('Oro de la cartera', 'Wallet gold')}: ${signed(f.goldCopper)}`;
-		if (f.salesSession && gold !== null) verdict.push(`- **${label('Oro ganado', 'Gold gained')}: ${signed(f.goldCopper!)}**`);
-		if (f.dominantCurrency !== null) verdict.push(`- **${currencyName(f.dominantCurrency.id)}: +${String(f.dominantCurrency.net)}** (${label('lo principal de la sesión', 'the main result of the session')})`);
+		// Every label says what its figure counts: the value and the pace are of the items the session observed (never the gold, which
+		// has its own line, nor a balance of the wallet), and the hour is an observed hour, not one of the session's length.
+		const netLabel = label('Valor neto de objetos observados', 'Net value of observed items');
+		const rateLabel = label('Objetos por hora observada', 'Items per observed hour');
+		const balance: string[] = [];
+		const gold = f.goldCopper === null ? null : `${label('Cambio de oro observado', 'Observed gold change')}: ${signed(f.goldCopper)}`;
+		if (f.salesSession && gold !== null) balance.push(`- **${gold}**`);
+		if (f.dominantCurrency !== null) balance.push(`- **${currencyName(f.dominantCurrency.id)}: +${String(f.dominantCurrency.net)}** (${label('lo principal de la sesión', 'the main result of the session')})`);
 		const shownNet = f.hasNewItems && !f.noPrices ? f.netCopper : null;
 		const shownPerHour = shownNet === null ? null : f.perHour.copper;
-		if (f.hasNewItems && f.noPrices) verdict.push(`- ${label('Sin precios de bazar: no hay valor estimado.', 'No bazaar prices: there is no estimated value.')}`);
+		if (f.hasNewItems && f.noPrices) balance.push(`- ${label('Sin precios de bazar: no hay valor neto de objetos observados.', 'No bazaar prices: there is no net value of observed items.')}`);
 		if (shownNet !== null) {
-			verdict.push(`- ${label('Neto estimado', 'Estimated net')}: ${money(shownNet)}${maxNote}`);
-			verdict.push(`- ${label('Por hora', 'Per hour')}: ${shownPerHour !== null ? `${money(shownPerHour)}${maxNote}`
+			balance.push(`- ${netLabel}: ${money(shownNet)}${maxNote}`);
+			balance.push(`- ${rateLabel}: ${shownPerHour !== null ? `${money(shownPerHour)}${maxNote}`
 				: label(`no disponible (menos de ${String(LIVE_RATE_MIN_OBSERVED_MS / 60_000)} min observados)`, `unavailable (under ${String(LIVE_RATE_MIN_OBSERVED_MS / 60_000)} observed min)`)}`);
 			if (f.withoutDominant !== null) {
 				const { itemId, netCopper: rest, perHourCopper: restPerHour } = f.withoutDominant;
-				// With nothing positive left there is no pace to state: the line says what the session comes to without the item, and why.
-				verdict.push(restPerHour !== null
-					? `- ${label('Por hora sin', 'Per hour without')} ${itemName(itemId)}: ${money(restPerHour)} (${label('ese objeto es más de la mitad del valor', 'that item is over half the value')})`
-					: `- ${label('Sin', 'Without')} ${itemName(itemId)} ${label('la sesión queda en', 'the session comes to')} ${money(rest)} (${rest < 0
-						? label('ese objeto vale más que el neto de la sesión', 'that item is worth more than the session\'s net')
-						: label('ese objeto es todo el neto de la sesión', 'that item is the whole net of the session')})`);
+				// With nothing positive left there is no pace to state: the line says what the value comes to without the item, and why.
+				balance.push(restPerHour !== null
+					? `- ${rateLabel} ${label('sin', 'without')} ${itemName(itemId)}: ${money(restPerHour)} (${label('ese objeto es más de la mitad del valor', 'that item is over half the value')})`
+					: `- ${label('Sin', 'Without')} ${itemName(itemId)} ${label('el valor neto de objetos observados queda en', 'the net value of observed items comes to')} ${money(rest)} (${rest < 0
+						? label('ese objeto vale más que todo el valor neto', 'that item is worth more than the whole net value')
+						: label('ese objeto es todo el valor neto', 'that item is the whole net value')})`);
 			}
-			if (average !== null) verdict.push(`- ${label('Tu media en sesiones parecidas', 'Your average in similar sessions')}: ${money(average)}/h (${label(`${String(comparables.length)} sesiones en este mapa`, `${String(comparables.length)} sessions on this map`)})`);
+			if (average !== null) balance.push(`- ${label('Tu media en sesiones parecidas', 'Your average in similar sessions')}: ${money(average)}/h (${label(`${String(comparables.length)} sesiones en este mapa`, `${String(comparables.length)} sessions on this map`)})`);
 		}
-		if (gold !== null && !f.salesSession) verdict.push(`- ${gold}`);
-		if (f.staple !== null) verdict.push(`- ${label('Lo que más entró', 'Most gained')}: ${itemName(f.staple.itemId)} ×${String(f.staple.quantity)} (${label(`entró ${String(f.staple.entries)} veces`, `came in ${String(f.staple.entries)} times`)}${f.staple.perHour !== null ? ` · ${String(f.staple.perHour)}/h` : ''})`);
-		if (verdict.length > 0) out.push('', `## ${label('Veredicto', 'Verdict')}`, '', ...verdict);
+		if (gold !== null && !f.salesSession) balance.push(`- ${gold}`);
+		if (f.staple !== null) balance.push(`- ${label('Lo que más entró', 'Most gained')}: ${itemName(f.staple.itemId)} ×${String(f.staple.quantity)} (${label(`entró ${String(f.staple.entries)} veces`, `came in ${String(f.staple.entries)} times`)}${f.staple.perHour !== null ? ` · ${String(f.staple.perHour)}/h` : ''})`);
+		if (balance.length > 0) out.push('', `## ${label('Balance observado', 'Observed balance')}`, '', ...balance);
 
 		if (f.hasNewItems) {
 			const top = f.sellable.slice(0, TOP_ITEMS);
-			out.push('', `## ${label('Para vender ahora', 'To sell now')}`, '');
+			// Not «to sell now»: the note is a record of what came in, and it does not know what is still in the bags when it is read.
+			out.push('', `## ${label('Objetos observados de más valor', 'Most valuable observed items')}`, '');
 			if (top.length === 0) out.push(label('Ningún objeto nuevo tiene precio de bazar.', 'No new item has a bazaar price.'));
 			else out.push(`| ${label('Objeto', 'Item')} | ${label('Cantidad', 'Quantity')} | ${label('Valor neto de comisión', 'Value net of fees')} |`, '|---|---:|---:|',
 				...top.map((row) => `| ${itemName(row.itemId)}${row.container ? ` (${label('sin abrir', 'unopened')})` : ''} | ${String(row.quantity)} | ${money(row.valueCopper!)} |`));
 			if (f.unpriced.length > 0) out.push('', `${label('Sin precio de bazar (fuera del valor)', 'No bazaar price (outside the value)')}: ${f.unpriced.map((row) => `${itemName(row.itemId)} ×${String(row.quantity)}${row.container ? ` (${label('sin abrir', 'unopened')})` : ''}`).join(', ')}`);
-			if (f.boundItemIds.length > 0) out.push('', `${label('Ligados a cuenta (fuera de la lista y del valor)', 'Account-bound (outside the list and the value)')}: ${f.boundItemIds.map(itemName).join(', ')}`);
+			// A handful is named whole; a farming session binds dozens, and then the line is a count with the first three, in the order they came.
+			const boundCount = f.boundItemIds.length;
+			if (boundCount > MAX_NAMED_BOUND) {
+				const named = f.boundItemIds.slice(0, BOUND_NAMED_WHEN_COUNTED).map(itemName).join(', '); const more = String(boundCount - BOUND_NAMED_WHEN_COUNTED);
+				out.push('', label(`${String(boundCount)} tipos de objeto ligados a cuenta, fuera de la lista y del valor: ${named} y ${more} más.`,
+					`${String(boundCount)} account-bound item types, outside the list and the value: ${named} and ${more} more.`));
+			} else if (boundCount > 0) out.push('', `${label('Ligados a cuenta (fuera de la lista y del valor)', 'Account-bound (outside the list and the value)')}: ${f.boundItemIds.map(itemName).join(', ')}`);
 		}
 
-		if (f.currencies.length > 0) out.push('', `## ${label('Otras monedas', 'Other currencies')}`, '',
+		if (f.currencies.length > 0) out.push('', `## ${label('Cambios de otras monedas', 'Other currency changes')}`, '',
 			...f.currencies.map((row) => `- ${currencyName(row.id)}: ${row.net > 0 ? '+' : ''}${String(row.net)}`));
 
 		if (f.alerts.length > 0) out.push('', `## ${label('Lo bueno', 'The good')}`, '',
 			...f.alerts.map((alert) => `- ${clock(alert.at)} · ${itemName(alert.itemId)} ×${String(alert.quantity)}${alert.totalCopper === null ? '' : ` · ${money(alert.totalCopper)}`}`));
 
-		// `outCount` is of units, so exactly one is one object: the sentence agrees with it in both languages.
-		if (f.outCount === 1) out.push('', label('Salió del inventario 1 objeto; no se distingue si se vendió, se consumió o se depositó.',
-			'1 item left the inventory; it cannot tell whether it was sold, consumed or deposited.'));
-		else if (f.outCount > 0) out.push('', label(`Salieron del inventario ${String(f.outCount)} objetos; no se distingue si se vendieron, se consumieron o se depositaron.`,
-			`${String(f.outCount)} items left the inventory; it cannot tell whether they were sold, consumed or deposited.`));
+		// Units and item types, both counted: «5 objetos» read as five items when it was five units of four. One unit is of one item.
+		if (f.outCount === 1) out.push('', label('Salió del inventario 1 unidad de un objeto; no se distingue si se vendió, se consumió o se depositó.',
+			'1 unit of one item left the inventory; it cannot tell whether it was sold, consumed or deposited.'));
+		else if (f.outCount > 0) out.push('', label(`Salieron del inventario ${String(f.outCount)} unidades de ${String(f.outKinds)} ${f.outKinds === 1 ? 'tipo' : 'tipos'} de objeto; no se distingue si se vendieron, se consumieron o se depositaron.`,
+			`${String(f.outCount)} units of ${String(f.outKinds)} item ${f.outKinds === 1 ? 'type' : 'types'} left the inventory; it cannot tell whether they were sold, consumed or deposited.`));
 
-		if (f.maps.length > 0) out.push('', `## ${label('Mapas', 'Maps')}`, '', ...f.maps.map((row) => `- ${mapName(row.mapId)} · ${duration(row.ms)}`),
-			// A blank line first: text right under a list item is, in Markdown, part of that item.
-			...(session.mapCoveragePartial ? ['', label('La lista puede estar incompleta.', 'The list may be incomplete.')] : []));
+		if (f.maps.length > 0) {
+			// The total is written when it adds something (with one map it is that map's line), and the warning only when it is true of
+			// this session: the map record has a hole AND the identified time falls short of the observed time.
+			const under = [...(f.maps.length > 1 ? [`${label('Tiempo con mapa identificado', 'Time on an identified map')}: ${duration(f.mapsMs)}.`] : []),
+				...(session.mapCoveragePartial && f.mapsMs < session.observedItemsMs ? [label('La lista puede estar incompleta.', 'The list may be incomplete.')] : [])];
+			out.push('', `## ${label('Mapas', 'Maps')}`, '', ...f.maps.map((row) => `- ${mapName(row.mapId)} · ${duration(row.ms)}`),
+				// A blank line first: text right under a list item is, in Markdown, part of that item.
+				...(under.length > 0 ? ['', under.join(' ')] : []));
+		}
 
 		const extra: string[] = [];
 		if (session.magicFind.source === 'verified' && session.magicFind.value !== null) extra.push(`- ${label('Hallazgo mágico', 'Magic find')}: ${String(session.magicFind.value)}`);
@@ -173,15 +194,40 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			out.push(label(`${String(f.gapStretches)} ${f.gapStretches === 1 ? 'tramo' : 'tramos'} sin observar, en total ${duration(f.gapsMs)}.`,
 				`${String(f.gapStretches)} unobserved ${f.gapStretches === 1 ? 'interval' : 'intervals'}, ${duration(f.gapsMs)} in total.`));
 		} else {
-			out.push(label(`Solo se observó el ${percent} % de la sesión. Tramos sin observar:`, `Only ${percent} % of the session was observed. Unobserved intervals:`));
-			for (const gap of f.gaps.slice(0, MAX_LISTED_GAPS)) out.push(`- ${clock(gap.fromAt)}–${clock(gap.toAt)} · ${gap.channels[0] === 'items' ? label('objetos', 'items') : label('monedas', 'currencies')} · ${gap.characterChange ? label('cambio de personaje', 'character change') : gapReason(gap.reason, es)}`);
-			if (f.gaps.length > MAX_LISTED_GAPS) out.push('', label(`… y ${String(f.gaps.length - MAX_LISTED_GAPS)} más.`, `… and ${String(f.gaps.length - MAX_LISTED_GAPS)} more.`));
+			// How much was observed and how much was not, then what explains it: the long stretches one per line, the longest first,
+			// each once whatever the channels it took, and the cuts of a few seconds counted together instead of filling the list.
+			const count = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
+			const total = (stretches: readonly { ms: number }[]): string => minutesSeconds(stretches.reduce((sum, stretch) => sum + stretch.ms, 0));
+			out.push(label(`Objetos observados durante ${minutesSeconds(session.observedItemsMs)} de una sesión de ${minutesSeconds(f.durationMs)}: ${percent} %.`,
+				`Items observed for ${minutesSeconds(session.observedItemsMs)} of a session of ${minutesSeconds(f.durationMs)}: ${percent} %.`),
+			label(`Sin observar: ${minutesSeconds(f.gapsMs)}, en ${count(f.gapStretches, 'tramo', 'tramos')}.`, `Unobserved: ${minutesSeconds(f.gapsMs)}, in ${count(f.gapStretches, 'interval', 'intervals')}.`));
+			const long = f.stretches.filter((stretch) => stretch.ms >= SUMMARY_SHORT_GAP_MS).sort((a, b) => b.ms - a.ms || Date.parse(a.fromAt) - Date.parse(b.fromAt));
+			const cuts = f.stretches.filter((stretch) => stretch.ms < SUMMARY_SHORT_GAP_MS);
+			const listed = long.slice(0, MAX_LISTED_GAPS); const unlisted = long.slice(MAX_LISTED_GAPS);
+			for (const stretch of listed) {
+				// A stretch inside one minute is written with that minute once: its length is on the line, so «08:54–08:54» says nothing.
+				const from = clock(stretch.fromAt); const to = clock(stretch.toAt);
+				// The section is about items, so «solo monedas» is the exception worth a word. «Solo objetos» is said only of a session that
+				// followed currencies at all: without them every stretch is of items alone, and the label would be on every line.
+				const channel = stretch.onlyChannel === 'currencies' ? ` · ${label('solo monedas', 'currencies only')}`
+					: stretch.onlyChannel === 'items' && session.observedCurrenciesMs > 0 ? ` · ${label('solo objetos', 'items only')}` : '';
+				out.push(`- ${from === to ? from : `${from}–${to}`} · ${minutesSeconds(stretch.ms)} · ${stretch.characterChange ? label('cambio de personaje', 'character change') : gapReason(stretch.reason, es)}${channel}`);
+			}
+			const shortLimit = `${String(SUMMARY_SHORT_GAP_MS / 1000)} s`;
+			const rest = [...(unlisted.length > 0 ? [label(`${count(unlisted.length, 'tramo', 'tramos')} más, en total ${total(unlisted)}`, `${count(unlisted.length, 'more interval', 'more intervals')}, ${total(unlisted)} in total`)] : []),
+				...(cuts.length > 0 ? [label(`${count(cuts.length, 'corte', 'cortes')} de menos de ${shortLimit}, en total ${total(cuts)}`, `${count(cuts.length, 'cut', 'cuts')} under ${shortLimit}, ${total(cuts)} in total`)] : [])];
+			// With no stretch listed everything is a cut, and the line above already gave their number and their time.
+			if (listed.length === 0) out.push(cuts.length === 1 ? label(`Es un corte de menos de ${shortLimit}.`, `It is a cut under ${shortLimit}.`)
+				: label(`Todos son cortes de menos de ${shortLimit}.`, `All of them are cuts under ${shortLimit}.`));
+			else if (rest.length > 0) out.push('', label(`Y ${rest.join(', y ')}.`, `And ${rest.join(', and ')}.`));
 		}
 
 		// The host's own target (Hebra: `id:<uuid>`) when it gave one; otherwise the vault path, which Obsidian resolves.
 		const hostTarget = input.fullNoteLinkTarget !== undefined && input.fullNoteLinkTarget !== '' ? input.fullNoteLinkTarget : null;
 		const link = hostTarget ?? input.fullNotePath.replace(/\.md$/u, '');
-		out.push('', `${label('Nota completa', 'Full note')}: ${/[[\]|#^]/u.test(link) ? `\`${link}\`` : `[[${link}|${label('Sesión de inventario observado', 'Observed inventory session')}]]`}`);
+		// The link reads as what it opens. A path a wikilink cannot carry is written as text, and then it needs the label in front.
+		const fullSession = label('Sesión completa', 'Full session');
+		out.push('', /[[\]|#^]/u.test(link) ? `${fullSession}: \`${link}\`` : `[[${link}|${fullSession}]]`);
 
 		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? (input.mapNames?.[String(id)] ?? `${label('Mapa', 'Map')} ${String(id)}`)
 			: (names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
@@ -250,6 +296,16 @@ function duration(ms: number): string {
 	const parts = [...(hours > 0 ? [`${String(hours)} h`] : []), ...(minutes > 0 ? [`${String(minutes)} min`] : []),
 		...(hours === 0 && seconds > 0 || total === 0 ? [`${String(seconds)} s`] : [])];
 	return parts.join(' ');
+}
+
+/**
+ * Minutes and seconds, to the second and with no hours: «81 min 12 s». The coverage states what was observed, what was not
+ * and the session's length, and those add up only if none is rounded to the minute (`duration` drops the seconds past the hour).
+ */
+function minutesSeconds(ms: number): string {
+	const total = Math.max(0, Math.round(ms / 1000));
+	const minutes = Math.floor(total / 60); const seconds = total % 60;
+	return [...(minutes > 0 ? [`${String(minutes)} min`] : []), ...(seconds > 0 || minutes === 0 ? [`${String(seconds)} s`] : [])].join(' ');
 }
 
 function gapReason(reason: StoredLiveSessionPayloadV1['gaps'][number]['reason'], es: boolean): string {

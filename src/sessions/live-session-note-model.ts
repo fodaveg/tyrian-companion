@@ -40,6 +40,29 @@ export interface LiveSessionNoteInput {
 	 * prices as net per unit (the only basis that format has) and 2 states them in the basis the runtime keeps (`liveRuntimePriceBasis`).
 	 */
 	payloadVersion?: LiveSessionPayloadVersion;
+	/** Offset of the machine's time zone from UTC, in minutes, at that instant: the title is written with it. Defaults to the system's. */
+	utcOffsetMinutes?: UtcOffsetMinutes;
+}
+
+/** Offset from UTC, in minutes, at an instant: what the local day and hour of a session's two notes are written with. */
+export type UtcOffsetMinutes = (atMs: number) => number;
+export const systemUtcOffsetMinutes: UtcOffsetMinutes = (atMs) => -new Date(atMs).getTimezoneOffset();
+
+/** The local `2026-10-09` and `08:42` of an instant. */
+export function liveSessionLocalTime(iso: string, utcOffsetMinutes: UtcOffsetMinutes = systemUtcOffsetMinutes): { day: string; clock: string } {
+	const at = Date.parse(iso);
+	const local = new Date(at + utcOffsetMinutes(at) * 60_000).toISOString();
+	return { day: local.slice(0, 10), clock: local.slice(11, 16) };
+}
+
+/**
+ * `2026-10-09 08.42`: the local day and hour a session started. It opens the title of both notes of the session (the full
+ * one and its summary), so two sessions are told apart in a list, a link or a search. The hour takes a dot and never a
+ * colon: Hebra takes a note's title from that line. The title is presentation only: nothing reads a note by it.
+ */
+export function liveSessionTitleStamp(startedAt: string, utcOffsetMinutes?: UtcOffsetMinutes): string {
+	const { day, clock } = liveSessionLocalTime(startedAt, utcOffsetMinutes);
+	return `${day} ${clock.replace(':', '.')}`;
 }
 
 /**

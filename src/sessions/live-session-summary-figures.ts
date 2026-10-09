@@ -10,6 +10,8 @@ export const SUMMARY_DOMINANT_VALUE_SHARE = 0.5;
 export const SUMMARY_STAPLE_MIN_ENTRIES = 10;
 /** Below this observed share the unobserved intervals are listed instead of folded into one line. */
 export const SUMMARY_FOLD_COVERAGE = 0.9;
+/** An unobserved stretch shorter than this is a cut: the note counts the cuts together instead of writing each one. */
+export const SUMMARY_SHORT_GAP_MS = 30_000;
 const GOLD_CURRENCY_ID = 1;
 /**
  * `/v2/items` flags that take an item out of «sell now» and out of the value: the ones that forbid TRADING it, which is what the
@@ -29,6 +31,21 @@ export type SummaryItemMetaMap = Readonly<Record<number, SummaryItemMeta | undef
 
 export interface SummaryItemRow { itemId: number; quantity: number; valueCopper: number | null; container: boolean }
 
+/**
+ * One unobserved stretch as the note counts and writes it. The session keeps one record per channel, so a cut that
+ * took items and currencies at once is two records over the same instants: here it is one stretch, and so are records
+ * that touch or overlap. The count and the total are of time nobody observed, never of records.
+ */
+export interface SummaryGapStretch {
+	fromAt: string; toAt: string; ms: number;
+	/** The reason of the longest record in the stretch: what the stretch is named after. */
+	reason: LiveGapV1['reason'];
+	/** A `context_changed` stretch that holds the instant a later character took over. */
+	characterChange: boolean;
+	/** The one channel that went unobserved, when the other was observed all along the stretch; null when both were hit. */
+	onlyChannel: 'items' | 'currencies' | null;
+}
+
 export interface SummaryFigures {
 	durationMs: number;
 	/** 0..1, observed item time over the session's length. */
@@ -40,6 +57,8 @@ export interface SummaryFigures {
 	observedPercent: number;
 	mainMapId: number | null;
 	maps: { mapId: number; ms: number }[];
+	/** Time on the maps of `maps` together: what the session spent on a map the plugin could identify. */
+	mapsMs: number;
 	/** Sellable items that came in, best value first (priced ones before unpriced). */
 	sellable: SummaryItemRow[];
 	/** Items that came in and are bound to the account (or soulbound on acquire): out of the list and out of the value. */
@@ -66,12 +85,16 @@ export interface SummaryFigures {
 	dominantCurrency: { id: number; net: number } | null;
 	/** Units that left the inventory (sold, consumed or deposited: the plugin cannot tell). */
 	outCount: number;
+	/** How many different items those units are of: 5 units can be 5 of one item or one each of five. */
+	outKinds: number;
 	hasNewItems: boolean;
 	salesSession: boolean;
 	alerts: { at: string; itemId: number; name: string; quantity: number; totalCopper: number | null }[];
-	gaps: { fromAt: string; toAt: string; ms: number; reason: LiveGapV1['reason']; channels: LiveGapV1['channels']; characterChange: boolean }[];
+	/** The disjoint unobserved stretches in the order they happened, whatever the channel. */
+	stretches: SummaryGapStretch[];
+	/** Their time together. */
 	gapsMs: number;
-	/** Disjoint unobserved stretches, whatever the channel: the number that goes with `gapsMs`. */
+	/** How many they are: the number that goes with `gapsMs`. */
 	gapStretches: number;
 }
 
@@ -169,30 +192,49 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	const alerts = session.journal.flatMap((entry) => entry.outbox.filter((row) => row.state === 'processed' && row.alert !== null)
 		.map((row) => ({ at: entry.observedAt, itemId: row.alert!.itemId, name: row.alert!.name, quantity: row.alert!.quantity, totalCopper: row.alert!.totalCopper })));
 
-	const gaps = session.gaps.filter((gap) => gap.toAt !== null).map((gap) => ({ fromAt: gap.fromAt, toAt: gap.toAt!, reason: gap.reason, channels: gap.channels,
-		ms: Date.parse(gap.toAt!) - Date.parse(gap.fromAt),
-		characterChange: gap.reason === 'context_changed' && characters.slice(1).some((entry) => entry.fromAt >= gap.fromAt && entry.fromAt <= gap.toAt!) }));
-	const unobserved = unionOf(session.gaps, session.endedAt);
+	const stretches = unobservedStretches(session.gaps, session.endedAt, characters);
+	const maps = mapTimes(session.mapIntervals);
 	// Integer arithmetic before the division, so an exact share (57 of 100 minutes) is not truncated to the percent below it.
 	const wholePercent = durationMs > 0 ? Math.min(100, Math.floor(observedMs * 100 / durationMs)) : 0;
 	return { durationMs, observedShare: durationMs > 0 ? Math.min(1, observedMs / durationMs) : 0,
-		observedPercent: unobserved.gapStretches > 0 ? Math.min(99, wholePercent) : wholePercent,
-		mainMapId: summaryMainMap(session), maps: mapTimes(session.mapIntervals), sellable, boundItemIds, unpriced, unknownBindingIds,
+		observedPercent: stretches.length > 0 ? Math.min(99, wholePercent) : wholePercent,
+		mainMapId: summaryMainMap(session), maps, mapsMs: maps.reduce((sum, row) => sum + row.ms, 0), sellable, boundItemIds, unpriced, unknownBindingIds,
 		netCopper: valueless ? null : netCopper, positiveCopper, noPrices,
 		perHour: { copper: valueless ? null : perHour(netCopper), reason: rateReason }, withoutDominant: valueless ? null : withoutDominant, staple, goldCopper, currencies,
 		dominantCurrency: positiveCopper === 0 ? gainedCurrency : null,
-		outCount: itemTotals.reduce((sum, row) => sum + row.negative, 0), hasNewItems,
+		outCount: itemTotals.reduce((sum, row) => sum + row.negative, 0), outKinds: itemTotals.filter((row) => row.negative > 0).length, hasNewItems,
 		salesSession,
-		alerts, gaps, ...unobserved };
+		alerts, stretches, gapsMs: stretches.reduce((sum, stretch) => sum + stretch.ms, 0), gapStretches: stretches.length };
 }
 
-/** Union of the unobserved intervals, whatever the channel: overlaps count once, and so does a cut seen by two channels. */
-function unionOf(gaps: readonly LiveGapV1[], endedAt: string): { gapsMs: number; gapStretches: number } {
-	let end = Number.NEGATIVE_INFINITY; let ms = 0; let stretches = 0;
-	for (const gap of [...gaps].sort((a, b) => a.fromAt.localeCompare(b.fromAt))) {
-		const from = Date.parse(gap.fromAt); const to = Date.parse(gap.toAt ?? endedAt);
-		if (from > end) stretches += 1;
-		ms += Math.max(0, to - Math.max(from, end)); end = Math.max(end, to);
+/**
+ * Union of the unobserved records, whatever the channel: a record that starts after everything before it ended opens a
+ * stretch, and one that touches or overlaps the open stretch extends it. So a cut seen by two channels is one stretch,
+ * with its time counted once. A record still open is taken up to the session's end.
+ */
+function unobservedStretches(gaps: readonly LiveGapV1[], endedAt: string, characters: readonly SummaryCharacter[]): SummaryGapStretch[] {
+	const records = gaps.map((gap) => ({ from: Date.parse(gap.fromAt), to: Date.parse(gap.toAt ?? endedAt), reason: gap.reason, channels: gap.channels }))
+		.sort((a, b) => a.from - b.from || a.to - b.to);
+	const takeovers = characters.slice(1).map((entry) => Date.parse(entry.fromAt));
+	const open: { from: number; to: number; reason: LiveGapV1['reason']; longestMs: number;
+		covered: Record<'items' | 'currencies', number>; until: Record<'items' | 'currencies', number> }[] = [];
+	for (const record of records) {
+		let stretch = open.at(-1);
+		if (stretch === undefined || record.from > stretch.to) {
+			stretch = { from: record.from, to: record.from, reason: record.reason, longestMs: -1, covered: { items: 0, currencies: 0 },
+				until: { items: Number.NEGATIVE_INFINITY, currencies: Number.NEGATIVE_INFINITY } };
+			open.push(stretch);
+		}
+		if (record.to - record.from > stretch.longestMs) { stretch.longestMs = record.to - record.from; stretch.reason = record.reason; }
+		// Time each channel went unobserved inside the stretch, each instant once: it says whether the stretch is of one channel alone.
+		for (const channel of record.channels) {
+			stretch.covered[channel] += Math.max(0, record.to - Math.max(record.from, stretch.until[channel]));
+			stretch.until[channel] = Math.max(stretch.until[channel], record.to);
+		}
+		stretch.to = Math.max(stretch.to, record.to);
 	}
-	return { gapsMs: ms, gapStretches: stretches };
+	return open.map((stretch) => ({ fromAt: new Date(stretch.from).toISOString(), toAt: new Date(stretch.to).toISOString(), ms: stretch.to - stretch.from,
+		reason: stretch.reason,
+		characterChange: stretch.reason === 'context_changed' && takeovers.some((at) => at >= stretch.from && at <= stretch.to),
+		onlyChannel: stretch.covered.currencies === 0 ? 'items' : stretch.covered.items === 0 ? 'currencies' : null }));
 }
