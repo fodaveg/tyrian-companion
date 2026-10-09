@@ -236,9 +236,13 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 			id = page.items.find((item) => !item.locked && item.title === title)?.id ?? null;
 			cursor = id === null ? page.nextCursor : null;
 		} while (cursor !== null);
-		for (let attempt = 0; id !== null && attempt < PROCESS_MAX_ATTEMPTS; attempt += 1) {
+		let gone = id === null;
+		for (let attempt = 0; id !== null && !gone && attempt < PROCESS_MAX_ATTEMPTS; attempt += 1) {
 			const current = await library.noteRead(id);
-			if (current === null || current.trashedAt !== null || current.archivedAt !== null || current.body === null) break;
+			if (current === null || current.trashedAt !== null || current.archivedAt !== null || current.body === null) {
+				gone = true;
+				break;
+			}
 			if (current.body === content) {
 				onNoteSaved?.(path, id);
 				return;
@@ -251,6 +255,10 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 				onNoteSaved?.(path, id);
 				return;
 			}
+		}
+		// Attempts exhausted on a note that is still there: creating another would duplicate it.
+		if (!gone && id !== null) {
+			throw new Error(`tyrian vault: saveNote did not converge after ${String(PROCESS_MAX_ATTEMPTS)} attempts (persistent conflict): ${path}`);
 		}
 		const created = await library.noteCreate({ folderId, body: content });
 		onNoteSaved?.(path, created.id);

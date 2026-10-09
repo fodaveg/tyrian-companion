@@ -72,7 +72,9 @@ correlación. En Obsidian es un `.json` bajo `<carpeta de salida>/diagnostics/`;
 carpeta que abrir, es la nota «Tyrian - Paquete de soporte» de esa misma carpeta (se crea la primera vez,
 se reescribe ENTERA en cada exportación, también lo que hayas escrito en ella, y se abre al terminar; sin
 frontmatter ni marcas de Tyrian, así que el índice de rutas no la guarda: Hebra la busca en la biblioteca
-por carpeta y título, y si está en la papelera o archivada crea una nueva; se sincroniza como cualquier
+por carpeta y título (una nota tuya en esa carpeta con ese mismo título se reescribe también; una de otra
+carpeta o subcarpeta, o con otro título, no se toca; una bloqueada se ignora y se crea otra), y si está en la
+papelera o archivada crea una nueva; se sincroniza como cualquier
 nota hasta que se borre). Revisa aun así el paquete visualmente antes de adjuntarlo. **Copiar extracto reciente**
 puede conservar texto saneado del log local: úsalo solo para líneas imprescindibles y tras revisión
 manual. No publiques el directorio completo ni confundas el saneado automático con una garantía

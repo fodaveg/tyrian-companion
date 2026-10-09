@@ -854,6 +854,52 @@ describe('createTyrianVaultPort: saveNote (the support package)', () => {
 		}
 	});
 
+	it('a note with ANOTHER title in the folder is left alone and the support note is created apart', async () => {
+		const library = setupLibrary();
+		library.addFolder('diag', ROOT, 'diagnostics');
+		library.addNote('mine', '# My own note\n\ntext\n', { folderId: 'diag' });
+		const { vault } = await open(library);
+		await vault.saveNote(PATH, body(1));
+		expect(library.notes.get('mine')?.body).toBe('# My own note\n\ntext\n');
+		expect(visible(library)).toHaveLength(1);
+		expect(library.notes.size).toBe(2);
+	});
+
+	it('a note with the SAME title in a subfolder of diagnostics is left alone', async () => {
+		const library = setupLibrary();
+		library.addFolder('diag', ROOT, 'diagnostics');
+		library.addFolder('deep', 'diag', 'older');
+		library.addNote('old', body(0), { folderId: 'deep' });
+		const { vault } = await open(library);
+		await vault.saveNote(PATH, body(1));
+		expect(library.notes.get('old')?.body).toBe(body(0));
+		expect(library.notes.size).toBe(2);
+	});
+
+	it('a locked note with the same title is ignored and another is created', async () => {
+		const library = setupLibrary();
+		library.addFolder('diag', ROOT, 'diagnostics');
+		library.addNote('locked', body(0), { folderId: 'diag', locked: true });
+		const { vault } = await open(library);
+		await vault.saveNote(PATH, body(1));
+		expect(library.notes.size).toBe(2);
+		expect(library.notes.get('locked')?.body).not.toBe(body(1));
+	});
+
+	it('when every revision check fails it throws and does NOT create a duplicate', async () => {
+		const library = setupLibrary();
+		const first = await open(library);
+		await first.vault.saveNote(PATH, body(1));
+		const rewrite = vi.fn(async () => ({ written: [] as string[], stale: ['x'] }));
+		const create = vi.fn(library.noteCreate);
+		const emitter = withEmitter(library, { notesRewriteBatch: rewrite as never, noteCreate: create });
+		const vault = createTyrianVaultPort({ library: emitter.library, index: await freshIndex(), rootFolderId: ROOT });
+		await expect(vault.saveNote(PATH, body(2))).rejects.toThrow(/did not converge/u);
+		expect(rewrite).toHaveBeenCalledTimes(5);
+		expect(create).not.toHaveBeenCalled();
+		expect(visible(library)).toHaveLength(1);
+	});
+
 	it('is never indexed, so a Tyrian note of the same folder is left alone', async () => {
 		const library = setupLibrary();
 		const index = await freshIndex();
