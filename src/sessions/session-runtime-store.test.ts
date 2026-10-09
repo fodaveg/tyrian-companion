@@ -25,7 +25,7 @@ import {
 	SESSION_RUNTIME_STORE_NAME,
 } from './session-runtime-store';
 import type { SessionStartContext } from './session-start-capture';
-import { closeUnderneath, emitEngineClose, hangStorage, holdNextOpen, macrotasks, killStorage, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
+import { closeUnderneath, emitEngineClose, hangStorage, engineIdle, holdNextOpen, killStorage, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 
 vi.mock('../core/canonical-sha256', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('../core/canonical-sha256')>();
@@ -719,10 +719,8 @@ describe('session runtime persistence', () => {
 			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('open-deadline-first'), undefined, timers);
 			hangStorage(tracked);
 			const load = store.load();
-			await macrotasks();
-			expect(timers.pending).toBe(2);
+			await vi.waitFor(() => { expect(timers.pending).toBe(2); });
 			timers.fireOne();
-			await macrotasks();
 			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
 
 			// The second read does not wait its own ten seconds: the pause is on, though the caller's own timer never ran.
@@ -736,7 +734,7 @@ describe('session runtime persistence', () => {
 			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('one-hertz'), undefined, timers);
 			hangStorage(tracked);
 			const first = store.load();
-			await macrotasks();
+			await vi.waitFor(() => { expect(timers.pending).toBe(2); });
 			timers.fire();
 			await expect(first).resolves.toEqual({ status: 'error', code: 'unavailable' });
 			resumeStorage(tracked);
@@ -782,7 +780,7 @@ describe('session runtime persistence', () => {
 			expect(tracked.connections).toHaveLength(2);
 			const [late, current] = tracked.connections as [IDBDatabase, IDBDatabase];
 			answer();
-			await macrotasks();
+			await engineIdle(tracked);
 			// The late one is closed (its transactions throw); the cached one keeps serving; no third open took its place.
 			expect(() => late.transaction(SESSION_RUNTIME_STORE_NAME, 'readonly')).toThrow();
 			expect(() => current.transaction(SESSION_RUNTIME_STORE_NAME, 'readonly')).not.toThrow();
@@ -810,7 +808,7 @@ describe('session runtime persistence', () => {
 			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
 			const unhandled = vi.fn(); process.on('unhandledRejection', unhandled);
 			answer();
-			await macrotasks();
+			await engineIdle(tracked);
 			process.off('unhandledRejection', unhandled);
 			expect(unhandled).not.toHaveBeenCalled();
 			// The store is not left in a stuck state: the next call tries by itself and gets the engine's own refusal.

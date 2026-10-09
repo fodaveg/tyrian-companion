@@ -1,4 +1,5 @@
 import { IDBFactory } from 'fake-indexeddb';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 /**
  * A fake IndexedDB that remembers every connection it handed out, so a test can kill one the way
@@ -21,19 +22,35 @@ export interface TrackedIndexedDb {
 	holdCommit: { matches: (databaseName: string) => boolean; answer: () => void } | null;
 	/** Armed by `holdNextOpen`: the next open is made for real and answered only when its release is called. */
 	holdOpen: { answer: () => void } | null;
+	/** Opens and transactions the fake engine has taken and not yet finished; those it was told to leave unanswered are not counted. */
+	inFlight: number;
 }
+
+/**
+ * Real milliseconds every open is answered late by (the environment variable, for a run on a slow machine on purpose): the
+ * tests must wait for the engine to be idle, never for a number of turns, so they pass whatever this is.
+ */
+const ENGINE_LATENCY_MS = Number(process.env.TYRIAN_TEST_ENGINE_LATENCY_MS ?? '0');
 
 export function trackedIndexedDb(): TrackedIndexedDb {
 	const factory = new IDBFactory();
-	const tracked: TrackedIndexedDb = { factory, connections: [], down: false, hung: false, hangOnly: null, opensAnswer: false, holdCommit: null, holdOpen: null };
+	const tracked: TrackedIndexedDb = { factory, connections: [], down: false, hung: false, hangOnly: null, opensAnswer: false, holdCommit: null, holdOpen: null, inFlight: 0 };
 	const isHung = (databaseName: string): boolean => tracked.hung && (tracked.hangOnly?.(databaseName) ?? true);
 	const open = factory.open.bind(factory);
 	factory.open = (name: string, version?: number) => {
 		if (isHung(name) && !tracked.opensAnswer) return unanswered<IDBOpenDBRequest>();
 		if (tracked.down) return refusedOpen();
 		const request = open(name, version);
-		const held = tracked.holdOpen;
+		countUntilDone(tracked, request, ['success', 'error', 'blocked']);
+		let held = tracked.holdOpen;
 		tracked.holdOpen = null;
+		if (held === null && ENGINE_LATENCY_MS > 0) {
+			const slow = { answer: () => undefined as void };
+			held = slow;
+			// The engine is slow, not silent: it still counts as busy until it answers.
+			tracked.inFlight += 1;
+			void sleep(ENGINE_LATENCY_MS).then(() => { slow.answer(); tracked.inFlight -= 1; });
+		}
 		request.addEventListener('success', () => {
 			const database = request.result;
 			tracked.connections.push(database);
@@ -41,6 +58,7 @@ export function trackedIndexedDb(): TrackedIndexedDb {
 			database.transaction = (...parameters: Parameters<IDBDatabase['transaction']>) => {
 				if (isHung(database.name)) return unanswered<IDBTransaction>();
 				const transaction = start(...parameters);
+				countUntilDone(tracked, transaction, ['complete', 'abort', 'error']);
 				const hold = tracked.holdCommit;
 				if (hold === null || parameters[1] !== 'readwrite' || !hold.matches(database.name)) return transaction;
 				tracked.holdCommit = null;
@@ -242,9 +260,25 @@ function heldOpen(request: IDBOpenDBRequest, hold: { answer: () => void }): IDBO
 	return stub as unknown as IDBOpenDBRequest;
 }
 
-/** Lets the fake engine take its turns: it answers through macrotasks, which a microtask flush never reaches. */
-export async function macrotasks(turns = 10): Promise<void> {
-	for (let turn = 0; turn < turns; turn += 1) await new Promise<void>((resolve) => { setImmediate(resolve); });
+function countUntilDone(tracked: TrackedIndexedDb, target: EventTarget, events: string[]): void {
+	let counted = true;
+	tracked.inFlight += 1;
+	const done = (): void => { if (counted) { counted = false; tracked.inFlight -= 1; } };
+	for (const event of events) target.addEventListener(event, done);
+}
+
+/**
+ * Waits until the fake engine has nothing in flight, for as long as that takes and no longer than `capMs` of REAL time, and then
+ * lets the microtasks and the macrotask hops that follow an answer run (three consecutive idle checks). What it waits for is
+ * the engine's state, not a number of turns: a slow or loaded machine only makes it take longer. Past the cap it throws.
+ */
+export async function engineIdle(tracked: TrackedIndexedDb, capMs = 3_000): Promise<void> {
+	const deadline = Date.now() + capMs;
+	for (let idle = 0; idle < 3;) {
+		await new Promise<void>((resolve) => { setImmediate(resolve); });
+		idle = tracked.inFlight === 0 ? idle + 1 : 0;
+		if (Date.now() > deadline) throw new Error(`The fake IndexedDB engine still had ${String(tracked.inFlight)} operation(s) in flight after ${String(capMs)} ms.`);
+	}
 }
 
 /**

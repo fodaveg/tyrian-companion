@@ -1,5 +1,5 @@
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
 	IndexedDbConnectionLostError,
@@ -9,7 +9,7 @@ import {
 	type IndexedDbOpenFailureReason,
 	type IndexedDbVersionChangeKind,
 } from './indexed-db-open';
-import { closeUnderneath, emitEngineClose, hangStorage, holdNextOpen, macrotasks, trackedIndexedDb, type TrackedIndexedDb } from '../test/indexed-db-connections';
+import { closeUnderneath, emitEngineClose, engineIdle, hangStorage, holdNextOpen, trackedIndexedDb, type TrackedIndexedDb } from '../test/indexed-db-connections';
 
 /**
  * The shared open handshake, proved once instead of ten times.
@@ -295,7 +295,7 @@ describe('openIndexedDb against an engine that does not answer', () => {
 			toError: (reason) => { reasons.push(reason); return new Error(`store: ${reason}`); }, ...clock,
 		});
 		const outcome = opening.then(() => 'opened', (error: Error) => error.message);
-		await Promise.resolve();
+		expect(clock.pending).toBe(1); // armed synchronously, in the executor
 		clock.fire();
 		await expect(outcome).resolves.toBe('store: timeout');
 		expect(reasons).toEqual(['timeout']);
@@ -310,11 +310,11 @@ describe('openIndexedDb against an engine that does not answer', () => {
 			toError: (reason) => new Error(reason), ...clock,
 		});
 		const outcome = opening.then(() => 'opened', (error: Error) => error.message);
-		await macrotasks();
+		await engineIdle(tracked);
 		clock.fire();
 		await expect(outcome).resolves.toBe('timeout');
 		answer();
-		await macrotasks();
+		await engineIdle(tracked);
 		expect(() => tracked.connections[0]!.transaction('records', 'readonly')).toThrow();
 		// Nothing holds the orphan: another context deletes the database without being blocked.
 		await new Promise<void>((resolve, reject) => {
@@ -351,7 +351,7 @@ describe('withIndexedDbReopen against a transaction that does not answer', () =>
 		await connection.open();
 		const never = async (): Promise<number> => await new Promise<number>(() => undefined);
 		const outcome = withIndexedDbReopen(connection, never, clock).then(() => 'done', (error: Error) => error.name);
-		await Promise.resolve(); await Promise.resolve();
+		await vi.waitFor(() => { expect(live.size).toBeGreaterThan(0); });
 		for (const [handle, callback] of [...live]) { live.delete(handle); callback(); }
 		await expect(outcome).resolves.toBe('TimeoutError');
 		expect(discarded).toEqual([tracked.connections[0]]);

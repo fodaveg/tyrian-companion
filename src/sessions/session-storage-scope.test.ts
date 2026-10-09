@@ -5,7 +5,7 @@
  * earlier release wrote is adopted by at most one vault, in place, without copying or deleting it.
  */
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { openIndexedDb } from '../core/indexed-db-open';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
@@ -217,7 +217,7 @@ describe('a scope whose engine does not answer', () => {
 		const scope = new SessionStorageScope(factory, VAULT_A, () => CLAIMED_AT, deadline);
 
 		const first = scope.names().then(() => 'names', (error: Error) => error.name);
-		await Promise.resolve(); await Promise.resolve();
+		await vi.waitFor(() => { expect(live.size).toBeGreaterThan(0); });
 		for (const [handle, callback] of [...live]) { live.delete(handle); callback(); }
 		await expect(first).resolves.toBe('TimeoutError');
 

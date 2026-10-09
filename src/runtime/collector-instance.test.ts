@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { hangTransactions, holdNextCommit, macrotasks, resumeStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
+import { engineIdle, hangTransactions, holdNextCommit, resumeStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 import { loadCollectorMode, saveCollectorMode } from './collector-instance';
 
 const VAULT = 'a'.repeat(64);
@@ -16,14 +16,15 @@ describe('the collector mode read against an engine that does not answer', () =>
 			setTimeout: (callback: () => void) => { live.set(++next, callback); return next; },
 			clearTimeout: (handle: number) => { live.delete(handle); },
 		});
-		return { fire() { for (const [handle, callback] of [...live]) { live.delete(handle); callback(); } } };
+		return { fire() { for (const [handle, callback] of [...live]) { live.delete(handle); callback(); } }, get pending() { return live.size; } };
 	}
 
 	it('rejects when the transaction never answers, and reads normally once the engine answers again', async () => {
 		const tracked = trackedIndexedDb(); const timers = stubTimers();
 		hangTransactions(tracked);
 		const read = loadCollectorMode(tracked.factory, VAULT, () => 'collector').then(() => 'read', (error: Error) => error.message);
-		await macrotasks();
+		await engineIdle(tracked);
+		expect(timers.pending).toBe(1);
 		timers.fire();
 		await expect(read).resolves.toBe('Collector instance store did not answer.');
 
@@ -37,12 +38,13 @@ describe('the collector mode read against an engine that does not answer', () =>
 		const answer = holdNextCommit(tracked, () => true);
 		const late = vi.fn();
 		const read = loadCollectorMode(tracked.factory, VAULT, () => 'collector', late).then(() => 'read', (error: Error) => error.message);
-		await macrotasks();
+		await engineIdle(tracked);
+		expect(timers.pending).toBe(1);
 		timers.fire();
 		await expect(read).resolves.toBe('Collector instance store did not answer.');
 		expect(late).not.toHaveBeenCalled();
 		answer();
-		await macrotasks();
+		await engineIdle(tracked);
 		expect(late).toHaveBeenCalledWith('consult');
 	});
 
@@ -50,7 +52,9 @@ describe('the collector mode read against an engine that does not answer', () =>
 		const tracked = trackedIndexedDb(); const timers = stubTimers();
 		const answer = holdNextCommit(tracked, () => true);
 		const write = saveCollectorMode(tracked.factory, VAULT, 'consult');
-		await macrotasks();
+		await engineIdle(tracked);
+		// A write the user asked for arms no deadline at all.
+		expect(timers.pending).toBe(0);
 		timers.fire();
 		expect(await settlement(write)).toBe('pending');
 		answer();

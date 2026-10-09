@@ -28,7 +28,7 @@ import {
 } from './sessions/session-runtime-store';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import { loadCollectorMode } from './runtime/collector-instance';
-import { hangStorage, hangTransactions, holdNextCommit, macrotasks, resumeStorage, trackedIndexedDb } from './test/indexed-db-connections';
+import { engineIdle, hangStorage, hangTransactions, holdNextCommit, resumeStorage, trackedIndexedDb, type TrackedIndexedDb } from './test/indexed-db-connections';
 
 interface RuntimeBootHarness {
 	runtimeReady: boolean;
@@ -136,28 +136,34 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			return tracked;
 		}
 
-		const QUIET_TURNS = 25;
 		const bootTiming: { readyAtMs: number | null; settledAtMs: number | null } = { readyAtMs: null, settledAtMs: null };
+		/** Real milliseconds without any progress (no timer to run, nothing in flight) after which a boot counts as stuck. */
+		const STALL_MS = 4_000;
 
-		/** Boots until `initializeRuntime` settles. `readyAtMs` is the virtual time at which `runtimeReady` first read true. */
-		async function bootUntilSettled(plugin: RuntimeBootHarness, timers: { step(): void; elapsedMs: number; pending: number }): Promise<boolean> {
+		/**
+		 * Boots until `initializeRuntime` settles, and then until what it left running has finished. `readyAtMs` is the virtual
+		 * time at which `runtimeReady` first read true.
+		 *
+		 * Nothing here counts turns. Virtual time only advances when the fake engine has nothing in flight (`engineIdle`): ten
+		 * seconds pass in a browser while a healthy open answers in milliseconds, and a clock that jumped first would time out
+		 * answers that were on their way, on a slow machine more often than on a fast one. A boot that waits for something that
+		 * will never come (no timer to run, nothing in flight) is stuck, and says so after `STALL_MS` of real time.
+		 */
+		async function bootUntilSettled(plugin: RuntimeBootHarness, timers: { step(): void; elapsedMs: number; pending: number }, tracked: TrackedIndexedDb): Promise<boolean> {
 			let settled = false;
 			bootTiming.readyAtMs = null; bootTiming.settledAtMs = null;
 			void plugin.initializeRuntime().then(() => { settled = true; bootTiming.settledAtMs = timers.elapsedMs; }, () => { settled = true; });
-			// Real macrotask turns let fake-indexeddb answer what it can; each turn also lets every 10 s wait run out.
-			// Time only advances once everything the engine CAN answer has been answered: ten real seconds pass in a browser while a
-			// healthy open answers in milliseconds, and a clock that jumped first would time out answers that were on their way.
-			// A boot that is waiting for something that will never come has no timer pending either: it is stuck, and ends here.
-			for (let turn = 0, idle = 0; turn < 2000 && !settled && idle < 5; turn += 1) {
-				await macrotasks(QUIET_TURNS);
+			let progressAt = Date.now();
+			while (!settled) {
+				await engineIdle(tracked);
 				if (bootTiming.readyAtMs === null && plugin.runtimeReady) bootTiming.readyAtMs = timers.elapsedMs;
-				idle = timers.pending === 0 ? idle + 1 : 0;
-				timers.step();
+				if (timers.pending > 0) { timers.step(); progressAt = Date.now(); }
+				else if (Date.now() - progressAt > STALL_MS) throw new Error('The boot is stuck: no timer to run, nothing in flight in the engine, and initializeRuntime has not settled.');
 			}
 			// What the boot left running in the background (the waits of the stores nobody awaits) is finished here, so it cannot
 			// arm timers in the NEXT test's clock and move its time.
-			for (let turn = 0, quiet = 0; turn < 3000 && quiet < 30; turn += 1) {
-				await macrotasks(QUIET_TURNS);
+			for (let quiet = 0; quiet < 3;) {
+				await engineIdle(tracked);
 				if (timers.pending === 0) quiet += 1; else { quiet = 0; timers.step(); }
 			}
 			return settled;
@@ -179,7 +185,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			const tracked = sessionEngineThatDoesNotAnswer();
 			const plugin = runtimeBootPlugin(tracked.factory);
 			const timers = manualWindowTimers();
-			expect(await bootUntilSettled(plugin, timers)).toBe(true);
+			expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
 			expect(plugin.runtimeReady).toBe(true);
 			// The session part reads as the store failing (the state a store that refuses already has), not as a session that is fine.
 			expect(phase(plugin)).toBe('error');
@@ -194,7 +200,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			const plugin = runtimeBootPlugin(tracked.factory);
 			const timers = manualWindowTimers();
 			clock = () => timers.elapsedMs;
-			const settled = await bootUntilSettled(plugin, timers);
+			const settled = await bootUntilSettled(plugin, timers, tracked);
 			expect(settled).toBe(true);
 			expect(plugin.runtimeReady).toBe(true);
 			expect(phase(plugin)).toBe('error');
@@ -226,13 +232,13 @@ describe('deferred runtime startup with persisted terminal state', () => {
 				const plugin = withSettingsTab(tracked.factory);
 				const timers = manualWindowTimers();
 				const answer = holdNextCommit(tracked, (name) => name === 'tyrian-companion-collector');
-				expect(await bootUntilSettled(plugin, timers)).toBe(true);
+				expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
 				expect(plugin.runtimeReady).toBe(true);
 				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
 				expect(bootTiming.readyAtMs).toBe(10_000);
 
 				answer();
-				await macrotasks(50);
+				await engineIdle(tracked);
 				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('consult');
 			});
 
@@ -262,27 +268,27 @@ describe('deferred runtime startup with persisted terminal state', () => {
 				const plugin = withSettingsTab(tracked.factory);
 				const timers = manualWindowTimers();
 				const answer = holdNextCommit(tracked, (name) => name === 'tyrian-companion-collector');
-				expect(await bootUntilSettled(plugin, timers)).toBe(true);
+				expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
 				return { tracked, plugin, answer, probe: instrument(plugin) };
 			}
 
 			it('does not undo a mode chosen in Settings while the read was still out, even when the read answers first', async () => {
-				const { plugin, answer, probe } = await bootWithReadHeld();
+				const { tracked, plugin, answer, probe } = await bootWithReadHeld();
 				// A real engine answers the read before the write queued behind it: the choice must already be marked when it does.
 				const choosing = (plugin as unknown as ModeCore).updateCollectorMode('collector');
 				answer();
 				await choosing;
-				await macrotasks(50);
+				await engineIdle(tracked);
 				expect(probe.applied).toEqual(['collector']);
 				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
 			});
 
 			it('keeps a saved consult pending while a session is running, and applies it when the session ends', async () => {
-				const { plugin, answer, probe } = await bootWithReadHeld();
+				const { tracked, plugin, answer, probe } = await bootWithReadHeld();
 				probe.setSessionRunning(true);
 
 				answer();
-				await macrotasks(50);
+				await engineIdle(tracked);
 				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
 				expect(probe.notices).toHaveBeenCalledTimes(1);
 				probe.sessionStateChanged();
@@ -290,7 +296,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 
 				probe.setSessionRunning(false);
 				probe.sessionStateChanged();
-				await macrotasks(50);
+				await engineIdle(tracked);
 				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('consult');
 				expect(probe.applied).toEqual(['consult']);
 			});
@@ -299,13 +305,13 @@ describe('deferred runtime startup with persisted terminal state', () => {
 				const { tracked, plugin, answer, probe } = await bootWithReadHeld();
 				probe.setSessionRunning(true);
 				answer();
-				await macrotasks(50);
+				await engineIdle(tracked);
 
 				// Choosing the mode in use is written (the saved one differs) and drops the pending one.
 				await expect((plugin as unknown as ModeCore).updateCollectorMode('collector')).resolves.toMatchObject({ status: 'saved' });
 				probe.setSessionRunning(false);
 				probe.sessionStateChanged();
-				await macrotasks(50);
+				await engineIdle(tracked);
 				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
 				await expect(loadCollectorMode(tracked.factory, probe.core.vaultId, () => 'consult')).resolves.toBe('collector');
 			});
@@ -315,7 +321,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 				tracked.down = true;
 				const plugin = withSettingsTab(tracked.factory);
 				const timers = manualWindowTimers();
-				expect(await bootUntilSettled(plugin, timers)).toBe(true);
+				expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
 				expect(plugin.runtimeReady).toBe(true);
 				tracked.down = false;
 				const attempts = vi.spyOn(tracked.factory, 'open');
@@ -329,7 +335,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			const tracked = trackedIndexedDb(); hangTransactions(tracked);
 			const plugin = runtimeBootPlugin(tracked.factory);
 			const timers = manualWindowTimers();
-			expect(await bootUntilSettled(plugin, timers)).toBe(true);
+			expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
 			expect(plugin.runtimeReady).toBe(true);
 			expect(phase(plugin)).toBe('error');
 			// Ten seconds per read that gates the start, and no more than three of them in a row.
@@ -340,7 +346,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			const tracked = sessionEngineThatDoesNotAnswer();
 			const plugin = runtimeBootPlugin(tracked.factory);
 			const timers = manualWindowTimers();
-			expect(await bootUntilSettled(plugin, timers)).toBe(true);
+			expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
 			expect(phase(plugin)).toBe('error');
 			// Any write to `runtimeReady` from here on is a flip.
 			const readyFlips = vi.fn(); let ready = plugin.runtimeReady;
@@ -351,7 +357,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			timers.advance(5_000);
 			heartbeat()();
 			// The engine answers now: the timers are not fired, or a wait would run out before the fake engine got its turn.
-			for (let turn = 0; turn < 500 && phase(plugin) === 'error'; turn += 1) await macrotasks(1);
+			await vi.waitFor(() => { expect(phase(plugin)).not.toBe('error'); }, { timeout: 4_000 });
 			expect(phase(plugin)).toBe('idle');
 			expect(plugin.runtimeReady).toBe(true);
 			expect(readyFlips).not.toHaveBeenCalled();

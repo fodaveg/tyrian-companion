@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 574,
 		"promise_catch": 59,
-		"void_expression": 125,
-		"callback_registration": 229
+		"void_expression": 126,
+		"callback_registration": 230
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -13975,11 +13975,44 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "b1a33b04b47a1cfb8909d3ebb20fd28a81ff7ef4",
+					"id": "554d2d08ac7c1a48bac204c94439736e6b3020b9",
+					"kind": "void_expression",
+					"line": 52,
+					"column": 4,
+					"endLine": 52,
+					"endColumn": 87,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "sleep().then",
+						"scope": "trackedIndexedDb",
+						"justification": "The \"trackedIndexedDb\" \"sleep().then\" detached call belongs to a test fake of IndexedDB: it answers an open after a real delay, to run the tests on a slow engine on purpose, and never ships in the bundle."
+					},
+					"reason": "Allowlisted void_expression: The \"trackedIndexedDb\" \"sleep().then\" detached call belongs to a test fake of IndexedDB: it answers an open after a real delay, to run the tests on a slow engine on purpose, and never ships in the bundle. Verified target: \"sleep().then\" in \"trackedIndexedDb\"."
+				},
+				{
+					"id": "719639101213996c003270ed6eef13be725006b0",
 					"kind": "callback_registration",
-					"line": 37,
+					"line": 52,
+					"column": 9,
+					"endLine": 52,
+					"endColumn": 87,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "trackedIndexedDb",
+						"justification": "The \"trackedIndexedDb\" \"then\" callback belongs to a test fake of IndexedDB: it delivers a delayed answer to the open that was held back, to run the tests on a slow engine on purpose, and never ships in the bundle."
+					},
+					"reason": "Allowlisted callback_registration: The \"trackedIndexedDb\" \"then\" callback belongs to a test fake of IndexedDB: it delivers a delayed answer to the open that was held back, to run the tests on a slow engine on purpose, and never ships in the bundle. Verified registration: \"then\" in \"trackedIndexedDb\"."
+				},
+				{
+					"id": "d6ee796f40151dca174ec3ff6e9832d49abf02dd",
+					"kind": "callback_registration",
+					"line": 54,
 					"column": 3,
-					"endLine": 54,
+					"endLine": 72,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -13994,9 +14027,9 @@
 				{
 					"id": "fc7dfb67d249769db99dcda387d869eba459b187",
 					"kind": "callback_registration",
-					"line": 166,
+					"line": 184,
 					"column": 4,
-					"endLine": 166,
+					"endLine": 184,
 					"endColumn": 107,
 					"registration": "queueMicrotask",
 					"classification": "allowlisted",
@@ -14011,9 +14044,9 @@
 				{
 					"id": "a9cbc56c770646cf2b2d888278e5962e32107896",
 					"kind": "callback_registration",
-					"line": 174,
+					"line": 192,
 					"column": 4,
-					"endLine": 174,
+					"endLine": 192,
 					"endColumn": 85,
 					"registration": "queueMicrotask",
 					"classification": "allowlisted",
@@ -14028,9 +14061,9 @@
 				{
 					"id": "39260b17edb090ce4a451c4446bbed553d8dcc4e",
 					"kind": "void_expression",
-					"line": 187,
+					"line": 205,
 					"column": 2,
-					"endLine": 187,
+					"endLine": 205,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14044,9 +14077,9 @@
 				{
 					"id": "dd042ba4e5e9a203ce178cfca50caf58a9d30a76",
 					"kind": "callback_registration",
-					"line": 187,
+					"line": 205,
 					"column": 7,
-					"endLine": 187,
+					"endLine": 205,
 					"endColumn": 81,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -14061,9 +14094,9 @@
 				{
 					"id": "3dbdbfa41d2ee5d470db0df4b7629b0cd3d914d4",
 					"kind": "callback_registration",
-					"line": 210,
+					"line": 228,
 					"column": 2,
-					"endLine": 210,
+					"endLine": 228,
 					"endColumn": 79,
 					"registration": "queueMicrotask",
 					"classification": "allowlisted",
