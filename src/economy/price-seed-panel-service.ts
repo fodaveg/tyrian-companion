@@ -60,12 +60,48 @@ const IDLE_STATE: Omit<PriceHistoryPanelSeedState, 'itemId'> = {
 	status: 'idle', days: [], failureReason: null, retrievedAt: null,
 };
 
+/**
+ * How many items' last-known state the service keeps in memory (Z16-c). The panel shows one item
+ * and a note holds a handful of price-history blocks, so 64 covers everything visible at once with
+ * a wide margin; each state carries the item's whole series, which is what grew without a bound.
+ * Only this in-memory view is capped: the persisted `seed-v1` base is untouched, and an evicted
+ * item is re-served from it on the next `ensure` with no network request.
+ */
+export const PRICE_SEED_PANEL_MAX_STATES = 64;
+
+/**
+ * A `Map` that keeps at most `maxEntries` entries, dropping the least recently used (read or
+ * written) first. An entry the `pinned` callback names, an item with a load under way, is never
+ * dropped, so a late `set` of its result cannot find it gone.
+ */
+class RecentStateMap extends Map<number, PriceHistoryPanelSeedState> {
+	constructor(private readonly maxEntries: number, private readonly pinned: (itemId: number) => boolean) {
+		super();
+	}
+
+	override get(itemId: number): PriceHistoryPanelSeedState | undefined {
+		const value = super.get(itemId);
+		if (value !== undefined) { super.delete(itemId); super.set(itemId, value); }
+		return value;
+	}
+
+	override set(itemId: number, value: PriceHistoryPanelSeedState): this {
+		super.delete(itemId);
+		super.set(itemId, value);
+		for (const key of this.keys()) {
+			if (this.size <= this.maxEntries) break;
+			if (key !== itemId && !this.pinned(key)) super.delete(key);
+		}
+		return this;
+	}
+}
+
 export class PriceHistoryPanelSeedService {
 	private readonly cacheTtlMs: number;
 	private readonly serialize: SerialTaskRunner;
 	private store: TyrianPriceSeedCache | null = null;
 	private opening: Promise<TyrianPriceSeedCache | null> | null = null;
-	private readonly states = new Map<number, PriceHistoryPanelSeedState>();
+	private readonly states = new RecentStateMap(PRICE_SEED_PANEL_MAX_STATES, (itemId) => this.inFlight.has(itemId));
 	private readonly inFlight = new Map<number, Promise<void>>();
 	private disposed = false;
 

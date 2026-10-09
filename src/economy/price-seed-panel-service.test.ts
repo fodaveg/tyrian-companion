@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { HttpRequest, HttpResponse, HttpTransport } from '../core/http';
 import { SerialTaskQueue, runSerialTaskUnqueued, type SerialTaskRunner } from '../core/serial-task-queue';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
-import { PriceHistoryPanelSeedService } from './price-seed-panel-service';
+import { PRICE_SEED_PANEL_MAX_STATES, PriceHistoryPanelSeedService } from './price-seed-panel-service';
 
 const RECORDS = [
 	{ date: '2026-08-01', buy_price_avg: 100, sell_price_avg: 110 },
@@ -213,5 +213,23 @@ describe('PriceHistoryPanelSeedService downloads through the queue it was handed
 		expect(await reader.get('vault', 101)).toBeNull();
 		expect(await reader.get('vault', 102)).toBeNull();
 		reader.close();
+	});
+
+	/** Z16-c: the in-memory view is bounded, least recently used first; the persisted base is not. */
+	it('keeps at most PRICE_SEED_PANEL_MAX_STATES states, drops the least recently used, and re-serves it from the cache with no request', async () => {
+		const { service, requests } = harness();
+		const total = PRICE_SEED_PANEL_MAX_STATES + 5;
+		for (let id = 1; id <= total; id += 1) {
+			await service.ensure(id);
+			// Item 1 is read after every load, so it stays the most recently used one.
+			service.getState(1);
+		}
+		expect(requests).toHaveLength(total);
+		expect(service.getState(1).status).toBe('seeded');
+		expect(service.getState(2).status).toBe('idle');
+		expect(service.getState(total).status).toBe('seeded');
+		const again = await service.ensure(2);
+		expect(again.status).toBe('seeded');
+		expect(requests, 'an evicted item came back from seed-v1, not from the network').toHaveLength(total);
 	});
 });
