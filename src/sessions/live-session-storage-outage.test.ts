@@ -1169,8 +1169,8 @@ describe('live session whose start storage did not answer', () => {
 		await f.service.initialize();
 		const answer = f.answerNextCommitLate();
 		await unansweredStart(f);
-		// The game exits three seconds in, and the tracker says so, once.
-		f.at(3000); await f.service.presence(false, AT + 3000);
+		// The game exits three seconds in. The tracker says so once, a second later: the instant kept is the one it gives, not the clock's.
+		f.at(4000); await f.service.presence(false, AT + 3000);
 		answer(); await turns();
 		f.at(5000); await f.beat();
 		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', connection: 'disconnected' });
@@ -1183,6 +1183,53 @@ describe('live session whose start storage did not answer', () => {
 		expect(f.service.getView()).toMatchObject({ phase: 'complete', endedAt: iso(3000) });
 		expect(f.options.onComplete).toHaveBeenCalledTimes(1);
 		expect((await f.durable()).record).toMatchObject({ phase: 'complete', endedAt: iso(3000), summaryReceipt: { path: 'Sessions/live.md' } });
+		await f.service.dispose();
+	});
+
+	it('the last report kept wins, and the evidence of presence it carries never goes backwards', async () => {
+		const f = outage('late-start-presence-order');
+		await f.service.initialize();
+		const answer = f.answerNextCommitLate();
+		await unansweredStart(f);
+		// Seen at 3.5 s, then reported gone with an older instant: gone is what holds, since the later evidence.
+		f.at(4000); await f.service.presence(true, AT + 3500); await f.service.presence(false, AT + 3000);
+		answer(); await turns();
+		f.at(5000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', connection: 'disconnected' });
+		expect(f.service.getRuntime()).toMatchObject({ lastPresenceAt: AT + 3500 });
+		await f.service.dispose();
+	});
+
+	it('a report that arrives between two unanswered starts is still kept when the second goes unanswered', async () => {
+		const f = outage('two-late-starts-presence');
+		const first = heldStart(f);
+		await unansweredStart(f);
+		f.at(3000); await f.service.presence(false, AT + 3000);
+		f.at(5000); await f.beat();
+		Object.assign(f.options, { sessionId: () => 'second-session' });
+		const second = heldStart(f);
+		f.at(6000); await unansweredStart(f);
+		await first.land('saved'); await second.land('stale');
+		f.at(10_000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', connection: 'disconnected' });
+		expect(f.service.getRuntime()).toMatchObject({ lastPresenceAt: AT + 3000 });
+		await f.service.dispose();
+	});
+
+	it('finding the start spends what was remembered: a start the store refuses after that session is over is not a reason to read again', async () => {
+		const f = outage('late-start-found-forgotten');
+		const start = heldStart(f);
+		await unansweredStart(f);
+		await start.land('saved');
+		f.at(5000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session' });
+		f.at(7000); await expect(f.service.stop(AT + 7000)).resolves.toBe(true);
+		const load = vi.spyOn(f.store, 'loadLive');
+		Object.assign(f.options, { sessionId: () => 'second-session' });
+		vi.spyOn(f.store, 'saveLive').mockResolvedValueOnce({ status: 'stale' });
+		f.at(8000); await expect(f.service.start('Test')).resolves.toBeNull();
+		f.at(10_000); await f.beat();
+		expect(load).not.toHaveBeenCalled();
 		await f.service.dispose();
 	});
 
