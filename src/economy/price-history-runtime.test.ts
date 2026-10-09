@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiPollOutcome, ApiPollSchedulerState } from '../sessions/api-poll-scheduler';
 import type { ApiPollScheduler } from '../sessions/api-poll-scheduler';
+import { HttpTransportError } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryRuntime } from './price-history-runtime';
@@ -108,6 +109,16 @@ describe('PriceHistoryRuntime', () => {
 		expect(await scheduler.poll()).toEqual({ kind: 'fatal' });
 		scheduler.publish('fatal');
 		expect(runtime.getState().status).toBe('invalid_payload');
+		runtime.dispose();
+	});
+
+	it('Z16: a refused request (HTTP 403) parks the capture as http_rejected, not as an invalid payload', async () => {
+		const scheduler = new FakeScheduler();
+		const runtime = createRuntime(new IDBFactory(), vi.fn(async () => { throw new HttpTransportError('http', 403, null, 'refused'); }), scheduler);
+		await runtime.activate(ENABLED);
+		expect(await scheduler.poll()).toEqual({ kind: 'fatal' });
+		scheduler.publish('fatal');
+		expect(runtime.getState().status).toBe('http_rejected');
 		runtime.dispose();
 	});
 

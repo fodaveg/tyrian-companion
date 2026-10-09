@@ -96,7 +96,7 @@ describe('price-history panel', () => {
 
 	it.each([
 		'loading', 'collecting', 'ready', 'partial', 'offline', 'backoff',
-		'invalid_payload', 'store_unavailable', 'store_corrupt', 'store_future',
+		'invalid_payload', 'http_rejected', 'store_unavailable', 'store_corrupt', 'store_future',
 	] as const)('renders the %s state through i18n and marks failures as alerts', (status) => {
 		const mount = createMount();
 		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('es'), {
@@ -106,7 +106,7 @@ describe('price-history panel', () => {
 		expect(statusElement?.textContent).not.toMatch(/^priceHistory\./u);
 		expect(statusElement?.textContent).not.toContain('{{');
 		expect(statusElement?.attributes.get('aria-live')).toBe('polite');
-		if (['offline', 'backoff', 'invalid_payload', 'store_unavailable', 'store_corrupt', 'store_future'].includes(status)) {
+		if (['offline', 'backoff', 'invalid_payload', 'http_rejected', 'store_unavailable', 'store_corrupt', 'store_future'].includes(status)) {
 			expect(statusElement?.attributes.get('role')).toBe('alert');
 		}
 	});

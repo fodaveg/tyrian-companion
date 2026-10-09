@@ -19,6 +19,8 @@ export type PriceHistoryCaptureResult =
 	| { status: 'rate_limited'; retryAfterMs: number | null }
 	| { status: 'transient_failure' }
 	| { status: 'invalid_payload' }
+	/** The server refused the request with a status that retrying will not change (400, 401, 403, 418...). */
+	| { status: 'http_rejected'; httpStatus: number }
 	| { status: 'store_unavailable' };
 
 /** Sequential public-price capture. It records only unit bid/ask values, never listing quantities. */
@@ -80,10 +82,16 @@ export class PriceHistoryCaptureService {
 						batch.forEach((id) => missing.add(id));
 						continue;
 					}
-					// Any other HTTP status the server answered (a 400, a 403, a 520 from a proxy...) says
-					// nothing about the payload: it is retried like the listed ones, not parked as
-					// `invalid_payload`, which stops the scheduler until the plugin is reloaded (Z16).
-					if (error instanceof HttpTransportError) return { status: 'transient_failure' };
+					// Transient: no answer (network, timeout) or a status that heals on its own (408, 425, any
+					// 5xx; 429 is handled above). Any other status is the server refusing the request, which
+					// retrying will not fix: `http_rejected`, with its true reason instead of `invalid_payload`
+					// (Z16). It parks the scheduler like `invalid_payload` does, never a short retry loop.
+					if (error instanceof HttpTransportError) {
+						const httpStatus = error.status;
+						if (httpStatus === null) return { status: 'transient_failure' };
+						if (httpStatus === 408 || httpStatus === 425 || (httpStatus >= 500 && httpStatus <= 599)) return { status: 'transient_failure' };
+						return { status: 'http_rejected', httpStatus };
+					}
 					return { status: 'invalid_payload' };
 				}
 				if (response.status !== 200 && response.status !== 206) {

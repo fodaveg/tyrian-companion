@@ -98,13 +98,41 @@ describe('PriceHistoryCaptureService', () => {
 		store.close();
 	});
 
-	it.each([400, 401, 403, 408, 418, 501, 520])('Z16: an HTTP %i outside the listed statuses is a transient failure, not an invalid payload', async (status) => {
-		const store = await opened(`unlisted-${String(status)}`);
-		const requestDetailed = vi.fn(async () => { throw new HttpTransportError('http', status, null, 'unlisted'); });
+	it.each([408, 425, 500, 501, 503, 520])('Z16: HTTP %i is a transient failure, retried like a network error', async (status) => {
+		const store = await opened(`transient-${String(status)}`);
+		const requestDetailed = vi.fn(async () => { throw new HttpTransportError('http', status, null, 'transient'); });
 		const result = await new PriceHistoryCaptureService({ requestDetailed }, new RateLimitCoordinator(), 'owner', () => 100)
 			.capture(store, 'vault', 0, 15);
 		expect(result.status).toBe('transient_failure');
 		expect(await store.readSnapshots('vault')).toEqual([]);
+		store.close();
+	});
+
+	it('Z16: HTTP 429 stays a rate limit, which the shared cooldown already retries', async () => {
+		const store = await opened('status-429');
+		const requestDetailed = vi.fn(async () => { throw new HttpTransportError('http', 429, 1_000, 'limited'); });
+		const result = await new PriceHistoryCaptureService({ requestDetailed }, new RateLimitCoordinator(), 'owner', () => 100)
+			.capture(store, 'vault', 0, 15);
+		expect(result.status).toBe('rate_limited');
+		store.close();
+	});
+
+	it.each([400, 401, 403, 418])('Z16: HTTP %i is the server refusing the request: http_rejected, neither invalid_payload nor transient', async (status) => {
+		const store = await opened(`rejected-${String(status)}`);
+		const requestDetailed = vi.fn(async () => { throw new HttpTransportError('http', status, null, 'refused'); });
+		const result = await new PriceHistoryCaptureService({ requestDetailed }, new RateLimitCoordinator(), 'owner', () => 100)
+			.capture(store, 'vault', 0, 15);
+		expect(result).toEqual({ status: 'http_rejected', httpStatus: status });
+		expect(await store.readSnapshots('vault')).toEqual([]);
+		store.close();
+	});
+
+	it('Z16: a non-HTTP failure stays invalid_payload', async () => {
+		const store = await opened('non-http');
+		const requestDetailed = vi.fn(async () => { throw new Error('boom'); });
+		const result = await new PriceHistoryCaptureService({ requestDetailed }, new RateLimitCoordinator(), 'owner', () => 100)
+			.capture(store, 'vault', 0, 15);
+		expect(result.status).toBe('invalid_payload');
 		store.close();
 	});
 

@@ -26,7 +26,7 @@ const DAY_MS = 86_400_000;
 
 export type PriceHistoryRuntimeStatus =
 	| 'disabled' | 'loading' | 'collecting' | 'ready' | 'partial'
-	| 'offline' | 'backoff' | 'invalid_payload'
+	| 'offline' | 'backoff' | 'invalid_payload' | 'http_rejected'
 	| 'store_unavailable' | 'store_corrupt' | 'store_future';
 
 export interface PriceHistoryRuntimeState {
@@ -359,9 +359,9 @@ export class PriceHistoryRuntime {
 		if (!this.owns(generation, store)) { span.cancel(this.state.status); return { kind: 'success' }; }
 		if (result.status === 'rate_limited') { span.retry('backoff', { retryAfterMs: result.retryAfterMs }); return { kind: 'rate_limited', retryAfterMs: result.retryAfterMs }; }
 		if (result.status === 'transient_failure') { span.failure(new Error('price_history_capture_transient'), 'network_failure', 'backoff'); return { kind: 'transient_failure' }; }
-		if (result.status === 'invalid_payload' || result.status === 'store_unavailable') {
+		if (result.status === 'invalid_payload' || result.status === 'http_rejected' || result.status === 'store_unavailable') {
 			this.setState({ status: result.status });
-			span.failure(new Error(`price_history_${result.status}`), result.status === 'invalid_payload' ? 'validation_failed' : 'storage_failure', result.status);
+			span.failure(new Error(`price_history_${result.status}`), result.status === 'store_unavailable' ? 'storage_failure' : result.status === 'http_rejected' ? 'network_failure' : 'validation_failed', result.status);
 			return { kind: 'fatal' };
 		}
 		if (result.status === 'busy') { span.skip('skipped', 'collecting'); return { kind: 'success' }; }
@@ -408,7 +408,7 @@ export class PriceHistoryRuntime {
 		const projected: Partial<PriceHistoryRuntimeState> = { nextCaptureAtMs: scheduler.nextRunAt };
 		if (scheduler.status === 'paused_offline') projected.status = 'offline';
 		else if (scheduler.status === 'backoff') projected.status = 'backoff';
-		else if (scheduler.status === 'fatal' && this.state.status !== 'invalid_payload'
+		else if (scheduler.status === 'fatal' && this.state.status !== 'invalid_payload' && this.state.status !== 'http_rejected'
 			&& !this.state.status.startsWith('store_')) projected.status = 'store_unavailable';
 		this.setState(projected);
 	}

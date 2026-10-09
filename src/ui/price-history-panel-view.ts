@@ -403,7 +403,7 @@ function stateText(state: PriceHistoryRuntimeState, translator: Translator): str
 	return translator.t(`priceHistory.state.${state.status}`);
 }
 function errorState(status: PriceHistoryRuntimeState['status']): boolean {
-	return ['offline', 'backoff', 'invalid_payload', 'store_unavailable', 'store_corrupt', 'store_future'].includes(status);
+	return ['offline', 'backoff', 'invalid_payload', 'http_rejected', 'store_unavailable', 'store_corrupt', 'store_future'].includes(status);
 }
 
 /** H14.2: the same today/yesterday-or-short-date wrapper every other timestamp in the plugin uses. */
