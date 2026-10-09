@@ -387,15 +387,26 @@ describe('SaleItemView where the host lists the sections itself', () => {
 		openProductSettings: () => undefined, ...extra,
 	});
 
-	it('builds no bar of tabs on the host\'s main screen, and keeps the shell around the content', async () => {
+	it('builds no tabs on the host\'s main screen, and keeps the shell around the content and the settings button at the end of its row', async () => {
 		installDom();
-		const view = new SaleItemView(content(), icons, withShell({ hostListsSections: () => true }));
+		const openProductSettings = vi.fn();
+		const view = new SaleItemView(content(), icons, withShell({ hostListsSections: () => true, openProductSettings }));
 		await view.onOpen();
 
 		const { shell, nav } = shellOf(view);
 		expect(shell).toBeDefined();
+		// No navigation at all: not an empty `<nav>`, and none of the three tabs anywhere.
 		expect(nav).toBeUndefined();
-		expect(find(view.contentEl as unknown as FakeElement, 'button').some((el) => el.className.includes('tyrian-product-shell__settings'))).toBe(false);
+		expect(find(view.contentEl as unknown as FakeElement, 'nav')).toEqual([]);
+		expect(find(view.contentEl as unknown as FakeElement, 'button').map((el) => el.textContent))
+			.not.toEqual(expect.arrayContaining(['Sesión', 'Inventario', 'Venta']));
+		// The settings button is the only thing in its row, before the content, and it opens Settings.
+		const tools = shell!.children[0]!;
+		expect(tools.className).toBe('tyrian-product-shell__tools');
+		expect(tools.children.map((el) => [el.tag, el.className, el.attributes.get('aria-label'), el.attributes.get('data-icon')]))
+			.toEqual([['button', 'clickable-icon tyrian-product-shell__settings', 'Ajustes de Tyrian Companion', 'settings']]);
+		tools.children[0]!.dispatch('click');
+		expect(openProductSettings).toHaveBeenCalledOnce();
 	});
 
 	it('keeps the bar as a view of its own, and where the core says nothing about it', async () => {

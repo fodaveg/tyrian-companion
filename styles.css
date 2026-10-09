@@ -2959,6 +2959,19 @@
 	height: var(--input-height);
 }
 
+/* Donde el host lista las secciones no hay pestañas: queda solo el icono de Ajustes, al final de
+   la misma fila que ocupaba, sin la línea de la barra debajo. */
+.tyrian-product-shell__tools {
+	display: flex;
+	justify-content: flex-end;
+	margin-block-end: var(--size-4-2);
+}
+
+.tyrian-product-shell__tools .tyrian-product-shell__settings {
+	padding: 0 var(--size-4-2);
+	height: var(--input-height);
+}
+
 /*
  * R1c: in Hebra's 288 px inspector column the surface leaves 256 px, and the three tabs with 12 px
  * each side plus the gear need 272-275: Ajustes ended up cut behind the bar's scroll. Only below
@@ -3113,7 +3126,7 @@
 @container (max-width: 400px) { .tyrian-live-session__metrics { grid-template-columns: minmax(0, 1fr); gap: 4px; } .tyrian-live-session__metrics dd { margin-block-end: 8px; } }
 @media (max-width: 400px) { .tyrian-live-session__table { min-width: 32rem; } }
 
-.tyrian-companion-view .tyrian-product-shell__nav button { min-width: 44px; min-height: 44px; }
+.tyrian-companion-view .tyrian-product-shell__nav button, .tyrian-companion-view .tyrian-product-shell__tools button { min-width: 44px; min-height: 44px; }
 .tyrian-farming-session > details > summary { min-height: 44px; padding-block: 12px; box-sizing: border-box; }
 
 /*

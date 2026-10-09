@@ -14,8 +14,9 @@ export interface ProductShellOptions {
 	/** Paints the Lucide icon of the settings button. */
 	readonly ui: Pick<TyrianUiPort, 'setIcon'>;
 	/**
-	 * False where the host itself lists the sections (its main screen): the bar of tabs, with its
-	 * settings button, is not built at all, since the host's list does that job. Absent means true.
+	 * False where the host itself lists the sections (its main screen): the three tabs are not
+	 * built, since the host's list does that job, and the settings button stays alone at the end
+	 * of its row. Absent means true.
 	 */
 	readonly navigation?: boolean;
 }
@@ -32,24 +33,28 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 	container.empty();
 	container.addClass('tyrian-product-surface');
 	const shell = container.createDiv({ cls: 'tyrian-product-shell' });
-	if (options.navigation !== false) {
 	// One line of tabs and nothing else above the content: the leaf title already names the
 	// product, and every word spent here is a word the panel's own numbers have to scroll past.
-	const nav = shell.createEl('nav', { cls: 'tyrian-product-shell__nav', attr: { 'aria-label': t.t('shell.title') } });
-	appendNav(nav, t.t('shell.nav.companion'), options.active === 'companion', () => { void options.actions.run('open-companion').catch(() => undefined); });
-	appendNav(nav, t.t('shell.nav.inventory'), options.active === 'inventory', () => { void options.actions.run('open-inventory-advisor').catch(() => undefined); });
-	appendNav(nav, t.t('shell.nav.sale'), options.active === 'sale', () => { void options.actions.run('open-sale').catch(() => undefined); });
+	// Where the host lists the sections itself there are no tabs, and so no navigation: the row
+	// is only what keeps the settings button at the end where it always was, with no bar under it.
+	const bar = options.navigation === false
+		? shell.createDiv({ cls: 'tyrian-product-shell__tools' })
+		: shell.createEl('nav', { cls: 'tyrian-product-shell__nav', attr: { 'aria-label': t.t('shell.title') } });
+	if (options.navigation !== false) {
+		appendNav(bar, t.t('shell.nav.companion'), options.active === 'companion', () => { void options.actions.run('open-companion').catch(() => undefined); });
+		appendNav(bar, t.t('shell.nav.inventory'), options.active === 'inventory', () => { void options.actions.run('open-inventory-advisor').catch(() => undefined); });
+		appendNav(bar, t.t('shell.nav.sale'), options.active === 'sale', () => { void options.actions.run('open-sale').catch(() => undefined); });
+	}
 	// H18.36 (boceto lámina 1): Ajustes opens a modal, not a view, so it never belongs beside the
 	// three tabs that switch what the panel shows — a fourth text button with `aria-current`
 	// promised a destination it never had. An icon-only `clickable-icon` at the end of the bar,
 	// like Obsidian's own view-header icons, keeps the vocabulary of "opens something else".
-	const settingsButton = nav.createEl('button', {
+	const settingsButton = bar.createEl('button', {
 		cls: 'clickable-icon tyrian-product-shell__settings',
 		attr: { 'aria-label': t.t('shell.settingsAria'), type: 'button' },
 	});
 	options.ui.setIcon(settingsButton, 'settings');
 	settingsButton.addEventListener('click', options.openSettings);
-	}
 
 	if (options.missingApiKey) {
 		const warning = shell.createDiv({ cls: 'tyrian-product-shell__attention' });

@@ -617,17 +617,28 @@ describe('(f) opening a section from outside it', () => {
 });
 
 describe('(g) the plugin\'s own bar of tabs', () => {
-	it('is not in any section of the main view, where Hebra lists them, and is in each view of its own', async () => {
+	it('has no tabs in any section of the main view, where Hebra lists them, keeps its settings button there, and is whole in each view of its own', async () => {
 		const started = await start({ mainView: true });
 		const { hebra, core } = started;
 		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).open();
 		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('inventory');
 		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('sale');
+		const openSettings = vi.spyOn(hebra!.api.ui, 'openSettings');
 		for (const id of ['session', 'inventory', 'sale']) {
 			const el = hebra!.view(TYRIAN_MAIN_VIEW_TYPE).element(id)!;
 			expect(el.querySelector('.tyrian-product-shell'), `${id}: no shell`).not.toBeNull();
-			expect(el.querySelector('.tyrian-product-shell__nav'), `${id}: its own bar`).toBeNull();
-			expect(el.querySelector('.tyrian-product-shell__settings'), `${id}: the bar's settings button`).toBeNull();
+			expect(el.querySelector('nav'), `${id}: a navigation of its own`).toBeNull();
+			expect(Array.from(el.querySelectorAll('button')).map((button) => button.textContent), `${id}: a tab of its own`)
+				.not.toEqual(expect.arrayContaining(['Sesión']));
+			// The settings button stays, alone in its row at the top of the shell, and opens the plugin's settings.
+			const tools = el.querySelector('.tyrian-product-shell')!.firstElementChild!;
+			expect(tools.className, `${id}: the row of the settings button`).toBe('tyrian-product-shell__tools');
+			expect(tools.children, `${id}: only the settings button`).toHaveLength(1);
+			const settings = tools.querySelector<HTMLButtonElement>('button.tyrian-product-shell__settings')!;
+			expect(settings.getAttribute('aria-label')).toBe('Ajustes de Tyrian Companion');
+			const before = openSettings.mock.calls.length;
+			settings.click();
+			expect(openSettings.mock.calls.length, `${id}: the settings button does nothing`).toBe(before + 1);
 		}
 
 		await core.updateViewPlacement('sidebar');
