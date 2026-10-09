@@ -889,6 +889,46 @@ describe('durable live alert outbox', () => {
 		expect(e.requestDetailed).toHaveBeenCalledTimes(2);
 		await e.service.dispose(); await f.service.dispose();
 	});
+	it('an ordinary pass asks for a stale quote however recently it was asked: the spacing is for retry passes only', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		e.service.observe(entry); await e.service.drain(); expect(e.requestDetailed).toHaveBeenCalledTimes(1);
+		// Sixteen minutes on the quote is stale and the trading post answers 500. Two samples with loot of their own, a second apart.
+		const later = AT+1000+16*60_000; e.requestDetailed.mockClear(); e.requestDetailed.mockImplementation(async () => ({status:500,headers:{},body:[]}));
+		f.setNow(later); await f.service.commit(f.sample(2,5)); e.service.observe(f.service.getJournal()[2]!); await e.service.drain();
+		expect(e.requestDetailed).toHaveBeenCalledTimes(1);
+		f.setNow(later+1000); await f.service.commit(f.sample(3,8)); e.service.observe(f.service.getJournal()[3]!); await e.service.drain();
+		expect(e.requestDetailed).toHaveBeenCalledTimes(2);
+		await e.service.dispose(); await f.service.dispose();
+	});
+	it('a retry pass that could not ask because of the rate limit is not counted as an ask: the price is asked as soon as the limit lifts', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const replace = f.store.replaceLiveJournal.bind(f.store);
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) =>
+			next.outbox.some((intent) => intent.state === 'dispatching') ? false : await replace(prior,next,owner));
+		e.service.observe(entry); await e.service.drain(); expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		// The quote goes stale under a rate limit of ten seconds: the retry pass may not ask, and asks nothing.
+		const later = AT+1000+16*60_000; e.requestDetailed.mockClear(); f.setNow(later); e.rateLimit.recordRateLimited(10_000);
+		f.setNow(later+1000); e.service.retryUnclaimedAlerts(); await e.service.drain();
+		expect(e.requestDetailed).not.toHaveBeenCalled();
+		// Eleven seconds in, the limit is over. Had the blocked pass counted as an ask, this one would wait out the sixty seconds.
+		f.setNow(later+11_000); e.service.retryUnclaimedAlerts(); await e.service.drain();
+		expect(e.requestDetailed).toHaveBeenCalledTimes(1);
+		await e.service.dispose(); await f.service.dispose();
+	});
+	it('the times a price was asked are forgotten with the session, like its quotes', async () => {
+		// No request can tell this apart: an alert owed in a session needs a quote read in that same session, and that read writes
+		// its own time over whatever was there. What the clearing bounds is the map itself, so that is what is looked at.
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const asked = (): number[] => [...(e.service as unknown as {priceAskedAt:Map<number,number>}).priceAskedAt.keys()];
+		e.service.observe(entry); await e.service.drain(); expect(asked()).toEqual([12147]);
+		await expect(f.service.stop(AT+1000)).resolves.toBe(true);
+		const other = (quantity: number) => ({rows:[{kind:'item' as const,idNumber:555,quantity}]});
+		await f.service.start('Test'); await f.service.open(f.source);
+		f.setNow(AT+2000); await f.service.commit(f.sample(0,0,other(0))); f.setNow(AT+3000); await f.service.commit(f.sample(1,0,other(3)));
+		e.service.observe(f.service.getJournal()[1]!); await e.service.drain();
+		expect(asked()).toEqual([555]);
+		await e.service.dispose(); await f.service.dispose();
+	});
 	it('what one session still owes is forgotten with it: the next session never retries it', async () => {
 		const f = fixture(); const entry = await positive(f); const e = economy(f);
 		const replace = f.store.replaceLiveJournal.bind(f.store); let refusing = true;

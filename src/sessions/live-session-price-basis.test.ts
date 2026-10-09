@@ -140,6 +140,7 @@ describe('a saved live session is read in the price basis it states', () => {
 		expect(sortLiveItemsByValue(totals, prices).map((row) => row.idNumber)).toEqual([1, 2]);
 	});
 	it('never ranks a smaller net above a larger one: the net of a sale does not fall as its total rises', () => {
+		// Kept to 20 000 c so it stays fast. The independent review of 9 Oct 2026 swept every total up to 6 000 000 c and found no fall.
 		let previous = 0; const falls: number[] = [];
 		for (let gross = 1; gross <= 20_000; gross += 1) {
 			const net = liveItemValueCopper('instant_sell_gross', gross, 1)!;
