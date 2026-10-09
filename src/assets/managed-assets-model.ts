@@ -37,6 +37,8 @@ export interface InspectedRetirement {
 	status: 'retire' | 'release';
 	/** The file exists now: a `release` that is present is an edited one the plugin leaves in place. */
 	present: boolean;
+	/** The id was only declared `excluded` by an older plugin (no file of the plugin's, nothing registered): it just leaves that list. */
+	excludedOnly?: true;
 }
 
 export interface ManagedAssetEntry {
@@ -200,6 +202,9 @@ export function decideManagedAssetsAutoUpdate(inspection: ManagedAssetsInspectio
 	if (!pending && (inspection.retirements?.length ?? 0) === 0) return { action: 'none' };
 	const plan = planManagedAssets(inspection, 'upgrade');
 	const missing = inspection.assets.some((entry) => entry.status === 'missing');
+	// Retirements alone are not «a new version of the Bases»: when the plan cannot apply (a Base the user
+	// edited, a deleted one) there is nothing to warn about and nothing is written, retirements included.
+	if (!pending && (!plan.canApply || missing)) return { action: 'none' };
 	if (plan.canApply && !missing) return { action: 'apply' };
 	return { action: 'manual', reasons: [...plan.reasons, ...(missing ? ['missing' as const] : [])] };
 }

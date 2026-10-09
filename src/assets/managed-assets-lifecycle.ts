@@ -1,4 +1,5 @@
 import type { ManagedAssetsManager, ManagedAssetsResult } from './managed-assets';
+import type { ManagedAssetsInspection } from './managed-assets-model';
 import type { ManagedAssetsPointerState, ManagedAssetsPointerStore } from './managed-assets-pointer';
 import {
 	startLocalDebugAction,
@@ -16,12 +17,13 @@ export class ManagedAssetsLifecycle {
 		private readonly diagnostics?: LocalDebugActionPort,
 	) {}
 
-	async install(root: string, parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult> {
+	/** `guard` is handed to the manager's apply (see `ManagedAssetsManager.apply`): the caller's last word on the inspection it acts on. */
+	async install(root: string, parent?: ResolvedLocalDebugActionContext, guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsLifecycleResult> {
 		const span = startLocalDebugAction(this.diagnostics, {
 			component: 'assets', action: 'managed_assets_apply', ...inheritedIds(parent),
 		});
 		try {
-			const result = await this.installInternal(root);
+			const result = await this.installInternal(root, guard);
 			finishLifecycleSpan(span, result);
 			return result;
 		} catch (error) {
@@ -30,22 +32,22 @@ export class ManagedAssetsLifecycle {
 		}
 	}
 
-	private async installInternal(root: string): Promise<ManagedAssetsLifecycleResult> {
+	private async installInternal(root: string, guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsLifecycleResult> {
 		let current = await this.pointer.read();
 		if (current.status === 'installing' && current.targetRoot === root) {
 			// Resume the exact durable intent after a crash or from another window.
 		} else if (current.status !== 'ready') return { status: 'busy', message: 'Another managed-assets lifecycle operation is active.' };
-		if (current.root === root) return await this.installOverExistingAuthority(root, current);
+		if (current.root === root) return await this.installOverExistingAuthority(root, current, guard);
 		if (current.status === 'ready' && current.root !== null) {
 			const reclaimed = await this.reclaimStalePointer(current, current.root, root);
 			if (!reclaimed) return { status: 'conflict', message: 'Another managed-assets root is active.' };
 			if (reclaimed.adopt) return await this.installAdoptedRoot(current.root, root, reclaimed.state);
-			return await this.installOverExistingAuthority(root, reclaimed.state);
+			return await this.installOverExistingAuthority(root, reclaimed.state, guard);
 		}
 		const claim = current.status === 'installing' ? current : await this.pointer.compareAndSet(current, { status: 'installing', root: null, targetRoot: root });
 		if (!claim) return { status: 'busy', message: 'Another managed-assets lifecycle operation won the race.' };
 		current = claim;
-		const installed = await this.manager.apply(root, 'install');
+		const installed = await this.manager.apply(root, 'install', guard);
 		if (!isSuccess(installed)) {
 			// Release only when inspection proves no manifest/journal was ever established.
 			try {
@@ -75,7 +77,7 @@ export class ManagedAssetsLifecycle {
 	 * writing anything in that case; an explicit Repair, not an implicit Apply, is what should
 	 * ever recreate wholesale-missing content.
 	 */
-	private async installOverExistingAuthority(root: string, current: ManagedAssetsPointerState): Promise<ManagedAssetsLifecycleResult> {
+	private async installOverExistingAuthority(root: string, current: ManagedAssetsPointerState, guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsLifecycleResult> {
 		try {
 			const inspection = await this.manager.inspect(root);
 			if (inspection.manifestStatus === 'ready' && inspection.assets.length > 0 &&
@@ -83,7 +85,7 @@ export class ManagedAssetsLifecycle {
 				return { status: 'unchanged', root, generation: current.generation };
 			}
 		} catch { /* fall through; apply() below performs its own safe inspection */ }
-		const upgraded = await this.manager.apply(root, 'upgrade');
+		const upgraded = await this.manager.apply(root, 'upgrade', guard);
 		return successResult(upgraded, 'applied', current);
 	}
 

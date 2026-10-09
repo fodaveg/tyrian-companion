@@ -2548,9 +2548,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				return undefined;
 			}
 			if (decision.action === 'none') return undefined;
-			await this.applyManagedAssets();
-			this.emitNotice(translateRuntime(translator, this.managedAssetsView.status === 'ready'
-				? 'notices.managedAssetsAutoUpdated' : 'notices.managedAssetsAutoUpdateBlocked'), 'managed_assets_updated');
+			const applied = await this.applyManagedAssetsIfStillDue(false);
+			if (applied === null && this.managedAssetsView.status === 'ready') return undefined;
+			if (this.managedAssetsView.status !== 'ready') {
+				this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoUpdateBlocked'), 'managed_assets_updated');
+			} else if (applied !== null && !this.announceManagedAssetsFollowed(applied)) {
+				this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoUpdated'), 'managed_assets_updated');
+			}
 			return undefined;
 		};
 		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'after_inventory_sync' }, perform)
@@ -2561,7 +2565,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * David, 9 Oct 2026 («que las cree solo», «borrarlas si no las editaste», «actualizarla también»): on
 	 * load the managed Bases follow the plugin exactly as they do after an inventory sync, with ONE rule
 	 * (`decideManagedAssetsAutoUpdate`): create the new ones, update those the user did not edit, and
-	 * retire those the bundle no longer ships (an unedited file goes to the trash, an edited one stays
+	 * retire those the bundle no longer ships (an unedited file is removed as the host's deleted-files setting says, an edited one stays
 	 * and stops being managed). A Base the user edited, a deleted one, a conflict or a newer manifest
 	 * holds everything back: nothing is written and, unlike the sync, nobody is warned (an edit made on
 	 * purpose would nag at every start). It additionally needs a `ready` manifest (an installation that
@@ -2577,24 +2581,51 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const perform = async () => {
 			// An unreadable manifest throws: `run` records the failure and the boot's fire-and-forget swallows it.
 			const inspection = await this.managedAssets.inspect(root);
-			if (inspection.manifestStatus !== 'ready' || decideManagedAssetsAutoUpdate(inspection).action !== 'apply') return undefined;
-			const pending = (status: string): string[] => inspection.assets.filter((entry) => entry.status === status).map((entry) => entry.asset.relativePath);
-			const created = pending('create'); const updated = pending('update');
-			const retirements = inspection.retirements ?? [];
-			await this.applyManagedAssets();
-			if (this.managedAssetsView.status !== 'ready') return undefined;
-			const translator = createTranslator(this.settings.language);
-			const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
-			const say = (key: 'notices.managedAssetsAutoCreated' | 'notices.managedAssetsAutoLoadUpdated' | 'notices.managedAssetsAutoRetired' | 'notices.managedAssetsAutoReleased', names: string[]): void => {
-				if (names.length > 0) this.emitNotice(translateRuntime(translator, key, { names: names.join(', ') }), 'managed_assets_updated');
-			};
-			say('notices.managedAssetsAutoCreated', created);
-			say('notices.managedAssetsAutoLoadUpdated', updated);
-			say('notices.managedAssetsAutoRetired', retirements.filter((entry) => entry.status === 'retire').map((entry) => name(entry.path)));
-			say('notices.managedAssetsAutoReleased', retirements.filter((entry) => entry.status === 'release' && entry.present).map((entry) => name(entry.path)));
+			if (this.unloaded || inspection.manifestStatus !== 'ready' || decideManagedAssetsAutoUpdate(inspection).action !== 'apply') return undefined;
+			const applied = await this.applyManagedAssetsIfStillDue(true);
+			if (applied !== null && !this.unloaded && this.managedAssetsView.status === 'ready') this.announceManagedAssetsFollowed(applied);
 			return undefined;
 		};
 		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'on_load' }, perform) ?? perform());
+	}
+
+	/**
+	 * Applies the managed assets only if the decision still holds on the inspection the apply itself acts on
+	 * (same flight, no gap for a sync or an edit in between), and not after the plugin unloaded. Returns that
+	 * inspection, or `null` when nothing was applied. `requireReady`: the load never acts without a `ready`
+	 * manifest; the sync may also recover a lost one, as `decideManagedAssetsAutoUpdate` allows.
+	 */
+	private async applyManagedAssetsIfStillDue(requireReady: boolean): Promise<ManagedAssetsInspection | null> {
+		const seen: { inspection: ManagedAssetsInspection | null } = { inspection: null };
+		await this.applyManagedAssets((inspection) => {
+			if (this.unloaded || (requireReady && inspection.manifestStatus !== 'ready')) return false;
+			if (decideManagedAssetsAutoUpdate(inspection).action !== 'apply') return false;
+			seen.inspection = inspection;
+			return true;
+		});
+		return seen.inspection;
+	}
+
+	/**
+	 * Says what the apply did, naming files: created, updated, removed (retired and not edited) and kept
+	 * without being managed (retired and edited). Returns false when there was nothing to name.
+	 */
+	private announceManagedAssetsFollowed(applied: ManagedAssetsInspection): boolean {
+		const translator = createTranslator(this.settings.language);
+		const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
+		const named = (status: string): string[] => applied.assets.filter((entry) => entry.status === status).map((entry) => entry.asset.relativePath);
+		const report = this.managedAssets.retirementReport();
+		let said = false;
+		const say = (key: 'notices.managedAssetsAutoCreated' | 'notices.managedAssetsAutoLoadUpdated' | 'notices.managedAssetsAutoRetired' | 'notices.managedAssetsAutoReleased', names: string[]): void => {
+			if (names.length === 0) return;
+			said = true;
+			this.emitNotice(translateRuntime(translator, key, { names: names.join(', ') }), 'managed_assets_updated');
+		};
+		say('notices.managedAssetsAutoCreated', named('create'));
+		say('notices.managedAssetsAutoLoadUpdated', named('update'));
+		say('notices.managedAssetsAutoRetired', report.trashed.map(base));
+		say('notices.managedAssetsAutoReleased', report.kept.map(base));
+		return said;
 	}
 
 	/** Discards a pending destructive plan without writing anything. */
@@ -4414,7 +4445,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.settingTab.refreshManagedAssetsRow();
 	}
 
-	async applyManagedAssets(): Promise<void> {
+	/** `guard` is the caller's last word on the inspection the apply acts on (see `ManagedAssetsManager.apply`). */
+	async applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (refusedInConsult(this)) return;
@@ -4423,7 +4455,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.settingTab.refreshManagedAssetsRow();
 			return;
 		}
-		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.install(this.settings.outputFolder));
+		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.install(this.settings.outputFolder, undefined, guard));
 		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
 	}
 

@@ -33,6 +33,12 @@ export interface ManagedAssetsVault {
 	create(path: string, content: string): Promise<ManagedAssetFile>;
 	process(file: ManagedAssetFile, update: (content: string) => string): Promise<string>;
 	trashFile(file: ManagedAssetFile): Promise<void>;
+	/**
+	 * Removes `file` only while its LF-normalized text still equals `expectedContent` (both hosts have it;
+	 * `labelledVault` passes it through). A port without it falls back to `trashFile` after the manager's
+	 * own re-check, which leaves a wider window.
+	 */
+	trashIfUnchanged?(file: ManagedAssetFile, expectedContent: string): Promise<{ status: 'trashed' } | { status: 'conflict' } | { status: 'unsupported' }>;
 }
 
 export type ManagedAssetsResult =
@@ -167,34 +173,85 @@ export class ManagedAssetsManager {
 			const file = this.vault.file(entry.path);
 			found.push({ entry, path: entry.path, present: file !== null, status: file !== null && await this.isAsWritten(file, entry) ? 'retire' : 'release' });
 		}
+		// A retired id a version of the plugin once declared `excluded` (a file of the user's it could not prove
+		// its own): never registered, never touched, only taken off the list.
+		for (const id of manifest.excluded ?? []) {
+			const retired = (this.bundle.retired ?? []).find((asset) => asset.id === id && !live.has(id));
+			if (!retired) continue;
+			const path = managedAssetPath(manifest.root, { ...retired, contentVersion: 0, bytes: '', contentHash: '' });
+			found.push({ entry: { id, kind: retired.kind, contentVersion: 0, locale: retired.locale, path, installedHash: '' }, path,
+				present: this.vault.file(path) !== null, status: 'release', excludedOnly: true });
+		}
 		return found;
 	}
 
+	/** The file is exactly what the plugin installed: same bytes, same meaning, or (implementation detail) any published version of that Base. */
 	private async isAsWritten(file: ManagedAssetFile, entry: ManagedAssetEntry): Promise<boolean> {
-		const content = normalizeLf(await this.vault.read(file));
+		return await this.contentIsAsWritten(normalizeLf(await this.vault.read(file)), entry);
+	}
+
+	private async contentIsAsWritten(content: string, entry: ManagedAssetEntry): Promise<boolean> {
 		if (await this.matchesInstalledContent(content, await sha256Text(content), entry)) return true;
+		return await this.matchesPublished(content, entry);
+	}
+
+	private async matchesPublished(content: string, entry: ManagedAssetEntry): Promise<boolean> {
 		if (entry.kind !== 'base') return false;
 		const meaning = await baseSemanticHash(content);
 		return meaning !== null && this.published.some((row) => row.assetId === entry.id && row.locale === entry.locale && row.semanticHash === meaning);
 	}
 
+	/** Remove / uninstall: what the manifest installed, or a published version of it (a schema 1 manifest has no semantic hash to compare). */
+	private async matchesInstalledOrPublished(content: string, currentHash: string, entry: ManagedAssetEntry, target?: PackagedAsset): Promise<boolean> {
+		return await this.matchesInstalledContent(content, currentHash, entry, target) || await this.matchesPublished(content, entry);
+	}
+
+	private lastRetirement: { trashed: string[]; kept: string[] } = { trashed: [], kept: [] };
+
 	/**
-	 * Retires what `inspectRetirements` found: trashes the unedited files (re-checked right before, then the
-	 * host's own trash, which is reversible in Obsidian and in Hebra) and then drops every retired entry from
-	 * the manifest in one compare-and-swap. Files first: a crash in between leaves entries whose file is gone,
-	 * which the next inspection reads as `release`.
+	 * What the last apply did to retired files, by path: `trashed` went through the host's removal, `kept` is a
+	 * file that is still there (edited, or changed while the apply ran). A file that was already gone is in neither.
+	 */
+	retirementReport(): { trashed: string[]; kept: string[] } {
+		const report = { trashed: [...this.lastRetirement.trashed], kept: [...this.lastRetirement.kept] };
+		this.lastRetirement = { trashed: [], kept: [] };
+		return report;
+	}
+
+	/**
+	 * Retires what `inspectRetirements` found. A file still as the plugin installed it is removed through the
+	 * host (`trashIfUnchanged` with the text just read, so an edit that lands in between is not removed;
+	 * Obsidian follows the user's «Deleted files» preference, Hebra sends it to its trash). An edited,
+	 * changed-meanwhile or already deleted one is left. Then every retired entry leaves the manifest in one
+	 * compare-and-swap, a retired id declared `excluded` leaves that list, and the bundle version moves up
+	 * when nothing else is pending. Files first: a crash in between leaves entries whose file is gone, which
+	 * the next inspection reads as `release`.
 	 */
 	private async retire(inspection: ManagedAssetsInspection): Promise<boolean> {
 		const manifest = inspection.manifest;
 		const retirements = inspection.retirements ?? [];
+		this.lastRetirement = { trashed: [], kept: [] };
 		if (manifest === null || manifest.state !== 'ready' || retirements.length === 0) return true;
 		for (const retirement of retirements) {
-			if (retirement.status !== 'retire') continue;
 			const file = this.vault.file(retirement.path);
-			if (file !== null && await this.isAsWritten(file, retirement.entry)) await this.vault.trashFile(file);
+			if (retirement.excludedOnly || file === null) continue;
+			const content = normalizeLf(await this.vault.read(file));
+			if (retirement.status !== 'retire' || !await this.contentIsAsWritten(content, retirement.entry)) { this.lastRetirement.kept.push(retirement.path); continue; }
+			if (this.vault.trashIfUnchanged) {
+				const outcome = await this.vault.trashIfUnchanged(file, content);
+				(outcome.status === 'trashed' ? this.lastRetirement.trashed : this.lastRetirement.kept).push(retirement.path);
+			} else {
+				await this.vault.trashFile(file);
+				this.lastRetirement.trashed.push(retirement.path);
+			}
 		}
-		const dropped = new Set(retirements.map(({ entry }) => entry.id));
+		const dropped = new Set(retirements.filter(({ excludedOnly }) => !excludedOnly).map(({ entry }) => entry.id));
+		const droppedExcluded = new Set(retirements.filter(({ excludedOnly }) => excludedOnly).map(({ entry }) => entry.id));
 		const next: ManagedAssetsManifest = { ...manifest, generation: manifest.generation + 1, assets: manifest.assets.filter((entry) => !dropped.has(entry.id)) };
+		const excluded = (manifest.excluded ?? []).filter((id) => !droppedExcluded.has(id));
+		if (excluded.length > 0) next.excluded = excluded; else delete next.excluded;
+		// Nothing else pending: the manifest now describes this bundle exactly, so it says so.
+		if (inspection.assets.every((entry) => isSettled(entry.status)) && manifest.locale === this.bundle.locale) next.bundleVersion = this.bundle.bundleVersion;
 		return await this.casManifest(manifest, next) !== null;
 	}
 
@@ -227,10 +284,14 @@ export class ManagedAssetsManager {
 		return await this.inspectForUninstall(root);
 	}
 
-	apply(root: string, kind: Exclude<ManagedOperationKind, 'relocate' | 'uninstall'> = 'install'): Promise<ManagedAssetsResult> {
+	/**
+	 * `guard` sees the very inspection this apply would act on and can refuse it: false writes nothing and
+	 * answers `unchanged`. It is how a caller that DECIDED on an earlier inspection re-decides inside the flight.
+	 */
+	apply(root: string, kind: Exclude<ManagedOperationKind, 'relocate' | 'uninstall'> = 'install', guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsResult> {
 		const key = this.flightKey(root, kind);
 		if (this.flight) return this.flight.key === key ? this.flight.promise : Promise.resolve({ status: 'busy', message: 'Another managed-assets operation is active.' });
-		const promise = this.applyInternal(root, kind).finally(() => { if (this.flight?.promise === promise) this.flight = null; });
+		const promise = this.applyInternal(root, kind, guard).finally(() => { if (this.flight?.promise === promise) this.flight = null; });
 		this.flight = { key, promise };
 		return promise;
 	}
@@ -352,9 +413,10 @@ export class ManagedAssetsManager {
 		return { entries, steps };
 	}
 
-	private async applyInternal(root: string, kind: 'install' | 'upgrade' | 'repair'): Promise<ManagedAssetsResult> {
+	private async applyInternal(root: string, kind: 'install' | 'upgrade' | 'repair', guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsResult> {
 		try {
 			let inspection = await this.inspect(root);
+			if (guard && !guard(inspection)) return { status: 'unchanged', inspection, ownership: 'existing' };
 			const ownership = inspection.manifestStatus === 'missing' ? 'created' as const : 'existing' as const;
 			if (inspection.manifest?.state === 'applying') {
 				if (inspection.manifest.pendingOperation?.kind !== kind) return { status: 'busy', message: 'Another managed-assets operation is active.' };
@@ -603,7 +665,7 @@ export class ManagedAssetsManager {
 					const content = normalizeLf(await this.vault.read(file));
 					const currentHash = await sha256Text(content);
 					const target = this.bundle.assets.find((asset) => asset.id === entry.id && asset.kind === entry.kind && asset.locale === entry.locale);
-					if (!await this.matchesInstalledContent(content, currentHash, entry, target)) return { status: 'conflict', message: 'Modified managed assets are preserved.' };
+					if (!await this.matchesInstalledOrPublished(content, currentHash, entry, target)) return { status: 'conflict', message: 'Modified managed assets are preserved.' };
 				}
 				const steps: ManagedOperationStep[] = inspection.manifest.assets.map((entry) => ({
 					id: entry.id, path: entry.path, beforeHash: entry.installedHash, afterHash: null, state: 'pending',
@@ -626,7 +688,7 @@ export class ManagedAssetsManager {
 					if (content !== tombstone) {
 						const currentHash = await sha256Text(content);
 						const target = this.bundle.assets.find((asset) => asset.id === entry.id && asset.kind === entry.kind && asset.locale === entry.locale);
-						if (!await this.matchesInstalledContent(content, currentHash, entry, target)) return { status: 'conflict', message: 'A managed asset changed before removal.' };
+						if (!await this.matchesInstalledOrPublished(content, currentHash, entry, target)) return { status: 'conflict', message: 'A managed asset changed before removal.' };
 						let applied = false;
 						await this.vault.process(file, (current) => { applied = normalizeLf(current) === content; return applied ? tombstone : current; });
 						if (!applied || normalizeLf(await this.vault.read(file)) !== tombstone) return { status: 'conflict', message: 'A managed asset changed during removal.' };
@@ -702,10 +764,11 @@ export class ManagedAssetsManager {
 		// The set stays exact, but a file the user owns at an asset's path may be declared `excluded`
 		// instead of registered: it is in exactly one of the two lists, never in neither.
 		const excluded = manifest.excluded ?? [];
+		const retiredIds = new Set((this.bundle.retired ?? []).map((asset) => asset.id));
 		if (new Set(excluded).size !== excluded.length || excluded.some((id) => manifest.assets.some((entry) => entry.id === id) ||
-			!assetsForManifestLocale.some((asset) => asset.id === id))) return false;
+			(!assetsForManifestLocale.some((asset) => asset.id === id) && !retiredIds.has(id)))) return false;
 		if (finalState && manifest.bundleVersion === this.bundle.bundleVersion) {
-			if (manifest.assets.length + excluded.length !== assetsForManifestLocale.length ||
+			if (manifest.assets.length + excluded.filter((id) => !retiredIds.has(id)).length !== assetsForManifestLocale.length ||
 				assetsForManifestLocale.some((asset) => !excluded.includes(asset.id) && !manifest.assets.some((entry) => entry.id === asset.id &&
 					entry.kind === asset.kind && entry.locale === asset.locale && entry.path === managedAssetPath(root, asset)))) return false;
 		}

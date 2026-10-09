@@ -22,7 +22,7 @@ import { RETIRED_MANAGED_ASSETS } from './assets/retired-assets';
 import { genericManagedAssets, legacyRetiredBases } from './test/managed-asset-fixture';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
 import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
-import { managedAssetMarker, type PackagedAsset } from './assets/managed-assets-model';
+import { managedAssetMarker, type ManagedAssetsInspection, type PackagedAsset } from './assets/managed-assets-model';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { LocalDebugActionRunner, type LocalDebugActionPort } from './core/local-debug-action-runner';
@@ -1838,6 +1838,70 @@ describe('the load retires the Bases the bundle no longer ships (9 Oct 2026)', (
 		expect(messages).toHaveLength(count);
 	});
 
+	it('re-decides inside the apply: a Base edited between the load\'s inspection and the apply stops everything', async () => {
+		const { vault, messages, plugin, load } = await installed('bundle7');
+		const wallet = `${BASES}/Wallet.base`;
+		const inspect = plugin.managedAssets.inspect.bind(plugin.managedAssets);
+		let calls = 0;
+		plugin.managedAssets.inspect = async (...args: Parameters<typeof inspect>) => {
+			const inspection = await inspect(...args);
+			calls += 1;
+			if (calls === 1) vault.contents.set(wallet, vault.contents.get(wallet)!.replace('name: "Todas"', 'name: "Mis monedas"'));
+			return inspection;
+		};
+		await load();
+		expect(calls).toBeGreaterThan(1);
+		for (const name of GONE) expect(vault.contents.has(`${BASES}/${name}`)).toBe(true);
+		expect(manifestIds(vault)).toHaveLength(6);
+		expect(messages).toEqual([]);
+	});
+
+	it('writes nothing if the plugin unloaded while the load was deciding', async () => {
+		const { vault, messages, plugin, load } = await installed('bundle7');
+		const inspect = plugin.managedAssets.inspect.bind(plugin.managedAssets);
+		plugin.managedAssets.inspect = async (...args: Parameters<typeof inspect>) => {
+			const inspection = await inspect(...args);
+			(plugin as unknown as { unloaded: boolean }).unloaded = true;
+			return inspection;
+		};
+		const before = new Map(vault.contents);
+		await load();
+		expect(new Map(vault.contents)).toEqual(before);
+		expect(messages).toEqual([]);
+	});
+
+	it('does not recreate a Base the user deleted just to retire the others', async () => {
+		const { vault, messages, load } = await installed('bundle7');
+		vault.contents.delete(`${BASES}/Wallet.base`);
+		const before = new Map(vault.contents);
+		await load();
+		expect(new Map(vault.contents)).toEqual(before);
+		expect(messages).toEqual([]);
+	});
+
+	it('after a sync, with a Base that stays edited and only retirements pending: nothing is written and nobody is told, however often', async () => {
+		const { vault, messages, sync } = await installed('bundle7');
+		const wallet = `${BASES}/Wallet.base`;
+		vault.contents.set(wallet, vault.contents.get(wallet)!.replace('name: "Todas"', 'name: "Mis monedas"'));
+		const before = new Map(vault.contents);
+		await sync();
+		await sync();
+		expect(new Map(vault.contents)).toEqual(before);
+		expect(messages).toEqual([]);
+	});
+
+	it('after a sync, names what it did, and does not call a file that was already gone «removed»', async () => {
+		const { vault, messages, sync } = await installed('bundle7');
+		vault.contents.delete(`${BASES}/Materials.base`);
+		await sync();
+		const removed = messages.find((message) => message.includes('were removed'));
+		expect(removed).toBeDefined();
+		expect(removed).toContain('Sessions.base');
+		expect(removed).toContain('Halloween.base');
+		expect(removed).not.toContain('Materials.base');
+		expect(messages.join('\n')).not.toMatch(/sent to the trash|reversible|recover/u);
+	});
+
 	it('David\'s install with Inventory.base edited by him: the load writes nothing and warns nobody', async () => {
 		const { vault, messages, load } = await installed('david');
 		const inventory = `${BASES}/Inventory.base`;
@@ -2440,7 +2504,9 @@ interface ManagedAssetsRootHarness {
 	renderViews(): void;
 	renderInventoryAdvisorViews(): void;
 	emitNotice(message: string, source: string): void;
-	applyManagedAssets(): Promise<void>;
+	applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<void>;
+	applyManagedAssetsIfStillDue(requireReady: boolean): Promise<ManagedAssetsInspection | null>;
+	announceManagedAssetsFollowed(applied: ManagedAssetsInspection): boolean;
 	updateSettings(update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	relocateManagedAssets(): Promise<unknown>;
 	reconcileManagedAssetsRoot(): Promise<void>;
@@ -2460,7 +2526,9 @@ function buildManagedAssetsRootHarness(
 	initialSettings: TyrianSettings,
 ): ManagedAssetsRootHarness {
 	const proto = TyrianCompanionCore.prototype as unknown as {
-		applyManagedAssets(this: ManagedAssetsRootHarness): Promise<void>;
+		applyManagedAssets(this: ManagedAssetsRootHarness, guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<void>;
+		applyManagedAssetsIfStillDue(this: ManagedAssetsRootHarness, requireReady: boolean): Promise<ManagedAssetsInspection | null>;
+		announceManagedAssetsFollowed(this: ManagedAssetsRootHarness, applied: ManagedAssetsInspection): boolean;
 		updateSettings(this: ManagedAssetsRootHarness, update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 		relocateManagedAssets(this: ManagedAssetsRootHarness): Promise<unknown>;
 		reconcileManagedAssetsRoot(this: ManagedAssetsRootHarness): Promise<void>;
@@ -2482,7 +2550,9 @@ function buildManagedAssetsRootHarness(
 		renderViews: () => undefined,
 		renderInventoryAdvisorViews: () => undefined,
 		emitNotice: () => undefined,
-		applyManagedAssets: () => proto.applyManagedAssets.call(harness),
+		applyManagedAssets: (guard) => proto.applyManagedAssets.call(harness, guard),
+		applyManagedAssetsIfStillDue: (requireReady) => proto.applyManagedAssetsIfStillDue.call(harness, requireReady),
+		announceManagedAssetsFollowed: (applied) => proto.announceManagedAssetsFollowed.call(harness, applied),
 		updateSettings: (update) => proto.updateSettings.call(harness, update),
 		relocateManagedAssets: () => proto.relocateManagedAssets.call(harness),
 		reconcileManagedAssetsRoot: () => proto.reconcileManagedAssetsRoot.call(harness),

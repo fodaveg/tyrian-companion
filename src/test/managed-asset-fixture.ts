@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { sha256Text } from '../assets/managed-asset-hash';
 import { managedAssetMarker, type PackagedAsset } from '../assets/managed-assets-model';
 
@@ -39,4 +41,14 @@ export async function legacyRetiredBases(): Promise<PackagedAsset[]> {
 		return { ...draft, bytes, contentHash: await sha256Text(bytes) };
 	};
 	return [sessions!, await make('halloween-base', 'es', 'Halloween.base'), await make('materials-base', 'es', 'Materials.base')];
+}
+
+/**
+ * The three Bases that bundle 8 retires, exactly as 0.6.15 published them (Sessions, and Halloween and
+ * Materials in Spanish), dumped from that tag with `git archive` into `published-retired-bases.json`.
+ * Their meaning hashes are the ones in `published-base-hashes.ts`; the synthetic ones above can not prove that.
+ */
+export async function publishedRetiredBases(): Promise<PackagedAsset[]> {
+	const rows = JSON.parse(readFileSync(new URL('./published-retired-bases.json', import.meta.url), 'utf8')) as Array<Omit<PackagedAsset, 'contentHash'>>;
+	return await Promise.all(rows.map(async (row) => ({ ...row, contentHash: await sha256Text(row.bytes) })));
 }
