@@ -32,7 +32,11 @@ remotas dentro de una nota.
   `tyrian-companion-0.6.16.zip.sha256` 94 (bytes).
 - Revisión: el lote de las Bases tuvo un revisor independiente en tres pasadas («integrar con correcciones» dos veces
   y después «integrar»). Los metadatos de versión y la entrada de changelog los leyó solo el integrador.
-- CI de `main` sobre `c6a10f5` (run 37896808682): `in_progress` al escribir esto (leído con `gh run view` el 9 oct 2026, 07:09 UTC): `detect-native-changes` y `check-guardrails` en `success`, `check` en curso, `rust-portable` y `rust-windows-helper` omitidos. La conclusión, y si incluye el benchmark `bench:h6-live-session`, no se han leído.
+- CI de `main` sobre `c6a10f5` (run 37896808682): `completed` con conclusión
+  `success` (leído con `gh run view --json status,conclusion,jobs` el 9 oct 2026). Jobs `detect-native-changes`,
+  `check-guardrails`, `check` y `release-package` en `success`; `rust-portable` y `rust-windows-helper` omitidos
+  (`skipped`). Dentro de `check`, en `success`: `npm run check`, `npm run bench:h6-performance`,
+  `npm run test:bench:h6-performance-red`, `npm run bench:h6-live-session` y `npm run bench:h6-live-session-red`.
 - Addon de Nexus: 0.8.3 publicado el mismo día (sección siguiente); no cambia el protocolo con el plugin.
 - No verificado: nadie ha visto la 0.6.16 instalada ni cargada en Obsidian/BRAT ni en Hebra: ni la creación,
   actualización y retirada de Bases al cargar, ni la columna «Icono» pintada, ni el ajuste de archivos eliminados.
