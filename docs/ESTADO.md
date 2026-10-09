@@ -4,13 +4,14 @@
 
 **Candidato; no publicado ni etiquetado.** Parte de `0eacbe0` (`main` con el canal 0.6.20 publicado). Trae un solo
 lote, de la vista principal de Hebra (`18845a5`, `70fc7f1`, `7a9ad41`, `c855785`, `2987258`, `1708c6e`, `1f176df`,
-`44b4018`, `edda5da`, `4d6f6cf`, `5d647c4`, `aa57e00`, `b25525d`, `d683599`): en un Hebra con la API de plugins 1.3.0
-el plugin registra UNA vista en la pantalla principal con las secciones Sesión, Inventario y Venta, en vez de sus tres
-vistas; una opción nueva de Ajustes, por dispositivo y no sincronizada, elige entre eso y la barra lateral, y cambiarla
-se aplica sin recargar; en un Hebra anterior y en Obsidian nada cambia. `hebra-plugin-api` pasa de 1.0.0 a 1.3.0 como
-dependencia de tipos. `hebra.json` sigue declarando `apiVersion ^1.0.0` y las mismas capacidades. Detalle y límites en
-[CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md) («Capas»). Metadatos de versión alineados en
-`manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de Obsidian 1.11.4).
+`44b4018`, `edda5da`, `4d6f6cf`, `5d647c4`, `aa57e00`, `b25525d`, `d683599`, `a1ed477`, `6cc19d0`): en un Hebra con la
+API de plugins 1.3.0 el plugin registra UNA vista en la pantalla principal con las secciones Sesión, Inventario y
+Venta, en vez de sus tres vistas; una opción nueva de Ajustes, por dispositivo y no sincronizada, elige entre eso y la
+barra lateral, y cambiarla se aplica sin recargar; en un Hebra anterior y en Obsidian nada cambia. `hebra-plugin-api`
+pasa de 1.0.0 a 1.3.0 como dependencia de tipos. `hebra.json` sigue declarando `apiVersion ^1.0.0` y las mismas
+capacidades. Detalle y límites en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md) («Capas»). Metadatos
+de versión alineados en `manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json` (mínimo de
+Obsidian 1.11.4).
 
 - Origen: petición de David del 9 oct 2026 en la sesión de Hebra («quiero que en las opciones del plugin haya una
   opción para verlo en la sidebar o en la pantalla principal. por defecto se verá en la principal.»); contrato de la
@@ -18,12 +19,21 @@ dependencia de tipos. `hebra.json` sigue declarando `apiVersion ^1.0.0` y las mi
   `685f2c02bec9106469c3ea83c3cc8e4e90f0d33f`.
 - Revisión: independiente. Primera pasada sobre `436f2eb..33cf9ea` (los commits de antes de rebasar el lote sobre
   `0eacbe0`): «integrar con correcciones», un obligatorio de test y dos recomendados, aplicados. Segunda pasada, sobre
-  las correcciones y el pin de la dependencia: segunda pasada pendiente de veredicto.
+  `33cf9ea..535e389` (rangos también de antes de rebasar): «integrar con correcciones», una sola corrección (las
+  coordenadas del baseline del censo, que no cambia ninguna decisión revisada; `6cc19d0`) y una mejora de redacción
+  (la frase de la fila de Ajustes; `a1ed477`), aplicadas; 27 mutaciones sobre el código, todas cazadas menos una
+  equivalente.
 - Medido sobre `d683599` (árbol `585002994a01ce03a0bd2f83ac758563eacb9a53`, el lote ya rebasado sobre `0eacbe0`;
   Fedora, 9 oct 2026): `tsc --noEmit` sin errores, `lint` con 0 errores, censo de observabilidad PASS, contrato de
   texto fuente PASS, `i18n-unused` e `i18n-copy-length` sin hallazgos y 1350 tests de 79 ficheros (`src/host/hebra`,
   `src/ui`, el núcleo, `view-placement` y `live-session-summary-note`; uno más se salta, `bundle.test.ts`), con un solo
   worker. No es el gate.
+- Medido sobre `6cc19d0` (árbol `ccff6521de816b0fec928ef95a442e21c3acb98f`, con las dos correcciones de la segunda
+  pasada; Fedora, 9 oct 2026): las mismas comprobaciones estáticas con el mismo resultado y 326 tests de 24 ficheros
+  (`src/host/hebra`, el núcleo, `settings-page` e `i18n`; uno más se salta, `bundle.test.ts`), con un solo worker. Los
+  1350 tests de `d683599` no se repitieron sobre este árbol. El reindexado del baseline del censo movió 436 coordenadas
+  en once ficheros censados que toca el lote, y ningún id, clasificación, evidencia ni total; en siete de ellos las
+  coordenadas ya iban atrasadas en `0eacbe0` (394 valores), así que el reindexado corrige también ese atraso.
 - Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
 - Comprobado fuera de los tests: el `hebra.json` que genera `scripts/release-package.mjs` con el pin nuevo se comparó
   con el de la release 0.6.20 y solo difieren la versión y los hashes de los ficheros; `build:host-esm` informa de un
@@ -37,8 +47,8 @@ dependencia de tipos. `hebra.json` sigue declarando `apiVersion ^1.0.0` y las mi
 - No verificado: nada de la 0.6.21 ejecutado en un Hebra real ni visto en pantalla, ni instalada por BRAT o en Hebra;
   el CSS nuevo no se ha visto en ningún navegador; la sesión de Hebra declara sin probar a mano la vista principal, el
   motor WebKit y la vista de solo editor. Ningún test graba una sesión en vivo con su sección oculta.
-- Pendiente: el veredicto de la segunda pasada de la revisión, el gate sobre el árbol candidato, la publicación (tag,
-  release, `release:brat-verify`) y la verificación en clientes reales.
+- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la verificación
+  en clientes reales.
 
 ## Canal 0.6.20 publicado: el mapa en curso tras un reinicio del host y el resumen de sesión por mapa (9 oct 2026)
 

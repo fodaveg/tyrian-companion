@@ -38,10 +38,13 @@ un Hebra anterior no cambia nada. [ESTADO](ESTADO.md) separa lo medido de lo que
 - Límites: Inventario y Venta se diseñaron para un diálogo de 960 px; en la columna de Hebra (de 593 a 852 px en un
   escritorio normal, según Hebra) usan sus disposiciones para contenedor estrecho por debajo de 760 px. El contenido
   no pasa de 84rem de ancho, así que en una ventana muy ancha queda a la izquierda. Al elegir «Pantalla principal»
-  desde los Ajustes de Hebra, al cerrarlos se vuelve a las notas, no al plugin (la fila dice desde dónde se abre). El botón de la
-  barra de Hebra no abre la vista directamente: abre su menú. El host falso de Hebra no rechaza un id de vista
-  repetido y el real sí; el plugin usa ids distintos para la vista principal y para las tres propias. Los comandos de
-  paleta conservan sus nombres de antes, que no son «Sesión», «Inventario» y «Venta».
+  desde los Ajustes de Hebra, al cerrarlos se vuelve a las notas, no al plugin (la fila dice con qué entrada del menú
+  se abre). El botón de la barra de Hebra no abre la vista directamente: abre su menú. El host falso de Hebra no
+  rechaza un id de vista repetido y el real sí; el plugin usa ids distintos para la vista principal y para las tres
+  propias. Los comandos de paleta conservan sus nombres de antes, que no son «Sesión», «Inventario» y «Venta». El
+  plugin se compila y se prueba contra los tipos de la API 1.3.0 pero sigue declarando `apiVersion ^1.0.0`: hoy no usa
+  en producción ningún campo posterior a la 1.0 fuera de la guarda de la vista principal (lo comprobó el revisor
+  buscando en el código), y nada lo impide mecánicamente en el futuro.
 
 ## Release beta 0.6.20 - el mapa en curso ya no se pierde al reiniciarse el host, y el resumen de sesión reparte por mapa el tiempo observado y el valor
 
