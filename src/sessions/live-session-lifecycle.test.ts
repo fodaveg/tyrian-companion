@@ -272,23 +272,35 @@ describe('passive live session lifecycle', () => {
 			expect(restored.getRuntime()?.mapIntervals).toEqual([{mapId:866,fromMs:AT,toMs:AT+90_000}]);
 			expect(isLiveSessionRuntimeRecord(restored.getRuntime())).toBe(true); await restored.dispose();
 		});
-		it('keeps the last 256 intervals when restarts alone fill the record, which stays valid and marked as partial, and its note is still written', async () => {
-			const epoch = (index: number): string => `E${String(index).padStart(20,'0')}A`; const CYCLE = 10*MIN; const CYCLES = 260;
-			const f = fixture(); await f.service.start('Test'); let service = f.service;
-			// Every cycle: a minute played on the map, then the host is gone until the next one. Each restart closes one interval.
-			for (let index = 0; index < CYCLES; index += 1) {
-				await play(f,service,epoch(index),AT+index*CYCLE,MIN);
-				service = await restart(f,service,AT+index*CYCLE+5*MIN);
+		it('keeps the last 256 intervals when restarts take the record past the limit: it stays valid and marked as partial, and its note is still written', async () => {
+			const epoch = (index: number): string => `E${String(index).padStart(20,'0')}A`; const CYCLE = 10*MIN;
+			// The saved session already holds 254 intervals (five seconds each, in its first 43 minutes): hundreds of restarts are not
+			// played here, only the ones that reach the limit and cross it, each of them a real one.
+			const seeded = Array.from({length:254},(_,index) => ({mapId:866,fromMs:AT+index*10_000,toMs:AT+index*10_000+5_000}));
+			const f = fixture(); await f.service.start('Test');
+			const stored = await f.store.loadLive(); if (stored.status !== 'loaded') throw new Error('No stored session.');
+			expect((await f.store.saveLive({...stored.record,mapIntervals:seeded})).status).toBe('saved');
+			let service = await restart(f,f.service,AT+5*CYCLE);
+			expect(service.getRuntime()?.mapIntervals).toEqual(seeded);
+			// Every cycle: a minute played on the map, then the host is gone. Each restart closes one interval: 255, 256, and from there
+			// the oldest one goes for each new one.
+			const kept: number[] = [];
+			for (let index = 0; index < 4; index += 1) {
+				await play(f,service,epoch(index),AT+(6+index)*CYCLE,MIN);
+				service = await restart(f,service,AT+(6+index)*CYCLE+5*MIN);
+				kept.push(service.getRuntime()!.mapIntervals.length);
 			}
+			expect(kept).toEqual([255,256,256,256]);
 			const record = service.getRuntime()!;
-			expect(record.mapIntervals).toHaveLength(256); expect(record.mapCoveragePartial).toBe(true); expect(isLiveSessionRuntimeRecord(record)).toBe(true);
-			// The oldest four were dropped; what is kept is whole and in order.
-			expect(record.mapIntervals[0]).toEqual({mapId:866,fromMs:AT+4*CYCLE,toMs:AT+4*CYCLE+MIN});
-			expect(record.mapIntervals[255]).toEqual({mapId:866,fromMs:AT+(CYCLES-1)*CYCLE,toMs:AT+(CYCLES-1)*CYCLE+MIN});
+			expect(record.mapCoveragePartial).toBe(true); expect(isLiveSessionRuntimeRecord(record)).toBe(true);
+			// The two oldest were dropped; what is kept is whole and in order, the four real ones last.
+			expect(record.mapIntervals.slice(0,252)).toEqual(seeded.slice(2));
+			expect(record.mapIntervals.slice(252)).toEqual([6,7,8,9].map((cycle) => ({mapId:866,fromMs:AT+cycle*CYCLE,toMs:AT+cycle*CYCLE+MIN})));
 			// One more stretch and the end of the session: still 256, and the evidence is one a note can carry.
-			await play(f,service,epoch(CYCLES),AT+CYCLES*CYCLE,MIN); await service.stop(AT+CYCLES*CYCLE+MIN);
+			await play(f,service,epoch(4),AT+10*CYCLE,MIN); await service.stop(AT+10*CYCLE+MIN);
 			const ended = service.getRuntime()!;
-			expect(ended.mapIntervals).toHaveLength(256); expect(ended.mapIntervals[255]).toEqual({mapId:866,fromMs:AT+CYCLES*CYCLE,toMs:AT+CYCLES*CYCLE+MIN});
+			expect(ended.mapIntervals).toHaveLength(256); expect(ended.mapIntervals[0]).toEqual(seeded[3]);
+			expect(ended.mapIntervals[255]).toEqual({mapId:866,fromMs:AT+10*CYCLE,toMs:AT+10*CYCLE+MIN});
 			expect(isLiveSessionRuntimeRecord(ended)).toBe(true);
 			const payload = await prepareLiveSessionPayload({record:ended,journal:service.getJournal(),locale:'es',outputFolder:'Tyrian'});
 			expect(payload?.mapIntervals).toHaveLength(256); expect(payload?.mapCoveragePartial).toBe(true); await service.dispose();
