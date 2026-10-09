@@ -199,9 +199,10 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 		return [...this.legacyArchives.values()].map(legacyRuntimeRecordFromArchive).filter((value): value is SessionRuntimeRecord => value !== null);
 	}
 	async readLegacyRuntimeArchive(sessionId:string):Promise<LegacyRuntimeArchiveV1|null> { return structuredClone(this.legacyArchives.get(sessionId) ?? null); }
-	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult> {
+	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
 		if (!isLiveSessionRuntimeRecord(next) || journal && (!isLiveJournalEntry(journal) || journal.sessionId !== next.sessionId || journal.epoch !== next.lastSample?.epoch || journal.cursor !== next.lastSample.cursor)) return { status: 'error', code: 'corrupt' };
 		if (this.value !== undefined && (!isLiveSessionRuntimeRecord(this.value) || !canReplaceLiveRuntime(this.value, next))) return { status: 'stale' };
+		if (expected !== undefined && JSON.stringify(this.value) !== JSON.stringify(expected)) return { status: 'stale' };
 		if (journal) {
 			const key = JSON.stringify(journalKey(journal)); const current = this.liveJournal.get(key);
 			if (current) return identicalJournal(current, journal) ? { status: 'saved' } : { status: 'error', code: 'corrupt' };
@@ -486,8 +487,8 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		if (!record || runtimeAuthority(record.state).sessionId !== sessionId) throw new Error('Preserved API runtime identity is corrupt.');
 		return structuredClone(value);
 	}
-	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult> {
-		try { return await this.run(async (database) => await commitLiveRuntime(database, next, journal)); }
+	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
+		try { return await this.run(async (database) => await commitLiveRuntime(database, next, journal, expected)); }
 		catch { return { status: 'error', code: 'unavailable' }; }
 	}
 	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> { return await this.run(async (database) => await readLiveJournal(database, sessionId)); }

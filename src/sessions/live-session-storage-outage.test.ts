@@ -656,6 +656,48 @@ describe('live session whose host died without releasing the lease', () => {
 		await other.dispose(); await f.service.dispose();
 	});
 
+	/**
+	 * What is left when the premise fails for an owner the 15 s do not cover: alive, unseen, and silent for
+	 * that long (its beat held back). The new owner takes the lease, and the store only refuses the old
+	 * one's writes from the new owner's FIRST save on. Found by the review of 9 Oct 2026, forcing the order:
+	 * a write of the old owner that had passed its ownership check landed between the new owner reading the
+	 * session and saving it, and that save wrote the older count over it. Record with one observation,
+	 * journal with two, and the next start refused the session («journal does not match its committed cursor»).
+	 *
+	 * The first save of a takeover now says what it read, and is refused unless that is still what is stored.
+	 */
+	it('a write of the old owner that lands between the new owner reading the session and saving it is not written over: record and journal still agree', async () => {
+		const f = await measured('late-old-write', 5000, fakeLocks());
+		// Sixteen seconds without a beat, and a sample reaches the old host: it still owns its lease, and its
+		// write is on its way to the store when the other process starts.
+		f.at(21_000);
+		const oldSave = f.store.saveLive.bind(f.store);
+		let land: () => void = () => undefined; const held = new Promise<void>((resolve) => { land = resolve; });
+		let onItsWay = false;
+		vi.spyOn(f.store, 'saveLive').mockImplementationOnce(async (...parameters) => { onItsWay = true; await held; return await oldSave(...parameters); });
+		const committing = f.service.commit(f.sample(2, 21_000, bags(9)));
+		await vi.waitFor(() => { expect(onItsWay).toBe(true); });
+
+		// A lock registry of its own: it sees the old host's lock free, and takes the lease.
+		const next = f.restarted(fakeLocks());
+		const newSave = next.store.saveLive.bind(next.store);
+		// The old write lands after the new owner has read the session and before its first save reaches the store.
+		vi.spyOn(next.store, 'saveLive').mockImplementationOnce(async (...parameters) => { land(); await committing; return await newSave(...parameters); });
+		await next.service.initialize();
+		await expect(committing).resolves.toBe('stored');
+		// The takeover was not saved over what it had not read, and says so; the next beat reads again and takes the session.
+		expect(next.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['Live session recovery could not be persisted.']);
+		f.at(26_000); await next.beat();
+		const durable = await f.durable();
+		expect(durable.record).toMatchObject({ authority: { instanceId: 'wl1:next-host', fence: 2 }, observationCount: 2 });
+		const observations = durable.journal.flatMap((entry) => entry.observations);
+		expect(observations).toHaveLength(durable.record.observationCount);
+		expect(liveObservationTotals([], observations)).toEqual(durable.record.totals);
+		expect(next.service.getRuntime()).toEqual(durable.record);
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		await next.dispose();
+	});
+
 	it('a machine suspended for longer than the lease lasts does not close the session: it comes back as after an outage', async () => {
 		const f = await measured('suspended', 10_000);
 		await f.service.presence(true, AT + 10_000);

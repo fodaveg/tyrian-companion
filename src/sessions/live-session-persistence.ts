@@ -11,7 +11,11 @@ export type LiveRuntimeLoadResult = { status: 'empty' | 'legacy' } | { status: '
 	| { status: 'error'; code: 'corrupt' | 'unavailable' };
 export interface LiveSessionPersistence {
 	loadLive(): Promise<LiveRuntimeLoadResult>;
-	saveLive(record: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult>;
+	/**
+	 * `expected`, when given, is the stored record this write was made from: unless that is still exactly what is stored, in
+	 * the transaction that writes, the answer is `stale` and nothing is written. The first save of a takeover gives it.
+	 */
+	saveLive(record: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<SessionRuntimeMutationResult>;
 	readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]>;
 	markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean>;
 	replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean>;
@@ -41,7 +45,7 @@ export function isSealedJournalQueue(value: unknown): value is SealedJournal[] {
 
 /** One transaction commits the bounded runtime cursor and appends the sample's ledger together. */
 export async function commitLiveRuntime(database: IDBDatabase, next: LiveSessionRuntimeRecord,
-	journal?: LiveJournalEntryV1): Promise<SessionRuntimeMutationResult> {
+	journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
 	if (!isLiveSessionRuntimeRecord(next) || journal && (!isLiveJournalEntry(journal) || journal.sessionId !== next.sessionId
 		|| journal.epoch !== next.lastSample?.epoch || journal.cursor !== next.lastSample.cursor)) return { status: 'error', code: 'corrupt' };
 	return await new Promise((resolve) => {
@@ -55,6 +59,9 @@ export async function commitLiveRuntime(database: IDBDatabase, next: LiveSession
 			if (current !== undefined && (!isLiveSessionRuntimeRecord(current) || !canReplaceLiveRuntime(current, next))) {
 				result = { status: 'stale' }; return;
 			}
+			// A new fence may replace anything older, so the fence alone lets a takeover write over what the last owner
+			// wrote after the takeover read it. Whoever says what it read is refused when that is no longer what is stored.
+			if (expected !== undefined && JSON.stringify(current) !== JSON.stringify(expected)) { result = { status: 'stale' }; return; }
 			if (!journal) { runtime.put(structuredClone(next), SESSION_RUNTIME_KEY); result = { status: 'saved' }; return; }
 			const key = journalKey(journal);
 			const existing = entries.get(key);

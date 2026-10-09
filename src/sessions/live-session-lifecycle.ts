@@ -604,6 +604,9 @@ export class LiveSessionLifecycle {
 		// An attempt that ends here keeps no handle, as one that ends at the save below: until the
 		// session is saved under this lease, no queued operation may write under it.
 		try { await this.refreshRecovery(); } catch (error) { this.handle = null; throw error; }
+		// What a takeover has just read is what its save below is made from, and the save says so: the last owner may have
+		// passed its own check before the lease changed hands, and what it writes until that save lands the store still accepts.
+		const read = this.recovering ? this.record : undefined;
 		// Under the lease it already had nothing is read as a takeover, but a write of its own may have landed unseen.
 		if (!this.recovering && await this.adoptLanded() === 'unavailable') { this.handle = null; return false; }
 		const recovered = this.getRuntime();
@@ -643,7 +646,7 @@ export class LiveSessionLifecycle {
 		}
 		next = { ...next, authority: sessionAuthorityFromLease(acquisition.handle), epoch: null, lastSample: null,
 			fingerprint: null, persistedAt: this.options.now() };
-		const saved = await this.persist(next);
+		const saved = await this.persist(next, undefined, read);
 		// Storage went away again: drop the handle so the next beat reclaims under the lease it finds.
 		if (saved === 'unavailable') { this.handle = null; return false; }
 		if (saved !== 'saved') throw new Error('Live session recovery could not be persisted.');
@@ -737,9 +740,9 @@ export class LiveSessionLifecycle {
 		return stored.phase === 'active' ? 'current' : 'ended';
 	}
 	/** One durable write of the session record. A refusal by storage itself is remembered; a stale authority is not its fault. */
-	private async persist(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1): Promise<'saved' | 'stale' | 'unavailable'> {
+	private async persist(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<'saved' | 'stale' | 'unavailable'> {
 		let status: string;
-		try { status = (await this.options.persistence.saveLive(next, journal)).status; }
+		try { status = (await this.options.persistence.saveLive(next, journal, expected)).status; }
 		catch { status = 'error'; }
 		if (status === 'saved' || status === 'stale') return status;
 		this.storageLost();
@@ -936,7 +939,7 @@ function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionL
 	const rejected = (): Promise<never> => Promise.reject(new StorageUnansweredError());
 	const persistence: LiveSessionLifecycleOptions['persistence'] = {
 		loadLive: () => deadline.bounded(() => options.persistence.loadLive(), unavailable),
-		saveLive: (record, journal) => deadline.bounded(() => options.persistence.saveLive(record, journal), unavailable),
+		saveLive: (record, journal, expected) => deadline.bounded(() => options.persistence.saveLive(record, journal, expected), unavailable),
 		readLiveJournal: (sessionId) => deadline.bounded(() => options.persistence.readLiveJournal(sessionId), rejected),
 		markLiveAlertsProcessed: (sessionId, epoch, cursor) => deadline.bounded(() => options.persistence.markLiveAlertsProcessed(sessionId, epoch, cursor), () => false),
 		replaceLiveJournal: (prior, next, owner) => deadline.bounded(() => options.persistence.replaceLiveJournal(prior, next, owner), () => false),
