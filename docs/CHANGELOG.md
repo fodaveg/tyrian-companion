@@ -1,5 +1,58 @@
 # Changelog
 
+## Release beta 0.6.17 - el valor de un botín se calcula sobre el total de la venta, y las notas, los avisos y los precios fallan sin romper lo demás
+
+Release por tag `0.6.17`. Cambia una cifra visible (el valor de la tarjeta de botín de una sesión de cuenta) y
+endurece cómo se leen las notas de sesión, cuándo sale un aviso, cómo se piden los precios y cómo se guarda y se
+lista en Hebra. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Tarjeta de botín de una sesión de cuenta: cada pila se valora con la comisión del bazar aplicada al total de la
+  venta, no por unidad. 250 unidades con una orden de compra de 8 c valen 1 700 c, no los 1 500 c de
+  `floor(8 × 0,85) × 250`. Cambian las filas, su orden, «ganado hasta ahora» y cuándo salta el aviso de botín
+  valioso, que compara esa cifra con el umbral; una venta que se come las dos comisiones mínimas vale cero. No se
+  guarda nada de esa tarjeta, así que ninguna cifra almacenada cambia. Ejemplo medido en `docs/SPEC-live-loot.md` §7.
+- Halloween: los avisos de evidencia y de botín llevan la orden de compra bruta por unidad y aplican la comisión
+  sobre cantidad × bruto (mismo cálculo). Un aviso ya guardado con el precio neto por unidad se lee como siempre y
+  no se reescribe. La base de datos de Halloween pasa a la versión 9 sin tocar almacenes, índices ni filas: un
+  cliente 0.6.16 no la abre e informa de esquema futuro.
+- Notas de sesión en vivo: se lee la versión 2 de la nota (diario disperso, sin entrada para una muestra que no
+  cambió nada) y la base de precio bruto `instant_sell_gross`, que solo es válida en una nota v2. El escritor v2
+  está implementado y APAGADO: esta versión sigue escribiendo la 1, byte a byte como la 0.6.16, y no guarda
+  muestras vacías. Una nota que no se puede leer (de una versión posterior o rota) se aparta por ruta, sin tocarla,
+  y se nombra en los dos paneles, en vez de convertir todo el historial y la comparación en un conflicto. Dos notas
+  de una misma sesión siguen siendo un conflicto. Una 0.6.16 trata una nota v2 como inválida.
+- Sesiones heredadas al arrancar: del archivo de una sesión de API preservada solo se aparta `record_invalid`
+  (sobre íntegro y suma correcta, pero que la validación de hoy rechaza); la fila no se toca y deja un diagnóstico
+  `validation_failed` con su clave. Un sobre mal formado, una suma que no cuadra o una clave que no nombra su sesión
+  siguen rechazando el listado. El listado va de la más reciente a la más antigua por `preservedAt` y calcula la
+  suma de cada archivo una vez, no dos.
+- Avisos: un aviso que quedó listo y cuya reserva fue rechazada se reintenta en los pases siguientes y en cada
+  cambio de estado de la sesión, sin esperar a un cambio de modo; nunca suena dos veces. Las peticiones de precio de
+  ese reintento van espaciadas 60 s. La identidad de un aviso pendiente incluye su sesión.
+- Sesión en vivo y almacenamiento: cada llamada al almacén de la sesión en vivo, del coordinador de reserva y del
+  escritor de notas tiene un plazo de 10 s; pasado ese plazo se responde como cuando el almacén no está
+  disponible, en vez de dejar bloqueada la cola. Una carga inicial que falla se reintenta con el latido, y un
+  fallo de `initialize()` no tumba el plugin.
+- Avisos de sonido: se cierra el `AudioContext` al liberar el anfitrión, un `resume()` que no se resolvió se
+  reintenta a los 5 s y el canal figura como pendiente mientras el contexto se reanuda.
+- Precios: «sin semilla» tiene dos motivos. `unreachable` (red, 408, 425, 429, 5xx): no deja marca de 24 h, guarda
+  una espera de 15 min solo en memoria y una pasada se detiene tras 3 seguidos. `unavailable` (el resto de 4xx, 404
+  incluido): el anfitrión contestó que no hay nada y se marca 24 h. En la captura, `http_rejected` es fatal y solo
+  se reintentan los estados transitorios. Límites conocidos: un registro `unavailable` lo lee como corrupto una
+  0.6.16 si se baja de versión, y un 401 o 403 de las semillas se enseña como «sin datos» durante 24 h.
+- Hebra: el paquete de soporte se guarda como nota de la biblioteca (`diagnostics/Tyrian - Paquete de soporte.md`),
+  que se reescribe entera en cada exportación; si se agotan las comprobaciones de revisión falla en vez de duplicar
+  la nota. El almacén local lista por prefijo en vez de pedir todas las claves: con 5 000 claves ajenas, 100
+  `append` + 3 `exists` + 1 `remove` pasan de 712 ms a 35 ms (fake-indexeddb). Archivar, desarchivar y mover notas
+  se siguen sin reiniciar: una nota archivada sale del índice.
+- Icono de Hebra nuevo (`assets/hebra-icon.png`): recorte de la acuarela original con un único borde negro.
+- Documentación: guía de instalación en Windows desde cero (`docs/INSTALAR-WINDOWS.md`, para plugin 0.6.17 y addon
+  0.8.4) y tres textos corregidos: el README ya no dice que cargar el plugin no toca las Bases, la especificación del
+  puente ya no nombra una fila de puerto en los ajustes y el aviso «activa primero Aviso dentro del juego» manda a
+  los ajustes del plugin, no a «Avanzado».
+- Sin verificar: nada de la 0.6.17 se ha visto en Obsidian ni en Hebra reales, ni la instalación de la 0.6.17 por
+  BRAT o en Hebra.
+
 ## Release beta 0.6.16 - las Bases se mantienen solas al cargar y el icono del objeto principal en los resúmenes
 
 [Canal 0.6.16 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.16); **instalación/runtime
