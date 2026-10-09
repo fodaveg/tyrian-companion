@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+// `IDBKeyRange` is a real global in the webview; in Node it only exists once this shim loads.
+import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
