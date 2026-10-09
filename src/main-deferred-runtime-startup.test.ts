@@ -27,6 +27,7 @@ import {
 	IndexedDbSessionRuntimeStore,
 } from './sessions/session-runtime-store';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
+import { hangStorage, resumeStorage, trackedIndexedDb } from './test/indexed-db-connections';
 
 interface RuntimeBootHarness {
 	runtimeReady: boolean;
@@ -96,6 +97,76 @@ describe('deferred runtime startup with persisted terminal state', () => {
 		const plugin = runtimeBootPlugin(new IDBFactory());
 		await expect(plugin.initializeRuntime()).resolves.toBeUndefined();
 		expect(plugin.runtimeReady).toBe(true);
+	});
+
+	// 9 Oct 2026 (Z3): an engine that accepts every open and transaction and answers none. `await sessions.initialize()` had no
+	// bound, so the plugin never became ready and no command, setting or view came up.
+	describe('with a storage engine that takes everything and answers nothing', () => {
+		function manualWindowTimers() {
+			const live = new Map<number, () => void>(); let next = 0;
+			const window = globalThis as unknown as { window: { setTimeout: unknown; clearTimeout: unknown } };
+			window.window.setTimeout = (callback: () => void) => { live.set(++next, callback); return next; };
+			window.window.clearTimeout = (handle: number) => { live.delete(handle); };
+			return { fire() { for (const [handle, callback] of [...live]) { live.delete(handle); callback(); } } };
+		}
+
+		// Only the session databases go silent: boot reads a dozen other stores first, and this fix is about the session part.
+		function sessionEngineThatDoesNotAnswer() {
+			const tracked = trackedIndexedDb();
+			tracked.hangOnly = (name) => /session-runtime|coordination/.test(name);
+			hangStorage(tracked);
+			return tracked;
+		}
+
+		async function bootUntilSettled(plugin: RuntimeBootHarness, timers: { fire(): void }): Promise<boolean> {
+			let settled = false;
+			void plugin.initializeRuntime().then(() => { settled = true; }, () => { settled = true; });
+			// Real macrotask turns let fake-indexeddb answer what it can; each turn also lets every 10 s wait run out.
+			for (let turn = 0; turn < 200 && !settled; turn += 1) { await new Promise((resolve) => setTimeout(resolve, 0)); timers.fire(); }
+			return settled;
+		}
+
+		type LiveView = { liveSessions: { getView(): { phase: string } } };
+		const phase = (plugin: RuntimeBootHarness): string => (plugin as unknown as LiveView).liveSessions.getView().phase;
+		/** The lifecycle's heartbeat, as the host would fire it: the callback armed with the 5 s interval. */
+		function heartbeat(): () => void {
+			const armed = (globalThis as unknown as { window: { setInterval: (callback: () => void, ms: number) => number } }).window.setInterval;
+			const beat = vi.mocked(armed).mock.calls.filter(([, ms]) => ms === 5_000).at(-1)?.[0];
+			if (beat === undefined) throw new Error('The lifecycle armed no heartbeat.');
+			return beat;
+		}
+		const sessionConnections = (tracked: ReturnType<typeof trackedIndexedDb>) =>
+			tracked.connections.filter((database) => /session-runtime|coordination/.test(database.name));
+
+		it('becomes ready within the bounded waits instead of never starting', async () => {
+			const tracked = sessionEngineThatDoesNotAnswer();
+			const plugin = runtimeBootPlugin(tracked.factory);
+			const timers = manualWindowTimers();
+			expect(await bootUntilSettled(plugin, timers)).toBe(true);
+			expect(plugin.runtimeReady).toBe(true);
+			// The session part reads as the store failing (the state a store that refuses already has), not as a session that is fine.
+			expect(phase(plugin)).toBe('error');
+		});
+
+		it('recovers by itself, on the heartbeat, once the engine answers again, without flipping ready or opening twice', async () => {
+			const tracked = sessionEngineThatDoesNotAnswer();
+			const plugin = runtimeBootPlugin(tracked.factory);
+			const timers = manualWindowTimers();
+			expect(await bootUntilSettled(plugin, timers)).toBe(true);
+			expect(phase(plugin)).toBe('error');
+			const readyFlips = vi.fn(); let last = plugin.runtimeReady;
+			const watch = setInterval(() => { if (plugin.runtimeReady !== last) { last = plugin.runtimeReady; readyFlips(); } }, 0);
+
+			resumeStorage(tracked);
+			heartbeat()();
+			for (let turn = 0; turn < 50 && phase(plugin) === 'error'; turn += 1) { await new Promise((resolve) => setTimeout(resolve, 0)); timers.fire(); }
+			clearInterval(watch);
+			expect(phase(plugin)).toBe('idle');
+			expect(plugin.runtimeReady).toBe(true);
+			expect(readyFlips).not.toHaveBeenCalled();
+			// At most one connection per session database: the silence did not leave an extra one open.
+			expect(sessionConnections(tracked).length).toBeLessThanOrEqual(2);
+		});
 	});
 
 	it('keeps runtime initialization alive and attributes the historical projection TypeError once', async () => {

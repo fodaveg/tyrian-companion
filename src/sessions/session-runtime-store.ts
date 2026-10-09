@@ -18,6 +18,7 @@ import {
 	isSessionPriceSnapshot,
 	type SessionPriceSnapshot,
 } from '../economy/session-price-snapshot';
+import { StorageDeadline, StorageUnansweredError, type StorageDeadlineOptions } from './storage-deadline';
 import { isSessionState } from './session-state-machine';
 import {
 	isSessionContaminationReview,
@@ -241,11 +242,15 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 	close(): void {}
 }
 
+/** The open in course, shared by whoever asks meanwhile; `abandon` is how a waiter whose time ran out disowns it. */
+interface OpeningDatabase { readonly promise: Promise<IDBDatabase>; abandon(): void }
+
 /** Machine-local, fail-closed persistence. It never falls back to vault files or memory. */
 export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSessionPersistence {
 	private database: IDBDatabase | null = null;
-	private opening: Promise<IDBDatabase> | null = null;
+	private opening: OpeningDatabase | null = null;
 	private unavailable = false;
+	private readonly deadline: StorageDeadline;
 	/** Archives the last listing set aside; the rows stay in the store. */
 	rejectedLegacyArchives: readonly RejectedLegacyArchive[] = [];
 
@@ -258,7 +263,8 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		private readonly factory: IDBFactory,
 		private readonly databaseName: string | (() => Promise<string>) = SESSION_RUNTIME_DB_NAME,
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
-	) {}
+		deadline: StorageDeadlineOptions = {},
+	) { this.deadline = new StorageDeadline(deadline); }
 
 	async load(context?: LocalDebugPersistenceContext): Promise<SessionRuntimeLoadResult> {
 		const attempt = this.diagnostics.begin('session_runtime', 'read', context);
@@ -494,7 +500,13 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		return await withIndexedDbReopen({
 			open: async () => await this.open(context),
 			discard: (database) => { this.discard(database); },
-		}, operation);
+		}, async (database) => await this.deadline.bounded(() => operation(database), () => {
+			// An engine that took the transaction and never answers: the connection is dropped (the engine finishes what it
+			// holds and closes it) so the next operation opens anew instead of queueing behind it, and this one is refused
+			// as any unavailable store is. The transaction itself is not cancelled and may still write; see `StorageDeadline`.
+			this.discard(database);
+			return Promise.reject(new StorageUnansweredError());
+		}));
 	}
 
 	/** Forgets a connection the engine closed or that no longer starts transactions; the next `open()` opens anew. */
@@ -506,21 +518,49 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	private async open(context?: LocalDebugPersistenceContext): Promise<IDBDatabase> {
 		if (this.unavailable) throw new Error('Session recovery storage is unavailable.');
 		if (this.database) return this.database;
-		if (this.opening) return this.opening;
+		const opening = this.opening ?? this.beginOpening(context);
+		// Every caller bounds its OWN wait. One whose wait ran out abandons the opening it was waiting for, if it is still
+		// the shared one: the next call opens again, and the database that arrives from the abandoned one is closed (it
+		// would otherwise stay open and unreferenced, and block any later upgrade of this database).
+		return await this.deadline.bounded(() => opening.promise, () => {
+			opening.abandon();
+			return Promise.reject(new StorageUnansweredError());
+		});
+	}
+
+	private beginOpening(context?: LocalDebugPersistenceContext): OpeningDatabase {
 		const attempt = this.diagnostics.begin('session_runtime', 'open', context);
-		const opening = this.openDatabase();
-		this.opening = opening;
-		try {
-			const database = await opening;
-			this.database = database;
-			attempt.success();
-			return database;
-		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
-			throw error;
-		} finally {
-			if (this.opening === opening) this.opening = null;
-		}
+		let abandoned = false;
+		let opening: OpeningDatabase | null = null;
+		const promise = (async () => {
+			try {
+				const database = await this.openDatabase();
+				if (abandoned) {
+					try { database.close(); } catch { /* Nobody holds it. */ }
+					throw new StorageUnansweredError();
+				}
+				this.database = database;
+				attempt.success();
+				return database;
+			} catch (error) {
+				if (!abandoned) attempt.failure(localDebugStorageFailureCode(error), error);
+				throw error;
+			} finally {
+				if (this.opening === opening) this.opening = null;
+			}
+		})();
+		const created: OpeningDatabase = {
+			promise,
+			abandon: () => {
+				if (abandoned) return;
+				abandoned = true;
+				attempt.failure(localDebugStorageFailureCode(new StorageUnansweredError()), new StorageUnansweredError());
+				if (this.opening === created) this.opening = null;
+			},
+		};
+		opening = created;
+		this.opening = created;
+		return created;
 	}
 
 	private async openDatabase(): Promise<IDBDatabase> {

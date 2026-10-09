@@ -25,7 +25,7 @@ import {
 	SESSION_RUNTIME_STORE_NAME,
 } from './session-runtime-store';
 import type { SessionStartContext } from './session-start-capture';
-import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
+import { closeUnderneath, emitEngineClose, hangStorage, holdNextOpen, killStorage, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 
 vi.mock('../core/canonical-sha256', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('../core/canonical-sha256')>();
@@ -670,6 +670,112 @@ describe('session runtime persistence', () => {
 		reviveStorage(tracked);
 		await expect(store.load()).resolves.toEqual({ status: 'empty' });
 		store.close();
+	});
+
+	// 9 Oct 2026 (Z3): an engine that takes an open or a transaction and fires no event at all. Nothing is refused, so nothing
+	// ever reached `catch`, and `await sessions.initialize()` at plugin start waited for ever. Timers are the test's own.
+	describe('an engine that does not answer', () => {
+		function manualTimers() {
+			const live = new Map<number, () => void>(); let next = 0;
+			return {
+				schedule: (callback: () => void) => { live.set(++next, callback); return next; },
+				cancel: (handle: unknown) => { live.delete(handle as number); },
+				get pending() { return live.size; },
+				fire() { for (const [handle, callback] of [...live]) { live.delete(handle); callback(); } },
+			};
+		}
+
+		it('answers unavailable when the open never answers, and opens again at the next call', async () => {
+			const tracked = trackedIndexedDb(); const timers = manualTimers();
+			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('hung-open'), undefined, timers);
+			hangStorage(tracked);
+			const load = store.load();
+			expect(await settlement(load)).toBe('pending');
+			timers.fire();
+			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
+
+			// The hung open is not kept: the call after it makes its own attempt, which now succeeds.
+			resumeStorage(tracked);
+			await expect(store.load()).resolves.toEqual({ status: 'empty' });
+			expect(tracked.connections).toHaveLength(1);
+			store.close();
+		});
+
+		it('answers unavailable when the first read never answers, and does not queue the next one behind it', async () => {
+			const tracked = trackedIndexedDb(); const timers = manualTimers();
+			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('hung-read'), undefined, timers);
+			await expect(store.load()).resolves.toEqual({ status: 'empty' });
+			hangStorage(tracked);
+			const load = store.load();
+			await vi.waitFor(() => { expect(timers.pending).toBe(1); });
+			timers.fire();
+			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
+
+			resumeStorage(tracked);
+			await expect(store.load()).resolves.toEqual({ status: 'empty' });
+			expect(tracked.connections).toHaveLength(2);
+			store.close();
+		});
+
+		it('closes a database whose open answered after the wait ran out, instead of leaving it open and unreferenced', async () => {
+			const tracked = trackedIndexedDb(); const timers = manualTimers();
+			const name = databaseName('late-open');
+			const store = new IndexedDbSessionRuntimeStore(tracked.factory, name, undefined, timers);
+			const answer = holdNextOpen(tracked);
+			const load = store.load();
+			await vi.waitFor(() => { expect(timers.pending).toBe(1); });
+			timers.fire();
+			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
+
+			// The next call opens its own connection and works on it.
+			await expect(store.save(activeRecord())).resolves.toEqual({ status: 'saved' });
+			expect(tracked.connections).toHaveLength(2);
+			const [late, current] = tracked.connections as [IDBDatabase, IDBDatabase];
+			answer();
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			// The late one is closed (its transactions throw); the cached one keeps serving; no third open took its place.
+			expect(() => late.transaction(SESSION_RUNTIME_STORE_NAME, 'readonly')).toThrow();
+			expect(() => current.transaction(SESSION_RUNTIME_STORE_NAME, 'readonly')).not.toThrow();
+			await expect(store.load()).resolves.toMatchObject({ status: 'loaded' });
+			expect(tracked.connections).toHaveLength(2);
+			// A closed orphan does not hold up another context: deleting the database is not blocked by it.
+			store.close();
+			await new Promise<void>((resolve, reject) => {
+				const request = tracked.factory.deleteDatabase(name);
+				request.onsuccess = () => resolve(); request.onerror = () => reject(request.error ?? new Error('delete failed'));
+				request.onblocked = () => reject(new Error('blocked by an open connection'));
+			});
+		});
+
+		it('ignores an open that answers with an error after the wait ran out', async () => {
+			const tracked = trackedIndexedDb(); const timers = manualTimers();
+			const name = databaseName('late-open-error');
+			// A newer schema on disk makes this build's open fail with a VersionError, but only when the held answer is released.
+			const upgraded = await openRaw(tracked.factory, name, 3); upgraded.close();
+			const store = new IndexedDbSessionRuntimeStore(tracked.factory, name, undefined, timers);
+			const answer = holdNextOpen(tracked);
+			const load = store.load();
+			await vi.waitFor(() => { expect(timers.pending).toBe(1); });
+			timers.fire();
+			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
+			const unhandled = vi.fn(); process.on('unhandledRejection', unhandled);
+			answer();
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			process.off('unhandledRejection', unhandled);
+			expect(unhandled).not.toHaveBeenCalled();
+			// The store is not left in a stuck state: the next call tries by itself and gets the engine's own refusal.
+			await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
+			store.close();
+		});
+
+		it('does not call a healthy store unavailable: a call that answers in time leaves no timer behind', async () => {
+			const tracked = trackedIndexedDb(); const timers = manualTimers();
+			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('healthy'), undefined, timers);
+			await expect(store.save(activeRecord())).resolves.toEqual({ status: 'saved' });
+			await expect(store.load()).resolves.toMatchObject({ status: 'loaded' });
+			expect(timers.pending).toBe(0);
+			store.close();
+		});
 	});
 
 	// Lote S (2026-09-09), test obligatorio: the real record David hit today (`registro-sesion-9sep.json`,

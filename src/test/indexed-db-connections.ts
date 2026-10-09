@@ -13,24 +13,31 @@ export interface TrackedIndexedDb {
 	down: boolean;
 	/** While true, the engine takes every open and every transaction and answers none: see `hangStorage`. */
 	hung: boolean;
+	/** When set, `hung` applies only to the databases it names: the rest of the plugin's storage keeps answering. */
+	hangOnly: ((databaseName: string) => boolean) | null;
+	/** Armed by `holdNextOpen`: the next open is made for real and answered only when its release is called. */
+	holdOpen: { answer: () => void } | null;
 }
 
 export function trackedIndexedDb(): TrackedIndexedDb {
 	const factory = new IDBFactory();
-	const tracked: TrackedIndexedDb = { factory, connections: [], down: false, hung: false };
+	const tracked: TrackedIndexedDb = { factory, connections: [], down: false, hung: false, hangOnly: null, holdOpen: null };
+	const isHung = (databaseName: string): boolean => tracked.hung && (tracked.hangOnly?.(databaseName) ?? true);
 	const open = factory.open.bind(factory);
 	factory.open = (name: string, version?: number) => {
-		if (tracked.hung) return unanswered<IDBOpenDBRequest>();
+		if (isHung(name)) return unanswered<IDBOpenDBRequest>();
 		if (tracked.down) return refusedOpen();
 		const request = open(name, version);
+		const held = tracked.holdOpen;
+		tracked.holdOpen = null;
 		request.addEventListener('success', () => {
 			const database = request.result;
 			tracked.connections.push(database);
 			const start = database.transaction.bind(database);
-			database.transaction = (...parameters: Parameters<IDBDatabase['transaction']>) => tracked.hung
+			database.transaction = (...parameters: Parameters<IDBDatabase['transaction']>) => isHung(database.name)
 				? unanswered<IDBTransaction>() : start(...parameters);
 		});
-		return request;
+		return held === null ? request : heldOpen(request, held);
 	};
 	return tracked;
 }
@@ -181,4 +188,35 @@ function refusedOpen(): IDBOpenDBRequest {
 	const request = { error: new DOMException('The storage process is gone.', 'UnknownError'), result: undefined } as unknown as IDBOpenDBRequest;
 	queueMicrotask(() => { request.onerror?.call(request, new Event('error')); });
 	return request;
+}
+
+/**
+ * The engine takes the NEXT open and answers it late (9 Oct 2026): the connection is really made, but
+ * its owner hears nothing until the function returned here is called, and then hears what a real
+ * request would have said. In between the owner is waiting on an open that, as far as it knows, never
+ * answers; afterwards a database it may no longer want is in its hands.
+ */
+export function holdNextOpen(tracked: TrackedIndexedDb): () => void {
+	const hold = { answer: () => undefined as void };
+	tracked.holdOpen = hold;
+	return () => { hold.answer(); };
+}
+
+function heldOpen(request: IDBOpenDBRequest, hold: { answer: () => void }): IDBOpenDBRequest {
+	const stub = {
+		get result() { return request.result; },
+		get error() { return request.error; },
+		onsuccess: null as IDBOpenDBRequest['onsuccess'], onerror: null as IDBOpenDBRequest['onerror'],
+		onblocked: null as IDBOpenDBRequest['onblocked'], onupgradeneeded: null as IDBOpenDBRequest['onupgradeneeded'],
+	};
+	let answered = false;
+	const owed: Array<() => void> = [];
+	const tell = (fire: () => void): void => { if (answered) fire(); else owed.push(fire); };
+	// The schema is applied when the engine says so; only the final word is held back.
+	request.onupgradeneeded = (event) => { stub.onupgradeneeded?.call(request, event); };
+	request.onsuccess = (event) => { tell(() => { stub.onsuccess?.call(request, event); }); };
+	request.onerror = (event) => { tell(() => { stub.onerror?.call(request, event); }); };
+	request.onblocked = (event) => { tell(() => { stub.onblocked?.call(request, event); }); };
+	hold.answer = () => { answered = true; for (const fire of owed.splice(0)) fire(); };
+	return stub as unknown as IDBOpenDBRequest;
 }
