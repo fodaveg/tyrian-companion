@@ -2,7 +2,13 @@
 
 ## Release beta 0.6.19 - la nota resumen de sesión dice qué cuenta cada cifra, agrupa su cobertura y se titula con la fecha y la hora
 
-Release por tag `0.6.19`. Cambia solo la presentación de la nota resumen de una sesión y los títulos de las dos notas:
+[Canal 0.6.19 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.19); **instalación/runtime
+pendiente**. Tag `0.6.19` sobre `436f2eb` (commit vacío de atestación), árbol
+`363a98282fb5b80db416bdbf57380403e5717052`. Gate local sobre el candidato `616ca1c` (mismo árbol): `check` 8/8
+(5651 tests, 339 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run
+37931703547) terminó en `success`, y `release:brat-verify` contra la salida real de la release dio PASS con los ocho
+assets. La CI de `main` sobre `436f2eb` (run 37931696575) terminó en `success`.
+Cambia solo la presentación de la nota resumen de una sesión y los títulos de las dos notas:
 texto y orden, ninguna cifra. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
 
 - Rótulos que dicen qué cuenta cada cifra: «Veredicto» pasa a «Balance observado», «Neto estimado» a «Valor neto de
