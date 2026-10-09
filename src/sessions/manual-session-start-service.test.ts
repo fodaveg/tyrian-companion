@@ -1626,8 +1626,12 @@ describe('ManualSessionStartService', () => {
 	 * 9 Oct 2026 (F7): the manual session shares the coordinator, so it shares what the coordinator knows
 	 * of an owner that died. Those 300 s above are still what is waited where nothing is known (no lock
 	 * manager, as in every test before this one); with the host's lock manager a window that died is not
-	 * waited for, and one that is alive is refused as it always was. The real coordinator and the real
-	 * store over one fake IndexedDB, as in the reload test above: this is about the wiring between them.
+	 * waited for past the 15 s without a renewal the coordinator asks of any owner, and one that is alive
+	 * is refused as it always was. The real coordinator and the real store over one fake IndexedDB, as in
+	 * the reload test above: this is about the wiring between them.
+	 *
+	 * Those 15 s are sized for the live session, which renews every 5 s. This one renews every 100 s, so
+	 * it is nearly always that silent: here the lock alone tells a window that is alive from one that died.
 	 */
 	describe('recovery of a session whose window held a life lock', () => {
 		const leaseTtlMs = 300_000;
@@ -1645,16 +1649,16 @@ describe('ManualSessionStartService', () => {
 			return { coordinator: coordinatorOfWindow, service, setInterval };
 		}
 
-		it('takes the session of a window that died at once, under the next fence, and beats every 100 s as before', async () => {
+		it('takes the session of a window that died 20 s ago, under the next fence, and beats every 100 s as before', async () => {
 			const factory = new IDBFactory(); const locks = fakeLocks();
 			const deadContext = locks.context();
 			const first = openWindow(factory, 'dead-window', 'instance-one', deadContext);
 			await expect(first.service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 				.resolves.toMatchObject({ status: 'started' });
 			expect(first.service.getState()).toMatchObject({ status: 'active', authority: { instanceId: 'wl1:instance-one', fence: 1 } });
-			// The window is gone ten seconds later: no dispose, no release. Its lease has 290 s left.
+			// The window is gone: no dispose, no release. Twenty seconds later its lease has 280 s left.
 			deadContext.die();
-			clock += 10_000;
+			clock += 20_000;
 
 			const second = openWindow(factory, 'dead-window', 'instance-two', locks.context());
 			await second.service.initialize();
@@ -1671,7 +1675,7 @@ describe('ManualSessionStartService', () => {
 			const first = openWindow(factory, 'live-window', 'instance-one', liveContext);
 			await expect(first.service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 				.resolves.toMatchObject({ status: 'started' });
-			clock += 10_000;
+			clock += 20_000;
 
 			const second = openWindow(factory, 'live-window', 'instance-two', locks.context());
 			await second.service.initialize();

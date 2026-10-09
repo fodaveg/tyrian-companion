@@ -66,9 +66,27 @@ export const LIFE_LOCK_ANSWER_TIMEOUT_MS = 1_000;
 const LIFE_MARK = 'wl1:';
 const LIFE_LOCK_PREFIX = 'tyrian-companion-lease:';
 
+/**
+ * How long an owner must have gone without renewing before a free lock is believed about it: three
+ * beats of the live session (`LIVE_SOURCE_STALE_MS`, 5 s), which renews on every one.
+ *
+ * A free lock alone is only as good as the premise that every context reading the lease sees that
+ * lock. Where it fails (two processes over one data directory in an engine that keeps its locks per
+ * process: measured, each one took the other's session on every beat) an owner that is alive and
+ * beating has renewed within these 15 s, so it is left alone exactly as before there were locks. A
+ * host that really died stops renewing, and whoever comes back sooner than this waits out the rest.
+ *
+ * It does not cover an owner that is alive, unseen AND silent for this long: a live session whose
+ * timers a hidden host holds back to one a minute, or the manual session, which renews every 100 s.
+ */
+export const DEAD_OWNER_SILENCE_MS = 15_000;
+
 type CommonErrorCode = Exclude<Extract<AcquireLeaseResult, { status: 'error' }>['code'], 'fence_overflow'>;
-/** What the first transaction of an acquisition found that the second one may take: a lease that ran out, or one whose owner may be shown to be gone. */
-type TakeableLease = { status: 'expired'; lease: ActiveSessionLease } | { status: 'held'; lease: ActiveSessionLease };
+/**
+ * What the first transaction of an acquisition found that the second one may take: a lease that ran out, or
+ * one whose owner may be shown to be gone, with how long ago it last renewed by the clock that judged it.
+ */
+type TakeableLease = { status: 'expired'; lease: ActiveSessionLease } | { status: 'held'; lease: ActiveSessionLease; silentMs: number };
 
 /**
  * Cross-window/process active-session lease with durable fencing and fail-closed storage.
@@ -85,15 +103,18 @@ type TakeableLease = { status: 'expired'; lease: ActiveSessionLease } | { status
  * its lock manager (`locks`). The instance holds one Web Lock for as long as it lives, named after its
  * `instanceId`, and that id says so (`LIFE_MARK`). The engine frees the lock when the document or the
  * process is gone, however it went, with no timer of ours involved. Whoever finds a lease that has not
- * run out, whose owner carries the mark and whose lock is free, takes it the way an expired one is
- * taken: a pause, then the exact lease compared again and the fence raised by one.
+ * run out, whose owner carries the mark, whose lock is free and which has not been renewed for
+ * `DEAD_OWNER_SILENCE_MS`, takes it the way an expired one is taken: a pause, then the exact lease
+ * compared again and the fence raised by one.
  *
- * Two rules bound it, and neither is traded for a faster recovery:
+ * Three rules bound it, and none is traded for a faster recovery:
  * - no lease is written under a marked id unless that instance's lock was granted AND the manager,
  *   asked, answered that it is held. An instance that cannot show both writes an unmarked id;
  * - an owner without the mark is never taken before its lease runs out, and neither is a marked one
  *   whose lock is not shown to be free: a probe that is held, late, missing or throwing answers `busy`,
- *   which is what every acquisition answered before this.
+ *   which is what every acquisition answered before this;
+ * - nor is one that renewed within `DEAD_OWNER_SILENCE_MS`, free lock or not: that is what keeps two
+ *   live owners that cannot see each other's locks from taking each other's lease on every beat.
  *
  * `renew`, `assertOwned` and `release` know nothing of locks: the lease lasts what it lasted.
  */
@@ -305,7 +326,8 @@ export class ActiveSessionLeaseCoordinator {
 					// Somebody else's and not run out. Its owner can only be asked about when it says it holds a
 					// lock, and only by an instance whose own lock showed that the manager answers truthfully.
 					if (this.life === 'proven' && hasLifeMark(state.lease.instanceId)) {
-						return { result: { status: 'held', lease: structuredClone(state.lease) } };
+						// The same `now` that has just said the lease has not run out says how long its owner has been silent.
+						return { result: { status: 'held', lease: structuredClone(state.lease), silentMs: now - state.lease.renewedAt } };
 					}
 					return { result: busyUnder(state.lease) };
 				}
@@ -317,7 +339,12 @@ export class ActiveSessionLeaseCoordinator {
 		// Outside any transaction, and not about the store at all. Only «free», said in time, takes this
 		// further; held, no answer, a late one or an error leave the owner where it is until its lease runs out.
 		const ownerGone = first.status === 'held';
-		if (ownerGone && await this.lifeLockState(lifeLockName(observed.instanceId)) !== 'free') return busyUnder(observed);
+		if (first.status === 'held') {
+			if (await this.lifeLockState(lifeLockName(observed.instanceId)) !== 'free') return busyUnder(observed);
+			// Free, and still not enough: an owner that renewed this recently is taken for alive whatever the
+			// manager says of its lock (`DEAD_OWNER_SILENCE_MS`). The next attempt asks again.
+			if (first.silentMs < DEAD_OWNER_SILENCE_MS) return busyUnder(observed);
+		}
 		try { await this.sleep(this.expiryConfirmDelayMs); } catch { return { status: 'error', code: 'unavailable' }; }
 		try {
 			return await (await this.getStore()).transaction<AcquireLeaseResult>((raw) => {

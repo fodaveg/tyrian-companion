@@ -42,8 +42,8 @@ function outage(label: string, setup: { locks?: FakeLocks; leaseTtlMs?: number }
 	const arm = (callback: () => void): number => { waits.set(++lastWait, callback); return lastWait; };
 	const disarm = (handle: unknown): void => { waits.delete(handle as number); };
 	const store = new IndexedDbSessionRuntimeStore(tracked.factory, `live-outage-${label}`);
-	const lease = (instanceId: string): ActiveSessionLeaseCoordinator => {
-		const context = setup.locks?.context();
+	const lease = (instanceId: string, registry: FakeLocks | undefined = setup.locks): ActiveSessionLeaseCoordinator => {
+		const context = registry?.context();
 		if (context) contexts.set(instanceId, context);
 		return new ActiveSessionLeaseCoordinator({
 			indexedDb: tracked.factory, databaseName: `live-outage-${label}-lease`, instanceId, machineId: () => 'machine',
@@ -79,12 +79,15 @@ function outage(label: string, setup: { locks?: FakeLocks; leaseTtlMs?: number }
 		},
 		/** The engine applies the next write of the session store and dies before saying so. */
 		dieAfterNextCommit: () => { killStorageAfterNextCommit(tracked, `live-outage-${label}`); },
-		/** Another host starting on what is on disk now, as the next launch of the plugin would. */
-		restarted: () => {
+		/**
+		 * Another host starting on what is on disk now, as the next launch of the plugin would. `registry` gives it a lock
+		 * manager that shares nothing with the first host's: two processes of an engine that keeps its locks per process.
+		 */
+		restarted: (registry?: FakeLocks) => {
 			const persistence = new IndexedDbSessionRuntimeStore(tracked.factory, `live-outage-${label}`); const failed = vi.fn();
 			let nextBeat: (() => void) | null = null;
 			// A session this host starts itself gets an id of its own, as every real one does.
-			const next = new LiveSessionLifecycle({ ...options, coordinator: lease('next-host'), persistence, onError: failed, sessionId: () => 'next-session',
+			const next = new LiveSessionLifecycle({ ...options, coordinator: lease('next-host', registry ?? setup.locks), persistence, onError: failed, sessionId: () => 'next-session',
 				setInterval: (callback: () => void) => { nextBeat = callback; return 1; }, clearInterval: () => { nextBeat = null; } });
 			return { service: next, store: persistence, onError: failed, dispose: async () => { await next.dispose(); persistence.close(); },
 				/** Whether this host armed a heartbeat at all. */
@@ -117,6 +120,11 @@ function outage(label: string, setup: { locks?: FakeLocks; leaseTtlMs?: number }
 async function turns(): Promise<void> {
 	for (let turn = 0; turn < 64; turn += 1) await Promise.resolve();
 }
+/** The epoch a producer opens after `index - 1` others: a distinct 16-byte id for each. */
+const epochOf = (index: number): string => {
+	const bytes = new Uint8Array(16).fill(index & 255); bytes[0] = index >> 8;
+	return btoa(String.fromCharCode(...bytes)).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '');
+};
 const bags = (quantity: number): LiveInventoryRowV1[] => [{ kind: 'item', idNumber: 12147, quantity }];
 const bagsAndGold = (quantity: number, copper: number): LiveInventoryRowV1[] => [...bags(quantity), { kind: 'currency', idNumber: 1, quantity: copper }];
 const storageGaps = (service: LiveSessionLifecycle) => service.getView().gaps.filter((gap) => gap.reason === 'storage_unavailable');
@@ -574,15 +582,18 @@ describe('live session whose host died without releasing the lease', () => {
 		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:host', 'tyrian-companion-lease:wl1:next-host']);
 		await expect(f.service.commit(f.sample(2, 125_000, bags(9)))).resolves.toBe('stored');
 		expect(f.service.getRuntime()).toMatchObject({ authority: { instanceId: 'wl1:host', fence: 1 } });
-		// Once the first host is really gone, the second one's next beat takes the session: no five minutes.
+		// Once the first host is really gone the second one takes the session on the first beat that finds
+		// it silent for 15 s (its last renewal was at 120 s): no five minutes.
 		f.hostDies();
 		f.at(130_000); await second.beat();
+		await expect(second.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		f.at(135_000); await second.beat();
 		await expect(second.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
 		expect(second.service.getRuntime()).toMatchObject({ authority: { instanceId: 'wl1:next-host', fence: 2 } });
 		await second.dispose();
 	});
 
-	it('a plugin reloaded in the same document takes its session back as soon as the old one is disposed of, released or not', async () => {
+	it('a plugin reloaded in the same document takes its session back 15 s after the old one last renewed, once that one is disposed of, released or not', async () => {
 		const locks = fakeLocks();
 		const f = await measured('reload-locks', 5000, locks);
 		f.at(6000);
@@ -590,11 +601,59 @@ describe('live session whose host died without releasing the lease', () => {
 		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
 		// The old coordinator is disposed of without its lease having been released (an unload cut short).
 		f.options.coordinator.dispose();
+		// Its lock is free at once, and its last renewal was at 5 s: the beats before 20 s leave it alone.
 		f.at(10_000); await next.beat();
+		f.at(15_000); await next.beat();
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:next-host']);
+		f.at(20_000); await next.beat();
 		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
 		expect(next.service.getRuntime()).toMatchObject({ authority: { instanceId: 'wl1:next-host', fence: 2 } });
-		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:next-host']);
 		await next.dispose();
+	});
+
+	/**
+	 * The premise the life lock rests on, failing: two processes alive over the same IndexedDB whose lock
+	 * managers share nothing, so each sees the other's lock free (an engine that keeps its locks per process,
+	 * with nothing stopping a second process from opening the same data). Measured by the review of 9 Oct 2026
+	 * before the second condition existed: each host took the other's session on every beat, and the one being
+	 * fed stored 45 of 120 samples under a fence that reached 17. This test, with that condition taken out of the
+	 * coordinator, gives 40 of 120 stored, 72 `live_open` refused and a fence of 18, in the other host's name.
+	 *
+	 * An owner that is alive and beating has renewed within the last 15 s, so it is left alone whatever the
+	 * lock manager says: the figures are those of two hosts with no lock manager at all.
+	 */
+	it.each([
+		['neither has a lock manager', false],
+		['each has a lock registry of its own and sees the other\'s lock free', true],
+	])('two hosts alive over one store, when %s: the one being fed stores every sample under the fence it started with', async (_case, registries) => {
+		const f = outage(`two-alive-${registries ? 'registries' : 'plain'}`, registries ? { locks: fakeLocks() } : {});
+		await f.service.start('Test');
+		f.at(500);
+		const other = f.restarted(registries ? fakeLocks() : undefined); await other.service.initialize();
+		const counts = { sent: 0, stored: 0, refused: 0, opened: 0, conflicts: 0 };
+		let epochs = 0; let epoch: string | null = null; let cursor = 0; let quantity = 5;
+		// Two minutes of the producer feeding the first host, a sample a second, both hosts beating every five.
+		for (let second = 1; second <= 120; second += 1) {
+			f.at(second * 1000);
+			if (second % 5 === 0) { await f.beat(); await other.beat(); }
+			if (epoch === null) {
+				const next = epochOf(++epochs);
+				if (await f.service.open({ ...f.source, epoch: next }) === 'ready') { epoch = next; cursor = 0; counts.opened += 1; } else counts.conflicts += 1;
+			}
+			if (epoch === null) continue;
+			quantity += 1; counts.sent += 1;
+			if (await f.service.commit(f.sample(cursor, cursor * 1000, bags(quantity), epoch)) === 'stored') { counts.stored += 1; cursor += 1; } else { counts.refused += 1; epoch = null; }
+		}
+		expect(counts).toEqual({ sent: 120, stored: 120, refused: 0, opened: 1, conflicts: 0 });
+		const owner = registries ? 'wl1:host' : 'host';
+		expect(f.service.getRuntime()).toMatchObject({ authority: { instanceId: owner, fence: 1 }, observationCount: 119 });
+		expect((await f.durable()).record).toMatchObject({ authority: { instanceId: owner, fence: 1 }, observationCount: 119 });
+		// The other host never had the session, and never stopped asking for it.
+		expect(other.service.getRuntime()).toMatchObject({ authority: { instanceId: owner, fence: 1 } });
+		await expect(other.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		expect(f.onError).not.toHaveBeenCalled();
+		await other.dispose(); await f.service.dispose();
 	});
 
 	it('a machine suspended for longer than the lease lasts does not close the session: it comes back as after an outage', async () => {
@@ -639,10 +698,6 @@ describe('live session whose host died without releasing the lease', () => {
  * gives, or the session loses it on every beat while it is being fed.
  */
 describe('live session on a host whose heartbeat fires once a minute', () => {
-	const epochOf = (index: number): string => {
-		const bytes = new Uint8Array(16).fill(index & 255); bytes[0] = index >> 8;
-		return btoa(String.fromCharCode(...bytes)).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '');
-	};
 	/**
 	 * Ten minutes of a producer as the addon behaves: a sample every second, each one waited for, and
 	 * a new epoch opened whenever one is refused. The heartbeat fires every `beatEveryS` seconds and at
