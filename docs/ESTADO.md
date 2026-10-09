@@ -1,5 +1,26 @@
 # Estado
 
+## En `main`, sin publicar: plazos del almacén de la sesión en vivo (9 oct 2026)
+
+**Integrado en `main` después del tag `0.6.17`; no está en ninguna versión publicada.** Son los 13 commits de
+`claude/ciclo-vida-almacen-20261009` (`fdd0a28`…`a750f79`). Qué cambia: cada llamada al almacén de la sesión en vivo,
+al coordinador de la reserva y al escritor de notas tiene un plazo de 10 s, y al vencer se responde como cuando el
+almacén no está disponible en vez de dejar la cola bloqueada; una carga inicial que falla se reintenta con el latido;
+un `initialize()` que falla ya no tumba el plugin; un inicio que el almacén no confirmó se vuelve a buscar y se
+recobra; una nota que tarda más que el plazo se espera en vez de escribirse otra vez; y una reclamación de aviso
+contestada como rechazada se relee antes de reintentar. La reserva de la sesión en vivo sigue en 5 minutos: la de
+30 s se descartó porque, con la ventana oculta y un latido por minuto, guardaba 150 de 600 muestras.
+
+- Revisión: independiente, en tres pasadas («integrar con correcciones» dos veces, con tres obligatorias en total, y
+  después «integrar»). El último commit, solo de tests, lo leyó el integrador.
+- Gate local sobre `a750f79` (árbol `f8889c69b8269e1dae30c712257f9550f64838e5`, Fedora, 9 oct 2026): `npm run check`
+  8/8 (5626 tests, 339 ficheros) y guardrails 25/25.
+- Límites conocidos, en [SPEC-live-loot](SPEC-live-loot.md): un motor de almacén que no contesta al arrancar sigue
+  impidiendo arrancar el plugin; un escritor de nota que no termina nunca bloquea las notas siguientes; tras un cierre
+  brusco de la app de notas siguen pudiendo pasar hasta 5 minutos sin medir; una renovación de reserva que llega a
+  disco después de su plazo cuesta un hueco y una época nueva.
+- No verificado: todo está medido con `fake-indexeddb`; nada se ha visto con un IndexedDB real ni en un cliente real.
+
 ## Canal 0.6.17 publicado: el valor de un botín sobre el total de la venta y fallos que ya no rompen lo demás (9 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.17](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.17)
@@ -18,7 +39,8 @@ No entra en esta versión la rama `claude/ciclo-vida-almacen-20261009` (plazo de
 sesión en vivo, reintento de la carga inicial y un `initialize()` fallido que no tumba el plugin). Su revisión
 independiente del 9 oct 2026 pidió dos correcciones obligatorias, las dos sobre un almacén lento que sí contesta: una
 nota de sesión que tarda más de 10 s en escribirse no llega a sellarse y bloquea el inicio siguiente, y un guardado
-del inicio que vence y aterriza después deja una sesión activa que el usuario no vio empezar. Sigue en su rama.
+del inicio que vence y aterriza después deja una sesión activa que el usuario no vio empezar. Se corrigió después y
+está en `main` sin publicar (sección anterior).
 
 - Gate local sobre el candidato (Fedora, Node v22.23.1, 9 oct 2026): `npm run check` 8/8 (5572 tests, 339
   ficheros), `npm run check:guardrails` 25/25, `release preflight: pass` y `release package: PASS`
