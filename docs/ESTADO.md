@@ -38,12 +38,14 @@ alineados en `manifest.json`, `package.json`, la raíz de `package-lock.json` y 
   `tyrian-companion-0.6.15.zip` construido en local, sha256
   `f8e545a8a5c53ab9d2aea9e6bfb7ead8e3124945065614bab6aef7cb13e7b069`; no se ha comparado con el sha256 del zip
   publicado. El benchmark H6 no se corrió en local; lo corre la CI de `main`.
-- CI de `main` sobre `d6fbd42` (run 37888694302): sin concluir (`in_progress` y luego `queued` en dos lecturas seguidas) cuando se escribió esto (9 oct 2026, 05:33 UTC). Su
-  conclusión no se ha leído.
+- CI de `main` sobre `d6fbd42` (run 37888694302): `completed` con conclusión
+  `success` (leído con `gh run view` el 9 oct 2026, 05:35 UTC). Jobs `detect-native-changes`, `check-guardrails`,
+  `check` (con los pasos `bench:h6-performance`, `bench:h6-live-session` y sus pruebas en rojo) y `release-package`
+  en `success`; `rust-portable` y `rust-windows-helper` omitidos (`skipped`).
 - Addon de Nexus: sin cambios (0.8.2).
 - No verificado: nadie ha visto el icono «C1» pintado en Hebra real, y los 18 px son una estimación. Tampoco la
   instalación ni la carga de la 0.6.15 en Hebra ni en Obsidian/BRAT.
-- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT) y la conclusión de la CI de `main`.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
 
 ## Canal 0.6.14 publicado: cinco arreglos de la nota resumen de sesión (8 oct 2026)
 
