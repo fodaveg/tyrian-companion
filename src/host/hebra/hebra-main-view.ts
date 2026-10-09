@@ -1,11 +1,12 @@
 /**
  * The main view of Hebra's plugin API 1.3.0 (`placement: 'main'`): the core's
- * `TyrianSectionsViewRegistration` over it. With `plugin-api-1-3-provisional.ts`, this is the only
- * file of the plugin that names that part of Hebra's API, which is still provisional.
+ * `TyrianSectionsViewRegistration` over it. This is the only file of the plugin that uses that part
+ * of Hebra's API.
  *
  * - detection: `api.has('ui.view.main')`. It is a feature of the host, not a capability the plugin
- *   declares: it is in neither `hebra.json` nor `capabilities.required`. On a Hebra without it (1.2.0)
- *   it answers false and nothing below is ever called (two of those methods do not exist there);
+ *   declares: it is in neither `hebra.json` nor `capabilities.required`, and the plugin still asks
+ *   for no more than API `^1.0.0`. On a Hebra without it (1.2.0 and before) it answers false and
+ *   nothing below is ever called (two of those methods do not exist there);
  * - the view registers with `retainSections`: Hebra mounts each section once, on its first visit,
  *   and from then on hides it instead of unmounting it, telling the section when it is hidden and
  *   when it is shown again (never right after mounting it, never before unmounting it);
@@ -13,16 +14,9 @@
  *   its own lane, as each view has in `hebra-host-ui.ts`: an `unmount` never overtakes the `mount`
  *   before it, and a first synchronous `mount` that throws still reaches Hebra.
  */
-import type { HebraPluginApi, PluginUi } from 'hebra-plugin-api';
+import type { HebraPluginApi, PluginHostFeature, PluginMainViewDefinition, PluginUi, PluginViewSectionPatch } from 'hebra-plugin-api';
 
 import type { TyrianSectionsViewRegistration, TyrianViewSectionPatch } from '../tyrian-host';
-import type {
-	PluginHasWithHostFeatures,
-	PluginHostFeature,
-	PluginMainViewDefinition,
-	PluginUiWithMainView,
-	PluginViewSectionPatch,
-} from './plugin-api-1-3-provisional';
 
 const MAIN_VIEW_FEATURE: PluginHostFeature = 'ui.view.main';
 
@@ -45,14 +39,12 @@ export interface HebraMainViewDeps {
 export function hebraHasMainView(api: Pick<HebraPluginApi, 'has'>, report: (error: unknown) => void = () => undefined): boolean {
 	if (typeof (api as { has?: unknown }).has !== 'function') return false;
 	try {
-		return (api as { has: PluginHasWithHostFeatures }).has(MAIN_VIEW_FEATURE) === true;
+		return api.has(MAIN_VIEW_FEATURE) === true;
 	} catch (error) {
 		report(error);
 		return false;
 	}
 }
-
-const widened = (ui: PluginUi): PluginUiWithMainView => ui as unknown as PluginUiWithMainView;
 
 /** Registers the one view of the main screen; the returned function takes it away, and Hebra unmounts its sections with it. */
 export function registerHebraMainView(deps: HebraMainViewDeps, view: TyrianSectionsViewRegistration): () => void {
@@ -79,12 +71,12 @@ export function registerHebraMainView(deps: HebraMainViewDeps, view: TyrianSecti
 			};
 		},
 	};
-	return widened(deps.ui).registerView(definition);
+	return deps.ui.registerView(definition);
 }
 
 /** Enters the main view on that section, or switches to it where the view is already on screen. */
 export function revealHebraMainViewSection(ui: PluginUi, viewId: string, sectionId: string): void {
-	widened(ui).revealView(viewId, { section: sectionId });
+	ui.revealView(viewId, { section: sectionId });
 }
 
 /** Changes what Hebra lists for one section. Only on a Hebra with the main view: the method does not exist before. */
@@ -94,5 +86,5 @@ export function updateHebraMainViewSection(ui: PluginUi, viewId: string, section
 		...(patch.subtitle === undefined ? {} : { subtitle: patch.subtitle }),
 		...(patch.badge === undefined ? {} : { badge: patch.badge }),
 	};
-	widened(ui).updateViewSection(viewId, sectionId, hebraPatch);
+	ui.updateViewSection(viewId, sectionId, hebraPatch);
 }

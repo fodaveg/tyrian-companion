@@ -3,7 +3,6 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
-import { withFakeMainView } from '../../test/hebra-main-view-fake';
 import { createTyrianTestApi, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
 import { installDomHelpers } from '../dom-polyfill';
 import type { CanonicalPathFor } from '../tyrian-host';
@@ -394,8 +393,7 @@ describe('createHebraHost: the other ports', () => {
 	});
 
 	it('declares the main view where Hebra says it has it (plugin API 1.3.0), with the port to register it', async () => {
-		const test = createTyrianTestApi();
-		const handle = await createHebraHost(deps(test, { api: withFakeMainView(test.api).api }));
+		const handle = await createHebraHost(deps(createTyrianTestApi({ mainView: true })));
 		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true, mainView: true });
 		expect(createTyrianRuntime(handle.host).mainViewSupported()).toBe(true);
 		expect(handle.host.ui).toHaveProperty('registerSectionsView');

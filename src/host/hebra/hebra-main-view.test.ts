@@ -1,18 +1,20 @@
 // @vitest-environment happy-dom
+import type { PluginMainViewDefinition } from 'hebra-plugin-api';
 import { createFakePluginApi } from 'hebra-plugin-api/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { withFakeMainView } from '../../test/hebra-main-view-fake';
 import { asHebraWithoutMainView } from '../../test/hebra-plugin-fakes';
+import { withRealHostBehaviour } from '../../test/hebra-real-host';
 import type { TyrianSectionsViewRegistration, TyrianViewSectionRegistration } from '../tyrian-host';
 import { createHebraTyrianUi } from './hebra-host-ui';
 import { hebraHasMainView } from './hebra-main-view';
-import type { PluginMainViewDefinition, PluginUiWithMainView } from './plugin-api-1-3-provisional';
 import { createMemorySecretsBackend, createPreloadedSecrets } from './secrets';
 
-// The main view of Hebra's plugin API 1.3.0 (provisional) through the adapter: what reaches Hebra
-// when the core registers ONE view with sections, and what Hebra's own behaviour (the fake of
-// `src/test/hebra-main-view-fake.ts`, written from the contract) makes of it.
+// The main view of Hebra's plugin API 1.3.0 through the adapter: what reaches Hebra when the core
+// registers ONE view with sections, and what Hebra makes of it. Hebra here is the package's own
+// fake (`hebra-plugin-api/testing`), with `src/test/hebra-real-host.ts` around it for the few
+// things the real host does and that fake does not; how the main view itself behaves is tested in
+// Hebra, not here.
 
 /** The id every test here registers its main view with. */
 const MAIN = 'tyrian-main-view';
@@ -27,13 +29,17 @@ async function olderHebra() {
 }
 
 /** A Hebra with the main view. */
-async function hebra() {
+async function hebra(mount: 'sync' | 'deferred' = 'sync') {
 	const fake = createFakePluginApi({ id: 'tyrian-companion', capabilities: ['editor'] });
-	const widened = withFakeMainView(fake.api);
+	const widened = withRealHostBehaviour({ fake, api: fake.api }, { mount });
+	hosts.push(widened);
 	const report = vi.fn();
 	const ui = createHebraTyrianUi({ api: widened.api, mainView: hebraHasMainView(widened.api), ...await rest(), report });
 	return { fake, widened, ui, report };
 }
+
+/** Every Hebra a test built, so that none ends with a failure of the plugin Hebra swallowed. */
+const hosts: Array<{ faults: string[] }> = [];
 
 async function rest() {
 	return {
@@ -62,24 +68,19 @@ function sectionsView(log: string[], sections = [section('session', log), sectio
 	return { type: 'tyrian-main-view', title: () => 'Tyrian Companion', icon: 'sword', sections };
 }
 
-/** The code Hebra refused the call with, or null when it went through. */
-function refusal(call: () => void): string | null {
-	try {
-		call();
-		return null;
-	} catch (error) {
-		return (error as { code?: string }).code ?? 'thrown without a code';
-	}
-}
-
 afterEach(() => {
+	const faults = hosts.splice(0).flatMap((host) => host.faults);
 	document.body.replaceChildren();
+	expect(faults, 'a function of the plugin threw and Hebra swallowed it').toEqual([]);
 });
 
 describe('a Hebra without the main view (1.2.0 and before)', () => {
 	it('answers false to the feature without throwing, and the port has none of the three methods', async () => {
-		const { ui, mainView } = await olderHebra();
+		const { api, ui, mainView } = await olderHebra();
 		expect(mainView).toBe(false);
+		expect(api.apiVersion).toBe('1.2.0');
+		expect(api.ui).not.toHaveProperty('updateView');
+		expect(api.ui).not.toHaveProperty('updateViewSection');
 		expect(ui).not.toHaveProperty('registerSectionsView');
 		expect(ui).not.toHaveProperty('revealSection');
 		expect(ui).not.toHaveProperty('updateSection');
@@ -105,8 +106,8 @@ describe('a Hebra without the main view (1.2.0 and before)', () => {
 	});
 
 	it('reveals a view with the type alone, as before', async () => {
-		const { fake, ui } = await olderHebra();
-		const revealView = vi.spyOn(fake.api.ui, 'revealView');
+		const { api, ui } = await olderHebra();
+		const revealView = vi.spyOn(api.ui, 'revealView');
 		await ui.revealView('tyrian-companion-view');
 		expect(revealView.mock.calls).toEqual([['tyrian-companion-view']]);
 	});
@@ -128,7 +129,7 @@ describe('registerSectionsView', () => {
 		ui.registerSectionsView!(sectionsView([]));
 
 		expect(registerView).toHaveBeenCalledOnce();
-		const definition = registerView.mock.calls[0]![0] as unknown as PluginMainViewDefinition;
+		const definition = registerView.mock.calls[0]![0] as PluginMainViewDefinition;
 		expect(Object.keys(definition).sort()).toEqual(['icon', 'id', 'mountSection', 'placement', 'retainSections', 'sections', 'title']);
 		expect([definition.id, definition.title, definition.icon, definition.placement, definition.retainSections])
 			.toEqual(['tyrian-main-view', 'Tyrian Companion', 'sword', 'main', true]);
@@ -137,46 +138,46 @@ describe('registerSectionsView', () => {
 			{ id: 'inventory', title: 'Título de inventory', icon: 'icon-inventory' },
 			{ id: 'sale', title: 'Título de sale', icon: 'icon-sale' },
 		]);
-		expect(widened.view(MAIN).registered()).toBe('tyrian-main-view');
-		expect(widened.viewTitle('tyrian-main-view')).toBe('Tyrian Companion');
+		expect(fake.recorded.mainViews.map(({ id }) => id)).toEqual(['tyrian-main-view']);
+		expect(fake.viewTitle('tyrian-main-view')).toBe('Tyrian Companion');
 		// Nothing of it is a column or dialog view, and nothing is mounted until somebody enters.
 		expect(fake.recorded.views).toEqual([]);
-		expect(widened.view(MAIN).mounted()).toEqual([]);
+		expect(fake.mainView.mounted(MAIN)).toEqual([]);
 	});
 
 	it('mounts each section on its first visit, in the element Hebra gives it, and never tells it it is visible right then', async () => {
-		const { widened, ui } = await hebra();
+		const { fake, widened, ui } = await hebra();
 		const log: string[] = [];
 		ui.registerSectionsView!(sectionsView(log));
 
-		widened.view(MAIN).open();
+		const el = fake.mainView.open(MAIN);
 		expect(log).toEqual(['mount session in session']);
-		expect(widened.view(MAIN).current()).toBe('session');
-		const el = widened.view(MAIN).element('session')!;
+		expect(fake.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'session' });
+		expect(el).toBe(widened.view(MAIN).element('session'));
 		expect(el.className).toBe('hebra-module-view-content hebra-module-view-main-content');
 		expect(el.parentElement?.className).toBe('hebra-module-view hebra-module-view-main');
 
-		widened.view(MAIN).select('sale');
+		fake.mainView.select('sale');
 		expect(log).toEqual(['mount session in session', 'hide session in session', 'mount sale in sale']);
 		// Inventory was never visited: it is not mounted.
-		expect(widened.view(MAIN).mounted()).toEqual(['session', 'sale']);
+		expect(fake.mainView.mounted(MAIN)).toEqual(['session', 'sale']);
 	});
 
 	it('hides and shows a mounted section instead of unmounting it, also when the user goes back to the notes', async () => {
-		const { widened, ui } = await hebra();
+		const { fake, widened, ui } = await hebra();
 		const log: string[] = [];
 		ui.registerSectionsView!(sectionsView(log));
-		widened.view(MAIN).open();
-		widened.view(MAIN).select('inventory');
+		fake.mainView.open(MAIN);
+		fake.mainView.select('inventory');
 		log.length = 0;
 
-		widened.view(MAIN).select('session');
+		fake.mainView.select('session');
 		expect(log).toEqual(['hide inventory in inventory', 'show session in session']);
 		expect(widened.view(MAIN).element('inventory')?.hidden).toBe(true);
 		expect(widened.view(MAIN).element('session')?.hidden).toBe(false);
 
-		widened.view(MAIN).leave();
-		widened.view(MAIN).open();
+		fake.mainView.leave();
+		fake.mainView.open(MAIN);
 		expect(log).toEqual([
 			'hide inventory in inventory', 'show session in session',
 			'hide session in session', 'show session in session',
@@ -185,17 +186,18 @@ describe('registerSectionsView', () => {
 	});
 
 	it('unmounts every mounted section, with its own element and no visibility notice first, when the view is taken away', async () => {
-		const { widened, ui } = await hebra();
+		const { fake, widened, ui } = await hebra();
 		const log: string[] = [];
 		const unregister = ui.registerSectionsView!(sectionsView(log));
-		widened.view(MAIN).open();
-		widened.view(MAIN).select('sale');
+		fake.mainView.open(MAIN);
+		fake.mainView.select('sale');
 		log.length = 0;
 
 		unregister();
 
 		expect(log).toEqual(['unmount session in session', 'unmount sale in sale']);
 		expect(widened.view(MAIN).registered()).toBeNull();
+		expect(fake.recorded.mainViews).toEqual([]);
 		expect(document.querySelector('.hebra-module-view-main')).toBeNull();
 		// Taking it away twice is taking it away once.
 		unregister();
@@ -203,7 +205,7 @@ describe('registerSectionsView', () => {
 	});
 
 	it('an unmount never overtakes an asynchronous mount in flight', async () => {
-		const { widened, ui } = await hebra();
+		const { fake, ui } = await hebra();
 		const order: string[] = [];
 		let mounted!: () => void;
 		const slow = section('session', [], {
@@ -211,7 +213,7 @@ describe('registerSectionsView', () => {
 			unmount: () => { order.push('unmounted'); },
 		});
 		const unregister = ui.registerSectionsView!(sectionsView([], [slow]));
-		widened.view(MAIN).open();
+		fake.mainView.open(MAIN);
 
 		unregister();
 		expect(order).toEqual([]);
@@ -220,60 +222,74 @@ describe('registerSectionsView', () => {
 	});
 
 	it('a first synchronous mount that throws reaches Hebra; a later asynchronous failure is reported', async () => {
-		const { widened, ui, report } = await hebra();
+		const { fake, ui, report } = await hebra();
 		const broken = section('session', [], { mount: () => { throw new Error('no pinta'); } });
 		const flaky = section('sale', [], { mount: async () => { throw new Error('tarde'); } });
 		ui.registerSectionsView!(sectionsView([], [broken, flaky]));
 
-		expect(() => { widened.view(MAIN).open(); }).toThrow('no pinta');
-		widened.view(MAIN).select('sale');
+		expect(() => { fake.mainView.open(MAIN); }).toThrow('no pinta');
+		fake.mainView.open(MAIN, 'sale');
 		await vi.waitFor(() => expect(report).toHaveBeenCalledWith(expect.objectContaining({ message: 'tarde' }), 'section tyrian-main-view/sale'));
 	});
 
 	it('a section without a visibility entry is hidden and shown without a call', async () => {
-		const { widened, ui } = await hebra();
+		const { fake, ui } = await hebra();
 		const log: string[] = [];
 		const quiet = section('session', log, { setVisible: undefined });
 		ui.registerSectionsView!(sectionsView(log, [quiet, section('sale', log)]));
-		widened.view(MAIN).open();
-		expect(() => { widened.view(MAIN).select('sale'); widened.view(MAIN).select('session'); }).not.toThrow();
+		fake.mainView.open(MAIN);
+		expect(() => { fake.mainView.select('sale'); fake.mainView.select('session'); }).not.toThrow();
 		expect(log).toEqual(['mount session in session', 'mount sale in sale', 'hide sale in sale']);
 	});
 });
 
 describe('revealSection and updateSection', () => {
 	it('enters the main view on that section, and switches to it where the view is already on screen', async () => {
-		const { widened, ui } = await hebra();
+		const { fake, ui } = await hebra();
 		const log: string[] = [];
 		ui.registerSectionsView!(sectionsView(log));
 
 		await ui.revealSection!('tyrian-main-view', 'inventory');
-		expect(widened.recorded.reveals).toEqual([{ id: 'tyrian-main-view', section: 'inventory' }]);
-		expect(widened.view(MAIN).current()).toBe('inventory');
+		expect(fake.recorded.reveals).toEqual([{ id: 'tyrian-main-view', section: 'inventory' }]);
+		expect(fake.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'inventory' });
 
 		await ui.revealSection!('tyrian-main-view', 'sale');
-		expect(widened.view(MAIN).current()).toBe('sale');
+		expect(fake.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'sale' });
 		expect(log).toEqual(['mount inventory in inventory', 'hide inventory in inventory', 'mount sale in sale']);
-		// The user comes back later: Hebra remembers the last section.
-		widened.view(MAIN).leave();
-		widened.view(MAIN).open();
-		expect(widened.view(MAIN).current()).toBe('sale');
+		// The user comes back later: Hebra remembers the section, the plugin stores none.
+		fake.mainView.leave();
+		fake.mainView.open(MAIN);
+		expect(fake.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'sale' });
+	});
+
+	it('on a Hebra that mounts on its next paint, the section asked for is mounted then and not before', async () => {
+		const { fake, widened, ui } = await hebra('deferred');
+		const log: string[] = [];
+		ui.registerSectionsView!(sectionsView(log));
+
+		await ui.revealSection!('tyrian-main-view', 'inventory');
+		expect(log).toEqual([]);
+		expect(fake.mainView.current()).toBeNull();
+
+		widened.mainView.paint();
+		expect(log).toEqual(['mount inventory in inventory']);
+		expect(fake.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'inventory' });
 	});
 
 	it('changes what Hebra lists for a section: its title, a subtitle, a badge; null takes the last two away', async () => {
-		const { widened, ui } = await hebra();
+		const { fake, widened, ui } = await hebra();
 		ui.registerSectionsView!(sectionsView([]));
 
 		ui.updateSection!('tyrian-main-view', 'sale', { title: 'Sale', subtitle: '3 to sell', badge: 3 });
-		expect(widened.view(MAIN).sections()[2]).toEqual({ id: 'sale', title: 'Sale', icon: 'icon-sale', subtitle: '3 to sell', badge: 3 });
+		expect(fake.mainView.sections(MAIN)[2]).toEqual({ id: 'sale', title: 'Sale', icon: 'icon-sale', subtitle: '3 to sell', badge: 3 });
 
 		ui.updateSection!('tyrian-main-view', 'sale', { subtitle: null, badge: null });
-		expect(widened.view(MAIN).sections()[2]).toEqual({ id: 'sale', title: 'Sale', icon: 'icon-sale', badge: null });
+		expect(fake.mainView.sections(MAIN)[2]).toEqual({ id: 'sale', title: 'Sale', icon: 'icon-sale', badge: null });
 		// An omitted field stays, and nothing else of the patch reaches Hebra.
-		const updateViewSection = vi.spyOn(widened.api.ui as unknown as { updateViewSection(...args: unknown[]): void }, 'updateViewSection');
+		const updateViewSection = vi.spyOn(widened.api.ui, 'updateViewSection');
 		ui.updateSection!('tyrian-main-view', 'session', { title: 'Session' });
 		expect(updateViewSection.mock.calls).toEqual([['tyrian-main-view', 'session', { title: 'Session' }]]);
-		expect(widened.view(MAIN).sections()[0]?.icon).toBe('icon-session');
+		expect(fake.mainView.sections(MAIN)[0]?.icon).toBe('icon-session');
 	});
 });
 
@@ -320,292 +336,105 @@ describe('the ribbon button while the main view is registered', () => {
 	});
 });
 
-describe('the fake of the main view, against the contract it was written from', () => {
-	it('refuses a view with no sections, a section without id or title, repeated ids and no mountSection, and registers nothing', async () => {
-		const { widened } = await hebra();
-		const register = (view: Partial<PluginMainViewDefinition>): (() => void) => () => {
-			(widened.api.ui as unknown as { registerView(view: unknown): void }).registerView({
-				id: 'x', title: 'X', icon: 'ghost', placement: 'main', sections: [{ id: 'a', title: 'A' }], mountSection: () => undefined, ...view,
-			});
-		};
-		expect(refusal(register({ sections: [] }))).toBe('invalid-argument');
-		expect(refusal(register({ sections: [{ id: '', title: 'A' }] }))).toBe('invalid-argument');
-		expect(refusal(register({ sections: [{ id: 'a', title: '' }] }))).toBe('invalid-argument');
-		expect(refusal(register({ sections: [{ id: 'a', title: 'A' }, { id: 'a', title: 'B' }] }))).toBe('invalid-argument');
-		expect(refusal(register({ mountSection: undefined }))).toBe('invalid-argument');
-		expect(widened.recorded.mainViews).toEqual([]);
-		expect(register({})).not.toThrow();
-		expect(widened.view('x').registered()).toBe('x');
-	});
-
-	it('a section that does not exist opens the remembered one, or the first, and an empty title is refused', async () => {
-		const { widened, ui } = await hebra();
-		ui.registerSectionsView!(sectionsView([]));
-
-		await ui.revealSection!('tyrian-main-view', 'nope');
-		expect(widened.view(MAIN).current()).toBe('session');
-		widened.view(MAIN).select('sale');
-		widened.view(MAIN).leave();
-		await ui.revealSection!('tyrian-main-view', 'nope');
-		expect(widened.view(MAIN).current()).toBe('sale');
-		expect(refusal(() => { ui.updateSection!('tyrian-main-view', 'sale', { title: '' }); })).toBe('invalid-argument');
-		// What does not exist does nothing.
-		expect(() => { ui.updateSection!('tyrian-main-view', 'nope', { title: 'X' }); }).not.toThrow();
-	});
-
-	it('refuses a second view of a type it already has, as Hebra does, and closes an open one when it is unregistered', async () => {
-		const { widened } = await hebra();
-		const unmount = vi.fn();
-		const view = { id: 'tyrian-companion-view', title: 'C', icon: 'sword', mount: vi.fn(), unmount };
-		const unregister = widened.api.ui.registerView(view);
-		expect(() => widened.api.ui.registerView(view)).toThrow();
-		widened.ownViews.open('tyrian-companion-view');
-		expect(widened.ownViews.opened()).toEqual(['tyrian-companion-view']);
-
-		unregister();
-		expect(unmount).toHaveBeenCalledOnce();
-		expect(widened.ownViews.registered()).toEqual([]);
-	});
-
+describe('what Hebra\'s real host does and its fake does not (`withRealHostBehaviour`)', () => {
 	/** A raw main view, as a plugin hands it to Hebra, that logs what Hebra does with each section. */
 	function rawView(log: string[], extra: Partial<PluginMainViewDefinition> = {}): PluginMainViewDefinition {
 		return {
 			id: MAIN, title: 'Tyrian', icon: 'sword', placement: 'main', retainSections: true,
-			sections: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }, { id: 'c', title: 'C' }],
-			mountSection: (el, sectionId) => {
-				log.push(`mount ${sectionId}${el.isConnected ? '' : ' (detached)'}`);
-				return {
-					unmount: () => { log.push(`unmount ${sectionId}`); },
-					onVisibilityChange: (visible) => { log.push(`${visible ? 'show' : 'hide'} ${sectionId}`); },
-				};
+			sections: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }],
+			mountSection: (_el, sectionId) => {
+				log.push(`mount ${sectionId}`);
+				return { unmount: () => { log.push(`unmount ${sectionId}`); } };
 			},
 			...extra,
 		};
 	}
-	const hebraUi = (widened: Awaited<ReturnType<typeof hebra>>['widened']): PluginUiWithMainView => widened.api.ui;
 
-	it('hands `mountSection` an element already in the document, and keeps no wrapper once nothing is mounted', async () => {
+	it('refuses a view id that is still registered, main or of its own, and takes it again once it is unregistered', async () => {
 		const { widened } = await hebra();
-		const log: string[] = [];
-		const unregister = hebraUi(widened).registerView(rawView(log));
-		expect(document.querySelector('.hebra-module-view-main')).toBeNull();
-
-		const el = widened.mainView.open(MAIN);
-		expect(log).toEqual(['mount a']);
-		expect(el.isConnected).toBe(true);
-		expect(el.parentElement?.className).toBe('hebra-module-view hebra-module-view-main');
-
-		unregister();
-		expect(document.querySelector('.hebra-module-view-main')).toBeNull();
-	});
-
-	it('with the view already open, a reveal with no section or with one that does not exist changes nothing', async () => {
-		const { widened } = await hebra();
-		const log: string[] = [];
-		hebraUi(widened).registerView(rawView(log));
-		widened.mainView.open(MAIN, 'b');
-		log.length = 0;
-
-		hebraUi(widened).revealView(MAIN);
-		hebraUi(widened).revealView(MAIN, { section: 'nope' });
-
-		expect(widened.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'b' });
-		expect(log).toEqual([]);
-		expect(widened.recorded.reveals).toEqual([{ id: MAIN }, { id: MAIN, section: 'nope' }]);
-	});
-
-	it('unregistered and registered again with the same id in the same turn, an open view stays open and mounts again what it showed', async () => {
-		const { widened } = await hebra();
-		const log: string[] = [];
-		const unregister = hebraUi(widened).registerView(rawView(log));
-		widened.mainView.open(MAIN, 'a');
-		widened.mainView.select('b');
-		log.length = 0;
-
-		unregister();
-		const again: string[] = [];
-		hebraUi(widened).registerView(rawView(again));
-
-		// Everything mounted before is unmounted, the retained and hidden «a» too, with no visibility notice first.
-		expect(log).toEqual(['unmount a', 'unmount b']);
-		expect(widened.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'b' });
-		expect(again).toEqual(['mount b']);
-		expect(widened.mainView.mounted(MAIN)).toEqual(['b']);
-	});
-
-	it('opens the first section instead when the new registration no longer has the one that was showing', async () => {
-		const { widened } = await hebra();
-		const unregister = hebraUi(widened).registerView(rawView([]));
-		widened.mainView.open(MAIN, 'c');
-
-		unregister();
-		const again: string[] = [];
-		hebraUi(widened).registerView(rawView(again, { sections: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }] }));
-
-		expect(widened.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'a' });
-		expect(again).toEqual(['mount a']);
-	});
-
-	it('with anything awaited between unregistering and registering, the view is closed and nothing is mounted', async () => {
-		const { widened } = await hebra();
-		const unregister = hebraUi(widened).registerView(rawView([]));
-		widened.mainView.open(MAIN, 'b');
-
-		unregister();
-		expect(widened.mainView.current()).toBeNull();
-		await Promise.resolve();
-		const again: string[] = [];
-		hebraUi(widened).registerView(rawView(again));
-
-		expect(widened.mainView.current()).toBeNull();
-		expect(again).toEqual([]);
-		expect(widened.mainView.mounted(MAIN)).toEqual([]);
-	});
-
-	it('a view of another id registered in that same turn does not keep anything open', async () => {
-		const { widened } = await hebra();
-		const log: string[] = [];
-		const unregister = hebraUi(widened).registerView(rawView(log));
-		widened.mainView.open(MAIN, 'b');
-		log.length = 0;
-
-		unregister();
 		const column = { id: 'tyrian-companion-view', title: 'C', icon: 'sword', mount: vi.fn(), unmount: vi.fn() };
-		hebraUi(widened).registerView(column);
+		const unregisterMain = widened.api.ui.registerView(rawView([]));
+		const unregisterColumn = widened.api.ui.registerView(column);
 
-		expect(log).toEqual(['unmount b']);
-		expect(widened.mainView.current()).toBeNull();
-		expect(widened.ownViews.opened()).toEqual([]);
-		expect(column.mount).not.toHaveBeenCalled();
+		expect(() => widened.api.ui.registerView(rawView([]))).toThrow(/Ya hay una vista/u);
+		expect(() => widened.api.ui.registerView(column)).toThrow(/Ya hay una vista/u);
+		expect(() => widened.api.ui.registerView({ ...column, id: MAIN })).toThrow(/Ya hay una vista/u);
+
+		unregisterMain();
+		unregisterColumn();
+		expect(() => { widened.api.ui.registerView(rawView([])); widened.api.ui.registerView(column); }).not.toThrow();
 	});
 
-	it('revealing a column view leaves the open main view, its retained sections mounted, hidden and told; a dialog does not', async () => {
-		const { widened } = await hebra();
-		const log: string[] = [];
-		hebraUi(widened).registerView(rawView(log));
-		hebraUi(widened).registerView({ id: 'column', title: 'C', icon: 'x', placement: 'column', mount: vi.fn(), unmount: vi.fn() });
-		hebraUi(widened).registerView({ id: 'unplaced', title: 'U', icon: 'x', mount: vi.fn(), unmount: vi.fn() });
-		hebraUi(widened).registerView({ id: 'dialog', title: 'D', icon: 'x', placement: 'dialog', mount: vi.fn(), unmount: vi.fn() });
-		widened.mainView.open(MAIN, 'a');
-		widened.mainView.select('b');
-		log.length = 0;
+	it('mounts a column or dialog view when the user opens it, and unmounts an open one when it is unregistered', async () => {
+		const { fake, widened } = await hebra();
+		const mount = vi.fn();
+		const unmount = vi.fn();
+		const unregister = widened.api.ui.registerView({ id: 'tyrian-sale-view', title: 'V', icon: 'candy', placement: 'dialog', mount, unmount });
+		expect(fake.recorded.views.map(({ id }) => id)).toEqual(['tyrian-sale-view']);
+		expect(() => widened.ownViews.open('tyrian-companion-view')).toThrow(/No view/u);
 
-		hebraUi(widened).revealView('dialog');
-		expect(widened.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'b' });
+		const el = widened.ownViews.open('tyrian-sale-view');
+		expect(mount).toHaveBeenCalledWith(el);
+		expect(widened.ownViews.opened()).toEqual(['tyrian-sale-view']);
+
+		unregister();
+		expect(unmount).toHaveBeenCalledOnce();
+		expect([widened.ownViews.registered(), widened.ownViews.opened(), fake.recorded.views]).toEqual([[], [], []]);
+		// One that was never opened has nothing to unmount.
+		const never = vi.fn();
+		widened.api.ui.registerView({ id: 'tyrian-sale-view', title: 'V', icon: 'candy', mount: vi.fn(), unmount: never })();
+		expect(never).not.toHaveBeenCalled();
+	});
+
+	it('with a deferred mount, what the plugin reveals waits for the paint, in order, while the user\'s own moves do not', async () => {
+		const { fake, widened } = await hebra('deferred');
+		const log: string[] = [];
+		const unregister = widened.api.ui.registerView(rawView(log));
+
+		widened.api.ui.revealView(MAIN, { section: 'b' });
+		widened.api.ui.revealView(MAIN, { section: 'a' });
 		expect(log).toEqual([]);
-
-		hebraUi(widened).revealView('column');
-		expect(widened.mainView.current()).toBeNull();
-		expect(log).toEqual(['hide b']);
-		expect(widened.mainView.mounted(MAIN)).toEqual(['a', 'b']);
-		expect([widened.mainView.element(MAIN, 'a')?.hidden, widened.mainView.element(MAIN, 'b')?.hidden]).toEqual([true, true]);
-
-		// A view registered with no placement is a column view too.
-		widened.mainView.open(MAIN);
-		log.length = 0;
-		hebraUi(widened).revealView('unplaced');
-		expect(widened.mainView.current()).toBeNull();
-		expect(log).toEqual(['hide b']);
-		expect(widened.recorded.reveals.map(({ id }) => id)).toEqual(['dialog', 'column', 'unplaced']);
-	});
-
-	it('without retained sections, revealing a column view unmounts what the main view showed', async () => {
-		const { widened } = await hebra();
-		const log: string[] = [];
-		hebraUi(widened).registerView(rawView(log, { retainSections: false }));
-		hebraUi(widened).registerView({ id: 'column', title: 'C', icon: 'x', mount: vi.fn(), unmount: vi.fn() });
-		widened.mainView.open(MAIN, 'a');
-		widened.mainView.select('b');
-		expect(log).toEqual(['mount a', 'unmount a', 'mount b']);
-		log.length = 0;
-
-		hebraUi(widened).revealView('column');
-
-		expect(log).toEqual(['unmount b']);
-		expect(widened.mainView.mounted(MAIN)).toEqual([]);
-		expect(document.querySelector('.hebra-module-view-main')).toBeNull();
-	});
-
-	it('a view that unregisters itself half way through being opened is no error: nothing is open and its element is out of the document', async () => {
-		const { widened } = await hebra();
-		const log: string[] = [];
-		const self: { unregister: () => void } = { unregister: () => undefined };
-		self.unregister = hebraUi(widened).registerView(rawView(log, {
-			mountSection: (_el, sectionId) => {
-				log.push(`mount ${sectionId}`);
-				self.unregister();
-				return () => { log.push(`unmount ${sectionId}`); };
-			},
-		}));
-
-		const el = widened.mainView.open(MAIN, 'b');
-
-		expect(log).toEqual(['mount b', 'unmount b']);
-		expect(el.isConnected).toBe(false);
-		expect(widened.mainView.current()).toBeNull();
-		expect(widened.view(MAIN).registered()).toBeNull();
-	});
-
-	it('what the plugin asks for from inside `mountSection` is applied once that mount has finished, also when it then throws', async () => {
-		const { widened } = await hebra();
-		const log: string[] = [];
-		hebraUi(widened).registerView(rawView(log, {
-			mountSection: (_el, sectionId) => {
-				log.push(`mount ${sectionId}`);
-				if (sectionId !== 'a') return undefined;
-				hebraUi(widened).revealView(MAIN, { section: 'c' });
-				// Not yet: never two sections under way at once.
-				log.push('asked for c');
-				throw new Error('a no pinta');
-			},
-		}));
-
-		expect(() => widened.mainView.open(MAIN, 'a')).toThrow('a no pinta');
-		expect(log).toEqual(['mount a', 'asked for c', 'mount c']);
-		expect(widened.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'c' });
-		// And the drivers of the user cannot be called from in there.
-		hebraUi(widened).registerView(rawView([], { id: 'other', mountSection: () => { widened.mainView.open(MAIN, 'b'); } }));
-		expect(() => widened.mainView.open('other')).toThrow(/cannot be called from inside/u);
-	});
-
-	it('with a deferred mount, what the plugin reveals is not mounted until Hebra paints, and the user\'s own moves are', async () => {
-		const fake = createFakePluginApi({ id: 'tyrian-companion', capabilities: ['editor'] });
-		const widened = withFakeMainView(fake.api, { mount: 'deferred' });
-		const log: string[] = [];
-		const unregister = hebraUi(widened).registerView(rawView(log));
-
-		hebraUi(widened).revealView(MAIN, { section: 'b' });
-		expect(log).toEqual([]);
-		expect(widened.mainView.current()).toBeNull();
+		expect(fake.recorded.reveals).toEqual([]);
 		widened.mainView.paint();
-		expect(log).toEqual(['mount b']);
-		expect(widened.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'b' });
+		expect(log).toEqual(['mount b', 'mount a']);
+		expect(fake.recorded.reveals).toEqual([{ id: MAIN, section: 'b' }, { id: MAIN, section: 'a' }]);
+		expect(fake.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'a' });
 
 		// The user picks a section: that is Hebra painting.
-		widened.mainView.select('a');
-		expect(log).toEqual(['mount b', 'hide b', 'mount a']);
+		fake.mainView.select('b');
+		expect(fake.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'b' });
 
-		// A reveal still waiting when the view goes away is dropped with it.
-		hebraUi(widened).revealView(MAIN, { section: 'c' });
+		// A reveal still waiting when the view goes away finds nothing to open.
+		widened.api.ui.revealView(MAIN, { section: 'a' });
 		unregister();
 		widened.mainView.paint();
-		expect(log).toEqual(['mount b', 'hide b', 'mount a', 'unmount b', 'unmount a']);
-		expect(widened.mainView.current()).toBeNull();
+		expect(fake.mainView.current()).toBeNull();
+		expect(log).toEqual(['mount b', 'mount a', 'unmount b', 'unmount a']);
+		// A second paint has nothing left to apply.
+		widened.mainView.paint();
+		expect(fake.recorded.reveals).toHaveLength(3);
 	});
 
-	it('with a deferred mount, the section an open view showed is mounted again on the paint after it is registered again', async () => {
-		const fake = createFakePluginApi({ id: 'tyrian-companion', capabilities: ['editor'] });
-		const widened = withFakeMainView(fake.api, { mount: 'deferred' });
-		const unregister = hebraUi(widened).registerView(rawView([]));
-		widened.mainView.open(MAIN, 'b');
+	it('writes down what the plugin\'s unmount and visibility notice throw, which Hebra swallows', async () => {
+		const { fake, widened } = await hebra();
+		const unregister = widened.api.ui.registerView(rawView([], {
+			mountSection: (_el, sectionId) => ({
+				unmount: () => { if (sectionId === 'a') throw new Error('unmount a'); },
+				onVisibilityChange: (visible) => { if (sectionId === 'a' && !visible) throw new Error('hide a'); },
+			}),
+		}));
+		fake.mainView.open(MAIN, 'a');
+		expect(widened.faults).toEqual([]);
 
-		unregister();
-		const again: string[] = [];
-		hebraUi(widened).registerView(rawView(again));
+		// Hebra goes on as if nothing had happened; the test would never know.
+		expect(() => { fake.mainView.select('b'); fake.mainView.select('a'); fake.mainView.leave(); }).not.toThrow();
+		expect(widened.faults).toEqual(['onVisibilityChange of tyrian-main-view/a', 'onVisibilityChange of tyrian-main-view/a']);
 
-		expect(widened.mainView.current()).toEqual({ viewId: MAIN, sectionId: 'b' });
-		expect(again).toEqual([]);
-		widened.mainView.paint();
-		expect(again).toEqual(['mount b']);
+		expect(() => { unregister(); }).not.toThrow();
+		expect(widened.faults).toEqual([
+			'onVisibilityChange of tyrian-main-view/a', 'onVisibilityChange of tyrian-main-view/a', 'unmount of tyrian-main-view/a',
+		]);
+		// These faults are this test's subject, not a failure of the plugin.
+		widened.faults.length = 0;
 	});
 });

@@ -6843,11 +6843,6 @@
 				}
 			]
 		},
-		"src/host/hebra/plugin-api-1-3-provisional.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
 		"src/host/hebra/secrets.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -13697,11 +13692,6 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
-		"src/test/hebra-main-view-fake.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
 		"src/test/hebra-plugin-fakes.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -13723,6 +13713,11 @@
 					"reason": "Allowlisted catch_clause: The \"parseJson\" catch (\"fallback_return\") belongs to a test fake of the Hebra plugin API: invalid JSON reads as null, which is the contract of the fake and never ships in the bundle. Verified recovery: \"fallback_return\" in \"parseJson\"."
 				}
 			]
+		},
+		"src/test/hebra-real-host.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		},
 		"src/test/indexed-db-connections.ts": {
 			"classification": "production_source",

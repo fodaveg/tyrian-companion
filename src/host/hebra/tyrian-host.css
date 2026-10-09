@@ -10,7 +10,7 @@
  *   .hebra-module-view-content            diálogo de vista (ModuleViewSlot.svelte) y, con la
  *                                         API 1.3.0, cada sección de la vista de la pantalla
  *                                         principal, que lleva además
- *                                         `.hebra-module-view-main-content` (PROVISIONAL)
+ *                                         `.hebra-module-view-main-content`
  *   .hebra-module-modal-content           `ui.openModal` (host-ui.ts)
  *   .lv1-modules-panel[data-module-panel] `ui.settingsPanel`, en el modal propio del módulo
  *                                         (LibraryModuleSettingsDialog.svelte)
@@ -110,7 +110,7 @@
    Ajustes, dentro del modal del módulo (54rem en escritorio: más de 480 px de hueco). El modal y el bloque de código NO lo llevan: el ancho del modal sale de su
    contenido (la contención lo colapsaría) y el bloque vive dentro de la nota, donde
    medir la columna es lo correcto.
-   La vista de la pantalla principal (API 1.3.0, PROVISIONAL): el padre de cada sección
+   La vista de la pantalla principal (API 1.3.0): el padre de cada sección
    lleva `hebra-module-view hebra-module-view-main` y mide la columna 3 entera (de 593 a
    852 px en un escritorio normal, de 397 a 756 en tablet, 390 en teléfono), así que la
    primera clase ya lo hace contenedor; la segunda va escrita para que no dependa de que

@@ -5,20 +5,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { VIEW_PLACEMENT_KEY } from '../../runtime/view-placement';
 import { createTyrianRuntime, TYRIAN_MAIN_VIEW_TYPE, type TyrianCompanionCore } from '../../runtime/tyrian-companion-core';
-import { withFakeMainView, type FakeMainView } from '../../test/hebra-main-view-fake';
 import { createTyrianTestApi, hebraDeviceKey, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
+import { withRealHostBehaviour, type RealHost } from '../../test/hebra-real-host';
 import { COMPANION_VIEW_TYPE } from '../../ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from '../../ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from '../../ui/sale-item-view';
 import { activateTyrian } from './hebra-runtime';
-import type { PluginMainViewDefinition } from './plugin-api-1-3-provisional';
 
 /**
  * The REAL core over the REAL HebraHost, on a Hebra with the main view of the plugin API 1.3.0
- * (`withFakeMainView`, written from Hebra's provisional contract) and on one without it (the
- * package's fake, which is the API the plugin is pinned to). What is registered, where a section
- * opens from outside, what the option in Settings swaps without a reload, and what a section does
- * while Hebra keeps it mounted but hidden.
+ * (the package's own fake, with `src/test/hebra-real-host.ts` around it for what the real host
+ * does and that fake does not) and on one without it (a Hebra 1.2.0: `has` says no and the newer
+ * methods are not there). What is registered, where a section opens from outside, what the option
+ * in Settings swaps without a reload, and what a section does while Hebra keeps it mounted but
+ * hidden.
  */
 
 const THREE_VIEWS = [COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE];
@@ -35,7 +35,7 @@ interface CoreInside {
 interface Started {
 	test: TyrianTestApi;
 	/** Null on a Hebra without the main view. */
-	hebra: FakeMainView | null;
+	hebra: RealHost | null;
 	api: HebraPluginApi;
 	core: TyrianCompanionCore;
 	inside: CoreInside;
@@ -51,7 +51,8 @@ async function start(options: {
 	/** `'deferred'`: Hebra mounts what the plugin reveals on its next paint, as the real one does. */
 	mount?: 'sync' | 'deferred';
 } = { mainView: true }): Promise<Started> {
-	const test = createTyrianTestApi();
+	// Without the main view this is a Hebra 1.2.0; with it, the package's fake, which is 1.3.0.
+	const test = createTyrianTestApi({ mainView: options.mainView });
 	test.library.addFolder('tc', 'root', 'Tyrian Companion');
 	test.local.set(hebraSettingsKey('tyrian-companion', test.library.libraryId()), JSON.stringify({ outputFolder: 'Tyrian Companion' }));
 	if (options.stored !== undefined) {
@@ -68,7 +69,8 @@ async function start(options: {
 			remove: (key: string) => { device.remove(key); },
 		} } }
 		: test.api;
-	const hebra = options.mainView ? withFakeMainView(base, { mount: options.mount ?? 'sync' }) : null;
+	const hebra = options.mainView ? withRealHostBehaviour({ fake: test.fake, api: base }, { mount: options.mount ?? 'sync' }) : null;
+	if (hebra !== null) hosts.push(hebra);
 	const api = hebra?.api ?? base;
 	let core: TyrianCompanionCore | null = null;
 	const stop = await activateTyrian(api, {
@@ -99,17 +101,24 @@ const mountedCount = ({ inside }: Started): number[] => [
 	inside.viewControllers?.sale.current().length ?? 0,
 ];
 
+/** Every Hebra with a main view a test started, so that none ends with a failure of the plugin Hebra swallowed. */
+const hosts: RealHost[] = [];
+
 afterEach(() => {
+	const faults = hosts.splice(0).flatMap((host) => host.faults);
 	document.body.replaceChildren();
 	document.body.className = '';
 	vi.restoreAllMocks();
+	expect(faults, 'a function of the plugin threw and Hebra swallowed it').toEqual([]);
 });
 
 describe('(a) a Hebra without the main view: everything as before', () => {
 	it('registers the three views, offers no choice in Settings and calls nothing of the newer API', async () => {
 		const started = await start({ mainView: false });
 		const { test, core } = started;
-		// The package's fake is the API the plugin is pinned to: the two methods 1.3.0 adds do not exist on it.
+		// A Hebra 1.2.0: it says no to the feature, and the two methods 1.3.0 adds do not exist on it.
+		expect(test.api.apiVersion).toBe('1.2.0');
+		expect(test.api.has('ui.view.main')).toBe(false);
 		expect(test.api.ui).not.toHaveProperty('updateView');
 		expect(test.api.ui).not.toHaveProperty('updateViewSection');
 
@@ -139,27 +148,14 @@ describe('(a) a Hebra without the main view: everything as before', () => {
 
 describe('(b) a Hebra with the main view and the default choice', () => {
 	it('registers ONE view on the main screen with Session, Inventory and Sale in that order, retained', async () => {
-		const test = createTyrianTestApi();
-		const probe = withFakeMainView(test.api);
-		const registered: PluginMainViewDefinition[] = [];
-		const registerView = probe.api.ui.registerView.bind(probe.api.ui);
-		probe.api.ui.registerView = (view) => {
-			if ((view as unknown as PluginMainViewDefinition).placement === 'main') registered.push(view as unknown as PluginMainViewDefinition);
-			return registerView(view);
-		};
-		let core: TyrianCompanionCore | null = null;
-		const stop = await activateTyrian(probe.api, {
-			indexedDB: new IDBFactory(),
-			window: Object.assign(Object.create(window) as Window, {
-				matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
-			}),
-			document,
-			createRuntime: (host) => { core = createTyrianRuntime(host); return core; },
-		});
+		const started = await start({ mainView: true });
+		const { test, hebra, core } = started;
+		expect(test.api.apiVersion).toBe('1.3.0');
+		expect(core.mainViewSupported()).toBe(true);
 
-		expect((core as unknown as TyrianCompanionCore).mainViewSupported()).toBe(true);
-		expect(registered).toHaveLength(1);
-		const definition = registered[0]!;
+		// What Hebra's own fake recorded: one main view and none of the three views of their own.
+		expect(test.fake.recorded.mainViews).toHaveLength(1);
+		const definition = test.fake.recorded.mainViews[0]!;
 		expect([definition.id, definition.title, definition.icon, definition.placement, definition.retainSections])
 			.toEqual([TYRIAN_MAIN_VIEW_TYPE, 'Tyrian Companion', 'sword', 'main', true]);
 		expect(definition.sections).toEqual([
@@ -167,14 +163,14 @@ describe('(b) a Hebra with the main view and the default choice', () => {
 			{ id: 'inventory', title: 'Inventario', icon: 'package-search' },
 			{ id: 'sale', title: 'Venta', icon: 'candy' },
 		]);
-		// None of the three views of their own, and nothing mounted before somebody enters.
+		expect(test.fake.viewTitle(TYRIAN_MAIN_VIEW_TYPE)).toBe('Tyrian Companion');
 		expect(test.fake.recorded.views).toEqual([]);
-		expect(probe.ownViews.registered()).toEqual([]);
-		expect(probe.mainView.mounted(TYRIAN_MAIN_VIEW_TYPE)).toEqual([]);
-		expect(probe.recorded.mainViews).toEqual(registered);
-		// The capability is asked of the host, never declared: Hebra would call the plugin incompatible.
-		expect(probe.recorded.mainViewCalls).toEqual(['registerView(main)']);
-		await stop();
+		expect(hebra!.ownViews.registered()).toEqual([]);
+		// Nothing is mounted, and nothing was opened for the player, before somebody enters.
+		expect(test.fake.mainView.mounted(TYRIAN_MAIN_VIEW_TYPE)).toEqual([]);
+		expect(test.fake.mainView.current()).toBeNull();
+		expect(test.fake.recorded.reveals).toEqual([]);
+		await started.cleanup();
 	}, 30_000);
 
 	it('offers the choice in Settings, right after the mode, showing the main screen', async () => {
@@ -198,7 +194,7 @@ describe('(c) a Hebra with the main view and the sidebar chosen on this device',
 		expect(core.getViewPlacement()).toBe('sidebar');
 		expect(hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
 		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).registered()).toBeNull();
-		expect(hebra!.recorded.mainViewCalls).toEqual([]);
+		expect(hebra!.recorded.mainViews).toEqual([]);
 		expect(started.test.fake.recorded.ribbon[0]).not.toHaveProperty('viewId');
 		// The row is still there: it is how the device goes back to the main screen.
 		expect(settingsRows(started).names).toContain(PLACEMENT_ROW);
@@ -392,7 +388,7 @@ describe('(d) what is left open and mounted after the swap, in each direction', 
 		await command(started, 'open-sale').run();
 
 		expect(hebra!.recorded.reveals).toEqual([{ id: INVENTORY_ADVISOR_VIEW_TYPE }, { id: SALE_VIEW_TYPE }]);
-		expect(hebra!.recorded.mainViewCalls).toEqual([]);
+		expect(hebra!.recorded.mainViews).toEqual([]);
 		expect(hebra!.mainView.current()).toBeNull();
 		// Hebra opens the dialogs it was asked for, each with its own controller.
 		const inventory = hebra!.ownViews.open(INVENTORY_ADVISOR_VIEW_TYPE);
@@ -412,11 +408,12 @@ describe('(B) a Hebra that mounts on its next paint, as the real one does', () =
 
 		await command(started, 'open-inventory-advisor').run();
 		// `revealView` has returned and the command is over: nothing is mounted yet.
-		expect(hebra!.recorded.reveals).toEqual([{ id: TYRIAN_MAIN_VIEW_TYPE, section: 'inventory' }]);
 		expect(main.mounted()).toEqual([]);
+		expect(main.current()).toBeNull();
 		expect(mountedCount(started)).toEqual([0, 0, 0]);
 
 		hebra!.mainView.paint();
+		expect(hebra!.recorded.reveals).toEqual([{ id: TYRIAN_MAIN_VIEW_TYPE, section: 'inventory' }]);
 		expect(main.current()).toBe('inventory');
 		expect(mountedCount(started)).toEqual([0, 1, 0]);
 		expect(main.element('inventory')!.querySelector('.tyrian-product-shell')).not.toBeNull();
@@ -572,7 +569,6 @@ describe('(f) opening a section from outside it', () => {
 	it('enters that section of the main view: the three commands, and the ribbon menu\'s way to the Session', async () => {
 		const started = await start({ mainView: true });
 		const { hebra, test } = started;
-		const revealOwnView = vi.spyOn(test.fake.api.ui, 'revealView');
 		// One palette command per section: what reaches a section where Hebra shows no list of them.
 		expect(['open-companion', 'open-inventory-advisor', 'open-sale'].map((id) => command(started, id).name))
 			.toEqual(['Abrir acompañante', 'Abrir asesor de inventario', 'Abrir venta de Halloween']);
@@ -588,8 +584,8 @@ describe('(f) opening a section from outside it', () => {
 			{ id: TYRIAN_MAIN_VIEW_TYPE, section: 'sale' },
 			{ id: TYRIAN_MAIN_VIEW_TYPE, section: 'session' },
 		]);
-		// No view of its own exists to reveal, and none was asked for.
-		expect(revealOwnView).not.toHaveBeenCalled();
+		// No view of its own exists to reveal: every reveal above named the main view.
+		expect(hebra!.ownViews.registered()).toEqual([]);
 		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).mounted()).toEqual(['inventory', 'sale', 'session']);
 
 		// The ribbon: tied to the main view, and a click still reaches the plugin (the menu).
