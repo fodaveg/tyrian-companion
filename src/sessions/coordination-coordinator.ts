@@ -426,8 +426,13 @@ export class ActiveSessionLeaseCoordinator {
 			// Called on the manager itself, never through a reference to `request` kept apart from it.
 			// Held for as long as `held` is pending. Granted after it was given up (the wait ran out, or the
 			// instance was disposed of), `held` is already settled and returning it lets the lock go at once.
-			// Whether what was granted is really a lock is not judged here: the manager is asked afterwards.
-			const request: unknown = locks.request(name, () => { answer(true); return held; });
+			// A callback handed no lock was granted nothing. It cannot be left to the question asked afterwards:
+			// a manager that answers everything with `null` would say «held» there too, of a lock nobody has.
+			const request: unknown = locks.request(name, (lock) => {
+				if (lock === null) { answer(false); return undefined; }
+				answer(true);
+				return held;
+			});
 			// A request that ends without having been granted is a lock nobody holds, whatever ended it.
 			void Promise.resolve(request).then(() => { answer(false); }, () => { answer(false); });
 		} catch { answer(false); }

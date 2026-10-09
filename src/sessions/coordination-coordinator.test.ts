@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LocalDebugPersistenceProbe, type LocalDebugPersistenceEvent } from '../core/local-debug-persistence';
 import { fakeLocks, type FakeLocks } from '../test/fake-lock-manager';
 import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
-import { ActiveSessionLeaseCoordinator, LIFE_LOCK_ANSWER_TIMEOUT_MS } from './coordination-coordinator';
+import { ActiveSessionLeaseCoordinator, LIFE_LOCK_ANSWER_TIMEOUT_MS, type SessionLifeLocks } from './coordination-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import {
 	COORDINATION_STORE_NAME,
@@ -835,6 +835,54 @@ describe('ActiveSessionLeaseCoordinator with the host\'s lock manager', () => {
 		expect(requireHandle(await acquiring)).toMatchObject({ instanceId: 'alone', fence: 1 });
 		expect(locks.held()).toEqual([]);
 		coordinator.dispose();
+	});
+
+	// The invariant at its barest: no lease under a marked id without that instance's lock granted. A
+	// manager that answers every callback with `null` grants nothing, and asked afterwards says «held» of
+	// a lock nobody has: only the callback itself can tell.
+	it('writes no mark under a manager that answers everything with null, although it then calls the lock held', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		locks.waiting = 'null'; locks.ifAvailable = 'always held';
+		const waits = manualWaits(); const recorded = recordedDecisions();
+		const coordinator = fiveMinutes(factory, 'null manager', {
+			instanceId: 'alone', locks: locks.context(), schedule: waits.arm, cancel: waits.disarm, diagnostics: recorded.probe,
+		});
+
+		const handle = requireHandle(await coordinator.acquire('session-1'));
+		expect(handle).toMatchObject({ instanceId: 'alone', fence: 1 });
+		expect(coordinator.instanceId).toBe('alone');
+		expect(locks.held()).toEqual([]);
+		expect(recorded.decisions()).toEqual([{ operation: 'open', phase: 'skip', code: 'unavailable', detail: { state: 'life_lock_unmarked', reason: 'lock_not_granted' } }]);
+		coordinator.dispose();
+	});
+
+	// The owner's silence is judged at the instant that judged its lease, not at whatever the clock says
+	// once the lock manager has answered: the two can be a second apart, and that second can be the fifteenth.
+	it('measures the owner\'s silence with the clock of the first transaction, not with the clock after asking about its lock', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = BORN;
+		const ownerContext = locks.context();
+		const owner = fiveMinutes(factory, 'silence clock', { instanceId: 'owner', locks: ownerContext, clock: () => now });
+		requireHandle(await owner.acquire('session-1'));
+		// A lock manager that takes a second of this host's clock to answer whether a lock is free.
+		const context = locks.context();
+		const slow = { request: (...parameters: unknown[]): unknown => {
+			if (typeof parameters[1] !== 'function') now += 1_000;
+			return (context.request as (...all: unknown[]) => unknown)(...parameters);
+		} } as SessionLifeLocks;
+		const sleep = vi.fn(async () => undefined);
+		const contender = fiveMinutes(factory, 'silence clock', { instanceId: 'contender', locks: slow, clock: () => now, sleep });
+		// Its own lock is shown held first (that question costs its second too), with the owner still alive.
+		await expect(contender.acquire('session-1')).resolves.toMatchObject({ status: 'busy' });
+		ownerContext.die();
+
+		now = BORN + 14_999;
+		await expect(contender.acquire('session-1')).resolves.toMatchObject({ status: 'busy', ownerInstanceId: 'wl1:owner' });
+		// The answer came at 15 999 ms of silence and was judged by the 14 999 the lease was read at.
+		expect(now).toBe(BORN + 15_999);
+		expect(sleep).not.toHaveBeenCalled();
+		await expect(contender.acquire('session-1')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		owner.dispose(); contender.dispose();
 	});
 
 	it('answers disposed, not unavailable, to an acquisition it was disposed of while waiting for its lock', async () => {
