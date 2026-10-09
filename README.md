@@ -597,7 +597,7 @@ when the old ready v2 manifest proves ownership and the new root contains the ex
 semantically equivalent set with no foreign file; a durable relocation journal is written before the
 pointer changes or the origin is detached. Ordinary install remains unable to adopt markerless files.
 Bundle v5 keeps the generic `.base`, localized
-`Halloween.base`, and localized `Inventory.base`/`Materials.base` through the same manifest/CAS path (bundle 8 retires `Sessions.base`, `Halloween.base` and `Materials.base`: an unedited installed file is trashed on update, an edited one is kept unmanaged).
+`Halloween.base`, and localized `Inventory.base`/`Materials.base` through the same manifest/CAS path (bundle 8 retires `Sessions.base`, `Halloween.base` and `Materials.base`: an unedited installed file is removed on update following the host's deleted-files setting, an edited one is kept unmanaged).
 
 Bundle v7 adds the localized `Session summaries.base` («Sesiones» / «Sessions»): a table of the summary notes written when a live session closes (filter `file.hasTag("gw2/session-summary")` and `tyrian_summary_version >= 2`, never a folder; newest first, with a second «Por mapa» / «By map» view grouped by map, without averages). An installation whose manifest is v6 receives it as a new entry (`create`) through Preview/Apply or Repair; the rest stays `unchanged`. Going back to 0.6.12 afterwards leaves the managed assets in `conflict` (its exact-set check does not know the new entry) until they are repaired; the Base files themselves stay in the vault, the same cost bundles v4 and v5 had.
 
