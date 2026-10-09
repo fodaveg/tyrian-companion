@@ -48,6 +48,8 @@ async function start(options: {
 	stored?: unknown;
 	/** The device storage throws when the choice is read. */
 	unreadable?: boolean;
+	/** `'deferred'`: Hebra mounts what the plugin reveals on its next paint, as the real one does. */
+	mount?: 'sync' | 'deferred';
 } = { mainView: true }): Promise<Started> {
 	const test = createTyrianTestApi();
 	test.library.addFolder('tc', 'root', 'Tyrian Companion');
@@ -66,7 +68,7 @@ async function start(options: {
 			remove: (key: string) => { device.remove(key); },
 		} } }
 		: test.api;
-	const hebra = options.mainView ? withFakeMainView(base) : null;
+	const hebra = options.mainView ? withFakeMainView(base, { mount: options.mount ?? 'sync' }) : null;
 	const api = hebra?.api ?? base;
 	let core: TyrianCompanionCore | null = null;
 	const stop = await activateTyrian(api, {
@@ -168,7 +170,8 @@ describe('(b) a Hebra with the main view and the default choice', () => {
 		// None of the three views of their own, and nothing mounted before somebody enters.
 		expect(test.fake.recorded.views).toEqual([]);
 		expect(probe.ownViews.registered()).toEqual([]);
-		expect(probe.mainView.mounted()).toEqual([]);
+		expect(probe.mainView.mounted(TYRIAN_MAIN_VIEW_TYPE)).toEqual([]);
+		expect(probe.recorded.mainViews).toEqual(registered);
 		// The capability is asked of the host, never declared: Hebra would call the plugin incompatible.
 		expect(probe.recorded.mainViewCalls).toEqual(['registerView(main)']);
 		await stop();
@@ -194,7 +197,7 @@ describe('(c) a Hebra with the main view and the sidebar chosen on this device',
 		expect(core.mainViewSupported()).toBe(true);
 		expect(core.getViewPlacement()).toBe('sidebar');
 		expect(hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
-		expect(hebra!.mainView.registered()).toBeNull();
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).registered()).toBeNull();
 		expect(hebra!.recorded.mainViewCalls).toEqual([]);
 		expect(started.test.fake.recorded.ribbon[0]).not.toHaveProperty('viewId');
 		// The row is still there: it is how the device goes back to the main screen.
@@ -205,7 +208,7 @@ describe('(c) a Hebra with the main view and the sidebar chosen on this device',
 	it('a stored value this build does not know is the main screen', async () => {
 		const started = await start({ mainView: true, stored: 'floating' });
 		expect(started.core.getViewPlacement()).toBe('main');
-		expect(started.hebra!.mainView.registered()).toBe(TYRIAN_MAIN_VIEW_TYPE);
+		expect(started.hebra!.view(TYRIAN_MAIN_VIEW_TYPE).registered()).toBe(TYRIAN_MAIN_VIEW_TYPE);
 		await started.cleanup();
 	}, 30_000);
 });
@@ -214,10 +217,10 @@ describe('(d) changing the choice in Settings swaps what is registered, without 
 	it('from the main screen to the sidebar and back: nothing is left mounted, nothing is mounted twice', async () => {
 		const started = await start({ mainView: true });
 		const { hebra, core, test } = started;
-		hebra!.mainView.open();
-		hebra!.mainView.select('inventory');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).open();
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('inventory');
 		expect(mountedCount(started)).toEqual([1, 1, 0]);
-		const sessionEl = hebra!.mainView.element('session')!;
+		const sessionEl = hebra!.view(TYRIAN_MAIN_VIEW_TYPE).element('session')!;
 
 		// The player changes the option in the plugin's settings, as the row does.
 		const { el } = settingsRows(started);
@@ -226,7 +229,7 @@ describe('(d) changing the choice in Settings swaps what is registered, without 
 		select.dispatchEvent(new Event('change'));
 		await vi.waitFor(() => expect(started.inside.registeredPlacement).toBe('sidebar'));
 
-		expect(hebra!.mainView.registered()).toBeNull();
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).registered()).toBeNull();
 		expect(hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
 		// Hebra unmounted the two sections it had mounted: no controller, timer or listener survives.
 		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 0, 0]));
@@ -245,17 +248,17 @@ describe('(d) changing the choice in Settings swaps what is registered, without 
 		await core.updateViewPlacement('main');
 		expect(hebra!.ownViews.registered()).toEqual([]);
 		expect(hebra!.ownViews.opened()).toEqual([]);
-		expect(hebra!.mainView.registered()).toBe(TYRIAN_MAIN_VIEW_TYPE);
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).registered()).toBe(TYRIAN_MAIN_VIEW_TYPE);
 		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 0, 0]));
 		expect(test.fake.recorded.ribbon).toHaveLength(1);
 		expect(test.fake.recorded.ribbon[0]).toMatchObject({ viewId: TYRIAN_MAIN_VIEW_TYPE });
 		// Nothing is opened by the change: Hebra's Settings already left the main screen.
-		expect(hebra!.mainView.current()).toBeNull();
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).current()).toBeNull();
 		expect(hebra!.recorded.reveals).toEqual([]);
 
-		hebra!.mainView.open();
-		hebra!.mainView.select('sale');
-		hebra!.mainView.select('session');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).open();
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('sale');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('session');
 		expect(mountedCount(started)).toEqual([1, 0, 1]);
 		// Saving the same choice again registers nothing again.
 		const registerView = vi.spyOn(hebra!.api.ui, 'registerView');
@@ -301,14 +304,209 @@ describe('(d) changing the choice in Settings swaps what is registered, without 
 	}, 30_000);
 });
 
+describe('(d) what is left open and mounted after the swap, in each direction', () => {
+	it('shares no view id between the two placements, so neither swap can keep anything open', () => {
+		expect(THREE_VIEWS).not.toContain(TYRIAN_MAIN_VIEW_TYPE);
+		expect(new Set([...THREE_VIEWS, TYRIAN_MAIN_VIEW_TYPE]).size).toBe(4);
+	});
+
+	it('main screen to sidebar: the main view is unmounted whole and nothing is open, not even a moment later', async () => {
+		const started = await start({ mainView: true });
+		const { hebra, core } = started;
+		const main = hebra!.view(TYRIAN_MAIN_VIEW_TYPE);
+		main.open();
+		main.select('sale');
+		main.select('inventory');
+		const elements = ['session', 'sale', 'inventory'].map((id) => main.element(id)!);
+		expect(hebra!.mainView.current()).toEqual({ viewId: TYRIAN_MAIN_VIEW_TYPE, sectionId: 'inventory' });
+		expect(mountedCount(started)).toEqual([1, 1, 1]);
+
+		const swapped = core.updateViewPlacement('sidebar');
+		await swapped;
+
+		// The retained and hidden sections go too, and their elements leave the document with the wrapper.
+		expect(main.registered()).toBeNull();
+		expect(main.mounted()).toEqual([]);
+		expect(elements.map((el) => el.isConnected)).toEqual([false, false, false]);
+		expect(document.querySelector('.hebra-module-view-main')).toBeNull();
+		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 0, 0]));
+		// Nothing is open: the three views are registered and none was opened for the player.
+		expect(hebra!.mainView.current()).toBeNull();
+		expect(hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
+		expect(hebra!.ownViews.opened()).toEqual([]);
+		expect(hebra!.recorded.reveals).toEqual([]);
+		await Promise.resolve();
+		expect(hebra!.mainView.current()).toBeNull();
+		await started.cleanup();
+	}, 30_000);
+
+	it('sidebar to main screen: every open view of its own is closed, the main view is registered and not open, nothing mounted', async () => {
+		const started = await start({ mainView: true, stored: 'sidebar' });
+		const { hebra, core } = started;
+		const column = hebra!.ownViews.open(COMPANION_VIEW_TYPE);
+		const dialog = hebra!.ownViews.open(INVENTORY_ADVISOR_VIEW_TYPE);
+		await vi.waitFor(() => expect(mountedCount(started)).toEqual([1, 1, 0]));
+		expect(column.querySelector('.tyrian-product-shell')).not.toBeNull();
+		expect(dialog.querySelector('.tyrian-product-shell')).not.toBeNull();
+
+		await core.updateViewPlacement('main');
+
+		expect(hebra!.ownViews.registered()).toEqual([]);
+		expect(hebra!.ownViews.opened()).toEqual([]);
+		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 0, 0]));
+		const main = hebra!.view(TYRIAN_MAIN_VIEW_TYPE);
+		expect(main.registered()).toBe(TYRIAN_MAIN_VIEW_TYPE);
+		expect(hebra!.mainView.current()).toBeNull();
+		expect(main.mounted()).toEqual([]);
+		expect(hebra!.recorded.reveals).toEqual([]);
+		// Entered afterwards, it starts on its first section and mounts only that one.
+		main.open();
+		expect(main.current()).toBe('session');
+		expect(mountedCount(started)).toEqual([1, 0, 0]);
+		await started.cleanup();
+	}, 30_000);
+
+	it('on the main screen the Session cannot be opened through its column view: it is not registered, and nothing reveals it', async () => {
+		const started = await start({ mainView: true });
+		const { hebra, test } = started;
+		expect(hebra!.ownViews.registered()).toEqual([]);
+		expect(test.fake.recorded.views).toEqual([]);
+		expect(() => hebra!.ownViews.open(COMPANION_VIEW_TYPE)).toThrow(/No view/u);
+
+		// So no reveal of a column view can ever take the player out of the main view.
+		const main = hebra!.view(TYRIAN_MAIN_VIEW_TYPE);
+		main.open('inventory');
+		await command(started, 'open-companion').run();
+		expect(hebra!.mainView.current()).toEqual({ viewId: TYRIAN_MAIN_VIEW_TYPE, sectionId: 'session' });
+		expect(hebra!.recorded.reveals.map(({ id }) => id)).toEqual([TYRIAN_MAIN_VIEW_TYPE]);
+		expect(main.mounted()).toEqual(['inventory', 'session']);
+		await started.cleanup();
+	}, 30_000);
+
+	it('in the sidebar, opening Inventory or Sale (dialogs) needs no main view: none is registered and none is touched', async () => {
+		const started = await start({ mainView: true, stored: 'sidebar' });
+		const { hebra } = started;
+		expect(hebra!.recorded.mainViews).toEqual([]);
+
+		await command(started, 'open-inventory-advisor').run();
+		await command(started, 'open-sale').run();
+
+		expect(hebra!.recorded.reveals).toEqual([{ id: INVENTORY_ADVISOR_VIEW_TYPE }, { id: SALE_VIEW_TYPE }]);
+		expect(hebra!.recorded.mainViewCalls).toEqual([]);
+		expect(hebra!.mainView.current()).toBeNull();
+		// Hebra opens the dialogs it was asked for, each with its own controller.
+		const inventory = hebra!.ownViews.open(INVENTORY_ADVISOR_VIEW_TYPE);
+		const sale = hebra!.ownViews.open(SALE_VIEW_TYPE);
+		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 1, 1]));
+		expect(inventory.querySelector('.tyrian-product-shell__nav')).not.toBeNull();
+		expect(sale.querySelector('.tyrian-product-shell__nav')).not.toBeNull();
+		await started.cleanup();
+	}, 30_000);
+});
+
+describe('(B) a Hebra that mounts on its next paint, as the real one does', () => {
+	it('opening a section from outside mounts nothing until Hebra paints, and then exactly that section', async () => {
+		const started = await start({ mainView: true, mount: 'deferred' });
+		const { hebra } = started;
+		const main = hebra!.view(TYRIAN_MAIN_VIEW_TYPE);
+
+		await command(started, 'open-inventory-advisor').run();
+		// `revealView` has returned and the command is over: nothing is mounted yet.
+		expect(hebra!.recorded.reveals).toEqual([{ id: TYRIAN_MAIN_VIEW_TYPE, section: 'inventory' }]);
+		expect(main.mounted()).toEqual([]);
+		expect(mountedCount(started)).toEqual([0, 0, 0]);
+
+		hebra!.mainView.paint();
+		expect(main.current()).toBe('inventory');
+		expect(mountedCount(started)).toEqual([0, 1, 0]);
+		expect(main.element('inventory')!.querySelector('.tyrian-product-shell')).not.toBeNull();
+
+		// Two asked for before one paint: the last one is what is on screen, both mounted in order.
+		await command(started, 'open-sale').run();
+		await command(started, 'open-companion').run();
+		expect(main.current()).toBe('inventory');
+		hebra!.mainView.paint();
+		expect(main.current()).toBe('session');
+		expect(main.mounted()).toEqual(['inventory', 'sale', 'session']);
+		expect(mountedCount(started)).toEqual([1, 1, 1]);
+		await started.cleanup();
+	}, 30_000);
+
+	it('the swap works the same: a section asked for and not painted yet is dropped with its view, and nothing is mounted twice', async () => {
+		const started = await start({ mainView: true, mount: 'deferred' });
+		const { hebra, core } = started;
+		const main = hebra!.view(TYRIAN_MAIN_VIEW_TYPE);
+		main.open();
+		await command(started, 'open-sale').run();
+
+		// The player changes to the sidebar before Hebra has painted the Sale that was asked for.
+		await core.updateViewPlacement('sidebar');
+		hebra!.mainView.paint();
+		expect(main.registered()).toBeNull();
+		expect(hebra!.mainView.current()).toBeNull();
+		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 0, 0]));
+		expect(hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
+
+		// A view of its own asked for from outside, and then back to the main screen.
+		await command(started, 'open-companion').run();
+		hebra!.mainView.paint();
+		hebra!.ownViews.open(COMPANION_VIEW_TYPE);
+		await vi.waitFor(() => expect(mountedCount(started)).toEqual([1, 0, 0]));
+		await core.updateViewPlacement('main');
+		hebra!.mainView.paint();
+		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 0, 0]));
+		expect(hebra!.mainView.current()).toBeNull();
+
+		await command(started, 'open-sale').run();
+		hebra!.mainView.paint();
+		expect(main.current()).toBe('sale');
+		expect(mountedCount(started)).toEqual([0, 0, 1]);
+		await started.cleanup();
+	}, 30_000);
+
+	it('repaints the same: the core repainting before the section exists does nothing, and a hidden one repaints once when shown', async () => {
+		const started = await start({ mainView: true, mount: 'deferred' });
+		const { hebra, inside } = started;
+		const main = hebra!.view(TYRIAN_MAIN_VIEW_TYPE);
+
+		await command(started, 'open-companion').run();
+		// Asked for and not painted: the core's repaints find no controller, and that is fine.
+		expect(() => { inside.renderViews(); inside.renderInventoryAdvisorViews(); }).not.toThrow();
+		await Promise.resolve();
+		expect(mountedCount(started)).toEqual([0, 0, 0]);
+
+		hebra!.mainView.paint();
+		const session = main.element('session')!;
+		const sessionPaints = vi.spyOn(session as unknown as { addClass(name: string): void }, 'addClass');
+		const fullSessionPaints = (): number => sessionPaints.mock.calls.filter(([name]) => name === 'tyrian-companion-view').length;
+
+		await command(started, 'open-inventory-advisor').run();
+		hebra!.mainView.paint();
+		expect([session.hidden, main.element('inventory')!.hidden]).toEqual([true, false]);
+		inside.renderViews();
+		await Promise.resolve();
+		inside.renderViews();
+		await Promise.resolve();
+		expect(fullSessionPaints()).toBe(0);
+
+		await command(started, 'open-companion').run();
+		// Still hidden until the paint: asking for it repaints nothing.
+		expect(fullSessionPaints()).toBe(0);
+		hebra!.mainView.paint();
+		expect(session.hidden).toBe(false);
+		expect(fullSessionPaints()).toBe(1);
+		await started.cleanup();
+	}, 30_000);
+});
+
 describe('(e) a section Hebra keeps mounted but hidden', () => {
 	it('paints nothing while hidden, however often the core repaints, and repaints once when it is shown again', async () => {
 		const started = await start({ mainView: true });
 		const { hebra, inside } = started;
-		hebra!.mainView.open();
-		hebra!.mainView.select('inventory');
-		const session = hebra!.mainView.element('session')!;
-		const inventory = hebra!.mainView.element('inventory')!;
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).open();
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('inventory');
+		const session = hebra!.view(TYRIAN_MAIN_VIEW_TYPE).element('session')!;
+		const inventory = hebra!.view(TYRIAN_MAIN_VIEW_TYPE).element('inventory')!;
 		expect([session.hidden, inventory.hidden]).toEqual([true, false]);
 
 		// Every full repaint of a section puts its surface class on the element; a hidden one must not.
@@ -321,7 +519,7 @@ describe('(e) a section Hebra keeps mounted but hidden', () => {
 		await Promise.resolve();
 		expect(fullSessionPaints(), 'the hidden Session section was repainted').toBe(0);
 
-		hebra!.mainView.select('session');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('session');
 		expect(fullSessionPaints(), 'the repaints asked for while hidden are one').toBe(1);
 		// Now Inventory is the hidden one: the advisor's repaints do not reach its DOM.
 		const before = inventory.innerHTML;
@@ -331,16 +529,16 @@ describe('(e) a section Hebra keeps mounted but hidden', () => {
 		inside.renderInventoryAdvisorViews();
 		expect(inventory.innerHTML).toBe(before);
 		shown.mockClear();
-		hebra!.mainView.select('inventory');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('inventory');
 		expect(shown).toHaveBeenCalledOnce();
 
 		// Back to the notes hides whatever was on screen, and coming back shows the same section.
-		hebra!.mainView.leave();
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).leave();
 		expect(inventory.hidden).toBe(true);
 		inside.renderInventoryAdvisorViews();
 		expect(inventory.innerHTML).toBe(before);
-		hebra!.mainView.open();
-		expect(hebra!.mainView.current()).toBe('inventory');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).open();
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).current()).toBe('inventory');
 		expect(mountedCount(started)).toEqual([1, 1, 0]);
 		await started.cleanup();
 	}, 30_000);
@@ -352,19 +550,19 @@ describe('(e) a section Hebra keeps mounted but hidden', () => {
 		// The advisor never analyzed this session: the state in which opening Sale refreshes by itself.
 		vi.spyOn(core, 'getSaleViewModel').mockReturnValue({ ...core.getSaleViewModel(), status: 'loading' });
 
-		hebra!.mainView.open();
-		hebra!.mainView.select('inventory');
-		hebra!.mainView.leave();
-		hebra!.mainView.open();
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).open();
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('inventory');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).leave();
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).open();
 		expect(refreshSale).not.toHaveBeenCalled();
-		expect(hebra!.mainView.mounted()).toEqual(['session', 'inventory']);
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).mounted()).toEqual(['session', 'inventory']);
 
-		hebra!.mainView.select('sale');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('sale');
 		expect(refreshSale.mock.calls).toEqual([[{ refreshSeeds: false }]]);
 		// Coming back to a Sale already mounted repaints it; it does not ask again.
 		await Promise.resolve();
-		hebra!.mainView.select('session');
-		hebra!.mainView.select('sale');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('session');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('sale');
 		expect(refreshSale).toHaveBeenCalledOnce();
 		await started.cleanup();
 	}, 30_000);
@@ -375,13 +573,16 @@ describe('(f) opening a section from outside it', () => {
 		const started = await start({ mainView: true });
 		const { hebra, test } = started;
 		const revealOwnView = vi.spyOn(test.fake.api.ui, 'revealView');
+		// One palette command per section: what reaches a section where Hebra shows no list of them.
+		expect(['open-companion', 'open-inventory-advisor', 'open-sale'].map((id) => command(started, id).name))
+			.toEqual(['Abrir acompañante', 'Abrir asesor de inventario', 'Abrir venta de Halloween']);
 
 		await command(started, 'open-inventory-advisor').run();
-		expect(hebra!.mainView.current()).toBe('inventory');
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).current()).toBe('inventory');
 		await command(started, 'open-sale').run();
-		expect(hebra!.mainView.current()).toBe('sale');
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).current()).toBe('sale');
 		await command(started, 'open-companion').run();
-		expect(hebra!.mainView.current()).toBe('session');
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).current()).toBe('session');
 		expect(hebra!.recorded.reveals).toEqual([
 			{ id: TYRIAN_MAIN_VIEW_TYPE, section: 'inventory' },
 			{ id: TYRIAN_MAIN_VIEW_TYPE, section: 'sale' },
@@ -389,19 +590,19 @@ describe('(f) opening a section from outside it', () => {
 		]);
 		// No view of its own exists to reveal, and none was asked for.
 		expect(revealOwnView).not.toHaveBeenCalled();
-		expect(hebra!.mainView.mounted()).toEqual(['inventory', 'sale', 'session']);
+		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).mounted()).toEqual(['inventory', 'sale', 'session']);
 
 		// The ribbon: tied to the main view, and a click still reaches the plugin (the menu).
 		const ribbon = test.fake.recorded.ribbon[0]!;
 		expect(ribbon.viewId).toBe(TYRIAN_MAIN_VIEW_TYPE);
 		const openMenu = vi.spyOn(hebra!.api.ui, 'openMenu');
-		hebra!.mainView.leave();
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).leave();
 		ribbon.onClick(new MouseEvent('click'));
 		await vi.waitFor(() => expect(openMenu).toHaveBeenCalledOnce());
 		const open = openMenu.mock.calls[0]![0].find((entry) => 'label' in entry && entry.icon === 'sword');
 		expect(open).toBeDefined();
 		(open as { onClick(): void }).onClick();
-		await vi.waitFor(() => expect(hebra!.mainView.current()).toBe('session'));
+		await vi.waitFor(() => expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).current()).toBe('session'));
 		await started.cleanup();
 	}, 30_000);
 
@@ -419,11 +620,11 @@ describe('(g) the plugin\'s own bar of tabs', () => {
 	it('is not in any section of the main view, where Hebra lists them, and is in each view of its own', async () => {
 		const started = await start({ mainView: true });
 		const { hebra, core } = started;
-		hebra!.mainView.open();
-		hebra!.mainView.select('inventory');
-		hebra!.mainView.select('sale');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).open();
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('inventory');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('sale');
 		for (const id of ['session', 'inventory', 'sale']) {
-			const el = hebra!.mainView.element(id)!;
+			const el = hebra!.view(TYRIAN_MAIN_VIEW_TYPE).element(id)!;
 			expect(el.querySelector('.tyrian-product-shell'), `${id}: no shell`).not.toBeNull();
 			expect(el.querySelector('.tyrian-product-shell__nav'), `${id}: its own bar`).toBeNull();
 			expect(el.querySelector('.tyrian-product-shell__settings'), `${id}: the bar's settings button`).toBeNull();
@@ -444,7 +645,7 @@ describe('(h) a device storage that cannot be read', () => {
 	it('falls back to the main screen instead of leaving the plugin without views', async () => {
 		const started = await start({ mainView: true, unreadable: true });
 		expect(started.core.getViewPlacement()).toBe('main');
-		expect(started.hebra!.mainView.registered()).toBe(TYRIAN_MAIN_VIEW_TYPE);
+		expect(started.hebra!.view(TYRIAN_MAIN_VIEW_TYPE).registered()).toBe(TYRIAN_MAIN_VIEW_TYPE);
 		expect(started.hebra!.ownViews.registered()).toEqual([]);
 		// The choice can still be written, and takes effect.
 		await started.core.updateViewPlacement('sidebar');
