@@ -1060,6 +1060,91 @@ describe('live session while storage does not answer', () => {
 });
 
 /**
+ * A start is the one write whose loss leaves nothing in memory to recover from: the session does not
+ * exist yet for this host. When storage did not say whether it stored it, the start answered null,
+ * the view stayed idle with no error, and if the write had landed the disk held an active session
+ * nobody knew of: later starts were refused by it, and after a restart the user found a session
+ * running that they never saw begin.
+ */
+describe('live session whose start storage did not answer', () => {
+	it('a start that landed unseen is reported, read back by the next beat, and goes on as the session it is: no restart is made up', async () => {
+		const f = outage('late-start');
+		await f.service.initialize();
+		const answer = f.answerNextCommitLate();
+		const starting = f.service.start('Test');
+		await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+		await f.timeout();
+		await expect(starting).resolves.toBeNull();
+		// The user is told, and the view does not say «idle» over a session that may be on disk.
+		expect(f.onError.mock.calls.map(([error]) => (error as Error).message)).toEqual(['Live session storage is unavailable.']);
+		expect(f.service.getView()).toMatchObject({ phase: 'error', sessionId: null });
+		expect((await f.durable()).record).toMatchObject({ sessionId: 'session', phase: 'active', authority: { fence: 1 } });
+
+		answer(); await turns();
+		f.at(5000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', startedAt: iso(0), connection: 'connected' });
+		// It is this host's own start, found late: the session as it was started, not one taken over after a restart.
+		expect(f.service.getView().gaps).toEqual([{ version: 1, reason: 'source_missing', fromAt: iso(0), toAt: null, channels: ['items'] }]);
+		expect(f.service.getRuntime()).toMatchObject({ authority: { instanceId: 'host', fence: 2 }, lastPresenceAt: AT, lastSourceDisconnectedAt: null });
+		expect((await f.durable()).record).toEqual(f.service.getRuntime());
+		await expect(f.service.start('Test')).resolves.toBe('session');
+
+		// With no producer linked and no report of presence it stays open: nobody was written as gone.
+		for (let minute = 1; minute <= 12; minute += 1) { f.at(minute * 60_000); await f.beat(); }
+		expect(f.service.getView()).toMatchObject({ phase: 'active', endedAt: null });
+		expect(f.options.onComplete).not.toHaveBeenCalled();
+		// And it measures: an epoch opens, a baseline, three bags.
+		await expect(f.service.open(f.source)).resolves.toBe('ready');
+		await expect(f.service.commit(f.sample(0, 0, bags(5)))).resolves.toBe('stored');
+		f.at(12 * 60_000 + 1000); await expect(f.service.commit(f.sample(1, 1000, bags(8)))).resolves.toBe('stored');
+		expect(f.service.getView().observations.map((row) => [row.before, row.after, row.delta])).toEqual([[5, 8, 3]]);
+		expect(f.onError).toHaveBeenCalledTimes(1);
+		await f.service.dispose();
+	});
+
+	it('a start that reaches storage after a load already answered «nothing saved» is found by the start it gets in the way of', async () => {
+		const f = outage('later-start');
+		const write = f.store.saveLive.bind(f.store);
+		let land: () => void = () => undefined; const held = new Promise<void>((resolve) => { land = resolve; });
+		let landed: unknown = null;
+		vi.spyOn(f.store, 'saveLive').mockImplementationOnce(async (record, journal) => {
+			await held; landed = await write(record, journal); return landed as Awaited<ReturnType<typeof write>>;
+		});
+		const starting = f.service.start('Test');
+		await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+		await f.timeout();
+		await expect(starting).resolves.toBeNull();
+		// The beat asks, and storage answers that nothing is saved: true for now.
+		f.at(5000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'idle', sessionId: null });
+		land(); await vi.waitFor(() => { expect(landed).toEqual({ status: 'saved' }); });
+
+		// The next start is a new session, and the one that landed is in its way. It is not started over it.
+		Object.assign(f.options, { sessionId: () => 'second-session' });
+		f.at(6000); await expect(f.service.start('Test')).resolves.toBeNull();
+		expect((await f.durable()).record).toMatchObject({ sessionId: 'session', phase: 'active' });
+		// It is read back instead, and it is the session the start after that returns.
+		f.at(7000); await expect(f.service.start('Test')).resolves.toBe('session');
+		expect(f.service.getView()).toMatchObject({ phase: 'active', sessionId: 'session', startedAt: iso(0), connection: 'connected' });
+		expect((await f.durable()).record).toEqual(f.service.getRuntime());
+		expect(f.onError).toHaveBeenCalledTimes(1);
+		await f.service.dispose();
+	});
+
+	it('a start storage refused outright changes nothing: nothing may have landed, so nothing is read again', async () => {
+		const f = outage('refused-start');
+		const load = vi.spyOn(f.store, 'loadLive');
+		vi.spyOn(f.store, 'saveLive').mockResolvedValueOnce({ status: 'stale' });
+		await expect(f.service.start('Test')).resolves.toBeNull();
+		expect(f.service.getView().phase).toBe('idle');
+		expect(f.onError).not.toHaveBeenCalled();
+		await expect(f.service.start('Test')).resolves.toBe('session');
+		expect(load).not.toHaveBeenCalled();
+		await f.service.dispose();
+	});
+});
+
+/**
  * The note writer has the same wait as storage, and a note can take longer than that to write. Each
  * attempt used to be a new call to the writer: `stop()` answered false, the session stayed closed
  * without its receipt, every beat started the writer again and gave it up ten seconds later, and no
