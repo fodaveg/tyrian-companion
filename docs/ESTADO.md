@@ -1,5 +1,45 @@
 # Estado
 
+## Candidato 0.6.20: el mapa en curso tras un reinicio del host y el resumen de sesión por mapa (9 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `b0c07cd` (`main` con el canal 0.6.19 publicado). Trae un solo
+lote, de mapas en las notas de sesión (`52ffeb3`, `49ebf59`, `8065aa6`, `72fdce8`, `fcf3e7d`, `6e1658e`, `1e736ba`,
+`2375f1c`): al recuperar una sesión en vivo tras un reinicio del host, el mapa en curso se cierra en la última muestra
+en vez de descartarse; la sección «Mapas» de la nota resumen pasa a tabla (tiempo observado, valor neto de objetos y
+por hora observada de cada mapa, fila «Sin mapa identificado» y recorrido con la hora local de cada entrada); y el
+bloque «Resumen» de la nota completa lista cada tramo en un mapa con su hora de entrada y de salida. No cambian las
+claves `tyrian_summary_*`, `tyrian_summary_version` (3), los nombres de fichero ni la forma del bloque de datos; la
+única excepción en los valores es el mapa cuyo nombre llega vacío, que se escribe «Mapa <id>». Un cambio de mapa no
+parte la sesión (decisión de David del 9 oct 2026). Detalle y límites en [CHANGELOG](CHANGELOG.md) y en
+[SPEC-live-loot](SPEC-live-loot.md) §6. Metadatos de versión alineados en `manifest.json`, `package.json`, la raíz de
+`package-lock.json` y `versions.json` (mínimo de Obsidian 1.11.4).
+
+- Origen: pregunta de David del 9 oct 2026 sobre cómo se ve un cambio de mapa; diagnóstico sobre los datos de la
+  sesión real y el registro de Nexus de ese día.
+- Revisión: independiente, dos pasadas. La primera, sobre `b0c07cd..fcf3e7d`: «integrar con correcciones», una
+  obligatoria (el último cambio de una sesión caía en «Sin mapa identificado»), aplicada en `6e1658e`. La segunda,
+  sobre `fcf3e7d..2375f1c`: «integrar»; 23 de 25 mutaciones mueren y las 2 que sobreviven son equivalentes o
+  inobservables en la nota.
+- Medido sobre `2375f1c` (árbol `2e3fc5538a35182dd1f0ac53bb007d743bdf0a9e`; Fedora, 9 oct 2026): `tsc --noEmit` sin
+  errores, `lint` con 0 errores, censo de observabilidad PASS, contrato de texto fuente PASS y 724 tests de los 30
+  ficheros afectados, con un solo worker. No es el gate.
+- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
+- Comprobado con datos reales: se renderizó con el código nuevo el resumen de la sesión real del 9 oct 2026 (96 min,
+  84 % observado): Hondonadas del Manantial de Ley 24 min 55 s y 0g 47s 82c, Resplandor del Fuego 58 s y 0g 37s 40c,
+  Litoral del Naufragio 12 min 52 s y 0g 0s 0c, sin mapa identificado 42 min 27 s y 0g 6s 44c. Suman los 81 min 12 s
+  observados y los 0g 91s 66c del balance. Esa sesión se grabó con el fallo del reinicio. Su frontmatter y el resto
+  del cuerpo salen byte a byte como los escribe `b0c07cd`.
+- Límites: las sesiones ya guardadas no se reparan y los resúmenes ya escritos no se reescriben. Lo que llega durante
+  la carga de un mapa o se abre en el mapa siguiente cuenta donde se observó; un hueco con menos de un segundo
+  observado se queda en el mapa de al lado; la tabla y el recorrido no tienen tope de filas ni de pasos;
+  `mapCoveragePartial` sigue sin volver a `false`; `src/sessions/ingame-session-marker.ts` conserva el mismo patrón de
+  descarte al recargar, sin tocar.
+- No verificado: nada de la 0.6.20 visto pintado en Obsidian ni en Hebra, ni instalada por BRAT o en Hebra; ninguna
+  sesión real grabada con el arreglo del reinicio. El resumen de la sesión real se renderizó fuera de cualquier
+  cliente.
+- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la verificación
+  en clientes reales.
+
 ## Canal 0.6.19 publicado: la presentación de la nota resumen de sesión y los títulos con fecha (9 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.19](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.19)

@@ -1,5 +1,48 @@
 # Changelog
 
+## Release beta 0.6.20 - el mapa en curso ya no se pierde al reiniciarse el host, y el resumen de sesión reparte por mapa el tiempo observado y el valor
+
+Release por tag `0.6.20`. Corrige un fallo del registro de mapas de la sesión en vivo y cambia la sección «Mapas» de
+la nota resumen y el bloque de resumen de la nota completa. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha
+visto en un cliente real.
+
+- Fallo corregido: al reiniciarse el host (Hebra u Obsidian) a mitad de una sesión en vivo, el plugin descartaba el
+  mapa en curso en vez de cerrarlo. El tiempo jugado en ese mapa antes del reinicio no quedaba en el registro de mapas
+  de la sesión, y lo recogido en él quedaba sin mapa. Ahora cierra ese tramo en la última muestra recibida; el tiempo
+  que el host estuvo caído no cuenta en ningún mapa. Las sesiones ya guardadas no se reparan: sus tramos no se
+  guardaron y no se inventan.
+- Nota resumen: la sección «Mapas» pasa de lista a tabla, con «Mapa», «Tiempo observado», «Valor neto de objetos» y
+  «Por hora observada». Una fila por mapa (un mapa al que se entra dos veces es una fila), en el orden de la primera
+  entrada, y una última fila «Sin mapa identificado» cuando hubo un tramo observado fuera de todo mapa. Debajo, cuando
+  tiene más de un paso, el recorrido con la hora local de cada entrada, incluidas las vueltas a un mapa ya visitado. El
+  tiempo por mapa es ahora tiempo OBSERVADO; antes era la longitud entera de sus intervalos, con los ratos sin observar
+  que cayeran dentro. Los valores de la tabla suman el «Valor neto de objetos observados» del balance. «Por hora
+  observada» de un mapa exige 15 minutos observados en ese mapa; por debajo sale «—». Con un solo mapa y nada fuera de
+  él no hay tabla sino una línea, y si la nota no escribe valor neto la tabla lleva solo el mapa y el tiempo.
+  Desaparecen «Tiempo con mapa identificado» y «La lista puede estar incompleta.».
+- Nota completa: el bloque «Resumen» lista cada tramo en un mapa identificado con su hora de entrada y de salida, en
+  UTC y con el id del mapa, como el resto de esa nota («- Mapa 1633: 2026-10-09T06:42:07.869Z →
+  2026-10-09T06:54:38.837Z»).
+- No cambia: las claves `tyrian_summary_*`, `tyrian_summary_version` (3), los nombres de fichero ni la forma del bloque
+  de datos de la nota completa. Única excepción en los valores: un mapa cuyo nombre llega vacío se escribe «Mapa <id>»
+  en vez de `""`, también en `tyrian_summary_map` y en el título. El título y `tyrian_summary_main_map` se calculan
+  como antes, no desde la tabla. Una nota completa ya escrita se reescribe sin conflicto y conserva «Mis notas»; los
+  resúmenes ya escritos no se reescriben. Un cambio de mapa no parte la sesión: una sesión es una nota completa y un
+  resumen (decisión del dueño del 9 oct 2026).
+- Límites: lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente, cuenta en el mapa donde se
+  observó. Un hueco entre mapas con menos de un segundo observado se queda en el mapa de al lado. La tabla y el
+  recorrido no tienen tope de filas ni de pasos. Los tiempos de la tabla suman el tiempo observado que dejan los
+  registros de la sesión (su duración menos los tramos sin observar de objetos), que es el tiempo observado de la
+  cobertura salvo que la sesión haya guardado menos del que dejan sus registros. Una sesión con reinicios guarda ahora intervalos que antes se perdían, así que su mapa principal
+  puede no ser el que habría salido antes. `mapCoveragePartial` sigue sin volver a `false`. El marcador de la sesión de
+  API (`src/sessions/ingame-session-marker.ts`) conserva el mismo patrón de descarte al recargar; no se ha tocado.
+- Comprobado con datos reales: el resumen de la sesión real del 9 oct 2026 renderizado con el código nuevo da
+  Hondonadas del Manantial de Ley 24 min 55 s y 0g 47s 82c, Resplandor del Fuego 58 s y 0g 37s 40c, Litoral del
+  Naufragio 12 min 52 s y 0g 0s 0c, y sin mapa identificado 42 min 27 s y 0g 6s 44c: los 81 min 12 s observados y los
+  0g 91s 66c del balance. Esa sesión se grabó con el fallo del reinicio, por eso tiene tanto tiempo sin mapa.
+- Sin verificar: nada de la 0.6.20 se ha visto pintado en Obsidian ni en Hebra, ni su instalación por BRAT o en Hebra.
+  Ninguna sesión real se ha grabado todavía con el arreglo del reinicio.
+
 ## Release beta 0.6.19 - la nota resumen de sesión dice qué cuenta cada cifra, agrupa su cobertura y se titula con la fecha y la hora
 
 [Canal 0.6.19 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.19); **instalación/runtime
