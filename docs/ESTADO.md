@@ -1,8 +1,8 @@
 # Estado
 
-## Candidato 0.6.24: el arranque con el almacenamiento mudo y la sesión en vivo tras un cierre brusco (9 oct 2026)
+## Canal 0.6.24 publicado: el arranque con el almacenamiento mudo y la sesión en vivo tras un cierre brusco (9 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Es la 0.6.23 que no llegó a publicarse, con los tests del arranque arreglados (ver abajo). Parte de `efe671f` (`main` con el canal 0.6.22 publicado). Trae dos lotes
+**Canal publicado; instalación/runtime pendiente.** Es la 0.6.23 que no llegó a publicarse, con los tests del arranque arreglados (ver abajo). Parte de `efe671f` (`main` con el canal 0.6.22 publicado). Trae dos lotes
 de robustez, sin cambios de interfaz, y los metadatos de versión (`bc41145` para la 0.6.23 y, para la 0.6.24, el commit de metadatos que la sigue: `manifest.json`, `package.json`, la raíz
 de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md), en
 [SPEC-live-loot](SPEC-live-loot.md) §4 y en [ARCHITECTURE](ARCHITECTURE.md) («Coordinación de sesión activa»).
@@ -22,7 +22,19 @@ de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle e
   de CPU en 24 hilos, 4 de 5 corridas rojas; con un motor simulado que contesta cada apertura con 30 ms de retraso, 5 de
   15 tests rojos con el instrumento viejo. Tras el arreglo: 10 de 10 sin lentitud; 10 de 10 con carga y latencia (antes
   del último retoque) y 3 de 3 después.
-- Pendiente: el CI de GitHub sobre `a734137` y la publicación de la 0.6.24.
+- Publicación (medida el 9 oct 2026). Gate local sobre `32b5a43e51ecd2d4e1c0d687b51b6ff620a41c00` (árbol
+  `f2469083d7bb1b878fc086e4d34bd0337ee253ec`), Fedora, Node v22.23.1: `check` «VEREDICTO: VERDE (8/8)», «Test Files 346
+  passed (346)», «Tests 5882 passed (5882)»; `check:guardrails` «VEREDICTO: VERDE (25/25)»; `release:preflight` pass;
+  `changelog-entry.mjs 0.6.24` exit 0; «host ESM bundle: PASS (397 inputs, 2681494 bytes -> hebra-main.mjs; exports:
+  activate; npm packages: yaml)»; «release package: PASS (tyrian-companion-0.6.24.zip
+  sha256=0e839ef2138ff9e813c99df4ce2b7940193ccd884a695a7a413b35708ff0b147)». Antes de etiquetar, CI de GitHub en verde
+  sobre `a734137` (run `37981097811`) y sobre `32b5a43` (run `37981443983`). Atestación: commit vacío `91f27a2`; tag
+  ligero `0.6.24` sobre él. Release publicada 2026-10-09T19:51:54Z, ni borrador ni prerelease, run del workflow
+  `37982769514` en success. «BRAT release contract: PASS (version=0.6.24; assets=8)» sobre la salida real de
+  `gh release view`; assets subidos: `hebra-main.mjs` 2681500, `hebra-styles.css` 122387, `hebra.json` 29593, `main.js`
+  1966440, `manifest.json` 237, `styles.css` 96405, `tyrian-companion-0.6.24.zip` 2063392 y su `.sha256` 94 bytes. El zip
+  descargado da el mismo sha256 que el del gate. CI de `main` sobre `91f27a2`: run `37982761464`, success. La etiqueta
+  `0.6.23` (sobre `969d874`) sigue existiendo sin release.
 - La 0.6.22 sigue sin verse pintada: no hay noticia nueva de David desde la captura de la 0.6.21.
 - Lote 1, arranque con el almacenamiento mudo (tarea Z3: `39caa31`, `b202e6a`, `593bff9`, `c3d3d5b`, `5e9f966`,
   `d137e8f`). Si el motor de almacenamiento del navegador no contesta, el plugin arranca igualmente: peor caso medido

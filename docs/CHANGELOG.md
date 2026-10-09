@@ -2,7 +2,13 @@
 
 ## Release beta 0.6.24 - el plugin arranca aunque el almacenamiento del navegador no conteste, y una sesión en vivo vuelve al reabrir tras un cierre brusco sin esperar cinco minutos
 
-Candidato; no publicado ni etiquetado. Dos arreglos de robustez: mientras todo va bien no cambia nada de lo que se ve.
+[Canal 0.6.24 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.24); **instalación/runtime
+pendiente**. Tag `0.6.24` sobre `91f27a2` (commit vacío de atestación). Gate local sobre el candidato `32b5a43` (árbol
+`f2469083d7bb1b878fc086e4d34bd0337ee253ec`): `check` 8/8 (5882 tests, 346 ficheros), guardrails 25/25 y
+`release:preflight` en verde. La CI de GitHub sobre `a734137` (run 37981097811) y sobre `32b5a43` (run 37981443983)
+terminó en `success` antes de etiquetar. El workflow de release (run 37982769514) terminó en `success`, y
+`release:brat-verify` contra la salida real de la release dio PASS con los ocho assets. La CI de `main` sobre `91f27a2`
+(run 37982761464) terminó en `success`. Dos arreglos de robustez: mientras todo va bien no cambia nada de lo que se ve.
 Cambia qué pasa cuando el almacenamiento local deja de contestar al arrancar, y qué pasa con la sesión en vivo cuando
 la aplicación de notas se cierra de golpe. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente
 real.
