@@ -37,8 +37,8 @@ const UNQUOTED_RETRY_MS = 60_000;
 const UNQUOTED_RETRY_MAX = 50;
 /** Older entries whose alert still awaits a price, or a claim, that are looked at per pass; the rest wait for the next one. */
 const AWAITING_ENTRIES_MAX = 20;
-/** A journal entry's identity within its session. */
-function journalKey(entry: Pick<LiveJournalEntryV1,'epoch' | 'cursor'>): string { return `${entry.epoch}/${String(entry.cursor)}`; }
+/** A journal entry's identity. The session is part of it: two sessions of one game process share the epoch and repeat its cursors. */
+function journalKey(entry: Pick<LiveJournalEntryV1,'sessionId' | 'epoch' | 'cursor'>): string { return `${entry.sessionId}/${entry.epoch}/${String(entry.cursor)}`; }
 
 /**
  * Public catalog and price requests run only in `enrich()`, after the durable measurement ACK, never
@@ -57,6 +57,8 @@ export class LiveSessionEconomy {
 	private readonly triedCurrencies = new Set<number>();
 	private readonly currencyAskedAt = new Map<number,number>();
 	private readonly unquotedAskedAt = new Map<number,number>();
+	/** When the price of each item was last asked of the trading post, by any pass and whatever came back: what spaces a retry pass. */
+	private readonly priceAskedAt = new Map<number,number>();
 	/** The session `quotes` were gathered for: a new session starts without the previous one's quotes. */
 	private quotesSession: string | null = null;
 	/** Gross best bid and lowest ask of the Halloween bag from the last public read of THIS process; a restored quote has none. */
@@ -170,7 +172,9 @@ export class LiveSessionEconomy {
 	 * «storage is back»; what it does when a refused write finally lands is report a state change, so the host calls this from
 	 * there. With nothing owed it does nothing, and at most one such pass waits in the queue however often it is called.
 	 * It goes through `observe`, the path a start or a mode switch already use for the alerts left unsettled: one pass over
-	 * one owed entry, which tries every other owed alert too.
+	 * one owed entry, which tries every other owed alert too. That pass asks the trading post for the entry's items only when
+	 * their quote is stale AND nobody asked for them in the last `UNQUOTED_RETRY_MS`, so a failing trading post is not asked
+	 * once per state change.
 	 */
 	retryUnclaimedAlerts(): void {
 		if (this.disposed || this.retryQueued !== null || this.unclaimed.size === 0) return;
@@ -204,7 +208,8 @@ export class LiveSessionEconomy {
 	}
 	private async enrich(entry: LiveJournalEntryV1): Promise<void> {
 		const lifecycle = this.options.lifecycle; const runtime = lifecycle.getRuntime();
-		if (entry === this.retryQueued) this.retryQueued = null;
+		// A pass asked for by `retryUnclaimedAlerts()` is there to claim, not to quote: it can run on every state change of the session.
+		const retrying = entry === this.retryQueued; if (retrying) this.retryQueued = null;
 		// An alert of a session that is over is owed to nobody: closing it skipped every alert still `ready`.
 		for (const [outboxId,row] of this.unclaimed) if (runtime?.phase !== 'active' || row.sessionId !== runtime.sessionId) this.unclaimed.delete(outboxId);
 		if (this.disposed || runtime?.phase !== 'active' || runtime.sessionId !== entry.sessionId) return;
@@ -212,15 +217,20 @@ export class LiveSessionEconomy {
 		if (this.disposed || lifecycle.getRuntime()?.phase !== 'active' || lifecycle.getRuntime()?.sessionId !== entry.sessionId) return;
 		const ids = [...new Set(entry.observations.filter((row) => row.kind === 'item').map((row) => row.idNumber))];
 		const now = this.options.now();
-		if (this.quotesSession !== runtime.sessionId) { this.quotes.clear(); this.unquotedAskedAt.clear(); this.quotesSession = runtime.sessionId; }
+		if (this.quotesSession !== runtime.sessionId) { this.quotes.clear(); this.unquotedAskedAt.clear(); this.priceAskedAt.clear(); this.quotesSession = runtime.sessionId; }
 		for (const price of runtime.prices) if (!this.quotes.has(price.itemId) && runtime.priceCapturedAt !== null) this.quotes.set(price.itemId,{unitCopper:price.unitCopper,capturedAt:Date.parse(runtime.priceCapturedAt)});
 		// Held items no read has quoted (a 404 DOES record a null quote, so only a failed or skipped request leaves one here) or
 		// whose quote is older than the criterion for a fresh one: asked again, 60 s apart per id and 50 per pass.
 		const retry = runtime.totals.filter((total) => total.kind === 'item' && !ids.includes(total.idNumber) && (!this.quotes.has(total.idNumber) || now - this.quotes.get(total.idNumber)!.capturedAt > QUOTE_FRESH_MS)
 			&& now - (this.unquotedAskedAt.get(total.idNumber) ?? -Infinity) >= UNQUOTED_RETRY_MS).map((total) => total.idNumber).slice(0,UNQUOTED_RETRY_MAX);
-		const missing = [...ids.filter((id) => !this.quotes.has(id) || now - this.quotes.get(id)!.capturedAt > QUOTE_FRESH_MS),...retry];
+		// The entry's own items are asked whenever their quote is missing or no longer fresh. In a retry pass they keep the spacing of
+		// the items above, counted from the last time anyone asked: a trading post that fails (an error, a 5xx) records no quote, and
+		// without the spacing every state change of a session with an alert owed would be one more request.
+		const missing = [...ids.filter((id) => (!this.quotes.has(id) || now - this.quotes.get(id)!.capturedAt > QUOTE_FRESH_MS)
+			&& (!retrying || now - (this.priceAskedAt.get(id) ?? -Infinity) >= UNQUOTED_RETRY_MS)),...retry];
 		if (missing.length > 0 && !this.options.rateLimit.status().active) {
 			for (const id of retry) this.unquotedAskedAt.set(id,now);
+			for (const id of missing) this.priceAskedAt.set(id,now);
 			const metadata = await this.options.catalog([...new Set([...ids,...retry])]);
 			for (const item of Object.values(metadata)) this.entities.set(item.id,{name:item.name,icon:item.icon ?? null});
 			for (let offset = 0; offset < missing.length; offset += 200) {

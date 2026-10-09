@@ -847,6 +847,72 @@ describe('durable live alert outbox', () => {
 		expect(e.requestDetailed).toHaveBeenCalledTimes(1);
 		await e.service.dispose(); await f.service.dispose();
 	});
+	it('asking for a retry several times in a row queues one pass, and another only after that one has run', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const replace = f.store.replaceLiveJournal.bind(f.store);
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) =>
+			next.outbox.some((intent) => intent.state === 'dispatching') ? false : await replace(prior,next,owner));
+		e.service.observe(entry); await e.service.drain(); expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		// Every pass that reaches the alerts asks the lifecycle once for the entries still awaiting a price.
+		const passes = vi.spyOn(f.service,'getAwaitingPriceEntries');
+		e.service.retryUnclaimedAlerts(); e.service.retryUnclaimedAlerts(); e.service.retryUnclaimedAlerts(); await e.service.drain();
+		expect(passes).toHaveBeenCalledTimes(1);
+		e.service.retryUnclaimedAlerts(); await e.service.drain(); expect(passes).toHaveBeenCalledTimes(2);
+		expect(e.emit).not.toHaveBeenCalled(); await e.service.dispose(); await f.service.dispose();
+	});
+	it.each([
+		['answers 500', async () => ({status:500,headers:{},body:[]})],
+		['cannot be reached', async () => { throw new Error('network down'); }],
+	] as const)('with an alert owed and its quote gone stale, a trading post that %s is asked once in thirty state changes over thirty seconds', async (_what, failing) => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const replace = f.store.replaceLiveJournal.bind(f.store); let refusing = true;
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) =>
+			refusing && next.outbox.some((intent) => intent.state === 'dispatching') ? false : await replace(prior,next,owner));
+		e.service.observe(entry); await e.service.drain();
+		expect(e.requestDetailed).toHaveBeenCalledTimes(1); expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		// The host asks for a retry on every state change of the session, as the core does.
+		f.options.onStateChange.mockImplementation(() => { e.service.retryUnclaimedAlerts(); });
+		// Sixteen minutes on, the quote is no longer fresh and the trading post has stopped answering. A sample a second, none with loot.
+		const later = AT+1000+16*60_000; e.requestDetailed.mockClear(); e.requestDetailed.mockImplementation(failing); f.options.onStateChange.mockClear();
+		for (let second = 1; second <= 30; second += 1) { f.setNow(later+second*1000); await f.service.commit(f.sample(1+second,2)); await e.service.drain(); }
+		expect(f.options.onStateChange.mock.calls.length).toBeGreaterThanOrEqual(30);
+		expect(e.requestDetailed).toHaveBeenCalledTimes(1);
+		// The spacing is the one of every unquoted item, sixty seconds from the failed read: then it is asked once more.
+		f.setNow(later+61_000); await f.service.commit(f.sample(32,2)); await e.service.drain();
+		f.setNow(later+62_000); await f.service.commit(f.sample(33,2)); await e.service.drain();
+		expect(e.requestDetailed).toHaveBeenCalledTimes(2);
+		// And the alert does not wait for the trading post: the pass that finds storage back claims it and it sounds, once.
+		expect(e.emit).not.toHaveBeenCalled(); refusing = false;
+		f.setNow(later+63_000); await f.service.commit(f.sample(34,2)); await e.service.drain();
+		f.setNow(later+64_000); await f.service.commit(f.sample(35,2)); await e.service.drain();
+		expect(e.emit).toHaveBeenCalledTimes(1); expect(f.service.getAlerts()[0]?.state).toBe('processed');
+		expect(e.requestDetailed).toHaveBeenCalledTimes(2);
+		await e.service.dispose(); await f.service.dispose();
+	});
+	it('what one session still owes is forgotten with it: the next session never retries it', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const replace = f.store.replaceLiveJournal.bind(f.store); let refusing = true;
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) =>
+			refusing && next.outbox.some((intent) => intent.state === 'dispatching') ? false : await replace(prior,next,owner));
+		e.service.observe(entry); await e.service.drain();
+		expect(f.service.getAlerts()[0]?.state).toBe('ready'); const owed = entry.outbox[0]!.outboxId;
+		// The session closes with the alert unclaimed (closing skips it) and another one starts, with storage working again.
+		await expect(f.service.stop(AT+1000)).resolves.toBe(true); refusing = false;
+		await f.service.start('Test'); await f.service.open(f.source);
+		// Its loot comes at another cursor than the old session's, so the two entries cannot be taken for one another.
+		f.setNow(AT+2000); await f.service.commit(f.sample(0,0)); f.setNow(AT+3000); await f.service.commit(f.sample(1,0));
+		f.setNow(AT+4000); await f.service.commit(f.sample(2,2));
+		expect(f.service.getRuntime()?.sessionId).toBe('session-2');
+		const update = vi.spyOn(f.service,'updateAlert');
+		e.service.retryUnclaimedAlerts(); e.service.observe(f.service.getJournal()[2]!); await e.service.drain();
+		expect(update.mock.calls.map(([outboxId]) => outboxId)).not.toContain(owed);
+		// Only the new session's own alert sounded, and nothing is owed any more: asking for a retry runs no pass.
+		expect(emittedQuantities(e.emit)).toEqual([2]); expect(f.service.getAlerts().map((alert) => alert.state)).toEqual(['processed']);
+		const passes = vi.spyOn(f.service,'getAwaitingPriceEntries'); update.mockClear();
+		e.service.retryUnclaimedAlerts(); await e.service.drain();
+		expect(passes).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+		await e.service.dispose(); await f.service.dispose();
+	});
 	it('an alert the lifecycle could not even look at, for want of the lease, is decided and sounds once the lease is back', async () => {
 		const f = fixture(); const entry = await positive(f); const e = economy(f);
 		f.loseLease(); e.service.observe(entry); await e.service.drain();
