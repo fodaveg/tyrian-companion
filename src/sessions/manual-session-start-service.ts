@@ -60,7 +60,7 @@ import {
 } from './session-api-settlement';
 
 export interface SessionLeaseCoordinator {
-	/** Stable for the coordinator's whole lifetime; identifies this plugin instance in diagnostics. */
+	/** Identifies this plugin instance in diagnostics; stable from its first lease on (before it, an instance may lose its life-lock mark once). */
 	readonly instanceId: string;
 	/**
 	 * `leaseTtlMs`, on both, is how long the lease lasts from that call; the coordinator's own (five minutes, H14.22)

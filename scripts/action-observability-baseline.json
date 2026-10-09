@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 572,
+		"catch_clause": 574,
 		"promise_catch": 59,
-		"void_expression": 123,
-		"callback_registration": 227
+		"void_expression": 125,
+		"callback_registration": 229
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -6390,9 +6390,9 @@
 				{
 					"id": "aae281863ae83c12096abd2d9170896bd015f8c2",
 					"kind": "catch_clause",
-					"line": 177,
+					"line": 188,
 					"column": 5,
-					"endLine": 182,
+					"endLine": 193,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6406,9 +6406,9 @@
 				{
 					"id": "e987e64e1e161b77bca09ce99e9c5c400fc13978",
 					"kind": "promise_catch",
-					"line": 295,
+					"line": 306,
 					"column": 3,
-					"endLine": 295,
+					"endLine": 306,
 					"endColumn": 87,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6423,9 +6423,9 @@
 				{
 					"id": "b4a317fd9993047215263c4714a78dd3beb19a70",
 					"kind": "promise_catch",
-					"line": 302,
+					"line": 313,
 					"column": 20,
-					"endLine": 302,
+					"endLine": 313,
 					"endColumn": 101,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6440,9 +6440,9 @@
 				{
 					"id": "26167d028a748946c7dd7b09fca0c5d03bbe52cc",
 					"kind": "catch_clause",
-					"line": 359,
+					"line": 370,
 					"column": 5,
-					"endLine": 361,
+					"endLine": 372,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6456,9 +6456,9 @@
 				{
 					"id": "86fd7e673733cade917a654af064c10d3aa8e6e6",
 					"kind": "callback_registration",
-					"line": 379,
+					"line": 390,
 					"column": 19,
-					"endLine": 379,
+					"endLine": 390,
 					"endColumn": 123,
 					"registration": "setTimeout",
 					"classification": "allowlisted",
@@ -6473,9 +6473,9 @@
 				{
 					"id": "5c398aeff80e78e985ff8d4e832744cb1fe39e9b",
 					"kind": "void_expression",
-					"line": 379,
+					"line": 390,
 					"column": 43,
-					"endLine": 379,
+					"endLine": 390,
 					"endColumn": 61,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6489,9 +6489,9 @@
 				{
 					"id": "1216249a9c2527c038b64c98b6f5ba6cbc7a0424",
 					"kind": "callback_registration",
-					"line": 452,
+					"line": 463,
 					"column": 5,
-					"endLine": 453,
+					"endLine": 464,
 					"endColumn": 88,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6506,9 +6506,9 @@
 				{
 					"id": "97455f6dbdd2afd9589e380a4d26765a03a1aa79",
 					"kind": "promise_catch",
-					"line": 452,
+					"line": 463,
 					"column": 5,
-					"endLine": 454,
+					"endLine": 465,
 					"endColumn": 66,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6523,9 +6523,9 @@
 				{
 					"id": "ad564ce1275e5bad9641b146e8159dd770695e6a",
 					"kind": "callback_registration",
-					"line": 514,
+					"line": 525,
 					"column": 23,
-					"endLine": 514,
+					"endLine": 525,
 					"endColumn": 69,
 					"registration": "setTimeout",
 					"classification": "allowlisted",
@@ -6540,9 +6540,9 @@
 				{
 					"id": "fceb459ed603de5e1120026f1341e35ac3900cb5",
 					"kind": "void_expression",
-					"line": 514,
+					"line": 525,
 					"column": 47,
-					"endLine": 514,
+					"endLine": 525,
 					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6584,9 +6584,9 @@
 				{
 					"id": "c8913590ad358b66692065c18641ff1caf38248e",
 					"kind": "catch_clause",
-					"line": 78,
+					"line": 82,
 					"column": 4,
-					"endLine": 85,
+					"endLine": 89,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6600,9 +6600,9 @@
 				{
 					"id": "8ece42f8ce86b1fdbaad516dc7b2894f75635a4a",
 					"kind": "catch_clause",
-					"line": 83,
+					"line": 87,
 					"column": 34,
-					"endLine": 83,
+					"endLine": 87,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6616,9 +6616,9 @@
 				{
 					"id": "7d6e66e8d19222967ab9c6e499823526951c7a9e",
 					"kind": "callback_registration",
-					"line": 97,
+					"line": 101,
 					"column": 10,
-					"endLine": 98,
+					"endLine": 102,
 					"endColumn": 31,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6633,9 +6633,9 @@
 				{
 					"id": "05239e2c338b4923ff47b4ffa0cdde3cfaa895b2",
 					"kind": "promise_catch",
-					"line": 97,
+					"line": 101,
 					"column": 10,
-					"endLine": 99,
+					"endLine": 103,
 					"endColumn": 53,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6650,9 +6650,9 @@
 				{
 					"id": "1931145d16604d103cdcdb422e969abf354fc03e",
 					"kind": "callback_registration",
-					"line": 97,
+					"line": 101,
 					"column": 10,
-					"endLine": 101,
+					"endLine": 105,
 					"endColumn": 41,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7458,9 +7458,9 @@
 				{
 					"id": "22ab4dc6cc9769e39fcea091c8f1106bb36f0f6d",
 					"kind": "callback_registration",
-					"line": 104,
+					"line": 110,
 					"column": 4,
-					"endLine": 104,
+					"endLine": 110,
 					"endColumn": 84,
 					"registration": "registerDomEvent",
 					"classification": "allowlisted",
@@ -7475,9 +7475,9 @@
 				{
 					"id": "fe92eb779601a30916e091e6b024bece448a6d94",
 					"kind": "callback_registration",
-					"line": 105,
+					"line": 111,
 					"column": 4,
-					"endLine": 105,
+					"endLine": 111,
 					"endColumn": 86,
 					"registration": "registerDomEvent",
 					"classification": "allowlisted",
@@ -7492,9 +7492,9 @@
 				{
 					"id": "3b07dc8e5beb4d11a9cef4c7a21142369ee95805",
 					"kind": "callback_registration",
-					"line": 110,
+					"line": 116,
 					"column": 4,
-					"endLine": 118,
+					"endLine": 124,
 					"endColumn": 6,
 					"registration": "registerDomEvent",
 					"classification": "allowlisted",
@@ -7509,9 +7509,9 @@
 				{
 					"id": "9133052d86ed405f58b7e27458f19930054791f0",
 					"kind": "callback_registration",
-					"line": 119,
+					"line": 125,
 					"column": 4,
-					"endLine": 126,
+					"endLine": 132,
 					"endColumn": 6,
 					"registration": "registerDomEvent",
 					"classification": "allowlisted",
@@ -10185,9 +10185,9 @@
 				{
 					"id": "a4a6b2942726e149e5f952a3f6371a4625a581d3",
 					"kind": "void_expression",
-					"line": 117,
+					"line": 194,
 					"column": 3,
-					"endLine": 119,
+					"endLine": 196,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10201,9 +10201,9 @@
 				{
 					"id": "debe49b1cb597ec91ea6707690090a89ff4e0fbf",
 					"kind": "callback_registration",
-					"line": 117,
+					"line": 194,
 					"column": 8,
-					"endLine": 119,
+					"endLine": 196,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10218,9 +10218,9 @@
 				{
 					"id": "756350def724bebb96d27082347e1fbb0bf22337",
 					"kind": "catch_clause",
-					"line": 142,
+					"line": 219,
 					"column": 6,
-					"endLine": 142,
+					"endLine": 219,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10234,9 +10234,9 @@
 				{
 					"id": "5beb51bb17052d6ed63e5d28aeb971963072f8b6",
 					"kind": "catch_clause",
-					"line": 160,
+					"line": 237,
 					"column": 6,
-					"endLine": 160,
+					"endLine": 237,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10250,9 +10250,9 @@
 				{
 					"id": "a6d9ed61b98ba2b831cb87dc0755bed58f3515ce",
 					"kind": "catch_clause",
-					"line": 179,
+					"line": 256,
 					"column": 6,
-					"endLine": 179,
+					"endLine": 256,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10266,9 +10266,9 @@
 				{
 					"id": "1d4f845f2ae3a8e7f14f7a951d8c0278ee76ee52",
 					"kind": "void_expression",
-					"line": 186,
+					"line": 263,
 					"column": 3,
-					"endLine": 186,
+					"endLine": 263,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10282,10 +10282,43 @@
 				{
 					"id": "de2db3273bd82a7bcc2144445a3a825beb409e80",
 					"kind": "callback_registration",
-					"line": 186,
+					"line": 263,
 					"column": 8,
-					"endLine": 186,
+					"endLine": 263,
 					"endColumn": 74,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "dispose",
+						"justification": "The \"dispose\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"dispose\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"dispose\"."
+				},
+				{
+					"id": "642032d5cf061204a547cfa8cad01e7ed143c6ab",
+					"kind": "void_expression",
+					"line": 267,
+					"column": 3,
+					"endLine": 267,
+					"endColumn": 58,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.queue.then",
+						"scope": "dispose",
+						"justification": "The \"dispose\" owner deliberately detaches \"this.queue.then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"dispose\" owner deliberately detaches \"this.queue.then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.queue.then\" in \"dispose\"."
+				},
+				{
+					"id": "9876c97207b4d28e668a8d0cb3d986ee3be69741",
+					"kind": "callback_registration",
+					"line": 267,
+					"column": 8,
+					"endLine": 267,
+					"endColumn": 58,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
@@ -10299,9 +10332,9 @@
 				{
 					"id": "20d2b88ad4c320a1e7f629afb54ba8546f143e22",
 					"kind": "catch_clause",
-					"line": 229,
+					"line": 314,
 					"column": 5,
-					"endLine": 229,
+					"endLine": 314,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10315,9 +10348,9 @@
 				{
 					"id": "3f502bbc7849f2af5cd8db72d41e63557e88062b",
 					"kind": "catch_clause",
-					"line": 231,
+					"line": 321,
 					"column": 56,
-					"endLine": 231,
+					"endLine": 321,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10331,9 +10364,9 @@
 				{
 					"id": "a8902dd8fa691df49ab067a33d0ce4f11b8a50c4",
 					"kind": "catch_clause",
-					"line": 251,
+					"line": 344,
 					"column": 5,
-					"endLine": 251,
+					"endLine": 344,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10345,11 +10378,76 @@
 					"reason": "Allowlisted catch_clause: The \"acquireInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"acquireInternal\"."
 				},
 				{
+					"id": "c3ddc01fc858aa9ab0ed58e92ffeb014eb5aa231",
+					"kind": "void_expression",
+					"line": 376,
+					"column": 4,
+					"endLine": 376,
+					"endColumn": 90,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "Promise.resolve().then",
+						"scope": "requestLifeLock",
+						"justification": "The \"requestLifeLock\" owner deliberately detaches \"Promise.resolve().then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"requestLifeLock\" owner deliberately detaches \"Promise.resolve().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"Promise.resolve().then\" in \"requestLifeLock\"."
+				},
+				{
+					"id": "706d0f31accb2dc8475d29ae042514d300236d66",
+					"kind": "callback_registration",
+					"line": 376,
+					"column": 9,
+					"endLine": 376,
+					"endColumn": 90,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "requestLifeLock",
+						"justification": "The \"requestLifeLock\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"requestLifeLock\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"requestLifeLock\"."
+				},
+				{
+					"id": "4cd79c81072b24d7cafad1e8c471d234ce4e2f7c",
+					"kind": "catch_clause",
+					"line": 377,
+					"column": 5,
+					"endLine": 377,
+					"endColumn": 29,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "requestLifeLock",
+						"justification": "The \"requestLifeLock\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"requestLifeLock\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"requestLifeLock\"."
+				},
+				{
+					"id": "0fbb6867bad128555692bf21aacbcd809825c30b",
+					"kind": "catch_clause",
+					"line": 412,
+					"column": 79,
+					"endLine": 412,
+					"endColumn": 101,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "lockAnswer",
+						"justification": "The \"lockAnswer\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"lockAnswer\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"lockAnswer\"."
+				},
+				{
 					"id": "e8dc69bf877d2a91ecaa6fd0e35faac86043c8cb",
 					"kind": "promise_catch",
-					"line": 273,
+					"line": 422,
 					"column": 4,
-					"endLine": 273,
+					"endLine": 422,
 					"endColumn": 89,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10364,9 +10462,9 @@
 				{
 					"id": "bedbf04d33c1e0424972813b262f946cfd200544",
 					"kind": "void_expression",
-					"line": 281,
+					"line": 430,
 					"column": 5,
-					"endLine": 281,
+					"endLine": 430,
 					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10380,9 +10478,9 @@
 				{
 					"id": "a0ef73c15c92d91877c6a058f71795a3b5967118",
 					"kind": "callback_registration",
-					"line": 281,
+					"line": 430,
 					"column": 10,
-					"endLine": 281,
+					"endLine": 430,
 					"endColumn": 65,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10397,9 +10495,9 @@
 				{
 					"id": "c97df1d837960e33b4f610522aa817ed1e97ad4e",
 					"kind": "catch_clause",
-					"line": 300,
+					"line": 449,
 					"column": 31,
-					"endLine": 300,
+					"endLine": 449,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10413,9 +10511,9 @@
 				{
 					"id": "5035656c978ac8c71b946ce7b0d56f368b1c3e49",
 					"kind": "callback_registration",
-					"line": 308,
+					"line": 457,
 					"column": 16,
-					"endLine": 308,
+					"endLine": 457,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -13836,6 +13934,11 @@
 			]
 		},
 		"src/test/ambient-capabilities.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/fake-lock-manager.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []

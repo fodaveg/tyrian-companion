@@ -1,8 +1,9 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
+import { fakeLocks } from '../test/fake-lock-manager';
 import { closeUnderneath, emitEngineClose, killStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
-import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
+import { ActiveSessionLeaseCoordinator, LIFE_LOCK_ANSWER_TIMEOUT_MS } from './coordination-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import {
 	COORDINATION_STORE_NAME,
@@ -488,6 +489,319 @@ describe('ActiveSessionLeaseCoordinator', () => {
 	});
 });
 
+/**
+ * 9 Oct 2026 (F7): a host that died holding the lease left the one that came back refused its own
+ * session for up to five minutes. With the host's lock manager the owner holds one Web Lock for as
+ * long as it lives and says so in its `instanceId` (`wl1:`); a lease that has not run out is taken
+ * when its owner carries that mark and its lock is free. Everything else waits for the lease to run
+ * out, exactly as before: what matters most here is that an owner that is alive is never taken.
+ *
+ * `wl1:` and the lock's name are written out on purpose. Both are read by whatever build comes back
+ * to a lease, so they are a format, not an implementation detail.
+ */
+describe('ActiveSessionLeaseCoordinator with the host\'s lock manager', () => {
+	it('takes the lease of a marked owner that died before it ran out: one pause, the next fence, and the old handle is lost', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		const ownerContext = locks.context();
+		const owner = createCoordinator(factory, 'dead owner', { instanceId: 'owner', locks: ownerContext });
+		const original = requireHandle(await owner.acquire('session-1'));
+		expect(original).toMatchObject({ instanceId: 'wl1:owner', fence: 1, expiresAt: 1_100 });
+		expect(owner.instanceId).toBe('wl1:owner');
+		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:owner']);
+		// The process is gone: nothing was released and nothing disposed of.
+		ownerContext.die();
+		let sleeps = 0;
+		const contender = createCoordinator(factory, 'dead owner', { instanceId: 'contender', locks: locks.context(), sleep: async () => { sleeps += 1; } });
+
+		// Still at 1 000: the lease has 100 ms left and is taken anyway.
+		const taken = await contender.acquire('session-1');
+		expect(taken).toMatchObject({ status: 'acquired', handle: { instanceId: 'wl1:contender', sessionId: 'session-1', fence: 2, acquiredAt: 1_000, expiresAt: 1_100 } });
+		expect(sleeps).toBe(1);
+		await expect(owner.renew(original)).resolves.toEqual({ status: 'lost' });
+		await expect(owner.assertOwned(original)).resolves.toEqual({ status: 'lost' });
+		await expect(owner.release(original)).resolves.toEqual({ status: 'lost' });
+		await expect(contender.assertOwned(requireHandle(taken))).resolves.toEqual({ status: 'owned' });
+		owner.dispose(); contender.dispose();
+	});
+
+	it('does not take a marked owner that is alive until its lease runs out', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = 1_000;
+		const owner = createCoordinator(factory, 'live owner', { instanceId: 'owner', locks: locks.context(), clock: () => now });
+		const original = requireHandle(await owner.acquire('session-1'));
+		const sleep = vi.fn(async () => undefined);
+		const contender = createCoordinator(factory, 'live owner', { instanceId: 'contender', locks: locks.context(), clock: () => now, sleep });
+
+		await expect(contender.acquire('session-2')).resolves.toEqual({ status: 'busy', ownerExpiresAt: 1_100, ownerInstanceId: 'wl1:owner', ownerMachineId: 'machine-live owner' });
+		now = 1_099;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'busy', ownerInstanceId: 'wl1:owner' });
+		// No pause, no second transaction: nothing was shown, so nothing was confirmed.
+		expect(sleep).not.toHaveBeenCalled();
+		await expect(owner.assertOwned(original)).resolves.toEqual({ status: 'owned' });
+		// Run out, it is taken as any lease that ran out: its owner is still alive and still holds its lock.
+		now = 1_100;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { instanceId: 'wl1:contender', fence: 2 } });
+		expect(sleep).toHaveBeenCalledTimes(1);
+		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:contender', 'tyrian-companion-lease:wl1:owner']);
+		owner.dispose(); contender.dispose();
+	});
+
+	it('never takes an owner without the mark before its lease runs out, whoever asks', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = 1_000;
+		// A build before this one, or a host without the API: no lock, no mark, and no way to tell it from a dead one.
+		const owner = createCoordinator(factory, 'unmarked owner', { instanceId: 'owner', clock: () => now });
+		expect(requireHandle(await owner.acquire('session-1')).instanceId).toBe('owner');
+		expect(locks.held()).toEqual([]);
+		const contender = createCoordinator(factory, 'unmarked owner', { instanceId: 'contender', locks: locks.context(), clock: () => now });
+
+		now = 1_099;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'busy', ownerInstanceId: 'owner', ownerExpiresAt: 1_100 });
+		now = 1_100;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		owner.dispose(); contender.dispose();
+	});
+
+	it('a contender without a lock manager waits for a marked owner\'s lease to run out, even when that owner is dead', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = 1_000;
+		const ownerContext = locks.context();
+		const owner = createCoordinator(factory, 'contender without locks', { instanceId: 'owner', locks: ownerContext, clock: () => now });
+		requireHandle(await owner.acquire('session-1'));
+		ownerContext.die();
+		const contender = createCoordinator(factory, 'contender without locks', { instanceId: 'contender', clock: () => now });
+
+		now = 1_099;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'busy', ownerInstanceId: 'wl1:owner' });
+		now = 1_100;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { instanceId: 'contender', fence: 2 } });
+		owner.dispose(); contender.dispose();
+	});
+
+	// The deliberate negative: the lock manager says «free» of an owner that is alive. The exact lease is
+	// still compared after the pause, and an owner that renewed meanwhile keeps it.
+	it('does not take an owner that renews during the confirmation, even when the lock manager calls its lock free', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = 1_000;
+		const owner = createCoordinator(factory, 'lying manager', { instanceId: 'owner', locks: locks.context(), clock: () => now, leaseTtlMs: 1_000 });
+		let current = requireHandle(await owner.acquire('session-1'));
+		let renewDuringPause = true;
+		const contender = createCoordinator(factory, 'lying manager', {
+			instanceId: 'contender', locks: locks.context(), clock: () => now, leaseTtlMs: 1_000,
+			sleep: async () => {
+				if (!renewDuringPause) return;
+				now += 5;
+				current = requireHandle(await owner.renew(current));
+			},
+		});
+		// Its own lock is shown to be held while the manager is still honest; from here on it lies.
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'busy' });
+		locks.ifAvailable = 'always free';
+
+		const refused = await contender.acquire('session-2');
+		// Refused under the lease as its owner left it in the pause, not as it was first read.
+		expect(current).toMatchObject({ renewedAt: 1_005, expiresAt: 2_005 });
+		expect(refused).toEqual({ status: 'busy', ownerExpiresAt: 2_005, ownerInstanceId: 'wl1:owner', ownerMachineId: 'machine-lying manager' });
+		await expect(owner.assertOwned(current)).resolves.toEqual({ status: 'owned' });
+		expect(current.fence).toBe(1);
+
+		// What that comparison does not cover, pinned so nobody reads more into it: the same lie with no
+		// renewal in the pause takes a live owner's lease. That is why the host only hands over a lock
+		// manager every context of its storage shares, and why an instance asks about its own lock first.
+		renewDuringPause = false;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		await expect(owner.assertOwned(current)).resolves.toEqual({ status: 'lost' });
+		owner.dispose(); contender.dispose();
+	});
+
+	it.each(['unanswered', 'rejects', 'throws'] as const)('answers busy when asking about the dead owner\'s lock %s, and takes the lease only once it ran out', async (failure) => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = 1_000;
+		const waits = manualWaits();
+		const ownerContext = locks.context();
+		const owner = createCoordinator(factory, `probe ${failure}`, { instanceId: 'owner', locks: ownerContext, clock: () => now });
+		requireHandle(await owner.acquire('session-1'));
+		const sleep = vi.fn(async () => undefined);
+		const contender = createCoordinator(factory, `probe ${failure}`, {
+			instanceId: 'contender', locks: locks.context(), clock: () => now, sleep, schedule: waits.arm, cancel: waits.disarm,
+		});
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'busy' });
+		ownerContext.die();
+		locks.ifAvailable = failure;
+
+		const acquiring = contender.acquire('session-2');
+		if (failure === 'unanswered') {
+			await vi.waitFor(() => { expect(waits.lockWaits()).toBe(1); });
+			expect(await settlement(acquiring)).toBe('pending');
+			waits.expire();
+		}
+		await expect(acquiring).resolves.toEqual({ status: 'busy', ownerExpiresAt: 1_100, ownerInstanceId: 'wl1:owner', ownerMachineId: `machine-probe ${failure}` });
+		expect(sleep).not.toHaveBeenCalled();
+		expect(waits.pending()).toBe(0);
+		// The way it always was: the lease runs out and is taken, without anybody asking about a lock.
+		now = 1_100;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		owner.dispose(); contender.dispose();
+	});
+
+	it('writes no mark when its own lock is not granted in time, and lets the lock go when it is granted late', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = 1_000;
+		const waits = manualWaits();
+		// Somebody else holds the name this instance asks for, so its request waits.
+		const blocker = locks.context();
+		void blocker.request('tyrian-companion-lease:wl1:late', () => new Promise<void>(() => undefined));
+		const late = createCoordinator(factory, 'late lock', { instanceId: 'late', locks: locks.context(), clock: () => now, schedule: waits.arm, cancel: waits.disarm });
+		expect(late.instanceId).toBe('wl1:late');
+
+		const acquiring = late.acquire('session-1');
+		await vi.waitFor(() => { expect(waits.lockWaits()).toBe(1); });
+		expect(await settlement(acquiring)).toBe('pending');
+		waits.expire();
+		const handle = requireHandle(await acquiring);
+		expect(handle).toMatchObject({ instanceId: 'late', fence: 1 });
+		expect(late.instanceId).toBe('late');
+		// The lock arrives after all: it is let go at once, and the instance stays unmarked for good.
+		blocker.die();
+		await vi.waitFor(() => { expect(locks.held()).toEqual([]); });
+		now = 1_010;
+		await expect(late.renew(handle)).resolves.toMatchObject({ status: 'renewed', handle: { instanceId: 'late' } });
+
+		// And an instance that can ask finds an owner without the mark: it is not taken before it runs out.
+		const contender = createCoordinator(factory, 'late lock', { instanceId: 'contender', locks: locks.context(), clock: () => now });
+		now = 1_109;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'busy', ownerInstanceId: 'late', ownerExpiresAt: 1_110 });
+		now = 1_110;
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { instanceId: 'wl1:contender', fence: 2 } });
+		late.dispose(); contender.dispose();
+	});
+
+	it('writes no mark when the lock manager never grants a lock at all', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		locks.grants = false;
+		const waits = manualWaits();
+		const coordinator = createCoordinator(factory, 'no grants', { instanceId: 'alone', locks: locks.context(), schedule: waits.arm, cancel: waits.disarm });
+
+		const acquiring = coordinator.acquire('session-1');
+		await vi.waitFor(() => { expect(waits.lockWaits()).toBe(1); });
+		expect(await settlement(acquiring)).toBe('pending');
+		waits.expire();
+		expect(requireHandle(await acquiring).instanceId).toBe('alone');
+		expect(waits.pending()).toBe(0);
+		// Decided once: the next acquisition does not wait for the lock again.
+		await expect(coordinator.acquire('session-1')).resolves.toMatchObject({ status: 'already_owned', handle: { instanceId: 'alone' } });
+		coordinator.dispose();
+	});
+
+	// The check at run time: a manager that offers this instance's own lock while it is held cannot be
+	// believed about anybody else's. `always free` is what contexts that do not share their locks look like.
+	it.each(['always free', 'unanswered', 'rejects', 'throws'] as const)('writes no mark, lets its lock go and asks about nobody when the manager, asked about its own lock, answers «%s»', async (answer) => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = 1_000;
+		const waits = manualWaits();
+		const ownerContext = locks.context();
+		const owner = createCoordinator(factory, `self check ${answer}`, { instanceId: 'owner', locks: ownerContext, clock: () => now });
+		requireHandle(await owner.acquire('session-1'));
+		ownerContext.die();
+		locks.ifAvailable = answer;
+		const sleep = vi.fn(async () => undefined);
+		const unsure = createCoordinator(factory, `self check ${answer}`, {
+			instanceId: 'unsure', locks: locks.context(), clock: () => now, sleep, schedule: waits.arm, cancel: waits.disarm,
+		});
+		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:unsure']);
+
+		const acquiring = unsure.acquire('session-2');
+		if (answer === 'unanswered') {
+			await vi.waitFor(() => { expect(waits.lockWaits()).toBe(1); });
+			expect(await settlement(acquiring)).toBe('pending');
+			waits.expire();
+		}
+		// The owner is dead and marked, and this instance still waits for its lease to run out.
+		await expect(acquiring).resolves.toMatchObject({ status: 'busy', ownerInstanceId: 'wl1:owner' });
+		expect(unsure.instanceId).toBe('unsure');
+		expect(locks.held()).toEqual([]);
+		expect(sleep).not.toHaveBeenCalled();
+		// Not even once the manager behaves: what an instance is was decided before its first lease.
+		locks.ifAvailable = 'honest';
+		now = 1_099;
+		await expect(unsure.acquire('session-2')).resolves.toMatchObject({ status: 'busy' });
+		now = 1_100;
+		await expect(unsure.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { instanceId: 'unsure', fence: 2 } });
+		owner.dispose(); unsure.dispose();
+	});
+
+	it('lets its lock go on dispose, so a lease it left behind without releasing it is taken at once', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		const owner = createCoordinator(factory, 'disposed owner', { instanceId: 'owner', locks: locks.context() });
+		requireHandle(await owner.acquire('session-1'));
+		const contender = createCoordinator(factory, 'disposed owner', { instanceId: 'contender', locks: locks.context() });
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'busy' });
+
+		owner.dispose();
+		await vi.waitFor(() => { expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:contender']); });
+		await expect(contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		contender.dispose();
+		await vi.waitFor(() => { expect(locks.held()).toEqual([]); });
+	});
+
+	it('keeps its lock until an operation that was in course when it was disposed of has ended', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		const controlled = new ControlledCoordinationStore(await IndexedDbCoordinationStore.open(factory, databaseName('dispose in course')));
+		const owner = new ActiveSessionLeaseCoordinator({
+			store: controlled, instanceId: 'owner', machineId: () => 'machine', clock: () => 1_000, sleep: async () => undefined, leaseTtlMs: 100, locks: locks.context(),
+		});
+		const handle = requireHandle(await owner.acquire('session-1'));
+		let answer: (() => void) | null = null;
+		controlled.beforeTransaction = () => new Promise<void>((resolve) => { answer = resolve; });
+		const renewing = owner.renew(handle);
+		await vi.waitFor(() => { expect(answer).not.toBeNull(); });
+
+		owner.dispose();
+		expect(await settlement(renewing)).toBe('pending');
+		expect(locks.held()).toEqual(['tyrian-companion-lease:wl1:owner']);
+		(answer as (() => void) | null)?.();
+		await expect(renewing).resolves.toMatchObject({ status: 'error' });
+		await vi.waitFor(() => { expect(locks.held()).toEqual([]); });
+	});
+
+	it('lets at most one of two contenders take a dead owner\'s lease', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		const ownerContext = locks.context();
+		const owner = createCoordinator(factory, 'two contenders', { instanceId: 'owner', locks: ownerContext });
+		requireHandle(await owner.acquire('session-1'));
+		ownerContext.die();
+		const left = createCoordinator(factory, 'two contenders', { instanceId: 'left', locks: locks.context() });
+		const right = createCoordinator(factory, 'two contenders', { instanceId: 'right', locks: locks.context() });
+
+		const results = await Promise.all([left.acquire('session-left'), right.acquire('session-right')]);
+		expect(results.map((result) => result.status).sort()).toEqual(['acquired', 'busy']);
+		expect(results.find((result) => result.status === 'acquired')).toMatchObject({ handle: { fence: 2 } });
+		owner.dispose(); left.dispose(); right.dispose();
+	});
+
+	it('refuses an id that carries the mark without a lock behind it, before opening or writing storage', async () => {
+		let opens = 0;
+		const forged = new ActiveSessionLeaseCoordinator({
+			instanceId: 'wl1:forged', machineId: () => 'machine', clock: () => 1_000, sleep: async () => undefined,
+			openStore: async () => { opens += 1; throw new Error('Must not open.'); },
+		});
+
+		await expect(forged.acquire('session-1')).resolves.toEqual({ status: 'error', code: 'corrupt' });
+		expect(opens).toBe(0);
+		forged.dispose();
+	});
+
+	it('asks for no lock when the id would not fit with the mark in front, and works unmarked', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		const instanceId = 'x'.repeat(254);
+		const coordinator = createCoordinator(factory, 'long id', { instanceId, locks: locks.context() });
+
+		expect(locks.held()).toEqual([]);
+		expect(requireHandle(await coordinator.acquire('session-1')).instanceId).toBe(instanceId);
+		coordinator.dispose();
+	});
+});
+
 describe('IndexedDbCoordinationStore', () => {
 	it('rejects an open error without creating a fallback store', async () => {
 		const factory = new IDBFactory();
@@ -600,18 +914,22 @@ function openRaw(factory: IDBFactory, name: string, version: number): Promise<ID
 	});
 }
 
-/** The waits on storage a coordinator armed, run out only when the test says so. */
+/**
+ * The waits a coordinator armed, on storage and on the lock manager alike, run out only when the test
+ * says so. `lockWaits` is how many of them are for an answer of the lock manager, told apart by how long they were armed for.
+ */
 function manualWaits() {
-	const waits = new Map<number, () => void>();
+	const waits = new Map<number, { expire: () => void; milliseconds: number }>();
 	let last = 0;
 	return {
-		arm: (callback: () => void): number => { waits.set(++last, callback); return last; },
+		arm: (callback: () => void, milliseconds: number): number => { waits.set(++last, { expire: callback, milliseconds }); return last; },
 		disarm: (handle: unknown): void => { waits.delete(handle as number); },
 		pending: (): number => waits.size,
+		lockWaits: (): number => [...waits.values()].filter((wait) => wait.milliseconds === LIFE_LOCK_ANSWER_TIMEOUT_MS).length,
 		expire: (): void => {
 			const pending = [...waits.values()];
 			waits.clear();
-			for (const expire of pending) expire();
+			for (const wait of pending) wait.expire();
 		},
 	};
 }

@@ -22,8 +22,8 @@ export interface LiveSessionSourceInput { sourceInstance: string; epoch: string;
  * How long the live session's lease lasts without a renewal: the coordinator's own five minutes (H14.22), asked for
  * by name so that the day it changes it changes here.
  *
- * Known limit: a host that dies without releasing (Hebra or Obsidian closed abruptly) leaves the plugin that comes
- * back refused its own session, `source_conflict` on every `live_open`, until these five minutes run out.
+ * It is what the host that comes back waits when NOTHING is known of the owner it finds: one that died without
+ * releasing (Hebra or Obsidian closed abruptly) left it `source_conflict` on every `live_open` until this ran out.
  *
  * It is NOT shortened, although this lifecycle beats every `LIVE_SOURCE_STALE_MS` and a short lease would heal that
  * (tried at 30 s on 9 Oct 2026). The beat is a timer, and the usual way to use this plugin is with the notes
@@ -32,10 +32,10 @@ export interface LiveSessionSourceInput { sourceInstance: string; epoch: string;
  * at one sample a second, a beat every 60 s stores 150 of 600 samples under a 30 s lease and all 600 under this one.
  * A rare five minutes without measuring is not traded for three quarters of the samples in the common case.
  *
- * The way out is not a number: `renew` has to accept a lease that ran out and nobody took, and the lease has to be
- * renewed from the data path as well (samples arrive on the addon's socket, not on a timer). That changes the
- * coordinator's contract and needs the real cadence of the beat measured first, with the window hidden, in Obsidian
- * and in Hebra. Figures and reasoning in SPEC-live-loot §4.
+ * The way out was not a number: the coordinator knows when the owner died (9 Oct 2026, F7). With the host's lock
+ * manager the owner holds a Web Lock while it lives, and whoever finds its lease with that lock free takes it at
+ * once: `initialize` has the session back before the first `live_open`, with nothing changed here. That replaced
+ * renewing a lease that ran out and renewing from the data path, no longer planned. Reasoning in SPEC-live-loot §4.
  */
 export const LIVE_SESSION_LEASE_TTL_MS = 300_000;
 export interface LiveSessionLifecycleOptions {
