@@ -55,7 +55,8 @@ export interface LocalFileBackend {
 	get(key: string): Promise<string | undefined>;
 	set(key: string, value: string): Promise<void>;
 	delete(key: string): Promise<void>;
-	keys(): Promise<string[]>;
+	/** Every key, or only those that start with `prefix`: a key range, so the rest is not even read. */
+	keys(prefix?: string): Promise<string[]>;
 	/** Closes the held connection (see `TyrianPathIndexKv.close`); a later call opens a new one. */
 	close?(): void;
 }
@@ -66,7 +67,7 @@ export function createMemoryFileBackend(): LocalFileBackend {
 		get: async (key) => files.get(key),
 		set: async (key, value) => { files.set(key, value); },
 		delete: async (key) => { files.delete(key); },
-		keys: async () => [...files.keys()],
+		keys: async (prefix = '') => [...files.keys()].filter((key) => key.startsWith(prefix)),
 	};
 }
 
@@ -128,7 +129,10 @@ export function createIndexedDbFileBackend(factory: IDBFactory, databaseName: st
 		get: async (key) => await run('readonly', (store) => store.get(key)) as string | undefined,
 		set: async (key, value) => { await run('readwrite', (store) => store.put(value, key)); },
 		delete: async (key) => { await run('readwrite', (store) => store.delete(key)); },
-		keys: async () => (await run('readonly', (store) => store.getAllKeys())).map(String),
+		keys: async (prefix) => (await run('readonly', (store) => store.getAllKeys(
+			// `\uffff` sorts after every character a key can continue with.
+			prefix === undefined ? undefined : IDBKeyRange.bound(prefix, `${prefix}\uffff`),
+		))).map(String),
 		close: () => {
 			const entry = cached;
 			cached = null;
@@ -152,7 +156,7 @@ export function createLocalFileStorage(backend: LocalFileBackend, libraryId: str
 	/** The chunk keys of a file, in append order. */
 	const chunkKeysOf = async (path: string): Promise<string[]> => {
 		const start = `${fileKey(path)}${CHUNK_SEPARATOR}`;
-		return (await backend.keys()).filter((key) => key.startsWith(start)).sort();
+		return (await backend.keys(start)).sort();
 	};
 	const chunkKey = (path: string, index: number): string =>
 		`${fileKey(path)}${CHUNK_SEPARATOR}${String(index).padStart(CHUNK_INDEX_DIGITS, '0')}`;
@@ -173,7 +177,7 @@ export function createLocalFileStorage(backend: LocalFileBackend, libraryId: str
 			if (await backend.get(fileKey(path)) !== undefined) return true;
 			const dir = dirMarker(path);
 			const chunks = `${fileKey(path)}${CHUNK_SEPARATOR}`;
-			return (await backend.keys()).some((key) => key.startsWith(dir) || key.startsWith(chunks));
+			return (await backend.keys(dir)).length > 0 || (await backend.keys(chunks)).length > 0;
 		},
 		async read(path) {
 			const value = await readAll(path);

@@ -1,3 +1,5 @@
+// `IDBKeyRange` is a real global in the webview; in Node it only exists once this shim loads.
+import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -161,6 +163,49 @@ describe('appending to a long file', () => {
 		expect(await storage.exists('.hebra/logs/a.jsonl')).toBe(true);
 		expect(await storage.exists('.hebra/logs')).toBe(true);
 	});
+});
+
+// 9 Oct 2026: `append`, `exists` and `remove` asked the backend for EVERY key of the database to
+// find the few of one file. With a prefix the backend answers with a key range.
+describe('listing the keys of one file', () => {
+	/** Counts the keys each call hands back, which is what crosses the IndexedDB boundary. */
+	function countingKeys(inner: LocalFileBackend): { backend: LocalFileBackend; returned: () => number } {
+		let returned = 0;
+		return {
+			returned: () => returned,
+			backend: {
+				...inner,
+				keys: async (prefix) => {
+					const keys = await inner.keys(prefix);
+					returned += keys.length;
+					return keys;
+				},
+			},
+		};
+	}
+	const seedOthers = async (backend: LocalFileBackend, count: number): Promise<void> => {
+		for (let n = 0; n < count; n += 1) await backend.set(`other-lib/notes/${String(n)}.json`, '{}');
+	};
+
+	for (const [name, makeBackend] of [
+		['memory', () => createMemoryFileBackend()],
+		['IndexedDB', () => createIndexedDbFileBackend(new IDBFactory(), 'keys-by-prefix')],
+	] as const) {
+		it(`append, exists and remove only read their own keys over ${name} with 5 000 unrelated ones`, async () => {
+			const inner = makeBackend();
+			await seedOthers(inner, 5000);
+			const { backend, returned } = countingKeys(inner);
+			const storage = createLocalFileStorage(backend, 'lib-1');
+			for (let n = 0; n < 100; n += 1) await storage.append('.hebra/logs/a.jsonl', `line ${String(n)}\n`);
+			expect(await storage.exists('.hebra/logs/a.jsonl')).toBe(true);
+			expect(await storage.exists('.hebra/logs')).toBe(true);
+			expect(await storage.exists('.hebra/missing')).toBe(false);
+			await storage.remove('.hebra/logs/a.jsonl');
+			// Before: 5 000+ keys per call (~500 000 here). After: only the few chunks of the file.
+			expect(returned()).toBeLessThan(500);
+			expect((await inner.keys()).length).toBe(5000); // only the unrelated keys stay.
+		});
+	}
 });
 
 // 7 Oct 2026: these files are the diagnostic log. A write that never settled stopped its queue for
