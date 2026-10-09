@@ -454,6 +454,83 @@ describe('live session across a storage outage that hid a commit already on disk
 });
 
 /**
+ * Hebra or Obsidian closed abruptly: the process dies holding the lease and never releases it. The
+ * lease lasted the coordinator's five minutes (H14.22, sized for the manual session, whose heartbeat
+ * derives from it), so the plugin that came back 70 s later was refused its own session for the rest
+ * of them: `source_conflict` on every `live_open`, and nothing measured meanwhile.
+ */
+describe('live session whose host died without releasing the lease', () => {
+	/** A session one host is measuring, beating every five seconds up to `untilMs`. */
+	async function measured(label: string, untilMs: number) {
+		const f = outage(label);
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+		for (let at = 5000; at <= untilMs; at += 5000) { f.at(at); await f.beat(); }
+		return f;
+	}
+
+	it('the host that starts 70 s later takes its session back at once', async () => {
+		const f = await measured('abrupt-close', 5000);
+		// The process is gone here: nothing was released and nothing disposed.
+		f.at(75_000);
+		const next = f.restarted(); await next.service.initialize();
+		await expect(next.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		expect(next.service.getRuntime()).toMatchObject({ sessionId: 'session', authority: { instanceId: 'next-host', fence: 2 } });
+		expect(next.service.getView().gaps.map((gap) => gap.reason)).toEqual(['host_restart']);
+		f.at(76_000); await expect(next.service.commit(f.sample(0, 0, bags(20), NEXT_EPOCH))).resolves.toBe('stored');
+		f.at(77_000); await expect(next.service.commit(f.sample(1, 1000, bags(23), NEXT_EPOCH))).resolves.toBe('stored');
+		expect(next.service.getView().observations.map((row) => [row.epoch, row.before, row.after, row.delta])).toEqual([[EPOCH, 5, 7, 2], [NEXT_EPOCH, 20, 23, 3]]);
+		await next.dispose();
+	});
+
+	it('a host that is alive is still the only one: a second host cannot take the session while the first one beats', async () => {
+		const f = await measured('two-hosts', 120_000);
+		f.at(121_000);
+		const second = f.restarted(); await second.service.initialize();
+		await expect(second.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		f.at(125_000); await second.beat();
+		await expect(second.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('source_conflict');
+		// And the first one goes on measuring under the lease it never lost.
+		await expect(f.service.commit(f.sample(2, 125_000, bags(9)))).resolves.toBe('stored');
+		expect(f.service.getRuntime()).toMatchObject({ authority: { instanceId: 'host', fence: 1 } });
+		await second.dispose(); await f.service.dispose();
+	});
+
+	it('a machine suspended for longer than the lease lasts does not close the session: it comes back as after an outage', async () => {
+		const f = await measured('suspended', 10_000);
+		await f.service.presence(true, AT + 10_000);
+		// Thirty minutes without a sample or a beat: the lease ran out long ago and nobody took it.
+		const woke = 10_000 + 30 * 60_000;
+		f.at(woke); await f.beat();
+		expect(f.service.getView().phase).toBe('error');
+		f.at(woke + 5000); await f.beat();
+		f.at(woke + 10_000); await f.beat();
+		f.at(woke + 15_000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', endedAt: null, connection: 'connected' });
+		expect(f.service.getRuntime()).toMatchObject({ phase: 'active', authority: { instanceId: 'host', fence: 2 }, epoch: null });
+		expect(f.service.getView().gaps).toEqual([{ version: 1, reason: 'storage_unavailable', fromAt: iso(1000), toAt: null, channels: ['items'] }]);
+		expect(f.options.onComplete).not.toHaveBeenCalled();
+		// The producer opens a new epoch and the session measures again.
+		await expect(f.service.open({ ...f.source, epoch: NEXT_EPOCH })).resolves.toBe('ready');
+		f.at(woke + 16_000); await expect(f.service.commit(f.sample(0, 0, bags(30), NEXT_EPOCH))).resolves.toBe('stored');
+		f.at(woke + 17_000); await expect(f.service.commit(f.sample(1, 1000, bags(31), NEXT_EPOCH))).resolves.toBe('stored');
+		expect(f.service.getView().observations.map((row) => [row.epoch, row.delta])).toEqual([[EPOCH, 2], [NEXT_EPOCH, 1]]);
+		await f.service.dispose();
+	});
+
+	it('nor does a suspension just longer than the short lease, which the five-minute one used to ride out', async () => {
+		const f = await measured('short-suspension', 10_000);
+		await f.service.presence(true, AT + 10_000);
+		f.at(70_000); await f.beat();
+		f.at(75_000); await f.beat();
+		f.at(80_000); await f.beat();
+		expect(f.service.getView()).toMatchObject({ phase: 'active', endedAt: null, connection: 'connected' });
+		expect(f.options.onComplete).not.toHaveBeenCalled();
+		await f.service.dispose();
+	});
+});
+
+/**
  * Storage that is down at the moment the host starts. The load of the saved session failed, the view
  * went to `error` and that was all: no heartbeat, nobody asked again, and once storage was back the
  * session on disk stayed where it was, unread, with every start refused until the next restart.

@@ -88,6 +88,17 @@ async function bridge(f:Awaited<ReturnType<typeof runtime>>,event:IngameConnecti
 	f.h.core.settings.alertIngameEnabled=true; f.access.onIngameConnectionEvent(event);
 	await f.access.ingameSessionMarker.reconcile(); await f.access.liveSessions.capture();
 }
+/**
+ * Time goes by with the host alive: the live heartbeat fires every five seconds on the way to `toMs`, as it does where
+ * timers run. A jump with no beat in it is a host that did not beat, and the live session's lease (thirty seconds) is
+ * gone by the end of it; the five-minute one these tests were written under survived a jump of a minute.
+ */
+async function elapse(f:Awaited<ReturnType<typeof runtime>>,fromMs:number,toMs:number) {
+	const heartbeat = f.h.timers().find((timer) => timer.kind === 'interval' && timer.delayMs === 5000);
+	if (!heartbeat) throw new Error('Live heartbeat is absent.');
+	for (let at=fromMs+5000;at<toMs;at+=5000) { f.setNow(at); f.h.fireTimer(heartbeat.id); await f.access.liveSessions.capture(); }
+	f.setNow(toMs);
+}
 /** The store the live session writes to, to make it refuse writes the way a dead engine does. */
 function livePersistence(f:Awaited<ReturnType<typeof runtime>>) {
 	return (f.access.liveSessions as unknown as {options:{persistence:LiveSessionPersistence}}).options.persistence;
@@ -200,10 +211,10 @@ describe('real passive Nexus composition', () => {
 		await f.port.open(f.source); await f.port.commit(f.sample(0,0));
 		const heartbeat = f.h.timers().find((timer) => timer.kind === 'interval' && timer.delayMs === 5000);
 		if (!heartbeat) throw new Error('Live heartbeat is absent.');
-		for (let minute=1;minute<=55;minute++) { f.setNow(AT+minute*60000); f.h.fireTimer(heartbeat.id); await f.access.liveSessions.capture(); }
+		for (let minute=1;minute<=55;minute++) { await elapse(f,AT+(minute-1)*60000,AT+minute*60000); f.h.fireTimer(heartbeat.id); await f.access.liveSessions.capture(); }
 		await f.access.liveSessions.presence(true);
 		await f.port.gap({sourceInstance:INSTANCE,epoch:EPOCH,reason:'disconnect',observedAt:new Date(AT+55*60000).toISOString()});
-		for (let minute=56;minute<=61;minute++) { f.setNow(AT+minute*60000); f.h.fireTimer(heartbeat.id); await f.access.liveSessions.capture(); }
+		for (let minute=56;minute<=61;minute++) { await elapse(f,AT+(minute-1)*60000,AT+minute*60000); f.h.fireTimer(heartbeat.id); await f.access.liveSessions.capture(); }
 		expect(f.h.core.getFarmingGoalProgress()).toMatchObject({status:'reached',elapsedMs:61*60000,remainingMs:0});
 		await f.access.liveSessions.presence(false); expect(f.h.core.getFarmingGoalProgress()).toMatchObject({status:'in_progress',elapsedMs:55*60000,remainingMs:5*60000});
 		await f.access.liveSessions.stop(AT+55*60000); expect(f.h.core.getFarmingGoalProgress()).toMatchObject({status:'in_progress',elapsedMs:55*60000,remainingMs:5*60000});
@@ -269,7 +280,7 @@ describe('real passive Nexus composition', () => {
 		expect(f.access.liveSessions.getRuntime()).toMatchObject({sessionId:priorId,epoch:EPOCH,lastSourceDisconnectedAt:null});
 		expect(f.h.core.getLiveSessionView().phase).toBe('error');
 
-		save.mockRestore(); f.setNow(AT+60_000);
+		save.mockRestore(); await elapse(f,AT+2000,AT+60_000);
 		const next = {...f.source,sourceInstance:'AwMDAwMDAwMDAwMDAwMDAw',epoch:'BAQEBAQEBAQEBAQEBAQEBA'};
 		await bridge(f,{kind:'authenticated',connectionId:'b',client:'nexus',instance:next.sourceInstance,atMs:AT+60_000});
 		// Storage is back and has written what it owed, and still no disconnection is on record.

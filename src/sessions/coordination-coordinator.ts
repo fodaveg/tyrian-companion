@@ -98,13 +98,20 @@ export class ActiveSessionLeaseCoordinator {
 		this.openStore = async () => this.answeredInTime(await open());
 	}
 
-	acquire(sessionId: string): Promise<AcquireLeaseResult> {
+	/**
+	 * `leaseTtlMs` is how long the lease lasts when this call grants one; the coordinator's own when
+	 * absent. It is the caller's to choose because it follows the caller's heartbeat: a lease has to
+	 * outlive a few missed beats and nothing more, since whoever comes back after its owner died
+	 * waits it out. It changes nothing about WHAT is leased: there is one lease, whatever its length,
+	 * and an acquisition in flight for the same session is joined as it is.
+	 */
+	acquire(sessionId: string, leaseTtlMs: number = this.leaseTtlMs): Promise<AcquireLeaseResult> {
 		if (!validId(this.instanceId) || !validId(sessionId)) {
 			return Promise.resolve({ status: 'error', code: 'corrupt' });
 		}
 		const existing = this.acquireFlights.get(sessionId);
 		if (existing) return existing;
-		const flight = this.serial(() => this.acquireInternal(sessionId));
+		const flight = this.serial(() => this.acquireInternal(sessionId, leaseTtlMs));
 		this.acquireFlights.set(sessionId, flight);
 		void flight.finally(() => {
 			if (this.acquireFlights.get(sessionId) === flight) this.acquireFlights.delete(sessionId);
@@ -112,11 +119,12 @@ export class ActiveSessionLeaseCoordinator {
 		return flight;
 	}
 
-	renew(handle: ActiveSessionLeaseHandle): Promise<RenewLeaseResult> {
+	/** `leaseTtlMs` is how long the lease lasts from this renewal on; the coordinator's own when absent (see `acquire`). */
+	renew(handle: ActiveSessionLeaseHandle, leaseTtlMs: number = this.leaseTtlMs): Promise<RenewLeaseResult> {
 		return this.serial(async () => {
 			if (this.disposed) return { status: 'error', code: 'disposed' };
 			if (!validId(this.instanceId)) return { status: 'error', code: 'corrupt' };
-			if (!validLease(handle)) return { status: 'error', code: 'corrupt' };
+			if (!validLease(handle) || !validTiming(leaseTtlMs, this.expiryConfirmDelayMs)) return { status: 'error', code: 'corrupt' };
 			try {
 				return await (await this.getStore()).transaction<RenewLeaseResult>((raw) => {
 					const now = this.safeNow();
@@ -125,7 +133,7 @@ export class ActiveSessionLeaseCoordinator {
 					if (!state) return { result: { status: 'error', code: 'corrupt' } };
 					if (now < handle.renewedAt) return { result: { status: 'error', code: 'clock_anomaly' } };
 					if (!sameLease(state.lease, handle) || now >= handle.expiresAt) return { result: { status: 'lost' } };
-					const expiresAt = safeExpiry(now, this.leaseTtlMs);
+					const expiresAt = safeExpiry(now, leaseTtlMs);
 					if (!expiresAt) return { result: { status: 'error', code: 'clock_anomaly' } };
 					const renewed: ActiveSessionLease = { ...handle, renewedAt: now, expiresAt };
 					return { result: { status: 'renewed', handle: renewed }, nextState: { ...state, lease: renewed } };
@@ -177,9 +185,9 @@ export class ActiveSessionLeaseCoordinator {
 		void this.storePromise?.then((store) => store.close(), () => undefined);
 	}
 
-	private async acquireInternal(sessionId: string): Promise<AcquireLeaseResult> {
+	private async acquireInternal(sessionId: string, leaseTtlMs: number): Promise<AcquireLeaseResult> {
 		if (this.disposed) return { status: 'error', code: 'disposed' };
-		if (!validTiming(this.leaseTtlMs, this.expiryConfirmDelayMs)) return { status: 'error', code: 'corrupt' };
+		if (!validTiming(leaseTtlMs, this.expiryConfirmDelayMs)) return { status: 'error', code: 'corrupt' };
 		let first: AcquireLeaseResult | { status: 'expired'; lease: ActiveSessionLease };
 		try {
 			first = await (await this.getStore()).transaction<AcquireLeaseResult | { status: 'expired'; lease: ActiveSessionLease }>((raw) => {
@@ -188,7 +196,7 @@ export class ActiveSessionLeaseCoordinator {
 				if (raw === undefined) {
 					const machineId = this.machineIdFactory();
 					if (!validId(machineId)) return { result: { status: 'error', code: 'corrupt' } };
-					const lease = createLease(machineId, this.instanceId, sessionId, 1, now, this.leaseTtlMs);
+					const lease = createLease(machineId, this.instanceId, sessionId, 1, now, leaseTtlMs);
 					if (!lease) return { result: { status: 'error', code: 'clock_anomaly' } };
 					return {
 						result: { status: 'acquired', handle: lease },
@@ -197,7 +205,7 @@ export class ActiveSessionLeaseCoordinator {
 				}
 				const state = parseState(raw);
 				if (!state) return { result: { status: 'error', code: 'corrupt' } };
-				if (state.lease === null) return this.acquireVacant(state, sessionId, now);
+				if (state.lease === null) return this.acquireVacant(state, sessionId, now, leaseTtlMs);
 				if (now < state.lease.renewedAt) return { result: { status: 'error', code: 'clock_anomaly' } };
 				if (
 					now < state.lease.expiresAt &&
@@ -237,7 +245,7 @@ export class ActiveSessionLeaseCoordinator {
 						},
 					};
 				}
-				return this.acquireVacant(state, sessionId, confirmedNow);
+				return this.acquireVacant(state, sessionId, confirmedNow, leaseTtlMs);
 			});
 		} catch { return { status: 'error', code: 'unavailable' }; }
 	}
@@ -246,9 +254,10 @@ export class ActiveSessionLeaseCoordinator {
 		state: CoordinationState,
 		sessionId: string,
 		now: number,
+		leaseTtlMs: number,
 	): { result: AcquireLeaseResult; nextState?: CoordinationState } {
 		if (state.fenceCounter >= Number.MAX_SAFE_INTEGER) return { result: { status: 'error', code: 'fence_overflow' } };
-		const lease = createLease(state.machineId, this.instanceId, sessionId, state.fenceCounter + 1, now, this.leaseTtlMs);
+		const lease = createLease(state.machineId, this.instanceId, sessionId, state.fenceCounter + 1, now, leaseTtlMs);
 		if (!lease) return { result: { status: 'error', code: 'clock_anomaly' } };
 		return { result: { status: 'acquired', handle: lease }, nextState: { ...state, fenceCounter: lease.fence, lease } };
 	}

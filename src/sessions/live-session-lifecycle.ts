@@ -18,8 +18,26 @@ import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } 
 import { StorageDeadline, StorageUnansweredError } from './storage-deadline';
 
 export interface LiveSessionSourceInput { sourceInstance: string; epoch: string; build: string; profile: string; context: IngameGameContext }
+/**
+ * How long the live session's lease lasts without a renewal. The coordinator's five minutes (H14.22) are sized for the
+ * manual session, whose heartbeat derives from them; this lifecycle beats every `LIVE_SOURCE_STALE_MS` whatever the
+ * lease lasts, so a long one buys it nothing and costs this: a host that died without releasing (Hebra or Obsidian
+ * closed abruptly) left the plugin that came back refused its own session, `source_conflict` on every `live_open`,
+ * until the five minutes ran out.
+ *
+ * Thirty seconds are six beats: a renewal that waits out a whole storage deadline (10 s) and the beat skipped behind it
+ * still leave the lease valid. A host kept from beating for longer (a suspended machine) finds the lease lost when it
+ * returns and takes it again as after an outage: a gap and a new epoch, never the end of the session.
+ *
+ * Known limit, not verified on a real client: a host that stays alive but whose timers fire less often than this (a
+ * hidden window with its timers held back to one a minute) loses the lease on every beat and measures only part of
+ * the time, where the five-minute lease rode it out. Measured figures and the way out are in SPEC-live-loot §4.
+ */
+export const LIVE_SESSION_LEASE_TTL_MS = 30_000;
 export interface LiveSessionLifecycleOptions {
 	coordinator: SessionLeaseCoordinator; persistence: LiveSessionPersistence & Pick<SessionRuntimeStore, 'clear'>;
+	/** How long the lease this lifecycle asks the coordinator for lasts (`LIVE_SESSION_LEASE_TTL_MS` when absent). */
+	leaseTtlMs?: number;
 	enabled(): boolean; now(): number; sessionId(): string;
 	setInterval(callback: () => void, intervalMs: number): unknown; clearInterval(handle: unknown): void;
 	/**
@@ -816,6 +834,9 @@ export class LiveSessionLifecycle {
  * `persistedAt`, or another authority or session), and one that landed while nobody was told is adopted before
  * memory is written again (`adoptLanded`): `storageLost` leaves the session owing that check.
  *
+ * The same place asks the coordinator for the lease length this lifecycle wants (`LIVE_SESSION_LEASE_TTL_MS`), so
+ * every acquisition and renewal it makes carries it and none can be left with the coordinator's own.
+ *
  * Everything else is read from the caller's own object each time it is used (it is this one's prototype), so an
  * option the caller changes later is still the one in force.
  */
@@ -839,10 +860,12 @@ function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionL
 		loadSummaryState: () => deadline.bounded(async () => await options.persistence.loadSummaryState?.() ?? null, () => null),
 		saveSummaryState: (state) => deadline.bounded(async () => await options.persistence.saveSummaryState?.(state) === true, () => false),
 	};
+	// The lease is the coordinator's one lease, asked for with the length this lifecycle's own heartbeat calls for.
+	const leaseTtlMs = options.leaseTtlMs ?? LIVE_SESSION_LEASE_TTL_MS;
 	const coordinator: SessionLeaseCoordinator = {
 		get instanceId() { return options.coordinator.instanceId; },
-		acquire: (sessionId) => deadline.bounded(() => options.coordinator.acquire(sessionId), unavailable),
-		renew: (handle) => deadline.bounded(() => options.coordinator.renew(handle), unavailable),
+		acquire: (sessionId) => deadline.bounded(() => options.coordinator.acquire(sessionId, leaseTtlMs), unavailable),
+		renew: (handle) => deadline.bounded(() => options.coordinator.renew(handle, leaseTtlMs), unavailable),
 		assertOwned: (handle) => deadline.bounded(() => options.coordinator.assertOwned(handle), unavailable),
 		release: (handle) => deadline.bounded(() => options.coordinator.release(handle), unavailable),
 		dispose: () => { options.coordinator.dispose(); },

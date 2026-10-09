@@ -62,8 +62,13 @@ import {
 export interface SessionLeaseCoordinator {
 	/** Stable for the coordinator's whole lifetime; identifies this plugin instance in diagnostics. */
 	readonly instanceId: string;
-	acquire(sessionId: string): Promise<AcquireLeaseResult>;
-	renew(handle: ActiveSessionLeaseHandle): Promise<RenewLeaseResult>;
+	/**
+	 * `leaseTtlMs`, on both, is how long the lease lasts from that call; the coordinator's own (five minutes, H14.22)
+	 * when absent, which is what this service uses and derives its heartbeat from. The live session, which beats
+	 * every five seconds, asks for a shorter one.
+	 */
+	acquire(sessionId: string, leaseTtlMs?: number): Promise<AcquireLeaseResult>;
+	renew(handle: ActiveSessionLeaseHandle, leaseTtlMs?: number): Promise<RenewLeaseResult>;
 	assertOwned(handle: ActiveSessionLeaseHandle): Promise<AssertLeaseResult>;
 	release(handle: ActiveSessionLeaseHandle): Promise<ReleaseLeaseResult>;
 	dispose(): void;

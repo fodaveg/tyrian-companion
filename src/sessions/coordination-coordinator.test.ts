@@ -353,6 +353,49 @@ describe('ActiveSessionLeaseCoordinator', () => {
 		coordinator.dispose();
 	});
 
+	// H14.22: the default is five minutes and the manual session's heartbeat derives from it. A caller
+	// that beats on its own cadence (the live session, every five seconds) asks for a shorter lease.
+	it('grants and renews a lease for as long as the caller asks, and for five minutes when it does not ask', async () => {
+		const factory = new IDBFactory();
+		let now = 1_000;
+		const coordinator = new ActiveSessionLeaseCoordinator({
+			indexedDb: factory, databaseName: databaseName('lease length'), instanceId: 'instance', machineId: () => 'machine',
+			clock: () => now, sleep: async () => undefined,
+		});
+		const short = requireHandle(await coordinator.acquire('session-live', 30_000));
+		expect(short).toMatchObject({ acquiredAt: 1_000, expiresAt: 31_000 });
+		now = 6_000;
+		const renewed = await coordinator.renew(short, 30_000);
+		expect(renewed).toMatchObject({ status: 'renewed', handle: { renewedAt: 6_000, expiresAt: 36_000 } });
+		await coordinator.release(requireHandle(renewed));
+
+		const standard = requireHandle(await coordinator.acquire('session-manual'));
+		expect(standard.expiresAt - standard.renewedAt).toBe(300_000);
+		now = 7_000;
+		expect(await coordinator.renew(standard)).toMatchObject({ status: 'renewed', handle: { renewedAt: 7_000, expiresAt: 307_000 } });
+		await expect(coordinator.acquire('session-other', 0)).resolves.toEqual({ status: 'error', code: 'corrupt' });
+		await expect(coordinator.renew(standard, -1)).resolves.toEqual({ status: 'error', code: 'corrupt' });
+		coordinator.dispose();
+	});
+
+	it('keeps one lease for both lengths: a short lease excludes another owner exactly as a long one, only for less time', async () => {
+		const factory = new IDBFactory();
+		let now = 1_000;
+		const options = { indexedDb: factory, databaseName: databaseName('one lease'), machineId: () => 'machine', clock: () => now, sleep: async () => undefined };
+		const live = new ActiveSessionLeaseCoordinator({ ...options, instanceId: 'live-host' });
+		const other = new ActiveSessionLeaseCoordinator({ ...options, instanceId: 'other-host' });
+		requireHandle(await live.acquire('session-live', 30_000));
+		now = 30_999;
+		await expect(other.acquire('session-manual')).resolves.toMatchObject({ status: 'busy', ownerInstanceId: 'live-host', ownerExpiresAt: 31_000 });
+		now = 31_000;
+		const taken = requireHandle(await other.acquire('session-manual'));
+		expect(taken).toMatchObject({ instanceId: 'other-host', fence: 2, expiresAt: 331_000 });
+		// And the other way round: the long lease is not shortened by somebody asking for a short one.
+		now = 200_000;
+		await expect(live.acquire('session-live', 30_000)).resolves.toMatchObject({ status: 'busy', ownerInstanceId: 'other-host' });
+		live.dispose(); other.dispose();
+	});
+
 	// 9 Oct 2026: one transaction the engine never answered held this queue for the rest of the
 	// plugin's life, and behind it every lease operation of the manual and of the live session.
 	it('answers unavailable when the store does not answer in time, and serves the next operation', async () => {
