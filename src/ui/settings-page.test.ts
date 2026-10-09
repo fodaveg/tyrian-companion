@@ -164,3 +164,58 @@ describe('settings page: one list, a closed maintenance block', () => {
 		expect(names).not.toContain('In-game alert port');
 	});
 });
+
+describe('settings page: main screen or sidebar, only where the host can show both', () => {
+	const PLACEMENT_ROW = 'Where it is shown';
+
+	/** A core whose host declared a main view, with this device's choice kept in a variable. */
+	function pluginWithMainView(supported: boolean | undefined, initial: 'main' | 'sidebar' = 'main') {
+		const choice = { value: initial };
+		const updateViewPlacement = vi.fn(async (next: 'main' | 'sidebar') => {
+			choice.value = next;
+			return { status: 'saved' as const, inventoryAdvisor: 'unchanged' as const };
+		});
+		const self = Object.assign(plugin(), {
+			...(supported === undefined ? {} : { mainViewSupported: () => supported }),
+			getViewPlacement: () => choice.value,
+			updateViewPlacement,
+		});
+		return { self, choice, updateViewPlacement };
+	}
+
+	it('mounts no such row when the core does not say the host has a main view, or says it has none', () => {
+		expect(rowNames(mountPage().container)).not.toContain(PLACEMENT_ROW);
+		expect(rowNames(mountPage(pluginWithMainView(undefined).self).container)).not.toContain(PLACEMENT_ROW);
+		expect(rowNames(mountPage(pluginWithMainView(false).self).container)).not.toContain(PLACEMENT_ROW);
+	});
+
+	it('mounts it right after the mode when the host has a main view, with the two places and this device\'s choice', () => {
+		const { container } = mountPage(pluginWithMainView(true, 'sidebar').self);
+
+		const names = rowNames(container);
+		expect(names.slice(0, 3)).toEqual(['This installation\'s mode', PLACEMENT_ROW, 'API key']);
+		// A main row: it never goes into the maintenance block.
+		expect(rowNames(container.querySelector('details')!)).not.toContain(PLACEMENT_ROW);
+		const select = container.querySelectorAll<HTMLSelectElement>('select')[1]!;
+		expect(Array.from(select.options).map((option) => option.value)).toEqual(['main', 'sidebar']);
+		expect(select.value).toBe('sidebar');
+	});
+
+	it('saves a change as this device\'s choice, never as a synced setting', async () => {
+		const { self, choice, updateViewPlacement } = pluginWithMainView(true);
+		const { container } = mountPage(self);
+		const select = container.querySelectorAll<HTMLSelectElement>('select')[1]!;
+		expect(select.value).toBe('main');
+
+		select.value = 'sidebar';
+		select.dispatchEvent(new Event('change'));
+
+		await vi.waitFor(() => expect(updateViewPlacement).toHaveBeenCalledWith('sidebar'));
+		expect(choice.value).toBe('sidebar');
+		expect(self.updateSettings).not.toHaveBeenCalled();
+		// The row announces the save like any other.
+		await vi.waitFor(() => {
+			expect(container.querySelectorAll('.setting-item')[1]?.querySelector('.tyrian-companion-settings__save-status')?.getAttribute('data-state')).toBe('saved');
+		});
+	});
+});

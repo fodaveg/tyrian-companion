@@ -5,6 +5,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import type { TyrianVaultChange } from '../tyrian-host';
 import { labelledVault, sessionHistoryVault } from '../../runtime/vault-ports';
+import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
 import { loadTyrianSettings } from '../../runtime/tyrian-runtime';
 import { SessionHistoryService, type SessionHistoryNoteChange } from '../../sessions/session-history';
 import { setMockLanguage } from '../../test/obsidian-mock';
@@ -213,6 +214,13 @@ describe('ObsidianHost secrets, settings and environment', () => {
 		});
 		host.localStorage?.save('tyrian-companion:ingame-session-link', { sessionId: 'b' });
 		expect(host.localStorage?.load('tyrian-companion:ingame-session-link')).toEqual({ sessionId: 'b' });
+	});
+
+	it('declares no main view, so Settings offers no choice between the main screen and the sidebar', () => {
+		const host = createObsidianHost(fakePlugin().plugin);
+		// Obsidian declares no capability at all; for `mainView`, saying nothing means not having it.
+		expect(host.capabilities).toBeUndefined();
+		expect(createTyrianRuntime(host).mainViewSupported()).toBe(false);
 	});
 
 	it('reads the manifest when asked, so a manifest assigned after construction is the one reported', () => {

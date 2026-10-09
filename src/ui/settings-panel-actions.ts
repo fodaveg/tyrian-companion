@@ -3,6 +3,7 @@ import type { ManagedAssetsLifecycleResult } from '../assets/managed-assets-life
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { CollectorMode, TyrianSettings } from '../core/settings';
+import type { ViewPlacement } from '../runtime/view-placement';
 import type { PilotMetricsExportPreview, PilotMetricsExportResult } from '../sessions/pilot-metrics-export';
 import type { PilotEnvironmentV1, PilotPlatform, PilotSilentLossReview } from '../sessions/pilot-metrics-model';
 import type { PilotMetricsState } from '../sessions/pilot-metrics-recorder';
@@ -63,6 +64,14 @@ export interface SettingsPanelActions {
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	getCollectorMode(): CollectorMode;
 	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult>;
+	/**
+	 * Optional: absent means FALSE, the reverse of `managedAssetsSupported`. True shows the row
+	 * where this device picks the host's main screen or its sidebar.
+	 */
+	mainViewSupported?(): boolean;
+	/** This device's choice between the two; never part of `settings`. */
+	getViewPlacement(): ViewPlacement;
+	updateViewPlacement(placement: ViewPlacement): Promise<SettingsUpdateResult>;
 	getConnectionState(): ConnectionState;
 	checkConnection(): Promise<ConnectionState>;
 	loadLegendaryArmoryOptions(): Promise<LegendaryArmoryOptionsResult>;

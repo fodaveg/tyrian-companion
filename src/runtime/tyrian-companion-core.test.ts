@@ -23,6 +23,7 @@ import { PRODUCT_ACTION_IDS } from '../ui/product-action-controller';
 import { SALE_VIEW_TYPE } from '../ui/sale-item-view';
 import { createTyrianRuntime } from './index';
 import { ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID } from './tyrian-companion-core';
+import { VIEW_PLACEMENT_KEY } from './view-placement';
 
 /**
  * R1c: the whole of Tyrian booted through `createTyrianRuntime(host).start()` over a host with no
@@ -218,5 +219,121 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		]));
 		// No API key on this host: nothing reached the network.
 		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('registers each view with the title and the icon of its section, in the language of the settings', async () => {
+		const { host, registered } = neutralHost();
+		await createTyrianRuntime(host).start();
+
+		expect(registered.views.map((view) => [view.type, view.title(), view.icon])).toEqual([
+			[COMPANION_VIEW_TYPE, 'Tyrian companion', 'sword'],
+			[INVENTORY_ADVISOR_VIEW_TYPE, 'Inventory advisor', 'package-search'],
+			[SALE_VIEW_TYPE, 'Halloween sale', 'candy'],
+		]);
+		// A registration is exactly what `registerView` takes: nothing of the section leaks into it.
+		for (const view of registered.views) {
+			expect(Object.keys(view).sort()).toEqual(['icon', 'mount', 'placement', 'title', 'type', 'unmount']);
+		}
+	});
+});
+
+/** A recording dropdown for a settings row rendered outside a page, as the host's settings search does. */
+function recordingDropdown() {
+	const state = { options: [] as Array<[string, string]>, shown: null as string | null, change: async (_value: string): Promise<void> => undefined };
+	const dropdown = {
+		addOption: (value: string, display: string) => { state.options.push([value, display]); return dropdown; },
+		setValue: (value: string) => { state.shown = value; return dropdown; },
+		setDisabled: () => dropdown,
+		onChange: (callback: (value: string) => Promise<void>) => { state.change = callback; return dropdown; },
+	};
+	const row = { addDropdown: (build: (control: typeof dropdown) => unknown) => { build(dropdown); return row; } };
+	return { state, row };
+}
+
+describe('main screen or sidebar: this device\'s choice, behind a host capability', () => {
+	const PLACEMENT_ROW = 'Where it is shown';
+	const settingNames = (registered: ReturnType<typeof neutralHost>['registered']): string[] =>
+		registered.panels[0]!.settingDefinitions!().map(({ name }) => name);
+	const threeViews = [
+		[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'],
+	];
+
+	it.each<[string, TyrianHost['capabilities']]>([
+		['says nothing of its capabilities', undefined],
+		['declares no capability at all', {}],
+		['declares the capabilities Hebra declares today', { managedAssets: true, supportPackageAsNote: true }],
+		['declares it has no main view', { mainView: false }],
+	])('offers no such choice in Settings on a host that %s', async (_label, capabilities) => {
+		const { host, registered } = neutralHost();
+		const runtime = createTyrianRuntime(capabilities === undefined ? host : { ...host, capabilities });
+		await runtime.start();
+
+		expect(runtime.mainViewSupported()).toBe(false);
+		expect(settingNames(registered)).not.toContain(PLACEMENT_ROW);
+		// The default still reads as the main screen; nothing acts on it.
+		expect(runtime.getViewPlacement()).toBe('main');
+		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual(threeViews);
+	});
+
+	it('offers it right after the mode on a host that declares a main view, and keeps the choice in the device storage only', async () => {
+		const { host, registered, records } = neutralHost();
+		const device = new Map<string, unknown>();
+		const saveSettings = vi.fn(async () => undefined);
+		const runtime = createTyrianRuntime({
+			...host,
+			capabilities: { mainView: true },
+			localStorage: { load: (key) => device.get(key) ?? null, save: (key, value) => { device.set(key, value); } },
+			settings: { load: () => host.settings.load(), save: saveSettings },
+		});
+		await runtime.start();
+
+		expect(runtime.mainViewSupported()).toBe(true);
+		const names = settingNames(registered);
+		expect(names.indexOf(PLACEMENT_ROW)).toBe(names.indexOf('This installation\'s mode') + 1);
+		const definition = registered.panels[0]!.settingDefinitions!().find(({ name }) => name === PLACEMENT_ROW)!;
+		expect(definition.desc).toBe('On the main screen or in the sidebar. Affects this device only.');
+		const { state, row } = recordingDropdown();
+		definition.render(row as never);
+		expect(state.options).toEqual([['main', 'Main screen'], ['sidebar', 'Sidebar']]);
+		expect(state.shown).toBe('main');
+		expect(device.size).toBe(0);
+
+		const settingsSavesBefore = saveSettings.mock.calls.length;
+		await state.change('sidebar');
+
+		expect([...device.entries()]).toEqual([[VIEW_PLACEMENT_KEY, 'sidebar']]);
+		expect(runtime.getViewPlacement()).toBe('sidebar');
+		// This device's, like the mode: the synced settings never carry it.
+		expect(saveSettings.mock.calls.length).toBe(settingsSavesBefore);
+		expect(runtime.settings).not.toHaveProperty('viewPlacement');
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({
+				component: 'settings', action: 'settings_save', state: 'view_placement', phase: 'success',
+			}));
+		});
+		// Saving the choice is all it does: the three views stay registered where they were.
+		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual(threeViews);
+
+		await state.change('main');
+		expect(device.get(VIEW_PLACEMENT_KEY)).toBe('main');
+		expect(runtime.getViewPlacement()).toBe('main');
+	});
+
+	it('reads the choice this device stored, and the main screen for a stored value it does not know', async () => {
+		const stored = async (value: unknown) => {
+			const { host } = neutralHost();
+			const runtime = createTyrianRuntime({
+				...host,
+				capabilities: { mainView: true },
+				localStorage: { load: (key) => (key === VIEW_PLACEMENT_KEY ? value : null), save: () => undefined },
+			});
+			await runtime.start();
+			return runtime.getViewPlacement();
+		};
+
+		expect(await stored('sidebar')).toBe('sidebar');
+		expect(await stored('main')).toBe('main');
+		expect(await stored('floating')).toBe('main');
+		expect(await stored(null)).toBe('main');
 	});
 });

@@ -152,6 +152,7 @@ import { SELL_SIGNAL_REFERENCE_DAYS } from '../economy/sell-signal';
 import { assemblePriceHistory } from './assemble-price-history';
 import { CollectorHeartbeat } from './collector-status';
 import { loadCollectorInstanceId, loadCollectorMode, saveCollectorMode } from './collector-instance';
+import { loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import {
 	PriceSeedBulkRefreshService,
@@ -637,6 +638,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * only `updateCollectorMode` changes it. Read through `consulting`.
 	 */
 	collectorMode: CollectorMode | undefined;
+	/**
+	 * Where this DEVICE shows the plugin (`runtime/view-placement.ts`), kept in the host's local
+	 * storage, never in `data.json`. Null until it is first read. Nothing acts on it yet: no host
+	 * declares `capabilities.mainView`, so the three views register as always.
+	 */
+	private viewPlacement: ViewPlacement | null = null;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
@@ -1427,6 +1434,39 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		};
 		return await (this.localDebugActions?.run(
 			{ component: 'settings', action: 'settings_save', state: 'collector_mode' }, perform,
+		) ?? perform());
+	}
+
+	/**
+	 * Whether Settings offers the choice between the host's main screen and its sidebar: only when
+	 * the host declared `capabilities.mainView: true`. An omitted capability means false, the reverse
+	 * of `managedAssetsSupported`, and no host declares it yet.
+	 */
+	mainViewSupported(): boolean {
+		return hostSupportsMainView(this.host);
+	}
+
+	/** This device's choice, for the Settings selector; the main screen until it picks the sidebar. */
+	getViewPlacement(): ViewPlacement {
+		this.viewPlacement ??= loadViewPlacement(this.host.localStorage);
+		return this.viewPlacement;
+	}
+
+	/**
+	 * The Settings selector's write. Stores the choice in this device's local storage only, so no
+	 * synced `data.json` carries it to another device. It changes nothing else yet.
+	 */
+	async updateViewPlacement(placement: ViewPlacement): Promise<SettingsUpdateResult> {
+		const perform = async (): Promise<SettingsUpdateResult> => {
+			if (placement !== this.getViewPlacement()) {
+				// Published only after the write, like `updateCollectorMode`.
+				saveViewPlacement(this.host.localStorage, placement);
+				this.viewPlacement = placement;
+			}
+			return { status: 'saved', inventoryAdvisor: 'unchanged' };
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'settings', action: 'settings_save', state: 'view_placement' }, perform,
 		) ?? perform());
 	}
 
@@ -6436,6 +6476,15 @@ function consulting(plugin: { readonly collectorMode?: CollectorMode }): boolean
  */
 function hostSupportsManagedAssets(host: TyrianHost | undefined): boolean {
 	return host?.capabilities?.managedAssets !== false;
+}
+
+/**
+ * Whether the host can show the plugin on its main screen: only when it declared
+ * `capabilities.mainView: true`. The reverse default of `hostSupportsManagedAssets`: a host that
+ * says nothing does not have it.
+ */
+function hostSupportsMainView(host: TyrianHost | undefined): boolean {
+	return host?.capabilities?.mainView === true;
 }
 
 /**

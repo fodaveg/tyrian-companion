@@ -2,6 +2,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
 import { createTyrianTestApi, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
 import { installDomHelpers } from '../dom-polyfill';
 import type { CanonicalPathFor } from '../tyrian-host';
@@ -381,6 +382,13 @@ describe('createHebraHost: the other ports', () => {
 		const handle = await createHebraHost(deps(createTyrianTestApi()));
 		expect(handle.host.vault.canonicalIdentity()).toBe('hebra-library:library-1');
 		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true });
+	});
+
+	it('declares no main view yet, so Settings offers no choice between the main screen and the sidebar', async () => {
+		const handle = await createHebraHost(deps(createTyrianTestApi()));
+		// For `mainView`, an omitted flag means the host does not have it.
+		expect(handle.host.capabilities).not.toHaveProperty('mainView');
+		expect(createTyrianRuntime(handle.host).mainViewSupported()).toBe(false);
 	});
 
 	it('secrets preloaded from the backend; settings and localStorage through api.storage', async () => {

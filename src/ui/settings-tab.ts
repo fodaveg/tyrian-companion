@@ -28,6 +28,7 @@ import type {
 	SettingsPanelActions,
 	SettingsUpdateResult,
 } from './settings-panel-actions';
+import type { ViewPlacement } from '../runtime/view-placement';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
 import { SessionHistoryScrubController } from './session-history-scrub-controller';
 import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
@@ -43,9 +44,13 @@ export type SettingsGroup = 'main' | 'maintenance';
 type SettingSaveState = 'saving' | 'saved' | 'error';
 /**
  * What a row saves. `collectorMode` is not a setting (R1b): it is this device's, so `writeSettings`
- * routes it to `updateCollectorMode` and it never reaches data.json. A row saves one or the other.
+ * routes it to `updateCollectorMode` and it never reaches data.json. `viewPlacement` is this
+ * device's too and goes to `updateViewPlacement`. A row saves one of the three.
  */
-type SettingsRowUpdate = Partial<TyrianSettings> & { readonly collectorMode?: CollectorMode };
+type SettingsRowUpdate = Partial<TyrianSettings> & {
+	readonly collectorMode?: CollectorMode;
+	readonly viewPlacement?: ViewPlacement;
+};
 type SettingsWriter = (settings: SettingsRowUpdate) => Promise<SettingsUpdateResult | null>;
 type CategorizedSettingRenderer = (setting: TyrianSettingRow, save: SettingsWriter) => void;
 interface CategorizedSettingDefinition {
@@ -290,12 +295,15 @@ export class TyrianCompanionSettingTab {
 		return result;
 	}
 
-	/** Sends a row's save to the plugin: this device's mode to `updateCollectorMode`, the rest to `updateSettings`. */
+	/**
+	 * Sends a row's save to the plugin: this device's mode to `updateCollectorMode`, where it shows
+	 * the plugin to `updateViewPlacement`, the rest to `updateSettings`.
+	 */
 	private async writeSettings(update: SettingsRowUpdate): Promise<SettingsUpdateResult> {
-		const { collectorMode, ...settings } = update;
-		return collectorMode === undefined
-			? await this.plugin.updateSettings(settings)
-			: await this.plugin.updateCollectorMode(collectorMode);
+		const { collectorMode, viewPlacement, ...settings } = update;
+		if (collectorMode !== undefined) return await this.plugin.updateCollectorMode(collectorMode);
+		if (viewPlacement !== undefined) return await this.plugin.updateViewPlacement(viewPlacement);
+		return await this.plugin.updateSettings(settings);
 	}
 
 	private definitions(): CategorizedSettingDefinition[] {
@@ -316,6 +324,8 @@ export class TyrianCompanionSettingTab {
 					);
 				},
 			},
+			// A host that cannot show the plugin on its main screen has no such choice to offer.
+			...this.viewPlacementDefinitions(),
 			{
 				group: 'main',
 				name: this.t('settings.apiKey.name'), desc: this.t('settings.apiKey.desc'),
@@ -630,6 +640,31 @@ export class TyrianCompanionSettingTab {
 			...this.debugDefinitions(),
 			// A host without managed assets (`capabilities.managedAssets: false`) has no such section.
 			...this.managedAssetsDefinitions(),
+		];
+	}
+
+	/**
+	 * The row where this device picks the host's main screen or its sidebar; none unless the host
+	 * declared `capabilities.mainView: true` (absent means no, the reverse of the managed assets).
+	 */
+	private viewPlacementDefinitions(): CategorizedSettingDefinition[] {
+		if (this.plugin.mainViewSupported?.() !== true) return [];
+		return [
+			{
+				group: 'main',
+				name: this.t('settings.viewPlacement.name'), desc: this.t('settings.viewPlacement.desc'),
+				render: (setting, save) => {
+					setting.addDropdown((dropdown) =>
+						dropdown
+							.addOption('main', this.t('settings.viewPlacement.main'))
+							.addOption('sidebar', this.t('settings.viewPlacement.sidebar'))
+							.setValue(this.plugin.getViewPlacement())
+							.onChange(async (viewPlacement) => {
+								await save({ viewPlacement: viewPlacement === 'sidebar' ? 'sidebar' : 'main' });
+							}),
+					);
+				},
+			},
 		];
 	}
 

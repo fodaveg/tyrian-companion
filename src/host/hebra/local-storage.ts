@@ -6,7 +6,8 @@
  * - `settings`: the plugin's JSON (Obsidian's `data.json`) in `api.storage.settings`, which Hebra
  *   keeps under `hebra.library-v1.module.tyrian-companion.settings:<libraryId>`. A new library has
  *   none, so the core starts in consultation mode (R1b: no key, no collector);
- * - `localStorage`: the core's small per-device values (today only the in-game session link) in
+ * - `localStorage`: the core's small per-device values (the in-game session link, the farming
+ *   context of the session in progress, where this device shows the plugin) in
  *   `api.storage.device`, under `…tyrian-companion.local:<libraryId>:<key>`; never synced;
  * - `adapter`/`diagnostics.storage`: raw writes under `configDir` (the rotating diagnostic log, the
  *   advisor capture receipt, the support package). They are not notes: they go to an IndexedDB

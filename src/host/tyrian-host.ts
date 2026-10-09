@@ -82,8 +82,9 @@ export interface TyrianSettingsPort {
 
 /**
  * Small values that belong to THIS vault on THIS device and must never sync (Obsidian's
- * `App.loadLocalStorage`/`saveLocalStorage`). Synchronous, like those. Today only the in-game
- * session link (`readIngameSessionLink`/`writeIngameSessionLink` in the core).
+ * `App.loadLocalStorage`/`saveLocalStorage`). Synchronous, like those. Today the in-game session
+ * link (`readIngameSessionLink`/`writeIngameSessionLink` in the core), the farming context of the
+ * session in progress and where this device shows the plugin (`runtime/view-placement.ts`).
  */
 export interface TyrianLocalStoragePort {
 	/** The stored value, or null when there is none (or the host keeps none). */
@@ -376,6 +377,7 @@ export interface TyrianUiPort {
 /**
  * What this host can do beyond the mandatory ports. Every flag is optional and an omitted one
  * means "supported", so a host written before the flag existed (Obsidian) behaves as always.
+ * `mainView` is the one that reads the other way round, and says so itself.
  */
 export interface TyrianHostCapabilities {
 	/**
@@ -392,6 +394,15 @@ export interface TyrianHostCapabilities {
 	 * `.json` under `<outputFolder>/diagnostics` written through `vault.adapter`, as in Obsidian.
 	 */
 	readonly supportPackageAsNote?: boolean;
+	/**
+	 * The host can show the plugin on its main screen, the three sections (Session, Inventory, Sale)
+	 * together, besides showing it in its sidebar. The REVERSE of `managedAssets`: an omitted flag
+	 * means NOT supported, because this is a screen a host has to build before it can offer it, so
+	 * a host written before the flag existed must not be taken to have it. Only with true does
+	 * Settings show the row where this device picks between the two (`runtime/view-placement.ts`).
+	 * No host declares it yet, neither Obsidian nor Hebra.
+	 */
+	readonly mainView?: boolean;
 }
 
 export interface TyrianHost {

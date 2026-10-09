@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
+import { VIEW_PLACEMENT_KEY, loadViewPlacement, saveViewPlacement } from '../../runtime/view-placement';
 import { createHebraStorage, hebraDeviceKey, hebraSettingsKey } from '../../test/hebra-plugin-fakes';
 import {
 	abortingIndexedDb, closeUnderneath, emitEngineClose, killStorage, reviveStorage, settlement, trackedIndexedDb,
@@ -57,6 +58,21 @@ describe('localStorage over api.storage.device', () => {
 		port.save('ingame-session', null);
 		expect(port.load('ingame-session')).toBeNull();
 		expect(local.size).toBe(0);
+	});
+
+	it('keeps where this device shows the plugin under the device key, never in the synced settings', () => {
+		const local = new Map<string, string>();
+		const port = createTyrianLocalStoragePort(createHebraStorage(local, 'tyrian-companion', 'lib-1'));
+		expect(loadViewPlacement(port)).toBe('main');
+
+		saveViewPlacement(port, 'sidebar');
+
+		expect([...local.keys()]).toEqual([hebraDeviceKey('tyrian-companion', 'lib-1', VIEW_PLACEMENT_KEY)]);
+		expect(local.has(hebraSettingsKey('tyrian-companion', 'lib-1'))).toBe(false);
+		expect(loadViewPlacement(port)).toBe('sidebar');
+		// A value this build does not know (a later one wrote it, or it is corrupt) reads as the default.
+		local.set(hebraDeviceKey('tyrian-companion', 'lib-1', VIEW_PLACEMENT_KEY), JSON.stringify('floating'));
+		expect(loadViewPlacement(port)).toBe('main');
 	});
 });
 
