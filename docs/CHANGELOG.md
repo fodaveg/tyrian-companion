@@ -2,7 +2,13 @@
 
 ## Release beta 0.6.17 - el valor de un botín se calcula sobre el total de la venta, y las notas, los avisos y los precios fallan sin romper lo demás
 
-Release por tag `0.6.17`. Cambia una cifra visible (el valor de la tarjeta de botín de una sesión de cuenta) y
+[Canal 0.6.17 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.17); **instalación/runtime
+pendiente**. Tag `0.6.17` sobre `3bf01ee` (commit vacío de atestación), árbol
+`dc4bf8cd730919a502c9bf3fac3b2dbf5de3d587`. Gate local sobre el candidato `d48f630` (mismo árbol): `check` 8/8
+(5572 tests, 339 ficheros), guardrails 25/25 y `release:preflight` en verde. El workflow de release (run
+37916791102) terminó con todos los pasos en `success`, y `release:brat-verify` contra la salida real de la release
+dio PASS con los ocho assets. La CI de `main` sobre `3bf01ee` (run 37916781466) seguía en curso al escribir esto.
+Cambia una cifra visible (el valor de la tarjeta de botín de una sesión de cuenta) y
 endurece cómo se leen las notas de sesión, cuándo sale un aviso, cómo se piden los precios y cómo se guarda y se
 lista en Hebra. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
 
@@ -17,8 +23,9 @@ lista en Hebra. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en
   cliente 0.6.16 no la abre e informa de esquema futuro.
 - Notas de sesión en vivo: se lee la versión 2 de la nota (diario disperso, sin entrada para una muestra que no
   cambió nada) y la base de precio bruto `instant_sell_gross`, que solo es válida en una nota v2. El escritor v2
-  está implementado y APAGADO: esta versión sigue escribiendo la 1, byte a byte como la 0.6.16, y no guarda
-  muestras vacías. Una nota que no se puede leer (de una versión posterior o rota) se aparta por ruta, sin tocarla,
+  está implementado y APAGADO: esta versión sigue escribiendo la 1, byte a byte como la 0.6.16, y por tanto sigue
+  guardando una entrada por cada muestra, también las que no cambian nada; dejar de guardarlas llega cuando se
+  encienda el escritor de la versión 2. Una nota que no se puede leer (de una versión posterior o rota) se aparta por ruta, sin tocarla,
   y se nombra en los dos paneles, en vez de convertir todo el historial y la comparación en un conflicto. Dos notas
   de una misma sesión siguen siendo un conflicto. Una 0.6.16 trata una nota v2 como inválida.
 - Sesiones heredadas al arrancar: del archivo de una sesión de API preservada solo se aparta `record_invalid`

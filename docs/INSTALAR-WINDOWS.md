@@ -1,7 +1,7 @@
 # Instalar Tyrian Companion en Windows desde cero
 
-Guía para el plugin **0.6.17** y el addon de Nexus **0.8.4**. Las dos versiones se publican a
-continuación de este texto: hasta que existan sus releases, los enlaces a ellas no abren nada.
+Guía para el plugin **0.6.17** y el addon de Nexus **0.8.4**. Las dos versiones ya están
+publicadas (plugin 0.6.17 y addon 0.8.4); publicadas no es instaladas ni verificadas en Windows.
 
 ## Límites de esta guía
 

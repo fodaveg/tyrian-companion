@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.17: el valor de un botín sobre el total de la venta y fallos que ya no rompen lo demás (9 oct 2026)
+## Canal 0.6.17 publicado: el valor de un botín sobre el total de la venta y fallos que ya no rompen lo demás (9 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `c520c2c` (main con el canal 0.6.16 publicado). Trae el valor de
+**Canal publicado; instalación/runtime pendiente.** [Tyrian Companion 0.6.17](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.17)
+es una release normal, sin draft ni prerelease, publicada el 2026-10-09T10:23:01Z; nombre, tag y `manifest.version`
+son `0.6.17`. El tag (ligero) apunta a `3bf01ee` (commit vacío de atestación, árbol
+`dc4bf8cd730919a502c9bf3fac3b2dbf5de3d587`); el candidato fuente es `d48f630`, con el mismo árbol. Parte de `c520c2c` (main con el canal 0.6.16 publicado). Trae el valor de
 la tarjeta de botín de una sesión de cuenta calculado con la comisión sobre el total de cada venta, la lectura de la
 versión 2 de la nota de sesión (el escritor v2 sigue apagado), el reintento de un aviso cuya reserva se rechazó, el
 cierre del `AudioContext` y el reintento de `resume()`, los dos motivos de «sin semilla» en los precios, la base de
@@ -17,10 +20,27 @@ independiente del 9 oct 2026 pidió dos correcciones obligatorias, las dos sobre
 nota de sesión que tarda más de 10 s en escribirse no llega a sellarse y bloquea el inicio siguiente, y un guardado
 del inicio que vence y aterriza después deja una sesión activa que el usuario no vio empezar. Sigue en su rama.
 
-- Sin medir todavía sobre el árbol candidato: el gate, los guardarraíles, `release:preflight` y el paquete.
-- No verificado: nadie ha visto la 0.6.17 en Obsidian ni en Hebra reales, ni la instalación de la 0.6.17 por BRAT o
-  en Hebra.
-- Pendiente: el gate, la publicación (tag, release, `release:brat-verify`) y la verificación en clientes reales.
+- Gate local sobre el candidato (Fedora, Node v22.23.1, 9 oct 2026): `npm run check` 8/8 (5572 tests, 339
+  ficheros), `npm run check:guardrails` 25/25, `release preflight: pass` y `release package: PASS`
+  (`tyrian-companion-0.6.17.zip` construido en local, sha256
+  `e60c99ff3669534f26b6747ed36e3f997a491b32b9d2d1eca933742dbc057fe3`). Sobre la release planeada, `BRAT release
+  contract: PASS` con 8 assets.
+- Publicación: el workflow de release (run 37916791102) terminó `completed`/`success`, con todos los pasos del job
+  `publish` en `success`. `release:brat-verify` (`node scripts/brat-release-contract.mjs --release-json <salida de
+  gh release view>`) sobre la release real: «BRAT release contract: PASS (version=0.6.17; assets=8)». Los ocho
+  assets están `uploaded`: `hebra-main.mjs` 2642047, `hebra-styles.css` 118003, `hebra.json` 29593, `main.js`
+  1938798, `manifest.json` 237, `styles.css` 94537, `tyrian-companion-0.6.17.zip` 2033882 y
+  `tyrian-companion-0.6.17.zip.sha256` 94 (bytes).
+- Revisión: los lotes del audit se pasaron juntos por el gate en `e800a54`; el lote del precio bruto tuvo revisor
+  independiente en dos pasadas. Los metadatos, el changelog y los tres textos corregidos los leyó solo el integrador.
+- CI de `main` sobre `3bf01ee` (run 37916781466): `in_progress` al escribir esto (leído con `gh run view` el 9 oct
+  2026, 10:25 UTC): `detect-native-changes` y `check-guardrails` en `success`, `check` en curso, `rust-portable` y
+  `rust-windows-helper` omitidos. La conclusión no se ha leído.
+- Corrección del texto publicado: el cuerpo de la release 0.6.17 llevaba una frase errónea («no guarda muestras
+  vacías»); con el escritor de la versión 1, el vigente, cada muestra deja su entrada, y solo la versión 2 omite la
+  que no cambia nada. El changelog queda corregido y el cuerpo de la release se edita con él.
+- No verificado: nadie ha visto la 0.6.17 instalada ni cargada en Obsidian/BRAT ni en Hebra.
+- Pendiente: la verificación en clientes reales (Hebra instalada y Obsidian/BRAT).
 - Addon de Nexus 0.8.4, publicado el 9 oct 2026:
   [release 0.8.4](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.4), tag anotado sobre `37a73a2`.
   Asset `tyrian_companion_nexus.dll` de 4 447 744 bytes, sha256
