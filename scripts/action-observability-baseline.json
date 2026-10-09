@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 563,
+		"catch_clause": 564,
 		"promise_catch": 59,
 		"void_expression": 123,
 		"callback_registration": 222
@@ -10733,11 +10733,27 @@
 					"reason": "Allowlisted catch_clause: The \"initializeRecord\" catch is a \"fallback_return\" for a journal storage could not read: it reports the error once through onError, marks the view failed, keeps nothing of the session in memory and leaves the heartbeat to ask again. Verified recovery: \"fallback_return\" in \"initializeRecord\"."
 				},
 				{
+					"id": "1769c2982cc7600e103c7b81c233fdff58ace7b0",
+					"kind": "catch_clause",
+					"line": 541,
+					"column": 5,
+					"endLine": 541,
+					"endColumn": 27,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "storedEntry",
+						"justification": "The \"storedEntry\" catch is a \"fallback_return\": a journal entry that cannot be read back after a refused write tells the lifecycle nothing more than the refusal did, so the write stays refused, exactly as before the read existed."
+					},
+					"reason": "Allowlisted catch_clause: The \"storedEntry\" catch is a \"fallback_return\": a journal entry that cannot be read back after a refused write tells the lifecycle nothing more than the refusal did, so the write stays refused, exactly as before the read existed. Verified recovery: \"fallback_return\" in \"storedEntry\"."
+				},
+				{
 					"id": "8508cd8935b74c9ffd787fa7a6ef711172d4fa3b",
 					"kind": "catch_clause",
-					"line": 575,
+					"line": 594,
 					"column": 41,
-					"endLine": 575,
+					"endLine": 594,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10751,9 +10767,9 @@
 				{
 					"id": "7c035d4a49139072cc03c37a219deb6a85d1abd2",
 					"kind": "catch_clause",
-					"line": 693,
+					"line": 712,
 					"column": 5,
-					"endLine": 693,
+					"endLine": 712,
 					"endColumn": 56,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10767,9 +10783,9 @@
 				{
 					"id": "91c1d62daec6aad6537ee5cf7bc3e3a60123810c",
 					"kind": "catch_clause",
-					"line": 705,
+					"line": 724,
 					"column": 3,
-					"endLine": 705,
+					"endLine": 724,
 					"endColumn": 30,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10783,9 +10799,9 @@
 				{
 					"id": "1df169d046eca4030f9a385c2d3c395e34e85f3c",
 					"kind": "callback_registration",
-					"line": 749,
+					"line": 768,
 					"column": 16,
-					"endLine": 753,
+					"endLine": 772,
 					"endColumn": 27,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -10800,9 +10816,9 @@
 				{
 					"id": "69fe951b87925b65ce28ce50085a842348c73ad6",
 					"kind": "void_expression",
-					"line": 752,
+					"line": 771,
 					"column": 4,
-					"endLine": 752,
+					"endLine": 771,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10816,9 +10832,9 @@
 				{
 					"id": "9a0dd42adce53d202a058057a2f5881a3d72e7f2",
 					"kind": "catch_clause",
-					"line": 783,
+					"line": 802,
 					"column": 41,
-					"endLine": 783,
+					"endLine": 802,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10832,9 +10848,9 @@
 				{
 					"id": "7ddd9f475ee93665839cd8b3166da5e8b9e9eb65",
 					"kind": "catch_clause",
-					"line": 809,
+					"line": 828,
 					"column": 92,
-					"endLine": 809,
+					"endLine": 828,
 					"endColumn": 191,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10848,9 +10864,9 @@
 				{
 					"id": "3b957ea797d76ce6bf47810a3c79ca2fa61e2ede",
 					"kind": "catch_clause",
-					"line": 825,
+					"line": 844,
 					"column": 5,
-					"endLine": 825,
+					"endLine": 844,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10864,9 +10880,9 @@
 				{
 					"id": "6cbbb0836dfb071587f2543e51de07446397417b",
 					"kind": "callback_registration",
-					"line": 867,
+					"line": 886,
 					"column": 16,
-					"endLine": 867,
+					"endLine": 886,
 					"endColumn": 147,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10881,9 +10897,9 @@
 				{
 					"id": "adf55f5bc4bd198a84023e136b829c746b3dbc28",
 					"kind": "catch_clause",
-					"line": 945,
+					"line": 965,
 					"column": 4,
-					"endLine": 945,
+					"endLine": 965,
 					"endColumn": 39,
 					"classification": "allowlisted",
 					"evidence": {

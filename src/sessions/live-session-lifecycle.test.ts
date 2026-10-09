@@ -829,6 +829,56 @@ describe('durable live alert outbox', () => {
 		e.service.observe(entry); await e.service.drain(); expect(e.emit).not.toHaveBeenCalled();
 		expect(f.service.getAlerts()[0]?.state).toBe('ready'); await e.service.dispose(); await f.service.dispose();
 	});
+	// A wait that runs out, or an engine that dies after the commit, answers a claim as refused although it was written. Memory
+	// stayed `ready`, disk said `dispatching`: every retry tried `ready → dispatching` again against an entry that no longer
+	// matched, on every state change of the session, for ever (20 `updateAlert` and 10 writes in ten samples), and nothing sounded.
+	it('a claim storage wrote and answered as refused is read back: the alert sounds once and no retry follows', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const replace = f.store.replaceLiveJournal.bind(f.store); const claims = vi.fn(); let lying = true;
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) => {
+			const claim = next.outbox.some((intent) => intent.state === 'dispatching'); if (claim) claims();
+			const written = await replace(prior,next,owner);
+			if (claim && lying) { lying = false; return false; }
+			return written;
+		});
+		f.options.onStateChange.mockImplementation(() => { e.service.retryUnclaimedAlerts(); });
+		e.service.observe(entry); await e.service.drain();
+		// The claim is this host's own and it is on disk: it is the claim, and the one step that lets the alert sound.
+		expect(e.emit).toHaveBeenCalledTimes(1); expect(emittedQuantities(e.emit)).toEqual([2]);
+		expect(f.service.getAlerts()[0]?.state).toBe('processed');
+		expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]?.state).toBe('processed');
+		// The pass the claim's own state change asked for finds the alert settled; from then on nothing is owed.
+		await e.service.drain(); const update = vi.spyOn(f.service,'updateAlert');
+		for (let second = 1; second <= 10; second += 1) { f.setNow(AT+1000+second*1000); await f.service.commit(f.sample(1+second,2)); await e.service.drain(); }
+		expect(update).not.toHaveBeenCalled(); expect(claims).toHaveBeenCalledTimes(1); expect(e.emit).toHaveBeenCalledTimes(1);
+		await e.service.dispose(); await f.service.dispose();
+	});
+	it('a claim that reaches storage after it was read back is not sounded: memory takes what the disk holds and the retries end', async () => {
+		const f = fixture(); const entry = await positive(f); const e = economy(f);
+		const replace = f.store.replaceLiveJournal.bind(f.store); const claims = vi.fn();
+		let late: (() => Promise<boolean>) | null = null; let held = true;
+		vi.spyOn(f.store,'replaceLiveJournal').mockImplementation(async (prior,next,owner) => {
+			const claim = next.outbox.some((intent) => intent.state === 'dispatching'); if (claim) claims();
+			// The first claim is answered as refused before it is written, and written only when the test says so.
+			if (claim && held) { held = false; late = async () => await replace(prior,next,owner); return false; }
+			return await replace(prior,next,owner);
+		});
+		e.service.observe(entry); await e.service.drain();
+		expect(e.emit).not.toHaveBeenCalled(); expect(f.service.getAlerts()[0]?.state).toBe('ready');
+		await expect(late!()).resolves.toBe(true);
+		expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]?.state).toBe('dispatching');
+		// The retry claims again a second later and is refused for real: the entry on disk is no longer the one in memory.
+		f.options.onStateChange.mockImplementation(() => { e.service.retryUnclaimedAlerts(); });
+		const update = vi.spyOn(f.service,'updateAlert');
+		f.setNow(AT+2000); e.service.retryUnclaimedAlerts(); await e.service.drain(); await e.service.drain();
+		expect(f.service.getAlerts()[0]?.state).toBe('dispatching'); expect(claims).toHaveBeenCalledTimes(2);
+		// Whether that claim was acted on is not known here, so it is not acted on again: at most once is the guarantee.
+		update.mockClear();
+		for (let second = 1; second <= 10; second += 1) { f.setNow(AT+2000+second*1000); await f.service.commit(f.sample(1+second,2)); await e.service.drain(); }
+		expect(update).not.toHaveBeenCalled(); expect(claims).toHaveBeenCalledTimes(2); expect(e.emit).not.toHaveBeenCalled();
+		expect((await f.store.readLiveJournal('session'))[1]?.outbox[0]?.state).toBe('dispatching');
+		await e.service.dispose(); await f.service.dispose();
+	});
 	it('an alert left ready by a refused claim sounds on a later pass once storage takes the claim, not only on a mode switch', async () => {
 		const f = fixture(); const entry = await positive(f); const e = economy(f);
 		const replace = f.store.replaceLiveJournal.bind(f.store); let refusing = true;

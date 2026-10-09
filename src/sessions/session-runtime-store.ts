@@ -4,7 +4,7 @@ import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-v
 import { canUpdateLiveOutbox } from './live-session-outbox';
 import { archiveLegacyRuntime, prepareLegacyRuntimeArchive, isLegacyRuntimeArchive, LEGACY_RUNTIME_ARCHIVE_PREFIX, type LegacyRuntimeArchiveV1 } from './live-session-legacy-archive';
 import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey, LIVE_SESSION_JOURNAL_STORE_NAME,
-	isSealedJournalQueue, LIVE_JOURNAL_PRUNE_QUEUE_KEY, liveRuntimeLoadResult, markLiveAlertsProcessed, pruneLiveJournal, type SealedJournal, readLiveJournal, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
+	isSealedJournalQueue, LIVE_JOURNAL_PRUNE_QUEUE_KEY, liveRuntimeLoadResult, markLiveAlertsProcessed, pruneLiveJournal, type SealedJournal, readLiveJournal, readLiveJournalEntry, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
@@ -210,6 +210,9 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 	}
 	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> {
 		return structuredClone([...this.liveJournal.values()].filter((entry) => entry.sessionId === sessionId));
+	}
+	async readLiveJournalEntry(sessionId: string, epoch: string, cursor: number): Promise<LiveJournalEntryV1 | null> {
+		return structuredClone(this.liveJournal.get(JSON.stringify([sessionId,epoch,cursor])) ?? null);
 	}
 	async markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean> {
 		const entry = this.liveJournal.get(JSON.stringify([sessionId,epoch,cursor]));
@@ -461,6 +464,9 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		catch { return { status: 'error', code: 'unavailable' }; }
 	}
 	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> { return await this.run(async (database) => await readLiveJournal(database, sessionId)); }
+	async readLiveJournalEntry(sessionId: string, epoch: string, cursor: number): Promise<LiveJournalEntryV1 | null> {
+		return await this.run(async (database) => await readLiveJournalEntry(database, sessionId, epoch, cursor)); // a failure reaches the lifecycle, which then knows nothing more than before
+	}
 	async markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean> {
 		try { return await this.run(async (database) => await markLiveAlertsProcessed(database, sessionId, epoch, cursor)); } catch { return false; }
 	}

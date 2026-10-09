@@ -4,7 +4,7 @@ import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import { sessionAuthorityFromLease } from './session-state-machine';
 import type { SessionRuntimeStore } from './session-runtime-store';
-import type { LiveSessionPersistence } from './live-session-persistence';
+import { identicalJournal, type LiveSessionPersistence } from './live-session-persistence';
 import { DEFAULT_FARMING_PREPARATION, normalizeFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
 import { LIVE_SOURCE_STALE_MS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveSessionRuntimeRecord, type LiveJournalEntryV1,
@@ -515,11 +515,30 @@ export class LiveSessionLifecycle {
 			const intent = update(structuredClone(prior));
 			const next = { ...entry, outbox: entry.outbox.map((row) => row.outboxId === outboxId ? intent : row) };
 			if (JSON.stringify(prior) === JSON.stringify(intent)) return null;
-			if (!await this.options.persistence.replaceLiveJournal(entry, next, receiptOnly ? undefined : target.record)) return null;
+			if (!await this.options.persistence.replaceLiveJournal(entry, next, receiptOnly ? undefined : target.record)) {
+				// «Refused» is also what a write answers when it was applied and nobody was told (a wait that ran out, an
+				// engine that died after the commit). Left at that, memory stays behind the disk for good: the same step
+				// is tried again on every retry against an entry that no longer matches, and never works. So the entry is
+				// read back before answering.
+				const stored = await this.storedEntry(entry);
+				if (stored === null || JSON.stringify(stored) === JSON.stringify(entry)) return null;
+				// The disk holds exactly what this call was writing: it is this write, landed, and it goes on as written.
+				// Anything else is some earlier write of this host's that landed unseen: memory takes it, and the caller is
+				// answered that THIS step did not happen. A claim found that way is never acted on, since nobody can tell
+				// here whether it already was: an alert may go unsounded, it cannot sound twice.
+				if (JSON.stringify(stored) !== JSON.stringify(next)) { Object.assign(entry, stored); this.options.onStateChange(); return null; }
+			}
 			Object.assign(entry, next); this.options.onStateChange();
 			if (target.record.phase === 'complete' && target.record.summaryReceipt !== null && this.options.onComplete) await this.options.onComplete(structuredClone(target.record), structuredClone(target.journal));
 			return structuredClone(intent);
 		});
+	}
+	/** What storage holds under the key of `entry`, when it is the same measurement; null when it cannot be read or is not. */
+	private async storedEntry(entry: LiveJournalEntryV1): Promise<LiveJournalEntryV1 | null> {
+		try {
+			const stored = await this.options.persistence.readLiveJournalEntry?.(entry.sessionId, entry.epoch, entry.cursor) ?? null;
+			return stored !== null && identicalJournal(stored, entry) ? stored : null;
+		} catch { return null; }
 	}
 	getAlerts(): LiveSessionAlertViewV1[] {
 		return this.journal.flatMap((entry) => entry.outbox.map((intent) => {
@@ -904,6 +923,7 @@ function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionL
 		replaceLiveJournal: (prior, next, owner) => deadline.bounded(() => options.persistence.replaceLiveJournal(prior, next, owner), () => false),
 		clear: (authority) => deadline.bounded(() => options.persistence.clear(authority), unavailable),
 		// A store without one of the optional steps answers as the lifecycle already read its absence.
+		readLiveJournalEntry: (sessionId, epoch, cursor) => deadline.bounded(async () => await options.persistence.readLiveJournalEntry?.(sessionId, epoch, cursor) ?? null, rejected),
 		pruneLiveJournal: (sessionId) => deadline.bounded(async () => await options.persistence.pruneLiveJournal?.(sessionId) === true, rejected),
 		loadPruneQueue: () => deadline.bounded(async () => await options.persistence.loadPruneQueue?.() ?? [], rejected),
 		savePruneQueue: (queue) => deadline.bounded(async () => await options.persistence.savePruneQueue?.(queue) === true, rejected),

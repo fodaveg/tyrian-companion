@@ -15,6 +15,11 @@ export interface LiveSessionPersistence {
 	readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]>;
 	markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean>;
 	replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean>;
+	/**
+	 * The one journal entry stored under that key, or null when there is none or it does not validate. What a writer reads
+	 * after `replaceLiveJournal` answered false, to learn whether the write is on disk after all. Rejects when storage cannot read.
+	 */
+	readLiveJournalEntry?(sessionId: string, epoch: string, cursor: number): Promise<LiveJournalEntryV1 | null>;
 	/** Deletes the journal of a SEALED session (its note receipt is durable). Refuses the session the runtime key still holds. */
 	pruneLiveJournal?(sessionId: string): Promise<boolean>;
 	/**
@@ -85,6 +90,17 @@ export async function readLiveJournal(database: IDBDatabase, sessionId: string):
 		};
 		transaction.oncomplete = () => resolve(result.sort((left, right) => left.observedAt.localeCompare(right.observedAt)
 			|| left.epoch.localeCompare(right.epoch) || left.cursor - right.cursor));
+		transaction.onerror = transaction.onabort = () => reject(new Error('Live session journal is unavailable.'));
+	});
+}
+/** One entry by its key: a single `get`, whatever the length of the session's journal. */
+export async function readLiveJournalEntry(database: IDBDatabase, sessionId: string, epoch: string, cursor: number): Promise<LiveJournalEntryV1 | null> {
+	return await new Promise((resolve, reject) => {
+		const transaction = startIndexedDbTransaction(database, LIVE_SESSION_JOURNAL_STORE_NAME, 'readonly');
+		const request = transaction.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME).get([sessionId, epoch, cursor]);
+		let entry: LiveJournalEntryV1 | null = null;
+		request.onsuccess = () => { const stored: unknown = request.result; if (isLiveJournalEntry(stored)) entry = structuredClone(stored); };
+		transaction.oncomplete = () => resolve(entry);
 		transaction.onerror = transaction.onabort = () => reject(new Error('Live session journal is unavailable.'));
 	});
 }

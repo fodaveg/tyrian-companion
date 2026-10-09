@@ -5,7 +5,8 @@ import type { TyrianTcpConnection } from '../host/tyrian-host';
 import { hangStorage, holdNextCommitAnswer, killStorage, killStorageAfterNextCommit, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventoryRowV1, type LiveInventorySampleV1, type LiveJournalEntryV1 } from './live-session-model';
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveAlertOutboxV1, type LiveInventoryRowV1, type LiveInventorySampleV1, type LiveJournalEntryV1 } from './live-session-model';
+import { decideLiveAlert } from './live-session-outbox';
 import { liveObservationTotals } from './live-session-reducer';
 import { IndexedDbSessionRuntimeStore } from './session-runtime-store';
 
@@ -1215,6 +1216,40 @@ describe('live session whose note takes longer to write than the wait for it', (
 		expect((await f.durable()).record).toMatchObject({ phase: 'complete', summaryReceipt: { path: 'Sessions/live.md' } });
 		expect(f.service.getView().phase).toBe('complete');
 		await f.service.dispose();
+	});
+});
+
+/**
+ * The claim of an alert is a write of its own (`replaceLiveJournal`), with the same wait. When that
+ * wait ran out the claim was answered as refused; if it had been written, memory said `ready`, disk
+ * said `dispatching`, and every retry tried the same step against an entry that no longer matched.
+ */
+describe('live session whose alert claim storage did not answer', () => {
+	it('a claim written while its wait ran out is read back from disk and is the claim: answered once, and a second claim finds nothing to take', async () => {
+		const f = outage('late-claim');
+		await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0, bags(5)));
+		f.at(1000); await f.service.commit(f.sample(1, 1000, bags(7)));
+		const entry = f.service.getJournal()[1]!; const intent = entry.outbox[0]!;
+		await f.service.updateAlert(intent.outboxId, (prior) => decideLiveAlert(prior, entry.observations[0]!, 85, 'Item', iso(1000), false));
+		expect(f.service.getAlerts()[0]?.state).toBe('ready');
+
+		const answer = f.answerNextCommitLate();
+		const claim = (at: number) => (prior: LiveAlertOutboxV1): LiveAlertOutboxV1 => prior.state === 'ready' ? { ...prior, state: 'dispatching', claimedAt: iso(at) } : prior;
+		const claiming = f.service.updateAlert(intent.outboxId, claim(1000));
+		await vi.waitFor(() => { expect(f.waiting()).toBe(1); });
+		await f.timeout();
+		await expect(claiming).resolves.toMatchObject({ outboxId: intent.outboxId, state: 'dispatching', claimedAt: iso(1000) });
+		expect(f.service.getAlerts()[0]?.state).toBe('dispatching');
+		expect(await f.store.readLiveJournalEntry('session', EPOCH, 1)).toEqual(f.service.getJournal()[1]);
+		// The engine's own answer arrives now, to nobody; and the alert cannot be claimed a second time.
+		answer(); await turns();
+		f.at(2000); await expect(f.service.updateAlert(intent.outboxId, claim(2000))).resolves.toBeNull();
+		expect((await f.durable()).journal[1]?.outbox[0]).toMatchObject({ state: 'dispatching', claimedAt: iso(1000) });
+
+		await expect(f.store.readLiveJournalEntry('session', EPOCH, 99)).resolves.toBeNull();
+		killStorage(f.tracked);
+		await expect(f.store.readLiveJournalEntry('session', EPOCH, 1)).rejects.toThrow();
+		reviveStorage(f.tracked); await f.service.dispose();
 	});
 });
 
