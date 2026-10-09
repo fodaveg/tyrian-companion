@@ -3760,6 +3760,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 					if (outcome !== 'played') {
 						throw new Error('No audio output was available.');
 					}
+					return undefined;
 				},
 			},
 			{
