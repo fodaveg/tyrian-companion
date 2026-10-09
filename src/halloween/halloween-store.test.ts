@@ -114,6 +114,31 @@ describe('IndexedDbHalloweenStore', () => {
 		reopened.close();
 	});
 
+	it('reads a 0.6.16 notice (netUnitCopper) and a current one (gross per unit) and refuses to mix them', async () => {
+		const factory = new IDBFactory(); const name = dbName('price-forms');
+		const store = await IndexedDbHalloweenStore.open(factory, name);
+		const reasons = [{ code: 'first_seen' as const }];
+		const base = { itemId: 5, quantity: 250, name: null, reasons };
+		await store.enqueueNotice({ ...notice('old', [5]),
+			items: [{ ...base, netUnitCopper: 6, priceStatus: 'quote' as const }] });
+		await store.enqueueNotice({ ...notice('new', [5]), episodeId: 'episode-2', noticeId: 'new',
+			items: [{ ...base, bidUnitCopper: 8, vendorUnitCopper: null, priceStatus: 'quote' as const }] });
+		const read = await store.readNotices('vault', 'account');
+		expect(read.find(({ noticeId }) => noticeId === 'old')?.items[0])
+			.toEqual({ ...base, netUnitCopper: 6, priceStatus: 'quote' });
+		expect(read.find(({ noticeId }) => noticeId === 'new')?.items[0])
+			.toEqual({ ...base, bidUnitCopper: 8, vendorUnitCopper: null, priceStatus: 'quote' });
+		for (const items of [
+			[{ ...base, netUnitCopper: 6, bidUnitCopper: 8, vendorUnitCopper: null, priceStatus: 'quote' as const }],
+			[{ ...base, priceStatus: 'quote' as const }],
+			[{ ...base, bidUnitCopper: 8, priceStatus: 'quote' as const }],
+		]) {
+			await expect(store.enqueueNotice({ ...notice('bad', [5]), episodeId: 'episode-3', items: items as never }))
+				.rejects.toMatchObject({ failure: 'corrupt' });
+		}
+		store.close();
+	});
+
 	it('replaces provisional episode evidence atomically at session final without a second notice', async () => {
 		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('replace'));
 		await store.enqueueNotice(notice('poll-1', [1, 2]));

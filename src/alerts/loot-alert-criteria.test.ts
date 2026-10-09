@@ -98,6 +98,39 @@ describe('H13.3 loot alert criteria', () => {
 	});
 });
 
+describe('policyAlertPriceOf over the total of the sale (F6)', () => {
+	it('250 units at a bid of 8c are worth 1_700c (1_500c when it was floor(0.85 x 8) x 250)', () => {
+		expect(policyAlertPriceOf({ bidUnitCopper: 8, vendorUnitCopper: null, priceStatus: 'quote', quantity: 250 }))
+			.toEqual({ totalCopper: 1_700, priceStatus: 'known' });
+	});
+
+	it('1 unit at 1c and 1 unit at 8c use the real policy', () => {
+		expect(policyAlertPriceOf({ bidUnitCopper: 1, vendorUnitCopper: null, priceStatus: 'quote', quantity: 1 }))
+			.toEqual({ totalCopper: 0, priceStatus: 'known' });
+		expect(policyAlertPriceOf({ bidUnitCopper: 8, vendorUnitCopper: null, priceStatus: 'quote', quantity: 1 }))
+			.toEqual({ totalCopper: 6, priceStatus: 'known' });
+	});
+
+	it('clears a threshold that the 85 % per-unit rule missed, and the alert fires', () => {
+		// 250 x 8c: 1_700c over the total against 1_500c per unit. A threshold of 1_600 is only met now.
+		const price = policyAlertPriceOf({ bidUnitCopper: 8, vendorUnitCopper: null, priceStatus: 'quote', quantity: 250 });
+		expect(decideLootAlert({
+			itemId: 7, name: 'Trozo', quantity: 250, ...price, alwaysAlertReasons: [],
+		}, 1_600)).toMatchObject({ kind: 'valuable_loot', totalCopper: 1_700 });
+		expect(1_500).toBeLessThan(1_600);
+	});
+
+	it('reads a notice written by 0.6.16 (net per unit) as net x quantity, as before', () => {
+		expect(policyAlertPriceOf({ netUnitCopper: 6, priceStatus: 'quote', quantity: 250 }))
+			.toEqual({ totalCopper: 1_500, priceStatus: 'known' });
+	});
+
+	it('is unavailable when a current notice has a quote status but no route', () => {
+		expect(policyAlertPriceOf({ bidUnitCopper: null, vendorUnitCopper: null, priceStatus: 'quote', quantity: 3 }))
+			.toEqual({ totalCopper: null, priceStatus: 'unavailable' });
+	});
+});
+
 describe('policyAlertPriceOf', () => {
 	it('reports a known price with its total, computed from the unit price and quantity', () => {
 		// Item 83008: flagged mini-not-unlocked (a reason that needs no quote to fire) while its evidence

@@ -82,12 +82,12 @@ export class HalloweenEvidenceService {
 			const price = prices.get(itemId) ?? { status: 'unavailable' as const, price: null };
 			const bound = item !== null && item.flags.some((flag) =>
 				flag === 'AccountBound' || flag === 'SoulbindOnAcquire');
-			const instantUnit = !bound && price.status === 'quote' && price.price?.bid
-				? safePercent(price.price.bid.unitCopper, 85) : null;
+			const bidUnit = !bound && price.status === 'quote' && price.price?.bid
+				? price.price.bid.unitCopper : null;
 			const vendorUnit = item !== null && item.vendorValue > 0 && !item.flags.includes('NoSell') ? item.vendorValue : null;
 			return {
 				itemId, quantity, catalog: item, catalogStatus: catalogEvidence.status,
-				netUnitCopper: maximum(instantUnit, vendorUnit), priceStatus: price.status, bound,
+				bidUnitCopper: bidUnit, vendorUnitCopper: vendorUnit, priceStatus: price.status, bound,
 				firstSeen: firstSeen.has(itemId), learning: input.learning, unlocks,
 			};
 		});
@@ -197,14 +197,6 @@ export function classifyPriceBatch(body: unknown, ids: number[]): Map<number, Pr
 		for (const id of ids) if (result.get(id)?.status === 'no_quote') result.set(id, { status: 'invalid', price: null });
 	}
 	return result;
-}
-
-function safePercent(value: number, percent: number): number | null {
-	const result = BigInt(value) * BigInt(percent) / 100n;
-	return result > BigInt(Number.MAX_SAFE_INTEGER) ? null : Number(result);
-}
-function maximum(left: number | null, right: number | null): number | null {
-	return left === null ? right : right === null ? left : Math.max(left, right);
 }
 
 function positiveInteger(value: unknown): value is number {

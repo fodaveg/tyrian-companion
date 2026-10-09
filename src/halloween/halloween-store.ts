@@ -846,22 +846,27 @@ function validNotice(value: unknown): value is HalloweenNoticeV1 {
 const ALERT_ITEM_PRICE_STATUSES = ['quote', 'no_quote', 'unavailable', 'invalid', 'rate_limited'];
 
 /**
- * Accepts both the notice shape written before the price evidence was carried through and the
- * current one. A notice enqueued pre-H13.x has no `netUnitCopper`/`priceStatus` pair at all; that
- * absence is not itself corruption, so a record missing both is read as legacy rather than
- * rejected, and `parseNotice` fills the honest default (`unavailable`, never a manufactured quote).
+ * Accepts three notice shapes: pre-H13.x (no price evidence at all, read as legacy and filled with the
+ * honest default by `parseNotice`), 0.6.16 and earlier (`netUnitCopper`: a NET per unit, read as
+ * `netUnitCopper x quantity` and never rewritten) and the current one (`bidUnitCopper` +
+ * `vendorUnitCopper`: GROSS per unit, the net is computed over the quantity). The two price forms are
+ * mutually exclusive: an item carrying `netUnitCopper` together with either gross field, or a
+ * `priceStatus` with no price field at all, fails the exact-keys check and is invalid.
  */
 function validAlertItem(value: unknown): value is HalloweenAlertItem {
 	if (!isRecord(value)) return false;
-	const hasPriceEvidence = 'netUnitCopper' in value || 'priceStatus' in value;
+	const hasNet = 'netUnitCopper' in value;
+	const hasGross = 'bidUnitCopper' in value || 'vendorUnitCopper' in value;
+	const hasPriceEvidence = hasNet || hasGross || 'priceStatus' in value;
+	const priceKeys = hasGross ? ['bidUnitCopper', 'vendorUnitCopper'] : ['netUnitCopper'];
 	if (!exactKeys(value, hasPriceEvidence
-		? ['itemId', 'quantity', 'name', 'netUnitCopper', 'priceStatus', 'reasons']
+		? ['itemId', 'quantity', 'name', ...priceKeys, 'priceStatus', 'reasons']
 		: ['itemId', 'quantity', 'name', 'reasons'])) return false;
 	if (!(typeof value.itemId === 'number' && Number.isSafeInteger(value.itemId) && value.itemId > 0)) return false;
 	if (!(typeof value.quantity === 'number' && Number.isSafeInteger(value.quantity) && value.quantity > 0)) return false;
 	if (!(value.name === null || (typeof value.name === 'string' && value.name.length > 0 && value.name.length <= 256))) return false;
 	if (hasPriceEvidence) {
-		if (!(value.netUnitCopper === null || safeNonNegative(value.netUnitCopper))) return false;
+		for (const key of priceKeys) if (!(value[key] === null || safeNonNegative(value[key]))) return false;
 		if (typeof value.priceStatus !== 'string' || !ALERT_ITEM_PRICE_STATUSES.includes(value.priceStatus)) return false;
 	}
 	return Array.isArray(value.reasons) && value.reasons.length > 0 && value.reasons.every(validAlertReason);
@@ -869,6 +874,7 @@ function validAlertItem(value: unknown): value is HalloweenAlertItem {
 
 /** Fills the pre-H13.x legacy shape's missing price evidence with the state that never claims a quote. */
 function normalizeAlertItem(item: HalloweenAlertItem): HalloweenAlertItem {
+	if ('bidUnitCopper' in item) return item;
 	return {
 		...item,
 		netUnitCopper: item.netUnitCopper ?? null,

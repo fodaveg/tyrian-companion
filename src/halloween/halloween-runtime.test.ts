@@ -121,7 +121,7 @@ describe('HalloweenRuntime', () => {
 	it('keeps a first-seen-only alert causal when final corrects the assisted quantity', async () => {
 		const runtime = new HalloweenRuntime(options({ resolveEvidence: async ({ gains, firstSeenItemIds, learning }) =>
 			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning),
-				netUnitCopper: null })) }));
+				bidUnitCopper: null })) }));
 		await runtime.activate();
 		const provisional = await runtime.observeDelta({
 			delta: delta('causal-a', 'causal-b', [1]), source: 'assisted_poll', episodeId: 'session:causal',
@@ -320,7 +320,7 @@ describe('HalloweenRuntime', () => {
 	it('keeps first-seen disabled while v2 backfill coverage remains partial', async () => {
 		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }: Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
 			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning),
-				netUnitCopper: null })));
+				bidUnitCopper: null })));
 		const runtime = new HalloweenRuntime(options({
 			loadBackfill: async () => [{ observationId: 'note:v2', episodeId: 'note:v2',
 				observedAt: '2026-08-29T10:00:00.000Z', coverage: 'partial', gains: [] }],
@@ -346,7 +346,7 @@ describe('HalloweenRuntime', () => {
 		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
 			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
 			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning),
-				netUnitCopper: null })));
+				bidUnitCopper: null })));
 		const runtime = new HalloweenRuntime(options({ loadBackfill, resolveEvidence }));
 		const activation = runtime.activate();
 		await vi.waitFor(() => expect(loadBackfill).toHaveBeenCalledTimes(1));
@@ -492,7 +492,7 @@ describe('HalloweenRuntime', () => {
 		['rate_limited', 'backoff'], ['unavailable', 'partial'], ['invalid', 'partial'],
 	] as const)('projects %s price coverage as %s without a Rare no-quote alert', async (priceStatus, status) => {
 		const runtime = new HalloweenRuntime(options({ resolveEvidence: async ({ gains }) => gains.map(({ itemId, quantity }) => ({
-			...evidence(itemId, quantity, false, false), netUnitCopper: null, priceStatus,
+			...evidence(itemId, quantity, false, false), bidUnitCopper: null, priceStatus,
 			catalog: { kind: 'item' as const, id: itemId, name: 'Rare item', type: 'Consumable', rarity: 'Rare', level: 0,
 				vendorValue: 0, flags: [], gameTypes: [], restrictions: [] },
 		})) }));
@@ -521,7 +521,7 @@ describe('HalloweenRuntime', () => {
 	it('does not emit first_seen for an item the owned-items seed already reported as held', async () => {
 		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
 			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
-			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null })));
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), bidUnitCopper: null })));
 		const runtime = new HalloweenRuntime(options({ loadOwnedItemIds: async () => [1], resolveEvidence }));
 		await runtime.activate();
 		const notice = await runtime.observeDelta({
@@ -535,7 +535,7 @@ describe('HalloweenRuntime', () => {
 	it('still emits first_seen for a gain absent from the owned-items seed', async () => {
 		const resolveEvidence = async ({ gains, firstSeenItemIds, learning }:
 			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
-			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null }));
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), bidUnitCopper: null }));
 		const runtime = new HalloweenRuntime(options({ loadOwnedItemIds: async () => [], resolveEvidence }));
 		await runtime.activate();
 		const notice = await runtime.observeDelta({
@@ -548,7 +548,7 @@ describe('HalloweenRuntime', () => {
 	it('suppresses first_seen while the owned-items seed cannot be captured, even once backfill coverage is complete', async () => {
 		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
 			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
-			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null })));
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), bidUnitCopper: null })));
 		const runtime = new HalloweenRuntime(options({
 			loadOwnedItemIds: async () => { throw new Error('missing API key'); },
 			resolveEvidence,
@@ -575,7 +575,7 @@ describe('HalloweenRuntime', () => {
 		first.dispose();
 		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
 			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
-			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null })));
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), bidUnitCopper: null })));
 		const second = new HalloweenRuntime(options({ factory, loadOwnedItemIds, resolveEvidence }));
 		await second.activate();
 		expect(loadOwnedItemIds).toHaveBeenCalledTimes(1); // still one: the second start found the durable seed record
@@ -593,7 +593,7 @@ describe('HalloweenRuntime', () => {
 		// global seen store does not disturb that per-episode bookkeeping.
 		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
 			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
-			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null })));
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), bidUnitCopper: null })));
 		const runtime = new HalloweenRuntime(options({ loadOwnedItemIds: async () => [], resolveEvidence }));
 		await runtime.activate();
 		const firstEpisode = await runtime.observeDelta({
@@ -622,7 +622,7 @@ function options(patch: Partial<ConstructorParameters<typeof HalloweenRuntime>[0
 	};
 }
 function evidence(itemId: number, quantity: number, firstSeen: boolean, learning: boolean): HalloweenItemEvidence {
-	return { itemId, quantity, catalog: null, catalogStatus: 'complete', netUnitCopper: 10_000, priceStatus: 'quote', bound: false, firstSeen, learning,
+	return { itemId, quantity, catalog: null, catalogStatus: 'complete', bidUnitCopper: 12_000, vendorUnitCopper: null, priceStatus: 'quote', bound: false, firstSeen, learning,
 		unlocks: { status: 'missing_scope', skinsStatus: 'missing_scope', minisStatus: 'missing_scope',
 			unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null } };
 }

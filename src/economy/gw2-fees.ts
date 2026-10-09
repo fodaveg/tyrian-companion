@@ -118,3 +118,37 @@ function percentageFee(grossCopper: number, basisPoints: number): number | null 
 	if (!Number.isSafeInteger(fee)) return null;
 	return Math.max(GW2_TRADING_POST_FEE_POLICY.minimumFeeCopper, fee);
 }
+
+/**
+ * Net copper of selling `quantity` units (e.g. a loot alert's pile), the best of two routes: instant sale to the best buy order and
+ * the vendor.
+ *
+ * The trading-post commission applies over the TOTAL of the sale (`quantity x bidUnitCopper`, the
+ * `total_sale_price` basis of `GW2_TRADING_POST_FEE_POLICY`), never to one unit and then multiplied. The
+ * vendor takes no commission, so it is linear in the quantity. A sale whose two minimum fees swallow the
+ * whole gross nets zero, not a negative. Returns null when no route has a price or the arithmetic would
+ * leave the safe-integer range.
+ */
+export function bestSaleNetCopper(
+	bidUnitCopper: number | null | undefined,
+	vendorUnitCopper: number | null | undefined,
+	quantity: number,
+): number | null {
+	if (!Number.isSafeInteger(quantity) || quantity <= 0) return null;
+	const instant = bidUnitCopper === null || bidUnitCopper === undefined ? null : instantNet(bidUnitCopper, quantity);
+	const vendor = vendorUnitCopper === null || vendorUnitCopper === undefined ? null : product(vendorUnitCopper, quantity);
+	if (instant === null) return vendor;
+	return vendor === null ? instant : Math.max(instant, vendor);
+}
+
+function instantNet(unitCopper: number, quantity: number): number | null {
+	const gross = product(unitCopper, quantity);
+	if (gross === null) return null;
+	const fees = calculateTradingPostFees(gross);
+	return fees.status === 'ok' ? Math.max(0, gross - fees.fees.totalFeesCopper) : null;
+}
+
+function product(unitCopper: number, quantity: number): number | null {
+	const value = unitCopper * quantity;
+	return Number.isSafeInteger(unitCopper) && unitCopper >= 0 && Number.isSafeInteger(value) ? value : null;
+}

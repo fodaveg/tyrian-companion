@@ -37,8 +37,13 @@ export interface HalloweenItemEvidence {
 	quantity: number;
 	catalog: CatalogItem | null;
 	catalogStatus: 'complete' | 'unavailable' | 'invalid' | 'rate_limited';
-	/** Best demonstrated liquid or vendor value per unit, after modeled fees. */
-	netUnitCopper: number | null;
+	/**
+	 * The best buy order's GROSS price per unit, or null when the item is bound or has no quote. The net of a
+	 * quantity is computed at the end, over quantity x gross (`bestSaleNetCopper` in `gw2-fees.ts`), never per unit.
+	 */
+	bidUnitCopper: number | null;
+	/** Vendor value per unit (no trading-post fee), or null when the item cannot be sold to a vendor. */
+	vendorUnitCopper: number | null;
 	/** Closed TP coverage. Only `no_quote` proves that a market quote is absent. */
 	priceStatus: 'quote' | 'no_quote' | 'unavailable' | 'invalid' | 'rate_limited';
 	bound: boolean;
@@ -66,8 +71,15 @@ export interface HalloweenAlertItem {
 	itemId: number;
 	quantity: number;
 	name: string | null;
-	/** Carried straight from the evidence that produced `reasons`, never recomputed downstream. */
-	netUnitCopper: HalloweenItemEvidence['netUnitCopper'];
+	/**
+	 * Carried straight from the evidence that produced `reasons`. A notice has ONE of two price forms:
+	 * the current `bidUnitCopper` + `vendorUnitCopper` (gross per unit; the net is computed over the
+	 * quantity), or the legacy `netUnitCopper` written by 0.6.16 and earlier (net per unit, read as
+	 * `netUnitCopper x quantity` as before and never rewritten). Never both.
+	 */
+	bidUnitCopper?: HalloweenItemEvidence['bidUnitCopper'];
+	vendorUnitCopper?: HalloweenItemEvidence['vendorUnitCopper'];
+	netUnitCopper?: number | null;
 	priceStatus: HalloweenItemEvidence['priceStatus'];
 	reasons: HalloweenAlertReason[];
 }

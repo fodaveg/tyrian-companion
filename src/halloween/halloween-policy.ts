@@ -1,3 +1,4 @@
+import { bestSaleNetCopper } from '../economy/gw2-fees';
 import {
 	DEFAULT_HALLOWEEN_VALUE_THRESHOLD_COPPER,
 	type HalloweenAlertItem,
@@ -21,8 +22,11 @@ export function evaluateHalloweenItem(
 ): HalloweenAlertItem | null {
 	if (!validPolicy(policy) || evidence.quantity <= 0 || !Number.isSafeInteger(evidence.quantity)) return null;
 	const reasons: HalloweenAlertReason[] = [];
-	if (safeCopper(evidence.netUnitCopper) && evidence.netUnitCopper >= policy.valueThresholdCopper) {
-		reasons.push({ code: 'valuable', netUnitCopper: evidence.netUnitCopper, thresholdCopper: policy.valueThresholdCopper });
+	// "Valuable" stays a per-unit reading (what one unit nets), as its text says; the alert's value over the
+	// real quantity is computed over the total in `policyAlertPriceOf`.
+	const oneUnitNet = bestSaleNetCopper(evidence.bidUnitCopper, evidence.vendorUnitCopper, 1);
+	if (oneUnitNet !== null && oneUnitNet >= policy.valueThresholdCopper) {
+		reasons.push({ code: 'valuable', netUnitCopper: oneUnitNet, thresholdCopper: policy.valueThresholdCopper });
 	}
 	const rarity = evidence.catalog?.rarity;
 	if (rarity !== undefined && (RARITY_RANK[rarity] ?? -1) >= RARITY_RANK.Rare! &&
@@ -45,7 +49,8 @@ export function evaluateHalloweenItem(
 		itemId: evidence.itemId,
 		quantity: evidence.quantity,
 		name: evidence.catalog?.name ?? null,
-		netUnitCopper: evidence.netUnitCopper,
+		bidUnitCopper: evidence.bidUnitCopper,
+		vendorUnitCopper: evidence.vendorUnitCopper,
 		priceStatus: evidence.priceStatus,
 		reasons,
 	};
@@ -62,8 +67,4 @@ export function evaluateHalloweenItems(
 
 function validPolicy(policy: HalloweenPolicy): boolean {
 	return Number.isSafeInteger(policy.valueThresholdCopper) && policy.valueThresholdCopper >= 0;
-}
-
-function safeCopper(value: number | null): value is number {
-	return value !== null && Number.isSafeInteger(value) && value >= 0;
 }

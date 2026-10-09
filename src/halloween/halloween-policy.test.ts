@@ -6,13 +6,13 @@ import type { HalloweenItemEvidence } from './halloween-model';
 describe('Halloween alert policy', () => {
 	it('aggregates valuable, rare, first-seen, skin and mini reasons deterministically', () => {
 		const result = evaluateHalloweenItem(evidence({
-			quantity: 2, netUnitCopper: 10_000, priceStatus: 'unavailable', bound: true, firstSeen: true, learning: false,
+			quantity: 2, bidUnitCopper: 12_000, priceStatus: 'unavailable', bound: true, firstSeen: true, learning: false,
 			catalog: item('Rare', { skins: [4, 3], minipetId: 9 }),
 			unlocks: { status: 'complete', skinsStatus: 'complete', minisStatus: 'complete',
 				unlockedSkinIds: [3], unlockedMiniIds: [], retryAfterMs: null },
 		}));
 		expect(result?.reasons).toEqual([
-			{ code: 'valuable', netUnitCopper: 10_000, thresholdCopper: 10_000 },
+			{ code: 'valuable', netUnitCopper: 10_200, thresholdCopper: 10_000 },
 			{ code: 'rare_unpriced_or_bound', rarity: 'Rare' },
 			{ code: 'first_seen' },
 			{ code: 'skin_not_unlocked', skinIds: [4] },
@@ -47,28 +47,28 @@ describe('Halloween alert policy', () => {
 	});
 
 	it('applies the threshold per unit and rejects unsafe copper values', () => {
-		expect(evaluateHalloweenItem(evidence({ quantity: 3, netUnitCopper: 9_999 }))).toBeNull();
-		expect(evaluateHalloweenItem(evidence({ netUnitCopper: Number.MAX_SAFE_INTEGER + 1 }))).toBeNull();
+		expect(evaluateHalloweenItem(evidence({ quantity: 3, vendorUnitCopper: 9_999 }))).toBeNull();
+		expect(evaluateHalloweenItem(evidence({ bidUnitCopper: Number.MAX_SAFE_INTEGER + 1 }))).toBeNull();
 	});
 
 	it('carries the evidence price straight into the verdict even when the firing reason needs no quote', () => {
 		// A first-seen alert never needs a price to fire, but the item this fires for can still be
 		// quoted on the trading post: the verdict must not throw that number away.
 		const quoted = evaluateHalloweenItem(evidence({
-			itemId: 83_008, netUnitCopper: 1_921, priceStatus: 'quote', firstSeen: true,
+			itemId: 83_008, vendorUnitCopper: 1_921, priceStatus: 'quote', firstSeen: true,
 		}));
-		expect(quoted).toMatchObject({ netUnitCopper: 1_921, priceStatus: 'quote' });
+		expect(quoted).toMatchObject({ vendorUnitCopper: 1_921, priceStatus: 'quote' });
 
-		const unpriced = evaluateHalloweenItem(evidence({ firstSeen: true, netUnitCopper: null, priceStatus: 'no_quote' }));
-		expect(unpriced).toMatchObject({ netUnitCopper: null, priceStatus: 'no_quote' });
+		const unpriced = evaluateHalloweenItem(evidence({ firstSeen: true, bidUnitCopper: null, priceStatus: 'no_quote' }));
+		expect(unpriced).toMatchObject({ bidUnitCopper: null, priceStatus: 'no_quote' });
 
-		const lookupFailed = evaluateHalloweenItem(evidence({ firstSeen: true, netUnitCopper: null, priceStatus: 'unavailable' }));
-		expect(lookupFailed).toMatchObject({ netUnitCopper: null, priceStatus: 'unavailable' });
+		const lookupFailed = evaluateHalloweenItem(evidence({ firstSeen: true, bidUnitCopper: null, priceStatus: 'unavailable' }));
+		expect(lookupFailed).toMatchObject({ bidUnitCopper: null, priceStatus: 'unavailable' });
 	});
 });
 
 function evidence(patch: Partial<HalloweenItemEvidence>): HalloweenItemEvidence {
-	return { itemId: 1, quantity: 1, catalog: item('Basic'), catalogStatus: 'complete', netUnitCopper: null, priceStatus: 'no_quote', bound: false,
+	return { itemId: 1, quantity: 1, catalog: item('Basic'), catalogStatus: 'complete', bidUnitCopper: null, vendorUnitCopper: null, priceStatus: 'no_quote', bound: false,
 		firstSeen: false, learning: false,
 		unlocks: { status: 'complete', skinsStatus: 'complete', minisStatus: 'complete',
 			unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null }, ...patch };

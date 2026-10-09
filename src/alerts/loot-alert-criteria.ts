@@ -1,5 +1,6 @@
 import { ALERT_PRICE_STATUSES, type AlertPriceStatus, type AlertReason, type AlertV1 } from './alert-contract';
 import type { HalloweenAlertItem } from '../halloween/halloween-model';
+import { bestSaleNetCopper } from '../economy/gw2-fees';
 
 /**
  * The two criteria of H13.3, in OR, as one pure decision.
@@ -80,11 +81,17 @@ export function alwaysAlertReasonsOf(item: Pick<HalloweenAlertItem, 'reasons'>):
  * number or lying that nothing was found.
  */
 export function policyAlertPriceOf(
-	item: Pick<HalloweenAlertItem, 'netUnitCopper' | 'priceStatus' | 'quantity'>,
+	item: Pick<HalloweenAlertItem, 'netUnitCopper' | 'bidUnitCopper' | 'vendorUnitCopper' | 'priceStatus' | 'quantity'>,
 ): { totalCopper: number | null; priceStatus: AlertPriceStatus } {
 	if (item.priceStatus === 'no_quote') return { totalCopper: null, priceStatus: 'unquoted' };
-	if (item.priceStatus !== 'quote' || item.netUnitCopper === null) return { totalCopper: null, priceStatus: 'unavailable' };
-	const totalCopper = safeProduct(item.netUnitCopper, item.quantity);
+	if (item.priceStatus !== 'quote') return { totalCopper: null, priceStatus: 'unavailable' };
+	// A notice written by 0.6.16 or earlier carries a net per unit and is read as it always was. A current
+	// one carries the gross bid per unit and the commission is applied over quantity x gross.
+	const legacy = item.netUnitCopper !== undefined;
+	if (legacy && item.netUnitCopper === null) return { totalCopper: null, priceStatus: 'unavailable' };
+	const totalCopper = legacy
+		? safeProduct(item.netUnitCopper!, item.quantity)
+		: bestSaleNetCopper(item.bidUnitCopper, item.vendorUnitCopper, item.quantity);
 	return totalCopper === null ? { totalCopper: null, priceStatus: 'unavailable' } : { totalCopper, priceStatus: 'known' };
 }
 
