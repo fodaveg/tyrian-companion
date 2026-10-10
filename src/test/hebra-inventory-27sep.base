@@ -1,0 +1,166 @@
+filters:
+  and:
+    - tc_schema == 1
+    - tc_kind == "gw2_inventory_position"
+    - tc_marker == "tyrian_companion_inventory_position"
+    - tc_active == true
+formulas:
+  item_icon: if(tc_icon != null, image(tc_icon), null)
+  source_label: if(tc_source == "character", "Personaje", if(tc_source == "shared_inventory", "Compartido", if(tc_source == "bank", "Banco", "Materiales")))
+properties:
+  formula.item_icon:
+    displayName: Icono
+  note.tc_item_name:
+    displayName: Objeto
+  note.tc_source:
+    displayName: Ubicación
+  note.tc_character:
+    displayName: Personaje
+  note.tc_quantity:
+    displayName: Cantidad
+  note.tc_item_type:
+    displayName: Tipo
+  note.tc_item_rarity:
+    displayName: Rareza
+  note.tc_captured_at:
+    displayName: Actualizado
+  note.tc_unit_sell_copper:
+    displayName: Venta instantánea 🟤
+  note.tc_total_sell_copper:
+    displayName: Venta instantánea (total) 🟤
+  note.tc_unit_list_copper:
+    displayName: Publicación 🟤
+  note.tc_total_list_copper:
+    displayName: Publicación (total) 🟤
+  formula.source_label:
+    displayName: Ubicación
+views:
+  - type: table
+    name: Todos
+    order:
+      - formula.item_icon
+      - tc_item_name
+      - formula.source_label
+      - tc_character
+      - tc_quantity
+      - tc_unit_sell_copper
+      - tc_total_sell_copper
+      - tc_unit_list_copper
+      - tc_total_list_copper
+      - tc_item_type
+      - tc_item_rarity
+      - tc_captured_at
+    sort:
+      - property: tc_unit_sell_copper
+        direction: DESC
+      - property: tc_total_sell_copper
+        direction: DESC
+      - property: tc_item_name
+        direction: ASC
+    rowHeight: medium
+    columnSize:
+      formula.item_icon: 52
+  - type: table
+    name: Personajes
+    filters:
+      and:
+        - tc_source == "character"
+    order:
+      - formula.item_icon
+      - tc_item_name
+      - formula.source_label
+      - tc_character
+      - tc_quantity
+      - tc_unit_sell_copper
+      - tc_total_sell_copper
+      - tc_unit_list_copper
+      - tc_total_list_copper
+      - tc_item_type
+      - tc_item_rarity
+      - tc_captured_at
+    sort:
+      - property: tc_total_sell_copper
+        direction: DESC
+      - property: tc_item_name
+        direction: ASC
+    rowHeight: medium
+    columnSize:
+      formula.item_icon: 52
+  - type: table
+    name: Compartido
+    filters:
+      and:
+        - tc_source == "shared_inventory"
+    order:
+      - formula.item_icon
+      - tc_item_name
+      - formula.source_label
+      - tc_character
+      - tc_quantity
+      - tc_unit_sell_copper
+      - tc_total_sell_copper
+      - tc_unit_list_copper
+      - tc_total_list_copper
+      - tc_item_type
+      - tc_item_rarity
+      - tc_captured_at
+    sort:
+      - property: tc_total_sell_copper
+        direction: DESC
+      - property: tc_item_name
+        direction: ASC
+    rowHeight: medium
+    columnSize:
+      formula.item_icon: 52
+  - type: table
+    name: Banco
+    filters:
+      and:
+        - tc_source == "bank"
+    order:
+      - formula.item_icon
+      - tc_item_name
+      - formula.source_label
+      - tc_character
+      - tc_quantity
+      - tc_unit_sell_copper
+      - tc_total_sell_copper
+      - tc_unit_list_copper
+      - tc_total_list_copper
+      - tc_item_type
+      - tc_item_rarity
+      - tc_captured_at
+    sort:
+      - property: tc_total_sell_copper
+        direction: DESC
+      - property: tc_item_name
+        direction: ASC
+    rowHeight: medium
+    columnSize:
+      formula.item_icon: 52
+  - type: table
+    name: Materiales
+    filters:
+      and:
+        - tc_source == "materials"
+    order:
+      - formula.item_icon
+      - tc_item_name
+      - formula.source_label
+      - tc_character
+      - tc_quantity
+      - tc_unit_sell_copper
+      - tc_total_sell_copper
+      - tc_unit_list_copper
+      - tc_total_list_copper
+      - tc_item_type
+      - tc_item_rarity
+      - tc_captured_at
+    sort:
+      - property: tc_total_sell_copper
+        direction: DESC
+      - property: tc_item_name
+        direction: ASC
+    rowHeight: medium
+    columnSize:
+      formula.item_icon: 52

@@ -9,8 +9,13 @@ import {
 describe('managed-assets settings actions', () => {
 	it('disables every action while an operation is working', () => {
 		expect(projectManagedAssetsActions({ working: true, hasManagedRoot: true, canMove: true })).toEqual({
-			preview: false, apply: false, repair: false, move: false, remove: false,
+			preview: false, apply: false, repair: false, replace: false, move: false, remove: false,
 		});
+	});
+
+	it('offers Replace only with a managed root and nothing running', () => {
+		expect(projectManagedAssetsActions({ working: false, hasManagedRoot: true, canMove: false }).replace).toBe(true);
+		expect(projectManagedAssetsActions({ working: false, hasManagedRoot: false, canMove: false }).replace).toBe(false);
 	});
 
 	it('requires an explicit confirmation before remove', async () => {

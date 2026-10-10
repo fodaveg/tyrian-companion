@@ -225,3 +225,28 @@ describe('settings page: main screen or sidebar, only where the host can show bo
 		});
 	});
 });
+
+describe('settings page: Replace sits with the other managed-assets actions', () => {
+	const replaceButton = (container: HTMLElement) =>
+		Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Replace')!;
+	const managed = (listed: Array<{ id: string; path: string }>) => Object.assign(plugin(), {
+		hasManagedAssetsRoot: () => true,
+		listUnownedManagedAssets: vi.fn(async () => listed),
+		replaceUnownedManagedAssets: vi.fn(async () => undefined),
+	});
+
+	it('shows the button with a managed root even though no preview was run', () => {
+		const { container } = mountPage(managed([]));
+		const button = replaceButton(container);
+		expect(button).toBeDefined();
+		expect(button.style.display).toBe('');
+	});
+
+	it('does nothing but read, and opens no window, when no Base is unrecognised', async () => {
+		const self = managed([]);
+		const { container } = mountPage(self);
+		replaceButton(container).click();
+		await vi.waitFor(() => expect(self.listUnownedManagedAssets).toHaveBeenCalledOnce());
+		expect(self.replaceUnownedManagedAssets).not.toHaveBeenCalled();
+	});
+});

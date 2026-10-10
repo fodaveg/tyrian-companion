@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import { managedAssetsBundle, sha256Text } from './generic-assets';
+import { PUBLISHED_BASE_FINGERPRINTS } from './published-base-hashes';
 import { RETIRED_MANAGED_ASSETS } from './retired-assets';
 import { genericManagedAssets } from '../test/managed-asset-fixture';
 import { walletManagedAssets } from './wallet-base';
@@ -1066,6 +1069,103 @@ async function baseAsset(id: string, relativePath: string, body: string): Promis
 	const bytes = `${managedAssetMarker(draft)}\n${body}`;
 	return { ...draft, bytes, contentHash: await sha256Text(bytes) };
 }
+
+/**
+ * Hebra's `Inventory.base` of 9 Oct 2026 (task 995a5941): 4091 bytes, no marker, five views. The blob is
+ * copied from Hebra's library (content-addressed, sha256 2ef9f71c…661f) into `src/test/`. Measured against
+ * git history it is the contentVersion 2 Base of 6f21dc2 (26 Aug 2026, 0.1.x) plus ONE extra sort key
+ * (`tc_unit_sell_copper` DESC in the first view): no committed version ever produced it, so its meaning
+ * matches no published fingerprint and the plugin cannot prove it wrote it.
+ */
+describe('a Base the plugin cannot prove is its own (Hebra Inventory.base, 9 Oct 2026)', () => {
+	const ROOT = 'Tyrian Companion';
+	const MANIFEST = `${ROOT}/${MANAGED_ASSETS_MANIFEST}`;
+	const pathOf = (asset: PackagedAsset) => `${ROOT}/Bases/${asset.relativePath}`;
+	const stale = readFileSync(new URL('../test/hebra-inventory-27sep.base', import.meta.url), 'utf8');
+
+	async function stage() {
+		const bundle = (await managedAssetsBundle()).filter((asset) => asset.locale === 'neutral' || asset.locale === 'es');
+		const inventory = bundle.find((asset) => asset.id === 'inventory-base')!;
+		const vault = new MemoryAssetVault();
+		vault.contents.set(pathOf(inventory), stale);
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets: bundle });
+		// The state Hebra is in: the plugin manages the folder, the old file sits on a managed path unregistered.
+		expect((await instance.apply(ROOT, 'install')).status).toBe('applied');
+		return { bundle, inventory, vault, instance, path: pathOf(inventory) };
+	}
+
+	it('is the 4091-byte file, matches no published version, and is left untouched by every automatic path', async () => {
+		const { vault, instance, path } = await stage();
+		expect(Buffer.byteLength(stale)).toBe(4091);
+		const meaning = await baseSemanticHash(stale);
+		expect(meaning).toBe('282225fe0f407a4c65be585a367ae0020f1db9ccd16365755eb08d57622e9c03');
+		expect(PUBLISHED_BASE_FINGERPRINTS.some((row) => row.semanticHash === meaning)).toBe(false);
+		const inspection = await instance.inspect(ROOT);
+		expect(inspection.assets.find((entry) => entry.asset.id === 'inventory-base')).toMatchObject({ status: 'occupied_unowned' });
+		expect(decideManagedAssetsAutoUpdate(inspection)).toEqual({ action: 'none' });
+		expect((await instance.preview(ROOT, 'upgrade')).steps.find((step) => step.id === 'inventory-base')?.status).toBe('occupied_unowned');
+		const writes = vault.writeCount;
+		expect((await instance.apply(ROOT, 'upgrade')).status).toBe('unchanged');
+		expect((await instance.apply(ROOT, 'repair')).status).toBe('unchanged');
+		expect(vault.writeCount).toBe(writes);
+		expect(vault.contents.get(path)).toBe(stale);
+	});
+
+	it('is replaced only by the explicit Replace: the bundle bytes land, it is registered, nothing else moves', async () => {
+		const { bundle, inventory, vault, instance, path } = await stage();
+		const others = bundle.filter((asset) => asset.id !== 'inventory-base');
+		const before = new Map(others.map((asset) => [pathOf(asset), vault.contents.get(pathOf(asset))]));
+
+		expect((await instance.replaceUnowned(ROOT, ['inventory-base'])).status).toBe('applied');
+		expect(vault.contents.get(path)).toBe(inventory.bytes);
+		for (const [other, bytes] of before) expect(vault.contents.get(other)).toBe(bytes);
+		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
+		expect(manifest).toMatchObject({ state: 'ready' });
+		expect(manifest.assets.map((entry) => entry.id)).toContain('inventory-base');
+		expect(manifest.assets).toHaveLength(bundle.length);
+		expect(manifest.excluded).toBeUndefined();
+		expect((await instance.inspect(ROOT)).assets.every((entry) => entry.status === 'unchanged')).toBe(true);
+
+		const writes = vault.writeCount;
+		expect((await instance.replaceUnowned(ROOT, ['inventory-base'])).status).toBe('unchanged');
+		expect((await instance.apply(ROOT, 'upgrade')).status).toBe('unchanged');
+		expect(vault.writeCount).toBe(writes);
+	});
+
+	it('replaces only the Bases the user was shown: another unrecognised one is byte for byte the same', async () => {
+		const bundle = (await managedAssetsBundle()).filter((asset) => asset.locale === 'neutral' || asset.locale === 'es');
+		const inventory = bundle.find((asset) => asset.id === 'inventory-base')!;
+		const wallet = bundle.find((asset) => asset.id === 'wallet-base')!;
+		const vault = new MemoryAssetVault();
+		const mine = stringifyYaml(parseYaml(wallet.bytes)).replace(/^views:/mu, 'tcUser: true\nviews:');
+		vault.contents.set(pathOf(inventory), stale);
+		vault.contents.set(pathOf(wallet), mine);
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets: bundle });
+		await instance.apply(ROOT, 'install');
+		// Both are unrecognised; the user is shown, and confirms, only the inventory one.
+		expect((await instance.listUnowned(ROOT)).map((entry) => entry.id).sort()).toEqual(['inventory-base', 'wallet-base']);
+
+		expect((await instance.replaceUnowned(ROOT, ['inventory-base'])).status).toBe('applied');
+		expect(vault.contents.get(pathOf(inventory))).toBe(inventory.bytes);
+		expect(vault.contents.get(pathOf(wallet))).toBe(mine);
+		expect((await instance.listUnowned(ROOT)).map((entry) => entry.id)).toEqual(['wallet-base']);
+		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
+		expect(manifest.excluded).toEqual(['wallet-base']);
+		expect(manifest.assets.map((entry) => entry.id)).toContain('inventory-base');
+	});
+
+	it('refuses to replace a file the user edited after it was inspected', async () => {
+		const { vault, instance, path } = await stage();
+		const edited = `${stale}# edited a second ago\n`;
+		const process = vault.process.bind(vault);
+		vault.process = async (file, update) => {
+			if (file.path === path) vault.contents.set(path, edited);
+			return await process(file, update);
+		};
+		expect((await instance.replaceUnowned(ROOT, ['inventory-base'])).status).toBe('conflict');
+		expect(vault.contents.get(path)).toBe(edited);
+	});
+});
 
 function fixtureAsset() {
 	return { id: 'sessions-base', kind: 'base' as const, contentVersion: 1, locale: 'neutral' as const,

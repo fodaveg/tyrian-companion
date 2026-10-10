@@ -85,7 +85,7 @@ function managedAssetsMessageKey(code: ManagedAssetsMessageCode): TranslationKey
 		legacy_explicit_only: 'settings.assets.legacyExplicitOnly', applying_lifecycle: 'settings.assets.applyingLifecycle',
 		lifecycle_ready: 'settings.assets.lifecycleReady', applying_journal: 'settings.assets.applyingJournal',
 		ownership_detached: 'settings.assets.ownershipDetached', assets_ready: 'settings.assets.ready',
-		operation_busy: 'settings.assets.operationBusy', operation_conflict: 'settings.assets.operationConflict',
+		no_unowned: 'settings.assets.noUnowned', operation_busy: 'settings.assets.operationBusy', operation_conflict: 'settings.assets.operationConflict',
 		operation_invalid: 'settings.assets.operationInvalid', operation_unavailable: 'settings.assets.operationUnavailable',
 	};
 	return keys[code];

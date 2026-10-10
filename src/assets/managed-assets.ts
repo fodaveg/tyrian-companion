@@ -295,12 +295,24 @@ export class ManagedAssetsManager {
 	 * `guard` sees the very inspection this apply would act on and can refuse it: false writes nothing and
 	 * answers `unchanged`. It is how a caller that DECIDED on an earlier inspection re-decides inside the flight.
 	 */
-	apply(root: string, kind: Exclude<ManagedOperationKind, 'relocate' | 'uninstall'> = 'install', guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsResult> {
-		const key = this.flightKey(root, kind);
+	apply(root: string, kind: Exclude<ManagedOperationKind, 'relocate' | 'uninstall'> = 'install', guard?: (inspection: ManagedAssetsInspection) => boolean, replaceUnowned: ReadonlySet<string> | null = null): Promise<ManagedAssetsResult> {
+		const key = this.flightKey(root, kind, replaceUnowned ? `replace-unowned:${[...replaceUnowned].sort().join(',')}` : null);
 		if (this.flight) return this.flight.key === key ? this.flight.promise : Promise.resolve({ status: 'busy', message: 'Another managed-assets operation is active.' });
-		const promise = this.applyInternal(root, kind, guard).finally(() => { if (this.flight?.promise === promise) this.flight = null; });
+		const promise = this.applyInternal(root, kind, guard, replaceUnowned).finally(() => { if (this.flight?.promise === promise) this.flight = null; });
 		this.flight = { key, promise };
 		return promise;
+	}
+
+	/**
+	 * The user's explicit «Replace»: every Base of the bundle sitting on its managed path that the plugin
+	 * cannot prove it wrote (`occupied_unowned`: edited by hand, or from a build nothing published) is
+	 * overwritten with the bundle's bytes and registered. Nothing else is ever touched, and no automatic path
+	 * reaches this: `apply` keeps leaving those files alone. The file is compared against the bytes inspected,
+	 * so one edited in between is refused rather than lost. Only the ids in `confirmed` (what the user was
+	 * shown) are replaced: an unrecognised Base that appeared since stays untouched.
+	 */
+	replaceUnowned(root: string, confirmed: readonly string[]): Promise<ManagedAssetsResult> {
+		return this.apply(root, 'repair', undefined, new Set(confirmed));
 	}
 
 	relocate(from: string, to: string): Promise<ManagedAssetsResult> {
@@ -317,6 +329,13 @@ export class ManagedAssetsManager {
 		const promise = this.uninstallInternal(root).finally(() => { if (this.flight?.promise === promise) this.flight = null; });
 		this.flight = { key, promise };
 		return await promise;
+	}
+
+	/** Read-only: the Bases on a managed path that the plugin cannot prove it wrote (what Replace would overwrite). */
+	async listUnowned(root: string): Promise<Array<{ id: string; path: string }>> {
+		return (await this.inspect(root)).assets
+			.filter((entry) => entry.status === 'occupied_unowned')
+			.map((entry) => ({ id: entry.asset.id, path: entry.path }));
 	}
 
 	private flightKey(root: string, kind: ManagedOperationKind, sourceRoot: string | null = null): string {
@@ -420,11 +439,15 @@ export class ManagedAssetsManager {
 		return { entries, steps };
 	}
 
-	private async applyInternal(root: string, kind: 'install' | 'upgrade' | 'repair', guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsResult> {
+	private async applyInternal(root: string, kind: 'install' | 'upgrade' | 'repair', guard?: (inspection: ManagedAssetsInspection) => boolean, replaceUnowned: ReadonlySet<string> | null = null): Promise<ManagedAssetsResult> {
 		try {
 			// Each apply reports its own retirements (an earlier apply nobody read must not leak into this one).
 			this.lastRetirement = { trashed: [], kept: [] };
-			let inspection = await this.inspect(root);
+			const inspectClaiming = async (): Promise<ManagedAssetsInspection> => {
+				const inspected = await this.inspect(root);
+				return replaceUnowned ? claimUnowned(inspected, replaceUnowned) : inspected;
+			};
+			let inspection = await inspectClaiming();
 			if (guard && !guard(inspection)) return { status: 'unchanged', inspection, ownership: 'existing' };
 			const ownership = inspection.manifestStatus === 'missing' ? 'created' as const : 'existing' as const;
 			if (inspection.manifest?.state === 'applying') {
@@ -453,7 +476,7 @@ export class ManagedAssetsManager {
 			const retiredAny = (inspection.retirements?.length ?? 0) > 0;
 			if (retiredAny) {
 				if (!await this.retire(inspection)) return { status: 'conflict', message: 'The managed-assets manifest changed.' };
-				inspection = await this.inspect(root);
+				inspection = await inspectClaiming();
 			}
 			if (planManagedAssets(inspection, kind).steps.every((step) => isSettled(step.status))) {
 				// Nothing to adopt or create and no manifest: an all-foreign folder must not become "managed".
@@ -514,7 +537,9 @@ export class ManagedAssetsManager {
 			state: 'applying',
 			assets: this.withAdopted(inspection, operation.kind, inspection.manifest?.assets ?? initialAssets), pendingOperation: operation,
 		};
-		if (inspection.manifest?.excluded) manifest.excluded = inspection.manifest.excluded;
+		// An id is either registered or excluded, never both (the exact-set rule): a file taken over leaves the list.
+		const stillExcluded = (inspection.manifest?.excluded ?? []).filter((id) => !manifest.assets.some((entry) => entry.id === id));
+		if (stillExcluded.length > 0) manifest.excluded = stillExcluded;
 		await ensureFolders(this.vault, inspection.root);
 		const file = this.vault.file(inspection.manifestPath);
 		const serialized = serializeManifest(manifest);
@@ -878,6 +903,26 @@ function publishedVersionOf(published: readonly PublishedBaseFingerprint[], asse
 			row.contentVersion <= asset.contentVersion)
 		.map((row) => row.contentVersion);
 	return versions.length === 0 ? null : Math.max(...versions);
+}
+/**
+ * The explicit «Replace» reads each CONFIRMED `occupied_unowned` file as one the plugin may overwrite: it
+ * becomes an `update` whose «installed» evidence is the very bytes inspected, so the write is compare-and-swap
+ * against them. An unowned file whose id is not in `confirmed` stays `occupied_unowned`, so the journal gives it
+ * no step and nothing writes it.
+ */
+function claimUnowned(inspection: ManagedAssetsInspection, confirmed: ReadonlySet<string>): ManagedAssetsInspection {
+	return {
+		...inspection,
+		assets: inspection.assets.map((entry) => {
+			if (entry.status !== 'occupied_unowned' || entry.currentHash === null || !confirmed.has(entry.asset.id)) return entry;
+			const adopted: ManagedAssetEntry = {
+				id: entry.asset.id, kind: entry.asset.kind, contentVersion: entry.asset.contentVersion, locale: entry.asset.locale,
+				path: entry.path, installedHash: entry.currentHash,
+				...(entry.asset.kind === 'base' ? { installedSemanticHash: entry.currentSemanticHash ?? entry.currentHash } : {}),
+			};
+			return { ...entry, status: 'update' as const, installedHash: entry.currentHash, adopted };
+		}),
+	};
 }
 /** An unchanged asset needs no write, and an unowned one is left alone: neither is work for the journal. */
 function isSettled(status: InspectedAsset['status']): boolean { return status === 'unchanged' || status === 'occupied_unowned'; }
