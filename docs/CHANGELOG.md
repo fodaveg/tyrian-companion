@@ -1,5 +1,30 @@
 # Changelog
 
+## Release beta 0.6.36 - Hebra arranca antes, copia de las preferencias de inventario y ajustes propios de cada equipo
+
+Se actualiza desde la 0.6.35 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- AVISO. Los ajustes pasan al esquema 16. Un equipo con la 0.6.29 a la 0.6.35 que reciba por sync un `data.json` de
+  esquema 16 deja sus ajustes en solo lectura, con aviso, hasta que se actualice. Un build anterior a la 0.6.29 borraría
+  la copia de las preferencias. Conviene actualizar todos los equipos de la misma biblioteca.
+- Hebra. Con el almacén de datos mudo, el plugin queda listo a los 10 s en vez de a los 20 (a los 30 s en vez de a los
+  40 si ninguna base contesta). El índice de rutas se guarda en segundo plano: ni el arranque ni crear una nota esperan.
+- Hebra. Los ajustes de la alerta en el juego (activada, puerto y nombre de la entrada del llavero), el registro de
+  diagnóstico (activado y nivel) y la última pasada del inventario se guardan por equipo. Cada equipo adopta una vez los
+  valores compartidos que hubiera; un equipo sin valor propio arranca con el registro apagado. Obsidian no cambia.
+- Inventario. Los objetivos y las excepciones de «conservar» tienen copia en los ajustes del host. Si la base del
+  vault está vacía al arrancar y la copia es válida, se restauran una vez. Una copia corrupta o de una versión futura
+  no se restaura, y la futura no se pisa. La copia lleva el `accountId` de GW2.
+- Inventario. Un personaje con una bolsa sin tamaño válido da «espacio desconocido» en vez de un falso «poco espacio».
+- Carpeta vigilada. Vigilar «Tyrian» ya no avisa de cambios en «Tyrian Old», ni en Obsidian ni en Hebra.
+- Diagnóstico. Si a una base de datos le falta un almacén o un índice, el arranque falla con el código `schema_incomplete`
+  en «Último fallo» de Ajustes. El registro guarda el uso del almacenamiento y un tramo de cuota, nunca la cuota exacta.
+  Con el registro activado, los veredictos del candado de vida se ven con el nivel por defecto «Avisos».
+- QA y limpieza interna. Herramienta nueva `npm run hebra:verify-install`, guion `docs/QA-HEBRA.md` y matriz de QA
+  actualizada; `verify-beta-runtime` y `smoke:live` más estrictos. Menos avisos de lint, seis modales fuera de la vista
+  principal y comprobaciones de comportamiento nuevas. Sin cambios visibles.
+
 ## Release beta 0.6.35 - Logros que leen el progreso, iconos en las recompensas y carpeta de salida que se crea sola
 
 Se actualiza desde la 0.6.34 publicada. Corrige lo que se vio usando la 0.6.34. Nada de esto se ha visto todavía en un

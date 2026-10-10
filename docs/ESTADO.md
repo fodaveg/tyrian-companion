@@ -1,5 +1,44 @@
 # Estado
 
+## Candidato 0.6.36: Hebra arranca antes, copia de las preferencias y ajustes por equipo (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.36` sobre el canal 0.6.35 publicado
+(`52fa782c`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.36 se ha visto en un Obsidian ni en un Hebra reales.
+  Única medición real: `npm run hebra:verify-install` da PASS contra el Hebra real de Fedora (0.6.35, `release-bytes=match`),
+  y en un Obsidian 1.14.4 flatpak desechable la 0.6.35 carga, `navigator.locks` existe y el plugin toma su candado al
+  cargar sin clave. NO se midió: que la herramienta compruebe la carga, su ruta por defecto en macOS (supuesto), la
+  reapertura ni que el candado muera con el proceso.
+- Contenido por lote:
+  - A: arranque de Hebra con almacén mudo (test HP-13) y guardado del índice de rutas en segundo plano (10 s en vez de 20).
+  - B: comprobación de almacenes e índices al abrir (`schema_incomplete`), uso y tramo de cuota en el diagnóstico, y
+    copia de las preferencias de inventario en los ajustes del host (esquema 16).
+  - C: veredictos del candado a nivel warn, `verify-beta-runtime` con digests, `smoke:live` por versión,
+    `hebra:verify-install` e informe JSON de vitest en CI.
+  - D: vigilancia de «Tyrian» sin «Tyrian Old», «espacio desconocido», tests de comportamiento del asesor y fichero sin
+    consumidor borrado.
+  - E: avisos `prefer-create-el` de 61 a 5, `CoinFigure` sin `createElementNS`, `sha256` sin aserciones `!` y seis
+    modales fuera de `companion-view.ts`.
+  - F: `docs/QA-HEBRA.md` nuevo y matriz 0.6.x de `docs/QA-MVP.md`.
+  - G: seis ajustes de Hebra (alerta en el juego, registro, última pasada) por equipo en `storage.device`.
+  - H: evidencia de la carga en el Obsidian desechable.
+- Riesgos aceptados:
+  - Esquema 16: de la 0.6.29 a la 0.6.35 los ajustes quedan en solo lectura al recibir un `data.json` v16, y antes de la
+    0.6.29 se borraría la copia.
+  - Adopción única por equipo en Hebra: cada equipo toma una vez los valores compartidos que hubiera.
+  - Esas claves quedan congeladas en los ajustes compartidos para que un equipo anterior vea valores coherentes.
+  - Una biblioteca nueva no tiene copias de esas claves.
+  - La copia de preferencias lleva el `accountId` de GW2 en `data.json` (excepción documentada en THREAT-MODEL).
+  - La última escritura de la copia al descargar el plugin relee y guarda los ajustes: si en esos milisegundos la instancia
+    siguiente guarda otro ajuste, ese se pierde; y una escritura normal ya en curso al descargar se pierde.
+- Incidente: la segunda instancia flatpak reemplazó el socket del CLI de Obsidian de David (CLI y MCP de obsidian sin
+  llegar a su instancia desde las 21:28 hasta que lo reactive); evidencia en
+  [2026-10-10-obsidian-desechable](evidencia/2026-10-10-obsidian-desechable.md).
+- Pendiente: gate, publicación, verla en un Obsidian y un Hebra reales, Z19 (b) (darse por activado sin recorrer toda la
+  carpeta), la parte de `manual-session-start-service.ts` de DE-07, y la reapertura de RT-03 y RT-15.
+
 ## Canal 0.6.35 publicado: Logros que leen el progreso, iconos de recompensas y carpeta de salida que se crea (10 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.35` = `7178ab40` (atestación; candidato `58950aaf`,
