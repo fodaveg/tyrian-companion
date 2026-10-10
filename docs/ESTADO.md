@@ -1,5 +1,28 @@
 # Estado
 
+## Candidato 0.6.25: sesiones en formato 2, resumen de sesiones, ajustes que no se pisan y arranque más ligero (10 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Parte de `6fbe77e` (`main` con el canal 0.6.24 publicado) y reúne nueve lotes
+integrados en `f14b3a6`, más el renombrado de la marca `painted` de la traza de arranque a `renderRequested` y los
+metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de
+Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md), en [SPEC-live-loot](SPEC-live-loot.md) §4 y §6.0 y en
+[ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.25 se ha ejecutado en un Hebra ni en un Obsidian
+  reales. La 0.6.24 publicada sí se vio en un Hebra real (cierre brusco incluido), pero esta candidata no.
+- Gate local sobre `f14b3a6`: «VEREDICTO: VERDE (8/8)» (5957 tests) y guardarraíles «VEREDICTO: VERDE (25/25)». El
+  commit final de la candidata (renombrado, metadatos y documentación) lo pasa de nuevo el integrador antes de etiquetar.
+- Sesiones en formato 2: las sesiones que empiezan con esta versión guardan el precio bruto y ninguna entrada para las
+  muestras que no cambian nada. Después de una de ellas no se puede volver a la 0.6.24 ni a una anterior (límite
+  aceptado, [SPEC-live-loot](SPEC-live-loot.md) §6.0, límite 1).
+- Límites conocidos que quedan abiertos: el tamaño del registro de depuración que muestran los ajustes sale por debajo
+  del real hasta la primera rotación o exportación, y un catálogo que responde `invalid` o `malformed` todavía puede
+  dejar una nota de inventario con el nombre de reserva.
+- La marca `renderRequested` de la traza de arranque (antes `painted`) no mide el primer pintado visible: el repintado
+  es diferido, y la marca dice que la inicialización terminó y que se pidió.
+- Pendiente: la integración final, el gate sobre el commit definitivo, la publicación de la 0.6.25 y verla en un
+  cliente real.
+
 ## Canal 0.6.24 publicado: el arranque con el almacenamiento mudo y la sesión en vivo tras un cierre brusco (9 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Es la 0.6.23 que no llegó a publicarse, con los tests del arranque arreglados (ver abajo). Parte de `efe671f` (`main` con el canal 0.6.22 publicado). Trae dos lotes
@@ -1205,8 +1228,12 @@ La [matriz 0.5.0](QA-MVP.md) sigue pendiente: Fedora/GE-Proton con Nexus, Window
 Nexus local y Blish HUD consumidor, carga/reapertura del Hebra canónico y BRAT/Obsidian. La
 [sonda externa histórica](audit/live-loot-evidence-provenance.md) no acredita el runtime del addon.
 La actualización del Hebra canónico usa el plugin externo de la misma release normal; las
-prereleases quedan fuera de su instalador. Nexus tiene `UpdateProvider::None`: requiere sustituir
-su DLL manualmente y verificar la versión cargada, sin prometer autoactualización. En la comprobación
+prereleases quedan fuera de su instalador. Nexus no tuvo fuente de actualización hasta el addon 0.8.5
+(publicado el 10 oct 2026), que declara GitHub como fuente: desde entonces Nexus lo actualiza (visto el 10 oct
+2026 en Fedora con Proton, de la 0.8.5 a la 0.8.6, recargando el addon en la misma sesión de juego; sin ver en
+Windows nativo). Quien tenga la 0.8.4 o anterior tiene que poner la 0.8.5 o posterior a mano una vez. Nexus guarda
+30 minutos la lista de versiones de GitHub. Para la 0.5.0 de esta sección valía la sustitución manual de la DLL
+y verificar la versión cargada, sin prometer autoactualización. En la comprobación
 previa a este despliegue figuraban Tyrian 0.3.4 en Hebra y Nexus 0.3.1; esas versiones no prueban que
 el candidato 0.5.0 esté instalado.
 

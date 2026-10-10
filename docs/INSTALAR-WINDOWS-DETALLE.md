@@ -37,8 +37,9 @@ los [problemas frecuentes](#b-problemas-frecuentes) y
   las plataformas desde el 8 oct 2026. El módulo de Blish HUD queda congelado en 0.5.0.
 - **Una release publicada no prueba que funcione en tu equipo.** Del plugin y del addon hay canal
   publicado, pero su instalación y su ejecución en un cliente real siguen pendientes.
-- **El addon no se actualiza solo.** Para actualizarlo hay que sustituir el fichero `.dll` a mano
-  con Guild Wars 2 cerrado.
+- **El addon se actualiza solo desde la 0.8.5.** Con la 0.8.4 o anterior hay que sustituir el
+  fichero `.dll` a mano, con Guild Wars 2 cerrado, una vez. Nexus guarda 30 minutos la lista de
+  versiones de GitHub. La actualización automática se ha visto en Fedora con Proton, no en Windows nativo.
 
 # Parte 1. Guild Wars 2, Nexus y el addon
 
@@ -84,8 +85,9 @@ Instalarlo es copiar un fichero `.dll` a la carpeta de addons de Nexus.
 Por confirmar: que Nexus detecte el `.dll` nuevo sin reiniciar el juego y cómo se llama el botón
 de cargarlo. El botón **Abrir carpeta de addons** sí se ha visto en Nexus.
 
-Para actualizar el addon, cierra Guild Wars 2, sustituye el `.dll` de esa carpeta por el nuevo y
-abre el juego. Con el juego abierto, Windows no deja sustituir un `.dll` cargado.
+Desde la 0.8.5 Nexus actualiza el addon. Si tienes la 0.8.4 o anterior, o quieres ponerlo a mano,
+cierra Guild Wars 2, sustituye el `.dll` de esa carpeta por el nuevo y abre el juego. Con el juego
+abierto, Windows no deja sustituir un `.dll` cargado.
 
 La carpeta de addons es `<carpeta de Guild Wars 2>\addons\`, donde la carpeta de Guild Wars 2 es
 la que contiene `Gw2-64.exe`. El nombre del fichero no importa: su dueño lo tiene instalado como
@@ -402,7 +404,7 @@ para el botón de comprobar conexión. Detalle completo en [Clave API de Guild W
 | Panel sin cifras y sin plugin                                         | Es lo previsto: las bolsas y el precio llegan del plugin (ver 1.5). Conecta el plugin con la Parte 2.                                                                                                                                                                                       |
 | Nexus registra `Failed LoadLibrary` con `Error Code 126`              | El DLL no carga sus dependencias. Copia de nuevo el `.dll` de la release y verifica su SHA-256. El `.dll` de la release está enlazado para no necesitar librerías externas. Si persiste, no está resuelto.                                                                                    |
 | Hebra u Obsidian no se abren solos al arrancar el juego               | En Windows nativo el addon solo los abre si la app registró su esquema `obsidian://` o `hebra://` al instalarse. Si no, no hace nada a propósito. Abre la app a mano. Comprueba también **App to open**. La opción se desactiva en **Open Obsidian or Hebra automatically when the game starts**. |
-| El `.dll` instalado es antiguo                                        | El addon no se actualiza solo. Con el juego cerrado, sustituye el `.dll` y comprueba `Loaded addon` al abrir el juego.                                                                                                                                                                        |
+| El `.dll` instalado es antiguo                                        | Con la 0.8.4 o anterior el addon no se actualiza solo. Con el juego cerrado, sustituye el `.dll` y comprueba `Loaded addon` al abrir el juego.                                                                                                                                                                        |
 | No veo la fila «Dónde se muestra» en Hebra                            | En Hebra 0.2.3 de Windows es lo previsto: necesita la API de plugins 1.3.0 (ver 2.8).                                                                                                                                                                                                        |
 | BRAT no ofrece la versión 0.6.24                                      | GitHub puede tardar entre 5 y 15 minutos en servir una release. Usa **Check for updates** en BRAT.                                                                                                                                                                                            |
 | El guardado de las opciones aparece en rojo                           | El ajuste no llegó al disco. Pulsa **Save** otra vez.                                                                                                                                                                                                                                         |

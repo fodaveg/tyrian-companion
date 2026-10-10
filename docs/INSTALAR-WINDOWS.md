@@ -19,7 +19,7 @@ Está bien instalado si en las opciones de Nexus hay una sección **Tyrian Compa
 
 El addon solo no muestra datos. Las cifras, las sesiones y las notas llegan del plugin (Parte 2).
 
-Para actualizarlo, cierra el juego y sustituye el `.dll` por el nuevo.
+Desde el addon 0.8.5 Nexus lo actualiza solo (puede tardar hasta 30 minutos en ver una versión nueva). Si tienes la 0.8.4 o anterior, pon la 0.8.5 o posterior a mano una vez: cierra el juego y sustituye el `.dll` por el nuevo.
 
 ## Parte 2. Hebra y la conexión con el addon
 
