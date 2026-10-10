@@ -678,6 +678,18 @@ function mergeOptionalBoundedInteger(current: number | null, update: unknown, ma
 }
 
 /** Rewrites persisted data to the exact current schema, retaining only explicit current/legacy fields. */
+/**
+ * DU-04: whether `data` was written by a release whose settings schema is newer than this one's. Such a file
+ * is read (migrated into memory like any other) but never written: `migrateSettings` would drop the keys this
+ * release does not know and reset the values it only trusts from its own schema, and the sync would carry that
+ * downgrade back to the device that runs the newer release. Anything that is not a settings object with a
+ * numeric `schemaVersion` above `SETTINGS_SCHEMA_VERSION` is not newer.
+ */
+export function isNewerSettingsSchema(data: unknown): boolean {
+	return isRecord(data) && typeof data.schemaVersion === 'number' && Number.isFinite(data.schemaVersion) &&
+		data.schemaVersion > SETTINGS_SCHEMA_VERSION;
+}
+
 export function shouldPersistSettingsOnLoad(persisted: unknown, migrated: TyrianSettings): boolean {
 	return JSON.stringify(persisted) !== JSON.stringify(migrated);
 }

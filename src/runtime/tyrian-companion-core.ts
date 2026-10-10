@@ -201,6 +201,7 @@ import {
 	ALERT_INGAME_SECRET_ID,
 	collectorModeSeed,
 	type CollectorMode,
+	isNewerSettingsSchema,
 	mergeSettingsUpdate,
 	migrateSettings,
 	SETTINGS_SCHEMA_VERSION,
@@ -417,7 +418,8 @@ type NoticeDiagnosticSource =
 	| 'live_observation'
 	| 'valuable_loot'
 	| 'ingame_secret_copy'
-	| 'session_error_copy';
+	| 'session_error_copy'
+	| 'settings_read_only';
 
 /** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
 export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
@@ -708,6 +710,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate());
 	/** False until `initializeRuntime` finishes constructing every runtime service. */
 	private runtimeReady = false;
+	/**
+	 * DU-04: the stored settings come from a newer settings schema, seen at boot or by a later save. From then on this run
+	 * writes no settings at all: it runs on what it read and says so. Never goes back to false before a reload.
+	 */
+	private settingsReadOnly = false;
 	/** The mode this device had saved, read after the start gave up waiting for it; applied once the runtime is ready. */
 	private lateCollectorMode: CollectorMode | null = null;
 	/** Whether the Settings selector wrote the mode in this run: a late read of the old value must not undo that. */
@@ -760,6 +767,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const boot = await runtime.boot();
 		this.bootTrace.mark('settings');
 		this.settings = boot.settings;
+		this.settingsReadOnly = boot.settingsReadOnly;
 		// R1b: the seed until `initializeRuntime` reads this device's own mode; nothing collects before that.
 		this.collectorMode ??= collectorModeSeed(this.settings);
 		this.localDebug = boot.localDebug;
@@ -917,6 +925,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		);
 		const vaultId = await sha256Text(host.vault.canonicalIdentity().normalize('NFC'));
 		this.vaultId = vaultId;
+		// DU-04: settings a newer release wrote are used as read and never written in this run; the user is told once here.
+		if (this.settingsReadOnly) this.warnSettingsReadOnly();
 		// R1b: this device's mode, read before any service that collects is built. The first time,
 		// the seed (the spec's rule over data.json) is stored locally; after that data.json no longer
 		// decides. Without IndexedDB the seed stands for this run and is not stored.
@@ -1631,12 +1641,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/**
 	 * DU-02: the vault's mark, created on first need and saved in the plugin's data (which travels with the folder). If a
-	 * device that syncs the same vault saved one in the meantime, that one is kept.
+	 * device that syncs the same vault saved one in the meantime, that one is kept. With settings from a newer release
+	 * (DU-04) no mark is created: one that is not saved would name nothing on the next start.
 	 */
 	private async ensureVaultMark(): Promise<void> {
 		if (isVaultMark(this.settings.vaultMark)) return;
 		await this.serializeSettingsWrite(async () => {
 			const base = await this.loadSettingsBase();
+			if (base === null) return;
 			const vaultMark = isVaultMark(base.vaultMark) ? base.vaultMark : crypto.randomUUID();
 			if (base.vaultMark !== vaultMark) await this.host.settings.save({ ...base, vaultMark });
 			this.settings = { ...this.settings, vaultMark };
@@ -3064,8 +3076,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async recordInventorySyncOutcome(outcome: InventoryVaultSyncLastRun): Promise<void> {
 		await this.serializeSettingsWrite(async () => {
 			const base = await this.loadSettingsBase();
-			const next = { ...base, inventorySyncLastRun: outcome };
-			await this.host.settings.save(next);
+			// DU-04: with settings from a newer release the receipt lives in memory only, for this run.
+			if (base !== null) await this.host.settings.save({ ...base, inventorySyncLastRun: outcome });
 			// Memory takes only the key this method owns. What another device changed stays unpublished,
 			// so the next `updateSettings` still sees it as a difference and reacts to it.
 			this.settings = { ...this.settings, inventorySyncLastRun: outcome };
@@ -3094,12 +3106,22 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/**
 	 * What a save merges over: the persisted settings, migrated like at boot, so a key that arrived from
 	 * another device (Obsidian Sync, Hebra storage) is kept whole. Only an object written under this very
-	 * settings schema counts: anything else (not an object, empty, no `schemaVersion`, older or newer)
-	 * falls back to memory, because `migrateSettings` would reset values across schemas. A rejected read
-	 * rejects, so nothing is written over what could not be read.
+	 * settings schema counts: anything else (not an object, empty, no `schemaVersion`, older) falls back to
+	 * memory, because `migrateSettings` would reset values across schemas. A rejected read rejects, so nothing
+	 * is written over what could not be read.
+	 *
+	 * DU-04: `null` means "write nothing". It answers so once the settings are read-only for this run, and when
+	 * this read finds a newer settings schema (another device updated the plugin and synced it meanwhile), which
+	 * makes them read-only from here on and tells the user once.
 	 */
-	private async loadSettingsBase(): Promise<TyrianSettings> {
+	private async loadSettingsBase(): Promise<TyrianSettings | null> {
+		if (this.settingsReadOnly) return null;
 		const persisted = await this.host.settings.load();
+		if (isNewerSettingsSchema(persisted)) {
+			this.settingsReadOnly = true;
+			this.warnSettingsReadOnly();
+			return null;
+		}
 		if (typeof persisted !== 'object' || persisted === null || Array.isArray(persisted) ||
 			(persisted as { schemaVersion?: unknown }).schemaVersion !== SETTINGS_SCHEMA_VERSION) return this.settings;
 		return migrateSettings(persisted, this.host.vault.configDir, this.host.locale());
@@ -4901,6 +4923,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** Records only the closed delivery cause; visible notice text never enters diagnostics. */
+	/** DU-04: tells the user the settings come from a newer release and stay as they are until the plugin is updated. */
+	private warnSettingsReadOnly(): void {
+		this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.settingsNewerSchema'), 'settings_read_only');
+	}
+
 	private emitNotice(message: string, source: NoticeDiagnosticSource, onClick?: () => void): void {
 		const deliver = (): void => { this.host.ui.notice(message, onClick); };
 		if (this.localDebugActions) this.localDebugActions.runSync(
@@ -5629,16 +5656,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.notifyRuntimeStarting();
 			return { status: 'blocked', reason: 'runtime_starting' };
 		}
+		// DU-04: settings from a newer release are never written in this run; each refused edit says why.
+		if (this.settingsReadOnly) {
+			this.warnSettingsReadOnly();
+			return { status: 'blocked', reason: 'settings_read_only' };
+		}
 		// Read, merge, save and publish are one serialized section: a concurrent save waits its turn
 		// and merges over what this one wrote. The reactions below stay outside it, because one of them
 		// (`reconcileManagedAssetsRoot`) calls `updateSettings` again and a non-reentrant queue would deadlock.
-		const {
-			previousPollingInterval, previousLanguage, previousOutputFolder, previousManagedAssetsRoot,
-			previousLegacyOutputFolder, previousLegacyManagedAssetsRoot, previousPriceHistory, previousHalloweenEnabled,
-			previousPersonalValuation, previousMaterialStorageCapacity, previousLowStorageSpaceThreshold,
-			previousSalvagePreferences, previousAlertIngameEnabled, previousAlertIngamePort, nextSettings, secretChanged,
-		} = await this.serializeSettingsWrite(async () => {
+		const written = await this.serializeSettingsWrite(async () => {
 			const base = await this.loadSettingsBase();
+			// The read found a newer settings schema (and already warned): nothing is written or published.
+			if (base === null) return null;
 			const previousSecret = this.settings.apiKeySecret;
 			const previousPollingInterval = this.settings.pollingIntervalMinutes;
 			const previousLanguage = this.settings.language;
@@ -5667,6 +5696,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				previousSalvagePreferences, previousAlertIngameEnabled, previousAlertIngamePort, nextSettings, secretChanged,
 			};
 		});
+		if (written === null) return { status: 'blocked', reason: 'settings_read_only' };
+		const {
+			previousPollingInterval, previousLanguage, previousOutputFolder, previousManagedAssetsRoot,
+			previousLegacyOutputFolder, previousLegacyManagedAssetsRoot, previousPriceHistory, previousHalloweenEnabled,
+			previousPersonalValuation, previousMaterialStorageCapacity, previousLowStorageSpaceThreshold,
+			previousSalvagePreferences, previousAlertIngameEnabled, previousAlertIngamePort, nextSettings, secretChanged,
+		} = written;
 		// Stale seed copies still waiting for their action to end are dropped with the opt-in: switching
 		// it back on does not bring them back. A pass already downloading stops at its next item.
 		if (!this.settings.priceHistoryEnabled) this.priceSeedDeferredRequest = null;
