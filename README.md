@@ -10,6 +10,17 @@ account inventory context inside a vault, with an independent Hebra host adapter
 describe manual actions: the plugin never operates the game account. A connected Nexus
 addon can mark session boundaries automatically from game presence.
 
+## Disclaimer
+
+Tyrian Companion is an unofficial, personal project. ArenaNet and NCSOFT did not make it and
+have not approved it. The plugin itself does not read game memory, but the Nexus addon that feeds
+its live sessions does (it only reads), and whether using it fits the game's rules is for you
+to check.
+
+Use both at your own risk. They are provided as they are, with no warranty of any kind, and the
+author takes no responsibility for anything that happens to your account, your game or your
+computer from using them.
+
 The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
 our Nexus addon as the source of new sessions. **The 0.6.24 channel is published;
 installation and runtime QA remain pending.** This does not prove that an installed older addon supplies it.
