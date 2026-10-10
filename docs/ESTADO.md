@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.6.34: Terminar sesión, Descartar sesión, token del addon, Assets en Hebra, Logros y Venta (10 oct 2026)
+## Canal 0.6.34 publicado: Terminar sesión, Descartar sesión, token del addon, Assets en Hebra, Logros y Venta (10 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.34` sobre el canal 0.6.33 publicado
-(`d1d39c0`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.34` = `b6ec025a` (atestación; candidato `96c28614`,
+árbol `9a1d12a5`). Gate local verde (check 9/9 con 6799 tests, guardrails 24/24, BRAT PASS); CI 38066638296 y Release
+38067293180 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.34` sobre el canal
+0.6.33 publicado (`d1d39c0`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.34 se ha visto en un Obsidian ni en un Hebra reales.
@@ -19,7 +21,7 @@
   declaró por script en cada fusión.
 - Límite conocido: durante una actualización con dos ventanas de builds distintos y el reloj parado, la nueva puede
   quitar la reserva a la vieja a los 5 min (sin corrupción, por el fence).
-- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+- Pendiente: verla en un Obsidian y un Hebra reales.
 
 ## Canal 0.6.33 publicado: el icono de Logros se ve en Hebra (10 oct 2026)
 
