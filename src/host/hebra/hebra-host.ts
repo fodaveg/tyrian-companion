@@ -396,6 +396,10 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	let restartArmed = false;
 	let restartTimer: number | undefined;
 	let disposed = false;
+	/** Set by `closeStorage`: from then on no path index of this instance may save. */
+	let storageClosed = false;
+	/** The index `createOutputFolder` is seeding, until it replaces `index`: `closeStorage` stops it too. */
+	let creating: TyrianPathIndex | null = null;
 	const stale = (): boolean => latestFolder !== outputFolder;
 	const disarmRestart = (): void => {
 		restartArmed = false;
@@ -534,6 +538,14 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 				pathIndexNamespace(libraryId, folderId),
 				(error) => deps.report(error, 'path-index.storage'),
 			);
+			// The plugin stopped while the index was loading: it must not save over a kv that is closed (a save would open a
+			// connection nobody closes).
+			if (disposed || storageClosed) {
+				created.stopSaving();
+				throw new Error('tyrian: the plugin stopped while its output folder was being created.');
+			}
+			// Stopped by `closeStorage` too while the seed below runs, so the seed's own save never reaches a closed kv.
+			creating = created;
 			// Empty when just created; one that reached the library meanwhile (sync) is adopted as on a start.
 			await seedTyrianPathIndex({
 				library: api.vault,
@@ -543,7 +555,11 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 				canonicalPathFor: deps.canonicalPathFor,
 				...(created.size === 0 ? {} : { reconcile: true }),
 			});
-			if (disposed) throw new Error('tyrian: the plugin stopped while its output folder was being created.');
+			if (creating === created) creating = null;
+			if (disposed || storageClosed) {
+				created.stopSaving();
+				throw new Error('tyrian: the plugin stopped while its output folder was being created.');
+			}
 			index = created;
 			vaultPort = createPort(folderId, created);
 			unwatchIndexedFiles = watchIndexedFiles(created);
@@ -652,8 +668,12 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			}
 		},
 		closeStorage: () => {
-			// The index's saves run in the background and are not waited for: none starts after this, so none reopens the kv.
+			// The index's saves run in the background and are not waited for. From here none starts, neither the index in use
+			// nor one `createOutputFolder` is still seeding (it gives up when it sees `storageClosed`), so none reopens the kv.
+			// The one already in flight is left to its own deadline.
+			storageClosed = true;
 			index.stopSaving();
+			creating?.stopSaving();
 			deps.pathIndexKv.close?.();
 			deps.fileBackend.close?.();
 		},
