@@ -29,8 +29,10 @@ export type MagicFindDerivationResult =
 	| { status: 'failed'; reason: MagicFindDerivationFailureReason };
 
 interface AchievementTier { count: number; points: number }
-interface CachedCatalogEntry { tiers: readonly AchievementTier[]; storedAt: number }
-interface AccountAchievementEntry { id: number; current: number | null; done: boolean }
+/** `pointCap` is the achievement's `point_cap`; only a positive integer is a valid cap, anything else is `null`. */
+interface CatalogAchievement { tiers: readonly AchievementTier[]; pointCap: number | null }
+interface CachedCatalogEntry extends CatalogAchievement { storedAt: number }
+interface AccountAchievementEntry { id: number; current: number | null; done: boolean; repeated: number }
 interface AccountAchievementsSnapshot {
 	entries: readonly AccountAchievementEntry[];
 	dailyAp: number;
@@ -117,6 +119,7 @@ export class MagicFindService {
 			entries.push(parsed);
 		}
 		if (!isRecord(accountBody) || !nonNegativeInteger(accountBody.daily_ap)) {
+			// `monthly_ap` is not summed: it reads 0 on the account today and cannot be validated.
 			// `daily_ap` requires the `progression` scope; its absence on an otherwise valid
 			// response means the key cannot answer this part, same conclusion `account/luck`
 			// reaches through a 403 instead.
@@ -131,14 +134,23 @@ export class MagicFindService {
 		operation: MagicFindOperation,
 		entries: readonly AccountAchievementEntry[],
 	): Promise<number> {
-		const tiersById = await this.resolveCatalog(operation, entries.map((entry) => entry.id));
+		const catalogById = await this.resolveCatalog(operation, entries.map((entry) => entry.id));
 		let total = 0;
 		for (const entry of entries) {
-			const tiers = tiersById.get(entry.id);
-			if (tiers === undefined) continue; // Removed or unresolvable achievements contribute nothing, not a failure.
-			total += entry.current !== null
+			const achievement = catalogById.get(entry.id);
+			if (achievement === undefined) continue; // Removed or unresolvable achievements contribute nothing, not a failure.
+			const { tiers, pointCap } = achievement;
+			const base = entry.current !== null
 				? tiers.filter((tier) => tier.count <= entry.current!).reduce((sum, tier) => sum + tier.points, 0)
 				: entry.done ? tiers.reduce((sum, tier) => sum + tier.points, 0) : 0;
+			// Each repetition of a repeatable achievement earns every tier again, up to its `point_cap`.
+			// Without a valid cap the repetitions are not counted at all.
+			if (entry.repeated > 0 && pointCap !== null) {
+				const perLap = tiers.reduce((sum, tier) => sum + tier.points, 0);
+				total += Math.max(base, Math.min(pointCap, base + entry.repeated * perLap));
+			} else {
+				total += base;
+			}
 		}
 		return total;
 	}
@@ -147,7 +159,7 @@ export class MagicFindService {
 	private async resolveCatalog(
 		operation: MagicFindOperation,
 		ids: readonly number[],
-	): Promise<Map<number, readonly AchievementTier[]>> {
+	): Promise<Map<number, CatalogAchievement>> {
 		const now = this.now();
 		const missing = [...new Set(ids)].filter((id) => {
 			const cached = this.catalog.get(id);
@@ -162,13 +174,13 @@ export class MagicFindService {
 			for (const raw of body) {
 				const parsed = parseAchievementCatalogEntry(raw);
 				if (parsed === null) continue; // Unrecognized shape: skip it, do not fail the whole batch.
-				this.catalog.set(parsed.id, { tiers: parsed.tiers, storedAt: now });
+				this.catalog.set(parsed.id, { tiers: parsed.tiers, pointCap: parsed.pointCap, storedAt: now });
 			}
 		}
-		const result = new Map<number, readonly AchievementTier[]>();
+		const result = new Map<number, CatalogAchievement>();
 		for (const id of ids) {
 			const cached = this.catalog.get(id);
-			if (cached !== undefined) result.set(id, cached.tiers);
+			if (cached !== undefined) result.set(id, { tiers: cached.tiers, pointCap: cached.pointCap });
 		}
 		return result;
 	}
@@ -188,20 +200,27 @@ function failureReason(error: unknown): MagicFindDerivationFailureReason {
 	return 'request_failed';
 }
 
-function parseAchievementCatalogEntry(value: unknown): { id: number; tiers: AchievementTier[] } | null {
+function parseAchievementCatalogEntry(value: unknown): { id: number; tiers: AchievementTier[]; pointCap: number | null } | null {
 	if (!isRecord(value) || !positiveInteger(value.id) || !Array.isArray(value.tiers)) return null;
 	const tiers: AchievementTier[] = [];
 	for (const tier of value.tiers) {
 		if (!isRecord(tier) || !nonNegativeInteger(tier.count) || !nonNegativeInteger(tier.points)) return null;
 		tiers.push({ count: tier.count, points: tier.points });
 	}
-	return { id: value.id, tiers };
+	// `point_cap` is optional and `-1` means uncapped: an odd value is no cap, never a malformed entry.
+	return { id: value.id, tiers, pointCap: positiveInteger(value.point_cap) ? value.point_cap : null };
 }
 
 function parseAccountAchievementEntry(value: unknown): AccountAchievementEntry | null {
 	if (!isRecord(value) || !positiveInteger(value.id) || typeof value.done !== 'boolean') return null;
 	if (value.current !== undefined && value.current !== null && !nonNegativeInteger(value.current)) return null;
-	return { id: value.id, current: value.current === undefined ? null : value.current, done: value.done };
+	if (value.repeated !== undefined && !nonNegativeInteger(value.repeated)) return null;
+	return {
+		id: value.id,
+		current: value.current === undefined ? null : value.current,
+		done: value.done,
+		repeated: value.repeated === undefined ? 0 : value.repeated,
+	};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
