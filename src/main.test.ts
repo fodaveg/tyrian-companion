@@ -2311,6 +2311,39 @@ describe('managed assets preview diagnostics', () => {
 		);
 		expect(failure).toMatchObject({ code: 'unknown_failure' });
 	});
+
+	it('lists the Bases Replace would overwrite, and says so when there are none or the inspection throws', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const listUnowned = vi.fn(async (): Promise<Array<{ id: string; path: string }>> => { throw new Error('invalid_root'); });
+		const harness = {
+			runtimeReady: true,
+			settings: { legacyManagedAssetsRoot: null, managedAssetsRoot: 'Tyrian Companion', outputFolder: 'Tyrian Companion' },
+			managedAssetsView: { status: 'idle' as const, message: 'idle', plan: null },
+			managedAssets: { listUnowned },
+			settingTab: { refreshManagedAssetsRow: vi.fn() },
+			notifyRuntimeStarting: vi.fn(),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'managed-assets-replace-list' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const list = (TyrianCompanionCore.prototype as unknown as {
+			listUnownedManagedAssets(this: typeof harness): Promise<Array<{ id: string; path: string }>>;
+		}).listUnownedManagedAssets;
+
+		await expect(list.call(harness)).resolves.toEqual([]);
+		expect(harness.managedAssetsView).toMatchObject({ status: 'error', message: 'inspect_failed' });
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'assets' && input.action === 'managed_assets_replace_list' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'unknown_failure' });
+
+		listUnowned.mockResolvedValueOnce([]);
+		await expect(list.call(harness)).resolves.toEqual([]);
+		expect(harness.managedAssetsView).toMatchObject({ status: 'ready', message: 'no_unowned' });
+
+		listUnowned.mockResolvedValueOnce([{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base' }]);
+		await expect(list.call(harness)).resolves.toEqual([{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base' }]);
+	});
 });
 
 describe('pilot metrics export diagnostics', () => {

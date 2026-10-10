@@ -10,7 +10,6 @@ import type {
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import {
 	projectManagedAssetsActions,
-	viewHasUnownedAssets,
 	projectManagedAssetsRootDivergence,
 	runConfirmedManagedAssetsRemoval,
 	type ManagedAssetsAction,
@@ -248,12 +247,8 @@ export class TyrianCompanionSettingTab {
 			working: view.status === 'working',
 			hasManagedRoot: this.plugin.hasManagedAssetsRoot(),
 			canMove: this.plugin.hasManagedAssetsRoot() && this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
-			hasUnowned: viewHasUnownedAssets(view),
 		});
 		for (const [action, button] of this.managedAssetButtons) button.setDisabled(!enabled[action]);
-		// Replace is not offered at all while the preview lists no Base the plugin does not recognise.
-		const replace = this.managedAssetButtons.get('replace');
-		if (replace) replace.buttonEl.style.display = viewHasUnownedAssets(view) ? '' : 'none';
 	}
 
 	/**
@@ -697,7 +692,7 @@ export class TyrianCompanionSettingTab {
 						button.setButtonText(this.t('settings.assets.replace')).onClick(async () => {
 							// A fresh read, not the last preview: the user confirms exactly what is listed, and only those are replaced.
 							const unowned = await this.plugin.listUnownedManagedAssets();
-							if (unowned.length === 0) { this.refreshManagedAssetsRow(); return; }
+							if (unowned.length === 0) return; // the core already said why in the status row
 							await runConfirmedManagedAssetsRemoval(
 								() => confirmManagedAssetsRemoval(this.host.ui, this.t.bind(this), 'replace', unowned.map((entry) => entry.path)),
 								() => this.plugin.replaceUnownedManagedAssets(unowned.map((entry) => entry.id)),

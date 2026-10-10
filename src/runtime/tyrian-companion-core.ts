@@ -4700,10 +4700,28 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * and the exact set `replaceUnownedManagedAssets` is then limited to. Empty when nothing can be listed; an unreadable manifest throws, as the Settings preview's own inspection would.
 	 */
 	async listUnownedManagedAssets(): Promise<Array<{ id: string; path: string }>> {
-		if (!hostSupportsManagedAssets(this.host) || !this.runtimeReady || this.settings.legacyManagedAssetsRoot !== null) return [];
+		if (!hostSupportsManagedAssets(this.host)) return [];
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return []; }
+		if (refusedInConsult(this)) return [];
 		const root = this.settings.managedAssetsRoot;
-		if (!root) return [];
-		return await this.managedAssets.listUnowned(root);
+		if (!root || this.settings.legacyManagedAssetsRoot !== null) return [];
+		let found: Array<{ id: string; path: string }> = [];
+		const perform = async () => {
+			try {
+				found = await this.managedAssets.listUnowned(root);
+				this.managedAssetsView = found.length === 0
+					? { status: 'ready', message: 'no_unowned', plan: null }
+					: this.managedAssetsView;
+				return undefined;
+			} catch (error) {
+				found = [];
+				this.managedAssetsView = { status: 'error', message: 'inspect_failed', plan: null };
+				return { phase: 'failure' as const, code: 'unknown_failure' as const, details: unmappedErrorLogDetails(error) };
+			}
+		};
+		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_replace_list' }, perform) ?? perform());
+		this.settingTab.refreshManagedAssetsRow();
+		return found;
 	}
 
 	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable

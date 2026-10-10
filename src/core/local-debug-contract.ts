@@ -32,7 +32,7 @@ export const LOCAL_DEBUG_ACTIONS = [
 	'price_history_configure', 'price_history_observe', 'price_history_load_series', 'price_history_poll', 'price_history_capture', 'price_history_compact',
 	'halloween_refresh', 'halloween_backfill', 'halloween_alert',
 	'inventory_advisor_refresh', 'inventory_advisor_reclassify', 'inventory_preferences_read', 'inventory_preferences_write',
-	'managed_assets_preview', 'managed_assets_apply', 'managed_assets_relocate', 'managed_assets_remove',
+	'managed_assets_preview', 'managed_assets_replace_list', 'managed_assets_apply', 'managed_assets_relocate', 'managed_assets_remove',
 	'notification_emit',
 	'vault_read', 'vault_write', 'command_execute', 'view_render',
 	'global_error',
