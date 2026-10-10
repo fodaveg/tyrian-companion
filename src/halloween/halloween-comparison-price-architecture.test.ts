@@ -16,13 +16,10 @@ describe('H11.3 and H11.5 architecture contract', () => {
 	});
 
 	it('seals only finalized review output and writes comparison in the same IndexedDB transaction', () => {
-		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
-		// The guard moved into `finalizeAndPersistStoppedSession` (Lote S, 2026-09-09: nobody reviews
-		// a session anymore, so there is only one finalize path left) and reads negated —
-		// `finishFinalizedSession`, the only caller of `observeHalloweenDelta` on this path, never
-		// runs unless this guard already confirmed `'finalized'`.
-		expect(main).toContain("reviewed.status !== 'finalized'");
-		expect(main).toContain("'session_final'");
+		// That only a finalized session reaches `observeHalloweenDelta`, and under `'session_final'`,
+		// runs in `src/main.test.ts` ('Halloween production gating': 'does not touch Halloween or the
+		// note when finalization itself fails' and 'passes the whole classification and stable delta
+		// to session_final only once finalization already succeeded') (DE-01).
 		const store = readModuleSource('src/halloween/halloween-store.ts');
 		expect(store).toContain('HALLOWEEN_DB_VERSION = 9');
 		expect(store).toContain('HALLOWEEN_COMPARISON_STORE');

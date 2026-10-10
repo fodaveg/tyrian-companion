@@ -46,11 +46,11 @@ describe('pilot metrics architecture', () => {
 		expect(receipts).not.toContain('accepted_workflow_failed');
 		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		// `recoveryFinished` is read from what a recovery and a discard hand the journal when they run,
-		// in `src/runtime/live-session-facade.test.ts` (DE-01).
-		for (const hook of [
-			'proposalPresented', "workflow: 'succeeded'", "workflow: 'failed'", 'sessionStarted',
-			'sessionCompleted', 'recoveryPresented', 'proposalExcluded',
-		]) expect(main).toContain(hook);
+		// in `src/runtime/live-session-facade.test.ts`; `sessionStarted`, `sessionCompleted` and the
+		// start's `workflow: 'succeeded'`/`'failed'` from a start and a finalization that run, in
+		// `src/main-session-workflow-semantics.test.ts`, and the stop's workflow in `src/main.test.ts`
+		// ('stop workflow outcome in the receipt and the pilot (H18.4)') (DE-01).
+		for (const hook of ['proposalPresented', 'recoveryPresented', 'proposalExcluded']) expect(main).toContain(hook);
 	});
 
 	it('attempts review-presented when a card materializes without delaying any product action', () => {
@@ -105,8 +105,7 @@ describe('pilot metrics architecture', () => {
 		expect(settings).toContain("invalidateAndDisarmAssistedDetection('connection_changed')");
 		const shutdown = classMethodBody(main, 'TyrianCompanionCore', 'shutdownRuntime');
 		expect(shutdown).toContain('const pilotProposalClosure = this.excludeLiveAssistedProposal()');
-		const stopWorkflow = classMethodBody(main, 'TyrianCompanionCore', 'performStopManualSession');
-		expect(stopWorkflow).toContain("this.assistedDetection.disarm('session_stopped')");
-		expect(stopWorkflow).not.toContain("invalidateAndDisarmAssistedDetection('session_stopped')");
+		// That a stop disarms the detector as `session_stopped` and never invalidates the proposal it
+		// accepted runs in `src/main-session-workflow-semantics.test.ts` (DE-01).
 	});
 });

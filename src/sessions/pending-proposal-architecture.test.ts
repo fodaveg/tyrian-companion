@@ -39,16 +39,8 @@ describe('pending confirmation background boundary', () => {
 		expect(refresh).not.toMatch(/\.render\s*\(|contentEl\.empty/u);
 	});
 
-	it('keeps ordinary manual workflows independent from pending queue receipts', () => {
-		const source = readModuleSource('src/runtime/tyrian-companion-core.ts');
-		const stop = classMethodBody(source, 'TyrianCompanionCore', 'performStopManualSession');
-		const start = classMethodBody(source, 'TyrianCompanionCore', 'startManualSession');
-		for (const workflow of [stop, start]) {
-			expect(workflow).toContain('const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null');
-			expect(workflow).toContain('if (intent && pendingClaim)');
-			expect(workflow).not.toMatch(/getPendingProposalState|getState\(\)\.next/u);
-		}
-	});
+	// 'keeps ordinary manual workflows independent from pending queue receipts' runs the start and
+	// the stop instead of matching them: `src/main-session-workflow-semantics.test.ts` (DE-01).
 
 	it('registers claim renewal timers with plugin unload lifecycle', () => {
 		const source = readModuleSource('src/runtime/tyrian-companion-core.ts');
