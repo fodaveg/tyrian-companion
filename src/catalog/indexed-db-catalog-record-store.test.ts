@@ -23,6 +23,19 @@ describe('IndexedDbCatalogRecordStore', () => {
 		database.close();
 	});
 
+	it('Z30: setMany commits all entries in one transaction and aborts as a whole on failure', async () => {
+		const factory = new IDBFactory();
+		const store = await IndexedDbCatalogRecordStore.open(factory, databaseName('set-many'));
+
+		await store.setMany([['a', '1'], ['b', '2'], ['c', '3']]);
+		await expect(store.getMany(['a', 'b', 'c'])).resolves.toEqual(new Map([['a', '1'], ['b', '2'], ['c', '3']]));
+
+		// A non-cloneable value makes `put` throw inside the transaction: nothing of the batch is kept.
+		await expect(store.setMany([['d', '4'], ['e', (() => 1) as unknown as string]])).rejects.toBeDefined();
+		await expect(store.getMany(['d', 'e'])).resolves.toEqual(new Map());
+		store.close();
+	});
+
 	it('persists committed data across close and reopen', async () => {
 		const factory = new IDBFactory();
 		const name = databaseName('reopen');

@@ -144,6 +144,79 @@ describe('PersistentCatalogCache', () => {
 		expect(results.has(11)).toBe(false);
 	});
 
+	it('Z30: setMany stores the same envelopes, saved date and validation as set', async () => {
+		const bySet = new SharedRecordStore();
+		const byMany = new SharedRecordStore();
+		const item10 = parseCatalogItems([itemPayload(10)])[0];
+		const item11 = parseCatalogItems([itemPayload(11)])[0];
+		if (!item10 || !item11) throw new Error('Missing item fixture.');
+		const missing = { value: null, storedAt: NOW, schemaVersion: PINNED_SCHEMA, normalizerVersion: CATALOG_NORMALIZER_VERSION, negativeReason: 'not_found' as const };
+		const one = new PersistentCatalogCache(bySet);
+		await one.set(itemKey('es', 10), record(item10));
+		await one.set(itemKey('es', 11), record(item11));
+		await one.set(itemKey('es', 12), missing);
+		const many = new PersistentCatalogCache(byMany);
+
+		await many.setMany([
+			{ key: itemKey('es', 10), record: record(item10) },
+			{ key: itemKey('es', 11), record: record(item11) },
+			{ key: itemKey('es', 12), record: missing },
+		]);
+
+		expect(byMany.records).toEqual(bySet.records);
+		const results = await many.getMany([itemKey('es', 10), itemKey('es', 11), itemKey('es', 12)]);
+		expect(results.get(10)).toEqual(record(item10));
+		expect(results.get(11)?.storedAt).toBe(NOW);
+		expect(results.get(12)).toEqual(missing);
+	});
+
+	it('Z30: setMany skips an entry that fails validation, as set does, and still writes the rest', async () => {
+		const store = new SharedRecordStore();
+		const cache = new PersistentCatalogCache(store);
+		const item11 = parseCatalogItems([itemPayload(11)])[0];
+		if (!item11) throw new Error('Missing item fixture.');
+
+		// The record carries the entity of id 11 under the key of id 10: incompatible envelope.
+		await cache.setMany([
+			{ key: itemKey('es', 10), record: record(item11) },
+			{ key: itemKey('es', 11), record: record(item11) },
+		]);
+
+		expect([...store.records.keys()]).toEqual([catalogCacheStorageKey(itemKey('es', 11))]);
+		await expect(cache.get(itemKey('es', 10))).resolves.toBeUndefined();
+	});
+
+	it('Z30: setMany uses the store batch write once when available and never rejects on store failure', async () => {
+		const store = new SharedRecordStore();
+		let setManyCalls = 0;
+		const item10 = parseCatalogItems([itemPayload(10)])[0];
+		if (!item10) throw new Error('Missing item fixture.');
+		const batched: CatalogRecordStore = {
+			get: store.get.bind(store),
+			set: store.set.bind(store),
+			delete: store.delete.bind(store),
+			close: store.close.bind(store),
+			setMany: async () => { setManyCalls += 1; throw new Error('quota'); },
+		};
+		const cache = new PersistentCatalogCache(batched);
+
+		await expect(cache.setMany([
+			{ key: itemKey('es', 10), record: record(item10) },
+			{ key: itemKey('es', 11), record: record(item10) },
+		])).resolves.toBeUndefined();
+
+		expect(setManyCalls).toBe(1);
+		expect(store.records.size).toBe(0);
+	});
+
+	it('Z30: MemoryCatalogCache setMany behaves like repeated set', async () => {
+		const cache = new MemoryCatalogCache();
+		const item10 = parseCatalogItems([itemPayload(10)])[0];
+		if (!item10) throw new Error('Missing item fixture.');
+		await cache.setMany([{ key: itemKey('es', 10), record: record(item10) }]);
+		await expect(cache.get(itemKey('es', 10))).resolves.toEqual(record(item10));
+	});
+
 	it('resolves an empty map for an empty getMany batch', async () => {
 		const cache = new PersistentCatalogCache(new SharedRecordStore());
 		await expect(cache.getMany([])).resolves.toEqual(new Map());
