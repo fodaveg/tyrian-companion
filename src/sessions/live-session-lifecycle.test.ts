@@ -684,6 +684,35 @@ describe('passive live session lifecycle', () => {
 			await expect(f.service.presence(false,AT+1000)).resolves.toBeUndefined(); await f.service.dispose();
 		});
 	});
+	describe('why a stop answered false', () => {
+		async function running() { const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0)); return f; }
+		it('names a lease that is not the host\'s', async () => {
+			const f = await running(); f.loseLease();
+			await expect(f.service.stop(AT+1000)).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('lease_not_owned');
+			await f.service.dispose();
+		});
+		it('names a record the store refuses as stale', async () => {
+			const f = await running(); vi.spyOn(f.store,'saveLive').mockResolvedValueOnce({ status: 'stale' });
+			await expect(f.service.stop(AT+1000)).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('record_stale');
+			await f.service.dispose();
+		});
+		it('names a storage that does not answer', async () => {
+			const f = await running(); vi.spyOn(f.store,'saveLive').mockResolvedValueOnce({ status: 'error', code: 'unavailable' });
+			await expect(f.service.stop(AT+1000)).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('storage_unavailable');
+			await f.service.dispose();
+		});
+		it('names a note that was not saved, and clears the reason once a stop works', async () => {
+			const f = await running(); f.onComplete.mockResolvedValueOnce(null as unknown as string);
+			await expect(f.service.stop(AT+1000)).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('note_not_saved');
+			await expect(f.service.stop(AT+1000)).resolves.toBe(true); expect(f.service.getStopFailure()).toBeNull();
+			await f.service.dispose();
+		});
+		it('names another session', async () => {
+			const f = await running();
+			await expect(f.service.stop(AT+1000,'other')).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('other_session');
+			await f.service.dispose();
+		});
+	});
 	describe('after a suspension, with the real lease coordinator', () => {
 		/** A lifecycle over the REAL coordinator on fake-indexeddb with a clock the test moves: the lease really expires. */
 		function suspended() {

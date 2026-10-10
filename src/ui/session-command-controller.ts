@@ -4,6 +4,7 @@ import { createTranslator, type Locale } from '../core/i18n';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import type { LocalDebugAction } from '../core/local-debug-contract';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
+import { LiveSessionStopError, liveStopFailureLogCode, liveStopFailureNoticeKey } from '../sessions/live-session-stop-failure';
 
 export type PreparedSessionCommand = () => void | Promise<void>;
 export type SessionCommandOutcome = 'completed' | 'cancelled' | 'unavailable' | 'failed';
@@ -86,15 +87,22 @@ export class SessionCommandController {
 			await execute();
 			return 'completed';
 		}).catch((error: unknown): SessionCommandOutcome => {
+			// A finish that says which step refused keeps that step in the log and in what the player reads;
+			// everything else is still the unmapped failure with its class.
+			const stop = error instanceof LiveSessionStopError ? error : null;
 			this.ports.diagnostics?.event({
 				component: 'session',
 				action: localDebugActionForSessionCommand(id),
 				level: 'error',
 				phase: 'failure',
-				code: 'unknown_failure',
+				code: stop === null ? 'unknown_failure' : liveStopFailureLogCode(stop.code),
+				...(stop === null ? {} : { state: `finish_${stop.code}` }),
 				details: unmappedErrorLogDetails(error),
 			});
-			if (!this.disposed) this.ports.notify(createTranslator(this.ports.getLocale?.() ?? 'en').t('commands.actionFailed'));
+			if (!this.disposed) {
+				const translator = createTranslator(this.ports.getLocale?.() ?? 'en');
+				this.ports.notify(translator.t(stop === null ? 'commands.actionFailed' : liveStopFailureNoticeKey(stop.code)));
+			}
 			return 'failed';
 		});
 		const legacy = outcome.then((result) => {

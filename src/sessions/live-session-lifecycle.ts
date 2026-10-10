@@ -1,4 +1,5 @@
 import { isDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
+import type { LiveStopFailure } from './live-session-stop-failure';
 import { normalizeFarmingGoal, type FarmingGoalV1 } from './farming-goal';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
@@ -159,6 +160,8 @@ export class LiveSessionLifecycle {
 	 */
 	private lostGap: { reason: LiveGapV1['reason']; sourceDisconnectedAt: string | null } | null = null;
 	private noteNeedsVerification = false;
+	private stopFailure: LiveStopFailure | null = null;
+	private noteFailure: LiveStopFailure | null = null;
 	/** Characters seen and the summary-written mark: kept apart from the closed record (see `live-session-summary-state.ts`). */
 	private summaryState: LiveSessionSummaryState | null = null;
 
@@ -443,19 +446,28 @@ export class LiveSessionLifecycle {
 	}
 
 	async stop(endedAtMs: number, sessionId?:string): Promise<boolean> {
-		return await this.enqueue(async () => sessionId !== undefined && this.record?.sessionId !== sessionId ? false : await this.stopInternal(endedAtMs));
+		return await this.enqueue(async () => {
+			this.stopFailure = null;
+			const stopped = sessionId !== undefined && this.record?.sessionId !== sessionId ? this.refuse('other_session') : await this.stopInternal(endedAtMs);
+			if (!stopped && this.stopFailure === null) this.stopFailure = 'unknown';
+			return stopped;
+		});
 	}
+	/** Why the last `stop` answered false (null while none failed): the caller names it in its diagnostic and in what it tells the player. */
+	getStopFailure(): LiveStopFailure | null { return this.stopFailure; }
+	private refuse(reason: LiveStopFailure): false { this.stopFailure = reason; return false; }
 	private async stopInternal(endedAtMs: number): Promise<boolean> {
-			if (this.record === null || !this.options.enabled()) return false;
-			if (this.record.phase === 'complete') return await this.saveCompletedNote();
-			if (await this.ready() !== 'owned') return false;
+			if (this.record === null) return this.refuse('no_session');
+			if (!this.options.enabled()) return this.refuse('disabled');
+			if (this.record.phase === 'complete') return await this.saveCompletedNote() || this.refuse(this.noteFailure ?? 'note_not_saved');
+			if (await this.ready() !== 'owned') return this.refuse('lease_not_owned');
 			for (const entry of this.journal) {
 				// Only an intent still owed is closed; an entry with none is left as it is, without being copied and compared.
 				if (!entry.outbox.some((intent) => intent.state === 'awaiting_price' || intent.state === 'ready')) continue;
 				const nextEntry = { ...entry, outbox: entry.outbox.map((intent) => ['awaiting_price','ready'].includes(intent.state)
 					? { ...intent, state: 'skipped' as const, skipReason: 'session_closed' as const, alert: null } : intent) };
 				if (JSON.stringify(entry) !== JSON.stringify(nextEntry)) {
-					if (!await this.options.persistence.replaceLiveJournal(entry,nextEntry,this.record)) return false;
+					if (!await this.options.persistence.replaceLiveJournal(entry,nextEntry,this.record)) return this.refuse('journal_close_refused');
 					Object.assign(entry,nextEntry);
 				}
 			}
@@ -467,8 +479,9 @@ export class LiveSessionLifecycle {
 			for (const gap of next.gaps) { gap.fromAt = new Date(Math.max(Date.parse(next.startedAt), Math.min(Date.parse(gap.fromAt), ended))).toISOString();
 				gap.toAt = new Date(Math.max(Date.parse(gap.fromAt), Math.min(gap.toAt === null ? ended : Date.parse(gap.toAt), ended))).toISOString(); }
 			next.gaps = next.gaps.filter((gap) => gap.toAt !== gap.fromAt);
-			if (await this.persist(next) !== 'saved') return false;
-			this.record = next; this.options.onStateChange(); return await this.saveCompletedNote();
+			const saved = await this.persist(next);
+			if (saved !== 'saved') return this.refuse(saved === 'stale' ? 'record_stale' : 'storage_unavailable');
+			this.record = next; this.options.onStateChange(); return await this.saveCompletedNote() || this.refuse(this.noteFailure ?? 'note_not_saved');
 	}
 
 	async updatePrices(prices: LiveSessionRuntimeRecord['prices'], capturedAt: string): Promise<boolean> {
@@ -915,25 +928,26 @@ export class LiveSessionLifecycle {
 		} catch (error) { this.options.onError(error); this.pruneHeld = true; }
 	}
 	private async saveCompletedNote(): Promise<boolean> {
+		this.noteFailure = null;
 		if (this.record?.phase !== 'complete') return false;
 		if (this.record.summaryReceipt !== null && !this.noteNeedsVerification) return true;
-		if (this.options.onComplete === undefined) return false;
+		if (this.options.onComplete === undefined) { this.noteFailure = 'note_not_saved'; return false; }
 		if (this.handle !== null && !await this.owned()) this.handle = null;
 		if (this.handle === null) {
 			const acquired = await this.options.coordinator.acquire(this.record.sessionId);
 			if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== this.record.sessionId
-				|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') return false;
+				|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') { this.noteFailure = 'lease_not_owned'; return false; }
 			this.handle = acquired.handle;
 			await this.refreshRecovery();
 			this.record = { ...this.record, authority: sessionAuthorityFromLease(acquired.handle), persistedAt: Math.max(this.options.now(), this.record.persistedAt) };
-			if ((await this.options.persistence.saveLive(this.record)).status !== 'saved') return false;
+			if ((await this.options.persistence.saveLive(this.record)).status !== 'saved') { this.noteFailure = 'record_stale'; return false; }
 		}
-		if (!await this.owned()) return false;
+		if (!await this.owned()) { this.noteFailure = 'lease_not_owned'; return false; }
 		await this.settleRecovery();
 		const path = await this.options.onComplete(structuredClone(this.record), structuredClone(this.journal), { ...this.format });
-		if (path === null) return false;
+		if (path === null) { this.noteFailure = 'note_not_saved'; return false; }
 		const next = { ...this.record, summaryReceipt: { version: 1 as const, sessionId: this.record.sessionId, path, savedAt: this.options.now() }, persistedAt: Math.max(this.options.now(), this.record.persistedAt) };
-		if ((await this.options.persistence.saveLive(next)).status !== 'saved') return false;
+		if ((await this.options.persistence.saveLive(next)).status !== 'saved') { this.noteFailure = 'record_stale'; return false; }
 		// The receipt is durable: a failure flagged by an earlier attempt (`enqueue` sets it when onComplete throws) no longer describes this session.
 		this.record = next; this.noteNeedsVerification = false; this.failure = false; await this.options.coordinator.release(this.handle); this.handle = null;
 		this.options.onStateChange(); return true;

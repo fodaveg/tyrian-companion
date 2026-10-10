@@ -6,6 +6,7 @@ import { LocalDebugActionRunner, type LocalDebugActionPort } from '../core/local
 import type { LocalDebugRecordV1 } from '../core/local-debug-contract';
 import { LocalDebugLogger } from '../core/local-debug-logger';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from '../core/local-debug-writer';
+import { LiveSessionStopError } from '../sessions/live-session-stop-failure';
 import { SessionCommandBackendFailure, SessionCommandController, type SessionCommandPorts } from './session-command-controller';
 import {
 	createSessionCommandDispatch,
@@ -268,6 +269,24 @@ describe('SessionCommandController', () => {
 		const [record] = (harness.ports.diagnostics.event as ReturnType<typeof vi.fn>).mock.calls.at(-1) as [Record<string, unknown>];
 		expect(record.message).toBeUndefined();
 		expect(record.stack).toBeUndefined();
+	});
+
+	it.each([
+		['record_stale', 'storage_failure', 'local storage refused the close'],
+		['lease_not_owned', 'precondition_failed', 'another plugin instance holds'],
+		['storage_unavailable', 'storage_failure', 'local storage does not answer'],
+		['note_not_saved', 'storage_failure', 'its note could not be saved'],
+		['unknown', 'internal_failure', 'could not be finished. Try again'],
+	] as const)('a finish refused for %s keeps that reason in the log and tells the player what to do', async (reason, code, text) => {
+		const harness = controllerHarness('active');
+		harness.ports.prepare.mockResolvedValue(async () => { throw new LiveSessionStopError(reason); });
+		await expect(harness.controller.runWithOutcome('finish-farming-session')).resolves.toBe('failed');
+		expect(harness.ports.diagnostics.event).toHaveBeenCalledWith(expect.objectContaining({
+			action: 'session_finish', level: 'error', phase: 'failure', code, state: `finish_${reason}`,
+			details: { reason: 'LiveSessionStopError', code: reason },
+		}));
+		expect(harness.ports.notify).toHaveBeenCalledWith(expect.stringContaining(text));
+		expect(harness.ports.notify).not.toHaveBeenCalledWith('The session action could not be completed.');
 	});
 
 	it('dispose prevents a confirmed late intent from executing', async () => {

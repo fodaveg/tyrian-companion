@@ -24,6 +24,7 @@ import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
 import { LiveSessionLifecycle, emptyLiveSessionView } from '../sessions/live-session-lifecycle';
+import { LiveSessionStopError } from '../sessions/live-session-stop-failure';
 import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
 import type { LiveSessionViewV1, LiveJournalEntryV1, LiveSessionFormat, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
 import { newLiveSessionFormat } from '../sessions/live-session-format';
@@ -4925,7 +4926,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	async stopManualSession(humanBoundaryAt: string | null = null): Promise<void> {
 		const live = this.liveSessions?.getRuntime();
-		if (live) { this.ingameSessionMarker?.markStoppedByPlayer(live.sessionId); if (!await this.liveSessions!.stop(Date.now(),live.sessionId)) throw new Error('Live session finish is unavailable.'); return; }
+		if (live) {
+			const mark = this.ingameSessionMarker?.markStoppedByPlayer(live.sessionId) ?? null;
+			let stopped = false;
+			try { stopped = await this.liveSessions!.stop(Date.now(),live.sessionId); }
+			// Only a session still running is given back to the addon: one that closed and lacks its note did stop.
+			finally { if (!stopped && mark !== null && this.liveSessions?.getRuntime()?.phase === 'active') this.ingameSessionMarker?.restoreLink(mark); }
+			if (!stopped) throw new LiveSessionStopError(this.liveSessions!.getStopFailure() ?? 'unknown');
+			return;
+		}
 		const perform = async () => humanBoundaryAt === null
 			? await this.sessionDispatch.finish()
 			: await this.performStopManualSession(undefined, humanBoundaryAt);

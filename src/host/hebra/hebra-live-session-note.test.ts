@@ -187,10 +187,40 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 		expect(core.getLiveSessionView().sessionId).not.toBe(first);
 		await cleanup();
 	}, 30_000);
+
+	it('«Terminar sesión» that fails says which step refused, and a session still running keeps accepting the addon', async () => {
+		const test = collectorHebra();
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		const first = await playUntilGameExit(core, 'a', FIRST_EPOCH, RECEPTION_MS, 'none');
+		const logged = vi.spyOn(core.localDebugActions, 'event');
+		vi.spyOn(core.liveSessions, 'stop').mockResolvedValue(false);
+		vi.spyOn(core.liveSessions, 'getStopFailure').mockReturnValue('record_stale');
+		await expect(core.getProductActionController().run('finish-farming-session')).rejects.toThrow();
+		expect(logged.mock.calls.map(([context]) => context), 'the log keeps the step that refused').toContainEqual(expect.objectContaining({
+			component: 'session', action: 'session_finish', level: 'error', phase: 'failure', code: 'storage_failure', state: 'finish_record_stale',
+		}));
+		expect(core.getLiveSessionView(), 'the session is still running').toMatchObject({ phase: 'active', sessionId: first });
+		expect(await core.liveIngamePort().open(sourceOf(FIRST_EPOCH)), 'and the addon is not turned away because of the failed stop').toBe('ready');
+		await cleanup();
+	}, 30_000);
+
+	it('a finish whose note cannot be saved logs note_not_saved, not the unmapped failure', async () => {
+		const test = collectorHebra();
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		await playUntilGameExit(core, 'a', FIRST_EPOCH, RECEPTION_MS, 'none');
+		test.library.noteCreate = async () => { throw new Error('the library refuses the write'); };
+		const logged = vi.spyOn(core.localDebugActions, 'event');
+		await expect(core.getProductActionController().run('finish-farming-session')).rejects.toThrow();
+		const failures = logged.mock.calls.map(([context]) => context as { action?: string; code?: string; state?: string })
+			.filter((context) => context.action === 'session_finish' && context.state?.startsWith('finish_'));
+		expect(failures).toContainEqual(expect.objectContaining({ code: 'storage_failure', state: 'finish_note_not_saved' }));
+		expect(core.liveSessions.getRuntime(), 'it did stop: the session is finished and waits for its note').toMatchObject({ phase: 'complete', summaryReceipt: null });
+		await cleanup();
+	}, 30_000);
 });
 
 /** The game connects, plays `SAMPLES` seconds with the addon's real timing and exits. Resolves to the session id. */
-async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: string, handshakeMs = HANDSHAKE_MS, ending: 'game_exit' | 'finish_button' = 'game_exit'): Promise<string> {
+async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: string, handshakeMs = HANDSHAKE_MS, ending: 'game_exit' | 'finish_button' | 'none' = 'game_exit'): Promise<string> {
 	core.settings.alertIngameEnabled = true;
 	const tracker = core.ingamePresenceTracker();
 	const source = sourceOf(epoch);
@@ -210,6 +240,7 @@ async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: st
 	const sessionId = core.getLiveSessionView().sessionId;
 	if (sessionId === null) throw new Error('No live session is running.');
 	now = readAt + SAMPLES * 1000 + 500;
+	if (ending === 'none') return sessionId;
 	if (ending === 'finish_button') {
 		// «Terminar sesión» inside the plugin, while the game stays connected.
 		await core.getProductActionController().run('finish-farming-session');
