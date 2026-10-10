@@ -1,5 +1,29 @@
 # Changelog
 
+## Release beta 0.6.28 - aviso cuando el vault cambia de ruta, cursor de la gráfica de sesión que no salta, aviso de puerto del juego ocupado y poda del historial de precios que no se atasca
+
+Se actualiza desde la 0.6.27 publicada. Lo que más se nota: Tyrian Companion avisa si el vault se ha renombrado o movido
+y pregunta si es el mismo antes de adoptar sus datos, la línea de la gráfica de sesión deja de saltar al mover el ratón y
+la app dice cuándo otra app tiene el puerto del juego. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un
+cliente real.
+
+- Vault renombrado o movido (DU-02). Si la ruta del vault cambia, Tyrian Companion arranca en modo consulta, avisa de que
+  no ve los datos locales de la ruta anterior y, en Ajustes, pregunta si es el mismo vault antes de adoptar sus datos:
+  puedes adoptar las preferencias de inventario y el modo de esa instalación, o empezar de cero. La sesión, el historial
+  de precios y Halloween no se adoptan; siguen guardados bajo la ruta anterior, sin borrar. Mientras se aplica la
+  respuesta se ve «Aplicando…» y los botones quedan desactivados. También reconoce un vault movido fuera de Obsidian.
+- Gráfica de sesión (N8). El cursor ya no salta al mover el ratón: la línea sigue al puntero con la lectura anterior a él
+  y la burbuja conserva su lado y su altura. Funciona también cuando la gráfica está en una ventana emergente.
+- Puerto del juego (HP-05). Si otra app tiene ya el puerto del puente del juego (por ejemplo Hebra con Obsidian en el mismo
+  equipo), sale un aviso al arrancar y una nota bajo la fila del aviso en el juego en Ajustes. Usa solo una como
+  recolector y deja la otra en Consulta; lo explica [BETA](BETA.md).
+- Historial de precios (DU-07). La poda ya no se detiene ante una fila ilegible: la retira como el resto y lo deja en los
+  diagnósticos, en vez de bloquear todas las podas siguientes.
+- Interno. THREAT-MODEL lista las nueve bases de datos que le faltaban, con qué guarda cada una y cómo comprobar que la
+  lista está completa (DU-10). ARCHITECTURE escribe la dirección permitida entre capas de `src/` y un test la congela
+  (DE-02). Se retira el panel de alertas de sesión en vivo, que no se montaba en ninguna parte, con su texto y un script de
+  benchmark que nadie referenciaba (DE-05, GR-12).
+
 ## Release beta 0.6.27 - logros de Leyspring Hollows en una nota, notas de sesión en vivo más legibles, gráfica de sesión con línea y burbuja, Hebra en castellano e inglés y sesiones que se restauran más rápido
 
 Se actualiza desde la 0.6.26 publicada. Lo que más se nota: un comando nuevo que escribe tus logros de Leyspring

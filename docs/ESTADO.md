@@ -1,5 +1,21 @@
 # Estado
 
+## Candidato 0.6.28: aviso de vault movido, cursor de gráfica estable y aviso de puerto ocupado (10 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Parte de `952a393` (rama `integracion/0.6.28` sobre el canal
+0.6.27) y añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.28 se ha ejecutado en un Hebra ni en un Obsidian
+  reales. Todo está medido en tests. En particular, la pregunta de vault movido (DU-02) no se ha visto con un vault
+  renombrado de verdad, y el cursor de la gráfica en ventana emergente (N8) y el aviso de puerto ocupado (HP-05) no se han
+  visto en un cliente.
+- Contenido: aviso y pregunta al renombrar o mover el vault, con «Aplicando…» y botones desactivados (DU-02), cursor de la
+  gráfica de sesión sin saltos y en ventana emergente (N8), aviso de puerto del juego ocupado (HP-05) y poda del historial
+  de precios que retira filas ilegibles (DU-07). Interno: THREAT-MODEL con las nueve bases (DU-10), regla de dirección de
+  capas con test (DE-02), retirada del panel de alertas sin montar y de un script huérfano (DE-05, GR-12).
+- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+
 ## Canal 0.6.27 publicado: logros de Leyspring, notas de sesión legibles, gráfica con burbuja y Hebra en dos idiomas (10 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Parte de `ae78f66` (rama de integración de la 0.6.27 sobre el canal 0.6.26
