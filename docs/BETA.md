@@ -199,13 +199,31 @@ procedimiento completo y no necesita nada de esto.
    ```
 
    El artifact de CI trae una copia de `verify-beta-runtime.mjs` del mismo commit: desde su directorio, el
-   comando es `node verify-beta-runtime.mjs --vault "/ruta/a/la-bóveda-probada"`.
+   comando es `node verify-beta-runtime.mjs --vault "/ruta/a/la-bóveda-probada" --no-release-check`.
+   Con el artifact hay que pasar `--no-release-check`: un commit sin release (o cuyos bytes no son los de la
+   release) no tiene `digest` contra el que comparar, y sin la opción el preflight daría `release-unavailable`
+   o `installed-asset-mismatch`. Quien instala por BRAT lo ejecuta sin ella y sí compara con la release.
 
    El preflight lee `manifest.json` del plugin instalado y obtiene desde la instancia viva, mediante
    `obsidian eval`, la bóveda efectiva, el estado activado, el manifest registrado y la versión del
    objeto de plugin cargado. Ese `obsidian` es un CLI externo que el script espera en el `PATH`; si
    se llama de otra forma, indícalo con `--obsidian-cli <ruta>`. Sin ese CLI el preflight no puede
    ejecutarse y la QA se registra como pendiente, no como fallida.
+   El preflight exige además `core.runtimeReady` (el `onload` terminó: `runtime-not-ready` si no) y
+   compara el sha256 de `main.js` y `styles.css` instalados con el `digest` de
+   `gh release view <versión> --json assets` (`installed-asset-mismatch` si difieren). Necesita `gh`
+   autenticado en el `PATH` (`--gh-cli <ruta>` para otro); `--release-tag <versión>` cambia la etiqueta
+   y `--no-release-check` omite la comparación, sin que el `PASS` diga entonces `release-bytes=match`.
+   Para Hebra (instalación, no carga): `npm run hebra:verify-install -- --plugins-dir "<datos de Hebra>/plugins"`
+   lee `installed.json` y los tres ficheros de `plugins/tyrian-companion/<versión>/` y compara su sha256
+   con el registro (solo `hebra-main.mjs` y `hebra-styles.css`, que son los que lista) y con el `digest` de
+   `gh release view` (los tres). En macOS y Linux hay ruta por defecto, y es un supuesto: en macOS el contenedor
+   del sandbox con el perfil `fresh-v1`, en Linux `$XDG_DATA_HOME` o `~/.local/share`. Si no existe, el error lo
+   dice y hay que pasar `--plugins-dir`; en Windows `--plugins-dir` es obligatorio.
+   `smoke:live` cuenta los errores de la versión cargada desde la marca `.tyrian-dev-reload-at` o, si es
+   posterior, desde el último arranque (`plugin_load` en fase `start`) de esa misma versión. Ese corte por
+   arranque solo existe con el registro de diagnóstico en nivel «Depuración»: en cualquier otro nivel no se
+   escribe `start`, se usa la marca, y un error de un arranque anterior de la misma versión puede contar.
    La QA de instalación o actualización no es válida sin `PASS`, incluso si
    la versión en disco ya es la esperada. Un `runtime-version-mismatch` exige recargar el plugin o
    reiniciar Obsidian y repetir el preflight. En una instalación desde artifact, usa la copia del

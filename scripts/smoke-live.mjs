@@ -6,7 +6,11 @@ import { pathToFileURL } from 'node:url';
 export const SMOKE_LIVE_CONTRACT_VERSION = 1;
 const PLUGIN_ID = 'tyrian-companion';
 const EVIDENCE_PREFIX = 'TYRIAN_SMOKE_V1\t';
-/** Written by `dev-install.mjs` right after a real reload; the "arranque" the log is scanned since. */
+/**
+ * Written by `dev-install.mjs` right after a real reload; the "arranque" the log is scanned since.
+ * BRAT never renews it (RT-07), so on its own it is a cutoff weeks old: `readErrorsSinceReload` also
+ * keeps only the lines written by the version that is loaded now.
+ */
 const RELOAD_MARKER = '.tyrian-dev-reload-at';
 /**
  * `runtimeReady`, `getConnectionState()` and `alertIngameServerPort` are read
@@ -74,7 +78,12 @@ export function parseSmokeLiveArguments(argv) {
  * Reads the live plugin state through `obsidian eval` and counts `level:
  * "error"` lines the plugin itself wrote to `logs/debug.jsonl` after its own
  * last `plugin_load`. ISO-8601 timestamps sort lexically, so the cutoff is a
- * plain string compare, no `Date` parsing needed.
+ * plain string compare, no `Date` parsing needed. The per-start cutoff (the last `plugin_load` `start` line
+ * of the loaded version) only exists with the log at the "Depuracion" (`debug`) level, the only one that
+ * writes `start`; at other levels the marker is the cutoff and an error from an earlier start of the same
+ * version can count. RT-07: when `loadedVersion` is known only the lines
+ * whose `pluginVersion` is that version count, because the marker is only renewed by `dev:install`
+ * and a BRAT install leaves it at the last dev reload, with every older version's errors after it.
  *
  * H15.27: also reads the `manifest.json` `dev-install.mjs` just copied to `pluginDir` and compares
  * it against `loadedVersion` (the version Obsidian actually has loaded). Before `dev-install.mjs`
@@ -103,7 +112,7 @@ export function runSmokeLive({
 	if (evidence.registeredVersion === null) fail('plugin-not-registered');
 	if (evidence.runtimeReady !== true) fail('runtime-not-ready');
 	if (!isRecord(evidence.connection) || typeof evidence.connection.status !== 'string') fail('runtime-state-unavailable');
-	const newErrors = readNewErrors(pluginDir);
+	const newErrors = readNewErrors(pluginDir, evidence.loadedVersion);
 	const manifestVersion = readManifestVersion(pluginDir);
 	if (typeof manifestVersion !== 'string' || manifestVersion.length === 0) fail('manifest-invalid');
 	const versionMismatch = manifestVersion !== evidence.loadedVersion || manifestVersion !== evidence.registeredVersion;
@@ -117,22 +126,37 @@ export function runSmokeLive({
 }
 
 /** Exported on its own: the exit-1 case only needs a fake log, never a live Obsidian. */
-export function readErrorsSinceReload(pluginDir) {
+export function readErrorsSinceReload(pluginDir, loadedVersion = null) {
 	const logPath = resolve(pluginDir, 'logs', 'debug.jsonl');
 	if (!existsSync(logPath)) return [];
 	const markerPath = resolve(pluginDir, RELOAD_MARKER);
 	const sinceIso = existsSync(markerPath) ? readFileSync(markerPath, 'utf8').trim() : null;
-	const errors = [];
+	const records = [];
 	for (const line of readFileSync(logPath, 'utf8').split('\n')) {
 		if (line.length === 0) continue;
-		let record;
 		try {
-			record = JSON.parse(line);
+			const record = JSON.parse(line);
+			if (isRecord(record)) records.push(record);
 		} catch {
 			continue;
 		}
-		if (!isRecord(record) || record.level !== 'error') continue;
-		if (sinceIso !== null && typeof record.timestampUtc === 'string' && record.timestampUtc < sinceIso) continue;
+	}
+	// RT-07: the cutoff is the start of the LAST load of this version, so errors of an earlier start of
+	// the same version (a crash fixed by a restart) are not this load's. The marker only raises it.
+	// Only a `start` line can be the cutoff: a `success` (or `boot_timings`) is written AFTER the errors of
+	// its own start, so cutting there would hide them. `start` is logged only at the `debug` level; at any
+	// other level there is none and the marker stays the cutoff.
+	let cutoff = sinceIso;
+	if (typeof loadedVersion === 'string') {
+		const starts = records.filter((record) => record.action === 'plugin_load' && record.phase === 'start' && record.pluginVersion === loadedVersion && typeof record.timestampUtc === 'string');
+		const last = starts.reduce((latest, record) => (latest === null || record.timestampUtc >= latest ? record.timestampUtc : latest), null);
+		if (last !== null && (cutoff === null || last > cutoff)) cutoff = last;
+	}
+	const errors = [];
+	for (const record of records) {
+		if (record.level !== 'error') continue;
+		if (typeof loadedVersion === 'string' && record.pluginVersion !== loadedVersion) continue;
+		if (cutoff !== null && typeof record.timestampUtc === 'string' && record.timestampUtc < cutoff) continue;
 		errors.push(record);
 	}
 	return errors;

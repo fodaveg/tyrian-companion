@@ -92,13 +92,36 @@ describe('local debug persistence port', () => {
 			.map((record) => sanitizeLocalDebugRecord(record, { timestampMs: 0, sequence: 1, pluginVersion: '0.1.14' }))
 			.map(({ level, phase, code, details }) => ({ level, phase, code, details }));
 		expect(logged).toEqual([
-			{ level: 'debug', phase: 'success', code: 'ok', details: { operation: 'open', state: 'life_lock_proven', store: 'coordination' } },
+			{ level: 'warn', phase: 'success', code: 'ok', details: { operation: 'open', state: 'life_lock_proven', store: 'coordination' } },
 			{ level: 'warn', phase: 'skip', code: 'precondition_failed', details: {
 				operation: 'recover', reason: 'owner_renewed_recently', result: 'refused', retryAfterMs: '5000', store: 'coordination',
 			} },
-			{ level: 'debug', phase: 'skip', code: 'skipped', details: { operation: 'open', state: 'life_lock_absent', store: 'coordination' } },
+			{ level: 'warn', phase: 'skip', code: 'skipped', details: { operation: 'open', state: 'life_lock_absent', store: 'coordination' } },
 		]);
 		expect(JSON.stringify(logged)).not.toContain('must-not-survive');
+	});
+
+	// RT-04: at the default `warn` level the life lock verdicts and a takeover must reach the log, or the
+	// log cannot say whether the lock works. Any other success on the same store stays at `debug`.
+	it('writes the life lock verdicts and a takeover at the default warn level, and other coordination successes at debug', () => {
+		const records: LocalDebugRecordInput[] = [];
+		const runner = new LocalDebugActionRunner({
+			diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		const probe = new LocalDebugPersistenceProbe({
+			sink: createLocalDebugPersistenceSink(runner, 'session', 'session_lease'),
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		probe.begin('coordination', 'open').success('ok', { state: 'life_lock_proven' });
+		probe.begin('coordination', 'open').skip('skipped', { state: 'life_lock_absent' });
+		probe.begin('coordination', 'open').skip('unavailable', { state: 'life_lock_unmarked', reason: 'lock_not_granted' });
+		probe.begin('coordination', 'recover').success('ok', { result: 'taken', reason: 'owner_lock_free' });
+		probe.begin('coordination', 'write').success('ok');
+		probe.begin('catalog', 'recover').success('ok', { result: 'taken' });
+
+		const levels = records.filter((record) => record.phase !== 'start').map((record) => record.level);
+		expect(levels).toEqual(['warn', 'warn', 'warn', 'warn', 'debug', 'debug']);
 	});
 
 	// H15.20: 8 stores called `attempt.failure()` pelado and lost `error.name` (a `QuotaExceededError`

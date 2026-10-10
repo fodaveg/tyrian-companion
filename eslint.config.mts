@@ -41,6 +41,8 @@ export const defaultProjectFiles = [
 	'scripts/smoke-live.mjs',
 	'scripts/tests/probar-dev-install.mjs',
 	'scripts/tests/probar-smoke-live.mjs',
+	'scripts/verify-hebra-install.mjs',
+	'scripts/tests/probar-hebra-install.mjs',
 	'scripts/record-api-fixtures.mjs',
 	'scripts/tests/probar-record-api-fixtures.mjs',
 	'scripts/i18n-unused.mjs',

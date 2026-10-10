@@ -22,6 +22,10 @@ try {
 	testNonErrorLevelsDoNotCount();
 	testMalformedLinesAreSkippedNotCrashed();
 	testWithoutMarkerCountsEveryError();
+	testErrorsOfOtherVersionsDoNotCount();
+	testRunSmokeLiveIgnoresErrorsOfOlderVersionsAfterAStaleMarker();
+	testErrorsBeforeTheLastLoadOfTheSameVersionDoNotCount();
+	testLoadSuccessAfterTheErrorIsNotACutoff();
 	testRunSmokeLiveExitsRedOnInjectedError();
 	testRunSmokeLiveStaysGreenWithoutNewErrors();
 	testCliUnavailableFailsClosed();
@@ -98,6 +102,58 @@ function testWithoutMarkerCountsEveryError() {
 	const pluginDir = freshPluginDir('no-marker');
 	writeLog(pluginDir, [record({ level: 'error', timestampUtc: '2020-01-01T00:00:00.000Z' })]);
 	assert(readErrorsSinceReload(pluginDir).length === 1, 'a log with no reload marker did not count its error');
+}
+
+/** RT-07: BRAT leaves the marker at the last dev reload; errors of older versions written after it are not this load's. */
+function testErrorsOfOtherVersionsDoNotCount() {
+	const pluginDir = freshPluginDir('other-versions');
+	writeMarker(pluginDir, '2026-01-01T00:00:00.000Z');
+	writeLog(pluginDir, [
+		{ ...record({ level: 'error', timestampUtc: '2026-02-01T00:00:00.000Z' }), pluginVersion: '0.2.20' },
+		{ ...record({ level: 'error', timestampUtc: '2026-02-02T00:00:00.000Z' }), pluginVersion: '0.6.35' },
+		{ ...record({ level: 'error', timestampUtc: '2026-02-03T00:00:00.000Z' }), pluginVersion: undefined },
+	]);
+	assert(readErrorsSinceReload(pluginDir, '0.6.35').length === 1, 'errors of other plugin versions were counted for the loaded one');
+	assert(readErrorsSinceReload(pluginDir).length === 3, 'without a loaded version every error since the marker must still count');
+}
+
+function testRunSmokeLiveIgnoresErrorsOfOlderVersionsAfterAStaleMarker() {
+	const pluginDir = freshPluginDir('stale-marker');
+	writeMarker(pluginDir, '2026-01-01T00:00:00.000Z');
+	writeLog(pluginDir, [{ ...record({ level: 'error', timestampUtc: '2026-02-01T00:00:00.000Z' }), pluginVersion: '0.2.20' }]);
+	const stale = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.30' }) });
+	assert(stale.newErrorCount === 0, 'an error of an older version turned smoke:live red after a stale marker');
+	writeLog(pluginDir, [{ ...record({ level: 'error', timestampUtc: '2026-02-01T00:00:00.000Z' }), pluginVersion: '0.1.30' }]);
+	const own = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.30' }) });
+	assert(own.newErrorCount === 1, 'an error of the loaded version was not counted');
+}
+
+/** RT-07 (D3): the same version started twice; what the first start logged is not the second's. */
+function testErrorsBeforeTheLastLoadOfTheSameVersionDoNotCount() {
+	const pluginDir = freshPluginDir('same-version-restart');
+	writeMarker(pluginDir, '2026-01-01T00:00:00.000Z');
+	const load = (timestampUtc) => ({ ...record({ level: 'info', timestampUtc }), action: 'plugin_load', phase: 'start' });
+	const error = (timestampUtc) => ({ ...record({ level: 'error', timestampUtc }), action: 'view_render' });
+	writeLog(pluginDir, [
+		load('2026-02-01T00:00:00.000Z'), error('2026-02-01T00:00:05.000Z'),
+		load('2026-02-02T00:00:00.000Z'), error('2026-02-02T00:00:05.000Z'),
+	]);
+	assert(readErrorsSinceReload(pluginDir, '0.1.30').length === 1, 'an error of an earlier start of the same version was counted');
+	const result = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.30' }) });
+	assert(result.newErrorCount === 1, `runSmokeLive counted ${String(result.newErrorCount)} errors, expected the 1 of the last start`);
+	writeLog(pluginDir, [load('2026-02-01T00:00:00.000Z'), error('2026-02-01T00:00:05.000Z')]);
+	assert(readErrorsSinceReload(pluginDir, '0.1.30').length === 1, 'an error after the only load of the version was not counted');
+}
+
+/** Below `debug` there is no `start` line; the `success` that closes a load comes AFTER the errors of that start. */
+function testLoadSuccessAfterTheErrorIsNotACutoff() {
+	const pluginDir = freshPluginDir('success-is-not-a-cutoff');
+	writeMarker(pluginDir, '2026-01-01T00:00:00.000Z');
+	writeLog(pluginDir, [
+		{ ...record({ level: 'error', timestampUtc: '2026-02-01T10:00:01.000Z' }), action: 'view_render' },
+		{ ...record({ level: 'info', timestampUtc: '2026-02-01T10:00:02.000Z' }), action: 'plugin_load', phase: 'success' },
+	]);
+	assert(readErrorsSinceReload(pluginDir, '0.1.30').length === 1, 'a plugin_load success written after an error hid that error');
 }
 
 /** The end-to-end case the lote names: `smoke:live` must exit 1 when the injected line is there. */

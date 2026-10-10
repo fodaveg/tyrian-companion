@@ -31,7 +31,21 @@ jobs:
           node-version-file: '.nvmrc'
           cache: npm
       - run: npm ci
+      # GR-17: the `unit` step of the gate also writes vitest's JSON report (duration per test file)
+      # next to the normal output; `vitest.config.mts` reads the path from this variable. The upload
+      # runs even when the gate is red, because that is when the durations are most wanted, and a
+      # missing file never fails the job. Keep a retention of 7 days here: the suites of
+      # `beta-channel` and H8.3 sabotage the FIRST retention line of 14 and of 1 day in this file, which must be theirs.
       - run: npm run check
+        env:
+          TYRIAN_VITEST_JSON: ${{ runner.temp }}/vitest-unit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-unit-report-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/vitest-unit.json
+          if-no-files-found: ignore
+          retention-days: 7
       # GR-03: the startup and storage suites again with a deliberately slow
       # IndexedDB engine (`TYRIAN_TEST_ENGINE_LATENCY_MS`, see
       # `src/test/indexed-db-connections.ts`). Every test that opens its storage
