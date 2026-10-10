@@ -298,9 +298,9 @@ describe('SessionCommandController', () => {
 	});
 
 	it.each([
-		['lease_not_owned', 'another plugin instance is still using it'],
+		['lease_not_owned', 'another plugin instance is using it'],
 		['clock_anomaly', 'the system clock went back'],
-		['record_stale', 'newer record from another instance'],
+		['record_stale', 'another instance saved a newer record'],
 		['storage_unavailable', 'local storage does not answer'],
 	] as const)('a discard refused for %s is logged once, under its own state, and says why', async (reason, text) => {
 		const harness = controllerHarness('active');

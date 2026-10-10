@@ -555,7 +555,7 @@ export class LiveSessionPanel {
 		const startMode = !stopMode && !busy;
 		// A live session that cannot finish comes before an old one blocking the start: the button discards that one.
 		const stuck = control.stuckSession === true && !control.consult && !busy;
-		const oldBlocks = startMode && control.oldSession !== null && !control.consult && !stuck;
+		const oldBlocks = startMode && control.oldSession !== null && !control.consult;
 		let hint = '';
 		if (control.consult) hint = this.copy('hintConsult');
 		else if (startMode && !control.gameConnected) hint = this.copy('hintGameOff');

@@ -468,6 +468,8 @@ export class LiveSessionLifecycle {
 	 * is the coordinator's rule for any acquisition): the record of a session another instance runs is never cleared from here,
 	 * and a `stale` answer from the store is a refusal, not a reason to force. The one record it clears without a reservation
 	 * is one the store says does not validate (`corrupt`), which nobody can hold. A record it could not read is read again first.
+	 * A record found on disk while memory has none is cleared WITHOUT trying its note (this host has not read its journal);
+	 * the panel does not offer that case.
 	 * `cleared: false` carries the reason; the session is as it was, except that the stop attempted on the way may have closed it.
 	 */
 	async discard(): Promise<LiveSessionDiscard> {
@@ -534,7 +536,8 @@ export class LiveSessionLifecycle {
 	 * its note, or it is in error with nothing in course that would clear it (a saved session still to be read, a reclaim).
 	 */
 	isStuck(): boolean {
-		if (this.stopFailure !== null) return true;
+		// A stop aimed at another session, or none, or a disabled host says nothing about this one.
+		if (this.stopFailure !== null && this.stopFailure !== 'other_session' && this.stopFailure !== 'no_session' && this.stopFailure !== 'disabled') return true;
 		if (this.record?.phase === 'complete' && this.record.summaryReceipt === null) return true;
 		return this.failure && !this.unread && !this.recovering && this.reclaimingAs === null;
 	}
@@ -719,6 +722,8 @@ export class LiveSessionLifecycle {
 		// no longer tell how this began.
 		this.reclaimingAs ??= this.hostRestarted ? 'restart' : 'outage';
 		const acquisition = await this.options.coordinator.acquire(this.record.sessionId);
+		// Kept for what a stop reads when there is no handle to ask about: why this host has no reservation.
+		this.leaseClock = acquisition.status === 'error' && acquisition.code === 'clock_anomaly';
 		if ((acquisition.status !== 'acquired' && acquisition.status !== 'already_owned') || acquisition.handle.sessionId !== this.record.sessionId
 			|| (await this.options.coordinator.assertOwned(acquisition.handle)).status !== 'owned') return false;
 		// A lease under another fence than the one the session was last saved under means it was free
@@ -824,6 +829,7 @@ export class LiveSessionLifecycle {
 	}
 	/** Tells a lease that is gone from one that merely cannot be read, which is not evidence of losing it. */
 	private async ownership(): Promise<LeaseOwnership> {
+		// No handle: nothing to ask. `leaseClock` keeps what the last attempt to take one (`reclaim`) found.
 		if (this.handle === null) return 'lost';
 		const asserted = await this.options.coordinator.assertOwned(this.handle);
 		this.leaseClock = false;

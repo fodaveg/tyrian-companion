@@ -820,6 +820,16 @@ describe('passive live session lifecycle', () => {
 			expect(f.service.isStuck()).toBe(false);
 			await f.service.dispose();
 		});
+		it('a stop aimed at another session says nothing about this one', async () => {
+			const f = await running();
+			await expect(f.service.stop(AT + 2000, 'other')).resolves.toBe(false);
+			expect(f.service.getStopFailure()).toBe('other_session'); expect(f.service.isStuck()).toBe(false);
+			await f.service.dispose();
+			const idle = fixture();
+			await expect(idle.service.stop(AT + 2000, 'other')).resolves.toBe(false);
+			expect(idle.service.isStuck(), 'nor does one on a host with no session').toBe(false);
+			await idle.service.dispose();
+		});
 		it('a saved session still to be read is an error in course, not a stuck one', async () => {
 			const f = await running(); await f.service.dispose();
 			vi.spyOn(f.store, 'loadLive').mockResolvedValue({ status: 'error', code: 'unavailable' });
@@ -833,29 +843,33 @@ describe('passive live session lifecycle', () => {
 		async function reloaded() {
 			const store = new IndexedDbSessionRuntimeStore(new IDBFactory(), 'live-reload-back') as unknown as MemorySessionRuntimeStore;
 			const factory = new IDBFactory(); const locks = fakeLocks(); const aContext = locks.context();
-			let now = AT + 60_000;
+			let now = AT + 60_000; let mono = 0; let beatB: (() => void) | null = null;
 			const f = fixture(store);
-			const a = new ActiveSessionLeaseCoordinator({ indexedDb: factory, databaseName: 'reload-back', clock: () => now, sleep: async () => undefined, instanceId: 'a', locks: aContext });
+			const a = new ActiveSessionLeaseCoordinator({ indexedDb: factory, databaseName: 'reload-back', clock: () => now, monotonicClock: () => mono, sleep: async () => undefined, instanceId: 'a', locks: aContext });
 			const hostA = new LiveSessionLifecycle({ ...f.options, coordinator: a, now: () => now });
 			f.setNow(now);
 			await hostA.start('Test'); await hostA.open(f.source); await hostA.commit(f.sample(0,0)); await hostA.commit(f.sample(1,3));
 			aContext.die();
 			now = AT + 30_000; f.setNow(now);
-			const b = new ActiveSessionLeaseCoordinator({ indexedDb: factory, databaseName: 'reload-back', clock: () => now, sleep: async () => undefined, instanceId: 'b', locks: locks.context() });
-			const hostB = new LiveSessionLifecycle({ ...f.options, coordinator: b, now: () => now });
-			return { f, hostB, store };
+			const b = new ActiveSessionLeaseCoordinator({ indexedDb: factory, databaseName: 'reload-back', clock: () => now, monotonicClock: () => mono, sleep: async () => undefined, instanceId: 'b', locks: locks.context() });
+			const hostB = new LiveSessionLifecycle({ ...f.options, coordinator: b, now: () => now, setInterval: (callback: () => void) => { beatB = callback; return 1; } });
+			return { f, hostB, store, wait: async (ms: number) => { mono += ms; beatB?.(); await hostB.capture(); } };
 		}
-		it('takes the dead host\'s reservation at once: the session comes back and the addon is accepted', async () => {
-			const { f, hostB } = await reloaded();
+		it('does not take the reservation at the first look, tells the clock apart in a stop, then takes it after 15 s and the addon is accepted', async () => {
+			const { f, hostB, wait } = await reloaded();
 			await hostB.initialize();
-			expect(hostB.getRuntime(), 'the saved session is back in this host\'s hands').toMatchObject({ phase: 'active', sessionId: 'session' });
-			expect(hostB.getView().phase).toBe('active');
+			await expect(hostB.stop(AT + 31_000, 'session')).resolves.toBe(false);
+			expect(hostB.getStopFailure(), 'the clock, not «another instance»').toBe('clock_anomaly');
+			await wait(15_000);
 			await expect(hostB.open(f.source)).resolves.toBe('ready');
+			expect(hostB.getView().phase).toBe('active');
 			await hostB.dispose();
 		});
 		it('discards a session whose reservation it can take, with the clock still behind', async () => {
-			const { hostB, store } = await reloaded();
+			const { hostB, store, wait } = await reloaded();
 			await hostB.initialize();
+			await expect(hostB.discard()).resolves.toMatchObject({ cleared: false, reason: 'clock_anomaly' });
+			await wait(15_000);
 			await expect(hostB.discard()).resolves.toMatchObject({ cleared: true });
 			await expect(store.loadLive()).resolves.toMatchObject({ status: 'empty' });
 			await expect(hostB.start('Test')).resolves.not.toBeNull();

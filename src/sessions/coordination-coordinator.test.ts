@@ -241,7 +241,8 @@ describe('ActiveSessionLeaseCoordinator', () => {
 		const renewed = requireHandle(await owner.renew(acquired));
 		const contender = createCoordinator(factory, 'step seen by another', { clock: () => wall, instanceId: 'contender' });
 
-		expect(renewed.renewedAt).toBe(acquired.renewedAt);
+		// Never earlier, and never the same: a renewal always changes the lease, so a watcher can tell a live owner from a silent one.
+		expect(renewed.renewedAt).toBe(acquired.renewedAt + 1);
 		await expect(contender.acquire('session-2')).resolves.toEqual({ status: 'error', code: 'clock_anomaly' });
 		owner.dispose();
 		contender.dispose();
@@ -368,8 +369,8 @@ describe('ActiveSessionLeaseCoordinator', () => {
 		const handle = requireHandle(await coordinator.acquire('session-1'));
 		closeUnderneath(tracked.connections[0]!);
 
-		await expect(coordinator.renew(handle)).resolves.toMatchObject({ status: 'renewed' });
-		await expect(coordinator.assertOwned(handle)).resolves.toEqual({ status: 'owned' });
+		const renewed = requireHandle(await coordinator.renew(handle));
+		await expect(coordinator.assertOwned(renewed)).resolves.toEqual({ status: 'owned' });
 		expect(tracked.connections).toHaveLength(2);
 		coordinator.dispose();
 	});
@@ -709,31 +710,76 @@ describe('ActiveSessionLeaseCoordinator with the host\'s lock manager', () => {
 
 	// 10 Oct 2026: the plugin reloaded with the wall clock set back found its dead predecessor's lease renewed «in the future»
 	// and answered clock_anomaly to every acquisition, so the addon was turned away although nobody held the session.
-	it('takes at once the lease of a marked owner that died, even when its stamp is ahead of this clock', async () => {
-		const factory = new IDBFactory(); const locks = fakeLocks();
-		let now = BORN + 60_000;
-		const ownerContext = locks.context();
-		const owner = fiveMinutes(factory, 'ahead dead', { instanceId: 'owner', locks: ownerContext, clock: () => now });
-		const original = requireHandle(await owner.acquire('session-1'));
-		ownerContext.die();
-		now = BORN + 30_000;
-		const contender = fiveMinutes(factory, 'ahead dead', { instanceId: 'contender', locks: locks.context(), clock: () => now, sleep: async () => undefined });
-		const taken = await contender.acquire('session-2');
-		expect(taken).toMatchObject({ status: 'acquired', handle: { instanceId: 'wl1:contender', sessionId: 'session-2', fence: 2 } });
-		await expect(owner.assertOwned(original)).resolves.toEqual({ status: 'lost' });
-		await expect(contender.assertOwned(requireHandle(taken))).resolves.toEqual({ status: 'owned' });
-		owner.dispose(); contender.dispose();
-	});
+	// The wall clocks cannot say how long that owner has been silent: the contender watches the lease on its OWN monotonic clock.
+	describe('a lease renewed ahead of this clock', () => {
+		const anomaly = { status: 'error', code: 'clock_anomaly' } as const;
+		function ahead(label: string, ownerLocks: ReturnType<typeof fakeLocks> | null, contenderLocks: ReturnType<typeof fakeLocks> | null) {
+			const factory = new IDBFactory(); let wall = BORN + 60_000; let mono = 0;
+			const ownerContext = ownerLocks?.context();
+			const owner = fiveMinutes(factory, label, { instanceId: 'owner', clock: () => wall, monotonicClock: () => mono, ...(ownerContext ? { locks: ownerContext } : {}) });
+			const contender = fiveMinutes(factory, label, { instanceId: 'contender', clock: () => wall, monotonicClock: () => mono,
+				...(contenderLocks ? { locks: contenderLocks.context() } : {}), sleep: async () => undefined });
+			return { owner, contender, ownerContext, back: () => { wall = BORN + 30_000; }, tick: (ms: number) => { mono += ms; }, wallNow: () => wall };
+		}
 
-	it('keeps answering clock_anomaly to a lease renewed ahead whose owner is alive', async () => {
-		const factory = new IDBFactory(); const locks = fakeLocks();
-		let now = BORN + 60_000;
-		const owner = fiveMinutes(factory, 'ahead alive', { instanceId: 'owner', locks: locks.context(), clock: () => now });
-		await owner.acquire('session-1');
-		now = BORN + 30_000;
-		const contender = fiveMinutes(factory, 'ahead alive', { instanceId: 'contender', locks: locks.context(), clock: () => now, sleep: async () => undefined });
-		await expect(contender.acquire('session-2')).resolves.toEqual({ status: 'error', code: 'clock_anomaly' });
-		owner.dispose(); contender.dispose();
+		it('never takes the lease of a live owner that renews, even when the two processes do not share their locks', async () => {
+			const h = ahead('ahead probe', fakeLocks(), fakeLocks());
+			let handle = requireHandle(await h.owner.acquire('session-1'));
+			h.back();
+			for (let step = 0; step < 40; step += 1) {
+				h.tick(1_500);
+				handle = requireHandle(await h.owner.renew(handle));
+				await expect(h.contender.acquire('session-2'), `step ${String(step)}`).resolves.toEqual(anomaly);
+			}
+			await expect(h.owner.assertOwned(handle)).resolves.toEqual({ status: 'owned' });
+			h.owner.dispose(); h.contender.dispose();
+		});
+
+		it('renews a lease with a clock that stands still or went back to a different lease every time', async () => {
+			const h = ahead('renew differs', null, null);
+			const first = requireHandle(await h.owner.acquire('session-1'));
+			h.back();
+			const second = requireHandle(await h.owner.renew(first));
+			const third = requireHandle(await h.owner.renew(second));
+			expect([first.renewedAt, second.renewedAt, third.renewedAt]).toEqual([first.renewedAt, first.renewedAt + 1, first.renewedAt + 2]);
+			h.owner.dispose(); h.contender.dispose();
+		});
+
+		it('takes a dead marked owner\'s lease after 15 s seen unchanged on its own monotonic clock, with the owner\'s lock free', async () => {
+			const locks = fakeLocks(); const h = ahead('ahead dead locks', locks, locks);
+			const original = requireHandle(await h.owner.acquire('session-1'));
+			h.ownerContext!.die(); h.back();
+			await expect(h.contender.acquire('session-2')).resolves.toEqual(anomaly);
+			h.tick(14_999);
+			await expect(h.contender.acquire('session-2')).resolves.toEqual(anomaly);
+			h.tick(1);
+			const taken = await h.contender.acquire('session-2');
+			expect(taken).toMatchObject({ status: 'acquired', handle: { instanceId: 'wl1:contender', sessionId: 'session-2', fence: 2 } });
+			await expect(h.owner.assertOwned(original)).resolves.toEqual({ status: 'lost' });
+			h.owner.dispose(); h.contender.dispose();
+		});
+
+		it('with no locks, takes it only after the lease\'s whole time to live seen unchanged', async () => {
+			const h = ahead('ahead no locks', null, null);
+			requireHandle(await h.owner.acquire('session-1'));
+			h.back();
+			await expect(h.contender.acquire('session-2')).resolves.toEqual(anomaly);
+			h.tick(TTL - 1);
+			await expect(h.contender.acquire('session-2')).resolves.toEqual(anomaly);
+			h.tick(1);
+			await expect(h.contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { instanceId: 'instance-ahead no locks'.replace('instance-ahead no locks', 'contender'), fence: 2 } });
+			h.owner.dispose(); h.contender.dispose();
+		});
+
+		it('keeps answering clock_anomaly while the owner\'s lock is held, however long it is seen', async () => {
+			const locks = fakeLocks(); const h = ahead('ahead alive lock', locks, locks);
+			await h.owner.acquire('session-1');
+			h.back();
+			await expect(h.contender.acquire('session-2')).resolves.toEqual(anomaly);
+			h.tick(60_000);
+			await expect(h.contender.acquire('session-2')).resolves.toEqual(anomaly);
+			h.owner.dispose(); h.contender.dispose();
+		});
 	});
 
 	it('does not take a marked owner that is alive until its lease runs out', async () => {
