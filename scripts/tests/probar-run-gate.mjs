@@ -148,6 +148,9 @@ function testManifestCoversDeclaredScripts() {
 	for (const [name, command] of Object.entries(packageJson.scripts)) {
 		if (!name.startsWith('test:')) continue;
 		if (name === 'test:bench:h6-performance-red') continue;
+		// GR-15: the C spike runs in its own `ci.yml` job, only when `spikes/` changes; the release-workflow
+		// contract fails if that job disappears, so leaving it out of the manifest is not a silent drop.
+		if (name === 'test:h8-crossover-spike') continue;
 		for (const piece of command.split('&&').map((part) => part.trim())) {
 			if (!manifestCommands.has(piece)) uncovered.push(`${name} -> ${piece}`);
 		}

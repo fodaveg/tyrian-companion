@@ -178,14 +178,14 @@ Los snapshots completos permiten comparar el antes y el después, pero elevan el
   o aliases que redefinan permisos, nombre del mapping o tamaño del view.
   La lane confirma además el resultado de `cc -E -P` con el mismo stub: hashes contractuales y
   sabotajes desde ambos headers, digraphs `%:` y line-splicing evitan depender solo del texto fuente.
-- `npm run test:h8-crossover-spike` compila el decoder normal y con ASan/UBSan, syntax-checkea el
+- `npm run test:h8-crossover-spike` (desde GR-15, en el job `h8-spike` de `ci.yml` cuando cambia `spikes/`, no en `check:guardrails`) compila el decoder normal y con ASan/UBSan, syntax-checkea el
   wrapper, valida su expansión real `cc -E -P`, ejecuta fixtures corruptos/interleaved y demuestra rojos causales para offset, 5.460,
   512, ocho pares y `9007199254740991`. No sustituye la ejecución del PE dentro de CrossOver.
 - `src/security-boundary.test.ts` ejecuta el flujo real de credencial hasta la única salida permitida, invoca la persistencia real de settings y descubre recursivamente fronteras presentes y futuras. Censa además cada import de `net` contra una lista revisada explícita (hoy solo `alert-ingame-server.ts`); un `net` en un fichero no censado pone el test en rojo.
 - `src/alerts/alert-ingame.test.ts` prueba la privacidad del payload dentro del juego con control positivo (el compositor real del toast sí contiene el motivo antes de comprobar que el JSON no) recorriendo `ALERT_KINDS`/`ALERT_REASONS` del contrato. `src/alerts/alert-ingame-server.test.ts` ejecuta el servidor loopback contra sockets reales: framing de una sola línea, cierre ante cualquier byte tras el `hello`, reintento de puerto ocupado y el fallo cerrado si el `net` inyectado no confirma loopback. `src/main-alert-wiring.test.ts` cubre el cableado del sexto canal, apagado por defecto y fallando con cero clientes conectados.
 - `src/economy/price-history-architecture.test.ts` cierra las dependencias del histórico, prohíbe capacidades de cuenta/Vault/secreto en sus módulos y exige la única frontera HTTP pública revisada.
 - Los tests de `session-runtime-store`, `session-detection-quality-store` y `session-note-writer` demuestran que los sumideros productivos rechazan capacidad de credencial antes de escribir.
-- `npm run check` incluye lint, tests, preflights, pruebas del scanner, scanner, TypeScript y build. CI ejecuta ese mismo gate en Node 22.20.0 y 22.x.
+- `npm run check` incluye lint, tests, preflights, pruebas del scanner, scanner, TypeScript y build. CI y la release ejecutan ese gate en el Node fijado en `.nvmrc` (hoy 24.12.0).
 
 Los controles no requieren red y son guardarraíles de regresión. No reemplazan revisión de diseño, pruebas dentro de Obsidian, auditoría de dependencias/CVEs, análisis de historia Git ni pruebas frente a un atacante con acceso local equivalente.
 
