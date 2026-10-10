@@ -3,11 +3,11 @@ import { isLiveSessionFormat, LIVE_SESSION_FORMAT_KEY, liveSessionFormatMark } f
 import type { LiveSessionFormat, LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-session-model';
 import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-validation';
 import type { SessionRuntimeMutationResult, SessionRuntimeLoadResult } from './session-runtime-store';
-import { SESSION_RUNTIME_KEY, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
+import { LIVE_SESSION_JOURNAL_STORE_NAME, SESSION_RUNTIME_KEY, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
 import { canUpdateLiveOutbox } from './live-session-outbox';
 import { startIndexedDbTransaction } from '../core/indexed-db-open';
 
-export const LIVE_SESSION_JOURNAL_STORE_NAME = 'live-inventory-journal-v1';
+export { LIVE_SESSION_JOURNAL_STORE_NAME };
 export type LiveRuntimeLoadResult = { status: 'empty' | 'legacy' } | { status: 'loaded'; record: LiveSessionRuntimeRecord }
 	| { status: 'error'; code: 'corrupt' | 'unavailable' };
 export interface LiveSessionPersistence {
