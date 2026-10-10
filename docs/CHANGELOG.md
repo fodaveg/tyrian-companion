@@ -2,6 +2,15 @@
 
 ## Release beta 0.6.26 - las sesiones en vivo nuevas guardan notas mucho más pequeñas (formato 2, sin vuelta atrás a la 0.6.24), el hallazgo mágico por logros cuenta las repeticiones, las notas de inventario respetan tus comentarios y el catálogo guarda cada lote de una vez
 
+[Canal 0.6.26 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.26) el 10 oct 2026; **instalación/runtime
+pendiente**. Tag `0.6.26` sobre `af030b0` (commit de atestación). El workflow de release (run 38031373642) terminó en
+`success`, y `release:brat-verify` contra la salida real de `gh release view 0.6.26` dio «BRAT release contract: PASS
+(version=0.6.26; assets=8)». La CI de GitHub sobre `af030b0` (run 38030787443) terminó en `success`, con
+`bench:h6-live-session` incluido (p95 al final de la sesión 70,7 ms en el CI, máximo 100). La CI de `670ead5` salió roja
+por ese benchmark y por eso no se etiquetó. Assets (bytes): `hebra-main.mjs` 2698729, `hebra-styles.css` 122387,
+`hebra.json` 29593, `main.js` 1977888, `manifest.json` 237, `styles.css` 96405, `tyrian-companion-0.6.26.zip` 2074840 y
+su `.sha256` 94.
+
 La 0.6.25 nunca se publicó ni se etiquetó: esta versión contiene todo lo suyo,
 y se actualiza desde la 0.6.24 publicada. Lo que más se nota es que las sesiones en vivo que empiecen con esta versión
 se guardan en un formato nuevo (formato 2) y no se puede volver a la 0.6.24 sin perder la posibilidad de empezar
@@ -11,6 +20,9 @@ visto en un cliente real.
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.26 se ha ejecutado en un Hebra ni en un Obsidian
   reales. Todo lo que sigue está medido en tests.
+- Sesión en vivo, gráfico: cada cambio de precios revalora el gráfico entero; en formato 2 cada valoración calcula la
+  comisión del bazar. `b6e8656` evita valorar dos veces un objeto del que no ha salido nada del inventario (p95 al final
+  de una sesión larga de 85 a 66-72 ms en las pruebas; formato 1, 48 ms). El resto queda como tarea (Z34).
 - Hallazgo mágico por puntos de logro. Ahora cuenta las repeticiones de los logros repetibles, hasta el tope de puntos
   de cada logro (`point_cap`). Medido con una cuenta real el 10 oct 2026: el plugin sumaba 19 986 puntos (11 %), el
   juego muestra 21 369 (13 %), y ahora suma 21 376 (13 %). Los puntos mensuales (`monthly_ap`) no se suman: en esa cuenta
