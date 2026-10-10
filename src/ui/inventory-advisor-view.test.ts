@@ -6,8 +6,6 @@ import {
 	createInventoryAdvisorFixturePort,
 	filterInventoryAdvisorRows,
 	formatInventoryAdvisorLocation,
-	groupInventoryAdvisorRows,
-	inventoryAdvisorCharacters,
 	inventoryAdvisorScopeSummary,
 	inventoryAdvisorValueConcentration,
 	prioritizeInventoryAdvisorRowsBySpace,
@@ -523,16 +521,6 @@ describe('Inventory Advisor view', () => {
 		expect(formatInventoryAdvisorLocation(location, createTranslator('es'))).toBe(expected);
 	});
 
-	it('filters by item text or id and groups the local rows without mutating the frozen model', () => {
-		const model = deepFreeze(readyModel());
-		const before = structuredClone(model);
-		const rows = model.groups.flatMap((group) => group.rows);
-		expect(filterInventoryAdvisorRows(rows, { query: 'mat', action: 'all', groupBy: 'action' }).map((row) => row.itemId)).toEqual([100]);
-		expect(filterInventoryAdvisorRows(rows, { query: '200', action: 'all', groupBy: 'action', showReview: true }).map((row) => row.itemId)).toEqual([200]);
-		expect(groupInventoryAdvisorRows(rows, 'evidence').map((group) => group.key)).toEqual(['complete', 'limited']);
-		expect(model).toEqual(before);
-	});
-
 	it('keeps controls, focus, and the live region stable through consecutive search and select events', () => {
 		const mount = render(readyModel());
 		const search = only(find(mount.elements(), 'input').filter((input) => input.type === 'search'));
@@ -654,50 +642,6 @@ describe('Inventory Advisor view', () => {
 		}
 	});
 
-	it('defaults to bags and shared inventory without prorating a non-linear account-wide value', () => {
-		const mixed = deepFreeze([row({
-			itemId: 42, name: 'Mixed', action: 'sell', quantity: 5, ownedQuantity: 5, availableQuantity: 5,
-			value: { status: 'available', route: 'instant_sell', copper: 500 },
-			allocations: [
-				{ positionRef: '#/positions/42/0', quantity: 2, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } },
-				{ positionRef: '#/positions/42/1', quantity: 3, location: { source: 'bank', slot: 0 } },
-			],
-		})]);
-		const before = structuredClone(mixed);
-		const base = filterInventoryAdvisorRows(mixed, { query: '', action: 'all', groupBy: 'action' });
-		expect(base[0]).toMatchObject({ quantity: 2, ownedQuantity: 2, availableQuantity: 2,
-			value: { status: 'unavailable', route: null } });
-		expect(base[0]?.allocations).toHaveLength(1);
-		const withBank = filterInventoryAdvisorRows(mixed, { query: '', action: 'all', groupBy: 'action', includeBank: true });
-		expect(withBank[0]).toMatchObject({ quantity: 5, ownedQuantity: 5, availableQuantity: 5, value: { copper: 500 } });
-		expect(mixed).toEqual(before);
-	});
-
-	it('scopes rows to one character and withholds non-linear account-wide value', () => {
-		const rows = deepFreeze([row({
-			itemId: 42, name: 'Mixed', action: 'sell', quantity: 10, ownedQuantity: 10, availableQuantity: 10,
-			value: { status: 'available', route: 'instant_sell', copper: 1_000 },
-			allocations: [
-				{ positionRef: '#/positions/42/0', quantity: 2, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } },
-				{ positionRef: '#/positions/42/1', quantity: 3, location: { source: 'character', character: 'Borja', container: 'bag', bagIndex: 0, slot: 1 } },
-				{ positionRef: '#/positions/42/2', quantity: 1, location: { source: 'shared_inventory', slot: 0 } },
-				{ positionRef: '#/positions/42/3', quantity: 4, location: { source: 'bank', slot: 0 } },
-			],
-		})]);
-		expect(inventoryAdvisorCharacters(rows, 'es')).toEqual(['Astra', 'Borja']);
-		const everything = filterInventoryAdvisorRows(rows, { query: '', action: 'all', groupBy: 'action', character: 'all' });
-		expect(everything[0]).toMatchObject({ quantity: 6, value: { status: 'unavailable', route: null } });
-		const astra = filterInventoryAdvisorRows(rows, { query: '', action: 'all', groupBy: 'action', character: 'Astra' });
-		expect(astra[0]).toMatchObject({ quantity: 2, ownedQuantity: 2, availableQuantity: 2,
-			value: { status: 'unavailable', route: null } });
-		expect(astra[0]?.allocations).toHaveLength(1);
-		const withBankAndCharacter = filterInventoryAdvisorRows(rows, {
-			query: '', action: 'all', groupBy: 'action', character: 'Borja', includeBank: true,
-		});
-		expect(withBankAndCharacter[0]).toMatchObject({ quantity: 3, value: { status: 'unavailable', route: null } });
-		expect(filterInventoryAdvisorRows(rows, { query: '', action: 'all', groupBy: 'action', character: 'Unknown' })).toEqual([]);
-	});
-
 	it('offers the observed roster, disables the extra stores while one character is scoped and resets an absent one', () => {
 		const mount = render(twoCharacterModel());
 		const characterSelect = controlWithLabel(mount.elements(), 'select', 'Personaje');
@@ -812,27 +756,6 @@ describe('Inventory Advisor view', () => {
 		const itemRows = find(mount.elements(), 'li').filter((element) => element.attributes.has('aria-label'));
 		expect(itemRows.map((rowEl) => walk(rowEl).some((element) => element.textContent === 'Bajo valor')))
 			.toEqual([true, false]);
-	});
-
-	it('orders by net value independently of occupied slots', () => {
-		const valuable = row({
-			id: '#/explanations/1/0', itemId: 1, name: 'Mucho oro', action: 'sell',
-			value: { status: 'available', route: 'instant_sell', copper: 1_000_000 },
-		});
-		const deadWeight = row({
-			id: '#/explanations/2/0', itemId: 2, name: 'Tres huecos', action: 'review', quantity: 30,
-			allocations: [
-				allocation('#/positions/2/0', 10), allocation('#/positions/2/1', 10), allocation('#/positions/2/2', 10),
-			],
-			burden: { kind: 'unclassified', quantity: 30, occupiedSlots: 3 },
-		});
-		const oneSlot = row({
-			id: '#/explanations/3/0', itemId: 3, name: 'Un hueco', action: 'keep', quantity: 250,
-			burden: { kind: 'retained', quantity: 250, occupiedSlots: 1 },
-		});
-
-		expect(sortInventoryAdvisorRows([valuable, oneSlot, deadWeight], 'value_desc', 'es')
-			.map((entry) => entry.itemId)).toEqual([1, 2, 3]);
 	});
 
 	it('keeps waiting decisions out of sell-now summaries and filters', () => {

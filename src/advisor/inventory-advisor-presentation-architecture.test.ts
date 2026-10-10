@@ -112,9 +112,13 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view',
 			'./sell-signal-line',
 			// The price chart of a row's «Detalles»: a presentation module that mounts the shared chart widget.
-			'./inventory-advisor-price-history-block',
-			// H18.15: the pure "free space first when low, gold first otherwise" ordering; no I/O.
-			'../inventory/storage-space'],
+			'./inventory-advisor-price-history-block'],
+		portCalls: [],
+	}],
+	['src/ui/inventory-advisor-view-model.ts', {
+		// DE-06: the DOM-free half of the view. Types of the presentation model and the workflow, plus
+		// H18.15's pure "free space first when low, gold first otherwise" ordering; no I/O.
+		imports: ['../advisor/inventory-advisor-presentation-model', '../advisor/inventory-advisor-workflow', '../inventory/storage-space'],
 		portCalls: [],
 	}],
 	['src/ui/inventory-advisor-price-history-block.ts', {
