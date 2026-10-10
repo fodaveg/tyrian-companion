@@ -2354,7 +2354,7 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "3f726f5313b47ba5a5b816478dbc0d93a1ca86e2",
+					"id": "2fa17c0c54e85f11d7bab0b3a8008ded0e968c0f",
 					"kind": "catch_clause",
 					"line": 58,
 					"column": 6,
@@ -2752,7 +2752,7 @@
 					"reason": "Allowlisted catch_clause: The \"deleteQuietly\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"deleteQuietly\"."
 				},
 				{
-					"id": "0abb02ddfaef4043dd96b87fa163e63e81e8d719",
+					"id": "8bd76807c59e1a3e20166461bce89772eed053da",
 					"kind": "catch_clause",
 					"line": 226,
 					"column": 4,
@@ -2768,7 +2768,7 @@
 					"reason": "Allowlisted catch_clause: The \"createCatalogCacheAdapter\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"createCatalogCacheAdapter\"."
 				},
 				{
-					"id": "2f6d3f149ca6e97d1ca99cb517340649f84be9ce",
+					"id": "8a711cb7429f23065d2bea3c16b4bd22377353b1",
 					"kind": "catch_clause",
 					"line": 271,
 					"column": 5,
@@ -3039,9 +3039,9 @@
 				{
 					"id": "ba4299d606d5457bd1aaefb9c16b8102d94cc24a",
 					"kind": "catch_clause",
-					"line": 125,
+					"line": 128,
 					"column": 27,
-					"endLine": 125,
+					"endLine": 128,
 					"endColumn": 111,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3055,9 +3055,9 @@
 				{
 					"id": "458b51bffa7f959190e2eba6b37102ce8ff11594",
 					"kind": "catch_clause",
-					"line": 135,
+					"line": 141,
 					"column": 3,
-					"endLine": 135,
+					"endLine": 141,
 					"endColumn": 119,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3071,9 +3071,9 @@
 				{
 					"id": "4ba20a6027dd8a98e960483fc1a53b234b48ef36",
 					"kind": "catch_clause",
-					"line": 191,
+					"line": 197,
 					"column": 4,
-					"endLine": 193,
+					"endLine": 199,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3087,9 +3087,9 @@
 				{
 					"id": "4dd783a097e1d34b949a5b61116fcbfe3d64c1e0",
 					"kind": "catch_clause",
-					"line": 229,
+					"line": 235,
 					"column": 4,
-					"endLine": 232,
+					"endLine": 238,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3103,9 +3103,9 @@
 				{
 					"id": "7fdcb0d18f6180c58695cb2f35059d445809d3f3",
 					"kind": "catch_clause",
-					"line": 236,
+					"line": 242,
 					"column": 4,
-					"endLine": 239,
+					"endLine": 245,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3119,9 +3119,9 @@
 				{
 					"id": "5061a855c2cd96ddff3dc2e78e472e8a12588c4d",
 					"kind": "catch_clause",
-					"line": 332,
+					"line": 339,
 					"column": 29,
-					"endLine": 332,
+					"endLine": 339,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4412,7 +4412,7 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "b1849d4da06ad60a1a335db4130cbe560cca07c9",
+					"id": "e4cec07d52b986d36cb15260feda71d1c31a2408",
 					"kind": "catch_clause",
 					"line": 131,
 					"column": 5,
@@ -5861,7 +5861,7 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "d452b247e6da341fec5acf1db3c78d55c577044d",
+					"id": "a4ba466eb86fd8cdac11d2a088186db0e4303be2",
 					"kind": "catch_clause",
 					"line": 159,
 					"column": 5,
@@ -10893,11 +10893,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "17e39e6a9a0cf98a42700bb0b05c9eaf0a4f3dc8",
+					"id": "98488865ec15e9b1a37bcd67e0f8a26d9738146a",
 					"kind": "catch_clause",
-					"line": 76,
+					"line": 77,
 					"column": 5,
-					"endLine": 79,
+					"endLine": 80,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10911,9 +10911,9 @@
 				{
 					"id": "9796309861659ca90a9ea2dd2af8fcb194026233",
 					"kind": "catch_clause",
-					"line": 99,
+					"line": 100,
 					"column": 5,
-					"endLine": 101,
+					"endLine": 102,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10927,9 +10927,9 @@
 				{
 					"id": "d61ba4a6b96aec70701ad121c8c94a601e29c67c",
 					"kind": "catch_clause",
-					"line": 122,
+					"line": 123,
 					"column": 8,
-					"endLine": 125,
+					"endLine": 126,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10943,9 +10943,9 @@
 				{
 					"id": "cd135a24831251421980a45846da8127d9ed53b0",
 					"kind": "catch_clause",
-					"line": 135,
+					"line": 136,
 					"column": 5,
-					"endLine": 137,
+					"endLine": 138,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10959,9 +10959,9 @@
 				{
 					"id": "b94401f98d0a68b6a1b5889620b85a3b5f03942a",
 					"kind": "catch_clause",
-					"line": 175,
+					"line": 176,
 					"column": 29,
-					"endLine": 175,
+					"endLine": 176,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12666,11 +12666,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "0bc30f2fd6086a2595c31a0f8d2c3744353dc8ff",
+					"id": "81b061fec90e4e15e6838f8b22b291c403e89224",
 					"kind": "catch_clause",
-					"line": 121,
+					"line": 120,
 					"column": 6,
-					"endLine": 125,
+					"endLine": 124,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12684,9 +12684,9 @@
 				{
 					"id": "bb4200181702709250ebbfaae2b358e1271486d4",
 					"kind": "catch_clause",
-					"line": 139,
+					"line": 138,
 					"column": 5,
-					"endLine": 143,
+					"endLine": 142,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12700,9 +12700,9 @@
 				{
 					"id": "c57b9c275048744acf89e3016738a5b19f2247b0",
 					"kind": "catch_clause",
-					"line": 173,
+					"line": 172,
 					"column": 9,
-					"endLine": 176,
+					"endLine": 175,
 					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12716,9 +12716,9 @@
 				{
 					"id": "62a8b036db8405317e3576b4436a7aff707b8638",
 					"kind": "catch_clause",
-					"line": 186,
+					"line": 185,
 					"column": 5,
-					"endLine": 190,
+					"endLine": 189,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12732,9 +12732,9 @@
 				{
 					"id": "86cb84f52649dfe95e33f37ac4c6d392bac8b2c3",
 					"kind": "catch_clause",
-					"line": 213,
+					"line": 212,
 					"column": 5,
-					"endLine": 216,
+					"endLine": 215,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13262,11 +13262,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "a11818e25a703b2e425a90179aa729ddcde316e3",
+					"id": "94f2f4eb6a1a69708731c06990a1470127a2200e",
 					"kind": "catch_clause",
-					"line": 188,
+					"line": 187,
 					"column": 6,
-					"endLine": 191,
+					"endLine": 190,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13280,9 +13280,9 @@
 				{
 					"id": "57d5f72cf1c009d671d9895f4c8f9bade55fb901",
 					"kind": "catch_clause",
-					"line": 212,
+					"line": 211,
 					"column": 5,
-					"endLine": 215,
+					"endLine": 214,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13296,9 +13296,9 @@
 				{
 					"id": "452fd6e16056035dd1d75aff8bdbce9508dc1846",
 					"kind": "catch_clause",
-					"line": 229,
+					"line": 228,
 					"column": 5,
-					"endLine": 232,
+					"endLine": 231,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13312,9 +13312,9 @@
 				{
 					"id": "b30b8a874b53a4c8a3be066fe49ac2bca541992e",
 					"kind": "catch_clause",
-					"line": 249,
+					"line": 248,
 					"column": 5,
-					"endLine": 252,
+					"endLine": 251,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14167,7 +14167,7 @@
 					"reason": "Allowlisted catch_clause: The \"beginOpening\" catch is an \"intentional_noop\": closing a database that nobody holds (an open that answered after the caller stopped waiting) has nothing to report, and the abandonment was already recorded as the failure of the open attempt when the wait ran out. Verified recovery: \"intentional_noop\" in \"beginOpening\"."
 				},
 				{
-					"id": "d6e7962592145212dac67be01594f9a7f9a1536f",
+					"id": "fff0525c15e920d54166943acca79d7c5510e151",
 					"kind": "catch_clause",
 					"line": 649,
 					"column": 6,

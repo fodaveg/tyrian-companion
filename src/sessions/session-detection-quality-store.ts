@@ -34,7 +34,6 @@ import {
 } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
-	localDebugStorageFailureCode,
 	type LocalDebugPersistenceContext,
 } from '../core/local-debug-persistence';
 
@@ -186,7 +185,7 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 				attempt.success();
 				return database;
 			} catch (error) {
-				attempt.failure(localDebugStorageFailureCode(error), error);
+				attempt.failure(indexedDbFailureCode(error), error);
 				throw error;
 			}
 		}, () => new Error('Detection quality storage is unavailable.'));

@@ -715,6 +715,19 @@ describe('session runtime persistence', () => {
 			store.close();
 		});
 
+		it('records an open whose caller stopped waiting as a timeout, like one that ran out of its own wait', async () => {
+			const tracked = trackedIndexedDb(); const timers = manualTimers();
+			const events: LocalDebugPersistenceEvent[] = [];
+			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('abandoned-open'),
+				new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } }), timers);
+			hangStorage(tracked);
+			const load = store.load();
+			await vi.waitFor(() => { expect(timers.pending).toBe(2); });
+			timers.fire(); // Both timers in one turn: the caller's runs before the open's rejection is seen, so it abandons.
+			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });
+			expect(events.filter((event) => event.phase === 'failure' && event.operation === 'open').map((event) => event.code)).toEqual(['timeout']);
+		});
+
 		it('is quiet for the pause when the OPEN\'s own deadline is the one that runs out first, as in a browser', async () => {
 			const tracked = trackedIndexedDb(); const timers = manualTimers();
 			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('open-deadline-first'), undefined, timers);

@@ -129,7 +129,7 @@ export class IndexedDbPriceHistoryStore {
 		try {
 			await connection.open();
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error));
+			attempt.failure(indexedDbFailureCode(error));
 			throw error;
 		}
 		attempt.success();

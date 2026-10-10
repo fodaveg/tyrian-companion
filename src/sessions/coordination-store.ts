@@ -1,6 +1,7 @@
 import type { CoordinationState } from './coordination-model';
 import {
 	IndexedDbConnectionLostError,
+	indexedDbFailureCode,
 	openIndexedDb,
 	startIndexedDbTransaction,
 	withIndexedDbReopen,
@@ -74,7 +75,7 @@ export class IndexedDbCoordinationStore implements CoordinationStore {
 		try {
 			await store.connection();
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 		attempt.success();

@@ -139,11 +139,14 @@ describe('local debug persistence port', () => {
 
 		probe.begin('catalog', 'read').skip();
 		probe.begin('catalog', 'read').skip('quota_exceeded');
+		// A cancellation by the store's own `close()` is routine too: `info`, as `LocalDebugActionRunner.cancel` records it.
+		probe.begin('catalog', 'read').skip('cancelled');
 
 		const terminal = records.filter((record) => record.phase === 'skip');
 		expect(terminal.map(({ code, level }) => ({ code, level }))).toEqual([
 			{ code: 'skipped', level: 'debug' },
 			{ code: 'quota_exceeded', level: 'warn' },
+			{ code: 'cancelled', level: 'info' },
 		]);
 	});
 
