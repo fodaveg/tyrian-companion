@@ -1262,25 +1262,35 @@ describe('resync: no rewrite by the clock, managed fields only, the user\'s text
 			]);
 			return await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es');
 		}
-		/** The same account one pass later: item 42 came back with the fallback name, both prices moved. */
-		const degraded = (input: Awaited<ReturnType<typeof twoItems>>, itemIds: number[] | undefined) => ({
+		type Input = Awaited<ReturnType<typeof twoItems>>;
+		/**
+		 * The same account one pass later, as the real pipeline gives it for an object the catalog
+		 * rejected: item 42 has the fallback name and no type, rarity or icon, and no quote; the
+		 * quantity of 42 fell to 2 and the price of 43 moved.
+		 */
+		const degraded = (input: Input, itemIds: number[] | undefined): Input => ({
 			...input,
 			...(itemIds === undefined ? {} : { degradedItemIds: itemIds }),
-			positions: input.positions.map((position) => ({
-				...position, unitSellCopper: 12,
-				...(position.itemId === 42 ? { name: 'Objeto 42', type: null, rarity: null, icon: null } : {}),
-			})),
+			positions: input.positions.map((position) => position.itemId === 42
+				? {
+					...position, name: 'Objeto 42', type: null, rarity: null, icon: null, quantity: 2,
+					unitSellCopper: null, totalSellCopper: null, sellDepthStatus: 'unavailable' as const,
+					sellCoveredQuantity: 0, sellUncoveredQuantity: 2, reservedQuantity: 0, freeQuantity: 2, actionableQuantity: 0,
+				}
+				: { ...position, unitSellCopper: 12 }),
 		});
+		const pathOf = (input: Input, itemId: number, plan: { steps: readonly { positionId: string; path: string }[] }) =>
+			plan.steps.find((entry) => entry.positionId === input.positions.find((position) => position.itemId === itemId)!.positionId)!.path;
 
-		it('leaves its existing note as it is and still writes the others', async () => {
+		it('keeps only the catalog fields of its existing note and updates the rest, the others too', async () => {
 			const vault = new MemoryInventoryVault();
 			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
 			const first = await twoItems();
-			await service.apply(await service.preview(ROOT, first));
-			const paths = new Map((await service.preview(ROOT, first)).steps.map((entry) => [entry.positionId, entry.path]));
-			const path42 = paths.get(first.positions.find((position) => position.itemId === 42)!.positionId)!;
-			const path43 = paths.get(first.positions.find((position) => position.itemId === 43)!.positionId)!;
-			const before42 = vault.contents.get(path42)!;
+			const firstPlan = await service.preview(ROOT, first);
+			await service.apply(firstPlan);
+			const path42 = pathOf(first, 42, firstPlan);
+			const path43 = pathOf(first, 43, firstPlan);
+			const before42 = frontmatter(vault.contents.get(path42)!);
 			const before43 = vault.contents.get(path43)!;
 
 			// Control: without the hold-back the degraded data does reach the note.
@@ -1288,11 +1298,51 @@ describe('resync: no rewrite by the clock, managed fields only, the user\'s text
 			expect(control.steps.find((entry) => entry.path === path42)).toMatchObject({ status: 'update' });
 
 			const plan = await service.preview(ROOT, degraded(first, [42]));
-			expect(plan.steps.find((entry) => entry.path === path42)).toMatchObject({ status: 'unchanged', before: before42, after: before42 });
-			expect(plan.steps.find((entry) => entry.path === path43)).toMatchObject({ status: 'update' });
-			expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 1, created: 0 });
-			expect(vault.contents.get(path42)).toBe(before42);
+			expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 2, created: 0 });
+			const after42 = frontmatter(vault.contents.get(path42)!);
+			expect(after42).toMatchObject({
+				tc_item_name: before42.tc_item_name, tc_item_type: before42.tc_item_type,
+				tc_item_rarity: before42.tc_item_rarity, tc_icon: before42.tc_icon,
+				tc_quantity: 2,
+			});
+			expect(vault.contents.get(path42)).toContain(`# ${String(before42.tc_item_name)}`);
 			expect(vault.contents.get(path43)).not.toBe(before43);
+			// More passes with the same data: the note keeps following the account, it is not frozen.
+			for (let pass = 0; pass < 3; pass += 1) await service.apply(await service.preview(ROOT, degraded(first, [42])));
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_quantity: 2, tc_item_name: before42.tc_item_name });
+			expect((await service.preview(ROOT, degraded(first, [42]))).steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+		});
+
+		it('keeps updating a note that was born with the fallback name', async () => {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const first = degraded(await twoItems(), [42]);
+			const plan = await service.preview(ROOT, first);
+			await service.apply(plan);
+			const path42 = pathOf(first, 42, plan);
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_item_name: 'Objeto 42', tc_quantity: 2 });
+			const later = {
+				...first,
+				positions: first.positions.map((position) => position.itemId === 42
+					? { ...position, quantity: 1, sellUncoveredQuantity: 1, freeQuantity: 1 } : position),
+			};
+			await service.apply(await service.preview(ROOT, later));
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_item_name: 'Objeto 42', tc_quantity: 1 });
+		});
+
+		it('reactivates an inactive note with the user\'s text when its object comes back', async () => {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const first = await twoItems();
+			const firstPlan = await service.preview(ROOT, first);
+			await service.apply(firstPlan);
+			const path42 = pathOf(first, 42, firstPlan);
+			vault.contents.set(path42, editedByUser(vault.contents.get(path42)!));
+			const gone = { ...first, positions: first.positions.filter((position) => position.itemId !== 42) };
+			await service.apply(await service.preview(ROOT, gone));
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_active: false });
+			await service.apply(await service.preview(ROOT, degraded(first, [42])));
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_active: true, tc_quantity: 2, tags: ['gw2', 'vender'] });
 		});
 
 		it('keeps today\'s behaviour for an object that has no note yet', async () => {

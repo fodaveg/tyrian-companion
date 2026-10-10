@@ -163,8 +163,8 @@ export interface InventoryVaultSyncInput {
 	/**
 	 * Items whose catalog answer was rejected (`invalid` or `malformed` coverage): their positions
 	 * carry the fallback name and no type, rarity or icon. A note that already exists for one of
-	 * them is left as it is on this pass (a step `unchanged`) rather than rewritten with those
-	 * degraded values; one that does not exist yet is created as usual. Absent means none.
+	 * them keeps its name, type, rarity and icon on this pass and is updated in everything else
+	 * (quantity, quotes, verdict); one that does not exist yet is created as usual. Absent means none.
 	 */
 	degradedItemIds?: readonly number[];
 }
@@ -846,10 +846,20 @@ export class InventoryVaultSyncService {
 			seenOwned.add(owned.fields.tc_position_id);
 			const target = desired.get(owned.fields.tc_position_id);
 			if (target) {
-				steps.push(degradedItemIds.has(target.position.itemId) || sameManagedContent(owned, target.fields, target.block)
+				// An object the catalog answered badly keeps the four values that come from the
+				// catalog (name, type, rarity, icon) from the note it already has; everything
+				// else (quantity, quotes, verdict, active flag) follows the account as usual.
+				const fields: InventoryNoteFields = degradedItemIds.has(target.position.itemId)
+					? {
+						...target.fields, tc_item_name: owned.fields.tc_item_name, tc_item_type: owned.fields.tc_item_type,
+						tc_item_rarity: owned.fields.tc_item_rarity, tc_icon: owned.fields.tc_icon,
+					}
+					: target.fields;
+				const block = fields === target.fields ? target.block : renderInventoryBlock(fields);
+				steps.push(sameManagedContent(owned, fields, block)
 					? step(target.position.positionId, file.path, 'unchanged', content, content)
 					: step(target.position.positionId, file.path, 'update', content,
-						await renderInventoryNote(target.fields, target.block, owned)));
+						await renderInventoryNote(fields, block, owned)));
 				continue;
 			}
 			// The position no longer appears on the account: the note is removed rather than

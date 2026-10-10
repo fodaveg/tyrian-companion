@@ -513,7 +513,8 @@ export async function inventoryVaultSyncInputFromAnalysis(
 /**
  * Owned items whose catalog answer was rejected (`invalid`, `malformed`). They do not stop the
  * sync, unlike `unavailable`: one object the API returns badly must not park every other note for
- * good. Their existing notes are held back instead (`InventoryVaultSyncInput.degradedItemIds`).
+ * good. Their existing notes keep the fields that come from the catalog (name, type, rarity, icon)
+ * and follow the account in the rest (`InventoryVaultSyncInput.degradedItemIds`).
  */
 function catalogRejectedItemIds(source: InventoryAdvisorContextualPresentationSource): number[] {
 	const items = source.input.catalog.coverage.items;
