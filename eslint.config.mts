@@ -87,6 +87,8 @@ export default defineConfig(
 	globalIgnores([
 		'.beta-artifact',
 		'.claude/**',
+		// One-off measurement scripts kept beside the audit they back; not shipped, not in tsconfig.
+		'docs/audit/**',
 		'.host-esm',
 		'.release',
 		'node_modules',
