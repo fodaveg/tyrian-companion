@@ -96,11 +96,19 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const es = input.locale === 'es';
 		const label = (spanish: string, english: string): string => es ? spanish : english;
 		const names = input.displayNames ?? {};
-		const itemName = (id: number): string => escapeMarkdown(names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
+		// An item name that arrived empty or blank is no name, as for maps: «Objeto <id>», never an empty cell or an image without text.
+		const rawItemName = (id: number): string => { const name = names[`item:${String(id)}`]; return name !== undefined && name.trim() !== '' ? name : `${label('Objeto', 'Item')} ${String(id)}`; };
+		const itemName = (id: number): string => escapeMarkdown(rawItemName(id));
 		// In a table cell: the item's icon, 20 px, in front of its name. The alternative text is the name itself, so an icon that does
 		// not load leaves a name to read; a cached icon off the GW2 render host, or a host that would show the Markdown, leaves the name alone.
+		// With the icon the name is written twice on one line, so a backtick or a `$` in it would pair with its copy (a code span, or
+		// Obsidian's inline maths) and swallow the image: both copies escape them. Without the icon the cell stays as it always was.
 		const iconUrl = (id: number): string | null => input.inlineIcons === true ? inlineIconUrl(input.itemMeta?.[id]?.icon) : null;
-		const itemCell = (id: number): string => { const url = iconUrl(id); return url === null ? itemName(id) : `![${imageAlt(itemName(id))}\\|${String(ICON_SIZE)}](${url}) ${itemName(id)}`; };
+		const itemCell = (id: number): string => {
+			const url = iconUrl(id); if (url === null) return itemName(id);
+			const shown = escapeCodeAndMath(itemName(id));
+			return `![${imageAlt(shown)}\\|${String(ICON_SIZE)}](${url}) ${shown}`;
+		};
 		const currencyName = (id: number): string => escapeMarkdown(names[`currency:${String(id)}`] ?? `${label('Moneda', 'Currency')} ${String(id)}`);
 		// A name that arrived empty is no name: the map gets the reserve one, like a map nobody could name, never an empty cell or title.
 		const rawMapName = (id: number): string => { const name = input.mapNames?.[String(id)]; return name !== undefined && name.trim() !== '' ? name : `${label('Mapa', 'Map')} ${String(id)}`; };
@@ -287,7 +295,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const fullSession = label('Sesión completa', 'Full session');
 		out.push('', /[[\]|#^]/u.test(link) ? `${fullSession}: \`${link}\`` : `[[${link}|${fullSession}]]`);
 
-		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? rawMapName(id) : (names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
+		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? rawMapName(id) : rawItemName(id);
 		const mapText = f.mainMapId !== null ? raw(f.mainMapId, 'map') : noMapKnown ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
 		const topItem = f.staple !== null ? { id: f.staple.itemId, count: f.staple.quantity } : f.sellable[0] !== undefined ? { id: f.sellable[0].itemId, count: f.sellable[0].quantity } : null;
 		const goldText = (copper: number | null): string => copper === null ? 'null' : String(Number((copper / 10_000).toFixed(4)));
@@ -425,5 +433,12 @@ function inlineIconUrl(icon: string | undefined): string | null {
  * `\|` for the cell), with its square brackets escaped too, so a `]` in a name does not close the text before `\|20`.
  */
 function imageAlt(cellName: string): string { return cellName.replace(/[[\]]/gu, (match) => `\\${match}`); }
+
+/**
+ * A backtick or a `$` escaped (`` \` ``, `\$`: CommonMark escapes of ASCII punctuation, so the text reads the same). Only for the
+ * item cell that carries an icon, where the name is written twice on one line; `escapeMarkdown` is shared with the currencies, the
+ * maps and the characters, and changing it would rewrite what every other note already says.
+ */
+function escapeCodeAndMath(value: string): string { return value.replace(/[`$]/gu, (match) => `\\${match}`); }
 
 function escapeMarkdown(value: string): string { return value.replace(/[\p{Cc}]/gu, ' ').replace(/[\\|<>]/gu, (match) => `\\${match}`); }

@@ -1428,8 +1428,12 @@ const imageOf = (cell: string): { alt: string; size: number | null; src: string;
 	const match = /^!\[((?:\\.|[^\\\]])*)\]\((https:\/\/[^\s)]+)\) (.+)$/u.exec(cell);
 	if (match === null) return null;
 	const alt = match[1]!.replace(/\\(.)/gu, '$1'); const size = /\|(\d+)$/u.exec(alt);
-	return { alt: size === null ? alt : alt.slice(0, size.index), size: size === null ? null : Number(size[1]), src: match[2]!, text: match[3]! };
+	return { alt: size === null ? alt : alt.slice(0, size.index), size: size === null ? null : Number(size[1]), src: match[2]!, text: match[3]!.replace(/\\(.)/gu, '$1') };
 };
+/** Backticks and dollars of a row that no backslash escapes: one of each pair would open a code span or inline maths. */
+const bare = (row: string, mark: '`' | '$'): number => [...row.matchAll(new RegExp(`(?<!\\\\)[${mark}]`, 'gu'))].length;
+const namedRows = async (staple: string, other: string): Promise<string[]> => itemRows((await render({ itemMeta: WITH_ICONS, inlineIcons: true,
+	displayNames: { ...NAMES, [`item:${String(STAPLE)}`]: staple, [`item:${String(OTHER)}`]: other } })).content);
 
 describe('live session summary: item icons in the table (N5)', () => {
 	it('in Obsidian each item of the table carries its cached icon, 20 px, before its name; nothing else of the note moves', async () => {
@@ -1483,6 +1487,52 @@ describe('live session summary: item icons in the table (N5)', () => {
 			expect(cellsOf(row), name).toHaveLength(3);
 			expect(imageOf(cellsOf(row)[0]!), name).toEqual({ alt: name, size: 20, src, text: name });
 		}
+	});
+
+	it('escapes an odd backtick and a `$` in both copies of the name, so neither pairs with the other across the image', async () => {
+		const rows = await namedRows('Foo`s', 'Pago $5 y $6');
+		expect(rows).toEqual([
+			'| ![Foo\\`s\\|20](' + ICON_STAPLE + ') Foo\\`s | 30 | 4g 50s 0c |',
+			'| ![Pago \\$5 y \\$6\\|20](' + ICON_OTHER + ') Pago \\$5 y \\$6 | 9 | 0g 27s 0c |']);
+		// Unescaped, the two backticks would make a code span of «s\|20](url) Foo» and the image would not be painted.
+		expect(bare(rows[0]!, '`')).toBe(0);
+		expect(bare(rows[1]!, '$')).toBe(0);
+		expect(imageOf(cellsOf(rows[0]!)[0]!)).toEqual({ alt: 'Foo`s', size: 20, src: ICON_STAPLE, text: 'Foo`s' });
+		expect(imageOf(cellsOf(rows[1]!)[0]!)).toEqual({ alt: 'Pago $5 y $6', size: 20, src: ICON_OTHER, text: 'Pago $5 y $6' });
+		// Without the icon the cell is as it always was: nothing new is escaped in a note that has no image.
+		const plain = itemRows((await render({ itemMeta: WITH_ICONS, displayNames: { ...NAMES, [`item:${String(STAPLE)}`]: 'Foo`s' } })).content);
+		expect(plain[0]).toBe('| Foo`s | 30 | 4g 50s 0c |');
+	});
+
+	it('writes a line break or a tab of the name as a space, and keeps a name ending in `\\` from escaping the bar of the size', async () => {
+		const rows = await namedRows('Saco\ngrande\tazul', 'Champiñón\\');
+		expect(rows).toEqual([
+			`| ![Saco grande azul\\|20](${ICON_STAPLE}) Saco grande azul | 30 | 4g 50s 0c |`,
+			`| ![Champiñón\\\\\\|20](${ICON_OTHER}) Champiñón\\\\ | 9 | 0g 27s 0c |`]);
+		for (const [row, name, src] of [[rows[0]!, 'Saco grande azul', ICON_STAPLE], [rows[1]!, 'Champiñón\\', ICON_OTHER]] as const) {
+			expect(cellsOf(row), name).toHaveLength(3);
+			expect(imageOf(cellsOf(row)[0]!), name).toEqual({ alt: name, size: 20, src, text: name });
+		}
+	});
+
+	it('leaves `!`, `*` and `_` of a name as they are: the image still opens and closes around the whole name', async () => {
+		const rows = await namedRows('¡Saco! *grande*', 'Champi_ñón_');
+		expect(rows).toEqual([
+			`| ![¡Saco! *grande*\\|20](${ICON_STAPLE}) ¡Saco! *grande* | 30 | 4g 50s 0c |`,
+			`| ![Champi_ñón_\\|20](${ICON_OTHER}) Champi_ñón_ | 9 | 0g 27s 0c |`]);
+		expect(imageOf(cellsOf(rows[0]!)[0]!)).toEqual({ alt: '¡Saco! *grande*', size: 20, src: ICON_STAPLE, text: '¡Saco! *grande*' });
+		expect(imageOf(cellsOf(rows[1]!)[0]!)).toEqual({ alt: 'Champi_ñón_', size: 20, src: ICON_OTHER, text: 'Champi_ñón_' });
+	});
+
+	it('names an item whose name arrived empty or blank «Objeto <id>», in the cell, the lines and the frontmatter: never an image without text', async () => {
+		const { content } = await render({ itemMeta: WITH_ICONS, inlineIcons: true,
+			displayNames: { ...NAMES, [`item:${String(STAPLE)}`]: '', [`item:${String(OTHER)}`]: '  \t ' } });
+		expect(itemRows(content)).toEqual([
+			`| ![Objeto ${String(STAPLE)}\\|20](${ICON_STAPLE}) Objeto ${String(STAPLE)} | 30 | 4g 50s 0c |`,
+			`| ![Objeto ${String(OTHER)}\\|20](${ICON_OTHER}) Objeto ${String(OTHER)} | 9 | 0g 27s 0c |`]);
+		expect(content).not.toMatch(/!\[\s*\\\|20\]/u);
+		expect(content).toContain(`- Objetos por hora observada sin Objeto ${String(STAPLE)}: `);
+		expect(content).toContain(`tyrian_summary_top_item: "Objeto ${String(STAPLE)}"`);
 	});
 
 	it('discards an icon off render.guildwars2.com, or one that would break the image or the cell: the name stays', async () => {
