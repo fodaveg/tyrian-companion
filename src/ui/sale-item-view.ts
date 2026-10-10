@@ -3,7 +3,7 @@ import { createTranslator, type Locale } from '../core/i18n';
 import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
 import type { ProductActionController } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
-import { renderSaleView } from './sale-view';
+import { renderSaleView, type SaleRefreshOutcome } from './sale-view';
 import type { SaleViewModel } from './sale-view-model';
 
 export const SALE_VIEW_TYPE = 'tyrian-sale-view';
@@ -46,6 +46,11 @@ export function saleView(actions: Pick<SaleViewActions, 'getSaleLocale'>): Tyria
 export class SaleItemView {
 	private closed = false;
 	private refreshing = false;
+	/** How the last refresh ended while Venta was still `loading`; null once data arrives or a new one starts. */
+	private refreshOutcome: SaleRefreshOutcome | null = null;
+	/** Identifies the refresh whose end may still touch the view: a retry after the deadline supersedes the old one. */
+	private refreshRun = 0;
+	private refreshDeadlineTimer: number | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
 	/** The pending repaint for the next instant a figure on screen stops being "recent". */
@@ -97,6 +102,7 @@ export class SaleItemView {
 	cancelExpiryRepaint(): void {
 		this.closed = true;
 		this.clearExpiryTimer();
+		this.clearRefreshDeadline();
 		this.visibilityCleanup?.();
 		this.visibilityCleanup = null;
 	}
@@ -135,6 +141,7 @@ export class SaleItemView {
 		this.productShell?.update();
 		renderSaleView(surface, this.ui, model, createTranslator(locale), {
 			refreshing: this.refreshing,
+			refreshOutcome: model.status === 'loading' ? this.refreshOutcome : null,
 			onRefresh: this.actions.refreshSale === undefined ? undefined : () => this.runRefresh(),
 		});
 		this.scheduleExpiryRepaint(model);
@@ -181,12 +188,50 @@ export class SaleItemView {
 
 	private async runRefresh(refreshSeeds = true): Promise<void> {
 		if (this.closed || this.refreshing || this.actions.refreshSale === undefined) return;
+		const run = ++this.refreshRun;
 		this.refreshing = true;
+		this.refreshOutcome = null;
+		this.armRefreshDeadline(run);
 		this.render();
+		let outcome: SaleRefreshOutcome | null = null;
 		try { await this.actions.refreshSale({ refreshSeeds }); }
-		finally { this.refreshing = false; this.render(); }
+		catch { outcome = 'failed'; }
+		// A refresh that passed its deadline already told the view; its late end must not undo a retry.
+		if (run !== this.refreshRun) { this.render(); return; }
+		this.clearRefreshDeadline();
+		this.refreshing = false;
+		// Whether it matters is `render()`'s call: the outcome only reaches the view while the model is `loading`.
+		this.refreshOutcome = outcome ?? 'unfinished';
+		this.render();
+	}
+
+	/**
+	 * The refresh's own network calls already have deadlines (`HttpTransport`: 10 s each, 30 s the
+	 * character fan-out), but nothing bounds the whole of it. Past `SALE_REFRESH_DEADLINE_MS` the view
+	 * stops waiting: "loading" becomes a timed-out message and the button works again. The refresh is
+	 * not cancelled; if it ends well later, the data simply paints.
+	 */
+	private armRefreshDeadline(run: number): void {
+		this.clearRefreshDeadline();
+		this.refreshDeadlineTimer = this.contentEl.win.setTimeout(() => {
+			this.refreshDeadlineTimer = null;
+			if (this.closed || run !== this.refreshRun || !this.refreshing) return;
+			this.refreshing = false;
+			this.refreshOutcome = 'timed_out';
+			this.refreshRun += 1;
+			this.render();
+		}, SALE_REFRESH_DEADLINE_MS);
+	}
+
+	private clearRefreshDeadline(): void {
+		if (this.refreshDeadlineTimer === null) return;
+		this.contentEl.win.clearTimeout(this.refreshDeadlineTimer);
+		this.refreshDeadlineTimer = null;
 	}
 }
+
+/** How long Venta waits for a whole refresh before it says so and offers a retry. */
+export const SALE_REFRESH_DEADLINE_MS = 60_000;
 
 /** Largest delay a browser timer takes (a 32-bit signed count of milliseconds). */
 const MAX_TIMER_MS = 2_147_483_647;

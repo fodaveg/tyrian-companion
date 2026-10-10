@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { nextExpiryMs, SALE_VIEW_TYPE, SaleItemView, saleView, type SaleViewActions } from './sale-item-view';
+import { nextExpiryMs, SALE_REFRESH_DEADLINE_MS, SALE_VIEW_TYPE, SaleItemView, saleView, type SaleViewActions } from './sale-item-view';
 import { ProductActionController } from './product-action-controller';
 import { buildSaleViewModel, type SaleSourceRow, type SaleViewModel, type SaleViewModelInput } from './sale-view-model';
 
@@ -162,7 +162,7 @@ describe('SaleItemView wiring', () => {
 		await Promise.resolve();
 	});
 
-	it('when the runtime is not ready yet and the refresh leaves the model in loading, shows a working Actualizar button instead of a dead end', async () => {
+	it('when the runtime is not ready yet and the refresh leaves the model in loading, ends in a final message with a working Actualizar button', async () => {
 		installDom();
 		let refreshCalls = 0;
 		// Mirrors `main.ts`'s `refreshInventoryAdvisor`: `if (!this.runtimeReady) { notify; return; }`
@@ -174,11 +174,74 @@ describe('SaleItemView wiring', () => {
 		await Promise.resolve();
 		await Promise.resolve();
 		const root = view.contentEl as unknown as FakeElement;
-		expect(text(root)).toContain('Leyendo precios del bazar');
+		expect(text(root)).not.toContain('Leyendo precios del bazar');
+		expect(text(root)).toContain('No se pudieron leer los precios del bazar');
+		expect(find(root, 'p').some((p) => p.attributes.get('role') === 'alert')).toBe(true);
+		expect(find(root, 'span').some((el) => el.className.includes('tyrian-sale__spinner'))).toBe(false);
 		const button = find(root, 'button').find((el) => text(el).includes('Actualizar'))!;
-		expect(button).toBeDefined();
+		expect(button.disabled).toBe(false);
 		button.dispatch('click');
 		expect(refreshCalls).toBe(2);
+	});
+
+	/** Loading with a refresh in flight: one text, a spinner span, `aria-busy` on the region. */
+	it('while the refresh runs, says "Leyendo" once, shows the spinner and marks the region busy', async () => {
+		installDom();
+		let resolveRefresh!: () => void;
+		const pending = new Promise<void>((resolve) => { resolveRefresh = resolve; });
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
+			refreshSale: async () => { await pending; },
+		}));
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		expect(text(root).split('Leyendo precios del bazar').length - 1).toBe(1);
+		expect(find(root, 'span').filter((el) => el.className.includes('tyrian-sale__spinner'))).toHaveLength(1);
+		expect(find(root, 'div').some((el) => el.className.includes('tyrian-sale') && el.attributes.get('aria-busy') === 'true')).toBe(true);
+		expect(find(root, 'p').filter((p) => p.attributes.get('role') === 'status')).toHaveLength(1);
+		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.disabled).toBe(true);
+		resolveRefresh();
+		await Promise.resolve();
+	});
+
+	it('a refresh that throws ends in the failure message with a retry, not in an eternal Leyendo', async () => {
+		installDom();
+		let calls = 0;
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
+			refreshSale: async () => { calls += 1; throw new Error('network down'); },
+		}));
+		await view.onOpen();
+		await Promise.resolve();
+		await Promise.resolve();
+		const root = view.contentEl as unknown as FakeElement;
+		expect(text(root)).toContain('No se pudieron leer los precios del bazar');
+		expect(text(root)).not.toContain('Leyendo precios del bazar');
+		find(root, 'button').find((el) => text(el).includes('Actualizar'))!.dispatch('click');
+		expect(calls).toBe(2);
+	});
+
+	it('a refresh that never answers ends at the deadline in the timed-out message, and the retry runs', async () => {
+		installDom();
+		vi.useFakeTimers();
+		try {
+			let calls = 0;
+			const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
+				refreshSale: () => { calls += 1; return new Promise<void>(() => undefined); },
+			}));
+			await view.onOpen();
+			const root = view.contentEl as unknown as FakeElement;
+			expect(text(root)).toContain('Leyendo precios del bazar');
+			vi.advanceTimersByTime(SALE_REFRESH_DEADLINE_MS - 1);
+			expect(text(root)).toContain('Leyendo precios del bazar');
+			vi.advanceTimersByTime(1);
+			expect(text(root)).toContain('tardan demasiado');
+			expect(text(root)).not.toContain('Leyendo precios del bazar');
+			const button = find(root, 'button').find((el) => text(el).includes('Actualizar'))!;
+			expect(button.disabled).toBe(false);
+			button.dispatch('click');
+			expect(calls).toBe(2);
+			expect(text(root)).toContain('Leyendo precios del bazar');
+			await view.onClose();
+		} finally { vi.useRealTimers(); }
 	});
 
 	it('when the analysis cannot run (missing key), shows the blocked reason instead of Leyendo', async () => {
