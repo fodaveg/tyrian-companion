@@ -11,11 +11,11 @@ import type { SessionCommandContext } from '../ui/session-command-model';
 
 /**
  * DE-01, step 3c: `LiveSessionRuntime` on its own, over ports checked with
- * `satisfies LiveSessionRuntimePort`. The recovery's pilot journal cases moved here from
- * `src/main-session-recovery-pilot.test.ts`, and from `src/main.test.ts` the recovery's backend
- * failure ('recovery backend failure observability (H15.6)') and the session state's half of the
- * 'deferred runtime boot guard'; they drove the same code as methods of `TyrianCompanionCore` on a
- * plain object, and their titles and assertions are theirs.
+ * `satisfies LiveSessionRuntimePort`. The recovery's pilot journal cases (written in 4d4beb6d over
+ * the core, before the move), and from `src/main.test.ts` the recovery's backend failure ('recovery
+ * backend failure observability (H15.6)') and the session state's half of the 'deferred runtime
+ * boot guard', moved here; they drove the same code as methods of `TyrianCompanionCore` on a plain
+ * object, and their titles and assertions are theirs.
  * The core's side (that the real core builds this runtime and reads its fields live) is
  * `src/main-live-session-runtime-wiring.test.ts`.
  */

@@ -1211,8 +1211,9 @@ describe('Halloween production gating', () => {
 			localDebugActions: null,
 			observeHalloweenDelta,
 		};
+		// The episode is the caller's session id, not the one the finalized record carries.
 		await liveOver(harness).finishFinalizedSession('session-final', stableDelta, {
-			state: { sessionId: 'session-final', finalizedAt: '2026-08-13T08:00:03.000Z' },
+			state: { sessionId: 'session-final-record', finalizedAt: '2026-08-13T08:00:03.000Z' },
 			review: reviewEvidence,
 		} as unknown as Parameters<LiveSessionRuntime['finishFinalizedSession']>[2]);
 		expect(observeHalloweenDelta).toHaveBeenCalledWith(

@@ -4,18 +4,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
+import { LocalDebugActionRunner } from './core/local-debug-action-runner';
+import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { LiveSessionRuntime } from './runtime/live-session-runtime';
 import type { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import { LiveSessionLifecycle } from './sessions/live-session-lifecycle';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
+import type { StoredSessionLootSummary } from './sessions/session-note-renderer';
 import { SessionNoteWriter } from './sessions/session-note-writer';
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';
 
 /**
  * DE-01, step 3c: the core's side of `LiveSessionRuntime`, over the real core and its real
  * `initializeRuntime`. The runtime's own behaviour is tested on its own
- * (`src/runtime/live-session-runtime.test.ts`); this file proves that each of the core's 14 facade
+ * (`src/runtime/live-session-runtime.test.ts`); this file proves that each of the core's 17 facade
  * methods (`FACADE`) reaches it with the view's arguments and answers what it answers, and that the
  * port reads the core as it stands (before and after the boot builds the services) and writes the
  * summary's fields back to the core's own.
@@ -146,20 +149,49 @@ describe('the core hands the session state and the ways out of a session to Live
 			expect({ before, after: runtime.core.isLiveSessionStuck() }).toEqual({ before: false, after: true });
 		});
 
-		it('savedSessionNotePath and sessionSummarySaveState: an abandon leaves its note in the core\'s own fields', async () => {
-			const runtime = core();
-			await runtime.initializeRuntime();
+		/** An abandon the backend accepts and whose note the vault writes, run straight on the core's own runtime. */
+		function abandonOn(runtime: RuntimeHarness): Promise<void> {
 			vi.spyOn(ManualSessionStartService.prototype, 'abandon').mockResolvedValue(
 				{ status: 'abandoned', state: { sessionId: 'abandoned-session' } } as Awaited<ReturnType<ManualSessionStartService['abandon']>>,
 			);
 			vi.spyOn(SessionNoteWriter.prototype, 'writeAbandoned').mockResolvedValue({ status: 'written', path: 'Tyrian Companion/abandoned.md' });
 			// The abandon is run by the session commands `onload` sets up; here, straight on the core's own runtime.
 			const { live } = runtime.core as unknown as { live: Pick<LiveSessionRuntime, 'performAbandonSession'> };
+			return live.performAbandonSession();
+		}
 
-			await live.performAbandonSession();
+		it('savedSessionNotePath, sessionSummarySaveState and storedSessionLootSummary: an abandon resets the core\'s own fields', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			// The previous session's loot summary, still on the core; only its identity matters here.
+			const own = runtime.core as unknown as { storedSessionLootSummary: StoredSessionLootSummary | null };
+			own.storedSessionLootSummary = { items: [] } as unknown as StoredSessionLootSummary;
 
-			expect({ state: runtime.core.getSessionSummarySaveState(), path: runtime.core.getSavedSessionNotePath() })
-				.toEqual({ state: 'unknown', path: 'Tyrian Companion/abandoned.md' });
+			await abandonOn(runtime);
+
+			expect({
+				state: runtime.core.getSessionSummarySaveState(),
+				path: runtime.core.getSavedSessionNotePath(),
+				loot: runtime.core.getStoredSessionLootSummary(),
+			}).toEqual({ state: 'unknown', path: 'Tyrian Companion/abandoned.md', loot: null });
+		});
+
+		it('localDebugActions: a runner the core gets after the runtime was built journals the abandon\'s note write', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			// Set after construction and after the boot, as `onload` sets the core's runner once the settings are read.
+			const records: LocalDebugRecordInput[] = [];
+			let id = 0;
+			(runtime.core as unknown as { localDebugActions: LocalDebugActionRunner }).localDebugActions = new LocalDebugActionRunner({
+				diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+				createId: () => `diagnostic-${String(id += 1)}`,
+			});
+
+			await abandonOn(runtime);
+
+			expect(records).toContainEqual(expect.objectContaining({
+				component: 'session', action: 'session_finish', state: 'note_write', phase: 'success',
+			}));
 		});
 	});
 });
