@@ -417,7 +417,8 @@ type NoticeDiagnosticSource =
 	| 'live_observation'
 	| 'valuable_loot'
 	| 'ingame_secret_copy'
-	| 'session_error_copy';
+	| 'session_error_copy'
+	| 'session_history_note';
 
 /** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
 export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
@@ -3880,6 +3881,22 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	openSavedSessionNote(): void {
 		const path = this.savedSessionNotePath;
 		if (path === null) return;
+		this.host.ui.openNote(path);
+	}
+
+	/**
+	 * Opens the note a history row links to. The history was read earlier, so the note may have been
+	 * moved or deleted since: the host would create an empty one at a missing path, so the vault is
+	 * asked first (one lookup, no read) and a gone note is a notice, not an open.
+	 */
+	openSessionHistoryNote(path: string): void {
+		if (this.host.vault.file(path) === null) {
+			this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.sessionHistoryNoteMissing'),
+				'session_history_note',
+			);
+			return;
+		}
 		this.host.ui.openNote(path);
 	}
 

@@ -802,6 +802,8 @@ contar casillas.
 
 H9.7 proyecta esos records validados a un agregado puro y sin referencias de cuenta o sesión. El panel conserva su estado solo en memoria, coalesce activaciones simultáneas y presenta `idle`, `loading`, `empty`, `ready`, `conflict` y `unavailable`; un conflicto bloquea toda la proyección en vez de enseñar un parcial. Los totales monetarios y de sacos solo existen si todas las sesiones aportan el dato: `null` nunca se convierte en cero. La evolución compara las dos sesiones más recientes y la superficie responsive usa tabla o tarjetas sin persistir recomendaciones ni añadir operaciones sobre la cuenta.
 
+Cada fila del historial enlaza a la nota de su sesión (0.6.29): `scan` estampa en el record la ruta desde la que lo leyó (`notePath`, nunca guardada en el índice porque la nota puede moverse) y la fila del agregado la lleva como `notePath`; la fecha es un `<button class="mod-link">` cuyo nombre accesible nombra la sesión. El panel no toca el host: recibe una acción del núcleo (`openSessionHistoryNote`), que comprueba con `vault.file` que la nota sigue existiendo y, si no, avisa en vez de abrirla (el host crearía una nota vacía). No añade lecturas al cargar.
+
 H9.5 amplía únicamente el record local validado con `activity` y `build`; el export sigue usando una
 allowlist JSON explícita y columnas CSV fijas que no contienen esos campos. Solo `activity =
 halloween` y un build no vacío crean grupos. Cada comparación exige dos sesiones `exact/high` con
