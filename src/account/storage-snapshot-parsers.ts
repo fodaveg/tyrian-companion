@@ -53,25 +53,36 @@ export function parseContainerFreeSlots(
  * Structural checks mirror `parseCharacterInventory` exactly (same `bags`/`inventory` shape), so
  * this never rejects a payload the holdings parser above already accepts. `size` is the one field
  * neither that parser nor any pre-H18.15 fixture ever had to carry: a bag missing it, or reporting
- * more occupied slots than it claims to hold, simply contributes no entry — "unknown", never an
- * invented or a fatal count.
+ * more occupied slots than it claims to hold, makes the WHOLE character unknown (no entries at
+ * all) — never an invented or a fatal count, and never a partial sum that would read as "low space".
  */
 export function parseCharacterBagFreeSlots(value: unknown, character: string): CharacterBagFreeSlots[] {
 	if (!isRecord(value) || !Array.isArray(value.bags)) {
 		throw new InvalidSnapshotPayloadError('character inventory');
 	}
-	return value.bags.flatMap((bag, bagIndex) => {
-		if (bag === null) return [];
+	const counted: CharacterBagFreeSlots[] = [];
+	let anyBagUnknown = false;
+	value.bags.forEach((bag, bagIndex) => {
+		if (bag === null) return;
 		if (!isRecord(bag) || !Array.isArray(bag.inventory)) {
 			throw new InvalidSnapshotPayloadError('character inventory');
 		}
-		if (!Number.isSafeInteger(bag.size) || (bag.size as number) <= 0) return [];
+		if (!Number.isSafeInteger(bag.size) || (bag.size as number) <= 0) {
+			anyBagUnknown = true;
+			return;
+		}
 		const bagItemId = positiveId(bag.id, 'character inventory');
 		const total = bag.size as number;
 		const occupied = bag.inventory.filter((slot) => slot !== null).length;
-		if (occupied > total) return [];
-		return [{ character, bagIndex, bagItemId, total, free: total - occupied }];
+		if (occupied > total) {
+			anyBagUnknown = true;
+			return;
+		}
+		counted.push({ character, bagIndex, bagItemId, total, free: total - occupied });
 	});
+	// A bag that cannot be counted must not silently shrink the character's total: the remaining
+	// bags would make the free space look lower than it is. Unknown for one bag is unknown for all.
+	return anyBagUnknown ? [] : counted;
 }
 
 export function parseMaterials(value: unknown): ItemHolding[] {

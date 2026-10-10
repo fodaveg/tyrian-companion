@@ -337,6 +337,20 @@ describe('createTyrianVaultPort: onChange', () => {
 		expect(changes).toEqual([{ kind: 'modify', path: 'a.md' }, { kind: 'delete', path: 'a.md' }]);
 	});
 
+	it('a watched root is a folder: "Tyrian" sees Tyrian/a.md and never "Tyrian Old/a.md"', async () => {
+		const library = setupLibrary();
+		const index = await freshIndex();
+		const vault = createTyrianVaultPort({ library, index, rootFolderId: ROOT });
+		await vault.create('Tyrian/a.md', 'one');
+		await vault.create('Tyrian Old/a.md', 'two');
+		const changes: TyrianVaultChange[] = [];
+		const stop = vault.onChange('Tyrian', (change) => changes.push(change));
+		await vault.process({ path: 'Tyrian Old/a.md' }, (current) => `${current} more`);
+		await vault.process({ path: 'Tyrian/a.md' }, (current) => `${current} more`);
+		stop();
+		expect(changes).toEqual([{ kind: 'modify', path: 'Tyrian/a.md' }]);
+	});
+
 	it('the disposer cuts the subscription, and the last one unsubscribes from the library', async () => {
 		const library = setupLibrary();
 		const index = await freshIndex();

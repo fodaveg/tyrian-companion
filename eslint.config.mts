@@ -138,6 +138,15 @@ export default defineConfig(
 			'obsidianmd/prefer-create-el': 'off',
 		},
 	},
+	// DE-10: `src/host/dom-polyfill.ts` IS the createEl/createDiv/createSpan polyfill for hosts without
+	// Obsidian's DOM helpers, so it has to call `document.createElement`. The obsidianmd preset forbids
+	// disabling its rules inline (`eslint-comments/no-restricted-disable`), hence a one-file override.
+	{
+		files: ['src/host/dom-polyfill.ts'],
+		rules: {
+			'obsidianmd/prefer-create-el': 'off',
+		},
+	},
 	// DE-12: `scripts/` are Node tools that never ship in the plugin; `fetch` there is Node's own.
 	{
 		files: ['scripts/**'],

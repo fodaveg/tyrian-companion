@@ -36,8 +36,6 @@ const REVIEWED_FUTURE_OUTBOUND_FILES = [
 	'src/sessions/pilot-metrics-export.ts',
 	// Pure UI projection. The filename contains `sync`, but the reviewed module has no outbound or credential capability.
 	'src/ui/inventory-sync-panel-view.ts',
-	// H18.39: pure formatter of the last sync's phase durations; imports only i18n, settings types and a duration formatter.
-	'src/ui/inventory-sync-timing-summary.ts',
 	'src/ui/inventory-vault-sync-controller.ts',
 	'src/ui/inventory-vault-sync-run-controller.ts',
 	// Memory-only preview/apply state machine shared by the wallet and inventory bindings;

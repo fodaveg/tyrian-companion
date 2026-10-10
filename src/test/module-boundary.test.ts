@@ -276,6 +276,18 @@ describe('property call chains', () => {
 		]);
 	});
 
+	it.each([
+		'(this.actions as any).deleteItem(1);',
+		'(this.actions!).deleteItem(1);',
+		'(this.actions satisfies object).deleteItem(1);',
+		'((this.actions as unknown) as Port).deleteItem(1);',
+		'(<Port>this.actions).deleteItem(1);',
+		'this.actions.deleteItem!(1);',
+		'(this as any).actions.deleteItem(1);',
+	])('sees through casts, assertions and parentheses in %s', (source) => {
+		expect(propertyCallChains(source)).toEqual(['this.actions.deleteItem']);
+	});
+
 	it('ignores a bare function call with no receiver', () => {
 		expect(propertyCallChains('run();')).toEqual([]);
 	});

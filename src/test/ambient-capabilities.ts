@@ -7,14 +7,20 @@ import { vi } from 'vitest';
  */
 export const AMBIENT_CAPABILITIES = [
 	'fetch', 'requestUrl', 'XMLHttpRequest', 'WebSocket',
-	'setTimeout', 'setInterval', 'requestAnimationFrame', 'requestIdleCallback',
+	'EventSource', 'setTimeout', 'setInterval', 'queueMicrotask', 'requestAnimationFrame', 'requestIdleCallback',
 	'indexedDB', 'localStorage', 'sessionStorage', 'app',
 ];
 
-/** Runs `work` with every ambient capability trapped and returns the accesses it made. */
-export async function ambientCapabilityUse(work: () => unknown): Promise<string[]> {
+/**
+ * Trapped only on request: `fake-indexeddb` schedules its work with `setImmediate`, so a test that
+ * runs through it cannot trap it, while a pure module's test should.
+ */
+export const NODE_TIMER_CAPABILITIES = ['setImmediate'];
+
+/** Runs `work` with every ambient capability trapped (plus `extra`) and returns the accesses it made. */
+export async function ambientCapabilityUse(work: () => unknown, extra: readonly string[] = []): Promise<string[]> {
 	const used: string[] = [];
-	for (const name of AMBIENT_CAPABILITIES) vi.stubGlobal(name, ambientTrap(name, used));
+	for (const name of [...AMBIENT_CAPABILITIES, ...extra]) vi.stubGlobal(name, ambientTrap(name, used));
 	try {
 		await work();
 	} finally {

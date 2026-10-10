@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { StorageFreeSlots } from '../account/storage-snapshot-model';
+import { parseCharacterBagFreeSlots } from '../account/storage-snapshot-parsers';
 import {
 	buildSlotClearingActions,
 	prioritizeSpaceFreeingActions,
@@ -41,6 +42,19 @@ describe('resolveObservedMaterialStorageCapacity', () => {
 			quantity: 250,
 			source: 'minimum_guaranteed',
 		});
+	});
+});
+
+describe('resolveStorageSpaceState with a degraded character payload', () => {
+	it('gives no verdict (not "low space") when one bag of the character has no size', () => {
+		const characterBags = parseCharacterBagFreeSlots({
+			name: 'A',
+			bags: [
+				{ id: 1, size: 20, inventory: new Array(20).fill({ id: 9, count: 1 }) },
+				{ id: 2, inventory: [null] },
+			],
+		}, 'A');
+		expect(resolveStorageSpaceState({ bank: null, characterBags }, 5, 'A')).toBeNull();
 	});
 });
 

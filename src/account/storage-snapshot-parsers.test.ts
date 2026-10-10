@@ -149,6 +149,26 @@ describe('storage snapshot parsers', () => {
 			}, characterName)).toEqual([]);
 		});
 
+		it('makes the whole character unknown when one of its bags has no size, instead of summing the rest', () => {
+			expect(parseCharacterBagFreeSlots({
+				name: characterName,
+				bags: [
+					{ id: 1_005, size: 20, inventory: [null] },
+					{ id: 1_006, inventory: [null] },
+				],
+			}, characterName)).toEqual([]);
+		});
+
+		it('makes the whole character unknown when one bag reports impossible occupancy', () => {
+			expect(parseCharacterBagFreeSlots({
+				name: characterName,
+				bags: [
+					{ id: 1_005, size: 20, inventory: [null] },
+					{ id: 1_003, size: 1, inventory: [{ id: 2, count: 1 }, { id: 3, count: 1 }] },
+				],
+			}, characterName)).toEqual([]);
+		});
+
 		it('reports a bag missing its size field as unknown, matching a pre-H18.15 fixture', () => {
 			expect(parseCharacterBagFreeSlots({
 				name: characterName,
