@@ -236,6 +236,8 @@ export class PendingProposalService {
 	}
 
 	async reconcile(context: ProposalReconcileContext): Promise<ProposalQueueState> {
+		// GR-05 F1: the boot's `queue_initialize` reconciles after `initialize()`, which an early unload outlives.
+		if (this.disposed) return this.unavailable();
 		try {
 			const now = this.timestamp();
 			await this.store.transaction((raw) => {

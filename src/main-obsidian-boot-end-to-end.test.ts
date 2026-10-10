@@ -4,6 +4,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { LocalDebugLogger } from './core/local-debug-logger';
+import { PROPOSAL_QUEUE_DB_NAME } from './sessions/pending-proposal-store';
 import { SESSION_STATE_VERSION } from './sessions/session';
 import { engineIdle, trackedIndexedDb, type TrackedIndexedDb } from './test/indexed-db-connections';
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';
@@ -41,7 +42,7 @@ interface StartedPlugin {
 	readonly registeredViewTypes: () => readonly string[];
 	readonly registeredCommandIds: () => readonly string[];
 	/** Runs what Obsidian runs once the layout is ready, and resolves when the boot it starts has settled. */
-	layoutReady(): Promise<void>;
+	layoutReady(options?: { readonly drain?: boolean }): Promise<void>;
 	/** `onunload()`, then the drain it leaves running, then whatever the engine still had in flight. */
 	unload(): Promise<void>;
 	/** The fake IndexedDB connections the plugin opened and never closed. */
@@ -121,7 +122,7 @@ async function startPlugin(): Promise<StartedPlugin> {
 		records,
 		registeredViewTypes: () => registerView.mock.calls.map((call: unknown[]) => call[0] as string),
 		registeredCommandIds: () => addCommand.mock.calls.map((call) => (call[0] as { id: string }).id),
-		layoutReady: async () => {
+		layoutReady: async ({ drain = true }: { drain?: boolean } = {}) => {
 			if (layout.ready === null) throw new Error('onload() handed Obsidian no onLayoutReady callback.');
 			layout.ready();
 			const [boot] = boots;
@@ -130,7 +131,7 @@ async function startPlugin(): Promise<StartedPlugin> {
 			}
 			await boot;
 			// The work the boot leaves running on its own (stores nobody awaits) finishes before the test goes on.
-			await engineIdle(tracked);
+			if (drain) await engineIdle(tracked);
 		},
 		unload,
 		openConnections: () => tracked.connections.filter((database) => !closed.has(database)).map(({ name }) => name),
@@ -140,6 +141,20 @@ async function startPlugin(): Promise<StartedPlugin> {
 const failures = (records: readonly LocalDebugRecordInput[]): string[] => records
 	.filter(({ phase, level }) => phase === 'failure' || level === 'error')
 	.map(({ component, action, state, code }) => `${component}/${action}/${String(state)}/${code}`);
+
+/** `store/operation` of each confirmation-queue outcome journaled with `code`. */
+const queueOutcomes = (records: readonly LocalDebugRecordInput[], code: LocalDebugRecordInput['code']): string[] => records
+	.filter((record) => record.code === code)
+	.map(({ details }) => (details ?? {}) as { store?: unknown; operation?: unknown })
+	.filter(({ store }) => store === 'pending_proposal')
+	.map(({ store, operation }) => `${String(store)}/${String(operation)}`);
+
+/** An open the engine answers with an error, the way it does with its storage process gone. */
+function refusedQueueOpen(): IDBOpenDBRequest {
+	const request = { error: new DOMException('The storage process is gone.', 'UnknownError'), result: undefined } as unknown as IDBOpenDBRequest;
+	queueMicrotask(() => { request.onerror?.call(request, new Event('error')); });
+	return request;
+}
 
 describe('the Obsidian plugin started end to end through its own lifecycle', { timeout: 15_000 }, () => {
 	it('registers the Companion, Inventory and Sale views and their open commands before the layout is ready', async () => {
@@ -211,6 +226,35 @@ describe('the Obsidian plugin started end to end through its own lifecycle', { t
 				.map(({ action, phase }) => `${action}/${phase}`),
 			connections: started.openConnections(),
 		}).toEqual({ failures: [], terminals: ['plugin_unload/success', 'debug_flush/success'], connections: [] });
+	});
+
+	// GR-05 F1: an unload right after `runtime_initialize`, with the confirmation queue's first open still in flight, wrote three
+	// `storage_failure` of `pending_proposal` (open, transaction, and a reconcile run on the closed queue). The two cut short are
+	// asserted as cancellations, so this test also proves the race was really reached and is not green by arriving too late.
+	it('unloads right after the boot settles, before its background work drains, with the cut-short queue journaled as cancelled', async () => {
+		const started = await startPlugin();
+		await started.layoutReady({ drain: false });
+		await started.unload();
+
+		expect({
+			failures: failures(started.records),
+			cancelled: queueOutcomes(started.records, 'cancelled'),
+			connections: started.openConnections(),
+		}).toEqual({ failures: [], cancelled: ['pending_proposal/open', 'pending_proposal/transaction'], connections: [] });
+	});
+
+	it('still journals a confirmation queue the engine refuses to open as a storage failure', async () => {
+		const started = await startPlugin();
+		const open = started.tracked.factory.open.bind(started.tracked.factory);
+		started.tracked.factory.open = (name: string, version?: number) => name.startsWith(`${PROPOSAL_QUEUE_DB_NAME}:`)
+			? refusedQueueOpen() : open(name, version);
+		await started.layoutReady();
+		await started.unload();
+
+		expect({
+			refused: queueOutcomes(started.records, 'storage_failure').filter((outcome) => outcome === 'pending_proposal/open').length > 0,
+			cancelled: queueOutcomes(started.records, 'cancelled'),
+		}).toEqual({ refused: true, cancelled: [] });
 	});
 
 	it('leaves no IndexedDB connection open and no host timer armed once unloaded', async () => {
