@@ -7,13 +7,14 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { SessionRuntime } from './runtime/session-facade';
 import type { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import { DEFAULT_FARMING_PREPARATION } from './sessions/farming-goal-preparation';
+import { LiveSessionLifecycle } from './sessions/live-session-lifecycle';
 import type { PilotMetricsRecorder } from './sessions/pilot-metrics-recorder';
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';
 
 /**
  * DE-01, step 3a: the core's side of `SessionRuntime`, over the real core and its real
  * `initializeRuntime`. The runtime's own behaviour is tested on its own
- * (`src/runtime/session-facade.test.ts`); this file proves that each of the core's 24 facade methods
+ * (`src/runtime/session-facade.test.ts`); this file proves that each of the core's 33 facade methods
  * reaches it, and that the port reads the core as it stands rather than as it was when the runtime
  * was built (with the core, before the boot builds the services, before the settings panel exists
  * and before the device can turn to consult).
@@ -48,7 +49,21 @@ const FACADE: ReadonlyArray<readonly [FacadeMethod, (core: TyrianCompanionCore) 
 	['saveFarmingPreparationSettings', async (core) => { await core.saveFarmingPreparationSettings({ ...DEFAULT_FARMING_PREPARATION, enabled: true }); }, [{ ...DEFAULT_FARMING_PREPARATION, enabled: true }]],
 	['getFarmingDeclaredBuildPreference', (core) => core.getFarmingDeclaredBuildPreference(), []],
 	['saveFarmingDeclaredBuildPreference', async (core) => { await core.saveFarmingDeclaredBuildPreference(null); }, [null]],
+	['getLiveSessionAlerts', (core) => core.getLiveSessionAlerts(), []],
+	['getLiveSessionView', (core) => core.getLiveSessionView(20, 50), [20, 50]],
+	['getLiveSessionComparison', (core) => core.getLiveSessionComparison(), []],
+	['loadLiveSessionComparison', async (core) => { await core.loadLiveSessionComparison(); }, []],
+	['getSelectedLiveSessionHistory', (core) => core.getSelectedLiveSessionHistory(), []],
+	['listLiveSessionHistory', async (core) => await core.listLiveSessionHistory(), []],
+	['getLiveSessionSetAside', (core) => core.getLiveSessionSetAside(), []],
+	['selectLiveSessionHistory', async (core) => { await core.selectLiveSessionHistory(null); }, [null]],
+	['exportLiveSession', async (core) => { await core.exportLiveSession('summary', 'json'); }, ['summary', 'json']],
 ];
+
+/** What a call came to: its value, or the message it was refused with (the export refuses without a session). */
+async function settled(outcome: unknown): Promise<{ value: unknown } | { error: string }> {
+	try { return { value: await outcome }; } catch (error) { return { error: String(error) }; }
+}
 
 describe('the core hands the pilot metrics and the session history to SessionRuntime', () => {
 	let harness: RuntimeHarness | null = null;
@@ -84,10 +99,10 @@ describe('the core hands the pilot metrics and the session history to SessionRun
 		await runtime.initializeRuntime();
 		const reached = vi.spyOn(SessionRuntime.prototype, name);
 
-		const answer = await call(runtime.core);
+		const answer = await settled(call(runtime.core));
 
 		expect(reached).toHaveBeenCalledExactlyOnceWith(...args);
-		expect(answer).toEqual(await reached.mock.results[0]?.value);
+		expect(answer).toEqual(await settled(reached.mock.results[0]?.value));
 	});
 
 	/**
@@ -129,6 +144,26 @@ describe('the core hands the pilot metrics and the session history to SessionRun
 				saved: { version: 1, kind: 'bags', targetBags: 77 },
 				read: { version: 1, kind: 'bags', targetBags: 77 },
 			});
+		});
+
+		it('liveHistory: before the boot the comparison has nothing to read; after it the boot\'s saved-session service answers', async () => {
+			const runtime = core();
+			await runtime.core.loadLiveSessionComparison();
+			const before = runtime.core.getLiveSessionComparison().history.status;
+
+			await runtime.initializeRuntime();
+			await runtime.core.loadLiveSessionComparison();
+
+			expect({ before, after: runtime.core.getLiveSessionComparison().history.status }).toEqual({ before: 'unavailable', after: 'ready' });
+		});
+
+		it('liveSessions: the lifecycle the boot built answers the live view', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			const view = { ...runtime.core.getLiveSessionView(), sessionId: 'live-after-boot' };
+			vi.spyOn(LiveSessionLifecycle.prototype, 'getView').mockReturnValue(view);
+
+			expect(runtime.core.getLiveSessionView().sessionId).toBe('live-after-boot');
 		});
 
 		it('collectorMode: a device turned to consult after the boot is refused the scrub', async () => {

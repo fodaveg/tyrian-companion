@@ -1,19 +1,23 @@
 /**
  * The session runtime's first part (DE-01, step 3a): the pilot metrics (the profile, the journal's
  * export, its clearing and opt-out, the silent losses review and the classification of a recovery),
- * the durable session history's export and scrub, and the next session's saved farming preferences
- * (goal, preparation, declared build) with their serialized writes; with the five fields only they
- * use.
+ * the durable session history's export and scrub, the next session's saved farming preferences
+ * (goal, preparation, declared build) with their serialized writes, and the saved live sessions
+ * (list, selection, the view and alerts of the selected one, the comparison and the export); with
+ * the nine fields only they use.
  *
  * Moved unchanged from `TyrianCompanionCore`, which stays the facade the views and the settings
- * panel see. The core keeps building the services (`pilotMetrics`, `pilotMetricsExporter`,
- * `sessionHistory`), keeps the history's runtime authority and its gate (the live session's start,
- * stop and recovery take their leases from it), keeps `loadSessionHistory` (the only scan of the
- * history, H9.7) and keeps the recovery's own pilot hooks (`pilotRecoveryIdentity`,
- * `ensurePilotRecoveryPresented`) with the two sets they fill, and the farming state a start
- * captures (the group context and the reminders). It hands all of that through
- * `SessionRuntimePort`; the getters below carry the names of the core's own fields, so the moved
- * code reads as it did there.
+ * panel see. The core keeps:
+ * - building the services (`pilotMetrics`, `pilotMetricsExporter`, `sessionHistory`,
+ *   `liveSessions`, `liveHistory`);
+ * - the history's runtime authority and its gate: the live session's start, stop and recovery
+ *   take their leases from it;
+ * - `loadSessionHistory`, the only scan of the history (H9.7);
+ * - the recovery's own pilot hooks (`pilotRecoveryIdentity`, `ensurePilotRecoveryPresented`) with
+ *   the two sets they fill;
+ * - the farming state a start captures (the group context and the reminders).
+ * It hands all of that through `SessionRuntimePort`; the getters below carry the names of the
+ * core's own fields, so the moved code reads as it did there.
  *
  * The file is not named `session-runtime.ts`: `scripts/security-scan.mjs` treats any file of that
  * name as a persisted-session boundary, and this module persists nothing of its own.
@@ -25,6 +29,18 @@ import type { CollectorMode, TyrianSettings } from '../core/settings';
 import type { TyrianEnvironmentPort, TyrianUiPort, TyrianVault } from '../host/tyrian-host';
 import { normalizeFarmingGoal, type FarmingGoalV1 } from '../sessions/farming-goal';
 import type { FarmingPreparationSettingsV1 } from '../sessions/farming-goal-preparation';
+import { provisionalLiveComparison, type LiveSessionComparisonState, type LiveSessionComparisonView } from '../sessions/live-session-comparison';
+import { prepareLiveSessionExportSnapshot } from '../sessions/live-session-export';
+import {
+	liveSessionAlertsFromStored,
+	liveSessionViewFromStored,
+	type LiveSessionHistoryEntry,
+	type LiveSessionHistoryService,
+	type LiveSessionSetAside,
+} from '../sessions/live-session-history';
+import { emptyLiveSessionView, type LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
+import type { LiveSessionAlertViewV1, LiveSessionViewV1 } from '../sessions/live-session-model';
+import type { StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
 import type { FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import type { PilotMetricsExporter, PilotMetricsExportPreview, PilotMetricsExportResult } from '../sessions/pilot-metrics-export';
 import type {
@@ -87,6 +103,10 @@ export interface SessionRuntimePort {
 	readonly measuredPilotRecoveries: Set<string>;
 	/** Each presented recovery's saved kind, filled by the core's `ensurePilotRecoveryPresented`. */
 	readonly pilotRecoveryKinds: Map<string, PilotRecoveryKind>;
+	/** The live session's lifecycle, built in `initializeRuntime`; null before it and on a device without one. */
+	readonly liveSessions: Pick<LiveSessionLifecycle, 'getAlerts' | 'getView' | 'getRuntime' | 'getSessionFormat' | 'capture'> | null;
+	/** The saved live sessions (schema7 notes), built in `initializeRuntime`; null before it. */
+	readonly liveHistory: Pick<LiveSessionHistoryService, 'loadComparison' | 'list' | 'select' | 'export'> | null;
 	/** Says once that this device only consults (`refusedInConsult`). */
 	notifyConsultMode(): void;
 	/** Says the runtime is still starting, or that it failed to start. */
@@ -115,6 +135,10 @@ export class SessionRuntime {
 	private sessionHistoryPreviewFlight: Promise<SessionHistoryScrubPreview> | null = null;
 	private sessionHistoryScrubFlight: Promise<SessionHistoryScrubResult> | null = null;
 	private farmingSettingsFlight: Promise<void> = Promise.resolve();
+	private liveSetAside: readonly LiveSessionSetAside[] = [];
+	private liveComparison: LiveSessionComparisonState = { status: 'idle' };
+	private liveComparisonFlight: Promise<void> | null = null;
+	private selectedLiveHistory: {payload:StoredLiveSessionPayloadV1;view:LiveSessionViewV1;observations:LiveSessionViewV1['observations'];alerts:LiveSessionAlertViewV1[]} | null = null;
 
 	// The core's own fields and methods, read through the port under the names the moved code uses.
 	private get settings(): SessionRuntimePort['settings'] { return this.port.settings; }
@@ -130,6 +154,8 @@ export class SessionRuntime {
 	private get pilotMetricsExporter(): SessionRuntimePort['pilotMetricsExporter'] { return this.port.pilotMetricsExporter; }
 	private get measuredPilotRecoveries(): Set<string> { return this.port.measuredPilotRecoveries; }
 	private get pilotRecoveryKinds(): Map<string, PilotRecoveryKind> { return this.port.pilotRecoveryKinds; }
+	private get liveSessions(): SessionRuntimePort['liveSessions'] { return this.port.liveSessions; }
+	private get liveHistory(): SessionRuntimePort['liveHistory'] { return this.port.liveHistory; }
 	/** Public, like the core's: `refusedInConsult` calls it on `this`. */
 	notifyConsultMode(): void { this.port.notifyConsultMode(); }
 	private notifyRuntimeStarting(): void { this.port.notifyRuntimeStarting(); }
@@ -270,6 +296,58 @@ export class SessionRuntime {
 		const flight = this.farmingSettingsFlight.then(save, save);
 		this.farmingSettingsFlight = flight;
 		await flight;
+	}
+
+	getLiveSessionAlerts(): readonly LiveSessionAlertViewV1[] { return this.selectedLiveHistory?.alerts ?? this.liveSessions?.getAlerts() ?? []; }
+	getLiveSessionView(offset = 0, limit = 200): LiveSessionViewV1 {
+		if (this.selectedLiveHistory === null) return this.liveSessions?.getView(offset,limit) ?? emptyLiveSessionView();
+		const selected = this.selectedLiveHistory; const start = Math.max(0,Number.isSafeInteger(offset) ? offset : 0);
+		const size = Math.max(1,Math.min(200,Number.isSafeInteger(limit) ? limit : 200));
+		return {...selected.view,observations:structuredClone(selected.observations.slice(start,start+size)),observationOffset:start,hasMore:start+size<selected.observations.length};
+	}
+	/** A saved-note comparison and the real active runtime retain independent sample counts. */
+	getLiveSessionComparison(): LiveSessionComparisonView {
+		const live = this.liveSessions;
+		return { history: this.liveComparison, provisional: live === null ? null : provisionalLiveComparison(live.getRuntime(), live.getView().elapsedMs ?? 0, live.getSessionFormat().priceBasis) };
+	}
+	/** Loads schema7 notes only after an explicit action; comparison performs no account requests. */
+	async loadLiveSessionComparison(): Promise<void> {
+		if (this.liveComparisonFlight !== null) return this.liveComparisonFlight;
+		this.liveComparison = { status: 'loading' };
+		const flight = this.loadLiveComparisonNotes(); this.liveComparisonFlight = flight;
+		try { await flight; } finally { this.liveComparisonFlight = null; }
+	}
+	private async loadLiveComparisonNotes(): Promise<void> {
+		try {
+			const result = await this.liveHistory?.loadComparison();
+			if (result?.status === 'ok') this.liveSetAside = result.setAside;
+			this.liveComparison = result?.status === 'ok' ? { status: 'ready', comparison: result.comparison, ignored: result.ignored, setAside: result.setAside }
+				: result?.status === 'conflict' ? result : { status: 'unavailable' };
+		} catch { this.liveComparison = { status: 'unavailable' }; }
+		this.renderViews();
+	}
+	getSelectedLiveSessionHistory(): string | null { return this.selectedLiveHistory?.payload.sessionRef ?? null; }
+	async listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> {
+		const result = await this.liveHistory?.list(); if (result?.status !== 'ok') throw new Error('Live session history is unavailable.');
+		this.liveSetAside = result.setAside;
+		return result.sessions;
+	}
+	/** The notes the last read of the saved sessions (list or comparison) left aside; the panels name them by path. */
+	getLiveSessionSetAside(): readonly LiveSessionSetAside[] { return this.liveSetAside; }
+	async selectLiveSessionHistory(sessionRef: string | null): Promise<void> {
+		if (sessionRef === null) { this.selectedLiveHistory = null; this.renderViews(); return; }
+		const result = await this.liveHistory?.select(sessionRef);
+		if (result?.status !== 'found') throw new Error('The saved live session could not be read.');
+		this.selectedLiveHistory = {payload:result.session,view:liveSessionViewFromStored(result.session,Date.now()),
+			observations:result.session.journal.flatMap((entry) => entry.observations),alerts:liveSessionAlertsFromStored(result.session)};
+		this.renderViews();
+	}
+	async exportLiveSession(kind: 'timeline'|'summary', format: 'csv'|'json'): Promise<void> {
+		const captured = this.selectedLiveHistory === null ? await this.liveSessions?.capture() : null;
+		const payload = this.selectedLiveHistory?.payload ?? (captured ? await prepareLiveSessionExportSnapshot(captured) : null);
+		if (payload === null || payload === undefined || this.liveHistory === null) throw new Error('The live session export is unavailable.');
+		const result = await this.liveHistory.export(this.settings.outputFolder,kind,format,payload);
+		if (result.status !== 'written' && result.status !== 'unchanged') throw new Error('The live session export could not be saved.');
 	}
 
 	/**

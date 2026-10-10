@@ -14,7 +14,7 @@
 
 import { bootNow, createBootTrace, type BootTrace } from '../core/boot-trace';
 import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
-import { provisionalLiveComparison, type LiveSessionComparisonState, type LiveSessionComparisonView } from '../sessions/live-session-comparison';
+import type { LiveSessionComparisonView } from '../sessions/live-session-comparison';
 import { farmingBagCapacity, farmingGoalForSession, projectBagPriceIngameState, projectFarmingIngameState, projectLiveFarmingIngameState } from './farming-runtime-projection';
 import { observeFarmingSessionContext, readFarmingSessionContext, type FarmingSessionContext, type FarmingGroupContext } from './farming-session-context';
 import { liveObservedFrom, normalizeFarmingGoal, projectFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
@@ -23,7 +23,7 @@ import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
-import { LiveSessionLifecycle, emptyLiveSessionView } from '../sessions/live-session-lifecycle';
+import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { LiveSessionStopError } from '../sessions/live-session-stop-failure';
 import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
 import type { LiveSessionViewV1, LiveJournalEntryV1, LiveSessionFormat, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
@@ -34,9 +34,8 @@ import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import type { LiveIngamePort } from '../alerts/live-loot-protocol';
 import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
 import { LiveSessionSummaryService, summaryCachedNames } from '../sessions/live-session-summary-service';
-import { LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
-import { knownLiveDisplayNames, type StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
-import { prepareLiveSessionExportSnapshot } from '../sessions/live-session-export';
+import { LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
+import { knownLiveDisplayNames } from '../sessions/live-session-note-model';
 import { exportLegacyRuntimeArchive } from '../sessions/live-session-legacy-archive';
 
 import { installDomHelpers } from '../host/dom-polyfill';
@@ -507,13 +506,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private readonly liveSourceConnections = new LiveSourceConnections();
 	private liveEconomy: LiveSessionEconomy | null = null;
 	private liveHistory: LiveSessionHistoryService | null = null;
-	private liveSetAside: readonly LiveSessionSetAside[] = [];
 	private liveSummaries: LiveSessionSummaryService | null = null;
 	/** False while the plugin loads: a summary written then uses caches only (no map-name request). */
 	private liveSummaryNetwork = false;
-	private liveComparison: LiveSessionComparisonState = { status: 'idle' };
-	private liveComparisonFlight: Promise<void> | null = null;
-	private selectedLiveHistory: {payload:StoredLiveSessionPayloadV1;view:LiveSessionViewV1;observations:LiveSessionViewV1['observations'];alerts:LiveSessionAlertViewV1[]} | null = null;
 	private assistedDetection!: AssistedDetectionService;
 	private detectionQuality!: DetectionQualityRecorder;
 	private pilotMetrics!: PilotMetricsRecorder;
@@ -3081,6 +3076,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get pilotMetricsExporter() { return core.pilotMetricsExporter; },
 			get measuredPilotRecoveries() { return core.measuredPilotRecoveries; },
 			get pilotRecoveryKinds() { return core.pilotRecoveryKinds; },
+			get liveSessions() { return core.liveSessions; },
+			get liveHistory() { return core.liveHistory; },
 			notifyConsultMode: () => { core.notifyConsultMode(); },
 			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
@@ -3502,57 +3499,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.runtimeReady ? this.liveSessionLoot.getState() : { status: 'idle' };
 	}
 
-	getLiveSessionAlerts(): readonly LiveSessionAlertViewV1[] { return this.selectedLiveHistory?.alerts ?? this.liveSessions?.getAlerts() ?? []; }
-	getLiveSessionView(offset = 0, limit = 200): LiveSessionViewV1 {
-		if (this.selectedLiveHistory === null) return this.liveSessions?.getView(offset,limit) ?? emptyLiveSessionView();
-		const selected = this.selectedLiveHistory; const start = Math.max(0,Number.isSafeInteger(offset) ? offset : 0);
-		const size = Math.max(1,Math.min(200,Number.isSafeInteger(limit) ? limit : 200));
-		return {...selected.view,observations:structuredClone(selected.observations.slice(start,start+size)),observationOffset:start,hasMore:start+size<selected.observations.length};
-	}
-	/** A saved-note comparison and the real active runtime retain independent sample counts. */
-	getLiveSessionComparison(): LiveSessionComparisonView {
-		const live = this.liveSessions;
-		return { history: this.liveComparison, provisional: live === null ? null : provisionalLiveComparison(live.getRuntime(), live.getView().elapsedMs ?? 0, live.getSessionFormat().priceBasis) };
-	}
-	/** Loads schema7 notes only after an explicit action; comparison performs no account requests. */
-	async loadLiveSessionComparison(): Promise<void> {
-		if (this.liveComparisonFlight !== null) return this.liveComparisonFlight;
-		this.liveComparison = { status: 'loading' };
-		const flight = this.loadLiveComparisonNotes(); this.liveComparisonFlight = flight;
-		try { await flight; } finally { this.liveComparisonFlight = null; }
-	}
-	private async loadLiveComparisonNotes(): Promise<void> {
-		try {
-			const result = await this.liveHistory?.loadComparison();
-			if (result?.status === 'ok') this.liveSetAside = result.setAside;
-			this.liveComparison = result?.status === 'ok' ? { status: 'ready', comparison: result.comparison, ignored: result.ignored, setAside: result.setAside }
-				: result?.status === 'conflict' ? result : { status: 'unavailable' };
-		} catch { this.liveComparison = { status: 'unavailable' }; }
-		this.renderViews();
-	}
-	getSelectedLiveSessionHistory(): string | null { return this.selectedLiveHistory?.payload.sessionRef ?? null; }
-	async listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> {
-		const result = await this.liveHistory?.list(); if (result?.status !== 'ok') throw new Error('Live session history is unavailable.');
-		this.liveSetAside = result.setAside;
-		return result.sessions;
-	}
-	/** The notes the last read of the saved sessions (list or comparison) left aside; the panels name them by path. */
-	getLiveSessionSetAside(): readonly LiveSessionSetAside[] { return this.liveSetAside; }
-	async selectLiveSessionHistory(sessionRef: string | null): Promise<void> {
-		if (sessionRef === null) { this.selectedLiveHistory = null; this.renderViews(); return; }
-		const result = await this.liveHistory?.select(sessionRef);
-		if (result?.status !== 'found') throw new Error('The saved live session could not be read.');
-		this.selectedLiveHistory = {payload:result.session,view:liveSessionViewFromStored(result.session,Date.now()),
-			observations:result.session.journal.flatMap((entry) => entry.observations),alerts:liveSessionAlertsFromStored(result.session)};
-		this.renderViews();
-	}
-	async exportLiveSession(kind: 'timeline'|'summary', format: 'csv'|'json'): Promise<void> {
-		const captured = this.selectedLiveHistory === null ? await this.liveSessions?.capture() : null;
-		const payload = this.selectedLiveHistory?.payload ?? (captured ? await prepareLiveSessionExportSnapshot(captured) : null);
-		if (payload === null || payload === undefined || this.liveHistory === null) throw new Error('The live session export is unavailable.');
-		const result = await this.liveHistory.export(this.settings.outputFolder,kind,format,payload);
-		if (result.status !== 'written' && result.status !== 'unchanged') throw new Error('The live session export could not be saved.');
-	}
+	/** The selected saved session's alerts, or the live one's (`SessionRuntime`). */
+	getLiveSessionAlerts(): readonly LiveSessionAlertViewV1[] { return this.session.getLiveSessionAlerts(); }
+	/** The selected saved session's page, or the live one's (`SessionRuntime`). */
+	getLiveSessionView(offset = 0, limit = 200): LiveSessionViewV1 { return this.session.getLiveSessionView(offset, limit); }
+	getLiveSessionComparison(): LiveSessionComparisonView { return this.session.getLiveSessionComparison(); }
+	/** One comparison load in flight at a time (`SessionRuntime`). */
+	async loadLiveSessionComparison(): Promise<void> { await this.session.loadLiveSessionComparison(); }
+	getSelectedLiveSessionHistory(): string | null { return this.session.getSelectedLiveSessionHistory(); }
+	async listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> { return await this.session.listLiveSessionHistory(); }
+	getLiveSessionSetAside(): readonly LiveSessionSetAside[] { return this.session.getLiveSessionSetAside(); }
+	async selectLiveSessionHistory(sessionRef: string | null): Promise<void> { await this.session.selectLiveSessionHistory(sessionRef); }
+	async exportLiveSession(kind: 'timeline'|'summary', format: 'csv'|'json'): Promise<void> { await this.session.exportLiveSession(kind, format); }
 	/** Explicit local export of preserved account evidence; it never calls a capture service. */
 	async exportPreservedLegacySession():Promise<void> {
 		const preserved = await this.sessions.readPreservedLegacyRuntime();

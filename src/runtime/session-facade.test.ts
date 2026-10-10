@@ -7,6 +7,7 @@ import type { LocalDebugRecordInput } from '../core/local-debug-contract';
 import type { LocalDebugLogger } from '../core/local-debug-logger';
 import { DEFAULT_SETTINGS, type TyrianSettings } from '../core/settings';
 import { DEFAULT_FARMING_PREPARATION } from '../sessions/farming-goal-preparation';
+import { buildLiveSessionComparison } from '../sessions/live-session-comparison';
 import type { SettingsUpdateResult } from '../ui/settings-panel-actions';
 import { PILOT_METRICS_VERSION, PILOT_PLATFORMS, type PilotJournalSnapshotV1, type PilotRecoveryKind } from '../sessions/pilot-metrics-model';
 import {
@@ -80,6 +81,8 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 		pilotMetricsExporter: { preview: unused('pilotMetricsExporter.preview'), export: unused('pilotMetricsExporter.export') },
 		measuredPilotRecoveries: new Set<string>(),
 		pilotRecoveryKinds: new Map<string, PilotRecoveryKind>(),
+		liveSessions: null,
+		liveHistory: null,
 		notifyConsultMode: unused('notifyConsultMode'),
 		notifyRuntimeStarting: unused('notifyRuntimeStarting'),
 		emitNotice: unused('emitNotice'),
@@ -320,5 +323,64 @@ describe('the next session\'s farming preferences through SessionRuntime', () =>
 			copy: true,
 			build: { raw: 'kept as stored' },
 		});
+	});
+});
+
+describe('the saved live sessions through SessionRuntime', () => {
+	const history = (overrides: Partial<NonNullable<SessionRuntimePort['liveHistory']>>): NonNullable<SessionRuntimePort['liveHistory']> => ({
+		loadComparison: unused('liveHistory.loadComparison'),
+		list: unused('liveHistory.list'),
+		select: unused('liveHistory.select'),
+		export: unused('liveHistory.export'),
+		...overrides,
+	});
+
+	it('shares one comparison load in flight, lands ready with what it set aside, and repaints once', async () => {
+		let answer: (load: Awaited<ReturnType<NonNullable<SessionRuntimePort['liveHistory']>['loadComparison']>>) => void = () => undefined;
+		const loadComparison = vi.fn(() => new Promise<Parameters<typeof answer>[0]>((resolve) => { answer = resolve; }));
+		const renderViews = vi.fn();
+		const runtime = new SessionRuntime(port({ liveHistory: history({ loadComparison }), renderViews }));
+		const setAside = [{ path: 'Sessions/newer.md', reason: 'newer_version' as const }];
+
+		const first = runtime.loadLiveSessionComparison();
+		const second = runtime.loadLiveSessionComparison();
+		const during = runtime.getLiveSessionComparison().history.status;
+		answer({ status: 'ok', comparison: buildLiveSessionComparison([]), ignored: 0, setAside });
+		await Promise.all([first, second]);
+
+		expect({
+			calls: loadComparison.mock.calls.length, during,
+			after: runtime.getLiveSessionComparison().history.status,
+			setAside: runtime.getLiveSessionSetAside(), repaints: renderViews.mock.calls.length,
+			provisional: runtime.getLiveSessionComparison().provisional,
+		}).toEqual({ calls: 1, during: 'loading', after: 'ready', setAside, repaints: 1, provisional: null });
+	});
+
+	it('a comparison that throws reads unavailable and the next one may load again', async () => {
+		const loadComparison = vi.fn(async () => { throw new Error('vault gone'); });
+		const runtime = new SessionRuntime(port({ liveHistory: history({ loadComparison }) }));
+
+		await runtime.loadLiveSessionComparison();
+		await runtime.loadLiveSessionComparison();
+
+		expect({ status: runtime.getLiveSessionComparison().history.status, calls: loadComparison.mock.calls.length })
+			.toEqual({ status: 'unavailable', calls: 2 });
+	});
+
+	it('without a live session or a selection, the view is the empty one and there are no alerts or selection', () => {
+		const runtime = new SessionRuntime(port());
+
+		expect({
+			phase: runtime.getLiveSessionView().phase,
+			alerts: runtime.getLiveSessionAlerts(),
+			selected: runtime.getSelectedLiveSessionHistory(),
+		}).toEqual({ phase: 'idle', alerts: [], selected: null });
+	});
+
+	it('an unreadable saved list is refused, and an export with nothing to export says so', async () => {
+		const runtime = new SessionRuntime(port({ liveHistory: history({ list: async () => ({ status: 'unavailable' }) }) }));
+
+		await expect(runtime.listLiveSessionHistory()).rejects.toThrow('Live session history is unavailable.');
+		await expect(runtime.exportLiveSession('summary', 'json')).rejects.toThrow('The live session export is unavailable.');
 	});
 });
