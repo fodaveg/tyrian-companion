@@ -21,6 +21,8 @@ export interface ManagedAssetsActionContext {
 	working: boolean;
 	hasManagedRoot: boolean;
 	canMove: boolean;
+	/** The last preview lists a Base the plugin does not recognise; without one, Replace is not offered. */
+	hasUnowned: boolean;
 }
 
 /** Single projection used by Settings so every action is disabled during a durable operation. */
@@ -29,7 +31,7 @@ export function projectManagedAssetsActions(context: ManagedAssetsActionContext)
 		preview: !context.working,
 		apply: !context.working,
 		repair: !context.working && context.hasManagedRoot,
-		replace: !context.working && context.hasManagedRoot,
+		replace: !context.working && context.hasManagedRoot && context.hasUnowned,
 		move: !context.working && context.hasManagedRoot && context.canMove,
 		remove: !context.working && context.hasManagedRoot,
 	};
@@ -61,4 +63,9 @@ export async function runConfirmedManagedAssetsRemoval(
 	if (!await confirm()) return false;
 	await remove();
 	return true;
+}
+
+/** True when the view's preview lists at least one Base left as «Yours, left untouched». */
+export function viewHasUnownedAssets(view: ManagedAssetsView): boolean {
+	return view.plan?.steps.some((step) => step.status === 'occupied_unowned') ?? false;
 }

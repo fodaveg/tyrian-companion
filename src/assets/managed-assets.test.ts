@@ -1116,7 +1116,7 @@ describe('a Base the plugin cannot prove is its own (Hebra Inventory.base, 9 Oct
 		const others = bundle.filter((asset) => asset.id !== 'inventory-base');
 		const before = new Map(others.map((asset) => [pathOf(asset), vault.contents.get(pathOf(asset))]));
 
-		expect((await instance.replaceUnowned(ROOT)).status).toBe('applied');
+		expect((await instance.replaceUnowned(ROOT, ['inventory-base'])).status).toBe('applied');
 		expect(vault.contents.get(path)).toBe(inventory.bytes);
 		for (const [other, bytes] of before) expect(vault.contents.get(other)).toBe(bytes);
 		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
@@ -1127,9 +1127,31 @@ describe('a Base the plugin cannot prove is its own (Hebra Inventory.base, 9 Oct
 		expect((await instance.inspect(ROOT)).assets.every((entry) => entry.status === 'unchanged')).toBe(true);
 
 		const writes = vault.writeCount;
-		expect((await instance.replaceUnowned(ROOT)).status).toBe('unchanged');
+		expect((await instance.replaceUnowned(ROOT, ['inventory-base'])).status).toBe('unchanged');
 		expect((await instance.apply(ROOT, 'upgrade')).status).toBe('unchanged');
 		expect(vault.writeCount).toBe(writes);
+	});
+
+	it('replaces only the Bases the user was shown: another unrecognised one is byte for byte the same', async () => {
+		const bundle = (await managedAssetsBundle()).filter((asset) => asset.locale === 'neutral' || asset.locale === 'es');
+		const inventory = bundle.find((asset) => asset.id === 'inventory-base')!;
+		const wallet = bundle.find((asset) => asset.id === 'wallet-base')!;
+		const vault = new MemoryAssetVault();
+		const mine = stringifyYaml(parseYaml(wallet.bytes)).replace(/^views:/mu, 'tcUser: true\nviews:');
+		vault.contents.set(pathOf(inventory), stale);
+		vault.contents.set(pathOf(wallet), mine);
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets: bundle });
+		await instance.apply(ROOT, 'install');
+		// Both are unrecognised; the user is shown, and confirms, only the inventory one.
+		expect((await instance.listUnowned(ROOT)).map((entry) => entry.id).sort()).toEqual(['inventory-base', 'wallet-base']);
+
+		expect((await instance.replaceUnowned(ROOT, ['inventory-base'])).status).toBe('applied');
+		expect(vault.contents.get(pathOf(inventory))).toBe(inventory.bytes);
+		expect(vault.contents.get(pathOf(wallet))).toBe(mine);
+		expect((await instance.listUnowned(ROOT)).map((entry) => entry.id)).toEqual(['wallet-base']);
+		const manifest = JSON.parse(vault.contents.get(MANIFEST)!) as MutableJournal;
+		expect(manifest.excluded).toEqual(['wallet-base']);
+		expect(manifest.assets.map((entry) => entry.id)).toContain('inventory-base');
 	});
 
 	it('refuses to replace a file the user edited after it was inspected', async () => {
@@ -1140,7 +1162,7 @@ describe('a Base the plugin cannot prove is its own (Hebra Inventory.base, 9 Oct
 			if (file.path === path) vault.contents.set(path, edited);
 			return await process(file, update);
 		};
-		expect((await instance.replaceUnowned(ROOT)).status).toBe('conflict');
+		expect((await instance.replaceUnowned(ROOT, ['inventory-base'])).status).toBe('conflict');
 		expect(vault.contents.get(path)).toBe(edited);
 	});
 });

@@ -225,3 +225,25 @@ describe('settings page: main screen or sidebar, only where the host can show bo
 		});
 	});
 });
+
+describe('settings page: Replace is offered only with a Base the plugin does not recognise', () => {
+	const replaceButton = (container: HTMLElement) =>
+		Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Replace')!;
+	const withPlan = (status: 'occupied_unowned' | 'unchanged') => Object.assign(plugin(), {
+		hasManagedAssetsRoot: () => true,
+		getManagedAssetsView: () => ({
+			status: 'ready' as const, message: 'preview_ready' as const,
+			plan: { kind: 'upgrade' as const, root: 'R', canApply: true, reasons: [], steps: [{ id: 'inventory-base', path: 'R/Bases/Inventory.base', status }] },
+		}),
+	});
+
+	it('hides the button when the preview lists nothing unrecognised', () => {
+		const { container } = mountPage(withPlan('unchanged'));
+		expect(replaceButton(container).style.display).toBe('none');
+	});
+
+	it('shows it when the preview lists an unrecognised Base', () => {
+		const { container } = mountPage(withPlan('occupied_unowned'));
+		expect(replaceButton(container).style.display).toBe('');
+	});
+});

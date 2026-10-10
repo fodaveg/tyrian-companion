@@ -187,7 +187,7 @@ const ES = {
 	'settings.remove.title': '¿Quitar assets gestionados?',
 	'settings.remove.desc': 'Solo van a la papelera los archivos intactos del plugin; los modificados se conservan.',
 	'settings.replace.title': '¿Reemplazar las Bases que el plugin no reconoce?',
-	'settings.replace.desc': 'Las Bases «Tuya, no se toca» se sobrescriben y su contenido se pierde.',
+	'settings.replace.desc': 'Se sobrescriben con las del plugin y su contenido se pierde:',
 	'common.cancel': 'Cancelar',
 	'collector.statusNote.body': 'Tyrian Companion anota aquí qué instalación recoge los datos de la cuenta y cuándo lo hizo por última vez. La reescribe el recolector: no la edites.',
 } as const;
@@ -378,7 +378,7 @@ const EN: { [K in keyof typeof ES]: string } = {
 	'settings.remove.title': 'Remove managed assets?',
 	'settings.remove.desc': 'Only intact plugin files go to the system trash; modified files are preserved.',
 	'settings.replace.title': 'Replace the Bases the plugin does not recognise?',
-	'settings.replace.desc': 'Bases marked "Yours, left untouched" are overwritten; their content is lost.',
+	'settings.replace.desc': 'These are overwritten with the plugin\'s and their content is lost:',
 	'common.cancel': 'Cancel',
 	'collector.statusNote.body': 'Tyrian Companion records here which installation collects the account data and when it last did. The collector rewrites it: do not edit it.',
 };

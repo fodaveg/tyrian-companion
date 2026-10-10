@@ -4682,7 +4682,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * it wrote (edited by hand, or from a build nothing published) with the ones it ships. No automatic path
 	 * reaches it: the preview keeps listing those files as «Yours, left untouched» until this runs.
 	 */
-	async replaceUnownedManagedAssets(): Promise<void> {
+	async replaceUnownedManagedAssets(confirmed: readonly string[]): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (refusedInConsult(this)) return;
@@ -4692,7 +4692,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			return;
 		}
 		if (!this.settings.managedAssetsRoot) return;
-		await this.runManagedAssetOperation(() => this.managedAssets.replaceUnowned(this.settings.managedAssetsRoot!));
+		await this.runManagedAssetOperation(() => this.managedAssets.replaceUnowned(this.settings.managedAssetsRoot!, confirmed));
+	}
+
+	/**
+	 * What «Replace» would overwrite right now (a fresh read, not the last preview): shown in its confirmation,
+	 * and the exact set `replaceUnownedManagedAssets` is then limited to. Empty when nothing can be listed; an unreadable manifest throws, as the Settings preview's own inspection would.
+	 */
+	async listUnownedManagedAssets(): Promise<Array<{ id: string; path: string }>> {
+		if (!hostSupportsManagedAssets(this.host) || !this.runtimeReady || this.settings.legacyManagedAssetsRoot !== null) return [];
+		const root = this.settings.managedAssetsRoot;
+		if (!root) return [];
+		return await this.managedAssets.listUnowned(root);
 	}
 
 	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable
