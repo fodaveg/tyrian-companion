@@ -85,23 +85,39 @@ export interface LiveChartReading { at: number; value: number; x: number; y: num
 export interface LiveChartGap { from: number; to: number; open: boolean; x: number; x2: number }
 /** What the last chart rebuild drew, kept so the cursor can find a reading or a gap by instant without the SVG. */
 export interface LiveChartGeometry { t0: number; t1: number; readings: LiveChartReading[]; gaps: LiveChartGap[] }
-export type LiveChartHit = { kind: 'reading'; index: number } | { kind: 'gap'; index: number };
+/** `before`: the stretch between the start of the session and its first reading, where the step line sits at zero. */
+export type LiveChartHit = { kind: 'reading'; index: number } | { kind: 'gap'; index: number } | { kind: 'before' };
 
 /**
- * What the chart shows at one instant: the gap covering it (there is no reading inside one), else the reading
- * nearest in time. The readings at both ends of a gap keep their own instants (the last one before it is at
- * `from`, the one that closes it at `to`), and an open gap keeps the right edge of the chart, where no reading
- * has come back yet.
+ * What the step line shows at one instant: the gap covering it (there is no reading inside one), else the LAST
+ * reading at or before it, which is the value the line has there (David, 10 Oct 2026: the bubble must match the
+ * height of the line under the pointer, not jump to the nearest reading). The readings at both ends of a gap keep
+ * their own instants (the last one before it is at `from`, the one that closes it at `to`), and an open gap keeps
+ * the right edge of the chart, where no reading has come back yet.
  */
 export function liveChartHitAt(geometry: LiveChartGeometry, at: number): LiveChartHit | null {
+	if (geometry.readings.length === 0) return null;
 	const gap = geometry.gaps.findIndex((band) => at > band.from && (band.open ? at <= band.to : at < band.to));
 	if (gap >= 0) return { kind: 'gap', index: gap };
-	let best = -1, distance = Number.POSITIVE_INFINITY;
-	geometry.readings.forEach((reading, index) => {
-		const apart = Math.abs(reading.at - at);
-		if (apart < distance) { distance = apart; best = index; }
-	});
-	return best < 0 ? null : { kind: 'reading', index: best };
+	let last = -1;
+	geometry.readings.forEach((reading, index) => { if (reading.at <= at) last = index; });
+	return last < 0 ? { kind: 'before' } : { kind: 'reading', index: last };
+}
+
+/** Breathing room between the cursor line and the bubble, the `--size-4-2` of the stylesheet, in px. */
+const TIP_GAP_PX = 8;
+
+/**
+ * Which side of the cursor line the bubble hangs on. It keeps its current side while the bubble fits there and
+ * only crosses when it no longer does and the other side has room: that overlap is the hysteresis that keeps it
+ * from flickering around one point. `room` is what the bubble needs as a fraction of the plot.
+ */
+export function liveChartTipSide(current: 'start' | 'end' | undefined, x: number, room: number): 'start' | 'end' {
+	const fitsEnd = x + room <= 1, fitsStart = x - room >= 0;
+	if (current === undefined) return fitsEnd ? 'end' : 'start';
+	if (current === 'end' && !fitsEnd && fitsStart) return 'start';
+	if (current === 'start' && !fitsStart && fitsEnd) return 'end';
+	return current;
 }
 
 interface Tile { li: HTMLElement; sig: string }
@@ -151,8 +167,10 @@ export class LiveSessionPanel {
 	/** Spoken mirror of the bubble. It lives outside the plot: the children of a `role="img"` are presentational. */
 	private readonly plotStatus: HTMLElement;
 	private chartGeometry: LiveChartGeometry | null = null;
-	/** The instant the chart cursor is pinned to: a reading's own instant, or the pointed instant inside a gap; null while hidden. */
+	/** The instant the chart cursor is pinned to (under the pointer, or a reading's own instant from the keys); null while hidden. */
 	private cursorAt: number | null = null;
+	/** The last pointer position not painted yet: one frame paints at most once however fast the pointer moves. */
+	private pendingClientX: number | null = null;
 	private readonly axisStart: HTMLElement;
 	private readonly axisEnd: HTMLElement;
 	private readonly legend: HTMLElement;
@@ -261,7 +279,7 @@ export class LiveSessionPanel {
 		this.plotMax = this.node('span', 'tyrian-live-session__plot-max');
 		this.plotDot = this.node('span', 'tyrian-live-session__plot-dot');
 		// The cursor: a line (or a band over a gap) and a bubble, both on the plot's own fractions like the end dot,
-		// hidden until a pointer, a finger or the arrow keys ask for one reading. The plot is focusable for the keys;
+		// hidden until a pointer, a finger or the arrow keys ask for one instant. The plot is focusable for the keys;
 		// it keeps `role="img"` and its summary label, which is what a screen reader hears on focus.
 		this.plotCursor = this.node('span', 'tyrian-live-session__plot-cursor');
 		this.plotCursor.hidden = true;
@@ -735,44 +753,45 @@ export class LiveSessionPanel {
 	}
 
 	/**
-	 * Pins the chart cursor to the instant `at`: the line and the bubble go to the reading nearest in time (or the band of
-	 * the gap covering it), on the plot's fractions like the end dot, and the spoken mirror gets the same words.
+	 * Pins the chart cursor to the instant `at`: the line stands exactly there (a band over the gap covering it), the
+	 * bubble follows it at a fixed height and tells the reading the step line shows there, and the spoken mirror gets the
+	 * same words. Everything sits on the plot's fractions like the end dot. The bubble keeps its side of the line until it
+	 * no longer fits (`liveChartTipSide`), and its height never depends on the value, so it does not jump around.
 	 */
-	private moveCursor(at: number): void {
+	private moveCursor(at: number, announce = this.document.activeElement === this.plot): void {
 		const geometry = this.chartGeometry;
 		const hit = geometry === null ? null : liveChartHitAt(geometry, at);
 		if (geometry === null || hit === null) { this.hideCursor(); return; }
-		let x: number, y: number;
+		this.cursorAt = at;
+		const x = Math.min(1, Math.max(0, (at - geometry.t0) / (geometry.t1 - geometry.t0)));
 		const lines: string[] = [];
 		if (hit.kind === 'gap') {
 			const gap = geometry.gaps[hit.index]!;
-			this.cursorAt = at;
-			x = gap.x; y = 1;
 			this.plotCursor.dataset.kind = 'gap';
+			this.plotCursor.style.setProperty('--x', String(gap.x));
 			this.plotCursor.style.setProperty('--w', String(Math.max(0.002, gap.x2 - gap.x)));
 			lines.push(gap.open ? this.copy('tipGapOpen').replace('{from}', this.clockOfDay(gap.from))
 				: this.copy('tipGap').replace('{from}', this.clockOfDay(gap.from)).replace('{to}', this.clockOfDay(gap.to)));
-			this.plotTip.dataset.side = (gap.x + gap.x2) / 2 > 0.5 ? 'start' : 'end';
 		} else {
-			const reading = geometry.readings[hit.index]!;
-			const previous = hit.index > 0 ? geometry.readings[hit.index - 1]! : null;
-			this.cursorAt = reading.at;
-			x = reading.x; y = reading.y;
 			delete this.plotCursor.dataset.kind;
+			this.plotCursor.style.setProperty('--x', String(x));
 			this.plotCursor.style.removeProperty('--w');
-			lines.push(this.timeOfDay(reading.at), this.money(reading.value));
-			const delta = previous === null ? null : reading.value - previous.value;
-			lines.push(delta === null ? this.copy('tipFirst') : this.copy('tipChange').replace('{delta}', `${delta > 0 ? '+' : ''}${this.money(delta)}`));
-			if (delta !== null && delta < 0) this.plotTipChange.dataset.neg = ''; else delete this.plotTipChange.dataset.neg;
-			this.plotTip.dataset.side = x > 0.5 ? 'start' : 'end';
+			if (hit.kind === 'before') lines.push(this.copy('tipBefore'), this.money(0));
+			else {
+				const reading = geometry.readings[hit.index]!;
+				const previous = hit.index > 0 ? geometry.readings[hit.index - 1]! : null;
+				lines.push(this.timeOfDay(reading.at), this.money(reading.value));
+				const delta = previous === null ? null : reading.value - previous.value;
+				lines.push(delta === null ? this.copy('tipFirst') : this.copy('tipChange').replace('{delta}', `${delta > 0 ? '+' : ''}${this.money(delta)}`));
+				if (delta !== null && delta < 0) this.plotTipChange.dataset.neg = ''; else delete this.plotTipChange.dataset.neg;
+			}
 		}
-		for (const target of [this.plotCursor, this.plotTip]) {
-			target.style.setProperty('--x', String(x));
-			target.style.setProperty('--y', String(y));
-		}
-		// Near the edges the bubble turns around: it hangs on the start side of the line in the right half and sits at the
-		// top while the reading is in the lower half, so it stays inside the plot and never widens the panel.
-		this.plotTip.dataset.v = y > 0.5 ? 'top' : 'bottom';
+		// The room the bubble needs, as a fraction of the plot: its own width when it has one on screen (it is fixed by the
+		// stylesheet, so a measure taken before the text changes still holds), else the half of the plot it may take at most.
+		const plotWidth = this.svg.getBoundingClientRect().width, tipWidth = this.plotTip.getBoundingClientRect().width;
+		const room = plotWidth > 0 ? ((tipWidth > 0 ? tipWidth : plotWidth / 2) + TIP_GAP_PX) / plotWidth : 0.5;
+		this.plotTip.dataset.side = liveChartTipSide(this.plotTip.dataset.side as 'start' | 'end' | undefined, x, room);
+		this.plotTip.style.setProperty('--x', String(x));
 		this.setText(this.plotTipTime, lines[0]!);
 		this.setText(this.plotTipValue, lines[1] ?? '');
 		this.setText(this.plotTipChange, lines[2] ?? '');
@@ -780,24 +799,43 @@ export class LiveSessionPanel {
 		this.plotTipChange.hidden = lines.length < 3;
 		this.plotCursor.hidden = false;
 		this.plotTip.hidden = false;
-		this.setText(this.plotStatus, lines.join(', '));
+		// Spoken only when the keys move the cursor or the plot has the focus: a mouse sweeping the chart would otherwise
+		// chatter. `setText` writes only a changed text, so the same reading under a moving pointer is not announced again.
+		this.setText(this.plotStatus, announce ? lines.join(', ') : '');
 	}
 
 	private readonly hideCursor = (): void => {
 		this.cursorAt = null;
+		this.pendingClientX = null;
 		this.plotCursor.hidden = true;
 		this.plotTip.hidden = true;
+		delete this.plotTip.dataset.side;
 		this.setText(this.plotStatus, '');
 	};
 
-	/** A hovering mouse (or pen) and a pressed finger both move the cursor to the instant under the pointer. */
+	/**
+	 * A hovering mouse (or pen) and a pressed finger both move the cursor to the instant under the pointer. The paint
+	 * waits for the next frame, so a fast pointer costs one paint per frame, not one per event.
+	 */
 	private readonly onPlotPointer = (event: PointerEvent): void => {
-		const geometry = this.chartGeometry;
-		if (geometry === null) return;
-		if (event.type === 'pointerdown' && event.pointerType === 'touch') this.plot.setPointerCapture(event.pointerId);
+		if (this.chartGeometry === null) return;
+		if (event.type === 'pointerdown' && event.pointerType === 'touch') {
+			// A pointer that is no longer active (the finger lifted before this ran) makes the browser throw NotFoundError;
+			// the cursor then simply follows the finger without capture, as a mouse does.
+			try { this.plot.setPointerCapture(event.pointerId); } catch { /* no capture: the pointer events still reach the plot while the finger stays on it */ }
+		}
+		const scheduled = this.pendingClientX !== null;
+		this.pendingClientX = event.clientX;
+		if (!scheduled) window.requestAnimationFrame(this.paintPointer);
+	};
+
+	private readonly paintPointer = (): void => {
+		const clientX = this.pendingClientX, geometry = this.chartGeometry;
+		this.pendingClientX = null;
+		if (clientX === null || geometry === null) return;
 		const rect = this.svg.getBoundingClientRect();
 		if (!(rect.width > 0)) return;
-		const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+		const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
 		this.moveCursor(geometry.t0 + fraction * (geometry.t1 - geometry.t0));
 	};
 
@@ -827,7 +865,7 @@ export class LiveSessionPanel {
 			default: return;
 		}
 		event.preventDefault();
-		this.moveCursor(readings[index]!.at);
+		this.moveCursor(readings[index]!.at, true);
 	};
 
 	private renderTimeline(view: LiveSessionViewV1): void {
