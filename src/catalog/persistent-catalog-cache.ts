@@ -11,7 +11,12 @@ import type {
 	CatalogKind,
 } from './public-catalog-model';
 import { isCatalogJsonValue, isNormalizedCatalogEntity } from './public-catalog-validators';
-import { openIndexedDb } from '../core/indexed-db-open';
+import {
+	IndexedDbConnectionLostError,
+	ReopeningIndexedDbConnection,
+	openIndexedDb,
+	startIndexedDbTransaction,
+} from '../core/indexed-db-open';
 import { LocalDebugPersistenceProbe, localDebugStorageFailureCode } from '../core/local-debug-persistence';
 
 export const CATALOG_CACHE_DB_NAME = 'tyrian-companion-public-catalog';
@@ -225,12 +230,23 @@ export async function createCatalogCacheAdapter(
 	}
 }
 
-/** IndexedDB-backed string store. Each method owns one transaction (`setMany` and `getMany`: one for the whole batch). */
+/**
+ * IndexedDB-backed string store. Each method owns one transaction (`setMany` and `getMany`: one for the whole batch).
+ *
+ * Opened through `open`, a connection the engine dropped is replaced on the next operation (DU-05); a store built around
+ * a fixed database has nothing to open again.
+ */
 export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
+	private readonly connection: ReopeningIndexedDbConnection;
+
 	constructor(
-		private readonly database: IDBDatabase,
+		database: IDBDatabase | ReopeningIndexedDbConnection,
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
-	) {}
+	) {
+		this.connection = database instanceof ReopeningIndexedDbConnection
+			? database
+			: new ReopeningIndexedDbConnection(null, () => new Error('The public catalog cache is closed.'), database);
+	}
 
 	static async open(
 		factory: IDBFactory,
@@ -239,61 +255,48 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbCatalogRecordStore> {
 		const attempt = diagnostics.begin('catalog', 'open');
-		let database: IDBDatabase;
+		const connection = new ReopeningIndexedDbConnection(async (hooks) => await openIndexedDb({
+			factory,
+			databaseName,
+			databaseVersion,
+			schema: [{ name: CATALOG_CACHE_STORE_NAME }],
+			...hooks,
+			toError: (reason) => new Error(reason === 'blocked'
+				? 'Public catalog cache upgrade was blocked.'
+				: 'Could not open the public catalog cache.'),
+		}), () => new Error('The public catalog cache is closed.'));
 		try {
-			database = await openIndexedDb({
-				factory,
-				databaseName,
-				databaseVersion,
-				schema: [{ name: CATALOG_CACHE_STORE_NAME }],
-				onVersionChange: 'close',
-				toError: (reason) => new Error(reason === 'blocked'
-					? 'Public catalog cache upgrade was blocked.'
-					: 'Could not open the public catalog cache.'),
-			});
+			await connection.open();
 		} catch (error) {
 			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		}
 		attempt.success();
-		return new IndexedDbCatalogRecordStore(database, diagnostics);
+		return new IndexedDbCatalogRecordStore(connection, diagnostics);
 	}
 
 	get(key: string): Promise<unknown> {
 		const attempt = this.diagnostics.begin('catalog', 'read');
-		return new Promise((resolve, reject) => {
-			let transaction: IDBTransaction;
-			try {
-				transaction = this.database.transaction(CATALOG_CACHE_STORE_NAME, 'readonly');
-			} catch (error) {
-				attempt.failure(localDebugStorageFailureCode(error), error);
-				reject(error instanceof Error ? error : new Error('Could not read the public catalog cache.'));
-				return;
-			}
+		return this.observed(attempt, (database) => new Promise((resolve, reject) => {
+			// A throw here rejects this promise: the executor runs synchronously inside it.
+			const transaction = startIndexedDbTransaction(database, CATALOG_CACHE_STORE_NAME, 'readonly');
 			const request = transaction.objectStore(CATALOG_CACHE_STORE_NAME).get(key);
 			let result: unknown;
 			request.onsuccess = () => {
 				result = request.result as unknown;
 			};
-			transaction.oncomplete = () => { attempt.success(); resolve(result); };
-			transaction.onerror = () => { attempt.failure(); reject(new Error('Could not read the public catalog cache.')); };
-			transaction.onabort = () => { attempt.failure(); reject(new Error('Public catalog cache read was aborted.')); };
-		});
+			transaction.oncomplete = () => { resolve(result); };
+			transaction.onerror = () => { reject(new CatalogTransactionFailure('Could not read the public catalog cache.')); };
+			transaction.onabort = () => { reject(new CatalogTransactionFailure('Public catalog cache read was aborted.')); };
+		}));
 	}
 
 	/** Opens exactly one readonly transaction for the whole batch, regardless of key count. */
 	getMany(keys: readonly string[]): Promise<Map<string, unknown>> {
 		const attempt = this.diagnostics.begin('catalog', 'read');
-		return new Promise((resolve, reject) => {
-			if (keys.length === 0) { attempt.skip(); resolve(new Map()); return; }
-			let transaction: IDBTransaction;
-			try {
-				transaction = this.database.transaction(CATALOG_CACHE_STORE_NAME, 'readonly');
-			} catch (error) {
-				attempt.failure(localDebugStorageFailureCode(error), error);
-				reject(error instanceof Error ? error : new Error('Could not read the public catalog cache.'));
-				return;
-			}
+		if (keys.length === 0) { attempt.skip(); return Promise.resolve(new Map<string, unknown>()); }
+		return this.observed(attempt, (database) => new Promise<Map<string, unknown>>((resolve, reject) => {
+			const transaction = startIndexedDbTransaction(database, CATALOG_CACHE_STORE_NAME, 'readonly');
 			const store = transaction.objectStore(CATALOG_CACHE_STORE_NAME);
 			const results = new Map<string, unknown>();
 			for (const key of keys) {
@@ -302,10 +305,10 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 					if (request.result !== undefined) results.set(key, request.result as unknown);
 				};
 			}
-			transaction.oncomplete = () => { attempt.success(); resolve(results); };
-			transaction.onerror = () => { attempt.failure(); reject(new Error('Could not read the public catalog cache.')); };
-			transaction.onabort = () => { attempt.failure(); reject(new Error('Public catalog cache read was aborted.')); };
-		});
+			transaction.oncomplete = () => { resolve(results); };
+			transaction.onerror = () => { reject(new CatalogTransactionFailure('Could not read the public catalog cache.')); };
+			transaction.onabort = () => { reject(new CatalogTransactionFailure('Public catalog cache read was aborted.')); };
+		}));
 	}
 
 	set(key: string, value: string): Promise<void> {
@@ -324,30 +327,55 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 
 	close(): void {
 		const attempt = this.diagnostics.begin('catalog', 'close');
-		this.database.close();
+		this.connection.close();
 		attempt.success();
 	}
 
 	private write(action: (store: IDBObjectStore) => void): Promise<void> {
 		const attempt = this.diagnostics.begin('catalog', 'write');
-		return new Promise((resolve, reject) => {
-			let transaction: IDBTransaction | undefined;
+		return this.observed(attempt, (database) => new Promise((resolve, reject) => {
+			const transaction = startIndexedDbTransaction(database, CATALOG_CACHE_STORE_NAME, 'readwrite');
 			try {
-				transaction = this.database.transaction(CATALOG_CACHE_STORE_NAME, 'readwrite');
 				action(transaction.objectStore(CATALOG_CACHE_STORE_NAME));
 			} catch (error) {
 				// A request that throws mid-batch must not leave the earlier puts to auto-commit.
-				transaction?.abort();
-				attempt.failure(localDebugStorageFailureCode(error), error);
+				transaction.abort();
 				reject(error instanceof Error ? error : new Error('Could not write the public catalog cache.'));
 				return;
 			}
-			transaction.oncomplete = () => { attempt.success(); resolve(); };
-			transaction.onerror = () => { attempt.failure(); reject(new Error('Could not write the public catalog cache.')); };
-			transaction.onabort = () => { attempt.failure(); reject(new Error('Public catalog cache write was aborted.')); };
-		});
+			transaction.oncomplete = () => { resolve(); };
+			transaction.onerror = () => { reject(new CatalogTransactionFailure('Could not write the public catalog cache.')); };
+			transaction.onabort = () => { reject(new CatalogTransactionFailure('Public catalog cache write was aborted.')); };
+		}));
+	}
+
+	/**
+	 * Runs one transaction on the cached connection, replacing a dead one once (DU-05), and records its one outcome. A
+	 * transaction that started and failed is recorded without a code, as it always was; anything else is the engine's
+	 * own error, recorded with its code and handed to the caller.
+	 */
+	private async observed<T>(
+		attempt: ReturnType<LocalDebugPersistenceProbe['begin']>,
+		operation: (database: IDBDatabase) => Promise<T>,
+	): Promise<T> {
+		try {
+			const value = await this.connection.run(operation);
+			attempt.success();
+			return value;
+		} catch (error) {
+			if (error instanceof CatalogTransactionFailure) {
+				attempt.failure();
+				throw error;
+			}
+			const reason = error instanceof IndexedDbConnectionLostError ? error.reason : error;
+			attempt.failure(localDebugStorageFailureCode(reason), reason);
+			throw reason instanceof Error ? reason : new Error('The public catalog cache is unavailable.');
+		}
 	}
 }
+
+/** A catalog transaction that started and then failed or aborted. */
+class CatalogTransactionFailure extends Error {}
 
 export function catalogCacheStorageKey(cacheKey: CatalogCacheKey): string {
 	return JSON.stringify([

@@ -13,9 +13,11 @@ const NOW = new Date('2026-08-20T10:01:00.000Z');
 
 describe('PilotMetricsRecorder', () => {
 	it('remains lazy and fail-open until the local platform profile is explicitly configured', async () => {
-		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('lazy'));
+		const factory = new IDBFactory();
+		const opened = vi.spyOn(factory, 'open');
+		const store = new IndexedDbPilotMetricsStore(factory, 'vault-a', databaseName('lazy'));
 		const recorder = new PilotMetricsRecorder(store, 10_000, () => NOW);
-		expect(store['database']).toBeNull();
+		expect(opened).not.toHaveBeenCalled();
 		await expect(recorder.proposalPresented(presentation('proposal-a'))).resolves.toBe(false);
 		expect(recorder.getState()).toEqual({ status: 'unconfigured' });
 		await expect(recorder.configure(profile())).resolves.toBe(true);

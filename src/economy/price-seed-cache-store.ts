@@ -1,4 +1,9 @@
-import { openIndexedDb } from '../core/indexed-db-open';
+import {
+	ReopeningIndexedDbConnection,
+	isIndexedDbUnavailable,
+	openIndexedDb,
+	startIndexedDbTransaction,
+} from '../core/indexed-db-open';
 import { isPriceSeed, type PriceSeedFailureReason, type PriceSeedV1 } from './price-seed-model';
 
 /**
@@ -33,26 +38,21 @@ export interface PriceSeedCacheRecordV1 {
 	cachedAtMs: number;
 }
 
-/** One IndexedDB record per `(vaultId, itemId)`. Fail-closed: never substitutes an in-memory copy. */
+/**
+ * One IndexedDB record per `(vaultId, itemId)`. Fail-closed: never substitutes an in-memory copy. A connection the
+ * engine dropped is replaced on the next operation (DU-05).
+ */
 export class IndexedDbPriceSeedCacheStore {
-	constructor(private readonly database: IDBDatabase) {}
+	constructor(private readonly connection: ReopeningIndexedDbConnection) {}
 
 	static async open(
 		factory: IDBFactory,
 		databaseName = PRICE_SEED_CACHE_DB_NAME,
 		databaseVersion = PRICE_SEED_CACHE_DB_VERSION,
 	): Promise<IndexedDbPriceSeedCacheStore> {
-		const database = await openIndexedDb({
-			factory,
-			databaseName,
-			databaseVersion,
-			schema: [{ name: PRICE_SEED_CACHE_STORE, keyPath: ['vaultId', 'itemId'] }],
-			onVersionChange: 'close',
-			toError: (reason, error) => new PriceSeedCacheStoreError(reason === 'blocked'
-				? 'blocked'
-				: error?.name === 'VersionError' ? 'future_schema' : 'unavailable'),
-		});
-		return new IndexedDbPriceSeedCacheStore(database);
+		return new IndexedDbPriceSeedCacheStore(
+			await openSeedConnection(factory, databaseName, databaseVersion, PRICE_SEED_CACHE_STORE),
+		);
 	}
 
 	get(vaultId: string, itemId: number): Promise<PriceSeedCacheRecordV1 | null> {
@@ -76,21 +76,58 @@ export class IndexedDbPriceSeedCacheStore {
 		});
 	}
 
-	close(): void { this.database.close(); }
+	close(): void { this.connection.close(); }
 
 	private transaction<T>(
 		mode: IDBTransactionMode,
 		operation: (store: IDBObjectStore, resolve: (value: T) => void, reject: (reason: unknown) => void) => void,
 	): Promise<T> {
-		return new Promise((resolve, reject) => {
-			let transaction: IDBTransaction;
-			try { transaction = this.database.transaction([PRICE_SEED_CACHE_STORE], mode); }
-			catch { reject(new PriceSeedCacheStoreError('unavailable')); return; }
+		return seedTransaction(this.connection, PRICE_SEED_CACHE_STORE, mode, operation);
+	}
+}
+
+/** Opens the first connection of a seed database, so a failure to open still rejects `open()` as it always did. */
+async function openSeedConnection(
+	factory: IDBFactory,
+	databaseName: string,
+	databaseVersion: number,
+	storeName: string,
+): Promise<ReopeningIndexedDbConnection> {
+	const connection = new ReopeningIndexedDbConnection(async (hooks) => await openIndexedDb({
+		factory,
+		databaseName,
+		databaseVersion,
+		schema: [{ name: storeName, keyPath: ['vaultId', 'itemId'] }],
+		...hooks,
+		toError: (reason, error) => new PriceSeedCacheStoreError(reason === 'blocked'
+			? 'blocked'
+			: error?.name === 'VersionError' ? 'future_schema' : 'unavailable'),
+	}), () => new PriceSeedCacheStoreError('unavailable'));
+	await connection.open();
+	return connection;
+}
+
+/**
+ * One transaction on `storeName`; a connection that died before it could start is replaced once (DU-05). A dead
+ * connection throws before `operation` runs, so running it again on a new one is safe.
+ */
+async function seedTransaction<T>(
+	connection: ReopeningIndexedDbConnection,
+	storeName: string,
+	mode: IDBTransactionMode,
+	operation: (store: IDBObjectStore, resolve: (value: T) => void, reject: (reason: unknown) => void) => void,
+): Promise<T> {
+	try {
+		return await connection.run((database) => new Promise<T>((resolve, reject) => {
+			// A throw here rejects this promise: the executor runs synchronously inside it.
+			const transaction = startIndexedDbTransaction(database, [storeName], mode);
 			transaction.onerror = () => reject(storeFailure(transaction.error));
 			transaction.onabort = () => reject(storeFailure(transaction.error));
-			try { operation(transaction.objectStore(PRICE_SEED_CACHE_STORE), resolve, reject); }
+			try { operation(transaction.objectStore(storeName), resolve, reject); }
 			catch (error) { reject(error instanceof Error ? error : new PriceSeedCacheStoreError('unavailable')); }
-		});
+		}));
+	} catch (error) {
+		throw isIndexedDbUnavailable(error) ? new PriceSeedCacheStoreError('unavailable') : error;
 	}
 }
 
@@ -143,26 +180,21 @@ export interface PriceSeedNoSeedRecordV1 {
 	failedAtMs: number;
 }
 
-/** One IndexedDB record per `(vaultId, itemId)`, remembering datawars2's LAST `no_seed` answer only. */
+/**
+ * One IndexedDB record per `(vaultId, itemId)`, remembering datawars2's LAST `no_seed` answer only. A connection the
+ * engine dropped is replaced on the next operation (DU-05).
+ */
 export class IndexedDbPriceSeedNoSeedStore {
-	constructor(private readonly database: IDBDatabase) {}
+	constructor(private readonly connection: ReopeningIndexedDbConnection) {}
 
 	static async open(
 		factory: IDBFactory,
 		databaseName = PRICE_SEED_NO_SEED_DB_NAME,
 		databaseVersion = PRICE_SEED_NO_SEED_DB_VERSION,
 	): Promise<IndexedDbPriceSeedNoSeedStore> {
-		const database = await openIndexedDb({
-			factory,
-			databaseName,
-			databaseVersion,
-			schema: [{ name: PRICE_SEED_NO_SEED_STORE, keyPath: ['vaultId', 'itemId'] }],
-			onVersionChange: 'close',
-			toError: (reason, error) => new PriceSeedCacheStoreError(reason === 'blocked'
-				? 'blocked'
-				: error?.name === 'VersionError' ? 'future_schema' : 'unavailable'),
-		});
-		return new IndexedDbPriceSeedNoSeedStore(database);
+		return new IndexedDbPriceSeedNoSeedStore(
+			await openSeedConnection(factory, databaseName, databaseVersion, PRICE_SEED_NO_SEED_STORE),
+		);
 	}
 
 	get(vaultId: string, itemId: number): Promise<PriceSeedNoSeedRecordV1 | null> {
@@ -195,21 +227,13 @@ export class IndexedDbPriceSeedNoSeedStore {
 		});
 	}
 
-	close(): void { this.database.close(); }
+	close(): void { this.connection.close(); }
 
 	private transaction<T>(
 		mode: IDBTransactionMode,
 		operation: (store: IDBObjectStore, resolve: (value: T) => void, reject: (reason: unknown) => void) => void,
 	): Promise<T> {
-		return new Promise((resolve, reject) => {
-			let transaction: IDBTransaction;
-			try { transaction = this.database.transaction([PRICE_SEED_NO_SEED_STORE], mode); }
-			catch { reject(new PriceSeedCacheStoreError('unavailable')); return; }
-			transaction.onerror = () => reject(storeFailure(transaction.error));
-			transaction.onabort = () => reject(storeFailure(transaction.error));
-			try { operation(transaction.objectStore(PRICE_SEED_NO_SEED_STORE), resolve, reject); }
-			catch (error) { reject(error instanceof Error ? error : new PriceSeedCacheStoreError('unavailable')); }
-		});
+		return seedTransaction(this.connection, PRICE_SEED_NO_SEED_STORE, mode, operation);
 	}
 }
 

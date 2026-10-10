@@ -1,5 +1,5 @@
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
 	CATALOG_CACHE_STORE_NAME,
@@ -99,8 +99,9 @@ describe('IndexedDbCatalogRecordStore', () => {
 		const store = new IndexedDbCatalogRecordStore(database);
 
 		const write = store.set('key', 'value');
-		const onabort = transaction?.onabort;
-		if (onabort) onabort.call(transaction as IDBTransaction, new Event('abort'));
+		// DU-05: the transaction starts once the store has its connection, a microtask later.
+		await vi.waitFor(() => { expect(transaction?.onabort).toBeTypeOf('function'); });
+		transaction?.onabort?.call(transaction as IDBTransaction, new Event('abort'));
 
 		await expect(write).rejects.toThrow('aborted');
 	});
@@ -113,7 +114,7 @@ describe('IndexedDbCatalogRecordStore', () => {
 		await Promise.all(keys.slice(0, 3).map((key, index) => store.set(key, `{"value":${index}}`)));
 
 		let transactionCalls = 0;
-		const database = (store as unknown as { database: IDBDatabase }).database;
+		const database = await (store as unknown as { connection: { open(): Promise<IDBDatabase> } }).connection.open();
 		const openTransaction = database.transaction.bind(database);
 		database.transaction = ((...args: Parameters<IDBDatabase['transaction']>) => {
 			transactionCalls += 1;
@@ -150,8 +151,8 @@ describe('IndexedDbCatalogRecordStore', () => {
 		const store = new IndexedDbCatalogRecordStore(database);
 
 		const write = store.set('key', 'value');
-		const onerror = transaction?.onerror;
-		if (onerror) onerror.call(transaction as IDBTransaction, new Event('error'));
+		await vi.waitFor(() => { expect(transaction?.onerror).toBeTypeOf('function'); });
+		transaction?.onerror?.call(transaction as IDBTransaction, new Event('error'));
 
 		await expect(write).rejects.toThrow('Could not write');
 	});

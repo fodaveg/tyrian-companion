@@ -22,7 +22,12 @@ import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
 } from '../core/local-debug-persistence';
-import { openIndexedDb } from '../core/indexed-db-open';
+import {
+	ReopeningIndexedDbConnection,
+	isIndexedDbUnavailable,
+	openIndexedDb,
+	startIndexedDbTransaction,
+} from '../core/indexed-db-open';
 import {
 	EMITTED_ALERT_RETENTION,
 	isEmittedAlertRecord,
@@ -84,16 +89,17 @@ export interface HalloweenEpisodeReplacement {
 	shouldNotify: boolean;
 }
 
-/** Dedicated fail-closed store. Observation idempotence and first-seen are one transaction. */
+/**
+ * Dedicated fail-closed store. Observation idempotence and first-seen are one transaction.
+ *
+ * A connection the engine dropped, or that a `versionchange` other than an upgrade released, is replaced on the next
+ * operation (DU-05); `close()` and a real upgrade from another context end the store for good.
+ */
 export class IndexedDbHalloweenStore {
-	private closed = false;
-
 	constructor(
-		private readonly database: IDBDatabase,
+		private readonly connection: ReopeningIndexedDbConnection,
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
-	) {
-		database.onversionchange = () => { this.closed = true; database.close(); };
-	}
+	) {}
 
 	static async open(
 		factory: IDBFactory,
@@ -102,7 +108,7 @@ export class IndexedDbHalloweenStore {
 		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbHalloweenStore> {
 		const attempt = diagnostics.begin('halloween', 'open');
-		const opening = openIndexedDb({
+		const connection = new ReopeningIndexedDbConnection(async (hooks) => await openIndexedDb({
 			factory,
 			databaseName,
 			databaseVersion,
@@ -140,21 +146,21 @@ export class IndexedDbHalloweenStore {
 					indexes: [{ name: 'by-scope-emitted', keyPath: ['vaultId', 'accountRef', 'emittedAt'] }],
 				},
 			],
-			// No `onversionchange` handler, exactly as before: this store's methods
-			// keep using the connection and closing it underneath them would fail them.
+			// Until DU-05 the store closed itself for good on ANY `versionchange`. Now only a real upgrade does; a
+			// released connection, or one the engine closed, is replaced by the next operation.
+			...hooks,
 			toError: (reason, error) => new HalloweenStoreError(reason === 'blocked'
 				? 'blocked'
 				: error?.name === 'VersionError' ? 'future_schema' : 'unavailable'),
-		});
-		let database: IDBDatabase;
+		}), () => new HalloweenStoreError('unavailable'));
 		try {
-			database = await opening;
+			await connection.open();
 		} catch (error) {
 			attempt.failure(localDebugStorageFailureCode(error));
 			throw error;
 		}
 		attempt.success();
-		return new IndexedDbHalloweenStore(database, diagnostics);
+		return new IndexedDbHalloweenStore(connection, diagnostics);
 	}
 
 	async applyBackfill(
@@ -725,38 +731,43 @@ export class IndexedDbHalloweenStore {
 
 	close(): void {
 		const attempt = this.diagnostics.begin('halloween', 'close');
-		this.closed = true;
-		this.database.close();
+		this.connection.close();
 		attempt.success();
 	}
 
-	private run<T>(
+	/**
+	 * One transaction on the cached connection; a connection that died before it could start is replaced once (DU-05).
+	 * A dead connection throws before `body` runs, so running it again on a new one is safe.
+	 */
+	private async run<T>(
 		stores: string[], mode: IDBTransactionMode,
 		body: (transaction: IDBTransaction, resolve: (value: T) => void, reject: (reason: unknown) => void) => void,
 	): Promise<T> {
 		const attempt = this.diagnostics.begin('halloween', mode === 'readonly' ? 'read' : 'transaction');
-		if (this.closed) {
+		if (this.connection.isRetired) {
 			attempt.failure();
-			return Promise.reject(new HalloweenStoreError('unavailable'));
+			throw new HalloweenStoreError('unavailable');
 		}
-		return new Promise((resolve, reject) => {
-			const resolveObserved = (value: T): void => { attempt.success(); resolve(value); };
-			const rejectObserved = (reason: unknown): void => {
-				const error = reason instanceof Error ? reason : new HalloweenStoreError('unavailable');
-				attempt.failure(localDebugStorageFailureCode(error));
-				reject(error);
-			};
-			let tx: IDBTransaction;
-			try { tx = this.database.transaction(stores, mode); }
-			catch { rejectObserved(new HalloweenStoreError('unavailable')); return; }
-			tx.onerror = () => rejectObserved(storeError(tx.error));
-			tx.onabort = () => rejectObserved(storeError(tx.error));
-			try {
-				body(tx, resolveObserved, rejectObserved);
-			} catch (error) {
-				rejectObserved(error);
-			}
-		});
+		try {
+			const value = await this.connection.run((database) => new Promise<T>((resolve, reject) => {
+				// A throw here rejects this promise: the executor runs synchronously inside it.
+				const tx = startIndexedDbTransaction(database, stores, mode);
+				tx.onerror = () => reject(storeError(tx.error));
+				tx.onabort = () => reject(storeError(tx.error));
+				try {
+					body(tx, resolve, reject);
+				} catch (error) {
+					reject(error instanceof Error ? error : new HalloweenStoreError('unavailable'));
+				}
+			}));
+			attempt.success();
+			return value;
+		} catch (reason) {
+			const error = reason instanceof Error && !isIndexedDbUnavailable(reason)
+				? reason : new HalloweenStoreError('unavailable');
+			attempt.failure(localDebugStorageFailureCode(error));
+			throw error;
+		}
 	}
 }
 

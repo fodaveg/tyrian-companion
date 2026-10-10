@@ -3,7 +3,12 @@ import {
 	isDetectionQualityEvent,
 	type DetectionQualityEvent,
 } from './session-detection-quality';
-import { openIndexedDb } from '../core/indexed-db-open';
+import {
+	IndexedDbConnectionLostError,
+	ReopeningIndexedDbConnection,
+	openIndexedDb,
+	startIndexedDbTransaction,
+} from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
@@ -66,16 +71,41 @@ export class MemoryDetectionQualityStore implements DetectionQualityStore {
 	close(): void {}
 }
 
+/**
+ * A connection the engine dropped, or that a `versionchange` other than an upgrade released, is replaced on the next
+ * operation (DU-05); `close()` and a real upgrade end the store for good.
+ */
 export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
-	private database: IDBDatabase | null = null;
-	private opening: Promise<IDBDatabase> | null = null;
-	private unavailable = false;
+	private readonly connection: ReopeningIndexedDbConnection;
+	/** The diagnostic context of the operation that is opening, if one is; an open is recorded under it. */
+	private openingContext: LocalDebugPersistenceContext | undefined;
 
 	constructor(
-		private readonly factory: IDBFactory,
-		private readonly databaseName = DETECTION_QUALITY_DB_NAME,
+		factory: IDBFactory,
+		databaseName = DETECTION_QUALITY_DB_NAME,
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
-	) {}
+	) {
+		this.connection = new ReopeningIndexedDbConnection(async (hooks) => {
+			const attempt = this.diagnostics.begin('detection_quality', 'open', this.openingContext);
+			try {
+				const database = await openIndexedDb({
+					factory,
+					databaseName,
+					databaseVersion: DETECTION_QUALITY_DB_VERSION,
+					schema: [{ name: DETECTION_QUALITY_STORE_NAME }],
+					...hooks,
+					toError: (reason) => new Error(reason === 'blocked'
+						? 'Detection quality storage upgrade was blocked.'
+						: 'Could not open detection quality storage.'),
+				});
+				attempt.success();
+				return database;
+			} catch (error) {
+				attempt.failure(localDebugStorageFailureCode(error), error);
+				throw error;
+			}
+		}, () => new Error('Detection quality storage is unavailable.'));
+	}
 
 	async load(context?: LocalDebugPersistenceContext): Promise<DetectionQualityLoadResult> {
 		const attempt = this.diagnostics.begin('detection_quality', 'read', context);
@@ -111,77 +141,43 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 
 	close(): void {
 		const attempt = this.diagnostics.begin('detection_quality', 'close');
-		this.unavailable = true;
-		this.database?.close();
-		this.database = null;
+		this.connection.close();
 		attempt.success();
 	}
 
-	private async open(context?: LocalDebugPersistenceContext): Promise<IDBDatabase> {
-		if (this.unavailable) throw new Error('Detection quality storage is unavailable.');
-		if (this.database) return this.database;
-		if (this.opening) return this.opening;
-		const attempt = this.diagnostics.begin('detection_quality', 'open', context);
-		const opening = openIndexedDb({
-			factory: this.factory,
-			databaseName: this.databaseName,
-			databaseVersion: DETECTION_QUALITY_DB_VERSION,
-			schema: [{ name: DETECTION_QUALITY_STORE_NAME }],
-			accept: () => !this.unavailable,
-			onVersionChange: (database) => {
-				if (this.database === database) this.database = null;
-				this.unavailable = true;
-			},
-			toError: (reason) => new Error(reason === 'blocked'
-				? 'Detection quality storage upgrade was blocked.'
-				: 'Could not open detection quality storage.'),
-		});
-		this.opening = opening;
+	/**
+	 * One operation on the cached connection, replacing a dead one once (DU-05). An open it causes is recorded under
+	 * `context`; a second dead connection is this operation's failure, reported as the store being unavailable.
+	 */
+	private async run<T>(context: LocalDebugPersistenceContext | undefined, operation: (database: IDBDatabase) => Promise<T>): Promise<T> {
+		this.openingContext = context;
 		try {
-			const database = await opening;
-			this.database = database;
-			attempt.success();
-			return database;
+			return await this.connection.run(operation);
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
-			throw error;
-		} finally {
-			if (this.opening === opening) this.opening = null;
+			throw error instanceof IndexedDbConnectionLostError ? new Error('Detection quality storage is unavailable.') : error;
 		}
 	}
 
 	private async getAll(context?: LocalDebugPersistenceContext): Promise<unknown[]> {
-		const database = await this.open(context);
-		return await new Promise((resolve, reject) => {
-			let transaction: IDBTransaction;
-			try {
-				transaction = database.transaction(DETECTION_QUALITY_STORE_NAME, 'readonly');
-			} catch {
-				reject(new Error('Detection quality storage is unavailable.'));
-				return;
-			}
+		return await this.run(context, (database) => new Promise((resolve, reject) => {
+			// A throw here rejects this promise: the executor runs synchronously inside it.
+			const transaction = startIndexedDbTransaction(database, DETECTION_QUALITY_STORE_NAME, 'readonly');
 			const request = transaction.objectStore(DETECTION_QUALITY_STORE_NAME).getAll();
 			let values: unknown[] = [];
 			request.onsuccess = () => { values = request.result as unknown[]; };
 			transaction.oncomplete = () => resolve(values);
 			transaction.onerror = () => reject(new Error('Could not read detection quality storage.'));
 			transaction.onabort = () => reject(new Error('Detection quality read was aborted.'));
-		});
+		}));
 	}
 
 	private async appendTransaction(
 		event: DetectionQualityEvent,
 		context?: LocalDebugPersistenceContext,
 	): Promise<DetectionQualityAppendResult> {
-		const database = await this.open(context);
-		return await new Promise((resolve, reject) => {
-			let transaction: IDBTransaction;
-			try {
-				transaction = database.transaction(DETECTION_QUALITY_STORE_NAME, 'readwrite');
-			} catch {
-				reject(new Error('Detection quality storage is unavailable.'));
-				return;
-			}
+		return await this.run(context, (database) => new Promise((resolve, reject) => {
+			// A dead connection throws here, before anything was read or written, so running it again is safe.
+			const transaction = startIndexedDbTransaction(database, DETECTION_QUALITY_STORE_NAME, 'readwrite');
 			const store = transaction.objectStore(DETECTION_QUALITY_STORE_NAME);
 			const request = store.get(event.eventId);
 			let result: DetectionQualityAppendResult = { status: 'error', code: 'unavailable' };
@@ -206,6 +202,6 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 			transaction.onabort = () => reject(new Error(
 				mutationFailed ? 'Detection quality mutation failed.' : 'Detection quality update was aborted.',
 			));
-		});
+		}));
 	}
 }

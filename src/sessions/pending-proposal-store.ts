@@ -17,7 +17,12 @@
  * adopted, as in `session-storage-scope.ts`: checking for the common queue must not create it.
  */
 import { normalizeProposalQueueRecord, type PendingProposalQueueRecord } from './pending-proposal-model';
-import { openIndexedDb } from '../core/indexed-db-open';
+import {
+	IndexedDbConnectionLostError,
+	ReopeningIndexedDbConnection,
+	openIndexedDb,
+	startIndexedDbTransaction,
+} from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
@@ -66,10 +71,14 @@ export class MemoryPendingProposalStore implements PendingProposalStore {
 	close(): void {}
 }
 
+/**
+ * A connection the engine dropped, or that a `versionchange` other than an upgrade released, is replaced on the next
+ * operation (DU-05); `close()` and a real upgrade end the queue for good.
+ */
 export class IndexedDbPendingProposalStore implements PendingProposalStore {
-	private database: IDBDatabase | null = null;
-	private opening: Promise<IDBDatabase> | null = null;
-	private unavailable = false;
+	private readonly connection: ReopeningIndexedDbConnection;
+	/** The diagnostic context of the operation that is opening, if one is; an open is recorded under it. */
+	private openingContext: LocalDebugPersistenceContext | undefined;
 	/** DU-03: this store's own record is known to exist, or the common queue had nothing to adopt; it is never read again. */
 	private adoptionSettled = false;
 
@@ -79,19 +88,44 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 	 */
 	constructor(
 		private readonly factory: IDBFactory,
-		private readonly databaseName = PROPOSAL_QUEUE_DB_NAME,
+		databaseName = PROPOSAL_QUEUE_DB_NAME,
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
 		private readonly adoptFrom: string | null = null,
-	) {}
+	) {
+		this.connection = new ReopeningIndexedDbConnection(async (hooks) => {
+			const attempt = this.diagnostics.begin('pending_proposal', 'open', this.openingContext);
+			try {
+				const database = await openIndexedDb({
+					factory: this.factory,
+					databaseName,
+					databaseVersion: PROPOSAL_QUEUE_DB_VERSION,
+					schema: [{ name: PROPOSAL_QUEUE_STORE_NAME }],
+					...hooks,
+					toError: (reason) => new Error(reason === 'blocked'
+						? 'Confirmation queue upgrade was blocked.'
+						: reason === 'refused'
+							? 'Confirmation queue was closed while opening.'
+							: 'Could not open confirmation queue.'),
+				});
+				attempt.success();
+				return database;
+			} catch (error) {
+				attempt.failure(localDebugStorageFailureCode(error), error);
+				throw error;
+			}
+		}, () => new Error('Confirmation queue is unavailable.'));
+	}
 
 	async read(context?: LocalDebugPersistenceContext): Promise<unknown> {
 		const attempt = this.diagnostics.begin('pending_proposal', 'read', context);
 		try {
-			const database = await this.open(context);
-			const seed = await this.adoptionSeed(database);
-			const own = await readQueueRecord(database);
+			const value = await this.run(context, async (database) => {
+				const seed = await this.adoptionSeed(database);
+				const own = await readQueueRecord(database);
+				return own === undefined && seed !== undefined ? structuredClone(seed) : own;
+			});
 			attempt.success();
-			return own === undefined && seed !== undefined ? structuredClone(seed) : own;
+			return value;
 		} catch (error) {
 			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
@@ -104,34 +138,36 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 	): Promise<T> {
 		const attempt = this.diagnostics.begin('pending_proposal', 'transaction', context);
 		try {
-			const database = await this.open(context);
-			// Read before the transaction (it cannot wait for another database), used only if the own record is still absent in it.
-			const seed = await this.adoptionSeed(database);
 			let ownRecordExists = false;
-			const value = await new Promise<T>((resolve, reject) => {
-			const transaction = database.transaction(PROPOSAL_QUEUE_STORE_NAME, 'readwrite');
-			const store = transaction.objectStore(PROPOSAL_QUEUE_STORE_NAME);
-			const request = store.get(QUEUE_KEY);
-			let result!: T;
-			let mutationFailed = false;
-			request.onsuccess = () => {
-				try {
-					const own = request.result as unknown;
-					const adopting = own === undefined && seed !== undefined;
-					const mutation = mutator(adopting ? structuredClone(seed) : own);
-					result = mutation.result;
-					// An adoption is written even by a mutation that writes nothing, so it happens once.
-					const next = mutation.next ?? (adopting ? seed : undefined);
-					if (next) store.put(structuredClone(next), QUEUE_KEY);
-					ownRecordExists = own !== undefined || next !== undefined;
-				} catch {
-					mutationFailed = true;
-					transaction.abort();
-				}
-			};
-			transaction.oncomplete = () => resolve(result);
-			transaction.onerror = () => reject(new Error('Could not update confirmation queue.'));
-			transaction.onabort = () => reject(new Error(mutationFailed ? 'Confirmation queue mutation failed.' : 'Confirmation queue update was aborted.'));
+			const value = await this.run(context, async (database) => {
+				// Read before the transaction (it cannot wait for another database), used only if the own record is still absent in it.
+				const seed = await this.adoptionSeed(database);
+				return await new Promise<T>((resolve, reject) => {
+					// A dead connection throws here, before the mutator ran, so running all of it again is safe.
+					const transaction = startIndexedDbTransaction(database, PROPOSAL_QUEUE_STORE_NAME, 'readwrite');
+					const store = transaction.objectStore(PROPOSAL_QUEUE_STORE_NAME);
+					const request = store.get(QUEUE_KEY);
+					let result!: T;
+					let mutationFailed = false;
+					request.onsuccess = () => {
+						try {
+							const own = request.result as unknown;
+							const adopting = own === undefined && seed !== undefined;
+							const mutation = mutator(adopting ? structuredClone(seed) : own);
+							result = mutation.result;
+							// An adoption is written even by a mutation that writes nothing, so it happens once.
+							const next = mutation.next ?? (adopting ? seed : undefined);
+							if (next) store.put(structuredClone(next), QUEUE_KEY);
+							ownRecordExists = own !== undefined || next !== undefined;
+						} catch {
+							mutationFailed = true;
+							transaction.abort();
+						}
+					};
+					transaction.oncomplete = () => resolve(result);
+					transaction.onerror = () => reject(new Error('Could not update confirmation queue.'));
+					transaction.onabort = () => reject(new Error(mutationFailed ? 'Confirmation queue mutation failed.' : 'Confirmation queue update was aborted.'));
+				});
 			});
 			if (ownRecordExists) this.adoptionSettled = true;
 			attempt.success();
@@ -144,10 +180,21 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 
 	close(): void {
 		const attempt = this.diagnostics.begin('pending_proposal', 'close');
-		this.unavailable = true;
-		this.database?.close();
-		this.database = null;
+		this.connection.close();
 		attempt.success();
+	}
+
+	/**
+	 * One operation on the cached connection, replacing a dead one once (DU-05). An open it causes is recorded under
+	 * `context`; a second dead connection is this operation's failure, reported as the queue being unavailable.
+	 */
+	private async run<T>(context: LocalDebugPersistenceContext | undefined, operation: (database: IDBDatabase) => Promise<T>): Promise<T> {
+		this.openingContext = context;
+		try {
+			return await this.connection.run(operation);
+		} catch (error) {
+			throw error instanceof IndexedDbConnectionLostError ? new Error('Confirmation queue is unavailable.') : error;
+		}
 	}
 
 	/**
@@ -192,43 +239,15 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 		}
 	}
 
-	private async open(context?: LocalDebugPersistenceContext): Promise<IDBDatabase> {
-		if (this.unavailable) throw new Error('Confirmation queue is unavailable.');
-		if (this.database) return this.database;
-		if (this.opening) return this.opening;
-		const attempt = this.diagnostics.begin('pending_proposal', 'open', context);
-		const opening = openIndexedDb({
-			factory: this.factory,
-			databaseName: this.databaseName,
-			databaseVersion: PROPOSAL_QUEUE_DB_VERSION,
-			schema: [{ name: PROPOSAL_QUEUE_STORE_NAME }],
-			accept: () => !this.unavailable,
-			onVersionChange: () => { this.database = null; this.unavailable = true; },
-			toError: (reason) => new Error(reason === 'blocked'
-				? 'Confirmation queue upgrade was blocked.'
-				: reason === 'refused'
-					? 'Confirmation queue was closed while opening.'
-					: 'Could not open confirmation queue.'),
-		});
-		this.opening = opening;
-		try {
-			const database = await opening;
-			this.database = database;
-			attempt.success();
-			return database;
-		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
-			throw error;
-		} finally {
-			if (this.opening === opening) this.opening = null;
-		}
-	}
 }
 
-/** The queue record of `database`, in a read-only transaction of its own. */
+/**
+ * The queue record of `database`, in a read-only transaction of its own. On the store's own connection a dead one throws
+ * `IndexedDbConnectionLostError`, which is what lets the operation open a new one.
+ */
 function readQueueRecord(database: IDBDatabase): Promise<unknown> {
 	return new Promise((resolve, reject) => {
-		const transaction = database.transaction(PROPOSAL_QUEUE_STORE_NAME, 'readonly');
+		const transaction = startIndexedDbTransaction(database, PROPOSAL_QUEUE_STORE_NAME, 'readonly');
 		const request = transaction.objectStore(PROPOSAL_QUEUE_STORE_NAME).get(QUEUE_KEY);
 		let value: unknown;
 		request.onsuccess = () => { value = request.result as unknown; };

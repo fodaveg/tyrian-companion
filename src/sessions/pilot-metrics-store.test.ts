@@ -16,8 +16,9 @@ describe('IndexedDbPilotMetricsStore', () => {
 	it('is lazy, persists the local profile separately and keeps observations until explicit clear', async () => {
 		const factory = new IDBFactory();
 		const name = databaseName('retention');
+		const opened = vi.spyOn(factory, 'open');
 		const store = new IndexedDbPilotMetricsStore(factory, 'vault-a', name);
-		expect(store['database']).toBeNull();
+		expect(opened).not.toHaveBeenCalled();
 		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unconfigured' });
 		await expect(store.saveProfile(ENV)).resolves.toMatchObject({ status: 'ok' });
 		await expect(store.ensureObservation(await presented('proposal-a'))).resolves.toMatchObject({ status: 'ok' });
@@ -218,8 +219,7 @@ describe('IndexedDbPilotMetricsStore', () => {
 		const captured = await store.load();
 		if (captured.status !== 'ok') throw new Error('Expected reviewable profile.');
 		await store.saveProfile({ ...ENV, platformVersion: '10.0-2' });
-		const database = await store['database'];
-		if (!database) throw new Error('Expected open database.');
+		const database = await store['connection'].open();
 		const corrupt = database.transaction(PILOT_METRICS_PROFILE_STORE, 'readwrite');
 		corrupt.objectStore(PILOT_METRICS_PROFILE_STORE).put({ invalid: 'profile' }, 'active');
 		await transactionComplete(corrupt);

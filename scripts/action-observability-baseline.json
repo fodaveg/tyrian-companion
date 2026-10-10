@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 588,
-		"promise_catch": 60,
-		"void_expression": 127,
-		"callback_registration": 231
+		"catch_clause": 587,
+		"promise_catch": 59,
+		"void_expression": 126,
+		"callback_registration": 230
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -2278,11 +2278,27 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "3f726f5313b47ba5a5b816478dbc0d93a1ca86e2",
+					"kind": "catch_clause",
+					"line": 56,
+					"column": 6,
+					"endLine": 59,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "constructor",
+						"justification": "The \"constructor\" owner builds the connect callback, which records a failed open on the managed_assets_pointer probe (attempt.failure) and then does a \"rethrow\", so the read or compareAndSet that caused the open fails and records its own outcome."
+					},
+					"reason": "Allowlisted catch_clause: The \"constructor\" owner builds the connect callback, which records a failed open on the managed_assets_pointer probe (attempt.failure) and then does a \"rethrow\", so the read or compareAndSet that caused the open fails and records its own outcome. Verified recovery: \"rethrow\" in \"constructor\"."
+				},
+				{
 					"id": "2383b91086b30cc20d4c0c2eb151ba2b30e7aeeb",
 					"kind": "catch_clause",
-					"line": 45,
+					"line": 69,
 					"column": 5,
-					"endLine": 48,
+					"endLine": 72,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2296,9 +2312,9 @@
 				{
 					"id": "38f1328201f7f0eb55455416a334a0e399e2acae",
 					"kind": "catch_clause",
-					"line": 68,
+					"line": 92,
 					"column": 7,
-					"endLine": 68,
+					"endLine": 92,
 					"endColumn": 37,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2312,9 +2328,9 @@
 				{
 					"id": "9f1f4e93fd29231aa7fd9caae5fc1db7385f82e9",
 					"kind": "catch_clause",
-					"line": 77,
+					"line": 101,
 					"column": 5,
-					"endLine": 80,
+					"endLine": 104,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2326,27 +2342,27 @@
 					"reason": "Allowlisted catch_clause: The \"compareAndSet\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"compareAndSet\"."
 				},
 				{
-					"id": "449ee9853c07fe2a9b1b5516975c9137778db9ed",
+					"id": "13c5a09b22aba0fa13f601b81b0b03dd6864858c",
 					"kind": "catch_clause",
-					"line": 110,
+					"line": 117,
 					"column": 5,
-					"endLine": 113,
+					"endLine": 119,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
-						"scope": "open",
-						"justification": "The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed."
+						"scope": "run",
+						"justification": "The \"run\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes the pointer's own unavailable error and anything else passes unchanged; read and compareAndSet record it through attempt.failure."
 					},
-					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes the pointer's own unavailable error and anything else passes unchanged; read and compareAndSet record it through attempt.failure. Verified recovery: \"rethrow\" in \"run\"."
 				},
 				{
 					"id": "98930ced093e88ac3bdfd757c2d4863d87a1f516",
 					"kind": "callback_registration",
-					"line": 125,
+					"line": 129,
 					"column": 16,
-					"endLine": 129,
+					"endLine": 133,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -2361,9 +2377,9 @@
 				{
 					"id": "d2c0477f0b881c70117b3144367bcd02975dbc1a",
 					"kind": "catch_clause",
-					"line": 157,
+					"line": 161,
 					"column": 84,
-					"endLine": 157,
+					"endLine": 161,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2582,9 +2598,9 @@
 				{
 					"id": "cdf62880b3c99e0db709800591131cb82210dfa5",
 					"kind": "catch_clause",
-					"line": 54,
+					"line": 59,
 					"column": 5,
-					"endLine": 57,
+					"endLine": 62,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2598,9 +2614,9 @@
 				{
 					"id": "4dae67d2ee07e40789577afd372103f15992117e",
 					"kind": "catch_clause",
-					"line": 88,
+					"line": 93,
 					"column": 5,
-					"endLine": 91,
+					"endLine": 96,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2614,9 +2630,9 @@
 				{
 					"id": "84c1462bcb8b2692961c4bfadac09b04fb5fcf28",
 					"kind": "catch_clause",
-					"line": 127,
+					"line": 132,
 					"column": 5,
-					"endLine": 130,
+					"endLine": 135,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2630,9 +2646,9 @@
 				{
 					"id": "b02d842ec1000a02302d34f553ed444b7fb2c450",
 					"kind": "catch_clause",
-					"line": 160,
+					"line": 165,
 					"column": 5,
-					"endLine": 163,
+					"endLine": 168,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2646,9 +2662,9 @@
 				{
 					"id": "b6463818d43605f3a61935f0214c1336ccd10eca",
 					"kind": "catch_clause",
-					"line": 175,
+					"line": 180,
 					"column": 5,
-					"endLine": 178,
+					"endLine": 183,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2662,9 +2678,9 @@
 				{
 					"id": "0abb02ddfaef4043dd96b87fa163e63e81e8d719",
 					"kind": "catch_clause",
-					"line": 220,
+					"line": 225,
 					"column": 4,
-					"endLine": 225,
+					"endLine": 230,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2678,9 +2694,9 @@
 				{
 					"id": "2f6d3f149ca6e97d1ca99cb517340649f84be9ce",
 					"kind": "catch_clause",
-					"line": 254,
+					"line": 270,
 					"column": 5,
-					"endLine": 257,
+					"endLine": 273,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2692,59 +2708,43 @@
 					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
 				},
 				{
-					"id": "f6ec28ae76f50d73af5995496090cb28f18da7f8",
+					"id": "c9ef2b9cc25b1f53dc197589b1b37cc7e8646580",
 					"kind": "catch_clause",
-					"line": 268,
+					"line": 340,
 					"column": 6,
-					"endLine": 272,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "get",
-						"justification": "The \"get\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"get\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"get\"."
-				},
-				{
-					"id": "df62c0ad0664f2bc898894bd29148d4797132d91",
-					"kind": "catch_clause",
-					"line": 292,
-					"column": 6,
-					"endLine": 296,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "getMany",
-						"justification": "The \"getMany\" owner explicitly handles \"fallback_return\": Opening the readonly IndexedDB transaction for the batched read records the failed attempt on the probe (attempt.failure) and rejects with a typed error, mirroring the single-record get path; the caller's own catch records the terminal outcome."
-					},
-					"reason": "Allowlisted catch_clause: The \"getMany\" owner explicitly handles \"fallback_return\": Opening the readonly IndexedDB transaction for the batched read records the failed attempt on the probe (attempt.failure) and rejects with a typed error, mirroring the single-record get path; the caller's own catch records the terminal outcome. Verified recovery: \"fallback_return\" in \"getMany\"."
-				},
-				{
-					"id": "02b487afec3312512c6501aaf264a871e8e963d3",
-					"kind": "catch_clause",
-					"line": 338,
-					"column": 6,
-					"endLine": 344,
+					"endLine": 345,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "write",
-						"justification": "The \"write\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"write\" catch aborts the transaction when a request throws mid-batch, so the earlier puts never auto-commit, and rejects with a \"fallback_return\"; observed() records that rejection on the catalog probe with its engine code."
 					},
-					"reason": "Allowlisted catch_clause: The \"write\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"write\"."
+					"reason": "Allowlisted catch_clause: The \"write\" catch aborts the transaction when a request throws mid-batch, so the earlier puts never auto-commit, and rejects with a \"fallback_return\"; observed() records that rejection on the catalog probe with its engine code. Verified recovery: \"fallback_return\" in \"write\"."
+				},
+				{
+					"id": "5124f26bd63f5134f717b38c6f6e20c2fd2f7b0d",
+					"kind": "catch_clause",
+					"line": 365,
+					"column": 5,
+					"endLine": 373,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "observed",
+						"justification": "The \"observed\" catch is a \"rethrow\" that records the one outcome of every catalog transaction on its probe (attempt.failure), with the engine reason of a lost connection, before handing the error to the caller."
+					},
+					"reason": "Allowlisted catch_clause: The \"observed\" catch is a \"rethrow\" that records the one outcome of every catalog transaction on its probe (attempt.failure), with the engine reason of a lost connection, before handing the error to the caller. Verified recovery: \"rethrow\" in \"observed\"."
 				},
 				{
 					"id": "e5674719cfeacda493a8e0cd1100d30cefc04975",
 					"kind": "catch_clause",
-					"line": 367,
+					"line": 395,
 					"column": 4,
-					"endLine": 369,
+					"endLine": 397,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3039,6 +3039,22 @@
 						"justification": "Second \"withIndexedDbReopen\" catch, always a \"rethrow\": it only drops a connection that was lost again before the error goes on to the store operation that called, which owns the diagnostic."
 					},
 					"reason": "Allowlisted catch_clause: Second \"withIndexedDbReopen\" catch, always a \"rethrow\": it only drops a connection that was lost again before the error goes on to the store operation that called, which owns the diagnostic. Verified recovery: \"rethrow\" in \"withIndexedDbReopen\"."
+				},
+				{
+					"id": "5061a855c2cd96ddff3dc2e78e472e8a12588c4d",
+					"kind": "catch_clause",
+					"line": 312,
+					"column": 29,
+					"endLine": 312,
+					"endColumn": 99,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "discard",
+						"justification": "The \"discard\" catch is an \"intentional_noop\": closing a connection that is dropped because it is already dead has nothing to report, and the store operation that dropped it records its own outcome."
+					},
+					"reason": "Allowlisted catch_clause: The \"discard\" catch is an \"intentional_noop\": closing a connection that is dropped because it is already dead has nothing to report, and the store operation that dropped it records its own outcome. Verified recovery: \"intentional_noop\" in \"discard\"."
 				}
 			]
 		},
@@ -4300,9 +4316,9 @@
 				{
 					"id": "b1849d4da06ad60a1a335db4130cbe560cca07c9",
 					"kind": "catch_clause",
-					"line": 115,
+					"line": 130,
 					"column": 5,
-					"endLine": 118,
+					"endLine": 133,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4316,9 +4332,9 @@
 				{
 					"id": "cc0736dba9f571aad4041fc75df6eca719d76f8c",
 					"kind": "catch_clause",
-					"line": 162,
+					"line": 177,
 					"column": 7,
-					"endLine": 162,
+					"endLine": 177,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4332,9 +4348,9 @@
 				{
 					"id": "fb9139a6d2cb569d8add9ab5f591a51912e74ba8",
 					"kind": "catch_clause",
-					"line": 210,
+					"line": 225,
 					"column": 7,
-					"endLine": 210,
+					"endLine": 225,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4348,9 +4364,9 @@
 				{
 					"id": "d2c5a0e1fc9c742ac99b4f3d1222465bcb6b6f57",
 					"kind": "callback_registration",
-					"line": 216,
+					"line": 231,
 					"column": 10,
-					"endLine": 217,
+					"endLine": 232,
 					"endColumn": 77,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4365,9 +4381,9 @@
 				{
 					"id": "583020e9ff297309fac9ab3103ec978b8f578258",
 					"kind": "catch_clause",
-					"line": 256,
+					"line": 271,
 					"column": 9,
-					"endLine": 256,
+					"endLine": 271,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4381,9 +4397,9 @@
 				{
 					"id": "77c270a2c98c0cb8044c4c63239a841b57baa18d",
 					"kind": "catch_clause",
-					"line": 258,
+					"line": 273,
 					"column": 7,
-					"endLine": 258,
+					"endLine": 273,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4397,9 +4413,9 @@
 				{
 					"id": "02d30aaf35ca2a78f76fb8d0ff6af5d3f822aba8",
 					"kind": "catch_clause",
-					"line": 294,
+					"line": 309,
 					"column": 9,
-					"endLine": 294,
+					"endLine": 309,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4413,9 +4429,9 @@
 				{
 					"id": "c04a581b13492243a0d9413282a141b71b77ddaa",
 					"kind": "catch_clause",
-					"line": 296,
+					"line": 311,
 					"column": 7,
-					"endLine": 296,
+					"endLine": 311,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4429,9 +4445,9 @@
 				{
 					"id": "a6feab46737cb53fc91ad9830bea276e7fbabe79",
 					"kind": "callback_registration",
-					"line": 302,
+					"line": 317,
 					"column": 10,
-					"endLine": 307,
+					"endLine": 322,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4446,9 +4462,9 @@
 				{
 					"id": "5a16aa2d52c171db69bf6d63e77bb3e6a66d6155",
 					"kind": "callback_registration",
-					"line": 311,
+					"line": 326,
 					"column": 10,
-					"endLine": 316,
+					"endLine": 331,
 					"endColumn": 90,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4463,9 +4479,9 @@
 				{
 					"id": "2f0bf722fc0331ea188e691cee908425ce8bad5e",
 					"kind": "catch_clause",
-					"line": 354,
+					"line": 369,
 					"column": 6,
-					"endLine": 354,
+					"endLine": 369,
 					"endColumn": 67,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4479,9 +4495,9 @@
 				{
 					"id": "d1a8343202dbde62e42d390f286399b5f39918cb",
 					"kind": "catch_clause",
-					"line": 374,
+					"line": 389,
 					"column": 7,
-					"endLine": 374,
+					"endLine": 389,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4495,9 +4511,9 @@
 				{
 					"id": "1ea6f8d30579f932105353eb6a37abff4617bd77",
 					"kind": "catch_clause",
-					"line": 388,
+					"line": 403,
 					"column": 7,
-					"endLine": 388,
+					"endLine": 403,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4511,9 +4527,9 @@
 				{
 					"id": "1c861cde9436cd3735480f2c1f2f090d33b3bcb3",
 					"kind": "catch_clause",
-					"line": 420,
+					"line": 435,
 					"column": 8,
-					"endLine": 420,
+					"endLine": 435,
 					"endColumn": 61,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4527,9 +4543,9 @@
 				{
 					"id": "d9be817acc7f803c165e58d32db8971394e0ab55",
 					"kind": "catch_clause",
-					"line": 425,
+					"line": 440,
 					"column": 6,
-					"endLine": 425,
+					"endLine": 440,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4543,9 +4559,9 @@
 				{
 					"id": "0cdeed1183023440e70f975cc1ed4bc8216dfa6e",
 					"kind": "catch_clause",
-					"line": 430,
+					"line": 445,
 					"column": 6,
-					"endLine": 430,
+					"endLine": 445,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4559,9 +4575,9 @@
 				{
 					"id": "4f263d7614a4a06c4a043511685cc964b53f8029",
 					"kind": "catch_clause",
-					"line": 478,
+					"line": 493,
 					"column": 5,
-					"endLine": 478,
+					"endLine": 493,
 					"endColumn": 31,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4575,9 +4591,9 @@
 				{
 					"id": "323994a13f104459e75c9c4f955d9ff18b33e4e8",
 					"kind": "catch_clause",
-					"line": 505,
+					"line": 520,
 					"column": 7,
-					"endLine": 505,
+					"endLine": 520,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4591,9 +4607,9 @@
 				{
 					"id": "5171a50f019b5d544f9adffe271a7ac0a939e751",
 					"kind": "catch_clause",
-					"line": 518,
+					"line": 533,
 					"column": 7,
-					"endLine": 518,
+					"endLine": 533,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4607,9 +4623,9 @@
 				{
 					"id": "5a23c551228ea5ea64f1632c0e95124da61fe4ec",
 					"kind": "catch_clause",
-					"line": 532,
+					"line": 547,
 					"column": 5,
-					"endLine": 532,
+					"endLine": 547,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4621,36 +4637,36 @@
 					"reason": "Allowlisted catch_clause: The \"readCursorAll\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"readCursorAll\"."
 				},
 				{
-					"id": "8c78e699af0446cc6fe34120d95f124aeef828e6",
+					"id": "c500a9beda00bde9b6f65e7667a7cbee3753bd54",
 					"kind": "catch_clause",
-					"line": 555,
-					"column": 4,
-					"endLine": 555,
-					"endColumn": 80,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"transaction\"."
-				},
-				{
-					"id": "e2ef0f6bc991b44faa232a0ebc74936d27693c96",
-					"kind": "catch_clause",
-					"line": 560,
-					"column": 6,
-					"endLine": 562,
-					"endColumn": 5,
+					"line": 573,
+					"column": 7,
+					"endLine": 575,
+					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"transaction\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise, and the outer catch of the same method records it on the price_history probe before rethrowing."
 					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
+					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise, and the outer catch of the same method records it on the price_history probe before rethrowing. Verified recovery: \"local_recovery\" in \"transaction\"."
+				},
+				{
+					"id": "c0df98b1a116107e1f5ca13f292866a8ed59d6a4",
+					"kind": "catch_clause",
+					"line": 579,
+					"column": 5,
+					"endLine": 584,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "transaction",
+						"justification": "The \"transaction\" catch is a \"rethrow\" that records the one outcome on the price_history probe (attempt.failure) and turns a connection lost after the one reopen (DU-05) into the store's unavailable error."
+					},
+					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"rethrow\" that records the one outcome on the price_history probe (attempt.failure) and turns a connection lost after the one reopen (DU-05) into the store's unavailable error. Verified recovery: \"rethrow\" in \"transaction\"."
 				}
 			]
 		},
@@ -4849,43 +4865,43 @@
 					"reason": "Allowlisted catch_clause: The \"get\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"get\"."
 				},
 				{
-					"id": "6d5740faf083958deb5d4ce46e1698ebbac065c9",
+					"id": "567a2cac01b616323c32482ea328b3b2cde0578b",
 					"kind": "catch_clause",
-					"line": 88,
+					"line": 127,
 					"column": 4,
-					"endLine": 88,
-					"endColumn": 74,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"transaction\"."
-				},
-				{
-					"id": "22b7e7682889af11aabe65655b78f822ec0307b0",
-					"kind": "catch_clause",
-					"line": 92,
-					"column": 4,
-					"endLine": 92,
+					"endLine": 127,
 					"endColumn": 107,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "seedTransaction",
+						"justification": "The \"seedTransaction\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise with the seed store's own error, which the panel or the bulk refresh that called it records."
 					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
+					"reason": "Allowlisted catch_clause: The \"seedTransaction\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise with the seed store's own error, which the panel or the bulk refresh that called it records. Verified recovery: \"local_recovery\" in \"seedTransaction\"."
+				},
+				{
+					"id": "cd5053f12db2ef126581e9c2592809846df5949d",
+					"kind": "catch_clause",
+					"line": 129,
+					"column": 4,
+					"endLine": 131,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "seedTransaction",
+						"justification": "The \"seedTransaction\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes PriceSeedCacheStoreError unavailable and anything else passes unchanged to the panel or bulk refresh that records it."
+					},
+					"reason": "Allowlisted catch_clause: The \"seedTransaction\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes PriceSeedCacheStoreError unavailable and anything else passes unchanged to the panel or bulk refresh that records it. Verified recovery: \"rethrow\" in \"seedTransaction\"."
 				},
 				{
 					"id": "18244d3a74c4b6cdc96a93d7d81bdff885d2c3a3",
 					"kind": "catch_clause",
-					"line": 174,
+					"line": 206,
 					"column": 5,
-					"endLine": 174,
+					"endLine": 206,
 					"endColumn": 37,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4895,38 +4911,6 @@
 						"justification": "The \"get\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"get\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"get\"."
-				},
-				{
-					"id": "34fb422865e19de4ac70f3158c22139d64961f31",
-					"kind": "catch_clause",
-					"line": 207,
-					"column": 4,
-					"endLine": 207,
-					"endColumn": 74,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"transaction\"."
-				},
-				{
-					"id": "d0abd85511796492a03431562b2b4352a419b0c5",
-					"kind": "catch_clause",
-					"line": 211,
-					"column": 4,
-					"endLine": 211,
-					"endColumn": 107,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
 				}
 			]
 		},
@@ -5781,9 +5765,9 @@
 				{
 					"id": "d452b247e6da341fec5acf1db3c78d55c577044d",
 					"kind": "catch_clause",
-					"line": 152,
+					"line": 158,
 					"column": 5,
-					"endLine": 155,
+					"endLine": 161,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5797,9 +5781,9 @@
 				{
 					"id": "d759a930484ae53ddc4ae3e793b8c6b5b78c55e8",
 					"kind": "catch_clause",
-					"line": 191,
+					"line": 197,
 					"column": 7,
-					"endLine": 191,
+					"endLine": 197,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5813,9 +5797,9 @@
 				{
 					"id": "635071b44b7e01a68fa355c3e337aa74b7317625",
 					"kind": "catch_clause",
-					"line": 206,
+					"line": 212,
 					"column": 7,
-					"endLine": 206,
+					"endLine": 212,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5829,9 +5813,9 @@
 				{
 					"id": "f1967228ef313946aec408c51faf8beacf6f4fce",
 					"kind": "catch_clause",
-					"line": 235,
+					"line": 241,
 					"column": 7,
-					"endLine": 235,
+					"endLine": 241,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5845,9 +5829,9 @@
 				{
 					"id": "2389bda0ccb8406804fa1e718aeef5749b2186a0",
 					"kind": "catch_clause",
-					"line": 254,
+					"line": 260,
 					"column": 9,
-					"endLine": 254,
+					"endLine": 260,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5861,9 +5845,9 @@
 				{
 					"id": "c1f2534f180d440db22d5c5587d232a581360d01",
 					"kind": "catch_clause",
-					"line": 257,
+					"line": 263,
 					"column": 23,
-					"endLine": 257,
+					"endLine": 263,
 					"endColumn": 67,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5877,9 +5861,9 @@
 				{
 					"id": "f78045290d1675f268734e437c33c85a3a4a02e5",
 					"kind": "catch_clause",
-					"line": 280,
+					"line": 286,
 					"column": 7,
-					"endLine": 280,
+					"endLine": 286,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5893,9 +5877,9 @@
 				{
 					"id": "06d1cceb9201018ac093415dff38fd4674c48737",
 					"kind": "catch_clause",
-					"line": 289,
+					"line": 295,
 					"column": 8,
-					"endLine": 289,
+					"endLine": 295,
 					"endColumn": 52,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5909,9 +5893,9 @@
 				{
 					"id": "2c38addc6bcdeadd39c4e645fd068caf0b05e05d",
 					"kind": "catch_clause",
-					"line": 326,
+					"line": 332,
 					"column": 11,
-					"endLine": 326,
+					"endLine": 332,
 					"endColumn": 55,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5925,9 +5909,9 @@
 				{
 					"id": "48a4e5c840749fe2a4c2733558471c0c97139db3",
 					"kind": "catch_clause",
-					"line": 328,
+					"line": 334,
 					"column": 9,
-					"endLine": 328,
+					"endLine": 334,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5941,9 +5925,9 @@
 				{
 					"id": "59b85bcda969fd8184f481b33a46d83ab46a0e2b",
 					"kind": "catch_clause",
-					"line": 331,
+					"line": 337,
 					"column": 23,
-					"endLine": 331,
+					"endLine": 337,
 					"endColumn": 67,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5957,9 +5941,9 @@
 				{
 					"id": "54d9a9d33761ab8e2e62b685b6e72f88ef1f5c7a",
 					"kind": "catch_clause",
-					"line": 353,
+					"line": 359,
 					"column": 7,
-					"endLine": 353,
+					"endLine": 359,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5973,9 +5957,9 @@
 				{
 					"id": "6f8a440b21ba6ce87fcded68abbc3ed0ed0e17e5",
 					"kind": "catch_clause",
-					"line": 379,
+					"line": 385,
 					"column": 8,
-					"endLine": 379,
+					"endLine": 385,
 					"endColumn": 52,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5989,9 +5973,9 @@
 				{
 					"id": "08f753f9ebbadb9fc127d413bda667e25ad51aee",
 					"kind": "catch_clause",
-					"line": 382,
+					"line": 388,
 					"column": 22,
-					"endLine": 382,
+					"endLine": 388,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6005,9 +5989,9 @@
 				{
 					"id": "56297d6dbde2aca1a3da91159fc29fc4170c3057",
 					"kind": "catch_clause",
-					"line": 421,
+					"line": 427,
 					"column": 7,
-					"endLine": 421,
+					"endLine": 427,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6021,9 +6005,9 @@
 				{
 					"id": "77e5da06c5ca478cf71c93d969997c10c57519c0",
 					"kind": "catch_clause",
-					"line": 475,
+					"line": 481,
 					"column": 10,
-					"endLine": 475,
+					"endLine": 481,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6037,9 +6021,9 @@
 				{
 					"id": "b0dcfae9264eb9d454e92f5195f7e72ce55389f2",
 					"kind": "catch_clause",
-					"line": 479,
+					"line": 485,
 					"column": 7,
-					"endLine": 479,
+					"endLine": 485,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6053,9 +6037,9 @@
 				{
 					"id": "1ebe4667afb0d89d82506e6fb6dc65f88d653a0b",
 					"kind": "catch_clause",
-					"line": 496,
+					"line": 502,
 					"column": 7,
-					"endLine": 496,
+					"endLine": 502,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6069,9 +6053,9 @@
 				{
 					"id": "c59b5d5e6d0405d2a272ba44824f223cf538d3f8",
 					"kind": "catch_clause",
-					"line": 556,
+					"line": 562,
 					"column": 7,
-					"endLine": 556,
+					"endLine": 562,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6085,9 +6069,9 @@
 				{
 					"id": "3e68e013b81d48830696d4b77cdf2c5d5bd2ed21",
 					"kind": "catch_clause",
-					"line": 570,
+					"line": 576,
 					"column": 7,
-					"endLine": 570,
+					"endLine": 576,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6101,9 +6085,9 @@
 				{
 					"id": "b4d139d1c6aa3899193af5d510ef0625e110e3e0",
 					"kind": "catch_clause",
-					"line": 587,
+					"line": 593,
 					"column": 7,
-					"endLine": 587,
+					"endLine": 593,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6117,9 +6101,9 @@
 				{
 					"id": "f44ab4707df90fa0d8f5e1c15d5849d559141112",
 					"kind": "catch_clause",
-					"line": 616,
+					"line": 622,
 					"column": 7,
-					"endLine": 616,
+					"endLine": 622,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6133,9 +6117,9 @@
 				{
 					"id": "9dbbd53f4ce01a70b93e826e65bf3b38a38d2a14",
 					"kind": "catch_clause",
-					"line": 640,
+					"line": 646,
 					"column": 7,
-					"endLine": 640,
+					"endLine": 646,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6149,9 +6133,9 @@
 				{
 					"id": "c43c01ee6cbe781a492b2863db939f6a767af6ea",
 					"kind": "catch_clause",
-					"line": 657,
+					"line": 663,
 					"column": 7,
-					"endLine": 657,
+					"endLine": 663,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6165,9 +6149,9 @@
 				{
 					"id": "80eba3fa1404787712bf50d2efaf2625855ae406",
 					"kind": "catch_clause",
-					"line": 673,
+					"line": 679,
 					"column": 7,
-					"endLine": 673,
+					"endLine": 679,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6181,9 +6165,9 @@
 				{
 					"id": "08ebaca091b145618436852b366d5b60d032134c",
 					"kind": "catch_clause",
-					"line": 687,
+					"line": 693,
 					"column": 7,
-					"endLine": 687,
+					"endLine": 693,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6197,9 +6181,9 @@
 				{
 					"id": "53601dfc39ec34bf4d25e6c0873453f412aee71f",
 					"kind": "catch_clause",
-					"line": 704,
+					"line": 710,
 					"column": 7,
-					"endLine": 704,
+					"endLine": 710,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6213,9 +6197,9 @@
 				{
 					"id": "9d26b380adc6fe2eea541f187a7b0a60b7d71edd",
 					"kind": "catch_clause",
-					"line": 721,
+					"line": 727,
 					"column": 7,
-					"endLine": 721,
+					"endLine": 727,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6227,36 +6211,36 @@
 					"reason": "Allowlisted catch_clause: The \"acknowledge\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"acknowledge\"."
 				},
 				{
-					"id": "95de4b2bfa167f8cfd7e0b6e847bc3c1e7dc8a95",
+					"id": "dab3d754b4d6813ca7d2f4d47eadbea2bfb7a11c",
 					"kind": "catch_clause",
-					"line": 751,
-					"column": 4,
-					"endLine": 751,
-					"endColumn": 77,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "run",
-						"justification": "The \"run\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"run\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"run\"."
-				},
-				{
-					"id": "cb77f1a5a5c10ff9bd0bfba554531e08f5b6ba02",
-					"kind": "catch_clause",
-					"line": 756,
-					"column": 6,
-					"endLine": 758,
-					"endColumn": 5,
+					"line": 759,
+					"column": 7,
+					"endLine": 761,
+					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "run",
-						"justification": "The \"run\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"run\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise, and the outer catch of the same method records it on the halloween probe before rethrowing."
 					},
-					"reason": "Allowlisted catch_clause: The \"run\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"run\"."
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise, and the outer catch of the same method records it on the halloween probe before rethrowing. Verified recovery: \"local_recovery\" in \"run\"."
+				},
+				{
+					"id": "37874a66cefc9677c8e9d58f9cc14a9bf823b808",
+					"kind": "catch_clause",
+					"line": 765,
+					"column": 5,
+					"endLine": 770,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "run",
+						"justification": "The \"run\" catch is a \"rethrow\" that records the one outcome on the halloween probe (attempt.failure) and turns a connection lost after the one reopen (DU-05) into HalloweenStoreError unavailable."
+					},
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"rethrow\" that records the one outcome on the halloween probe (attempt.failure) and turns a connection lost after the one reopen (DU-05) into HalloweenStoreError unavailable. Verified recovery: \"rethrow\" in \"run\"."
 				}
 			]
 		},
@@ -12504,11 +12488,27 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "f5ac746e59ed87d6128c1ee7fee073dad400c343",
+					"kind": "catch_clause",
+					"line": 112,
+					"column": 6,
+					"endLine": 115,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "constructor",
+						"justification": "The \"constructor\" owner builds the connect callback, which records a failed open on the pending_proposal probe (attempt.failure) and then does a \"rethrow\", so the read or transaction that caused the open fails and records its own outcome."
+					},
+					"reason": "Allowlisted catch_clause: The \"constructor\" owner builds the connect callback, which records a failed open on the pending_proposal probe (attempt.failure) and then does a \"rethrow\", so the read or transaction that caused the open fails and records its own outcome. Verified recovery: \"rethrow\" in \"constructor\"."
+				},
+				{
 					"id": "22b10c19fa77f6e892c00b53ef558161753bd59a",
 					"kind": "catch_clause",
-					"line": 95,
+					"line": 129,
 					"column": 5,
-					"endLine": 98,
+					"endLine": 132,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12520,27 +12520,27 @@
 					"reason": "Allowlisted catch_clause: The \"read\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"read\"."
 				},
 				{
-					"id": "4fee5c5a2b5afe027082982485f56e4f99538951",
+					"id": "c57b9c275048744acf89e3016738a5b19f2247b0",
 					"kind": "catch_clause",
-					"line": 127,
-					"column": 7,
-					"endLine": 130,
-					"endColumn": 6,
+					"line": 162,
+					"column": 9,
+					"endLine": 165,
+					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"transaction\" catch is a \"local_recovery\": a mutator that throws aborts the transaction, which rejects as a failed mutation, and the same method records that rejection through attempt.failure."
 					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
+					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"local_recovery\": a mutator that throws aborts the transaction, which rejects as a failed mutation, and the same method records that rejection through attempt.failure. Verified recovery: \"local_recovery\" in \"transaction\"."
 				},
 				{
 					"id": "d965959f1820cbd42acdb825c31f08b58c26c1ac",
 					"kind": "catch_clause",
-					"line": 139,
+					"line": 175,
 					"column": 5,
-					"endLine": 142,
+					"endLine": 178,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12552,20 +12552,20 @@
 					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"transaction\"."
 				},
 				{
-					"id": "f0531fa2b1b40140bded5b313611deb5b713bed4",
+					"id": "4cde6430b3f777b7d5d1dd88991238eaaab8f1b5",
 					"kind": "catch_clause",
-					"line": 219,
+					"line": 195,
 					"column": 5,
-					"endLine": 222,
+					"endLine": 197,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
-						"scope": "open",
-						"justification": "The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "run",
+						"justification": "The \"run\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes the queue's unavailable error and anything else passes unchanged; read and transaction record it through attempt.failure."
 					},
-					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"open\"."
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes the queue's unavailable error and anything else passes unchanged; read and transaction record it through attempt.failure. Verified recovery: \"rethrow\" in \"run\"."
 				}
 			]
 		},
@@ -12823,9 +12823,9 @@
 				{
 					"id": "127e42121138b9c1525587ee09bb3743ef8aa034",
 					"kind": "catch_clause",
-					"line": 101,
+					"line": 118,
 					"column": 5,
-					"endLine": 101,
+					"endLine": 118,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12839,9 +12839,9 @@
 				{
 					"id": "ce867c8ae26855fc2a01370f5f2ccfd979a36aec",
 					"kind": "catch_clause",
-					"line": 111,
+					"line": 128,
 					"column": 5,
-					"endLine": 111,
+					"endLine": 128,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12855,9 +12855,9 @@
 				{
 					"id": "d8d74f9625cd7fc537fb3b12223f9cb993005235",
 					"kind": "catch_clause",
-					"line": 138,
+					"line": 156,
 					"column": 5,
-					"endLine": 138,
+					"endLine": 156,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12871,9 +12871,9 @@
 				{
 					"id": "f7592d6fe8f13c62c1b65034d1604884b0c858ae",
 					"kind": "catch_clause",
-					"line": 171,
+					"line": 190,
 					"column": 5,
-					"endLine": 171,
+					"endLine": 190,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12887,9 +12887,9 @@
 				{
 					"id": "617ea83cad5df99cbfea41d9639be4fa95740fe6",
 					"kind": "catch_clause",
-					"line": 212,
+					"line": 232,
 					"column": 5,
-					"endLine": 212,
+					"endLine": 232,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12903,9 +12903,9 @@
 				{
 					"id": "2ff331854981e5af435178b2c5dd17f91a4534f0",
 					"kind": "catch_clause",
-					"line": 277,
+					"line": 298,
 					"column": 5,
-					"endLine": 277,
+					"endLine": 298,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12919,9 +12919,9 @@
 				{
 					"id": "cd437dea1350e2a4be0d436c6ce1403f2b966d21",
 					"kind": "catch_clause",
-					"line": 301,
+					"line": 323,
 					"column": 5,
-					"endLine": 301,
+					"endLine": 323,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12933,61 +12933,11 @@
 					"reason": "Allowlisted catch_clause: The \"disable\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"disable\"."
 				},
 				{
-					"id": "10ba2fd5db1b9085426ebac51dfc20b86d0637e5",
-					"kind": "void_expression",
-					"line": 305,
-					"column": 3,
-					"endLine": 305,
-					"endColumn": 82,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.database.then().catch",
-						"scope": "close",
-						"justification": "The \"close\" owner deliberately detaches \"this.database.then().catch\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"close\" owner deliberately detaches \"this.database.then().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.database.then().catch\" in \"close\"."
-				},
-				{
-					"id": "0f4861a7dff6c76428a10d72df51590bea995071",
-					"kind": "callback_registration",
-					"line": 305,
-					"column": 8,
-					"endLine": 305,
-					"endColumn": 59,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "close",
-						"justification": "The \"close\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"close\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"close\"."
-				},
-				{
-					"id": "634883251b9a19b0847d11064ebe1b074f4bb877",
-					"kind": "promise_catch",
-					"line": 305,
-					"column": 8,
-					"endLine": 305,
-					"endColumn": 82,
-					"registration": "catch",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "close",
-						"justification": "The \"close\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted promise_catch: The \"close\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"close\"."
-				},
-				{
 					"id": "66319446b83ba78ee276f3d1a44bd04633eee9dd",
 					"kind": "catch_clause",
-					"line": 350,
+					"line": 372,
 					"column": 5,
-					"endLine": 350,
+					"endLine": 372,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13001,9 +12951,9 @@
 				{
 					"id": "a1bcc0670f29ab460c5ca81bc16639fa9c680962",
 					"kind": "catch_clause",
-					"line": 390,
+					"line": 413,
 					"column": 5,
-					"endLine": 390,
+					"endLine": 413,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13134,11 +13084,27 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "a11818e25a703b2e425a90179aa729ddcde316e3",
+					"kind": "catch_clause",
+					"line": 103,
+					"column": 6,
+					"endLine": 106,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "constructor",
+						"justification": "The \"constructor\" owner builds the connect callback, which records a failed open on the detection_quality probe (attempt.failure) and then does a \"rethrow\", so the load or append that caused the open fails and records its own outcome."
+					},
+					"reason": "Allowlisted catch_clause: The \"constructor\" owner builds the connect callback, which records a failed open on the detection_quality probe (attempt.failure) and then does a \"rethrow\", so the load or append that caused the open fails and records its own outcome. Verified recovery: \"rethrow\" in \"constructor\"."
+				},
+				{
 					"id": "48ed0e7e0b14245707ed40bc6c6e89096fce7f1f",
 					"kind": "catch_clause",
-					"line": 91,
+					"line": 121,
 					"column": 5,
-					"endLine": 94,
+					"endLine": 124,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13152,9 +13118,9 @@
 				{
 					"id": "942fc1f70e2a23db39566fa101211e7af4033780",
 					"kind": "catch_clause",
-					"line": 106,
+					"line": 136,
 					"column": 5,
-					"endLine": 109,
+					"endLine": 139,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13166,52 +13132,20 @@
 					"reason": "Allowlisted catch_clause: The \"append\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"append\"."
 				},
 				{
-					"id": "79ba9dd64197fe5b7617b9da4ec0fa26cc6fc414",
+					"id": "0d4ae4611fcee8571860dc96836c9915fc700678",
 					"kind": "catch_clause",
-					"line": 145,
+					"line": 156,
 					"column": 5,
-					"endLine": 148,
+					"endLine": 158,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
-						"scope": "open",
-						"justification": "The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "run",
+						"justification": "The \"run\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes the store's unavailable error and anything else passes unchanged; load and append record it through attempt.failure."
 					},
-					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"open\"."
-				},
-				{
-					"id": "226f8c3a81b99a8198bdddbc7dc5c5d786cfc21b",
-					"kind": "catch_clause",
-					"line": 159,
-					"column": 6,
-					"endLine": 162,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "getAll",
-						"justification": "The \"getAll\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"getAll\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"getAll\"."
-				},
-				{
-					"id": "361b485d962afdd615d29dfae99c060f6fd0fedb",
-					"kind": "catch_clause",
-					"line": 181,
-					"column": 6,
-					"endLine": 184,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "appendTransaction",
-						"justification": "The \"appendTransaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"appendTransaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"appendTransaction\"."
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes the store's unavailable error and anything else passes unchanged; load and append record it through attempt.failure. Verified recovery: \"rethrow\" in \"run\"."
 				}
 			]
 		},
