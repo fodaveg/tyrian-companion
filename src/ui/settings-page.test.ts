@@ -89,6 +89,7 @@ function plugin() {
 		getSessionHistoryView: () => ({ status: 'idle' as const, sessions: 0 }),
 		getLocalDebugStatus: () => status,
 		getAlertIngameServerErrorCode: () => null,
+		hasAlertIngameSecret: () => false,
 		hasManagedAssetsRoot: () => false,
 		previewSessionHistoryScrub: async () => undefined,
 		cancelSessionHistoryScrubPreview: () => undefined,
@@ -262,5 +263,93 @@ describe('settings page: Replace sits with the other managed-assets actions', ()
 		replaceButton(container).click();
 		await vi.waitFor(() => expect(self.listUnownedManagedAssets).toHaveBeenCalledOnce());
 		expect(self.replaceUnownedManagedAssets).not.toHaveBeenCalled();
+	});
+});
+
+describe('settings page: the addon token is created with a button, never typed', () => {
+	const TOKEN_ROW = 'Addon token';
+
+	/** A core with the bridge on whose token exists or not, and whose copy and regenerate calls are recorded. */
+	function pluginWithBridge(options: { token: boolean; presence?: 'absent' | 'present' | 'lost' }) {
+		const state = { token: options.token };
+		const copy = vi.fn(async () => { const outcome = state.token ? 'copied' as const : 'generated' as const; state.token = true; return outcome; });
+		const regenerate = vi.fn(async () => 'generated' as const);
+		const self = Object.assign(plugin(), {
+			hasAlertIngameSecret: () => state.token,
+			copyAlertIngameSecret: copy,
+			regenerateAlertIngameSecret: regenerate,
+			...(options.presence === undefined ? {} : { getIngamePresence: () => ({ status: options.presence! }) }),
+		});
+		self.settings = { ...self.settings, alertIngameEnabled: true };
+		return { self, copy, regenerate };
+	}
+
+	const tokenRow = (root: ParentNode): HTMLElement =>
+		Array.from(root.querySelectorAll<HTMLElement>('.setting-item'))
+			.find((row) => ['Addon token', 'Token del addon'].includes(row.firstElementChild?.firstElementChild?.textContent ?? ''))!;
+	const buttons = (row: HTMLElement): string[] => Array.from(row.querySelectorAll('button')).map((b) => b.textContent ?? '');
+
+	it('without a token: says to press the button, offers only "Create token" and no field to type in', () => {
+		const { self } = pluginWithBridge({ token: false });
+		const { container } = mountPage(self);
+
+		const row = tokenRow(container);
+		expect(row.firstElementChild?.firstElementChild?.textContent).toBe(TOKEN_ROW);
+		expect(row.textContent).toContain('Press “Create token”');
+		expect(row.textContent).toContain('Do not type it.');
+		expect(buttons(row)).toEqual(['Create token']);
+		expect(row.querySelector('input, select, textarea')).toBeNull();
+	});
+
+	it('with a token: hides the value, offers copy and a new token, and reports the addon', () => {
+		for (const [presence, line] of [['present', 'Addon connected.'], ['absent', 'Addon not connected.'], ['lost', 'Addon not connected.']] as const) {
+			const { self } = pluginWithBridge({ token: true, presence });
+			const { container } = mountPage(self);
+
+			const row = tokenRow(container);
+			expect(row.textContent).toContain('Press “Copy token”');
+			expect(row.textContent).toContain('Token: ••••••••••••');
+			expect(row.textContent).toContain(line);
+			expect(row.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Token created, hidden');
+			expect(buttons(row)).toEqual(['Copy token', 'Create new token']);
+			expect(row.querySelector('input, select, textarea')).toBeNull();
+			container.remove();
+		}
+	});
+
+	it('Create token generates through the core and then offers copy', async () => {
+		const { self, copy } = pluginWithBridge({ token: false });
+		const { container } = mountPage(self);
+
+		tokenRow(container).querySelector('button')!.click();
+		await vi.waitFor(() => { expect(tokenRow(container).textContent).toContain('New token created and copied.'); });
+
+		expect(copy).toHaveBeenCalledTimes(1);
+		expect(buttons(tokenRow(container))).toEqual(['Copy token', 'Create new token']);
+	});
+
+	it('a new token needs a second press and warns that the addon is cut off until it is pasted', async () => {
+		const { self, regenerate } = pluginWithBridge({ token: true });
+		const { container } = mountPage(self);
+
+		tokenRow(container).querySelectorAll('button')[1]!.click();
+
+		expect(regenerate).not.toHaveBeenCalled();
+		expect(buttons(tokenRow(container))).toEqual(['Copy token', 'Confirm: create new token']);
+		expect(tokenRow(container).querySelector('[role="status"]')?.textContent).toContain('The current token stops working');
+
+		tokenRow(container).querySelectorAll('button')[1]!.click();
+		await vi.waitFor(() => { expect(regenerate).toHaveBeenCalledTimes(1); });
+		await vi.waitFor(() => { expect(buttons(tokenRow(container))).toEqual(['Copy token', 'Create new token']); });
+	});
+
+	it('says in Spanish what to do, with the button names', () => {
+		const { self } = pluginWithBridge({ token: false });
+		self.settings = { ...self.settings, language: 'es' };
+		const { container } = mountPage(self);
+
+		const row = tokenRow(container);
+		expect(row.textContent).toContain('Pulsa «Crear token»');
+		expect(buttons(row)).toEqual(['Crear token']);
 	});
 });

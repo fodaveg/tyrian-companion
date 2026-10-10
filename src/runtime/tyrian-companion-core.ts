@@ -4220,6 +4220,24 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * both callers then show their existing failure copy.
 	 */
 	async copyAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome> {
+		return await this.deliverAlertIngameSecret(false);
+	}
+
+	/** Whether a usable bridge token exists, so the settings row offers "Copy" rather than "Create". */
+	hasAlertIngameSecret(): boolean {
+		return isUsableIngameBridgeSecret(this.readAlertIngameSecret());
+	}
+
+	/**
+	 * Replaces the bridge token with a new one (stored under `ALERT_INGAME_SECRET_ID` and selected)
+	 * and copies it. The previous token stops working: an addon still holding it is rejected until
+	 * the new one is pasted there, which is why the settings row asks first.
+	 */
+	async regenerateAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome> {
+		return await this.deliverAlertIngameSecret(true);
+	}
+
+	private async deliverAlertIngameSecret(replace: boolean): Promise<AlertIngameSecretCopyOutcome> {
 		const deliver = async (secret: string, outcome: 'copied' | 'generated'): Promise<AlertIngameSecretCopyOutcome> => {
 			try {
 				await this.host.clipboard.writeText(secret);
@@ -4240,8 +4258,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		};
 		const run = async (): Promise<AlertIngameSecretCopyOutcome> => {
 			const current = this.readAlertIngameSecret();
-			if (isUsableIngameBridgeSecret(current)) return await deliver(current, 'copied');
-			const stored = this.host.secrets.list().includes(ALERT_INGAME_SECRET_ID)
+			if (!replace && isUsableIngameBridgeSecret(current)) return await deliver(current, 'copied');
+			const stored = !replace && this.host.secrets.list().includes(ALERT_INGAME_SECRET_ID)
 				? this.host.secrets.get(ALERT_INGAME_SECRET_ID) : null;
 			const secret = isUsableIngameBridgeSecret(stored)
 				? stored : createIngameBridgeSecret((bytes) => { crypto.getRandomValues(bytes); });

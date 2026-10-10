@@ -89,6 +89,12 @@ export interface SettingsPanelActions {
 	checkConnection(): Promise<ConnectionState>;
 	loadLegendaryArmoryOptions(): Promise<LegendaryArmoryOptionsResult>;
 	copyAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome>;
+	/** Whether a usable bridge token exists: the token row offers "Create token" until it does. */
+	hasAlertIngameSecret(): boolean;
+	/** Replaces the token with a new one and copies it; the old one stops working. */
+	regenerateAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome>;
+	/** Optional: whether the addon is connected right now; absent means the row says nothing about it. */
+	getIngamePresence?(): { readonly status: 'absent' | 'present' | 'lost' };
 	getAlertIngameServerErrorCode(): string | null;
 	getManagedAssetsView(): ManagedAssetsView;
 	/** Optional: absent means true. False hides the managed-assets row (host without Bases). */

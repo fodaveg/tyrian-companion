@@ -40,6 +40,8 @@ interface SecretCopyHarness {
 	settings: TyrianSettings;
 	copyAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome>;
 	copyAlertIngameSecretFromCommand(): Promise<void>;
+	hasAlertIngameSecret(): boolean;
+	regenerateAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome>;
 }
 
 const USER_SECRET = 'u'.repeat(40);
@@ -86,6 +88,24 @@ describe('0.2.1 "Copy in-game bridge token" command', () => {
 		expect(clipboard.writes).toEqual([USER_SECRET]);
 		expect(surfaces.notices).toEqual(['Token copied.']);
 		expect(secrets.has(ALERT_INGAME_SECRET_ID)).toBe(false);
+	});
+
+	it('knows whether a usable token exists, and "create new" replaces it, selects it and copies it', async () => {
+		const { plugin, secrets, clipboard } = secretCopyPlugin({ alertIngameEnabled: true, alertIngameSecret: 'mine' });
+		expect(plugin.hasAlertIngameSecret()).toBe(false);
+		secrets.set('mine', USER_SECRET);
+		expect(plugin.hasAlertIngameSecret()).toBe(true);
+
+		await expect(plugin.regenerateAlertIngameSecret()).resolves.toBe('generated');
+
+		const created = secrets.get(ALERT_INGAME_SECRET_ID);
+		expect(created).toMatch(/^[\w-]{43}$/u);
+		expect(created).not.toBe(USER_SECRET);
+		expect(plugin.settings.alertIngameSecret).toBe(ALERT_INGAME_SECRET_ID);
+		expect(clipboard.writes).toEqual([created]);
+
+		await expect(plugin.regenerateAlertIngameSecret()).resolves.toBe('generated');
+		expect(secrets.get(ALERT_INGAME_SECRET_ID)).not.toBe(created);
 	});
 
 	it('reports the existing failure copy when the copy itself fails', async () => {
