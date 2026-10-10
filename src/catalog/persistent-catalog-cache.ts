@@ -1,6 +1,7 @@
 import {
 	MemoryCatalogCache,
 	type CatalogCacheAdapter,
+	type CatalogCacheEntry,
 	type CatalogCacheKey,
 	type CatalogCacheRecord,
 } from './public-catalog-cache';
@@ -23,6 +24,9 @@ export interface CatalogRecordStore {
 	 * to parallel `get` calls when a store (such as a test double) does not implement it. */
 	getMany?(keys: readonly string[]): Promise<Map<string, unknown>>;
 	set(key: string, value: string): Promise<void>;
+	/** Optional: all-or-nothing batched write in one transaction. `PersistentCatalogCache.setMany`
+	 * falls back to sequential `set` calls when a store (such as a test double) does not implement it. */
+	setMany?(entries: readonly (readonly [key: string, value: string])[]): Promise<void>;
 	delete(key: string): Promise<void>;
 	close(): void;
 }
@@ -126,6 +130,39 @@ export class PersistentCatalogCache implements CatalogCacheAdapter {
 		}
 	}
 
+	/**
+	 * Z30: stores a whole resolved batch through one store write (one IndexedDB transaction)
+	 * instead of one per entity. Each entry is serialized and validated exactly as in `set`; an
+	 * entry that fails validation is skipped and the rest are still written. As in `set`, a storage
+	 * failure is recorded and never rejects. With a single transaction a failure is all-or-nothing
+	 * for the batch (before: entities written up to the failure stayed); the cache refills.
+	 */
+	async setMany(entries: readonly CatalogCacheEntry[]): Promise<void> {
+		if (entries.length === 0) return;
+		const attempt = this.diagnostics.begin('catalog', 'write');
+		const serialized: [string, string][] = [];
+		let rejected = 0;
+		for (const { key: cacheKey, record } of entries) {
+			const text = JSON.stringify({ key: cacheKey, record } satisfies PersistedCatalogEnvelope);
+			const jsonValue: unknown = JSON.parse(text);
+			if (!isCompatibleEnvelope(jsonValue, cacheKey)) { rejected += 1; continue; }
+			serialized.push([catalogCacheStorageKey(cacheKey), text]);
+		}
+		if (serialized.length === 0) { attempt.failure('validation_failed'); return; }
+		try {
+			if (this.store.setMany) {
+				await this.store.setMany(serialized);
+			} else {
+				for (const [storageKey, text] of serialized) await this.store.set(storageKey, text);
+			}
+			if (rejected > 0) attempt.failure('validation_failed');
+			else attempt.success();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
+			// A cache write must never fail the catalog resolution.
+		}
+	}
+
 	dispose(): void {
 		this.store.close();
 	}
@@ -188,7 +225,7 @@ export async function createCatalogCacheAdapter(
 	}
 }
 
-/** IndexedDB-backed string store. Each method owns one transaction. */
+/** IndexedDB-backed string store. Each method owns one transaction (`setMany` and `getMany`: one for the whole batch). */
 export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 	constructor(
 		private readonly database: IDBDatabase,
@@ -272,11 +309,17 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 	}
 
 	set(key: string, value: string): Promise<void> {
-		return this.write((store) => store.put(value, key));
+		return this.write((store) => { store.put(value, key); });
+	}
+
+	/** Opens exactly one readwrite transaction for the whole batch; it commits or aborts as a whole. */
+	setMany(entries: readonly (readonly [key: string, value: string])[]): Promise<void> {
+		if (entries.length === 0) return Promise.resolve();
+		return this.write((store) => { for (const [key, value] of entries) store.put(value, key); });
 	}
 
 	delete(key: string): Promise<void> {
-		return this.write((store) => store.delete(key));
+		return this.write((store) => { store.delete(key); });
 	}
 
 	close(): void {
@@ -285,14 +328,16 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 		attempt.success();
 	}
 
-	private write(action: (store: IDBObjectStore) => IDBRequest): Promise<void> {
+	private write(action: (store: IDBObjectStore) => void): Promise<void> {
 		const attempt = this.diagnostics.begin('catalog', 'write');
 		return new Promise((resolve, reject) => {
-			let transaction: IDBTransaction;
+			let transaction: IDBTransaction | undefined;
 			try {
 				transaction = this.database.transaction(CATALOG_CACHE_STORE_NAME, 'readwrite');
 				action(transaction.objectStore(CATALOG_CACHE_STORE_NAME));
 			} catch (error) {
+				// A request that throws mid-batch must not leave the earlier puts to auto-commit.
+				transaction?.abort();
 				attempt.failure(localDebugStorageFailureCode(error), error);
 				reject(error instanceof Error ? error : new Error('Could not write the public catalog cache.'));
 				return;

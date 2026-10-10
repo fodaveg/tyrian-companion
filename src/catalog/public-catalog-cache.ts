@@ -37,7 +37,19 @@ export interface CatalogCacheAdapter {
 		key: CatalogCacheKey<K>,
 		record: CatalogCacheRecord<CatalogEntityByKind[K]>,
 	): Promise<void>;
+	/**
+	 * Batched write (Z30), awaited like `set`. A persistent adapter stores the whole batch in one
+	 * transaction. Optional: the service falls back to sequential `set` calls when an adapter does
+	 * not implement it. Like `set`, it must not reject because storage failed.
+	 */
+	setMany?(entries: readonly CatalogCacheEntry[]): Promise<void>;
 	dispose(): void;
+}
+
+/** One key/record pair of a batched `setMany` write. */
+export interface CatalogCacheEntry<K extends CatalogKind = CatalogKind> {
+	key: CatalogCacheKey<K>;
+	record: CatalogCacheRecord<CatalogEntityByKind[K]>;
 }
 
 /** Process-local cache adapter. Persistent storage stays outside this vertical. */
@@ -71,6 +83,10 @@ export class MemoryCatalogCache implements CatalogCacheAdapter {
 		record: CatalogCacheRecord<CatalogEntityByKind[K]>,
 	): Promise<void> {
 		this.records.set(key(cacheKey), structuredClone(record));
+	}
+
+	async setMany(entries: readonly CatalogCacheEntry[]): Promise<void> {
+		for (const entry of entries) this.records.set(key(entry.key), structuredClone(entry.record));
 	}
 
 	dispose(): void {

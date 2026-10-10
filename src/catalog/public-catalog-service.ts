@@ -3,6 +3,7 @@ import { createLimiter } from '../core/concurrency';
 import { HttpTransportError } from '../core/http';
 import type {
 	CatalogCacheAdapter,
+	CatalogCacheEntry,
 	CatalogCacheKey,
 	CatalogCacheRecord,
 } from './public-catalog-cache';
@@ -370,6 +371,8 @@ export class PublicCatalogService {
 			}
 		}
 
+		// Z30: entities and 206 absences of the batch are persisted together, in one cache write.
+		const writes: CatalogCacheEntry<K>[] = [];
 		for (const id of ids) {
 			if (conflicts.has(id)) {
 				result.coverage.set(id, {
@@ -391,9 +394,9 @@ export class PublicCatalogService {
 			if (entity) {
 				result.entities.set(id, entity);
 				result.coverage.set(id, { status: 'resolved', source: 'network' });
-				await this.cache.set(cacheKey(kind, locale, id), cacheRecord(entity, now));
+				writes.push({ key: cacheKey(kind, locale, id), record: cacheRecord(entity, now) });
 			} else if (status === 206) {
-				await this.recordMissing(kind, locale, [id], now, result, 'partial_response');
+				writes.push(this.missingEntry(kind, locale, id, now, result, 'partial_response'));
 			} else {
 				result.coverage.set(id, {
 					status: 'missing',
@@ -403,6 +406,31 @@ export class PublicCatalogService {
 				result.warnings.push({ code: 'missing_response', kind, id });
 			}
 		}
+		await this.writeBatch(writes);
+	}
+
+	private async writeBatch<K extends CatalogKind>(entries: readonly CatalogCacheEntry<K>[]): Promise<void> {
+		if (entries.length === 0) return;
+		if (this.cache.setMany) {
+			await this.cache.setMany(entries);
+			return;
+		}
+		for (const entry of entries) await this.cache.set(entry.key, entry.record);
+	}
+
+	private missingEntry<K extends CatalogKind>(
+		kind: K,
+		locale: CatalogLocale,
+		id: number,
+		now: number,
+		result: KindResolution<K>,
+		reason: 'not_found' | 'partial_response',
+	): CatalogCacheEntry<K> {
+		result.coverage.set(id, { status: 'missing', source: 'network', reason });
+		return {
+			key: cacheKey(kind, locale, id),
+			record: cacheRecord<CatalogEntityByKind[K]>(null, now, reason),
+		};
 	}
 
 	private async recordMissing<K extends CatalogKind>(
@@ -413,13 +441,7 @@ export class PublicCatalogService {
 		result: KindResolution<K>,
 		reason: 'not_found' | 'partial_response' = 'not_found',
 	): Promise<void> {
-		for (const id of ids) {
-			result.coverage.set(id, { status: 'missing', source: 'network', reason });
-			await this.cache.set(
-				cacheKey(kind, locale, id),
-				cacheRecord<CatalogEntityByKind[K]>(null, now, reason),
-			);
-		}
+		await this.writeBatch(ids.map((id) => this.missingEntry(kind, locale, id, now, result, reason)));
 	}
 
 	private recordMalformed<K extends CatalogKind>(

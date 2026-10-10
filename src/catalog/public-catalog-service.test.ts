@@ -1,3 +1,4 @@
+import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
@@ -11,7 +12,11 @@ import {
 } from './__fixtures__/public-catalog';
 import { MemoryCatalogCache, type CatalogCacheKey } from './public-catalog-cache';
 import type { PublicCatalogGateway } from './public-catalog-client';
-import { PersistentCatalogCache } from './persistent-catalog-cache';
+import {
+	CATALOG_CACHE_STORE_NAME,
+	IndexedDbCatalogRecordStore,
+	PersistentCatalogCache,
+} from './persistent-catalog-cache';
 import {
 	parseCatalogCurrencies,
 	parseCatalogItems,
@@ -542,7 +547,94 @@ describe('PublicCatalogService', () => {
 		expect(getManyCalls).toBe(1);
 		expect(getCalls).toBe(0);
 	});
+
+	/**
+	 * Z30: `fetchBatch` awaited one `cache.set` (one readwrite IndexedDB transaction) per entity
+	 * and per absence. A batch of 200 ids now writes through one `setMany`, so one transaction.
+	 * Entities and 206 absences of the same batch share that single transaction.
+	 */
+	it('writes a 200-id batch to the persistent cache in one readwrite transaction (Z30)', async () => {
+		const ids = Array.from({ length: 200 }, (_value, index) => index + 1);
+		const { store, modes } = await countingStore('z30-entities');
+		const cache = new PersistentCatalogCache(store);
+		const api = gateway((path) => http(200, idsFrom(path).map(itemPayload)));
+
+		const resolved = await new PublicCatalogService(api, cache, () => NOW).resolveItems(ids, 'es');
+
+		expect(Object.keys(resolved)).toHaveLength(200);
+		expect(modes.filter((mode) => mode === 'readwrite')).toHaveLength(1);
+		const reread = await cache.getMany(ids.map((id) => cacheKey('items', 'es', id)));
+		expect(reread.size).toBe(200);
+		cache.dispose();
+	});
+
+	it('writes entities and 206 absences of one batch in a single readwrite transaction (Z30)', async () => {
+		const ids = Array.from({ length: 200 }, (_value, index) => index + 1);
+		const { store, modes } = await countingStore('z30-partial');
+		const cache = new PersistentCatalogCache(store);
+		const api = gateway((path) => http(206, idsFrom(path).filter((id) => id <= 150).map(itemPayload)));
+
+		await new PublicCatalogService(api, cache, () => NOW).resolveItems(ids, 'es');
+
+		expect(modes.filter((mode) => mode === 'readwrite')).toHaveLength(1);
+		const reread = await cache.getMany(ids.map((id) => cacheKey('items', 'es', id)));
+		expect(reread.size).toBe(200);
+		expect(reread.get(151)).toEqual(cacheRecord(null, NOW, 'partial_response'));
+		cache.dispose();
+	});
+
+	it('writes a 404 batch of absences in one readwrite transaction (Z30)', async () => {
+		const ids = Array.from({ length: 200 }, (_value, index) => index + 1);
+		const { store, modes } = await countingStore('z30-404');
+		const cache = new PersistentCatalogCache(store);
+		const api = gateway(() => http(404, {}));
+
+		await new PublicCatalogService(api, cache, () => NOW).resolveItems(ids, 'es');
+
+		expect(modes.filter((mode) => mode === 'readwrite')).toHaveLength(1);
+		cache.dispose();
+	});
+
+	it('still returns the resolved batch when the cache write fails (Z30)', async () => {
+		const store = {
+			async get(): Promise<unknown> { return undefined; },
+			async set(): Promise<void> { throw new Error('quota'); },
+			async setMany(): Promise<void> { throw new Error('quota'); },
+			async delete(): Promise<void> { /* no-op */ },
+			close(): void { /* no-op */ },
+		};
+		const api = gateway((path) => http(200, idsFrom(path).map(itemPayload)));
+
+		const resolved = await new PublicCatalogService(api, new PersistentCatalogCache(store), () => NOW)
+			.resolveItems([1, 2, 3], 'es');
+
+		expect(Object.keys(resolved)).toEqual(['1', '2', '3']);
+	});
 });
+
+/** A real (fake-indexeddb) catalog store whose connection records the mode of every transaction. */
+async function countingStore(name: string): Promise<{ store: IndexedDbCatalogRecordStore; modes: string[] }> {
+	const database = await new Promise<IDBDatabase>((resolve, reject) => {
+		const request = new IDBFactory().open(name, 1);
+		request.onupgradeneeded = () => { request.result.createObjectStore(CATALOG_CACHE_STORE_NAME); };
+		request.onsuccess = () => { resolve(request.result); };
+		request.onerror = () => { reject(new Error('Could not open the test database.')); };
+	});
+	const modes: string[] = [];
+	const counting = new Proxy(database, {
+		get(target, property) {
+			if (property === 'transaction') {
+				return (storeNames: string, mode?: IDBTransactionMode) => {
+					modes.push(mode ?? 'readonly');
+					return target.transaction(storeNames, mode);
+				};
+			}
+			const value: unknown = Reflect.get(target, property, target);
+			return typeof value === 'function' ? (value as () => unknown).bind(target) : value;
+		},
+	});
+	return { store: new IndexedDbCatalogRecordStore(counting), modes };
+}
 
 function deepFreeze(value: unknown): void {
 	if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return;

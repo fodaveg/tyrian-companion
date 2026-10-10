@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 580,
+		"catch_clause": 581,
 		"promise_catch": 59,
 		"void_expression": 126,
 		"callback_registration": 230
@@ -2502,9 +2502,9 @@
 				{
 					"id": "cdf62880b3c99e0db709800591131cb82210dfa5",
 					"kind": "catch_clause",
-					"line": 50,
+					"line": 54,
 					"column": 5,
-					"endLine": 53,
+					"endLine": 57,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2518,9 +2518,9 @@
 				{
 					"id": "4dae67d2ee07e40789577afd372103f15992117e",
 					"kind": "catch_clause",
-					"line": 84,
+					"line": 88,
 					"column": 5,
-					"endLine": 87,
+					"endLine": 91,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2534,9 +2534,9 @@
 				{
 					"id": "84c1462bcb8b2692961c4bfadac09b04fb5fcf28",
 					"kind": "catch_clause",
-					"line": 123,
+					"line": 127,
 					"column": 5,
-					"endLine": 126,
+					"endLine": 130,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2548,11 +2548,27 @@
 					"reason": "Allowlisted catch_clause: The \"set\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"set\"."
 				},
 				{
+					"id": "b02d842ec1000a02302d34f553ed444b7fb2c450",
+					"kind": "catch_clause",
+					"line": 160,
+					"column": 5,
+					"endLine": 163,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "setMany",
+						"justification": "The \"setMany\" owner explicitly handles \"local_recovery\": the batched write records the failed attempt on its own diagnostics probe (attempt.failure) and returns without rejecting, exactly like \"set\"; a catalog cache write never fails the resolution, and the single transaction makes the failure all-or-nothing for the batch (the cache refills on the next resolve)."
+					},
+					"reason": "Allowlisted catch_clause: The \"setMany\" owner explicitly handles \"local_recovery\": the batched write records the failed attempt on its own diagnostics probe (attempt.failure) and returns without rejecting, exactly like \"set\"; a catalog cache write never fails the resolution, and the single transaction makes the failure all-or-nothing for the batch (the cache refills on the next resolve). Verified recovery: \"local_recovery\" in \"setMany\"."
+				},
+				{
 					"id": "b6463818d43605f3a61935f0214c1336ccd10eca",
 					"kind": "catch_clause",
-					"line": 138,
+					"line": 175,
 					"column": 5,
-					"endLine": 141,
+					"endLine": 178,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2566,9 +2582,9 @@
 				{
 					"id": "0abb02ddfaef4043dd96b87fa163e63e81e8d719",
 					"kind": "catch_clause",
-					"line": 183,
+					"line": 220,
 					"column": 4,
-					"endLine": 188,
+					"endLine": 225,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2582,9 +2598,9 @@
 				{
 					"id": "2f6d3f149ca6e97d1ca99cb517340649f84be9ce",
 					"kind": "catch_clause",
-					"line": 217,
+					"line": 254,
 					"column": 5,
-					"endLine": 220,
+					"endLine": 257,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2598,9 +2614,9 @@
 				{
 					"id": "f6ec28ae76f50d73af5995496090cb28f18da7f8",
 					"kind": "catch_clause",
-					"line": 231,
+					"line": 268,
 					"column": 6,
-					"endLine": 235,
+					"endLine": 272,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2614,9 +2630,9 @@
 				{
 					"id": "df62c0ad0664f2bc898894bd29148d4797132d91",
 					"kind": "catch_clause",
-					"line": 255,
+					"line": 292,
 					"column": 6,
-					"endLine": 259,
+					"endLine": 296,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2628,11 +2644,11 @@
 					"reason": "Allowlisted catch_clause: The \"getMany\" owner explicitly handles \"fallback_return\": Opening the readonly IndexedDB transaction for the batched read records the failed attempt on the probe (attempt.failure) and rejects with a typed error, mirroring the single-record get path; the caller's own catch records the terminal outcome. Verified recovery: \"fallback_return\" in \"getMany\"."
 				},
 				{
-					"id": "2aca1842363a82a42cbae834edc7e9fa16f7f9bf",
+					"id": "02b487afec3312512c6501aaf264a871e8e963d3",
 					"kind": "catch_clause",
-					"line": 295,
+					"line": 338,
 					"column": 6,
-					"endLine": 299,
+					"endLine": 344,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2646,9 +2662,9 @@
 				{
 					"id": "e5674719cfeacda493a8e0cd1100d30cefc04975",
 					"kind": "catch_clause",
-					"line": 322,
+					"line": 367,
 					"column": 4,
-					"endLine": 324,
+					"endLine": 369,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
