@@ -4939,12 +4939,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 	}
 
-	/** Records only the closed delivery cause; visible notice text never enters diagnostics. */
 	/** DU-04: tells the user the settings come from a newer release and stay as they are until the plugin is updated. */
 	private warnSettingsReadOnly(): void {
 		this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.settingsNewerSchema'), 'settings_read_only');
 	}
 
+	/** Records only the closed delivery cause; visible notice text never enters diagnostics. */
 	private emitNotice(message: string, source: NoticeDiagnosticSource, onClick?: () => void): void {
 		const deliver = (): void => { this.host.ui.notice(message, onClick); };
 		if (this.localDebugActions) this.localDebugActions.runSync(

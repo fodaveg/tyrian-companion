@@ -429,6 +429,42 @@ describe('one confirmation queue per vault (DU-03)', () => {
 		leftover.close();
 	});
 
+	it('looks at the common queue once when it has nothing pending, not on every read', async () => {
+		const factory = new IDBFactory();
+		const common = service(new IndexedDbPendingProposalStore(factory, PROPOSAL_QUEUE_DB_NAME));
+		await common.initialize();
+		common.dispose();
+		let listings = 0;
+		const listDatabases = factory.databases.bind(factory);
+		factory.databases = async () => { listings += 1; return await listDatabases(); };
+
+		const store = vaultStore(factory, 'vault-a');
+		await expect(store.read()).resolves.toBeUndefined();
+		await expect(store.read()).resolves.toBeUndefined();
+		store.close();
+
+		expect(listings).toBe(1);
+	});
+
+	it('adopts nothing and creates no common queue on a factory without databases()', async () => {
+		const factory = new IDBFactory();
+		const withoutListing = { open: factory.open.bind(factory), deleteDatabase: factory.deleteDatabase.bind(factory), cmp: factory.cmp.bind(factory) } as unknown as IDBFactory;
+
+		// No common queue: checking for it does not create it.
+		const fresh = service(vaultStore(withoutListing, 'vault-a'));
+		await expect(fresh.initialize()).resolves.toMatchObject({ status: 'ready', pendingCount: 0 });
+		fresh.dispose();
+		expect(await names(factory)).toEqual([vaultProposalQueueDatabaseName('vault-a')]);
+
+		// A common queue with a pending proposal: without the listing it is not adopted (the earlier rule of session storage).
+		const common = service(new IndexedDbPendingProposalStore(factory, PROPOSAL_QUEUE_DB_NAME));
+		expect((await common.enqueue(stopInput)).status).toBe('added');
+		common.dispose();
+		const vaultB = service(vaultStore(withoutListing, 'vault-b'), undefined, 'window-b');
+		await expect(vaultB.initialize()).resolves.toMatchObject({ status: 'ready', pendingCount: 0 });
+		vaultB.dispose();
+	});
+
 	it('starts an empty queue of its own when the common queue cannot be read as a queue', async () => {
 		const factory = new IDBFactory();
 		const common = new IndexedDbPendingProposalStore(factory, PROPOSAL_QUEUE_DB_NAME);

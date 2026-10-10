@@ -70,7 +70,7 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 	private database: IDBDatabase | null = null;
 	private opening: Promise<IDBDatabase> | null = null;
 	private unavailable = false;
-	/** DU-03: this store's own record is known to exist, so the common queue is never read again. */
+	/** DU-03: this store's own record is known to exist, or the common queue had nothing to adopt; it is never read again. */
 	private adoptionSettled = false;
 
 	/**
@@ -152,7 +152,8 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 
 	/**
 	 * DU-03: what this queue starts from while its own record was never written: the adopted copy of the common queue,
-	 * or nothing. Once the own record exists it answers nothing without reading anything. A failure to read the common
+	 * or nothing. Once the own record exists, or the common queue was read and holds nothing to adopt, it answers nothing
+	 * without reading anything. A failure to read the common
 	 * queue rejects, so the operation fails and nothing is written that would make the adoption impossible later.
 	 */
 	private async adoptionSeed(database: IDBDatabase): Promise<PendingProposalQueueRecord | undefined> {
@@ -161,7 +162,11 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			this.adoptionSettled = true;
 			return undefined;
 		}
-		return adoptedProposalQueue(await this.readCommonQueue(this.adoptFrom));
+		const seed = adoptedProposalQueue(await this.readCommonQueue(this.adoptFrom));
+		// Nothing pending there (or no common queue, or none this release can read): there is nothing to adopt later
+		// either, so later reads do not look again.
+		if (seed === undefined) this.adoptionSettled = true;
+		return seed;
 	}
 
 	/** The common queue's record, or undefined when it does not exist; opening it only after listing never creates it. */
