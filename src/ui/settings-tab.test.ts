@@ -561,7 +561,7 @@ describe('local diagnostics settings', () => {
 		};
 		for (const [locale, text] of [
 			['en', 'At least 2048 bytes in 5 files (older files not measured yet)'],
-			['es', 'Al menos 2048 bytes en 5 archivos (aún no se han medido los archivos antiguos)'],
+			['es', 'Al menos 2048 bytes en 5 archivos (aún sin medir los archivos antiguos)'],
 		] as const) {
 			const translator = createTranslator(locale);
 			const lines = projectLocalDebugStatus(status, translator.t.bind(translator)).lines;

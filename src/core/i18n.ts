@@ -63,7 +63,7 @@ const ES = {
 	'settings.debug.level.error': 'Errores',
 	'settings.debug.path': 'Carpeta de registros: {{path}}',
 	'settings.debug.storage': '{{bytes}} bytes en {{files}} archivos',
-	'settings.debug.storagePartial': 'Al menos {{bytes}} bytes en {{files}} archivos (aún no se han medido los archivos antiguos)',
+	'settings.debug.storagePartial': 'Al menos {{bytes}} bytes en {{files}} archivos (aún sin medir los archivos antiguos)',
 	'settings.debug.lastEvent': 'Último evento: {{timestamp}}',
 	'settings.debug.noEvents': 'Todavía no hay eventos escritos.',
 	'settings.debug.writer.ready': 'Escritor listo',
