@@ -9,6 +9,9 @@ import { configDefaults, defineConfig } from 'vitest/config';
 // code, both slow relative to the signal they give the fast `check` gate.
 // `vitest.guardrails.config.mts` runs exactly this excluded set; keep the two
 // files in sync so together they still cover every test exactly once.
+// `bundle.test.ts` is excluded for another reason: it loads `hebra-main.mjs`,
+// which only exists after the `host-esm` step, so it has its own config and its
+// own gate step (`hebra-bundle`) behind that build instead of running here.
 const frozenSourceTextTests = (JSON.parse(
 	readFileSync(new URL('./scripts/source-text-assertion-allowlist.json', import.meta.url), 'utf8'),
 ) as { frozen: string[] }).frozen;
@@ -18,7 +21,7 @@ export default defineConfig({
 		// An agent worktree checked out under .claude/ is a full second copy of src/.
 		// Without this, `vitest run` from the repo root collects both copies and reports
 		// roughly double the test count as green.
-		exclude: [...configDefaults.exclude, '.claude/**', 'src/platform/**', ...frozenSourceTextTests],
+		exclude: [...configDefaults.exclude, '.claude/**', 'src/platform/**', 'src/host/hebra/bundle.test.ts', ...frozenSourceTextTests],
 	},
 	resolve: {
 		alias: {
