@@ -1,5 +1,27 @@
 # Estado
 
+## Candidato 0.6.37: orden interno del núcleo y copia de preferencias al descargar (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.37` sobre el canal 0.6.36 publicado
+(`a252cbfa`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.37 se ha visto en un Obsidian ni en un Hebra reales.
+  La copia de preferencias al descargar está probada con IndexedDB y ajustes simulados.
+- Contenido:
+  - DE-01 paso 3, parcial: `src/runtime/session-facade.ts` (`SessionRuntime`) con 35 métodos de sesión (métricas piloto,
+    exportación y borrado del historial, preferencias de farming, sesiones en vivo guardadas); el núcleo deja 33
+    delegados y baja de 6.778 a 6.580 líneas. Revisión independiente: 285 líneas movidas literalmente, sin cambio de
+    comportamiento.
+  - DE-08: 280 `export` quitados en `src/sessions` y `src/economy` (solo la palabra `export`, comprobado por script).
+  - Lote K: `dispose()` de la copia de preferencias encadena una escritura final si hay una en curso; `setImmediate`
+    en `EXACT_TIMERS` del test del bundle del asesor.
+- Riesgo aceptado: `pilot-metrics-architecture.test.ts:78` solo lee el texto del núcleo y ya no ve los métodos del
+  piloto movidos a la fachada.
+- Pendiente de DE-01: unos 99 métodos de sesión (ciclo de la sesión en vivo, propuestas, nota y resumen, comandos)
+  siguen en el núcleo porque tests congelados del contrato de texto fuente los fijan allí; moverlos exige pasar esos
+  tests a comportamiento. Pendiente también: el gate, la publicación y verla en hosts reales.
+
 ## Canal 0.6.36 publicado: Hebra arranca antes, copia de las preferencias y ajustes por equipo (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.36` = `c594d47e` (atestación; candidato `e17643b5`,

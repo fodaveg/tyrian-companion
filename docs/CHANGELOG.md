@@ -1,5 +1,16 @@
 # Changelog
 
+## Release beta 0.6.37 - Orden interno del núcleo y dos arreglos de la copia de preferencias
+
+Se actualiza desde la 0.6.36 publicada. No cambia nada visible salvo un caso raro al cerrar el plugin. Nada de esto se
+ha visto todavía en un Obsidian ni en un Hebra reales; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Inventario. Si se cierra el plugin justo mientras se guarda la copia de las preferencias, esa copia ya no se pierde:
+  se escribe una última vez al descargar, sin hacer esperar al cierre.
+- Limpieza interna, sin cambios visibles. 35 métodos de sesión del núcleo pasan a su propio módulo (`SessionRuntime`);
+  280 símbolos de sesiones y economía dejan de exportarse porque solo se usan en su fichero; un test más vigila que el
+  módulo de reglas del asesor no use `setImmediate`.
+
 ## Release beta 0.6.36 - Hebra arranca antes, copia de las preferencias de inventario y ajustes propios de cada equipo
 
 Se actualiza desde la 0.6.35 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
