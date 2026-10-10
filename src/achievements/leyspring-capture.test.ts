@@ -13,11 +13,14 @@ function response(body: unknown, status = 200) { return { status, body, headers:
 
 function services(options: {
 	account?: unknown; achievements?: unknown; achievementsError?: Error; catalog?: unknown; catalogStatus?: number; noKey?: boolean;
+	/** `tokeninfo`'s list of permissions; by default every one. */
+	permissions?: string[];
 } = {}) {
 	const requested: string[] = [];
 	const operation: GuildWars2Operation = {
 		request: async (path) => {
 			requested.push(path);
+			if (path === 'tokeninfo') return { id: 'KEY-ID', name: 'Clave', permissions: options.permissions ?? ['account', 'inventories', 'progression', 'unlocks', 'wallet'] };
 			return 'account' in options ? options.account : { id: 'ABCD-1234', name: 'Tester.1234' };
 		},
 		requestDetailed: async (path) => {
@@ -76,12 +79,21 @@ describe('LeyspringCaptureService', () => {
 	it('maps a missing key, a missing permission and a network error to closed reasons', async () => {
 		expect(await services({ noKey: true }).service.capture('es')).toEqual({ status: 'unavailable', reason: 'missing_key' });
 		for (const status of [401, 403]) {
-			expect(await services({ achievementsError: new HttpTransportError('http', status, null, 'denied') }).service.capture('es'))
-				.toEqual({ status: 'unavailable', reason: 'missing_scope' });
+			const lacking = services({ achievementsError: new HttpTransportError('http', status, null, 'denied'), permissions: ['account', 'wallet'] });
+			expect(await lacking.service.capture('es')).toEqual({ status: 'unavailable', reason: 'missing_scope' });
+			expect(lacking.requested.at(-1)).toBe('tokeninfo');
 		}
 		expect(await services({ achievementsError: new HttpTransportError('network', null, null, 'down') }).service.capture('es'))
 			.toEqual({ status: 'unavailable', reason: 'request_failed' });
 		expect(await services({ catalogStatus: 503 }).service.capture('es')).toEqual({ status: 'unavailable', reason: 'request_failed' });
+	});
+
+	it('a 401/403 for a key whose tokeninfo lists progression is a failed reading, not «falta progression»', async () => {
+		for (const status of [401, 403]) {
+			const { service, requested } = services({ achievementsError: new HttpTransportError('http', status, null, 'denied') });
+			expect(await service.capture('es')).toEqual({ status: 'unavailable', reason: 'request_failed' });
+			expect(requested).toContain('tokeninfo');
+		}
 	});
 
 	it('rejects bad answers instead of reading them as "nothing done"', async () => {

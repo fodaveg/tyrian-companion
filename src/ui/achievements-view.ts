@@ -862,13 +862,25 @@ export class AchievementsView {
 		const t = this.t;
 		body.createEl('h4', { text: t.t('achievements.tracked.elements') });
 		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t(elements.loadFailed === true ? (this.actions.hasConfiguredApiKey() ? 'achievements.tracked.elementsLoadFailed' : 'achievements.tracked.elementsLoadFailedNoKey') : elements.hiddenOnly === true ? 'achievements.tracked.elementsHidden' : elements.periodicOnly === true ? 'achievements.tracked.elementsPeriodic' : 'achievements.tracked.elementsNone') }); return; }
-		const unread = elements.items.every((element) => element.state === 'unknown');
+		const unknown = elements.items.filter((element) => element.state === 'unknown').length;
+		const unread = unknown === elements.items.length;
 		const unreadText = elements.total === 1 ? t.t('achievements.tracked.elementsUnread.one') : t.t('achievements.tracked.elementsUnread.many', { total: elements.total });
+		// An element the reading did not ask about is not read, not «not done»: a reading kept from an
+		// older version (that asked other ids) must not pass its gaps off as pending in the count.
 		const count = body.createEl('p', {
 			cls: 'tyrian-achievements__elements-count',
-			text: unread ? unreadText : t.t('achievements.tracked.elementsCount', { done: elements.done, total: elements.total }),
+			text: unread ? unreadText
+				: unknown > 0 ? t.t('achievements.tracked.elementsCountUnread', { done: elements.done, total: elements.total, unread: unknown })
+					: t.t('achievements.tracked.elementsCount', { done: elements.done, total: elements.total }),
 		});
-		if (!unread && elements.done === elements.total && elements.partial !== true && elements.barUnit === undefined) count.addClass('is-complete');
+		if (unknown === 0 && elements.done === elements.total && elements.partial !== true && elements.barUnit === undefined) count.addClass('is-complete');
+		// The dotted circle says «sin leer» only to the eye that knows it: said in words beside the list.
+		if (unknown > 0) {
+			body.createEl('p', {
+				cls: 'tyrian-achievements__elements-count tyrian-achievements__elements-unread',
+				text: t.t(this.actions.hasConfiguredApiKey() ? 'achievements.tracked.elementsUnreadHint' : 'achievements.tracked.elementsUnreadHintNoKey'),
+			});
+		}
 		if (elements.barUnit === 'pieces') body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsPieces') });
 		if (elements.partial === true) body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsPartial') });
 		const list = body.createEl('ul', { cls: 'tyrian-achievements__elements' });

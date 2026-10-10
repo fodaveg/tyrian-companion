@@ -1,4 +1,4 @@
-import { readAccountAchievements } from '../account/account-achievements';
+import { keyLacksProgression, readAccountAchievements } from '../account/account-achievements';
 import { MissingApiKeyError, type GuildWars2Client } from '../account/guild-wars-2-client';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { sha256Text } from '../assets/managed-asset-hash';
@@ -10,9 +10,11 @@ import type { StoredTrackedProgress, TrackedProgressStore } from './achievement-
  *
  * - `missing_key`: no key selected.
  * - `key_rejected`: `account` answered 401/403, so the key itself is invalid or revoked.
- * - `missing_scope`: `account` answered but `account/achievements` refused (401/403): the key lacks
- *   `progression`.
- * - `request_failed`: network, timeout or any other status.
+ * - `missing_scope`: `account` answered, `account/achievements` refused (401/403) and `tokeninfo`,
+ *   asked with the same key, lists no `progression`.
+ * - `request_failed`: network, timeout, any other status, or a 401/403 on `account/achievements`
+ *   that `tokeninfo` does not confirm as a missing `progression` (the transport's own diagnostic
+ *   keeps the real status of each request).
  * - `invalid_response`: a body that does not parse.
  * - `cancelled`: the key changed while the reading was in flight (`clearProgress`), so the reading
  *   was discarded without being kept: it may be of another account.
@@ -155,7 +157,11 @@ async function readTrackedProgress(
 			readAccountAchievements(operation),
 		]);
 		if (accountRead.status === 'rejected') return { status: 'unavailable', reason: failureReason(accountRead.reason, 'key_rejected') };
-		if (achievementsRead.status === 'rejected') return { status: 'unavailable', reason: failureReason(achievementsRead.reason, 'missing_scope') };
+		if (achievementsRead.status === 'rejected') {
+			const reason = failureReason(achievementsRead.reason, 'missing_scope');
+			// A refusal says «falta progression» only once `tokeninfo`, with the same key, confirms it.
+			return { status: 'unavailable', reason: reason === 'missing_scope' && !await keyLacksProgression(operation) ? 'request_failed' : reason };
+		}
 		const accountId = parseAccountId(accountRead.value);
 		const achievements = achievementsRead.value;
 		if (achievements.status !== 'ok' || accountId === null) return { status: 'unavailable', reason: 'invalid_response' };

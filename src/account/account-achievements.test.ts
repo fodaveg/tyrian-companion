@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
 	ACCOUNT_ACHIEVEMENTS_PATH,
+	keyLacksProgression,
 	parseAccountAchievements,
 	readAccountAchievements,
 } from './account-achievements';
@@ -57,5 +58,24 @@ describe('readAccountAchievements', () => {
 			.resolves.toEqual({ status: 'invalid' });
 		await expect(readAccountAchievements({ requestDetailed: async () => ({ status: 206, body: [] }) } as never))
 			.rejects.toThrow('Unexpected status 206.');
+	});
+});
+
+describe('keyLacksProgression', () => {
+	it('asks tokeninfo with the operation and is true only for a list of permissions without progression', async () => {
+		const request = vi.fn(async () => ({ id: 'KEY-ID', name: 'Clave', permissions: ['account', 'wallet'] }));
+		expect(await keyLacksProgression({ request })).toBe(true);
+		expect(request).toHaveBeenCalledWith('tokeninfo');
+		expect(await keyLacksProgression({ request: async () => ({ permissions: ['account', 'progression'] }) })).toBe(false);
+	});
+
+	it('is false, and never rejects, when tokeninfo fails, throws at once or answers something else', async () => {
+		for (const request of [
+			async () => { throw new Error('401'); },
+			() => { throw new Error('sync'); },
+			async () => null, async () => ({}), async () => ({ permissions: 'account' }), async () => ({ permissions: ['account', 7] }),
+		]) {
+			await expect(keyLacksProgression({ request })).resolves.toBe(false);
+		}
 	});
 });

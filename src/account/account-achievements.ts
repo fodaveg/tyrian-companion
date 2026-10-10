@@ -54,8 +54,9 @@ export type AccountAchievementsRead =
 
 /**
  * Requests and parses the account's achievements with `full` validation. A transport failure or a
- * status other than 200 rejects (a key without `progression` answers 403 there); a 200 whose body
- * does not parse is `invalid`.
+ * status other than 200 rejects (a key without `progression` answers 403 there, but so can the API
+ * for a key that has it: `keyLacksProgression` tells them apart); a 200 whose body does not parse
+ * is `invalid`.
  */
 export async function readAccountAchievements(
 	operation: Pick<GuildWars2Operation, 'requestDetailed'>,
@@ -64,6 +65,24 @@ export async function readAccountAchievements(
 	if (response.status !== 200) throw new Error(`Unexpected status ${response.status}.`);
 	const entries = parseAccountAchievements(response.body, 'full');
 	return entries === null ? { status: 'invalid' } : { status: 'ok', entries };
+}
+
+/**
+ * Whether the key of `operation` really lacks `progression`, asked to `GET /v2/tokeninfo` with the
+ * same key. A 401/403 on `account/achievements` alone does not say it: one came for a key with
+ * every permission (0.6.34, 10 oct 2026) right after `account` had accepted it, and the body of the
+ * refusal never reaches here (`HttpTransportError` keeps the status only). Only `tokeninfo` lists
+ * the permissions. True ONLY when `tokeninfo` answers a list of permissions without
+ * `progression`; a failed or malformed `tokeninfo` is false, because nothing was confirmed. Never
+ * rejects: the caller tells «falta el permiso» from «no se pudo leer» with it.
+ */
+export async function keyLacksProgression(operation: Pick<GuildWars2Operation, 'request'>): Promise<boolean> {
+	// `async` so a request that throws synchronously still settles as a rejection here.
+	const ask = async (): Promise<unknown> => await operation.request('tokeninfo');
+	const [read] = await Promise.allSettled([ask()]);
+	if (read.status !== 'fulfilled' || !isRecord(read.value)) return false;
+	const permissions = read.value.permissions;
+	return Array.isArray(permissions) && permissions.every((scope) => typeof scope === 'string') && !permissions.includes('progression');
 }
 
 function parseFullEntry(value: unknown): AccountAchievementEntry | null {

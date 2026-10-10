@@ -1,8 +1,9 @@
 import {
+	keyLacksProgression,
 	readAccountAchievements,
 	type AccountAchievementEntry,
 } from '../account/account-achievements';
-import { MissingApiKeyError, type GuildWars2Client } from '../account/guild-wars-2-client';
+import { MissingApiKeyError, type GuildWars2Client, type GuildWars2Operation } from '../account/guild-wars-2-client';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { sha256Text } from '../assets/managed-asset-hash';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
@@ -50,8 +51,9 @@ export class LeyspringCaptureService {
 	) {}
 
 	async capture(locale: CatalogLocale): Promise<LeyspringCaptureResult> {
+		let operation: GuildWars2Operation | null = null;
 		try {
-			const operation = this.client.beginOperation();
+			operation = this.client.beginOperation();
 			const ids = [LEYSPRING_MASTERY_ACHIEVEMENT_ID, ...LEYSPRING_TRACKED_ACHIEVEMENTS.map((entry) => entry.id)];
 			const [accountBody, achievements, catalog] = await Promise.all([
 				operation.request(`account?v=${encodeURIComponent(PINNED_SCHEMA)}`),
@@ -80,7 +82,11 @@ export class LeyspringCaptureService {
 				},
 			};
 		} catch (error) {
-			return unavailable(failureReason(error));
+			const reason = failureReason(error);
+			// A 401/403 (of whichever of the three reads) says «falta progression» only once
+			// `tokeninfo`, with the same key, confirms it; `keyLacksProgression` never rejects.
+			if (reason === 'missing_scope' && (operation === null || !await keyLacksProgression(operation))) return unavailable('request_failed');
+			return unavailable(reason);
 		}
 	}
 }

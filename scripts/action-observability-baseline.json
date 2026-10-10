@@ -488,11 +488,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "caab3f7215e00353c2a6b30cc6d6155b067e88bf",
+					"id": "0fcc1a4f9a1c3d718996c2df7b6d0255dea5d7e4",
 					"kind": "catch_clause",
-					"line": 82,
+					"line": 84,
 					"column": 5,
-					"endLine": 84,
+					"endLine": 90,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
