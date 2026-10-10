@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { datawars2RealHistoryJorcameloDays } from './__fixtures__/datawars2-real-history-43320-2026-09-26';
+import { datawars2RealHistoryJorcameloDays } from '../test/fixtures/economy/datawars2-real-history-43320-2026-09-26';
 
 import {
 	compareSellNowWithWaiting,
@@ -17,8 +17,8 @@ import {
 	runSellTimingExperiment,
 	type SellTimingPriceDay,
 } from './sell-timing-experiment';
-import { SELL_TIMING_HISTORY_BAG_ITEM_ID, sellTimingHistoryBagDays } from './__fixtures__/sell-timing-history-36038';
-import { SELL_TIMING_HISTORY_CORN_ITEM_ID, sellTimingHistoryCornDays } from './__fixtures__/sell-timing-history-47909';
+import { SELL_TIMING_HISTORY_BAG_ITEM_ID, sellTimingHistoryBagDays } from '../test/fixtures/economy/sell-timing-history-36038';
+import { SELL_TIMING_HISTORY_CORN_ITEM_ID, sellTimingHistoryCornDays } from '../test/fixtures/economy/sell-timing-history-47909';
 
 /** 2026-09-24 is the fixtures' download day and, 19 days before 13 October, 2026's decision day. */
 const DECISION_MS = Date.parse('2026-09-24T12:00:00.000Z');
