@@ -29,7 +29,11 @@ import {
 import { SessionItemTypeSnapshotService } from '../sessions/session-item-type-capture';
 import { PendingProposalService } from '../sessions/pending-proposal-service';
 import { PendingProposalRenewalRegistry } from '../sessions/pending-proposal-renewal';
-import { IndexedDbPendingProposalStore } from '../sessions/pending-proposal-store';
+import {
+	IndexedDbPendingProposalStore,
+	PROPOSAL_QUEUE_DB_NAME,
+	vaultProposalQueueDatabaseName,
+} from '../sessions/pending-proposal-store';
 import type { InactivityStopProposal } from '../sessions/inactivity-stop-detector';
 import type { RelevantStartProposal } from '../sessions/relevant-item-start-detector';
 import { PilotMetricsExporter, type PilotMetricsExportVault } from '../sessions/pilot-metrics-export';
@@ -48,7 +52,7 @@ import type { SessionStorageScope } from '../sessions/session-storage-scope';
 export interface SessionsAssemblyInput {
 	/** The IndexedDB factory every session store opens against. */
 	factory: IDBFactory;
-	/** Scopes the pilot metrics journal to one vault. */
+	/** Scopes the pilot metrics journal and the confirmation queue (DU-03) to one vault. */
 	vaultId: string;
 	/** Which database holds this vault's saved session (H18.12); the lease coordinator shares it. */
 	sessionStorage: Pick<SessionStorageScope, 'runtimeDatabaseName'>;
@@ -138,7 +142,10 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 	const sessionNotes = new SessionNoteWriter(input.sessionNoteVault);
 	const sessionHistory = new SessionHistoryService(input.sessionHistoryVault, input.diagnostics ?? undefined);
 	const pendingProposals = new PendingProposalService(
-		new IndexedDbPendingProposalStore(input.factory, undefined, input.proposalQueuePersistence),
+		// DU-03: this vault's own queue, adopting once a copy of the common one an earlier release left.
+		new IndexedDbPendingProposalStore(
+			input.factory, vaultProposalQueueDatabaseName(input.vaultId), input.proposalQueuePersistence, PROPOSAL_QUEUE_DB_NAME,
+		),
 		input.instanceId,
 		undefined,
 		input.onProposalQueueStateChange,

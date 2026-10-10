@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { compareStorageSnapshots } from './account/storage-delta';
+import { sha256Text } from './assets/managed-asset-hash';
+import { PROPOSAL_QUEUE_DB_NAME, vaultProposalQueueDatabaseName } from './sessions/pending-proposal-store';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import { DEFAULT_SETTINGS } from './core/settings';
 import { obsidianPluginCore } from './test/obsidian-host-harness';
@@ -67,6 +69,23 @@ describe('a saved session belongs to the vault that saved it (H18.12)', () => {
 		await expect(new IndexedDbSessionRuntimeStore(factory).load()).resolves.toMatchObject({
 			status: 'loaded', record: { state: { status: 'complete', sessionId: 'session-vault-a' } },
 		});
+	});
+
+	it('gives each vault its own confirmation queue, and creates no common one (DU-03)', async () => {
+		const factory = new IDBFactory();
+		const queues = async (): Promise<string[]> => (await factory.databases())
+			.map((info) => info.name ?? '').filter((name) => name.startsWith(PROPOSAL_QUEUE_DB_NAME)).sort();
+
+		await vaultPlugin(factory, '/vaults/farming').initializeRuntime();
+		await vaultPlugin(factory, '/vaults/notes').initializeRuntime();
+
+		// The queue opens in the background after the start; the names are what each vault's own id gives.
+		const expected = [
+			vaultProposalQueueDatabaseName(await vaultIdOf('/vaults/farming')),
+			vaultProposalQueueDatabaseName(await vaultIdOf('/vaults/notes')),
+		].sort();
+		await vi.waitFor(async () => { expect(await queues()).toEqual(expected); });
+		expect(await queues()).not.toContain(PROPOSAL_QUEUE_DB_NAME);
 	});
 
 	it('gives the live journal to a database an earlier release left in version 1, keeping its session (DU-01)', async () => {
@@ -151,6 +170,11 @@ async function persistInEarlierDatabase(factory: IDBFactory, record: SessionRunt
 	const saved = await store.save(record);
 	store.close();
 	if (saved.status !== 'saved') throw new Error('The session fixture could not be persisted.');
+}
+
+/** The id the core derives for a vault at this path (`canonicalIdentity` is the base path on desktop). */
+async function vaultIdOf(basePath: string): Promise<string> {
+	return await sha256Text(basePath.normalize('NFC'));
 }
 
 /** One vault window: same factory as every other window, its own vault path. */
