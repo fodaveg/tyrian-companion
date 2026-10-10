@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { Window } from 'happy-dom';
 import { describe, expect, it, vi } from 'vitest';
+import { installDomHelpers } from '../host/dom-polyfill';
 import { FarmingDeclaredBuildEditor } from './farming-declared-build-editor';
 
 const fixtures = JSON.parse(readFileSync(new URL('../sessions/__fixtures__/build-template-chatlinks.json', import.meta.url), 'utf8')) as { samples: { code: string }[] };
 function setup(initial: unknown = null) {
 	const document = new Window().document as unknown as Document; let saved = initial;
+	// The editor builds with Obsidian's `createEl`, which both hosts provide (Hebra through the polyfill).
+	installDomHelpers(document.defaultView ?? {});
 	const save = vi.fn(async (value: unknown) => { saved = value; });
 	const actions = { getLocale: () => 'es' as const, getFarmingDeclaredBuildPreference: () => saved, saveFarmingDeclaredBuildPreference: save };
 	const editor = new FarmingDeclaredBuildEditor(document, actions); document.body.append(editor.element);

@@ -30,8 +30,9 @@ export function liveSessionSetAsideNotice(locale: 'es' | 'en', setAside: readonl
 }
 
 /** Fills `target` (a status region) with the notice, one paragraph per sentence; hides it when there is none. */
-export function paintLiveSessionSetAside(document: Document, target: HTMLElement, locale: 'es' | 'en', setAside: readonly LiveSessionSetAside[]): void {
+export function paintLiveSessionSetAside(target: HTMLElement, locale: 'es' | 'en', setAside: readonly LiveSessionSetAside[]): void {
 	const lines = liveSessionSetAsideNotice(locale, setAside);
 	target.hidden = lines.length === 0;
-	target.replaceChildren(...lines.map((line) => { const p = document.createElement('p'); p.textContent = line; return p; }));
+	target.replaceChildren();
+	for (const line of lines) target.createEl('p', { text: line });
 }

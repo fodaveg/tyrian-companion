@@ -206,9 +206,9 @@ describe('set-aside notice and coin figure DOM', () => {
 			...Array.from({ length: 7 }, (_, index) => ({ path: `Sessions/new-${String(index)}.md`, reason: 'newer_version' as const })),
 			{ path: 'Sessions/broken.md', reason: 'unreadable' as const },
 		];
-		paintLiveSessionSetAside(document, target, 'es', setAside);
+		paintLiveSessionSetAside(target, 'es', setAside);
 		expect(target.outerHTML).toMatchSnapshot();
-		paintLiveSessionSetAside(document, target, 'en', []);
+		paintLiveSessionSetAside(target, 'en', []);
 		expect(target.outerHTML).toMatchSnapshot();
 	});
 

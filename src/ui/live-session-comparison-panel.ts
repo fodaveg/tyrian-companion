@@ -27,18 +27,19 @@ export class LiveSessionComparisonPanel {
 	private page = 0;
 	private historyKey = '';
 
-	constructor(private readonly document: Document, private readonly actions: LiveSessionComparisonActions) {
+	constructor(document: Document, private readonly actions: LiveSessionComparisonActions) {
+		// The root has no parent yet (the farming panel places it), so only it comes from `document`.
 		this.element = document.createElement('details'); this.element.className = 'tyrian-live-comparison tyrian-live-session';
-		this.element.append(this.node('summary', this.copy('title')), this.node('p', this.copy('limit')));
-		this.loadButton = this.button(this.copy('load'), () => { void this.load(); });
-		this.status = this.node('p'); this.status.setAttribute('role', 'status');
-		this.provisional = this.node('div'); this.content = this.node('div');
-		this.aside = this.node('div'); this.aside.setAttribute('role', 'status'); this.aside.hidden = true;
-		const toolbar = this.node('div'); toolbar.className = 'tyrian-live-session__toolbar';
-		this.previous = this.button(this.copy('previous'), () => { this.page = Math.max(0, this.page - 1); this.historyKey = ''; this.refresh(); });
-		this.next = this.button(this.copy('next'), () => { this.page++; this.historyKey = ''; this.refresh(); });
-		this.pageLabel = this.node('span'); toolbar.append(this.loadButton, this.previous, this.pageLabel, this.next);
-		this.element.append(toolbar, this.status, this.aside, this.provisional, this.content); this.refresh();
+		this.node(this.element, 'summary', this.copy('title')); this.node(this.element, 'p', this.copy('limit'));
+		const toolbar = this.node(this.element, 'div'); toolbar.className = 'tyrian-live-session__toolbar';
+		this.loadButton = this.button(toolbar, this.copy('load'), () => { void this.load(); });
+		this.previous = this.button(toolbar, this.copy('previous'), () => { this.page = Math.max(0, this.page - 1); this.historyKey = ''; this.refresh(); });
+		this.pageLabel = this.node(toolbar, 'span');
+		this.next = this.button(toolbar, this.copy('next'), () => { this.page++; this.historyKey = ''; this.refresh(); });
+		this.status = this.node(this.element, 'p'); this.status.setAttribute('role', 'status');
+		this.aside = this.node(this.element, 'div'); this.aside.setAttribute('role', 'status'); this.aside.hidden = true;
+		this.provisional = this.node(this.element, 'div'); this.content = this.node(this.element, 'div');
+		this.refresh();
 	}
 	refresh(): void {
 		const { history, provisional } = this.actions.getLiveSessionComparison();
@@ -48,7 +49,7 @@ export class LiveSessionComparisonPanel {
 		this.status.setAttribute('role', this.failed || history.status === 'conflict' || history.status === 'unavailable' ? 'alert' : 'status');
 		this.status.textContent = this.failed ? this.copy('unavailable') : history.status === 'ready'
 			? `${this.copy('finalCount')}: ${String(history.comparison.completedSessions)}` : this.copy(history.status === 'loading' ? 'loading' : history.status);
-		paintLiveSessionSetAside(this.document, this.aside, this.actions.getLocale(), history.status === 'ready' ? history.setAside : []);
+		paintLiveSessionSetAside(this.aside, this.actions.getLocale(), history.status === 'ready' ? history.setAside : []);
 		this.provisional.replaceChildren();
 		if (provisional) this.renderProvisional(provisional);
 		const key = JSON.stringify([history, this.page]);
@@ -58,7 +59,7 @@ export class LiveSessionComparisonPanel {
 		this.page = Math.min(this.page, Math.max(0, Math.ceil(groups.length / PAGE_SIZE) - 1));
 		this.previous.disabled = this.page === 0; this.next.disabled = (this.page + 1) * PAGE_SIZE >= groups.length;
 		this.pageLabel.textContent = groups.length === 0 ? '' : `${String(this.page * PAGE_SIZE + 1)}–${String(Math.min(groups.length, (this.page + 1) * PAGE_SIZE))} / ${String(groups.length)}`;
-		if (history.status === 'ready' && groups.length === 0) this.content.append(this.node('p', this.copy('empty')));
+		if (history.status === 'ready' && groups.length === 0) this.node(this.content, 'p', this.copy('empty'));
 		for (const group of groups.slice(this.page * PAGE_SIZE, (this.page + 1) * PAGE_SIZE)) this.renderGroup(group);
 	}
 	private async load(): Promise<void> {
@@ -69,9 +70,9 @@ export class LiveSessionComparisonPanel {
 		finally { this.working = false; this.refresh(); }
 	}
 	private renderGroup(group: LiveComparisonGroup): void {
-		const section = this.node('section'); section.append(this.node('h4', group.conditions.playerBuild === null ? this.copy('buildUnknown') : `${group.conditions.playerBuild.profession}${group.conditions.playerBuild.label === null ? '' : ` · ${group.conditions.playerBuild.label}`} · ${this.copy('buildManual')}`), this.node('p', this.conditions(group.conditions)));
+		const section = this.node(this.content, 'section'); this.node(section, 'h4', group.conditions.playerBuild === null ? this.copy('buildUnknown') : `${group.conditions.playerBuild.profession}${group.conditions.playerBuild.label === null ? '' : ` · ${group.conditions.playerBuild.label}`} · ${this.copy('buildManual')}`); this.node(section, 'p', this.conditions(group.conditions));
 		if (group.conditions.playerBuild !== null) {
-			const template = this.node('details'); template.append(this.node('summary', this.copy('buildTemplate')), this.node('code', group.conditions.playerBuild.templateCode)); section.append(template);
+			const template = this.node(section, 'details'); this.node(template, 'summary', this.copy('buildTemplate')); this.node(template, 'code', group.conditions.playerBuild.templateCode);
 		}
 		const metrics = this.metrics(section);
 		this.metric(metrics, 'finalCount', group.completedSessions); this.metric(metrics, 'eligible', group.eligibleSessions);
@@ -83,11 +84,11 @@ export class LiveSessionComparisonPanel {
 		this.metric(metrics, 'partialPrices', group.unpricedItemCount);
 		this.metric(metrics, 'range', group.minimumBagsPerHourMilli === null || group.maximumBagsPerHourMilli === null ? null
 			: `${this.rate(group.minimumBagsPerHourMilli)}–${this.rate(group.maximumBagsPerHourMilli)}`);
-		if (group.status !== 'ready') section.append(this.node('p', this.copy('minimum')));
-		section.append(this.node('p', this.copy('gold'))); this.content.append(section);
+		if (group.status !== 'ready') this.node(section, 'p', this.copy('minimum'));
+		this.node(section, 'p', this.copy('gold'));
 	}
 	private renderProvisional(row: LiveComparisonRow): void {
-		this.provisional.append(this.node('h4', this.copy('provisional')), this.node('p', row.conditions.playerBuild === null ? this.copy('buildUnknown') : `${row.conditions.playerBuild.label ?? row.conditions.playerBuild.profession} · ${this.copy('buildManual')}`), this.node('p', this.conditions(row.conditions)));
+		this.node(this.provisional, 'h4', this.copy('provisional')); this.node(this.provisional, 'p', row.conditions.playerBuild === null ? this.copy('buildUnknown') : `${row.conditions.playerBuild.label ?? row.conditions.playerBuild.profession} · ${this.copy('buildManual')}`); this.node(this.provisional, 'p', this.conditions(row.conditions));
 		const metrics = this.metrics(this.provisional);
 		this.metric(metrics, 'connection', this.time(row.connectionMs)); this.metric(metrics, 'coverage', this.time(row.observedItemsMs));
 		this.metric(metrics, 'positive', row.positiveBags); this.metric(metrics, 'negative', row.negativeBags); this.metric(metrics, 'net', row.netBags);
@@ -97,11 +98,12 @@ export class LiveSessionComparisonPanel {
 	private conditions(value: LiveComparisonConditions): string {
 		return `${this.copy(value.groupContext ?? 'groupUnknown')} · ${this.copy(value.presenceScope)} · ${this.copy('magicFind')}: ${value.magicFind.value === null ? '—' : String(value.magicFind.value)} (${this.copy(value.magicFind.source === 'unknown' ? 'sourceUnknown' : value.magicFind.source)}) · ${this.copy('manualBonus')}: ${value.magicFind.manualBonus === null ? '—' : String(value.magicFind.manualBonus)}`;
 	}
-	private metrics(parent: HTMLElement): HTMLElement { const dl = this.node('dl'); dl.className = 'tyrian-live-session__metrics'; parent.append(dl); return dl; }
-	private metric(parent: HTMLElement, key: LiveComparisonCopyKey, value: string | number | null): void { parent.append(this.node('dt', this.copy(key)), this.node('dd', value === null ? '—' : String(value))); }
+	private metrics(parent: HTMLElement): HTMLElement { const dl = this.node(parent, 'dl'); dl.className = 'tyrian-live-session__metrics'; return dl; }
+	private metric(parent: HTMLElement, key: LiveComparisonCopyKey, value: string | number | null): void { this.node(parent, 'dt', this.copy(key)); this.node(parent, 'dd', value === null ? '—' : String(value)); }
 	private time(value: number | null): string | null { return value === null ? null : formatFarmingTime(value); }
 	private rate(value: number | null): string | null { return value === null ? null : (value / 1000).toLocaleString(this.actions.getLocale(), { maximumFractionDigits: 3 }); }
-	private node<K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] { const node = this.document.createElement(tag); node.textContent = text; return node; }
-	private button(text: string, action: () => void): HTMLButtonElement { const button = this.node('button', text); button.type = 'button'; button.addEventListener('click', action); return button; }
+	/** A `tag` with `text`, appended to `parent`. */
+	private node<K extends keyof HTMLElementTagNameMap>(parent: HTMLElement, tag: K, text = ''): HTMLElementTagNameMap[K] { return parent.createEl(tag, { text }); }
+	private button(parent: HTMLElement, text: string, action: () => void): HTMLButtonElement { const button = this.node(parent, 'button', text); button.type = 'button'; button.addEventListener('click', action); return button; }
 	private copy(key: LiveComparisonCopyKey): string { return liveComparisonCopy(this.actions.getLocale(), key); }
 }

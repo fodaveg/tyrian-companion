@@ -442,7 +442,7 @@ export class LiveSessionPanel {
 		this.setText(this.previousAlert.firstElementChild as HTMLElement, failed ? this.copy('previousFailed') : '');
 		this.setText(this.previousRetry, this.copy('retry'));
 		// Named whether or not any session is listed: the notes that are not in the list are the reason it may look short.
-		paintLiveSessionSetAside(this.document, this.previousAside, this.actions.getLocale(), open && state === 'ready' ? this.previousSetAside : []);
+		paintLiveSessionSetAside(this.previousAside, this.actions.getLocale(), open && state === 'ready' ? this.previousSetAside : []);
 		const listed = open && state === 'ready' && entries.length > 0;
 		this.previousRows.hidden = !listed;
 		this.previousMore.hidden = true;
