@@ -96,7 +96,9 @@ function vaultEntry(target: TAbstractFile | null): TyrianVaultFile | null {
  */
 function watchVault(plugin: Plugin, root: string, listener: (change: TyrianVaultChange) => void): () => void {
 	const vault = plugin.app.vault;
-	const under = (path: string): boolean => root.length === 0 || path.startsWith(root);
+	// Folder boundary: root "Tyrian" matches "Tyrian/x.md" (and "Tyrian" itself), never "Tyrian Old/x.md".
+	const folder = root.endsWith('/') ? root : `${root}/`;
+	const under = (path: string): boolean => root.length === 0 || path === root || path.startsWith(folder);
 	const refs: EventRef[] = [
 		vault.on('create', (file) => { if (file instanceof TFile && under(file.path)) listener({ kind: 'create', path: file.path }); }),
 		vault.on('modify', (file) => { if (file instanceof TFile && under(file.path)) listener({ kind: 'modify', path: file.path }); }),
