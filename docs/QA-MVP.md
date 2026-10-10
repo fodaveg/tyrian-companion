@@ -1,6 +1,47 @@
 # QA manual del MVP
 
-## Matriz candidata 0.5.0 live1 (6 oct 2026; ejecución real pendiente)
+## Matriz 0.6.x de v1 (10 oct 2026; canal 0.6.35; ejecución real pendiente)
+
+Esta matriz es la vigente: lista lo que han añadido las 0.6.x y cómo se puede comprobar. Lo anterior
+(la matriz 0.5.0 live1 y las dieciséis pruebas históricas) queda debajo como anexo. Ninguna fila tiene
+hoy una ejecución real registrada en un Obsidian o un Hebra: ver [ESTADO](ESTADO.md). Para Hebra hay un
+[guion corto](QA-HEBRA.md).
+
+Clase de comprobación (propuesta, a falta de confirmar con el inventario de la nota de Hebra de la
+auditoría RT-05, que no he podido leer):
+
+- **a**: la puede hacer un agente sin la persona, con scripts o `obsidian eval` sobre una bóveda desechable
+  (Obsidian) o contra los ficheros instalados y `gh release view`.
+- **b**: pide un Hebra real abierto, o un plugin de sonda dentro de Hebra; la persona solo da permiso.
+- **c**: solo la hace una persona, con el juego, el addon de Nexus o una clave API reales.
+
+| Función (versión) | Obsidian | Hebra | Qué comprobar |
+| --- | --- | --- | --- |
+| Vista principal de Hebra con Sesión, Inventario, Venta y Logros (0.6.21), presentación a una columna y «Valor estimado» (0.6.22) | n/a (la vista principal es de Hebra; Obsidian usa pantalla o barra lateral) | b | Se abre con **Abrir acompañante**, las cuatro secciones salen y cambian sin perder el foco |
+| Notas resumen de sesión (0.6.13 a 0.6.19) | c | c | Al cerrar una sesión real se escribe la nota en `<carpeta de salida>/summaries`, con iconos de objetos (0.6.32) |
+| Logros: buscador, seguimiento y elementos con iconos (0.6.30, 0.6.32) | a | b | Buscar, **Seguir**, ver los elementos; sin clave API |
+| Logros: progreso con **Actualizar progreso** y motivo de rechazo en el diagnóstico (0.6.35) | c | c | Con una clave con permiso `progression`; las redacciones de rechazo de ArenaNet no están medidas con una clave real |
+| Assets gestionados: **Aplicar**, **Reparar**, **Reemplazar**, **Mover** y carpeta de salida creada en Hebra (0.6.34, 0.6.35) | a | b | Vista previa y aplicar sobre una carpeta nueva; dos pulsaciones seguidas no duplican carpetas |
+| Sesión en vivo: reserva, reloj atrasado, **Terminar sesión** y **Descartar sesión** (0.6.31, 0.6.34) | c | c | Con el juego y el addon; el candado `navigator.locks` de Hebra no está medido (ver [QA-HEBRA](QA-HEBRA.md), lista de candados) |
+| Arranque con almacén mudo, candado y recuperación de almacenes (0.6.24, 0.6.30) | a | b | Cierre forzado con una sesión en vivo, reabrir; eventos `life_lock_*` y `taken` en el registro |
+| Token del addon: **Crear token** y **Copiar token** (0.6.34) | a | b | El portapapeles responde; el addon acepta el token (esto último es c) |
+| Venta: animación, plazo de 60 s y **Actualizar** (0.6.34) | a | b | Precios del bazar sin clave API; con inventario de temporada, filas con icono |
+| Instalación y carga de la release (todas) | a | b | Versión cargada igual a la de la release; en Obsidian `verify-beta-runtime`, en Hebra, [QA-HEBRA](QA-HEBRA.md) |
+
+### Pregunta abierta para David: plataformas de la QA (RT-10)
+
+Los documentos se contradicen y esta matriz no elige:
+
+- Las pruebas 12 a 15 del anexo exigen Windows con **Blish HUD** y dejan fuera macOS con CrossOver.
+- [BETA](BETA.md) dice que desde el 8 oct 2026 **Nexus es obligatorio** para las funciones en vivo en todas
+  las plataformas, que Blish queda congelado en su 0.5.0 y que Windows con Nexus es una expectativa sin
+  probar (el lector solo está probado en Fedora con Proton).
+
+La decisión que falta: para cerrar v1, ¿Windows se prueba con Nexus (y Blish deja de contar), se mantiene
+Blish en la QA, o Windows queda fuera de v1? Hasta entonces las filas de Windows de los anexos no
+cuentan como requisito.
+
+## Anexo A. Matriz candidata 0.5.0 live1 (6 oct 2026; ejecución real pendiente)
 
 [SPEC-live-loot](SPEC-live-loot.md) prevalece sobre precondiciones y recorridos API históricos para las nuevas sesiones. La evidencia `e370775` de abajo no acredita live1. Registrar versiones, SHA y entorno realmente probado; cross-build no equivale a carga nativa. Se conserva QA de funciones API manuales.
 
@@ -29,7 +70,7 @@ no acreditación de que esas fuentes ya estén implementadas.
 
 Casos discriminantes y comandos existentes: SPEC-live-loot §11. Monedas/MF siguen dentro del objetivo: ausencia de cobertura no acredita implementación. La [sonda externa](audit/live-loot-evidence-provenance.md) solo avala su candidato; QA dentro de Nexus y Windows siguen pendientes. En nuevas sesiones, salir de un mapa no las cierra: rige toda la conexión y su gracia de diez minutos.
 
-## Matriz histórica API/H18 y compatibilidad
+## Anexo B. Matriz histórica API/H18 y compatibilidad
 
 Las pruebas siguientes conservan el estado y referencias de sus candidatos originales. Las
 operaciones manuales de inventario y lectura de datos legacy siguen siendo pruebas de compatibilidad.

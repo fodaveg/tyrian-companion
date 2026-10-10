@@ -18,7 +18,7 @@
   salida en Hebra solo en las pulsaciones de Aplicar, Reparar y Reemplazar.
 - Riesgo aceptado: dos dispositivos que pulsan «Aplicar» antes de que el sync converja pueden dejar dos carpetas de
   salida hermanas, sin pérdida de datos.
-- Pendiente: verla en un Obsidian y un Hebra reales.
+- Pendiente: verla en un Obsidian y un Hebra reales. Guion corto, con la lista de candados `life_lock_*` y `taken`: [QA-HEBRA](QA-HEBRA.md).
 
 ## Canal 0.6.34 publicado: Terminar sesión, Descartar sesión, token del addon, Assets en Hebra, Logros y Venta (10 oct 2026)
 
