@@ -27,7 +27,6 @@ import {
 } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
-	localDebugStorageFailureCode,
 	type LocalDebugPersistenceContext,
 } from '../core/local-debug-persistence';
 
@@ -120,7 +119,7 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 				return database;
 			} catch (error) {
 				if (error instanceof ProposalQueueClosedError) attempt.skip('cancelled');
-				else attempt.failure(localDebugStorageFailureCode(error), error);
+				else attempt.failure(indexedDbFailureCode(error), error);
 				throw error;
 			}
 		}, () => this.closedError('Confirmation queue is unavailable.'));

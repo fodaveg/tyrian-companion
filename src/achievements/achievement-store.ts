@@ -31,8 +31,13 @@ export const ACHIEVEMENTS_DB_VERSION = 1;
 export const ACHIEVEMENTS_PUBLIC_STORE = 'public-v1';
 export const ACHIEVEMENTS_PROGRESS_STORE = 'progress-v1';
 
-/** The kinds of public record; `index-page` and `detail` carry a number (page index or achievement id). */
-export type AchievementPublicKind = 'groups' | 'categories' | 'index-page' | 'detail';
+/**
+ * The kinds of public record; `index-page` and `detail` carry a number (page index or achievement id)
+ * and the `name-*` ones the id of the object, mini, skin or title whose name they keep.
+ */
+export type AchievementPublicKind =
+	| 'groups' | 'categories' | 'index-page' | 'detail'
+	| 'name-item' | 'name-minipet' | 'name-skin' | 'name-title';
 
 export interface AchievementPublicRecord {
 	key: string;

@@ -104,6 +104,9 @@ export interface OpenIndexedDbOptions {
 	cancel?: (handle: unknown) => void;
 }
 
+/** The errors `openIndexedDb` rejected with because the engine never answered the open. */
+const openTimeouts = new WeakSet<object>();
+
 /**
  * Opens the database, applies the schema and resolves the connection.
  *
@@ -129,7 +132,10 @@ export function openIndexedDb(options: OpenIndexedDbOptions): Promise<IDBDatabas
 			if (settled) return;
 			settled = true;
 			stopTimer();
-			reject(options.toError(reason, error));
+			const built = options.toError(reason, error);
+			// The error stays the store's own; this only lets `indexedDbFailureCode` tell that the wait ran out.
+			if (reason === 'timeout' && typeof built === 'object' && built !== null) openTimeouts.add(built);
+			reject(built);
 		};
 		try { timer = schedule(() => { fail('timeout', null); }, options.timeoutMs ?? STORAGE_ANSWER_TIMEOUT_MS); }
 		catch { timer = undefined; /* No timer in this host (a unit test under Node): the open is unbounded, as before. */ }
@@ -256,11 +262,12 @@ export class IndexedDbUnavailableError extends Error {
 
 /**
  * The diagnostic code of a failed store operation: `timeout` when the engine did not answer in time
- * (`StorageUnansweredError`, also when a store wrapped it), otherwise the storage code of the engine's own error.
+ * (`StorageUnansweredError`, also when a store wrapped it) or an open ran out of its wait (whatever error `toError`
+ * built for `timeout`), otherwise the storage code of the engine's own error.
  */
 export function indexedDbFailureCode(error: unknown): LocalDebugCode {
 	const reason = error instanceof IndexedDbUnavailableError || error instanceof IndexedDbConnectionLostError ? error.reason : error;
-	return reason instanceof StorageUnansweredError ? 'timeout' : localDebugStorageFailureCode(reason);
+	return reason instanceof StorageUnansweredError || (typeof reason === 'object' && reason !== null && openTimeouts.has(reason)) ? 'timeout' : localDebugStorageFailureCode(reason);
 }
 
 /** What a reopening connection installs on each open: spread them into the `openIndexedDb` options. */

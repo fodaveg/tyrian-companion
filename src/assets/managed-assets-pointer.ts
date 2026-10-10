@@ -6,7 +6,7 @@ import {
 	openIndexedDb,
 	startIndexedDbTransaction,
 } from '../core/indexed-db-open';
-import { LocalDebugPersistenceProbe, localDebugStorageFailureCode } from '../core/local-debug-persistence';
+import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 
 export const MANAGED_ASSETS_POINTER_DB = 'tyrian-companion-managed-assets';
 const STORE = 'pointer-v1';
@@ -56,7 +56,7 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 				attempt.success();
 				return database;
 			} catch (error) {
-				attempt.failure(localDebugStorageFailureCode(error), error);
+				attempt.failure(indexedDbFailureCode(error), error);
 				throw error;
 			}
 		}, () => new Error('Managed-assets pointer is closed.'));

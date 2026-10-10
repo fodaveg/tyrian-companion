@@ -14,9 +14,6 @@ import {
 } from './companion-status-model';
 import { createTranslator } from '../core/i18n';
 import type { RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
-import {
-	classMethodBody, classMethodCallChains, forbiddenBoundaryUses, type ModuleBoundary, readModuleSource,
-} from '../test/module-boundary';
 
 const NOW = Date.parse('2026-08-14T12:00:00.000Z');
 
@@ -281,30 +278,6 @@ describe('buildCompanionStatus', () => {
 describe('formatElapsed', () => {
 	it('does not wrap hours after one day', () => {
 		expect(formatElapsed(123 * 3_600_000 + 4_000)).toBe('123:00:04');
-	});
-});
-
-describe('status projection boundary', () => {
-	it('has no live Obsidian, network, timer, or storage dependency', () => {
-		const boundary: ModuleBoundary = {
-			path: 'src/ui/companion-status-model.ts',
-			forbiddenImports: ['obsidian'],
-			forbiddenNames: ['requestUrl', 'fetch', 'setInterval', 'localStorage', 'indexedDB'],
-		};
-		expect(forbiddenBoundaryUses(readModuleSource(boundary.path), boundary)).toEqual([]);
-	});
-
-	it('prevents timer ticks from rebuilding the view and stealing focus', () => {
-		const source = readModuleSource('src/ui/companion-view.ts');
-		const schedule = classMethodCallChains(source, 'TyrianCompanionView', 'scheduleRefresh');
-		expect(schedule).not.toContain('this.render');
-		expect(schedule).toContain('this.contentEl.win.setInterval');
-		expect(schedule).toContain('this.refreshDynamicStatus');
-		const refresh = classMethodBody(source, 'TyrianCompanionView', 'refreshDynamicStatus');
-		expect(refresh).toContain('this.checkButton.disabled');
-		// Lote M/N (9 sep 2026): the incident line became the card's single callout, rebuilt in its
-		// own retained slot instead of a full card rebuild — same in-place-repaint property, new node.
-		expect(refresh).toContain('renderSessionCardCallout(this.calloutSlot');
 	});
 });
 

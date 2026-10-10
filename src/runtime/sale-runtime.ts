@@ -51,7 +51,7 @@ import {
 	saleInstantSellNetFor,
 	saleOpenVsSellCopper,
 	saleSourceRowFromAdvisorRow,
-} from './core-sale-helpers';
+} from './core-sale-rules';
 
 /**
  * The part of an advisor analysis the Sale tab reads: the live price snapshot it was built from

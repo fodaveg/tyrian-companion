@@ -17,8 +17,10 @@
 //   feature test is allowed; the guarded use behind it is not;
 // - `Buffer`, `process` or `require` read off `globalThis`/`window`/`self`/`global`, and any
 //   `require`/`__require` call left in the output (a require esbuild could not resolve);
-//   The output is minified (whitespace and syntax, not identifiers: renaming would hide esbuild's
-//   `__require` shim), so these checks read what survives it: a reference in dead code that esbuild
+//   The guard reads a build whose identifiers are NOT renamed (renaming would hide esbuild's
+//   `__require` shim), made apart in memory; the file Hebra loads is a second build of the same
+//   sources with identifiers renamed, as `esbuild.config.mjs` does for Obsidian, and the markers
+//   and member reads are looked for in it too. Either way a reference in dead code that esbuild
 //   removes is no longer reported, which is right for the file Hebra loads;
 // - any import left in the output (Hebra resolves none), or a bundled copy of a module Hebra lends
 //   (`@codemirror/*`, `@lezer/*`): two copies of `@codemirror/state` break Hebra's editor;
@@ -74,7 +76,7 @@ export async function buildHostEsm({
 	requiredExports = entry === HOST_ESM_ENTRY ? PLUGIN_EXPORTS : [],
 } = {}) {
 	const forbiddenImports = [];
-	const result = await esbuild.build({
+	const options = (publish) => ({
 		absWorkingDir: root,
 		entryPoints: [entry],
 		outfile,
@@ -82,9 +84,11 @@ export async function buildHostEsm({
 		format: 'esm',
 		platform: 'browser',
 		target: 'es2021',
-		write,
-		// Whitespace and syntax only: renaming identifiers would hide esbuild's `__require` shim from `outputViolations`.
+		// The guard build is never written and keeps every identifier, so `__require` stays findable;
+		// the published one is the same build with the identifiers renamed.
+		write: publish && write,
 		minifyWhitespace: true,
+		minifyIdentifiers: publish,
 		// Without a line limit the whole bundle is one line of ~2.5 MB and every stack trace points at its column.
 		lineLimit: 200,
 		minifySyntax: true,
@@ -97,16 +101,21 @@ export async function buildHostEsm({
 				// esbuild runs the filter as a Go regular expression, which rejects the `u` flag.
 				build.onResolve({ filter: /.*/ }, (args) => {
 					if (args.kind === 'entry-point' || !isForbiddenSpecifier(args.path)) return undefined;
-					forbiddenImports.push({ specifier: args.path, importer: relative(root, args.importer) });
+					if (!publish) forbiddenImports.push({ specifier: args.path, importer: relative(root, args.importer) });
 					return { path: args.path, external: true };
 				});
 			},
 		}, hebraShared()],
 	});
+	const checked = await esbuild.build(options(false));
+	const result = await esbuild.build(options(true));
 
 	const violations = forbiddenImports.map(({ specifier, importer }) => `import '${specifier}' from ${importer}`);
 	const text = result.outputFiles?.[0]?.text ?? readFileSync(resolve(root, outfile), 'utf8');
-	violations.push(...outputViolations(text));
+	violations.push(...outputViolations(checked.outputFiles?.[0]?.text ?? ''));
+	for (const violation of outputViolations(text)) {
+		if (!violations.includes(violation)) violations.push(violation);
+	}
 	const output = Object.values(result.metafile.outputs)[0];
 	const reported = new Set(forbiddenImports.map(({ specifier }) => specifier));
 	for (const imported of output?.imports ?? []) {
@@ -123,7 +132,8 @@ export async function buildHostEsm({
 	const packages = [...new Set(inputs.flatMap((path) => packageOf(path) ?? []))].sort();
 	for (const name of packages.filter((name) => !declared.has(name))) violations.push(`package ${name} is not declared in package.json`);
 	const bytes = text.length;
-	return { violations, inputs: inputs.length, packages, bytes, outfile, exports: [...(output?.exports ?? [])].sort() };
+	const checkedBytes = (checked.outputFiles?.[0]?.text ?? '').length;
+	return { violations, inputs: inputs.length, packages, bytes, checkedBytes, outfile, exports: [...(output?.exports ?? [])].sort() };
 }
 
 /**

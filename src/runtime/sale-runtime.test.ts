@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
-import { resolveSaleSeasonalInputFor } from './core-sale-helpers';
+import { resolveSaleSeasonalInputFor } from './core-sale-rules';
 import { createTranslator } from '../core/i18n';
 import type { HttpRequest, HttpResponse, HttpTransport } from '../core/http';
 import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
