@@ -34,7 +34,8 @@ describe('H14.13 renderViews coalescing', () => {
 		// The test double for `Plugin` (`src/test/obsidian-mock.ts`) does not set `this.app` the
 		// way the real Obsidian base class does; `obsidianPluginCore` makes that assignment.
 		const core = obsidianPluginCore(app, manifest).core as unknown as { viewControllers: unknown; renderViews(): void };
-		core.viewControllers = { companion, inventoryAdvisor: new MountedViews(() => view), sale: new MountedViews(() => view) };
+		// The same shape as production's `mountedViews`, Achievements included.
+		core.viewControllers = { companion, inventoryAdvisor: new MountedViews(() => view), sale: new MountedViews(() => view), achievements: new MountedViews(() => view) };
 		return core;
 	}
 

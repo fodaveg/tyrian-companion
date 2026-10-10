@@ -76,9 +76,11 @@ describe('inventory sync progress and the open product tabs', () => {
 		});
 		const sales = new MountedViews(() => sale);
 		const advisors = new MountedViews(() => advisor);
+		// The same shape as production's `mountedViews`: every section, Achievements included, or `shutdownRuntime` walks an undefined one.
 		core.viewControllers = {
 			companion: new MountedViews(() => { throw new Error('No Companion view is mounted in this test.'); }),
 			inventoryAdvisor: advisors, sale: sales,
+			achievements: new MountedViews(() => { throw new Error('No Achievements view is mounted in this test.'); }),
 		};
 		const saleRegistration = sales.registration(saleView({ getSaleLocale: () => 'en' }));
 		const advisorRegistration = advisors.registration(inventoryAdvisorView({ getInventoryAdvisorLocale: () => 'en' }));
@@ -302,6 +304,7 @@ describe('Sale tab expiry timer and the plugin unload', () => {
 				companion: new MountedViews(() => { throw new Error('No Companion view is mounted in this test.'); }),
 				inventoryAdvisor: new MountedViews(() => { throw new Error('No advisor view is mounted in this test.'); }),
 				sale: sales,
+				achievements: new MountedViews(() => { throw new Error('No Achievements view is mounted in this test.'); }),
 			};
 			await sales.registration(saleView({ getSaleLocale: () => 'en' })).mount(content as unknown as HTMLElement);
 			expect(vi.getTimerCount(), 'the view armed its expiry timer').toBe(1);

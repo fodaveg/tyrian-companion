@@ -28,7 +28,7 @@ const PLACEMENT_ROW = 'Dónde se muestra';
 
 /** What these tests read of the core besides its public methods. */
 interface CoreInside {
-	viewControllers: Record<'companion' | 'inventoryAdvisor' | 'sale', { current(): Array<{ contentEl: HTMLElement; render(): void }> }> | null;
+	viewControllers: Record<'companion' | 'inventoryAdvisor' | 'sale' | 'achievements', { current(): Array<{ contentEl: HTMLElement; render(): void }> }> | null;
 	registeredPlacement: 'main' | 'sidebar' | null;
 	renderViews(): void;
 	renderInventoryAdvisorViews(): void;
