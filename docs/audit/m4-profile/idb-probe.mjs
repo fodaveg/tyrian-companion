@@ -1,7 +1,8 @@
 // Loads a dumped live journal (`measure.mjs --dump-journal=1`) into a REAL IndexedDB engine (headless Chromium or WebKit
 // through Playwright, on disk in a persistent profile) with the schema of the session runtime database, restarts the browser,
-// and times reading it back the way `readLiveJournal` does (index cursor + structuredClone per entry + sort) and, for
-// comparison, with one `index.getAll`. It does not run plugin code: it measures what the engine costs, nothing else.
+// and times reading it back the way `readLiveJournal` did up to 0.6.37 (index cursor + structuredClone per entry + sort) and
+// the way it does since M4 (one `index.getAll` + sort). It does not run plugin code (no validation): it measures what the
+// engine costs, nothing else.
 //   node docs/audit/m4-profile/idb-probe.mjs <journal.json> <profile dir> --playwright=<dir of playwright-core>
 //     [--engine=chromium|webkit] [--reps=5]
 // Always headless.
@@ -84,5 +85,5 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 const line = (k) => `mediana ${median(runs.map((r) => r[k])).toFixed(1)} ms (${runs.map((r) => r[k].toFixed(1)).join(", ")})`;
 console.log(`${ENGINE}: ${String(written)} entradas escritas; ${String(REPS)} lecturas, navegador nuevo en cada una`);
 console.log(`  abrir la base: ${line("openMs")}`);
-console.log(`  cursor del índice + structuredClone + orden (como readLiveJournal): ${line("cursorMs")}; leídas ${String(runs[0].cursorCount)}`);
-console.log(`  index.getAll + orden: ${line("getAllMs")}; leídas ${String(runs[0].getAllCount)}`);
+console.log(`  cursor del índice + structuredClone + orden (readLiveJournal hasta 0.6.37): ${line("cursorMs")}; leídas ${String(runs[0].cursorCount)}`);
+console.log(`  index.getAll + orden (readLiveJournal desde M4): ${line("getAllMs")}; leídas ${String(runs[0].getAllCount)}`);

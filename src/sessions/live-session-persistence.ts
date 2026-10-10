@@ -98,19 +98,22 @@ export async function commitLiveRuntime(database: IDBDatabase, next: LiveSession
 	});
 }
 
+/**
+ * Every entry of the session, in the order it was observed, or a rejection when one entry does not validate.
+ *
+ * One `getAll` on the session index, not a cursor: a restore reads the whole journal twice, and walking it one `continue()`
+ * at a time cost Chromium 170 ms per read of a 3 h journal against 94 ms in one call (M4, docs/audit/m4-profile). What
+ * `getAll` hands back is already a copy nobody else holds, so it is not cloned again.
+ */
 export async function readLiveJournal(database: IDBDatabase, sessionId: string): Promise<LiveJournalEntryV1[]> {
 	return await new Promise((resolve, reject) => {
 		const transaction = startIndexedDbTransaction(database, LIVE_SESSION_JOURNAL_STORE_NAME, 'readonly');
-		const request = transaction.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME).index('session').openCursor(sessionId);
-		const result: LiveJournalEntryV1[] = [];
+		const request = transaction.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME).index('session').getAll(sessionId);
+		let result: LiveJournalEntryV1[] = [];
 		request.onsuccess = () => {
-			const cursor = request.result; if (!cursor) return;
-			const entry: unknown = cursor.value;
-			if (cursor.key === sessionId) {
-				if (!isLiveJournalEntry(entry)) { transaction.abort(); return; }
-				result.push(structuredClone(entry));
-			}
-			cursor.continue();
+			const entries: unknown[] = request.result;
+			if (!entries.every(isLiveJournalEntry)) { transaction.abort(); return; }
+			result = entries;
 		};
 		transaction.oncomplete = () => resolve(result.sort((left, right) => left.observedAt.localeCompare(right.observedAt)
 			|| left.epoch.localeCompare(right.epoch) || left.cursor - right.cursor));
