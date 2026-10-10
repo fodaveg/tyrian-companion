@@ -5,6 +5,9 @@ import { TyrianCompanionCore } from './tyrian-companion-core';
 import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from '../core/local-debug-contract';
 import type { LocalDebugLogger } from '../core/local-debug-logger';
+import { DEFAULT_SETTINGS, type TyrianSettings } from '../core/settings';
+import { DEFAULT_FARMING_PREPARATION } from '../sessions/farming-goal-preparation';
+import type { SettingsUpdateResult } from '../ui/settings-panel-actions';
 import { PILOT_METRICS_VERSION, PILOT_PLATFORMS, type PilotJournalSnapshotV1, type PilotRecoveryKind } from '../sessions/pilot-metrics-model';
 import {
 	SessionHistoryRuntimeAuthority,
@@ -37,10 +40,15 @@ const SNAPSHOT: PilotJournalSnapshotV1 = {
 	observations: [],
 };
 
+const SETTINGS: SessionRuntimePort['settings'] = {
+	language: 'en', outputFolder: 'Tyrian Companion', farmingGoal: DEFAULT_SETTINGS.farmingGoal,
+	farmingPreparation: DEFAULT_SETTINGS.farmingPreparation, farmingDeclaredBuild: DEFAULT_SETTINGS.farmingDeclaredBuild,
+};
+
 /** A ready collector with no live session, no recovery and every service stubbed out. */
 function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 	return {
-		settings: { language: 'en', outputFolder: 'Tyrian Companion' },
+		settings: SETTINGS,
 		runtimeReady: true,
 		collectorMode: 'collector',
 		localDebugActions: null,
@@ -78,6 +86,7 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 		renderViews: () => undefined,
 		pilotRecoveryIdentity: () => null,
 		ensurePilotRecoveryPresented: unused('ensurePilotRecoveryPresented'),
+		updateSettings: unused('updateSettings'),
 		...overrides,
 	} satisfies SessionRuntimePort;
 }
@@ -157,7 +166,7 @@ describe('openSessionHistoryNote (history row link)', () => {
 		const openNote = vi.fn();
 		const emitNotice = vi.fn();
 		const runtime = new SessionRuntime(port({
-			settings: { language, outputFolder: 'Tyrian Companion' },
+			settings: { ...SETTINGS, language },
 			host: {
 				...port().host,
 				vault: { file: (path) => existing.includes(path) ? { path } : null },
@@ -255,5 +264,61 @@ describe('the session history scrub and export through SessionRuntime', () => {
 		await runtime.exportSessionHistory();
 
 		expect(runtime.getSessionHistoryView()).toEqual({ status: 'unavailable', sessions: 0, erased: 0, alreadyAbsent: 0 });
+	});
+});
+
+describe('the next session\'s farming preferences through SessionRuntime', () => {
+	it('writes the three forms one after another, each merged by the core\'s own settings write', async () => {
+		const writes: Array<Partial<TyrianSettings>> = [];
+		let finish: () => void = () => undefined;
+		const first = new Promise<void>((resolve) => { finish = resolve; });
+		const updateSettings = vi.fn(async (settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult> => {
+			writes.push(settings);
+			if (writes.length === 1) await first;
+			return { status: 'saved', inventoryAdvisor: 'unchanged' };
+		});
+		const runtime = new SessionRuntime(port({ updateSettings }));
+
+		const goal = runtime.saveFarmingGoal({ version: 1, kind: 'bags', targetBags: 50 });
+		const preparation = runtime.saveFarmingPreparationSettings({ ...DEFAULT_FARMING_PREPARATION, enabled: true });
+		const build = runtime.saveFarmingDeclaredBuildPreference(null);
+		await Promise.resolve();
+		const whileTheFirstWaits = writes.length;
+		finish();
+		await Promise.all([goal, preparation, build]);
+
+		expect({ whileTheFirstWaits, writes }).toEqual({ whileTheFirstWaits: 1, writes: [
+			{ farmingGoal: { version: 1, kind: 'bags', targetBags: 50 } },
+			{ farmingPreparation: { ...DEFAULT_FARMING_PREPARATION, enabled: true } },
+			{ farmingDeclaredBuild: null },
+		] });
+	});
+
+	it('a refused write rejects its own form and leaves the next one free to save', async () => {
+		const updateSettings = vi.fn(async (): Promise<SettingsUpdateResult> => ({ status: 'saved', inventoryAdvisor: 'unchanged' }));
+		updateSettings.mockResolvedValueOnce({ status: 'blocked', reason: 'settings_read_only' });
+		const runtime = new SessionRuntime(port({ updateSettings }));
+
+		await expect(runtime.saveFarmingGoal({ version: 1, kind: 'none' })).rejects.toThrow('Farming settings are unavailable.');
+		await expect(runtime.saveFarmingGoal({ version: 1, kind: 'none' })).resolves.toBeUndefined();
+	});
+
+	it('reads the saved preferences as they stand, the goal normalized and the preparation as a copy', () => {
+		const settings = { ...SETTINGS, farmingPreparation: { ...DEFAULT_FARMING_PREPARATION, enabled: true }, farmingDeclaredBuild: { raw: 'kept as stored' } };
+		const runtime = new SessionRuntime(port({ settings }));
+
+		const preparation = runtime.getFarmingPreparationSettings();
+
+		expect({
+			goal: runtime.getFarmingGoal(),
+			preparation,
+			copy: preparation !== settings.farmingPreparation,
+			build: runtime.getFarmingDeclaredBuildPreference(),
+		}).toEqual({
+			goal: { version: 1, kind: 'none' },
+			preparation: { ...DEFAULT_FARMING_PREPARATION, enabled: true },
+			copy: true,
+			build: { raw: 'kept as stored' },
+		});
 	});
 });

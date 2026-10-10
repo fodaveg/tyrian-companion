@@ -1,14 +1,17 @@
 /**
  * The session runtime's first part (DE-01, step 3a): the pilot metrics (the profile, the journal's
- * export, its clearing and opt-out, the silent losses review and the classification of a recovery)
- * and the durable session history's export and scrub, with the three fields only they use.
+ * export, its clearing and opt-out, the silent losses review and the classification of a recovery),
+ * the durable session history's export and scrub, and the next session's saved farming preferences
+ * (goal, preparation, declared build) with their serialized writes; with the five fields only they
+ * use.
  *
  * Moved unchanged from `TyrianCompanionCore`, which stays the facade the views and the settings
  * panel see. The core keeps building the services (`pilotMetrics`, `pilotMetricsExporter`,
  * `sessionHistory`), keeps the history's runtime authority and its gate (the live session's start,
  * stop and recovery take their leases from it), keeps `loadSessionHistory` (the only scan of the
  * history, H9.7) and keeps the recovery's own pilot hooks (`pilotRecoveryIdentity`,
- * `ensurePilotRecoveryPresented`) with the two sets they fill. It hands all of that through
+ * `ensurePilotRecoveryPresented`) with the two sets they fill, and the farming state a start
+ * captures (the group context and the reminders). It hands all of that through
  * `SessionRuntimePort`; the getters below carry the names of the core's own fields, so the moved
  * code reads as it did there.
  *
@@ -20,6 +23,9 @@ import { createTranslator } from '../core/i18n';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { CollectorMode, TyrianSettings } from '../core/settings';
 import type { TyrianEnvironmentPort, TyrianUiPort, TyrianVault } from '../host/tyrian-host';
+import { normalizeFarmingGoal, type FarmingGoalV1 } from '../sessions/farming-goal';
+import type { FarmingPreparationSettingsV1 } from '../sessions/farming-goal-preparation';
+import type { FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import type { PilotMetricsExporter, PilotMetricsExportPreview, PilotMetricsExportResult } from '../sessions/pilot-metrics-export';
 import type {
 	PilotJournalHealth,
@@ -36,7 +42,7 @@ import type {
 	SessionHistoryScrubResult,
 	SessionHistoryService,
 } from '../sessions/session-history';
-import type { SessionHistoryView } from '../ui/settings-panel-actions';
+import type { SessionHistoryView, SettingsUpdateResult } from '../ui/settings-panel-actions';
 import { refusedInConsult } from './core-actions';
 
 /**
@@ -49,6 +55,10 @@ export interface SessionRuntimePort {
 		readonly language: TyrianSettings['language'];
 		/** Where the pilot journal and the session history are exported. */
 		readonly outputFolder: TyrianSettings['outputFolder'];
+		/** The next session's farming preferences, as saved. */
+		readonly farmingGoal: TyrianSettings['farmingGoal'];
+		readonly farmingPreparation: TyrianSettings['farmingPreparation'];
+		readonly farmingDeclaredBuild: TyrianSettings['farmingDeclaredBuild'];
 	};
 	/** False until `initializeRuntime` has built the services below. */
 	readonly runtimeReady: boolean;
@@ -87,6 +97,8 @@ export interface SessionRuntimePort {
 	pilotRecoveryIdentity(): string | null;
 	/** Records the recovery as presented and reads its saved kind back into the two sets above. */
 	ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean>;
+	/** The core's own settings write: one serialized section, merged against the latest saved copy. */
+	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 }
 
 export class SessionRuntime {
@@ -102,6 +114,7 @@ export class SessionRuntime {
 		{ status: 'idle', sessions: 0, erased: 0, alreadyAbsent: 0 };
 	private sessionHistoryPreviewFlight: Promise<SessionHistoryScrubPreview> | null = null;
 	private sessionHistoryScrubFlight: Promise<SessionHistoryScrubResult> | null = null;
+	private farmingSettingsFlight: Promise<void> = Promise.resolve();
 
 	// The core's own fields and methods, read through the port under the names the moved code uses.
 	private get settings(): SessionRuntimePort['settings'] { return this.port.settings; }
@@ -123,8 +136,12 @@ export class SessionRuntime {
 	private emitNotice(message: string, source: 'session_history_note'): void { this.port.emitNotice(message, source); }
 	private renderViews(): void { this.port.renderViews(); }
 	private pilotRecoveryIdentity(): string | null { return this.port.pilotRecoveryIdentity(); }
-	private async ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean> {
-		return await this.port.ensurePilotRecoveryPresented(recoveryId);
+	// These two hand back the core's own promise, so an await on them takes the ticks it took there.
+	private ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean> {
+		return this.port.ensurePilotRecoveryPresented(recoveryId);
+	}
+	private updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult> {
+		return this.port.updateSettings(settings);
 	}
 
 	getPilotMetricsState(): PilotMetricsState {
@@ -230,6 +247,29 @@ export class SessionRuntime {
 		if (classified) this.pilotRecoveryKinds.set(recoveryId, recoveryKind);
 		this.renderViews();
 		return classified;
+	}
+
+	/** Default intent is saved for the next session; active measurements keep their captured goal. */
+	getFarmingGoal(): FarmingGoalV1 { return normalizeFarmingGoal(this.settings.farmingGoal); }
+	async saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { await this.saveFarmingSettings({ farmingGoal: goal }); }
+	getFarmingPreparationSettings(): FarmingPreparationSettingsV1 { return { ...this.settings.farmingPreparation }; }
+	async saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void> {
+		await this.saveFarmingSettings({ farmingPreparation: settings });
+	}
+	/** Raw declarations are next-session preferences; invalid drafts never replace captured active metadata. */
+	getFarmingDeclaredBuildPreference(): unknown { return this.settings.farmingDeclaredBuild; }
+	async saveFarmingDeclaredBuildPreference(value: FarmingDeclaredBuildPreferenceV1 | null): Promise<void> {
+		await this.saveFarmingSettings({ farmingDeclaredBuild: value });
+	}
+	/** Serializes the visible preference forms, merging each write against the latest saved settings. */
+	private async saveFarmingSettings(settings: Partial<TyrianSettings>): Promise<void> {
+		const save = async (): Promise<void> => {
+			const result = await this.updateSettings(settings);
+			if (result.status !== 'saved') throw new Error('Farming settings are unavailable.');
+		};
+		const flight = this.farmingSettingsFlight.then(save, save);
+		this.farmingSettingsFlight = flight;
+		await flight;
 	}
 
 	/**

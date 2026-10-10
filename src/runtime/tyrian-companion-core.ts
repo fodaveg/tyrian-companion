@@ -529,7 +529,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private farmingSessionContext: FarmingSessionContext | null = null;
 	private farmingGroupContext: FarmingGroupContext = null;
 	private farmingReminders: FarmingManualReminder[] = [];
-	private farmingSettingsFlight: Promise<void> = Promise.resolve();
 	private sessionSummarySaveState: 'unknown' | 'saving' | 'saved' | 'failed' = 'unknown';
 	private storedSessionLootSummary: StoredSessionLootSummary | null = null;
 	/** Economic evidence measured for the completed session on screen, or `null` while unmeasured. */
@@ -3087,7 +3086,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
 			renderViews: () => { core.renderViews(); },
 			pilotRecoveryIdentity: () => core.pilotRecoveryIdentity(),
-			ensurePilotRecoveryPresented: async (recoveryId) => await core.ensurePilotRecoveryPresented(recoveryId),
+			ensurePilotRecoveryPresented: (recoveryId) => core.ensurePilotRecoveryPresented(recoveryId),
+			updateSettings: (settings) => core.updateSettings(settings),
 		};
 	}
 
@@ -3407,29 +3407,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		catch (error) { this.recordIngameSessionFailure(error); }
 	}
 
-	/** Default intent is saved for the next session; active measurements keep their captured goal. */
-	getFarmingGoal(): FarmingGoalV1 { return normalizeFarmingGoal(this.settings.farmingGoal); }
-	async saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { await this.saveFarmingSettings({ farmingGoal: goal }); }
+	/** The next session's saved goal (`SessionRuntime`); an active session keeps the one it captured. */
+	getFarmingGoal(): FarmingGoalV1 { return this.session.getFarmingGoal(); }
+	/** Serialized with the other two preference forms (`SessionRuntime.saveFarmingSettings`). */
+	async saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { await this.session.saveFarmingGoal(goal); }
 	getFarmingGroupContext(): FarmingGroupContext { return this.farmingGroupContext; }
 	setFarmingGroupContext(context: FarmingGroupContext): void { this.farmingGroupContext = context; }
-	getFarmingPreparationSettings(): FarmingPreparationSettingsV1 { return { ...this.settings.farmingPreparation }; }
+	getFarmingPreparationSettings(): FarmingPreparationSettingsV1 { return this.session.getFarmingPreparationSettings(); }
 	async saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void> {
-		await this.saveFarmingSettings({ farmingPreparation: settings });
+		await this.session.saveFarmingPreparationSettings(settings);
 	}
-	/** Raw declarations are next-session preferences; invalid drafts never replace captured active metadata. */
-	getFarmingDeclaredBuildPreference(): unknown { return this.settings.farmingDeclaredBuild; }
+	getFarmingDeclaredBuildPreference(): unknown { return this.session.getFarmingDeclaredBuildPreference(); }
 	async saveFarmingDeclaredBuildPreference(value: FarmingDeclaredBuildPreferenceV1 | null): Promise<void> {
-		await this.saveFarmingSettings({ farmingDeclaredBuild: value });
-	}
-	/** Serializes the visible preference forms, merging each write against the latest saved settings. */
-	private async saveFarmingSettings(settings: Partial<TyrianSettings>): Promise<void> {
-		const save = async (): Promise<void> => {
-			const result = await this.updateSettings(settings);
-			if (result.status !== 'saved') throw new Error('Farming settings are unavailable.');
-		};
-		const flight = this.farmingSettingsFlight.then(save, save);
-		this.farmingSettingsFlight = flight;
-		await flight;
+		await this.session.saveFarmingDeclaredBuildPreference(value);
 	}
 	getFarmingReminders(): readonly FarmingManualReminder[] { return this.farmingReminders.map((reminder) => ({ ...reminder })); }
 	startFarmingReminder(kind: FarmingReminderKind, minutes: number): void {
