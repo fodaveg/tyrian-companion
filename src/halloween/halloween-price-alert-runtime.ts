@@ -7,6 +7,7 @@ import {
 } from '../core/local-debug-action-runner';
 import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import {
+	createHalloweenPriceNotice,
 	evaluateHalloweenPrice,
 	type HalloweenPriceAlertSettings,
 	type HalloweenPriceNoticeV1,
@@ -51,6 +52,13 @@ export class HalloweenPriceAlertRuntime {
 	private generation = 0;
 	private loadedAccountRef: string | null = null;
 	private disposed = false;
+	/**
+	 * Per account, the notices a commit may have stored without anyone announcing them: the commit failed (it can still
+	 * have been applied after the 10 s bound, DU-05 review), or it said "notify" and the evaluation ended before the
+	 * announcement. The next evaluation that reads that account's notices announces each one still there and unread,
+	 * once, and forgets them. Memory only: a restart drops them, and the notice stays in the list either way.
+	 */
+	private readonly unannounced = new Map<string, Set<string>>();
 	private state: HalloweenPriceAlertRuntimeState = {
 		status: 'disabled', projection: null, notices: [], unreadCount: 0,
 	};
@@ -140,6 +148,8 @@ export class HalloweenPriceAlertRuntime {
 			this.setState({ status: 'out_of_season', projection: seasonal });
 			return;
 		}
+		// The notice this evaluation may leave stored and not announced; see `unannounced`.
+		let pending: string | null = null;
 		try {
 			const fromDayUtc = priceHistoryDayUtc(Math.max(0, nowMs - 30 * DAY_MS));
 			const daily = await port.readDaily(36_038, fromDayUtc);
@@ -149,15 +159,54 @@ export class HalloweenPriceAlertRuntime {
 				this.setState({ status: projection.status, projection });
 				return;
 			}
+			// Only a high projection can store a notice, and its id is fixed by the capture it comes from. One already in the
+			// list this runtime last read was stored (and announced) before: this commit cannot be what stores it.
+			const candidate = projection.status === 'high'
+				? createHalloweenPriceNotice(this.options.vaultId, accountRef, projection, this.settings.cooldownHours).noticeId
+				: null;
+			pending = candidate !== null && !this.state.notices.some((notice) => notice.noticeId === candidate) ? candidate : null;
 			const result = await store.commitPriceProjection(
 				this.options.vaultId, accountRef, projection, this.settings.cooldownHours,
 			);
+			// Answered: the store says whether it stored a notice to announce, and a capture it had already accepted stores none.
+			pending = result.shouldNotify && result.notice !== null ? result.notice.noticeId : null;
 			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return;
 			const notices = await store.readPriceNotices(this.options.vaultId, accountRef);
 			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return;
 			this.project(notices, result.projection);
 			if (result.shouldNotify && result.notice !== null) this.emitNotice(result.notice, parent);
+			pending = null;
+			this.announceLate(accountRef, notices, result.notice?.noticeId ?? null, parent);
 		} catch (error) { if (this.owns(generation, store)) this.fail(error); }
+		finally { if (pending !== null) this.rememberUnannounced(accountRef, pending); }
+	}
+
+	private rememberUnannounced(accountRef: string, noticeId: string): void {
+		const ids = this.unannounced.get(accountRef) ?? new Set<string>();
+		ids.add(noticeId);
+		this.unannounced.set(accountRef, ids);
+	}
+
+	/**
+	 * Announces, once, each remembered notice of `accountRef` that the store now holds unread, and forgets them all: one
+	 * that is not there was never stored (its commit really failed), and one already acknowledged was seen in the list.
+	 * Read-write transactions on the same stores run in the order they were made, so a late commit has settled by the
+	 * time a later commit answered; `justAnnounced` is the one this evaluation's own commit announced already.
+	 */
+	private announceLate(
+		accountRef: string,
+		notices: readonly HalloweenPriceNoticeV1[],
+		justAnnounced: string | null,
+		parent?: ResolvedLocalDebugActionContext,
+	): void {
+		const ids = this.unannounced.get(accountRef);
+		if (ids === undefined) return;
+		this.unannounced.delete(accountRef);
+		for (const notice of notices) {
+			if (ids.has(notice.noticeId) && notice.noticeId !== justAnnounced && notice.acknowledgedAt === null) {
+				this.emitNotice(notice, parent);
+			}
+		}
 	}
 
 	async acknowledge(noticeId: string, parent?: ResolvedLocalDebugActionContext): Promise<boolean> {

@@ -133,9 +133,10 @@ describe('detection quality stores', () => {
 			return event;
 		});
 		for (const event of sessions) await expect(store.append(event)).resolves.toEqual({ status: 'saved' });
+		// Before any load: the pruning happened inside each write's own transaction.
+		await expect(rawKeys(factory, name)).resolves.toEqual(sessions.slice(2).map((event) => event.eventId).sort());
 		await expect(store.load()).resolves.toEqual({ status: 'loaded', events: sessions.slice(2) });
 		store.close();
-		await expect(rawKeys(factory, name)).resolves.toHaveLength(3);
 		expect(DETECTION_QUALITY_MAX_EVENTS).toBeGreaterThan(0);
 	});
 

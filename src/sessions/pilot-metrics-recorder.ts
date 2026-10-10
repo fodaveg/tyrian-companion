@@ -229,7 +229,9 @@ export class PilotMetricsRecorder {
 		if (result.status === 'stale') return false;
 		if (result.status === 'missing') return true;
 		if (this.state.status === 'full' || this.state.status === 'inconsistent') return true;
-		const count = this.state.status === 'ready' ? this.state.observations : 0;
+		// Since DU-05 the store opens again after a failure, so a write can succeed after `unavailable`: keep counting from
+		// what was counted then, not from zero.
+		const count = this.state.status === 'unconfigured' ? 0 : this.state.observations;
 		const observations = Math.min(this.limit, count + (countNew && result.status === 'ok' ? 1 : 0));
 		this.state = {
 			status: observations >= this.limit ? 'full' : 'ready',

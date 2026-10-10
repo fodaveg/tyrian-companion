@@ -18,6 +18,8 @@
 import {
 	STORAGE_ANSWER_TIMEOUT_MS, StorageDeadline, StorageUnansweredError, type StorageDeadlineOptions,
 } from '../sessions/storage-deadline';
+import type { LocalDebugCode } from './local-debug-contract';
+import { localDebugStorageFailureCode } from './local-debug-persistence';
 
 /** An index as the upgrade handlers declare it today: name plus key path, nothing else. */
 export interface IndexedDbIndexSchema {
@@ -76,9 +78,11 @@ export interface OpenIndexedDbOptions {
 	 *
 	 * `'close'` closes the connection so another tab's upgrade is not blocked; a
 	 * callback closes first and then runs, which is where a store drops its cached
-	 * handle. OMITTING it installs no handler at all, which is deliberately
-	 * available because the Halloween store has never had one, and quietly giving
-	 * it one would close a database its own methods still hold.
+	 * handle. OMITTING it installs no handler at all: the connection then stays
+	 * open through another context's upgrade, which waits (`blocked`) until its
+	 * owner closes it. No store omits it since DU-05 (the Halloween store, the
+	 * last one without a handler, now gets one from `ReopeningIndexedDbConnection`);
+	 * it stays available for a caller that closes the connection itself right away.
 	 *
 	 * The callback is told which kind it was, so a store can stay closed after a real
 	 * upgrade and still open again after anything else.
@@ -241,6 +245,22 @@ export async function withIndexedDbReopen<T>(
  */
 export function isIndexedDbUnavailable(error: unknown): boolean {
 	return error instanceof IndexedDbConnectionLostError || error instanceof StorageUnansweredError;
+}
+
+/** A store's own "unavailable", keeping what `withIndexedDbReopen` gave up with, so the diagnostic can still name it. */
+export class IndexedDbUnavailableError extends Error {
+	constructor(message: string, readonly reason: unknown) {
+		super(message);
+	}
+}
+
+/**
+ * The diagnostic code of a failed store operation: `timeout` when the engine did not answer in time
+ * (`StorageUnansweredError`, also when a store wrapped it), otherwise the storage code of the engine's own error.
+ */
+export function indexedDbFailureCode(error: unknown): LocalDebugCode {
+	const reason = error instanceof IndexedDbUnavailableError || error instanceof IndexedDbConnectionLostError ? error.reason : error;
+	return reason instanceof StorageUnansweredError ? 'timeout' : localDebugStorageFailureCode(reason);
 }
 
 /** What a reopening connection installs on each open: spread them into the `openIndexedDb` options. */

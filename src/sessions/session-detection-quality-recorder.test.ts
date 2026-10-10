@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { createAcceptedDetectionEvent } from './session-detection-quality';
 import { DetectionQualityRecorder } from './session-detection-quality-recorder';
-import { MemoryDetectionQualityStore, type DetectionQualityStore } from './session-detection-quality-store';
+import {
+	DETECTION_QUALITY_MAX_EVENTS,
+	MemoryDetectionQualityStore,
+	type DetectionQualityStore,
+} from './session-detection-quality-store';
 
 const NOW = new Date('2026-08-13T12:00:00.000Z');
 
@@ -80,6 +85,30 @@ describe('DetectionQualityRecorder', () => {
 		await expect(recorder.initialize()).resolves.toEqual({ status: 'ready' });
 		await expect(recorder.recordAccepted('start', 'session-1', NOW.toISOString(), manualBoundary())).resolves.toBe(true);
 		expect(recorder.getStats()).toMatchObject({ acceptedBoundaries: 1 });
+	});
+
+	// DU-08 review: the database keeps the newest 2,000 events; the copy in memory must not grow past the same bound.
+	it('keeps in memory only the newest events up to the same bound as the database', async () => {
+		const recorder = new DetectionQualityRecorder(new MemoryDetectionQualityStore(), () => NOW, 3);
+		await recorder.initialize();
+		for (let minute = 0; minute < 5; minute += 1) {
+			const at = new Date(NOW.getTime() + minute * 60_000).toISOString();
+			await expect(recorder.recordAccepted('start', `session-${String(minute)}`, at, manualBoundary())).resolves.toBe(true);
+		}
+		expect(recorder.getStats()).toMatchObject({ acceptedBoundaries: 3 });
+		expect(recorder.getSessionSummary('session-1')).toMatchObject({ start: null });
+		expect(recorder.getSessionSummary('session-4')).toMatchObject({ start: { sessionId: 'session-4' } });
+	});
+
+	it('bounds memory with DETECTION_QUALITY_MAX_EVENTS unless told otherwise', async () => {
+		const stored = Array.from({ length: DETECTION_QUALITY_MAX_EVENTS + 1 }, (_, index) => createAcceptedDetectionEvent(
+			'start', `session-${String(index)}`, new Date(NOW.getTime() + index * 1_000).toISOString(), manualBoundary(),
+		));
+		const recorder = new DetectionQualityRecorder(new MemoryDetectionQualityStore(stored), () => NOW);
+		await recorder.initialize();
+		await expect(recorder.recordAccepted('stop', 'session-x', new Date(NOW.getTime() + 10_000_000).toISOString(), manualBoundary()))
+			.resolves.toBe(true);
+		expect(recorder.getStats()).toMatchObject({ acceptedBoundaries: DETECTION_QUALITY_MAX_EVENTS });
 	});
 
 	it('closes the store on dispose', () => {

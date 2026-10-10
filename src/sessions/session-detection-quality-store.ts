@@ -25,8 +25,10 @@ import {
 	type DetectionQualityEvent,
 } from './session-detection-quality';
 import {
-	IndexedDbConnectionLostError,
+	IndexedDbUnavailableError,
 	ReopeningIndexedDbConnection,
+	indexedDbFailureCode,
+	isIndexedDbUnavailable,
 	openIndexedDb,
 	startIndexedDbTransaction,
 } from '../core/indexed-db-open';
@@ -208,7 +210,7 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 			attempt.success();
 			return { status: 'loaded', events: pass.result };
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
@@ -225,7 +227,7 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 			else attempt.failure('validation_failed');
 			return result;
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
@@ -245,7 +247,8 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 		try {
 			return await this.connection.run(operation);
 		} catch (error) {
-			throw error instanceof IndexedDbConnectionLostError ? new Error('Detection quality storage is unavailable.') : error;
+			// Both ways `withIndexedDbReopen` gives up are the store being unavailable; the reason stays for the diagnostic code.
+			throw isIndexedDbUnavailable(error) ? new IndexedDbUnavailableError('Detection quality storage is unavailable.', error) : error;
 		}
 	}
 

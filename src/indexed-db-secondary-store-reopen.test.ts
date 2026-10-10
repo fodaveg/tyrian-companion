@@ -12,9 +12,14 @@ import { IndexedDbPendingProposalStore } from './sessions/pending-proposal-store
 import { createPilotEnvironment } from './sessions/pilot-metrics-model';
 import { IndexedDbPilotMetricsStore } from './sessions/pilot-metrics-store';
 import { createAcceptedDetectionEvent } from './sessions/session-detection-quality';
+import { DetectionQualityRecorder } from './sessions/session-detection-quality-recorder';
 import { IndexedDbDetectionQualityStore } from './sessions/session-detection-quality-store';
 import {
-	closeUnderneath, emitEngineClose, killStorage, reviveStorage, trackedIndexedDb, type TrackedIndexedDb,
+	LocalDebugPersistenceProbe, type LocalDebugPersistenceEvent, type LocalDebugPersistenceStore,
+} from './core/local-debug-persistence';
+import {
+	closeUnderneath, emitEngineClose, engineIdle, hangTransactions, killStorage, reviveStorage, trackedIndexedDb,
+	type TrackedIndexedDb,
 } from './test/indexed-db-connections';
 
 const VAULT = 'a'.repeat(64);
@@ -26,6 +31,7 @@ const ENV = createPilotEnvironment({
 const QUALITY_EVENT = createAcceptedDetectionEvent('start', 'session-1', AT, {
 	mode: 'manual', window: { from: '2026-10-10T11:59:55.000Z', to: AT },
 })!;
+const MANUAL = { mode: 'manual' as const, window: { from: '2026-10-10T11:59:55.000Z', to: AT } };
 const QUEUE: PendingProposalQueueRecord = { version: 1, revision: 1, proposals: [], receipts: [] };
 
 /** One store under test: a write, a read that shows the write, and what that read must answer. */
@@ -204,6 +210,122 @@ describe('DU-05: the secondary IndexedDB stores open a new connection when the e
 		reviveStorage(tracked);
 		await expect(answer(probe.read)).resolves.toEqual(probe.expected);
 		probe.close();
+	});
+
+	// The store answering again is not enough if the one who writes through it stopped asking: the detection quality
+	// recorder used to stay `unavailable` after one failed write until the plugin was reloaded.
+	it('detection quality recorder: answers again once storage is back, without reloading the plugin', async () => {
+		const tracked = trackedIndexedDb();
+		const recorder = new DetectionQualityRecorder(
+			new IndexedDbDetectionQualityStore(tracked.factory, databaseName('detection quality recorder')), () => new Date(AT),
+		);
+		await expect(recorder.initialize()).resolves.toEqual({ status: 'ready' });
+		await expect(recorder.recordAccepted('start', 'session-1', AT, MANUAL)).resolves.toBe(true);
+
+		killStorage(tracked);
+		await expect(recorder.recordAccepted('stop', 'session-1', AT, MANUAL)).resolves.toBe(false);
+		expect(recorder.getState()).toMatchObject({ status: 'unavailable' });
+
+		reviveStorage(tracked);
+		await expect(recorder.recordAccepted('stop', 'session-1', AT, MANUAL)).resolves.toBe(true);
+		expect(recorder.getState()).toEqual({ status: 'ready' });
+		expect(recorder.getStats()).toMatchObject({ acceptedBoundaries: 2 });
+		recorder.dispose();
+	});
+
+	it('detection quality recorder: a load that failed is made again by the next write once storage is back', async () => {
+		const tracked = trackedIndexedDb();
+		const name = databaseName('detection quality recorder load');
+		const earlier = new IndexedDbDetectionQualityStore(tracked.factory, name);
+		await expect(earlier.append(QUALITY_EVENT)).resolves.toEqual({ status: 'saved' });
+		earlier.close();
+		const recorder = new DetectionQualityRecorder(new IndexedDbDetectionQualityStore(tracked.factory, name), () => new Date(AT));
+
+		killStorage(tracked);
+		await expect(recorder.initialize()).resolves.toMatchObject({ status: 'unavailable' });
+		reviveStorage(tracked);
+		await expect(recorder.recordAccepted('stop', 'session-1', AT, MANUAL)).resolves.toBe(true);
+		expect(recorder.getState()).toEqual({ status: 'ready' });
+		// The event saved before the failed load is back in memory: the load was made, not skipped.
+		expect(recorder.getStats()).toMatchObject({ acceptedBoundaries: 2 });
+		recorder.dispose();
+	});
+});
+
+/**
+ * DU-05 review: a transaction the engine never answers is refused at the 10 s bound with `StorageUnansweredError`. Each
+ * store hands its caller its own "unavailable", and its diagnostic keeps saying it was a timeout.
+ */
+describe('DU-05: a secondary store the engine stops answering reports a timeout', () => {
+	interface TimeoutCase {
+		label: string;
+		store: LocalDebugPersistenceStore;
+		operation: string;
+		/** Opens the store, then asks it one thing; what that call settles to, or `'failed'` when it throws. */
+		ask: (factory: IDBFactory, name: string, probe: LocalDebugPersistenceProbe, hang: () => void) => Promise<() => Promise<unknown>>;
+		unavailable: unknown;
+	}
+	const settle = async (call: Promise<unknown>): Promise<unknown> => {
+		try { return await call; } catch (error) { return error instanceof Error ? `${error.name}: ${error.message}` : 'failed'; }
+	};
+	const TIMEOUT_CASES: TimeoutCase[] = [
+		{
+			label: 'price history', store: 'price_history', operation: 'read', unavailable: 'PriceHistoryStoreError: Price-history storage is unavailable.',
+			ask: async (factory, name, probe, hang) => {
+				const store = await IndexedDbPriceHistoryStore.open(factory, name, undefined, probe);
+				hang();
+				return async () => await settle(store.readWatchList(VAULT));
+			},
+		},
+		{
+			label: 'Halloween', store: 'halloween', operation: 'read', unavailable: 'HalloweenStoreError: Halloween storage is unavailable.',
+			ask: async (factory, name, probe, hang) => {
+				const store = await IndexedDbHalloweenStore.open(factory, name, undefined, probe);
+				hang();
+				return async () => await settle(store.readSeeded(VAULT, ACCOUNT_REF));
+			},
+		},
+		{
+			label: 'confirmation queue', store: 'pending_proposal', operation: 'read', unavailable: 'Error: Confirmation queue is unavailable.',
+			ask: async (factory, name, probe, hang) => {
+				const store = new IndexedDbPendingProposalStore(factory, name, probe);
+				await store.read();
+				hang();
+				return async () => await settle(store.read());
+			},
+		},
+		{
+			label: 'detection quality', store: 'detection_quality', operation: 'read', unavailable: { status: 'error', code: 'unavailable' },
+			ask: async (factory, name, probe, hang) => {
+				const store = new IndexedDbDetectionQualityStore(factory, name, probe);
+				await store.load();
+				hang();
+				return async () => await settle(store.load());
+			},
+		},
+	];
+
+	it.each(TIMEOUT_CASES)('$label: answers unavailable at the bound and records it as a timeout', async (testCase) => {
+		const timers: (() => void)[] = [];
+		vi.stubGlobal('window', {
+			setTimeout: (callback: () => void) => { timers.push(callback); return timers.length; },
+			clearTimeout: () => undefined,
+		});
+		try {
+			const tracked = trackedIndexedDb();
+			const events: LocalDebugPersistenceEvent[] = [];
+			const probe = new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } });
+			const ask = await testCase.ask(tracked.factory, databaseName(`timeout ${testCase.label}`), probe, () => { hangTransactions(tracked); });
+			const answered = ask();
+			await engineIdle(tracked);
+			for (const expire of timers.splice(0)) expire();
+			await expect(answered).resolves.toEqual(testCase.unavailable);
+			expect(events.filter((event) => event.phase === 'failure').map((event) => ({
+				store: event.store, operation: event.operation, code: event.code,
+			}))).toEqual([{ store: testCase.store, operation: testCase.operation, code: 'timeout' }]);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });
 

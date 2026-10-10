@@ -16,6 +16,7 @@ import {
 import { buildPriceHistoryDailyAggregates } from './price-history-statistics';
 import {
 	ReopeningIndexedDbConnection,
+	indexedDbFailureCode,
 	isIndexedDbUnavailable,
 	openIndexedDb,
 	startIndexedDbTransaction,
@@ -579,7 +580,8 @@ export class IndexedDbPriceHistoryStore {
 		} catch (reason) {
 			const error = reason instanceof Error && !isIndexedDbUnavailable(reason)
 				? reason : new PriceHistoryStoreError('unavailable');
-			attempt.failure(localDebugStorageFailureCode(error));
+			// Coded from what really happened: an engine that did not answer in time stays a `timeout`.
+			attempt.failure(isIndexedDbUnavailable(reason) ? indexedDbFailureCode(reason) : localDebugStorageFailureCode(error));
 			throw error;
 		}
 	}

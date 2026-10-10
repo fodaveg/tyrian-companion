@@ -18,8 +18,10 @@
  */
 import { normalizeProposalQueueRecord, type PendingProposalQueueRecord } from './pending-proposal-model';
 import {
-	IndexedDbConnectionLostError,
+	IndexedDbUnavailableError,
 	ReopeningIndexedDbConnection,
+	indexedDbFailureCode,
+	isIndexedDbUnavailable,
 	openIndexedDb,
 	startIndexedDbTransaction,
 } from '../core/indexed-db-open';
@@ -127,7 +129,7 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			attempt.success();
 			return value;
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -173,7 +175,7 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			attempt.success();
 			return value;
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -193,7 +195,8 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 		try {
 			return await this.connection.run(operation);
 		} catch (error) {
-			throw error instanceof IndexedDbConnectionLostError ? new Error('Confirmation queue is unavailable.') : error;
+			// Both ways `withIndexedDbReopen` gives up are the queue being unavailable; the reason stays for the diagnostic code.
+			throw isIndexedDbUnavailable(error) ? new IndexedDbUnavailableError('Confirmation queue is unavailable.', error) : error;
 		}
 	}
 

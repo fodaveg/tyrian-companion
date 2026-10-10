@@ -24,6 +24,7 @@ import {
 } from '../core/local-debug-persistence';
 import {
 	ReopeningIndexedDbConnection,
+	indexedDbFailureCode,
 	isIndexedDbUnavailable,
 	openIndexedDb,
 	startIndexedDbTransaction,
@@ -765,7 +766,8 @@ export class IndexedDbHalloweenStore {
 		} catch (reason) {
 			const error = reason instanceof Error && !isIndexedDbUnavailable(reason)
 				? reason : new HalloweenStoreError('unavailable');
-			attempt.failure(localDebugStorageFailureCode(error));
+			// Coded from what really happened: an engine that did not answer in time stays a `timeout`.
+			attempt.failure(isIndexedDbUnavailable(reason) ? indexedDbFailureCode(reason) : localDebugStorageFailureCode(error));
 			throw error;
 		}
 	}
