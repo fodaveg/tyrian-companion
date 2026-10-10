@@ -207,7 +207,7 @@ function parseAchievementCatalogEntry(value: unknown): { id: number; tiers: Achi
 		if (!isRecord(tier) || !nonNegativeInteger(tier.count) || !nonNegativeInteger(tier.points)) return null;
 		tiers.push({ count: tier.count, points: tier.points });
 	}
-	// `point_cap` is optional and `-1` means uncapped: an odd value is no cap, never a malformed entry.
+	// `point_cap` is optional and reads `-1` on repeatables whose tiers award no points: an odd value is no cap, never a malformed entry.
 	return { id: value.id, tiers, pointCap: positiveInteger(value.point_cap) ? value.point_cap : null };
 }
 
