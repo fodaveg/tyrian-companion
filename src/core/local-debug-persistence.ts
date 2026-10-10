@@ -22,6 +22,8 @@ export const LOCAL_DEBUG_PERSISTENCE_STORES = [
 	'inventory_preferences',
 	'managed_assets_pointer',
 	'achievements',
+	// The whole origin's storage, not one database: whether the engine agreed not to evict it (`persistent-storage.ts`).
+	'origin_storage',
 ] as const;
 export type LocalDebugPersistenceStore = typeof LOCAL_DEBUG_PERSISTENCE_STORES[number];
 

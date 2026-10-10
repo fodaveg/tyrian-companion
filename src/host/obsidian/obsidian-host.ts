@@ -33,6 +33,8 @@ export function createObsidianHost(plugin: Plugin): TyrianHost {
 		// one Chromium storage partition, so they share its locks as they share its databases. A window
 		// without the API (or a test's stand-in for one) hands over none, and the lease waits as it always did.
 		get locks() { return (window as Partial<Pick<Window, 'navigator'>>).navigator?.locks ?? null; },
+		// The storage manager of that same window, which is the origin's: whether its IndexedDB may be evicted (DU-13).
+		get storage() { return (window as Partial<Pick<Window, 'navigator'>>).navigator?.storage ?? null; },
 	};
 	let soundCloseRegistered = false;
 	return {

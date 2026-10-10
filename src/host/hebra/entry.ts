@@ -17,6 +17,8 @@ export function activate(api: HebraPluginApi): Promise<PluginCleanup> {
 		indexedDB: window.indexedDB,
 		// Of the same page as the IndexedDB above; a webview without Web Locks hands over none. `locks: null` here turns the life lock off in Hebra.
 		locks: (window.navigator as Partial<Pick<Navigator, 'locks'>>).locks ?? null,
+		// The storage manager of that same page, asked once not to evict it (DU-13); a webview without one hands over none.
+		storage: (window.navigator as Partial<Pick<Navigator, 'storage'>>).storage ?? null,
 		window,
 		document,
 		moduleUrl: import.meta.url,

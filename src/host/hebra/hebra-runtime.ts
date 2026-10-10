@@ -46,6 +46,8 @@ export interface HebraRuntimeEnvironment {
 	readonly indexedDB: IDBFactory;
 	/** The lock manager of the same page as `indexedDB` (`HebraHostDeps.locks`); absent, the session lease asks for no lock. */
 	readonly locks?: HebraHostDeps['locks'];
+	/** The storage manager of the same page as `indexedDB` (`HebraHostDeps.storage`); absent, nothing asks it to persist. */
+	readonly storage?: HebraHostDeps['storage'];
 	readonly window: HebraHostWindow & MobileClassWindow;
 	readonly document: Document;
 	/** The URL this module was loaded from (`import.meta.url`: a `blob:` URL inside Hebra). */
@@ -76,6 +78,7 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 			api,
 			indexedDB: environment.indexedDB,
 			locks: environment.locks ?? null,
+			storage: environment.storage ?? null,
 			pathIndexKv,
 			fileBackend,
 			secretsBackend: await hebraSecretsBackend(api, report),

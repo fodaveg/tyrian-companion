@@ -181,14 +181,154 @@ describe('ActiveSessionLeaseCoordinator', () => {
 		second.dispose();
 	});
 
-	it('fails closed on a backwards clock and invalid persisted timestamps', async () => {
+	// Since DU-09 a backwards wall clock is only an anomaly against what ANOTHER writer stored: this
+	// instance's own lease is ordered by the monotonic clock (next test).
+	it('fails closed on a lease another owner renewed ahead of this clock', async () => {
 		const factory = new IDBFactory();
 		let now = 1_000;
-		const coordinator = createCoordinator(factory, 'clock', { clock: () => now });
-		const handle = requireHandle(await coordinator.acquire('session-1'));
+		const owner = createCoordinator(factory, 'clock', { clock: () => now, instanceId: 'owner' });
+		const handle = requireHandle(await owner.acquire('session-1'));
 		now = 999;
-		await expect(coordinator.assertOwned(handle)).resolves.toEqual({ status: 'error', code: 'clock_anomaly' });
-		coordinator.dispose();
+		const contender = createCoordinator(factory, 'clock', { clock: () => now, instanceId: 'contender' });
+		const sameIdElsewhere = createCoordinator(factory, 'clock', { clock: () => now, instanceId: 'owner' });
+
+		await expect(contender.acquire('session-2')).resolves.toEqual({ status: 'error', code: 'clock_anomaly' });
+		// Another coordinator under the same id did not write that lease either: the wall clock judges it.
+		await expect(sameIdElsewhere.assertOwned(handle)).resolves.toEqual({ status: 'error', code: 'clock_anomaly' });
+		await expect(owner.assertOwned(handle)).resolves.toEqual({ status: 'owned' });
+		owner.dispose();
+		contender.dispose();
+		sameIdElsewhere.dispose();
+	});
+
+	// DU-09 (10 Oct 2026): a wall clock set back 30 s under a live session left it in error until the
+	// clock passed the stored `renewedAt` again, plus whichever retry came next.
+	it('keeps its own lease through a wall clock that steps back 30 s mid-session', async () => {
+		const factory = new IDBFactory();
+		let wall = 1_000_000;
+		let monotonic = 0;
+		const owner = createCoordinator(factory, 'wall steps back', {
+			clock: () => wall, monotonicClock: () => monotonic, instanceId: 'owner', leaseTtlMs: 300_000,
+		});
+		const acquired = requireHandle(await owner.acquire('session-1'));
+		wall += 100_000; monotonic += 100_000;
+		const beforeStep = requireHandle(await owner.renew(acquired));
+		wall -= 30_000; monotonic += 1_000;
+
+		const afterStep = await owner.renew(beforeStep);
+		expect(afterStep).toMatchObject({ status: 'renewed' });
+		const renewed = requireHandle(afterStep);
+		// What is stored for one lease never goes back, so it stays a valid lease for whoever reads it.
+		expect(renewed.renewedAt).toBeGreaterThanOrEqual(beforeStep.renewedAt);
+		expect(renewed.expiresAt).toBeGreaterThan(renewed.renewedAt);
+		await expect(owner.assertOwned(renewed)).resolves.toEqual({ status: 'owned' });
+		wall += 5_000; monotonic += 5_000;
+		await expect(owner.acquire('session-1')).resolves.toEqual({ status: 'already_owned', handle: renewed });
+		await expect(owner.release(renewed)).resolves.toEqual({ status: 'released' });
+		await expect(owner.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		owner.dispose();
+	});
+
+	it('still shows another owner a lease its owner renewed across the step as renewed ahead of it', async () => {
+		const factory = new IDBFactory();
+		let wall = 1_000_000;
+		let monotonic = 0;
+		const owner = createCoordinator(factory, 'step seen by another', {
+			clock: () => wall, monotonicClock: () => monotonic, instanceId: 'owner', leaseTtlMs: 300_000,
+		});
+		const acquired = requireHandle(await owner.acquire('session-1'));
+		wall -= 30_000; monotonic += 10_000;
+		const renewed = requireHandle(await owner.renew(acquired));
+		const contender = createCoordinator(factory, 'step seen by another', { clock: () => wall, instanceId: 'contender' });
+
+		expect(renewed.renewedAt).toBe(acquired.renewedAt);
+		await expect(contender.acquire('session-2')).resolves.toEqual({ status: 'error', code: 'clock_anomaly' });
+		owner.dispose();
+		contender.dispose();
+	});
+
+	it('runs its own lease out on the monotonic clock when the wall clock was set back, and takes it again through the fence', async () => {
+		const factory = new IDBFactory();
+		let wall = 1_000_000;
+		let monotonic = 0;
+		const owner = createCoordinator(factory, 'monotonic deadline', {
+			clock: () => wall, monotonicClock: () => monotonic, instanceId: 'owner', leaseTtlMs: 300_000,
+		});
+		const acquired = requireHandle(await owner.acquire('session-1'));
+		// Five minutes without a beat, during which the wall clock was set back 30 s.
+		wall += 300_000 - 30_000; monotonic += 300_000;
+
+		await expect(owner.assertOwned(acquired)).resolves.toEqual({ status: 'lost' });
+		await expect(owner.renew(acquired)).resolves.toEqual({ status: 'lost' });
+		// Not `already_owned` with the handle it has just been told it lost.
+		const retaken = await owner.acquire('session-1');
+		expect(retaken).toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		// The lease taken back through the second transaction is this instance's own too: another step back is no anomaly for it.
+		wall -= 30_000; monotonic += 1_000;
+		await expect(owner.assertOwned(requireHandle(retaken))).resolves.toEqual({ status: 'owned' });
+		owner.dispose();
+	});
+
+	// H18.7: a host that slept past its lease finds it lost, although the monotonic clock may not have moved.
+	it('finds its own lease lost when the wall clock passed it while the monotonic clock stood still', async () => {
+		const factory = new IDBFactory();
+		let wall = 1_000_000;
+		const owner = createCoordinator(factory, 'slept', {
+			clock: () => wall, monotonicClock: () => 0, instanceId: 'owner', leaseTtlMs: 300_000,
+		});
+		const acquired = requireHandle(await owner.acquire('session-1'));
+		wall += 300_000;
+
+		await expect(owner.assertOwned(acquired)).resolves.toEqual({ status: 'lost' });
+		await expect(owner.renew(acquired)).resolves.toEqual({ status: 'lost' });
+		owner.dispose();
+	});
+
+	// The lease remembered as this instance's is the one a transaction COMMITTED: a renewal or a release whose
+	// mutator ran but whose transaction aborted leaves it as it was.
+	it.each([
+		['renewal', (owner: ActiveSessionLeaseCoordinator, handle: ActiveSessionLeaseHandle) => owner.renew(handle)],
+		['release', (owner: ActiveSessionLeaseCoordinator, handle: ActiveSessionLeaseHandle) => owner.release(handle)],
+	])('keeps the committed lease as its own when a %s aborts after its mutator ran', async (_label, operation) => {
+		const factory = new IDBFactory();
+		const inner = await IndexedDbCoordinationStore.open(factory, databaseName(`aborted ${_label}`));
+		let abortNext = false;
+		const store: CoordinationStore = {
+			read: (context) => inner.read(context),
+			transaction: async (mutator, context) => {
+				if (!abortNext) return await inner.transaction(mutator, context);
+				abortNext = false;
+				mutator(await inner.read(context));
+				throw new Error('aborted');
+			},
+			close: () => { inner.close(); },
+		};
+		let wall = 1_000_000;
+		let monotonic = 0;
+		const owner = createCoordinator(factory, `aborted ${_label}`, {
+			store, clock: () => wall, monotonicClock: () => monotonic, instanceId: 'owner', leaseTtlMs: 300_000,
+		});
+		const acquired = requireHandle(await owner.acquire('session-1'));
+		wall += 10_000; monotonic += 10_000;
+		abortNext = true;
+		await expect(operation(owner, acquired)).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		wall -= 30_000; monotonic += 1_000;
+
+		// Still this instance's own lease, so the wall clock set back is no anomaly for it.
+		await expect(owner.assertOwned(acquired)).resolves.toEqual({ status: 'owned' });
+		owner.dispose();
+	});
+
+	it('answers clock_anomaly when the monotonic clock goes back or is not a number', async () => {
+		const factory = new IDBFactory();
+		let monotonic = 10;
+		const owner = createCoordinator(factory, 'monotonic back', { monotonicClock: () => monotonic, instanceId: 'owner' });
+		const acquired = requireHandle(await owner.acquire('session-1'));
+		monotonic = 9;
+		await expect(owner.renew(acquired)).resolves.toEqual({ status: 'error', code: 'clock_anomaly' });
+		monotonic = Number.NaN;
+		await expect(owner.assertOwned(acquired)).resolves.toEqual({ status: 'error', code: 'clock_anomaly' });
+		owner.dispose();
 	});
 
 	it.each([
@@ -1090,6 +1230,9 @@ function createCoordinator(
 		instanceId: `instance-${label}`,
 		machineId: () => `machine-${label}`,
 		clock: () => 1_000,
+		// Still unless a test moves it: leases of 10 ms judged by the real `performance.now()` would run out
+		// on a slow machine between two awaits, and these tests are about the wall clock.
+		monotonicClock: () => 0,
 		sleep: async () => undefined,
 		leaseTtlMs: 100,
 		expiryConfirmDelayMs: 1,

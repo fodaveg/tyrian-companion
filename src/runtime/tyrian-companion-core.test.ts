@@ -44,7 +44,7 @@ import { VIEW_PLACEMENT_KEY } from './view-placement';
  * Obsidian behind it at all, the way Hebra embeds it: an in-memory library, `fake-indexeddb` for
  * `kv`, and a UI port that only records what the core registers. Nothing here imports the plugin.
  */
-function neutralHost() {
+function neutralHost(originStorage?: TyrianKvPort['storage']) {
 	const notes = new Map<string, string>();
 	const folders = new Set<string>();
 	const logs = new Map<string, string>();
@@ -119,7 +119,7 @@ function neutralHost() {
 		secretPicker: () => () => undefined,
 		openExternal: vi.fn(),
 	};
-	const kv: TyrianKvPort = { indexedDB: new IDBFactory() };
+	const kv: TyrianKvPort = { indexedDB: new IDBFactory(), ...(originStorage === undefined ? {} : { storage: originStorage }) };
 	const request = vi.fn(async () => { throw new Error('No request is expected without an API key.'); });
 	const host: TyrianHost = {
 		vault,
@@ -258,6 +258,30 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		]));
 		// No API key on this host: nothing reached the network.
 		expect(request).not.toHaveBeenCalled();
+	});
+
+	// DU-13 (10 Oct 2026): `persist()` is asked once per load, and an engine that never answers does not hold the start.
+	it('asks the host\'s storage manager once not to evict the origin, without waiting for its answer', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const persist = vi.fn(() => new Promise<boolean>(() => undefined));
+		const { host, registered, records } = neutralHost({ persist });
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+
+		registered.ready[0]!();
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({
+				action: 'plugin_load', state: 'runtime_initialize', phase: 'success',
+			}));
+		}, { timeout: 10_000 });
+		await runtime.stop();
+
+		expect(persist).toHaveBeenCalledTimes(1);
+		const asked = records().filter((record) => (record.details as Record<string, unknown> | undefined)?.store === 'origin_storage');
+		// Asked, and nothing settled: the start did not wait for it.
+		expect(asked.map((record) => [record.component, record.action, record.phase])).toEqual([['plugin', 'plugin_load', 'start']]);
 	});
 
 	it('registers each view with the title and the icon of its section, in the language of the settings', async () => {

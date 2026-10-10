@@ -148,4 +148,21 @@ describe('the Hebra plugin activated through entry.ts', { timeout: 15_000 }, () 
 		expect({ failures: failures(activated.records), connections: activated.openConnections() })
 			.toEqual({ failures: [], connections: [] });
 	});
+
+	// DU-13 (10 Oct 2026): `entry.ts` hands over the page's `navigator.storage`, and the core asks it once per load.
+	it('asks the page\'s storage manager once not to evict the origin, and journals its answer', async () => {
+		const persist = vi.fn(async () => false);
+		Object.defineProperty(window.navigator, 'storage', { configurable: true, value: { persist } });
+		try {
+			const activated = await activatePlugin();
+			await activated.booted();
+
+			expect(persist).toHaveBeenCalledTimes(1);
+			expect(activated.records.filter(({ details }) => (details as Record<string, unknown> | undefined)?.store === 'origin_storage')
+				.map(({ phase, code, details }) => [phase, code, (details as Record<string, unknown>).result]))
+				.toEqual([['start', 'ok', undefined], ['skip', 'permission_denied', 'denied']]);
+		} finally {
+			delete (window.navigator as { storage?: unknown }).storage;
+		}
+	});
 });

@@ -397,6 +397,16 @@ describe('createHebraHost: the other ports', () => {
 		expect(locks.request).not.toHaveBeenCalled();
 	});
 
+	// DU-13 (10 Oct 2026): the storage manager is the page's too, handed over next to its IndexedDB.
+	it('kv carries the storage manager it was handed with the IndexedDB, and none when it was handed none', async () => {
+		const storage = { persist: vi.fn(async () => true) };
+		const withStorage = await createHebraHost(deps(createTyrianTestApi(), { indexedDB: new IDBFactory(), storage }));
+		expect(withStorage.host.kv.storage).toBe(storage);
+		const without = await createHebraHost(deps(createTyrianTestApi()));
+		expect(without.host.kv.storage).toBeNull();
+		expect(storage.persist).not.toHaveBeenCalled();
+	});
+
 	it('declares no main view on a Hebra that has none, so Settings offers no choice between the main screen and the sidebar', async () => {
 		const handle = await createHebraHost(deps(createTyrianTestApi()));
 		// For `mainView`, an omitted flag means the host does not have it.
