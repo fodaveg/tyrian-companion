@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createFakeLibrary } from '../../test/hebra-plugin-fakes';
-import { ensureFolderPath, folderRelativePaths, folderSegmentsOf, libraryFolderPaths, resolveFolderPath } from './folder-path';
+import { createLibraryFolderPath, ensureFolderPath, folderRelativePaths, folderSegmentsOf, libraryFolderPaths, resolveFolderPath } from './folder-path';
 
 // Ported from Hebra's `src/lib/modules/tyrian/folder-path.test.ts`, over `api.vault` folders.
 // `isFolderUnderRoot` is not ported: nothing but its own test used it in Hebra.
@@ -10,6 +10,36 @@ describe('folderSegmentsOf', () => {
 	it('drops the last part (the file name) and keeps the rest', () => {
 		expect(folderSegmentsOf('Inventory/Positions/abc.md')).toEqual(['Inventory', 'Positions']);
 		expect(folderSegmentsOf('abc.md')).toEqual([]);
+	});
+});
+
+describe('createLibraryFolderPath', () => {
+	it('creates the missing segments from the library root, a first-level one with no parent', async () => {
+		const library = createFakeLibrary();
+		const id = await createLibraryFolderPath(library, 'root', 'Games/GW2/Tyrian');
+		const [games, gw2, tyrian] = ['Games', 'GW2', 'Tyrian'].map((name) => library.folders.find((folder) => folder.name === name));
+		expect(games?.parentId).toBeNull();
+		expect(gw2?.parentId).toBe(games?.id);
+		expect(tyrian?.parentId).toBe(gw2?.id);
+		expect(id).toBe(tyrian?.id);
+		expect(resolveFolderPath(library.folders, 'root', 'Games/GW2/Tyrian')).toBe(id);
+	});
+
+	it('reuses what exists (under the root id or with no parent, case-insensitively) and creates only the rest', async () => {
+		const library = createFakeLibrary();
+		library.addFolder('games', 'root', 'games');
+		expect(await createLibraryFolderPath(library, 'root', 'Games')).toBe('games');
+		await createLibraryFolderPath(library, 'root', 'Games/GW2');
+		expect(library.folders.filter((folder) => folder.name === 'GW2').map((folder) => folder.parentId)).toEqual(['games']);
+		library.addFolder('loose', null, 'Loose');
+		expect(await createLibraryFolderPath(library, 'root', 'loose')).toBe('loose');
+		expect(library.writes).toEqual(['folderCreate:GW2']);
+	});
+
+	it('refuses an empty path instead of handing back the library root', async () => {
+		const library = createFakeLibrary();
+		await expect(createLibraryFolderPath(library, 'root', '/')).rejects.toThrow('empty path');
+		expect(library.folders).toEqual([]);
 	});
 });
 

@@ -1510,6 +1510,22 @@ describe('legacy summary reconciliation under passive sessions', () => {
 });
 
 describe('managed-assets root reconciliation', () => {
+	// David, 10 Oct 2026 («si no existe, se crea»): in Obsidian `createFolder` creates the output folder itself, so
+	// Apply never needed `createOutputFolder` (the Obsidian host has none) and never said `output_folder_missing`.
+	it('Obsidian: Apply into an output folder the vault lacks creates it, with the folders that contain it', async () => {
+		const vault = new MemoryAssetVault();
+		const manager = await buildManagedAssetsManager(vault);
+		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Games/GW2/Tyrian' });
+		expect('createOutputFolder' in (harness as unknown as { host: { vault: object } }).host.vault).toBe(false);
+		expect([...vault.folders]).toEqual([]);
+
+		await harness.applyManagedAssets();
+
+		expect([...vault.folders]).toEqual(expect.arrayContaining(['Games', 'Games/GW2', 'Games/GW2/Tyrian', 'Games/GW2/Tyrian/Bases']));
+		expect(harness.settings.managedAssetsRoot).toBe('Games/GW2/Tyrian');
+		expect(vault.contents.has('Games/GW2/Tyrian/Bases/Sessions.base')).toBe(true);
+	});
+
 	it('relocates already-installed Bases when the output folder changes, and equalizes both roots', async () => {
 		const vault = new MemoryAssetVault();
 		const manager = await buildManagedAssetsManager(vault);

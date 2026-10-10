@@ -12,8 +12,9 @@
  * - `canonicalIdentity` = `hebra-library:<libraryId>`, the same on every device of the library, so
  *   the core's IndexedDB records keep their `vaultId`;
  * - the output folder comes from the plugin settings (`outputFolder`, chosen among the real
- *   folders) and is LOOKED UP in the library, never created; when missing the vault is empty
- *   (consultation mode, no notes). It is read on start: choosing another one with the plugin on
+ *   folders) and is LOOKED UP in the library; the start never creates it, and when missing the vault
+ *   is empty (no notes) until a press of the managed-assets row creates it (`createOutputFolder`,
+ *   David, 10 Oct 2026). It is read on start: choosing another one with the plugin on
  *   RESTARTS it (`api.workspace.restart()`, with the setting already saved) and until then the
  *   vault refuses every write;
  * - the index is seeded ONCE per output folder (empty index and folder present), adopting the notes
@@ -47,7 +48,7 @@ import type {
 	TyrianPlatform,
 	TyrianVault,
 } from '../tyrian-host';
-import { libraryFolderPaths, resolveFolderPath } from './folder-path';
+import { createLibraryFolderPath, libraryFolderPaths, resolveFolderPath } from './folder-path';
 import { createHebraTyrianUi } from './hebra-host-ui';
 import { hebraHasMainView } from './hebra-main-view';
 import { createTyrianHttpPort } from './http';
@@ -434,7 +435,8 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		},
 	};
 
-	const index = await TyrianPathIndex.load(
+	// Replaced once, with the port below, when a press of the managed-assets row creates the missing output folder.
+	let index = await TyrianPathIndex.load(
 		deps.pathIndexKv,
 		pathIndexNamespace(libraryId, rootFolderId),
 		(error) => deps.report(error, 'path-index.storage'),
@@ -486,16 +488,27 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	/** Notes `vault.saveNote` left outside the path index (the support package), by relative path. */
 	const savedNotes = new Map<string, string>();
 	const adapter = createLocalFileStorage(deps.fileBackend, libraryId);
-	const vaultPort = rootFolderId
-		? createTyrianVaultPort({
-			library: api.vault,
-			index,
-			rootFolderId,
-			canonicalPathFor: (text) => deps.canonicalPathFor(outputFolder, text),
-			onError: (error) => deps.report(error, 'vault.sync'),
-			onNoteSaved: (path, id) => { savedNotes.set(path, id); },
-		})
-		: null;
+	const createPort = (folderId: string, pathIndex: TyrianPathIndex) => createTyrianVaultPort({
+		library: api.vault,
+		index: pathIndex,
+		rootFolderId: folderId,
+		canonicalPathFor: (text) => deps.canonicalPathFor(outputFolder, text),
+		onError: (error) => deps.report(error, 'vault.sync'),
+		onNoteSaved: (path, id) => { savedNotes.set(path, id); },
+	});
+	// An indexed file (a Base, the manifest) someone trashes or purges in Hebra (Files, another
+	// device through sync) leaves the index: otherwise `file(path)` would keep returning it and the
+	// core would fail reading it instead of creating it again. Notes are followed by `onChange`.
+	const watchIndexedFiles = (pathIndex: TyrianPathIndex) => api.vault.onChange((event) => {
+		if (event.kind !== 'library-changed') return;
+		for (const id of event.ids) {
+			if (pathIndex.getKindForId(id) !== 'file') continue;
+			api.vault.fileRead(id)
+				.then((row) => (row && row.trashedAt === null ? undefined : pathIndex.deleteById(id)))
+				.catch((error: unknown) => deps.report(error, 'vault.file'));
+		}
+	});
+	let vaultPort = rootFolderId ? createPort(rootFolderId, index) : null;
 	const vault = createHebraTyrianVault({
 		port: vaultPort,
 		index,
@@ -506,22 +519,34 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			? `the saved output folder is «${latestFolder}» and this vault is still on «${outputFolder}»; the plugin restarts`
 			: null),
 		onReject: (error) => deps.report(error, 'vault.refusal'),
+		// David, 10 Oct 2026 («si no existe, se crea»): a press of the managed-assets row creates the
+		// missing output folder, the one this start was bound to, and this start writes there from then on.
+		createOutputFolder: async () => {
+			const folderId = await createLibraryFolderPath(api.vault, libraryRootId, outputFolder);
+			const created = await TyrianPathIndex.load(
+				deps.pathIndexKv,
+				pathIndexNamespace(libraryId, folderId),
+				(error) => deps.report(error, 'path-index.storage'),
+			);
+			// Empty when just created; one that reached the library meanwhile (sync) is adopted as on a start.
+			await seedTyrianPathIndex({
+				library: api.vault,
+				index: created,
+				rootFolderId: folderId,
+				root: outputFolder,
+				canonicalPathFor: deps.canonicalPathFor,
+				...(created.size === 0 ? {} : { reconcile: true }),
+			});
+			if (disposed) throw new Error('tyrian: the plugin stopped while its output folder was being created.');
+			index = created;
+			vaultPort = createPort(folderId, created);
+			unwatchIndexedFiles = watchIndexedFiles(created);
+			return { port: vaultPort, index: created };
+		},
+		onCreateOutputFolderFailure: (error) => deps.report(error, 'vault.output-folder'),
 	});
 	adoptManagedAssetsRoot = await hasManagedAssetsFootprint(vault, outputFolder, (error) => deps.report(error, 'vault.file'));
-	// An indexed file (a Base, the manifest) someone trashes or purges in Hebra (Files, another
-	// device through sync) leaves the index: otherwise `file(path)` would keep returning it and the
-	// core would fail reading it instead of creating it again. Notes are followed by `onChange`.
-	const unwatchIndexedFiles = rootFolderId
-		? api.vault.onChange((event) => {
-			if (event.kind !== 'library-changed') return;
-			for (const id of event.ids) {
-				if (index.getKindForId(id) !== 'file') continue;
-				api.vault.fileRead(id)
-					.then((row) => (row && row.trashedAt === null ? undefined : index.deleteById(id)))
-					.catch((error: unknown) => deps.report(error, 'vault.file'));
-			}
-		})
-		: () => undefined;
+	let unwatchIndexedFiles = rootFolderId ? watchIndexedFiles(index) : () => undefined;
 	const secrets = await createPreloadedSecrets(deps.secretsBackend, (error) => deps.report(error, 'keychain.write'));
 	const kv: TyrianKvPort = { indexedDB: deps.indexedDB, locks: deps.locks ?? null, storage: deps.storage ?? null };
 	const background = createBackground(deps);

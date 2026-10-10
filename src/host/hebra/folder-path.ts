@@ -46,23 +46,53 @@ export async function ensureFolderPath(
 /**
  * The library folder for a Tyrian path counted from the library ROOT (`'Tyrian Companion'`,
  * `'Games/GW2'`), WITHOUT creating anything: null when a segment is missing. It is how HebraHost
- * finds the output folder on start: consultation mode writes nothing, so nothing is ensured.
+ * finds the output folder on start: the start creates nothing (`createLibraryFolderPath` does, on a press).
  * First-level folders hang from `rootFolderId` or have no parent.
  */
 export function resolveFolderPath(folders: readonly PluginFolder[], rootFolderId: string, path: string): string | null {
 	const segments = path.split('/').filter((segment) => segment.trim().length > 0);
 	if (segments.length === 0) return null;
-	let parentId = rootFolderId;
-	for (const [position, segment] of segments.entries()) {
-		const found = findChildByName(folders, parentId, segment)
-			?? (position === 0
-				? folders.find((folder) => folder.parentId === null && folder.id !== rootFolderId
-					&& folder.name.trim().toLowerCase() === segment.trim().toLowerCase())
-				: undefined);
+	let parentId: string | null = null;
+	for (const segment of segments) {
+		const found = findSegment(folders, rootFolderId, parentId, segment);
 		if (!found) return null;
 		parentId = found.id;
 	}
 	return parentId;
+}
+
+/**
+ * David, 10 Oct 2026 («si no existe, se crea»): the library folder for a path counted from the library
+ * ROOT, as `resolveFolderPath` finds it, creating the segments that are missing (a first-level one with
+ * `parentId` null, as the plugin API documents it). Only the explicit managed-assets writes of the
+ * Settings row reach it (`vault.createOutputFolder`), with the output folder the user configured.
+ * Rejects with what Hebra rejects (`invalid_name`, a name another writer took meanwhile…).
+ */
+export async function createLibraryFolderPath(library: TyrianFolderLibrary, rootFolderId: string, path: string): Promise<string> {
+	const segments = path.split('/').filter((segment) => segment.trim().length > 0);
+	if (segments.length === 0) throw new Error('tyrian folders: no folder to create for an empty path.');
+	let folders = await library.foldersList();
+	let parentId: string | null = null;
+	for (const segment of segments) {
+		const existing = findSegment(folders, rootFolderId, parentId, segment);
+		if (existing) {
+			parentId = existing.id;
+			continue;
+		}
+		const created = await library.folderCreate(parentId, segment);
+		// Another writer may have created the same folder meanwhile: list again, as `ensureFolderPath` does.
+		folders = await library.foldersList();
+		parentId = findSegment(folders, rootFolderId, parentId, segment)?.id ?? created.id;
+	}
+	return parentId as string;
+}
+
+/** A folder named `name` under `parentId`; null is the library root, whose children may hang from `rootFolderId` or from nothing. */
+function findSegment(folders: readonly PluginFolder[], rootFolderId: string, parentId: string | null, name: string): PluginFolder | undefined {
+	if (parentId !== null) return findChildByName(folders, parentId, name);
+	return findChildByName(folders, rootFolderId, name)
+		?? folders.find((folder) => folder.parentId === null && folder.id !== rootFolderId
+			&& folder.name.trim().toLowerCase() === name.trim().toLowerCase());
 }
 
 function findChildByName(folders: readonly PluginFolder[], parentId: string, name: string): PluginFolder | undefined {

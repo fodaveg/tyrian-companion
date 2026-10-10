@@ -38,7 +38,8 @@ describe('Tyrian in Hebra: the Assets row explains a press that wrote nothing', 
 	}, 30_000);
 
 	it('while the plugin is still starting, and clears it once it is ready', async () => {
-		const test = hebra();
+		// A missing output folder: the press while starting must not create it either.
+		const test = hebra({ outputFolder: 'Nope' });
 		let core: TyrianCompanionCore | null = null;
 		// The boot is NOT awaited: the Settings panel is mounted and pressed while the runtime is still being built.
 		const booting = activateTyrian(test.api, {
@@ -65,6 +66,7 @@ describe('Tyrian in Hebra: the Assets row explains a press that wrote nothing', 
 		expect(row.getManagedAssetsView()).toMatchObject({ status: 'idle', message: 'not_inspected' });
 		expect(rowText(panel)).toContain('Sin inspeccionar');
 		expect(test.library.files.size).toBe(0);
+		expect(test.library.writes.filter((write) => write.startsWith('folderCreate')), 'a press while starting creates no folder').toEqual([]);
 		await stop();
 		test.unloadPlugin();
 	}, 30_000);
@@ -100,12 +102,96 @@ describe('Tyrian in Hebra: the Assets row explains a press that wrote nothing', 
 		await cleanup();
 	}, 30_000);
 
-	it('when the output folder does not exist in the library', async () => {
+	/**
+	 * David, 10 Oct 2026 («si no existe, se crea»): Apply creates the missing output folder, with the folders that
+	 * contain it, and installs the Bases there, instead of stopping at «elige otra».
+	 */
+	it('when the output folder does not exist in the library, Apply creates it and installs the Bases', async () => {
+		const test = hebra({ outputFolder: 'Games/GW2/Tyrian' });
+		const { core, panel, cleanup } = await start(test);
+		expect(test.library.folders.some((folder) => folder.name === 'Games')).toBe(false);
+		await press(panel, 'Aplicar');
+		expect(core.getManagedAssetsView()).toMatchObject({ status: 'ready', message: 'lifecycle_ready' });
+		const games = test.library.folders.find((folder) => folder.name === 'Games');
+		const gw2 = test.library.folders.find((folder) => folder.name === 'GW2' && folder.parentId === games?.id);
+		const tyrian = test.library.folders.find((folder) => folder.name === 'Tyrian' && folder.parentId === gw2?.id);
+		expect(games?.parentId ?? null, 'a first-level folder hangs from the library root').toBeNull();
+		expect(tyrian, 'the whole configured path is created').toBeDefined();
+		const live = [...test.library.files.values()].filter((file) => file.trashedAt === null);
+		expect(live.some((file) => file.folderId === tyrian!.id && file.name === 'Tyrian Companion Assets.json')).toBe(true);
+		expect(test.library.folders.some((folder) => folder.name === 'Bases' && folder.parentId === tyrian!.id)).toBe(true);
+		expect(live.filter((file) => file.name.endsWith('.base')).map((file) => file.name).sort()).toEqual([...BASES].sort());
+		expect(rowText(panel)).not.toContain('no existe en la biblioteca');
+		// Nothing outside the configured path: the old default folder holds nothing.
+		expect(live.filter((file) => file.folderId === 'tc')).toEqual([]);
+		// A second press over the created folder is not a new install.
+		await press(panel, 'Aplicar');
+		expect(core.getManagedAssetsView()).toMatchObject({ status: 'ready' });
+		expect(test.library.folders.filter((folder) => folder.name === 'Games')).toHaveLength(1);
+		await cleanup();
+	}, 30_000);
+
+	it('when Hebra refuses to create the output folder, says so, offers a retry and writes nothing', async () => {
 		const test = hebra({ outputFolder: 'Nope' });
+		const createFolder = test.library.folderCreate.bind(test.library);
+		let refuse = true;
+		test.library.folderCreate = async (parentId, name) => {
+			// What Hebra's engine throws when another writer took the name meanwhile (`ensureFolderNameFree`).
+			if (refuse) throw Object.assign(new Error('folder_name_taken'), { code: 'folder_name_taken' });
+			return await createFolder(parentId, name);
+		};
 		const { core, panel, cleanup } = await start(test);
 		await press(panel, 'Aplicar');
 		expect(core.getManagedAssetsView()).toMatchObject({ status: 'error', message: 'operation_output_folder_missing' });
-		expect(rowText(panel)).toContain('no existe en la biblioteca');
+		expect(rowText(panel)).toContain('No se pudo crear la carpeta de salida');
+		expect(rowText(panel)).toContain('Reintenta');
+		expect(rowText(panel)).not.toContain('Elige otra');
+		expect(test.library.files.size).toBe(0);
+		expect(test.library.folders.some((folder) => folder.name === 'Nope')).toBe(false);
+		// The retry the message asks for works once Hebra lets it.
+		refuse = false;
+		await press(panel, 'Aplicar');
+		expect(core.getManagedAssetsView()).toMatchObject({ status: 'ready', message: 'lifecycle_ready' });
+		expect(test.library.folders.filter((folder) => folder.name === 'Nope')).toHaveLength(1);
+		await cleanup();
+	}, 30_000);
+
+	it('Repair over a managed root whose output folder is gone creates it again and writes the Bases', async () => {
+		const test = hebra({ outputFolder: 'Nope', managedAssetsRoot: 'Nope' });
+		const { core, panel, cleanup } = await start(test);
+		await press(panel, 'Reparar');
+		expect(core.getManagedAssetsView()).toMatchObject({ status: 'ready', message: 'assets_ready' });
+		const nope = test.library.folders.find((folder) => folder.name === 'Nope');
+		expect(nope?.parentId ?? null).toBeNull();
+		const live = [...test.library.files.values()].filter((file) => file.trashedAt === null);
+		expect(live.some((file) => file.folderId === nope!.id && file.name === 'Tyrian Companion Assets.json')).toBe(true);
+		expect(live.filter((file) => file.name.endsWith('.base')).map((file) => file.name).sort()).toEqual([...BASES].sort());
+		await cleanup();
+	}, 30_000);
+
+	it('creates no output folder on a device in consult mode', async () => {
+		const test = hebra({ withKey: false, outputFolder: 'Nope' });
+		const { core, panel, cleanup } = await start(test);
+		const foldersBefore = test.library.folders.length;
+		await press(panel, 'Aplicar');
+		expect(core.getManagedAssetsView()).toMatchObject({ status: 'error', message: 'consult_mode' });
+		expect(test.library.folders).toHaveLength(foldersBefore);
+		expect(test.library.writes.filter((write) => write.startsWith('folderCreate'))).toEqual([]);
+		expect(test.library.files.size).toBe(0);
+		await cleanup();
+	}, 30_000);
+
+	it.each([
+		['with no managed root', {}],
+		['with the managed root there (the start\'s own update of the Bases)', { managedAssetsRoot: 'Nope' }],
+	])('creates no output folder on its own, %s: neither the start nor the Preview', async (_case, root) => {
+		const test = hebra({ outputFolder: 'Nope', ...root });
+		const { core, panel, cleanup } = await start(test);
+		await settle(600);
+		await press(panel, 'Vista previa');
+		expect(core.getManagedAssetsView()).toMatchObject({ status: 'ready' });
+		expect(test.library.writes.filter((write) => write.startsWith('folderCreate'))).toEqual([]);
+		expect(test.library.folders.some((folder) => folder.name === 'Nope')).toBe(false);
 		await cleanup();
 	}, 30_000);
 

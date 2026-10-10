@@ -4740,7 +4740,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.settingTab.refreshManagedAssetsRow();
 			return;
 		}
-		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.install(this.settings.outputFolder, undefined, guard));
+		const outputFolder = this.settings.outputFolder;
+		const result = await this.runManagedAssetsLifecycle(async () => {
+			// Only the press creates a missing output folder: the automatic applies (on load, after a sync) pass a guard.
+			if (guard === undefined) await createMissingOutputFolder(this.host, outputFolder, outputFolder);
+			return await this.managedAssetsLifecycle.install(outputFolder, undefined, guard);
+		});
 		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
 	}
 
@@ -4754,7 +4759,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			return;
 		}
 		if (!this.settings.managedAssetsRoot) return;
-		await this.runManagedAssetOperation(() => this.managedAssets.apply(this.settings.managedAssetsRoot!, 'repair'));
+		const root = this.settings.managedAssetsRoot;
+		const outputFolder = this.settings.outputFolder;
+		await this.runManagedAssetOperation(async () => {
+			await createMissingOutputFolder(this.host, root, outputFolder);
+			return await this.managedAssets.apply(root, 'repair');
+		});
 	}
 
 	/**
@@ -4772,7 +4782,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			return;
 		}
 		if (!this.settings.managedAssetsRoot) return;
-		await this.runManagedAssetOperation(() => this.managedAssets.replaceUnowned(this.settings.managedAssetsRoot!, confirmed));
+		const root = this.settings.managedAssetsRoot;
+		const outputFolder = this.settings.outputFolder;
+		await this.runManagedAssetOperation(async () => {
+			await createMissingOutputFolder(this.host, root, outputFolder);
+			return await this.managedAssets.replaceUnowned(root, confirmed);
+		});
 	}
 
 	/**
@@ -6610,6 +6625,18 @@ async function ensureAdapterDirectory(
  * output folder moved away from it (a sibling, or a folder inside it) nothing of the old root can be read and
  * Apply installs afresh instead.
  */
+/**
+ * David, 10 Oct 2026 (Assets row: «la carpeta de salida no existe en la biblioteca […] si no existe, se crea»):
+ * before an explicit write of the row (Apply, Repair, Replace) into the output folder, a host whose
+ * `createFolder` cannot create that folder (Hebra) creates it. Never for a root outside the output folder,
+ * on a start or in an automatic apply. It never rejects: a failure is the host's to report, and the write
+ * that follows refuses with `output_folder_missing`. Tolerates an absent host, like `consulting`.
+ */
+async function createMissingOutputFolder(host: TyrianHost | undefined, root: string, outputFolder: string): Promise<void> {
+	if (root !== outputFolder && !root.startsWith(`${outputFolder}/`)) return;
+	await host?.vault.createOutputFolder?.();
+}
+
 function canMoveManagedAssets(host: TyrianHost | undefined, root: string | null, outputFolder: string): boolean {
 	if (host?.capabilities?.managedAssetsMove !== false) return true;
 	return root !== null && (root === outputFolder || root.startsWith(`${outputFolder}/`));
