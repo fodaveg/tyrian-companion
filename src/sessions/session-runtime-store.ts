@@ -658,7 +658,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 			abandon: () => {
 				if (abandoned) return;
 				abandoned = true;
-				attempt.failure(localDebugStorageFailureCode(new StorageUnansweredError()), new StorageUnansweredError());
+				attempt.failure(indexedDbFailureCode(new StorageUnansweredError()), new StorageUnansweredError());
 				if (this.opening === created) this.opening = null;
 			},
 		};
