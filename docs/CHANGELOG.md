@@ -1,5 +1,34 @@
 # Changelog
 
+## Release beta 0.6.27 - logros de Leyspring Hollows en una nota, notas de sesión en vivo más legibles, gráfica de sesión con línea y burbuja, Hebra en castellano e inglés y sesiones que se restauran más rápido
+
+Se actualiza desde la 0.6.26 publicada. Lo que más se nota: un comando nuevo que escribe tus logros de Leyspring
+Hollows en una nota, las notas de las sesiones en vivo con tramos de mapa y horas locales, y la gráfica de sesión que
+enseña el valor al pasar el ratón. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Logros de Leyspring Hollows. El comando «Actualizar logros de Leyspring» escribe `Achievements/Leyspring Hollows.md`
+  bajo la carpeta de salida, con los 46 logros, los pendientes y los hechos, el enlace a la wiki de cada uno y la
+  maestría. Necesita que la clave de API tenga el permiso `progression`. Funciona también en modo Consulta: es una
+  excepción explícita, igual que las acciones manuales de inventario y cartera de la 0.3.1, porque solo escribe esa nota
+  y no cambia nada en tu cuenta. No toca tus notas propias; las casillas las reescribe la API en cada actualización, así
+  que no marques ahí lo que quieras conservar.
+- Notas de sesión en vivo. El resumen y la nota completa muestran ahora los tramos de mapa de la sesión. La nota
+  completa usa horas locales, pone el id junto a cada nombre, coloca «Mis notas» antes de los datos y enlaza con su
+  resumen. Las cifras y los datos no cambian.
+- Gráfica de sesión. Al pasar el ratón sale una línea y una burbuja con el valor en ese punto; también funciona con el
+  táctil y con el teclado.
+- Hebra en castellano e inglés. Los avisos, el panel de notas no adoptadas, el selector de carpeta y el diálogo de
+  secretos salen en el idioma que elijas, y los títulos de las vistas cambian con él.
+- Rendimiento. La gráfica de sesión valora cada objeto una sola vez por reconstrucción, y restaurar una sesión en vivo
+  reconstruye la gráfica una sola vez en vez de varias, sin copiar entradas del diario que no tienen nada que liquidar.
+- Durabilidad. Una base de sesión que una versión anterior dejó en la versión 1 recibe ahora el almacén del diario en
+  vivo, y una base dañada a la que le falta se repara.
+- Interno. `hebra-plugin-api` pasa a la 1.4.0 y los dobles de pruebas de Hebra deshacen los registros del plugin al
+  descargarlo, como hace Hebra. En CI y publicación: el test del bundle de Hebra corre tras construirlo, los
+  guardarraíles corren antes de publicar, el contrato de release exige que no sea prerelease y que `hebra.json` sea
+  coherente, CI y release usan el Node de `.nvmrc`, el spike de H8 solo corre si cambia `spikes/` y hay un paso de CI con
+  motor lento. Las reglas de lint de Obsidian sobre temporizadores y DOM quedan apagadas en los tests.
+
 ## Release beta 0.6.26 - las sesiones en vivo nuevas guardan notas mucho más pequeñas (formato 2, sin vuelta atrás a la 0.6.24), el hallazgo mágico por logros cuenta las repeticiones, las notas de inventario respetan tus comentarios y el catálogo guarda cada lote de una vez
 
 [Canal 0.6.26 publicado](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.26) el 10 oct 2026; **instalación/runtime
