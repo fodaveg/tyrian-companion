@@ -450,6 +450,8 @@ export class LiveSessionLifecycle {
 			if (this.record.phase === 'complete') return await this.saveCompletedNote();
 			if (await this.ready() !== 'owned') return false;
 			for (const entry of this.journal) {
+				// Only an intent still owed is closed; an entry with none is left as it is, without being copied and compared.
+				if (!entry.outbox.some((intent) => intent.state === 'awaiting_price' || intent.state === 'ready')) continue;
 				const nextEntry = { ...entry, outbox: entry.outbox.map((intent) => ['awaiting_price','ready'].includes(intent.state)
 					? { ...intent, state: 'skipped' as const, skipReason: 'session_closed' as const, alert: null } : intent) };
 				if (JSON.stringify(entry) !== JSON.stringify(nextEntry)) {
@@ -690,12 +692,24 @@ export class LiveSessionLifecycle {
 		const journal = await this.options.persistence.readLiveJournal(loaded.record.sessionId);
 		const observations = journal.flatMap((entry) => entry.observations);
 		if (observations.length !== loaded.record.observationCount || JSON.stringify(liveObservationTotals([],observations)) !== JSON.stringify(loaded.record.totals)) throw new Error('Live recovery journal changed.');
-		this.record = loaded.record; this.journal = journal; this.observations = observations; this.rebuildChart();
+		// The chart is a function of the record (prices, tracked currencies, last observation) and of what each entry observed and
+		// when. The load that brought the session back built it from the same record and the same entries more often than not (a
+		// restart nobody wrote between), and building it is the dearest thing a restore does after reading: only a read that differs
+		// builds it again.
+		const sameChart = this.record !== null && journal.length === this.journal.length
+			&& JSON.stringify(loaded.record) === JSON.stringify(this.record)
+			&& journal.every((entry, index) => { const held = this.journal[index]!;
+				return entry.observedAt === held.observedAt && entry.breakBefore === held.breakBefore && JSON.stringify(entry.observations) === JSON.stringify(held.observations); });
+		this.record = loaded.record; this.journal = journal; this.observations = observations;
+		if (!sameChart) this.rebuildChart();
 	}
 	/** A late takeover settles interrupted effects before publishing resumable, unclaimed intents. */
 	private async settleRecovery(): Promise<void> {
 		if (!this.recovering || this.record === null || !await this.owned()) return;
 		for (const entry of this.journal) {
+			// Only an effect that was dispatching or whose receipt was pending is settled; any other intent comes back as it was, so an entry
+			// without one is not copied nor compared (that was two serialisations of every entry of the journal, 10 801 in a 3 h session).
+			if (!entry.outbox.some((intent) => intent.state === 'dispatching' || intent.receipt?.state === 'pending')) continue;
 			const next = {...entry,outbox:entry.outbox.map(settleLiveAlertRestart)};
 			if (JSON.stringify(next) !== JSON.stringify(entry)) {
 				if (!await this.options.persistence.replaceLiveJournal(entry,next,this.record)) throw new Error('Live recovery settlement could not be persisted.');
