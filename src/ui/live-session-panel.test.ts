@@ -5,8 +5,8 @@ import type { LiveSessionHistoryEntry } from '../sessions/live-session-history';
 import { sha256Text } from '../sessions/session-note-renderer';
 import type { LiveGapV1, LiveObservationV1, LiveSessionViewV1 } from '../sessions/live-session-model';
 import {
-	LiveSessionPanel, liveSessionRatePerHour, liveSessionValue,
-	type LiveSessionControlState, type LiveSessionPanelActions,
+	LiveSessionPanel, liveChartHitAt, liveSessionRatePerHour, liveSessionValue,
+	type LiveChartGeometry, type LiveSessionControlState, type LiveSessionPanelActions,
 } from './live-session-panel';
 
 const at = (seconds: number): string => new Date(Date.UTC(2026, 9, 6, 8, 0, seconds)).toISOString();
@@ -58,7 +58,7 @@ function controls(panel: LiveSessionPanel): string[] {
 	return Array.from(panel.element.querySelectorAll<HTMLElement>('button, summary, a, input, select, textarea, [tabindex]'))
 		.filter((el) => el.closest('[hidden]') === null)
 		.filter((el) => { const details = el.closest('details'); return details === null || details.open || el.tagName === 'SUMMARY' && el.parentElement === details; })
-		.map((el) => `${el.tagName.toLowerCase()}:${el.textContent}`);
+		.map((el) => el.getAttribute('role') === 'img' ? `${el.tagName.toLowerCase()}[role=img]` : `${el.tagName.toLowerCase()}:${el.textContent}`);
 }
 const toggle = (panel: LiveSessionPanel): HTMLButtonElement => panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__toggle')!;
 const timeline = (panel: LiveSessionPanel): HTMLDetailsElement => panel.element.querySelector<HTMLDetailsElement>('details')!;
@@ -70,14 +70,15 @@ describe('Session tab: header and the one button', () => {
 		const idle = harness(idleView(), control({ canStart: true }));
 		expect(controls(idle.panel)).toEqual(['button:Start session']);
 		const active = harness(liveView(), control());
-		expect(controls(active.panel)).toEqual(['button:Finish session', 'summary:Timeline (2)']);
+		// The chart is focusable for its keyboard cursor, so it counts on the keyboard surface once it has readings.
+		expect(controls(active.panel)).toEqual(['button:Finish session', 'div[role=img]', 'summary:Timeline (2)']);
 		const consult = harness(idleView(), control({ consult: true, gameConnected: false }));
 		expect(controls(consult.panel)).toEqual([]);
 		expect(consult.panel.element.querySelector('.tyrian-live-session__phase')?.textContent).toBe('No session');
 		expect(consult.panel.element.textContent).toContain('This installation is in consult mode');
 		const many = harness(liveView(120), control());
 		openTimeline(many.panel);
-		expect(controls(many.panel)).toEqual(['button:Finish session', 'summary:Timeline (120)', 'button:Show 50 more']);
+		expect(controls(many.panel)).toEqual(['button:Finish session', 'div[role=img]', 'summary:Timeline (120)', 'button:Show 50 more']);
 		const old = harness(idleView(), control({ oldSession: { canDiscard: true } }));
 		expect(controls(old.panel)).toContain('button:Discard old session');
 	});
@@ -167,7 +168,7 @@ describe('Session tab: header and the one button', () => {
 		const notice = h.panel.element.querySelector('.tyrian-live-session__notice')!;
 		expect(notice.hasAttribute('hidden')).toBe(false);
 		expect(notice.textContent).toContain('Connection lost');
-		expect(controls(h.panel)).toEqual(['button:Finish session', 'summary:Timeline (2)']);
+		expect(controls(h.panel)).toEqual(['button:Finish session', 'div[role=img]', 'summary:Timeline (2)']);
 	});
 });
 
@@ -363,6 +364,195 @@ describe('Session tab: figures, objects and chart', () => {
 		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__line')).toHaveLength(1);
 		expect(gapped.panel.element.querySelectorAll('.tyrian-live-session__gap-mask')).toHaveLength(2);
 		expect(gapped.panel.element.querySelector('.tyrian-live-session__chart [role="img"]')!.getAttribute('aria-label')).toContain('2 reading gaps');
+	});
+
+	describe('chart cursor (David, 10 Oct 2026: a line and a bubble under the pointer)', () => {
+		/** Five readings over 40 s (0, 10, 25, 25, 15 c) with a closed gap from 20 s to 30 s; 1 000 px wide, so 25 px per second. */
+		function cursorView(): LiveSessionViewV1 {
+			const view = liveView(4);
+			view.chartPoints = [[0, 0], [10, 10], [20, 25], [30, 25], [40, 15]].map(([second, value]) => ({
+				observedAt: at(second!), itemQuantityNet: 0, netItemValueKnownCopper: value!, knownNetValueCopper: null, breakBefore: second === 30 }));
+			view.gaps = [{ version: 1, fromAt: at(20), toAt: at(30), reason: 'disconnect', channels: ['items'] }];
+			view.lastObservationAt = at(40);
+			return view;
+		}
+		const plot = (panel: LiveSessionPanel): HTMLElement => panel.element.querySelector<HTMLElement>('.tyrian-live-session__plot')!;
+		const tip = (panel: LiveSessionPanel): HTMLElement => panel.element.querySelector<HTMLElement>('.tyrian-live-session__plot-tip')!;
+		const cursor = (panel: LiveSessionPanel): HTMLElement => panel.element.querySelector<HTMLElement>('.tyrian-live-session__plot-cursor')!;
+		const spoken = (panel: LiveSessionPanel): string => panel.element.querySelector('.tyrian-live-session__plot-status')!.textContent ?? '';
+		const lines = (panel: LiveSessionPanel): string[] => Array.from(tip(panel).children).filter((line) => !line.hasAttribute('hidden')).map((line) => line.textContent ?? '');
+		const clock = (second: number, seconds = true): string => new Date(at(second)).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}), hourCycle: 'h23' });
+		/** happy-dom lays nothing out: the SVG reports the width the plot would have on screen. */
+		function laidOut(panel: LiveSessionPanel, width = 1_000): void {
+			const svg = panel.element.querySelector('.tyrian-live-session__plot svg')!;
+			Object.defineProperty(svg, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width, height: 100, right: width, bottom: 100, x: 0, y: 0, toJSON: () => ({}) }) });
+		}
+		const pointer = (panel: LiveSessionPanel, type: string, clientX: number, pointerType = 'mouse'): boolean =>
+			plot(panel).dispatchEvent(new PointerEvent(type, { clientX, pointerType, pointerId: 1, bubbles: true, cancelable: true }));
+		const key = (panel: LiveSessionPanel, name: string): boolean => plot(panel).dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+		function cursorHarness(view = cursorView()) {
+			const h = harness(view);
+			laidOut(h.panel);
+			return h;
+		}
+
+		it('finds the reading nearest in time, and the gap covering an instant, with a closing reading keeping its own instant', () => {
+			const geometry: LiveChartGeometry = { t0: 0, t1: 40, readings: [0, 10, 20, 30, 40].map((instant) => ({ at: instant, value: instant, x: instant / 40, y: 0 })),
+				gaps: [{ from: 20, to: 30, open: false, x: 0.5, x2: 0.75 }] };
+			expect(liveChartHitAt(geometry, 14)).toEqual({ kind: 'reading', index: 1 });
+			expect(liveChartHitAt(geometry, 16)).toEqual({ kind: 'reading', index: 2 });
+			expect(liveChartHitAt(geometry, 20), 'the last reading before the gap keeps its instant').toEqual({ kind: 'reading', index: 2 });
+			expect(liveChartHitAt(geometry, 20.5)).toEqual({ kind: 'gap', index: 0 });
+			expect(liveChartHitAt(geometry, 25)).toEqual({ kind: 'gap', index: 0 });
+			expect(liveChartHitAt(geometry, 30)).toEqual({ kind: 'reading', index: 3 });
+			expect(liveChartHitAt(geometry, 99)).toEqual({ kind: 'reading', index: 4 });
+			expect(liveChartHitAt({ ...geometry, gaps: [{ from: 20, to: 40, open: true, x: 0.5, x2: 1 }] }, 40)).toEqual({ kind: 'gap', index: 0 });
+			expect(liveChartHitAt({ t0: 0, t1: 1, readings: [], gaps: [] }, 0)).toBeNull();
+		});
+
+		it('is hidden until a pointer moves over the plot, then marks the nearest reading with the local time, the value and the signed change', () => {
+			const { panel } = cursorHarness();
+			expect(plot(panel).getAttribute('role')).toBe('img');
+			expect(plot(panel).getAttribute('aria-label')).toMatch(/^Value over time: /);
+			expect(plot(panel).tabIndex).toBe(0);
+			expect(cursor(panel).hasAttribute('hidden')).toBe(true);
+			expect(tip(panel).hasAttribute('hidden')).toBe(true);
+			expect(spoken(panel)).toBe('');
+			pointer(panel, 'pointermove', 260); // 10.4 s → the reading at 10 s
+			expect(cursor(panel).hasAttribute('hidden')).toBe(false);
+			expect(tip(panel).hasAttribute('hidden')).toBe(false);
+			expect(lines(panel)).toEqual([clock(10), '0g 0s 10c', '+0g 0s 10c vs. previous']);
+			expect(spoken(panel)).toBe(`${clock(10)}, 0g 0s 10c, +0g 0s 10c vs. previous`);
+			expect(cursor(panel).style.getPropertyValue('--x')).toBe('0.25');
+			expect(tip(panel).style.getPropertyValue('--x')).toBe('0.25');
+			expect(tip(panel).style.getPropertyValue('--y')).toBe('0.6'); // 10 c of a 25 c maximum
+			expect(cursor(panel).dataset.kind).toBeUndefined();
+			pointer(panel, 'pointermove', 1); // the first reading has no previous one
+			expect(lines(panel)).toEqual([clock(0), '0g 0s 0c', 'first reading']);
+			pointer(panel, 'pointermove', 990); // 39.6 s → the last reading, a loss against the one before
+			expect(lines(panel)).toEqual([clock(40), '0g 0s 15c', '-0g 0s 10c vs. previous']);
+			expect(tip(panel).querySelector('.tyrian-live-session__plot-tip-change')!.hasAttribute('data-neg')).toBe(true);
+			pointer(panel, 'pointermove', 260);
+			expect(tip(panel).querySelector('.tyrian-live-session__plot-tip-change')!.hasAttribute('data-neg')).toBe(false);
+		});
+
+		it('says «no readings from … to …» inside a gap, without a value, and bands the gap instead of drawing a line', () => {
+			const { panel } = cursorHarness();
+			pointer(panel, 'pointermove', 625); // 25 s, inside the 20–30 s gap
+			expect(lines(panel)).toEqual([`no readings from ${clock(20, false)} to ${clock(30, false)}`]);
+			expect(spoken(panel)).toBe(`no readings from ${clock(20, false)} to ${clock(30, false)}`);
+			expect(cursor(panel).dataset.kind).toBe('gap');
+			expect(cursor(panel).style.getPropertyValue('--x')).toBe('0.5');
+			expect(cursor(panel).style.getPropertyValue('--w')).toBe('0.25');
+			pointer(panel, 'pointermove', 750); // exactly where the gap closes: that reading, not the gap
+			expect(lines(panel)).toEqual([clock(30), '0g 0s 25c', '0g 0s 0c vs. previous']);
+			expect(cursor(panel).dataset.kind).toBeUndefined();
+			expect(cursor(panel).style.getPropertyValue('--w')).toBe('');
+			const open = cursorView(); open.gaps = [{ version: 1, fromAt: at(20), toAt: null, reason: 'disconnect', channels: ['items'] }];
+			const stillOpen = cursorHarness(open);
+			pointer(stillOpen.panel, 'pointermove', 1_000);
+			expect(lines(stillOpen.panel)).toEqual([`no readings since ${clock(20, false)}`]);
+			const spanish = harness(cursorView(), control(), 'es'); laidOut(spanish.panel);
+			pointer(spanish.panel, 'pointermove', 625);
+			expect(lines(spanish.panel)).toEqual([`sin lecturas de ${clock(20, false)} a ${clock(30, false)}`]);
+			pointer(spanish.panel, 'pointermove', 990);
+			expect(lines(spanish.panel)[2]).toBe('-0g 0s 10c vs. anterior');
+		});
+
+		it('turns the bubble around near the edges: start side of the line in the right half, top while the reading is low', () => {
+			const { panel } = cursorHarness();
+			pointer(panel, 'pointermove', 990); // right edge, value 15 of 25 → upper half
+			expect(tip(panel).dataset.side).toBe('start');
+			expect(tip(panel).dataset.v).toBe('bottom');
+			pointer(panel, 'pointermove', 0); // left edge, value 0 → bottom of the plot
+			expect(tip(panel).dataset.side).toBe('end');
+			expect(tip(panel).dataset.v).toBe('top');
+			pointer(panel, 'pointermove', 625); // a gap band centred at 0.625
+			expect(tip(panel).dataset.side).toBe('start');
+			expect(tip(panel).dataset.v).toBe('top');
+		});
+
+		it('walks the readings with the keyboard: arrows, Home, End and Escape, stepping over a gap', () => {
+			const { panel } = cursorHarness();
+			expect(key(panel, 'ArrowRight')).toBe(false); // handled: the first reading
+			expect(lines(panel)[0]).toBe(clock(0));
+			key(panel, 'ArrowRight'); expect(lines(panel)[0]).toBe(clock(10));
+			key(panel, 'End'); expect(lines(panel)[0]).toBe(clock(40));
+			key(panel, 'ArrowRight'); expect(lines(panel)[0]).toBe(clock(40));
+			key(panel, 'ArrowLeft'); expect(lines(panel)[0]).toBe(clock(30));
+			key(panel, 'ArrowLeft'); expect(lines(panel)[0]).toBe(clock(20));
+			key(panel, 'Home'); expect(lines(panel)[0]).toBe(clock(0));
+			key(panel, 'ArrowLeft'); expect(lines(panel)[0]).toBe(clock(0));
+			expect(key(panel, 'a')).toBe(true); // not ours
+			expect(key(panel, 'Escape')).toBe(false);
+			expect(tip(panel).hasAttribute('hidden')).toBe(true);
+			expect(spoken(panel)).toBe('');
+			expect(key(panel, 'Escape'), 'nothing to hide: the key goes on to the host').toBe(true);
+			pointer(panel, 'pointermove', 625); // from inside the gap the arrows reach the readings on either side
+			key(panel, 'ArrowRight'); expect(lines(panel)[0]).toBe(clock(30));
+			pointer(panel, 'pointermove', 625);
+			key(panel, 'ArrowLeft'); expect(lines(panel)[0]).toBe(clock(20));
+			plot(panel).dispatchEvent(new FocusEvent('blur'));
+			expect(tip(panel).hasAttribute('hidden')).toBe(true);
+		});
+
+		it('follows a finger: pressing and dragging move the cursor, lifting hides it; a released mouse button keeps the hover', () => {
+			const { panel } = cursorHarness();
+			pointer(panel, 'pointerdown', 260, 'touch');
+			expect(lines(panel)[0]).toBe(clock(10));
+			pointer(panel, 'pointermove', 500, 'touch'); // 20 s: the last reading before the gap, not the gap
+			expect(lines(panel)[0]).toBe(clock(20));
+			pointer(panel, 'pointermove', 510, 'touch'); // 20.4 s: inside it
+			expect(lines(panel)[0]).toMatch(/^no readings from /);
+			pointer(panel, 'pointerup', 510, 'touch');
+			expect(tip(panel).hasAttribute('hidden')).toBe(true);
+			pointer(panel, 'pointerdown', 260, 'touch');
+			pointer(panel, 'pointercancel', 260, 'touch');
+			expect(tip(panel).hasAttribute('hidden')).toBe(true);
+			pointer(panel, 'pointermove', 260);
+			pointer(panel, 'pointerup', 260);
+			expect(tip(panel).hasAttribute('hidden')).toBe(false);
+			pointer(panel, 'pointerleave', 260);
+			expect(tip(panel).hasAttribute('hidden')).toBe(true);
+			expect(spoken(panel)).toBe('');
+		});
+
+		it('keeps the bubble on the same instant with the new value across a rebuild, and drops it when the reading or the chart goes', () => {
+			const h = cursorHarness();
+			pointer(h.panel, 'pointermove', 260);
+			expect(lines(h.panel)[1]).toBe('0g 0s 10c');
+			const repriced = cursorView();
+			for (const point of repriced.chartPoints) point.netItemValueKnownCopper *= 2;
+			h.state.view = repriced; h.panel.refresh();
+			expect(lines(h.panel)).toEqual([clock(10), '0g 0s 20c', '+0g 0s 20c vs. previous']);
+			expect(spoken(h.panel)).toBe(`${clock(10)}, 0g 0s 20c, +0g 0s 20c vs. previous`);
+			const thinned = cursorView();
+			thinned.chartPoints = thinned.chartPoints.filter((point) => point.observedAt !== at(10));
+			h.state.view = thinned; h.panel.refresh();
+			expect(lines(h.panel)[0], 'the reading at 10 s is gone: the nearest one, never a stale value').toBe(clock(0));
+			expect(lines(h.panel)[1]).toBe('0g 0s 0c');
+			h.state.view = { ...cursorView(), chartPoints: [] }; h.panel.refresh();
+			expect(h.panel.element.querySelector('.tyrian-live-session__chart')!.hasAttribute('hidden')).toBe(true);
+			expect(tip(h.panel).hasAttribute('hidden')).toBe(true);
+			expect(cursor(h.panel).hasAttribute('hidden')).toBe(true);
+			expect(spoken(h.panel)).toBe('');
+		});
+
+		it('shows nothing without readings or without a laid-out plot', () => {
+			const none = harness({ ...liveView(0), totals: [], chartPoints: [] });
+			pointer(none.panel, 'pointermove', 100);
+			key(none.panel, 'ArrowRight');
+			expect(none.panel.element.querySelector('.tyrian-live-session__chart')!.hasAttribute('hidden')).toBe(true);
+			expect(tip(none.panel).hasAttribute('hidden')).toBe(true);
+			expect(cursor(none.panel).hasAttribute('hidden')).toBe(true);
+			expect(spoken(none.panel)).toBe('');
+			expect(controls(none.panel)).not.toContain('div[role=img]');
+			const flat = harness(cursorView()); // happy-dom: zero width, so no instant can be read from a pointer
+			pointer(flat.panel, 'pointermove', 100);
+			expect(tip(flat.panel).hasAttribute('hidden')).toBe(true);
+			key(flat.panel, 'ArrowRight'); // the keys do not need a layout
+			expect(tip(flat.panel).hasAttribute('hidden')).toBe(false);
+		});
 	});
 
 	describe('order of the sections (David, 8 Oct 2026)', () => {
