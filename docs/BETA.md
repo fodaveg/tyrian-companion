@@ -2,9 +2,9 @@
 
 ## Estado actual
 
-[0.6.28 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.28) como release
+[0.6.29 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.29) como release
 normal, sin draft ni prerelease: **canal publicado; instalación/runtime pendiente**. Nombre de
-GitHub Release, tag y `manifest.version` son exactamente `0.6.28`, con ocho assets reales subidos,
+GitHub Release, tag y `manifest.version` son exactamente `0.6.29`, con ocho assets reales subidos,
 no vacíos y verificados. El SHA del tag, gates y workflows están en [ESTADO](ESTADO.md).
 `manifest.json` por sí solo identifica un checkout o instalación; no demuestra carga correcta.
 Para volver a verificar los metadatos de la release:
@@ -165,8 +165,8 @@ instalar o actualizar el plugin usa BRAT: el [README](../README.md#install-the-b
 procedimiento completo y no necesita nada de esto.
 
 1. Descarga el artifact de CI correspondiente al SHA que se va a probar.
-2. Comprueba que el artifact contiene `tyrian-companion-<versión>.zip`, su `.sha256` e
-   `install-beta.mjs`. Con Obsidian completamente cerrado, ejecuta desde el directorio del
+2. Comprueba que el artifact contiene `tyrian-companion-<versión>.zip`, su `.sha256`,
+   `install-beta.mjs` y `verify-beta-runtime.mjs`. Con Obsidian completamente cerrado, ejecuta desde el directorio del
    artifact:
 
    ```sh
@@ -197,6 +197,9 @@ procedimiento completo y no necesita nada de esto.
    ```sh
    node scripts/verify-beta-runtime.mjs --vault "/ruta/a/la-bóveda-probada"
    ```
+
+   El artifact de CI trae una copia de `verify-beta-runtime.mjs` del mismo commit: desde su directorio, el
+   comando es `node verify-beta-runtime.mjs --vault "/ruta/a/la-bóveda-probada"`.
 
    El preflight lee `manifest.json` del plugin instalado y obtiene desde la instancia viva, mediante
    `obsidian eval`, la bóveda efectiva, el estado activado, el manifest registrado y la versión del

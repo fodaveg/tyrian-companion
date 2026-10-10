@@ -1,8 +1,8 @@
 # Estado
 
-## Candidato 0.6.29: historial con nota abrible, ajustes de versión más nueva respetados y cola de confirmaciones por vault (10 oct 2026)
+## Canal 0.6.29 publicado: historial con nota abrible, ajustes de versión más nueva respetados y cola de confirmaciones por vault (10 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Parte de `15c9363` (rama `integracion/0.6.29` sobre el canal
+**Canal publicado; instalación/runtime pendiente.** Parte de `15c9363` (rama `integracion/0.6.29` sobre el canal
 0.6.28, `3ee0c30`) y añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
 
@@ -16,7 +16,13 @@
   exports sin uso (DE-09), fixtures movidas (DE-14), ARCHITECTURE con la matriz de imports generada desde el código
   (DE-15), plazos de los tests de arranque (GR-09) y ESTADO de la 0.6.24 (RT-11).
 - Fuera de esta versión: la sección Logros va en la 0.6.30.
-- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+- Publicación (medida el 10 oct 2026). Tag `0.6.29` sobre `1b3ee6b` (commit de atestación; árbol
+  `842deb08019458b67e8ce6786b693ad998099d63`). CI de GitHub: run `38041097149`, success. Workflow de release: run
+  `38041768008`, success. «BRAT release contract: PASS (version=0.6.29; assets=8)» sobre la salida real de
+  `gh release view 0.6.29 --json tagName,name,isDraft,isPrerelease,assets`, con `isDraft` false e `isPrerelease` false.
+  SHA-256 del zip `tyrian-companion-0.6.29.zip`: `82f7c998a85c9421703b805513a5e809f7021693bc3a02ec98da3c80b031a257`.
+- Pendiente: verificar la instalación y la carga de la 0.6.29 en un Obsidian y un Hebra reales. Nada de eso se ha
+  comprobado.
 
 ## Canal 0.6.28 publicado: aviso de vault movido, cursor de gráfica estable y aviso de puerto ocupado (10 oct 2026)
 

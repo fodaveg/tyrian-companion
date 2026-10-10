@@ -6,7 +6,6 @@ import { runInNewContext } from 'node:vm';
 
 import {
 	SmokeLiveError,
-	defaultPluginDir,
 	parseSmokeLiveArguments,
 	readErrorsSinceReload,
 	readInstalledManifestVersion,
@@ -150,8 +149,9 @@ function testArgumentParsing() {
 	assert(defaulted.pluginDir === resolve('/tmp/from-env'), 'TC_PLUGIN_DIR was not honoured when no flag is given');
 	assert(defaulted.cliCommand === 'obsidian', 'the obsidian CLI command did not default to "obsidian"');
 
-	const noEnv = withEnvironment({ TC_PLUGIN_DIR: undefined }, () => parseSmokeLiveArguments([]));
-	assert(noEnv.pluginDir === defaultPluginDir(), 'the default plugin dir did not match defaultPluginDir()');
+	// RT-08: with neither flag nor env var there is no vault to fall back on.
+	assertThrowsCode(() => withEnvironment({ TC_PLUGIN_DIR: undefined }, () => parseSmokeLiveArguments([])), 'plugin-dir-required', 'a run without a vault fell back to a default one');
+	assertThrowsCode(() => withEnvironment({ TC_PLUGIN_DIR: '' }, () => parseSmokeLiveArguments([])), 'plugin-dir-required', 'an empty TC_PLUGIN_DIR was accepted as a vault');
 
 	assertThrowsCode(() => parseSmokeLiveArguments(['--unknown']), 'usage', 'an unknown flag was silently accepted');
 	assertThrowsCode(() => parseSmokeLiveArguments(['--plugin-dir']), 'usage', 'a --plugin-dir without a value was accepted');

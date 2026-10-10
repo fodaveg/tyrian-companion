@@ -575,11 +575,16 @@ function testPreparedArtifact() {
 	const release = candidate('artifact-stage', '0.1.0');
 	writeInstallerFixture(release.root);
 	const prepared = prepareBetaArtifact({ root: release.root });
-	const expected = [release.archiveName, `${release.archiveName}.sha256`, 'install-beta.mjs'].sort();
+	const expected = [release.archiveName, `${release.archiveName}.sha256`, 'install-beta.mjs', 'verify-beta-runtime.mjs'].sort();
 	assert(JSON.stringify(readdirSync(prepared.stageRoot).sort()) === JSON.stringify(expected), 'beta artifact stage was not exact');
 	assert(
 		readFileSync(resolve(prepared.stageRoot, 'install-beta.mjs')).equals(readFileSync(resolve('scripts/install-beta.mjs'))),
 		'beta artifact installer bytes changed',
+	);
+	// RT-12: the runtime verifier of the same commit travels with the artifact.
+	assert(
+		readFileSync(resolve(prepared.stageRoot, 'verify-beta-runtime.mjs')).equals(readFileSync(resolve('scripts/verify-beta-runtime.mjs'))),
+		'beta artifact runtime verifier bytes changed',
 	);
 	for (const [name, extra] of [
 		['extra-zip', 'tyrian-companion-decoy.zip'],
@@ -598,6 +603,7 @@ function testPreparedArtifact() {
 		[release.archiveName, Buffer.from('malicious archive')],
 		[`${release.archiveName}.sha256`, Buffer.from(`${'0'.repeat(64)}  ${release.archiveName}\n`)],
 		['install-beta.mjs', Buffer.from('process.exit(0);\n')],
+		['verify-beta-runtime.mjs', Buffer.from('process.exit(0);\n')],
 	]) {
 		assertArtifactThrows(
 			() => prepareBetaArtifact({
@@ -748,6 +754,7 @@ function assertNoTransactionFiles(plugin, label) {
 function writeInstallerFixture(root) {
 	mkdirSync(resolve(root, 'scripts'), { recursive: true });
 	writeFileSync(resolve(root, 'scripts/install-beta.mjs'), readFileSync(resolve('scripts/install-beta.mjs')));
+	writeFileSync(resolve(root, 'scripts/verify-beta-runtime.mjs'), readFileSync(resolve('scripts/verify-beta-runtime.mjs')));
 }
 
 function manifestSource(version, author = 'fodaveg', minAppVersion = '1.11.4') {
