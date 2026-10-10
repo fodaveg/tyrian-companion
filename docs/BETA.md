@@ -2,9 +2,9 @@
 
 ## Estado actual
 
-[0.6.35 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.35) como release
+[0.6.36 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.36) como release
 normal, sin draft ni prerelease: **canal publicado; instalación/runtime pendiente**. Nombre de
-GitHub Release, tag y `manifest.version` son exactamente `0.6.35`, con ocho assets reales subidos,
+GitHub Release, tag y `manifest.version` son exactamente `0.6.36`, con ocho assets reales subidos,
 no vacíos y verificados. El SHA del tag, gates y workflows están en [ESTADO](ESTADO.md).
 `manifest.json` por sí solo identifica un checkout o instalación; no demuestra carga correcta.
 Para volver a verificar los metadatos de la release:
