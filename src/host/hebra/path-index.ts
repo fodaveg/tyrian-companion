@@ -73,6 +73,12 @@ export class TyrianPathIndex {
 	/** note or file id → path (for `onChange` and deletion by id). */
 	readonly #byId = new Map<string, string>();
 	#unadopted: readonly TyrianUnadoptedNote[] = [];
+	/**
+	 * The text last read from, or written to, the kv under this namespace. `#persist` writes only
+	 * when the index serializes to something else: a start that changes nothing (the usual one)
+	 * would otherwise rewrite the whole index to say what it already says.
+	 */
+	#saved: string | undefined;
 	/** Inside `batch()`: mutations are saved ONCE at the end. */
 	#batchDepth = 0;
 	#batchDirty = false;
@@ -103,6 +109,7 @@ export class TyrianPathIndex {
 			return index;
 		}
 		if (!raw) return index;
+		index.#saved = raw;
 		let snapshot: TyrianPathIndexSnapshot;
 		try {
 			snapshot = JSON.parse(raw) as TyrianPathIndexSnapshot;
@@ -131,8 +138,11 @@ export class TyrianPathIndex {
 			entries: [...this.#byPath.values()],
 			unadopted: this.#unadopted,
 		};
+		const text = JSON.stringify(snapshot);
+		if (text === this.#saved) return;
 		try {
-			await this.#kv.set(kvKey(this.#namespace), JSON.stringify(snapshot));
+			await this.#kv.set(kvKey(this.#namespace), text);
+			this.#saved = text;
 		} catch (error) {
 			this.#reportStorageError(error);
 		}
