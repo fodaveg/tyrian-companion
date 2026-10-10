@@ -1,5 +1,28 @@
 # Estado
 
+## Candidato 0.6.38: diario de sesión en una lectura y ciclo de la sesión en vivo fuera del núcleo (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.38` sobre el canal 0.6.37 publicado
+(`e40e2494`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.38 se ha visto en un Obsidian ni en un Hebra reales.
+  WebKit (Hebra en macOS e iOS) no se ha medido: Playwright WebKit no arranca en este Fedora.
+- Medido (M4, `docs/audit/m4-profile/2026-10-11-perfil.md`): los 2,1 s del audit del 8 oct ya no aparecen; `initialize()`
+  con una sesión de 3 h tarda 41 ms (formato 1) y 5 ms (formato 2) con el almacén en memoria. Con `getAll`, una lectura
+  del diario en Chromium pasa de 166 a 93 ms (formato 1) y de 8,4 a 2,4 ms (formato 2); con fake-indexeddb el arranque
+  en formato 1 pasa de 219,5 s a 0,8 s (fake-indexeddb es cuadrático con el cursor, no el plugin).
+- Contenido:
+  - M4: `readLiveJournal` (`src/sessions/live-session-persistence.ts`) lee con `index('session').getAll`; 4 tests nuevos
+    (rechazo de entrada inválida, orden, igual al cursor en formato 1 y 2).
+  - DE-01 paso 3, segunda parte: `LiveSessionRuntime` (`src/runtime/live-session-runtime.ts`) con 28 métodos y 2 clases
+    del ciclo de la sesión en vivo; el núcleo pasa de 6.580 a 6.165 líneas. Los tests congelados de texto que lo
+    impedían pasan a tests de comportamiento (congelados 17 → 16). Revisión independiente: cuerpos idénticos por AST y
+    28 de 30 mutaciones en rojo (una equivalente; la otra cerrada después).
+- Pendiente de DE-01: 74 métodos de sesión (propuestas, comandos, nota y resumen, vista en vivo, farming) y algunas
+  aserciones congeladas que fijan `loadSessionHistory` e `inspectCompletedSessionSummary`. Pendiente también: el gate,
+  la publicación y verla en hosts reales.
+
 ## Canal 0.6.37 publicado: orden interno del núcleo y copia de preferencias al descargar (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.37` = `18425f9c` (atestación; candidato `2cb68d07`,

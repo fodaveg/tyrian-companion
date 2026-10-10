@@ -1,5 +1,17 @@
 # Changelog
 
+## Release beta 0.6.38 - Restaurar una sesión larga lee su diario de una vez
+
+Se actualiza desde la 0.6.37 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesión. Al reabrir con una sesión en vivo guardada, el diario se lee con una sola petición a IndexedDB en vez de
+  entrada a entrada. Medido en Chromium con una sesión de 3 h: unos 147 ms menos por arranque en sesiones antiguas
+  (formato 1) y unos 12 ms en las nuevas. Una entrada inválida sigue haciendo rechazar la lectura.
+- Limpieza interna, sin cambios visibles. El ciclo de la sesión en vivo (empezar, parar, finalizar, recuperar,
+  descartar, limpiar, abandonar) sale del núcleo a su propio módulo, y las comprobaciones que solo leían el texto del
+  código pasan a comprobar el comportamiento ejecutándolo.
+
 ## Release beta 0.6.37 - Orden interno del núcleo y dos arreglos de la copia de preferencias
 
 Se actualiza desde la 0.6.36 publicada. No cambia nada visible salvo un caso raro al cerrar el plugin. Nada de esto se
