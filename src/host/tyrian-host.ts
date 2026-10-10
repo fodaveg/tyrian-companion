@@ -451,6 +451,13 @@ export interface TyrianHostCapabilities {
 	 */
 	readonly managedAssets?: boolean;
 	/**
+	 * Managed assets can be moved from one root to another (the «Move» button and the automatic follow of the
+	 * output folder). Default true. Hebra declares false: its vault IS the output folder, so after the output
+	 * folder changes the old root is outside the vault, unreadable, and no move could ever work; Apply installs
+	 * into the new folder instead.
+	 */
+	readonly managedAssetsMove?: boolean;
+	/**
 	 * The support package cannot be a file the user can open (no filesystem to land on), so it is
 	 * saved as a note of the vault and opened with `ui.openNote`. Default false: the package is a
 	 * `.json` under `<outputFolder>/diagnostics` written through `vault.adapter`, as in Obsidian.

@@ -93,6 +93,8 @@ export interface SettingsPanelActions {
 	getManagedAssetsView(): ManagedAssetsView;
 	/** Optional: absent means true. False hides the managed-assets row (host without Bases). */
 	managedAssetsSupported?(): boolean;
+	/** Optional: absent means true. False when the host cannot move assets between roots (Hebra): no Move button. */
+	managedAssetsCanMove?(): boolean;
 	hasManagedAssetsRoot(): boolean;
 	previewManagedAssets(): Promise<void>;
 	applyManagedAssets(): Promise<void>;

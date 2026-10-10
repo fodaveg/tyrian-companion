@@ -1,4 +1,4 @@
-import type { ManagedAssetsManager, ManagedAssetsResult } from './managed-assets';
+import type { ManagedAssetsFailureCause, ManagedAssetsManager, ManagedAssetsResult } from './managed-assets';
 import type { ManagedAssetsInspection } from './managed-assets-model';
 import type { ManagedAssetsPointerState, ManagedAssetsPointerStore } from './managed-assets-pointer';
 import {
@@ -8,7 +8,7 @@ import {
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
 
-export type ManagedAssetsLifecycleResult = { status: 'applied' | 'removed' | 'relocated' | 'unchanged'; root: string | null; generation: number } | { status: 'busy' | 'conflict' | 'unavailable'; message: string };
+export type ManagedAssetsLifecycleResult = { status: 'applied' | 'removed' | 'relocated' | 'unchanged'; root: string | null; generation: number } | { status: 'busy' | 'conflict' | 'unavailable'; message: string; cause?: ManagedAssetsFailureCause; details?: Record<string, unknown> };
 
 export class ManagedAssetsLifecycle {
 	constructor(
@@ -281,7 +281,13 @@ export class ManagedAssetsLifecycle {
 }
 
 function isSuccess(result: ManagedAssetsResult): result is Extract<ManagedAssetsResult, { status: 'applied' | 'unchanged' | 'detached' }> { return !('message' in result); }
-function failure(result: ManagedAssetsResult): ManagedAssetsLifecycleResult { return 'message' in result ? { status: result.status === 'busy' ? 'busy' : result.status === 'unavailable' ? 'unavailable' : 'conflict', message: result.message } : { status: 'conflict', message: 'Managed-assets evidence did not reach the required state.' }; }
+function failure(result: ManagedAssetsResult): ManagedAssetsLifecycleResult {
+	if (!('message' in result)) return { status: 'conflict', message: 'Managed-assets evidence did not reach the required state.' };
+	return {
+		status: result.status === 'busy' ? 'busy' : result.status === 'unavailable' ? 'unavailable' : 'conflict', message: result.message,
+		...(result.cause === undefined ? {} : { cause: result.cause }), ...(result.details === undefined ? {} : { details: result.details }),
+	};
+}
 function successResult(result: ManagedAssetsResult, status: 'applied', pointer: ManagedAssetsPointerState): ManagedAssetsLifecycleResult { return isSuccess(result) ? { status: result.status === 'unchanged' ? 'unchanged' : status, root: pointer.root, generation: pointer.generation } : failure(result); }
 
 function finishLifecycleSpan(span: LocalDebugActionSpan, result: ManagedAssetsLifecycleResult): void {
@@ -290,9 +296,10 @@ function finishLifecycleSpan(span: LocalDebugActionSpan, result: ManagedAssetsLi
 	} else if (result.status === 'unchanged' || result.status === 'busy') {
 		span.skip('skipped', result.status);
 	} else if (result.status === 'unavailable') {
-		span.failure(new Error('managed_assets_unavailable'), 'storage_failure', result.status, { message: result.message });
+		// The real code (`cause`, else the error's own code) reaches the record, not only the fixed «unavailable».
+		span.failure(new Error('managed_assets_unavailable'), result.cause === undefined ? 'storage_failure' : 'missing', result.status, { message: result.message, ...result.details });
 	} else {
-		span.failure(new Error('managed_assets_conflict'), 'validation_failed', result.status, { message: 'message' in result ? result.message : undefined });
+		span.failure(new Error('managed_assets_conflict'), 'validation_failed', result.status, { message: 'message' in result ? result.message : undefined, ...('details' in result ? result.details : {}) });
 	}
 }
 

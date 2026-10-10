@@ -19,6 +19,7 @@ import {
 	type PackagedAsset,
 } from './managed-assets-model';
 import { MemoryManagedAssetsPointerStore } from './managed-assets-pointer';
+import { vaultFailure } from '../core/vault-failure-cause';
 
 const CONFIG_DIR = 'vault-config';
 
@@ -631,6 +632,56 @@ describe('ManagedAssetsManager', () => {
 
 		expect(vault.contents).toEqual(before);
 		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Ghost root' });
+	});
+
+	/** Hebra, 10 oct 2026: the failures the host can name must not end in the same «not available» / «conflict». */
+	describe('names why a press failed', () => {
+		it('bytes not synced yet: unavailable with its cause and real code, and nothing is written', async () => {
+			const vault = new MemoryAssetVault();
+			const instance = await manager(vault, 2);
+			expect(await instance.apply('Root', 'install')).toMatchObject({ status: 'applied' });
+			const unsynced = (await instance.inspect('Root')).assets[0]!.path;
+			const read = vault.read.bind(vault);
+			vault.read = async (file) => {
+				if (file.path === unsynced) throw vaultFailure('missing blob', 'bytes_not_synced');
+				return await read(file);
+			};
+			const before = new Map(vault.contents);
+			const writes = vault.writeCount;
+
+			expect(await instance.apply('Root', 'upgrade')).toMatchObject({
+				status: 'unavailable', cause: 'bytes_not_synced', details: { code: 'bytes_not_synced' },
+			});
+			expect(vault.contents).toEqual(before);
+			expect(vault.writeCount).toBe(writes);
+		});
+
+		it('output folder missing: the host refusal behind a folder that cannot be created keeps its cause', async () => {
+			const vault = new MemoryAssetVault();
+			vault.createFolder = async () => { throw vaultFailure('no output folder', 'output_folder_missing'); };
+			const instance = await manager(vault, 2);
+
+			expect(await instance.apply('Root', 'install')).toMatchObject({
+				status: 'unavailable', cause: 'output_folder_missing', details: { code: 'output_folder_missing' },
+			});
+			expect(vault.contents.size).toBe(0);
+		});
+
+		it('a create the host refuses is not swallowed as a race', async () => {
+			const vault = new MemoryAssetVault();
+			vault.create = async () => { throw vaultFailure('write blocked', 'host_refused'); };
+			const instance = await manager(vault, 2);
+
+			expect(await instance.apply('Root', 'install')).toMatchObject({ status: 'unavailable', cause: 'host_refused' });
+		});
+
+		it('only files of the user on the managed paths: conflict with its cause', async () => {
+			const vault = new MemoryAssetVault();
+			const instance = await manager(vault, 2);
+			for (const entry of (await instance.inspect('Root')).assets) vault.contents.set(entry.path, `tcUser: ${entry.asset.id}\n`);
+
+			expect(await instance.apply('Root', 'install')).toMatchObject({ status: 'conflict', cause: 'only_unowned_files' });
+		});
 	});
 
 	it('relocates a retained legacy root only through an explicit lifecycle move', async () => {
