@@ -696,7 +696,12 @@ la vista, antes de permitir que una ausencia convierta una fila previa en inacti
 `prepareInventoryVaultSyncInput` elimina `accountId`, `snapshotId`, token y payloads antes de cruzar la
 frontera del writer. Conserva únicamente una fila por `itemId + source + character`; agrega pilas del
 mismo personaje, excluye bolsas equipadas y objetos embebidos, y calcula por fila
-`bid.unitCopper * quantity` con aritmética segura. Los IDs y filenames usan item, código de fuente y
+`bid.unitCopper * cantidad vendible` con aritmética segura: cada pila se clasifica por separado
+(vinculación incluida) y solo las pilas vendibles cuentan como vendibles. En una fila con pilas
+vinculadas y libres, `tc_quantity` sigue siendo la total, `tc_sell_covered_quantity` es lo que la
+profundidad de compra cubre de la parte vendible y `tc_sell_uncovered_quantity` el resto, vinculado
+incluido; `tc_sell_depth_status: complete` significa «la parte vendible está cubierta» y ya no
+implica `tc_sell_uncovered_quantity: 0`. El valor de la fila no depende del orden de las pilas. Los IDs y filenames usan item, código de fuente y
 un prefijo SHA-256 del personaje, nunca su nombre ni la cuenta.
 
 `InventoryVaultSyncService` recibe solo un port de Vault. Preview enumera las notas dinámicas bajo la
@@ -705,7 +710,11 @@ marker, schema, relación de ruta y el hash del bloque gestionado, y produce pas
 create/update/unchanged/deactivate/conflict sin escribir. Desde H18.16 una nota se divide en partes
 gestionadas (claves `tc_*` y `descripcion`, y el bloque entre la línea de marca y
 `<!-- /tyrian-companion-inventory -->`) y partes del usuario (cualquier otra clave del frontmatter y el
-texto fuera del bloque), que cada reescritura conserva byte a byte. `unchanged` compara solo lo
+texto fuera del bloque), que cada reescritura conserva byte a byte. Un comentario YAML (`# …`) que
+el usuario escriba en la cabecera también cuenta como contenido suyo: se conserva en cada
+actualización, aunque puede cambiar de sitio (los que colgaban de claves gestionadas pasan a ir tras
+ellas, en su orden, y una línea en blanco dentro de un bloque de comentarios se pierde), y evita que
+la nota vaya a la papelera. `unchanged` compara solo lo
 gestionado y no cuenta como cambio la fecha de la cotización ni la vigencia de un veredicto de precio,
 que salen del instante de la captura: sin cambio de datos, 0 escrituras. Apply relee cada nota que va
 a escribir y usa `Vault.process` como CAS por nota. Una nota ajena, duplicada, futura, editada dentro
@@ -715,7 +724,10 @@ paso `deactivate`: el host solo manda la nota a la papelera si sigue diciendo lo
 Obsidian la relee justo antes, garantía `checked`, no atómica; una nota editada mientras tanto, o un
 host que responde `unsupported`, es un conflicto y la nota se conserva), no se conserva con `tc_active:false` (H14.21: 24 notas así en una bóveda real, sin
 volver a converger nunca solas), salvo que la nota lleve texto o propiedades del usuario: entonces se
-reescribe inactiva con ese texto intacto. Ninguna nota de posición lleva `tc_captured_at`: entraba en
+reescribe inactiva con ese texto intacto (comentarios YAML de la cabecera incluidos). El catálogo
+`unavailable` para un objeto poseído bloquea la escritura de todas las notas; con cobertura `invalid`
+o `malformed` no bloquea: la nota ya existente de ese objeto conserva nombre, tipo, rareza e icono y
+actualiza todo lo demás (`degradedItemIds`), y uno sin nota se crea como siempre. Ninguna nota de posición lleva `tc_captured_at`: entraba en
 el hash del marker y reescribía las 1.402 en cada captura aunque el inventario no cambiara; la Base lee
 la fecha de actualización con `file.mtime`.
 

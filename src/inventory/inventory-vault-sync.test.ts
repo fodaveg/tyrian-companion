@@ -72,6 +72,61 @@ describe('inventory Vault projection', () => {
 		]);
 	});
 
+	describe('two stacks of one item in one place, one bound and one not', () => {
+		const depth = () => marketDepthFor(42, [{ unitCopper: 100, quantity: 15 }, { unitCopper: 90, quantity: 15 }]);
+		const bound = (quantity: number, slot: number) =>
+			({ ...holding(42, quantity, { source: 'bank', slot }), metadata: { binding: 'Account' as const } });
+		const free = (quantity: number, slot: number) => holding(42, quantity, { source: 'bank', slot });
+		const project = async (holdings: ItemHolding[]) => {
+			const snapshot = snapshotWith(holdings);
+			return (await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 100), 'full', 'es', depth())).positions;
+		};
+
+		it.each([
+			['bound first', () => [bound(5, 0), free(3, 1)]],
+			['free first', () => [free(3, 0), bound(5, 1)]],
+		])('only the sellable quantity counts as sellable (%s)', async (_label, stacks) => {
+			const [reference] = await project([free(3, 0)]);
+			const positions = await project(stacks());
+			expect(positions).toHaveLength(1);
+			expect(positions[0]).toMatchObject({
+				quantity: 8,
+				unitSellCopper: 100,
+				totalSellCopper: reference!.totalSellCopper,
+				sellDepthStatus: 'complete',
+				sellCoveredQuantity: 3,
+				sellUncoveredQuantity: 5,
+			});
+			expect(reference!.totalSellCopper).not.toBeNull();
+		});
+
+		it('the row is the same whatever the order the stacks arrive in', async () => {
+			const [one] = await project([bound(5, 0), free(3, 1)]);
+			const [other] = await project([free(3, 0), bound(5, 1)]);
+			expect(one).toEqual(other);
+		});
+
+		it.each([
+			['bound first', () => [bound(5, 0), free(3, 1)]],
+			['free first', () => [free(3, 0), bound(5, 1)]],
+		])('the mixed row goes through preview and apply, and the next preview is unchanged (%s)', async (_label, stacks) => {
+			const snapshot = snapshotWith(stacks());
+			const input = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 100), 'full', 'es', depth());
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			expect(await service.apply(await service.preview(ROOT, input))).toMatchObject({ status: 'applied', created: 1 });
+			expect(frontmatter([...vault.contents.values()][0]!)).toMatchObject({
+				tc_quantity: 8, tc_sell_depth_status: 'complete', tc_sell_covered_quantity: 3, tc_sell_uncovered_quantity: 5,
+			});
+			expect((await service.preview(ROOT, input)).steps.map((entry) => entry.status)).toEqual(['unchanged']);
+		});
+
+		it('a place with only bound stacks stays unvalued', async () => {
+			const [only] = await project([bound(5, 0), bound(2, 1)]);
+			expect(only).toMatchObject({ quantity: 7, unitSellCopper: null, totalSellCopper: null, sellCoveredQuantity: 0, sellUncoveredQuantity: 7 });
+		});
+	});
+
 	it('produces stable portable identifiers without account or character names', async () => {
 		const account = 'account-private-123';
 		const character = 'Áine / NUL:Uno';
@@ -1196,6 +1251,199 @@ describe('resync: no rewrite by the clock, managed fields only, the user\'s text
 		expect(after.endsWith('Vender en Halloween.\n')).toBe(true);
 		// Already inactive: the next sync neither rewrites it nor asks to deactivate it again.
 		expect((await service.preview(ROOT, reduced)).steps.find((entry) => entry.path === bankPath)).toMatchObject({ status: 'unchanged' });
+	});
+
+	describe('an object the catalog answered badly (degradedItemIds)', () => {
+		async function twoItems() {
+			const snapshot = snapshotWith([holding(42, 5, { source: 'bank', slot: 0 }), holding(43, 4, { source: 'bank', slot: 1 })]);
+			const prices = priceSnapshotWith(snapshot, [
+				{ itemId: 42, whitelisted: true, bid: { unitCopper: 10, quantity: 100 }, ask: { unitCopper: 11, quantity: 100 } },
+				{ itemId: 43, whitelisted: true, bid: { unitCopper: 10, quantity: 100 }, ask: { unitCopper: 11, quantity: 100 } },
+			]);
+			return await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es');
+		}
+		type Input = Awaited<ReturnType<typeof twoItems>>;
+		/**
+		 * The same account one pass later, as the real pipeline gives it for an object the catalog
+		 * rejected: item 42 has the fallback name and no type, rarity or icon, and no quote; the
+		 * quantity of 42 fell to 2 and the price of 43 moved.
+		 */
+		const degraded = (input: Input, itemIds: number[] | undefined): Input => ({
+			...input,
+			...(itemIds === undefined ? {} : { degradedItemIds: itemIds }),
+			positions: input.positions.map((position) => position.itemId === 42
+				? {
+					...position, name: 'Objeto 42', type: null, rarity: null, icon: null, quantity: 2,
+					unitSellCopper: null, totalSellCopper: null, sellDepthStatus: 'unavailable' as const,
+					sellCoveredQuantity: 0, sellUncoveredQuantity: 2, reservedQuantity: 0, freeQuantity: 2, actionableQuantity: 0,
+				}
+				: { ...position, unitSellCopper: 12 }),
+		});
+		const pathOf = (input: Input, itemId: number, plan: { steps: readonly { positionId: string; path: string }[] }) =>
+			plan.steps.find((entry) => entry.positionId === input.positions.find((position) => position.itemId === itemId)!.positionId)!.path;
+
+		it('keeps only the catalog fields of its existing note and updates the rest, the others too', async () => {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const first = await twoItems();
+			const firstPlan = await service.preview(ROOT, first);
+			await service.apply(firstPlan);
+			const path42 = pathOf(first, 42, firstPlan);
+			const path43 = pathOf(first, 43, firstPlan);
+			const before42 = frontmatter(vault.contents.get(path42)!);
+			const before43 = vault.contents.get(path43)!;
+
+			// Control: without the hold-back the degraded data does reach the note.
+			const control = await service.preview(ROOT, degraded(first, undefined));
+			expect(control.steps.find((entry) => entry.path === path42)).toMatchObject({ status: 'update' });
+
+			const plan = await service.preview(ROOT, degraded(first, [42]));
+			expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 2, created: 0 });
+			const after42 = frontmatter(vault.contents.get(path42)!);
+			expect(after42).toMatchObject({
+				tc_item_name: before42.tc_item_name, tc_item_type: before42.tc_item_type,
+				tc_item_rarity: before42.tc_item_rarity, tc_icon: before42.tc_icon,
+				tc_quantity: 2,
+			});
+			expect(vault.contents.get(path42)).toContain(`# ${String(before42.tc_item_name)}`);
+			expect(vault.contents.get(path43)).not.toBe(before43);
+			// More passes with the same data: the note keeps following the account, it is not frozen.
+			for (let pass = 0; pass < 3; pass += 1) await service.apply(await service.preview(ROOT, degraded(first, [42])));
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_quantity: 2, tc_item_name: before42.tc_item_name });
+			expect((await service.preview(ROOT, degraded(first, [42]))).steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+		});
+
+		it('keeps updating a note that was born with the fallback name', async () => {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const first = degraded(await twoItems(), [42]);
+			const plan = await service.preview(ROOT, first);
+			await service.apply(plan);
+			const path42 = pathOf(first, 42, plan);
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_item_name: 'Objeto 42', tc_quantity: 2 });
+			const later = {
+				...first,
+				positions: first.positions.map((position) => position.itemId === 42
+					? { ...position, quantity: 1, sellUncoveredQuantity: 1, freeQuantity: 1 } : position),
+			};
+			await service.apply(await service.preview(ROOT, later));
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_item_name: 'Objeto 42', tc_quantity: 1 });
+		});
+
+		it('reactivates an inactive note with the user\'s text when its object comes back', async () => {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const first = await twoItems();
+			const firstPlan = await service.preview(ROOT, first);
+			await service.apply(firstPlan);
+			const path42 = pathOf(first, 42, firstPlan);
+			vault.contents.set(path42, editedByUser(vault.contents.get(path42)!));
+			const gone = { ...first, positions: first.positions.filter((position) => position.itemId !== 42) };
+			await service.apply(await service.preview(ROOT, gone));
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_active: false });
+			await service.apply(await service.preview(ROOT, degraded(first, [42])));
+			expect(frontmatter(vault.contents.get(path42)!)).toMatchObject({ tc_active: true, tc_quantity: 2, tags: ['gw2', 'vender'] });
+		});
+
+		it('keeps today\'s behaviour for an object that has no note yet', async () => {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const plan = await service.preview(ROOT, degraded(await twoItems(), [42]));
+			expect(plan.steps.map((entry) => entry.status)).toEqual(['create', 'create']);
+			expect(await service.apply(plan)).toMatchObject({ status: 'applied', created: 2 });
+		});
+
+		it('rejects a malformed list', async () => {
+			const service = new InventoryVaultSyncService(new MemoryInventoryVault(), CONFIG_DIR);
+			await expect(service.preview(ROOT, degraded(await twoItems(), [-1]))).rejects.toThrow('invalid_inventory_sync_input');
+		});
+	});
+
+	describe('a YAML comment the user wrote in the header', () => {
+		// Where a user might put it: before the managed keys, between them, or after the last one.
+		const placements: Array<[string, (content: string) => string]> = [
+			['at the top', (content) => content.replace(/^---\n/u, '---\n# mi nota sobre esto\n')],
+			['between managed keys', (content) => content.replace(/\n(tc_quantity:)/u, '\n# mi nota sobre esto\n$1')],
+			['at the end', (content) => content.replace('\n---\n', '\n# mi nota sobre esto\n---\n')],
+		];
+
+		async function bankWithComment(place: (content: string) => string) {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const current = await inputWithAllSources();
+			await service.apply(await service.preview(ROOT, current));
+			const bank = (await service.preview(ROOT, current)).steps.find((entry) => entry.positionId.includes('-b-'))!;
+			vault.contents.set(bank.path, place(vault.contents.get(bank.path)!));
+			return { vault, service, current, bank };
+		}
+
+		it.each(placements)('%s survives an update', async (_label, place) => {
+			const { vault, service, current, bank } = await bankWithComment(place);
+			const moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+			expect(await service.apply(await service.preview(ROOT, moved))).toMatchObject({ status: 'applied' });
+			expect(vault.contents.get(bank.path)).toContain('# mi nota sobre esto');
+			expect(frontmatter(vault.contents.get(bank.path)!)).toMatchObject({ tc_unit_sell_copper: 11 });
+		});
+
+		it.each(placements)('%s: the rewrite is stable, the next sync costs no write', async (_label, place) => {
+			const { vault, service, current } = await bankWithComment(place);
+			const moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+			await service.apply(await service.preview(ROOT, moved));
+			const mutations = vault.mutations;
+			const plan = await service.preview(ROOT, moved);
+			expect(plan.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+			expect(vault.mutations).toBe(mutations);
+			expect(vault.contents.get(plan.steps[0]!.path)!.split('# mi nota sobre esto').length).toBeLessThanOrEqual(2);
+		});
+
+		const headerComments = (content: string) => (content.match(/^---\n([\s\S]*?)\n---\n/u)![1]!).split('\n').filter((line) => line.startsWith('#'));
+
+		it('three comments in three places keep their order through the rewrite', async () => {
+			const { vault, service, current, bank } = await bankWithComment((content) => content
+				.replace(/^---\n/u, '---\n# uno\n')
+				.replace(/\n(tc_quantity:)/u, '\n# dos\n$1')
+				.replace('\n---\n', '\n# tres\n---\n'));
+			const moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+			await service.apply(await service.preview(ROOT, moved));
+			expect(headerComments(vault.contents.get(bank.path)!)).toEqual(['# uno', '# dos', '# tres']);
+		});
+
+		it('a blank line inside a comment block does not grow into comment lines, rewrite after rewrite', async () => {
+			const { vault, service, current, bank } = await bankWithComment((content) =>
+				content.replace(/^---\n/u, '---\n# primero\n\n# segundo\n'));
+			let moved = current;
+			const seen: string[] = [];
+			for (const copper of [11, 12, 13]) {
+				moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: copper })) };
+				await service.apply(await service.preview(ROOT, moved));
+				seen.push(headerComments(vault.contents.get(bank.path)!).join('|'));
+			}
+			expect(seen[0]).toContain('# primero');
+			expect(seen[0]).toContain('# segundo');
+			expect(new Set(seen).size).toBe(1);
+			expect(seen[0]!.split('|').every((line) => line === '# primero' || line === '# segundo')).toBe(true);
+		});
+
+		it('next to a key of the user, both survive an update', async () => {
+			const { vault, service, current, bank } = await bankWithComment((content) =>
+				content.replace(/^---\n/u, '---\n# mi nota sobre esto\n').replace('\n---\n', '\ntags:\n  - gw2\n---\n'));
+			const moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+			await service.apply(await service.preview(ROOT, moved));
+			expect(vault.contents.get(bank.path)).toContain('# mi nota sobre esto');
+			expect(frontmatter(vault.contents.get(bank.path)!)).toMatchObject({ tags: ['gw2'], tc_unit_sell_copper: 11 });
+		});
+
+		it.each(placements)('%s keeps the note out of the trash when its position leaves', async (_label, place) => {
+			const { vault, service, current, bank } = await bankWithComment(place);
+			const reduced = { ...current, positions: current.positions.filter((position) => position.source !== 'bank') };
+			const plan = await service.preview(ROOT, reduced);
+			const step = plan.steps.find((entry) => entry.path === bank.path);
+			expect(step).toMatchObject({ status: 'deactivate' });
+			expect(step?.after).not.toBeNull();
+			await service.apply(plan);
+			expect(vault.contents.get(bank.path)).toContain('# mi nota sobre esto');
+			expect(frontmatter(vault.contents.get(bank.path)!)).toMatchObject({ tc_active: false });
+		});
 	});
 
 	/** What a host importer does: stamps `title:` on the note's frontmatter. */

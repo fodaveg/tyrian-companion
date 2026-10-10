@@ -1,4 +1,4 @@
-import { parseDocument, stringify as stringifyYaml } from 'yaml';
+import { isMap, isPair, parseDocument, stringify as stringifyYaml } from 'yaml';
 
 import type { ItemHolding, StorageSnapshot } from '../account/storage-snapshot-model';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
@@ -97,6 +97,10 @@ export interface InventoryVaultPosition {
 	quantity: number;
 	unitSellCopper: number | null;
 	totalSellCopper: number | null;
+	/**
+	 * `complete`: the SELLABLE part of the row is covered by the buy levels. Stacks that cannot be
+	 * sold (bound ones) are not part of it, so a `complete` row may still have `sellUncoveredQuantity > 0`.
+	 */
 	sellDepthStatus: 'complete' | 'partial' | 'no_market' | 'unavailable' | 'invalid';
 	sellCoveredQuantity: number;
 	sellUncoveredQuantity: number;
@@ -156,6 +160,13 @@ export interface InventoryVaultSyncInput {
 	capturedAt: string;
 	locale: CatalogLocale;
 	positions: InventoryVaultPosition[];
+	/**
+	 * Items whose catalog answer was rejected (`invalid` or `malformed` coverage): their positions
+	 * carry the fallback name and no type, rarity or icon. A note that already exists for one of
+	 * them keeps its name, type, rarity and icon on this pass and is updated in everything else
+	 * (quantity, quotes, verdict); one that does not exist yet is created as usual. Absent means none.
+	 */
+	degradedItemIds?: readonly number[];
 }
 
 export type InventoryVaultSyncStepStatus =
@@ -476,7 +487,10 @@ export async function buildInventoryVaultPositionCores(
 		throw new Error('inventory_capture_identity_mismatch');
 	}
 	const grouped = new Map<string, {
-		itemId: number; source: InventoryPositionSource; character: string | null; quantity: number; holding: ItemHolding;
+		itemId: number; source: InventoryPositionSource; character: string | null; quantity: number;
+		// Every stack of the row, kept apart: binding (and so tradeability) is a property of the
+		// stack, and the row only values the stacks that can be sold.
+		stacks: { holding: ItemHolding; quantity: number }[];
 	}>();
 	for (const holding of snapshot.holdings) {
 		if (holding.kind !== 'item' || holding.state !== 'loose') continue;
@@ -484,11 +498,15 @@ export async function buildInventoryVaultPositionCores(
 		if (location === null) continue;
 		const groupKey = JSON.stringify([holding.itemId, location.source, location.character]);
 		const current = grouped.get(groupKey);
-		if (current) current.quantity = safeAdd(current.quantity, holding.quantity);
-		// The representative holding only feeds `classifyItemLiquidity`'s state/binding
-		// check; the first stack seen for this item+location is a fine stand-in even
-		// when several stacks are aggregated into one row.
-		else grouped.set(groupKey, { itemId: holding.itemId, ...location, quantity: holding.quantity, holding });
+		if (current) {
+			current.quantity = safeAdd(current.quantity, holding.quantity);
+			current.stacks.push({ holding, quantity: holding.quantity });
+		} else {
+			grouped.set(groupKey, {
+				itemId: holding.itemId, ...location, quantity: holding.quantity,
+				stacks: [{ holding, quantity: holding.quantity }],
+			});
+		}
 	}
 
 	const priceById = new Map(prices.items.map((price) => [price.itemId, price]));
@@ -500,17 +518,26 @@ export async function buildInventoryVaultPositionCores(
 	for (const group of orderedGroups) {
 		const item = catalog.items[String(group.itemId)] ?? null;
 		const price = priceById.get(group.itemId);
-		const liquidity = classifyItemLiquidity(group.holding, item, price === undefined ? 'missing' : 'available');
-		const eligible = liquidity.status === 'ok'
-			&& isTradingPostAccessible(liquidity.classification.tradingPost, tradingPostAccess, price?.whitelisted === true);
-		const untradeable = liquidity.status === 'ok'
-			&& definitelyUntradeable(liquidity.classification.tradingPost, tradingPostAccess, price);
+		// Each stack is classified on its own: one bound and one unbound stack of the same item in
+		// the same place make one row, but only the unbound quantity is sellable.
+		let sellableQuantity = 0;
+		let untradeable = true;
+		for (const stack of group.stacks) {
+			const liquidity = classifyItemLiquidity(stack.holding, item, price === undefined ? 'missing' : 'available');
+			if (liquidity.status === 'ok'
+				&& isTradingPostAccessible(liquidity.classification.tradingPost, tradingPostAccess, price?.whitelisted === true)) {
+				sellableQuantity = safeAdd(sellableQuantity, stack.quantity);
+			}
+			if (!(liquidity.status === 'ok'
+				&& definitelyUntradeable(liquidity.classification.tradingPost, tradingPostAccess, price))) untradeable = false;
+		}
+		const eligible = sellableQuantity > 0;
 		const unitSellCopper = eligible && price !== undefined && price.bid !== null ? price.bid.unitCopper : null;
 		const unitListCopper = eligible && price !== undefined && price.ask !== null ? price.ask.unitCopper : null;
 		const depth = eligible && unitSellCopper !== null ? depthById.get(group.itemId) : undefined;
 		const consumed = consumedByItem.get(group.itemId) ?? 0;
 		const demonstrated = depth?.coverage === 'complete'
-			? valueInstantSellDepth(depth.buys, group.quantity, consumed)
+			? valueInstantSellDepth(depth.buys, sellableQuantity, consumed)
 			: null;
 		if (demonstrated !== null && demonstrated.status !== 'invalid') {
 			consumedByItem.set(group.itemId, safeAdd(consumed, demonstrated.coveredQuantity));
@@ -529,7 +556,8 @@ export async function buildInventoryVaultPositionCores(
 			totalSellCopper,
 			sellDepthStatus,
 			sellCoveredQuantity: demonstrated?.coveredQuantity ?? 0,
-			sellUncoveredQuantity: demonstrated?.uncoveredQuantity ?? group.quantity,
+			// What is not covered includes the stacks that cannot be sold at all.
+			sellUncoveredQuantity: group.quantity - (demonstrated?.coveredQuantity ?? 0),
 			untradeable,
 			unitListCopper,
 			// The best ask is a competing listing, not demonstrated buyer capacity.
@@ -778,6 +806,7 @@ export class InventoryVaultSyncService {
 			desired.set(position.positionId, { position, path, fields, block: renderInventoryBlock(fields) });
 		}
 
+		const degradedItemIds = new Set(input.degradedItemIds ?? []);
 		const steps: InventoryVaultSyncStep[] = [];
 		const seenOwned = new Set<string>();
 		const conflictPaths = new Set<string>();
@@ -817,10 +846,20 @@ export class InventoryVaultSyncService {
 			seenOwned.add(owned.fields.tc_position_id);
 			const target = desired.get(owned.fields.tc_position_id);
 			if (target) {
-				steps.push(sameManagedContent(owned, target.fields, target.block)
+				// An object the catalog answered badly keeps the four values that come from the
+				// catalog (name, type, rarity, icon) from the note it already has; everything
+				// else (quantity, quotes, verdict, active flag) follows the account as usual.
+				const fields: InventoryNoteFields = degradedItemIds.has(target.position.itemId)
+					? {
+						...target.fields, tc_item_name: owned.fields.tc_item_name, tc_item_type: owned.fields.tc_item_type,
+						tc_item_rarity: owned.fields.tc_item_rarity, tc_icon: owned.fields.tc_icon,
+					}
+					: target.fields;
+				const block = fields === target.fields ? target.block : renderInventoryBlock(fields);
+				steps.push(sameManagedContent(owned, fields, block)
 					? step(target.position.positionId, file.path, 'unchanged', content, content)
 					: step(target.position.positionId, file.path, 'update', content,
-						await renderInventoryNote(target.fields, target.block, owned)));
+						await renderInventoryNote(fields, block, owned)));
 				continue;
 			}
 			// The position no longer appears on the account: the note is removed rather than
@@ -1366,10 +1405,48 @@ function splitInventoryFrontmatter(text: string, positionId: string): { managed:
 		else if (key === 'title' && strayTitle) continue;
 		else userKeys += 1;
 	}
-	if (userKeys === 0) return { managed, userFrontmatter: null };
-	for (const key of MANAGED_OR_RETIRED_KEYS) document.delete(key);
-	if (strayTitle) document.delete('title');
-	return { managed, userFrontmatter: document.toString({ lineWidth: 0 }).trimEnd() };
+	// A YAML comment the user wrote is theirs: it counts as user frontmatter and survives a
+	// rewrite. A comment attached to a key the plugin removes (a managed or stray-title key) would
+	// leave with it, so it is carried over as a comment line of its own.
+	// Order: what the document and its mapping carry before the first key, then the comments of the
+	// removed keys in file order, then what they carry after the last one.
+	const removed = new Set<string>(MANAGED_OR_RETIRED_KEYS);
+	if (strayTitle) removed.add('title');
+	const orphanComments: string[] = userKeys === 0
+		? [...commentLines(document.commentBefore), ...commentLines(nodeComment(document.contents, 'commentBefore'))]
+		: [];
+	if (isMap(document.contents)) {
+		for (const pair of document.contents.items) {
+			if (!isPair(pair) || !removed.has(String((pair.key as { value?: unknown } | null)?.value))) continue;
+			orphanComments.push(
+				...commentLines(nodeComment(pair.key, 'commentBefore')), ...commentLines(nodeComment(pair.key, 'comment')),
+				...commentLines(nodeComment(pair.value, 'commentBefore')), ...commentLines(nodeComment(pair.value, 'comment')),
+			);
+		}
+	}
+	if (userKeys === 0) {
+		orphanComments.push(...commentLines(nodeComment(document.contents, 'comment')), ...commentLines(document.comment));
+	}
+	if (userKeys === 0 && orphanComments.length === 0) return { managed, userFrontmatter: null };
+	for (const key of removed) document.delete(key);
+	if (userKeys === 0) return { managed, userFrontmatter: orphanComments.join('\n') };
+	const kept = document.toString({ lineWidth: 0 }).trimEnd();
+	return { managed, userFrontmatter: orphanComments.length === 0 ? kept : `${kept}\n${orphanComments.join('\n')}` };
+}
+
+/** One of the two comment slots of a yaml node, or null. */
+function nodeComment(node: unknown, slot: 'commentBefore' | 'comment'): string | null {
+	if (typeof node !== 'object' || node === null) return null;
+	const text = (node as Record<string, unknown>)[slot];
+	return typeof text === 'string' ? text : null;
+}
+
+/**
+ * The `# …` lines of a yaml comment. A blank line inside a block of comments is dropped: it would
+ * come back as an empty `#` line and grow with every rewrite.
+ */
+function commentLines(text: string | null | undefined): string[] {
+	return (text ?? '').split('\n').filter((line) => line.trim().length > 0).map((line) => `#${line}`);
 }
 
 function step(
@@ -1385,6 +1462,8 @@ function step(
 function isInventoryVaultSyncInput(value: unknown): value is InventoryVaultSyncInput {
 	if (!record(value) || value.schemaVersion !== INVENTORY_NOTE_SCHEMA_VERSION ||
 		(value.locale !== 'es' && value.locale !== 'en') || !iso(value.capturedAt) || !Array.isArray(value.positions)) return false;
+	if (value.degradedItemIds !== undefined
+		&& !(Array.isArray(value.degradedItemIds) && value.degradedItemIds.every(positive))) return false;
 	return value.positions.every(isInventoryPosition) && new Set(value.positions.map((entry) => entry.positionId)).size === value.positions.length;
 }
 
@@ -1396,7 +1475,7 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		['complete', 'partial', 'no_market', 'unavailable', 'invalid'].includes(String(value.sellDepthStatus)) &&
 		nonNegative(value.sellCoveredQuantity) && nonNegative(value.sellUncoveredQuantity) &&
 		value.sellCoveredQuantity + value.sellUncoveredQuantity === value.quantity &&
-		(value.sellDepthStatus === 'complete' ? value.sellUncoveredQuantity === 0 && value.totalSellCopper !== null
+		(value.sellDepthStatus === 'complete' ? value.sellCoveredQuantity > 0 && value.totalSellCopper !== null
 			: value.totalSellCopper === null) &&
 		nullableNonNegative(value.unitListCopper) && nullableNonNegative(value.totalListCopper) && nonEmptyText(value.name) &&
 		(value.type === null || nonEmptyText(value.type)) && (value.rarity === null || nonEmptyText(value.rarity)) &&
@@ -1515,7 +1594,7 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		['complete', 'partial', 'no_market', 'unavailable', 'invalid'].includes(String(value.tc_sell_depth_status)) &&
 		nonNegative(value.tc_sell_covered_quantity) && nonNegative(value.tc_sell_uncovered_quantity) &&
 		value.tc_sell_covered_quantity + value.tc_sell_uncovered_quantity === value.tc_quantity &&
-		(value.tc_sell_depth_status === 'complete' ? value.tc_sell_uncovered_quantity === 0
+		(value.tc_sell_depth_status === 'complete' ? value.tc_sell_covered_quantity > 0
 			: value.tc_total_sell_copper === null) && nullableNonNegative(value.tc_unit_list_copper) &&
 		nullableNonNegative(value.tc_total_list_copper) && typeof value.tc_active === 'boolean' &&
 		value.tc_active === (value.tc_quantity > 0) &&

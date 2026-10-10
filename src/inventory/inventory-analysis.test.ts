@@ -208,6 +208,31 @@ describe('one result per object: the advisor view, the notes and the Base agree 
 		await expect(inventoryVaultSyncInputFromAnalysis(source, objects)).resolves.toHaveProperty('positions');
 	});
 
+	it.each([
+		['bound first', () => [{ ...bank(23, 5, 0), metadata: { binding: 'Account' as const } }, bank(23, 3, 1)]],
+		['free first', () => [bank(23, 3, 0), { ...bank(23, 5, 1), metadata: { binding: 'Account' as const } }]],
+	])('a row of a bound and a free stack reaches the notes with only the free part valued (%s)', async (_label, holdings) => {
+		const { input, notes } = await analyse(holdings());
+		expect(input.positions).toHaveLength(1);
+		expect(input.positions[0]).toMatchObject({ quantity: 8, sellCoveredQuantity: 3, sellUncoveredQuantity: 5 });
+		expect(notes.get(23)).toMatchObject({ tc_quantity: 8, tc_sell_covered_quantity: 3, tc_sell_uncovered_quantity: 5 });
+	});
+
+	it.each(['invalid', 'malformed'] as const)(
+		'a %s catalog answer for one object does not stop the sync: the object is held back, the rest is written',
+		async (status) => {
+			const { source, objects } = await analyse([bank(23, 5, 0), bank(24, 5, 1), bank(25, 5, 2)]);
+			const degraded = structuredClone(source);
+			(degraded.input.catalog.coverage.items['24'] as { status: string }).status = status;
+			expect(inventoryAnalysisNotReadyCause(degraded, objects, AS_OF_MS)).toBeNull();
+			const input = await inventoryVaultSyncInputFromAnalysis(degraded, objects);
+			expect(input.positions.map((position) => position.itemId)).toEqual([23, 24, 25]);
+			expect(input.degradedItemIds).toEqual([24]);
+			// A healthy catalog holds nothing back.
+			expect((await inventoryVaultSyncInputFromAnalysis(source, objects)).degradedItemIds ?? []).toEqual([]);
+		},
+	);
+
 	it('names the first readiness condition that fails, one by one, with a code that holds no account data', async () => {
 		const { source, objects } = await analyse([bank(23, 5, 0)]);
 		const cause = (s = source, o: InventoryObjectResultsV1 | null = objects, now = AS_OF_MS): string | null =>
