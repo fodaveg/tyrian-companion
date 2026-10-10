@@ -1,23 +1,58 @@
 # QA manual del MVP
 
-## Matriz candidata 0.5.0 live1 (6 oct 2026; ejecución real pendiente)
+## Matriz 0.6.x de v1 (10 oct 2026; canal 0.6.35; ejecución real pendiente)
+
+Esta matriz es la vigente: lista lo que han añadido las 0.6.x y cómo se puede comprobar. Lo anterior
+(la matriz 0.5.0 live1 y las dieciséis pruebas históricas) queda debajo como anexo. Ninguna fila tiene
+hoy una ejecución real registrada en un Obsidian o un Hebra: ver [ESTADO](ESTADO.md). Para Hebra hay un
+[guion corto](QA-HEBRA.md).
+
+### Plataformas de la QA de v1 (RT-10, decidido el 10 oct 2026)
+
+Salen de decisiones de David ya tomadas (nota de decisiones de Tyrian, 10 oct 2026, Claude por
+delegación de David):
+
+- **Fedora con Proton**: primaria y completa.
+- **Los dos hosts en el Mac** (Obsidian y Hebra).
+- **Windows con Nexus** para sus compañeros ([guía del 9 oct](INSTALAR-WINDOWS.md)). Que funcione sigue sin
+  probarse: el lector solo está probado en Fedora con Proton.
+- **Blish HUD, fuera de v1**: congelado el 8 oct 2026 (ver [BETA](BETA.md)).
+
+Clase de comprobación, literal del inventario a/b/c del audit RT-05: (a) automatizable hoy con los
+scripts del repo; (b) con un arnés nuevo; (c) solo humana. Cada celda cita el ID del inventario; las
+filas sin equivalente allí llevan «propuesta» y no son del audit.
+
+| Función (versión) | Obsidian | Hebra | Qué comprobar |
+| --- | --- | --- | --- |
+| Vista principal de Hebra con Sesión, Inventario, Venta y Logros (0.6.21), presentación a una columna y «Valor estimado» (0.6.22) | b para capturas por ancho, c para juzgarlas (E8) | c (E8, E9, L4); b con RT-09 | Se abre con **Abrir acompañante**, las cuatro secciones salen y cambian sin perder el foco |
+| Notas resumen de sesión (0.6.13 a 0.6.19) | c (E11) | c (E11) | Al cerrar una sesión real se escribe la nota en `<carpeta de salida>/summaries`, con iconos de objetos (0.6.32) |
+| Logros: buscador, seguimiento y elementos con iconos (0.6.30, 0.6.32) | propuesta: a | propuesta: b | Buscar, **Seguir**, ver los elementos; sin clave API |
+| Logros: progreso con **Actualizar progreso** y motivo de rechazo en el diagnóstico (0.6.35) | propuesta: c | propuesta: c | Con una clave con permiso `progression`; las redacciones de rechazo de ArenaNet no están medidas con una clave real |
+| Assets gestionados: **Aplicar**, **Reparar**, **Reemplazar**, **Mover** y carpeta de salida creada en Hebra (0.6.34, 0.6.35) | propuesta: a | propuesta: b | Vista previa y aplicar sobre una carpeta nueva; dos pulsaciones seguidas no duplican carpetas |
+| Sesión en vivo: reserva, reloj atrasado, **Terminar sesión** y **Descartar sesión** (0.6.31, 0.6.34) | a para carga, c para el cierre brusco con sesión en vivo (E1) | c (E1) | Con el juego y el addon de Nexus; ver [QA-HEBRA](QA-HEBRA.md) |
+| Arranque con almacén mudo, candado y recuperación de almacenes (0.6.24, 0.6.30) | a para `navigator.locks` y que el candado muera con el proceso (E2, E3) | b para los dos (E2, E3); c para el arranque de Hebra con el motor mudo (E5) | Cierre forzado con una sesión en vivo, reabrir; eventos `life_lock_*` y `taken` en el registro |
+| Token del addon: **Crear token** y **Copiar token** (0.6.34) | propuesta: a | propuesta: b | El portapapeles responde; el addon acepta el token (esto último, c) |
+| Venta: animación, plazo de 60 s y **Actualizar** (0.6.34) | propuesta: a | propuesta: c | Precios del bazar sin clave API; con inventario de temporada, filas con icono |
+| Instalación y carga de la release (todas) | a (L3: `verify-beta-runtime`, `smoke-live`) | c hoy; b con RT-09 (L4) | Versión cargada igual a la de la release; para Hebra, [QA-HEBRA](QA-HEBRA.md) |
+
+## Anexo A. Matriz candidata 0.5.0 live1 (6 oct 2026; ejecución real pendiente)
 
 [SPEC-live-loot](SPEC-live-loot.md) prevalece sobre precondiciones y recorridos API históricos para las nuevas sesiones. La evidencia `e370775` de abajo no acredita live1. Registrar versiones, SHA y entorno realmente probado; cross-build no equivale a carga nativa. Se conserva QA de funciones API manuales.
 
 | Recorrido real | Fuente / consumidor | Estado de esta preparación |
 | --- | --- | --- |
 | Fedora con GE-Proton | Nexus productor y HUD; Hebra/Obsidian como host del candidato probado | Pendiente: cargar, arrancar/reabrir, medir, cerrar, guardar y exportar |
-| Windows | Nexus productor local obligatorio; Blish HUD consumidor y host disponible | Pendiente: mismo recorrido, avisos y fuente ausente al retirar Nexus |
+| Windows (Blish HUD fuera de v1: congelado el 8 oct 2026; cuenta Nexus) | Nexus productor local obligatorio; Blish HUD consumidor y host disponible | Pendiente: mismo recorrido, avisos y fuente ausente al retirar Nexus |
 | Distribución Obsidian | BRAT, candidato instalado y actualización desde versión anterior | Pendiente: verificar versión realmente cargada y ejecutar recorrido |
 | Distribución Hebra | Plugin externo del mismo candidato | Pendiente: carga, reapertura, persistencia y presentación |
 
-No se infiere compatibilidad de Blish en Fedora. Registrar por fila versiones de host/addons, SHA y
+No se infiere compatibilidad de Blish en Fedora (Blish fuera de v1, congelado el 8 oct 2026). Registrar por fila versiones de host/addons, SHA y
 artefactos realmente instalados; las pruebas de lector/transporte aisladas no marcan estas filas
 PASS. Monedas, MF y slots sin evidencia deben seguir desconocidos; es comportamiento exigido,
 no acreditación de que esas fuentes ya estén implementadas.
 
 - Sin clave API: carga → presencia → inicio → muestra → cierre → recovery → render. Cualquier consulta autenticada automática falla; inventario/cartera manuales y conexión explícita funcionan. Catálogo/precios públicos son canales distintos.
-- Cargar addon Nexus real en Fedora/GE-Proton y Windows; Windows con Blish necesita productor Nexus local. Sin Nexus, presencia sigue pero fuente aparece ausente. Arranque autónomo y reapertura Hebra requieren evidencia propia.
+- Cargar addon Nexus real en Fedora/GE-Proton y Windows; Windows con Nexus (Blish fuera de v1, congelado el 8 oct 2026). Sin Nexus, presencia sigue pero fuente aparece ausente. Arranque autónomo y reapertura Hebra requieren evidencia propia.
 - Fixture `0 → 2 → 4`: dos filas `+2`, cuatro observados y valoración coherente. Reordenar no cambia cantidades; disminución tiene causa desconocida. Baselines no son botín; monedas/MF/huecos de bolsas sin cobertura son desconocidos, no cero.
 - Contexto equivalente entre begin/rows/end conserva lote/época; cambio real incluso con retorno invalida época sin terminar conexión. Heartbeat vivo con muestras antiguas abre hueco, detiene tiempo observado y no activa API fallback.
 - Framing/límites/timeout adversos del contrato. Sin end, con fallo de almacén o lease perdido no hay stored/UI/avisos. Retry idéntico tras ACK perdido, incluido cursor 0, no duplica ni renueva frescura. Dos productores no mezclan filas.
@@ -29,7 +64,7 @@ no acreditación de que esas fuentes ya estén implementadas.
 
 Casos discriminantes y comandos existentes: SPEC-live-loot §11. Monedas/MF siguen dentro del objetivo: ausencia de cobertura no acredita implementación. La [sonda externa](audit/live-loot-evidence-provenance.md) solo avala su candidato; QA dentro de Nexus y Windows siguen pendientes. En nuevas sesiones, salir de un mapa no las cierra: rige toda la conexión y su gracia de diez minutos.
 
-## Matriz histórica API/H18 y compatibilidad
+## Anexo B. Matriz histórica API/H18 y compatibilidad
 
 Las pruebas siguientes conservan el estado y referencias de sus candidatos originales. Las
 operaciones manuales de inventario y lectura de datos legacy siguen siendo pruebas de compatibilidad.
@@ -59,7 +94,7 @@ Para las pruebas aplicables, distinguiendo matriz live y compatibilidad históri
 1. Crear una bóveda **desechable** nueva. No abrir, copiar ni modificar la bóveda canónica.
 2. Instalar el candidato y anotar: versión de Tyrian Companion (de `manifest.json`), SHA-256 del
    commit (`git rev-parse HEAD`), versión de Obsidian, sistema operativo y plataforma (Fedora con
-   Proton con Nexus / Windows nativo con Nexus productor y Blish HUD para el clan — macOS con CrossOver queda fuera de esta ronda
+   Proton con Nexus / Windows nativo con Nexus productor (Blish HUD para el clan, fuera de v1, congelado el 8 oct 2026) — macOS con CrossOver queda fuera de esta ronda
    salvo que David lo pida).
 3. Solo para pruebas API manuales/legacy, crear un secreto de Obsidian con una clave de pruebas (`account`, `characters`, `inventories`,
    `builds` como mínimo).
@@ -416,7 +451,10 @@ al mapa 866, el cierre al salir o tras 10 minutos desconectado, un drop de más 
 dentro del juego con su retraso real medido, y que reiniciar Obsidian no silencia los avisos
 siguientes (auditoría §8.12, ya reescrita por la decisión del 24 sep, sección 9).
 
-**Plataforma:** Fedora con Proton + Nexus (primaria para esta prueba); Windows con Blish HUD para el
+**Fuera de v1 en su parte Blish: Blish congelado el 8 oct 2026.** Vale Fedora con Proton + Nexus; Windows
+cuenta con Nexus.
+
+**Plataforma:** Fedora con Proton + Nexus (primaria para esta prueba); Windows con Nexus (Blish HUD, fuera de v1, congelado el 8 oct 2026) para el
 recorrido de los compañeros de David (prueba 14 aparte).
 
 **Pasos:**
@@ -452,7 +490,10 @@ pasos 1 y 3 de arriba no pueden dar el resultado esperado todavía. Ejecutar igu
 Verificar el reinicio del puente o del addon, una conexión muda, dos addons simultáneos y una
 desconexión sin cerrar el juego (auditoría §8.13).
 
-**Plataforma:** Fedora con Proton + Nexus; Windows con Blish HUD.
+**Fuera de v1 en su parte Blish (paso 3 y Windows con Blish HUD): Blish congelado el 8 oct 2026.** Windows
+cuenta con Nexus.
+
+**Plataforma:** Fedora con Proton + Nexus; Windows con Nexus (Blish HUD, fuera de v1, congelado el 8 oct 2026).
 
 **Pasos:**
 1. Con el puente activo y un addon conectado, reinicia el addon (o el puente) y observa que el estado
@@ -481,6 +522,9 @@ desconexión sin cerrar el juego (auditoría §8.13).
 Verificar que un compañero en Windows con Blish HUD ve una sesión automática de principio a fin y un
 aviso visible (auditoría §8.14, sección 9: Windows deja de ser solo beta para este recorrido).
 
+**Fuera de v1: Blish congelado el 8 oct 2026.** La prueba se conserva como histórica; en Windows la QA de v1
+es con Nexus.
+
 **Plataforma:** Windows x64 con Blish HUD.
 
 **Pasos:**
@@ -506,7 +550,9 @@ HUD con marca de tiempo.
 Verificar que, al empezar a jugar con Obsidian cerrado, el addon lo abre solo y la sesión se marca sin
 clics (auditoría §8.15, decisión 1 de la sección 9).
 
-**Plataforma:** Fedora con Proton + Nexus (primaria); Windows con Blish (más directo, sin la capa
+**Fuera de v1 en su parte Blish: Blish congelado el 8 oct 2026.** Windows cuenta con Nexus.
+
+**Plataforma:** Fedora con Proton + Nexus (primaria); Windows con Nexus (Blish, fuera de v1, congelado el 8 oct 2026; más directo, sin la capa
 Proton).
 
 **Pasos:**
@@ -525,7 +571,7 @@ un proceso dentro de Proton puede abrir/enfocar el Obsidian del host vía `wineb
 implementada en el addon de Nexus (rama `feat/abrir-obsidian-al-arrancar`, pendiente de integrar).
 En Fedora con Nexus, esta prueba ya puede ejecutarse como aceptación en cuanto esa rama esté
 integrada, no solo como sonda de viabilidad. El marcado automático sigue siendo la misma Entrega 5
-de las pruebas 12 y 14. En Windows con Blish HUD sigue sin verificarse ni el mecanismo de apertura
+de las pruebas 12 y 14. En Windows con Blish HUD (fuera de v1, congelado el 8 oct 2026) sigue sin verificarse ni el mecanismo de apertura
 (Windows nativo, sin Wine/Proton) ni su integración; ejecutar ahí solo como sonda de viabilidad,
 registrando el resultado como diagnóstico.
 
