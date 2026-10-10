@@ -335,6 +335,45 @@ describe('inventory analysis: the moment stage inside the one result', () => {
 		expect(rowFor(rows, 42, 'sell')).toBeDefined();
 	});
 
+	it('reads the price history of the objects that have a sale price only, a few reads at a time, without changing any result (Z31)', async () => {
+		const pricedIds = Array.from({ length: 40 }, (_, index) => 100 + index);
+		const unpricedIds = Array.from({ length: 25 }, (_, index) => 200 + index);
+		const { source } = await analyse([...pricedIds, ...unpricedIds].map((itemId, slot) => bank(itemId, 3, slot)));
+		const noPrice = structuredClone(source);
+		noPrice.input.prices.items = noPrice.input.prices.items.filter((price) => !unpricedIds.includes(price.itemId));
+
+		let inFlight = 0;
+		let peak = 0;
+		const readIds: number[] = [];
+		const slow = async <T>(itemId: number, value: T): Promise<T> => {
+			readIds.push(itemId);
+			inFlight += 1;
+			peak = Math.max(peak, inFlight);
+			for (let turn = 0; turn < 3; turn += 1) await Promise.resolve();
+			inFlight -= 1;
+			return value;
+		};
+		const history = (itemId: number) => dailySeries(itemId, 40, 100 + (itemId % 7), itemId % 5, AS_OF_MS);
+		const evaluateWith = async (port: InventoryPositionRecommendationPort) =>
+			await new InventoryAnalysisService(port).evaluate(noPrice, []);
+
+		const measured = await evaluateWith(recommendationPort({
+			readDaily: async (itemId) => await slow(itemId, history(itemId)),
+			readCachedSeed: async (itemId) => await slow(itemId, null),
+		}));
+		expect(peak).toBeGreaterThan(1);
+		expect(peak).toBeLessThanOrEqual(8);
+		expect(readIds.length).toBeGreaterThan(0);
+		expect(readIds.every((itemId) => pricedIds.includes(itemId))).toBe(true);
+
+		// The same snapshot with a history for every id, read or not, gives the very same result.
+		const everything = await evaluateWith(recommendationPort({ readDaily: async (itemId) => history(itemId) }));
+		expect(measured).toEqual(everything);
+		// And the history does reach the decision of the priced ones (the comparison is not vacuous).
+		const without = await evaluateWith(recommendationPort());
+		expect(without).not.toEqual(measured);
+	});
+
 	/**
 	 * Review fix (26 sep 2026): David's real note for the Saco de Halloween (#36038, one unit,
 	 * 321 copper total sell value) read `tc_recommendation: review` /
