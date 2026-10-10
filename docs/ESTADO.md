@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.6.35: Logros que leen el progreso, iconos de recompensas y carpeta de salida que se crea (10 oct 2026)
+## Canal 0.6.35 publicado: Logros que leen el progreso, iconos de recompensas y carpeta de salida que se crea (10 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.35` sobre el canal 0.6.34 publicado
-(`c9ec5674`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.35` = `7178ab40` (atestación; candidato `58950aaf`,
+árbol `93bddfd2`). Gate local verde (check 9/9 con 6868 tests, guardrails 24/24, BRAT PASS); CI 38071948026 y Release
+38072777859 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.35` sobre el canal
+0.6.34 publicado (`c9ec5674`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.35 se ha visto en un Obsidian ni en un Hebra reales.
@@ -16,7 +18,7 @@
   salida en Hebra solo en las pulsaciones de Aplicar, Reparar y Reemplazar.
 - Riesgo aceptado: dos dispositivos que pulsan «Aplicar» antes de que el sync converja pueden dejar dos carpetas de
   salida hermanas, sin pérdida de datos.
-- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+- Pendiente: verla en un Obsidian y un Hebra reales.
 
 ## Canal 0.6.34 publicado: Terminar sesión, Descartar sesión, token del addon, Assets en Hebra, Logros y Venta (10 oct 2026)
 
