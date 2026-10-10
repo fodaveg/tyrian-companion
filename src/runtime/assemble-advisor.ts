@@ -29,7 +29,7 @@ import {
 	BackedUpInventoryPreferencesStore,
 	InventoryPreferencesBackup,
 	type InventoryPreferencesBackupOptions,
-} from '../advisor/inventory-preferences-copy';
+} from '../advisor/inventory-preferences-backup';
 import { InventoryPreferencesRuntime } from '../advisor/inventory-preferences-runtime';
 import { InventoryPreferencesService } from '../advisor/inventory-preferences-service';
 import { IndexedDbInventoryPreferencesStore } from '../advisor/inventory-preferences-store';

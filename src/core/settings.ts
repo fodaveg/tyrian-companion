@@ -210,7 +210,7 @@ export interface TyrianSettings {
 	trackedAchievementIds: readonly number[];
 	/**
 	 * v16 (DU-13): the copy of the inventory preferences (goals and «keep» exceptions per account of this vault) that
-	 * `advisor/inventory-preferences-copy.ts` writes after each burst of changes and restores into an empty IndexedDB.
+	 * `advisor/inventory-preferences-backup.ts` writes after each burst of changes and restores into an empty IndexedDB.
 	 * Opaque here, like `farmingDeclaredBuild`: kept exactly as stored (an invalid copy too, so its reader can say so and
 	 * nothing deletes it), validated only by that reader. Null before the first change saves one.
 	 */

@@ -308,7 +308,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		});
 	});
 
-	// DU-13: the copy of the inventory preferences kept in the host's settings (`advisor/inventory-preferences-copy.ts`).
+	// DU-13: the copy of the inventory preferences kept in the host's settings (`advisor/inventory-preferences-backup.ts`).
 	describe('the copy of the inventory preferences in the host settings (DU-13)', () => {
 		const copy = {
 			version: 1,

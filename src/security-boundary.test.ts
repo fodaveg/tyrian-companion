@@ -18,6 +18,10 @@ import {
 
 const TOKEN_SENTINEL = ['tyrian-h6', 'token-sentinel', 'not-a-credential'].join('-');
 const REVIEWED_FUTURE_OUTBOUND_FILES = [
+	// Reviewed 2026-10-10 (DU-13): writes inventory goals and keep exceptions, keyed by the GW2 accountId, into the host
+	// settings through the core settings port; Obsidian Sync or Hebra may carry them off-device by design; no transport or
+	// credential capability.
+	'src/advisor/inventory-preferences-backup.ts',
 	'src/inventory/inventory-vault-sync.ts',
 	'src/platform/mumble-v2-client.ts',
 	'src/platform/mumble-v2-codec.ts',

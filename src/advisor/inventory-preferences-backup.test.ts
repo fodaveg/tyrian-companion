@@ -7,7 +7,7 @@ import {
 	readInventoryPreferencesBackup,
 	type InventoryPreferencesBackupV1,
 	type InventoryPreferencesBackupWriteOutcome,
-} from './inventory-preferences-copy';
+} from './inventory-preferences-backup';
 import type { InventoryAdvisorEvidenceCaptureResultV1 } from './inventory-advisor-evidence-model';
 import { INVENTORY_PREFERENCES_DB_NAME, type InventoryPreferenceScope } from './inventory-preferences-model';
 import { InventoryPreferencesRuntime } from './inventory-preferences-runtime';

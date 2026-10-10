@@ -1295,6 +1295,60 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/advisor/inventory-preferences-backup.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "9a36ccdb8d40c5cdb847613a47c57eeca8effe44",
+					"kind": "catch_clause",
+					"line": 100,
+					"column": 4,
+					"endLine": 103,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "readInventoryPreferencesBackup",
+						"justification": "The \"readInventoryPreferencesBackup\" catch is a \"fallback_return\" of { status: \"invalid\", reason: \"corrupt\" }: a stored value that throws while it is read is not a usable copy, and restoreOnce records that answer on the advisor log (inventory_preferences_write / backup_invalid, validation_failed)."
+					},
+					"reason": "Allowlisted catch_clause: The \"readInventoryPreferencesBackup\" catch is a \"fallback_return\" of { status: \"invalid\", reason: \"corrupt\" }: a stored value that throws while it is read is not a usable copy, and restoreOnce records that answer on the advisor log (inventory_preferences_write / backup_invalid, validation_failed). Verified recovery: \"fallback_return\" in \"readInventoryPreferencesBackup\"."
+				},
+				{
+					"id": "3677be6944c55fc51d73432d321813625b3616b7",
+					"kind": "catch_clause",
+					"line": 232,
+					"column": 5,
+					"endLine": 235,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "writeNow",
+						"justification": "The \"writeNow\" catch is a \"local_recovery\" that records the failed write of the copy on its own span (advisor / inventory_preferences_write, state backup_write_failed, storage_failure); the user's change is already in IndexedDB and the next change writes the copy again."
+					},
+					"reason": "Allowlisted catch_clause: The \"writeNow\" catch is a \"local_recovery\" that records the failed write of the copy on its own span (advisor / inventory_preferences_write, state backup_write_failed, storage_failure); the user's change is already in IndexedDB and the next change writes the copy again. Verified recovery: \"local_recovery\" in \"writeNow\"."
+				},
+				{
+					"id": "8e7fc4d80dc7e2fc33fac89c671ec484345e952e",
+					"kind": "catch_clause",
+					"line": 268,
+					"column": 5,
+					"endLine": 271,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "restoreOnce",
+						"justification": "The \"restoreOnce\" catch is a \"fallback_return\" of \"failed\" after recording the failure on its own span (advisor / inventory_preferences_write, state backup_restore_failed, storage_failure); the start goes on with IndexedDB as it is."
+					},
+					"reason": "Allowlisted catch_clause: The \"restoreOnce\" catch is a \"fallback_return\" of \"failed\" after recording the failure on its own span (advisor / inventory_preferences_write, state backup_restore_failed, storage_failure); the start goes on with IndexedDB as it is. Verified recovery: \"fallback_return\" in \"restoreOnce\"."
+				}
+			]
+		},
 		"src/advisor/inventory-preferences-contract.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -1330,60 +1384,6 @@
 						"justification": "The \"safe\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"safe\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"safe\"."
-				}
-			]
-		},
-		"src/advisor/inventory-preferences-copy.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "e71cd843f4173cc1f28ea58d96e4f5b4fa7c657d",
-					"kind": "catch_clause",
-					"line": 100,
-					"column": 4,
-					"endLine": 103,
-					"endColumn": 3,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "readInventoryPreferencesBackup",
-						"justification": "The \"readInventoryPreferencesBackup\" catch is a \"fallback_return\" of { status: \"invalid\", reason: \"corrupt\" }: a stored value that throws while it is read is not a usable copy, and restoreOnce records that answer on the advisor log (inventory_preferences_write / backup_invalid, validation_failed)."
-					},
-					"reason": "Allowlisted catch_clause: The \"readInventoryPreferencesBackup\" catch is a \"fallback_return\" of { status: \"invalid\", reason: \"corrupt\" }: a stored value that throws while it is read is not a usable copy, and restoreOnce records that answer on the advisor log (inventory_preferences_write / backup_invalid, validation_failed). Verified recovery: \"fallback_return\" in \"readInventoryPreferencesBackup\"."
-				},
-				{
-					"id": "ca194b92fbaa24e5da39703b236509e031279461",
-					"kind": "catch_clause",
-					"line": 232,
-					"column": 5,
-					"endLine": 235,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "writeNow",
-						"justification": "The \"writeNow\" catch is a \"local_recovery\" that records the failed write of the copy on its own span (advisor / inventory_preferences_write, state backup_write_failed, storage_failure); the user's change is already in IndexedDB and the next change writes the copy again."
-					},
-					"reason": "Allowlisted catch_clause: The \"writeNow\" catch is a \"local_recovery\" that records the failed write of the copy on its own span (advisor / inventory_preferences_write, state backup_write_failed, storage_failure); the user's change is already in IndexedDB and the next change writes the copy again. Verified recovery: \"local_recovery\" in \"writeNow\"."
-				},
-				{
-					"id": "b6d28970489ac63e80711a90bd27811dafaecbf7",
-					"kind": "catch_clause",
-					"line": 268,
-					"column": 5,
-					"endLine": 271,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "restoreOnce",
-						"justification": "The \"restoreOnce\" catch is a \"fallback_return\" of \"failed\" after recording the failure on its own span (advisor / inventory_preferences_write, state backup_restore_failed, storage_failure); the start goes on with IndexedDB as it is."
-					},
-					"reason": "Allowlisted catch_clause: The \"restoreOnce\" catch is a \"fallback_return\" of \"failed\" after recording the failure on its own span (advisor / inventory_preferences_write, state backup_restore_failed, storage_failure); the start goes on with IndexedDB as it is. Verified recovery: \"fallback_return\" in \"restoreOnce\"."
 				}
 			]
 		},

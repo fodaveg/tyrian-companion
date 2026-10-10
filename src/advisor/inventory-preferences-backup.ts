@@ -55,7 +55,7 @@ export type InventoryPreferencesBackupReading =
 	| { status: 'invalid'; reason: 'corrupt' | 'future_schema' };
 
 /** A well-formed identifier and timestamp, only to run each account through the record validator. */
-const VALIDATION_SCOPE_VAULT = 'inventory-preferences-copy';
+const VALIDATION_SCOPE_VAULT = 'inventory-preferences-backup';
 const VALIDATION_TIMESTAMP = '2026-10-10T00:00:00.000Z';
 
 /** The copy of these records: every account once, in `accountId` order, with its goals and exceptions as stored. */

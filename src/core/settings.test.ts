@@ -668,7 +668,7 @@ describe('settings schema v15: the tracked achievements of the «Logros» sectio
 	});
 });
 
-/** DU-13: the copy of the inventory preferences that `advisor/inventory-preferences-copy.ts` keeps in the settings. */
+/** DU-13: the copy of the inventory preferences that `advisor/inventory-preferences-backup.ts` keeps in the settings. */
 describe('settings schema v16: the copy of the inventory preferences', () => {
 	const backup = {
 		version: 1,

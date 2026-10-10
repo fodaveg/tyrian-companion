@@ -196,7 +196,7 @@ import {
 	sameInventoryPreferencesBackup,
 	type InventoryPreferencesBackupV1,
 	type InventoryPreferencesBackupWriteOutcome,
-} from '../advisor/inventory-preferences-copy';
+} from '../advisor/inventory-preferences-backup';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
 import { LEGENDARY_MATERIALS_TABLE, legendaryMaterialsEntryFor } from '../economy/legendary-materials';
