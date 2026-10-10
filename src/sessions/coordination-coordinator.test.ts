@@ -792,13 +792,18 @@ describe('ActiveSessionLeaseCoordinator with the host\'s lock manager', () => {
 			owner.dispose(); contender.dispose();
 		});
 
-		it('keeps answering clock_anomaly while the owner\'s lock is held, however long it is seen', async () => {
+		it('keeps answering clock_anomaly while the owner\'s lock is held, for less than its time to live, and takes it at the whole TTL', async () => {
 			const locks = fakeLocks(); const h = ahead('ahead alive lock', locks, locks);
 			await h.owner.acquire('session-1');
 			h.back();
 			await expect(h.contender.acquire('session-2')).resolves.toEqual(anomaly);
 			h.tick(60_000);
 			await expect(h.contender.acquire('session-2')).resolves.toEqual(anomaly);
+			h.tick(TTL - 60_001);
+			await expect(h.contender.acquire('session-2')).resolves.toEqual(anomaly);
+			// A lease nobody renewed for its whole time to live has run out, whoever holds a lock.
+			h.tick(1);
+			await expect(h.contender.acquire('session-2')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
 			h.owner.dispose(); h.contender.dispose();
 		});
 	});
