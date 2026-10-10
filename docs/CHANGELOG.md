@@ -11,13 +11,14 @@ el motor cierra la conexión. [ESTADO](ESTADO.md) separa lo medido de lo que nad
   sección muestra un contador con cuántos sigues.
 - Logros y tu clave de API. Abrir la sección, buscar o seguir un logro no consulta la API con tu clave; solo el botón
   «Actualizar» lee tu progreso. Si cambias la clave, el progreso guardado se borra.
-- Ajustes. Pasan a la versión 15. Una versión anterior de Tyrian conserva la cadencia y el diagnóstico.
+- Ajustes. Pasan a la versión 15. Al actualizar desde una versión anterior se conservan la cadencia y el diagnóstico.
 - Historial. Abrir el historial o el comparador en Obsidian solo lee las notas de sesión de Tyrian, no todo el vault, y cada
   nota se lee una vez por pasada. El panel deja de quedarse en «arrancando» cuando ya está listo. Si un decodificador falla
   durante la lectura del historial, queda registrado.
 - Almacenamiento local. Ocho almacenes secundarios se recuperan solos si el motor de IndexedDB cierra la conexión. La
   calidad de detección queda separada por vault, con un tope de 2000 eventos, y una fila ilegible ya no la desactiva. Un
-  aviso de precio de Halloween ya no se pierde si el guardado tarda. El diagnóstico distingue «tiempo agotado».
+  aviso de precio de Halloween ya no se pierde si el guardado tarda. El diagnóstico distingue «tiempo agotado», y desactivar
+  el plugin justo después de arrancar ya no deja fallos de almacenamiento falsos en él.
 - Herramientas para desarrolladores. `dev:install` y `smoke:live` ya no apuntan por defecto a la bóveda canónica: piden
   carpeta. El artifact de CI trae el verificador de runtime. El gate de cierre pasa el lint sin caché y se amplía la
   capacidad del lint para ficheros fuera del proyecto.
