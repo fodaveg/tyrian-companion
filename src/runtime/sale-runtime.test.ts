@@ -1508,7 +1508,7 @@ describe('price seed phases through the core: missing seeds before the result, s
 			expect(sale['priceSeedDeferredRequest']).toBeNull();
 		});
 
-		it('the real shutdownRuntime while the stale copies wait: the slot is emptied and the action\'s end starts nothing', async () => {
+		it('the core\'s unload steps (unloaded, the seed service disposed, SaleRuntime disposed) while the stale copies wait: the slot is emptied and the action\'s end starts nothing', async () => {
 			const { sale, probe, sync, shutdownRuntime } = await setup([1, 2, 3]);
 			probe.open();
 			const notes = gate();
