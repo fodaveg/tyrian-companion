@@ -181,6 +181,8 @@ export class InventoryPreferencesBackup {
 	private timer: unknown = undefined;
 	private pending = false;
 	private writing: Promise<void> = Promise.resolve();
+	/** Writes queued or running, not yet settled: what `dispose` must not close the store under. */
+	private unsettled = 0;
 	private disposed = false;
 	private readonly quietMs: number;
 
@@ -216,16 +218,20 @@ export class InventoryPreferencesBackup {
 	}
 
 	/**
-	 * Stops scheduling. A burst still waiting is written at once, best effort, as the final write (`final: true`, which
-	 * the host accepts during its unload); the answer is that write, for whoever must keep the store open until it ends,
-	 * or null when nothing was waiting. Nobody has to wait for it, and it never rejects.
+	 * Stops scheduling. A burst still waiting, or a write already queued or running (its timer fired before the unload),
+	 * is written once more at once, best effort, as the final write (`final: true`, which the host accepts during its
+	 * unload): a write launched earlier is not final and the host may refuse it as `unloaded`, so it cannot be relied on.
+	 * The final write reads IndexedDB after it, so it leaves the copy whole. The answer is the chain ending in that write,
+	 * for whoever must keep the store open until it ends, or null when nothing was waiting or running. Nobody has to wait
+	 * for it, and it never rejects.
 	 */
 	dispose(): Promise<void> | null {
 		if (this.disposed) return null;
 		this.disposed = true;
 		if (this.timer !== undefined) this.options.cancel(this.timer);
 		this.timer = undefined;
-		if (!this.pending) return null;
+		if (!this.pending && this.unsettled === 0) return null;
+		this.pending = true;
 		this.flush(true);
 		return this.writing;
 	}
@@ -235,9 +241,14 @@ export class InventoryPreferencesBackup {
 		if (!this.pending || (this.disposed && !final)) return;
 		this.pending = false;
 		const previous = this.writing;
+		this.unsettled += 1;
 		this.writing = (async () => {
 			await previous;
-			await this.writeNow(final);
+			try {
+				await this.writeNow(final);
+			} finally {
+				this.unsettled -= 1;
+			}
 		})();
 	}
 
