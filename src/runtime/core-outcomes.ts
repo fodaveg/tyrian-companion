@@ -7,7 +7,7 @@ import type { ProductActionOutcome } from '../ui/product-action-controller';
 import type { InventoryAdvisorViewModel } from '../ui/inventory-advisor-view-model';
 import type { InventoryVaultSyncViewState } from '../ui/inventory-vault-sync-controller';
 import type { InventoryVaultSyncRunState } from '../ui/inventory-vault-sync-run-controller';
-import type { WalletVaultSyncViewState } from '../wallet/wallet-vault-sync';
+import type { WalletVaultSyncViewState } from '../ui/wallet-vault-sync-controller';
 
 export function detectionActionOutcome(
 	state: AssistedDetectionState,
