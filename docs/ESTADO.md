@@ -1,5 +1,79 @@
 # Estado
 
+## Cinco audits de solo lectura: evidencia en hosts reales, guardarraíles, almacenamiento local, paridad de hosts y deuda estructural (10 oct 2026)
+
+**Nada implementado; solo informes, notas y tareas.** Encargo de David del 10 oct 2026: un metaaudit recomendó cinco
+audits y después pidió «lanzalos todos y después crea notas en hebra y proyectos en lumbre». Cinco agentes de solo
+lectura auditaron `main` en `6fbe77e` (0.6.24 publicada) desde el Mac. Mientras corrían, `origin/main` avanzó 74 commits
+hasta `670ead57` (candidata 0.6.26, integrada desde Fedora). Cada tarea de Lumbre empieza por la lista de ficheros
+citados que cambiaron en ese tramo, y cada hallazgo hay que contrastarlo con el `main` vigente antes de implementarlo.
+Los ficheros clave de los hallazgos graves (`src/sessions/session-storage-scope.ts`, `src/core/settings.ts`,
+`scripts/gate-steps.mjs`, los workflows de `.github/workflows/`, `src/host/hebra/entry.ts`, `docs/QA-MVP.md`) no
+cambiaron entre `6fbe77e` y `670ead57`.
+
+Hallazgos por severidad: Alto / Medio / Bajo / Sin medir. Cada proyecto de Lumbre está anidado en «21.15 Tyrian
+Companion»; cada nota de Hebra está en la carpeta «21.15 tyrian companion» y vinculada a su proyecto con `link_list_note`.
+
+| Audit | Informe | Hallazgos (A / M / B / S) | Decisiones | Proyecto de Lumbre | Nota de Hebra |
+| --- | --- | --- | --- | --- | --- |
+| Evidencia de ejecución en hosts reales | `docs/audit/2026-10-10-evidencia-runtime.md` | RT-01 a RT-18: 5 / 5 / 2 / 6 | 4 | «Tyrian Companion · evidencia de ejecución en hosts reales (audit 10 oct 2026)» (22 tareas) | «Tyrian Companion - Audit de evidencia en hosts reales (2026-10-10)» |
+| Red de guardarraíles y tests | `docs/audit/2026-10-10-guardarrailes-y-tests.md` | GR-01 a GR-18: 3 / 5 / 8 / 2 | 5 | «Tyrian Companion · red de guardarraíles y tests (audit 10 oct 2026)» (23 tareas) | «Tyrian Companion - Audit de guardarraíles y tests (2026-10-10)» |
+| Durabilidad del almacenamiento local | `docs/audit/2026-10-10-durabilidad-almacen.md` | DU-01 a DU-15: 2 / 3 / 6 / 4 | 4 | «Tyrian Companion · durabilidad del almacenamiento local (audit 10 oct 2026)» (19 tareas) | «Tyrian Companion - Audit de durabilidad del almacenamiento local (2026-10-10)» |
+| Paridad entre Obsidian y Hebra | `docs/audit/2026-10-10-paridad-hosts.md` | HP-01 a HP-16: 2 / 3 / 7 / 4 | 6 | «Tyrian Companion · paridad entre Obsidian y Hebra (audit 10 oct 2026)» (22 tareas) | «Tyrian Companion - Audit de paridad entre Obsidian y Hebra (2026-10-10)» |
+| Deuda estructural y tipado | `docs/audit/2026-10-10-deuda-estructural.md` | DE-01 a DE-21: 2 / 7 / 8 / 4 | 6 | «Tyrian Companion · deuda estructural y tipado (audit 10 oct 2026)» (27 tareas) | «Tyrian Companion - Audit de deuda estructural y tipado (2026-10-10)» |
+
+En total son 88 hallazgos, todos como tareas `@acked` en su sección de severidad (Alto p1, Medio p2, Bajo p3, Sin medir
+p4), y 25 decisiones de David en secciones «Decisiones de David» (p1, sin estado de agente).
+
+Lo más grave:
+
+- RT-01: la 0.6.24 YA está instalada en los dos hosts del Mac y nadie lo había anotado. Hebra 0.2.0 (149) la instaló a
+  las 04:38Z del 10 oct sustituyendo a la 0.6.22 (que también estuvo instalada, cosa que la entrada de la 0.6.24 niega),
+  y BRAT la instaló en la bóveda canónica de Obsidian a las 07:40 hora local. Los ficheros coinciden byte a byte con los
+  assets de la release. Lo que sigue sin comprobar es que CARGUE. La frase «nada de la 0.6.24 se ha ejecutado en un
+  Hebra ni en un Obsidian reales» de la entrada de abajo queda matizada así (esa entrada no se reescribe).
+- RT-02 y GR-01 (el mismo hecho desde dos audits): `src/host/hebra/bundle.test.ts` es el único test que importa el
+  `hebra-main.mjs` publicado y se salta en CI y en la release (`describe.runIf(existsSync(BUNDLE))`, el paso `unit` va
+  antes que `host-esm` en `scripts/gate-steps.mjs` y el fichero está en `.gitignore`). Es el «1 skipped» de GitHub. En
+  local pasa porque queda un bundle de builds anteriores.
+- GR-02: `release.yml` publica tras `npm run check` solo, sin `check:guardrails` y sin depender del CI del mismo commit.
+- GR-03: quedan esperas de tiempo fijo de la familia que tumbó la 0.6.23 (50 ms reales en tres tests del host de
+  Hebra; `settle()` de 5 macrotareas en `main-collector-mode.test.ts`, usado 22 veces) y `TYRIAN_TEST_ENGINE_LATENCY_MS`
+  no la fija ningún gate.
+- DU-01: `resolveSessionStorageNames` (`src/sessions/session-storage-scope.ts`) abre la base de sesión antigua sin
+  sufijo de vault en versión 2 con solo el almacén antiguo, así que esa subida de v1 a v2 nunca crea
+  `live-inventory-journal-v1`. En el vault que adoptó esa base toda transacción del diario en vivo da `NotFoundError` y
+  `saveLive` contesta `unavailable` para siempre. Reproducido con `fake-indexeddb`; ningún test siembra una base en v1.
+  Comprobación en los equipos reales (DU-15), solo lectura desde la consola:
+  `(await indexedDB.databases()).map(d => [d.name, d.version])` y mirar `objectStoreNames` de
+  `tyrian-companion-session-runtime`.
+- DU-02: `vaultId` es el SHA-256 de la ruta absoluta del vault. Mover o renombrar la carpeta deja huérfano en silencio
+  todo lo local (preferencias de inventario, historial de precios, Halloween, sesión y reserva) y puede devolver un
+  equipo en `consult` a `collector`.
+- HP-01 y HP-02: en Hebra los avisos del sistema van sin `urgency: 'critical'` ni `silent: true` (la API no lo admite),
+  y el candado de vida está activo en Hebra sobre Linux (`src/host/hebra/entry.ts`) sin sonda, donde el propio código
+  dice que con dos procesos vivos resuelve peor que sin candados.
+- DE-01 y DE-02: `src/runtime/tyrian-companion-core.ts` es una clase de 6.694 líneas con 159 imports de 13 carpetas y
+  unos 309 miembros. 14 de las 16 carpetas de `src/` forman un solo ciclo de imports, con `core` importando dominio
+  desde `core/settings.ts`.
+- DE-03, que corrige una premisa del metaaudit: la cifra de lint de la entrada de la 0.6.24 (117 avisos) es correcta.
+  Los 1.639 errores que da `eslint` en el Mac salen de que su `node_modules` es del 18 ago y le faltan
+  `hebra-plugin-api` y `happy-dom` (360 paquetes frente a 442 del lockfile): sin ellos, `src/host/hebra/` se tipa como
+  `any`. En el Mac, `check` saldría rojo hasta pasar `npm ci`. Tampoco hay ningún `innerHTML` en la fuente: los 84
+  `prefer-create-el` señalan `document.createElement`, y el arreglo que sugiere la regla (`document.win.createEl`)
+  rompería la vista en Hebra, cuyo polyfill no define `win`.
+
+Qué no se hizo: ningún gate, suite completa ni build en esta sesión (el `node_modules` del Mac no sirve para medirlos);
+ningún test en Obsidian ni Hebra reales; no se tocó código. El CI de GitHub sobre el commit de documentación
+  (`6500b843`, run `38029515920`) salió en ROJO por `bench:h6-live-session` («end-of-session p95 113.92ms > 100ms»), el
+  mismo paso y la misma cifra que el CI de `670ead57` (run `38028453458`, «p95 114.43ms»); el último verde es `6fbe77e`.
+  Un commit solo de docs no cambia el bench: el exceso viene de la 0.6.25/0.6.26 o del runner. Tarea `e2e3923b` en el
+  proyecto de guardarraíles.
+
+Dónde seguir: las 25 decisiones están en las secciones «Decisiones de David» de los cinco proyectos de Lumbre. El guion
+humano de 30 minutos para comprobar la carga de la 0.6.24 en el Mac está en el apartado 3 de la nota «Tyrian Companion -
+Audit de evidencia en hosts reales (2026-10-10)».
+
 ## Candidato 0.6.26: hallazgo mágico con repeticiones, notas de inventario que respetan comentarios y catálogo por lotes (10 oct 2026)
 
 **Candidato; no publicado ni etiquetado.** Es la única candidata y contiene la 0.6.25, que no se publica ni se etiqueta
