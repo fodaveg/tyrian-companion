@@ -4,6 +4,7 @@ import {
 	createInventoryAdvisorBuiltinBundleProvider,
 } from './inventory-advisor-builtin-bundle';
 import { sha256InventoryRulePack } from './inventory-advisor-contract';
+import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import {
 	evaluateInventoryContainerEconomy,
 	isInventoryContainerEconomyPack,
@@ -346,6 +347,20 @@ describe('H4.19 inventory container economy', () => {
 		expect(result.status).toBe('ready');
 		if (result.status !== 'ready') return;
 		expect(result.decision.action).toBe('sell');
+	});
+
+	it('evaluates every route, through the disposition kernel, without reaching any ambient capability', async () => {
+		const statuses: string[] = [];
+		const used = await ambientCapabilityUse(() => {
+			for (const route of ['open', 'sell', 'vendor'] as const) {
+				const value = fixture(route);
+				statuses.push(evaluateInventoryContainerEconomy(value).status);
+				isInventoryContainerEconomyPack(value.economyPack);
+				sha256InventoryContainerEconomyPack(value.economyPack);
+				isInventoryContainerPriceEvidence(value.prices);
+			}
+		});
+		expect({ used, statuses }).toEqual({ used: [], statuses: ['ready', 'ready', 'ready'] });
 	});
 
 	it('returns invalid instead of throwing for hostile or malformed inputs', () => {
