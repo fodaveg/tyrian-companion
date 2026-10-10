@@ -17,7 +17,7 @@ import {
 	TRICK_OR_TREAT_BAG_HISTORY_GAP,
 	TRICK_OR_TREAT_BAG_HISTORY_TODAY,
 	TRICK_OR_TREAT_BAG_ITEM_ID,
-} from './__fixtures__/trick-or-treat-bag-history';
+} from '../test/fixtures/economy/trick-or-treat-bag-history';
 import type { PriceHistoryDailyV1 } from './price-history-model';
 
 /** The curated parameters, exactly as the pack publishes them. */

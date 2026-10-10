@@ -42,7 +42,6 @@ En Hebra, `src/host/hebra/hebra-main-view.ts` traduce esa vista a la de su API 1
 - `advisor`: preparación y contratos puros del Inventory Advisor; captura, clasificación y UI siguen separadas.
 - `inventory`: proyección sin identidad y persistencia Vault-only del inventario durable mediante Preview/CAS.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
-- `objectives`: no es un módulo vivo. Es un único fichero de interfaces, `src/objectives/objective.ts`, sin implementación y sin ningún consumidor en el repositorio: nada bajo `src/` lo importa y su única aparición fuera del propio fichero es la entrada del censo en `scripts/action-observability-baseline.json`. Se conserva como contrato futuro, no como frontera que gobierne código existente.
 - `platform`: contrato H8.1/H8.4, núcleo H8.6, frontera H8.7 y política shadow H8.8 puras con puertos inyectados; no contiene I/O ambiente ni executor host.
 - `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
@@ -117,11 +116,11 @@ no intenta inferir el runtime desde procesos ni desde el disco.
 ## Flujo de dependencias
 
 ```text
-main -> ui -> connection service -> account gateway -> GW2 client
-                                                   |
-                                                   +-> core (HTTP + SecretStorage)
+main -> host/obsidian + runtime (tyrian-companion-core) -> ui -> connection service -> account gateway -> GW2 client
+                                                                                                    |
+                                                                                                    +-> core (HTTP + SecretStorage)
 
-main -> advisor
+runtime -> advisor
 
 storage snapshot service -> GW2 operation fijada -> core concurrency
 
@@ -148,7 +147,6 @@ recommendation envelope -> decisiones H4.10 + refs internas (JSON, manual, sin c
 
 sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
-objectives --> interfaces sin implementación ni consumidores
 
 H8.1/H8.4 contract -> H8.5 helper + H8.6 client core + H8.7 safe launch + H8.8 shadow policy aislados -/-> main, plugin o release
 
@@ -157,6 +155,39 @@ efectos HTTP/scheduler/IndexedDB -> puertos diagnósticos cerrados -----------/
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Una tabla cerrada por operación sustituye esos defaults solo para `character_inventory|character_build`: un intento de 30 segundos y cero reintentos internos, porque el scheduler de captura es el único dueño del backoff. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
+
+### Imports entre carpetas de `src/`
+
+Cuenta de imports relativos entre carpetas de primer nivel de `src/`, generada desde el código con el parser de TypeScript (multilínea, `export ... from` y `import()` incluidos; los de tipo cuentan). Se leen los `.ts` que no son `*.test.ts` ni `*.d.ts`, la misma regla que `sourceModulePaths` de `src/test/module-boundary.ts`, así que `src/test` y las fixtures cuentan como fuente (382 ficheros). `main` son los ficheros directamente bajo `src/`. Filas: carpeta que importa; columnas: carpeta importada. Es una fotografía, no un contrato: lo que gobierna las direcciones permitidas es `src/layer-direction-architecture.test.ts`.
+
+```text
+            acco achi advi aler asse cata core econ hall host inve main perf plat runt sess test   ui wall
+account        .    .    .    .    .    .   18    .    .    .    .    .    .    .    .    .    .    .    .
+achievements    3    .    .    .    2    4    6    .    .    .    .    .    .    .    .    .    .    .    .
+advisor       21    .    .    .    .   11   14   76    .    .    .    .    .    .    .    .    .    .    .
+alerts         .    .    .    .    .    .    2    1    1    1    .    .    .    .    .    .    .    .    .
+assets         .    .    2    .    .    .    7    .    .    .    .    .    .    .    .    .    .    .    .
+catalog        3    .    .    .    .    .    8    .    .    .    .    .    .    .    .    .    .    .    .
+core           .    .    .    1    .    .    .    4    1    2    .    .    .    .    .    3    .    .    .
+economy       14    .    2    3    .   15   36    .    .    4    .    .    .    .    .    2    .    .    .
+halloween      6    .    .    3    .    4   12   10    .    .    .    .    .    .    .    2    .    .    .
+host           .    .    .    6    2    .   18    4    1    .    1    .    .    .    2    3    .    1    1
+inventory      2    .    7    .    1    1    7   14    .    .    .    .    .    .    .    .    .    .    .
+main           .    .    .    .    .    .    .    .    .    1    .    .    .    .    1    .    .    .    .
+performance    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+platform       .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+runtime       14    4   17   24    7   11   45   22   13   10    5    .    .    .    .   74    .   24    2
+sessions      32    .    .   19    .    5   58   20    .    .    1    .    .    2    2    .    .    .    1
+test           1    .    3    .    2    .    3    5    .    2    .    2    .    .    2    2    .    .    .
+ui            14    .   17    9    5    .   63   31    3   13    5    .    .    .    3   62    .    .    1
+wallet         2    .    .    .    1    3    3    .    .    .    .    .    .    .    .    .    .    .    .
+```
+
+Generada el 10 oct 2026 con `node <scratchpad>/folder-imports.mjs <raíz del repo>`, un script de solo lectura que no está versionado en el repositorio (cuenta los imports por AST sobre los 382 ficheros).
+
+- Concentradoras de entrada: `core` (300 imports desde 15 carpetas), `economy` (187, 10), `sessions` (148, 7), `account` (112, 11).
+- Concentradoras de salida: `runtime` (272 hacia 14 carpetas), `ui` (226, 12), `sessions` (140, 9), `advisor` (122, 4).
+- Hojas: `platform` (0 salidas; solo la importa `sessions`, con 2 imports) y `performance` (sin imports entre carpetas en ninguno de los dos sentidos). `account` solo importa `core`.
 
 ## Diagnóstico local H6.17
 

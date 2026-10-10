@@ -103,7 +103,9 @@ describe('deferred runtime startup with persisted terminal state', () => {
 
 	// 9 Oct 2026 (Z3): an engine that accepts every open and transaction and answers none. `await sessions.initialize()` had no
 	// bound, so the plugin never became ready and no command, setting or view came up.
-	describe('with a storage engine that takes everything and answers nothing', () => {
+	// GR-09: the waits inside (`engineIdle` caps at 3 s, `STALL_MS` is 4 s) sit under vitest's own 5 s default, so a slow
+	// runner would report "Test timed out" instead of their message ("The boot is stuck…"). 15 s lets those speak first.
+	describe('with a storage engine that takes everything and answers nothing', { timeout: 15_000 }, () => {
 		function manualWindowTimers() {
 			// A virtual clock, shared with the stores through `performance.now`. `step` runs ONE timer, the earliest (the first armed
 			// among equals), as a browser runs timers: tasks one at a time, with the microtasks and the engine's own events between.

@@ -3741,46 +3741,6 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
-		"src/economy/__fixtures__/datawars2-real-history-36038-2026-09-26.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/economy/__fixtures__/datawars2-real-history-36041-2026-09-26.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/economy/__fixtures__/datawars2-real-history-43320-2026-09-26.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/economy/__fixtures__/datawars2-real-history-47909-2026-09-26.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/economy/__fixtures__/datawars2-real-history-48805-2026-09-26.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/economy/__fixtures__/sell-timing-history-36038.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/economy/__fixtures__/sell-timing-history-47909.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/economy/__fixtures__/trick-or-treat-bag-history.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
 		"src/economy/commerce-listings-capture.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -10128,6 +10088,28 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/runtime/vault-relocation.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "7cfddb5e29093955f38fd2647c85bc8446805a15",
+					"kind": "catch_clause",
+					"line": 215,
+					"column": 4,
+					"endLine": 219,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "settleVaultRelocation",
+						"justification": "The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending."
+					},
+					"reason": "Allowlisted catch_clause: The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending. Verified recovery: \"rethrow\" in \"settleVaultRelocation\"."
+				}
+			]
+		},
 		"src/runtime/view-placement.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -14188,6 +14170,46 @@
 			"boundaries": []
 		},
 		"src/test/fake-lock-manager.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/fixtures/economy/datawars2-real-history-36038-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/fixtures/economy/datawars2-real-history-36041-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/fixtures/economy/datawars2-real-history-43320-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/fixtures/economy/datawars2-real-history-47909-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/fixtures/economy/datawars2-real-history-48805-2026-09-26.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/fixtures/economy/sell-timing-history-36038.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/fixtures/economy/sell-timing-history-47909.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/test/fixtures/economy/trick-or-treat-bag-history.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
@@ -18326,28 +18348,6 @@
 						"justification": "The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"validateWalletNoteMarker\"."
-				}
-			]
-		},
-		"src/runtime/vault-relocation.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "7cfddb5e29093955f38fd2647c85bc8446805a15",
-					"kind": "catch_clause",
-					"line": 215,
-					"column": 4,
-					"endLine": 219,
-					"endColumn": 3,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "settleVaultRelocation",
-						"justification": "The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending."
-					},
-					"reason": "Allowlisted catch_clause: The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending. Verified recovery: \"rethrow\" in \"settleVaultRelocation\"."
 				}
 			]
 		}

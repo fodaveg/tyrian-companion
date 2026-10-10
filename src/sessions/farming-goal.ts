@@ -4,7 +4,6 @@ export type FarmingGoalV1 =
 	| { version: 1; kind: 'bags'; targetBags: number }
 	| { version: 1; kind: 'duration'; targetDurationMs: number };
 
-export const DEFAULT_FARMING_GOAL: Readonly<FarmingGoalV1> = Object.freeze({ version: 1, kind: 'none' });
 export const DEFAULT_FARMING_TARGET_BAGS = 1_000;
 export const DEFAULT_FARMING_TARGET_DURATION_MS = 60 * 60_000;
 /** Three API boundaries over twenty minutes avoid estimating from one cache interval. */

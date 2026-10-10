@@ -9,7 +9,7 @@ import {
 import {
 	trickOrTreatBagHistoryRecords,
 	TRICK_OR_TREAT_BAG_ITEM_ID,
-} from './__fixtures__/trick-or-treat-bag-history';
+} from '../test/fixtures/economy/trick-or-treat-bag-history';
 
 const RETRIEVED_AT = '2026-09-03T00:00:00.000Z';
 
