@@ -285,6 +285,18 @@ describe('durable session history', () => {
 		expect(vault.reads).toBe(2);
 	});
 
+	it('carries the vault path of each note into its record and its summary row, from the index too', async () => {
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note());
+		const history = new SessionHistoryService(vault);
+		for (const source of ['vault', 'rebuild', 'index'] as const) {
+			const scanned = await history.scan(source);
+			if (scanned.status !== 'ok') throw new Error('expected an ok scan');
+			expect(scanned.sessions[0]?.notePath).toBe('Sessions/one.md');
+			expect(buildSessionHistoryAggregate(scanned.sessions).sessions[0]?.notePath).toBe('Sessions/one.md');
+		}
+	});
+
 	it('scans schema v3 notes with canonical positive item evidence', async () => {
 		const vault = new MemoryVault();
 		vault.contents.set('Sessions/one.md', await note({

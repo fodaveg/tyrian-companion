@@ -109,6 +109,8 @@ export interface SessionHistorySummaryRow {
 	/** Already-rendered gains lines the note itself wrote; empty when its results table couldn't
 	 *  be read back. No identity travels with a line: only a name, a quantity, and its label. */
 	readonly lootRows: readonly DurableSessionLootLine[];
+	/** Where the session's note was read from, so the row can link to it; null when unknown. A path, never a hashed identity. */
+	readonly notePath: string | null;
 }
 
 /** Arithmetic delta between the latest two validated sessions. */
@@ -269,6 +271,7 @@ function summaryRow(session: DurableSessionHistoryRecord): SessionHistorySummary
 		immediateCopperPerHour: session.immediateCopperPerHour,
 		listingCopperPerHour: session.listingCopperPerHour,
 		lootRows: session.lootRows,
+		notePath: session.notePath ?? null,
 	};
 }
 

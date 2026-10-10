@@ -657,6 +657,14 @@
 	min-height: 44px;
 }
 
+/* The date of a history row is the link to its note: a text button, never a boxed control. */
+.tyrian-session-history__note-link {
+	min-height: 24px;
+	padding: 0;
+	text-align: start;
+	font: inherit;
+}
+
 .tyrian-session-history__footer {
 	display: block;
 	margin-block-start: var(--size-4-3);
