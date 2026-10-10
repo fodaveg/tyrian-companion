@@ -14,7 +14,7 @@ import {
 	type CoordinationStore,
 } from './coordination-store';
 import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
-import { StorageDeadline, StorageUnansweredError } from './storage-deadline';
+import { monotonicNowMs, StorageDeadline, StorageUnansweredError } from './storage-deadline';
 
 export interface ActiveSessionLeaseCoordinatorOptions {
 	store?: CoordinationStore;
@@ -25,7 +25,10 @@ export interface ActiveSessionLeaseCoordinatorOptions {
 	 * its own database (H18.12), and which one is only known once `SessionStorageScope` decided.
 	 */
 	databaseName?: string | (() => Promise<string>);
+	/** The wall clock: what is stored, and what is compared with what another instance stored (`Date.now` when absent). */
 	clock?: () => number;
+	/** A clock that only moves forward, for order and deadlines within this instance (`monotonicNowMs` when absent). */
+	monotonicClock?: () => number;
 	sleep?: (milliseconds: number) => Promise<void>;
 	machineId?: () => string;
 	instanceId?: string;
@@ -82,6 +85,10 @@ const LIFE_LOCK_PREFIX = 'tyrian-companion-lease:';
 export const DEAD_OWNER_SILENCE_MS = 15_000;
 
 type CommonErrorCode = Exclude<Extract<AcquireLeaseResult, { status: 'error' }>['code'], 'fence_overflow'>;
+/** One reading of both clocks, taken together: `wall` is what is stored and compared with others, `monotonic` orders this instance. */
+type Instant = { wall: number; monotonic: number };
+/** The lease this instance wrote last, and when it runs out by the monotonic clock. */
+type WrittenLease = { lease: ActiveSessionLease; runsOutAt: number };
 /**
  * What the first transaction of an acquisition found that the second one may take: a lease that ran out, or
  * one whose owner may be shown to be gone, with how long ago it last renewed by the clock that judged it.
@@ -117,6 +124,16 @@ type TakeableLease = { status: 'expired'; lease: ActiveSessionLease } | { status
  *   live owners that cannot see each other's locks from taking each other's lease on every beat.
  *
  * `renew`, `assertOwned` and `release` know nothing of locks: the lease lasts what it lasted.
+ *
+ * Two clocks (DU-09, 10 Oct 2026). A wall clock set back under a live session used to answer
+ * `clock_anomaly` until it passed the stored `renewedAt` again, which put the session in error for as
+ * long as the step. The wall clock is now only what is stored, and what is compared with what ANOTHER
+ * instance stored: a lease of somebody else's renewed ahead of it is still `clock_anomaly`, the silence
+ * of the 15 s rule is still `wall - renewedAt`, and whether any lease ran out is still `wall >= expiresAt`,
+ * because that is how every other reader judges it. Within this instance, order is the monotonic clock's,
+ * which does not go back: the lease it wrote last is never «renewed in the future» for it, and has also
+ * run out once its time to live has passed on that clock, whatever the wall says. Renewing it never
+ * stores a `renewedAt` earlier than the one it had, so a step back does not leave a lease that does not validate.
  */
 export class ActiveSessionLeaseCoordinator {
 	private readonly baseInstanceId: string;
@@ -143,6 +160,7 @@ export class ActiveSessionLeaseCoordinator {
 	private readonly leaseTtlMs: number;
 	private readonly expiryConfirmDelayMs: number;
 	private readonly clock: () => number;
+	private readonly monotonicClock: () => number;
 	private readonly sleep: (milliseconds: number) => Promise<void>;
 	private readonly machineIdFactory: () => string;
 	private readonly openStore: () => Promise<CoordinationStore>;
@@ -151,7 +169,14 @@ export class ActiveSessionLeaseCoordinator {
 	private acquireFlights = new Map<string, Promise<AcquireLeaseResult>>();
 	private queue: Promise<void> = Promise.resolve();
 	private disposed = false;
-	private lastNow: number | null = null;
+	/** The last monotonic reading: one before it is the only clock anomaly that concerns the whole instance. */
+	private lastMonotonic: number | null = null;
+	/**
+	 * Set inside the transaction that writes it, so a write the engine answers late is still known as this
+	 * instance's. Compared by the exact lease: an older handle, or one another coordinator wrote under the
+	 * same id, is judged by the wall clock alone, as before.
+	 */
+	private written: WrittenLease | null = null;
 
 	constructor(options: ActiveSessionLeaseCoordinatorOptions = {}) {
 		this.baseInstanceId = options.instanceId ?? crypto.randomUUID();
@@ -174,6 +199,7 @@ export class ActiveSessionLeaseCoordinator {
 		this.leaseTtlMs = options.leaseTtlMs ?? 300_000;
 		this.expiryConfirmDelayMs = options.expiryConfirmDelayMs ?? 250;
 		this.clock = options.clock ?? Date.now;
+		this.monotonicClock = options.monotonicClock ?? monotonicNowMs;
 		this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds)));
 		this.machineIdFactory = options.machineId ?? (() => crypto.randomUUID());
 		this.deadline = new StorageDeadline({ timeoutMs: options.storageTimeoutMs, schedule: options.schedule, cancel: options.cancel });
@@ -236,14 +262,17 @@ export class ActiveSessionLeaseCoordinator {
 			try {
 				return await (await this.getStore()).transaction<RenewLeaseResult>((raw) => {
 					const now = this.safeNow();
-					if (typeof now !== 'number') return { result: { status: 'error', code: now } };
+					if (typeof now === 'string') return { result: { status: 'error', code: now } };
 					const state = parseState(raw);
 					if (!state) return { result: { status: 'error', code: 'corrupt' } };
-					if (now < handle.renewedAt) return { result: { status: 'error', code: 'clock_anomaly' } };
-					if (!sameLease(state.lease, handle) || now >= handle.expiresAt) return { result: { status: 'lost' } };
-					const expiresAt = safeExpiry(now, leaseTtlMs);
+					if (this.renewedAhead(handle, now)) return { result: { status: 'error', code: 'clock_anomaly' } };
+					if (!sameLease(state.lease, handle) || this.ranOut(handle, now)) return { result: { status: 'lost' } };
+					// Never earlier than it was: a wall clock set back would otherwise store a lease renewed before it was acquired.
+					const renewedAt = Math.max(now.wall, handle.renewedAt);
+					const expiresAt = safeExpiry(renewedAt, leaseTtlMs);
 					if (!expiresAt) return { result: { status: 'error', code: 'clock_anomaly' } };
-					const renewed: ActiveSessionLease = { ...handle, renewedAt: now, expiresAt };
+					const renewed: ActiveSessionLease = { ...handle, renewedAt, expiresAt };
+					this.wrote(renewed, now, leaseTtlMs);
 					return { result: { status: 'renewed', handle: renewed }, nextState: { ...state, lease: renewed } };
 				});
 			} catch { return { status: 'error', code: 'unavailable' }; }
@@ -258,10 +287,10 @@ export class ActiveSessionLeaseCoordinator {
 			try {
 				const state = parseState(await (await this.getStore()).read());
 				const now = this.safeNow();
-				if (typeof now !== 'number') return { status: 'error', code: now };
+				if (typeof now === 'string') return { status: 'error', code: now };
 				if (!state) return { status: 'error', code: 'corrupt' };
-				if (now < handle.renewedAt) return { status: 'error', code: 'clock_anomaly' };
-				return sameLease(state.lease, handle) && now < handle.expiresAt
+				if (this.renewedAhead(handle, now)) return { status: 'error', code: 'clock_anomaly' };
+				return sameLease(state.lease, handle) && !this.ranOut(handle, now)
 					? { status: 'owned' }
 					: { status: 'lost' };
 			} catch { return { status: 'error', code: 'unavailable' }; }
@@ -276,11 +305,12 @@ export class ActiveSessionLeaseCoordinator {
 			try {
 				return await (await this.getStore()).transaction<ReleaseLeaseResult>((raw) => {
 					const now = this.safeNow();
-					if (typeof now !== 'number') return { result: { status: 'error', code: now } };
+					if (typeof now === 'string') return { result: { status: 'error', code: now } };
 					const state = parseState(raw);
 					if (!state) return { result: { status: 'error', code: 'corrupt' } };
-					if (now < handle.renewedAt) return { result: { status: 'error', code: 'clock_anomaly' } };
+					if (this.renewedAhead(handle, now)) return { result: { status: 'error', code: 'clock_anomaly' } };
 					if (!sameLease(state.lease, handle)) return { result: { status: 'lost' } };
+					this.written = null;
 					return { result: { status: 'released' }, nextState: { ...state, lease: null } };
 				});
 			} catch { return { status: 'error', code: 'unavailable' }; }
@@ -313,12 +343,13 @@ export class ActiveSessionLeaseCoordinator {
 		try {
 			first = await (await this.getStore()).transaction<AcquireLeaseResult | TakeableLease>((raw) => {
 				const now = this.safeNow();
-				if (typeof now !== 'number') return { result: { status: 'error', code: now } };
+				if (typeof now === 'string') return { result: { status: 'error', code: now } };
 				if (raw === undefined) {
 					const machineId = this.machineIdFactory();
 					if (!validId(machineId)) return { result: { status: 'error', code: 'corrupt' } };
-					const lease = createLease(machineId, this.instanceId, sessionId, 1, now, leaseTtlMs);
+					const lease = createLease(machineId, this.instanceId, sessionId, 1, now.wall, leaseTtlMs);
 					if (!lease) return { result: { status: 'error', code: 'clock_anomaly' } };
+					this.wrote(lease, now, leaseTtlMs);
 					return {
 						result: { status: 'acquired', handle: lease },
 						nextState: { version: COORDINATION_STATE_VERSION, machineId, fenceCounter: 1, lease },
@@ -327,19 +358,21 @@ export class ActiveSessionLeaseCoordinator {
 				const state = parseState(raw);
 				if (!state) return { result: { status: 'error', code: 'corrupt' } };
 				if (state.lease === null) return this.acquireVacant(state, sessionId, now, leaseTtlMs);
-				if (now < state.lease.renewedAt) return { result: { status: 'error', code: 'clock_anomaly' } };
+				if (this.renewedAhead(state.lease, now)) return { result: { status: 'error', code: 'clock_anomaly' } };
+				const ranOut = this.ranOut(state.lease, now);
 				if (
-					now < state.lease.expiresAt &&
+					!ranOut &&
 					state.lease.instanceId === this.instanceId
 				) {
 					return { result: { status: 'already_owned', handle: structuredClone(state.lease) } };
 				}
-				if (now < state.lease.expiresAt) {
+				if (!ranOut) {
 					// Somebody else's and not run out. Its owner can only be asked about when it says it holds a
 					// lock, and only by an instance whose own lock showed that the manager answers truthfully.
 					if (this.life === 'proven' && hasLifeMark(state.lease.instanceId)) {
-						// The same `now` that has just said the lease has not run out says how long its owner has been silent.
-						return { result: { status: 'held', lease: structuredClone(state.lease), silentMs: now - state.lease.renewedAt } };
+						// The same `now` that has just said the lease has not run out says how long its owner has been
+						// silent: by the wall clock, the one its owner stored `renewedAt` with.
+						return { result: { status: 'held', lease: structuredClone(state.lease), silentMs: now.wall - state.lease.renewedAt } };
 					}
 					return { result: busyUnder(state.lease) };
 				}
@@ -379,18 +412,18 @@ export class ActiveSessionLeaseCoordinator {
 		try {
 			return await (await this.getStore()).transaction<AcquireLeaseResult>((raw) => {
 				const confirmedNow = this.safeNow();
-				if (typeof confirmedNow !== 'number') return { result: { status: 'error', code: confirmedNow } };
+				if (typeof confirmedNow === 'string') return { result: { status: 'error', code: confirmedNow } };
 				const state = parseState(raw);
 				if (!state) return { result: { status: 'error', code: 'corrupt' } };
 				const currentLease = state.lease;
 				// The exact lease, in both cases: one its owner renewed meanwhile is not the one that was
 				// observed. Having run out is asked only of the lease that was found run out; the one whose
 				// owner is gone is taken while it still has time left, which is the whole point.
-				if (!sameLease(currentLease, observed) || currentLease === null || (!ownerGone && confirmedNow < currentLease.expiresAt)) {
+				if (!sameLease(currentLease, observed) || currentLease === null || (!ownerGone && !this.ranOut(currentLease, confirmedNow))) {
 					return {
 						result: {
 							status: 'busy',
-							ownerExpiresAt: currentLease?.expiresAt ?? confirmedNow,
+							ownerExpiresAt: currentLease?.expiresAt ?? confirmedNow.wall,
 							ownerInstanceId: currentLease?.instanceId ?? 'unknown',
 							ownerMachineId: currentLease?.machineId ?? 'unknown',
 						},
@@ -404,12 +437,13 @@ export class ActiveSessionLeaseCoordinator {
 	private acquireVacant(
 		state: CoordinationState,
 		sessionId: string,
-		now: number,
+		now: Instant,
 		leaseTtlMs: number,
 	): { result: AcquireLeaseResult; nextState?: CoordinationState } {
 		if (state.fenceCounter >= Number.MAX_SAFE_INTEGER) return { result: { status: 'error', code: 'fence_overflow' } };
-		const lease = createLease(state.machineId, this.instanceId, sessionId, state.fenceCounter + 1, now, leaseTtlMs);
+		const lease = createLease(state.machineId, this.instanceId, sessionId, state.fenceCounter + 1, now.wall, leaseTtlMs);
 		if (!lease) return { result: { status: 'error', code: 'clock_anomaly' } };
+		this.wrote(lease, now, leaseTtlMs);
 		return { result: { status: 'acquired', handle: lease }, nextState: { ...state, fenceCounter: lease.fence, lease } };
 	}
 
@@ -520,13 +554,50 @@ export class ActiveSessionLeaseCoordinator {
 		};
 	}
 
-	private safeNow(): number | CommonErrorCode {
+	/**
+	 * Both clocks, read together. A wall clock that went back since the last reading is not an anomaly any
+	 * more (DU-09): it is what a sync or a manual change does, and the monotonic clock keeps the order. One
+	 * that is not a whole, non-negative number of milliseconds still is, and so is a monotonic clock that
+	 * went back, which no real one does.
+	 */
+	private safeNow(): Instant | CommonErrorCode {
 		if (this.disposed) return 'disposed';
-		let now: number;
-		try { now = this.clock(); } catch { return 'clock_anomaly'; }
-		if (!Number.isSafeInteger(now) || now < 0 || (this.lastNow !== null && now < this.lastNow)) return 'clock_anomaly';
-		this.lastNow = now;
-		return now;
+		let wall: number;
+		let monotonic: number;
+		try { wall = this.clock(); monotonic = this.monotonicClock(); } catch { return 'clock_anomaly'; }
+		if (!Number.isSafeInteger(wall) || wall < 0) return 'clock_anomaly';
+		if (!Number.isFinite(monotonic) || (this.lastMonotonic !== null && monotonic < this.lastMonotonic)) return 'clock_anomaly';
+		this.lastMonotonic = monotonic;
+		return { wall, monotonic };
+	}
+
+	/** Records the lease this instance is about to write, and when it runs out by the monotonic clock. */
+	private wrote(lease: ActiveSessionLease, now: Instant, leaseTtlMs: number): void {
+		this.written = { lease, runsOutAt: now.monotonic + leaseTtlMs };
+	}
+
+	/** Whether `lease` is exactly the one this instance wrote last. */
+	private wroteLast(lease: ActiveSessionLease): boolean {
+		return this.written !== null && sameLease(this.written.lease, lease);
+	}
+
+	/**
+	 * A lease renewed after `now`. Only another writer's can be: the order of the one this instance wrote
+	 * last is the monotonic clock's, and `safeNow` already refused one that went back.
+	 */
+	private renewedAhead(lease: ActiveSessionLease, now: Instant): boolean {
+		return !this.wroteLast(lease) && now.wall < lease.renewedAt;
+	}
+
+	/**
+	 * Whether `lease` ran out. By the wall clock always: that is how every other reader judges it, and a wall
+	 * clock that jumped ahead, or a host that slept, has to find its own lease lost as before (H18.7). The
+	 * one this instance wrote last has also run out once its time to live passed on the monotonic clock, so
+	 * a wall clock set back does not stretch it for its owner.
+	 */
+	private ranOut(lease: ActiveSessionLease, now: Instant): boolean {
+		if (now.wall >= lease.expiresAt) return true;
+		return this.written !== null && this.wroteLast(lease) && now.monotonic >= this.written.runsOutAt;
 	}
 
 	private serial<T>(operation: () => Promise<T>): Promise<T> {
