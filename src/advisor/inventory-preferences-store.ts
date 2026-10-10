@@ -145,15 +145,14 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 		const attempt = this.readDiagnostics.begin('inventory_preferences', 'read');
 		try {
 			const stored = await this.onStore<{ keys: IDBValidKey[]; values: unknown[] }>(this.readDiagnostics, 'readonly', (store, done) => {
-				const keys = store.getAllKeys();
-				const values = store.getAll();
-				// Both lists come back in key order, from the same transaction.
+				// Only this vault's keys, never a vault whose id merely starts the same; both lists in key order, one transaction.
+				const keys = store.getAllKeys(vaultKeys(vaultId));
+				const values = store.getAll(vaultKeys(vaultId));
 				values.onsuccess = () => { done({ keys: keys.result, values: values.result as unknown[] }); };
 			});
 			const records: InventoryPreferencesV1[] = [];
 			let unreadable = 0;
 			stored.keys.forEach((key, index) => {
-				if (!inVault(key, vaultId)) return;
 				const record = migrateInventoryPreferences(stored.values[index]);
 				if (record === null || record.vaultId !== vaultId || storageKey(record) !== key) unreadable += 1;
 				else records.push(record);
@@ -181,9 +180,9 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 		}
 		try {
 			const result = await this.onStore<InventoryPreferencesVaultRestoreResult>(this.writeDiagnostics, 'readwrite', (store, done) => {
-				const keys = store.getAllKeys();
-				keys.onsuccess = () => {
-					if (keys.result.some((key) => inVault(key, vaultId))) {
+				const present = store.count(vaultKeys(vaultId));
+				present.onsuccess = () => {
+					if (present.result > 0) {
 						done({ status: 'not_empty' });
 						return;
 					}
@@ -334,9 +333,12 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 	}
 }
 
-/** Whether a key of this store belongs to `vaultId` (`<vaultId>\0<accountId>`), never to a vault whose id only starts the same. */
-function inVault(key: IDBValidKey, vaultId: string): key is string {
-	return typeof key === 'string' && key.startsWith(`${vaultId}\u0000`);
+/**
+ * The keys of one vault, `<vaultId>\0<accountId>`, and no other (a vault whose id merely starts the same falls outside),
+ * as `vaultKeys` of `runtime/vault-relocation.ts`. `IDBKeyRange` is the engine's, from the same document as the factory.
+ */
+function vaultKeys(vaultId: string): IDBKeyRange {
+	return IDBKeyRange.bound(`${vaultId}\u0000`, `${vaultId}\u0001`, false, true);
 }
 
 function parseRecord(raw: unknown, scope: InventoryPreferenceScope):

@@ -193,7 +193,9 @@ import type {
 	InventoryPreferencesEditorState,
 } from '../advisor/inventory-preferences-runtime';
 import {
+	inventoryPreferencesBackupWritableOver,
 	sameInventoryPreferencesBackup,
+	type InventoryPreferencesBackup,
 	type InventoryPreferencesBackupV1,
 	type InventoryPreferencesBackupWriteOutcome,
 } from '../advisor/inventory-preferences-backup';
@@ -571,6 +573,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** The «Logros» section's store and services (`assemble-achievements.ts`); null until `initializeRuntime` and after unload. */
 	private achievements: AchievementsAssembly | null = null;
 	private inventoryPreferences!: InventoryPreferencesRuntime;
+	/** DU-13: the copy of the preferences in the host's settings; told of the changes that bypass the preferences store. */
+	private inventoryPreferencesBackup: InventoryPreferencesBackup | null = null;
 	private priceHistory: PriceHistoryRuntime | null = null;
 	/** Deferred to the panel's own load action; never touched from `onload`. */
 	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
@@ -1326,7 +1330,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			preferencesBackup: {
 				settings: {
 					read: () => this.settings.inventoryPreferencesBackup,
-					write: async (backup) => await this.writeInventoryPreferencesBackup(backup),
+					write: async (backup, final) => await this.writeInventoryPreferencesBackup(backup, final),
 				},
 				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
 				cancel: (handle) => { window.clearTimeout(handle as number); },
@@ -1334,6 +1338,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			},
 		});
 		this.inventoryPreferences = advisorServices.preferences;
+		this.inventoryPreferencesBackup = advisorServices.preferencesBackup;
 		// DU-13: once per load, before any preference is read (reads and writes wait for it), and never waited for here.
 		// It never rejects: every outcome, a failure included, ends in the local log.
 		void advisorServices.preferencesBackup?.restore();
@@ -1606,6 +1611,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// What was copied is read again by the in-memory preferences, which cached the (empty) record of the new id. Always on
 		// an adopt, whatever this attempt copied: an earlier attempt may have copied and failed before the reload.
 		if (adoption !== null) await this.inventoryPreferences.loadCached();
+		// DU-13: the adoption writes IndexedDB past the preferences store, so the copy is told here.
+		if (adoption !== null && adoption.preferences > 0) this.inventoryPreferencesBackup?.changed();
 		if (this.unloaded) return { status: 'none' };
 		const own = await readStoredCollectorMode(indexedDB, vaultId);
 		if (this.unloaded) return { status: 'none' };
@@ -2849,12 +2856,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/**
 	 * DU-13: writes the copy of the inventory preferences into the host's settings, over the settings as they are now
 	 * (`loadSettingsBase`), in the same write chain as every other save. A copy equal to the stored one is not written
-	 * again. With settings from a newer release (DU-04) nothing is written. A failed save rejects, for the copy to record.
+	 * again. Nothing is written with settings from a newer release (DU-04), over a stored copy of a version this release
+	 * does not know (only the newer release can read it), or once the plugin is unloaded, except the `final` write the
+	 * copy starts as it is disposed. A failed save rejects, for the copy to record.
 	 */
-	private async writeInventoryPreferencesBackup(backup: InventoryPreferencesBackupV1): Promise<InventoryPreferencesBackupWriteOutcome> {
+	private async writeInventoryPreferencesBackup(backup: InventoryPreferencesBackupV1, final: boolean): Promise<InventoryPreferencesBackupWriteOutcome> {
+		if (this.unloaded && !final) return 'unloaded';
 		return await this.serializeSettingsWrite(async () => {
+			if (this.unloaded && !final) return 'unloaded';
 			const base = await this.loadSettingsBase();
 			if (base === null) return 'read_only';
+			if (!inventoryPreferencesBackupWritableOver(base.inventoryPreferencesBackup)) return 'future_kept';
 			if (sameInventoryPreferencesBackup(base.inventoryPreferencesBackup, backup)) return 'unchanged';
 			await this.host.settings.save({ ...base, inventoryPreferencesBackup: backup });
 			// Memory takes only the key this method owns, as `recordInventorySyncOutcome` does.

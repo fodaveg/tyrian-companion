@@ -1,5 +1,5 @@
-import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { IDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	BackedUpInventoryPreferencesStore,
@@ -28,6 +28,10 @@ const ACCOUNT = 'account-alpha';
 const scope: InventoryPreferenceScope = { vaultId: VAULT, accountId: ACCOUNT };
 const now = () => '2026-10-10T20:00:00.000Z';
 let sequence = 0;
+
+// The store reads one vault by key range, with the engine's `IDBKeyRange`; here, fake-indexeddb's.
+beforeEach(() => { vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('inventory preferences copy: restore at the start', () => {
 	it('restores a valid copy into an empty IndexedDB, once, and the editor reads it', async () => {
@@ -173,11 +177,65 @@ describe('inventory preferences copy: writes after a change', () => {
 		world.dispose();
 	});
 
-	it('writes nothing after dispose', async () => {
+	it.each([
+		['the stored copy is of a future version', 'future_kept', ['skip', 'precondition_failed', 'backup_future_kept', { count: 1 }]],
+		['the plugin is already unloaded', 'unloaded', ['skip', 'cancelled', 'backup_after_unload', { count: 1 }]],
+	] as const)('records a write the host refused because %s', async (_label, outcome, line) => {
+		const world = harness({ stored: null, write: async () => outcome });
+		await world.service.upsertGoal(scope, 0, goal('goal-a'));
+		world.timers.fire();
+		await world.backup.settled();
+		expect(world.outcomes('backup_write')).toEqual([line]);
+		world.dispose();
+	});
+
+	it('writes only this vault\'s records, never those of a vault whose id starts the same', async () => {
+		const world = harness({ stored: null });
+		const other = new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(world.factory, world.name), now);
+		await other.upsertGoal({ vaultId: `${VAULT}-other`, accountId: ACCOUNT }, 0, goal('goal-other'));
+		other.dispose();
+		await world.service.upsertGoal(scope, 0, goal('goal-a'));
+		world.timers.fire();
+		await world.backup.settled();
+		expect(world.writes).toEqual([{ version: 1, accounts: [{ accountId: ACCOUNT, goals: [goalOf('goal-a')], keepExceptions: [] }] }]);
+		// Nothing of the other vault was even read: no unreadable record is counted.
+		expect(world.outcomes('backup_write')).toEqual([['success', 'ok', 'backup_saved', { count: 1 }]]);
+		world.dispose();
+	});
+});
+
+describe('inventory preferences copy: dispose', () => {
+	it('writes a burst still waiting once more, as the final write, and closes the store after it', async () => {
 		const world = harness({ stored: null });
 		await world.service.upsertGoal(scope, 0, goal('goal-a'));
+		expect(world.timers.pending).toBe(1);
+
 		world.dispose();
-		world.timers.fire();
+		expect(world.timers.pending).toBe(0);
+		await world.backup.settled();
+		expect(world.writes).toEqual([{ version: 1, accounts: [{ accountId: ACCOUNT, goals: [goalOf('goal-a')], keepExceptions: [] }] }]);
+		expect(world.finals).toEqual([true]);
+		expect(world.outcomes('backup_write_final')).toEqual([['success', 'ok', 'backup_saved', { count: 1 }]]);
+		// Nothing after it: a later change schedules nothing.
+		world.backup.changed();
+		expect(world.timers.pending).toBe(0);
+	});
+
+	it('never holds or breaks the unload: a final write that fails is only recorded', async () => {
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => { release = resolve; });
+		const world = harness({ stored: null, write: async () => { await held; throw new Error('data.json is gone'); } });
+		await world.service.upsertGoal(scope, 0, goal('goal-a'));
+
+		expect(() => { world.dispose(); }).not.toThrow();
+		release();
+		await expect(world.backup.settled()).resolves.toBeUndefined();
+		expect(world.outcomes('backup_write_final')).toEqual([['failure', 'storage_failure', 'backup_write_failed', undefined]]);
+	});
+
+	it('writes nothing at dispose when no burst is waiting', async () => {
+		const world = harness({ stored: null });
+		world.dispose();
 		await world.backup.settled();
 		expect(world.writes).toEqual([]);
 	});
@@ -187,9 +245,10 @@ describe('inventory preferences copy: writes after a change', () => {
 
 function harness(options: {
 	stored: unknown;
-	write?: (backup: InventoryPreferencesBackupV1) => Promise<InventoryPreferencesBackupWriteOutcome>;
+	write?: (backup: InventoryPreferencesBackupV1, final: boolean) => Promise<InventoryPreferencesBackupWriteOutcome>;
 }) {
 	const factory = new IDBFactory();
+	const finals: boolean[] = [];
 	sequence += 1;
 	const name = `${INVENTORY_PREFERENCES_DB_NAME}-backup-test-${String(sequence)}`;
 	const store = new IndexedDbInventoryPreferencesStore(factory, name);
@@ -210,7 +269,12 @@ function harness(options: {
 		store,
 		settings: {
 			read: () => options.stored,
-			write: options.write ?? (async (copy) => { writes.push(JSON.parse(JSON.stringify(copy)) as InventoryPreferencesBackupV1); return 'saved'; }),
+			write: async (copy, final) => {
+				finals.push(final);
+				if (options.write !== undefined) return await options.write(copy, final);
+				writes.push(JSON.parse(JSON.stringify(copy)) as InventoryPreferencesBackupV1);
+				return 'saved';
+			},
 		},
 		schedule: timers.schedule,
 		cancel: timers.cancel,
@@ -221,7 +285,7 @@ function harness(options: {
 	const terminal = (state: string) => events.filter((event) => event.phase !== 'start' && event.actionId !== undefined
 		&& events.some((start) => start.phase === 'start' && start.actionId === event.actionId && start.state === state));
 	return {
-		factory, name, backup, service, timers, writes,
+		factory, name, backup, service, timers, writes, finals,
 		outcomes: (state: string) => terminal(state).map((event) => [event.phase, event.code, event.state, event.details]),
 		levels: (state: string) => terminal(state).map((event) => event.level),
 		dispose: () => { service.dispose(); },

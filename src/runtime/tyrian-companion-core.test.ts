@@ -1,4 +1,4 @@
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createBootTrace } from '../core/boot-trace';
@@ -315,6 +315,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 			accounts: [{ accountId: 'account-a', goals: [], keepExceptions: [{ version: 1, exceptionId: 'keep-1', itemId: 7, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' }] }],
 		};
 		const startWith = async (stored: Record<string, unknown>, logged = true) => {
+			vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange);
 			vi.stubGlobal('window', {
 				setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
 			});
@@ -355,22 +356,48 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 			const saves = store.saves;
 			// Another device changed a setting after this one started.
 			store.value = { ...(store.value as Record<string, unknown>), valuableLootThresholdCopper: 12_345 };
-			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
 
-			await expect(write(copy)).resolves.toBe('saved');
+			await expect(write(copy, false)).resolves.toBe('saved');
 			expect(store.value).toMatchObject({ inventoryPreferencesBackup: copy, valuableLootThresholdCopper: 12_345 });
 			expect(runtime.settings.inventoryPreferencesBackup).toEqual(copy);
-			await expect(write(structuredClone(copy))).resolves.toBe('unchanged');
+			await expect(write(structuredClone(copy), false)).resolves.toBe('unchanged');
 			expect(store.saves).toBe(saves + 1);
 			await runtime.stop();
 		});
 
 		it('writes nothing over settings from a newer release (DU-04)', async () => {
 			const { runtime, store } = await startWith({ ...base, schemaVersion: SETTINGS_SCHEMA_VERSION + 1 }, false);
-			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
-			await expect(write(copy)).resolves.toBe('read_only');
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			await expect(write(copy, false)).resolves.toBe('read_only');
 			expect(store.saves).toBe(0);
 			await runtime.stop();
+		});
+
+		it('keeps a stored copy of a future version, which only the newer release can read, and writes over a corrupt one', async () => {
+			const future = { version: 9, accounts: 'whatever release 9 keeps here' };
+			const { runtime, store } = await startWith({ ...base, inventoryPreferencesBackup: future });
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			const saves = store.saves;
+			await expect(write(copy, false)).resolves.toBe('future_kept');
+			expect(store.saves).toBe(saves);
+			expect((store.value as Record<string, unknown>).inventoryPreferencesBackup).toEqual(future);
+
+			store.value = { ...(store.value as Record<string, unknown>), inventoryPreferencesBackup: 'not a copy at all' };
+			await expect(write(copy, false)).resolves.toBe('saved');
+			expect((store.value as Record<string, unknown>).inventoryPreferencesBackup).toEqual(copy);
+			await runtime.stop();
+		});
+
+		it('writes nothing once the plugin is unloaded, except the final write of a burst left waiting', async () => {
+			const { runtime, store } = await startWith({ ...base });
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			await runtime.stop();
+			const saves = store.saves;
+			await expect(write(copy, false)).resolves.toBe('unloaded');
+			expect(store.saves).toBe(saves);
+			await expect(write(copy, true)).resolves.toBe('saved');
+			expect((store.value as Record<string, unknown>).inventoryPreferencesBackup).toEqual(copy);
 		});
 	});
 

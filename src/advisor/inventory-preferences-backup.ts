@@ -9,13 +9,17 @@
  * - What: per account of this vault, its goals and exceptions. No vault id (it is a hash of the path in Obsidian, so it
  *   changes when the vault moves), no generation, no timestamp: nothing derived, only what restoring needs.
  * - When it is written: after a change IndexedDB confirmed, once per burst (`quietMs` after the last one), from what the
- *   vault holds in IndexedDB at that moment. A failure is recorded and never reaches the user's action.
+ *   vault holds in IndexedDB at that moment. A record this release cannot read (corrupt, or from a newer release) is
+ *   left out of the copy and counted in the log line; it stays in IndexedDB. A failure is recorded and never reaches the
+ *   user's action. A burst still waiting at `dispose` is written once more, best effort, without holding the unload; any
+ *   other write after the unload is refused by the host. A vault's adoption of its earlier path (DU-02) counts as a change.
  * - When it is restored: once per load, at the start, only when IndexedDB holds no record of this vault and the copy is
  *   valid. Checking and writing are one IndexedDB transaction, so a record saved meanwhile is never overwritten. Until
  *   the restore has settled, the store wrapped by `BackedUpInventoryPreferencesStore` makes reads and writes wait for it.
  * - IndexedDB wins: with records there, the copy is not touched until the next change rewrites it from them.
  * - A copy that does not validate (corrupt, or a version this release does not know) is not restored and is recorded;
- *   nothing deletes it.
+ *   nothing deletes it. One of a future version is not written over either (`inventoryPreferencesBackupWritableOver`):
+ *   only the newer release that wrote it can read it. A corrupt one is.
  *
  * Timers come from the host (`schedule`/`cancel`), never a global read here.
  */
@@ -125,15 +129,31 @@ export function sameInventoryPreferencesBackup(left: unknown, right: InventoryPr
 	return before.status === 'valid' && after.status === 'valid' && canonical(before.backup) === canonical(after.backup);
 }
 
-/** How the host's settings answered a write of the copy. `read_only`: settings from a newer release (DU-04), nothing written. */
-export type InventoryPreferencesBackupWriteOutcome = 'saved' | 'unchanged' | 'read_only';
+/**
+ * How the host's settings answered a write of the copy; only `saved` wrote anything. `read_only`: settings from a newer
+ * release (DU-04). `future_kept`: the stored copy is of a version this release does not know, and is kept. `unloaded`:
+ * the plugin was already unloaded and this was not its final write.
+ */
+export type InventoryPreferencesBackupWriteOutcome = 'saved' | 'unchanged' | 'read_only' | 'future_kept' | 'unloaded';
 
 /** The host's settings, seen from the copy. */
 export interface InventoryPreferencesBackupSettingsPort {
 	/** The field as the settings were loaded at this start. */
 	read(): unknown;
-	/** Writes the field over the settings as they are now; rejects when the write failed. */
-	write(backup: InventoryPreferencesBackupV1): Promise<InventoryPreferencesBackupWriteOutcome>;
+	/**
+	 * Writes the field over the settings as they are now; rejects when the write failed. `final` is the one write `dispose`
+	 * starts for a burst still waiting, which the host accepts while it unloads; any other write after the unload is not.
+	 */
+	write(backup: InventoryPreferencesBackupV1, final: boolean): Promise<InventoryPreferencesBackupWriteOutcome>;
+}
+
+/**
+ * Whether a copy may be written over `stored`: not over one of a version this release does not know, which a newer
+ * release wrote and only it can read. A corrupt one can be: a fresh copy from IndexedDB is better than nothing usable.
+ */
+export function inventoryPreferencesBackupWritableOver(stored: unknown): boolean {
+	const reading = readInventoryPreferencesBackup(stored);
+	return reading.status !== 'invalid' || reading.reason !== 'future_schema';
 }
 
 export interface InventoryPreferencesBackupOptions {
@@ -195,28 +215,35 @@ export class InventoryPreferencesBackup {
 		await this.writing;
 	}
 
-	/** Stops scheduling. A burst still waiting is not written: the copy catches up with the next change. */
-	dispose(): void {
+	/**
+	 * Stops scheduling. A burst still waiting is written at once, best effort, as the final write (`final: true`, which
+	 * the host accepts during its unload); the answer is that write, for whoever must keep the store open until it ends,
+	 * or null when nothing was waiting. Nobody has to wait for it, and it never rejects.
+	 */
+	dispose(): Promise<void> | null {
+		if (this.disposed) return null;
 		this.disposed = true;
 		if (this.timer !== undefined) this.options.cancel(this.timer);
 		this.timer = undefined;
-		this.pending = false;
+		if (!this.pending) return null;
+		this.flush(true);
+		return this.writing;
 	}
 
-	/** One write per burst, after the previous one: two never run together. */
-	private flush(): void {
-		if (!this.pending || this.disposed) return;
+	/** One write per burst, after the previous one: two never run together. Only the final one runs after dispose. */
+	private flush(final = false): void {
+		if (!this.pending || (this.disposed && !final)) return;
 		this.pending = false;
 		const previous = this.writing;
 		this.writing = (async () => {
 			await previous;
-			await this.writeNow();
+			await this.writeNow(final);
 		})();
 	}
 
-	private async writeNow(): Promise<void> {
+	private async writeNow(final: boolean): Promise<void> {
 		const span = startLocalDebugAction(this.options.diagnostics, {
-			component: 'advisor', action: 'inventory_preferences_write', state: 'backup_write',
+			component: 'advisor', action: 'inventory_preferences_write', state: final ? 'backup_write_final' : 'backup_write',
 		});
 		try {
 			const read = await this.options.store.readVault(this.options.vaultId);
@@ -224,10 +251,13 @@ export class InventoryPreferencesBackup {
 				span.failure(new Error(`inventory_preferences_${read.code}`), 'storage_failure', 'backup_read_failed', { reason: read.code });
 				return;
 			}
-			const outcome = await this.options.settings.write(createInventoryPreferencesBackup(read.records));
+			// A record IndexedDB holds but this release cannot read is left out of the copy, and counted here.
+			const outcome = await this.options.settings.write(createInventoryPreferencesBackup(read.records), final);
 			const details = { count: read.records.length, ...(read.unreadable > 0 ? { result: `unreadable_${String(read.unreadable)}` } : {}) };
 			if (outcome === 'saved') span.success('backup_saved', details);
 			else if (outcome === 'unchanged') span.skip('skipped', 'backup_unchanged', details);
+			else if (outcome === 'future_kept') span.skip('precondition_failed', 'backup_future_kept', details);
+			else if (outcome === 'unloaded') span.skip('cancelled', 'backup_after_unload', details);
 			else span.skip('precondition_failed', 'settings_read_only', details);
 		} catch (error) {
 			// The user's change is already in IndexedDB; only the copy is behind, until the next change writes it.
@@ -300,9 +330,18 @@ export class BackedUpInventoryPreferencesStore implements InventoryPreferencesSt
 		return result;
 	}
 
+	/**
+	 * A burst still waiting is written once more, best effort; the store stays open until that write has read it, and is
+	 * closed right away when nothing was waiting. The unload never waits for it.
+	 */
 	dispose(): void {
-		this.backup.dispose();
-		this.inner.dispose();
+		const finalWrite = this.backup.dispose();
+		if (finalWrite === null) {
+			this.inner.dispose();
+			return;
+		}
+		// The final write never rejects (`writeNow` records every failure), so this only closes the store after it.
+		void finalWrite.then(() => { this.inner.dispose(); });
 	}
 }
 
