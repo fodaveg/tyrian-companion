@@ -125,10 +125,10 @@ const DEFAULT_RECOMMENDATION_PORT: InventoryPositionRecommendationPort = {
 /** `calculatePriceHistoryPercentile`'s own floor, reused by the Sale tab's hero card (`main.ts`) so both callers ask `recommendPosition` for the same amount of history. */
 export const POSITION_RECOMMENDATION_REQUIRED_DAYS = 42;
 
-/** Tie-break between two routes covering the same share of one position: act first, doubt last. */
 /** How many price-history reads (each its own IndexedDB transaction) are in flight at once. */
 const PRICE_HISTORY_READ_CONCURRENCY = 8;
 
+/** Tie-break between two routes covering the same share of one position: act first, doubt last. */
 const ROUTE_PRIORITY: readonly InventoryObjectRoute[] = [
 	'sell', 'list', 'vendor', 'salvage', 'open', 'use', 'deposit_material', 'discard_review', 'keep', 'review',
 ];

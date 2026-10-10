@@ -122,15 +122,17 @@ describe('trading post evidence', () => {
 		expect(isActiveTradingPostOrdersEvidence(evidence)).toBe(true);
 	});
 
-	// Known gap (Z28): fixing it needs a new `catch` boundary in the action-observability census,
-	// whose baseline entries are reviewed by a person. When fixed, turn `it.fails` into `it`.
-	it.fails('is complete when exactly 200 orders arrive without x-page-total and the next page is a 404 (Z28)', async () => {
+	// Known gap (Z28): ideally this is `complete` (a 404 past a full page without `x-page-total` is the
+	// end of the list). Telling it apart needs a new `catch`, i.e. a reviewed census baseline entry.
+	it('reports partial request_failed when exactly 200 orders arrive without x-page-total and the next page is a 404 (Z28)', async () => {
 		const requestDetailed = vi.fn(async (path: string) => page(path) === 0
 			? response(Array.from({ length: 200 }, (_, index) => transaction(path.includes('/buys'), index + 1, 1)))
 			: Promise.reject(new HttpTransportError('http', 404, null, 'page out of range')));
 		const evidence = await captureActiveTradingPostOrders(operation(requestDetailed), 'account-1', token(), () => NOW);
 
-		expect(evidence.status).toBe('complete');
+		expect(evidence.status).toBe('partial');
+		expect(evidence.endpointCoverage.buy).toEqual({ status: 'partial', capturedAt: null, reason: 'request_failed' });
+		expect(evidence.endpointCoverage.sell).toEqual({ status: 'partial', capturedAt: null, reason: 'request_failed' });
 		expect(evidence.orders).toHaveLength(400);
 	});
 
