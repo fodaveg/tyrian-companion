@@ -684,6 +684,34 @@ describe('ManagedAssetsManager', () => {
 		});
 	});
 
+	it('keeps the cause of an inspection the host could not complete when reclaiming a ghost pointer', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const instance = await manager(vault, 2);
+		const lifecycle = new ManagedAssetsLifecycle(instance, pointer);
+		await pointer.compareAndSet(await pointer.read(), { status: 'ready', root: 'Ghost root', targetRoot: null });
+		const unsynced = (await instance.inspect('New root')).assets[0]!.path;
+		vault.contents.set(unsynced, 'tcUser: true\n');
+		vault.read = async () => { throw vaultFailure('missing blob', 'bytes_not_synced'); };
+
+		expect(await lifecycle.install('New root')).toMatchObject({
+			status: 'unavailable', cause: 'bytes_not_synced', details: { code: 'bytes_not_synced' },
+		});
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Ghost root' });
+	});
+
+	it('gives the pointer back to the ghost root when the caller\'s guard refuses the install into a fresh root', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const lifecycle = new ManagedAssetsLifecycle(await manager(vault, 2), pointer);
+		await pointer.compareAndSet(await pointer.read(), { status: 'ready', root: 'Ghost root', targetRoot: null });
+
+		expect(await lifecycle.install('New root', undefined, () => false)).toMatchObject({ status: 'unchanged', root: 'Ghost root' });
+
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Ghost root' });
+		expect([...vault.contents.keys()]).toEqual([]);
+	});
+
 	it('relocates a retained legacy root only through an explicit lifecycle move', async () => {
 		const vault = new MemoryAssetVault();
 		const instance = await manager(vault, 1);

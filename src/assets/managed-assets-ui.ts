@@ -11,7 +11,7 @@ export type ManagedAssetsMessageCode =
 	/** The press did nothing: the plugin is still starting / this device only consults. */
 	| 'runtime_starting' | 'consult_mode'
 	/** The preview found files of the user's that Apply will not touch. */
-	| 'preview_unowned'
+	| 'preview_unowned' | 'preview_unowned_no_root'
 	/** Why an operation failed, when the host or the folder says so (`ManagedAssetsFailureCause`). */
 	| 'operation_bytes_not_synced' | 'operation_output_folder_missing' | 'operation_host_refused' | 'operation_only_unowned';
 

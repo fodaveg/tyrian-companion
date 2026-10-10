@@ -56,7 +56,63 @@ describe('Tyrian in Hebra: «Aplicar» on managed assets after the output folder
 		for (const id of oldFolderFiles) expect(test.library.files.get(id)?.trashedAt).toBeNull();
 		await second.cleanup();
 	}, 30_000);
+
+	/**
+	 * Review of c16a4a76: with Move switched off for all of Hebra, picking the PARENT of the old root as output
+	 * (the old root is still inside the vault and readable) left Apply answering `operation_conflict` for ever,
+	 * where the start used to move the Bases on its own. Moving depends on the old root being readable, not on Hebra.
+	 */
+	it('moves the Bases on its own when the new output folder is the PARENT of the old root', async () => {
+		const test = nestedHebra();
+		const factory = new IDBFactory();
+		saveSettings(test, { outputFolder: 'Other/Tyrian Companion' });
+		const first = await activate(test, factory);
+		await clickApply(test);
+		expect(first.core.settings.managedAssetsRoot).toBe('Other/Tyrian Companion');
+		await first.cleanup();
+
+		saveSettings(test, { outputFolder: 'Other', managedAssetsRoot: 'Other/Tyrian Companion' });
+		const second = await activate(test, factory);
+		await new Promise((resolve) => { window.setTimeout(resolve, 600); });
+		expect(second.core.settings.managedAssetsRoot).toBe('Other');
+		expect(second.core.getManagedAssetsView()).toMatchObject({ status: 'ready' });
+		const manifests = [...test.library.files.values()].filter((file) => file.name === 'Tyrian Companion Assets.json' && file.trashedAt === null);
+		expect(manifests.map((file) => file.folderId)).toContain('outer');
+		// The Bases left the old folder (Move trashes the intact ones) and now live under the new root.
+		expect([...test.library.files.values()].filter((file) => file.folderId !== 'outer' && file.name.endsWith('.base') && file.trashedAt === null && test.library.folders.find((folder) => folder.id === file.folderId)?.parentId === 'first')).toEqual([]);
+
+		// And Apply, pressed anyway, is not a conflict.
+		await clickApply(test);
+		expect(second.core.getManagedAssetsView()).toMatchObject({ status: 'ready' });
+		await second.cleanup();
+	}, 30_000);
+
+	it('installs by Apply when the new output folder is INSIDE the old root (the old root is not readable)', async () => {
+		const test = nestedHebra();
+		test.library.addFolder('inner', 'first', 'Sub');
+		const factory = new IDBFactory();
+		saveSettings(test, { outputFolder: 'Other/Tyrian Companion' });
+		const first = await activate(test, factory);
+		await clickApply(test);
+		await first.cleanup();
+
+		saveSettings(test, { outputFolder: 'Other/Tyrian Companion/Sub', managedAssetsRoot: 'Other/Tyrian Companion' });
+		const second = await activate(test, factory);
+		await clickApply(test);
+		expect(second.core.getManagedAssetsView()).toMatchObject({ status: 'ready', message: 'lifecycle_ready' });
+		expect(second.core.settings.managedAssetsRoot).toBe('Other/Tyrian Companion/Sub');
+		expect([...test.library.files.values()].some((file) => file.folderId === 'inner' && file.name === 'Tyrian Companion Assets.json')).toBe(true);
+		await second.cleanup();
+	}, 30_000);
 });
+
+function nestedHebra(): TyrianTestApi {
+	const keychain = new Map([[TYRIAN_KEYCHAIN_ACCOUNT, JSON.stringify({ v: 1, secrets: { 'gw2-main': 'KEY' } })]]);
+	const test = createTyrianTestApi({ keychain });
+	test.library.addFolder('outer', 'root', 'Other');
+	test.library.addFolder('first', 'outer', 'Tyrian Companion');
+	return test;
+}
 
 function saveSettings(test: TyrianTestApi, value: Record<string, unknown>): void {
 	test.local.set(hebraSettingsKey('tyrian-companion', test.library.libraryId()), JSON.stringify({ apiKeySecret: 'gw2-main', ...value }));

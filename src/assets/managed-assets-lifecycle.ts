@@ -1,4 +1,4 @@
-import type { ManagedAssetsFailureCause, ManagedAssetsManager, ManagedAssetsResult } from './managed-assets';
+import { failureEvidence, type ManagedAssetsFailureCause, type ManagedAssetsManager, type ManagedAssetsResult } from './managed-assets';
 import type { ManagedAssetsInspection } from './managed-assets-model';
 import type { ManagedAssetsPointerState, ManagedAssetsPointerStore } from './managed-assets-pointer';
 import {
@@ -41,6 +41,7 @@ export class ManagedAssetsLifecycle {
 		if (current.status === 'ready' && current.root !== null) {
 			const reclaimed = await this.reclaimStalePointer(current, current.root, root);
 			if (!reclaimed) return { status: 'conflict', message: 'Another managed-assets root is active.' };
+			if ('failure' in reclaimed) return reclaimed.failure;
 			if (reclaimed.adopt) return await this.installAdoptedRoot(current.root, root, reclaimed.state, guard);
 			return await this.installOverExistingAuthority(root, reclaimed.state, guard);
 		}
@@ -91,7 +92,7 @@ export class ManagedAssetsLifecycle {
 
 	/**
 	 * A `ready` pointer naming a different root than the one this install targets is reclaimed in
-	 * exactly three cases, both through a `compareAndSet` keyed on the exact pointer already read (a
+	 * exactly three cases, all through a `compareAndSet` keyed on the exact pointer already read (a
 	 * concurrent window that moves the pointer in between always beats this one back to `null`).
 	 *
 	 * 1. Stale: the named root has decayed to nothing (no manifest and every asset `create`) while
@@ -114,7 +115,7 @@ export class ManagedAssetsLifecycle {
 	 *
 	 * Anything else leaves this returning `null` and `installInternal` answers `conflict`.
 	 */
-	private async reclaimStalePointer(current: ManagedAssetsPointerState, staleRoot: string, root: string): Promise<{ state: ManagedAssetsPointerState; adopt: boolean } | null> {
+	private async reclaimStalePointer(current: ManagedAssetsPointerState, staleRoot: string, root: string): Promise<{ state: ManagedAssetsPointerState; adopt: boolean } | { failure: ManagedAssetsLifecycleResult } | null> {
 		let adopt = false;
 		try {
 			const requested = await this.manager.inspect(root);
@@ -126,7 +127,10 @@ export class ManagedAssetsLifecycle {
 				// Fresh (case 3): no manifest to extend, so it is installed like an adopted root.
 				adopt = requested.manifestStatus === 'missing';
 			}
-		} catch { return null; }
+		} catch (error) {
+			// An inspection the host could not complete (bytes not synced, folder missing) keeps its cause: it is not a conflict.
+			return { failure: { status: 'unavailable', message: 'The managed-assets roots could not be inspected.', ...failureEvidence(error) } };
+		}
 		const state = await this.pointer.compareAndSet(current, { status: 'ready', root, targetRoot: null });
 		return state ? { state, adopt } : null;
 	}
@@ -138,6 +142,11 @@ export class ManagedAssetsLifecycle {
 	 */
 	private async installAdoptedRoot(previousRoot: string, root: string, claim: ManagedAssetsPointerState, guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsLifecycleResult> {
 		const installed = await this.manager.apply(root, 'install', guard);
+		if (isSuccess(installed) && installed.status === 'unchanged' && installed.inspection.manifestStatus === 'missing') {
+			// The guard refused (or nothing was left to install): no manifest exists at the new root, so it must not keep the pointer.
+			await this.pointer.compareAndSet(claim, { status: 'ready', root: previousRoot, targetRoot: null });
+			return { status: 'unchanged', root: previousRoot, generation: claim.generation };
+		}
 		if (isSuccess(installed)) return successResult(installed, 'applied', claim);
 		const inspection = await this.manager.inspect(root);
 		if (inspection.manifestStatus === 'missing') await this.pointer.compareAndSet(claim, { status: 'ready', root: previousRoot, targetRoot: null });

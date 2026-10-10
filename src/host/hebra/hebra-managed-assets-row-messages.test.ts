@@ -39,15 +39,34 @@ describe('Tyrian in Hebra: the Assets row explains a press that wrote nothing', 
 
 	it('while the plugin is still starting, and clears it once it is ready', async () => {
 		const test = hebra();
-		const { core, panel, cleanup } = await start(test);
-		const inside = core as unknown as { runtimeReady: boolean; settingTab: { refreshManagedAssetsRow(): void } };
-		inside.runtimeReady = false;
-		await press(panel, 'Aplicar');
-		expect(core.getManagedAssetsView()).toMatchObject({ status: 'error', message: 'runtime_starting' });
+		let core: TyrianCompanionCore | null = null;
+		// The boot is NOT awaited: the Settings panel is mounted and pressed while the runtime is still being built.
+		const booting = activateTyrian(test.api, {
+			indexedDB: new IDBFactory(),
+			window: Object.assign(Object.create(window) as Window, {
+				matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
+			}),
+			document,
+			createRuntime: (host) => { core = createTyrianRuntime(host); return core; },
+		});
+		for (let waited = 0; test.fake.recorded.settingsPanels.length === 0 && waited < 2_000; waited += 1) await settle(1);
+		const panel = document.body.appendChild(document.createElementNS('http://www.w3.org/1999/xhtml', 'div'));
+		test.fake.recorded.settingsPanels.at(-1)!(panel);
+		const row = core as unknown as RowCore & { runtimeReady: boolean };
+		expect(row.runtimeReady, 'the press has to come before the end of the boot').toBe(false);
+		Array.from(panel.querySelectorAll('button')).find((entry) => entry.textContent === 'Aplicar')!.click();
+		await settle(0);
+		expect(row.getManagedAssetsView()).toMatchObject({ status: 'error', message: 'runtime_starting' });
 		expect(rowText(panel)).toContain('aún está iniciando');
+
+		const stop = await booting;
+		await settle(100);
+		expect(row.runtimeReady).toBe(true);
+		expect(row.getManagedAssetsView()).toMatchObject({ status: 'idle', message: 'not_inspected' });
+		expect(rowText(panel)).toContain('Sin inspeccionar');
 		expect(test.library.files.size).toBe(0);
-		inside.runtimeReady = true;
-		await cleanup();
+		await stop();
+		test.unloadPlugin();
 	}, 30_000);
 
 	it('when the bytes of a file have not reached this device yet, and writes nothing', async () => {

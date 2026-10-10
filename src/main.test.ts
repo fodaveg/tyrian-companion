@@ -2442,6 +2442,30 @@ describe('managed assets preview diagnostics', () => {
 		expect(failure).toMatchObject({ code: 'unknown_failure' });
 	});
 
+	it('warns about the user\'s files in the preview, and only points to Replace when there is a managed root to replace', async () => {
+		const plan = { kind: 'install', root: 'Tyrian Companion', canApply: true, reasons: [], steps: [{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base', status: 'occupied_unowned' }] };
+		const build = (managedAssetsRoot: string | null) => ({
+			runtimeReady: true,
+			settings: { legacyManagedAssetsRoot: null, managedAssetsRoot, outputFolder: 'Tyrian Companion' },
+			managedAssetsView: { status: 'idle' as const, message: 'idle', plan: null },
+			managedAssets: { preview: vi.fn(async () => plan) },
+			settingTab: { refreshManagedAssetsRow: vi.fn() },
+			notifyRuntimeStarting: vi.fn(),
+			localDebugActions: undefined,
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const preview = (TyrianCompanionCore.prototype as unknown as {
+			previewManagedAssets(this: ReturnType<typeof build>): Promise<void>;
+		}).previewManagedAssets;
+
+		const withRoot = build('Tyrian Companion');
+		await preview.call(withRoot);
+		expect(withRoot.managedAssetsView).toMatchObject({ status: 'ready', message: 'preview_unowned' });
+		const fresh = build(null);
+		await preview.call(fresh);
+		expect(fresh.managedAssetsView).toMatchObject({ status: 'ready', message: 'preview_unowned_no_root' });
+	});
+
 	it('lists the Bases Replace would overwrite, and says so when there are none or the inspection throws', async () => {
 		const record = vi.fn((_input: LocalDebugRecordInput) => true);
 		const diagnostics = { record } as unknown as LocalDebugLogger;

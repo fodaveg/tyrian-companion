@@ -453,8 +453,9 @@ export interface TyrianHostCapabilities {
 	/**
 	 * Managed assets can be moved from one root to another (the «Move» button and the automatic follow of the
 	 * output folder). Default true. Hebra declares false: its vault IS the output folder, so after the output
-	 * folder changes the old root is outside the vault, unreadable, and no move could ever work; Apply installs
-	 * into the new folder instead.
+	 * folder changes the old root may be outside the vault, unreadable, and then no move could work; Apply
+	 * installs into the new folder instead. With false the core still moves while the old root's manifest is
+	 * visible in the vault (the new output folder is the old root's parent).
 	 */
 	readonly managedAssetsMove?: boolean;
 	/**

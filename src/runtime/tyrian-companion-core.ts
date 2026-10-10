@@ -100,6 +100,7 @@ import { ManagedAssetsManager, type ManagedAssetsFailureCause, type ManagedAsset
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
 import {
 	decideManagedAssetsAutoUpdate,
+	MANAGED_ASSETS_MANIFEST,
 	planManagedAssets,
 	type ManagedAssetsAutoUpdateDecision,
 	type ManagedAssetsInspection,
@@ -4627,7 +4628,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** False when the host cannot move assets between roots (Hebra): no Move button, no automatic follow. */
 	managedAssetsCanMove(): boolean {
-		return hostCanMoveManagedAssets(this.host);
+		return canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot);
 	}
 
 	hasManagedAssetsRoot(): boolean {		return this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null;
@@ -4655,7 +4656,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				const plan = await this.managedAssets.preview(root, kind);
 				// Files of the user's at a managed path are not touched by Apply: the preview says so and points to Replace.
 				const message = !plan.canApply ? 'preview_blocked'
-					: plan.steps.some((step) => step.status === 'occupied_unowned') ? 'preview_unowned' : 'preview_ready';
+					: plan.steps.some((step) => step.status === 'occupied_unowned')
+						// Replace needs a managed root: a fresh install, with none, can only be told to move or rename the files.
+						? (this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null ? 'preview_unowned' : 'preview_unowned_no_root')
+						: 'preview_ready';
 				this.managedAssetsView = { status: 'ready', message, plan };
 				return undefined;
 			} catch (error) {
@@ -4751,7 +4755,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable
 	 * pointer could not be confirmed to match the retained root first). */
 	async relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
-		if (!hostSupportsManagedAssets(this.host) || !hostCanMoveManagedAssets(this.host)) return null;
+		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot)) return null;
 		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return null; }
 		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return null; }
 		const destination = this.settings.outputFolder;
@@ -4796,7 +4800,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * that into something that fires on its own the next time Obsidian starts.
 	 */
 	private async reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host) || !hostCanMoveManagedAssets(this.host)) return;
+		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot)) return;
 		// R1b: moving the Bases is a collector write; a consult installation leaves them where they are.
 		if (consulting(this) || this.settings.legacyManagedAssetsRoot !== null) return;
 		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
@@ -6490,15 +6494,21 @@ async function ensureAdapterDirectory(
 }
 
 /**
+ * Whether the managed assets can be moved off the root the settings name. A host that declared
+ * `capabilities.managedAssetsMove: false` (Hebra: the vault IS the output folder) can only do it while that root is
+ * still READABLE in the vault, which is when its manifest is visible there; once the output folder moved away from
+ * it (a sibling, or a folder inside it) nothing of the old root can be read and Apply installs afresh instead.
+ */
+function canMoveManagedAssets(host: TyrianHost | undefined, root: string | null): boolean {
+	if (host?.capabilities?.managedAssetsMove !== false) return true;
+	return root !== null && host.vault.file(`${root}/${MANAGED_ASSETS_MANIFEST}`) !== null;
+}
+
+/**
  * Whether the host keeps managed assets (Bases): true unless it declared
  * `capabilities.managedAssets: false`. Tolerates an absent host, like `consulting` does for the
  * isolated `this` objects the tests drive.
  */
-/** False for a host that declared it cannot move assets between roots (Hebra); omitted means it can. */
-function hostCanMoveManagedAssets(host: TyrianHost | undefined): boolean {
-	return host?.capabilities?.managedAssetsMove !== false;
-}
-
 function hostSupportsManagedAssets(host: TyrianHost | undefined): boolean {
 	return host?.capabilities?.managedAssets !== false;
 }

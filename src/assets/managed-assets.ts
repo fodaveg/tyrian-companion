@@ -54,7 +54,7 @@ export type ManagedAssetsResult =
 export type ManagedAssetsFailureCause = VaultFailureCause | 'only_unowned_files';
 
 /** The cause and the real error code for the diagnostic, read from what was thrown (never its message). */
-function failureEvidence(error: unknown): { cause?: ManagedAssetsFailureCause; details: Record<string, unknown> } {
+export function failureEvidence(error: unknown): { cause?: ManagedAssetsFailureCause; details: Record<string, unknown> } {
 	const cause = vaultFailureCause(error);
 	const details = unmappedErrorLogDetails(error);
 	if (cause !== undefined) details.code = cause;
