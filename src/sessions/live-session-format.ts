@@ -6,7 +6,7 @@ import { keys, record } from './live-session-reducer';
  * plugin that finds an extra key in that record refuses to load it, and no session can start). It lives under its own key of the
  * same runtime store, which no earlier plugin reads, and names the session it belongs to: the mark of one session says nothing
  * about another. It is written in the same transaction as the first record of the session, so a session never exists without
- * the mark it started with, nor a mark without its session.
+ * the mark it started with. The mark outlives its session, until the next one starts and writes its own.
  */
 export const LIVE_SESSION_FORMAT_KEY = 'live-session-format';
 
