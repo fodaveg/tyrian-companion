@@ -194,6 +194,21 @@ describe('detection quality stores', () => {
 		expect(opened.mock.calls.map(([name]) => name)).not.toContain(common);
 	});
 
+	it('reads a common database without the store as empty instead of failing the load (DU-06)', async () => {
+		const factory = new IDBFactory();
+		const common = databaseName('common-storeless');
+		await new Promise<void>((resolve, reject) => {
+			const request = factory.open(common, 1);
+			request.onsuccess = () => { request.result.close(); resolve(); };
+			request.onerror = () => { reject(request.error ?? new Error('seed')); };
+		});
+		const store = new IndexedDbDetectionQualityStore(factory, databaseName('vault-storeless'), undefined, common);
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
+		const event = manualEvent('start');
+		await expect(store.append(event)).resolves.toEqual({ status: 'saved' });
+		store.close();
+	});
+
 	it('closes on versionchange and becomes unavailable', async () => {
 		const factory = new IDBFactory();
 		const name = databaseName('versionchange');

@@ -152,9 +152,10 @@ export interface TyrianKvPort {
 	/**
 	 * The storage manager of the SAME storage as `indexedDB` (`navigator.storage` of that document), or `null`/absent
 	 * where there is none. The core asks it once per load not to evict the origin (`persist()`, DU-13) and records the
-	 * answer; nothing else is read of it, and nothing waits for it.
+	 * answer, with the origin's `estimate()` in whole MiB where the manager has one; nothing else is read of it, and
+	 * nothing waits for it.
 	 */
-	readonly storage?: Pick<StorageManager, 'persist'> | null;
+	readonly storage?: (Pick<StorageManager, 'persist'> & Partial<Pick<StorageManager, 'estimate'>>) | null;
 }
 
 // ---------------------------------------------------------------------------------------------

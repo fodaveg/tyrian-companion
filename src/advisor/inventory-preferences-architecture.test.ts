@@ -11,6 +11,8 @@ const PRODUCT_MODULES = readdirSync(new URL('.', import.meta.url))
 const FORBIDDEN_IMPORT_PREFIXES = ['../ui/', '../sessions/', '../account/', '../catalog/'];
 const FORBIDDEN_IMPORT_EXACT = new Set(['obsidian']);
 const ALLOWED_CORE_IMPORTS = new Map<string, readonly string[]>([
+	// DU-13: the copy in the host's settings records its restore and its writes the way the runtime records its actions.
+	['inventory-preferences-backup.ts', ['../core/local-debug-action-runner']],
 	['inventory-preferences-runtime.ts', ['../core/local-debug-action-runner']],
 	// `../core/indexed-db-open` is reviewed in: it imports nothing at all and holds
 	// only the shared open handshake, so it widens no capability this boundary guards.
@@ -20,6 +22,7 @@ const ALLOWED_CORE_IMPORTS = new Map<string, readonly string[]>([
 describe('inventory preferences architecture', () => {
 	it('censuses every product module as local and explicitly wired', () => {
 		expect(PRODUCT_MODULES).toEqual([
+			'inventory-preferences-backup.ts',
 			'inventory-preferences-contract.ts',
 			'inventory-preferences-model.ts',
 			'inventory-preferences-runtime.ts',

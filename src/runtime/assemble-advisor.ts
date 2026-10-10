@@ -25,6 +25,11 @@ import {
 	type InventoryAdvisorWorkflowResult,
 	type InventoryObjectAnalysisPort,
 } from '../advisor/inventory-advisor-workflow';
+import {
+	BackedUpInventoryPreferencesStore,
+	InventoryPreferencesBackup,
+	type InventoryPreferencesBackupOptions,
+} from '../advisor/inventory-preferences-backup';
 import { InventoryPreferencesRuntime } from '../advisor/inventory-preferences-runtime';
 import { InventoryPreferencesService } from '../advisor/inventory-preferences-service';
 import { IndexedDbInventoryPreferencesStore } from '../advisor/inventory-preferences-store';
@@ -86,25 +91,40 @@ export interface AdvisorAssemblyInput {
 	 * the host paints and its sync counters advance; the workflow itself owns no timer.
 	 */
 	yieldToEventLoop?: () => Promise<void>;
+	/**
+	 * DU-13: the copy of the preferences in the host's settings and the timers that group its writes. Omitted, the
+	 * preferences live in IndexedDB alone, as before.
+	 */
+	preferencesBackup?: Omit<InventoryPreferencesBackupOptions, 'vaultId' | 'store' | 'diagnostics'>;
 }
 
 export interface AdvisorAssembly {
 	preferences: InventoryPreferencesRuntime;
 	controller: InventoryAdvisorPresentationController;
+	/** Present with `preferencesBackup`: the caller starts its `restore()` once, at the start. */
+	preferencesBackup: InventoryPreferencesBackup | null;
 }
 
 /** Builds the preferences runtime and the advisor controller that reads it. Nothing is captured here. */
 export function assembleAdvisor(input: AdvisorAssemblyInput): AdvisorAssembly {
+	const indexedDbStore = new IndexedDbInventoryPreferencesStore(
+		input.factory,
+		undefined,
+		{ read: input.preferencesReadPersistence, write: input.preferencesWritePersistence },
+	);
+	const preferencesBackup = input.preferencesBackup === undefined ? null : new InventoryPreferencesBackup({
+		...input.preferencesBackup,
+		vaultId: input.vaultId,
+		store: indexedDbStore,
+		...(input.diagnostics === null ? {} : { diagnostics: input.diagnostics }),
+	});
 	const preferences = new InventoryPreferencesRuntime(
-		new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(
-			input.factory,
-			undefined,
-			{ read: input.preferencesReadPersistence, write: input.preferencesWritePersistence },
-		)),
+		new InventoryPreferencesService(preferencesBackup === null
+			? indexedDbStore : new BackedUpInventoryPreferencesStore(indexedDbStore, preferencesBackup)),
 		input.vaultId,
 		input.diagnostics ?? undefined,
 	);
-	return { preferences, controller: createInventoryAdvisorRuntime(input, preferences) };
+	return { preferences, controller: createInventoryAdvisorRuntime(input, preferences), preferencesBackup };
 }
 
 function createInventoryAdvisorRuntime(

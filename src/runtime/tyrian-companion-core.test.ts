@@ -1,4 +1,4 @@
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createBootTrace } from '../core/boot-trace';
@@ -7,6 +7,8 @@ import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { LocalDebugStoragePort } from '../core/local-debug-writer';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION } from '../core/settings';
+import { IndexedDbInventoryPreferencesStore } from '../advisor/inventory-preferences-store';
+import { sha256Text } from '../assets/managed-asset-hash';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import type {
 	TyrianCommandRegistration,
@@ -282,6 +284,121 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		const asked = records().filter((record) => (record.details as Record<string, unknown> | undefined)?.store === 'origin_storage');
 		// Asked, and nothing settled: the start did not wait for it.
 		expect(asked.map((record) => [record.component, record.action, record.phase])).toEqual([['plugin', 'plugin_load', 'start']]);
+	});
+
+	// The figures reach the local log through its sanitizer, not only the probe's event.
+	it('records the answer and the origin\'s estimate in the local log', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const mib = 1024 * 1024;
+		const { host, registered, records } = neutralHost({ persist: async () => true, estimate: async () => ({ usage: 12 * mib, quota: 4096 * mib }) });
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+
+		registered.ready[0]!();
+		const settled = () => records().filter((record) => (record.details as Record<string, unknown> | undefined)?.store === 'origin_storage' && record.phase !== 'start');
+		await vi.waitFor(() => { expect(settled()).toHaveLength(1); }, { timeout: 10_000 });
+		await runtime.stop();
+
+		expect(settled()[0]).toMatchObject({ component: 'plugin', action: 'plugin_load', phase: 'success', code: 'ok' });
+		// Exactly these: the quota itself (which gives the size of the disk away) never reaches the log.
+		expect(settled()[0]!.details).toEqual({
+			store: 'origin_storage', operation: 'open', result: 'granted', usageMiB: '12', quotaUsedBand: '<50',
+		});
+	});
+
+	// DU-13: the copy of the inventory preferences kept in the host's settings (`advisor/inventory-preferences-backup.ts`).
+	describe('the copy of the inventory preferences in the host settings (DU-13)', () => {
+		const copy = {
+			version: 1,
+			accounts: [{ accountId: 'account-a', goals: [], keepExceptions: [{ version: 1, exceptionId: 'keep-1', itemId: 7, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' }] }],
+		};
+		const startWith = async (stored: Record<string, unknown>, logged = true) => {
+			vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange);
+			vi.stubGlobal('window', {
+				setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+			});
+			const { host, registered, records } = neutralHost();
+			const store = { value: stored as unknown, saves: 0 };
+			const runtime = createTyrianRuntime({ ...host, settings: {
+				load: async () => structuredClone(store.value), save: async (value) => { store.value = structuredClone(value); store.saves += 1; },
+			} });
+			await runtime.start();
+			registered.ready[0]!();
+			// Settings from a newer release keep the log off for this run (DU-04), so there is no record to wait for.
+			if (logged) {
+				await vi.waitFor(() => {
+					expect(records()).toContainEqual(expect.objectContaining({ action: 'plugin_load', state: 'runtime_initialize', phase: 'success' }));
+				}, { timeout: 10_000 });
+			}
+			return { host, runtime, store, records };
+		};
+		const base = { ...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'debug' };
+
+		it('restores the copy from the settings into an empty IndexedDB at the start, and logs it once', async () => {
+			const { host, runtime, records } = await startWith({ ...base, inventoryPreferencesBackup: copy });
+			await vi.waitFor(() => {
+				expect(records().filter((record) => record.state === 'backup_restored')).toHaveLength(1);
+			}, { timeout: 10_000 });
+			await runtime.stop();
+
+			const vaultId = await sha256Text('hebra-library:test');
+			const stored = await new IndexedDbInventoryPreferencesStore(host.kv.indexedDB).readVault(vaultId);
+			expect(stored).toMatchObject({ status: 'ok', records: [{ vaultId, accountId: 'account-a', generation: 1, goals: [], keepExceptions: [{ exceptionId: 'keep-1', itemId: 7 }] }] });
+			expect(records().find((record) => record.state === 'backup_restored')).toMatchObject({
+				component: 'advisor', action: 'inventory_preferences_write', phase: 'success', details: { count: 1 },
+			});
+		});
+
+		it('writes the copy over the settings as they are saved, keeps what another device changed, and skips an identical copy', async () => {
+			const { runtime, store } = await startWith({ ...base });
+			const saves = store.saves;
+			// Another device changed a setting after this one started.
+			store.value = { ...(store.value as Record<string, unknown>), valuableLootThresholdCopper: 12_345 };
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+
+			await expect(write(copy, false)).resolves.toBe('saved');
+			expect(store.value).toMatchObject({ inventoryPreferencesBackup: copy, valuableLootThresholdCopper: 12_345 });
+			expect(runtime.settings.inventoryPreferencesBackup).toEqual(copy);
+			await expect(write(structuredClone(copy), false)).resolves.toBe('unchanged');
+			expect(store.saves).toBe(saves + 1);
+			await runtime.stop();
+		});
+
+		it('writes nothing over settings from a newer release (DU-04)', async () => {
+			const { runtime, store } = await startWith({ ...base, schemaVersion: SETTINGS_SCHEMA_VERSION + 1 }, false);
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			await expect(write(copy, false)).resolves.toBe('read_only');
+			expect(store.saves).toBe(0);
+			await runtime.stop();
+		});
+
+		it('keeps a stored copy of a future version, which only the newer release can read, and writes over a corrupt one', async () => {
+			const future = { version: 9, accounts: 'whatever release 9 keeps here' };
+			const { runtime, store } = await startWith({ ...base, inventoryPreferencesBackup: future });
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			const saves = store.saves;
+			await expect(write(copy, false)).resolves.toBe('future_kept');
+			expect(store.saves).toBe(saves);
+			expect((store.value as Record<string, unknown>).inventoryPreferencesBackup).toEqual(future);
+
+			store.value = { ...(store.value as Record<string, unknown>), inventoryPreferencesBackup: 'not a copy at all' };
+			await expect(write(copy, false)).resolves.toBe('saved');
+			expect((store.value as Record<string, unknown>).inventoryPreferencesBackup).toEqual(copy);
+			await runtime.stop();
+		});
+
+		it('writes nothing once the plugin is unloaded, except the final write of a burst left waiting', async () => {
+			const { runtime, store } = await startWith({ ...base });
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			await runtime.stop();
+			const saves = store.saves;
+			await expect(write(copy, false)).resolves.toBe('unloaded');
+			expect(store.saves).toBe(saves);
+			await expect(write(copy, true)).resolves.toBe('saved');
+			expect((store.value as Record<string, unknown>).inventoryPreferencesBackup).toEqual(copy);
+		});
 	});
 
 	it('registers each view with the title and the icon of its section, in the language of the settings', async () => {

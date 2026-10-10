@@ -54,6 +54,35 @@ describe('local debug sanitizer: apiReason of a refused request', () => {
 	});
 });
 
+/**
+ * DU-13: the origin_storage line keeps how full the origin is and drops the quota, which gives the size of the disk
+ * away, even if a caller hands it over.
+ */
+describe('local debug sanitizer: origin storage estimate', () => {
+	it.each(['<50', '50-80', '80-95', '>=95'])('keeps usageMiB and the band %s on plugin, and drops the quota and an exact share under any of their names', (band) => {
+		const record = sanitizeLocalDebugRecord({
+			level: 'info', component: 'plugin', action: 'plugin_load', phase: 'success', code: 'ok',
+			actionId: 'a1', correlationId: 'c1',
+			details: {
+				store: 'origin_storage', result: 'granted', usageMiB: '12', quotaUsedBand: band,
+				quotaUsedPercent: '1', quotaMiB: '4096', quota: 4_294_967_296,
+			},
+		}, CONTEXT);
+
+		expect(record.details).toEqual({ store: 'origin_storage', result: 'granted', usageMiB: '12', quotaUsedBand: band });
+	});
+
+	it('drops both for every component that has not reviewed them', () => {
+		const record = sanitizeLocalDebugRecord({
+			level: 'info', component: 'session', action: 'session_start', phase: 'success', code: 'ok',
+			actionId: 'a1', correlationId: 'c1',
+			details: { phase: 'observing', usageMiB: '12', quotaUsedBand: '<50' },
+		}, CONTEXT);
+
+		expect(record.details).toEqual({ phase: 'observing' });
+	});
+});
+
 /** A failed vault sync must leave its progress (`written`) in the final record; `errorName` stays blocked by name. */
 describe('local debug sanitizer: failed vault sync details', () => {
 	it.each(['inventory', 'wallet'] as const)('keeps written, and drops errorName, on a %s failure', (component) => {

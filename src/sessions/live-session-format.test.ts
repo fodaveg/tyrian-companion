@@ -1,5 +1,6 @@
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
+import { LocalDebugPersistenceProbe, type LocalDebugPersistenceEvent } from '../core/local-debug-persistence';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import { LiveSessionEconomy } from './live-session-economy';
@@ -522,6 +523,24 @@ describe('the live journal of an adopted session database (DU-01)', () => {
 		const store = new IndexedDbSessionRuntimeStore(factory);
 		expect(await store.loadLive()).toEqual({ status: 'empty' });
 		store.close();
+		expect(await shape(factory)).toEqual({ version: 2, stores: BOTH });
+	});
+	it('reports a journal without its index as schema_incomplete, on every start and without raising the version (DU-06)', async () => {
+		const factory = new IDBFactory();
+		await new Promise<void>((resolve, reject) => {
+			const request = factory.open(SESSION_RUNTIME_DB_NAME, 2);
+			request.onupgradeneeded = () => { request.result.createObjectStore(SESSION_RUNTIME_STORE_NAME); request.result.createObjectStore(LIVE_SESSION_JOURNAL_STORE_NAME); };
+			request.onsuccess = () => { request.result.close(); resolve(); };
+			request.onerror = () => { reject(new Error('seed')); };
+		});
+		const events: LocalDebugPersistenceEvent[] = [];
+		for (let start = 1; start <= 2; start += 1) {
+			const store = new IndexedDbSessionRuntimeStore(factory, SESSION_RUNTIME_DB_NAME, new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } }));
+			await expect(store.readLiveJournal('any'), `start ${String(start)}`).rejects.toThrow();
+			store.close();
+		}
+		expect(events.filter((event) => event.operation === 'open' && event.phase !== 'start').map((event) => [event.phase, event.code]))
+			.toEqual([['failure', 'schema_incomplete'], ['failure', 'schema_incomplete']]);
 		expect(await shape(factory)).toEqual({ version: 2, stores: BOTH });
 	});
 	it('takes a version 1 database to version 2 with both stores', async () => {

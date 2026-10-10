@@ -468,6 +468,35 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		await plugin.shutdownRuntime();
 	});
 
+	// DU-13: the adoption writes IndexedDB past the preferences store, so the copy in the settings is told directly.
+	it('an adoption that copied preferences tells the copy in the settings, and one that copied none does not', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', {});
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		await savePreferences(world, oldId);
+		const plugin = await boot(world, '/vaults/new', {});
+		const backup = (plugin as unknown as { inventoryPreferencesBackup: { changed(): void } }).inventoryPreferencesBackup;
+		const changed = vi.spyOn(backup, 'changed');
+
+		expect(await plugin.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted', preferences: 1 });
+		expect(changed).toHaveBeenCalledTimes(1);
+		await plugin.shutdownRuntime();
+
+		// The new id already holds its own record, so the adoption copies nothing and there is nothing to tell.
+		const again = device();
+		const before = await boot(again, '/vaults/old', {});
+		const beforeId = before.vaultId ?? '';
+		await before.shutdownRuntime();
+		await savePreferences(again, beforeId);
+		await savePreferences(again, await sha256Text('/vaults/new'), 7);
+		const held = await boot(again, '/vaults/new', {});
+		const untouched = vi.spyOn((held as unknown as { inventoryPreferencesBackup: { changed(): void } }).inventoryPreferencesBackup, 'changed');
+		expect(await held.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted', preferences: 0 });
+		expect(untouched).not.toHaveBeenCalled();
+		await held.shutdownRuntime();
+	});
+
 	it('a question left open stays open on the next start even when the registry cannot be read, and stores no mode for the new path', async () => {
 		const world = device();
 		await (await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' })).shutdownRuntime();
