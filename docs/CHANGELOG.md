@@ -1,5 +1,29 @@
 # Changelog
 
+## Release beta 0.6.30 - sección Logros en Obsidian y en Hebra, historial que solo lee las notas de Tyrian y almacenes locales que se recuperan solos
+
+Se actualiza desde la 0.6.29 publicada. Lo que más se nota: llega la cuarta sección, Logros, con buscador y seguimiento de
+hasta 100 logros; abrir el historial en Obsidian ya no recorre todo el vault y los almacenes locales se recuperan solos si
+el motor cierra la conexión. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Logros (nuevo). Cuarta sección «Logros» en Obsidian y en Hebra, debajo de las tres actuales. Tiene un buscador por texto
+  y por categoría, permite seguir y dejar de seguir logros (hasta 100) y lista los que sigues con su progreso. En Hebra, la
+  sección muestra un contador con cuántos sigues.
+- Logros y tu clave de API. Abrir la sección, buscar o seguir un logro no consulta la API con tu clave; solo el botón
+  «Actualizar» lee tu progreso. Si cambias la clave, el progreso guardado se borra.
+- Ajustes. Pasan a la versión 15. Una versión anterior de Tyrian conserva la cadencia y el diagnóstico.
+- Historial. Abrir el historial o el comparador en Obsidian solo lee las notas de sesión de Tyrian, no todo el vault, y cada
+  nota se lee una vez por pasada. El panel deja de quedarse en «arrancando» cuando ya está listo. Si un decodificador falla
+  durante la lectura del historial, queda registrado.
+- Almacenamiento local. Ocho almacenes secundarios se recuperan solos si el motor de IndexedDB cierra la conexión. La
+  calidad de detección queda separada por vault, con un tope de 2000 eventos, y una fila ilegible ya no la desactiva. Un
+  aviso de precio de Halloween ya no se pierde si el guardado tarda. El diagnóstico distingue «tiempo agotado».
+- Herramientas para desarrolladores. `dev:install` y `smoke:live` ya no apuntan por defecto a la bóveda canónica: piden
+  carpeta. El artifact de CI trae el verificador de runtime. El gate de cierre pasa el lint sin caché y se amplía la
+  capacidad del lint para ficheros fuera del proyecto.
+- Tests. Arranque de punta a punta en Obsidian y en Hebra. Los tests de red ya no dependen de plazos de milisegundos.
+- Interno. Queda documentado el plan medido para dividir el núcleo.
+
 ## Release beta 0.6.29 - fecha de cada sesión que abre su nota, ajustes de una versión más nueva que no se pisan y una cola de confirmaciones por vault
 
 Se actualiza desde la 0.6.28 publicada. Lo que más se nota: en el historial de sesiones la fecha de cada sesión abre su
