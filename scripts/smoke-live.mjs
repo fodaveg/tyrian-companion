@@ -78,7 +78,10 @@ export function parseSmokeLiveArguments(argv) {
  * Reads the live plugin state through `obsidian eval` and counts `level:
  * "error"` lines the plugin itself wrote to `logs/debug.jsonl` after its own
  * last `plugin_load`. ISO-8601 timestamps sort lexically, so the cutoff is a
- * plain string compare, no `Date` parsing needed. RT-07: when `loadedVersion` is known only the lines
+ * plain string compare, no `Date` parsing needed. The per-start cutoff (the last `plugin_load` `start` line
+ * of the loaded version) only exists with the log at the "Depuracion" (`debug`) level, the only one that
+ * writes `start`; at other levels the marker is the cutoff and an error from an earlier start of the same
+ * version can count. RT-07: when `loadedVersion` is known only the lines
  * whose `pluginVersion` is that version count, because the marker is only renewed by `dev:install`
  * and a BRAT install leaves it at the last dev reload, with every older version's errors after it.
  *
@@ -140,11 +143,13 @@ export function readErrorsSinceReload(pluginDir, loadedVersion = null) {
 	}
 	// RT-07: the cutoff is the start of the LAST load of this version, so errors of an earlier start of
 	// the same version (a crash fixed by a restart) are not this load's. The marker only raises it.
+	// Only a `start` line can be the cutoff: a `success` (or `boot_timings`) is written AFTER the errors of
+	// its own start, so cutting there would hide them. `start` is logged only at the `debug` level; at any
+	// other level there is none and the marker stays the cutoff.
 	let cutoff = sinceIso;
 	if (typeof loadedVersion === 'string') {
-		const loads = records.filter((record) => record.action === 'plugin_load' && record.pluginVersion === loadedVersion && typeof record.timestampUtc === 'string');
-		const starts = loads.filter((record) => record.phase === 'start');
-		const last = (starts.length > 0 ? starts : loads).reduce((latest, record) => (latest === null || record.timestampUtc >= latest ? record.timestampUtc : latest), null);
+		const starts = records.filter((record) => record.action === 'plugin_load' && record.phase === 'start' && record.pluginVersion === loadedVersion && typeof record.timestampUtc === 'string');
+		const last = starts.reduce((latest, record) => (latest === null || record.timestampUtc >= latest ? record.timestampUtc : latest), null);
 		if (last !== null && (cutoff === null || last > cutoff)) cutoff = last;
 	}
 	const errors = [];

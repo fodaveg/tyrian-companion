@@ -25,6 +25,7 @@ try {
 	testErrorsOfOtherVersionsDoNotCount();
 	testRunSmokeLiveIgnoresErrorsOfOlderVersionsAfterAStaleMarker();
 	testErrorsBeforeTheLastLoadOfTheSameVersionDoNotCount();
+	testLoadSuccessAfterTheErrorIsNotACutoff();
 	testRunSmokeLiveExitsRedOnInjectedError();
 	testRunSmokeLiveStaysGreenWithoutNewErrors();
 	testCliUnavailableFailsClosed();
@@ -142,6 +143,17 @@ function testErrorsBeforeTheLastLoadOfTheSameVersionDoNotCount() {
 	assert(result.newErrorCount === 1, `runSmokeLive counted ${String(result.newErrorCount)} errors, expected the 1 of the last start`);
 	writeLog(pluginDir, [load('2026-02-01T00:00:00.000Z'), error('2026-02-01T00:00:05.000Z')]);
 	assert(readErrorsSinceReload(pluginDir, '0.1.30').length === 1, 'an error after the only load of the version was not counted');
+}
+
+/** Below `debug` there is no `start` line; the `success` that closes a load comes AFTER the errors of that start. */
+function testLoadSuccessAfterTheErrorIsNotACutoff() {
+	const pluginDir = freshPluginDir('success-is-not-a-cutoff');
+	writeMarker(pluginDir, '2026-01-01T00:00:00.000Z');
+	writeLog(pluginDir, [
+		{ ...record({ level: 'error', timestampUtc: '2026-02-01T10:00:01.000Z' }), action: 'view_render' },
+		{ ...record({ level: 'info', timestampUtc: '2026-02-01T10:00:02.000Z' }), action: 'plugin_load', phase: 'success' },
+	]);
+	assert(readErrorsSinceReload(pluginDir, '0.1.30').length === 1, 'a plugin_load success written after an error hid that error');
 }
 
 /** The end-to-end case the lote names: `smoke:live` must exit 1 when the injected line is there. */

@@ -220,6 +220,10 @@ procedimiento completo y no necesita nada de esto.
    `gh release view` (los tres). En macOS y Linux hay ruta por defecto, y es un supuesto: en macOS el contenedor
    del sandbox con el perfil `fresh-v1`, en Linux `$XDG_DATA_HOME` o `~/.local/share`. Si no existe, el error lo
    dice y hay que pasar `--plugins-dir`; en Windows `--plugins-dir` es obligatorio.
+   `smoke:live` cuenta los errores de la versión cargada desde la marca `.tyrian-dev-reload-at` o, si es
+   posterior, desde el último arranque (`plugin_load` en fase `start`) de esa misma versión. Ese corte por
+   arranque solo existe con el registro de diagnóstico en nivel «Depuración»: en cualquier otro nivel no se
+   escribe `start`, se usa la marca, y un error de un arranque anterior de la misma versión puede contar.
    La QA de instalación o actualización no es válida sin `PASS`, incluso si
    la versión en disco ya es la esperada. Un `runtime-version-mismatch` exige recargar el plugin o
    reiniciar Obsidian y repetir el preflight. En una instalación desde artifact, usa la copia del
