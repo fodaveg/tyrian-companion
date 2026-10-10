@@ -224,7 +224,7 @@ export async function createCatalogCacheAdapter(
 		attempt.success();
 		return cache;
 	} catch (error) {
-		attempt.failure(localDebugStorageFailureCode(error), error);
+		attempt.failure(indexedDbFailureCode(error), error);
 		const fallback = diagnostics.begin('catalog', 'fallback');
 		fallback.success('unavailable');
 		return new MemoryCatalogCache();
@@ -269,7 +269,7 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 		try {
 			await connection.open();
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 		attempt.success();

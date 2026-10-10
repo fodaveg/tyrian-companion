@@ -18,7 +18,7 @@ import {
 	LocalDebugPersistenceProbe, type LocalDebugPersistenceEvent, type LocalDebugPersistenceStore,
 } from './core/local-debug-persistence';
 import {
-	closeUnderneath, emitEngineClose, engineIdle, hangTransactions, killStorage, reviveStorage, trackedIndexedDb,
+	closeUnderneath, emitEngineClose, engineIdle, hangStorage, hangTransactions, killStorage, reviveStorage, trackedIndexedDb,
 	type TrackedIndexedDb,
 } from './test/indexed-db-connections';
 
@@ -341,6 +341,30 @@ describe('DU-05: a secondary store the engine stops answering reports a timeout'
 			expect(events.filter((event) => event.phase === 'failure').map((event) => ({
 				store: event.store, operation: event.operation, code: event.code,
 			}))).toEqual([{ store: testCase.store, operation: testCase.operation, code: 'timeout' }]);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+});
+
+describe('DU-05: the confirmation queue opening that runs out of time reports a timeout', () => {
+	it('records the open as a timeout, not as a storage failure', async () => {
+		const timers: (() => void)[] = [];
+		vi.stubGlobal('window', {
+			setTimeout: (callback: () => void) => { timers.push(callback); return timers.length; },
+			clearTimeout: () => undefined,
+		});
+		try {
+			const tracked = trackedIndexedDb();
+			hangStorage(tracked);
+			const events: LocalDebugPersistenceEvent[] = [];
+			const probe = new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } });
+			const store = new IndexedDbPendingProposalStore(tracked.factory, databaseName('open timeout'), probe);
+			const read = store.read().then(() => 'read', () => 'failed');
+			await engineIdle(tracked);
+			for (const expire of timers.splice(0)) expire();
+			await expect(read).resolves.toBe('failed');
+			expect(events.filter((event) => event.phase === 'failure' && event.operation === 'open').map((event) => event.code)).toEqual(['timeout']);
 		} finally {
 			vi.unstubAllGlobals();
 		}

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	IndexedDbConnectionLostError,
 	ReopeningIndexedDbConnection,
+	indexedDbFailureCode,
 	openIndexedDb,
 	startIndexedDbTransaction,
 	withIndexedDbReopen,
@@ -300,6 +301,21 @@ describe('openIndexedDb against an engine that does not answer', () => {
 		clock.fire();
 		await expect(outcome).resolves.toBe('store: timeout');
 		expect(reasons).toEqual(['timeout']);
+	});
+
+	it('lets indexedDbFailureCode name an open that ran out of time `timeout`, whatever error the store built', async () => {
+		const tracked = trackedIndexedDb(); const clock = timers();
+		hangStorage(tracked);
+		const opening = openIndexedDb({
+			factory: tracked.factory, databaseName: databaseName('code'), databaseVersion: 1, schema: [{ name: 'records' }],
+			toError: () => new Error('Could not open the store.'), ...clock,
+		});
+		const outcome = opening.then(() => undefined, (error: unknown) => error);
+		clock.fire();
+		const error = await outcome;
+		expect(indexedDbFailureCode(error)).toBe('timeout');
+		// Control: the same message from a plain error is still a storage failure.
+		expect(indexedDbFailureCode(new Error('Could not open the store.'))).toBe('storage_failure');
 	});
 
 	it('closes a database the engine hands over after the wait ran out', async () => {

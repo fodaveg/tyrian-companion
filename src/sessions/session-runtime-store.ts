@@ -9,7 +9,7 @@ import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey,
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
-import { openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen, type IndexedDbStoreSchema, type OpenIndexedDbOptions } from '../core/indexed-db-open';
+import { indexedDbFailureCode, openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen, type IndexedDbStoreSchema, type OpenIndexedDbOptions } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
@@ -647,7 +647,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 				attempt.success();
 				return database;
 			} catch (error) {
-				if (!abandoned) attempt.failure(localDebugStorageFailureCode(error), error);
+				if (!abandoned) attempt.failure(indexedDbFailureCode(error), error);
 				throw error;
 			} finally {
 				if (this.opening === opening) this.opening = null;
