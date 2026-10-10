@@ -224,11 +224,11 @@ describe('from a section to the view the host registers', () => {
 		let tracked: number[] = [];
 		const actions = { getLocale: () => 'es' as const, getTrackedAchievementIds: () => tracked };
 		const section = achievementsSection(actions);
-		expect([section.id, section.title(), section.label(), section.icon, section.badge?.()]).toEqual(['achievements', 'Logros', 'Logros', 'trophy', null]);
+		expect([section.id, section.title(), section.label(), section.icon, section.badge?.()]).toEqual(['achievements', 'Logros', 'Logros', 'circle-check', null]);
 		tracked = [1, 2, 3];
 		expect(section.badge?.()).toBe(3);
 		const view = achievementsView(actions);
-		expect([view.type, view.title(), view.icon, view.placement]).toEqual([ACHIEVEMENTS_VIEW_TYPE, 'Logros', 'trophy', 'dialog']);
+		expect([view.type, view.title(), view.icon, view.placement]).toEqual([ACHIEVEMENTS_VIEW_TYPE, 'Logros', 'circle-check', 'dialog']);
 		expect(ACHIEVEMENTS_VIEW_SLOT).toEqual({ type: ACHIEVEMENTS_VIEW_TYPE, placement: 'dialog' });
 
 		// Through `MountedViews.section` and into ONE view: the badge travels, and only for the section that has one.
@@ -239,7 +239,7 @@ describe('from a section to the view the host registers', () => {
 			views.section(saleSection({ getSaleLocale: () => 'es' })), mounted,
 		]);
 		expect(registration.sections.map((listed) => [listed.id, listed.title(), listed.icon, 'badge' in listed ? listed.badge?.() : 'none']))
-			.toEqual([['sale', 'Venta', 'candy', 'none'], ['achievements', 'Logros', 'trophy', 3]]);
+			.toEqual([['sale', 'Venta', 'candy', 'none'], ['achievements', 'Logros', 'circle-check', 3]]);
 		tracked = [];
 		expect(registration.sections[1]!.badge?.()).toBeNull();
 		// As a view of its own nothing of the badge leaks into what `registerView` takes.
