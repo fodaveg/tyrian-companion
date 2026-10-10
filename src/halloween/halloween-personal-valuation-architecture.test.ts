@@ -15,7 +15,7 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		const settings = readModuleSource('src/core/settings.ts');
 		const settingsTab = readModuleSource('src/ui/settings-tab.ts');
 		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
-		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 15');
+		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 16');
 		expect(settings).toContain('halloweenPersonalValuation: { version: 1 as const, values: [] }');
 		// 6 oct 2026: the page lost this row (presentation only); the saved overlay still feeds the
 		// advisor through the settings key and the wiring asserted below.
