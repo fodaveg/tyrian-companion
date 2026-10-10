@@ -30,44 +30,52 @@ export function canonicalJson(value: unknown): string {
 const KEY_COLLATOR = new Intl.Collator();
 function compareKeys(left: string, right: string): number { return KEY_COLLATOR.compare(left, right); }
 
-/** Synchronous SHA-256 for validated in-memory contracts; no Node runtime dependency. */
+/** The eight working words of SHA-256, as a tuple so each one reads as a `number`. */
+type Sha256State = [number, number, number, number, number, number, number, number];
+
+/**
+ * Synchronous SHA-256 for validated in-memory contracts; no Node runtime dependency.
+ *
+ * The padded message and the message schedule are read through `DataView` (big-endian words, as
+ * SHA-256 defines them) and the round constants through `entries()`, so no index can come back
+ * `undefined`. `canonical-sha256.test.ts` holds it to the FIPS 180-2 vectors and to `node:crypto`.
+ */
 export function sha256Utf8(message: string): string {
-	const bytes = [...new TextEncoder().encode(message)];
-	const bitLength = BigInt(bytes.length) * 8n;
-	bytes.push(0x80);
-	while (bytes.length % 64 !== 56) bytes.push(0);
-	for (let shift = 56n; shift >= 0n; shift -= 8n) bytes.push(Number((bitLength >> shift) & 0xffn));
-	const hash = [
+	const bytes = new TextEncoder().encode(message);
+	// The message, a 0x80 byte, zeros up to 56 mod 64 and the 64-bit big-endian bit length.
+	const padded = new Uint8Array(Math.ceil((bytes.length + 9) / 64) * 64);
+	padded.set(bytes);
+	padded[bytes.length] = 0x80;
+	const input = new DataView(padded.buffer);
+	input.setBigUint64(padded.length - 8, BigInt(bytes.length) * 8n);
+	const schedule = new DataView(new ArrayBuffer(64 * 4));
+	const word = (index: number): number => schedule.getUint32(index * 4);
+	let hash: Sha256State = [
 		0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
 		0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 	];
-	for (let offset = 0; offset < bytes.length; offset += 64) {
-		const words = new Array<number>(64).fill(0);
-		for (let index = 0; index < 16; index += 1) {
-			const start = offset + index * 4;
-			words[index] = ((bytes[start]! << 24) | (bytes[start + 1]! << 16)
-				| (bytes[start + 2]! << 8) | bytes[start + 3]!) >>> 0;
-		}
+	for (let offset = 0; offset < padded.length; offset += 64) {
+		for (let index = 0; index < 16; index += 1) schedule.setUint32(index * 4, input.getUint32(offset + index * 4));
 		for (let index = 16; index < 64; index += 1) {
-			const x = words[index - 15]!; const y = words[index - 2]!;
-			words[index] = (words[index - 16]! + (rotateRight(x, 7) ^ rotateRight(x, 18) ^ (x >>> 3))
-				+ words[index - 7]! + (rotateRight(y, 17) ^ rotateRight(y, 19) ^ (y >>> 10))) >>> 0;
+			const x = word(index - 15); const y = word(index - 2);
+			schedule.setUint32(index * 4, (word(index - 16) + (rotateRight(x, 7) ^ rotateRight(x, 18) ^ (x >>> 3))
+				+ word(index - 7) + (rotateRight(y, 17) ^ rotateRight(y, 19) ^ (y >>> 10))) >>> 0);
 		}
 		let [a, b, c, d, e, f, g, h] = hash;
-		for (let index = 0; index < 64; index += 1) {
-			const sum1 = rotateRight(e!, 6) ^ rotateRight(e!, 11) ^ rotateRight(e!, 25);
-			const choice = (e! & f!) ^ (~e! & g!);
-			const temp1 = (h! + sum1 + choice + SHA256_CONSTANTS[index]! + words[index]!) >>> 0;
-			const sum0 = rotateRight(a!, 2) ^ rotateRight(a!, 13) ^ rotateRight(a!, 22);
-			const temp2 = (sum0 + ((a! & b!) ^ (a! & c!) ^ (b! & c!))) >>> 0;
-			h = g; g = f; f = e; e = (d! + temp1) >>> 0; d = c; c = b; b = a; a = (temp1 + temp2) >>> 0;
+		for (const [index, constant] of SHA256_CONSTANTS.entries()) {
+			const sum1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
+			const choice = (e & f) ^ (~e & g);
+			const temp1 = (h + sum1 + choice + constant + word(index)) >>> 0;
+			const sum0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
+			const temp2 = (sum0 + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+			h = g; g = f; f = e; e = (d + temp1) >>> 0; d = c; c = b; b = a; a = (temp1 + temp2) >>> 0;
 		}
-		hash[0] = (hash[0]! + a!) >>> 0; hash[1] = (hash[1]! + b!) >>> 0;
-		hash[2] = (hash[2]! + c!) >>> 0; hash[3] = (hash[3]! + d!) >>> 0;
-		hash[4] = (hash[4]! + e!) >>> 0; hash[5] = (hash[5]! + f!) >>> 0;
-		hash[6] = (hash[6]! + g!) >>> 0; hash[7] = (hash[7]! + h!) >>> 0;
+		hash = [
+			(hash[0] + a) >>> 0, (hash[1] + b) >>> 0, (hash[2] + c) >>> 0, (hash[3] + d) >>> 0,
+			(hash[4] + e) >>> 0, (hash[5] + f) >>> 0, (hash[6] + g) >>> 0, (hash[7] + h) >>> 0,
+		];
 	}
-	return hash.map((word) => word.toString(16).padStart(8, '0')).join('');
+	return hash.map((value) => value.toString(16).padStart(8, '0')).join('');
 }
 
 export function sha256CanonicalValue(value: unknown): string {
