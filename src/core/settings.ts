@@ -142,6 +142,12 @@ export interface TyrianSettings {
 	legacyManagedAssetsRoot: string | null;
 	/** Last outcome of the one-click inventory Vault sync. Null before any run, or on a pre-0.1.7 install. */
 	inventorySyncLastRun: InventoryVaultSyncLastRun | null;
+	/**
+	 * DU-02: a random token that identifies THIS vault, created once and kept in the data that travels with the
+	 * folder (so it is the same on every device that syncs it). Empty before the first start that creates it.
+	 * Only hosts whose vault identity is a path use it.
+	 */
+	vaultToken: string;
 	/** Public-price sampling is opt-in and remains device-local in IndexedDB. */
 	priceHistoryEnabled: boolean;
 	priceHistoryIntervalMinutes: PriceHistoryIntervalMinutes;
@@ -237,6 +243,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	legacyOutputFolder: null,
 	legacyManagedAssetsRoot: null,
 	inventorySyncLastRun: null,
+	vaultToken: '',
 	priceHistoryEnabled: false,
 	priceHistoryIntervalMinutes: 15,
 	priceHistoryRawRetentionDays: 7,
@@ -331,6 +338,7 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 		legacyManagedAssetsRoot: legacyVaultFolder(data.legacyManagedAssetsRoot, configDir) ??
 			legacyVaultFolder(data.managedAssetsRoot, configDir),
 		inventorySyncLastRun: inventoryVaultSyncLastRun(data.inventorySyncLastRun),
+		vaultToken: typeof data.vaultToken === 'string' && /^[A-Za-z0-9-]{16,64}$/u.test(data.vaultToken) ? data.vaultToken : '',
 		priceHistoryEnabled: data.priceHistoryEnabled === true,
 		priceHistoryIntervalMinutes: enumNumber(data.priceHistoryIntervalMinutes, PRICE_HISTORY_INTERVALS,
 			DEFAULT_SETTINGS.priceHistoryIntervalMinutes) as PriceHistoryIntervalMinutes,

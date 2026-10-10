@@ -16,6 +16,7 @@ import { ManualSessionStartService } from './sessions/manual-session-start-servi
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { obsidianPluginCore } from './test/obsidian-host-harness';
 import { loadCollectorMode, saveCollectorMode } from './runtime/collector-instance';
+import { VAULT_REGISTRY_DB } from './runtime/vault-relocation';
 import type { SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import type { TyrianHost } from './host/tyrian-host';
 
@@ -203,6 +204,132 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		await plugin.shutdownRuntime();
 	});
 
+	it('going back to the original path without answering does not warn about a move from itself', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' });
+		await first.shutdownRuntime();
+		const away = await boot(world, '/vaults/b', { apiKeySecret: 'gw2-main' });
+		expect(away.getVaultRelocation()).toEqual({ pending: true });
+		await away.shutdownRuntime();
+		const warned = world.notices.length;
+		const back = await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' });
+
+		expect(back.getVaultRelocation()).toEqual({ pending: false });
+		expect(back.getCollectorMode()).toBe('collector');
+		expect(world.notices).toHaveLength(warned);
+		await back.shutdownRuntime();
+	});
+
+	it('a detection that cannot be made, with another id saved, starts in consult and says so', async () => {
+		const world = device();
+		world.local.set(IDENTITY_KEY, { vaultId: await sha256Text('/vaults/old') });
+		const open = world.factory.open.bind(world.factory);
+		vi.spyOn(world.factory, 'open').mockImplementation((name: string, version?: number) => {
+			if (name === VAULT_REGISTRY_DB) throw new Error('storage unavailable');
+			return open(name, version);
+		});
+		const plugin = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+
+		expect(plugin.getCollectorMode()).toBe('consult');
+		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
+		expect(world.notices).toHaveLength(1);
+		expect(world.notices[0]).toMatch(/check|comprob/iu);
+		await plugin.shutdownRuntime();
+	});
+
+	it('adopt does not overwrite the mode the user chose for the new path while the question was open', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		await first.updateCollectorMode('consult');
+		await first.shutdownRuntime();
+		const second = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		await second.updateCollectorMode('collector');
+
+		expect(await second.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted' });
+		expect(second.getCollectorMode()).toBe('collector');
+		await second.shutdownRuntime();
+		const third = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		expect(third.getCollectorMode()).toBe('collector');
+		await third.shutdownRuntime();
+	});
+
+	it('a double click adopts once and warns once', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		await first.shutdownRuntime();
+		const second = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		const before = world.notices.length;
+
+		const [one, two] = await Promise.all([second.resolveVaultRelocation('adopt'), second.resolveVaultRelocation('adopt')]);
+
+		expect(one).toEqual(two);
+		expect(one.status).toBe('adopted');
+		expect(world.notices).toHaveLength(before + 1);
+		await second.shutdownRuntime();
+	});
+
+	it('the adopted notice does not mention a mode when the previous path stored none', async () => {
+		const world = device();
+		const ghost = await sha256Text('/vaults/ghost');
+		world.local.set(IDENTITY_KEY, { vaultId: ghost });
+		await savePreferences(world, ghost);
+		const plugin = await boot(world, '/vaults/new', {});
+		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
+
+		expect(await plugin.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted', preferences: 1, mode: null });
+		expect(world.notices.at(-1)).not.toMatch(/mode|modo/iu);
+		await plugin.shutdownRuntime();
+	});
+
+	it('a folder moved outside Obsidian (new app id, empty local storage, same token) warns and starts in consult', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		await first.shutdownRuntime();
+		expect(world.data?.vaultToken).toMatch(/^[A-Za-z0-9-]{16,64}$/u);
+		world.local.clear();
+		const second = await boot(world, '/vaults/elsewhere', { apiKeySecret: 'gw2-main' });
+
+		expect(second.getVaultRelocation()).toEqual({ pending: true });
+		expect(second.getCollectorMode()).toBe('consult');
+		expect(world.notices).toHaveLength(1);
+		expect(await second.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted', mode: 'collector' });
+		expect(second.getCollectorMode()).toBe('collector');
+		await second.shutdownRuntime();
+	});
+
+	it('a vault with no token gets one and does not warn', async () => {
+		const world = device();
+		const plugin = await boot(world, '/vaults/brand-new', { apiKeySecret: 'gw2-main' });
+
+		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
+		expect(world.data?.vaultToken).toMatch(/^[A-Za-z0-9-]{16,64}$/u);
+		expect(world.notices).toEqual([]);
+		await plugin.shutdownRuntime();
+	});
+
+	it('another device of the same synced vault (same token, nothing recorded on it) does not warn', async () => {
+		const first = device();
+		await (await boot(first, '/vaults/shared', { apiKeySecret: 'gw2-main' })).shutdownRuntime();
+		const other = device();
+		other.data = structuredClone(first.data);
+		const plugin = await boot(other, '/home/other/shared', { apiKeySecret: 'gw2-main' });
+
+		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
+		expect(plugin.getCollectorMode()).toBe('collector');
+		expect(other.notices).toEqual([]);
+		await plugin.shutdownRuntime();
+	});
+
+	it('a host whose identity is not a path creates no token and detects nothing', async () => {
+		const world = device();
+		const plugin = await boot(world, '/vaults/hebra-like', { apiKeySecret: 'gw2-main' }, true, { pathBoundIdentity: false });
+
+		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
+		expect(world.data?.vaultToken ?? '').toBe('');
+		expect(world.local.get(IDENTITY_KEY)).toBeUndefined();
+		await plugin.shutdownRuntime();
+	});
+
 	it('a host without per-device local storage behaves as before', async () => {
 		const world = device();
 		world.local.clear();
@@ -224,11 +351,13 @@ interface Device {
 	readonly factory: IDBFactory;
 	readonly local: Map<string, unknown>;
 	readonly notices: string[];
+	/** The plugin's `data.json`: it travels with the folder, so a second device of the same vault starts from a copy. */
+	data: Record<string, unknown> | null;
 }
 
 /** One computer: the IndexedDB and the per-vault local storage that survive a restart or a rename. */
 function device(): Device {
-	return { factory: new IDBFactory(), local: new Map(), notices: [] };
+	return { factory: new IDBFactory(), local: new Map(), notices: [], data: null };
 }
 
 async function savePreferences(world: Device, vaultId: string, generation = 3): Promise<void> {
@@ -252,6 +381,7 @@ async function savePreferences(world: Device, vaultId: string, generation = 3): 
 
 async function boot(
 	world: Device, basePath: string, overrides: Partial<TyrianSettings>, withLocalStorage = true,
+	capabilities?: { pathBoundIdentity: boolean },
 ): Promise<RelocationHarness> {
 	vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
 	const vault = {
@@ -277,12 +407,15 @@ async function boot(
 		} : {}),
 	} as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const { core } = obsidianPluginCore(app, manifest, { saveData: vi.fn(async () => undefined) });
+	const { core } = obsidianPluginCore(app, manifest, {
+		saveData: vi.fn(async (data: unknown) => { world.data = structuredClone(data) as Record<string, unknown>; }),
+		loadData: async () => structuredClone(world.data),
+	});
 	const target = core as unknown as RelocationHarness & {
 		localDebug: null; localDebugActions: null; lootPresentation: LootPresentationCache;
 		settingTab: Record<string, () => void>;
 	};
-	target.settings = { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
+	target.settings = { ...structuredClone(DEFAULT_SETTINGS), ...(world.data ?? {}), ...overrides };
 	target.localDebug = null;
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
@@ -297,6 +430,7 @@ async function boot(
 	vi.stubGlobal('navigator', { onLine: true });
 	const notice = vi.spyOn(target.host.ui, 'notice').mockImplementation((message: string) => { world.notices.push(message); });
 	void notice;
+	if (capabilities !== undefined) (target.host as { capabilities?: unknown }).capabilities = capabilities;
 	await target.initializeRuntime();
 	for (let round = 0; round < 5; round += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 	return target;

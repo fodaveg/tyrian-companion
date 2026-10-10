@@ -86,7 +86,7 @@ export function goldThresholdToCopper(value: string): number | 'invalid' {
 
 /** What the settings panel needs from the host: rows, modals, the folder picker and the config folder. */
 export interface SettingsPanelHost {
-	readonly ui: Pick<TyrianUiPort, 'setting' | 'openModal' | 'pickFolder'>;
+	readonly ui: Pick<TyrianUiPort, 'setting' | 'openModal' | 'pickFolder'> & Partial<Pick<TyrianUiPort, 'notice'>>;
 	readonly vault: Pick<TyrianVault, 'configDir'>;
 }
 
@@ -306,6 +306,13 @@ export class TyrianCompanionSettingTab {
 		return await this.plugin.updateSettings(settings);
 	}
 
+	/** DU-02: a failed answer is told to the user and leaves the question pending, so the same button retries it. */
+	private async answerVaultRelocation(choice: 'adopt' | 'fresh'): Promise<void> {
+		try { await this.plugin.resolveVaultRelocation?.(choice); }
+		catch { this.host.ui.notice?.(this.t('settings.vaultRelocation.failed')); }
+		this.refreshForSettingsChange();
+	}
+
 	private definitions(): CategorizedSettingDefinition[] {
 		return [
 			// DU-02: only while the vault changed path and the user has not answered.
@@ -316,10 +323,10 @@ export class TyrianCompanionSettingTab {
 				render: (setting) => {
 					setting.addButton((button) => button
 						.setButtonText(this.t('settings.vaultRelocation.adopt')).setCta()
-						.onClick(async () => { await this.plugin.resolveVaultRelocation?.('adopt'); this.refreshForSettingsChange(); }));
+						.onClick(async () => { await this.answerVaultRelocation('adopt'); }));
 					setting.addButton((button) => button
 						.setButtonText(this.t('settings.vaultRelocation.fresh'))
-						.onClick(async () => { await this.plugin.resolveVaultRelocation?.('fresh'); this.refreshForSettingsChange(); }));
+						.onClick(async () => { await this.answerVaultRelocation('fresh'); }));
 				},
 			},
 			{

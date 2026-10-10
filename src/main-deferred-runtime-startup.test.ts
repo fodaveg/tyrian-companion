@@ -204,10 +204,10 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			expect(settled).toBe(true);
 			expect(plugin.runtimeReady).toBe(true);
 			expect(phase(plugin)).toBe('error');
-			// Every start-gating wait is one ten-second deadline: the collector mode, then the saved session (the reads after the
+			// Every start-gating wait is one ten-second deadline: the vault registry (DU-02), the collector mode, then the saved session (the reads after the
 			// first answer at once, the store having just stayed silent).
 			expect(opened.length).toBeGreaterThan(1);
-			expect([bootTiming.readyAtMs, bootTiming.settledAtMs]).toEqual([20_000, 20_000]);
+			expect([bootTiming.readyAtMs, bootTiming.settledAtMs]).toEqual([30_000, 30_000]);
 		});
 
 		// A slow engine, not a silent one: the device saved `consult`, the read of it answers after the start gave up waiting.
@@ -339,7 +339,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			expect(plugin.runtimeReady).toBe(true);
 			expect(phase(plugin)).toBe('error');
 			// Ten seconds per read that gates the start, and no more than three of them in a row.
-			expect([bootTiming.readyAtMs, bootTiming.settledAtMs]).toEqual([20_000, 20_000]);
+			expect([bootTiming.readyAtMs, bootTiming.settledAtMs]).toEqual([30_000, 30_000]);
 		});
 
 		it('recovers by itself, on the heartbeat, once the engine answers again, without flipping ready or opening twice', async () => {
@@ -482,7 +482,7 @@ function runtimeBootPlugin(factory: IDBFactory, notes = new Map<string, string>(
 	};
 	const app = { vault, workspace, fileManager: vault.fileManager } as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
-	const { core } = obsidianPluginCore(app, manifest);
+	const { core } = obsidianPluginCore(app, manifest, { saveData: vi.fn(async () => undefined) });
 	const target = core as unknown as {
 		settings: typeof DEFAULT_SETTINGS;
 		localDebug: null;
