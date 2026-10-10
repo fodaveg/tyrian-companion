@@ -83,10 +83,13 @@ export interface SaleAdvisorAnalysis {
  * setting changed or the device turned to consult is seen as it stands at the moment of the read.
  */
 export interface SaleRuntimePort {
-	readonly settings: Pick<
-		TyrianSettings,
-		'language' | 'priceHistoryEnabled' | 'priceHistoryDailyRetentionDays' | 'recommendationCapitalThresholdCopper'
-	>;
+	readonly settings: {
+		readonly language: TyrianSettings['language'];
+		readonly priceHistoryEnabled: boolean;
+		/** Days of local history the hero card's verdict reads, back from today. */
+		readonly priceHistoryDailyRetentionDays: number;
+		readonly recommendationCapitalThresholdCopper: number;
+	};
 	/** False until `initializeRuntime` has built the services below. */
 	readonly runtimeReady: boolean;
 	/** True from the moment the plugin starts to unload. */
