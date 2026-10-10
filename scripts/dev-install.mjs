@@ -1,17 +1,17 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const DEV_INSTALL_CONTRACT_VERSION = 1;
 const PLUGIN_ID = 'tyrian-companion';
 const MANAGED_FILES = Object.freeze(['manifest.json', 'main.js', 'styles.css']);
-const DEFAULT_CONFIG_DIRECTORY = ['.', 'obsidian'].join('');
 const RELOAD_EVIDENCE_PREFIX = 'TYRIAN_DEV_RELOAD_V1\t';
 /** Written next to the installed plugin right after a real reload; `smoke-live.mjs` reads it back as "arranque". */
 export const DEV_RELOAD_MARKER = '.tyrian-dev-reload-at';
+
+const PLUGIN_DIR_HINT = 'Indica una boveda desechable: --plugin-dir <boveda>/<configDir>/plugins/tyrian-companion o TC_PLUGIN_DIR. No hay boveda por defecto.\n';
 
 export class DevInstallError extends Error {
 	constructor(code) {
@@ -19,17 +19,6 @@ export class DevInstallError extends Error {
 		this.name = 'DevInstallError';
 		this.code = code;
 	}
-}
-
-/**
- * The vault this machine actually uses. `~/Documentos` on this Linux box,
- * `~/Documents` on macOS (Obsidian's own vault-relative name for the folder,
- * not a translated one); overridden by `TC_PLUGIN_DIR` or `--plugin-dir` for
- * every other vault, including every one of THIS script's own tests.
- */
-export function defaultPluginDir() {
-	const documentsDirectoryName = process.platform === 'darwin' ? 'Documents' : 'Documentos';
-	return resolve(homedir(), documentsDirectoryName, 'fodaveg', DEFAULT_CONFIG_DIRECTORY, 'plugins', PLUGIN_ID);
 }
 
 export function parseDevInstallArguments(argv) {
@@ -54,7 +43,9 @@ export function parseDevInstallArguments(argv) {
 		}
 		fail('usage');
 	}
-	if (!pluginDirSet) pluginDir = process.env.TC_PLUGIN_DIR ?? defaultPluginDir();
+	// RT-08: no default vault. A default pointed at the daily-use vault and a bare run rewrote its main.js.
+	if (!pluginDirSet) pluginDir = process.env.TC_PLUGIN_DIR ?? null;
+	if (typeof pluginDir !== 'string' || pluginDir.length === 0) fail('plugin-dir-required');
 	return Object.freeze({ pluginDir: resolve(pluginDir), reload });
 }
 
@@ -208,7 +199,7 @@ if (invokedPath === import.meta.url) {
 		);
 	} catch (error) {
 		const code = error instanceof DevInstallError ? error.code : 'unexpected-failure';
-		process.stderr.write(`dev install: ${code}\n`);
+		process.stderr.write(`dev install: ${code}\n${code === 'plugin-dir-required' ? PLUGIN_DIR_HINT : ''}`);
 		process.exitCode = 1;
 	}
 }

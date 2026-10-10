@@ -1,12 +1,10 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const SMOKE_LIVE_CONTRACT_VERSION = 1;
 const PLUGIN_ID = 'tyrian-companion';
-const DEFAULT_CONFIG_DIRECTORY = ['.', 'obsidian'].join('');
 const EVIDENCE_PREFIX = 'TYRIAN_SMOKE_V1\t';
 /** Written by `dev-install.mjs` right after a real reload; the "arranque" the log is scanned since. */
 const RELOAD_MARKER = '.tyrian-dev-reload-at';
@@ -31,17 +29,14 @@ const SMOKE_EVIDENCE_EXPRESSION = `(()=>{const plugin=app.plugins.plugins["${PLU
 	'ingamePort:core?.alertIngameServerPort??null' +
 	'});})()';
 
+const PLUGIN_DIR_HINT = 'Indica una boveda desechable: --plugin-dir <boveda>/<configDir>/plugins/tyrian-companion o TC_PLUGIN_DIR. No hay boveda por defecto.\n';
+
 export class SmokeLiveError extends Error {
 	constructor(code) {
 		super(`smoke live: ${code}`);
 		this.name = 'SmokeLiveError';
 		this.code = code;
 	}
-}
-
-export function defaultPluginDir() {
-	const documentsDirectoryName = process.platform === 'darwin' ? 'Documents' : 'Documentos';
-	return resolve(homedir(), documentsDirectoryName, 'fodaveg', DEFAULT_CONFIG_DIRECTORY, 'plugins', PLUGIN_ID);
 }
 
 export function parseSmokeLiveArguments(argv) {
@@ -69,7 +64,9 @@ export function parseSmokeLiveArguments(argv) {
 		}
 		fail('usage');
 	}
-	if (!pluginDirSet) pluginDir = process.env.TC_PLUGIN_DIR ?? defaultPluginDir();
+	// RT-08: no default vault. A default pointed at the daily-use vault and a bare run rewrote its main.js.
+	if (!pluginDirSet) pluginDir = process.env.TC_PLUGIN_DIR ?? null;
+	if (typeof pluginDir !== 'string' || pluginDir.length === 0) fail('plugin-dir-required');
 	return Object.freeze({ pluginDir: resolve(pluginDir), cliCommand });
 }
 
@@ -210,7 +207,7 @@ if (invokedPath === import.meta.url) {
 		if (result.newErrorCount > 0) process.exitCode = 1;
 	} catch (error) {
 		const code = error instanceof SmokeLiveError ? error.code : 'unexpected-failure';
-		process.stderr.write(`smoke live: ${code}\n`);
+		process.stderr.write(`smoke live: ${code}\n${code === 'plugin-dir-required' ? PLUGIN_DIR_HINT : ''}`);
 		process.exitCode = 1;
 	}
 }

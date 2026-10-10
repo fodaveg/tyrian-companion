@@ -60,10 +60,12 @@ export const defaultProjectFiles = [
 // H14.18's i18n-unused-keys scanner and its test, to 48 for the same lote's
 // changelog-entry release-notes extractor and its test, to 50 for
 // H14.20's i18n-copy-length scanner and its test, and to 52 for R1a's
-// build-host-esm check and its test. The headroom below is
+// build-host-esm check and its test, and to 56 for DE-17 (48 listed files
+// had left no room for the next script; a `tsconfig.scripts.json` that empties
+// the list is the structural fix, 1 to 2 h). The headroom below is
 // unchanged on purpose: the point of this bound is that growing it stays a
 // deliberate edit rather than something that drifts.
-export const defaultProjectCapacity = 52;
+export const defaultProjectCapacity = 56;
 export const defaultProjectReservedHeadroom = 4;
 
 export function assertDefaultProjectCapacity(
