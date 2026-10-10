@@ -503,7 +503,24 @@ export async function inventoryVaultSyncInputFromAnalysis(
 		};
 	});
 	positions.sort(comparePositions);
-	return { schemaVersion: INVENTORY_NOTE_SCHEMA_VERSION, capturedAt: input.snapshot.completedAt, locale: input.catalog.locale, positions };
+	const degradedItemIds = catalogRejectedItemIds(source);
+	return {
+		schemaVersion: INVENTORY_NOTE_SCHEMA_VERSION, capturedAt: input.snapshot.completedAt, locale: input.catalog.locale, positions,
+		...(degradedItemIds.length === 0 ? {} : { degradedItemIds }),
+	};
+}
+
+/**
+ * Owned items whose catalog answer was rejected (`invalid`, `malformed`). They do not stop the
+ * sync, unlike `unavailable`: one object the API returns badly must not park every other note for
+ * good. Their existing notes are held back instead (`InventoryVaultSyncInput.degradedItemIds`).
+ */
+function catalogRejectedItemIds(source: InventoryAdvisorContextualPresentationSource): number[] {
+	const items = source.input.catalog.coverage.items;
+	return Object.keys(source.input.snapshot.ownedByItem)
+		.filter((id) => items[id]?.status === 'invalid' || items[id]?.status === 'malformed')
+		.map(Number)
+		.sort((left, right) => left - right);
 }
 
 function coresFromAnalysis(source: InventoryAdvisorContextualPresentationSource): Promise<InventoryVaultPositionCore[]> {

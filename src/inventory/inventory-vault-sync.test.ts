@@ -1238,6 +1238,62 @@ describe('resync: no rewrite by the clock, managed fields only, the user\'s text
 		expect((await service.preview(ROOT, reduced)).steps.find((entry) => entry.path === bankPath)).toMatchObject({ status: 'unchanged' });
 	});
 
+	describe('an object the catalog answered badly (degradedItemIds)', () => {
+		async function twoItems() {
+			const snapshot = snapshotWith([holding(42, 5, { source: 'bank', slot: 0 }), holding(43, 4, { source: 'bank', slot: 1 })]);
+			const prices = priceSnapshotWith(snapshot, [
+				{ itemId: 42, whitelisted: true, bid: { unitCopper: 10, quantity: 100 }, ask: { unitCopper: 11, quantity: 100 } },
+				{ itemId: 43, whitelisted: true, bid: { unitCopper: 10, quantity: 100 }, ask: { unitCopper: 11, quantity: 100 } },
+			]);
+			return await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es');
+		}
+		/** The same account one pass later: item 42 came back with the fallback name, both prices moved. */
+		const degraded = (input: Awaited<ReturnType<typeof twoItems>>, itemIds: number[] | undefined) => ({
+			...input,
+			...(itemIds === undefined ? {} : { degradedItemIds: itemIds }),
+			positions: input.positions.map((position) => ({
+				...position, unitSellCopper: 12,
+				...(position.itemId === 42 ? { name: 'Objeto 42', type: null, rarity: null, icon: null } : {}),
+			})),
+		});
+
+		it('leaves its existing note as it is and still writes the others', async () => {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const first = await twoItems();
+			await service.apply(await service.preview(ROOT, first));
+			const paths = new Map((await service.preview(ROOT, first)).steps.map((entry) => [entry.positionId, entry.path]));
+			const path42 = paths.get(first.positions.find((position) => position.itemId === 42)!.positionId)!;
+			const path43 = paths.get(first.positions.find((position) => position.itemId === 43)!.positionId)!;
+			const before42 = vault.contents.get(path42)!;
+			const before43 = vault.contents.get(path43)!;
+
+			// Control: without the hold-back the degraded data does reach the note.
+			const control = await service.preview(ROOT, degraded(first, undefined));
+			expect(control.steps.find((entry) => entry.path === path42)).toMatchObject({ status: 'update' });
+
+			const plan = await service.preview(ROOT, degraded(first, [42]));
+			expect(plan.steps.find((entry) => entry.path === path42)).toMatchObject({ status: 'unchanged', before: before42, after: before42 });
+			expect(plan.steps.find((entry) => entry.path === path43)).toMatchObject({ status: 'update' });
+			expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 1, created: 0 });
+			expect(vault.contents.get(path42)).toBe(before42);
+			expect(vault.contents.get(path43)).not.toBe(before43);
+		});
+
+		it('keeps today\'s behaviour for an object that has no note yet', async () => {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const plan = await service.preview(ROOT, degraded(await twoItems(), [42]));
+			expect(plan.steps.map((entry) => entry.status)).toEqual(['create', 'create']);
+			expect(await service.apply(plan)).toMatchObject({ status: 'applied', created: 2 });
+		});
+
+		it('rejects a malformed list', async () => {
+			const service = new InventoryVaultSyncService(new MemoryInventoryVault(), CONFIG_DIR);
+			await expect(service.preview(ROOT, degraded(await twoItems(), [-1]))).rejects.toThrow('invalid_inventory_sync_input');
+		});
+	});
+
 	describe('a YAML comment the user wrote in the header', () => {
 		// Where a user might put it: before the managed keys, between them, or after the last one.
 		const placements: Array<[string, (content: string) => string]> = [

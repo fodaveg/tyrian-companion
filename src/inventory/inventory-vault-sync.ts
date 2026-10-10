@@ -156,6 +156,13 @@ export interface InventoryVaultSyncInput {
 	capturedAt: string;
 	locale: CatalogLocale;
 	positions: InventoryVaultPosition[];
+	/**
+	 * Items whose catalog answer was rejected (`invalid` or `malformed` coverage): their positions
+	 * carry the fallback name and no type, rarity or icon. A note that already exists for one of
+	 * them is left as it is on this pass (a step `unchanged`) rather than rewritten with those
+	 * degraded values; one that does not exist yet is created as usual. Absent means none.
+	 */
+	degradedItemIds?: readonly number[];
 }
 
 export type InventoryVaultSyncStepStatus =
@@ -795,6 +802,7 @@ export class InventoryVaultSyncService {
 			desired.set(position.positionId, { position, path, fields, block: renderInventoryBlock(fields) });
 		}
 
+		const degradedItemIds = new Set(input.degradedItemIds ?? []);
 		const steps: InventoryVaultSyncStep[] = [];
 		const seenOwned = new Set<string>();
 		const conflictPaths = new Set<string>();
@@ -834,7 +842,7 @@ export class InventoryVaultSyncService {
 			seenOwned.add(owned.fields.tc_position_id);
 			const target = desired.get(owned.fields.tc_position_id);
 			if (target) {
-				steps.push(sameManagedContent(owned, target.fields, target.block)
+				steps.push(degradedItemIds.has(target.position.itemId) || sameManagedContent(owned, target.fields, target.block)
 					? step(target.position.positionId, file.path, 'unchanged', content, content)
 					: step(target.position.positionId, file.path, 'update', content,
 						await renderInventoryNote(target.fields, target.block, owned)));
@@ -1430,6 +1438,8 @@ function step(
 function isInventoryVaultSyncInput(value: unknown): value is InventoryVaultSyncInput {
 	if (!record(value) || value.schemaVersion !== INVENTORY_NOTE_SCHEMA_VERSION ||
 		(value.locale !== 'es' && value.locale !== 'en') || !iso(value.capturedAt) || !Array.isArray(value.positions)) return false;
+	if (value.degradedItemIds !== undefined
+		&& !(Array.isArray(value.degradedItemIds) && value.degradedItemIds.every(positive))) return false;
 	return value.positions.every(isInventoryPosition) && new Set(value.positions.map((entry) => entry.positionId)).size === value.positions.length;
 }
 
