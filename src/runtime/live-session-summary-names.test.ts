@@ -74,7 +74,8 @@ class SummaryVault {
  * plugin load leaves it: no entity in memory, the catalog cache as an earlier run left it, and a
  * transport that records every request.
  */
-async function loadedCore(options: { cached?: boolean; network?: boolean; language?: 'es' | 'en'; /** The session also recorded the map it was on. */ map?: boolean } = {}) {
+async function loadedCore(options: { cached?: boolean; network?: boolean; language?: 'es' | 'en'; /** The session also recorded the map it was on. */ map?: boolean;
+	/** What the host declares; absent, nothing, as Obsidian. */ capabilities?: TyrianHost['capabilities'] } = {}) {
 	const store = new MemorySessionRuntimeStore();
 	await closedSession(store);
 	const restored = lifecycleOver(store);
@@ -83,7 +84,7 @@ async function loadedCore(options: { cached?: boolean; network?: boolean; langua
 	// Prices are the session's own, frozen in its record; here they only make the «to sell now» table and the top item appear.
 	vi.spyOn(restored, 'getRuntime').mockImplementation(() => ({ ...structuredClone(record), prices: [{ itemId: 106732, unitCopper: 1105 }, { itemId: 9333, unitCopper: 139 }], priceCapturedAt: new Date(AT).toISOString(),
 		...(options.map === true ? { mapIntervals: [{ mapId: 1633, fromMs: AT, toMs: AT + 5000 }] } : {}) }));
-	const core = new TyrianCompanionCore({} as TyrianHost);
+	const core = new TyrianCompanionCore((options.capabilities === undefined ? {} : { capabilities: options.capabilities }) as TyrianHost);
 	core.settings.language = options.language ?? 'es';
 	const calls: string[] = [];
 	// With the network allowed the public API would answer every name: whatever the note lacks, it lacks because it did not ask.
@@ -118,8 +119,9 @@ describe('names in the summary note of a session closed before this plugin load'
 		const { text, calls, core } = await loadedCore({ cached: true });
 		expect(core.getLiveSessionEntity('item', 106732)).toBeNull();
 		expect(calls).toEqual([]);
-		expect(text).toContain('| Fragmento brillante | 1 | 0g 11s 5c |');
-		expect(text).toContain('| Bolsa de botín | 1 | 0g 1s 39c |');
+		// The host says nothing of remote images, as Obsidian, which paints them: each name has the icon of its cache record in front.
+		expect(text).toContain('| ![Fragmento brillante\\|20](https://render.guildwars2.com/file/106732.png) Fragmento brillante | 1 | 0g 11s 5c |');
+		expect(text).toContain('| ![Bolsa de botín\\|20](https://render.guildwars2.com/file/9333.png) Bolsa de botín | 1 | 0g 1s 39c |');
 		expect(text).toContain('- Karma: +2940');
 		expect(text).toContain('- Fragmento de espíritu: +1');
 		expect(text).toContain('tyrian_summary_top_item: "Fragmento brillante"');
@@ -155,9 +157,23 @@ describe('names in the summary note of a session closed before this plugin load'
 		expect(cold.text).toContain('tyrian_summary_top_item: "Objeto 106732"');
 		const warm = await loadedCore({ network: true, cached: true });
 		expect(warm.calls).toEqual([]);
-		expect(warm.text).toContain('| Fragmento brillante | 1 | 0g 11s 5c |');
+		expect(warm.text).toContain('| ![Fragmento brillante\\|20](https://render.guildwars2.com/file/106732.png) Fragmento brillante | 1 | 0g 11s 5c |');
 		expect(warm.text).toContain('- Karma: +2940');
 		expect(warm.text).toContain('tyrian_summary_top_item: "Fragmento brillante"');
+	});
+
+	it('writes the icons from the cache records only where the host paints remote images, and asks for none', async () => {
+		// Hebra without `markdown.image.remote` declares false: the same cached items, by name alone.
+		const older = await loadedCore({ cached: true, network: true, capabilities: { remoteImages: false } });
+		expect(older.calls).toEqual([]);
+		expect(older.text).toContain('| Fragmento brillante | 1 | 0g 11s 5c |');
+		expect(older.text).not.toContain('![');
+		// Hebra with it declares true, as its host does: the icons, and still no request.
+		const newer = await loadedCore({ cached: true, network: true, capabilities: { remoteImages: true } });
+		expect(newer.calls).toEqual([]);
+		expect(newer.text).toContain('| ![Fragmento brillante\\|20](https://render.guildwars2.com/file/106732.png) Fragmento brillante | 1 | 0g 11s 5c |');
+		// No cache record, no icon: the name (here its fallback) alone, whatever the host paints.
+		expect((await loadedCore({ capabilities: { remoteImages: true } })).text).toContain('| Objeto 106732 | 1 | 0g 11s 5c |');
 	});
 
 	it('with a map on record the only request is the approved one, `maps`, and never while loading', async () => {

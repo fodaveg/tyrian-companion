@@ -53,6 +53,8 @@ export interface LiveSessionSummaryServiceOptions {
 	itemMeta(itemIds: readonly number[]): Promise<SummaryItemMetaMap>;
 	/** Map names by decimal id: the cache, and the public API only when `network` is true. The service bounds the wait. */
 	mapNames(mapIds: readonly number[], network: boolean): Promise<Record<string, string>>;
+	/** Whether the host paints a remote image inside a line of the note; absent, it does not, and the item tables carry names alone. */
+	inlineIcons?(): boolean;
 	/** False while the plugin is loading: the summary of a session closed earlier is then written from caches only. */
 	networkAllowed(): boolean;
 	/** False in consult mode and after unload: the same gate that governs the full note. */
@@ -143,7 +145,7 @@ export class LiveSessionSummaryService {
 			const result: LiveSessionSummaryWriteResult = await this.writer.write({ session, locale, outputFolder, fullNotePath: receipt.path,
 				fullNoteLinkTarget: this.options.vault.linkTarget?.(receipt.path) ?? null,
 				displayNames, characters: this.options.characters(), charactersCapped: this.options.charactersCapped(),
-				itemMeta, mapNames, comparablePerHour: comparable.perHour, ...(comparable.capped === true ? { comparablesCapped: true } : {}) });
+				itemMeta, mapNames, comparablePerHour: comparable.perHour, inlineIcons: this.options.inlineIcons?.() === true, ...(comparable.capped === true ? { comparablesCapped: true } : {}) });
 			if (result.status === 'written' || result.status === 'unchanged' || result.status === 'kept') {
 				progress.done = true; await this.options.markWritten();
 				// The link back goes in right after the summary exists and is marked, because a host that names notes by id knows its id only

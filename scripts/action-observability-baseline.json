@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 594,
+		"catch_clause": 595,
 		"promise_catch": 61,
 		"void_expression": 139,
 		"callback_registration": 243
@@ -6547,11 +6547,27 @@
 					"reason": "Allowlisted catch_clause: The \"hasManagedAssetsFootprint\" catch (\"fallback_return\") hands the failure to onUnreadable (deps.report, the adapter failure channel that logs it) and treats an unreadable managed-assets manifest as still Tyrian's, so the core shows it as a conflict in its settings instead of failing the check. Verified recovery: \"fallback_return\" in \"hasManagedAssetsFootprint\"."
 				},
 				{
+					"id": "983663d00cdded14a0f741e352d134c5ec2c4b38",
+					"kind": "catch_clause",
+					"line": 297,
+					"column": 4,
+					"endLine": 300,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "hebraHasRemoteImages",
+						"justification": "The \"hebraHasRemoteImages\" catch (\"fallback_return\") calls report with the failure of api.has for markdown.image.remote and answers false, so a Hebra whose has() throws builds the host without remote images and the session summary writes item names without icons; the failure is logged, not hidden."
+					},
+					"reason": "Allowlisted catch_clause: The \"hebraHasRemoteImages\" catch (\"fallback_return\") calls report with the failure of api.has for markdown.image.remote and answers false, so a Hebra whose has() throws builds the host without remote images and the session summary writes item names without icons; the failure is logged, not hidden. Verified recovery: \"fallback_return\" in \"hebraHasRemoteImages\"."
+				},
+				{
 					"id": "e987e64e1e161b77bca09ce99e9c5c400fc13978",
 					"kind": "promise_catch",
-					"line": 329,
+					"line": 347,
 					"column": 3,
-					"endLine": 329,
+					"endLine": 347,
 					"endColumn": 87,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6566,9 +6582,9 @@
 				{
 					"id": "b4a317fd9993047215263c4714a78dd3beb19a70",
 					"kind": "promise_catch",
-					"line": 336,
+					"line": 354,
 					"column": 20,
-					"endLine": 336,
+					"endLine": 354,
 					"endColumn": 101,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6583,9 +6599,9 @@
 				{
 					"id": "26167d028a748946c7dd7b09fca0c5d03bbe52cc",
 					"kind": "catch_clause",
-					"line": 395,
+					"line": 413,
 					"column": 5,
-					"endLine": 397,
+					"endLine": 415,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6599,9 +6615,9 @@
 				{
 					"id": "86fd7e673733cade917a654af064c10d3aa8e6e6",
 					"kind": "callback_registration",
-					"line": 415,
+					"line": 433,
 					"column": 19,
-					"endLine": 415,
+					"endLine": 433,
 					"endColumn": 123,
 					"registration": "setTimeout",
 					"classification": "allowlisted",
@@ -6616,9 +6632,9 @@
 				{
 					"id": "5c398aeff80e78e985ff8d4e832744cb1fe39e9b",
 					"kind": "void_expression",
-					"line": 415,
+					"line": 433,
 					"column": 43,
-					"endLine": 415,
+					"endLine": 433,
 					"endColumn": 61,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6632,9 +6648,9 @@
 				{
 					"id": "1216249a9c2527c038b64c98b6f5ba6cbc7a0424",
 					"kind": "callback_registration",
-					"line": 501,
+					"line": 519,
 					"column": 5,
-					"endLine": 502,
+					"endLine": 520,
 					"endColumn": 88,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6649,9 +6665,9 @@
 				{
 					"id": "97455f6dbdd2afd9589e380a4d26765a03a1aa79",
 					"kind": "promise_catch",
-					"line": 501,
+					"line": 519,
 					"column": 5,
-					"endLine": 503,
+					"endLine": 521,
 					"endColumn": 66,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6666,9 +6682,9 @@
 				{
 					"id": "ad564ce1275e5bad9641b146e8159dd770695e6a",
 					"kind": "callback_registration",
-					"line": 564,
+					"line": 585,
 					"column": 23,
-					"endLine": 564,
+					"endLine": 585,
 					"endColumn": 69,
 					"registration": "setTimeout",
 					"classification": "allowlisted",
@@ -6683,9 +6699,9 @@
 				{
 					"id": "fceb459ed603de5e1120026f1341e35ac3900cb5",
 					"kind": "void_expression",
-					"line": 564,
+					"line": 585,
 					"column": 47,
-					"endLine": 564,
+					"endLine": 585,
 					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9111,9 +9127,9 @@
 				{
 					"id": "cf530cf92ec3897aa90a15c08bc7300979d235cd",
 					"kind": "catch_clause",
-					"line": 4045,
+					"line": 4047,
 					"column": 5,
-					"endLine": 4047,
+					"endLine": 4049,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9125,9 +9141,9 @@
 				{
 					"id": "cb0488c2843711d17113c21535bd3e78ce805f13",
 					"kind": "catch_clause",
-					"line": 4095,
+					"line": 4097,
 					"column": 5,
-					"endLine": 4097,
+					"endLine": 4099,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9141,9 +9157,9 @@
 				{
 					"id": "55bd095604828519ea1f6fb157cc3a03bae7ff0e",
 					"kind": "callback_registration",
-					"line": 4112,
+					"line": 4114,
 					"column": 18,
-					"endLine": 4116,
+					"endLine": 4118,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9158,9 +9174,9 @@
 				{
 					"id": "d518c0e4554b41653e0b3a1e58c67caefe7920a1",
 					"kind": "promise_catch",
-					"line": 4112,
+					"line": 4114,
 					"column": 18,
-					"endLine": 4121,
+					"endLine": 4123,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9175,9 +9191,9 @@
 				{
 					"id": "c0f6f743252f0087dab4de14a026e8262cf30660",
 					"kind": "callback_registration",
-					"line": 4112,
+					"line": 4114,
 					"column": 18,
-					"endLine": 4125,
+					"endLine": 4127,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9192,9 +9208,9 @@
 				{
 					"id": "f42302cf0a7c39343c249824059bf5434b859753",
 					"kind": "callback_registration",
-					"line": 4157,
+					"line": 4159,
 					"column": 18,
-					"endLine": 4161,
+					"endLine": 4163,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9209,9 +9225,9 @@
 				{
 					"id": "bb1a3b6e03292fdb478d0f71e674f5f7500511a9",
 					"kind": "promise_catch",
-					"line": 4157,
+					"line": 4159,
 					"column": 18,
-					"endLine": 4169,
+					"endLine": 4171,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9226,9 +9242,9 @@
 				{
 					"id": "94590d89298efef6333db74e297c5071663abbbc",
 					"kind": "callback_registration",
-					"line": 4157,
+					"line": 4159,
 					"column": 18,
-					"endLine": 4173,
+					"endLine": 4175,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9243,9 +9259,9 @@
 				{
 					"id": "11924231863c6eda90628d4bcdb8e302477d6c3e",
 					"kind": "catch_clause",
-					"line": 4253,
+					"line": 4255,
 					"column": 5,
-					"endLine": 4261,
+					"endLine": 4263,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9257,9 +9273,9 @@
 				{
 					"id": "fa46b7738ce47742889194b6520ce6f18fd97b22",
 					"kind": "catch_clause",
-					"line": 4274,
+					"line": 4276,
 					"column": 5,
-					"endLine": 4276,
+					"endLine": 4278,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9273,9 +9289,9 @@
 				{
 					"id": "d52c88483e6bbd1d925e252b91318fbc1298859e",
 					"kind": "catch_clause",
-					"line": 4290,
+					"line": 4292,
 					"column": 5,
-					"endLine": 4292,
+					"endLine": 4294,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9289,9 +9305,9 @@
 				{
 					"id": "c9f4d501ec2cb1dc97113fb49c1c990d270a5dd8",
 					"kind": "callback_registration",
-					"line": 4481,
+					"line": 4483,
 					"column": 18,
-					"endLine": 4512,
+					"endLine": 4514,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9306,9 +9322,9 @@
 				{
 					"id": "d9643cb885a00ea7d9b9681392345e345185d6c7",
 					"kind": "promise_catch",
-					"line": 4481,
+					"line": 4483,
 					"column": 18,
-					"endLine": 4526,
+					"endLine": 4528,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "observed",
@@ -9321,9 +9337,9 @@
 				{
 					"id": "54d9b3a70b55678c113eeb7717854c5d92ae86b2",
 					"kind": "callback_registration",
-					"line": 4481,
+					"line": 4483,
 					"column": 18,
-					"endLine": 4527,
+					"endLine": 4529,
 					"endColumn": 60,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9338,9 +9354,9 @@
 				{
 					"id": "c3ae68566e32c12bb090076de08b7ba3431651cb",
 					"kind": "catch_clause",
-					"line": 4694,
+					"line": 4696,
 					"column": 6,
-					"endLine": 4706,
+					"endLine": 4708,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -9352,9 +9368,9 @@
 				{
 					"id": "fa67a11fad255eba6216837d9c3f67f8d2ae2312",
 					"kind": "catch_clause",
-					"line": 4744,
+					"line": 4746,
 					"column": 5,
-					"endLine": 4746,
+					"endLine": 4748,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9366,9 +9382,9 @@
 				{
 					"id": "81c62c0279eb731d8a288003f470d4dd18b99fbe",
 					"kind": "void_expression",
-					"line": 4773,
+					"line": 4775,
 					"column": 7,
-					"endLine": 4776,
+					"endLine": 4778,
 					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9382,9 +9398,9 @@
 				{
 					"id": "ba040cad1edce89114b19793e7efa7e46a16bd7a",
 					"kind": "callback_registration",
-					"line": 4773,
+					"line": 4775,
 					"column": 12,
-					"endLine": 4776,
+					"endLine": 4778,
 					"endColumn": 8,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9399,9 +9415,9 @@
 				{
 					"id": "f1d8ad9a2b41606a3a04cd653597f21918a0fa95",
 					"kind": "void_expression",
-					"line": 4794,
+					"line": 4796,
 					"column": 22,
-					"endLine": 4794,
+					"endLine": 4796,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9415,9 +9431,9 @@
 				{
 					"id": "6752a7c99052d0a41664dc47536e1a33394d1648",
 					"kind": "promise_catch",
-					"line": 4794,
+					"line": 4796,
 					"column": 27,
-					"endLine": 4794,
+					"endLine": 4796,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9432,9 +9448,9 @@
 				{
 					"id": "37f8e1478029f922cda8f8f9a3794833e1b0bd14",
 					"kind": "void_expression",
-					"line": 4823,
+					"line": 4825,
 					"column": 22,
-					"endLine": 4823,
+					"endLine": 4825,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9448,9 +9464,9 @@
 				{
 					"id": "f71b27614079d8710ac91a84c66ee9bcfd283218",
 					"kind": "void_expression",
-					"line": 4857,
+					"line": 4859,
 					"column": 4,
-					"endLine": 4857,
+					"endLine": 4859,
 					"endColumn": 29,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9464,9 +9480,9 @@
 				{
 					"id": "d4bafd7d3f50ec407381957023f1a066cfd8b82f",
 					"kind": "void_expression",
-					"line": 4858,
+					"line": 4860,
 					"column": 4,
-					"endLine": 4859,
+					"endLine": 4861,
 					"endColumn": 104,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9480,9 +9496,9 @@
 				{
 					"id": "cb6a88f9ec9089bdb29ae287d93edf374c40923f",
 					"kind": "void_expression",
-					"line": 4861,
+					"line": 4863,
 					"column": 3,
-					"endLine": 4861,
+					"endLine": 4863,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9496,9 +9512,9 @@
 				{
 					"id": "bcf5ccc78f836b1a682497bc8aa293348cf4ca3e",
 					"kind": "catch_clause",
-					"line": 4930,
+					"line": 4932,
 					"column": 5,
-					"endLine": 4933,
+					"endLine": 4935,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9512,9 +9528,9 @@
 				{
 					"id": "adfd960861f6e628a65d0a01dabfc7dd5621f1e4",
 					"kind": "catch_clause",
-					"line": 4941,
+					"line": 4943,
 					"column": 5,
-					"endLine": 4943,
+					"endLine": 4945,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9528,9 +9544,9 @@
 				{
 					"id": "c934c4a5ed941b049a6566572c64101fc5fb9547",
 					"kind": "callback_registration",
-					"line": 4970,
+					"line": 4972,
 					"column": 18,
-					"endLine": 4973,
+					"endLine": 4975,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9545,9 +9561,9 @@
 				{
 					"id": "71d14f9ad532611a4703914547606f05430aa766",
 					"kind": "callback_registration",
-					"line": 4970,
+					"line": 4972,
 					"column": 18,
-					"endLine": 4973,
+					"endLine": 4975,
 					"endColumn": 91,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9562,9 +9578,9 @@
 				{
 					"id": "458c5cb85d23c947d97bc5c97cbc13bb21fa4260",
 					"kind": "catch_clause",
-					"line": 5112,
+					"line": 5114,
 					"column": 6,
-					"endLine": 5115,
+					"endLine": 5117,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9578,9 +9594,9 @@
 				{
 					"id": "6c8798075442081f5cc38441def783a0d90182ee",
 					"kind": "catch_clause",
-					"line": 5190,
+					"line": 5192,
 					"column": 6,
-					"endLine": 5194,
+					"endLine": 5196,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9594,9 +9610,9 @@
 				{
 					"id": "c4596e2be8241b08541ac16d08bdb3fa721945c6",
 					"kind": "catch_clause",
-					"line": 5290,
+					"line": 5292,
 					"column": 3,
-					"endLine": 5290,
+					"endLine": 5292,
 					"endColumn": 113,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9610,9 +9626,9 @@
 				{
 					"id": "4cd79f6abd4507a3fe1263dbf8bfa43f8aae6d61",
 					"kind": "catch_clause",
-					"line": 5421,
+					"line": 5423,
 					"column": 6,
-					"endLine": 5429,
+					"endLine": 5431,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -9624,9 +9640,9 @@
 				{
 					"id": "f92cfc661f99537af095df9072843636d2459be7",
 					"kind": "callback_registration",
-					"line": 5454,
+					"line": 5456,
 					"column": 25,
-					"endLine": 5456,
+					"endLine": 5458,
 					"endColumn": 43,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9641,9 +9657,9 @@
 				{
 					"id": "dfbef88f9a59aa09fa4a5f4b2a2c70cc80e4249e",
 					"kind": "void_expression",
-					"line": 5503,
+					"line": 5505,
 					"column": 29,
-					"endLine": 5506,
+					"endLine": 5508,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9657,9 +9673,9 @@
 				{
 					"id": "827aaccbd19a4a18a72e278cdf63fceff093afa9",
 					"kind": "catch_clause",
-					"line": 5510,
+					"line": 5512,
 					"column": 5,
-					"endLine": 5516,
+					"endLine": 5518,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9673,9 +9689,9 @@
 				{
 					"id": "c19166069b7e9019791a8c3c278ca19a43e3c5bc",
 					"kind": "void_expression",
-					"line": 5511,
+					"line": 5513,
 					"column": 55,
-					"endLine": 5514,
+					"endLine": 5516,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9689,9 +9705,9 @@
 				{
 					"id": "4b43d98ed427424ee39a230b519d14f826cf1bce",
 					"kind": "void_expression",
-					"line": 5551,
+					"line": 5553,
 					"column": 3,
-					"endLine": 5551,
+					"endLine": 5553,
 					"endColumn": 97,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9705,9 +9721,9 @@
 				{
 					"id": "35fbd9d3016bb631c068f5279b6ea4359d20506e",
 					"kind": "catch_clause",
-					"line": 5615,
+					"line": 5617,
 					"column": 3,
-					"endLine": 5615,
+					"endLine": 5617,
 					"endColumn": 49,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9721,9 +9737,9 @@
 				{
 					"id": "98700551298dce36e6814d7f2296e45b2cc7032f",
 					"kind": "catch_clause",
-					"line": 5645,
+					"line": 5647,
 					"column": 5,
-					"endLine": 5652,
+					"endLine": 5654,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9735,9 +9751,9 @@
 				{
 					"id": "83015dc52bb0c806baaec29a7150d7e52028ad32",
 					"kind": "callback_registration",
-					"line": 5700,
+					"line": 5702,
 					"column": 25,
-					"endLine": 5700,
+					"endLine": 5702,
 					"endColumn": 89,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9752,9 +9768,9 @@
 				{
 					"id": "36fb5e44ab318e92c1f58e5564cd13f2af8fbe27",
 					"kind": "void_expression",
-					"line": 5707,
+					"line": 5709,
 					"column": 5,
-					"endLine": 5707,
+					"endLine": 5709,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9768,9 +9784,9 @@
 				{
 					"id": "6fae3ba3442df33965cacf181af00eca565bcbb0",
 					"kind": "void_expression",
-					"line": 5728,
+					"line": 5730,
 					"column": 29,
-					"endLine": 5731,
+					"endLine": 5733,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9784,9 +9800,9 @@
 				{
 					"id": "c14be76cd9da0de74cd40fdc59ea20031d60c603",
 					"kind": "catch_clause",
-					"line": 5736,
+					"line": 5738,
 					"column": 7,
-					"endLine": 5736,
+					"endLine": 5738,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9800,9 +9816,9 @@
 				{
 					"id": "cd4916558f29c39ec2c1d980cd15df214208dd32",
 					"kind": "catch_clause",
-					"line": 5740,
+					"line": 5742,
 					"column": 5,
-					"endLine": 5746,
+					"endLine": 5748,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9816,9 +9832,9 @@
 				{
 					"id": "8e6d3371d41b0d7632f747210a17dc8e858bbd70",
 					"kind": "void_expression",
-					"line": 5741,
+					"line": 5743,
 					"column": 55,
-					"endLine": 5744,
+					"endLine": 5746,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9832,9 +9848,9 @@
 				{
 					"id": "334022dc13fbebddb4dcb92f8406d45cf14a62da",
 					"kind": "catch_clause",
-					"line": 5888,
+					"line": 5890,
 					"column": 6,
-					"endLine": 5890,
+					"endLine": 5892,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9848,9 +9864,9 @@
 				{
 					"id": "940a9c8d9c850abd61b99b1ad1b3e9257a808ddc",
 					"kind": "callback_registration",
-					"line": 5974,
+					"line": 5976,
 					"column": 3,
-					"endLine": 5979,
+					"endLine": 5981,
 					"endColumn": 5,
 					"registration": "queueMicrotask",
 					"classification": "allowlisted",
@@ -9865,9 +9881,9 @@
 				{
 					"id": "0d7e0c7a35c65fb6505392e13a9effe0966589da",
 					"kind": "callback_registration",
-					"line": 6331,
+					"line": 6333,
 					"column": 24,
-					"endLine": 6331,
+					"endLine": 6333,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9882,9 +9898,9 @@
 				{
 					"id": "d2ee8524a5c8c1a9fed1cc8ac5aac25a738cbc8f",
 					"kind": "void_expression",
-					"line": 6361,
+					"line": 6363,
 					"column": 19,
-					"endLine": 6361,
+					"endLine": 6363,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9898,9 +9914,9 @@
 				{
 					"id": "e6f8263d0defff98ffc28f3e4fb23e3d00713812",
 					"kind": "callback_registration",
-					"line": 6364,
+					"line": 6366,
 					"column": 24,
-					"endLine": 6364,
+					"endLine": 6366,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9915,9 +9931,9 @@
 				{
 					"id": "81ad1801388c43c7d6e01b667169f43c2580f97e",
 					"kind": "catch_clause",
-					"line": 6365,
+					"line": 6367,
 					"column": 3,
-					"endLine": 6368,
+					"endLine": 6370,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9931,9 +9947,9 @@
 				{
 					"id": "e51617b00c7ebe44c0dec7319946149b61267a78",
 					"kind": "void_expression",
-					"line": 6366,
+					"line": 6368,
 					"column": 20,
-					"endLine": 6366,
+					"endLine": 6368,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9947,9 +9963,9 @@
 				{
 					"id": "4e301aa2861790d20e4f84670ba115cc57c1f6d6",
 					"kind": "void_expression",
-					"line": 6371,
+					"line": 6373,
 					"column": 20,
-					"endLine": 6371,
+					"endLine": 6373,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9963,9 +9979,9 @@
 				{
 					"id": "a1a36a201e12975b613bd5c18752041569de5833",
 					"kind": "void_expression",
-					"line": 6376,
+					"line": 6378,
 					"column": 19,
-					"endLine": 6376,
+					"endLine": 6378,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9979,9 +9995,9 @@
 				{
 					"id": "d3c5cd6b5e8a4e6b3f1791eef863687c40e25aea",
 					"kind": "void_expression",
-					"line": 6397,
+					"line": 6399,
 					"column": 19,
-					"endLine": 6397,
+					"endLine": 6399,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9995,9 +10011,9 @@
 				{
 					"id": "3816ad7643065619f6e0d042d8457255a79130a7",
 					"kind": "callback_registration",
-					"line": 6400,
+					"line": 6402,
 					"column": 24,
-					"endLine": 6400,
+					"endLine": 6402,
 					"endColumn": 93,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10012,9 +10028,9 @@
 				{
 					"id": "ef06b4866c68da37533d51f68cded885e1cda01d",
 					"kind": "catch_clause",
-					"line": 6401,
+					"line": 6403,
 					"column": 3,
-					"endLine": 6404,
+					"endLine": 6406,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10028,9 +10044,9 @@
 				{
 					"id": "8f2439040f04ee35002e2fb486ad1d3744451487",
 					"kind": "void_expression",
-					"line": 6402,
+					"line": 6404,
 					"column": 20,
-					"endLine": 6402,
+					"endLine": 6404,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10044,9 +10060,9 @@
 				{
 					"id": "52c83b19e342b3a71d0c5792ae25242583c53e02",
 					"kind": "void_expression",
-					"line": 6407,
+					"line": 6409,
 					"column": 20,
-					"endLine": 6407,
+					"endLine": 6409,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10060,9 +10076,9 @@
 				{
 					"id": "14661eb16607a543ae29e70347b88869724e4e2d",
 					"kind": "void_expression",
-					"line": 6410,
+					"line": 6412,
 					"column": 19,
-					"endLine": 6410,
+					"endLine": 6412,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10076,9 +10092,9 @@
 				{
 					"id": "3f1d9a42d7bad4594837c36688d9f6a839811106",
 					"kind": "catch_clause",
-					"line": 6544,
+					"line": 6546,
 					"column": 5,
-					"endLine": 6547,
+					"endLine": 6549,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10090,9 +10106,9 @@
 				{
 					"id": "cf2457ea09339a061ccbd73e4e47bce5b13473e5",
 					"kind": "callback_registration",
-					"line": 6784,
+					"line": 6786,
 					"column": 17,
-					"endLine": 6784,
+					"endLine": 6786,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10107,9 +10123,9 @@
 				{
 					"id": "43004c112baf2d083714ed369372095021455d1d",
 					"kind": "promise_catch",
-					"line": 6784,
+					"line": 6786,
 					"column": 17,
-					"endLine": 6784,
+					"endLine": 6786,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10124,9 +10140,9 @@
 				{
 					"id": "5f8e08d4a327890e911dad18d1957e859d216cc2",
 					"kind": "callback_registration",
-					"line": 6785,
+					"line": 6787,
 					"column": 20,
-					"endLine": 6785,
+					"endLine": 6787,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10141,9 +10157,9 @@
 				{
 					"id": "8974d15d4ec4a076f85ec88ad0d8f42f56c90302",
 					"kind": "promise_catch",
-					"line": 6785,
+					"line": 6787,
 					"column": 20,
-					"endLine": 6785,
+					"endLine": 6787,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10158,9 +10174,9 @@
 				{
 					"id": "bd67adc222fe844d703c05617b4d192198d7fbc3",
 					"kind": "catch_clause",
-					"line": 6881,
+					"line": 6883,
 					"column": 5,
-					"endLine": 6881,
+					"endLine": 6883,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10174,9 +10190,9 @@
 				{
 					"id": "ff338dcbd125c5fa78e00e2af469ff2fcecb89db",
 					"kind": "catch_clause",
-					"line": 6911,
+					"line": 6913,
 					"column": 5,
-					"endLine": 6911,
+					"endLine": 6913,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10190,9 +10206,9 @@
 				{
 					"id": "94d6b4776639a6a734379011d2e02de96265a034",
 					"kind": "promise_catch",
-					"line": 6983,
+					"line": 6985,
 					"column": 7,
-					"endLine": 6983,
+					"endLine": 6985,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10207,9 +10223,9 @@
 				{
 					"id": "d27f06a0044e5f3ab79cc19299174127a9de4e5b",
 					"kind": "promise_catch",
-					"line": 7038,
+					"line": 7045,
 					"column": 2,
-					"endLine": 7038,
+					"endLine": 7045,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11670,9 +11686,9 @@
 				{
 					"id": "12aa421a7a97e07271fd51629576d431571ccb23",
 					"kind": "catch_clause",
-					"line": 298,
+					"line": 310,
 					"column": 4,
-					"endLine": 298,
+					"endLine": 310,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11686,9 +11702,9 @@
 				{
 					"id": "290bbd10fb244dd928e97421a7dc408c4f1171ed",
 					"kind": "catch_clause",
-					"line": 354,
+					"line": 366,
 					"column": 6,
-					"endLine": 358,
+					"endLine": 370,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11702,9 +11718,9 @@
 				{
 					"id": "f57edfcbf0226f4cb22ba2190ac9f141d94fd22b",
 					"kind": "catch_clause",
-					"line": 359,
+					"line": 371,
 					"column": 5,
-					"endLine": 361,
+					"endLine": 373,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11724,9 +11740,9 @@
 				{
 					"id": "f6570bb69d7e6f0f6649ce858e97629c0ca1df8e",
 					"kind": "catch_clause",
-					"line": 101,
+					"line": 103,
 					"column": 33,
-					"endLine": 103,
+					"endLine": 105,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11740,9 +11756,9 @@
 				{
 					"id": "e642139ff285f92278167951f07ae5c094545a17",
 					"kind": "catch_clause",
-					"line": 107,
+					"line": 109,
 					"column": 44,
-					"endLine": 107,
+					"endLine": 109,
 					"endColumn": 128,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11756,9 +11772,9 @@
 				{
 					"id": "e5488525f5cc8126c68971360a36932d1c9c0a8d",
 					"kind": "catch_clause",
-					"line": 190,
+					"line": 192,
 					"column": 32,
-					"endLine": 193,
+					"endLine": 195,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {

@@ -10,7 +10,7 @@ import { LiveSessionHistoryService } from './live-session-history';
 import { SessionHistoryService, type SessionHistoryVault } from './session-history';
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
 import { LiveSessionSummaryWriter, linkFullNoteToSummary, liveSessionSummaryRelativePath, renderLiveSessionSummary, type LiveSessionSummaryInput } from './live-session-summary-note';
-import { computeSummaryFigures } from './live-session-summary-figures';
+import { computeSummaryFigures, type SummaryItemMetaMap } from './live-session-summary-figures';
 import { readComparablePerHour } from './live-session-summary-history';
 import { LIVE_SUMMARY_MAX_ATTEMPTS, LIVE_SUMMARY_RETRY_MS, LiveSessionSummaryService } from './live-session-summary-service';
 
@@ -1410,9 +1410,133 @@ describe('live session summary: file, history and writer', () => {
 	});
 });
 
+/** N5 (David, 9 Oct 2026): «quiero que en las sesiones (las notas) aparezcan iconos de los objetos». */
+const ICON_STAPLE = 'https://render.guildwars2.com/file/E6017363449406DEE3DD3B80263AA2A91716F1DE/499375.png';
+const ICON_OTHER = 'https://render.guildwars2.com/file/1C8B6A8A5C1B4B0E3F2D9E7A6B5C4D3E2F1A0B9C/66524.png';
+const WITH_ICONS: SummaryItemMetaMap = { [STAPLE]: { flags: [], type: 'Trophy', icon: ICON_STAPLE }, [OTHER]: { flags: [], type: 'CraftingMaterial', icon: ICON_OTHER } };
+const HEBRA_TARGET = 'id:f27d387d-7245-430a-bb8d-ffda023154c4';
+/** The rows of the item table (its alignment line is the only one with three columns), as written. */
+const itemRows = (content: string): string[] => {
+	const lines = body(content).split('\n'); const start = lines.indexOf('|---|---:|---:|');
+	if (start < 0) throw new Error('no item table');
+	const end = lines.indexOf('', start); return lines.slice(start + 1, end < 0 ? undefined : end);
+};
+/** A row split into cells as a GFM table does: on the bars that are not escaped, and then `\|` is a bar of the cell's text. */
+const cellsOf = (row: string): string[] => row.slice(1, -1).split(/(?<!\\)\|/u).map((cell) => cell.trim().replace(/\\\|/gu, '|'));
+/** An image at the start of a cell, read as CommonMark reads it: the escapes of its text undone and the trailing `|<size>` apart. */
+const imageOf = (cell: string): { alt: string; size: number | null; src: string; text: string } | null => {
+	const match = /^!\[((?:\\.|[^\\\]])*)\]\((https:\/\/[^\s)]+)\) (.+)$/u.exec(cell);
+	if (match === null) return null;
+	const alt = match[1]!.replace(/\\(.)/gu, '$1'); const size = /\|(\d+)$/u.exec(alt);
+	return { alt: size === null ? alt : alt.slice(0, size.index), size: size === null ? null : Number(size[1]), src: match[2]!, text: match[3]! };
+};
+
+describe('live session summary: item icons in the table (N5)', () => {
+	it('in Obsidian each item of the table carries its cached icon, 20 px, before its name; nothing else of the note moves', async () => {
+		const plain = await render({ itemMeta: WITH_ICONS });
+		const note = await render({ itemMeta: WITH_ICONS, inlineIcons: true });
+		expect(itemRows(note.content)).toEqual([
+			`| ![Saco grande\\|20](${ICON_STAPLE}) Saco grande | 30 | 4g 50s 0c |`,
+			`| ![Champiñón\\|20](${ICON_OTHER}) Champiñón | 9 | 0g 27s 0c |`]);
+		// Read as a table reads it: three cells, and in the first one the image (the name, 20 px, the icon) and then the name.
+		const [first] = itemRows(note.content);
+		expect(cellsOf(first!)).toHaveLength(3);
+		expect(imageOf(cellsOf(first!)[0]!)).toEqual({ alt: 'Saco grande', size: 20, src: ICON_STAPLE, text: 'Saco grande' });
+		// Only the two rows change: the frontmatter, the other sections and the link to the full note are those of a note without icons.
+		const differing = note.content.split('\n').filter((line, index) => line !== plain.content.split('\n')[index]);
+		expect(differing).toEqual(itemRows(note.content));
+		expect(note.content.split('\n')).toHaveLength(plain.content.split('\n').length);
+		expect(note.content).toContain(`[[${FULL_NOTE.replace(/\.md$/u, '')}|Sesión completa]]`);
+	});
+
+	it('in a Hebra that paints remote images the table is the same, and the link goes by its own id', async () => {
+		const obsidian = await render({ itemMeta: WITH_ICONS, inlineIcons: true });
+		const hebra = await render({ itemMeta: WITH_ICONS, inlineIcons: true, fullNoteLinkTarget: HEBRA_TARGET });
+		expect(itemRows(hebra.content)).toEqual(itemRows(obsidian.content));
+		expect(hebra.content).toContain(`[[${HEBRA_TARGET}|Sesión completa]]`);
+	});
+
+	it('in a Hebra without `markdown.image.remote` it writes the names alone, and so it does when nobody says', async () => {
+		for (const inlineIcons of [false, undefined]) {
+			const { content } = await render({ itemMeta: WITH_ICONS, fullNoteLinkTarget: HEBRA_TARGET, ...(inlineIcons === undefined ? {} : { inlineIcons }) });
+			expect(itemRows(content), String(inlineIcons)).toEqual(['| Saco grande | 30 | 4g 50s 0c |', '| Champiñón | 9 | 0g 27s 0c |']);
+			expect(body(content), String(inlineIcons)).not.toContain('![');
+			expect(body(content), String(inlineIcons)).not.toContain('|20');
+		}
+	});
+
+	it('an item with no icon in the cache, or no cache record at all, keeps its name alone next to one that has it', async () => {
+		const noIcon = await render({ inlineIcons: true, itemMeta: { ...WITH_ICONS, [OTHER]: { flags: [], type: 'CraftingMaterial' } } });
+		expect(itemRows(noIcon.content)).toEqual([`| ![Saco grande\\|20](${ICON_STAPLE}) Saco grande | 30 | 4g 50s 0c |`, '| Champiñón | 9 | 0g 27s 0c |']);
+		const noRecord = await render({ inlineIcons: true, itemMeta: { [STAPLE]: WITH_ICONS[STAPLE] } });
+		expect(itemRows(noRecord.content)[1]).toBe('| Champiñón | 9 | 0g 27s 0c |');
+		expect(itemRows((await render({ inlineIcons: true })).content)).toEqual(['| Saco grande | 30 | 4g 50s 0c |', '| Champiñón | 9 | 0g 27s 0c |']);
+	});
+
+	it('escapes a `|` or a `]` of the name, so the cell does not split and the image ends where it should', async () => {
+		const names = { ...NAMES, [`item:${String(STAPLE)}`]: 'Saco [grande] | raro', 'item:12147': 'Champi]ñón' };
+		const { content } = await render({ itemMeta: WITH_ICONS, inlineIcons: true, displayNames: names });
+		expect(itemRows(content)).toEqual([
+			`| ![Saco \\[grande\\] \\| raro\\|20](${ICON_STAPLE}) Saco [grande] \\| raro | 30 | 4g 50s 0c |`,
+			`| ![Champi\\]ñón\\|20](${ICON_OTHER}) Champi]ñón | 9 | 0g 27s 0c |`]);
+		for (const [row, name, src] of [[itemRows(content)[0]!, 'Saco [grande] | raro', ICON_STAPLE], [itemRows(content)[1]!, 'Champi]ñón', ICON_OTHER]] as const) {
+			expect(cellsOf(row), name).toHaveLength(3);
+			expect(imageOf(cellsOf(row)[0]!), name).toEqual({ alt: name, size: 20, src, text: name });
+		}
+	});
+
+	it('discards an icon off render.guildwars2.com, or one that would break the image or the cell: the name stays', async () => {
+		for (const icon of ['https://evil.example/file/x.png', 'http://render.guildwars2.com/file/x.png', 'https://render.guildwars2.com.evil.example/x.png',
+			'https://user:pass@render.guildwars2.com/x.png', 'javascript:alert(1)', 'not a url', '', 'data:image/png;base64,AAAA',
+			'https://render.guildwars2.com/file/a.png\nevil: true', 'https://render.guildwars2.com/file/a"b.png', 'https://render.guildwars2.com/file/a\\b.png',
+			'https://render.guildwars2.com/file/a).png', 'https://render.guildwars2.com/file/a|b.png', 'https://render.guildwars2.com/file/a]b.png',
+			'https://render.guildwars2.com/file/<a>.png', 'https://render.guildwars2.com/file/a b.png', 'https://render.guildwars2.com/file/a`b.png']) {
+			const { content } = await render({ inlineIcons: true, itemMeta: { ...META, [STAPLE]: { flags: [], type: 'Trophy', icon } } });
+			expect(itemRows(content)[0], icon).toBe('| Saco grande | 30 | 4g 50s 0c |');
+			expect(body(content), icon).not.toContain('![');
+		}
+	});
+});
+
+describe('live session summary: notes with icons read back like the ones before them (N5)', () => {
+	it('is neither a session candidate nor part of either history: a vault with it reads the same as one with the note before icons', async () => {
+		const input = fixture();
+		const older = await render({ itemMeta: WITH_ICONS }); const newer = await render({ itemMeta: WITH_ICONS, inlineIcons: true });
+		expect(newer.path).toBe(older.path);
+		expect(await inspectLiveSessionNote(newer.content)).toEqual({ status: 'non_candidate' });
+		const vaults = await Promise.all([older, newer].map(async (summary) => {
+			const vault = new TestVault();
+			expect((await new SessionNoteWriter(vault).writeLive(input)).status).toBe('written');
+			vault.contents.set(summary.path, summary.content); return vault;
+		}));
+		const [beforeList, afterList] = await Promise.all(vaults.map(async (vault) => await new LiveSessionHistoryService(historyVault(vault)).list()));
+		expect(afterList).toEqual(beforeList);
+		expect(afterList!.status === 'ok' && afterList!.sessions).toHaveLength(1);
+		const [beforeScan, afterScan] = await Promise.all(vaults.map(async (vault) => await new SessionHistoryService(historyVault(vault)).scan()));
+		expect(afterScan).toEqual(beforeScan);
+	});
+
+	it('the average of similar sessions reads summaries with icons and without them alike', async () => {
+		const vault = new TestVault();
+		const put = async (suffix: string, startMinutes: number, icons: boolean): Promise<void> => {
+			const base = await payload();
+			const session = { ...base, startedAt: new Date(AT + startMinutes * 60_000).toISOString(), endedAt: new Date(AT + (startMinutes + 40) * 60_000).toISOString(),
+				sessionRef: (suffix + base.sessionRef).slice(0, 64) };
+			const rendered = await renderLiveSessionSummary({ session: { ...session, mapIntervals: [{ mapId: 866, fromMs: Date.parse(session.startedAt), toMs: Date.parse(session.endedAt) }] },
+				locale: 'es', outputFolder: 'Tyrian Companion', fullNotePath: FULL_NOTE, itemMeta: WITH_ICONS, displayNames: NAMES, utcOffsetMinutes: OFFSET, inlineIcons: icons });
+			if (rendered.status !== 'ok') throw new Error('render');
+			expect(rendered.note.content.includes('![Saco grande'), suffix).toBe(icons);
+			vault.contents.set(rendered.note.path, rendered.note.content);
+		};
+		await put('a', 1_000, false); await put('b', 2_000, true); await put('c', 3_000, true);
+		expect(await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).toEqual({ perHour: [71_550, 71_550, 71_550], unreadable: 0, capped: false });
+	});
+});
+
 describe('live session summary service', () => {
 	function harness(overrides: { receipt?: boolean; enabled?: boolean; written?: boolean; network?: boolean; mapNames?: (ids: readonly number[], network: boolean) => Promise<Record<string, string>>;
 		itemMeta?: () => Promise<never>; onFailure?: () => void; characters?: { name: string; fromAt: string }[];
+		/** What the host answers about remote images; absent, the option is not passed at all. */ inlineIcons?: () => boolean; meta?: SummaryItemMetaMap;
 		/** Names in memory (default: all of them, as right after closing). */ memoryNames?: Record<string, string>;
 		/** What the catalog cache knows, by the note's keys; `'fails'` is a cache that cannot be read. */ cachedNames?: Record<string, string> | 'fails';
 		fixture?: FixtureOptions } = {}) {
@@ -1432,7 +1556,7 @@ describe('live session summary service', () => {
 			},
 			characters: () => overrides.characters ?? [{ name: 'Alfa', fromAt: iso(0) }], charactersCapped: () => false,
 			isWritten: () => written, markWritten: async () => { written = true; marks.push(clock); }, networkAllowed: () => network,
-			itemMeta: overrides.itemMeta ?? (async () => META),
+			itemMeta: overrides.itemMeta ?? (async () => overrides.meta ?? META), ...(overrides.inlineIcons === undefined ? {} : { inlineIcons: overrides.inlineIcons }),
 			mapNames: overrides.mapNames ?? (async (_ids, allowed) => { mapCalls.push(allowed); return { '866': 'Laberinto del Rey Loco' }; }), mapWaitMs: 20, startTimer: realTimer,
 			onFailure: overrides.onFailure ?? ((details) => { failures.push(details); }) });
 		return { service, vault, failures, source, marks, mapCalls, nameCalls, tick: (ms: number) => { clock += ms; },
@@ -1517,6 +1641,15 @@ describe('live session summary service', () => {
 		await h.service.observe();
 		expect(h.summaries()).toHaveLength(1);
 		expect(h.vault.contents.get(h.summaries()[0]!)).toContain('| Mapa 866 | 20 min |');
+	});
+	it('writes the cached icons only when the host says it paints remote images, and names alone otherwise (N5)', async () => {
+		const row = `| ![Saco grande\\|20](${ICON_STAPLE}) Saco grande | 30 | 4g 50s 0c |`;
+		for (const [inlineIcons, painted] of [[() => true, true], [() => false, false], [undefined, false]] as const) {
+			const h = harness({ meta: WITH_ICONS, ...(inlineIcons === undefined ? {} : { inlineIcons }) });
+			await h.service.observe();
+			expect(h.text().includes(row), String(inlineIcons)).toBe(painted);
+			expect(h.text().includes('| Saco grande | 30 | 4g 50s 0c |'), String(inlineIcons)).toBe(!painted);
+		}
 	});
 	it('writes the note without names or flags when those lookups fail', async () => {
 		const h = harness({ mapNames: async () => { throw new Error('offline'); }, itemMeta: async () => { throw new Error('no cache'); } });
