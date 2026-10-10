@@ -249,8 +249,8 @@ describe.each(LOCALES)('the real plugin in %s', (locale) => {
 		const started = await start({ mainView: false, appLocale: locale });
 		const { test } = started;
 		const run = (id: string) => test.fake.recorded.commands.find((entry) => entry.id === `tyrian-companion:${id}`)!.run();
-		run(EXPORT_LIVE_SESSION_COMMAND_ID);
-		run(EXPORT_LEGACY_SESSION_COMMAND_ID);
+		void run(EXPORT_LIVE_SESSION_COMMAND_ID);
+		void run(EXPORT_LEGACY_SESSION_COMMAND_ID);
 		expect(test.fake.recorded.notices).toEqual(locale === 'es'
 			? ['No hay ninguna sesión en curso que exportar.', 'No hay ninguna sesión antigua guardada que exportar.']
 			: ['There is no current session to export.', 'There is no saved old session to export.']);
@@ -268,7 +268,7 @@ describe.each(LOCALES)('the real plugin in %s', (locale) => {
 });
 
 function test_run({ test }: Started, id: string): void {
-	test.fake.recorded.commands.find((entry) => entry.id === `tyrian-companion:${id}`)!.run();
+	void test.fake.recorded.commands.find((entry) => entry.id === `tyrian-companion:${id}`)!.run();
 }
 
 describe('the saved language wins over the app\'s in the adapter\'s notices', () => {
