@@ -570,6 +570,20 @@ describe('local diagnostics settings', () => {
 		}
 	});
 
+	it('keeps the plain storage line while the logger is disabled and has measured nothing', () => {
+		const status: LocalDebugStatus = {
+			enabled: false, minimumLevel: 'warn', state: 'disabled',
+			path: 'test-config-dir/plugins/tyrian-companion/logs/', bytes: 0, bytesComplete: false, fileCount: 0,
+			lastEventAt: null, droppedRecords: 0,
+			errorCode: null, queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 0, lastError: null,
+		};
+		const translator = createTranslator('en');
+		const lines = projectLocalDebugStatus(status, translator.t.bind(translator)).lines;
+		expect(lines).toContain('0 bytes in 0 files');
+		expect(lines.join('\n')).not.toContain('At least');
+	});
+
 	it('surfaces a healthy writer as an alert once errors have been recorded since load, with the last failure named', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'warn', state: 'ready',
