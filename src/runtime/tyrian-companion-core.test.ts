@@ -574,3 +574,111 @@ describe('the three sections on a host with a main screen', () => {
 		expect(patched).toEqual([]);
 	});
 });
+
+describe('saving settings re-reads the store first', { timeout: 20_000 }, () => {
+	afterEach(() => { vi.unstubAllGlobals(); });
+
+	/** A host whose settings live in a store the test can change from outside, as another device would. */
+	async function readyOverStore(load?: () => Promise<unknown>) {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered, records } = neutralHost();
+		const store = { value: { ...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'debug' } as Record<string, unknown> | null };
+		const patched: string[] = [];
+		const saves: Array<Record<string, unknown>> = [];
+		const wired: TyrianHost = {
+			...host,
+			capabilities: { mainView: true },
+			ui: {
+				...host.ui,
+				registerSectionsView: () => () => undefined,
+				revealSection: async () => undefined,
+				updateSection: (_type: string, sectionId: string) => { patched.push(sectionId); },
+			},
+			settings: {
+				load: load ? () => load() : async () => store.value,
+				save: async (value) => { saves.push(value as never); store.value = value as never; },
+			},
+		};
+		const runtime = createTyrianRuntime(wired);
+		await runtime.start();
+		registered.ready[0]!();
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({ action: 'plugin_load', state: 'runtime_initialize', phase: 'success' }));
+		}, { timeout: 10_000 });
+		saves.length = 0;
+		return { runtime, store, patched, saves };
+	}
+
+	it('keeps a key that changed in the store while the plugin was running', async () => {
+		const { runtime, store, saves } = await readyOverStore();
+		store.value = { ...store.value, preferredCharacter: 'Kasmeer' };
+
+		await runtime.updateSettings({ valuableLootThresholdCopper: 20_000 });
+
+		expect(saves.at(-1)).toMatchObject({ preferredCharacter: 'Kasmeer', valuableLootThresholdCopper: 20_000 });
+		expect(runtime.settings).toMatchObject({ preferredCharacter: 'Kasmeer', valuableLootThresholdCopper: 20_000 });
+	});
+
+	it('reacts to a key it discovers at save time, by the comparison that already exists', async () => {
+		const { runtime, store, patched } = await readyOverStore();
+		store.value = { ...store.value, language: 'es' };
+
+		await runtime.updateSettings({ valuableLootThresholdCopper: 20_000 });
+
+		expect(runtime.settings.language).toBe('es');
+		expect(patched).toEqual(['session', 'inventory', 'sale']);
+	});
+
+	it('falls back to its memory when the store answers something that is not a settings object', async () => {
+		const { runtime, store, saves } = await readyOverStore();
+		store.value = null;
+
+		await runtime.updateSettings({ valuableLootThresholdCopper: 20_000 });
+
+		expect(saves).toHaveLength(1);
+		expect(saves[0]).toMatchObject({ valuableLootThresholdCopper: 20_000, language: 'en' });
+	});
+
+	it('writes nothing when the store cannot be read, and the next save still works', async () => {
+		let failing = false;
+		const failure = new Error('The store is unreadable.');
+		const { runtime, saves } = await readyOverStore(async () => {
+			if (failing) throw failure;
+			return { ...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'debug' };
+		});
+		failing = true;
+
+		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 20_000 })).rejects.toBe(failure);
+
+		expect(saves).toEqual([]);
+		expect(runtime.settings.valuableLootThresholdCopper).toBe(DEFAULT_SETTINGS.valuableLootThresholdCopper);
+		failing = false;
+		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 30_000 })).resolves.toMatchObject({ status: 'saved' });
+		expect(saves).toHaveLength(1);
+	});
+
+	it('loses neither of two concurrent updates', async () => {
+		const { runtime, saves } = await readyOverStore();
+
+		await Promise.all([
+			runtime.updateSettings({ valuableLootThresholdCopper: 20_000 }),
+			runtime.updateSettings({ preferredCharacter: 'Kasmeer' }),
+		]);
+
+		expect(saves).toHaveLength(2);
+		expect(saves.at(-1)).toMatchObject({ valuableLootThresholdCopper: 20_000, preferredCharacter: 'Kasmeer' });
+		expect(runtime.settings).toMatchObject({ valuableLootThresholdCopper: 20_000, preferredCharacter: 'Kasmeer' });
+	});
+
+	it('does not overwrite a key changed in the store with the inventory sync receipt', async () => {
+		const { runtime, store, saves } = await readyOverStore();
+		store.value = { ...store.value, preferredCharacter: 'Kasmeer' };
+		const receipt = { at: 1 } as never;
+
+		await (runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome(receipt);
+
+		expect(saves.at(-1)).toMatchObject({ preferredCharacter: 'Kasmeer', inventorySyncLastRun: receipt });
+	});
+});

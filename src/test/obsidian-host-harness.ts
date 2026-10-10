@@ -12,7 +12,7 @@ import { vi } from 'vitest';
 import { createObsidianHost } from '../host/obsidian/obsidian-host';
 import type { TyrianHost } from '../host/tyrian-host';
 import TyrianCompanionPlugin from '../main';
-import type { TyrianCompanionCore } from '../runtime/tyrian-companion-core';
+import { TyrianCompanionCore as TyrianCoreClass, type TyrianCompanionCore } from '../runtime/tyrian-companion-core';
 
 /**
  * R1c: the plugin Obsidian builds and the core it hands its `ObsidianHost` to, the production
@@ -30,11 +30,21 @@ export function obsidianPluginCore(
 	obsidianPlugin.app = app;
 	obsidianPlugin.manifest = manifest;
 	obsidianPlugin.registerEvent = vi.fn();
+	// Saving settings re-reads the store first. A test that only stubbed `saveData` has a store that
+	// holds what the core holds, so the read answers the core's own settings.
+	obsidianPlugin.loadData = async () => obsidianPlugin.core.settings;
 	Object.assign(obsidianPlugin, plugin);
 	return { plugin: obsidianPlugin, core: obsidianPlugin.core };
 }
 
 export function withObsidianHost<T extends object>(harness: T): T & { readonly host: TyrianHost } {
+	// The prototype methods under test run on a plain object: it needs the settings write chain and
+	// the store read the core has, and a store that holds what the harness holds unless the test sets one.
+	const proto = TyrianCoreClass.prototype as unknown as Record<string, unknown>;
+	const bag = harness as unknown as Record<string, unknown>;
+	for (const name of ['serializeSettingsWrite', 'loadSettingsBase']) bag[name] ??= proto[name];
+	bag.settingsWriteChain ??= Promise.resolve();
+	bag.loadData ??= async () => bag.settings;
 	let host: TyrianHost | null = null;
 	Object.defineProperty(harness, 'host', {
 		configurable: true,
