@@ -84,3 +84,60 @@ describe('requestPersistentStorage', () => {
 		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
 	});
 });
+
+// The answer alone does not say whether eviction is near: the same line carries how full the origin is, where the engine says.
+describe('requestPersistentStorage with an estimate', () => {
+	const MIB = 1024 * 1024;
+
+	it('records the origin\'s usage and quota in whole MiB next to the answer, asking estimate once on the manager itself', async () => {
+		const { probe, settled } = recorded();
+		const storage = {
+			persist: vi.fn(async () => true),
+			estimate: vi.fn(function (this: unknown): Promise<StorageEstimate> {
+				if (this !== storage) throw new TypeError('Illegal invocation');
+				return Promise.resolve({ usage: 5.4 * MIB, quota: 2048 * MIB });
+			}),
+		};
+
+		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
+		expect(storage.estimate).toHaveBeenCalledTimes(1);
+		expect(settled().detail).toEqual({ result: 'granted', usageMiB: '5', quotaMiB: '2048' });
+	});
+
+	it('records them with a refusal too', async () => {
+		const { probe, settled } = recorded();
+		const storage = { persist: async () => false, estimate: async () => ({ usage: 0, quota: 512 * MIB }) };
+
+		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('denied');
+		expect(settled()).toMatchObject({ phase: 'skip', code: 'permission_denied' });
+		expect(settled().detail).toEqual({ result: 'denied', usageMiB: '0', quotaMiB: '512' });
+	});
+
+	it.each([
+		['rejects', { estimate: async () => { throw new DOMException('no', 'SecurityError'); } }],
+		['throws', { estimate: () => { throw new TypeError('no'); } }],
+	])('keeps the answer and leaves the figures out when estimate %s', async (_label, estimating) => {
+		const { probe, settled } = recorded();
+		const storage = { persist: async () => true, ...estimating } as PersistentStorageManager;
+
+		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
+		expect(settled()).toMatchObject({ phase: 'success', code: 'ok' });
+		expect(settled().detail).toEqual({ result: 'granted' });
+	});
+
+	it('leaves out a figure that is not a finite, non-negative number', async () => {
+		const { probe, settled } = recorded();
+		const storage = { persist: async () => true, estimate: async () => ({ usage: Number.NaN, quota: -1 }) };
+
+		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
+		expect(settled().detail).toEqual({ result: 'granted' });
+	});
+
+	it('never asks for an estimate when there was nothing to ask persist of', async () => {
+		const { probe } = recorded();
+		const estimate = vi.fn(async () => ({ usage: 1, quota: 1 }));
+
+		await expect(requestPersistentStorage(() => ({ estimate }) as unknown as PersistentStorageManager, probe)).resolves.toBe('unavailable');
+		expect(estimate).not.toHaveBeenCalled();
+	});
+});

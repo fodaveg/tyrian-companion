@@ -284,6 +284,27 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		expect(asked.map((record) => [record.component, record.action, record.phase])).toEqual([['plugin', 'plugin_load', 'start']]);
 	});
 
+	// The figures reach the local log through its sanitizer, not only the probe's event.
+	it('records the answer and the origin\'s estimate in the local log', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const mib = 1024 * 1024;
+		const { host, registered, records } = neutralHost({ persist: async () => true, estimate: async () => ({ usage: 12 * mib, quota: 4096 * mib }) });
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+
+		registered.ready[0]!();
+		const settled = () => records().filter((record) => (record.details as Record<string, unknown> | undefined)?.store === 'origin_storage' && record.phase !== 'start');
+		await vi.waitFor(() => { expect(settled()).toHaveLength(1); }, { timeout: 10_000 });
+		await runtime.stop();
+
+		expect(settled()[0]).toMatchObject({
+			component: 'plugin', action: 'plugin_load', phase: 'success', code: 'ok',
+			details: { store: 'origin_storage', result: 'granted', usageMiB: '12', quotaMiB: '4096' },
+		});
+	});
+
 	it('registers each view with the title and the icon of its section, in the language of the settings', async () => {
 		const { host, registered } = neutralHost();
 		await createTyrianRuntime(host).start();

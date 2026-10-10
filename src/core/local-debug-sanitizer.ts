@@ -44,7 +44,9 @@ const NUMERIC_MAP_KEY = /^[A-Za-z][A-Za-z0-9]{0,31}$/u;
 export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, readonly string[]>> = {
 	// `bootMs`/`bootCounts` (the `boot_timings` line, `src/core/boot-trace.ts`): flat maps of phase to
 	// non-negative integer, enforced by `NUMERIC_MAP_FIELDS` below, never a string or a nested object.
-	plugin: [...COMMON_DETAIL_FIELDS, 'enabled', 'commandCount', 'viewCount', 'bootMs', 'bootCounts'],
+	// `usageMiB`/`quotaMiB` (the `origin_storage` line, `src/core/persistent-storage.ts`): the origin's storage
+	// estimate as a whole number of MiB, never the exact byte counts.
+	plugin: [...COMMON_DETAIL_FIELDS, 'enabled', 'commandCount', 'viewCount', 'bootMs', 'bootCounts', 'usageMiB', 'quotaMiB'],
 	settings: [...COMMON_DETAIL_FIELDS, 'schemaVersion', 'changedKeys', 'language'],
 	connection: [...COMMON_DETAIL_FIELDS, 'permissionCount', 'missingPermissionCount'],
 	// `itemIds` are GW2's own public catalog item ids (e.g. the batch behind a failed

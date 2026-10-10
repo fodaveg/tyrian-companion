@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 605,
+		"catch_clause": 606,
 		"promise_catch": 61,
 		"void_expression": 142,
 		"callback_registration": 250
@@ -3730,6 +3730,22 @@
 						"justification": "The \"requestPersistentStorage\" owner explicitly handles \"fallback_return\": a storage manager that cannot be handed over, throws or rejects is recorded on its own persistence probe (attempt.skip, result \"unavailable\", reason \"request_failed\") and answered \"unavailable\"; nothing waits for it and nothing else depends on it."
 					},
 					"reason": "Allowlisted catch_clause: The \"requestPersistentStorage\" owner explicitly handles \"fallback_return\": a storage manager that cannot be handed over, throws or rejects is recorded on its own persistence probe (attempt.skip, result \"unavailable\", reason \"request_failed\") and answered \"unavailable\"; nothing waits for it and nothing else depends on it. Verified recovery: \"fallback_return\" in \"requestPersistentStorage\"."
+				},
+				{
+					"id": "533eb972191df4e6c9f3186c7640fbe6dd24fefe",
+					"kind": "catch_clause",
+					"line": 72,
+					"column": 4,
+					"endLine": 75,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "originEstimate",
+						"justification": "The \"originEstimate\" catch is a \"fallback_return\" of no figures: the answer to persist() is already known, and requestPersistentStorage records it on the origin_storage probe without usageMiB/quotaMiB, which is how an estimate that threw or rejected shows in the log."
+					},
+					"reason": "Allowlisted catch_clause: The \"originEstimate\" catch is a \"fallback_return\" of no figures: the answer to persist() is already known, and requestPersistentStorage records it on the origin_storage probe without usageMiB/quotaMiB, which is how an estimate that threw or rejected shows in the log. Verified recovery: \"fallback_return\" in \"originEstimate\"."
 				}
 			]
 		},
