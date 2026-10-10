@@ -1,6 +1,6 @@
 /** Localized copy for the shared Hebra/Obsidian inventory observation surface. */
 const EN = {
- details: 'Details', notices: 'Observed valuable items', noNotices: 'No notification intents recorded.', receiptLimit: 'Addon acceptance does not confirm that a notice was displayed.', noticeValue: 'Estimated value', noticeState: 'Notification intent', receipt: 'Addon receipt', noReceipt: 'No receipt', notice_awaiting_price: 'Waiting for a price', notice_skipped: 'Skipped', notice_ready: 'Ready', notice_dispatching: 'Dispatch claimed', notice_processed: 'Processed', noticeNoPrice: 'No price', noticeBelowThreshold: 'Below threshold', noticeClosed: 'Session closed', receipt_pending: 'Awaiting receipt', receipt_received: 'Accepted by addon', receipt_unconfirmed: 'Receipt unconfirmed · may not have been displayed', noticeFailed: 'Failed channels',
+ details: 'Details',
  history: 'Saved session', current: 'Current session', title: 'Inventory observations', timeline: 'Timeline', summary: 'Session summary',
  source: 'Source', character: 'Character', nexus: 'Local Nexus · character bags', missing: 'No Nexus inventory source',
  warming_up: 'Waiting for baseline', ready: 'Reading available', stale: 'Reading is old',
@@ -25,7 +25,7 @@ const EN = {
  disconnect: 'Connection lost', source_stale: 'No recent reader sample', read_failed: 'Reader could not complete the sample', partial_inventory: 'Some bag positions could not be read', context_changed: 'Character or map changed', host_restart: 'Host restarted', storage_unavailable: 'Could not store the reading', unsupported_build: 'Unsupported game build', source_missing: 'Reader source missing', cursor_gap: 'Missing sample', kindItem: 'Item', kindCurrency: 'Currency',
 } as const;
 const ES: Record<keyof typeof EN, string> = {
- details: 'Detalles', notices: 'Objetos valiosos observados', noNotices: 'Sin intentos de aviso guardados.', receiptLimit: 'La aceptación del addon no confirma que el aviso se haya mostrado.', noticeValue: 'Valor estimado', noticeState: 'Intento de aviso', receipt: 'Recepción del addon', noReceipt: 'Sin recepción', notice_awaiting_price: 'Esperando precio', notice_skipped: 'Omitido', notice_ready: 'Preparado', notice_dispatching: 'Envío reclamado', notice_processed: 'Procesado', noticeNoPrice: 'Sin precio', noticeBelowThreshold: 'Bajo el umbral', noticeClosed: 'Sesión terminada', receipt_pending: 'Esperando recepción', receipt_received: 'Aceptado por el addon', receipt_unconfirmed: 'Recepción no confirmada · puede no haberse mostrado', noticeFailed: 'Canales fallidos',
+ details: 'Detalles',
  history: 'Sesión guardada', current: 'Sesión actual', title: 'Observaciones del inventario', timeline: 'Cronología', summary: 'Resumen de sesión',
  source: 'Fuente', character: 'Personaje', nexus: 'Nexus local · bolsas del personaje', missing: 'Sin fuente Nexus de inventario',
  warming_up: 'Esperando baseline', ready: 'Lectura disponible', stale: 'Lectura antigua',
