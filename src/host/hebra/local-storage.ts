@@ -17,6 +17,7 @@
 import type { PluginStorage } from 'hebra-plugin-api';
 
 import { openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen } from '../../core/indexed-db-open';
+import { DEFAULT_SETTINGS } from '../../core/settings';
 import type { LocalDebugStoragePort } from '../../core/local-debug-writer';
 import type { TyrianLocalStoragePort, TyrianSettingsPort } from '../tyrian-host';
 
@@ -65,7 +66,8 @@ export interface TyrianSettingsPortOptions {
  * A library saved by an older build still has the device settings in the shared scope. `load`
  * moves each one that this device does not hold yet, once: it copies it to `device` and only then
  * drops it from `settings`. A copy that fails leaves it in `settings`, so nothing is lost and the
- * next load tries again.
+ * next load tries again. A device setting found in neither scope reaches the core as its default
+ * (`DEFAULT_SETTINGS`), so a device without a value of its own starts with diagnostic logging off.
  */
 export function createTyrianSettingsPort(
 	storage: Pick<PluginStorage, 'settings' | 'device'>,
@@ -122,7 +124,13 @@ async function withDeviceSettings(
 			merged[key] = local;
 			continue;
 		}
-		if (!Object.prototype.hasOwnProperty.call(shared, key)) continue;
+		if (!Object.prototype.hasOwnProperty.call(shared, key)) {
+			// In neither scope (a device that never saved them, settings that arrived by sync, a
+			// downgrade): the core's default, never the reading `migrateSettings` gives an absent key,
+			// which for `debugLoggingEnabled` is "on". Only what the core gets: `device` stays empty.
+			merged[key] = DEFAULT_SETTINGS[key];
+			continue;
+		}
 		const value = shared[key];
 		// `null` (the empty sync receipt) is what an absent device key reads as: nothing to copy.
 		if (value !== null && value !== undefined) {

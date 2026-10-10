@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA_VERSION } from '../../core/settings';
 import { VIEW_PLACEMENT_KEY, loadViewPlacement, saveViewPlacement } from '../../runtime/view-placement';
 import { createHebraStorage, hebraDeviceKey, hebraSettingsKey } from '../../test/hebra-plugin-fakes';
 import {
@@ -34,8 +35,10 @@ describe('settings over api.storage.settings', () => {
 		const one = createTyrianSettingsPort(createHebraStorage(local, 'tyrian-companion', 'lib-1'));
 		const two = createTyrianSettingsPort(createHebraStorage(local, 'tyrian-companion', 'lib-2'));
 		await one.save({ outputFolder: 'GW2' });
-		expect(await one.load()).toEqual({ outputFolder: 'GW2' });
-		expect(one.latest()).toEqual({ outputFolder: 'GW2' });
+		// The device settings it never saved come back as the core's defaults (see the device describe below).
+		const loaded = await one.load() as Record<string, unknown>;
+		expect(loaded.outputFolder).toBe('GW2');
+		expect(one.latest()).toBe(loaded);
 		expect(await two.load()).toBeNull();
 		expect([...local.keys()]).toEqual(['hebra.library-v1.module.tyrian-companion.settings:lib-1']);
 		expect(hebraSettingsKey('tyrian-companion', 'lib-1')).toBe('hebra.library-v1.module.tyrian-companion.settings:lib-1');
@@ -65,6 +68,8 @@ describe('settings of this device over api.storage.device', () => {
 	};
 	const shared = (local: Map<string, string>): Record<string, unknown> =>
 		JSON.parse(local.get(settingsKey) ?? 'null') as Record<string, unknown>;
+	const deviceDefaults = (): Record<string, unknown> =>
+		Object.fromEntries(HEBRA_DEVICE_SETTING_KEYS.map((key) => [key, DEFAULT_SETTINGS[key]]));
 	const port = (local: Map<string, string>, report?: (error: unknown, where: string) => void) =>
 		createTyrianSettingsPort(createHebraStorage(local, 'tyrian-companion', 'lib-1'), { report });
 
@@ -88,7 +93,13 @@ describe('settings of this device over api.storage.device', () => {
 		local.set(deviceKey('alertIngamePort'), JSON.stringify(47_200));
 		local.set(deviceKey('debugLoggingLevel'), JSON.stringify('info'));
 
-		expect(await port(local).load()).toEqual({ schemaVersion: 15, outputFolder: 'GW2', alertIngamePort: 47_200, debugLoggingLevel: 'info' });
+		expect(await port(local).load()).toEqual({
+			...deviceDefaults(),
+			schemaVersion: 15,
+			outputFolder: 'GW2',
+			alertIngamePort: 47_200,
+			debugLoggingLevel: 'info',
+		});
 		expect(shared(local)).toEqual({ schemaVersion: 15, outputFolder: 'GW2' });
 	});
 
@@ -151,7 +162,22 @@ describe('settings of this device over api.storage.device', () => {
 		expect(JSON.parse(local.get(deviceKey('alertIngamePort')) ?? 'null')).toBe(47_300);
 		expect(local.has(deviceKey('inventorySyncLastRun'))).toBe(false);
 		expect(settings.latest()).toEqual({ ...legacy, alertIngamePort: 47_300, inventorySyncLastRun: null });
-		expect(await settings.load()).toEqual({ ...legacy, alertIngamePort: 47_300, inventorySyncLastRun: undefined });
+		expect(await settings.load()).toEqual({ ...legacy, alertIngamePort: 47_300, inventorySyncLastRun: null });
+	});
+
+	it('a device setting in neither scope reaches the core as its default: diagnostic logging off, nothing written to device', async () => {
+		// Settings that came from another device (or that a downgrade left behind): a schema with explicit
+		// debug settings and no device setting anywhere. `migrateSettings` alone reads the absent
+		// `debugLoggingEnabled` of such a schema as on.
+		const local = new Map([[settingsKey, JSON.stringify({ schemaVersion: SETTINGS_SCHEMA_VERSION, outputFolder: 'GW2' })]]);
+		expect(migrateSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION }).debugLoggingEnabled).toBe(true);
+
+		const loaded = await port(local).load();
+
+		expect(migrateSettings(loaded).debugLoggingEnabled).toBe(false);
+		expect(loaded).toEqual({ ...deviceDefaults(), schemaVersion: SETTINGS_SCHEMA_VERSION, outputFolder: 'GW2' });
+		expect([...local.keys()]).toEqual([settingsKey]);
+		expect(shared(local)).toEqual({ schemaVersion: SETTINGS_SCHEMA_VERSION, outputFolder: 'GW2' });
 	});
 
 	it('a library without settings still loads null, whatever this device holds', async () => {
