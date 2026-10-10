@@ -1,8 +1,8 @@
 # Estado
 
-## Candidato 0.6.32: Logros con elementos, nombres e iconos, iconos en el resumen de sesión y Venta fuera del núcleo (10 oct 2026)
+## Canal 0.6.32 publicado: Logros con elementos, nombres e iconos, iconos en el resumen de sesión y Venta fuera del núcleo (10 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.32` sobre el canal 0.6.31 publicado
+**Canal publicado; instalación/runtime pendiente.** Rama `integracion/0.6.32` sobre el canal 0.6.31 publicado
 (`ed1d596`, docs `5b8ff66`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de
 `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en
 [ARCHITECTURE](ARCHITECTURE.md).
@@ -16,7 +16,13 @@
   resumen de sesión (N5); `hebra-main.mjs` minificado (HP-07); diagnóstico sin falsos avisos y plazo al abrir
   almacenes (HP-12); DE-01 paso 2 (`SaleRuntime` fuera del núcleo); GR-04 y GR-13 (tests de comportamiento de vuelta
   en `check`).
-- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+- Publicación (medida el 10 oct 2026). Tag `0.6.32` sobre `f50b922` (commit de atestación; candidato `1a67eaa`;
+  árbol `843f05d65f6fd6724b9538993071b89bd038e040`). CI de GitHub: run `38052588883`, success. Workflow de release: run
+  `38053241181`, success. «BRAT release contract: PASS (version=0.6.32; assets=8)» sobre la salida real de
+  `gh release view 0.6.32 --json tagName,name,isDraft,isPrerelease,assets`, con `isDraft` false e `isPrerelease` false.
+  SHA-256 del zip `tyrian-companion-0.6.32.zip`: `47eff2fadc46d2f4daff5a66e8a54ec9c58284a9364c17b604e88687d7bb4c95`.
+- Pendiente: verificar la instalación y la carga de la 0.6.32 en un Obsidian y un Hebra reales. Nada de eso se ha
+  comprobado.
 
 ## Canal 0.6.31 publicado: Halloween sin esperas, reserva de sesión con reloj monótono y almacenamiento persistente (10 oct 2026)
 
