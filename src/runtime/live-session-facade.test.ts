@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { LiveSessionRuntime, type LiveSessionRuntimePort } from './live-session-facade';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
+import { DEFAULT_SETTINGS } from '../core/settings';
 import { SESSION_STATE_VERSION } from '../sessions/session';
 import type { StoredSessionLootSummary } from '../sessions/session-note-renderer';
 import type { SessionRuntimeRecord } from '../sessions/session-runtime-store';
@@ -27,9 +28,11 @@ function unused(name: string): () => never {
 /** A ready collector with an idle session, no recovery and every service stubbed out. */
 function port(overrides: Partial<LiveSessionRuntimePort> = {}): LiveSessionRuntimePort {
 	return {
-		settings: { language: 'en', outputFolder: 'Tyrian Companion' },
+		settings: { language: 'en', outputFolder: 'Tyrian Companion', farmingGoal: DEFAULT_SETTINGS.farmingGoal, preferredCharacter: 'Astra Uno' },
 		runtimeReady: true,
+		collectorMode: 'collector',
 		localDebugActions: null,
+		sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true, acquireRuntimeMutation: () => ({ release: () => undefined }) },
 		sessions: {
 			getState: () => ({ version: SESSION_STATE_VERSION, status: 'idle' }),
 			getLastFailure: () => null,
@@ -43,25 +46,57 @@ function port(overrides: Partial<LiveSessionRuntimePort> = {}): LiveSessionRunti
 			abandon: unused('sessions.abandon'),
 			getCompletedRuntimeRecord: unused('sessions.getCompletedRuntimeRecord'),
 			resetCompletedSession: unused('sessions.resetCompletedSession'),
+			start: unused('sessions.start'),
+			stop: unused('sessions.stop'),
+			stopAt: unused('sessions.stopAt'),
+			captureFinalNow: unused('sessions.captureFinalNow'),
+			getPriceSnapshot: () => null,
+			finalizeStoppedSession: unused('sessions.finalizeStoppedSession'),
+			getBaselineSnapshot: unused('sessions.getBaselineSnapshot'),
 		},
 		liveSessions: null,
-		liveSessionLoot: { getState: () => ({ status: 'idle' }) },
+		liveSessionLoot: { getState: () => ({ status: 'idle' }), begin: unused('liveSessionLoot.begin'), reconcile: unused('liveSessionLoot.reconcile') },
 		ingameSessionMarker: null,
 		sessionNotes: { write: unused('sessionNotes.write'), writeAbandoned: unused('sessionNotes.writeAbandoned') },
 		sessionCommands: { run: unused('sessionCommands.run') },
-		sessionDispatch: { recover: unused('sessionDispatch.recover'), discard: unused('sessionDispatch.discard') },
-		pilotMetrics: { recoveryFinished: unused('pilotMetrics.recoveryFinished') },
+		sessionDispatch: { recover: unused('sessionDispatch.recover'), discard: unused('sessionDispatch.discard'), finish: unused('sessionDispatch.finish') },
+		pilotMetrics: {
+			recoveryFinished: unused('pilotMetrics.recoveryFinished'),
+			sessionStarted: unused('pilotMetrics.sessionStarted'),
+			sessionCompleted: unused('pilotMetrics.sessionCompleted'),
+			proposalDecided: unused('pilotMetrics.proposalDecided'),
+		},
+		assistedDetection: {
+			getState: unused('assistedDetection.getState'),
+			disarm: unused('assistedDetection.disarm'),
+			dismissProposal: unused('assistedDetection.dismissProposal'),
+			armFromSnapshot: unused('assistedDetection.armFromSnapshot'),
+		},
+		detectionQuality: { recordAccepted: unused('detectionQuality.recordAccepted') },
+		pendingProposals: { accept: unused('pendingProposals.accept') },
+		priceHistory: null,
+		farmingGroupContext: null,
 		sessionSummarySaveState: 'unknown',
 		storedSessionLootSummary: null,
 		savedSessionNotePath: null,
+		farmingReminders: [],
+		notifyConsultMode: unused('notifyConsultMode'),
+		notifyRuntimeStarting: unused('notifyRuntimeStarting'),
 		requireRuntimeMutationLease: () => ({ release: () => undefined }),
 		renderViews: () => undefined,
 		emitNotice: unused('emitNotice'),
 		armAssistedDetection: unused('armAssistedDetection'),
-		startLiveObservation: unused('startLiveObservation'),
 		pilotRecoveryIdentity: () => null,
 		ensurePilotRecoveryPresented: unused('ensurePilotRecoveryPresented'),
 		sessionNoteInput: unused('sessionNoteInput'),
+		acquirePendingIntent: unused('acquirePendingIntent'),
+		ensureCompletedSummarySaved: unused('ensureCompletedSummarySaved'),
+		persistFarmingSessionContext: unused('persistFarmingSessionContext'),
+		updateSettings: unused('updateSettings'),
+		getIngamePresence: unused('getIngamePresence'),
+		persistCompletedSessionSummary: unused('persistCompletedSessionSummary'),
+		refreshLootPresentation: unused('refreshLootPresentation'),
+		observeHalloweenDelta: unused('observeHalloweenDelta'),
 		...overrides,
 	} satisfies LiveSessionRuntimePort;
 }
@@ -97,7 +132,7 @@ function recoveryHarness(kind: RecoveryKind, outcome: 'confirms' | 'refuses' | '
 			recover: kind === 'recover' ? backend : unused('sessions.recover'),
 			discardRecovery: kind === 'discard' ? backend : unused('sessions.discardRecovery'),
 		},
-		pilotMetrics: { recoveryFinished },
+		pilotMetrics: { ...base.pilotMetrics, recoveryFinished },
 		pilotRecoveryIdentity: () => 'session-a:7',
 		ensurePilotRecoveryPresented: recoveryPresented,
 	}));
@@ -219,16 +254,30 @@ describe('the ways out of a session reset the summary through the port', () => {
 	});
 
 	it('a session the service took back on its own gets its loot poll back only when the poll no longer follows it', () => {
-		const startLiveObservation = vi.fn();
+		// The loot poll's start (`startLiveObservation`): the loot tracker begins the session, restored.
+		const begin = vi.fn();
 		const base = port();
-		const active = { ...base.sessions, getState: () => ({ status: 'active', sessionId: 'session-c' }) as ReturnType<LiveSessionRuntimePort['sessions']['getState']> };
-		new LiveSessionRuntime(port({ sessions: active, startLiveObservation, liveSessionLoot: { getState: () => ({ status: 'idle' }) } })).resumeAutoRecoveredSession();
+		const active = {
+			...base.sessions,
+			getState: () => ({ status: 'active', sessionId: 'session-c' }) as ReturnType<LiveSessionRuntimePort['sessions']['getState']>,
+			getBaselineSnapshot: () => ({ snapshotId: 'baseline' }) as ReturnType<LiveSessionRuntimePort['sessions']['getBaselineSnapshot']>,
+		};
+		const assistedDetection = {
+			...base.assistedDetection,
+			armFromSnapshot: () => ({ status: 'armed' }) as ReturnType<LiveSessionRuntimePort['assistedDetection']['armFromSnapshot']>,
+		};
 		new LiveSessionRuntime(port({
-			sessions: active, startLiveObservation,
-			liveSessionLoot: { getState: () => ({ status: 'observing', sessionId: 'session-c' }) as ReturnType<LiveSessionRuntimePort['liveSessionLoot']['getState']> },
+			sessions: active, assistedDetection, liveSessionLoot: { ...base.liveSessionLoot, getState: () => ({ status: 'idle' }), begin },
+		})).resumeAutoRecoveredSession();
+		new LiveSessionRuntime(port({
+			sessions: active, assistedDetection,
+			liveSessionLoot: {
+				...base.liveSessionLoot, begin,
+				getState: () => ({ status: 'observing', sessionId: 'session-c' }) as ReturnType<LiveSessionRuntimePort['liveSessionLoot']['getState']>,
+			},
 		})).resumeAutoRecoveredSession();
 
-		expect(startLiveObservation.mock.calls).toEqual([['session-c', true]]);
+		expect(begin.mock.calls).toEqual([['session-c', true]]);
 	});
 
 	it('a clear writes the finished session\'s note before it resets the session, and releases its lease when it is refused', async () => {

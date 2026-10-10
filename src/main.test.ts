@@ -14,7 +14,7 @@ vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
 
 import TyrianCompanionPlugin from './main';
 import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
-import type { LiveSessionRuntime } from './runtime/live-session-facade';
+import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-facade';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -56,7 +56,8 @@ interface StartIntentHarness {
 	app: unknown;
 	settings: { language: 'en'; preferredCharacter: string };
 	startModal: ManualSessionStartModal | null;
-	startManualSession(input: SessionStartInput): Promise<void>;
+	// DE-01, step 3c: the start itself is `LiveSessionRuntime`'s, the core's `live`.
+	live: { startManualSession(input: SessionStartInput): Promise<void> };
 }
 
 interface InventoryVaultIntentHarness {
@@ -67,6 +68,19 @@ interface InventoryVaultIntentHarness {
 	};
 	activateInventoryAdvisorView(): Promise<unknown>;
 	renderInventoryAdvisorViews(): void;
+}
+
+/**
+ * DE-01, step 3c: the start, the stop and the finalization are `LiveSessionRuntime`'s. The cases below
+ * that drove them as methods of `TyrianCompanionCore` on a plain object run them on a runtime built
+ * over that same object through the core's own port (`liveSessionRuntimePort`), so the object's
+ * fields and the core's methods it lends are read exactly as the moved code reads them in production.
+ */
+function liveOver(harness: object): LiveSessionRuntime {
+	const portOf = (TyrianCompanionCore as unknown as {
+		liveSessionRuntimePort(this: void, core: object): LiveSessionRuntimePort;
+	}).liveSessionRuntimePort;
+	return new LiveSessionRuntime(portOf(harness));
 }
 
 describe('connection diagnostics composition', () => {
@@ -561,7 +575,7 @@ describe('manual session start command', () => {
 			app: {},
 			settings: { language: 'en', preferredCharacter: 'Astra Uno' },
 			startModal: null,
-			startManualSession,
+			live: { startManualSession },
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
 		const prepareStartIntent = (TyrianCompanionCore.prototype as unknown as {
@@ -1177,11 +1191,7 @@ describe('Halloween production gating', () => {
 			settings: { language: 'en' as const },
 			observeHalloweenDelta,
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
-		const finalize = (TyrianCompanionCore.prototype as unknown as {
-			finalizeAndPersistStoppedSession(this: typeof harness, sessionId: string, delta: StorageDelta): Promise<void>;
-		}).finalizeAndPersistStoppedSession;
-		await finalize.call(harness, 'session-review-only', { status: 'comparable' } as StorageDelta);
+		await liveOver(harness).finalizeAndPersistStoppedSession('session-review-only', { status: 'comparable' } as StorageDelta);
 		expect(observeHalloweenDelta).not.toHaveBeenCalled();
 		expect(harness.sessionSummarySaveState).toBe('failed');
 	});
@@ -1201,17 +1211,10 @@ describe('Halloween production gating', () => {
 			localDebugActions: null,
 			observeHalloweenDelta,
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
-		const finish = (TyrianCompanionCore.prototype as unknown as {
-			finishFinalizedSession(
-				this: typeof harness, sessionId: string, delta: StorageDelta,
-				reviewed: { state: { sessionId: string; finalizedAt: string }; review: unknown },
-			): Promise<void>;
-		}).finishFinalizedSession;
-		await finish.call(harness, 'session-final', stableDelta, {
+		await liveOver(harness).finishFinalizedSession('session-final', stableDelta, {
 			state: { sessionId: 'session-final', finalizedAt: '2026-08-13T08:00:03.000Z' },
 			review: reviewEvidence,
-		});
+		} as unknown as Parameters<LiveSessionRuntime['finishFinalizedSession']>[2]);
 		expect(observeHalloweenDelta).toHaveBeenCalledWith(
 			stableDelta, 'session_final', 'session:session-final', { status: 'exact', reasons: [] },
 		);
@@ -1325,12 +1328,10 @@ describe('completed-session summary persistence', () => {
 
 	it('writes the core summary before optional Halloween enrichment and keeps it saved when enrichment throws', async () => {
 		const order: string[] = [];
-		const proto = TyrianCompanionCore.prototype as unknown as {
-			finalizeAndPersistStoppedSession(this: unknown, sessionId: string, delta: StorageDelta): Promise<boolean>;
-		};
 		const delta = { status: 'comparable' } as StorageDelta;
 		const runtime = { state: { status: 'complete' as const, sessionId: 'session-final' } };
-		const harness = Object.assign(Object.create(proto) as object, {
+		// The core's own summary write (`persistCompletedSessionSummary`), lent to the runtime by its port.
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			liveSessionLoot: { reconcile: vi.fn(async () => undefined) },
 			sessions: {
 				finalizeStoppedSession: vi.fn(async () => ({
@@ -1350,7 +1351,7 @@ describe('completed-session summary persistence', () => {
 		});
 
 		// H18.4: the result now says whether the summary is saved; the throwing enrichment does not change it.
-		await expect(proto.finalizeAndPersistStoppedSession.call(harness, 'session-final', delta)).resolves.toBe(true);
+		await expect(liveOver(harness).finalizeAndPersistStoppedSession('session-final', delta)).resolves.toBe(true);
 		await Promise.resolve();
 
 		expect(order).toEqual(['write', 'halloween']);
@@ -1362,10 +1363,7 @@ describe('stop observation teardown ordering', () => {
 	it('disarms immediately after stop and stays disarmed when later persistence fails', async () => {
 		const order: string[] = [];
 		let detectorState = 'armed';
-		const proto = TyrianCompanionCore.prototype as unknown as {
-			performStopManualSession(this: unknown): Promise<void>;
-		};
-		const harness = Object.assign(Object.create(proto) as object, {
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
 			requireRuntimeMutationLease: () => ({ release: vi.fn() }),
 			sessions: { stop: vi.fn(async () => ({
@@ -1375,11 +1373,12 @@ describe('stop observation teardown ordering', () => {
 				getState: () => ({ status: detectorState }),
 				disarm: vi.fn(() => { detectorState = 'disarmed'; order.push('disarm'); }),
 			},
-			finalizeAndPersistStoppedSession: vi.fn(async () => { order.push('persist'); throw new Error('Vault unavailable'); }),
+			// The persistence that follows the stop (`finalizeAndPersistStoppedSession`) fails at its first step.
+			liveSessionLoot: { reconcile: vi.fn(async () => { order.push('persist'); throw new Error('Vault unavailable'); }) },
 			renderViews: vi.fn(), localDebugActions: null,
 		});
 
-		await expect(proto.performStopManualSession.call(harness)).rejects.toThrow('Vault unavailable');
+		await expect(liveOver(harness).performStopManualSession()).rejects.toThrow('Vault unavailable');
 
 		expect(order).toEqual(['disarm', 'persist']);
 		expect(detectorState).toBe('disarmed');
@@ -1391,10 +1390,7 @@ describe('stop workflow outcome in the receipt and the pilot (H18.4)', () => {
 		const accept = vi.fn(async () => true);
 		const proposalDecided = vi.fn(async () => true);
 		const intent = { proposalId: 'proposal-1', accountId: 'account-1', phase: 'stop' as const, binding: { kind: 'session' as const, sessionId: 'session-1', baselineSnapshotId: 'before' } };
-		const proto = TyrianCompanionCore.prototype as unknown as {
-			performStopManualSession(this: unknown, intent?: unknown): Promise<void>;
-		};
-		const harness = Object.assign(Object.create(proto) as object, {
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
 			requireRuntimeMutationLease: () => ({ release: vi.fn() }),
 			acquirePendingIntent: vi.fn(async () => ({
@@ -1408,16 +1404,25 @@ describe('stop workflow outcome in the receipt and the pilot (H18.4)', () => {
 					delta: { status: 'comparable', itemChanges: [] },
 				})),
 				getPriceSnapshot: () => null,
+				// What `finalizeAndPersistStoppedSession` reads: the finalization, and the record its summary is written from.
+				finalizeStoppedSession: vi.fn(async () => (summarySaved
+					? { status: 'finalized' as const, state: { status: 'complete' as const, sessionId: 'session-1', finalizedAt: '2026-09-01T08:10:00.000Z' }, review: { classification: { status: 'exact', reasons: [] } } }
+					: { status: 'failed' as const, message: 'unavailable' })),
+				getCompletedRuntimeRecord: vi.fn(async () => ({ state: { status: 'complete', sessionId: 'session-1' } })),
 			},
+			liveSessionLoot: { reconcile: vi.fn(async () => undefined) },
+			persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
+			refreshLootPresentation: vi.fn(async () => undefined),
+			observeHalloweenDelta: vi.fn(async () => undefined),
+			emitNotice: vi.fn(), settings: { language: 'en' as const },
 			assistedDetection: { getState: () => ({ status: 'armed' }), disarm: vi.fn() },
-			finalizeAndPersistStoppedSession: vi.fn(async () => summarySaved),
 			pendingProposals: { accept },
-			pilotMetrics: { proposalDecided },
+			pilotMetrics: { proposalDecided, sessionCompleted: vi.fn(async () => true) },
 			detectionQuality: { recordAccepted: vi.fn(async () => undefined) },
 			priceHistory: null,
 			renderViews: vi.fn(), localDebugActions: null,
 		});
-		return { run: () => proto.performStopManualSession.call(harness, intent), accept, proposalDecided };
+		return { run: () => liveOver(harness).performStopManualSession(intent), accept, proposalDecided };
 	}
 
 	it('records a failed workflow in the receipt and the pilot when the summary could not be saved', async () => {
@@ -1443,10 +1448,7 @@ describe('legacy summary reconciliation under passive sessions', () => {
 	it('saves already captured evidence without re-arming account detection or checking the connection', async () => {
 		const arm = vi.fn(async () => ({ status: 'armed' as const, armedAt: '2026-09-10T00:00:00.000Z', scheduler: {}, lastSnapshotAt: null }));
 		const checkConnection = vi.fn();
-		const proto = TyrianCompanionCore.prototype as unknown as {
-			finishFinalizedSession(this: unknown, sessionId: string, delta: StorageDelta, reviewed: unknown): Promise<boolean>;
-		};
-		const harness = Object.assign(Object.create(proto) as object, {
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			runtimeReady: true,
 			liveSessions: {},
 			pilotMetrics: null,
@@ -1466,10 +1468,10 @@ describe('legacy summary reconciliation under passive sessions', () => {
 			renderViews: vi.fn(), emitNotice: vi.fn(), localDebugActions: null,
 		});
 
-		await expect(proto.finishFinalizedSession.call(harness, 'session-1', { status: 'comparable' } as StorageDelta, {
+		await expect(liveOver(harness).finishFinalizedSession('session-1', { status: 'comparable' } as StorageDelta, {
 			state: { sessionId: 'session-1', finalizedAt: '2026-09-01T08:10:00.000Z' },
 			review: { classification: { status: 'exact', reasons: [] } },
-		})).resolves.toBe(true);
+		} as unknown as Parameters<LiveSessionRuntime['finishFinalizedSession']>[2])).resolves.toBe(true);
 
 		expect(harness.persistCompletedSessionSummary).toHaveBeenCalledOnce();
 		expect(arm).not.toHaveBeenCalled();
@@ -2770,9 +2772,6 @@ describe('capture-now failure observability (H15.9)', () => {
 	it('shows one Notice, logs session_finish with the real cause, and never leaves the rejection unhandled', async () => {
 		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
 		const notify = vi.fn();
-		const proto = TyrianCompanionCore.prototype as unknown as {
-			captureSessionFinalNow(this: unknown): Promise<void>;
-		};
 		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			settings: { language: 'en' as const },
 			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
@@ -2789,7 +2788,7 @@ describe('capture-now failure observability (H15.9)', () => {
 				event: diagnosticsEvent,
 			},
 		});
-		const onClick = () => { void proto.captureSessionFinalNow.call(harness).catch(() => undefined); };
+		const onClick = () => { void liveOver(harness).captureSessionFinalNow().catch(() => undefined); };
 
 		let unhandled = 0;
 		const onUnhandledRejection = () => { unhandled += 1; };

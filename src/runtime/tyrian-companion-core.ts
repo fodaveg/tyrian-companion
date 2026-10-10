@@ -17,14 +17,13 @@ import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from 
 import type { LiveSessionComparisonView } from '../sessions/live-session-comparison';
 import { farmingBagCapacity, farmingGoalForSession, projectBagPriceIngameState, projectFarmingIngameState, projectLiveFarmingIngameState } from './farming-runtime-projection';
 import { observeFarmingSessionContext, readFarmingSessionContext, type FarmingSessionContext, type FarmingGroupContext } from './farming-session-context';
-import { liveObservedFrom, normalizeFarmingGoal, projectFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
+import { liveObservedFrom, projectFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
-import { LiveSessionStopError } from '../sessions/live-session-stop-failure';
 import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
 import type { LiveSessionViewV1, LiveJournalEntryV1, LiveSessionFormat, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
 import { newLiveSessionFormat } from '../sessions/live-session-format';
@@ -53,7 +52,6 @@ import { labelledVault, sessionHistoryVault } from './vault-ports';
 import { createTyrianCoreRuntime, flushTyrianLocalDebug } from './tyrian-runtime';
 import { GuildWars2AccountGateway } from '../account/account-service';
 import {
-	ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS,
 	ALERT_LATENCY_MINUTES,
 	type AlertKind,
 	type AlertV1,
@@ -280,7 +278,6 @@ import {
 } from '../sessions/ingame-session-marker';
 import type { SessionRuntimeRecord } from '../sessions/session-runtime-store';
 import { SESSION_STATE_VERSION, type SessionState } from '../sessions/session';
-import type { SessionStartInput } from '../sessions/session-start-capture';
 import { assembleSessions } from './assemble-sessions';
 import {
 	COMPANION_VIEW_SLOT,
@@ -598,10 +595,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private readonly session: SessionRuntime = new SessionRuntime(TyrianCompanionCore.sessionRuntimePort(this));
 	/**
-	 * DE-01, step 3c: the session's state as the views read it and the ways out of a session other
-	 * than its stop (recovery, discard, clear, abandon, a stuck live session). It reads the core's
-	 * fields through `liveSessionRuntimePort`, under their own names, and writes the three summary
-	 * fields back through it; the core keeps the start and the stop, the commands and their modals.
+	 * DE-01, step 3c: the live session's lifecycle (start, stop, finalization, recovery, discard,
+	 * clear, abandon, a stuck live session) and the session state the views read. It reads the core's
+	 * fields through `liveSessionRuntimePort`, under their own names, and writes the summary fields
+	 * and the farming reminders back through it; the core keeps the commands, their intents and
+	 * modals, the pending queue's claim, and the note, summary, loot projection and Halloween code.
 	 */
 	private readonly live: LiveSessionRuntime = new LiveSessionRuntime(TyrianCompanionCore.liveSessionRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
@@ -1377,7 +1375,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			onSettlementDue: () => {
 				fireAndForgetLocal(this.localDebugActions,
 					{ component: 'session', action: 'session_finish', state: 'settlement_due' },
-					() => this.performStopManualSession());
+					() => this.live.performStopManualSession());
 			},
 			onSessionAutoRecovered: () => this.live.resumeAutoRecoveredSession(),
 			observedPlayIntervals: () => this.ingameSessionMarker?.observedPlayIntervals() ?? [],
@@ -1475,11 +1473,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// itself, so the host finishes that here, the same as after a live `stop()`.
 		const startupFinalization = this.sessions.takeStartupFinalization();
 		const restoredSession = this.sessions.getState();
-		if (restoredSession.status === 'active') this.startLiveObservation(restoredSession.sessionId, true);
+		if (restoredSession.status === 'active') this.live.startLiveObservation(restoredSession.sessionId, true);
 		// R1b: the finished session's note is a collector write. A consult installation (the mode
 		// changed under an unfinished session, e.g. through a synced data.json) leaves it unwritten.
 		else if (startupFinalization && !consulting(this)) {
-			await this.finishFinalizedSession(
+			await this.live.finishFinalizedSession(
 				startupFinalization.sessionId, startupFinalization.delta, startupFinalization.review,
 			);
 		} else if (restoredSession.status === 'complete') await this.restoreCompletedSessionSummary();
@@ -3097,14 +3095,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/**
 	 * What `LiveSessionRuntime` reads from this core and asks of it (DE-01, step 3c). Getters over the
-	 * core's own fields, read as they stand; the three summary fields are setters too, so the ways out
-	 * of a session reset the core's own state, which its note and summary code read.
+	 * core's own fields, read as they stand; the summary fields and the farming reminders are setters
+	 * too, so the session's lifecycle writes the core's own state, which its note, summary and farming
+	 * code read.
 	 */
 	private static liveSessionRuntimePort(core: TyrianCompanionCore): LiveSessionRuntimePort {
 		return {
 			get settings() { return core.settings; },
 			get runtimeReady() { return core.runtimeReady; },
+			get collectorMode() { return core.collectorMode; },
 			get localDebugActions() { return core.localDebugActions; },
+			get sessionHistoryRuntimeAuthority() { return core.sessionHistoryRuntimeAuthority; },
 			get sessions() { return core.sessions; },
 			get liveSessions() { return core.liveSessions; },
 			get liveSessionLoot() { return core.liveSessionLoot; },
@@ -3113,20 +3114,36 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get sessionCommands() { return core.sessionCommands; },
 			get sessionDispatch() { return core.sessionDispatch; },
 			get pilotMetrics() { return core.pilotMetrics; },
+			get assistedDetection() { return core.assistedDetection; },
+			get detectionQuality() { return core.detectionQuality; },
+			get pendingProposals() { return core.pendingProposals; },
+			get priceHistory() { return core.priceHistory; },
+			get farmingGroupContext() { return core.farmingGroupContext; },
 			get sessionSummarySaveState() { return core.sessionSummarySaveState; },
 			set sessionSummarySaveState(value) { core.sessionSummarySaveState = value; },
 			get storedSessionLootSummary() { return core.storedSessionLootSummary; },
 			set storedSessionLootSummary(value) { core.storedSessionLootSummary = value; },
 			get savedSessionNotePath() { return core.savedSessionNotePath; },
 			set savedSessionNotePath(value) { core.savedSessionNotePath = value; },
+			get farmingReminders() { return core.farmingReminders; },
+			set farmingReminders(value) { core.farmingReminders = value; },
+			notifyConsultMode: () => { core.notifyConsultMode(); },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
 			requireRuntimeMutationLease: () => core.requireRuntimeMutationLease(),
 			renderViews: () => { core.renderViews(); },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
 			armAssistedDetection: () => core.armAssistedDetection(),
-			startLiveObservation: (sessionId, restored) => { core.startLiveObservation(sessionId, restored); },
 			pilotRecoveryIdentity: () => core.pilotRecoveryIdentity(),
 			ensurePilotRecoveryPresented: (recoveryId) => core.ensurePilotRecoveryPresented(recoveryId),
 			sessionNoteInput: (runtime) => core.sessionNoteInput(runtime),
+			acquirePendingIntent: (intent) => core.acquirePendingIntent(intent),
+			ensureCompletedSummarySaved: () => core.ensureCompletedSummarySaved(),
+			persistFarmingSessionContext: (context) => { core.persistFarmingSessionContext(context); },
+			updateSettings: (settings) => core.updateSettings(settings),
+			getIngamePresence: () => core.getIngamePresence(),
+			persistCompletedSessionSummary: (notifyFailure, existingRuntime) => core.persistCompletedSessionSummary(notifyFailure, existingRuntime),
+			refreshLootPresentation: () => core.refreshLootPresentation(),
+			observeHalloweenDelta: (delta, source, episodeId, classification) => core.observeHalloweenDelta(delta, source, episodeId, classification),
 		};
 	}
 
@@ -3261,7 +3278,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			(input) => { fireAndForgetLocal(this.localDebugActions,
 				{ component: 'session', action: 'session_start' },
 				async () => {
-					try { await this.startManualSession(input, intent, humanBoundaryAt); }
+					try { await this.live.startManualSession(input, intent, humanBoundaryAt); }
 					catch (error) {
 						this.emitNotice(
 							translateRuntime(createTranslator(this.settings.language), 'notices.pendingStartFailed'),
@@ -3278,7 +3295,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	async stopPendingSession(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): Promise<void> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (intent.phase !== 'stop') return;
-		await this.performStopManualSession(intent, humanBoundaryAt);
+		await this.live.performStopManualSession(intent, humanBoundaryAt);
 	}
 
 	async armAssistedDetection(): Promise<ProductActionOutcome> {
@@ -4963,21 +4980,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.live.confirmDiscardRecoveredSession();
 	}
 
-	async stopManualSession(humanBoundaryAt: string | null = null): Promise<void> {
-		const live = this.liveSessions?.getRuntime();
-		if (live) {
-			const mark = this.ingameSessionMarker?.markStoppedByPlayer(live.sessionId) ?? null;
-			let stopped = false;
-			try { stopped = await this.liveSessions!.stop(Date.now(),live.sessionId); }
-			// Only a session still running is given back to the addon: one that closed and lacks its note did stop.
-			finally { if (!stopped && mark !== null && this.liveSessions?.getRuntime()?.phase === 'active') this.ingameSessionMarker?.restoreLink(mark); }
-			if (!stopped) throw new LiveSessionStopError(this.liveSessions!.getStopFailure() ?? 'unknown');
-			return;
-		}
-		const perform = async () => humanBoundaryAt === null
-			? await this.sessionDispatch.finish()
-			: await this.performStopManualSession(undefined, humanBoundaryAt);
-		return await (this.localDebugActions?.run({ component: 'session', action: 'session_finish' }, perform) ?? perform());
+	stopManualSession(humanBoundaryAt: string | null = null): Promise<void> {
+		return this.live.stopManualSession(humanBoundaryAt);
 	}
 
 	/** Countdown of the grace window the final capture is waiting for (`LiveSessionRuntime`). */
@@ -4985,174 +4989,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.live.getSessionSettlementWait();
 	}
 
-	/**
-	 * Explicit human override: capture the final snapshot without waiting out the cache window.
-	 * Unlike `stopManualSession`, this never went through `sessionCommands`, so a failure here used
-	 * to reach the caller with no Notice at all and a `session_finish` line with no cause (H15.9,
-	 * 2026-09-10 audit). The `catch` below gives it the same Notice `SessionCommandController`
-	 * already shows for every other stop failure, and the backend's real `SessionStopFailure` code
-	 * as `details.cause` instead of the generic `unknown_failure` the rethrow's own outer `run()`
-	 * still logs. It rethrows on purpose: the caller (`companion-view.ts`'s "Capturar ya" button)
-	 * already swallows the rejection with its own `.catch(() => undefined)`.
-	 */
-	async captureSessionFinalNow(): Promise<void> {
-		const perform = async () => {
-			try {
-				await this.performStopManualSession(undefined, null, true);
-			} catch (error) {
-				this.localDebugActions?.event({
-					component: 'session', action: 'session_finish', level: 'error', phase: 'failure',
-					code: 'unknown_failure', state: 'settlement_skipped',
-					details: { cause: error instanceof SessionStopBackendFailure ? error.code : 'unknown_failure' },
-				});
-				this.emitNotice(createTranslator(this.settings.language).t('commands.actionFailed'), 'session_command');
-				throw error;
-			}
-		};
-		return await (this.localDebugActions?.run(
-			{ component: 'session', action: 'session_finish', state: 'settlement_skipped' },
-			perform,
-		) ?? perform());
-	}
-
-	private async performStopManualSession(
-		intent?: PendingProposalIntent,
-		humanBoundaryAt: string | null = null,
-		captureNow = false,
-		/** H18.26: the end the in-game presence observed; null is the ordinary stop at this call. */
-		observedEndAtMs: number | null = null,
-	): Promise<void> {
-		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
-		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
-		const detection = this.assistedDetection.getState();
-		const proposal = pendingClaim?.proposal.phase === 'stop'
-			? pendingClaim.proposal.proposal : detection.status === 'stop_proposed' ? detection.proposal : null;
-		const workflowProposalId = pendingClaim?.proposal.proposalId ?? proposal?.proposalId ?? null;
-		let pilotWorkflowSucceeded = false;
-		this.renderViews();
-		try {
-			const runtimeLease = this.requireRuntimeMutationLease();
-			const result = await (captureNow ? this.sessions.captureFinalNow()
-				: observedEndAtMs !== null ? this.sessions.stopAt(observedEndAtMs) : this.sessions.stop())
-				.finally(() => runtimeLease.release());
-			// The stop itself is decided the moment the session leaves `active`, even when the final
-			// snapshot still waits out the API cache window: the detector must not keep proposing and
-			// the accepted proposal must not stay claimed for ten minutes waiting for a receipt.
-			// What the accepted proposal led to (H18.4): a stop whose summary could not be saved is
-			// recorded as such in its receipt and in the pilot, never as a clean success.
-			let summarySaved = true;
-			if (result.status !== 'failed') {
-				this.assistedDetection.disarm('session_stopped'); this.localDebugActions?.event({ component: 'detection', action: 'detection_disarm', state: 'session_stopped', level: 'info', phase: 'success', code: 'ok' });
-				if (result.status === 'stopped') {
-					summarySaved = await this.finalizeAndPersistStoppedSession(result.state.sessionId, result.delta);
-				}
-				// A resumed result is a retry of a capture already reported once: finalize again, but do
-				// not record the stop or its price observation a second time.
-				if (result.status === 'stopped' && result.resumed !== true) {
-					const priceSnapshot = this.sessions.getPriceSnapshot();
-					const stopped = result.state;
-					const delta = result.delta;
-					fireAndForgetLocal(this.localDebugActions,
-						{ component: 'inventory', action: 'inventory_refresh', state: 'price_history_observe' },
-						async () => { await this.priceHistory?.observeSessionItemIds([
-							...delta.itemChanges.map(({ id }) => id),
-							...(priceSnapshot?.items.map(({ itemId }) => itemId) ?? []),
-							...(priceSnapshot?.missingItemIds ?? []),
-						]); });
-					fireAndForgetLocal(this.localDebugActions,
-						{ component: 'detection', action: 'detection_proposal', state: 'accept_stop' },
-						async () => { await this.detectionQuality.recordAccepted(
-						'stop',
-						stopped.sessionId,
-						stopped.finalSnapshot.completedAt,
-						proposal ?? {
-							mode: 'manual',
-							window: {
-								from: stopped.stopRequestedAt,
-								to: stopped.finalSnapshot.completedAt,
-							},
-						},
-						); this.renderViews(); });
-				}
-				const workflow = summarySaved ? 'succeeded' : 'failed';
-				if (intent && pendingClaim) {
-					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId, workflow)) {
-						throw new Error('Proposal receipt failed.');
-					}
-				}
-				pilotWorkflowSucceeded = true;
-				if (workflowProposalId) void this.pilotMetrics?.proposalDecided({
-					proposalId: workflowProposalId,
-					decision: 'accepted', workflow, cause: null, humanBoundaryAt,
-				});
-			}
-			this.renderViews();
-			if (result.status === 'failed') throw new SessionStopBackendFailure(result.failure.code);
-		} catch (error) {
-			if (workflowProposalId && !pilotWorkflowSucceeded) void this.pilotMetrics?.proposalDecided({
-				proposalId: workflowProposalId,
-				decision: 'accepted', workflow: 'failed', cause: null, humanBoundaryAt,
-			});
-			throw error;
-		} finally {
-			pendingClaim?.stopRenewal();
-		}
-	}
-
-	/**
-	 * Stop a live session: hand its final delta to the runtime, then finalize and persist it. Returns
-	 * whether the summary is saved (H18.4): before, a failure here only showed a Notice, and the
-	 * proposal receipt and the pilot kept recording the workflow as a success.
-	 */
-	private async finalizeAndPersistStoppedSession(sessionId: string, delta: StorageDelta): Promise<boolean> {
-		await this.liveSessionLoot.reconcile(sessionId, delta);
-		const reviewed = await this.sessions.finalizeStoppedSession();
-		if (reviewed.status !== 'finalized' || reviewed.state.status !== 'complete') {
-			this.sessionSummarySaveState = 'failed';
-			this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
-				'session_command',
-			);
-			return false;
-		}
-		return await this.finishFinalizedSession(sessionId, delta, reviewed);
-	}
-
-	/**
-	 * Writes the note and runs the pilot metrics/Halloween bookkeeping that follow finalization
-	 * (`provisional` → `complete`), regardless of who finalized it: a live `stop()`
-	 * (`finalizeAndPersistStoppedSession`) or `initialize()` auto-finalizing a `provisional` record
-	 * it found already stopped (no human reviews anything anymore, David 2026-09-09).
-	 */
-	private async finishFinalizedSession(
-		sessionId: string,
-		delta: StorageDelta,
-		reviewed: Extract<Awaited<ReturnType<ManualSessionStartService['finalizeStoppedSession']>>, { status: 'finalized' }>,
-	): Promise<boolean> {
-		void this.pilotMetrics?.sessionCompleted(reviewed.state.sessionId, reviewed.state.finalizedAt);
-		const runtime = await this.sessions.getCompletedRuntimeRecord();
-		if (runtime === null) {
-			this.sessionSummarySaveState = 'failed';
-			this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
-				'session_command',
-			);
-			return false;
-		}
-		const note = await this.persistCompletedSessionSummary(true, runtime);
-		await this.refreshLootPresentation();
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'halloween', action: 'halloween_refresh', state: 'session_final' },
-			() => this.observeHalloweenDelta(delta, 'session_final', `session:${sessionId}`,
-				reviewed.review.classification));
-		// The detector was disarmed when the stop was decided; the next session must be detectable
-		// again without anyone checking the connection by hand (H18.9). It only arms with an account
-		// already connected, and a summary not saved yet never blocks it: `start()` guards that. At
-		// boot the connection warm-up arms it instead, once the runtime is ready.
-		if (this.runtimeReady) fireAndForgetLocal(this.localDebugActions,
-			{ component: 'detection', action: 'detection_arm', state: 'session_complete' },
-			() => this.armAssistedDetection());
-		return note?.status === 'written' || note?.status === 'unchanged';
+	/** Explicit human override: the final snapshot without waiting out the cache window (`LiveSessionRuntime`). */
+	captureSessionFinalNow(): Promise<void> {
+		return this.live.captureSessionFinalNow();
 	}
 
 	/**
@@ -5244,117 +5083,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return note;
 	}
 
-	openManualSessionStart(_humanBoundaryAt: string | null = null): void {
-		if (refusedInConsult(this)) return;
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'session', action: 'session_start' }, async () => {
-				if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-				const presence = this.getIngamePresence();
-				if (presence.status !== 'present') {
-					this.emitNotice('Connect Nexus to start an observed inventory session.', 'session_command'); return;
-				}
-				await this.sessionCommands.run('start-farming-session');
-			});
-	}
-
-	private async startManualSession(
-		input: SessionStartInput,
-		intent?: PendingProposalIntent,
-		humanBoundaryAt: string | null = null,
-	): Promise<void> {
-		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
-		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
-		const detection = this.assistedDetection.getState();
-		const capturedGoal = normalizeFarmingGoal(this.settings.farmingGoal);
-		const capturedGroup = this.farmingGroupContext;
-		const proposal = pendingClaim?.proposal.phase === 'start'
-			? pendingClaim.proposal.proposal : detection.status === 'start_proposed' ? detection.proposal : null;
-		const workflowProposalId = pendingClaim?.proposal.proposalId ?? proposal?.proposalId ?? null;
-		let pilotWorkflowSucceeded = false;
-		this.renderViews();
-		try {
-			// A finished session is released by the start itself once its summary is proven saved
-			// (H18.8); saving it here first is what lets the next session start without a clear.
-			await this.ensureCompletedSummarySaved();
-			const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
-			if (runtimeLease === null) throw new Error('Session history scrub is active.');
-			const result = await this.sessions.start(input).finally(() => runtimeLease.release());
-			if (result.status === 'started') {
-				this.persistFarmingSessionContext({ version: 1, sessionId: result.state.sessionId, goal: capturedGoal,
-					groupContext: capturedGroup, observedFrom: result.state.baseline.completedAt,
-					observedAt: result.state.baseline.completedAt, sampleCount: 1 });
-				this.farmingReminders = [];
-				this.startLiveObservation(result.state.sessionId, false);
-				void this.pilotMetrics?.sessionStarted(result.state.sessionId, result.state.baseline.completedAt);
-				await this.detectionQuality.recordAccepted(
-					'start',
-					result.state.sessionId,
-					result.state.baseline.completedAt,
-					proposal ?? {
-						mode: 'manual',
-						window: {
-							from: result.state.requestedAt,
-							to: result.state.baseline.completedAt,
-						},
-					},
-				);
-				this.renderViews();
-				this.assistedDetection.dismissProposal();
-				if (intent && pendingClaim) {
-					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId)) {
-						throw new Error('Proposal receipt failed.');
-					}
-				}
-				pilotWorkflowSucceeded = true;
-				if (workflowProposalId) void this.pilotMetrics?.proposalDecided({
-					proposalId: workflowProposalId,
-					decision: 'accepted', workflow: 'succeeded', cause: null, humanBoundaryAt,
-				});
-			}
-			if (result.status === 'started' && this.settings.preferredCharacter !== input.characterName.trim()) {
-				try {
-					await this.updateSettings({ preferredCharacter: input.characterName.trim() });
-				} catch { /* the active session does not depend on remembering the preference */ }
-			}
-			this.renderViews();
-			if (result.status === 'failed') throw new Error('Start failed.');
-		} catch (error) {
-			if (workflowProposalId && !pilotWorkflowSucceeded) void this.pilotMetrics?.proposalDecided({
-				proposalId: workflowProposalId,
-				decision: 'accepted', workflow: 'failed', cause: null, humanBoundaryAt,
-			});
-			throw error;
-		} finally {
-			pendingClaim?.stopRenewal();
-		}
-	}
-
-	/**
-	 * Starts the loot poll of an active session, manual or assisted alike.
-	 *
-	 * The cadence here is deliberately NOT `pollingIntervalMinutes`. That setting
-	 * is the idle detection cadence, floored at ten minutes because a background
-	 * hunt for a start proposal re-reads bytes a 5-10 minute cache cannot have
-	 * changed. Once a session is open the player is farming and the alert is the
-	 * product, so it polls at the five minutes H13.3 declares: the fastest
-	 * cadence that still buys new bytes, and the one the latency copy quotes.
-	 */
-	private startLiveObservation(sessionId: string, restored: boolean): void {
-		// R1b: the loot poll is a Guild Wars 2 request; a consult installation never starts one.
-		if (consulting(this)) return;
-		this.sessionSummarySaveState = 'unknown';
-		this.storedSessionLootSummary = null;
-		this.savedSessionNotePath = null;
-		this.liveSessionLoot.begin(sessionId, restored);
-		const baseline = this.sessions.getBaselineSnapshot();
-		const state = baseline === null
-			? { status: 'error' as const }
-			: this.assistedDetection.armFromSnapshot(baseline, ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS);
-		if (state.status !== 'error') return;
-		this.emitNotice(
-			translateRuntime(createTranslator(this.settings.language), 'notices.liveObservationUnavailable'),
-			'live_observation',
-		);
+	openManualSessionStart(humanBoundaryAt: string | null = null): void {
+		this.live.openManualSessionStart(humanBoundaryAt);
 	}
 
 	async updateSettings(settings: Partial<TyrianSettings> | SettingsPatchOverBase): Promise<SettingsUpdateResult> {
@@ -5830,7 +5560,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (id === 'discard-saved-session') return this.prepareDiscardIntent();
 		if (id === 'clear-completed-session') return this.prepareClearIntent();
 		if (id === 'abandon-farming-session') return this.prepareAbandonIntent();
-		if (id === 'finish-farming-session') return Promise.resolve(() => this.performStopManualSession());
+		if (id === 'finish-farming-session') return Promise.resolve(() => this.live.performStopManualSession());
 		return Promise.resolve(() => this.live.performRecoverSession());
 	}
 
@@ -5859,7 +5589,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				this.host.ui,
 				this.settings.preferredCharacter,
 				() => this.settings.language,
-				(input) => { submitted = true; resolve(() => this.startManualSession(input)); },
+				(input) => { submitted = true; resolve(() => this.live.startManualSession(input)); },
 				() => { this.startModal = null; if (!submitted) resolve(null); },
 			);
 			this.startModal.open();
@@ -6144,23 +5874,6 @@ const IDLE_ASSISTED_DETECTION_STATE: AssistedDetectionState = {
 	},
 	lastSnapshotAt: null,
 };
-
-/**
- * Thrown by `performStopManualSession` when `sessions.stop()`/`captureFinalNow()` returns
- * `{status:'failed'}` (H15.9, 2026-09-10 audit): carries the backend's own `SessionStopFailure`
- * code as an own `code` property instead of the fixed `'Stop failed.'` message it replaced, which
- * discarded it entirely. `captureSessionFinalNow` reads this `code` to log `session_finish`
- * `details.cause` and to show the same Notice the Terminar button's `SessionCommandController`
- * already shows for every other stop failure.
- */
-class SessionStopBackendFailure extends Error {
-	readonly code: SessionStopFailure['code'];
-	constructor(code: SessionStopFailure['code']) {
-		super('Session stop failed.');
-		this.name = 'SessionStopBackendFailure';
-		this.code = code;
-	}
-}
 
 /**
  * Identity of the evidence a valuation was measured from. Both halves matter: re-running a session

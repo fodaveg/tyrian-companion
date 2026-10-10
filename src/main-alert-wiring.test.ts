@@ -49,7 +49,8 @@ interface AlertWiringHarness {
 	settings: TyrianSettings;
 	runtimeReady: boolean;
 	initializeRuntime(): Promise<void>;
-	startManualSession(input: unknown): Promise<void>;
+	// DE-01, step 3c: the start is `LiveSessionRuntime`'s, the core's `live`.
+	readonly live: { startManualSession(input: unknown): Promise<void> };
 	emitAlert(alert: AlertV1): Promise<AlertDeliveryReport>;
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
 	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1>;
@@ -91,7 +92,7 @@ describe('H13.3 loot poll cabling', () => {
 			plugin.setFarmingGroupContext('with_bosses');
 			return { status: 'started', state: record.state } as never;
 		});
-		await plugin.startManualSession({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		await plugin.live.startManualSession({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		expect(local.get('tyrian-farming-session')).toMatchObject({ sessionId: record.state.sessionId,
 			goal: { version: 1, kind: 'bags', targetBags: 123 }, groupContext: 'without_bosses', sampleCount: 1 });
 		expect(plugin.getFarmingGoalProgress()?.goal).toEqual({ version: 1, kind: 'bags', targetBags: 123 });
@@ -156,7 +157,7 @@ describe('H13.3 loot poll cabling', () => {
 		expect(plugin.getLiveSessionLoot()).toMatchObject({ status: 'idle' });
 
 		sessionState.mockReturnValue(record.state);
-		await plugin.startManualSession({ characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null } });
+		await plugin.live.startManualSession({ characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null } });
 
 		expect(arm).toHaveBeenCalledWith(
 			expect.objectContaining({ snapshotId: record.baselineSnapshot.snapshotId }),

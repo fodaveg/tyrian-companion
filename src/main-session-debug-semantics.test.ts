@@ -4,6 +4,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
+import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-facade';
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import type { SessionLeaseCoordinator } from './sessions/manual-session-start-service';
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';
@@ -94,15 +95,22 @@ describe('session debug semantics, as journaled', () => {
 					state: { sessionId: 'session-1', stopRequestedAt: '2026-09-01T08:00:00.000Z', finalSnapshot: { completedAt: '2026-09-01T08:10:00.000Z' } },
 					delta: { status: 'comparable', itemChanges: [] },
 				})),
+				finalizeStoppedSession: vi.fn(async () => ({ status: 'failed' as const, message: 'unavailable' })),
 			},
 			assistedDetection: { getState: () => ({ status: 'armed' }), disarm },
-			finalizeAndPersistStoppedSession: vi.fn(async () => true),
+			// The persistence after the stop: a finalization that did not finalize leaves the summary unsaved.
+			liveSessionLoot: { reconcile: vi.fn(async () => undefined) },
+			emitNotice: vi.fn(), settings: { language: 'en' as const },
 			pilotMetrics: null,
 			renderViews: vi.fn(),
-		}) as unknown as TyrianCompanionCore;
+		});
+		// DE-01, step 3c: the stop is `LiveSessionRuntime`'s, run over the harness through the core's own port.
+		const live = new LiveSessionRuntime((TyrianCompanionCore as unknown as {
+			liveSessionRuntimePort(core: object): LiveSessionRuntimePort;
+		}).liveSessionRuntimePort(core));
 
 		// A human boundary takes the stop straight to its workflow, under the gesture's own `session_finish`.
-		await core.stopManualSession('2026-09-01T08:00:00.000Z');
+		await live.stopManualSession('2026-09-01T08:00:00.000Z');
 
 		expect(disarm).toHaveBeenCalledWith('session_stopped');
 		const disarmed = records.filter((record) => record.action === 'detection_disarm');

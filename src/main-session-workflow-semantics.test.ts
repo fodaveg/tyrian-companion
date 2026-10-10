@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { DEFAULT_SETTINGS } from './core/settings';
+import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-facade';
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 
 /**
@@ -23,11 +24,21 @@ const INTENT = { proposalId: 'proposal-1', accountId: 'account-1', phase: 'start
 const STOP_INTENT = { proposalId: 'proposal-2', accountId: 'account-1', phase: 'stop' as const, binding: { kind: 'session' as const, sessionId: 'session-1', baselineSnapshotId: 'before' } };
 const INPUT = { characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 };
 
-const proto = TyrianCompanionCore.prototype as unknown as {
-	startManualSession(this: unknown, input: unknown, intent?: unknown): Promise<void>;
-	performStopManualSession(this: unknown, intent?: unknown): Promise<void>;
-	finishFinalizedSession(this: unknown, sessionId: string, delta: unknown, reviewed: unknown): Promise<boolean>;
-};
+/**
+ * DE-01, step 3c: the start, the stop and the finalization are `LiveSessionRuntime`'s. They run here
+ * on a runtime built over the harness through the core's own port (`liveSessionRuntimePort`), so the
+ * harness's fields and the core's methods it lends are read as the runtime reads them in production.
+ */
+function liveOver(harness: object): {
+	startManualSession(input: unknown, intent?: unknown): Promise<void>;
+	performStopManualSession(intent?: unknown): Promise<void>;
+	finishFinalizedSession(sessionId: string, delta: unknown, reviewed: unknown): Promise<boolean>;
+} {
+	const portOf = (TyrianCompanionCore as unknown as {
+		liveSessionRuntimePort(this: void, core: object): LiveSessionRuntimePort;
+	}).liveSessionRuntimePort;
+	return new LiveSessionRuntime(portOf(harness));
+}
 
 /** A start or a stop, with the pending queue, the journal and the backend each recording what it is asked. */
 function workflowHarness(phase: 'start' | 'stop', backend: 'succeeds' | 'fails' = 'succeeds') {
@@ -38,7 +49,7 @@ function workflowHarness(phase: 'start' | 'stop', backend: 'succeeds' | 'fails' 
 	});
 	const accept = vi.fn(async () => { order.push('accept'); return true; });
 	const queueRead = vi.fn(() => { throw new Error('The manual workflow read the pending queue.'); });
-	const pilotMetrics = { sessionStarted: vi.fn(async () => true), proposalDecided: vi.fn(async () => true) };
+	const pilotMetrics = { sessionStarted: vi.fn(async () => true), proposalDecided: vi.fn(async () => true), sessionCompleted: vi.fn(async () => true) };
 	const disarm = vi.fn();
 	const invalidateAndDisarmAssistedDetection = vi.fn();
 	const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
@@ -53,12 +64,22 @@ function workflowHarness(phase: 'start' | 'stop', backend: 'succeeds' | 'fails' 
 		invalidateAndDisarmAssistedDetection,
 		ensureCompletedSummarySaved: vi.fn(async () => true),
 		persistFarmingSessionContext: vi.fn(),
-		startLiveObservation: vi.fn(),
-		finalizeAndPersistStoppedSession: vi.fn(async () => true),
+		// The live observation a start begins, and the summary a stop's finalization writes.
+		liveSessionLoot: { begin: vi.fn(), reconcile: vi.fn(async () => undefined) },
+		persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
+		refreshLootPresentation: vi.fn(async () => undefined),
+		observeHalloweenDelta: vi.fn(async () => undefined),
+		emitNotice: vi.fn(),
 		detectionQuality: { recordAccepted: vi.fn(async () => undefined) },
 		priceHistory: null,
 		pilotMetrics,
 		sessions: {
+			getBaselineSnapshot: () => null,
+			finalizeStoppedSession: vi.fn(async () => ({
+				status: 'finalized' as const, state: { status: 'complete' as const, sessionId: 'session-1', finalizedAt: '2026-09-01T08:10:00.000Z' },
+				review: { classification: { status: 'exact', reasons: [] } },
+			})),
+			getCompletedRuntimeRecord: vi.fn(async () => ({ state: { status: 'complete', sessionId: 'session-1' } })),
 			start: vi.fn(async () => {
 				order.push('backend');
 				return backend === 'succeeds'
@@ -75,8 +96,8 @@ function workflowHarness(phase: 'start' | 'stop', backend: 'succeeds' | 'fails' 
 		renderViews: vi.fn(), localDebugActions: null,
 	});
 	const run = (intent?: unknown) => phase === 'start'
-		? proto.startManualSession.call(harness, INPUT, intent)
-		: proto.performStopManualSession.call(harness, intent);
+		? liveOver(harness).startManualSession(INPUT, intent)
+		: liveOver(harness).performStopManualSession(intent);
 	return { run, order, acquirePendingIntent, accept, queueRead, pilotMetrics, disarm, invalidateAndDisarmAssistedDetection };
 }
 
@@ -136,7 +157,7 @@ describe('a session\'s own lifecycle in the pilot journal (H0.6)', () => {
 			emitNotice: vi.fn(), settings: { language: 'en' as const },
 		});
 
-		await proto.finishFinalizedSession.call(harness, 'session-1', { status: 'comparable' }, {
+		await liveOver(harness).finishFinalizedSession('session-1', { status: 'comparable' }, {
 			state: { sessionId: 'session-1', finalizedAt: '2026-09-01T08:10:00.000Z' }, review: { classification: { status: 'exact', reasons: [] } },
 		});
 

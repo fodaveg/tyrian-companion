@@ -21,32 +21,40 @@ import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harnes
  * summary's fields back to the core's own.
  */
 
-/** The methods both expose. */
-type FacadeMethod = keyof LiveSessionRuntime & keyof TyrianCompanionCore;
+/** The methods both expose; `collectorMode` is a field of the core, read by the port. */
+type FacadeMethod = Exclude<keyof LiveSessionRuntime & keyof TyrianCompanionCore, 'collectorMode' | 'notifyConsultMode'>;
+
+const BOUNDARY = '2026-10-11T00:00:00.000Z';
 
 /**
- * Each facade method of the core and how the views call it. A record over `FacadeMethod`, so a
- * public method added to `LiveSessionRuntime` and the core does not compile until it has its row.
+ * Each facade method of the core, how the views call it and the arguments LiveSessionRuntime must get.
+ * A record over `FacadeMethod`, so a public method added to `LiveSessionRuntime` and the core does
+ * not compile until it has its row here.
  */
-const FACADE: Readonly<Record<FacadeMethod, (core: TyrianCompanionCore) => unknown>> = {
-	getSessionState: (core) => core.getSessionState(),
-	getSessionStartFailure: (core) => core.getSessionStartFailure(),
-	getSessionStopFailure: (core) => core.getSessionStopFailure(),
-	getSessionAutoRetryAt: (core) => core.getSessionAutoRetryAt(),
-	getSessionSettlementWait: (core) => core.getSessionSettlementWait(),
-	getSessionRecoveryState: (core) => core.getSessionRecoveryState(),
-	recoverSession: (core) => core.recoverSession(),
-	discardRecoveredSession: (core) => core.discardRecoveredSession(),
-	confirmDiscardRecoveredSession: (core) => { core.confirmDiscardRecoveredSession(); },
-	confirmClearCompletedSession: (core) => { core.confirmClearCompletedSession(); },
-	resetCompletedSession: (core) => core.resetCompletedSession(),
-	isLiveSessionStuck: (core) => core.isLiveSessionStuck(),
-	canAbandonSession: (core) => core.canAbandonSession(),
-	confirmAbandonSession: (core) => { core.confirmAbandonSession(); },
+const FACADE: Readonly<Record<FacadeMethod, readonly [call: (core: TyrianCompanionCore) => unknown, args: readonly unknown[]]>> = {
+	getSessionState: [(core) => core.getSessionState(), []],
+	getSessionStartFailure: [(core) => core.getSessionStartFailure(), []],
+	getSessionStopFailure: [(core) => core.getSessionStopFailure(), []],
+	getSessionAutoRetryAt: [(core) => core.getSessionAutoRetryAt(), []],
+	getSessionSettlementWait: [(core) => core.getSessionSettlementWait(), []],
+	getSessionRecoveryState: [(core) => core.getSessionRecoveryState(), []],
+	recoverSession: [(core) => core.recoverSession(), []],
+	discardRecoveredSession: [(core) => core.discardRecoveredSession(), []],
+	confirmDiscardRecoveredSession: [(core) => { core.confirmDiscardRecoveredSession(); }, []],
+	confirmClearCompletedSession: [(core) => { core.confirmClearCompletedSession(); }, []],
+	resetCompletedSession: [(core) => core.resetCompletedSession(), []],
+	isLiveSessionStuck: [(core) => core.isLiveSessionStuck(), []],
+	canAbandonSession: [(core) => core.canAbandonSession(), []],
+	confirmAbandonSession: [(core) => { core.confirmAbandonSession(); }, []],
+	openManualSessionStart: [(core) => { core.openManualSessionStart(BOUNDARY); }, [BOUNDARY]],
+	stopManualSession: [(core) => core.stopManualSession(BOUNDARY), [BOUNDARY]],
+	captureSessionFinalNow: [(core) => core.captureSessionFinalNow(), []],
 };
 
 /** What the delegates of a void method hand back: nothing. */
-const VOID_METHODS = new Set<FacadeMethod>(['confirmDiscardRecoveredSession', 'confirmClearCompletedSession', 'confirmAbandonSession']);
+const VOID_METHODS = new Set<FacadeMethod>([
+	'confirmDiscardRecoveredSession', 'confirmClearCompletedSession', 'confirmAbandonSession', 'openManualSessionStart',
+]);
 
 describe('the core hands the session state and the ways out of a session to LiveSessionRuntime', () => {
 	let harness: RuntimeHarness | null = null;
@@ -76,19 +84,48 @@ describe('the core hands the session state and the ways out of a session to Live
 
 	// The runtime's answer is replaced by a token of its own, so the commands these reach (built in
 	// `onload`, which this harness does not run) are never driven: what is read is the delegation.
-	it.each(Object.keys(FACADE) as FacadeMethod[])('%s reaches LiveSessionRuntime once, with no arguments, and answers what it answers', async (name) => {
+	it.each(Object.keys(FACADE) as FacadeMethod[])('%s reaches LiveSessionRuntime once, with the view\'s arguments, and answers what it answers', async (name) => {
 		const runtime = core();
 		await runtime.initializeRuntime();
 		const token = { answeredBy: name };
 		const reached = vi.spyOn(LiveSessionRuntime.prototype, name).mockImplementation((() => token) as never);
+		const [call, args] = FACADE[name];
 
-		const answer = FACADE[name](runtime.core);
+		const answer = call(runtime.core);
 
-		expect(reached).toHaveBeenCalledExactlyOnceWith();
+		expect(reached).toHaveBeenCalledExactlyOnceWith(...args);
 		expect(answer).toBe(VOID_METHODS.has(name) ? undefined : token);
 	});
 
 	describe('the port reads the core as it stands and writes the summary back to it', () => {
+		it('collectorMode: a device turned to consult after the boot is refused a start, through the core\'s own notice', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			runtime.core.collectorMode = 'consult';
+			const notified = vi.spyOn(runtime.core, 'notifyConsultMode').mockImplementation(() => undefined);
+
+			runtime.core.openManualSessionStart();
+
+			expect(notified).toHaveBeenCalledOnce();
+		});
+
+		it('farmingReminders: a start clears the reminders the core keeps for the next session', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			runtime.core.startFarmingReminder('food', 30);
+			vi.spyOn(ManualSessionStartService.prototype, 'start').mockResolvedValue({
+				status: 'started',
+				state: { sessionId: 'started-session', requestedAt: '2026-10-11T00:00:00.000Z', baseline: { completedAt: '2026-10-11T00:00:05.000Z' } },
+			} as unknown as Awaited<ReturnType<ManualSessionStartService['start']>>);
+			// The start is run by the start modal `onload` sets up; here, straight on the core's own runtime.
+			const { live } = runtime.core as unknown as { live: Pick<LiveSessionRuntime, 'startManualSession'> };
+			const before = runtime.core.getFarmingReminders().length;
+
+			await live.startManualSession({ characterName: 'Astra Uno' } as Parameters<LiveSessionRuntime['startManualSession']>[0]);
+
+			expect({ before, after: runtime.core.getFarmingReminders().length }).toEqual({ before: 1, after: 0 });
+		});
+
 		it('runtimeReady and sessions: before the boot the state is neutral; after it the boot\'s session service answers', async () => {
 			const runtime = core();
 			const before = runtime.core.getSessionState();
