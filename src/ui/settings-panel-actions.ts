@@ -1,6 +1,6 @@
 import type { ConnectionState } from '../account/connection-service';
 import type { ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
-import type { ManagedAssetsView } from '../assets/managed-assets-ui';
+import type { ManagedAssetsView, ManagedAssetsWriteOptions } from '../assets/managed-assets-ui';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { CollectorMode, TyrianSettings } from '../core/settings';
 import type { ViewPlacement } from '../runtime/view-placement';
@@ -103,10 +103,11 @@ export interface SettingsPanelActions {
 	managedAssetsCanMove?(): boolean;
 	hasManagedAssetsRoot(): boolean;
 	previewManagedAssets(): Promise<void>;
-	applyManagedAssets(): Promise<void>;
-	repairManagedAssets(): Promise<void>;
+	/** The Settings press passes no guard and `{ createOutputFolder: true }` (`ManagedAssetsWriteOptions`). */
+	applyManagedAssets(guard?: undefined, options?: ManagedAssetsWriteOptions): Promise<void>;
+	repairManagedAssets(options?: ManagedAssetsWriteOptions): Promise<void>;
 	listUnownedManagedAssets(): Promise<Array<{ id: string; path: string }>>;
-	replaceUnownedManagedAssets(confirmed: readonly string[]): Promise<void>;
+	replaceUnownedManagedAssets(confirmed: readonly string[], options?: ManagedAssetsWriteOptions): Promise<void>;
 	relocateManagedAssets(): Promise<ManagedAssetsLifecycleResult | null>;
 	removeManagedAssets(): Promise<void>;
 	getSessionHistoryView(): SessionHistoryView;

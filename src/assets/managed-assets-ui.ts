@@ -13,7 +13,18 @@ export type ManagedAssetsMessageCode =
 	/** The preview found files of the user's that Apply will not touch. */
 	| 'preview_unowned' | 'preview_unowned_no_root'
 	/** Why an operation failed, when the host or the folder says so (`ManagedAssetsFailureCause`). */
-	| 'operation_bytes_not_synced' | 'operation_output_folder_missing' | 'operation_host_refused' | 'operation_only_unowned';
+	| 'operation_bytes_not_synced' | 'operation_output_folder_missing' | 'operation_host_refused' | 'operation_only_unowned'
+	/** A press asked to create the missing output folder and the host could not. */
+	| 'operation_output_folder_create_failed';
+
+/**
+ * What a write of the managed-assets row may do besides its own work. `createOutputFolder`: create the output
+ * folder when the library lacks it (Hebra; David, 10 Oct 2026 «si no existe, se crea»). Only the Settings presses
+ * of Apply, Repair and Replace pass it; a start, an automatic apply, Remove and Move never do.
+ */
+export interface ManagedAssetsWriteOptions {
+	readonly createOutputFolder?: boolean;
+}
 
 export interface ManagedAssetsView {
 	status: 'idle' | 'working' | 'ready' | 'error';

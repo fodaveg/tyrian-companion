@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createFakeLibrary } from '../../test/hebra-plugin-fakes';
-import { ensureFolderPath, folderRelativePaths, folderSegmentsOf, libraryFolderPaths, resolveFolderPath } from './folder-path';
+import { createLibraryFolderPath, ensureFolderPath, folderRelativePaths, folderSegmentsOf, libraryFolderPaths, resolveFolderPath } from './folder-path';
 
 // Ported from Hebra's `src/lib/modules/tyrian/folder-path.test.ts`, over `api.vault` folders.
 // `isFolderUnderRoot` is not ported: nothing but its own test used it in Hebra.
@@ -10,6 +10,78 @@ describe('folderSegmentsOf', () => {
 	it('drops the last part (the file name) and keeps the rest', () => {
 		expect(folderSegmentsOf('Inventory/Positions/abc.md')).toEqual(['Inventory', 'Positions']);
 		expect(folderSegmentsOf('abc.md')).toEqual([]);
+	});
+});
+
+describe('createLibraryFolderPath', () => {
+	it('creates the missing segments from the library root, a first-level one with no parent', async () => {
+		const library = createFakeLibrary();
+		const id = await createLibraryFolderPath(library, 'root', 'Games/GW2/Tyrian');
+		const [games, gw2, tyrian] = ['Games', 'GW2', 'Tyrian'].map((name) => library.folders.find((folder) => folder.name === name));
+		expect(games?.parentId).toBeNull();
+		expect(gw2?.parentId).toBe(games?.id);
+		expect(tyrian?.parentId).toBe(gw2?.id);
+		expect(id).toBe(tyrian?.id);
+		expect(resolveFolderPath(library.folders, 'root', 'Games/GW2/Tyrian')).toBe(id);
+	});
+
+	it('reuses what exists (under the root id or with no parent, case-insensitively) and creates only the rest', async () => {
+		const library = createFakeLibrary();
+		library.addFolder('games', 'root', 'games');
+		expect(await createLibraryFolderPath(library, 'root', 'Games')).toBe('games');
+		await createLibraryFolderPath(library, 'root', 'Games/GW2');
+		expect(library.folders.filter((folder) => folder.name === 'GW2').map((folder) => folder.parentId)).toEqual(['games']);
+		library.addFolder('loose', null, 'Loose');
+		expect(await createLibraryFolderPath(library, 'root', 'loose')).toBe('loose');
+		expect(library.writes).toEqual(['folderCreate:GW2']);
+	});
+
+	/** Like Hebra's engine (`ensureFolderNameFree`): a sibling whose name it already holds is refused. */
+	function hebraLikeLibrary() {
+		const library = createFakeLibrary();
+		const key = (name: string) => name.normalize('NFC').trim().toLowerCase();
+		const create = library.folderCreate.bind(library);
+		library.folderCreate = async (parentId, name) => {
+			const parent = parentId ?? 'root';
+			if (library.folders.some((folder) => (folder.parentId ?? 'root') === parent && key(folder.name) === key(name))) {
+				throw Object.assign(new Error('folder_name_taken'), { name: 'LibraryError', code: 'folder_name_taken' });
+			}
+			return await create(parentId, name);
+		};
+		return library;
+	}
+
+	it('two creations at once end in the same folder: the one that loses the name reuses it', async () => {
+		const library = hebraLikeLibrary();
+		const [first, second] = await Promise.all([
+			createLibraryFolderPath(library, 'root', 'Games/GW2'),
+			createLibraryFolderPath(library, 'root', 'Games/GW2'),
+		]);
+		expect(first).toBe(second);
+		expect(library.folders.filter((folder) => folder.name === 'Games')).toHaveLength(1);
+		expect(library.folders.filter((folder) => folder.name === 'GW2')).toHaveLength(1);
+	});
+
+	it('any other refusal of Hebra still rejects', async () => {
+		const library = createFakeLibrary();
+		library.folderCreate = async () => { throw Object.assign(new Error('invalid_name'), { code: 'invalid_name' }); };
+		await expect(createLibraryFolderPath(library, 'root', 'Games')).rejects.toThrow('invalid_name');
+	});
+
+	it('a setting in NFD finds the folder Hebra keeps in NFC, as Hebra compares names', async () => {
+		const library = createFakeLibrary();
+		library.addFolder('musica', 'root', 'Música'.normalize('NFC'));
+		const nfd = 'Música/Álbumes'.normalize('NFD');
+		expect(resolveFolderPath(library.folders, 'root', nfd.split('/')[0]!)).toBe('musica');
+		const id = await createLibraryFolderPath(library, 'root', nfd);
+		expect(library.folders.filter((folder) => folder.parentId === 'root' || folder.parentId === null)).toHaveLength(1);
+		expect(library.folders.find((folder) => folder.id === id)?.parentId).toBe('musica');
+	});
+
+	it('refuses an empty path instead of handing back the library root', async () => {
+		const library = createFakeLibrary();
+		await expect(createLibraryFolderPath(library, 'root', '/')).rejects.toThrow('empty path');
+		expect(library.folders).toEqual([]);
 	});
 });
 

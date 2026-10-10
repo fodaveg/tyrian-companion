@@ -105,7 +105,7 @@ import {
 	type ManagedAssetsAutoUpdateDecision,
 	type ManagedAssetsInspection,
 } from '../assets/managed-assets-model';
-import type { ManagedAssetsMessageCode, ManagedAssetsView } from '../assets/managed-assets-ui';
+import type { ManagedAssetsMessageCode, ManagedAssetsView, ManagedAssetsWriteOptions } from '../assets/managed-assets-ui';
 import { IndexedDbManagedAssetsPointerStore } from '../assets/managed-assets-pointer';
 import { HostRequestTransport, HttpTransportError } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
@@ -2782,7 +2782,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			if (decideManagedAssetsAutoUpdate(inspection).action !== 'apply') return false;
 			seen.inspection = inspection;
 			return true;
-		});
+		// An automatic apply never creates a missing output folder: only the press of «Aplicar» does.
+		}, { createOutputFolder: false });
 		return seen.inspection;
 	}
 
@@ -4741,8 +4742,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.settingTab.refreshManagedAssetsRow();
 	}
 
-	/** `guard` is the caller's last word on the inspection the apply acts on (see `ManagedAssetsManager.apply`). */
-	async applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<void> {
+	/**
+	 * `guard` is the caller's last word on the inspection the apply acts on (see `ManagedAssetsManager.apply`).
+	 * `options.createOutputFolder`: only the Settings press passes it (`createMissingOutputFolder`).
+	 */
+	async applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean, options: ManagedAssetsWriteOptions = {}): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
 		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
 		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
@@ -4751,11 +4755,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.settingTab.refreshManagedAssetsRow();
 			return;
 		}
-		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.install(this.settings.outputFolder, undefined, guard));
+		const outputFolder = this.settings.outputFolder;
+		const result = await this.runManagedAssetsLifecycle(async () => (
+			await createMissingOutputFolder(this.host, outputFolder, outputFolder, options)
+			?? await this.managedAssetsLifecycle.install(outputFolder, undefined, guard)
+		));
 		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
 	}
 
-	async repairManagedAssets(): Promise<void> {
+	async repairManagedAssets(options: ManagedAssetsWriteOptions = {}): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
 		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
 		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
@@ -4765,7 +4773,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			return;
 		}
 		if (!this.settings.managedAssetsRoot) return;
-		await this.runManagedAssetOperation(() => this.managedAssets.apply(this.settings.managedAssetsRoot!, 'repair'));
+		const root = this.settings.managedAssetsRoot;
+		const outputFolder = this.settings.outputFolder;
+		await this.runManagedAssetOperation(async () => (
+			await createMissingOutputFolder(this.host, root, outputFolder, options) ?? await this.managedAssets.apply(root, 'repair')
+		));
 	}
 
 	/**
@@ -4773,7 +4785,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * it wrote (edited by hand, or from a build nothing published) with the ones it ships. No automatic path
 	 * reaches it: the preview keeps listing those files as «Yours, left untouched» until this runs.
 	 */
-	async replaceUnownedManagedAssets(confirmed: readonly string[]): Promise<void> {
+	async replaceUnownedManagedAssets(confirmed: readonly string[], options: ManagedAssetsWriteOptions = {}): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
 		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
 		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
@@ -4783,7 +4795,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			return;
 		}
 		if (!this.settings.managedAssetsRoot) return;
-		await this.runManagedAssetOperation(() => this.managedAssets.replaceUnowned(this.settings.managedAssetsRoot!, confirmed));
+		const root = this.settings.managedAssetsRoot;
+		const outputFolder = this.settings.outputFolder;
+		await this.runManagedAssetOperation(async () => (
+			await createMissingOutputFolder(this.host, root, outputFolder, options) ?? await this.managedAssets.replaceUnowned(root, confirmed)
+		));
 	}
 
 	/**
@@ -6448,6 +6464,7 @@ function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'una
 	const byCause: Record<ManagedAssetsFailureCause, ManagedAssetsMessageCode> = {
 		bytes_not_synced: 'operation_bytes_not_synced', output_folder_missing: 'operation_output_folder_missing',
 		host_refused: 'operation_host_refused', only_unowned_files: 'operation_only_unowned',
+		output_folder_create_failed: 'operation_output_folder_create_failed',
 	};
 	if (cause !== undefined) return byCause[cause];
 	const codes: Record<typeof status, ManagedAssetsMessageCode> = {
@@ -6613,6 +6630,27 @@ async function ensureAdapterDirectory(
 		current = current.length === 0 ? segment : `${current}/${segment}`;
 		if (!await adapter.exists(current)) await adapter.mkdir(current);
 	}
+}
+
+/**
+ * David, 10 Oct 2026 (Assets row: «la carpeta de salida no existe en la biblioteca […] si no existe, se crea»):
+ * before a write the Settings row asked for with `createOutputFolder: true` (the presses of Apply, Repair and
+ * Replace) into the output folder, a host whose `createFolder` cannot create that folder (Hebra) creates it.
+ * Never without that flag (a start, an automatic apply, Remove, Move), nor for a root outside the output folder.
+ * Returns the failure the row shows when creating it failed (the host already reported why), null otherwise.
+ * Tolerates an absent host, like `consulting`.
+ */
+async function createMissingOutputFolder(
+	host: TyrianHost | undefined,
+	root: string,
+	outputFolder: string,
+	options: ManagedAssetsWriteOptions,
+): Promise<{ status: 'unavailable'; message: string; cause: 'output_folder_create_failed' } | null> {
+	if (options.createOutputFolder !== true || (root !== outputFolder && !root.startsWith(`${outputFolder}/`))) return null;
+	const vault = host?.vault;
+	if (vault?.createOutputFolder === undefined) return null;
+	if (await vault.createOutputFolder()) return null;
+	return { status: 'unavailable', message: 'The output folder is not in the library and could not be created.', cause: 'output_folder_create_failed' };
 }
 
 /**

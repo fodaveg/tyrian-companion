@@ -5,8 +5,9 @@
  * Not free text: it saves only on CHOOSING a folder that exists in the library (a click on a
  * suggestion, Enter on the highlighted one, or Enter on an exact match). Leaving the field without
  * choosing puts the saved folder back. A saved folder the library lacks (the default
- * `Tyrian Companion` in a library without it) stays in the field with its warning below: it is
- * never changed on its own nor created.
+ * `Tyrian Companion` in a library without it) stays in the field with its warning below, which says
+ * that «Aplicar» of the managed assets creates it (David, 10 Oct 2026); the picker never changes or
+ * creates it, and reads the folders again when they change, so the warning goes once it exists.
  *
  * The list sits in the flow, under the field, not floating: inside the plugin's scrolling settings
  * dialog a floating list would be clipped. Nothing overflows: the field takes 100 % with
@@ -37,6 +38,9 @@ export interface FolderPickerDeps {
 	translator: HebraTranslator;
 	/** Paths of the library's folders. */
 	folderPaths(): Promise<readonly string[]>;
+	/** Called when the library's folders change (another device, Hebra's own UI, the output folder
+	 *  created by «Aplicar»): the picker reads `folderPaths` again. Returns its cleanup. */
+	onFoldersChange?(listener: () => void): () => void;
 	report(error: unknown, where: string): void;
 	/** The folder the plugin really has saved. After `onSelect` the field shows THIS one: if the
 	 *  core refused the path without throwing, it does not look saved. Without it, the chosen one
@@ -273,18 +277,24 @@ export function attachFolderPicker(
 	input.hidden = true;
 	input.after(root);
 
-	deps.folderPaths()
-		.then((result) => {
-			if (!active) return;
-			paths = result;
-			loaded = true;
-			paintNote();
-			if (open) paintList();
-		})
-		.catch((error: unknown) => deps.report(error, 'pickFolder'));
+	const loadPaths = (): void => {
+		deps.folderPaths()
+			.then((result) => {
+				if (!active) return;
+				paths = result;
+				loaded = true;
+				paintNote();
+				if (open) paintList();
+			})
+			.catch((error: unknown) => deps.report(error, 'pickFolder'));
+	};
+	loadPaths();
+	// David, 10 Oct 2026: «Aplicar» creates a missing output folder, so the warning below must not outlive it.
+	const stopWatching = deps.onFoldersChange?.(loadPaths);
 
 	return () => {
 		active = false;
+		stopWatching?.();
 		field.removeEventListener('input', onInput);
 		field.removeEventListener('focus', onFocus);
 		field.removeEventListener('blur', onBlur);

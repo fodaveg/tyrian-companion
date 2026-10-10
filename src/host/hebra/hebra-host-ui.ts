@@ -41,6 +41,8 @@ export interface HebraTyrianUiDeps {
 	secrets: TyrianSecretsPort;
 	/** Paths of the library's folders: the options of `pickFolder`. */
 	folderPaths(): Promise<readonly string[]>;
+	/** When the library's folders change: `pickFolder` reads `folderPaths` again (see `FolderPickerDeps.onFoldersChange`). */
+	onFoldersChange?(listener: () => void): () => void;
 	/** `ui.openNote(path)`: the core's vault path, resolved through the index. */
 	openNote(path: string): void;
 	/** An asynchronous failure of the plugin with nobody to reach (it is logged). */

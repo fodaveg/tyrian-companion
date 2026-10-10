@@ -244,7 +244,7 @@ describe('modal, menu, notice and the rest', () => {
 		ui.pickFolder(missing, vi.fn());
 		const note = (missing.nextElementSibling as HTMLElement).querySelector<HTMLElement>('.hebra-module-folder-note');
 		await vi.waitFor(() => expect(note?.hidden).toBe(false));
-		expect(note?.textContent).toBe('«Tyrian Companion» no existe en la biblioteca.');
+		expect(note?.textContent).toBe('«Tyrian Companion» aún no existe; se creará al aplicar los assets.');
 	});
 
 	it('openSettings, openNote, revealView and openExternal go where they belong; a failing openExternal is reported', async () => {

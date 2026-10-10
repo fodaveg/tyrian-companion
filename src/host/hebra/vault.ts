@@ -11,12 +11,14 @@
  * advisor receipt go through `adapter`).
  *
  * Without an output folder in the library (`port === null`: the saved one, or the default, does
- * not exist; it is picked in the plugin settings among the real ones and Hebra never creates it),
- * the vault is empty and every write refuses. Consultation mode does not write, so it goes unseen.
+ * not exist; it is picked in the plugin settings among the real ones), the vault is empty and every
+ * write refuses with `output_folder_missing`. The start never creates it; `createOutputFolder` does,
+ * when an explicit press of the managed-assets row asks for it (David, 10 Oct 2026: «si no existe, se
+ * crea»), and from then on this vault writes there. Consultation mode does not write, so it goes unseen.
  */
 import type { LocalDebugStoragePort } from '../../core/local-debug-writer';
 import { vaultFailure, type VaultFailureCause } from '../../core/vault-failure-cause';
-import type { TyrianVault, TyrianVaultFile } from '../tyrian-host';
+import type { TyrianDisposer, TyrianVault, TyrianVaultChange, TyrianVaultFile } from '../tyrian-host';
 import type { TyrianPathIndex } from './path-index';
 import type { TyrianVaultPort } from './vault-port';
 
@@ -37,11 +39,24 @@ export interface CreateHebraTyrianVaultOptions {
 	writeBlockedReason?: () => string | null;
 	/** Called with each refused write before it is thrown: the host's diagnostics. */
 	onReject?: (error: Error) => void;
+	/**
+	 * Creates the output folder in the library (with the folders that contain it) and returns the port and
+	 * the path index over it. Only reached while `port` is null, through `vault.createOutputFolder`. Absent:
+	 * this vault cannot create it and `createOutputFolder` changes nothing.
+	 */
+	createOutputFolder?: () => Promise<{ port: TyrianVaultPort; index: TyrianPathIndex }>;
+	/** Called with the failure of `createOutputFolder`, which never rejects: the host's diagnostics. */
+	onCreateOutputFolderFailure?: (error: unknown) => void;
 }
 
 export function createHebraTyrianVault(options: CreateHebraTyrianVaultOptions): TyrianVault {
-	const { port, index, libraryId, adapter } = options;
+	const { libraryId, adapter } = options;
+	// Both change once, when `createOutputFolder` creates the missing output folder.
+	let { port, index } = options;
 	const root = options.outputFolder.replace(/^\/+|\/+$/gu, '');
+	/** `onChange` subscriptions made while there was no output folder: attached when it is created. */
+	const waiting = new Set<{ relative: string; listener: (change: TyrianVaultChange) => void; detach: TyrianDisposer | null }>();
+	let creating: Promise<boolean> | null = null;
 
 	/** null: outside the output folder. `''`: the output folder itself. */
 	const toRelative = (path: string): string | null => relativeToOutputFolder(root, path);
@@ -64,6 +79,15 @@ export function createHebraTyrianVault(options: CreateHebraTyrianVaultOptions): 
 		const error = cause === undefined ? new Error(message) : vaultFailure(message, cause);
 		options.onReject?.(error);
 		throw error;
+	}
+
+	/** `listener` on `relative` of `target`, with the paths given back as vault paths. */
+	function attach(target: TyrianVaultPort, relative: string, listener: (change: TyrianVaultChange) => void): TyrianDisposer {
+		return target.onChange(relative, (change) => listener({
+			...change,
+			path: toVaultPath(change.path),
+			...(change.oldPath === undefined ? {} : { oldPath: toVaultPath(change.oldPath) }),
+		}));
 	}
 
 	/** No write leaves while the saved output folder differs from the vault's. */
@@ -156,12 +180,42 @@ export function createHebraTyrianVault(options: CreateHebraTyrianVaultOptions): 
 			// listener filters by its folder, as in Obsidian. A foreign root delivers nothing.
 			const cleanWatched = watched.replace(/^\/+|\/+$/gu, '');
 			const relative = cleanWatched === '' || isAncestorOfOutput(watched) !== null ? '' : toRelative(watched);
-			if (relative === null || !port) return () => undefined;
-			return port.onChange(relative, (change) => listener({
-				...change,
-				path: toVaultPath(change.path),
-				...(change.oldPath === undefined ? {} : { oldPath: toVaultPath(change.oldPath) }),
-			}));
+			if (relative === null) return () => undefined;
+			if (port) return attach(port, relative, listener);
+			// No output folder yet: the subscription waits for `createOutputFolder` instead of being lost.
+			const entry = { relative, listener, detach: null as TyrianDisposer | null };
+			waiting.add(entry);
+			return () => {
+				waiting.delete(entry);
+				entry.detach?.();
+				entry.detach = null;
+			};
+		},
+		createOutputFolder() {
+			if (port || options.createOutputFolder === undefined || options.writeBlockedReason?.()) return Promise.resolve(true);
+			const create = options.createOutputFolder;
+			creating ??= create().then(
+				(created) => {
+					try {
+						if (!port) {
+							({ port, index } = created);
+							for (const entry of waiting) entry.detach = attach(created.port, entry.relative, entry.listener);
+						}
+					} catch (error) {
+						// The folder and its port exist: only a waiting subscription failed to attach.
+						options.onCreateOutputFolderFailure?.(error);
+					} finally {
+						creating = null;
+					}
+					return true;
+				},
+				(error: unknown) => {
+					creating = null;
+					options.onCreateOutputFolderFailure?.(error);
+					return false;
+				},
+			);
+			return creating;
 		},
 		configDir: HEBRA_TYRIAN_CONFIG_DIR,
 		canonicalIdentity: () => `hebra-library:${libraryId}`,
