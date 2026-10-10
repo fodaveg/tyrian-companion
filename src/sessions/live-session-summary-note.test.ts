@@ -1296,6 +1296,23 @@ describe('live session summary: the average of similar sessions', () => {
 		expect((await render({ itemMeta: META, comparablePerHour: [60_000, 70_000, 80_000] })).content).not.toContain('Tu media');
 	});
 
+	it('says of how many summaries the average comes when the read limit was reached, and stays as it was when not', async () => {
+		const input = { itemMeta: META, mutate: mainMap, comparablePerHour: [60_000, 70_000, 80_000] };
+		expect((await render({ ...input, comparablesCapped: true })).content)
+			.toContain('(3 sesiones en este mapa, entre tus 200 resúmenes más recientes)');
+		expect((await render({ ...input, comparablesCapped: true, locale: 'en' })).content)
+			.toContain('(3 sessions on this map, among your 200 most recent summaries)');
+		expect((await render({ ...input, comparablesCapped: false })).content).toContain('(3 sesiones en este mapa)');
+	});
+
+	it('reports the read limit as reached only when the vault holds that many summaries', async () => {
+		const vault = new TestVault();
+		for (let index = 0; index < 199; index += 1) vault.contents.set(`Tyrian Companion/summaries/${String(index).padStart(4, '0')}.md`, '# nada');
+		expect((await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).capped).toBe(false);
+		vault.contents.set('Tyrian Companion/summaries/0199.md', '# nada');
+		expect((await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).capped).toBe(true);
+	});
+
 	it('is read from the earlier summaries of the same main map, never the session itself', async () => {
 		const vault = new TestVault();
 		const put = async (suffix: string, startMinutes: number, map: (session: StoredLiveSessionPayloadV1) => StoredLiveSessionPayloadV1, ref?: string) => {
@@ -1568,7 +1585,7 @@ describe('live session summary service', () => {
 		vault.contents.set('Tyrian Companion/summaries/rota.md', 'x');
 		vault.contents.set('Tyrian Companion/summaries/otra.md', '# nota cualquiera');
 		vi.spyOn(vault, 'read').mockImplementation(async (file) => { if (file.path.endsWith('rota.md')) throw new Error('io'); return '# nota cualquiera'; });
-		expect(await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).toEqual({ perHour: [], unreadable: 1 });
+		expect(await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).toEqual({ perHour: [], unreadable: 1, capped: false });
 	});
 	it('looks the earlier summaries up in the normalized folder the writer uses', async () => {
 		const nfd = 'Tyrian Companion\u0301'.normalize('NFD'); const nfc = nfd.normalize('NFC');
