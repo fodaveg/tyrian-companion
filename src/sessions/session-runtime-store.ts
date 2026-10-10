@@ -40,11 +40,11 @@ export interface RejectedLegacyArchive { key: string; reason: 'record_invalid' }
 export const SESSION_RUNTIME_VERSION = 3 as const;
 export const SESSION_RUNTIME_DB_NAME = 'tyrian-companion-session-runtime';
 /**
- * 3 (10 Oct 2026, DU-01): a database an earlier release left in version 1, or one version 2 opened without the live
- * journal, gets its missing stores on this upgrade. Never lower it and never open the database at a version without
- * `SESSION_RUNTIME_SCHEMA`: an upgrade with an incomplete schema leaves the version raised and the store missing for good.
+ * The version a NEW database is created in, and the lowest one the published 0.6.26 opens. A database never goes above it
+ * unless a store is missing (see {@link openSessionRuntimeDatabase}): raising it for everybody would leave the 0.6.26 unable
+ * to open a healthy database. Do not open the database at a fixed version anywhere else.
  */
-export const SESSION_RUNTIME_DB_VERSION = 3;
+export const SESSION_RUNTIME_DB_VERSION = 2;
 export const SESSION_RUNTIME_STORE_NAME = 'active-session-v1';
 /**
  * Defined here, not in `live-session-persistence` (which re-exports it): the schema below reads it while this module loads,
@@ -61,16 +61,38 @@ export const SESSION_RUNTIME_SCHEMA: readonly IndexedDbStoreSchema[] = [
 export type OpenSessionRuntimeDatabaseOptions = Omit<OpenIndexedDbOptions, 'databaseVersion' | 'schema'>;
 
 /**
- * Opens the session runtime database with the complete schema and repairs one that is already missing a store.
- * A base that lost a store to an earlier incomplete upgrade is opened again one version up so `applyIndexedDbSchema`
- * creates what is missing; it is never deleted or recreated, because it holds the saved session.
+ * Opens the session runtime database with the complete schema and repairs one that is missing a store.
+ *
+ * A new database, or one left in version 1, is opened in {@link SESSION_RUNTIME_DB_VERSION} and gets every store on that
+ * upgrade. One already in a higher version is opened in the version it has: asking for a lower one fails with
+ * `VersionError`, and asking for a higher one would lock out the release that wrote it. Only when a store is still missing
+ * (a database an earlier incomplete upgrade damaged, DU-01) is it opened again one version up so `applyIndexedDbSchema`
+ * creates what is missing. It is never deleted or recreated, because it holds the saved session.
  */
 export async function openSessionRuntimeDatabase(options: OpenSessionRuntimeDatabaseOptions): Promise<IDBDatabase> {
-	const database = await openIndexedDb({ ...options, databaseVersion: SESSION_RUNTIME_DB_VERSION, schema: SESSION_RUNTIME_SCHEMA });
-	if (SESSION_RUNTIME_SCHEMA.every((store) => database.objectStoreNames.contains(store.name))) return database;
+	const complete = (database: IDBDatabase): boolean => SESSION_RUNTIME_SCHEMA.every((store) => database.objectStoreNames.contains(store.name));
+	const openAt = async (databaseVersion: number, onVersionError?: () => void): Promise<IDBDatabase> => await openIndexedDb({
+		...options, databaseVersion, schema: SESSION_RUNTIME_SCHEMA,
+		toError: (reason, error) => { if (error?.name === 'VersionError') onVersionError?.(); return options.toError(reason, error); },
+	});
+	let tooLow = false;
+	// `allSettled` rather than try/catch: the only failure absorbed here is "the database is already above the minimum".
+	const [first] = await Promise.allSettled([openAt(SESSION_RUNTIME_DB_VERSION, () => { tooLow = true; })]);
+	if (first.status === 'rejected' && !tooLow) throw first.reason;
+	let database: IDBDatabase | null = first.status === 'fulfilled' ? first.value : null;
+	if (database === null) {
+		// Already above the minimum: read the version it has and open exactly that one.
+		const current = await new Promise<number>((resolve, reject) => {
+			const request = options.factory.open(options.databaseName);
+			request.onsuccess = () => { const { version } = request.result; request.result.close(); resolve(version); };
+			request.onerror = () => { reject(options.toError('error', request.error)); };
+		});
+		database = await openAt(current);
+	}
+	if (complete(database)) return database;
 	const repairVersion = database.version + 1;
 	database.close();
-	return await openIndexedDb({ ...options, databaseVersion: repairVersion, schema: SESSION_RUNTIME_SCHEMA });
+	return await openAt(repairVersion);
 }
 /** Exported so a test can seed a legacy-schema record directly, bypassing `save()`'s current-schema validation. */
 export const SESSION_RUNTIME_KEY = 'active-session';

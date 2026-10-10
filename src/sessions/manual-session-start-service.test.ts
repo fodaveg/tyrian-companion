@@ -23,7 +23,6 @@ import {
 import {
 	IndexedDbSessionRuntimeStore,
 	MemorySessionRuntimeStore,
-	SESSION_RUNTIME_DB_VERSION,
 	type SessionRuntimeStore,
 } from './session-runtime-store';
 import { SessionStartCaptureError, type SessionStartCaptureResult } from './session-start-capture';
@@ -1502,7 +1501,7 @@ describe('ManualSessionStartService', () => {
 			await first.initialize(); await expect(first.preserveLegacyForLiveMigration()).resolves.toBe(true); await first.dispose();
 			// A checksummed archive whose original no longer passes today's validation, sorted before the real one.
 			const database = await new Promise<IDBDatabase>((resolve, reject) => {
-				const request = factory.open(dbName, SESSION_RUNTIME_DB_VERSION); request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed')); request.onsuccess = () => resolve(request.result);
+				const request = factory.open(dbName, 2); request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed')); request.onsuccess = () => resolve(request.result);
 			});
 			const tx = database.transaction('active-session-v1', 'readwrite');
 			tx.objectStore('active-session-v1').add(prepareLegacyRuntimeArchive({ notARuntime: true }, 9_999_999_999_999), 'legacy-api-runtime:aaa-old-evidence');

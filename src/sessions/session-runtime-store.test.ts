@@ -22,7 +22,6 @@ import {
 	IndexedDbSessionRuntimeStore,
 	isSessionRuntimeRecord,
 	MemorySessionRuntimeStore,
-	SESSION_RUNTIME_DB_VERSION,
 	SESSION_RUNTIME_STORE_NAME,
 } from './session-runtime-store';
 import type { SessionStartContext } from './session-start-capture';
@@ -141,7 +140,7 @@ describe('session runtime persistence', () => {
 		async function seedArchives(label: string, rows: Array<[string, unknown]>) {
 			const factory = new IDBFactory(); const name = databaseName(label);
 			const store = new IndexedDbSessionRuntimeStore(factory, name); await store.load();
-			const database = await openRaw(factory, name, SESSION_RUNTIME_DB_VERSION);
+			const database = await openRaw(factory, name, 2);
 			const tx = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readwrite');
 			for (const [sessionId, row] of rows) tx.objectStore(SESSION_RUNTIME_STORE_NAME).add(row, `${LEGACY_RUNTIME_ARCHIVE_PREFIX}${sessionId}`);
 			await transactionDone(tx); database.close();
@@ -189,7 +188,7 @@ describe('session runtime persistence', () => {
 			const events: LocalDebugPersistenceEvent[] = [];
 			const factory = new IDBFactory(); const name = databaseName('archive-set-aside');
 			const store = new IndexedDbSessionRuntimeStore(factory, name, new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } }));
-			await store.load(); const database = await openRaw(factory, name, SESSION_RUNTIME_DB_VERSION);
+			await store.load(); const database = await openRaw(factory, name, 2);
 			const junk = prepareLegacyRuntimeArchive({ notARuntime: true }, 50);
 			const tx = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readwrite'); const objects = tx.objectStore(SESSION_RUNTIME_STORE_NAME);
 			objects.add(junk, `${LEGACY_RUNTIME_ARCHIVE_PREFIX}ghost`);
@@ -261,7 +260,7 @@ describe('session runtime persistence', () => {
 	});
 	it('a corrupted prior archive receipt cannot make the active copy disposable', async () => {
 		const factory = new IDBFactory(); const name = databaseName('archive-corrupt-receipt'); const record = activeRecord();
-		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record); const database = await openRaw(factory,name,SESSION_RUNTIME_DB_VERSION);
+		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record); const database = await openRaw(factory,name,2);
 		const prior = {...prepareLegacyRuntimeArchive(record,1),receipt:{version:1,sessionId:'tampered-session',path:'other.md',savedAt:1}};
 		const tx = database.transaction(SESSION_RUNTIME_STORE_NAME,'readwrite'); tx.objectStore(SESSION_RUNTIME_STORE_NAME).add(prior,`${LEGACY_RUNTIME_ARCHIVE_PREFIX}${authority.sessionId}`); await transactionDone(tx);
 		await expect(store.archiveLegacyRuntime({...authority,fence:authority.fence+1})).resolves.toBe(false);
@@ -271,7 +270,7 @@ describe('session runtime persistence', () => {
 	});
 	it('a conflicting additive archive never overwrites either preserved or active evidence', async () => {
 		const factory = new IDBFactory(); const name = databaseName('archive-collision'); const record = activeRecord();
-		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record); const database = await openRaw(factory,name,SESSION_RUNTIME_DB_VERSION);
+		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record); const database = await openRaw(factory,name,2);
 		const prior = prepareLegacyRuntimeArchive({...record,persistedAt:record.persistedAt+1},1);
 		const tx = database.transaction(SESSION_RUNTIME_STORE_NAME,'readwrite'); tx.objectStore(SESSION_RUNTIME_STORE_NAME).add(prior,`${LEGACY_RUNTIME_ARCHIVE_PREFIX}${authority.sessionId}`);
 		await transactionDone(tx); await expect(store.archiveLegacyRuntime({...authority,fence:authority.fence+1})).resolves.toBe(false);
@@ -280,7 +279,7 @@ describe('session runtime persistence', () => {
 	});
 	it('an aborted archival transaction leaves the original as the only durable copy', async () => {
 		const factory = new IDBFactory(); const name = databaseName('archive-abort'); const record = activeRecord();
-		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record); const database = await openRaw(factory,name,SESSION_RUNTIME_DB_VERSION);
+		const store = new IndexedDbSessionRuntimeStore(factory,name); await store.save(record); const database = await openRaw(factory,name,2);
 		const transaction = database.transaction.bind(database);
 		vi.spyOn(database,'transaction').mockImplementation((stores,mode,options) => {
 			const tx = transaction(stores,mode,options); queueMicrotask(() => tx.abort()); return tx;
@@ -597,7 +596,7 @@ describe('session runtime persistence', () => {
 		const store = new IndexedDbSessionRuntimeStore(factory, name);
 		await expect(store.load()).resolves.toEqual({ status: 'empty' });
 
-		const upgraded = await openRaw(factory, name, SESSION_RUNTIME_DB_VERSION + 1);
+		const upgraded = await openRaw(factory, name, 3);
 		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
 		upgraded.close();
 	});
@@ -650,7 +649,7 @@ describe('session runtime persistence', () => {
 		const name = databaseName('versionchange-upgrade');
 		const store = new IndexedDbSessionRuntimeStore(tracked.factory, name);
 		await expect(store.load()).resolves.toEqual({ status: 'empty' });
-		const upgraded = await openRaw(tracked.factory, name, SESSION_RUNTIME_DB_VERSION + 1);
+		const upgraded = await openRaw(tracked.factory, name, 3);
 		const opened = tracked.connections.length;
 
 		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });

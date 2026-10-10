@@ -475,4 +475,56 @@ describe('the live journal of an adopted session database (DU-01)', () => {
 			expect(names.sort()).toEqual([LIVE_SESSION_JOURNAL_STORE_NAME, SESSION_RUNTIME_STORE_NAME].sort());
 		});
 	}
+
+	async function shape(factory: IDBFactory): Promise<{ version: number; stores: string[] }> {
+		return await new Promise((resolve, reject) => {
+			const request = factory.open(SESSION_RUNTIME_DB_NAME);
+			request.onsuccess = () => { const { version, objectStoreNames } = request.result; request.result.close(); resolve({ version, stores: Array.from(objectStoreNames).sort() }); };
+			request.onerror = () => { reject(new Error('open')); };
+		});
+	}
+	async function survivor(factory: IDBFactory): Promise<unknown> {
+		const store = new IndexedDbSessionRuntimeStore(factory);
+		try { return await (store as unknown as { read(key: undefined, name: string): Promise<unknown> }).read(undefined, 'survivor'); } finally { store.close(); }
+	}
+	const BOTH = [LIVE_SESSION_JOURNAL_STORE_NAME, SESSION_RUNTIME_STORE_NAME].sort();
+
+	it('repairs a damaged database once and opens it, loads and saves on every later start', async () => {
+		const factory = new IDBFactory(); await seed(factory, 2, [SESSION_RUNTIME_STORE_NAME]);
+		const record = await firstRecord();
+		for (let start = 1; start <= 3; start += 1) {
+			const store = new IndexedDbSessionRuntimeStore(factory);
+			expect(await store.saveLive({ ...record, persistedAt: record.persistedAt + start }, undefined, undefined, GROSS), `start ${String(start)}`).toEqual({ status: 'saved' });
+			expect(await store.loadLive(), `start ${String(start)}`).toMatchObject({ status: 'loaded' });
+			store.close();
+		}
+		expect(await shape(factory)).toEqual({ version: 3, stores: BOTH });
+		expect(await survivor(factory)).toEqual(SURVIVOR);
+	});
+	it('repairs a database already above version 2 without lowering or locking it, on every later start', async () => {
+		const factory = new IDBFactory(); await seed(factory, 3, [SESSION_RUNTIME_STORE_NAME]);
+		const record = await firstRecord();
+		for (let start = 1; start <= 3; start += 1) {
+			const store = new IndexedDbSessionRuntimeStore(factory);
+			expect(await store.saveLive({ ...record, persistedAt: record.persistedAt + start }, undefined, undefined, GROSS), `start ${String(start)}`).toEqual({ status: 'saved' });
+			store.close();
+		}
+		expect(await shape(factory)).toEqual({ version: 4, stores: BOTH });
+		expect(await survivor(factory)).toEqual(SURVIVOR);
+	});
+	it('leaves a healthy version 2 database in version 2, where the published 0.6.26 still opens it', async () => {
+		const factory = new IDBFactory(); await seed(factory, 2, [SESSION_RUNTIME_STORE_NAME, LIVE_SESSION_JOURNAL_STORE_NAME]);
+		const store = new IndexedDbSessionRuntimeStore(factory);
+		expect(await store.loadLive()).toEqual({ status: 'empty' });
+		store.close();
+		expect(await shape(factory)).toEqual({ version: 2, stores: BOTH });
+	});
+	it('takes a version 1 database to version 2 with both stores', async () => {
+		const factory = new IDBFactory(); await seed(factory, 1, [SESSION_RUNTIME_STORE_NAME]);
+		const store = new IndexedDbSessionRuntimeStore(factory);
+		expect(await store.readLiveJournal('any')).toEqual([]);
+		store.close();
+		expect(await shape(factory)).toEqual({ version: 2, stores: BOTH });
+		expect(await survivor(factory)).toEqual(SURVIVOR);
+	});
 });
