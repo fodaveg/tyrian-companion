@@ -92,4 +92,20 @@ describe('LeyspringCaptureService', () => {
 			expect(await services(options).service.capture('es')).toEqual({ status: 'unavailable', reason: 'invalid_response' });
 		}
 	});
+
+	it('accepts a 206 whose body lacks some ids and keeps the account progress of those', async () => {
+		const { service } = services({ catalogStatus: 206, catalog: [{ id: 9368, name: 'Operation Fetch', tiers: [{ count: 1, points: 5 }] }] });
+		const result = await service.capture('es');
+		expect(result.status).toBe('ok');
+		if (result.status !== 'ok') return;
+		expect(result.capture.names.get(9368)).toBe('Operation Fetch');
+		expect(result.capture.names.has(9470)).toBe(false);
+		expect(result.capture.progress.get(9470)).toMatchObject({ current: 6, max: 13 });
+		expect(result.capture.thresholds.has(9417)).toBe(false);
+	});
+
+	it('reads a 206 with an invalid body as invalid_response, like a 200', async () => {
+		expect(await services({ catalogStatus: 206, catalog: { not: 'a list' } }).service.capture('es'))
+			.toEqual({ status: 'unavailable', reason: 'invalid_response' });
+	});
 });

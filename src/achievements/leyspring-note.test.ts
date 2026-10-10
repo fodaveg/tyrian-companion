@@ -188,6 +188,27 @@ describe('Leyspring achievements note', () => {
 		expect(note).toContain('## Hechos (2)');
 	});
 
+	it('writes a whole note with fallback names and the 36 threshold from the account when the catalog lacks them', async () => {
+		const vault = new MemoryVault();
+		const capture = captureWith({ done: [IDS[0]!], omitNames: [IDS[0]!, IDS[1]!] });
+		(capture.names as Map<number, string>).delete(LEYSPRING_MASTERY_ACHIEVEMENT_ID);
+		(capture.thresholds as Map<number, number>).clear();
+		expect((await writer(vault).write(ROOT, capture)).status).toBe('created');
+		expect(vault.note).toContain(`[Logro ${String(IDS[1])}](`);
+		expect(vault.note).toContain('- Maestría (Leyspring Hollows Mastery): 1/36');
+	});
+
+	it('keeps CRLF line endings, user text included, when it updates a CRLF note', async () => {
+		const vault = new MemoryVault();
+		await writer(vault).write(ROOT, captureWith({ done: [IDS[0]!] }));
+		vault.files.set(NOTE_PATH, `${vault.note}Mi texto\n`.replace(/\n/gu, '\r\n'));
+		const result = await writer(vault).write(ROOT, captureWith({ done: [IDS[0]!, IDS[1]!], capturedAt: '2026-10-11T00:00:00.000Z' }));
+		expect(result.status).toBe('updated');
+		expect(vault.note).toContain('## Hechos (2)');
+		expect(vault.note.replace(/\r\n/gu, '')).not.toContain('\n');
+		expect(vault.note.endsWith('Mi texto\r\n')).toBe(true);
+	});
+
 	it('refuses to write when the user typed inside the managed block', async () => {
 		const vault = new MemoryVault();
 		await writer(vault).write(ROOT, captureWith({ done: [IDS[0]!] }));

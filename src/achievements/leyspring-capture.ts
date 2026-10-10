@@ -61,7 +61,8 @@ export class LeyspringCaptureService {
 				),
 			]);
 			if (achievements.status !== 'ok') return unavailable('invalid_response');
-			if (catalog.status !== 200) return unavailable('request_failed');
+			// 206 Partial Content: some requested id is not in the catalog; the ones that are come in the body.
+			if (catalog.status !== 200 && catalog.status !== 206) return unavailable('request_failed');
 			const account = parseAccount(accountBody);
 			const parsedCatalog = parseCatalog(catalog.body);
 			if (account === null || parsedCatalog === null) return unavailable('invalid_response');

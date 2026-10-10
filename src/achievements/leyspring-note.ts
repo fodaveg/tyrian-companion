@@ -323,7 +323,9 @@ export class LeyspringNoteWriter {
 				}
 				return { status: 'created', summary: view.summary, path };
 			}
-			const before = normalizeLf(await this.vault.read(existing));
+			const raw = await this.vault.read(existing);
+			const crlf = raw.includes('\r\n');
+			const before = normalizeLf(raw);
 			const classified = await classifyLeyspringNote(before);
 			if (classified.status === 'foreign') return conflict('foreign_note');
 			if (classified.status === 'edited') return conflict('edited_block');
@@ -333,7 +335,7 @@ export class LeyspringNoteWriter {
 			let applied = false;
 			await this.vault.process(existing, (current) => {
 				applied = normalizeLf(current) === before;
-				return applied ? after : current;
+				return applied ? (crlf ? after.replace(/\n/gu, '\r\n') : after) : current;
 			});
 			const verified = this.vault.file(path);
 			if (!applied || verified === null || normalizeLf(await this.vault.read(verified)) !== after) {
