@@ -282,6 +282,24 @@ export function tyrianPlatform(env: Pick<HebraPluginApi['env'], 'platform'>): Ty
 	return env.platform === 'macos' || env.platform === 'linux' || env.platform === 'windows' ? env.platform : 'unknown';
 }
 
+/**
+ * Whether this Hebra paints a remote image inside a line of a note (`markdown.image.remote`, plugin
+ * API 1.4.0). It is a feature of the host, not a capability the plugin declares, as `ui.view.main`
+ * is: a Hebra before 1.4.0 answers false, and so does one where `has` is missing or throws (then
+ * `report` gets the failure), because the answer is read while the host is built and the icons of a
+ * note are not worth a plugin that does not start. True says what Hebra can do, not whether the user
+ * turned remote images off in its settings: then the note shows the name, the alternative text.
+ */
+export function hebraHasRemoteImages(api: Pick<HebraPluginApi, 'has'>, report: (error: unknown) => void = () => undefined): boolean {
+	if (typeof (api as { has?: unknown }).has !== 'function') return false;
+	try {
+		return api.has('markdown.image.remote') === true;
+	} catch (error) {
+		report(error);
+		return false;
+	}
+}
+
 function createEnvironment(deps: HebraHostDeps): TyrianEnvironmentPort {
 	const { api } = deps;
 	const win = deps.window;
@@ -511,12 +529,15 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	// Asked once: the main view of the plugin API 1.3.0. A Hebra before it answers false, and one
 	// that fails to answer is taken as not having it.
 	const mainView = hebraHasMainView(api, (error) => deps.report(error, 'has ui.view.main'));
+	// Asked once too: remote images in a line of a note (plugin API 1.4.0), for the icons of the session summary.
+	const remoteImages = hebraHasRemoteImages(api, (error) => deps.report(error, 'has markdown.image.remote'));
 
 	const host: TyrianHost = {
 		// Managed assets as in Obsidian: the Bases and their manifest are library files under the
 		// output folder; the settings show the section and the core adopts and upgrades them.
 		// `mainView` only where this Hebra has it: omitted, the core takes it as not supported.
-		capabilities: { managedAssets: true, supportPackageAsNote: true, pathBoundIdentity: false, ...(mainView ? { mainView: true } : {}) },
+		// `remoteImages` always, true or false: omitted, the core would take it as painted, which is Obsidian's default.
+		capabilities: { managedAssets: true, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages, ...(mainView ? { mainView: true } : {}) },
 		vault,
 		http: createTyrianHttpPort(api),
 		secrets,

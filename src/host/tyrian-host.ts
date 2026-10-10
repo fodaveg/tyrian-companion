@@ -472,6 +472,13 @@ export interface TyrianHostCapabilities {
 	 * never changed by moving files, so there is no relocation to detect.
 	 */
 	readonly pathBoundIdentity?: boolean;
+	/**
+	 * The host paints a Markdown image with an `https` destination inside a line of a note, sized with `|20` at the end of its
+	 * alternative text (`![Nombre|20](https://…)`, the bar escaped in a table cell). Default true: Obsidian does it natively and
+	 * declares nothing. Hebra declares what its plugin API answers to `markdown.image.remote` (1.4): a Hebra before it would show
+	 * the Markdown as text, so there the session summary writes item names without their icons.
+	 */
+	readonly remoteImages?: boolean;
 }
 
 export interface TyrianHost {

@@ -457,6 +457,11 @@ export interface TyrianTestApiOptions {
 	 * being tested against the API it has to keep working on.
 	 */
 	mainView?: boolean;
+	/**
+	 * False: a Hebra without remote images in a line of a note (`markdown.image.remote`, plugin API
+	 * 1.4.0), whose `has` answers false to that name. Default: what the package's fake answers (true).
+	 */
+	remoteImages?: boolean;
 }
 
 /**
@@ -547,7 +552,8 @@ export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianT
 	hebra.editor.registerCodeBlock = tracked(hebra.editor.registerCodeBlock.bind(hebra.editor));
 	const api: HebraPluginApi = {
 		...hebra,
-		has: (capability) => (capability === 'secrets' ? secretsAvailable : hebra.has(capability)),
+		has: (capability) => (capability === 'secrets' ? secretsAvailable
+			: capability === 'markdown.image.remote' && options.remoteImages === false ? false : hebra.has(capability)),
 		vault: library,
 		storage: createHebraStorage(local, 'tyrian-companion', library.libraryId()),
 		secrets: keychain === null ? fake.api.secrets : createFakeSecrets(keychain),

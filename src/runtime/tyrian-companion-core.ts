@@ -3925,7 +3925,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * session closed before this load) and then from the catalog cache, never from the network: the
 	 * only request the summary may make is `maps`, and only once `liveSummaryNetwork` is set, which the
 	 * load never does before the lifecycle is restored. An entity nobody names gets no key, so the note
-	 * writes «Objeto <id>».
+	 * writes «Objeto <id>». Item icons come from the same cache records (`itemMeta`), never a request,
+	 * and go in the note only where the host paints a remote image (`hostPaintsRemoteImages`).
 	 */
 	private createLiveSummaries(vault: ConstructorParameters<typeof LiveSessionSummaryService>[0]['vault']): LiveSessionSummaryService {
 		return new LiveSessionSummaryService({
@@ -3934,6 +3935,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			characters: () => this.liveSessions?.getCharacters() ?? [],
 			charactersCapped: () => this.liveSessions?.isCharacterListCapped() ?? false, isWritten: () => this.liveSessions?.isSummaryWritten() ?? false,
 			markWritten: async () => { await this.liveSessions?.markSummaryWritten(); }, networkAllowed: () => this.liveSummaryNetwork, locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
+			inlineIcons: () => hostPaintsRemoteImages(this.host),
 			displayNames: (record) => knownLiveDisplayNames(record.totals, (kind, id) => this.getLiveSessionEntity(kind, id)?.name),
 			cachedNames: async (wanted) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await summaryCachedNames(this.sessionCatalog, wanted, this.settings.language); },
 			itemMeta: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedItems(ids, this.settings.language);
@@ -7009,6 +7011,11 @@ function hostSupportsManagedAssets(host: TyrianHost | undefined): boolean {
  */
 function hostSupportsMainView(host: TyrianHost | undefined): boolean {
 	return host?.capabilities?.mainView === true;
+}
+
+/** Whether the host paints a remote image inside a line of a note: true unless it declared `capabilities.remoteImages: false`. */
+function hostPaintsRemoteImages(host: TyrianHost | undefined): boolean {
+	return host?.capabilities?.remoteImages !== false;
 }
 
 /**

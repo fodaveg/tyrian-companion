@@ -30,6 +30,8 @@ const MAX_LISTED_GAPS = 5;
 /** Up to this many account-bound item types are named, all of them; with more the line counts them and names the first three. */
 const MAX_NAMED_BOUND = 5;
 const BOUND_NAMED_WHEN_COUNTED = 3;
+/** Width of an item icon in a table, in px: up to 24 the line keeps the height of its neighbours in Hebra, before and after loading. */
+const ICON_SIZE = 20;
 
 export interface LiveSessionSummaryInput {
 	session: StoredLiveSessionPayloadV1;
@@ -54,6 +56,12 @@ export interface LiveSessionSummaryInput {
 	charactersCapped?: boolean;
 	/** Offset of the machine's time zone from UTC, in minutes, at that instant. Defaults to the system's. */
 	utcOffsetMinutes?: (atMs: number) => number;
+	/**
+	 * The host paints a remote image inside a line of the note (`![Nombre|20](https://…)`): Obsidian natively, Hebra where its plugin
+	 * API answers `markdown.image.remote` (1.4). Only with true does an item table carry the icon the catalog cache holds for the item,
+	 * in the item's cell and before its name; absent or false the note writes the name alone, as before (David, 9 Oct 2026).
+	 */
+	inlineIcons?: boolean;
 }
 export interface RenderedLiveSessionSummary { path: string; content: string; sessionRef: string; mainMapId: number | null }
 
@@ -88,7 +96,19 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const es = input.locale === 'es';
 		const label = (spanish: string, english: string): string => es ? spanish : english;
 		const names = input.displayNames ?? {};
-		const itemName = (id: number): string => escapeMarkdown(names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
+		// An item name that arrived empty or blank is no name, as for maps: «Objeto <id>», never an empty cell or an image without text.
+		const rawItemName = (id: number): string => { const name = names[`item:${String(id)}`]; return name !== undefined && name.trim() !== '' ? name : `${label('Objeto', 'Item')} ${String(id)}`; };
+		const itemName = (id: number): string => escapeMarkdown(rawItemName(id));
+		// In a table cell: the item's icon, 20 px, in front of its name. The alternative text is the name itself, so an icon that does
+		// not load leaves a name to read; a cached icon off the GW2 render host, or a host that would show the Markdown, leaves the name alone.
+		// With the icon the name is written twice on one line, so a backtick or a `$` in it would pair with its copy (a code span, or
+		// Obsidian's inline maths) and swallow the image: both copies escape them. Without the icon the cell stays as it always was.
+		const iconUrl = (id: number): string | null => input.inlineIcons === true ? inlineIconUrl(input.itemMeta?.[id]?.icon) : null;
+		const itemCell = (id: number): string => {
+			const url = iconUrl(id); if (url === null) return itemName(id);
+			const shown = escapeCodeAndMath(itemName(id));
+			return `![${imageAlt(shown)}\\|${String(ICON_SIZE)}](${url}) ${shown}`;
+		};
 		const currencyName = (id: number): string => escapeMarkdown(names[`currency:${String(id)}`] ?? `${label('Moneda', 'Currency')} ${String(id)}`);
 		// A name that arrived empty is no name: the map gets the reserve one, like a map nobody could name, never an empty cell or title.
 		const rawMapName = (id: number): string => { const name = input.mapNames?.[String(id)]; return name !== undefined && name.trim() !== '' ? name : `${label('Mapa', 'Map')} ${String(id)}`; };
@@ -153,7 +173,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			out.push('', `## ${label('Objetos observados de más valor', 'Most valuable observed items')}`, '');
 			if (top.length === 0) out.push(label('Ningún objeto nuevo tiene precio de bazar.', 'No new item has a bazaar price.'));
 			else out.push(`| ${label('Objeto', 'Item')} | ${label('Cantidad', 'Quantity')} | ${label('Valor neto de comisión', 'Value net of fees')} |`, '|---|---:|---:|',
-				...top.map((row) => `| ${itemName(row.itemId)}${row.container ? ` (${label('sin abrir', 'unopened')})` : ''} | ${String(row.quantity)} | ${money(row.valueCopper!)} |`));
+				...top.map((row) => `| ${itemCell(row.itemId)}${row.container ? ` (${label('sin abrir', 'unopened')})` : ''} | ${String(row.quantity)} | ${money(row.valueCopper!)} |`));
 			if (f.unpriced.length > 0) out.push('', `${label('Sin precio de bazar (fuera del valor)', 'No bazaar price (outside the value)')}: ${f.unpriced.map((row) => `${itemName(row.itemId)} ×${String(row.quantity)}${row.container ? ` (${label('sin abrir', 'unopened')})` : ''}`).join(', ')}`);
 			// A handful is named whole; a farming session binds dozens, and then the line is a count with the first three, in the order they came.
 			const boundCount = f.boundItemIds.length;
@@ -275,7 +295,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const fullSession = label('Sesión completa', 'Full session');
 		out.push('', /[[\]|#^]/u.test(link) ? `${fullSession}: \`${link}\`` : `[[${link}|${fullSession}]]`);
 
-		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? rawMapName(id) : (names[`item:${String(id)}`] ?? `${label('Objeto', 'Item')} ${String(id)}`);
+		const raw = (id: number, kind: 'item' | 'map'): string => kind === 'map' ? rawMapName(id) : rawItemName(id);
 		const mapText = f.mainMapId !== null ? raw(f.mainMapId, 'map') : noMapKnown ? label('Mapa desconocido', 'Unknown map') : label('Varios mapas', 'Several maps');
 		const topItem = f.staple !== null ? { id: f.staple.itemId, count: f.staple.quantity } : f.sellable[0] !== undefined ? { id: f.sellable[0].itemId, count: f.sellable[0].quantity } : null;
 		const goldText = (copper: number | null): string => copper === null ? 'null' : String(Number((copper / 10_000).toFixed(4)));
@@ -398,5 +418,27 @@ function iconText(icon: string | undefined): string {
 	// A path must follow the host directly (so no `user@` or `.evil` suffix) and nothing may need escaping.
 	return icon !== undefined && /^https:\/\/render\.guildwars2\.com\/[^\s"\\@\p{Cc}]*$/u.test(icon) ? JSON.stringify(icon) : 'null';
 }
+
+/**
+ * An item icon as the destination of a Markdown image, or null. The same host rule as `iconText` (https, the GW2 render host
+ * right after the scheme, no credentials), and on top of it nothing that would end the destination or the table cell early:
+ * no parenthesis, angle or square bracket, bar or backtick. A cached icon that fails it is not written; the name stays.
+ */
+function inlineIconUrl(icon: string | undefined): string | null {
+	return icon !== undefined && /^https:\/\/render\.guildwars2\.com\/[^\s"\\@\p{Cc}()<>[\]|`]*$/u.test(icon) ? icon : null;
+}
+
+/**
+ * The alternative text of an item icon: the name as the table cell already writes it (`escapeMarkdown`, which turns `|` into
+ * `\|` for the cell), with its square brackets escaped too, so a `]` in a name does not close the text before `\|20`.
+ */
+function imageAlt(cellName: string): string { return cellName.replace(/[[\]]/gu, (match) => `\\${match}`); }
+
+/**
+ * A backtick or a `$` escaped (`` \` ``, `\$`: CommonMark escapes of ASCII punctuation, so the text reads the same). Only for the
+ * item cell that carries an icon, where the name is written twice on one line; `escapeMarkdown` is shared with the currencies, the
+ * maps and the characters, and changing it would rewrite what every other note already says.
+ */
+function escapeCodeAndMath(value: string): string { return value.replace(/[`$]/gu, (match) => `\\${match}`); }
 
 function escapeMarkdown(value: string): string { return value.replace(/[\p{Cc}]/gu, ' ').replace(/[\\|<>]/gu, (match) => `\\${match}`); }
