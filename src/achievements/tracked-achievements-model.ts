@@ -75,6 +75,8 @@ export interface TrackedElements {
 	barUnit?: KnownBarUnit;
 	/** Only set (true) when the category has members but every one is hidden until the account advances in one. */
 	hiddenOnly?: true;
+	/** Only set (true) with no elements because the public categories could not be loaded. */
+	loadFailed?: true;
 }
 
 export type TrackedReward =
@@ -111,6 +113,8 @@ export interface TrackedCategoryInput {
 	englishNames: ReadonlyMap<number, string>;
 	/** The bar counts something that is not an achievement (pieces): each element contributes several. */
 	barUnit?: KnownBarUnit | null;
+	/** The categories failed to load, so an empty list is unknown, not empty. */
+	loadFailed?: boolean;
 }
 
 export interface TrackedAchievementInput {
@@ -133,6 +137,8 @@ export function buildTrackedAchievementsView(input: {
 	reading: TrackedReadingEntries | null;
 	/** The public categories, to find the members of a meta's category; none lists nothing. */
 	categories?: readonly AchievementCategory[];
+	/** The public categories could not be loaded: a meta without a known set cannot say what its elements are, which is not the same as the API listing none. */
+	categoriesFailed?: boolean;
 }): TrackedAchievementView[] {
 	return input.trackedIds.map((id) => {
 		const detail = input.details.get(id) ?? null;
@@ -144,7 +150,7 @@ export function buildTrackedAchievementsView(input: {
 			englishName: input.englishNames.get(id) ?? null,
 			retired: input.retired.has(id),
 			reading: input.reading,
-			category: members === null ? null : { members, details: input.details, englishNames: input.englishNames, barUnit: knownBarUnitOf(id) },
+			category: members === null ? null : { members, details: input.details, englishNames: input.englishNames, barUnit: knownBarUnitOf(id), loadFailed: input.categoriesFailed === true && knownSetMembersOf(id) === null },
 		});
 	});
 }
@@ -260,6 +266,7 @@ function elementsOf(
 		...(sorted.total > 0 && category.barUnit == null && isPartialCategory(detail, category.members) ? { partial: true as const } : {}),
 		...(category.barUnit == null ? {} : { barUnit: category.barUnit }),
 		...(hiddenOnly ? { hiddenOnly: true as const } : {}),
+		...(sorted.total === 0 && category.loadFailed === true ? { loadFailed: true as const } : {}),
 	};
 }
 

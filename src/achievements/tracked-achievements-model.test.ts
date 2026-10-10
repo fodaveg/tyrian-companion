@@ -218,6 +218,18 @@ describe('the elements of a meta of its category (CategoryDisplay without bits)'
 	});
 });
 
+describe('categories that failed to load', () => {
+	it('a meta without a known set is marked loadFailed (unknown, not empty); one with a set is not, and a meta whose categories did load is not', () => {
+		const base = { trackedIds: [META_ID], details: MEMBER_DETAILS, englishNames: ENGLISH, retired: new Set<number>(), reading: null };
+		expect(buildTrackedAchievementsView({ ...base, categories: [], categoriesFailed: true })[0]!.elements).toEqual({ source: 'category', items: [], done: 0, total: 0, loadFailed: true });
+		expect(buildTrackedAchievementsView({ ...base, categories: [], categoriesFailed: false })[0]!.elements).toEqual({ source: 'category', items: [], done: 0, total: 0 });
+		const withSet = new Map([[5790, { ...MEMBER_DETAILS.get(META_ID)!, id: 5790 }]]);
+		const known = buildTrackedAchievementsView({ ...base, trackedIds: [5790], details: withSet, categories: [], categoriesFailed: true })[0]!.elements!;
+		expect(known.total).toBe(24);
+		expect(known.loadFailed).toBeUndefined();
+	});
+});
+
 describe('trackedReadingIds', () => {
 	it('asks about each tracked id and every member of a meta\'s category, the hidden and daily ones included, once each', () => {
 		expect(trackedReadingIds({ trackedIds: [META_ID, 9468, 10], details: MEMBER_DETAILS, retired: new Set(), categories: CATEGORIES }))

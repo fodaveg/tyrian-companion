@@ -385,6 +385,7 @@ export class AchievementsView {
 			retired: details.retired,
 			reading: reading === null ? null : { trackedIds: reading.reading.trackedIds, entries: reading.reading.entries },
 			categories,
+			categoriesFailed: categoriesRead.status !== 'ok',
 		});
 		this.tracked = { status: 'ready', views, details, elementDetails, categories, reading };
 		// Names of another language are not shown under this one: ids until the right ones arrive.
@@ -860,7 +861,7 @@ export class AchievementsView {
 	private renderElements(body: HTMLElement, elements: TrackedElements): void {
 		const t = this.t;
 		body.createEl('h4', { text: t.t('achievements.tracked.elements') });
-		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t(elements.hiddenOnly === true ? 'achievements.tracked.elementsHidden' : 'achievements.tracked.elementsNone') }); return; }
+		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t(elements.loadFailed === true ? 'achievements.tracked.elementsLoadFailed' : elements.hiddenOnly === true ? 'achievements.tracked.elementsHidden' : 'achievements.tracked.elementsNone') }); return; }
 		const unread = elements.items.every((element) => element.state === 'unknown');
 		const unreadText = elements.total === 1 ? t.t('achievements.tracked.elementsUnread.one') : t.t('achievements.tracked.elementsUnread.many', { total: elements.total });
 		const count = body.createEl('p', {

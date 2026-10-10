@@ -984,9 +984,9 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		h.view.mount();
 		await h.settle();
 		expect(h.calls.filter((call) => call.startsWith('details:'))).toEqual([`details:${String(META_ID)}`]);
-		// Without categories no category lists the meta: the section says the API lists no elements (yet).
+		// Without categories no category lists the meta: the categories failed to load: the section says so, not that the API lists none.
 		expect(rows(h)).toEqual([]);
-		expect(counter(h)).toBe('La API no lista los elementos de este logro.');
+		expect(counter(h)).toBe('No se pudo cargar la lista de elementos. Pulsa «Actualizar progreso».');
 
 		h.view.refresh();
 		await h.settle();
