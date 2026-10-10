@@ -15,7 +15,7 @@ const ALLOWED_DEPENDENCIES = new Set([
 
 const EXACT_IO_NETWORK = ['fetch', 'requestUrl', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'readFile', 'readFileSync', 'writeFile', 'writeFileSync'];
 const EXACT_PERSISTENCE = ['indexedDB', 'IndexedDB', 'localStorage', 'sessionStorage', 'store', 'Store'];
-const EXACT_TIMERS = ['setTimeout', 'setInterval', 'requestAnimationFrame', 'queueMicrotask'];
+const EXACT_TIMERS = ['setTimeout', 'setInterval', 'requestAnimationFrame', 'queueMicrotask', 'setImmediate'];
 const EXACT_EXECUTION = ['GuildWars2Client', 'deleteItem', 'salvageItem', 'openContainer', 'capture', 'operation', 'executor', 'destroy'];
 const HOSTILE_EXPORT_TOKENS = ['client', 'network', 'capture', 'operation', 'executor', 'destroy', 'store', 'request'];
 

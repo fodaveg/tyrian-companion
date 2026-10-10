@@ -233,6 +233,69 @@ describe('inventory preferences copy: dispose', () => {
 		expect(world.outcomes('backup_write_final')).toEqual([['failure', 'storage_failure', 'backup_write_failed', undefined]]);
 	});
 
+	/** A host that, like the core after the unload, refuses a write that is not final; the first write is held open. */
+	function inFlightWorld() {
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => { release = resolve; });
+		const saved: InventoryPreferencesBackupV1[] = [];
+		const world = harness({
+			stored: null,
+			write: async (copy, final) => {
+				if (!final) {
+					await held;
+					return 'unloaded';
+				}
+				saved.push(JSON.parse(JSON.stringify(copy)) as InventoryPreferencesBackupV1);
+				return 'saved';
+			},
+		});
+		const storeDispose = vi.spyOn(world.store, 'dispose');
+		return { world, saved, release, storeDispose };
+	}
+
+	it('a write already running when the unload comes ends with the copy saved, by a final write', async () => {
+		const { world, saved, release } = inFlightWorld();
+		await world.service.upsertGoal(scope, 0, goal('goal-a'));
+		world.timers.fire();
+		// Let the burst's own write reach the settings port and stop there.
+		await vi.waitFor(() => { expect(world.finals).toEqual([false]); });
+
+		world.dispose();
+		release();
+		await world.backup.settled();
+		expect(world.finals).toEqual([false, true]);
+		expect(saved).toEqual([{ version: 1, accounts: [{ accountId: ACCOUNT, goals: [goalOf('goal-a')], keepExceptions: [] }] }]);
+	});
+
+	it('does not close the store before the running write and the final one have ended', async () => {
+		const { world, release, storeDispose } = inFlightWorld();
+		await world.service.upsertGoal(scope, 0, goal('goal-a'));
+		world.timers.fire();
+		await vi.waitFor(() => { expect(world.finals).toEqual([false]); });
+
+		world.dispose();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(storeDispose).not.toHaveBeenCalled();
+		release();
+		await world.backup.settled();
+		await vi.waitFor(() => { expect(storeDispose).toHaveBeenCalledTimes(1); });
+		expect(world.finals).toEqual([false, true]);
+	});
+
+	it('never waits for the running write: the dispose returns at once and does not throw', async () => {
+		const { world, saved, release } = inFlightWorld();
+		await world.service.upsertGoal(scope, 0, goal('goal-a'));
+		world.timers.fire();
+		await vi.waitFor(() => { expect(world.finals).toEqual([false]); });
+
+		let returned = false;
+		expect(() => { world.dispose(); returned = true; }).not.toThrow();
+		expect(returned).toBe(true);
+		expect(saved).toEqual([]);
+		release();
+		await expect(world.backup.settled()).resolves.toBeUndefined();
+	});
+
 	it('writes nothing at dispose when no burst is waiting', async () => {
 		const world = harness({ stored: null });
 		world.dispose();
@@ -285,7 +348,7 @@ function harness(options: {
 	const terminal = (state: string) => events.filter((event) => event.phase !== 'start' && event.actionId !== undefined
 		&& events.some((start) => start.phase === 'start' && start.actionId === event.actionId && start.state === state));
 	return {
-		factory, name, backup, service, timers, writes, finals,
+		factory, name, store, backup, service, timers, writes, finals,
 		outcomes: (state: string) => terminal(state).map((event) => [event.phase, event.code, event.state, event.details]),
 		levels: (state: string) => terminal(state).map((event) => event.level),
 		dispose: () => { service.dispose(); },
