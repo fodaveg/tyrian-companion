@@ -419,6 +419,7 @@ type NoticeDiagnosticSource =
 	| 'valuable_loot'
 	| 'ingame_secret_copy'
 	| 'session_error_copy'
+	| 'session_history_note'
 	| 'settings_read_only';
 
 /** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
@@ -3906,6 +3907,22 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * Opens the note a history row links to. The history was read earlier, so the note may have been
+	 * moved or deleted since: the host would create an empty one at a missing path, so the vault is
+	 * asked first (one lookup, no read) and a gone note is a notice, not an open.
+	 */
+	openSessionHistoryNote(path: string): void {
+		if (this.host.vault.file(path) === null) {
+			this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.sessionHistoryNoteMissing'),
+				'session_history_note',
+			);
+			return;
+		}
+		this.host.ui.openNote(path);
+	}
+
+	/**
 	 * The incident callout's "Copiar detalle técnico" (H18.36, boceto lámina 2.3): the code
 	 * deliberately never renders as visible text, only to the clipboard, so a refused write has no
 	 * other way to reach the player — it must say so instead of leaving a copy that never happened.
@@ -6774,6 +6791,7 @@ function idleInventoryPreferencesEditorSession(notifyRuntimeStarting: () => void
 	});
 }
 
+/** Test seed (DE-09): the command wiring is exercised by `inventory-advisor-integration-architecture.test.ts` only. */
 export function createInventoryAdvisorCommandCallbacks(actions: {
 	open(): void | Promise<void>;
 	refresh(): void | Promise<void>;

@@ -10,7 +10,7 @@ import { HALLOWEEN_SEASONAL_WINDOW } from './models/halloween-season';
 import type { SeasonalWindowV1 } from './seasonal-window';
 import { PRICE_SEED_BASE_URL, PRICE_SEED_FIELDS } from './price-seed-model';
 import type { PriceHistoryDailyV1 } from './price-history-model';
-import { trickOrTreatBagHistoryRecords, TRICK_OR_TREAT_BAG_ITEM_ID } from './__fixtures__/trick-or-treat-bag-history';
+import { trickOrTreatBagHistoryRecords, TRICK_OR_TREAT_BAG_ITEM_ID } from '../test/fixtures/economy/trick-or-treat-bag-history';
 
 const TODAY_MS = Date.parse('2026-09-03T12:00:00.000Z');
 const SELL_DAY_MS = Date.parse('2026-05-31T12:00:00.000Z');

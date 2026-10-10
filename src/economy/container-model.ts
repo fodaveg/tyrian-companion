@@ -138,6 +138,7 @@ export function containerModelPriceItemIds(model: ContainerModelV1): number[] {
 	return [...ids].sort((left, right) => left - right);
 }
 
+/** Test seed (DE-09): no production module calls it; only `container-model.test.ts` does. */
 export function containerOutcomeKey(namespace: ContainerOutcomeNamespace, id: number): string {
 	if (!positiveInteger(id)) throw new Error('Container outcome ids must be positive safe integers.');
 	return `${namespace}:${id}`;

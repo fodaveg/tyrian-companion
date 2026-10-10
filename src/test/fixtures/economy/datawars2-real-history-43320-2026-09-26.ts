@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { parseDatawars2History, PRICE_SEED_CHART_MAX_DAYS, type PriceSeedDayV1 } from '../price-seed-model';
+import { parseDatawars2History, PRICE_SEED_CHART_MAX_DAYS, type PriceSeedDayV1 } from '../../../economy/price-seed-model';
 
 /**
  * Public datawars2 response fetched 2026-09-26 from the production endpoint:

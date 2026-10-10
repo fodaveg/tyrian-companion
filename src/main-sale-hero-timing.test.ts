@@ -15,12 +15,12 @@ import {
 	saleBagSlotsUsed,
 } from './runtime/tyrian-companion-core';
 import { festivalCalendarEntryForItem, type FestivalCalendarCandidateV1 } from './economy/seasonal-window';
-import { sellTimingHistoryBagDays } from './economy/__fixtures__/sell-timing-history-36038';
-import { datawars2RealHistorySacoDays } from './economy/__fixtures__/datawars2-real-history-36038-2026-09-26';
-import { datawars2RealHistoryTrozoDays } from './economy/__fixtures__/datawars2-real-history-36041-2026-09-26';
-import { datawars2RealHistoryBarraDays } from './economy/__fixtures__/datawars2-real-history-47909-2026-09-26';
-import { datawars2RealHistoryJorcameloDays } from './economy/__fixtures__/datawars2-real-history-43320-2026-09-26';
-import { datawars2RealHistoryColmillosAltaCalidadDays } from './economy/__fixtures__/datawars2-real-history-48805-2026-09-26';
+import { sellTimingHistoryBagDays } from './test/fixtures/economy/sell-timing-history-36038';
+import { datawars2RealHistorySacoDays } from './test/fixtures/economy/datawars2-real-history-36038-2026-09-26';
+import { datawars2RealHistoryTrozoDays } from './test/fixtures/economy/datawars2-real-history-36041-2026-09-26';
+import { datawars2RealHistoryBarraDays } from './test/fixtures/economy/datawars2-real-history-47909-2026-09-26';
+import { datawars2RealHistoryJorcameloDays } from './test/fixtures/economy/datawars2-real-history-43320-2026-09-26';
+import { datawars2RealHistoryColmillosAltaCalidadDays } from './test/fixtures/economy/datawars2-real-history-48805-2026-09-26';
 import type { PriceHistoryDailyV1 } from './economy/price-history-model';
 import { recommendPosition } from './advisor/inventory-position-recommendation';
 import { POSITION_RECOMMENDATION_REQUIRED_DAYS } from './inventory/inventory-analysis';

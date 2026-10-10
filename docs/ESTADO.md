@@ -262,11 +262,8 @@ de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle e
   `i18n-unused` e `i18n-copy-length` sin hallazgos; `build:host-esm`: «host ESM bundle: PASS (397 inputs, 2681494 bytes
   -> hebra-main.mjs; exports: activate; npm packages: yaml)»; y 103 ficheros de test con 1887 tests en verde (todo
   `src/sessions`, `src/host`, `src/test`, los de diagnóstico y `indexed-db-open`, y nueve `main-*`). No es el gate.
-- Sin medir: el gate, los guardarraíles, `release:preflight` y el paquete. No se ha probado bajo Node 24.
 - Cómo se comprobará el lote 2 en un cliente: matar la aplicación con una sesión en vivo, reabrirla y leer en el
   registro de diagnóstico local los eventos `life_lock_*` y `taken`.
-- Pendiente: el gate sobre el árbol candidato, la publicación (tag, release, `release:brat-verify`) y la verificación en
-  clientes reales.
 
 ## Canal 0.6.22 publicado: Sesión a una columna en la pantalla principal de Hebra y «Valor estimado» en grande con los iconos de oro, plata y cobre (9 oct 2026)
 

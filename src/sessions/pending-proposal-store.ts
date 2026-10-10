@@ -53,6 +53,7 @@ export interface PendingProposalStore {
 	close(): void;
 }
 
+/** Test seed (DE-09): in-memory double of the IndexedDB store; only the proposal queue tests build it. */
 export class MemoryPendingProposalStore implements PendingProposalStore {
 	private value: unknown;
 	constructor(initial?: unknown) { this.value = initial === undefined ? undefined : structuredClone(initial); }

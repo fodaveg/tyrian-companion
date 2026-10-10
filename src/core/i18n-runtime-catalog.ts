@@ -1101,6 +1101,7 @@ const ES = {
 		'sessionHistory.title': 'Historial durable',
 		'sessionHistory.intro': 'Compara las sesiones finalizadas guardadas en notas. El vault solo se lee al activar esta acción.',
 		'sessionHistory.refresh': 'Actualizar historial',
+		'sessionHistory.openNote': 'Abrir la nota de la sesión terminada {{ended}}',
 		'sessionHistory.loadingAction': 'Cargando…',
 		'sessionHistory.idle': 'Aún no se ha leído el historial. Cargar no consulta la cuenta ni cambia ninguna nota.',
 		'sessionHistory.loadingTitle': 'Leyendo notas de sesión…',
@@ -1209,6 +1210,7 @@ const ES = {
 		// El detalle solo va al portapapeles (nunca como texto legible), así que un portapapeles que
 		// rechaza la escritura tiene que decirlo: si no, el jugador cree que copió y no copió nada.
 		'sessionCard.copyTechnicalDetailFailed': 'No se pudo copiar el detalle técnico.',
+		'notices.sessionHistoryNoteMissing': 'Esa nota de sesión ya no está donde se guardó. Actualiza el historial.',
 		// H18.36 (boceto lámina 2.2/2.3): recorrido del cierre y su meta con la hora del reintento.
 		'sessionCard.earnedSoFar': 'Ganado hasta ahora',
 		'sessionCard.receipt.closureAria': 'Recorrido del cierre',
@@ -2296,6 +2298,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sessionHistory.title': 'Durable history',
 	'sessionHistory.intro': 'Compare completed sessions saved in notes. The Vault is read only when you activate this action.',
 	'sessionHistory.refresh': 'Refresh history',
+	'sessionHistory.openNote': 'Open the note of the session ended {{ended}}',
 	'sessionHistory.loadingAction': 'Loading…',
 	'sessionHistory.idle': 'History has not been read yet. Loading does not query the account or change any note.',
 	'sessionHistory.loadingTitle': 'Reading session notes…',
@@ -2385,6 +2388,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sessionCard.lastErrorLine': 'Last failure: {{component}}/{{action}}, {{timestamp}}',
 	'sessionCard.copyTechnicalDetail': 'Copy technical detail',
 	'sessionCard.copyTechnicalDetailFailed': 'The technical detail could not be copied.',
+	'notices.sessionHistoryNoteMissing': 'That session note is no longer where it was saved. Refresh the history.',
 	'sessionCard.earnedSoFar': 'Earned so far',
 	'sessionCard.receipt.closureAria': 'Closing recorrido',
 	'sessionCard.receipt.stopMarked': 'End marked',

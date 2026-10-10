@@ -20,6 +20,7 @@ export type WalletVaultSyncControllerPorts = VaultSyncControllerPorts<WalletVaul
 /** Wallet binding of the shared Vault sync machine; states and races live in `VaultSyncController`. */
 export class WalletVaultSyncController extends VaultSyncController<WalletVaultSyncPlan, WalletVaultSyncResult> {}
 
+/** Test seed (DE-09): the wallet binding of `summarizeVaultSyncPlan`; only its own test calls it. */
 export function summarizeWalletVaultSyncPlan(plan: WalletVaultSyncPlan): WalletVaultSyncPlanSummary {
 	return summarizeVaultSyncPlan(plan);
 }

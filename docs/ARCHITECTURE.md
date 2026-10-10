@@ -42,7 +42,6 @@ En Hebra, `src/host/hebra/hebra-main-view.ts` traduce esa vista a la de su API 1
 - `advisor`: preparación y contratos puros del Inventory Advisor; captura, clasificación y UI siguen separadas.
 - `inventory`: proyección sin identidad y persistencia Vault-only del inventario durable mediante Preview/CAS.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
-- `objectives`: no es un módulo vivo. Es un único fichero de interfaces, `src/objectives/objective.ts`, sin implementación y sin ningún consumidor en el repositorio: nada bajo `src/` lo importa y su única aparición fuera del propio fichero es la entrada del censo en `scripts/action-observability-baseline.json`. Se conserva como contrato futuro, no como frontera que gobierne código existente.
 - `platform`: contrato H8.1/H8.4, núcleo H8.6, frontera H8.7 y política shadow H8.8 puras con puertos inyectados; no contiene I/O ambiente ni executor host.
 - `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
@@ -117,11 +116,11 @@ no intenta inferir el runtime desde procesos ni desde el disco.
 ## Flujo de dependencias
 
 ```text
-main -> ui -> connection service -> account gateway -> GW2 client
-                                                   |
-                                                   +-> core (HTTP + SecretStorage)
+main -> host/obsidian + runtime (tyrian-companion-core) -> ui -> connection service -> account gateway -> GW2 client
+                                                                                                    |
+                                                                                                    +-> core (HTTP + SecretStorage)
 
-main -> advisor
+runtime -> advisor
 
 storage snapshot service -> GW2 operation fijada -> core concurrency
 
@@ -148,7 +147,6 @@ recommendation envelope -> decisiones H4.10 + refs internas (JSON, manual, sin c
 
 sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
-objectives --> interfaces sin implementación ni consumidores
 
 H8.1/H8.4 contract -> H8.5 helper + H8.6 client core + H8.7 safe launch + H8.8 shadow policy aislados -/-> main, plugin o release
 
@@ -157,6 +155,39 @@ efectos HTTP/scheduler/IndexedDB -> puertos diagnósticos cerrados -----------/
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Una tabla cerrada por operación sustituye esos defaults solo para `character_inventory|character_build`: un intento de 30 segundos y cero reintentos internos, porque el scheduler de captura es el único dueño del backoff. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
+
+### Imports entre carpetas de `src/`
+
+Cuenta de imports relativos entre carpetas de primer nivel de `src/`, generada desde el código con el parser de TypeScript (multilínea, `export ... from` y `import()` incluidos; los de tipo cuentan). Se leen los `.ts` que no son `*.test.ts` ni `*.d.ts`, la misma regla que `sourceModulePaths` de `src/test/module-boundary.ts`, así que `src/test` y las fixtures cuentan como fuente (382 ficheros). `main` son los ficheros directamente bajo `src/`. Filas: carpeta que importa; columnas: carpeta importada. Es una fotografía, no un contrato: lo que gobierna las direcciones permitidas es `src/layer-direction-architecture.test.ts`.
+
+```text
+            acco achi advi aler asse cata core econ hall host inve main perf plat runt sess test   ui wall
+account        .    .    .    .    .    .   18    .    .    .    .    .    .    .    .    .    .    .    .
+achievements    3    .    .    .    2    4    6    .    .    .    .    .    .    .    .    .    .    .    .
+advisor       21    .    .    .    .   11   14   76    .    .    .    .    .    .    .    .    .    .    .
+alerts         .    .    .    .    .    .    2    1    1    1    .    .    .    .    .    .    .    .    .
+assets         .    .    2    .    .    .    7    .    .    .    .    .    .    .    .    .    .    .    .
+catalog        3    .    .    .    .    .    8    .    .    .    .    .    .    .    .    .    .    .    .
+core           .    .    .    1    .    .    .    4    1    2    .    .    .    .    .    3    .    .    .
+economy       14    .    2    3    .   15   36    .    .    4    .    .    .    .    .    2    .    .    .
+halloween      6    .    .    3    .    4   12   10    .    .    .    .    .    .    .    2    .    .    .
+host           .    .    .    6    2    .   18    4    1    .    1    .    .    .    2    3    .    1    1
+inventory      2    .    7    .    1    1    7   14    .    .    .    .    .    .    .    .    .    .    .
+main           .    .    .    .    .    .    .    .    .    1    .    .    .    .    1    .    .    .    .
+performance    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+platform       .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+runtime       14    4   17   24    7   11   45   22   13   10    5    .    .    .    .   74    .   24    2
+sessions      32    .    .   19    .    5   58   20    .    .    1    .    .    2    2    .    .    .    1
+test           1    .    3    .    2    .    3    5    .    2    .    2    .    .    2    2    .    .    .
+ui            14    .   17    9    5    .   63   31    3   13    5    .    .    .    3   62    .    .    1
+wallet         2    .    .    .    1    3    3    .    .    .    .    .    .    .    .    .    .    .    .
+```
+
+Generada el 10 oct 2026 contando los imports por AST, con el parser de TypeScript, sobre los 382 ficheros de fuente que recorre `sourceModulePaths` de `src/test/module-boundary.ts` (sin `.test.ts` ni `.d.ts`). Es una fotografía: no la regenera ningún script del repositorio.
+
+- Concentradoras de entrada: `core` (300 imports desde 15 carpetas), `economy` (187, 10), `sessions` (148, 7), `account` (112, 11).
+- Concentradoras de salida: `runtime` (272 hacia 14 carpetas), `ui` (226, 12), `sessions` (140, 9), `advisor` (122, 4).
+- Hojas: `platform` (0 salidas; solo la importa `sessions`, con 2 imports) y `performance` (sin imports entre carpetas en ninguno de los dos sentidos). `account` solo importa `core`.
 
 ## Diagnóstico local H6.17
 
@@ -803,6 +834,8 @@ contar casillas.
 `SessionHistoryService` es una frontera Vault-only creada en `onload` sin listar ni leer archivos. Solo las acciones explícitas de export/scrub en Ajustes y de carga del historial visible en Companion invocan el escaneo Markdown vault-wide; abrir o repintar la vista no lo hace. Reutiliza el codec de frontmatter y marcadores H5.4/H5.7: exige `tc_kind: gw2_farming_session`, schema 1/2/3, referencias SHA-256 y los seis bloques en orden con hash válido; una nota sin `tc_*` se ignora, pero cualquier indicio `tc_*` incompleto, duplicado o incompatible bloquea el lote. Ese mismo inspector canónico expone al backfill Halloween únicamente evento, refs, fin y deltas positivos v3 ya validados. El frontmatter propiedad del plugin se analiza con YAML Core real, claves únicas y los estilos escalares exactos del productor: strings con comillas dobles, enteros seguros y `null`; comillas rotas, tipos compuestos, coerciones o duplicados fallan cerrados. El decoder valida además enums, opcionales y la igualdad `ended - started = duration`. Los records exportables son una proyección de propiedades `tc_*` seguras, sin IDs originales, ruta Vault, personaje/build o cuerpo humano. JSON v1 y CSV de columnas fijas se ordenan por inicio/fin/ref; tanto cabeceras como datos pasan por el mismo serializador CSV, usan CRLF y anteponen un apóstrofo a una CADENA que empieza por una fórmula (`=`, `+`, `-`, `@`), incluso tras espacios o controles; los números (también los negativos) se escriben como números, sin apóstrofo, porque un número no puede ser una fórmula; cero sesiones produce solo la cabecera. Ambos ficheros son create-only: se preflightan los dos antes de crear un sibling y una repetición admite únicamente bytes idénticos, permitiendo concluir un par parcial sin sobrescribirlo. `Sessions.base` conserva content v2 dentro del bundle gestionado v4, por lo que un plugin anterior reconoce el manifiesto más nuevo y no lo pisa.
 
 H9.7 proyecta esos records validados a un agregado puro y sin referencias de cuenta o sesión. El panel conserva su estado solo en memoria, coalesce activaciones simultáneas y presenta `idle`, `loading`, `empty`, `ready`, `conflict` y `unavailable`; un conflicto bloquea toda la proyección en vez de enseñar un parcial. Los totales monetarios y de sacos solo existen si todas las sesiones aportan el dato: `null` nunca se convierte en cero. La evolución compara las dos sesiones más recientes y la superficie responsive usa tabla o tarjetas sin persistir recomendaciones ni añadir operaciones sobre la cuenta.
+
+Cada fila del historial enlaza a la nota de su sesión (0.6.29): `scan` estampa en el record la ruta desde la que lo leyó (`notePath`, nunca guardada en el índice porque la nota puede moverse) y la fila del agregado la lleva como `notePath`; la fecha es un `<button class="mod-link">` cuyo nombre accesible nombra la sesión. El panel no toca el host: recibe una acción del núcleo (`openSessionHistoryNote`), que comprueba con `vault.file` que la nota sigue existiendo y, si no, avisa en vez de abrirla (el host crearía una nota vacía). No añade lecturas al cargar.
 
 H9.5 amplía únicamente el record local validado con `activity` y `build`; el export sigue usando una
 allowlist JSON explícita y columnas CSV fijas que no contienen esos campos. Solo `activity =

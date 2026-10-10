@@ -29,7 +29,7 @@ import {
 } from '../src/economy/sell-timing-experiment';
 
 /** Directory the two frozen fixtures live in, resolved the way this repo's other scripts do. */
-const FIXTURES_DIR = fileURLToPath(new URL('../src/economy/__fixtures__/', import.meta.url));
+const FIXTURES_DIR = fileURLToPath(new URL('../src/test/fixtures/economy/', import.meta.url));
 
 const ITEM_IDS = Object.freeze([36_038, 47_909]);
 
