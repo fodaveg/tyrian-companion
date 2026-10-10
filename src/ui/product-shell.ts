@@ -3,7 +3,7 @@ import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale } from '../core/i18n';
 import type { ProductActionController } from './product-action-controller';
 
-export type ProductSurface = 'companion' | 'inventory' | 'sale' | 'settings';
+export type ProductSurface = 'companion' | 'inventory' | 'sale' | 'achievements' | 'settings';
 
 export interface ProductShellOptions {
 	readonly locale: Locale;
@@ -14,7 +14,7 @@ export interface ProductShellOptions {
 	/** Paints the Lucide icon of the settings button. */
 	readonly ui: Pick<TyrianUiPort, 'setIcon'>;
 	/**
-	 * False where the host itself lists the sections (its main screen): the three tabs are not
+	 * False where the host itself lists the sections (its main screen): the four tabs are not
 	 * built, since the host's list does that job, and the settings button stays alone at the end
 	 * of its row. Absent means true.
 	 */
@@ -44,10 +44,11 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 		appendNav(bar, t.t('shell.nav.companion'), options.active === 'companion', () => { void options.actions.run('open-companion').catch(() => undefined); });
 		appendNav(bar, t.t('shell.nav.inventory'), options.active === 'inventory', () => { void options.actions.run('open-inventory-advisor').catch(() => undefined); });
 		appendNav(bar, t.t('shell.nav.sale'), options.active === 'sale', () => { void options.actions.run('open-sale').catch(() => undefined); });
+		appendNav(bar, t.t('shell.nav.achievements'), options.active === 'achievements', () => { void options.actions.run('open-achievements').catch(() => undefined); });
 	}
 	// H18.36 (boceto lámina 1): Ajustes opens a modal, not a view, so it never belongs beside the
-	// three tabs that switch what the panel shows — a fourth text button with `aria-current`
-	// promised a destination it never had. An icon-only `clickable-icon` at the end of the bar,
+	// tabs that switch what the panel shows — a text button with `aria-current` promised a
+	// destination it never had. An icon-only `clickable-icon` at the end of the bar,
 	// like Obsidian's own view-header icons, keeps the vocabulary of "opens something else".
 	const settingsButton = bar.createEl('button', {
 		cls: 'clickable-icon tyrian-product-shell__settings',

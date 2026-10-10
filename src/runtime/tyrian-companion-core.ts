@@ -325,6 +325,9 @@ import {
 } from '../ui/inventory-advisor-item-view';
 import { MountedViews, sectionsViewRegistration, sectionViewRegistration, type TyrianSectionId } from '../ui/mounted-views';
 import { SALE_VIEW_SLOT, SALE_VIEW_TYPE, SaleItemView, saleSection } from '../ui/sale-item-view';
+import { ACHIEVEMENTS_VIEW_SLOT, ACHIEVEMENTS_VIEW_TYPE, AchievementsItemView, achievementsSection } from '../ui/achievements-item-view';
+import type { AchievementsViewServices } from '../ui/achievements-view';
+import { assembleAchievements, type AchievementsAssembly } from './assemble-achievements';
 import {
 	buildSaleViewModel,
 	computeListingNetCopper,
@@ -477,18 +480,20 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		readonly companion: MountedViews<TyrianCompanionView>;
 		readonly inventoryAdvisor: MountedViews<InventoryAdvisorItemView>;
 		readonly sale: MountedViews<SaleItemView>;
+		readonly achievements: MountedViews<AchievementsItemView>;
 	} | null = null;
 	private get mountedViews(): NonNullable<TyrianCompanionCore['viewControllers']> {
 		this.viewControllers ??= {
 			companion: new MountedViews((container) => new TyrianCompanionView(container, this.host.ui, this)),
 			inventoryAdvisor: new MountedViews((container) => new InventoryAdvisorItemView(container, this.host.ui, this)),
 			sale: new MountedViews((container) => new SaleItemView(container, this.host.ui, this)),
+			achievements: new MountedViews((container) => new AchievementsItemView(container, this.host.ui, this)),
 		};
 		return this.viewControllers;
 	}
 	/**
-	 * What is registered with the host right now: the three sections in ONE view of its main screen
-	 * (`'main'`) or as three views of their own (`'sidebar'`, the only way before the main view and
+	 * What is registered with the host right now: the four sections in ONE view of its main screen
+	 * (`'main'`) or as four views of their own (`'sidebar'`, the only way before the main view and
 	 * still Obsidian's). Null until `onload` registers. `registeredViews` undoes it, so a change of
 	 * the choice swaps one for the other without reloading the plugin.
 	 */
@@ -562,6 +567,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private walletVaultSync!: WalletVaultSyncController;
 	/** Built with the clients in `initializeRuntime`; null until then. */
 	private leyspringAchievements: LeyspringAchievementsService | null = null;
+	/** The «Logros» section's store and services (`assemble-achievements.ts`); null until `initializeRuntime` and after unload. */
+	private achievements: AchievementsAssembly | null = null;
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	private priceHistory: PriceHistoryRuntime | null = null;
 	/** Deferred to the panel's own load action; never touched from `onload`. */
@@ -1316,6 +1323,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			new LeyspringCaptureService(client, publicClient),
 			new LeyspringNoteWriter(labelledVault(host.vault, 'Achievements note'), host.vault.configDir),
 		);
+		// «Logros»: the keyed client reaches only `TrackedProgressService.refresh`, behind the section's button.
+		this.achievements = assembleAchievements({
+			factory: indexedDB, client, publicGateway: publicClient,
+			diagnostics: this.persistenceDiagnostics('ui', 'view_render'),
+		});
 		const advisorServices = assembleAdvisor({
 			factory: indexedDB,
 			vaultId,
@@ -1806,12 +1818,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const session = views.companion.section(companionSection(this));
 		const inventory = views.inventoryAdvisor.section(inventoryAdvisorSection(this));
 		const sale = views.sale.section(saleSection(this));
+		const achievements = views.achievements.section(achievementsSection(this));
 		if (placement === 'main') {
 			const mainView = sectionsViewRegistration({
 				type: TYRIAN_MAIN_VIEW_TYPE,
 				title: () => translateRuntime(createTranslator(this.settings.language), 'shell.title'),
 				icon: 'sword',
-			}, [session, inventory, sale]);
+			}, [session, inventory, sale, achievements]);
 			// `wantedPlacement` only answers 'main' on a host that has the method.
 			return [() => ui.registerSectionsView?.(mainView) ?? NO_VIEW];
 		}
@@ -1819,6 +1832,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			() => ui.registerView(sectionViewRegistration(session, COMPANION_VIEW_SLOT)),
 			() => ui.registerView(sectionViewRegistration(inventory, INVENTORY_ADVISOR_VIEW_SLOT)),
 			() => ui.registerView(sectionViewRegistration(sale, SALE_VIEW_SLOT)),
+			() => ui.registerView(sectionViewRegistration(achievements, ACHIEVEMENTS_VIEW_SLOT)),
 		];
 	}
 
@@ -1834,9 +1848,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private relabelListedSections(): void {
 		if (this.registeredPlacement !== 'main') return;
-		for (const section of [companionSection(this), inventoryAdvisorSection(this), saleSection(this)]) {
+		for (const section of [companionSection(this), inventoryAdvisorSection(this), saleSection(this), achievementsSection(this)]) {
 			this.host.ui.updateSection?.(TYRIAN_MAIN_VIEW_TYPE, section.id, { title: section.label() });
 		}
+	}
+
+	/** The count of followed achievements beside «Logros» where the host lists the sections; none shows nothing. */
+	private syncAchievementsBadge(): void {
+		if (this.registeredPlacement !== 'main') return;
+		this.host.ui.updateSection?.(TYRIAN_MAIN_VIEW_TYPE, 'achievements', { badge: achievementsSection(this).badge?.() ?? null });
 	}
 
 	/**
@@ -1929,6 +1949,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// The Companion's start button reads the mode (disabled in consult).
 		this.renderViews();
 		this.renderInventoryAdvisorViews();
+		// The Achievements tab was «arrancando» until now: its services exist, so it reads the catalog.
+		this.renderAchievementsViews();
 	}
 
 	onunload(): void {
@@ -1982,6 +2004,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		for (const view of this.viewControllers?.inventoryAdvisor.current() ?? []) view.cancelProgressRender();
 		// The Sale tab's expiry timer must not outlive the plugin: Hebra may never unmount the view.
 		for (const view of this.viewControllers?.sale.current() ?? []) view.cancelExpiryRepaint();
+		// The Achievements tab's index build and search debounce end here too, before its services close.
+		for (const view of this.viewControllers?.achievements.current() ?? []) view.cancelLoads();
+		this.achievements?.dispose();
+		this.achievements = null;
 		this.walletVaultSync?.dispose();
 		this.inventoryPreferences?.dispose();
 		this.priceHistory?.dispose();
@@ -2111,6 +2137,29 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	openProductSettings(): void {
 		this.host.ui.openSettings();
+	}
+
+	/** The wiki link of a followed achievement: the host opens it outside. */
+	openExternal(url: string): void {
+		this.host.ui.openExternal(url);
+	}
+
+	getTrackedAchievementIds(): readonly number[] {
+		return this.settings.trackedAchievementIds;
+	}
+
+	/** Following and unfollowing go through `updateSettings`, like every edit; false when the save was refused (read-only settings, runtime starting). */
+	async setTrackedAchievementIds(ids: readonly number[]): Promise<boolean> {
+		const result = await this.updateSettings({ trackedAchievementIds: [...ids] });
+		return result.status === 'saved';
+	}
+
+	/** The «Logros» services once the runtime built them; null while the plugin is still starting. */
+	getAchievementsServices(): AchievementsViewServices | null {
+		const achievements = this.achievements;
+		const vaultId = this.vaultId;
+		if (achievements === null || vaultId === null || !this.runtimeReady) return null;
+		return { catalog: achievements.catalog, progress: achievements.progress, vaultId };
 	}
 
 	/** Returns only the bounded health projection intended for visible diagnostics UI. */
@@ -5700,6 +5749,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			const previousSalvagePreferences = JSON.stringify(resolveEquipmentSalvagePreferences(this.settings));
 			const previousAlertIngameEnabled = this.settings.alertIngameEnabled;
 			const previousAlertIngamePort = this.settings.alertIngamePort;
+			const previousTrackedAchievements = this.settings.trackedAchievementIds.join(',');
 			const nextSettings = mergeSettingsUpdate(base, settings, this.host.vault.configDir, this.host.locale());
 			const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 			// Publish the new runtime view only after its durable write succeeds. A rejected
@@ -5710,7 +5760,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				previousPollingInterval, previousLanguage, previousOutputFolder, previousManagedAssetsRoot,
 				previousLegacyOutputFolder, previousLegacyManagedAssetsRoot, previousPriceHistory, previousHalloweenEnabled,
 				previousPersonalValuation, previousMaterialStorageCapacity, previousLowStorageSpaceThreshold,
-				previousSalvagePreferences, previousAlertIngameEnabled, previousAlertIngamePort, nextSettings, secretChanged,
+				previousSalvagePreferences, previousAlertIngameEnabled, previousAlertIngamePort, previousTrackedAchievements, nextSettings, secretChanged,
 			};
 		});
 		if (written === null) return { status: 'blocked', reason: 'settings_read_only' };
@@ -5718,7 +5768,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			previousPollingInterval, previousLanguage, previousOutputFolder, previousManagedAssetsRoot,
 			previousLegacyOutputFolder, previousLegacyManagedAssetsRoot, previousPriceHistory, previousHalloweenEnabled,
 			previousPersonalValuation, previousMaterialStorageCapacity, previousLowStorageSpaceThreshold,
-			previousSalvagePreferences, previousAlertIngameEnabled, previousAlertIngamePort, nextSettings, secretChanged,
+			previousSalvagePreferences, previousAlertIngameEnabled, previousAlertIngamePort, previousTrackedAchievements, nextSettings, secretChanged,
 		} = written;
 		// Stale seed copies still waiting for their action to end are dropped with the opt-in: switching
 		// it back on does not bring them back. A pass already downloading stops at its next item.
@@ -5737,6 +5787,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				this.managedAssets.setBundle({ bundleVersion: MANAGED_ASSETS_BUNDLE_VERSION, locale: nextSettings.language, assets: await managedAssetsBundle(), retired: RETIRED_MANAGED_ASSETS });
 			}
 			this.settingTab.refreshForLocaleChange();
+			this.renderAchievementsViews();
 		}
 		// The Settings cadence is the idle detection cadence. An active session polls at the
 		// H13.3 five minutes and must not be slowed down to 60 by an unrelated preference edit.
@@ -5753,6 +5804,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			await this.halloweenPriceAlert?.configure(halloweenPriceAlertSettingsFrom(this.settings), false, context);
 			this.settingTab.refreshConnectionRow();
 			this.renderViews();
+			// The kept achievements progress may be of another account: forget it, and let the section say «sin leer».
+			this.clearAchievementsProgress();
+		}
+		if (previousTrackedAchievements !== this.settings.trackedAchievementIds.join(',')) {
+			this.syncAchievementsBadge();
+			this.renderAchievementsViews();
 		}
 		let inventoryAdvisorResult: Extract<SettingsUpdateResult, { status: 'saved' }>['inventoryAdvisor'] = 'unchanged';
 		if (previousPersonalValuation !== JSON.stringify(this.settings.halloweenPersonalValuation)
@@ -5871,6 +5928,25 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// The Sale tab reads the SAME advisor model, so every refresh that moves it also
 		// moves the Sale tab's own hero card, calendar and grouped list.
 		for (const view of this.mountedViews.sale.current()) view.render();
+	}
+
+	private renderAchievementsViews(): void {
+		for (const view of this.mountedViews.achievements.current()) view.render();
+	}
+
+	/**
+	 * The API key changed: the kept progress of the «Logros» section may be of another account, so it
+	 * is forgotten (`TrackedProgressService.clearProgress`, which also discards a refresh in flight)
+	 * and the section repaints as not read. Never calls the API.
+	 */
+	private clearAchievementsProgress(): void {
+		const achievements = this.achievements;
+		const vaultId = this.vaultId;
+		if (achievements === null || vaultId === null) return;
+		fireAndForgetLocal(this.localDebugActions, { component: 'settings', action: 'settings_save', state: 'achievements_progress_clear' }, async () => {
+			await achievements.progress.clearProgress(vaultId);
+			if (!this.unloaded) this.renderAchievementsViews();
+		});
 	}
 
 	/** True while the one-click sync's last reported state was `running`. */
@@ -6019,12 +6095,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async executeProductAction(
 		id: Exclude<ProductActionId, SessionCommandId>,
 	): Promise<ProductActionOutcome> {
-		if (id === 'open-companion' || id === 'open-inventory-advisor' || id === 'open-sale') {
+		if (id === 'open-companion' || id === 'open-inventory-advisor' || id === 'open-sale' || id === 'open-achievements') {
 			const state = id === 'open-companion' ? 'open_companion'
-				: id === 'open-inventory-advisor' ? 'open_inventory_advisor' : 'open_sale';
+				: id === 'open-inventory-advisor' ? 'open_inventory_advisor'
+					: id === 'open-sale' ? 'open_sale' : 'open_achievements';
 			const navigate = id === 'open-companion' ? () => this.activateView()
 				: id === 'open-inventory-advisor' ? () => this.activateInventoryAdvisorView()
-					: () => this.activateSaleView();
+					: id === 'open-sale' ? () => this.activateSaleView()
+						: () => this.activateAchievementsView();
 			await (this.localDebugActions?.run(
 				{ component: 'ui', action: 'command_execute', state }, navigate,
 			) ?? navigate());
@@ -6047,7 +6125,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** Maps handled controller states back into the shared action feedback contract. */
 	private productActionOutcome(
-		id: Exclude<ProductActionId, SessionCommandId | 'open-companion' | 'open-inventory-advisor' | 'open-sale' | 'review-pending-farming-proposal' | 'arm-assisted-detection'>,
+		id: Exclude<ProductActionId, SessionCommandId | 'open-companion' | 'open-inventory-advisor' | 'open-sale' | 'open-achievements' | 'review-pending-farming-proposal' | 'arm-assisted-detection'>,
 	): ProductActionOutcome {
 		if (id === 'disarm-assisted-detection') return detectionActionOutcome(this.getAssistedDetectionState(), 'disarm');
 		if (id === 'refresh-inventory-advisor') return advisorActionOutcome(this.getInventoryAdvisorViewModel());
@@ -6455,6 +6533,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	private async activateSaleView(): Promise<void> {
 		await this.revealSection('sale', SALE_VIEW_TYPE);
+	}
+
+	private async activateAchievementsView(): Promise<void> {
+		await this.revealSection('achievements', ACHIEVEMENTS_VIEW_TYPE);
 	}
 
 	/**

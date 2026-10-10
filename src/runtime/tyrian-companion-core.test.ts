@@ -27,6 +27,7 @@ import { COMPANION_VIEW_TYPE } from '../ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from '../ui/inventory-advisor-item-view';
 import { PRODUCT_ACTION_IDS } from '../ui/product-action-controller';
 import { SALE_VIEW_TYPE } from '../ui/sale-item-view';
+import { ACHIEVEMENTS_VIEW_TYPE } from '../ui/achievements-item-view';
 import { createTyrianRuntime } from './index';
 import {
 	ALERT_INGAME_SECRET_COMMAND_ID,
@@ -162,7 +163,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		await runtime.start();
 
 		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual([
-			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'],
+			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'], [ACHIEVEMENTS_VIEW_TYPE, 'dialog'],
 		]);
 		expect(registered.commands.map(({ id }) => id)).toEqual([
 			...PRODUCT_ACTION_IDS, ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID,
@@ -267,6 +268,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 			[COMPANION_VIEW_TYPE, 'Tyrian companion', 'sword'],
 			[INVENTORY_ADVISOR_VIEW_TYPE, 'Inventory advisor', 'package-search'],
 			[SALE_VIEW_TYPE, 'Halloween sale', 'candy'],
+			[ACHIEVEMENTS_VIEW_TYPE, 'Achievements', 'trophy'],
 		]);
 		// A registration is exactly what `registerView` takes: nothing of the section leaks into it.
 		for (const view of registered.views) {
@@ -384,8 +386,8 @@ describe('main screen or sidebar: this device\'s choice, behind a host capabilit
 	const PLACEMENT_ROW = 'Where it is shown';
 	const settingNames = (registered: ReturnType<typeof neutralHost>['registered']): string[] =>
 		registered.panels[0]!.settingDefinitions!().map(({ name }) => name);
-	const threeViews = [
-		[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'],
+	const ownViews = [
+		[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'], [ACHIEVEMENTS_VIEW_TYPE, 'dialog'],
 	];
 
 	it.each<[string, TyrianHost['capabilities']]>([
@@ -402,7 +404,7 @@ describe('main screen or sidebar: this device\'s choice, behind a host capabilit
 		expect(settingNames(registered)).not.toContain(PLACEMENT_ROW);
 		// The default still reads as the main screen; nothing acts on it.
 		expect(runtime.getViewPlacement()).toBe('main');
-		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual(threeViews);
+		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual(ownViews);
 	});
 
 	it('offers it right after the mode on a host that declares a main view, and keeps the choice in the device storage only', async () => {
@@ -447,7 +449,7 @@ describe('main screen or sidebar: this device\'s choice, behind a host capabilit
 		});
 		// This host declares the main view but has no port to register one: saving the choice is
 		// all it does, and the three views stay registered where they were.
-		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual(threeViews);
+		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual(ownViews);
 
 		await state.change('main');
 		expect(device.get(VIEW_PLACEMENT_KEY)).toBe('main');
@@ -510,7 +512,7 @@ describe('the three sections on a host with a main screen', () => {
 		return { ...neutral, host, device, sectionsViews, disposed, revealed, revealedViews, patched };
 	}
 
-	it('registers ONE view that lists Session, Inventory and Sale under their short labels, and counts one view in the load journal', async () => {
+	it('registers ONE view that lists Session, Inventory, Sale and Achievements under their short labels, and counts one view in the load journal', async () => {
 		const { host, registered, sectionsViews, records } = mainScreenHost();
 		const runtime = createTyrianRuntime(host);
 		await runtime.start();
@@ -520,10 +522,13 @@ describe('the three sections on a host with a main screen', () => {
 		const view = sectionsViews[0]!;
 		expect([view.type, view.title(), view.icon]).toEqual([TYRIAN_MAIN_VIEW_TYPE, 'Tyrian Companion', 'sword']);
 		expect(view.sections.map((section) => [section.id, section.title(), section.icon])).toEqual([
-			['session', 'Session', 'sword'], ['inventory', 'Inventory', 'package-search'], ['sale', 'Sale', 'candy'],
+			['session', 'Session', 'sword'], ['inventory', 'Inventory', 'package-search'], ['sale', 'Sale', 'candy'], ['achievements', 'Achievements', 'trophy'],
 		]);
 		for (const section of view.sections) {
-			expect(Object.keys(section).sort()).toEqual(['icon', 'id', 'mount', 'setVisible', 'title', 'unmount']);
+			// Only Achievements carries a badge (the followed count); the others list none.
+			expect(Object.keys(section).sort()).toEqual(section.id === 'achievements'
+				? ['badge', 'icon', 'id', 'mount', 'setVisible', 'title', 'unmount']
+				: ['icon', 'id', 'mount', 'setVisible', 'title', 'unmount']);
 		}
 		expect(runtime.hostListsSections()).toBe(true);
 		await vi.waitFor(() => {
@@ -554,16 +559,16 @@ describe('the three sections on a host with a main screen', () => {
 		});
 	});
 
-	it('a host that declares the main view but has no way to register it gets the three views', async () => {
+	it('a host that declares the main view but has no way to register it gets the four views', async () => {
 		const { host, registered } = mainScreenHost({ withoutPort: true });
 		const runtime = createTyrianRuntime(host);
 		await runtime.start();
 
-		expect(registered.views.map(({ type }) => type)).toEqual([COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE]);
+		expect(registered.views.map(({ type }) => type)).toEqual([COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE, ACHIEVEMENTS_VIEW_TYPE]);
 		expect(runtime.hostListsSections()).toBe(false);
 	});
 
-	it('swaps the one view for the three, and back, when the device changes its choice; the same choice again swaps nothing', async () => {
+	it('swaps the one view for the four, and back, when the device changes its choice; the same choice again swaps nothing', async () => {
 		const { host, registered, sectionsViews, disposed } = mainScreenHost();
 		const runtime = createTyrianRuntime(host);
 		await runtime.start();
@@ -571,17 +576,17 @@ describe('the three sections on a host with a main screen', () => {
 		await runtime.updateViewPlacement('sidebar');
 		expect(disposed).toEqual([TYRIAN_MAIN_VIEW_TYPE]);
 		expect(registered.views.map(({ type, placement }) => [type, placement])).toEqual([
-			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'],
+			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'], [ACHIEVEMENTS_VIEW_TYPE, 'dialog'],
 		]);
-		expect(registered.views.map((view) => view.title())).toEqual(['Tyrian companion', 'Inventory advisor', 'Halloween sale']);
+		expect(registered.views.map((view) => view.title())).toEqual(['Tyrian companion', 'Inventory advisor', 'Halloween sale', 'Achievements']);
 		expect(runtime.hostListsSections()).toBe(false);
 
 		await runtime.updateViewPlacement('sidebar');
 		expect(disposed).toHaveLength(1);
-		expect(registered.views).toHaveLength(3);
+		expect(registered.views).toHaveLength(4);
 
 		await runtime.updateViewPlacement('main');
-		expect(disposed).toEqual([TYRIAN_MAIN_VIEW_TYPE, COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE]);
+		expect(disposed).toEqual([TYRIAN_MAIN_VIEW_TYPE, COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE, ACHIEVEMENTS_VIEW_TYPE]);
 		expect(sectionsViews).toHaveLength(2);
 		expect(runtime.hostListsSections()).toBe(true);
 	});
@@ -610,6 +615,7 @@ describe('the three sections on a host with a main screen', () => {
 		['open-companion', 'Open companion', 'session'],
 		['open-inventory-advisor', 'Open inventory advisor', 'inventory'],
 		['open-sale', 'Open Halloween sale', 'sale'],
+		['open-achievements', 'Open achievements', 'achievements'],
 	])('has a palette command for each section that enters it on the main screen: %s', async (id, name, section) => {
 		const { host, registered, revealed, revealedViews } = mainScreenHost();
 		await createTyrianRuntime(host).start();
@@ -647,7 +653,39 @@ describe('the three sections on a host with a main screen', () => {
 			[TYRIAN_MAIN_VIEW_TYPE, 'session', { title: 'Sesión' }],
 			[TYRIAN_MAIN_VIEW_TYPE, 'inventory', { title: 'Inventario' }],
 			[TYRIAN_MAIN_VIEW_TYPE, 'sale', { title: 'Venta' }],
+			[TYRIAN_MAIN_VIEW_TYPE, 'achievements', { title: 'Logros' }],
 		]);
+		await runtime.stop();
+	});
+
+	it('lists «Logros» with the followed count as its badge (none at zero) and tells the host on every change of the list, and only then', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered, sectionsViews, patched, records } = mainScreenHost();
+		// A store that keeps what is saved: every save re-reads it first, so a stale one would bring the old list back.
+		const store = { value: { ...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'debug', trackedAchievementIds: [10, 20] } as unknown };
+		const runtime = createTyrianRuntime({ ...host, settings: { load: async () => store.value, save: async (value) => { store.value = value; } } });
+		await runtime.start();
+		const section = sectionsViews[0]!.sections[3]!;
+		expect([section.id, section.title(), section.icon, section.badge?.()]).toEqual(['achievements', 'Achievements', 'trophy', 2]);
+
+		registered.ready[0]!();
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({ action: 'plugin_load', state: 'runtime_initialize', phase: 'success' }));
+		}, { timeout: 10_000 });
+		expect(patched).toEqual([]);
+
+		await expect(runtime.updateSettings({ trackedAchievementIds: [10, 20, 30] })).resolves.toMatchObject({ status: 'saved' });
+		expect(patched).toEqual([[TYRIAN_MAIN_VIEW_TYPE, 'achievements', { badge: 3 }]]);
+		expect(section.badge?.()).toBe(3);
+		await runtime.updateSettings({ trackedAchievementIds: [] });
+		expect(patched.at(-1)).toEqual([TYRIAN_MAIN_VIEW_TYPE, 'achievements', { badge: null }]);
+		// A save that leaves the list alone, or the same list again, says nothing to the host.
+		patched.length = 0;
+		await runtime.updateSettings({ valuableLootThresholdCopper: 20_000 });
+		await runtime.updateSettings({ trackedAchievementIds: [] });
+		expect(patched).toEqual([]);
 		await runtime.stop();
 	});
 
@@ -682,6 +720,7 @@ describe('the three sections on a host with a main screen', () => {
 			[TYRIAN_MAIN_VIEW_TYPE, 'session', { title: 'Sesión' }],
 			[TYRIAN_MAIN_VIEW_TYPE, 'inventory', { title: 'Inventario' }],
 			[TYRIAN_MAIN_VIEW_TYPE, 'sale', { title: 'Venta' }],
+			[TYRIAN_MAIN_VIEW_TYPE, 'achievements', { title: 'Logros' }],
 		]);
 
 		await runtime.updateViewPlacement('sidebar');
@@ -744,7 +783,7 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 		await runtime.updateSettings({ valuableLootThresholdCopper: 20_000 });
 
 		expect(runtime.settings.language).toBe('es');
-		expect(patched).toEqual(['session', 'inventory', 'sale']);
+		expect(patched).toEqual(['session', 'inventory', 'sale', 'achievements']);
 	});
 
 	it('falls back to its memory when the store answers something that is not a settings object', async () => {
@@ -811,7 +850,7 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 		await runtime.updateSettings({ valuableLootThresholdCopper: 20_000 });
 
 		expect(saves.at(-1)).toMatchObject({ language: 'es', valuableLootThresholdCopper: 20_000 });
-		expect(patched).toEqual(['session', 'inventory', 'sale']);
+		expect(patched).toEqual(['session', 'inventory', 'sale', 'achievements']);
 	});
 
 	it.each([

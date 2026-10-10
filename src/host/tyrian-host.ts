@@ -214,6 +214,12 @@ export interface TyrianViewSectionRegistration {
 	title(): string;
 	/** Lucide name. */
 	readonly icon: string;
+	/**
+	 * A short mark the host lists beside the title (a count); read when the view registers, and
+	 * `updateSection` changes it afterwards. Null, 0 or '' show nothing. A section without one is
+	 * listed without a mark.
+	 */
+	badge?(): string | number | null;
 	mount(container: HTMLElement): void | Promise<void>;
 	unmount(container: HTMLElement): void | Promise<void>;
 	/** The host hid (false) or showed again (true) the mounted section in `container`. Never called right after `mount` nor before `unmount`. */

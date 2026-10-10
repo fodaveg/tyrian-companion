@@ -17,6 +17,7 @@ import {
 	type TyrianViewDescriptor,
 } from './mounted-views';
 import { SALE_VIEW_SLOT, SALE_VIEW_TYPE, saleSection, saleView } from './sale-item-view';
+import { ACHIEVEMENTS_VIEW_SLOT, ACHIEVEMENTS_VIEW_TYPE, achievementsSection, achievementsView } from './achievements-item-view';
 
 class RecordingView implements MountableView {
 	readonly events: string[] = [];
@@ -208,14 +209,41 @@ describe('from a section to the view the host registers', () => {
 		expect([companionView(actions), inventoryAdvisorView(actions), saleView(actions)].map(say)).toEqual(facts());
 	});
 
-	it('names the three sections with ids that do not change with the language', () => {
+	it('names the four sections with ids that do not change with the language', () => {
 		const ids = (locale: 'es' | 'en') => [
 			companionSection({ getLocale: () => locale }).id,
 			inventoryAdvisorSection({ getInventoryAdvisorLocale: () => locale }).id,
 			saleSection({ getSaleLocale: () => locale }).id,
+			achievementsSection({ getLocale: () => locale, getTrackedAchievementIds: () => [] }).id,
 		];
-		expect(ids('es')).toEqual(['session', 'inventory', 'sale']);
+		expect(ids('es')).toEqual(['session', 'inventory', 'sale', 'achievements']);
 		expect(ids('en')).toEqual(ids('es'));
+	});
+
+	it('the Achievements section: a view of its own in the dialog, and a badge with the followed count that shows nothing at zero', () => {
+		let tracked: number[] = [];
+		const actions = { getLocale: () => 'es' as const, getTrackedAchievementIds: () => tracked };
+		const section = achievementsSection(actions);
+		expect([section.id, section.title(), section.label(), section.icon, section.badge?.()]).toEqual(['achievements', 'Logros', 'Logros', 'trophy', null]);
+		tracked = [1, 2, 3];
+		expect(section.badge?.()).toBe(3);
+		const view = achievementsView(actions);
+		expect([view.type, view.title(), view.icon, view.placement]).toEqual([ACHIEVEMENTS_VIEW_TYPE, 'Logros', 'trophy', 'dialog']);
+		expect(ACHIEVEMENTS_VIEW_SLOT).toEqual({ type: ACHIEVEMENTS_VIEW_TYPE, placement: 'dialog' });
+
+		// Through `MountedViews.section` and into ONE view: the badge travels, and only for the section that has one.
+		const views = new MountedViews((element) => new RecordingView(element));
+		const mounted = views.section(section);
+		expect(Object.keys(mounted).sort()).toEqual(['badge', 'icon', 'id', 'label', 'mount', 'setVisible', 'title', 'unmount']);
+		const registration = sectionsViewRegistration({ type: 'tyrian-main', title: () => 'Tyrian', icon: 'sword' }, [
+			views.section(saleSection({ getSaleLocale: () => 'es' })), mounted,
+		]);
+		expect(registration.sections.map((listed) => [listed.id, listed.title(), listed.icon, 'badge' in listed ? listed.badge?.() : 'none']))
+			.toEqual([['sale', 'Venta', 'candy', 'none'], ['achievements', 'Logros', 'trophy', 3]]);
+		tracked = [];
+		expect(registration.sections[1]!.badge?.()).toBeNull();
+		// As a view of its own nothing of the badge leaks into what `registerView` takes.
+		expect(Object.keys(sectionViewRegistration(mounted, ACHIEVEMENTS_VIEW_SLOT)).sort()).toEqual(['icon', 'mount', 'placement', 'title', 'type', 'unmount']);
 	});
 
 	it('lists the same sections together in ONE view: in the order given, each under its short label and with its own icon', () => {

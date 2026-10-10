@@ -11,6 +11,7 @@ export const PRODUCT_ACTION_IDS = [
 	'open-companion',
 	'open-inventory-advisor',
 	'open-sale',
+	'open-achievements',
 	'review-pending-farming-proposal',
 	...SESSION_COMMAND_IDS,
 	'arm-assisted-detection',
@@ -83,6 +84,7 @@ const GROUP_BY_ID: Readonly<Record<ProductActionId, ProductActionGroup>> = {
 	'open-companion': 'navigation',
 	'open-inventory-advisor': 'navigation',
 	'open-sale': 'navigation',
+	'open-achievements': 'navigation',
 	'review-pending-farming-proposal': 'session',
 	'start-farming-session': 'session',
 	'finish-farming-session': 'session',
@@ -103,6 +105,7 @@ const TRANSLATION_BY_ID: Readonly<Record<ProductActionId, TranslationKey>> = {
 	'open-companion': 'commands.openCompanion',
 	'open-inventory-advisor': 'commands.openInventoryAdvisor',
 	'open-sale': 'commands.openSale',
+	'open-achievements': 'commands.openAchievements',
 	'review-pending-farming-proposal': 'commands.reviewPending',
 	'start-farming-session': 'commands.startSession',
 	'finish-farming-session': 'commands.finishSession',
@@ -123,6 +126,7 @@ const DESCRIPTION_KEY_BY_ID: Readonly<Record<ProductActionId, TranslationKey>> =
 	'open-companion': 'productAction.desc.open-companion',
 	'open-inventory-advisor': 'productAction.desc.open-inventory-advisor',
 	'open-sale': 'productAction.desc.open-sale',
+	'open-achievements': 'productAction.desc.open-achievements',
 	'review-pending-farming-proposal': 'productAction.desc.review-pending-farming-proposal',
 	'start-farming-session': 'productAction.desc.start-farming-session',
 	'finish-farming-session': 'productAction.desc.finish-farming-session',
@@ -329,7 +333,7 @@ export class ProductActionController {
 
 	private nonSessionAvailability(id: Exclude<ProductActionId, SessionCommandId>): { available: boolean; reason: string | null } {
 		const t = createTranslator(this.ports.getLocale());
-		if (id === 'open-companion' || id === 'open-inventory-advisor' || id === 'open-sale') return { available: true, reason: null };
+		if (id === 'open-companion' || id === 'open-inventory-advisor' || id === 'open-sale' || id === 'open-achievements') return { available: true, reason: null };
 		if (!this.ports.isRuntimeReady()) return { available: false, reason: t.t('productAction.reason.runtime') };
 		if (id === 'review-pending-farming-proposal') return this.ports.getPendingProposals().pendingCount > 0
 			? { available: true, reason: null } : { available: false, reason: t.t('productAction.reason.pending') };

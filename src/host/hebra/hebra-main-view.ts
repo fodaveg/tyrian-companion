@@ -53,7 +53,11 @@ export function registerHebraMainView(deps: HebraMainViewDeps, view: TyrianSecti
 		title: view.title(),
 		icon: view.icon,
 		placement: 'main',
-		sections: view.sections.map((section) => ({ id: section.id, title: section.title(), icon: section.icon })),
+		// The badge goes only where the section has one: Hebra paints nothing for null, 0 or ''.
+		sections: view.sections.map((section) => ({
+			id: section.id, title: section.title(), icon: section.icon,
+			...(section.badge === undefined ? {} : { badge: section.badge() }),
+		})),
 		retainSections: true,
 		mountSection(el, sectionId) {
 			const section = view.sections.find((candidate) => candidate.id === sectionId);

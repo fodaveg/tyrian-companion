@@ -15,23 +15,25 @@ export interface MountableView {
 export type TyrianViewDescriptor = Omit<TyrianViewRegistration, 'mount' | 'unmount'>;
 
 /** The plugin's sections. Stable: the same in every language, version and host. */
-export type TyrianSectionId = 'session' | 'inventory' | 'sale';
+export type TyrianSectionId = 'session' | 'inventory' | 'sale' | 'achievements';
 
 /** What a section says about itself, wherever a host shows it; `MountedViews.section` adds how it mounts. */
 export interface TyrianSectionDescriptor {
 	readonly id: TyrianSectionId;
 	/** Localized, so read on every paint. The title of the section as a view of its own. */
 	title(): string;
-	/** Localized. Its short name where a host lists the sections together («Sesión», «Inventario», «Venta»). */
+	/** Localized. Its short name where a host lists the sections together («Sesión», «Inventario», «Venta», «Logros»). */
 	label(): string;
 	/** Lucide name. */
 	readonly icon: string;
+	/** A short mark beside the label where a host lists the sections (the count of followed achievements); null shows nothing. */
+	badge?(): string | number | null;
 }
 
 /**
- * One section of the plugin (Session, Inventory, Sale) as a host can show it: what it is and how
- * it is painted into an element, with nothing about WHERE. Where is a separate fact, so the same
- * three sections are three views of their own (`sectionViewRegistration`, each in its
+ * One section of the plugin (Session, Inventory, Sale, Achievements) as a host can show it: what it
+ * is and how it is painted into an element, with nothing about WHERE. Where is a separate fact, so
+ * the same four sections are four views of their own (`sectionViewRegistration`, each in its
  * `TyrianSectionViewSlot`) or the parts of one view (`sectionsViewRegistration`).
  */
 export interface TyrianSection extends TyrianSectionDescriptor {
@@ -83,6 +85,8 @@ export function sectionsViewRegistration(
 			id: section.id,
 			title: () => section.label(),
 			icon: section.icon,
+			// Only a section with a mark lists one: the host paints nothing for a section without the entry.
+			...(section.badge === undefined ? {} : { badge: () => section.badge!() }),
 			mount: (container) => section.mount(container),
 			unmount: (container) => section.unmount(container),
 			setVisible: (container, visible) => { section.setVisible?.(container, visible); },
@@ -122,6 +126,7 @@ export class MountedViews<T extends MountableView> {
 			title: () => section.title(),
 			label: () => section.label(),
 			icon: section.icon,
+			...(section.badge === undefined ? {} : { badge: () => section.badge!() }),
 			mount: (container) => this.open(container),
 			unmount: (container) => this.close(container),
 			setVisible: (container, visible) => { this.byContainer.get(container)?.setVisible?.(visible); },

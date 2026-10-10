@@ -147,6 +147,21 @@ describe('registerSectionsView', () => {
 		expect(fake.mainView.mounted(MAIN)).toEqual([]);
 	});
 
+	it('lists the badge of a section that has one, as it is when the view registers, and nothing for the others', async () => {
+		const { fake, ui } = await hebra();
+		let count = 0;
+		const badged = section('achievements', [], { badge: () => (count === 0 ? null : count) });
+		ui.registerSectionsView!(sectionsView([], [section('session', []), badged]));
+		expect(fake.mainView.sections(MAIN)).toEqual([
+			{ id: 'session', title: 'Título de session', icon: 'icon-session' },
+			{ id: 'achievements', title: 'Título de achievements', icon: 'icon-achievements', badge: null },
+		]);
+		// A change of the count reaches Hebra only through `updateSection`, as the core does on every change.
+		count = 4;
+		ui.updateSection!(MAIN, 'achievements', { badge: 4 });
+		expect(fake.mainView.sections(MAIN)[1]).toMatchObject({ badge: 4 });
+	});
+
 	it('mounts each section on its first visit, in the element Hebra gives it, and never tells it it is visible right then', async () => {
 		const { fake, widened, ui } = await hebra();
 		const log: string[] = [];

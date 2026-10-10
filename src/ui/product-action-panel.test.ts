@@ -22,13 +22,13 @@ describe('product action surface', () => {
 	// `review-session` is gone (Lote S, 2026-09-09: nobody reviews a session anymore), so the
 	// session group drops from 7 to 6 and the total from 16 to 15. «Abandonar sesión» (David, 2026-09-24)
 	// brings them back to 7 and 16. The Sale tab's `open-sale` brings the navigation group to 3 and the
-	// total to 17.
-	it('has exact 17-command parity with the requested 3/7/2/5 groups', () => {
+	// total to 17. The Achievements tab's `open-achievements` (L2, 0.6.30) brings them to 4 and 18.
+	it('has exact 18-command parity with the requested 4/7/2/5 groups', () => {
 		const controller = createController();
-		expect(PRODUCT_ACTION_IDS).toHaveLength(17);
-		expect(new Set(PRODUCT_ACTION_IDS).size).toBe(17);
+		expect(PRODUCT_ACTION_IDS).toHaveLength(18);
+		expect(new Set(PRODUCT_ACTION_IDS).size).toBe(18);
 		expect(controller.all().find((action) => action.id === 'open-companion')?.group).toBe('navigation');
-		expect(controller.all().filter((action) => action.group === 'navigation')).toHaveLength(3);
+		expect(controller.all().filter((action) => action.group === 'navigation')).toHaveLength(4);
 		expect(controller.all().filter((action) => action.group === 'session')).toHaveLength(7);
 		expect(controller.all().filter((action) => action.group === 'detection')).toHaveLength(2);
 		expect(controller.all().filter((action) => action.group === 'inventory')).toHaveLength(5);
@@ -164,18 +164,20 @@ describe('product action surface', () => {
 		expect(elements.filter((element) => element.className.includes('tyrian-action-panel__action'))).toHaveLength(0);
 		const nav = elements.find((element) => element.className.includes('tyrian-product-shell__nav'))!;
 		const tabs = walk(nav).filter((element) => element.tag === 'button');
-		expect(tabs).toHaveLength(4);
+		expect(tabs).toHaveLength(5);
 		// H18.36: Ajustes is now an icon-only button (no visible text), identified by its
-		// aria-label and Lucide icon instead of the tab word it used to share with the other three.
-		expect(tabs.map((tab) => tab.textContent)).toEqual(['Session', 'Inventory', 'Sale', '']);
+		// aria-label and Lucide icon instead of the tab word it used to share with the other four.
+		expect(tabs.map((tab) => tab.textContent)).toEqual(['Session', 'Inventory', 'Sale', 'Achievements', '']);
 		expect(tabs[1]!.attributes.get('aria-current')).toBe('page');
-		expect(tabs[3]!.attributes.get('aria-label')).toBe('Tyrian Companion settings');
-		expect(tabs[3]!.attributes.get('data-icon')).toBe('settings');
-		expect(tabs[3]!.className).toContain('clickable-icon');
-		// The "Sale" tab navigates through the SAME controller as the other two, not a
-		// bespoke callback.
+		expect(tabs[4]!.attributes.get('aria-label')).toBe('Tyrian Companion settings');
+		expect(tabs[4]!.attributes.get('data-icon')).toBe('settings');
+		expect(tabs[4]!.className).toContain('clickable-icon');
+		// The "Sale" and "Achievements" tabs navigate through the SAME controller as the other
+		// two, not a bespoke callback.
 		tabs[2]!.dispatch('click');
 		expect(execute).toHaveBeenCalledWith('open-sale');
+		tabs[3]!.dispatch('click');
+		expect(execute).toHaveBeenCalledWith('open-achievements');
 		const warning = elements.find((element) => element.className.includes('tyrian-product-shell__attention'))!;
 		expect(warning.attributes.get('role')).toBe('alert');
 		expect(walk(warning).map((element) => element.textContent).join(' ')).toContain('API key not linked');
@@ -183,7 +185,7 @@ describe('product action surface', () => {
 		expect(openSettings).toHaveBeenCalledOnce();
 	});
 
-	it('keeps expert commands in the palette without mounting the 17-action panel at any width', () => {
+	it('keeps expert commands in the palette without mounting the 18-action panel at any width', () => {
 		const document = installFakeDocument();
 		const root = new FakeElement('div', document);
 		const mount = renderProductShell(root as unknown as HTMLElement, {
@@ -191,7 +193,7 @@ describe('product action surface', () => {
 		});
 		expect(walk(root).some((element) => element.className.includes('tyrian-action-panel'))).toBe(false);
 		expect(walk(root).some((element) => element.tag === 'aside')).toBe(false);
-		expect(PRODUCT_ACTION_IDS).toHaveLength(17);
+		expect(PRODUCT_ACTION_IDS).toHaveLength(18);
 		mount.dispose();
 	});
 });

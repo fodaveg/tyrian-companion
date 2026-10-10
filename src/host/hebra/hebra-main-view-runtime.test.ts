@@ -10,6 +10,7 @@ import { withRealHostBehaviour, type RealHost } from '../../test/hebra-real-host
 import { COMPANION_VIEW_TYPE } from '../../ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from '../../ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from '../../ui/sale-item-view';
+import { ACHIEVEMENTS_VIEW_TYPE } from '../../ui/achievements-item-view';
 import { activateTyrian } from './hebra-runtime';
 
 /**
@@ -21,7 +22,8 @@ import { activateTyrian } from './hebra-runtime';
  * hidden.
  */
 
-const THREE_VIEWS = [COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE];
+/** The sections as views of their own, in the order the core registers them (the sidebar placement). */
+const OWN_VIEWS = [COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE, ACHIEVEMENTS_VIEW_TYPE];
 const PLACEMENT_ROW = 'Dónde se muestra';
 
 /** What these tests read of the core besides its public methods. */
@@ -125,9 +127,9 @@ describe('(a) a Hebra without the main view: everything as before', () => {
 		expect(core.mainViewSupported()).toBe(false);
 		expect(started.inside.registeredPlacement).toBe('sidebar');
 		expect(test.fake.recorded.views.map(({ id, placement }) => [id, placement])).toEqual([
-			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'],
+			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'], [ACHIEVEMENTS_VIEW_TYPE, 'dialog'],
 		]);
-		expect(test.fake.recorded.views.map(({ title }) => title)).toEqual(['Acompañante de Tyria', 'Asesor de inventario', 'Venta de Halloween']);
+		expect(test.fake.recorded.views.map(({ title }) => title)).toEqual(['Acompañante de Tyria', 'Asesor de inventario', 'Venta de Halloween', 'Logros']);
 		expect(settingsRows(started).names).not.toContain(PLACEMENT_ROW);
 		expect(test.fake.recorded.ribbon[0]).not.toHaveProperty('viewId');
 
@@ -141,7 +143,7 @@ describe('(a) a Hebra without the main view: everything as before', () => {
 		// A choice stored by another build changes nothing here: there is no main screen to go to.
 		await core.updateViewPlacement('sidebar');
 		await core.updateViewPlacement('main');
-		expect(test.fake.recorded.views.map(({ id }) => id)).toEqual(THREE_VIEWS);
+		expect(test.fake.recorded.views.map(({ id }) => id)).toEqual(OWN_VIEWS);
 		await started.cleanup();
 	}, 30_000);
 });
@@ -162,6 +164,7 @@ describe('(b) a Hebra with the main view and the default choice', () => {
 			{ id: 'session', title: 'Sesión', icon: 'sword' },
 			{ id: 'inventory', title: 'Inventario', icon: 'package-search' },
 			{ id: 'sale', title: 'Venta', icon: 'candy' },
+			{ id: 'achievements', title: 'Logros', icon: 'trophy', badge: null },
 		]);
 		expect(test.fake.viewTitle(TYRIAN_MAIN_VIEW_TYPE)).toBe('Tyrian Companion');
 		expect(test.fake.recorded.views).toEqual([]);
@@ -192,7 +195,7 @@ describe('(c) a Hebra with the main view and the sidebar chosen on this device',
 		const { hebra, core } = started;
 		expect(core.mainViewSupported()).toBe(true);
 		expect(core.getViewPlacement()).toBe('sidebar');
-		expect(hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
+		expect(hebra!.ownViews.registered()).toEqual(OWN_VIEWS);
 		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).registered()).toBeNull();
 		expect(hebra!.recorded.mainViews).toEqual([]);
 		expect(started.test.fake.recorded.ribbon[0]).not.toHaveProperty('viewId');
@@ -226,7 +229,7 @@ describe('(d) changing the choice in Settings swaps what is registered, without 
 		await vi.waitFor(() => expect(started.inside.registeredPlacement).toBe('sidebar'));
 
 		expect(hebra!.view(TYRIAN_MAIN_VIEW_TYPE).registered()).toBeNull();
-		expect(hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
+		expect(hebra!.ownViews.registered()).toEqual(OWN_VIEWS);
 		// Hebra unmounted the two sections it had mounted: no controller, timer or listener survives.
 		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 0, 0]));
 		expect(sessionEl.isConnected).toBe(false);
@@ -284,26 +287,28 @@ describe('(d) changing the choice in Settings swaps what is registered, without 
 		order.length = 0;
 
 		await core.updateViewPlacement('main');
-		expect(order.slice(0, 4)).toEqual([
+		expect(order.slice(0, 5)).toEqual([
 			`unregister ${COMPANION_VIEW_TYPE}`, `unregister ${INVENTORY_ADVISOR_VIEW_TYPE}`, `unregister ${SALE_VIEW_TYPE}`,
+			`unregister ${ACHIEVEMENTS_VIEW_TYPE}`,
 			`register ${TYRIAN_MAIN_VIEW_TYPE}`,
 		]);
 		order.length = 0;
 
 		await core.updateViewPlacement('sidebar');
-		expect(order.slice(0, 4)).toEqual([
+		expect(order.slice(0, 5)).toEqual([
 			`unregister ${TYRIAN_MAIN_VIEW_TYPE}`,
 			`register ${COMPANION_VIEW_TYPE}`, `register ${INVENTORY_ADVISOR_VIEW_TYPE}`, `register ${SALE_VIEW_TYPE}`,
+			`register ${ACHIEVEMENTS_VIEW_TYPE}`,
 		]);
-		expect(order.slice(4)).toEqual(['tick']);
+		expect(order.slice(5)).toEqual(['tick']);
 		await started.cleanup();
 	}, 30_000);
 });
 
 describe('(d) what is left open and mounted after the swap, in each direction', () => {
 	it('shares no view id between the two placements, so neither swap can keep anything open', () => {
-		expect(THREE_VIEWS).not.toContain(TYRIAN_MAIN_VIEW_TYPE);
-		expect(new Set([...THREE_VIEWS, TYRIAN_MAIN_VIEW_TYPE]).size).toBe(4);
+		expect(OWN_VIEWS).not.toContain(TYRIAN_MAIN_VIEW_TYPE);
+		expect(new Set([...OWN_VIEWS, TYRIAN_MAIN_VIEW_TYPE]).size).toBe(5);
 	});
 
 	it('main screen to sidebar: the main view is unmounted whole and nothing is open, not even a moment later', async () => {
@@ -328,7 +333,7 @@ describe('(d) what is left open and mounted after the swap, in each direction', 
 		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 0, 0]));
 		// Nothing is open: the three views are registered and none was opened for the player.
 		expect(hebra!.mainView.current()).toBeNull();
-		expect(hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
+		expect(hebra!.ownViews.registered()).toEqual(OWN_VIEWS);
 		expect(hebra!.ownViews.opened()).toEqual([]);
 		expect(hebra!.recorded.reveals).toEqual([]);
 		await Promise.resolve();
@@ -442,7 +447,7 @@ describe('(B) a Hebra that mounts on its next paint, as the real one does', () =
 		expect(main.registered()).toBeNull();
 		expect(hebra!.mainView.current()).toBeNull();
 		await vi.waitFor(() => expect(mountedCount(started)).toEqual([0, 0, 0]));
-		expect(hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
+		expect(hebra!.ownViews.registered()).toEqual(OWN_VIEWS);
 
 		// A view of its own asked for from outside, and then back to the main screen.
 		await command(started, 'open-companion').run();
@@ -619,8 +624,9 @@ describe('(g) the plugin\'s own bar of tabs', () => {
 		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).open();
 		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('inventory');
 		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('sale');
+		hebra!.view(TYRIAN_MAIN_VIEW_TYPE).select('achievements');
 		const openSettings = vi.spyOn(hebra!.api.ui, 'openSettings');
-		for (const id of ['session', 'inventory', 'sale']) {
+		for (const id of ['session', 'inventory', 'sale', 'achievements']) {
 			const el = hebra!.view(TYRIAN_MAIN_VIEW_TYPE).element(id)!;
 			expect(el.querySelector('.tyrian-product-shell'), `${id}: no shell`).not.toBeNull();
 			expect(el.querySelector('nav'), `${id}: a navigation of its own`).toBeNull();
@@ -638,12 +644,48 @@ describe('(g) the plugin\'s own bar of tabs', () => {
 		}
 
 		await core.updateViewPlacement('sidebar');
-		for (const type of THREE_VIEWS) {
+		for (const type of OWN_VIEWS) {
 			const el = hebra!.ownViews.open(type);
 			await vi.waitFor(() => expect(el.querySelector('.tyrian-product-shell__nav'), `${type}: no bar`).not.toBeNull());
 			expect(Array.from(el.querySelectorAll('.tyrian-product-shell__nav button:not(.tyrian-product-shell__settings)')).map((tab) => tab.textContent))
-				.toEqual(['Sesión', 'Inventario', 'Venta']);
+				.toEqual(['Sesión', 'Inventario', 'Venta', 'Logros']);
 		}
+		await started.cleanup();
+	}, 30_000);
+});
+
+describe('(i) the «Logros» section (L2, 0.6.30)', () => {
+	it('is listed fourth with the followed count as its badge, opening it asks nothing with the key, and following tells Hebra the new count', async () => {
+		const started = await start({ mainView: true });
+		const { hebra, test, core } = started;
+		expect(test.fake.recorded.mainViews[0]!.sections[3]).toEqual({ id: 'achievements', title: 'Logros', icon: 'trophy', badge: null });
+
+		// Entering the section mounts the view: the search, the followed list, the button; nothing keyed was asked.
+		const main = hebra!.view(TYRIAN_MAIN_VIEW_TYPE);
+		main.open();
+		main.select('achievements');
+		const el = main.element('achievements')!;
+		await vi.waitFor(() => expect(el.querySelector('.tyrian-achievements')).not.toBeNull());
+		expect(el.querySelector('input[type="search"]')).not.toBeNull();
+		expect(el.querySelector('.tyrian-achievements__refresh')).not.toBeNull();
+		expect(el.querySelector('nav')).toBeNull();
+		await new Promise((resolve) => { window.setTimeout(resolve, 20); });
+		expect(test.fake.recorded.httpRequests.filter((request) => /\/account/u.test(request.url))).toEqual([]);
+
+		// Following goes through the settings, and the badge reaches Hebra through `updateViewSection`.
+		const updateViewSection = vi.spyOn(hebra!.api.ui, 'updateViewSection');
+		await vi.waitFor(async () => { expect((await core.updateSettings({ trackedAchievementIds: [1, 2] })).status).toBe('saved'); }, { timeout: 10_000 });
+		expect(updateViewSection).toHaveBeenCalledWith(TYRIAN_MAIN_VIEW_TYPE, 'achievements', { badge: 2 });
+		expect(test.fake.mainView.sections(TYRIAN_MAIN_VIEW_TYPE)[3]).toMatchObject({ id: 'achievements', badge: 2 });
+		await core.updateSettings({ trackedAchievementIds: [] });
+		expect(test.fake.mainView.sections(TYRIAN_MAIN_VIEW_TYPE)[3]).toMatchObject({ id: 'achievements', badge: null });
+		expect(test.fake.recorded.httpRequests.filter((request) => /\/account/u.test(request.url))).toEqual([]);
+
+		// The command enters the section, like the other three.
+		expect(command(started, 'open-achievements').name).toBe('Abrir logros');
+		main.select('session');
+		await command(started, 'open-achievements').run();
+		expect(main.current()).toBe('achievements');
 		await started.cleanup();
 	}, 30_000);
 });
@@ -656,7 +698,7 @@ describe('(h) a device storage that cannot be read', () => {
 		expect(started.hebra!.ownViews.registered()).toEqual([]);
 		// The choice can still be written, and takes effect.
 		await started.core.updateViewPlacement('sidebar');
-		expect(started.hebra!.ownViews.registered()).toEqual(THREE_VIEWS);
+		expect(started.hebra!.ownViews.registered()).toEqual(OWN_VIEWS);
 		await started.cleanup();
 	}, 30_000);
 });

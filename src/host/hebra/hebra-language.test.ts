@@ -13,6 +13,7 @@ import { withRealHostBehaviour, type RealHost } from '../../test/hebra-real-host
 import { COMPANION_VIEW_TYPE } from '../../ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from '../../ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from '../../ui/sale-item-view';
+import { ACHIEVEMENTS_VIEW_TYPE } from '../../ui/achievements-item-view';
 import { installDomHelpers } from '../dom-polyfill';
 import { attachFolderPicker } from './folder-picker';
 import { outputFolderChangedNotice, outputFolderRestartFailedNotice } from './hebra-host';
@@ -291,11 +292,11 @@ describe('HP-08: the titles of the views follow a language change', () => {
 		await started.cleanup();
 	}, 30_000);
 
-	it('three column views: each is updated with its title in the new language', async () => {
+	it('four views of their own: each is updated with its title in the new language', async () => {
 		const started = await start({ mainView: true, language: 'es' });
 		const { test, hebra, core } = started;
 		await core.updateViewPlacement('sidebar');
-		const ids = [COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE];
+		const ids = [COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE, ACHIEVEMENTS_VIEW_TYPE];
 		expect(hebra!.ownViews.registered()).toEqual(ids);
 		const before = ids.map((id) => test.fake.viewTitle(id));
 		await core.updateSettings({ language: 'en' });
