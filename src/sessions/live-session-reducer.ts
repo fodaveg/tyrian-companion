@@ -252,7 +252,8 @@ export function valueLiveTotals(totals: readonly LiveTotalV1[], prices: readonly
 		if (total.kind !== 'item') continue;
 		const unit = quotes.get(total.idNumber);
 		const gained = unit === null || unit === undefined ? null : liveItemValueCopper(basis, unit, total.positive);
-		const kept = unit === null || unit === undefined ? null : liveItemValueCopper(basis, unit, total.net);
+		// Nothing of this item has left the inventory: both quantities are one, and valuing it twice (a sale with its fees, in gross) is the cost.
+		const kept = unit === null || unit === undefined ? null : total.net === total.positive ? gained : liveItemValueCopper(basis, unit, total.net);
 		if (gained === null || kept === null) { unpricedItemIds.push(total.idNumber); continue; }
 		positive += gained; net += kept;
 	}
