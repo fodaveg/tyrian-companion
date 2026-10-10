@@ -2,6 +2,11 @@ import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { classMemberNames, moduleBoundaryFacts, moduleSpecifiers, propertyCallChains, referencedNames } from '../test/module-boundary';
+import {
+	InventoryAdvisorPresentationController,
+	type InventoryAdvisorControllerPorts,
+} from '../ui/inventory-advisor-controller';
+import type { InventoryAdvisorWorkflowResult } from './inventory-advisor-workflow';
 
 const inventoryAdvisorFiles = (directory: string) => readdirSync(directory)
 	.filter((file) => file.startsWith('inventory-advisor-')
@@ -189,11 +194,32 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 		}
 	});
 
-	it('censuses the explicit integration capabilities the controller may reach for', () => {
-		const controller = PRESENTATION_FILES.find(({ file }) => file === 'inventory-advisor-controller.ts');
-		if (controller === undefined) throw new Error('Missing inventory-advisor-controller.ts in the presentation census.');
-		const calls = knownPortCalls(moduleBoundaryFacts(controller.path).propertyCallChains);
-		expect(calls.sort()).toEqual(['ports.dispose', 'ports.invalidate', 'ports.load', 'ports.reclassify']);
+	// GR-13: by behaviour, not by listing `this.ports.X` call chains in the AST. Every port the controller
+	// touches while its whole lifecycle runs is recorded by a Proxy; anything beyond the four declared
+	// integration seams (a capture, a client, a store...) would show up as a fifth key. A branch the
+	// lifecycle below does not drive (a rejected load) is not observed here.
+	it('reaches only the four declared integration ports through its whole lifecycle', async () => {
+		const reached = new Set<string>();
+		const blocked: InventoryAdvisorWorkflowResult = { status: 'blocked', reason: 'capture_unavailable' };
+		const ports = new Proxy<InventoryAdvisorControllerPorts>({
+			load: async () => blocked,
+			reclassify: async () => blocked,
+			invalidate: () => undefined,
+			dispose: () => undefined,
+		}, {
+			get: (target, key, receiver) => {
+				reached.add(String(key));
+				return Reflect.get(target, key, receiver) as unknown;
+			},
+		});
+		const controller = new InventoryAdvisorPresentationController(ports);
+		controller.open();
+		await controller.refresh();
+		await controller.reclassify();
+		controller.block();
+		controller.invalidate();
+		controller.dispose();
+		expect([...reached].sort()).toEqual(['dispose', 'invalidate', 'load', 'reclassify']);
 	});
 
 	it('guards workflow, presentation, ItemView and renderer with per-file import and capability allowlists', () => {

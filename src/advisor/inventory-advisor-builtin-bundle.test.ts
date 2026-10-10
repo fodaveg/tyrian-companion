@@ -32,6 +32,7 @@ import {
 import { applyInventoryDiscardAllowlist, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
+import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import { moduleBoundaryFacts } from '../test/module-boundary';
 import {
 	isInventoryContainerEconomyPack,
@@ -517,12 +518,32 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		expect(JSON.stringify(source)).toBe(before);
 	});
 
-	it('contains no execution, clock read, or I/O capability', () => {
+	// GR-13: the clock and the I/O globals are checked by running `load` with every ambient capability and
+	// `Date.now` trapped, not by looking for the names in the AST. The module is imported afresh inside the
+	// trap because the bundle is memoized: that way its evaluation and its first build are covered too.
+	it('loads the bundle without reading the clock or reaching any ambient I/O capability', async () => {
+		const clockReads: string[] = [];
+		const now = vi.spyOn(Date, 'now').mockImplementation(() => { clockReads.push('Date.now'); throw new Error('clock read'); });
+		let loaded: { status: string } | undefined;
+		let used: string[];
+		try {
+			vi.resetModules();
+			used = await ambientCapabilityUse(async () => {
+				const fresh = await import('./inventory-advisor-builtin-bundle');
+				loaded = fresh.createInventoryAdvisorBuiltinBundleProvider().load(BEFORE_EXPIRY);
+			});
+		} finally {
+			now.mockRestore();
+		}
+		expect({ used, clockReads, status: loaded?.status }).toEqual({ used: [], clockReads: [], status: 'available' });
+	});
+
+	it('contains no execution capability', () => {
+		// Still by name: the domain words and the irreversible item operations cannot be observed by running `load`.
 		const facts = moduleBoundaryFacts('src/advisor/inventory-advisor-builtin-bundle.ts');
 		expect(facts.names.has('free_to_play')).toBe(false);
 		expect(facts.names.has('whitelist')).toBe(false);
-		expect(facts.propertyCallChains).not.toContain('Date.now');
-		for (const name of ['fetch', 'requestUrl', 'XMLHttpRequest', 'WebSocket', 'destroyItem', 'deleteItem', 'salvageItem', 'openContainer']) {
+		for (const name of ['destroyItem', 'deleteItem', 'salvageItem', 'openContainer']) {
 			expect(facts.names.has(name), name).toBe(false);
 		}
 		const result = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
