@@ -150,7 +150,7 @@ describe('(b) a Hebra with the main view and the default choice', () => {
 	it('registers ONE view on the main screen with Session, Inventory and Sale in that order, retained', async () => {
 		const started = await start({ mainView: true });
 		const { test, hebra, core } = started;
-		expect(test.api.apiVersion).toBe('1.3.0');
+		expect(test.api.apiVersion).toBe('1.4.0');
 		expect(core.mainViewSupported()).toBe(true);
 
 		// What Hebra's own fake recorded: one main view and none of the three views of their own.
