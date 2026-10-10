@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -12,8 +12,10 @@ const run = promisify(execFile);
 const SCRIPT = join(process.cwd(), 'scripts/generate-known-achievement-sets.mjs');
 
 /** One meta (id 1, bar 1) whose category lists a second achievement, in the cache the script reads. */
+const caches: string[] = [];
 function seedCache(): string {
 	const cache = mkdtempSync(join(tmpdir(), 'known-sets-'));
+	caches.push(cache);
 	mkdirSync(join(cache, 'wiki'));
 	writeFileSync(join(cache, 'ach-en.json'), JSON.stringify([
 		{ id: 1, name: 'Meta', flags: ['CategoryDisplay'], tiers: [{ count: 1, points: 1 }] },
@@ -24,7 +26,11 @@ function seedCache(): string {
 }
 
 let server: Server | null = null;
-afterEach(() => { server?.close(); server = null; });
+afterEach(() => {
+	server?.close();
+	server = null;
+	for (const cache of caches.splice(0)) rmSync(cache, { recursive: true, force: true });
+});
 
 async function wiki(answer: (url: string) => { status: number; body: string }): Promise<{ base: string; asked: string[] }> {
 	const asked: string[] = [];
@@ -65,5 +71,21 @@ describe('the known sets generator keeps only what the wiki really served', () =
 		await generate(cache, base, ['--date', '2026-10-10', '--report', join(cache, 'report.txt')]);
 		// Only the pages that were not kept are asked for again.
 		expect(asked.length - before).toBeLessThan(before);
+	});
+
+	it('exits non-zero and writes nothing when the wiki answers 429 or 500: that is not «no such page»', async () => {
+		for (const status of [429, 500]) {
+			const cache = seedCache();
+			const { base } = await wiki(() => ({ status, body: 'try later' }));
+			await expect(generate(cache, base, ['--date', '2026-10-10'])).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('neither a page nor a 404') as unknown });
+			expect(existsSync(join(cache, 'out.ts'))).toBe(false);
+			server?.close();
+		}
+	});
+
+	it('exits non-zero when the network is down', async () => {
+		const cache = seedCache();
+		await expect(generate(cache, 'http://127.0.0.1:1/wiki/', ['--date', '2026-10-10'])).rejects.toMatchObject({ code: 1 });
+		expect(existsSync(join(cache, 'out.ts'))).toBe(false);
 	});
 });

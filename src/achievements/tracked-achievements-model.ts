@@ -75,6 +75,8 @@ export interface TrackedElements {
 	barUnit?: KnownBarUnit;
 	/** Only set (true) when the category has members but every one is hidden until the account advances in one. */
 	hiddenOnly?: true;
+	/** Only set (true) when every member of the category is periodic (daily, weekly, monthly): they come and go and are not listed. */
+	periodicOnly?: true;
 	/** Only set (true) with no elements because the public categories could not be loaded. */
 	loadFailed?: true;
 }
@@ -261,11 +263,18 @@ function elementsOf(
 	const sorted = sortedElements('category', elements);
 	const hiddenOnly = elements.length === 0 && category.members.length > 0
 		&& category.members.every((id) => category.details.get(id)?.flags.includes('Hidden') === true);
+	// Every member comes and goes (daily, weekly, monthly), or is hidden: 6832 «(Weekly) Mist War Hero» has nine weekly ones.
+	const periodicOnly = !hiddenOnly && elements.length === 0 && category.members.length > 0
+		&& category.members.every((id) => {
+			const member = category.details.get(id);
+			return member !== undefined && (isPeriodicAchievement(member) || member.flags.includes('Hidden'));
+		});
 	return {
 		...sorted,
 		...(sorted.total > 0 && category.barUnit == null && isPartialCategory(detail, category.members) ? { partial: true as const } : {}),
 		...(category.barUnit == null ? {} : { barUnit: category.barUnit }),
 		...(hiddenOnly ? { hiddenOnly: true as const } : {}),
+		...(periodicOnly ? { periodicOnly: true as const } : {}),
 		...(sorted.total === 0 && category.loadFailed === true ? { loadFailed: true as const } : {}),
 	};
 }

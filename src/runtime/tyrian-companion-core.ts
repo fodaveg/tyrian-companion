@@ -2177,12 +2177,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/**
 	 * «Logros» «Actualizar progreso» failed outside the reading itself (the public reads behind its ids, or the
 	 * list reload after a good reading). The view says it on screen; this keeps the fact in the diagnostics, with
-	 * the stage and no message (the error may carry a path or a key).
+	 * the stage as `details.operation` (a field the sanitizer keeps for every component) and no message (the error may carry a path or a key).
 	 */
 	localDebugAchievementsRefreshFailure(stage: 'reading_ids' | 'reload'): void {
 		this.localDebugActions?.event({
 			component: 'ui', action: 'view_render', level: 'error', phase: 'failure', code: 'unavailable',
-			state: 'achievements_refresh', details: { surface: 'achievements', stage },
+			state: 'achievements_refresh', details: { surface: 'achievements', operation: stage },
 		});
 	}
 

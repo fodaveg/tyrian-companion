@@ -75,6 +75,8 @@ for (const a of achievements) {
 let lastRequest = 0;
 /** Titles that answered anything but a 200 with a body in this run: asked once, never written to the cache. */
 const missing = new Set();
+/** Answers that say nothing about the page (429, 5xx, no network): the run cannot be trusted and exits non-zero without writing. A 404 is a real «no such page». */
+const unreliable = [];
 async function wikiPage(title) {
 	const file = join(cache, 'wiki', `${encodeURIComponent(title).replace(/[!'()*]/gu, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}.txt`);
 	if (missing.has(title)) return '';
@@ -89,8 +91,9 @@ async function wikiPage(title) {
 	try {
 		const response = await fetch(`${WIKI}${encodeURIComponent(title.replaceAll(' ', '_')).replaceAll('%28', '(').replaceAll('%29', ')').replaceAll('%27', "'").replaceAll('%3A', ':')}?action=raw`, { headers: { 'User-Agent': USER_AGENT } });
 		if (response.ok) body = await response.text();
-	} catch {
-		body = '';
+		else if (response.status !== 404) unreliable.push(`${title}: HTTP ${String(response.status)}`);
+	} catch (error) {
+		unreliable.push(`${title}: ${String(error)}`);
 	}
 	// Only a 200 with a body is kept: an error answer is not the page, and a later run asks again.
 	if (body.length === 0 || body.startsWith('#ERROR')) { missing.add(title); return ''; }
@@ -118,10 +121,11 @@ function visibleText(line) {
 
 /**
  * Metas whose bar counts something other than achievements. Measured 10 oct 2026: 223 «The Emperor's New Wardrobe»
- * asks 90 = 5 specialty armors x 18 pieces, and its 7 category achievements each give several; the wiki has no row
- * for it. They list the API's category with a note that the bar counts pieces.
+ * asks 90 = 5 specialty armors x 18 pieces; the wiki has no row for it. Its contributors are the five «Specialty
+ * Armors» achievements (93 to 97, 18 pieces each); the other two of its category (1567 «Fashion Forward», 3935
+ * «Lunatic's Fashion») count something else and stay out.
  */
-const BAR_UNITS = new Map([[223, 'pieces']]);
+const BAR_UNITS = new Map([[223, { unit: 'pieces', members: [93, 94, 95, 96, 97] }]]);
 const metas = achievements.filter((a) => (a.bits ?? []).length === 0 && a.flags.includes('CategoryDisplay'));
 const sets = [];
 /** Ids the wiki names by anchor that the API does not serve. */
@@ -133,7 +137,7 @@ for (const meta of metas) {
 	const category = categoryOf.get(meta.id) ?? null;
 	const apiMembers = category === null ? [] : category.achievements.map(idOfEntry).filter((id) => id !== meta.id);
 	const unit = BAR_UNITS.get(meta.id);
-	if (unit !== undefined) { sets.push({ meta, members: apiMembers, wikiAll: false, barUnit: unit }); counts.emitted += 1; continue; }
+	if (unit !== undefined) { sets.push({ meta, members: unit.members, wikiAll: false, barUnit: unit.unit }); counts.emitted += 1; continue; }
 	const titles = [];
 	if (category !== null) titles.push(`${clean(category.name)} (achievements)`, clean(category.name));
 	titles.push(`${meta.name} (achievements)`, meta.name);
@@ -244,6 +248,10 @@ export function knownSetMembersOf(id: number): number[] | null {
 	return members === undefined ? null : [...members];
 }
 `;
+if (unreliable.length > 0) {
+	console.error(`${String(unreliable.length)} wiki requests got neither a page nor a 404 (rate limit, server error or network); nothing was written. First: ${unreliable[0]}`);
+	process.exit(1);
+}
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, moduleText);
 

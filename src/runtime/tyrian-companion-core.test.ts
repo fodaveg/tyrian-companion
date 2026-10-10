@@ -768,6 +768,28 @@ describe('the three sections on a host with a main screen', () => {
 		await runtime.stop();
 	});
 
+	it('the «Logros» refresh failure reaches the sanitized local log with its stage: the record is read back from the log, after the sanitizer', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered, records } = mainScreenHost();
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		registered.ready[0]!();
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({ action: 'plugin_load', state: 'runtime_initialize', phase: 'success' }));
+		}, { timeout: 10_000 });
+
+		runtime.localDebugAchievementsRefreshFailure('reload');
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({
+				component: 'ui', action: 'view_render', phase: 'failure', state: 'achievements_refresh',
+				details: { surface: 'achievements', operation: 'reload' },
+			}));
+		}, { timeout: 3_000 });
+		await runtime.stop();
+	});
+
 	it('toggleTrackedAchievement computes the list inside the serialized write, so two quick follows keep both; a save that throws answers refused', async () => {
 		vi.stubGlobal('window', {
 			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),

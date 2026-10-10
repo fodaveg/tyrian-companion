@@ -464,12 +464,12 @@ export class AchievementsView {
 			const result = await services.progress.refresh(services.vaultId, ids);
 			if (this.disposed) return;
 			this.refreshState = result.status === 'ok' ? { status: 'idle' } : { status: 'failed', reason: result.reason };
-			if (result.status === 'ok') {
-				// The reading went well: from here a failure is the list reload's, and the reading stays good.
-				stage = 'reload';
-				this.announce(this.t.t('achievements.live.refreshed'));
-				await this.loadTracked();
-			}
+			// From here a failure is the list reload's, and the reading (good or not) stays as it was.
+			stage = 'reload';
+			if (result.status === 'ok') this.announce(this.t.t('achievements.live.refreshed'));
+			// Also after a failed reading: `readingIds` has just asked the public categories again, and a list that
+			// could not load them should not keep saying so when they have come.
+			await this.loadTracked();
 		} catch {
 			// The public reads behind the ids (or the list reload) threw: the button must not stay «running».
 			if (this.disposed) return;
@@ -861,7 +861,7 @@ export class AchievementsView {
 	private renderElements(body: HTMLElement, elements: TrackedElements): void {
 		const t = this.t;
 		body.createEl('h4', { text: t.t('achievements.tracked.elements') });
-		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t(elements.loadFailed === true ? 'achievements.tracked.elementsLoadFailed' : elements.hiddenOnly === true ? 'achievements.tracked.elementsHidden' : 'achievements.tracked.elementsNone') }); return; }
+		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t(elements.loadFailed === true ? (this.actions.hasConfiguredApiKey() ? 'achievements.tracked.elementsLoadFailed' : 'achievements.tracked.elementsLoadFailedNoKey') : elements.hiddenOnly === true ? 'achievements.tracked.elementsHidden' : elements.periodicOnly === true ? 'achievements.tracked.elementsPeriodic' : 'achievements.tracked.elementsNone') }); return; }
 		const unread = elements.items.every((element) => element.state === 'unknown');
 		const unreadText = elements.total === 1 ? t.t('achievements.tracked.elementsUnread.one') : t.t('achievements.tracked.elementsUnread.many', { total: elements.total });
 		const count = body.createEl('p', {

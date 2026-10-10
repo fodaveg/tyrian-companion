@@ -556,7 +556,7 @@ export const KNOWN_ACHIEVEMENT_SETS: readonly KnownAchievementSet[] = [
 	{
 		meta: 223, name: 'The Emperor\'s New Wardrobe', tierMax: 90, wikiAll: false, barUnit: 'pieces',
 		members: [
-			93, 94, 95, 96, 97, 1567, 3935,
+			93, 94, 95, 96, 97,
 		],
 	},
 	{

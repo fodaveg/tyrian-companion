@@ -103,13 +103,21 @@ describe('a sample of the sweep over the API (10 oct 2026): what each kind of me
 		expect(view(copy.id, copy.details, copy.categories).elements).toEqual({ source: 'category', items: [], done: 0, total: 0 });
 	});
 
-	it('(a) 223 «The Emperor\'s New Wardrobe» (bar 90 = pieces): its 7 achievements, flagged as a bar of pieces, never fewer than the 7 of 0.6.33', () => {
+	it('(a) 223 «The Emperor\'s New Wardrobe» (bar 90 = 5 armors x 18 pieces): the five Specialty Armors, flagged as a bar of pieces; Fashion Forward and Lunatic\'s Fashion count something else and stay out', () => {
 		const shown = view(223).elements!;
-		expect(shown.total).toBe(7);
+		expect(shown.items.map((element) => element.refId)).toEqual([93, 94, 95, 96, 97]);
 		expect(shown.barUnit).toBe('pieces');
 		expect(shown.partial).toBeUndefined();
+		expect(shown.items.map((element) => element.refId)).not.toContain(1567);
 		expect(knownBarUnitOf(223)).toBe('pieces');
 		expect(knownBarUnitOf(9417)).toBeNull();
+	});
+
+	it('(a) 6832 «(Weekly) Mist War Hero»: its nine members are weekly, so the section says they are periodic, not that the API lists none', () => {
+		expect(view(6832).elements).toMatchObject({ source: 'category', total: 0, periodicOnly: true });
+		expect(view(6832).elements!.hiddenOnly).toBeUndefined();
+		// A category with some members that do show is not «periodic only».
+		expect(view(9417).elements!.periodicOnly).toBeUndefined();
 	});
 
 	it('(a) a meta with neither category nor set (8415 «Return to Season 4», bar 14) has an empty section, not none', () => {
