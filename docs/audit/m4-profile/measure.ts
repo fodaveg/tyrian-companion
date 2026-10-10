@@ -19,6 +19,8 @@ import { LiveSessionLifecycle } from "../../../src/sessions/live-session-lifecyc
 import {
 	NEXUS_LIVE_BUILD,
 	NEXUS_LIVE_PROFILE,
+	livePriceBasisOf,
+	type LiveSessionFormat,
 	type LiveInventorySampleV1,
 	type LiveJournalEntryV1,
 } from "../../../src/sessions/live-session-model";
@@ -53,7 +55,7 @@ let fence = 0;
 
 function makeLifecycle(
 	store: MemorySessionRuntimeStore,
-	onComplete: (record: never, journal: readonly LiveJournalEntryV1[]) => Promise<string | null>,
+	onComplete: (record: never, journal: readonly LiveJournalEntryV1[], format: LiveSessionFormat) => Promise<string | null>,
 ): LiveSessionLifecycle {
 	const handle = (sessionId: string): ActiveSessionLeaseHandle => ({
 		machineId: "machine", instanceId: "host", sessionId, fence: ++fence,
@@ -72,7 +74,7 @@ function makeLifecycle(
 	return new LiveSessionLifecycle({
 		coordinator, persistence: store, enabled: () => true, now: () => now,
 		sessionId: () => "m4-session", thresholdCopper: () => 50_000,
-		noteVersion: VARIANT,
+		sessionFormat: { noteVersion: VARIANT, priceBasis: livePriceBasisOf(VARIANT) },
 		setInterval: () => 1, clearInterval: () => undefined,
 		onStateChange: () => undefined,
 		onError: (error) => { throw error instanceof Error ? error : new Error(String(error)); },
@@ -143,9 +145,9 @@ interface Prepared { lifecycle: LiveSessionLifecycle; vault: MapVault }
 function prepare(base: MemorySessionRuntimeStore): Prepared {
 	const vault = new MapVault();
 	const writer = new SessionNoteWriter(vault);
-	const lifecycle = makeLifecycle(cloneStore(base), async (record, journal) => {
+	const lifecycle = makeLifecycle(cloneStore(base), async (record, journal, format) => {
 		const result = await writer.writeLive({
-			record, journal, locale: "es", outputFolder: "Tyrian", displayNames: undefined, payloadVersion: VARIANT,
+			record, journal, format, locale: "es", outputFolder: "Tyrian", displayNames: undefined,
 		} as never);
 		return result.status === "written" || result.status === "unchanged" ? result.path : null;
 	});
