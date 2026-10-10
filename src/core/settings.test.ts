@@ -621,3 +621,50 @@ describe('isNewerSettingsSchema (DU-04)', () => {
 		}
 	});
 });
+
+describe('settings schema v15: the tracked achievements of the «Logros» section', () => {
+	it('is schema 15 and ships an empty tracked list', () => {
+		expect(SETTINGS_SCHEMA_VERSION).toBe(15);
+		expect(DEFAULT_SETTINGS.trackedAchievementIds).toEqual([]);
+		expect(migrateSettings(null).trackedAchievementIds).toEqual([]);
+	});
+
+	// Regression: before v15 the cadence and the diagnostics were accepted only from `=== SETTINGS_SCHEMA_VERSION`,
+	// so this bump would have reset both on every v14 install.
+	it('keeps the polling cadence and the diagnostic opt-in of a v14 data.json when migrating to v15', () => {
+		const v14 = { schemaVersion: 14, pollingIntervalMinutes: 60, debugLoggingEnabled: true, debugLoggingLevel: 'debug' };
+		expect(migrateSettings(v14)).toMatchObject({
+			schemaVersion: 15, pollingIntervalMinutes: 60, debugLoggingEnabled: true, debugLoggingLevel: 'debug', trackedAchievementIds: [],
+		});
+	});
+
+	it('accepts the cadence from v12 and the diagnostics from v11, up to the current schema, and from nothing newer (DU-04)', () => {
+		for (const schemaVersion of [12, 13, 14, 15]) {
+			expect(migrateSettings({ schemaVersion, pollingIntervalMinutes: 60 }).pollingIntervalMinutes, `cadence of v${String(schemaVersion)}`).toBe(60);
+		}
+		for (const schemaVersion of [11, 12, 13, 14, 15]) {
+			expect(migrateSettings({ schemaVersion, debugLoggingEnabled: true, debugLoggingLevel: 'debug' }), `diagnostics of v${String(schemaVersion)}`)
+				.toMatchObject({ debugLoggingEnabled: true, debugLoggingLevel: 'debug' });
+		}
+		expect(migrateSettings({ schemaVersion: 11, pollingIntervalMinutes: 60 }).pollingIntervalMinutes).toBe(10);
+		expect(migrateSettings({ schemaVersion: 10, debugLoggingEnabled: true, debugLoggingLevel: 'debug' }))
+			.toMatchObject({ debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
+		// A newer schema is read-only (`isNewerSettingsSchema`) and, in memory, its own-schema-only values take the default.
+		const newer = { schemaVersion: SETTINGS_SCHEMA_VERSION + 1, pollingIntervalMinutes: 60, debugLoggingEnabled: true, debugLoggingLevel: 'debug' };
+		expect(isNewerSettingsSchema(newer)).toBe(true);
+		expect(migrateSettings(newer)).toMatchObject({ pollingIntervalMinutes: 10, debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
+	});
+
+	it('keeps the tracked ids in the order they were added, once each, positive integers only, at most 100', () => {
+		expect(migrateSettings({ schemaVersion: 15, trackedAchievementIds: [30, 5, 30, 0, -1, 2.5, '7', 5, 12] }).trackedAchievementIds)
+			.toEqual([30, 5, 12]);
+		const many = Array.from({ length: 150 }, (_, index) => 150 - index);
+		const capped = migrateSettings({ schemaVersion: 15, trackedAchievementIds: many }).trackedAchievementIds;
+		expect(capped).toHaveLength(100);
+		expect(capped).toEqual(many.slice(0, 100));
+		for (const notAList of [undefined, null, 'x', 7, {}, { 0: 1 }]) {
+			expect(migrateSettings({ schemaVersion: 15, trackedAchievementIds: notAList }).trackedAchievementIds).toEqual([]);
+		}
+		expect(mergeSettingsUpdate(migrateSettings(null), { trackedAchievementIds: [3, 3, 1] }).trackedAchievementIds).toEqual([3, 1]);
+	});
+});

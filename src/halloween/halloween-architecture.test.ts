@@ -54,7 +54,7 @@ describe('H11-A architecture and UI contract', () => {
 	});
 
 	it('pins settings v14 and canonical session-note v6 evidence', () => {
-		expect(readModuleSource('src/core/settings.ts')).toContain('SETTINGS_SCHEMA_VERSION = 14');
+		expect(readModuleSource('src/core/settings.ts')).toContain('SETTINGS_SCHEMA_VERSION = 15');
 		expect(readModuleSource('src/sessions/session-note-model.ts')).toContain('SESSION_NOTE_SCHEMA_VERSION = 6');
 		expect(readModuleSource('src/sessions/session-note-renderer.ts')).toContain('tc_positive_item_deltas_json');
 	});

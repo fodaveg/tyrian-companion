@@ -28,10 +28,19 @@ import {
 	type FarmingPreparationSettingsV1,
 } from '../sessions/farming-goal-preparation';
 
-export const SETTINGS_SCHEMA_VERSION = 14 as const;
+export const SETTINGS_SCHEMA_VERSION = 15 as const;
+/**
+ * The oldest schemas whose polling cadence (v12 rewrote it once) and diagnostic opt-in (v11 introduced it) are
+ * accepted as the user's own. A value from an older schema takes the default; one from a newer schema too, because
+ * that file is read-only (DU-04) and this build cannot know what the newer one meant by it.
+ */
+const FIRST_SCHEMA_WITH_EXPLICIT_CADENCE = 12;
+const FIRST_SCHEMA_WITH_EXPLICIT_DEBUG_SETTINGS = 11;
 
 /** Highest number of legendary targets the settings panel keeps; well above anything the Legendary Armory lists today (205, measured 2026-09-11). */
 const MAX_LEGENDARY_TARGET_ITEM_IDS = 64;
+/** Highest number of tracked achievements («Logros» section); a list, not a catalog, so one screen can show it whole. */
+export const MAX_TRACKED_ACHIEVEMENT_IDS = 100;
 
 /** Lowest port the in-game bridge accepts. Below this range needs a privilege the plugin never asks for. */
 export const ALERT_INGAME_MIN_PORT = 1_024;
@@ -193,6 +202,12 @@ export interface TyrianSettings {
 	 * and rule (a) never fires, exactly matching the pre-M4 behaviour.
 	 */
 	legendaryTargetItemIds: readonly number[];
+	/**
+	 * v15: the achievements the «Logros» section follows, in the order they were added (the section lists them so),
+	 * once each, positive ids of `/v2/achievements`, at most `MAX_TRACKED_ACHIEVEMENT_IDS`. Empty on a fresh install.
+	 * Following and unfollowing go through `updateSettings`, like every other edit.
+	 */
+	trackedAchievementIds: readonly number[];
 	/** Optional off-device alert relay. Empty means off; only HTTPS destinations are used. */
 	alertWebhookUrl: string;
 	/** Optional in-game alert relay (H13.9/H13.15). Off by default: no port opens on a fresh install. */
@@ -254,6 +269,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	valuableLootThresholdCopper: DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER,
 	recommendationCapitalThresholdCopper: 100_000,
 	legendaryTargetItemIds: [],
+	trackedAchievementIds: [],
 	alertWebhookUrl: '',
 	alertIngameEnabled: false,
 	alertIngamePort: DEFAULT_ALERT_INGAME_PORT,
@@ -316,9 +332,11 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 			data.preferredCharacter,
 			DEFAULT_SETTINGS.preferredCharacter,
 		).trim(),
-		// v12 rewrote the cadence once: a pre-v12 install adopts the current default,
-		// while a value already written by v12 stays durable, edit or inherited alike.
-		pollingIntervalMinutes: data.schemaVersion === SETTINGS_SCHEMA_VERSION &&
+		// v12 rewrote the cadence once: a pre-v12 install adopts the current default, while a value
+		// already written by v12 or any later schema up to this one stays durable, edit or inherited
+		// alike. A range, not `=== SETTINGS_SCHEMA_VERSION`: with equality every schema bump since
+		// (v13, v14, v15) silently reset the cadence of every existing install.
+		pollingIntervalMinutes: hasExplicitPollingCadence(data.schemaVersion) &&
 			typeof data.pollingIntervalMinutes === 'number' &&
 			POLLING_INTERVALS.has(data.pollingIntervalMinutes)
 				? data.pollingIntervalMinutes
@@ -326,8 +344,9 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 		// `detectionMode` is gone (David, 2026-09-09: assisted detection is always armed with a
 		// connected account, no more on/off setting). A `data.json` written by an older version
 		// still has the field; it is simply never read into the normalized settings below.
-		// Logging was introduced in v11. Trust only its closed v11/v12 shapes so
-		// this unrelated bump preserves a valid opt-out without accepting future data.
+		// Logging was introduced in v11. Trust its shape from v11 up to this schema (a range, as
+		// with the cadence above) so an unrelated bump preserves a valid opt-out without accepting
+		// the data of a newer schema, which is read-only (DU-04).
 		debugLoggingEnabled: hasExplicitDebugSettings(data.schemaVersion)
 			? data.debugLoggingEnabled !== false : DEFAULT_SETTINGS.debugLoggingEnabled,
 		debugLoggingLevel: hasExplicitDebugSettings(data.schemaVersion) && isLocalDebugLevel(data.debugLoggingLevel)
@@ -366,6 +385,8 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 		// `recommendationCapitalThresholdCopper` above: an absent value on any pre-v14 install
 		// falls through to the empty default instead of losing an unrelated field to the bump.
 		legendaryTargetItemIds: legendaryTargetItemIds(data.legendaryTargetItemIds),
+		// v15. Read defensively like the two above: absent on any pre-v15 install, it is the empty list.
+		trackedAchievementIds: trackedAchievementIds(data.trackedAchievementIds),
 		alertWebhookUrl: alertWebhookDestination(data.alertWebhookUrl),
 		alertIngameEnabled: data.alertIngameEnabled === true,
 		alertIngamePort: alertIngamePortValue(data.alertIngamePort),
@@ -513,6 +534,17 @@ function legendaryTargetItemIds(value: unknown): number[] {
 	if (!Array.isArray(value)) return [...DEFAULT_SETTINGS.legendaryTargetItemIds];
 	const ids = value.filter((entry): entry is number => Number.isSafeInteger(entry) && entry > 0);
 	return [...new Set(ids)].sort((left, right) => left - right).slice(0, MAX_LEGENDARY_TARGET_ITEM_IDS);
+}
+
+/**
+ * v15: the tracked achievements as the user added them (first added first), once each, positive ids only, capped.
+ * Unlike `legendaryTargetItemIds` the order is kept, because the section lists them in it. Anything that is not an
+ * array is the empty list.
+ */
+function trackedAchievementIds(value: unknown): number[] {
+	if (!Array.isArray(value)) return [];
+	const ids = value.filter((entry): entry is number => Number.isSafeInteger(entry) && entry > 0);
+	return [...new Set(ids)].slice(0, MAX_TRACKED_ACHIEVEMENT_IDS);
 }
 
 function enumNumber(value: unknown, allowed: ReadonlySet<number>, fallback: number): number {
@@ -747,9 +779,19 @@ function isLocalDebugLevel(value: unknown): value is LocalDebugLevel {
 	return typeof value === 'string' && (LOCAL_DEBUG_LEVELS as readonly string[]).includes(value);
 }
 
-/** Accepts only settings schemas that carry the reviewed local-debug fields. */
+/** Accepts only settings schemas that carry the reviewed local-debug fields: v11 up to this one. */
 function hasExplicitDebugSettings(value: unknown): boolean {
-	return value === 11 || value === SETTINGS_SCHEMA_VERSION;
+	return isSchemaInRange(value, FIRST_SCHEMA_WITH_EXPLICIT_DEBUG_SETTINGS);
+}
+
+/** Accepts only settings schemas whose polling cadence is the user's own: v12 up to this one. */
+function hasExplicitPollingCadence(value: unknown): boolean {
+	return isSchemaInRange(value, FIRST_SCHEMA_WITH_EXPLICIT_CADENCE);
+}
+
+/** `from <= schemaVersion <= SETTINGS_SCHEMA_VERSION`; a newer schema is outside on purpose (DU-04). */
+function isSchemaInRange(value: unknown, from: number): boolean {
+	return typeof value === 'number' && Number.isSafeInteger(value) && value >= from && value <= SETTINGS_SCHEMA_VERSION;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
