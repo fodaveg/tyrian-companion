@@ -96,6 +96,8 @@ export interface LocalDebugStatus {
 	state: LocalDebugRuntimeState;
 	path: string;
 	bytes: number;
+	/** False while some retained files have not been read yet, so `bytes` is a lower bound. */
+	bytesComplete: boolean;
 	fileCount: number;
 	lastEventAt: string | null;
 	droppedRecords: number;
@@ -118,6 +120,8 @@ export interface LocalDebugLastError {
 export interface LocalDebugWriterStatus {
 	path: string;
 	bytes: number;
+	/** False while some retained files have not been read yet, so `bytes` is a lower bound. */
+	bytesComplete: boolean;
 	fileCount: number;
 	recoveredTails: number;
 	maxSequence: number;

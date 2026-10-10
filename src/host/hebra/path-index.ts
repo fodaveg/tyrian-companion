@@ -57,6 +57,39 @@ interface TyrianPathIndexSnapshot {
 	readonly unadopted?: readonly TyrianUnadoptedNote[];
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isIndexEntry(value: unknown): value is TyrianIndexEntry {
+	if (!isRecord(value)) return false;
+	return (
+		typeof value.path === 'string' &&
+		(value.kind === 'note' || value.kind === 'file' || value.kind === 'folder') &&
+		(value.id === undefined || typeof value.id === 'string') &&
+		(value.mtime === undefined || (typeof value.mtime === 'number' && Number.isFinite(value.mtime)))
+	);
+}
+
+function isUnadoptedNote(value: unknown): value is TyrianUnadoptedNote {
+	if (!isRecord(value)) return false;
+	return (
+		typeof value.id === 'string' &&
+		typeof value.title === 'string' &&
+		typeof value.family === 'string' &&
+		(value.reason === 'path_taken' || value.reason === 'invalid_marker') &&
+		Array.isArray(value.candidates) &&
+		value.candidates.every((candidate) => typeof candidate === 'string')
+	);
+}
+
+/** The saved text is only trusted whole: one malformed entry discards the cache, which is rebuilt. */
+function isSnapshot(value: unknown): value is TyrianPathIndexSnapshot {
+	if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.entries)) return false;
+	if (!value.entries.every(isIndexEntry)) return false;
+	return value.unadopted === undefined || (Array.isArray(value.unadopted) && value.unadopted.every(isUnadoptedNote));
+}
+
 function kvKey(namespace: string): string {
 	return `tyrian-path-index:${namespace}`;
 }
@@ -110,21 +143,22 @@ export class TyrianPathIndex {
 		}
 		if (!raw) return index;
 		index.#saved = raw;
-		let snapshot: TyrianPathIndexSnapshot;
+		let snapshot: unknown;
 		try {
-			snapshot = JSON.parse(raw) as TyrianPathIndexSnapshot;
+			snapshot = JSON.parse(raw);
 		} catch {
 			// A corrupt index (a half-written disk, an unknown future version) is rebuilt by
 			// `seedTyrianPathIndex`; it never throws from here.
 			return index;
 		}
-		if (snapshot.version !== 1 || !Array.isArray(snapshot.entries)) return index;
-		// `Array.isArray` narrows a readonly array to `any[]`: give the entries their type back.
-		for (const entry of snapshot.entries as readonly TyrianIndexEntry[]) {
+		// Valid JSON of the wrong shape is treated like an absent or other-version index: empty, so
+		// the next seed rebuilds it and `#persist` saves it again.
+		if (!isSnapshot(snapshot)) return index;
+		for (const entry of snapshot.entries) {
 			index.#byPath.set(entry.path, entry);
 			if (entry.id) index.#byId.set(entry.id, entry.path);
 		}
-		if (Array.isArray(snapshot.unadopted)) index.#unadopted = snapshot.unadopted;
+		if (snapshot.unadopted) index.#unadopted = snapshot.unadopted;
 		return index;
 	}
 

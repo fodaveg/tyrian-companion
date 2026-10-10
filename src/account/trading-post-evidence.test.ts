@@ -147,6 +147,32 @@ describe('trading post evidence', () => {
 			sell: { status: 'invalid', reason: 'invalid_payload' },
 		} });
 	});
+	it('rejects the side as an invalid payload, without orders, when an order id repeats across pages', async () => {
+		const requestDetailed = vi.fn(async (path: string) => {
+			const buy = path.includes('/buys');
+			if (page(path) === 0) return response(Array.from({ length: 200 }, (_, index) => transaction(buy, index + 1, 1)));
+			return response([transaction(buy, 5, 1)]);
+		});
+		const evidence = await captureActiveTradingPostOrders(operation(requestDetailed), 'account-1', token(), () => NOW);
+
+		expect(evidence).toMatchObject({ status: 'unavailable', orders: [], endpointCoverage: {
+			buy: { status: 'invalid', reason: 'invalid_payload' },
+			sell: { status: 'invalid', reason: 'invalid_payload' },
+		} });
+	});
+
+	it('gives an order id repeated inside one page the same treatment as one repeated across pages', async () => {
+		const requestDetailed = vi.fn(async (path: string) => {
+			const buy = path.includes('/buys');
+			return response([transaction(buy, 7, 1), transaction(buy, 8, 1), transaction(buy, 7, 3)]);
+		});
+		const evidence = await captureActiveTradingPostOrders(operation(requestDetailed), 'account-1', token(), () => NOW);
+
+		expect(evidence).toMatchObject({ status: 'unavailable', orders: [], endpointCoverage: {
+			buy: { status: 'invalid', reason: 'invalid_payload' },
+			sell: { status: 'invalid', reason: 'invalid_payload' },
+		} });
+	});
 });
 
 function operation(requestDetailed: (path: string) => Promise<{ status: number; headers: Record<string, string>; body: unknown }>): GuildWars2Operation {

@@ -281,6 +281,28 @@ describe('LocalDebugJsonlWriter', () => {
 			expect(writer.status().bytes).toBe(contents.reduce((total, content) => total + new TextEncoder().encode(content).byteLength, 0));
 		});
 
+		it('reports its byte total as partial until the older files are read, and complete once they are', async () => {
+			const storage = fullDirectory();
+			const writer = createWriter(storage);
+			const started = await writer.initialize();
+			expect(started.bytesComplete).toBe(false);
+			expect(started.fileCount).toBe(5);
+
+			await writer.readAll();
+			const read = writer.status();
+			expect(read.bytesComplete).toBe(true);
+			expect(read.bytes).toBe([...storage.files.values()].reduce((total, content) => total + new TextEncoder().encode(content).byteLength, 0));
+		});
+
+		it('reports a complete total when there is nothing unread, and after a clear', async () => {
+			const empty = createWriter(new MemoryStorage());
+			await expect(empty.initialize()).resolves.toMatchObject({ bytesComplete: true, bytes: 0 });
+
+			const writer = createWriter(fullDirectory());
+			await writer.initialize();
+			await expect(writer.clear()).resolves.toMatchObject({ bytesComplete: true, bytes: 0 });
+		});
+
 		it('rotates at the same size limit and keeps five files after a restart over a full set', async () => {
 			const storage = fullDirectory();
 			const bytes = (value: string): number => new TextEncoder().encode(value).byteLength;

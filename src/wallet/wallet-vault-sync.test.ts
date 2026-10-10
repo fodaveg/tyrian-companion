@@ -273,6 +273,29 @@ describe('wallet Vault preview and apply', () => {
 		expect(vault.contents).toEqual(before);
 	});
 
+	it('shares the running apply with a second call for the same plan', async () => {
+		const vault = new MemoryWalletVault();
+		const service = new WalletVaultSyncService(vault, CONFIG_DIR);
+		const plan = await service.preview(ROOT, threeCurrencyInput());
+		const first = service.apply(plan);
+		const second = service.apply(structuredClone(plan));
+		expect(second).toBe(first);
+		expect(await first).toMatchObject({ status: 'applied', created: 3 });
+		expect(vault.markdownFiles()).toHaveLength(3);
+	});
+
+	it('does not hand the running apply result to a second call with a different plan', async () => {
+		const vault = new MemoryWalletVault();
+		const service = new WalletVaultSyncService(vault, CONFIG_DIR);
+		const running = await service.preview(ROOT, threeCurrencyInput());
+		const other = await service.preview(ROOT, oneCurrencyInput());
+		const first = service.apply(running);
+		const second = await service.apply(other);
+		expect(second).toEqual({ status: 'invalid', message: 'Another wallet plan is already being applied.' });
+		expect(await first).toMatchObject({ status: 'applied', created: 3 });
+		expect(vault.markdownFiles()).toHaveLength(3);
+	});
+
 	it('leaves legacy gw2 currency notes untouched and creates separate owned notes', async () => {
 		const legacyPath = '02 - Areas/Guild Wars 2/Wiki/Wallet/legacy.md';
 		const legacy = '---\ngw2_super_type: currency\ngw2_id: 1\ngw2_amount: 7\n---\n# Legacy\n';

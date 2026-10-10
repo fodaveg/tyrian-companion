@@ -170,6 +170,8 @@ export class WalletVaultCaptureService {
 /** Plans and applies only versioned Tyrian wallet notes below one portable Vault root. */
 export class WalletVaultSyncService {
 	private flight: Promise<WalletVaultSyncResult> | null = null;
+	/** The plan the running `flight` applies: a second call only shares its result for the same plan. */
+	private flightPlanKey: string | null = null;
 
 	constructor(
 		private readonly vault: WalletVaultPort,
@@ -244,11 +246,20 @@ export class WalletVaultSyncService {
 	}
 
 	apply(plan: WalletVaultSyncPlan): Promise<WalletVaultSyncResult> {
-		if (this.flight) return this.flight;
+		const planKey = JSON.stringify(plan);
+		if (this.flight) {
+			return this.flightPlanKey === planKey
+				? this.flight
+				: Promise.resolve({ status: 'invalid', message: 'Another wallet plan is already being applied.' });
+		}
 		const flight = this.applyInternal(plan).finally(() => {
-			if (this.flight === flight) this.flight = null;
+			if (this.flight === flight) {
+				this.flight = null;
+				this.flightPlanKey = null;
+			}
 		});
 		this.flight = flight;
+		this.flightPlanKey = planKey;
 		return flight;
 	}
 
