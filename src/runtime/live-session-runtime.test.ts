@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { LiveSessionRuntime, type LiveSessionRuntimePort } from './live-session-facade';
+import { LiveSessionRuntime, type LiveSessionRuntimePort } from './live-session-runtime';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { DEFAULT_SETTINGS } from '../core/settings';
 import { SESSION_STATE_VERSION } from '../sessions/session';

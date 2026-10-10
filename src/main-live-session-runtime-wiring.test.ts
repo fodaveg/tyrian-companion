@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import { LiveSessionRuntime } from './runtime/live-session-facade';
+import { LiveSessionRuntime } from './runtime/live-session-runtime';
 import type { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import { LiveSessionLifecycle } from './sessions/live-session-lifecycle';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
@@ -15,7 +15,7 @@ import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harnes
 /**
  * DE-01, step 3c: the core's side of `LiveSessionRuntime`, over the real core and its real
  * `initializeRuntime`. The runtime's own behaviour is tested on its own
- * (`src/runtime/live-session-facade.test.ts`); this file proves that each of the core's 14 facade
+ * (`src/runtime/live-session-runtime.test.ts`); this file proves that each of the core's 14 facade
  * methods (`FACADE`) reaches it with the view's arguments and answers what it answers, and that the
  * port reads the core as it stands (before and after the boot builds the services) and writes the
  * summary's fields back to the core's own.

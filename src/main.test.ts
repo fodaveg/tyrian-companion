@@ -14,7 +14,7 @@ vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
 
 import TyrianCompanionPlugin from './main';
 import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
-import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-facade';
+import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -2049,7 +2049,7 @@ interface RuntimeReadyHarness {
 
 describe('deferred runtime boot guard', () => {
 	// DE-01, step 3c: the session state's half moved with `getSessionState` to
-	// `src/runtime/live-session-facade.test.ts`.
+	// `src/runtime/live-session-runtime.test.ts`.
 	it('answers connection and session state neutrally instead of touching an unassigned service', () => {
 		const harness: RuntimeReadyHarness = { runtimeReady: false };
 		const getConnectionState = (TyrianCompanionCore.prototype as unknown as {
@@ -2758,7 +2758,7 @@ function buildManagedAssetsRootHarness(
 }
 
 // DE-01, step 3c: 'recovery backend failure observability (H15.6)' moved with `performRecoverSession` to
-// `src/runtime/live-session-facade.test.ts`.
+// `src/runtime/live-session-runtime.test.ts`.
 
 describe('capture-now failure observability (H15.9)', () => {
 	/**

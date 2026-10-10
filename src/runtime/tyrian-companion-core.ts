@@ -163,7 +163,12 @@ import {
 } from './core-sale-rules';
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
-import { LiveSessionRuntime, type LiveSessionRuntimePort } from './live-session-facade';
+import {
+	LiveSessionRuntime,
+	type LiveSessionRuntimePort,
+	type PendingIntentClaim,
+	type SessionSummarySaveState,
+} from './live-session-runtime';
 import { CollectorHeartbeat } from './collector-status';
 import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
@@ -234,7 +239,7 @@ import type {
 } from '../sessions/pilot-metrics-model';
 import type { PilotMetricsRecorder, PilotMetricsState } from '../sessions/pilot-metrics-recorder';
 import type { PendingProposalService, ProposalQueueState } from '../sessions/pending-proposal-service';
-import { proposalIntent, sameProposalIntent, type PendingProposal, type PendingProposalIntent } from '../sessions/pending-proposal-model';
+import { proposalIntent, sameProposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
 import type { PendingProposalRenewalRegistry } from '../sessions/pending-proposal-renewal';
 import type { LootPresentationV1 } from '../sessions/loot-presentation';
 import { LootPresentationCache } from '../sessions/loot-presentation-cache';
@@ -520,7 +525,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private farmingSessionContext: FarmingSessionContext | null = null;
 	private farmingGroupContext: FarmingGroupContext = null;
 	private farmingReminders: FarmingManualReminder[] = [];
-	private sessionSummarySaveState: 'unknown' | 'saving' | 'saved' | 'failed' = 'unknown';
+	private sessionSummarySaveState: SessionSummarySaveState = 'unknown';
 	private storedSessionLootSummary: StoredSessionLootSummary | null = null;
 	/** Economic evidence measured for the completed session on screen, or `null` while unmeasured. */
 	private sessionEconomy: { key: string; evidence: SessionEconomyEvidence } | null = null;
@@ -3663,7 +3668,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.reconcileManagedAssetsRoot();
 	}
 
-	getSessionSummarySaveState(): 'unknown' | 'saving' | 'saved' | 'failed' {
+	getSessionSummarySaveState(): SessionSummarySaveState {
 		return this.sessionSummarySaveState;
 	}
 
@@ -5379,11 +5384,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		refreshBackgroundStatus(this.mountedViews.companion.current());
 	}
 
-	private async acquirePendingIntent(intent: PendingProposalIntent): Promise<{
-		proposal: PendingProposal;
-		operationId: string;
-		stopRenewal: () => void;
-	}> {
+	private async acquirePendingIntent(intent: PendingProposalIntent): Promise<PendingIntentClaim> {
 		await this.reconcilePendingProposals();
 		const operationId = crypto.randomUUID();
 		const claimed = await this.pendingProposals.claim(intent, operationId);

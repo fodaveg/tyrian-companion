@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { DEFAULT_SETTINGS } from './core/settings';
-import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-facade';
+import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 
 /**

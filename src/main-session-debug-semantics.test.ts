@@ -4,7 +4,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
-import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-facade';
+import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import type { SessionLeaseCoordinator } from './sessions/manual-session-start-service';
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';

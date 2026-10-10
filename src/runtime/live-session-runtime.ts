@@ -26,9 +26,10 @@
  * It hands all of that through `LiveSessionRuntimePort`; the getters below carry the names of the
  * core's own fields, so the moved code reads as it did there.
  *
- * Not named `live-session-runtime.ts`: `scripts/security-scan.mjs` treats any file whose name holds
- * `session-runtime` as a persisted-session boundary, and this module persists nothing of its own; the
- * stores and the note writer it reaches are the core's, through the port.
+ * Its name holds `session-runtime`, so `scripts/security-scan.mjs` treats it as a persisted-session
+ * boundary and `security-boundary.test.ts` keeps the account key and its providers out of it: it
+ * orchestrates the session note's writes (the abandoned note, the summary after a stop), even though
+ * the stores and the note writer it reaches are the core's, through the port.
  */
 import type { StorageDelta } from '../account/storage-delta-model';
 import { ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS } from '../alerts/alert-contract';
