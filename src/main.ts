@@ -26,11 +26,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.companionCore;
 	}
 
-	async onload(): Promise<void> {
+	override async onload(): Promise<void> {
 		await this.core.start();
 	}
 
-	onunload(): void {
+	override onunload(): void {
 		this.core.onunload();
 	}
 }

@@ -964,7 +964,7 @@ function confirmManagedAssetsRemoval(ui: TyrianModalUi, t: (key: TranslationKey)
 	return new Promise((resolve) => {
 		let settled = false;
 		const modal = new class extends TyrianModal {
-			protected title(): string { return t(action === 'replace' ? 'settings.replace.title' : 'settings.remove.title'); }
+			protected override title(): string { return t(action === 'replace' ? 'settings.replace.title' : 'settings.remove.title'); }
 
 			onOpen(): void {
 				this.contentEl.createEl('p', { text: t(action === 'replace' ? 'settings.replace.desc' : 'settings.remove.desc') });
@@ -977,7 +977,7 @@ function confirmManagedAssetsRemoval(ui: TyrianModalUi, t: (key: TranslationKey)
 				const remove = actions.createEl('button', { text: t(action === 'replace' ? 'settings.assets.replace' : 'settings.assets.remove'), cls: 'mod-warning' });
 				remove.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
-			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+			override onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
 		}(ui);
 		modal.open();
 	});
@@ -991,7 +991,7 @@ function confirmSessionHistoryScrub(
 	return new Promise((resolve) => {
 		let settled = false;
 		const modal = new class extends TyrianModal {
-			protected title(): string { return t('settings.history.scrubModal.title'); }
+			protected override title(): string { return t('settings.history.scrubModal.title'); }
 
 			onOpen(): void {
 				this.contentEl.createEl('p', {
@@ -1008,7 +1008,7 @@ function confirmSessionHistoryScrub(
 				const scrub = actions.createEl('button', { text: t('settings.history.scrubModal.confirm'), cls: 'mod-warning' });
 				scrub.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
-			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+			override onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
 		}(ui);
 		modal.open();
 	});
@@ -1075,7 +1075,7 @@ function confirmLocalDebugExport(
 	return new Promise((resolve) => {
 		let settled = false;
 		const modal = new class extends TyrianModal {
-			protected title(): string { return t('settings.debug.exportModal.title'); }
+			protected override title(): string { return t('settings.debug.exportModal.title'); }
 
 			onOpen(): void {
 				this.contentEl.createEl('p', { text: t('settings.debug.exportModal.intro') });
@@ -1088,7 +1088,7 @@ function confirmLocalDebugExport(
 				const confirm = actions.createEl('button', { text: t('settings.debug.exportModal.confirm'), cls: 'mod-cta' });
 				confirm.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
-			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+			override onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
 		}(ui);
 		modal.open();
 	});
@@ -1102,7 +1102,7 @@ function confirmLocalDebugClear(
 	return new Promise((resolve) => {
 		let settled = false;
 		const modal = new class extends TyrianModal {
-			protected title(): string { return t('settings.debug.clearModal.title'); }
+			protected override title(): string { return t('settings.debug.clearModal.title'); }
 
 			onOpen(): void {
 				this.contentEl.createEl('p', { text: t('settings.debug.clearModal.desc') });
@@ -1111,7 +1111,7 @@ function confirmLocalDebugClear(
 				const clear = actions.createEl('button', { text: t('settings.debug.clearModal.confirm'), cls: 'mod-warning' });
 				clear.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
-			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+			override onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
 		}(ui);
 		modal.open();
 	});

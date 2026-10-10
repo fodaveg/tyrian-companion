@@ -1905,11 +1905,11 @@ export class ConfirmDiscardSessionModal extends TyrianModal {
 		super(ui);
 	}
 
-	onClose(): void {
+	override onClose(): void {
 		this.onClosed();
 	}
 
-	protected title(): string {
+	protected override title(): string {
 		return runtimeText(this.getLocale(), 'modal.discardTitle');
 	}
 
@@ -1946,11 +1946,11 @@ export class ConfirmDiscardUnreadableSessionModal extends TyrianModal {
 		super(ui);
 	}
 
-	onClose(): void {
+	override onClose(): void {
 		this.onClosed();
 	}
 
-	protected title(): string {
+	protected override title(): string {
 		return runtimeText(this.getLocale(), 'modal.discardUnreadableTitle');
 	}
 
@@ -1981,7 +1981,7 @@ export class ConfirmClearCompletedSessionModal extends TyrianModal {
 		super(ui);
 	}
 
-	protected title(): string {
+	protected override title(): string {
 		return runtimeText(this.getLocale(), 'modal.clearTitle');
 	}
 
@@ -2001,7 +2001,7 @@ export class ConfirmClearCompletedSessionModal extends TyrianModal {
 		cancel.focus();
 	}
 
-	onClose(): void {
+	override onClose(): void {
 		this.onClosed();
 	}
 }
@@ -2021,7 +2021,7 @@ export class ConfirmAbandonSessionModal extends TyrianModal {
 		super(ui);
 	}
 
-	protected title(): string {
+	protected override title(): string {
 		return runtimeText(this.getLocale(), 'modal.abandonTitle');
 	}
 
@@ -2039,7 +2039,7 @@ export class ConfirmAbandonSessionModal extends TyrianModal {
 		cancel.focus();
 	}
 
-	onClose(): void {
+	override onClose(): void {
 		this.onClosed();
 	}
 }
@@ -2054,7 +2054,7 @@ class DetectionCorrectionModal extends TyrianModal {
 		super(ui);
 	}
 
-	protected title(): string {
+	protected override title(): string {
 		return runtimeText(this.getLocale(), this.phase === 'start' ? 'modal.correctionStartTitle' : 'modal.correctionStopTitle');
 	}
 
