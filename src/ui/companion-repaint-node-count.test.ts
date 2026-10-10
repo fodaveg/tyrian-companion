@@ -166,7 +166,7 @@ describe('Durable history: accessibility across a repaint', () => {
 	// there the repainted surface is the shell's `<main>`, not the view's own `contentEl`.
 	it.each([
 		{ name: 'without the product shell', shell: false, nav: [] },
-		{ name: 'under the product shell', shell: true, nav: ['button:Sesión', 'button:Inventario', 'button:Venta', 'button:'] },
+		{ name: 'under the product shell', shell: true, nav: ['button:Sesión', 'button:Inventario', 'button:Venta', 'button:Logros', 'button:'] },
 	])('keeps the focus on "Actualizar historial", and the same roles, scopes and tab order, $name', async ({ shell, nav }) => {
 		const actionController = shellController();
 		const companion = await idleCompanion(

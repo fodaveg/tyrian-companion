@@ -90,7 +90,14 @@ export class TrackedProgressService {
 				if ((this.generation.get(vaultId) ?? 0) !== generation) return { status: 'unavailable', reason: 'cancelled' };
 				if (read.status !== 'ok') return read;
 				this.knownAccount.set(vaultId, read.reading.accountRef);
-				return { ...read, saved: await this.store.writeProgress(vaultId, read.reading) };
+				const saved = await this.store.writeProgress(vaultId, read.reading);
+				// The key changed while the reading was being written: what the write left is of the
+				// old key, so it is cleared again and the reading is not answered as good.
+				if ((this.generation.get(vaultId) ?? 0) !== generation) {
+					await this.store.clearProgress(vaultId);
+					return { status: 'unavailable', reason: 'cancelled' };
+				}
+				return { ...read, saved };
 			} finally {
 				// Only this flight's slot: after a `clearProgress` the slot is empty or a newer flight's.
 				if ((this.generation.get(vaultId) ?? 0) === generation) this.inFlight.delete(vaultId);

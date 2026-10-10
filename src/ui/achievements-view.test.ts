@@ -64,9 +64,22 @@ function harness(options: {
 	detailsStale?: boolean;
 	refresh?: TrackedProgressRefreshResult;
 	saveRefused?: boolean;
+	/** The toggle rejects (a save that threw and was not caught): the view must survive it. */
+	saveThrows?: boolean;
+	/** Every save waits until `releaseSaves()`; the list is updated only then, in order. */
+	holdSaves?: boolean;
+	/** The catalog lists wait until `releaseCatalog()`. */
+	holdCatalog?: boolean;
+	/** The index build waits until `releaseBuild()`. */
+	holdBuild?: boolean;
 	locale?: 'es' | 'en';
 } = {}) {
 	const tracked = [...(options.tracked ?? [])];
+	let readingCleared = false;
+	const gate = () => { let release = () => undefined as void; const wait = new Promise<void>((resolve) => { release = resolve; }); return { wait, release }; };
+	const catalogGate = gate();
+	const buildGate = gate();
+	const pendingSaves: Array<() => void> = [];
 	const timers = {
 		pending: new Map<number, () => void>(),
 		next: 1,
@@ -78,8 +91,8 @@ function harness(options: {
 	const buildSignals: AbortSignal[] = [];
 	let indexReady = options.indexKept === true;
 	const catalog: AchievementCatalogPort = {
-		loadGroups: async () => { calls.push('groups'); return options.catalogFails ? { status: 'unavailable', reason: 'request_failed' } : { status: 'ok', value: GROUPS, freshness: fresh(options.stale) }; },
-		loadCategories: async () => { calls.push('categories'); return options.catalogFails ? { status: 'unavailable', reason: 'request_failed' } : { status: 'ok', value: CATEGORIES, freshness: fresh(options.stale) }; },
+		loadGroups: async () => { calls.push('groups'); if (options.holdCatalog) await catalogGate.wait; return options.catalogFails ? { status: 'unavailable', reason: 'request_failed' } : { status: 'ok', value: GROUPS, freshness: fresh(options.stale) }; },
+		loadCategories: async () => { calls.push('categories'); if (options.holdCatalog) await catalogGate.wait; return options.catalogFails ? { status: 'unavailable', reason: 'request_failed' } : { status: 'ok', value: CATEGORIES, freshness: fresh(options.stale) }; },
 		loadIndex: async () => { calls.push('loadIndex'); return indexReady ? { status: 'ready', total: INDEX.length, freshness: fresh() } : { status: 'not_built', done: 0, total: INDEX.length }; },
 		buildIndex: async (_locale, buildOptions: AchievementIndexBuildOptions = {}): Promise<AchievementIndexBuildResult> => {
 			calls.push('buildIndex');
@@ -87,6 +100,7 @@ function harness(options: {
 			buildOptions.onProgress?.({ done: 0, total: 450 });
 			buildOptions.onProgress?.({ done: 200, total: 450 });
 			await Promise.resolve();
+			if (options.holdBuild) await buildGate.wait;
 			if (buildOptions.signal?.aborted === true) return { status: 'cancelled', done: 200, total: 450 };
 			if (options.indexFails) return { status: 'failed', reason: 'request_failed', done: 200, total: 450 };
 			buildOptions.onProgress?.({ done: 450, total: 450 });
@@ -114,7 +128,7 @@ function harness(options: {
 		refresh: async (vaultId, ids) => { const result = await refresh(vaultId, ids); if (result.status === 'ok') verified = true; return result; },
 		lastReading: async () => {
 			calls.push('lastReading');
-			if (options.noReading) return null;
+			if (options.noReading || readingCleared) return null;
 			return {
 				accountVerified: verified,
 				reading: { accountRef: 'a'.repeat(24), capturedAt: new Date(NOW - 5 * 60_000).toISOString(), trackedIds: options.readingIds ?? tracked, entries: options.entries ?? [] },
@@ -125,15 +139,21 @@ function harness(options: {
 	let starting = options.starting ?? false;
 	const openSettings = vi.fn();
 	const openExternal = vi.fn();
-	const setTracked = vi.fn(async (ids: readonly number[]) => {
-		if (options.saveRefused) return false;
-		tracked.splice(0, tracked.length, ...ids);
-		return true;
+	/** The core's toggle: computes the list from what is saved, in order, as `toggleTrackedAchievement` does. */
+	const toggle = vi.fn(async (id: number, follow: boolean) => {
+		if (options.holdSaves) await new Promise<void>((resolve) => { pendingSaves.push(resolve); });
+		if (options.saveThrows) throw new Error('The settings could not be written.');
+		if (options.saveRefused) return 'refused' as const;
+		const without = tracked.filter((candidate) => candidate !== id);
+		const next = follow ? [...without, id] : without;
+		if (next.length > 100) return 'limit' as const;
+		tracked.splice(0, tracked.length, ...next);
+		return 'saved' as const;
 	});
 	const actions: AchievementsViewActions = {
 		getLocale: () => options.locale ?? 'es',
 		getTrackedAchievementIds: () => [...tracked],
-		setTrackedAchievementIds: setTracked,
+		toggleTrackedAchievement: toggle,
 		getAchievementsServices: () => (starting ? null : services),
 		hasConfiguredApiKey: () => options.hasKey ?? true,
 		openProductSettings: openSettings,
@@ -142,8 +162,13 @@ function harness(options: {
 	const container = document.body.appendChild(document.createElement('div'));
 	const view = new AchievementsView(container, actions, { now: () => NOW, timers });
 	return {
-		view, container, timers, calls, refresh, setTracked, openSettings, openExternal, buildSignals, tracked,
+		view, container, timers, calls, refresh, toggle, openSettings, openExternal, buildSignals, tracked,
 		ready: () => { starting = false; },
+		/** The key changed: the core forgot the kept reading (`clearProgress`); the view is told by `refresh()`. */
+		clearReading: () => { readingCleared = true; },
+		releaseCatalog: () => { catalogGate.release(); },
+		releaseBuild: () => { buildGate.release(); },
+		releaseSaves: () => { for (const release of pendingSaves.splice(0)) release(); },
 		async settle() { for (let round = 0; round < 6; round += 1) await Promise.resolve(); },
 		async search(text: string) {
 			const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
@@ -175,6 +200,7 @@ describe('AchievementsView: no call with the key except the button (docs/PRODUCT
 		h.view.refresh();
 		h.view.setVisible(false);
 		h.view.setVisible(true);
+		h.view.refresh();
 		await h.settle();
 		expect(h.refresh).not.toHaveBeenCalled();
 		expect(h.calls.filter((call) => call === 'REFRESH')).toEqual([]);
@@ -268,6 +294,37 @@ describe('AchievementsView: the search', () => {
 		expect(failing.calls.filter((call) => call === 'buildIndex')).toHaveLength(2);
 	});
 
+	it('a text typed before the catalog arrived is searched as soon as it does', async () => {
+		const h = harness({ holdCatalog: true });
+		h.view.mount();
+		await h.settle();
+		await h.search('logro 2');
+		expect(h.results()).toEqual([]);
+		h.releaseCatalog();
+		await h.settle();
+		h.timers.flush();
+		await h.settle();
+		expect(h.results().map((row) => row.querySelector('strong')?.textContent)).toEqual(['Logro 2']);
+	});
+
+	it('a text shortened to one letter while the index was being built paints no results when it ends', async () => {
+		const h = harness({ holdBuild: true });
+		h.view.mount();
+		await h.settle();
+		const input = h.container.querySelector<HTMLInputElement>('input[type="search"]')!;
+		input.value = 'lo';
+		input.dispatchEvent(new Event('input'));
+		h.timers.flush();
+		expect(h.calls.filter((call) => call === 'buildIndex')).toHaveLength(1);
+		input.value = 'l';
+		input.dispatchEvent(new Event('input'));
+		h.timers.flush();
+		h.releaseBuild();
+		await h.settle();
+		expect(h.results()).toEqual([]);
+		expect(h.container.querySelector('.tyrian-achievements__search-status')?.textContent).toBe('Escribe 2 letras o más, o elige una categoría.');
+	});
+
 	it('cancels its wait on the build and the pending search when unmounted', async () => {
 		const h = harness();
 		h.view.mount();
@@ -297,7 +354,7 @@ describe('AchievementsView: following', () => {
 		button.focus();
 		button.click();
 		await h.settle();
-		expect(h.setTracked).toHaveBeenCalledWith([2]);
+		expect(h.toggle).toHaveBeenCalledWith(2, true);
 		const repainted = h.results()[0]!.querySelector('button')!;
 		expect([repainted.textContent, repainted.getAttribute('aria-pressed')]).toEqual(['Siguiendo', 'true']);
 		expect(document.activeElement).toBe(repainted);
@@ -309,7 +366,7 @@ describe('AchievementsView: following', () => {
 		// Pressing again unfollows from the same button.
 		repainted.click();
 		await h.settle();
-		expect(h.setTracked).toHaveBeenLastCalledWith([]);
+		expect(h.toggle).toHaveBeenLastCalledWith(2, false);
 		expect(h.items()).toEqual([]);
 		expect(h.text()).toContain('No sigues ningún logro todavía. Búscalo arriba y pulsa «Seguir».');
 	});
@@ -321,7 +378,7 @@ describe('AchievementsView: following', () => {
 		await full.search('logro 1');
 		full.results()[0]!.querySelector('button')!.click();
 		await full.settle();
-		expect(full.setTracked).not.toHaveBeenCalled();
+		expect(full.toggle).not.toHaveBeenCalled();
 		expect(full.live()).toBe('Como máximo se siguen 100 logros. Deja de seguir alguno para añadir otro.');
 
 		const refused = harness({ saveRefused: true });
@@ -332,6 +389,47 @@ describe('AchievementsView: following', () => {
 		await refused.settle();
 		expect(refused.live()).toBe('No se pudo guardar la lista de seguidos.');
 		expect(refused.results()[0]!.querySelector('button')!.getAttribute('aria-pressed')).toBe('false');
+	});
+
+	it('two quick follows ask the core for each id, never for a list computed from a stale one, and both end up followed', async () => {
+		const h = harness({ holdSaves: true });
+		h.view.mount();
+		await h.settle();
+		await h.search('logro');
+		h.results()[0]!.querySelector('button')!.click();
+		h.results()[1]!.querySelector('button')!.click();
+		await h.settle();
+		expect(h.toggle.mock.calls).toEqual([[1, true], [2, true]]);
+		h.releaseSaves();
+		await h.settle();
+		expect(h.tracked).toEqual([1, 2]);
+		expect(h.items().map((item) => item.dataset.id)).toEqual(['1', '2']);
+	});
+
+	it('a save that throws leaves the button usable and says the failure in the live region, with nothing rejected', async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (event: Event) => { unhandled.push(event); event.preventDefault(); };
+		window.addEventListener('unhandledrejection', onUnhandled);
+		try {
+			const h = harness({ saveThrows: true, tracked: [3] });
+			h.view.mount();
+			await h.settle();
+			await h.search('logro 1');
+			const button = h.results()[0]!.querySelector('button')!;
+			button.click();
+			expect(button.disabled).toBe(true);
+			await h.settle();
+			expect(button.disabled).toBe(false);
+			expect(h.live()).toBe('No se pudo guardar la lista de seguidos.');
+			h.items()[0]!.querySelector('button')!.click();
+			await h.settle();
+			expect(h.live()).toBe('No se pudo guardar la lista de seguidos.');
+			expect(h.items()).toHaveLength(1);
+			await new Promise((resolve) => { window.setTimeout(resolve, 0); });
+			expect(unhandled).toEqual([]);
+		} finally {
+			window.removeEventListener('unhandledrejection', onUnhandled);
+		}
 	});
 
 	it('unfollowing from the list moves the focus to the next achievement, and to the heading from the last one', async () => {
@@ -476,6 +574,25 @@ describe('AchievementsView: the states of the section', () => {
 		}
 		// The kept reading stays on screen.
 		expect(h.items()).toHaveLength(1);
+	});
+
+	it('when the key changes, a refresh reads the kept reading again (store only) and the section says «sin leer» for the old account\'s progress', async () => {
+		const h = harness({ tracked: [1], entries: [{ id: 1, done: false, current: 1, max: 4, repeated: null, bits: [1] }] });
+		h.view.mount();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__reading')?.textContent).toBe('Leído hace 5 minutos');
+		expect(h.items()[0]!.dataset.status).toBe('in_progress');
+		const detailsBefore = h.calls.filter((call) => call.startsWith('details:')).length;
+
+		// The core forgot the reading (clearProgress) and repaints the section: same ids, same locale, same vault.
+		h.clearReading();
+		h.view.refresh();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__reading')?.textContent).toBe('Progreso sin leer. Pulsa «Actualizar progreso» para leerlo con tu clave.');
+		expect(h.items()[0]!.dataset.status).toBe('unread');
+		// The details are the catalog's and were cached; the reading was asked again; the key was never used.
+		expect(h.calls.filter((call) => call.startsWith('details:')).length).toBe(detailsBefore);
+		expect(h.refresh).not.toHaveBeenCalled();
 	});
 
 	it('a reading kept from before a restart is shown as unverified, and nothing read at all says so', async () => {

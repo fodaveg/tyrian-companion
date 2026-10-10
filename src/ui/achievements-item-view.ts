@@ -60,11 +60,17 @@ export class AchievementsItemView {
 		this.render();
 	}
 
-	/** The host hid this section, or showed it again, without unmounting it. Hidden, nothing is painted; shown again, the view reads again. */
+	/**
+	 * The host hid this section, or showed it again, without unmounting it. Hidden, a `render()` asked
+	 * for meanwhile paints nothing. Shown again, it repaints once whether or not one was asked for
+	 * (`sale-item-view.ts` does the same): the language or the key may have changed while nobody
+	 * looked, and the shell and the view follow them in `render`.
+	 */
 	setVisible(visible: boolean): void {
 		if (visible === !this.sectionHidden) return;
 		this.sectionHidden = !visible;
 		this.view?.setVisible(visible);
+		if (visible) this.render();
 	}
 
 	/** Stops the view's loads and waits (the index build, the search debounce). Idempotent; the runtime calls it on unload. */

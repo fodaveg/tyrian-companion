@@ -19,19 +19,21 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		expect(actionSource).toContain("'open-inventory-advisor',");
 		expect(actionSource).toContain("'refresh-inventory-advisor',");
 		// H18.32 review fix (26 sep 2026): a third open-* surface (Venta) joined open-companion and
-		// open-inventory-advisor. The property this whole test protects — opening a surface only
-		// navigates, an explicit refresh is the one thing that captures — has to hold for it too, so
-		// this asserts the full three-way state/navigate mapping, not just the two-way one that
-		// predates it.
-		expect(source).toContain("id === 'open-companion' || id === 'open-inventory-advisor' || id === 'open-sale'");
+		// open-inventory-advisor, and L2 (0.6.30) a fourth (Logros). The property this whole test
+		// protects — opening a surface only navigates, an explicit refresh is the one thing that
+		// captures — has to hold for each of them, so this asserts the full four-way state/navigate
+		// mapping, not just the two-way one that predates it.
+		expect(source).toContain("id === 'open-companion' || id === 'open-inventory-advisor' || id === 'open-sale' || id === 'open-achievements'");
 		expect(source).toContain(
 			"const state = id === 'open-companion' ? 'open_companion'\n"
-			+ "\t\t\t\t: id === 'open-inventory-advisor' ? 'open_inventory_advisor' : 'open_sale';",
+			+ "\t\t\t\t: id === 'open-inventory-advisor' ? 'open_inventory_advisor'\n"
+			+ "\t\t\t\t\t: id === 'open-sale' ? 'open_sale' : 'open_achievements';",
 		);
 		expect(source).toContain(
 			"const navigate = id === 'open-companion' ? () => this.activateView()\n"
 			+ "\t\t\t\t: id === 'open-inventory-advisor' ? () => this.activateInventoryAdvisorView()\n"
-			+ "\t\t\t\t\t: () => this.activateSaleView();",
+			+ "\t\t\t\t\t: id === 'open-sale' ? () => this.activateSaleView()\n"
+			+ "\t\t\t\t\t\t: () => this.activateAchievementsView();",
 		);
 		expect(source).toContain("else if (id === 'refresh-inventory-advisor') await this.refreshInventoryAdvisor();");
 		expect(source).toContain('registerProductActionPalette(');

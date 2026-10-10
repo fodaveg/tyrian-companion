@@ -614,6 +614,21 @@ function inventoryVaultSyncPlanSummarySnapshot(value: unknown): InventoryVaultSy
 /** Backwards-compatible alias for callers that normalize partial settings updates. */
 export const normalizeSettings = migrateSettings;
 
+/**
+ * A settings edit computed over what is really saved, inside the serialized write, instead of a
+ * patch fixed when the edit was asked for: a toggle of one id in a list (`toggleTrackedAchievement`)
+ * must merge over the list the previous toggle just wrote, or two quick toggles lose each other.
+ * `keys` names what it changes, for the log.
+ */
+export interface SettingsPatchOverBase {
+	readonly keys: readonly (keyof TyrianSettings)[];
+	compute(base: TyrianSettings): Partial<TyrianSettings>;
+}
+
+export function isSettingsPatchOverBase(value: Partial<TyrianSettings> | SettingsPatchOverBase): value is SettingsPatchOverBase {
+	return typeof (value as SettingsPatchOverBase).compute === 'function' && Array.isArray((value as SettingsPatchOverBase).keys);
+}
+
 /** Merges a user-initiated update, clearing a legacy path only when its safe replacement is explicit. */
 export function mergeSettingsUpdate(
 	current: TyrianSettings,

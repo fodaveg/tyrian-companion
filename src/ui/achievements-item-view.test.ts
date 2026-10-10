@@ -14,21 +14,26 @@ function harness(options: { hostLists?: boolean; locale?: 'es' | 'en'; hasKey?: 
 	const run = vi.fn(async () => 'completed' as const);
 	const controller = { run, refresh: vi.fn() } as unknown as ProductActionController;
 	let locale: 'es' | 'en' = options.locale ?? 'es';
+	let hasKey = options.hasKey ?? true;
 	const openSettings = vi.fn();
 	const actions: AchievementsItemViewActions = {
 		getLocale: () => locale,
 		getTrackedAchievementIds: () => [],
-		setTrackedAchievementIds: async () => true,
+		toggleTrackedAchievement: async () => 'saved',
 		// Still starting: no service, so nothing is asked of anybody while the shell is measured.
 		getAchievementsServices: () => null,
-		hasConfiguredApiKey: () => options.hasKey ?? true,
+		hasConfiguredApiKey: () => hasKey,
 		openProductSettings: openSettings,
 		getProductActionController: () => controller,
 		hostListsSections: () => options.hostLists ?? false,
 	};
 	const contentEl = document.body.appendChild(document.createElement('div'));
 	const view = new AchievementsItemView(contentEl, { setIcon: vi.fn() }, actions);
-	return { view, contentEl, run, openSettings, setLocale: (next: 'es' | 'en') => { locale = next; } };
+	return {
+		view, contentEl, run, openSettings,
+		setLocale: (next: 'es' | 'en') => { locale = next; },
+		removeKey: () => { hasKey = false; },
+	};
 }
 
 beforeAll(() => { installDomHelpers(window); });
@@ -64,6 +69,26 @@ describe('AchievementsItemView', () => {
 		expect(warning.getAttribute('role')).toBe('alert');
 		warning.querySelector('button')!.click();
 		expect(openSettings).toHaveBeenCalledOnce();
+	});
+
+	it('shown again after a language change and the key removed while hidden, it comes back in the new language with the key warning', async () => {
+		const { view, contentEl, setLocale, removeKey } = harness();
+		await view.onOpen();
+		expect(contentEl.querySelector('.tyrian-achievements__refresh')?.textContent).toBe('Actualizar progreso');
+		expect(contentEl.querySelector('.tyrian-product-shell__attention')).toBeNull();
+
+		view.setVisible(false);
+		setLocale('en');
+		removeKey();
+		// The core repaints on both changes; hidden, the section paints nothing.
+		view.render();
+		view.render();
+		expect(contentEl.querySelector('.tyrian-achievements__refresh')?.textContent).toBe('Actualizar progreso');
+
+		view.setVisible(true);
+		expect(contentEl.querySelector('.tyrian-achievements__refresh')?.textContent).toBe('Update progress');
+		expect(contentEl.querySelector('.tyrian-product-shell__attention')?.textContent).toContain('API key not linked');
+		expect(contentEl.querySelectorAll('.tyrian-achievements')).toHaveLength(1);
 	});
 
 	it('remakes the view on a language change and refreshes it otherwise; hidden it paints nothing; closed it is empty', async () => {

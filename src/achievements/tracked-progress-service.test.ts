@@ -11,16 +11,19 @@ const VAULT = 'vault-a';
 class MemoryProgressStore implements TrackedProgressStore {
 	readonly records = new Map<string, StoredTrackedProgress>();
 	failWrites = false;
+	/** Every write waits on it, as a slow IndexedDB would. */
+	holdWrites: Promise<void> | null = null;
 
 	readProgress(vaultId: string, accountRef: string | null): Promise<StoredTrackedProgress | null> {
 		const record = this.records.get(vaultId) ?? null;
 		return Promise.resolve(record !== null && accountRef !== null && record.accountRef !== accountRef ? null : record);
 	}
 
-	writeProgress(vaultId: string, progress: StoredTrackedProgress): Promise<boolean> {
-		if (this.failWrites) return Promise.resolve(false);
+	async writeProgress(vaultId: string, progress: StoredTrackedProgress): Promise<boolean> {
+		if (this.holdWrites) await this.holdWrites;
+		if (this.failWrites) return false;
 		this.records.set(vaultId, structuredClone(progress));
-		return Promise.resolve(true);
+		return true;
 	}
 
 	clearProgress(vaultId: string): Promise<boolean> {
@@ -149,6 +152,22 @@ describe('TrackedProgressService.refresh', () => {
 		expect((await service.refresh(VAULT, [10])).status).toBe('ok');
 		expect(beginOperation).toHaveBeenCalledTimes(3);
 		expect((await service.lastReading(VAULT))?.accountVerified).toBe(true);
+	});
+
+	it('a clearProgress that arrives while the reading is being written discards it too: nothing of it is kept and the answer is cancelled', async () => {
+		const store = new MemoryProgressStore();
+		let release: () => void = () => undefined;
+		store.holdWrites = new Promise<void>((resolve) => { release = resolve; });
+		const { service } = harness({ store });
+		const inFlight = service.refresh(VAULT, [10]);
+		// The account and the list were read; the write is waiting on the store.
+		await new Promise((resolve) => { setTimeout(resolve, 0); });
+		await expect(service.clearProgress(VAULT)).resolves.toBe(true);
+		release();
+
+		expect(await inFlight).toEqual({ status: 'unavailable', reason: 'cancelled' });
+		expect(store.records.has(VAULT)).toBe(false);
+		expect(await service.lastReading(VAULT)).toBeNull();
 	});
 
 	it('runs one refresh per vault at a time: a second call joins it', async () => {

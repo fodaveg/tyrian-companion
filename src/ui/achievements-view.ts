@@ -45,11 +45,22 @@ export interface AchievementsViewServices {
 	readonly vaultId: string;
 }
 
+/**
+ * What following or unfollowing one achievement came to: `saved`; `limit`, the list already holds
+ * `MAX_TRACKED_ACHIEVEMENT_IDS`; `refused`, the settings could not be written (read-only, runtime
+ * starting, or a save that failed and was recorded by the core).
+ */
+export type TrackedAchievementToggleResult = 'saved' | 'limit' | 'refused';
+
 export interface AchievementsViewActions {
 	getLocale(): Locale;
 	getTrackedAchievementIds(): readonly number[];
-	/** Saves the followed list through the settings; false when the save was refused (settings read-only, runtime starting). */
-	setTrackedAchievementIds(ids: readonly number[]): Promise<boolean>;
+	/**
+	 * Follows (`true`) or unfollows one achievement through the settings. The core computes the new
+	 * list from what is saved, inside its serialized write, so two quick calls never lose each other.
+	 * Never rejects.
+	 */
+	toggleTrackedAchievement(id: number, follow: boolean): Promise<TrackedAchievementToggleResult>;
 	/** Null until the runtime has built the services (plugin still starting). */
 	getAchievementsServices(): AchievementsViewServices | null;
 	hasConfiguredApiKey(): boolean;
@@ -111,8 +122,13 @@ export class AchievementsView {
 	private buildAbort: AbortController | null = null;
 	/** Which `loadTracked` is the latest; an older one that finishes later paints nothing. */
 	private trackedLoad = 0;
-	/** The followed ids the painted list was built from, to skip a reload that would change nothing. */
-	private trackedKey: string | null = null;
+	/**
+	 * The catalog details of the followed ids, kept for `detailsKey` (locale, ids, vault): the one
+	 * part of the list that is cached. The kept reading is read again on every load, because the core
+	 * may have forgotten it (the key changed) without any of those three changing.
+	 */
+	private details: AchievementDetailsRead | null = null;
+	private detailsKey: string | null = null;
 	private readonly now: () => number;
 	private readonly debounceMs: number;
 	private readonly timers: NonNullable<AchievementsViewOptions['timers']>;
@@ -208,16 +224,20 @@ export class AchievementsView {
 		this.container.empty();
 	}
 
-	/** The host hid (false) or showed again (true) the section without unmounting it. Shown again, the followed list is read again. */
+	/**
+	 * The host hid (false) or showed again (true) the section without unmounting it. Hidden, a
+	 * `refresh` paints nothing; the controller that owns this view (`AchievementsItemView.render`)
+	 * reads again when it is shown.
+	 */
 	setVisible(visible: boolean): void {
-		if (visible === !this.hidden) return;
 		this.hidden = !visible;
-		if (visible) this.refresh();
 	}
 
 	/**
 	 * The core changed something this view shows (the followed list, the key, the language, the
-	 * runtime becoming ready): reads it again. Never calls the API with the key.
+	 * runtime becoming ready): reads it again. The kept reading is ALWAYS read again (store only):
+	 * after a key change the core has forgotten it, with nothing else changing. Never calls the API
+	 * with the key.
 	 */
 	refresh(): void {
 		if (this.disposed || this.hidden) return;
@@ -252,22 +272,25 @@ export class AchievementsView {
 		this.renderNotice();
 		this.renderSearchStatus();
 		this.renderTracked();
+		// A text typed while the catalog was still arriving is searched now.
+		if (this.wantsSearch()) this.scheduleSearch(0);
 	}
 
 	private async loadTracked(): Promise<void> {
 		const ids = this.actions.getTrackedAchievementIds();
 		const services = this.actions.getAchievementsServices();
-		const key = `${this.actions.getLocale()}:${ids.join(',')}:${services === null ? 'starting' : services.vaultId}`;
-		if (key === this.trackedKey && this.tracked.status === 'ready') { this.renderTracked(); return; }
 		const load = ++this.trackedLoad;
 		if (services === null) { this.tracked = { status: 'loading' }; this.renderTracked(); return; }
 		if (this.tracked.status !== 'ready') this.renderTracked();
 		const locale = this.actions.getLocale();
+		const key = `${locale}:${ids.join(',')}:${services.vaultId}`;
 		const [details, reading] = await Promise.all([
-			services.catalog.loadDetails(locale, ids),
+			this.detailsKey === key && this.details !== null ? this.details : services.catalog.loadDetails(locale, ids),
 			services.progress.lastReading(services.vaultId),
 		]);
 		if (this.disposed || load !== this.trackedLoad) return;
+		this.details = details;
+		this.detailsKey = key;
 		const views = buildTrackedAchievementsView({
 			trackedIds: ids,
 			details: details.details,
@@ -276,7 +299,6 @@ export class AchievementsView {
 			reading: reading === null ? null : { trackedIds: reading.reading.trackedIds, entries: reading.reading.entries },
 		});
 		this.tracked = { status: 'ready', views, details, reading };
-		this.trackedKey = key;
 		this.renderBar();
 		this.renderNotice();
 		this.renderTracked();
@@ -293,7 +315,6 @@ export class AchievementsView {
 		if (this.disposed) return;
 		this.refreshState = result.status === 'ok' ? { status: 'idle' } : { status: 'failed', reason: result.reason };
 		if (result.status === 'ok') {
-			this.trackedKey = null;
 			this.announce(this.t.t('achievements.live.refreshed'));
 			await this.loadTracked();
 		}
@@ -352,6 +373,13 @@ export class AchievementsView {
 			}
 			this.index = { status: 'ready', freshness: built.freshness, saved: built.saved };
 			this.renderNotice();
+			// The text may have shrunk below the minimum while the index was being built.
+			if (!this.wantsSearch()) {
+				this.results = null;
+				this.renderSearchStatus();
+				this.renderResults();
+				return;
+			}
 		}
 		this.results = services.catalog.search(locale, { query: this.query, categoryId: this.categoryId }) ?? [];
 		this.shown = ACHIEVEMENT_RESULTS_PAGE;
@@ -362,30 +390,35 @@ export class AchievementsView {
 
 	// ----- follow / unfollow ---------------------------------------------------------------------
 
+	/**
+	 * Follows or unfollows from a result row. The list itself is the core's to compute, from what is
+	 * saved (`toggleTrackedAchievement`): this only says which id and which way. Never rejects: a save
+	 * that fails is said in the live region, and the button is usable again whatever happened.
+	 */
 	private async follow(entry: AchievementIndexEntry, button: HTMLButtonElement): Promise<void> {
 		const t = this.t;
 		const current = this.actions.getTrackedAchievementIds();
-		const next = current.includes(entry.id) ? current.filter((id) => id !== entry.id) : [...current, entry.id];
-		if (next.length > MAX_TRACKED_ACHIEVEMENT_IDS) { this.announce(t.t('achievements.tracked.limit', { max: MAX_TRACKED_ACHIEVEMENT_IDS })); return; }
+		const follow = !current.includes(entry.id);
+		if (follow && current.length >= MAX_TRACKED_ACHIEVEMENT_IDS) { this.announce(t.t('achievements.tracked.limit', { max: MAX_TRACKED_ACHIEVEMENT_IDS })); return; }
 		button.disabled = true;
-		const saved = await this.actions.setTrackedAchievementIds(next);
-		if (this.disposed) return;
-		button.disabled = false;
-		if (!saved) { this.announce(t.t('achievements.tracked.saveFailed')); return; }
-		this.announce(t.t(next.includes(entry.id) ? 'achievements.live.followed' : 'achievements.live.unfollowed', { name: entry.name }));
-		this.renderResults();
-		// The focus stays where the player was: on the same button, now repainted.
-		this.resultsList.querySelector<HTMLButtonElement>(`button[data-id="${String(entry.id)}"]`)?.focus();
-		await this.loadTracked();
+		try {
+			const result = await this.toggle(entry.id, follow);
+			if (this.disposed || result !== 'saved') return;
+			this.announce(t.t(follow ? 'achievements.live.followed' : 'achievements.live.unfollowed', { name: entry.name }));
+			this.renderResults();
+			// The focus stays where the player was: on the same button, now repainted.
+			this.resultsList.querySelector<HTMLButtonElement>(`button[data-id="${String(entry.id)}"]`)?.focus();
+			await this.loadTracked();
+		} finally {
+			button.disabled = false;
+		}
 	}
 
+	/** Unfollows from the followed list. Never rejects, as `follow`. */
 	private async unfollow(view: TrackedAchievementView, index: number): Promise<void> {
 		const t = this.t;
-		const current = this.actions.getTrackedAchievementIds();
-		const next = current.filter((id) => id !== view.id);
-		const saved = await this.actions.setTrackedAchievementIds(next);
-		if (this.disposed) return;
-		if (!saved) { this.announce(t.t('achievements.tracked.saveFailed')); return; }
+		const result = await this.toggle(view.id, false);
+		if (this.disposed || result !== 'saved') return;
 		this.announce(t.t('achievements.live.unfollowed', { name: this.nameOf(view) }));
 		this.renderResults();
 		await this.loadTracked();
@@ -393,6 +426,25 @@ export class AchievementsView {
 		// The focus goes to the next followed achievement, or to the heading when there is none after it.
 		const items = this.trackedList.querySelectorAll<HTMLElement>('details > summary');
 		(items[index] ?? items[index - 1] ?? this.trackedHeading).focus();
+	}
+
+	/**
+	 * The core's toggle, with every outcome but `saved` said in the live region. A rejection (a save
+	 * that threw; the core records it) is caught here too, so a detached `follow`/`unfollow` never
+	 * leaves a rejected promise behind.
+	 */
+	private async toggle(id: number, follow: boolean): Promise<TrackedAchievementToggleResult> {
+		const t = this.t;
+		let result: TrackedAchievementToggleResult;
+		try {
+			result = await this.actions.toggleTrackedAchievement(id, follow);
+		} catch {
+			result = 'refused';
+		}
+		if (this.disposed) return result;
+		if (result === 'limit') this.announce(t.t('achievements.tracked.limit', { max: MAX_TRACKED_ACHIEVEMENT_IDS }));
+		else if (result === 'refused') this.announce(t.t('achievements.tracked.saveFailed'));
+		return result;
 	}
 
 	// ----- paint ---------------------------------------------------------------------------------

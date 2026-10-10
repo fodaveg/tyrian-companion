@@ -689,6 +689,58 @@ describe('the three sections on a host with a main screen', () => {
 		await runtime.stop();
 	});
 
+	it('toggleTrackedAchievement computes the list inside the serialized write, so two quick follows keep both; a save that throws answers refused', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered, records } = mainScreenHost();
+		const store = { value: { ...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'debug' } as Record<string, unknown> };
+		let hold: Promise<void> | null = null;
+		let fail = false;
+		const saves: Array<readonly number[]> = [];
+		const runtime = createTyrianRuntime({ ...host, settings: {
+			load: async () => store.value,
+			save: async (value) => {
+				if (hold) await hold;
+				if (fail) throw new Error('disk full');
+				store.value = value as Record<string, unknown>;
+				saves.push((value as { trackedAchievementIds: readonly number[] }).trackedAchievementIds);
+			},
+		} });
+		await runtime.start();
+		registered.ready[0]!();
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({ action: 'plugin_load', state: 'runtime_initialize', phase: 'success' }));
+		}, { timeout: 10_000 });
+		saves.length = 0;
+
+		let release: () => void = () => undefined;
+		hold = new Promise<void>((resolve) => { release = resolve; });
+		const first = runtime.toggleTrackedAchievement(10, true);
+		const second = runtime.toggleTrackedAchievement(20, true);
+		release();
+		expect(await Promise.all([first, second])).toEqual(['saved', 'saved']);
+		expect(saves).toEqual([[10], [10, 20]]);
+		expect(runtime.settings.trackedAchievementIds).toEqual([10, 20]);
+		hold = null;
+
+		expect(await runtime.toggleTrackedAchievement(10, false)).toBe('saved');
+		expect(runtime.settings.trackedAchievementIds).toEqual([20]);
+		// The same id again is idempotent, and the 101st is refused as the limit.
+		expect(await runtime.toggleTrackedAchievement(20, true)).toBe('saved');
+		expect(runtime.settings.trackedAchievementIds).toEqual([20]);
+		store.value = { ...store.value, trackedAchievementIds: Array.from({ length: 100 }, (_, index) => 1000 + index) };
+		expect(await runtime.toggleTrackedAchievement(7, true)).toBe('limit');
+		expect(runtime.settings.trackedAchievementIds).not.toContain(7);
+
+		fail = true;
+		await expect(runtime.toggleTrackedAchievement(8, true)).resolves.toBe('refused');
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({ action: 'settings_save', phase: 'failure' }));
+		});
+		await runtime.stop();
+	});
+
 	it('keeps the choice it had, and what it had registered, when the device storage refuses the write', async () => {
 		const failure = new Error('The device storage is full.');
 		const { host, registered, sectionsViews, disposed } = mainScreenHost();

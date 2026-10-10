@@ -202,6 +202,8 @@ import {
 	collectorModeSeed,
 	type CollectorMode,
 	isNewerSettingsSchema,
+	isSettingsPatchOverBase,
+	MAX_TRACKED_ACHIEVEMENT_IDS,
 	mergeSettingsUpdate,
 	migrateSettings,
 	SETTINGS_SCHEMA_VERSION,
@@ -209,6 +211,7 @@ import {
 	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
 	type InventoryVaultSyncLastRun,
+	type SettingsPatchOverBase,
 	type TyrianSettings,
 } from '../core/settings';
 import {
@@ -326,7 +329,7 @@ import {
 import { MountedViews, sectionsViewRegistration, sectionViewRegistration, type TyrianSectionId } from '../ui/mounted-views';
 import { SALE_VIEW_SLOT, SALE_VIEW_TYPE, SaleItemView, saleSection } from '../ui/sale-item-view';
 import { ACHIEVEMENTS_VIEW_SLOT, ACHIEVEMENTS_VIEW_TYPE, AchievementsItemView, achievementsSection } from '../ui/achievements-item-view';
-import type { AchievementsViewServices } from '../ui/achievements-view';
+import type { AchievementsViewServices, TrackedAchievementToggleResult } from '../ui/achievements-view';
 import { assembleAchievements, type AchievementsAssembly } from './assemble-achievements';
 import {
 	buildSaleViewModel,
@@ -2148,10 +2151,31 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.settings.trackedAchievementIds;
 	}
 
-	/** Following and unfollowing go through `updateSettings`, like every edit; false when the save was refused (read-only settings, runtime starting). */
-	async setTrackedAchievementIds(ids: readonly number[]): Promise<boolean> {
-		const result = await this.updateSettings({ trackedAchievementIds: [...ids] });
-		return result.status === 'saved';
+	/**
+	 * Follows or unfollows one achievement through `updateSettings`, like every edit. The new list is
+	 * computed INSIDE the serialized write, from the persisted base, so two quick toggles never lose
+	 * each other (the second merges over what the first wrote). `limit` when the list is full and the
+	 * id is not in it; `refused` when the save was blocked (read-only settings, runtime starting) or
+	 * threw: that failure is already in the log under `settings_save`, so it is not rethrown.
+	 */
+	async toggleTrackedAchievement(id: number, follow: boolean): Promise<TrackedAchievementToggleResult> {
+		let limit = false;
+		try {
+			const result = await this.updateSettings({
+				keys: ['trackedAchievementIds'],
+				compute: (base) => {
+					const without = base.trackedAchievementIds.filter((tracked) => tracked !== id);
+					if (!follow) return { trackedAchievementIds: without };
+					limit = without.length >= MAX_TRACKED_ACHIEVEMENT_IDS;
+					return limit ? {} : { trackedAchievementIds: [...without, id] };
+				},
+			});
+			if (result.status !== 'saved') return 'refused';
+			return limit ? 'limit' : 'saved';
+		} catch {
+			// Recorded by `updateSettings` (`settings_save`, phase failure); the section says it in its live region.
+			return 'refused';
+		}
 	}
 
 	/** The «Logros» services once the runtime built them; null while the plugin is still starting. */
@@ -5715,7 +5739,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		);
 	}
 
-	async updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult> {
+	async updateSettings(settings: Partial<TyrianSettings> | SettingsPatchOverBase): Promise<SettingsUpdateResult> {
 		const debugLoggingWasEnabled = this.settings.debugLoggingEnabled;
 		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<SettingsUpdateResult> => {
 		if (!this.runtimeReady) {
@@ -5750,7 +5774,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			const previousAlertIngameEnabled = this.settings.alertIngameEnabled;
 			const previousAlertIngamePort = this.settings.alertIngamePort;
 			const previousTrackedAchievements = this.settings.trackedAchievementIds.join(',');
-			const nextSettings = mergeSettingsUpdate(base, settings, this.host.vault.configDir, this.host.locale());
+			// A patch over the base is computed here, inside the serialized section, over what is really saved.
+			const patch = isSettingsPatchOverBase(settings) ? settings.compute(base) : settings;
+			const nextSettings = mergeSettingsUpdate(base, patch, this.host.vault.configDir, this.host.locale());
 			const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 			// Publish the new runtime view only after its durable write succeeds. A rejected
 			// save therefore leaves every subsequent Refresh on the last persisted overlay.
@@ -5875,7 +5901,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		try {
 			result = await (this.localDebugActions?.run({
 				component: 'settings', action: 'settings_save',
-				details: { changedKeys: Object.keys(settings).sort() },
+				details: { changedKeys: (isSettingsPatchOverBase(settings) ? [...settings.keys] : Object.keys(settings)).sort() },
 			}, perform) ?? perform());
 		} finally {
 			const debugLoggingIsEnabled = this.settings.debugLoggingEnabled;
