@@ -102,6 +102,7 @@ function harness(options: {
 } = {}) {
 	const tracked = [...(options.tracked ?? [])];
 	let readingCleared = false;
+	let keyRevision = 0;
 	const gate = () => { let release = () => undefined as void; const wait = new Promise<void>((resolve) => { release = resolve; }); return { wait, release }; };
 	const catalogGate = gate();
 	const namesGate = gate();
@@ -208,6 +209,7 @@ function harness(options: {
 		toggleTrackedAchievement: toggle,
 		getAchievementsServices: () => (starting ? null : services),
 		hasConfiguredApiKey: () => options.hasKey ?? true,
+		getApiKeyRevision: () => keyRevision,
 		openProductSettings: openSettings,
 		localDebugAchievementsRefreshFailure: refreshFailure,
 		...(options.noOpenExternal ? {} : { openExternal }),
@@ -221,6 +223,8 @@ function harness(options: {
 		ready: () => { starting = false; },
 		/** The key changed: the core forgot the kept reading (`clearProgress`); the view is told by `refresh()`. */
 		clearReading: () => { readingCleared = true; },
+		/** Another key selected: the core bumps its revision and forgets the kept reading; the view is told by `refresh()`. */
+		changeKey: () => { keyRevision += 1; readingCleared = true; },
 		releaseCatalog: () => { catalogGate.release(); },
 		releaseBuild: () => { buildGate.release(); },
 		releaseSaves: () => { for (const release of pendingSaves.splice(0)) release(); },
@@ -651,6 +655,40 @@ describe('AchievementsView: the states of the section', () => {
 		// The details are the catalog's and were cached; the reading was asked again; the key was never used.
 		expect(h.calls.filter((call) => call.startsWith('details:')).length).toBe(detailsBefore);
 		expect(h.refresh).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['key_rejected', 'La clave API no es válida o fue revocada. Revísala en Ajustes.'],
+		['missing_scope', 'La clave API necesita el permiso «progression» para leer el progreso.'],
+	] as const)('after %s, choosing another key drops what the failure said of the old one; a repaint with the same key keeps it', async (reason, copy) => {
+		const h = harness({ tracked: [1], refresh: { status: 'unavailable', reason } });
+		h.view.mount();
+		await h.settle();
+		h.refreshButton().click();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__notice')?.textContent).toContain(copy);
+		h.view.refresh();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__notice')?.textContent).toContain(copy);
+
+		h.changeKey();
+		h.view.refresh();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__notice')?.textContent).not.toContain(copy);
+		expect(h.container.querySelector('.tyrian-achievements__notice [role="alert"]')).toBeNull();
+		expect(h.refresh).toHaveBeenCalledOnce();
+	});
+
+	it('without a key and with nothing read, the bar says a key is needed instead of pointing to the disabled button', async () => {
+		const es = harness({ tracked: [1], hasKey: false, noReading: true });
+		es.view.mount();
+		await es.settle();
+		expect(es.container.querySelector('.tyrian-achievements__reading')?.textContent).toBe('Progreso sin leer. Hace falta una clave API para leerlo.');
+		expect(es.refreshButton().disabled).toBe(true);
+		const en = harness({ tracked: [1], hasKey: false, noReading: true, locale: 'en' });
+		en.view.mount();
+		await en.settle();
+		expect(en.container.querySelector('.tyrian-achievements__reading')?.textContent).toBe('Progress not read yet. An API key is needed to read it.');
 	});
 
 	it('details that could not be loaded are asked again by «Actualizar progreso», and the warning goes once they arrive', async () => {

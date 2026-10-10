@@ -1031,6 +1031,19 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 		expect(saves[0]).toMatchObject({ pollingIntervalMinutes: 30, apiKeySecret: 'gw2-primary', schemaVersion: SETTINGS_SCHEMA_VERSION });
 	});
 
+	it('bumps the API key revision the «Logros» view reads only when the selected key changes', async () => {
+		const { runtime } = await readyOverStore();
+		const before = runtime.getApiKeyRevision();
+		await runtime.updateSettings({ valuableLootThresholdCopper: 20_000 });
+		expect(runtime.getApiKeyRevision()).toBe(before);
+		await runtime.updateSettings({ apiKeySecret: 'gw2-primary' });
+		expect(runtime.getApiKeyRevision()).toBe(before + 1);
+		await runtime.updateSettings({ apiKeySecret: 'gw2-primary' });
+		expect(runtime.getApiKeyRevision()).toBe(before + 1);
+		await runtime.updateSettings({ apiKeySecret: 'gw2-other' });
+		expect(runtime.getApiKeyRevision()).toBe(before + 2);
+	});
+
 	it('leaves the chain usable when a save rejects', async () => {
 		const { runtime, store } = await readyOverStore();
 		const failure = new Error('The store refuses the write.');

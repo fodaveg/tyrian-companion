@@ -77,6 +77,8 @@ export interface AchievementsViewActions {
 	/** Null until the runtime has built the services (plugin still starting). */
 	getAchievementsServices(): AchievementsViewServices | null;
 	hasConfiguredApiKey(): boolean;
+	/** An opaque count the core bumps when the selected key changes; absent, the view never sees a change. */
+	getApiKeyRevision?(): number;
 	openProductSettings?(): void;
 	/** Opens the wiki link through the host; without it the link is a plain anchor. */
 	openExternal?(url: string): void;
@@ -155,6 +157,8 @@ export class AchievementsView {
 	private index: IndexState = { status: 'idle' };
 	private tracked: TrackedState = { status: 'loading' };
 	private refreshState: RefreshState = { status: 'idle' };
+	/** The key revision `refreshState` speaks of (`AchievementsViewActions.getApiKeyRevision`). */
+	private keyRevision: number;
 	private query = '';
 	private categoryId: number | null = null;
 	private shown = ACHIEVEMENT_RESULTS_PAGE;
@@ -213,6 +217,7 @@ export class AchievementsView {
 		options: AchievementsViewOptions = {},
 	) {
 		this.now = options.now ?? Date.now;
+		this.keyRevision = actions.getApiKeyRevision?.() ?? 0;
 		this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 		this.timers = options.timers ?? {
 			setTimeout: (callback, ms) => container.win.setTimeout(callback, ms),
@@ -313,6 +318,13 @@ export class AchievementsView {
 	 */
 	refresh(): void {
 		if (this.disposed || this.hidden) return;
+		// Another key: what the last failed reading said («revisa la clave», «falta progression») was of
+		// the key no longer selected. A reading in flight is the service's (`cancelled`), not touched here.
+		const keyRevision = this.actions.getApiKeyRevision?.() ?? 0;
+		if (keyRevision !== this.keyRevision) {
+			this.keyRevision = keyRevision;
+			if (this.refreshState.status === 'failed') this.refreshState = { status: 'idle' };
+		}
 		if (this.catalog.status === 'starting') void this.loadCatalog();
 		this.renderBar();
 		this.renderNotice();
@@ -649,7 +661,8 @@ export class AchievementsView {
 		const reading = this.tracked.status === 'ready' ? this.tracked.reading : null;
 		const line = this.bar.createEl('p', { cls: 'tyrian-achievements__reading' });
 		if (reading === null) {
-			line.setText(t.t('achievements.view.unread'));
+			// Without a key the button is disabled: the line does not send the player to it.
+			line.setText(t.t(this.actions.hasConfiguredApiKey() ? 'achievements.view.unread' : 'achievements.view.unreadNoKey'));
 			return;
 		}
 		const ago = relativeTimeLabel(reading.reading.capturedAt, this.actions.getLocale(), this.now());

@@ -561,6 +561,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private walletVaultSync!: WalletVaultSyncController;
 	/** Built with the clients in `initializeRuntime`; null until then. */
 	private leyspringAchievements: LeyspringAchievementsService | null = null;
+	/** Bumped each time the selected API key changes; see `getApiKeyRevision`. */
+	private apiKeyRevision = 0;
 	/** The «Logros» section's store and services (`assemble-achievements.ts`); null until `initializeRuntime` and after unload. */
 	private achievements: AchievementsAssembly | null = null;
 	private inventoryPreferences!: InventoryPreferencesRuntime;
@@ -2147,6 +2149,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// Recorded by `updateSettings` (`settings_save`, phase failure); the section says it in its live region.
 			return 'refused';
 		}
+	}
+
+	/**
+	 * How many times the selected API key has changed in this session: an opaque count, never the key
+	 * nor its secret's name. The «Logros» view compares it on each repaint to drop a failed reading's
+	 * «revisa la clave», which spoke of the key that is no longer selected.
+	 */
+	getApiKeyRevision(): number {
+		return this.apiKeyRevision;
 	}
 
 	/** The «Logros» services once the runtime built them; null while the plugin is still starting. */
@@ -5492,6 +5503,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.runRuntimeMutation(() => this.assistedDetection.updateInterval(nextSettings.pollingIntervalMinutes * 60_000));
 		}
 		if (secretChanged) {
+			// Before any repaint below: the views read it on their next render.
+			this.apiKeyRevision += 1;
 			this.invalidateInventoryAdvisor();
 			this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('connection_changed'));
 			this.connection.reset();
