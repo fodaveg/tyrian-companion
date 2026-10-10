@@ -5,7 +5,8 @@
  *
  * - `settings`: the plugin's JSON (Obsidian's `data.json`) in `api.storage.settings`, which Hebra
  *   keeps under `hebra.library-v1.module.tyrian-companion.settings:<libraryId>`. A new library has
- *   none, so the core starts in consultation mode (R1b: no key, no collector);
+ *   none, so the core starts in consultation mode (R1b: no key, no collector). The settings of
+ *   THIS device (`HEBRA_DEVICE_SETTING_KEYS`) are split off into `api.storage.device` instead;
  * - `localStorage`: the core's small per-device values (the in-game session link, the farming
  *   context of the session in progress, where this device shows the plugin) in
  *   `api.storage.device`, under `…tyrian-companion.local:<libraryId>:<key>`; never synced;
@@ -25,20 +26,131 @@ export interface HebraTyrianSettingsPort extends TyrianSettingsPort {
 	latest(): unknown;
 }
 
-export function createTyrianSettingsPort(storage: Pick<PluginStorage, 'settings'>): HebraTyrianSettingsPort {
+/**
+ * The settings that belong to THIS device rather than to the library (decision of 10 Oct 2026):
+ * the in-game bridge (whether it listens, its loopback port and the NAME of its keychain entry,
+ * whose value already lives in this device's keychain), the diagnostic log switch and level, and
+ * the receipt of the last inventory sync run here. `api.storage.settings` is the scope that will
+ * travel with the library once Hebra syncs settings; these stay in `api.storage.device`, which
+ * never syncs. Everything else (the webhook URL and the output folder included) stays shared.
+ *
+ * Only Hebra splits them: the core still sees one settings object, and Obsidian's `data.json`
+ * keeps its exact contract.
+ */
+export const HEBRA_DEVICE_SETTING_KEYS = Object.freeze([
+	'alertIngameEnabled',
+	'alertIngamePort',
+	'alertIngameSecret',
+	'debugLoggingEnabled',
+	'debugLoggingLevel',
+	'inventorySyncLastRun',
+] as const);
+
+/** The `api.storage.device` key of a device setting. Hebra namespaces it per library
+ *  (`…tyrian-companion.local:<libraryId>:<key>`), like the core's own device values. */
+export function hebraDeviceSettingKey(key: string): string {
+	return `tyrian-companion:setting:${key}`;
+}
+
+export interface TyrianSettingsPortOptions {
+	/** Where a failure the port recovers from goes (`HebraHostDeps.report`). */
+	report?: (error: unknown, where: string) => void;
+}
+
+/**
+ * The core's settings over Hebra's two scopes. `load` hands the core ONE object: the shared one
+ * with the device settings laid over it, the device value winning. `save` splits it again: the
+ * device settings go to `api.storage.device` and are never written to `api.storage.settings`.
+ *
+ * A library saved by an older build still has the device settings in the shared scope. `load`
+ * moves each one that this device does not hold yet, once: it copies it to `device` and only then
+ * drops it from `settings`. A copy that fails leaves it in `settings`, so nothing is lost and the
+ * next load tries again.
+ */
+export function createTyrianSettingsPort(
+	storage: Pick<PluginStorage, 'settings' | 'device'>,
+	options: TyrianSettingsPortOptions = {},
+): HebraTyrianSettingsPort {
+	const report = options.report ?? (() => undefined);
 	let latest: unknown = null;
 	return {
 		async load() {
-			// Hebra reads a corrupt value as null, which the core migrates to its defaults.
-			latest = await storage.settings.load();
+			// Hebra reads a corrupt value as null, which the core migrates to its defaults. With no
+			// shared object there is nothing to lay the device values over: a library without settings
+			// must still load null (the core starts in consultation mode).
+			const shared = await storage.settings.load();
+			latest = isSettingsObject(shared) ? await withDeviceSettings(storage, shared, report) : shared;
 			return latest;
 		},
 		async save(data) {
 			latest = data;
-			await storage.settings.save(data);
+			if (!isSettingsObject(data)) {
+				await storage.settings.save(data);
+				return;
+			}
+			const shared: Record<string, unknown> = { ...data };
+			// Device first: a device write that throws rejects the save before the shared scope changes.
+			for (const key of HEBRA_DEVICE_SETTING_KEYS) {
+				const value = data[key];
+				delete shared[key];
+				if (value === null || value === undefined) storage.device.remove(hebraDeviceSettingKey(key));
+				else storage.device.set(hebraDeviceSettingKey(key), value);
+			}
+			await storage.settings.save(shared);
 		},
 		latest: () => latest,
 	};
+}
+
+/**
+ * The shared settings with this device's settings laid over them, moving to `device` the ones an
+ * older build left in `settings`. Idempotent: once moved, a key is in `device` and not in
+ * `settings`, so the next load writes nothing.
+ */
+async function withDeviceSettings(
+	storage: Pick<PluginStorage, 'settings' | 'device'>,
+	shared: Record<string, unknown>,
+	report: (error: unknown, where: string) => void,
+): Promise<Record<string, unknown>> {
+	const merged: Record<string, unknown> = { ...shared };
+	const remaining: Record<string, unknown> = { ...shared };
+	let moved = false;
+	for (const key of HEBRA_DEVICE_SETTING_KEYS) {
+		const local = storage.device.get(hebraDeviceSettingKey(key));
+		if (local !== null && local !== undefined) {
+			// This device's value wins. A stale shared copy is left alone here: the next save drops it.
+			merged[key] = local;
+			continue;
+		}
+		if (!Object.prototype.hasOwnProperty.call(shared, key)) continue;
+		const value = shared[key];
+		// `null` (the empty sync receipt) is what an absent device key reads as: nothing to copy.
+		if (value !== null && value !== undefined) {
+			try {
+				storage.device.set(hebraDeviceSettingKey(key), value);
+			} catch (error) {
+				// The value stays in `settings` (and in what the core gets); the next load tries again.
+				report(error, 'settings.device-move');
+				continue;
+			}
+		}
+		delete remaining[key];
+		moved = true;
+	}
+	if (moved) {
+		try {
+			await storage.settings.save(remaining);
+		} catch (error) {
+			// The copies are already in `device`, which wins on every load, so the stale shared ones
+			// lose nothing; the next save drops them. Starting without settings would be worse.
+			report(error, 'settings.device-move');
+		}
+	}
+	return merged;
+}
+
+function isSettingsObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function createTyrianLocalStoragePort(storage: Pick<PluginStorage, 'device'>): TyrianLocalStoragePort {

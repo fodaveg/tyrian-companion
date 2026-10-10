@@ -377,7 +377,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	const { api } = deps;
 	const libraryId = api.vault.libraryId();
 	const libraryRootId = api.vault.rootFolderId();
-	const storedSettings = createTyrianSettingsPort(api.storage);
+	const storedSettings = createTyrianSettingsPort(api.storage, { report: deps.report });
 	const translator = createHebraTranslator(() => storedSettings.latest(), () => api.env.locale());
 	const outputFolder = outputFolderFromSettings(await storedSettings.load());
 	deps.bootTrace?.mark('hebraSettings');

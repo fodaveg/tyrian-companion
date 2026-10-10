@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 604,
+		"catch_clause": 606,
 		"promise_catch": 61,
 		"void_expression": 142,
 		"callback_registration": 250
@@ -6942,11 +6942,43 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "c079d13a8d91b3027ab76f23279499fa145e2138",
+					"kind": "catch_clause",
+					"line": 131,
+					"column": 6,
+					"endLine": 135,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "control_flow_recovery",
+						"scope": "withDeviceSettings",
+						"justification": "The \"withDeviceSettings\" catch (\"control_flow_recovery\") hands the failed device write to report, which createHebraHost wires to deps.report as settings.device-move, and skips the key so it stays in the shared settings: nothing is lost and the next load tries the move again."
+					},
+					"reason": "Allowlisted catch_clause: The \"withDeviceSettings\" catch (\"control_flow_recovery\") hands the failed device write to report, which createHebraHost wires to deps.report as settings.device-move, and skips the key so it stays in the shared settings: nothing is lost and the next load tries the move again. Verified recovery: \"control_flow_recovery\" in \"withDeviceSettings\"."
+				},
+				{
+					"id": "27a74def4c3d66c924269fa93cd4329e50f1ecd8",
+					"kind": "catch_clause",
+					"line": 143,
+					"column": 5,
+					"endLine": 147,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "withDeviceSettings",
+						"justification": "The \"withDeviceSettings\" catch (\"local_recovery\") hands the failed shared save to report, which createHebraHost wires to deps.report as settings.device-move; the moved values are already in device, which wins on every load, and the next save drops the stale shared copies."
+					},
+					"reason": "Allowlisted catch_clause: The \"withDeviceSettings\" catch (\"local_recovery\") hands the failed shared save to report, which createHebraHost wires to deps.report as settings.device-move; the moved values are already in device, which wins on every load, and the next save drops the stale shared copies. Verified recovery: \"local_recovery\" in \"withDeviceSettings\"."
+				},
+				{
 					"id": "12376db8f3f2a22d0fb7a1558b71c191e1f2876b",
 					"kind": "callback_registration",
-					"line": 96,
+					"line": 208,
 					"column": 13,
-					"endLine": 100,
+					"endLine": 212,
 					"endColumn": 74,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6961,9 +6993,9 @@
 				{
 					"id": "186b5a2e947c400fe948932f6ec097e396b73557",
 					"kind": "promise_catch",
-					"line": 103,
+					"line": 215,
 					"column": 3,
-					"endLine": 103,
+					"endLine": 215,
 					"endColumn": 70,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6978,9 +7010,9 @@
 				{
 					"id": "d03f9608a555c11483c95b728dd9ae5eb96a753b",
 					"kind": "catch_clause",
-					"line": 108,
+					"line": 220,
 					"column": 29,
-					"endLine": 108,
+					"endLine": 220,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6994,9 +7026,9 @@
 				{
 					"id": "9212690ae870c6f0117cee44cc688715d0aa53ec",
 					"kind": "callback_registration",
-					"line": 136,
+					"line": 248,
 					"column": 9,
-					"endLine": 136,
+					"endLine": 248,
 					"endColumn": 53,
 					"registration": "then",
 					"classification": "allowlisted",
