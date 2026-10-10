@@ -32,6 +32,7 @@ import {
 	EXPORT_LEGACY_SESSION_COMMAND_ID,
 	EXPORT_LIVE_SESSION_COMMAND_ID,
 	TYRIAN_MAIN_VIEW_TYPE,
+	UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID,
 } from './tyrian-companion-core';
 import { VIEW_PLACEMENT_KEY } from './view-placement';
 
@@ -163,6 +164,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		]);
 		expect(registered.commands.map(({ id }) => id)).toEqual([
 			...PRODUCT_ACTION_IDS, ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID,
+			UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID,
 		]);
 		expect(registered.ribbons.map(({ icon }) => icon)).toEqual(['sword']);
 		expect(registered.codeBlocks).toEqual([PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE]);
@@ -202,6 +204,30 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		legacy.checkCallback?.(false);
 		await vi.waitFor(() => expect(registered.notices).toContain('Could not export. Your data is kept; try again.'));
 		expect(exportLegacy).toHaveBeenCalledOnce();
+	});
+
+	it('registers "Update Leyspring achievements", waits for the runtime, and answers with the counts of the run', async () => {
+		const { host, registered } = neutralHost();
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		const command = registered.commands.find((candidate) => candidate.id === UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID)!;
+		expect(command.name).toBe('Update Leyspring achievements');
+		// A manual action with no availability check: it works in consult mode like the inventory and wallet ones.
+		expect('checkCallback' in command).toBe(false);
+
+		command.callback?.();
+		await vi.waitFor(() => expect(registered.notices).toContain('Tyrian Companion is still starting. Try again in a moment.'));
+
+		const core = runtime as unknown as Record<string, unknown>;
+		const run = vi.fn(async () => ({
+			status: 'updated' as const, path: 'x.md',
+			summary: { done: 22, total: 46, masteryName: 'Mastery', masteryCurrent: 22, masteryMax: 36 },
+		}));
+		core.runtimeReady = true;
+		core.leyspringAchievements = { run };
+		command.callback?.();
+		await vi.waitFor(() => expect(registered.notices).toContain('Leyspring achievements updated: 22 of 46; mastery 22/36.'));
+		expect(run).toHaveBeenCalledWith('Tyrian Companion', 'en');
 	});
 
 	it('boots the runtime when the host is ready, opens the ribbon menu through the host, and drains the log on stop', async () => {
