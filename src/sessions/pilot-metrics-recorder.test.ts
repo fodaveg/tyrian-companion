@@ -8,19 +8,43 @@ import { PilotMetricsRecorder } from './pilot-metrics-recorder';
 import { IndexedDbPilotMetricsStore, type PilotMetricsStore } from './pilot-metrics-store';
 import { createPilotEnvironment, pilotProposalRef } from './pilot-metrics-model';
 import { isRelevantStartProposal, type PendingProposal } from './pending-proposal-model';
+import { killStorage, reviveStorage, trackedIndexedDb } from '../test/indexed-db-connections';
 
 const NOW = new Date('2026-08-20T10:01:00.000Z');
 
 describe('PilotMetricsRecorder', () => {
 	it('remains lazy and fail-open until the local platform profile is explicitly configured', async () => {
-		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('lazy'));
+		const factory = new IDBFactory();
+		const opened = vi.spyOn(factory, 'open');
+		const store = new IndexedDbPilotMetricsStore(factory, 'vault-a', databaseName('lazy'));
 		const recorder = new PilotMetricsRecorder(store, 10_000, () => NOW);
-		expect(store['database']).toBeNull();
+		expect(opened).not.toHaveBeenCalled();
 		await expect(recorder.proposalPresented(presentation('proposal-a'))).resolves.toBe(false);
 		expect(recorder.getState()).toEqual({ status: 'unconfigured' });
 		await expect(recorder.configure(profile())).resolves.toBe(true);
 		await expect(recorder.proposalPresented(presentation('proposal-a'))).resolves.toBe(true);
 		expect(recorder.getState()).toMatchObject({ status: 'ready', observations: 1 });
+	});
+
+	// DU-05 review: since the store opens again after a failure, a write that succeeds after `unavailable` must keep
+	// counting from the observations already counted, not from zero.
+	it('keeps counting from the observations it had after a failed write, without inspecting the journal again', async () => {
+		const tracked = trackedIndexedDb();
+		const recorder = new PilotMetricsRecorder(
+			new IndexedDbPilotMetricsStore(tracked.factory, 'vault-a', databaseName('count-after-failure')), 10_000, () => NOW,
+		);
+		await expect(recorder.configure(profile())).resolves.toBe(true);
+		await expect(recorder.proposalPresented(presentation('proposal-a'))).resolves.toBe(true);
+		await expect(recorder.proposalPresented(presentation('proposal-b'))).resolves.toBe(true);
+		expect(recorder.getState()).toEqual({ status: 'ready', observations: 2, limit: 10_000 });
+
+		killStorage(tracked);
+		await expect(recorder.proposalPresented(presentation('proposal-c'))).resolves.toBe(false);
+		expect(recorder.getState()).toEqual({ status: 'unavailable', observations: 2, limit: 10_000 });
+
+		reviveStorage(tracked);
+		await expect(recorder.proposalPresented(presentation('proposal-c'))).resolves.toBe(true);
+		expect(recorder.getState()).toEqual({ status: 'ready', observations: 3, limit: 10_000 });
 	});
 
 	it('records presentation and the first workflow terminal without touching H5.3 receipts', async () => {

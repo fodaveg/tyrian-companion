@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 591,
-		"promise_catch": 61,
-		"void_expression": 138,
-		"callback_registration": 244
+		"catch_clause": 593,
+		"promise_catch": 60,
+		"void_expression": 137,
+		"callback_registration": 243
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -550,9 +550,9 @@
 				{
 					"id": "a7871757ba399b4472095f9d1893193b1b59304f",
 					"kind": "catch_clause",
-					"line": 164,
+					"line": 171,
 					"column": 4,
-					"endLine": 166,
+					"endLine": 173,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2354,27 +2354,43 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "2383b91086b30cc20d4c0c2eb151ba2b30e7aeeb",
+					"id": "3f726f5313b47ba5a5b816478dbc0d93a1ca86e2",
 					"kind": "catch_clause",
-					"line": 45,
+					"line": 58,
+					"column": 6,
+					"endLine": 61,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "constructor",
+						"justification": "The \"constructor\" owner builds the connect callback, which records a failed open on the managed_assets_pointer probe (attempt.failure) and then does a \"rethrow\", so the read or compareAndSet that caused the open fails and records its own outcome."
+					},
+					"reason": "Allowlisted catch_clause: The \"constructor\" owner builds the connect callback, which records a failed open on the managed_assets_pointer probe (attempt.failure) and then does a \"rethrow\", so the read or compareAndSet that caused the open fails and records its own outcome. Verified recovery: \"rethrow\" in \"constructor\"."
+				},
+				{
+					"id": "b94003a235a626b210a34e587179559b83490b87",
+					"kind": "catch_clause",
+					"line": 71,
 					"column": 5,
-					"endLine": 48,
+					"endLine": 74,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "read",
-						"justification": "The \"read\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"read\" catch is a \"rethrow\" that records the one outcome on the managed_assets_pointer probe (attempt.failure), coded timeout when the engine did not answer in time (indexedDbFailureCode), and hands the caller the same error."
 					},
-					"reason": "Allowlisted catch_clause: The \"read\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"read\"."
+					"reason": "Allowlisted catch_clause: The \"read\" catch is a \"rethrow\" that records the one outcome on the managed_assets_pointer probe (attempt.failure), coded timeout when the engine did not answer in time (indexedDbFailureCode), and hands the caller the same error. Verified recovery: \"rethrow\" in \"read\"."
 				},
 				{
 					"id": "38f1328201f7f0eb55455416a334a0e399e2acae",
 					"kind": "catch_clause",
-					"line": 68,
+					"line": 94,
 					"column": 7,
-					"endLine": 68,
+					"endLine": 94,
 					"endColumn": 37,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2386,43 +2402,43 @@
 					"reason": "Allowlisted catch_clause: The \"compareAndSet\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"compareAndSet\"."
 				},
 				{
-					"id": "9f1f4e93fd29231aa7fd9caae5fc1db7385f82e9",
+					"id": "616930bf0636d4a3ae1ef79dde7e33a3ff6d8950",
 					"kind": "catch_clause",
-					"line": 77,
+					"line": 103,
 					"column": 5,
-					"endLine": 80,
+					"endLine": 106,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "compareAndSet",
-						"justification": "The \"compareAndSet\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"compareAndSet\" catch is a \"rethrow\" that records the one outcome on the managed_assets_pointer probe (attempt.failure), coded timeout when the engine did not answer in time (indexedDbFailureCode), and hands the caller the same error."
 					},
-					"reason": "Allowlisted catch_clause: The \"compareAndSet\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"compareAndSet\"."
+					"reason": "Allowlisted catch_clause: The \"compareAndSet\" catch is a \"rethrow\" that records the one outcome on the managed_assets_pointer probe (attempt.failure), coded timeout when the engine did not answer in time (indexedDbFailureCode), and hands the caller the same error. Verified recovery: \"rethrow\" in \"compareAndSet\"."
 				},
 				{
-					"id": "449ee9853c07fe2a9b1b5516975c9137778db9ed",
+					"id": "ebfe555fab991e9b5b45bdac5804e703c55dc4bf",
 					"kind": "catch_clause",
-					"line": 110,
+					"line": 119,
 					"column": 5,
-					"endLine": 113,
+					"endLine": 122,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
-						"scope": "open",
-						"justification": "The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed."
+						"scope": "run",
+						"justification": "The \"run\" catch is a \"rethrow\": a connection lost after the one reopen or a transaction unanswered past the bound becomes the pointer's unavailable error carrying its reason; read and compareAndSet record it through attempt.failure."
 					},
-					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"rethrow\": a connection lost after the one reopen or a transaction unanswered past the bound becomes the pointer's unavailable error carrying its reason; read and compareAndSet record it through attempt.failure. Verified recovery: \"rethrow\" in \"run\"."
 				},
 				{
 					"id": "98930ced093e88ac3bdfd757c2d4863d87a1f516",
 					"kind": "callback_registration",
-					"line": 125,
+					"line": 132,
 					"column": 16,
-					"endLine": 129,
+					"endLine": 136,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -2437,9 +2453,9 @@
 				{
 					"id": "d2c0477f0b881c70117b3144367bcd02975dbc1a",
 					"kind": "catch_clause",
-					"line": 157,
+					"line": 164,
 					"column": 84,
-					"endLine": 157,
+					"endLine": 164,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2658,9 +2674,9 @@
 				{
 					"id": "cdf62880b3c99e0db709800591131cb82210dfa5",
 					"kind": "catch_clause",
-					"line": 54,
+					"line": 60,
 					"column": 5,
-					"endLine": 57,
+					"endLine": 63,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2674,9 +2690,9 @@
 				{
 					"id": "4dae67d2ee07e40789577afd372103f15992117e",
 					"kind": "catch_clause",
-					"line": 88,
+					"line": 94,
 					"column": 5,
-					"endLine": 91,
+					"endLine": 97,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2690,9 +2706,9 @@
 				{
 					"id": "84c1462bcb8b2692961c4bfadac09b04fb5fcf28",
 					"kind": "catch_clause",
-					"line": 127,
+					"line": 133,
 					"column": 5,
-					"endLine": 130,
+					"endLine": 136,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2706,9 +2722,9 @@
 				{
 					"id": "b02d842ec1000a02302d34f553ed444b7fb2c450",
 					"kind": "catch_clause",
-					"line": 160,
+					"line": 166,
 					"column": 5,
-					"endLine": 163,
+					"endLine": 169,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2722,9 +2738,9 @@
 				{
 					"id": "b6463818d43605f3a61935f0214c1336ccd10eca",
 					"kind": "catch_clause",
-					"line": 175,
+					"line": 181,
 					"column": 5,
-					"endLine": 178,
+					"endLine": 184,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2738,9 +2754,9 @@
 				{
 					"id": "0abb02ddfaef4043dd96b87fa163e63e81e8d719",
 					"kind": "catch_clause",
-					"line": 220,
+					"line": 226,
 					"column": 4,
-					"endLine": 225,
+					"endLine": 231,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2754,9 +2770,9 @@
 				{
 					"id": "2f6d3f149ca6e97d1ca99cb517340649f84be9ce",
 					"kind": "catch_clause",
-					"line": 254,
+					"line": 271,
 					"column": 5,
-					"endLine": 257,
+					"endLine": 274,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2768,59 +2784,43 @@
 					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
 				},
 				{
-					"id": "f6ec28ae76f50d73af5995496090cb28f18da7f8",
+					"id": "c9ef2b9cc25b1f53dc197589b1b37cc7e8646580",
 					"kind": "catch_clause",
-					"line": 268,
+					"line": 341,
 					"column": 6,
-					"endLine": 272,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "get",
-						"justification": "The \"get\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"get\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"get\"."
-				},
-				{
-					"id": "df62c0ad0664f2bc898894bd29148d4797132d91",
-					"kind": "catch_clause",
-					"line": 292,
-					"column": 6,
-					"endLine": 296,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "getMany",
-						"justification": "The \"getMany\" owner explicitly handles \"fallback_return\": Opening the readonly IndexedDB transaction for the batched read records the failed attempt on the probe (attempt.failure) and rejects with a typed error, mirroring the single-record get path; the caller's own catch records the terminal outcome."
-					},
-					"reason": "Allowlisted catch_clause: The \"getMany\" owner explicitly handles \"fallback_return\": Opening the readonly IndexedDB transaction for the batched read records the failed attempt on the probe (attempt.failure) and rejects with a typed error, mirroring the single-record get path; the caller's own catch records the terminal outcome. Verified recovery: \"fallback_return\" in \"getMany\"."
-				},
-				{
-					"id": "02b487afec3312512c6501aaf264a871e8e963d3",
-					"kind": "catch_clause",
-					"line": 338,
-					"column": 6,
-					"endLine": 344,
+					"endLine": 346,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "write",
-						"justification": "The \"write\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"write\" catch aborts the transaction when a request throws mid-batch, so the earlier puts never auto-commit, and rejects with a \"fallback_return\"; observed() records that rejection on the catalog probe with its engine code."
 					},
-					"reason": "Allowlisted catch_clause: The \"write\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"write\"."
+					"reason": "Allowlisted catch_clause: The \"write\" catch aborts the transaction when a request throws mid-batch, so the earlier puts never auto-commit, and rejects with a \"fallback_return\"; observed() records that rejection on the catalog probe with its engine code. Verified recovery: \"fallback_return\" in \"write\"."
+				},
+				{
+					"id": "ae1d8d7f2c85081ed3b4b53bb754724e0104be3b",
+					"kind": "catch_clause",
+					"line": 366,
+					"column": 5,
+					"endLine": 375,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "observed",
+						"justification": "The \"observed\" catch is a \"rethrow\" that records the one outcome of every catalog transaction on its probe (attempt.failure), coded timeout when the engine did not answer in time (indexedDbFailureCode), before handing the error to the caller."
+					},
+					"reason": "Allowlisted catch_clause: The \"observed\" catch is a \"rethrow\" that records the one outcome of every catalog transaction on its probe (attempt.failure), coded timeout when the engine did not answer in time (indexedDbFailureCode), before handing the error to the caller. Verified recovery: \"rethrow\" in \"observed\"."
 				},
 				{
 					"id": "e5674719cfeacda493a8e0cd1100d30cefc04975",
 					"kind": "catch_clause",
-					"line": 367,
+					"line": 397,
 					"column": 4,
-					"endLine": 369,
+					"endLine": 399,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3039,9 +3039,9 @@
 				{
 					"id": "ba4299d606d5457bd1aaefb9c16b8102d94cc24a",
 					"kind": "catch_clause",
-					"line": 121,
+					"line": 125,
 					"column": 27,
-					"endLine": 121,
+					"endLine": 125,
 					"endColumn": 111,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3055,9 +3055,9 @@
 				{
 					"id": "458b51bffa7f959190e2eba6b37102ce8ff11594",
 					"kind": "catch_clause",
-					"line": 131,
+					"line": 135,
 					"column": 3,
-					"endLine": 131,
+					"endLine": 135,
 					"endColumn": 119,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3071,9 +3071,9 @@
 				{
 					"id": "4ba20a6027dd8a98e960483fc1a53b234b48ef36",
 					"kind": "catch_clause",
-					"line": 187,
+					"line": 191,
 					"column": 4,
-					"endLine": 189,
+					"endLine": 193,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3087,9 +3087,9 @@
 				{
 					"id": "4dd783a097e1d34b949a5b61116fcbfe3d64c1e0",
 					"kind": "catch_clause",
-					"line": 225,
+					"line": 229,
 					"column": 4,
-					"endLine": 228,
+					"endLine": 232,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3103,9 +3103,9 @@
 				{
 					"id": "7fdcb0d18f6180c58695cb2f35059d445809d3f3",
 					"kind": "catch_clause",
-					"line": 232,
+					"line": 236,
 					"column": 4,
-					"endLine": 235,
+					"endLine": 239,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3115,6 +3115,22 @@
 						"justification": "Second \"withIndexedDbReopen\" catch, always a \"rethrow\": it only drops a connection that was lost again before the error goes on to the store operation that called, which owns the diagnostic."
 					},
 					"reason": "Allowlisted catch_clause: Second \"withIndexedDbReopen\" catch, always a \"rethrow\": it only drops a connection that was lost again before the error goes on to the store operation that called, which owns the diagnostic. Verified recovery: \"rethrow\" in \"withIndexedDbReopen\"."
+				},
+				{
+					"id": "5061a855c2cd96ddff3dc2e78e472e8a12588c4d",
+					"kind": "catch_clause",
+					"line": 332,
+					"column": 29,
+					"endLine": 332,
+					"endColumn": 99,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "discard",
+						"justification": "The \"discard\" catch is an \"intentional_noop\": closing a connection that is dropped because it is already dead has nothing to report, and the store operation that dropped it records its own outcome."
+					},
+					"reason": "Allowlisted catch_clause: The \"discard\" catch is an \"intentional_noop\": closing a connection that is dropped because it is already dead has nothing to report, and the store operation that dropped it records its own outcome. Verified recovery: \"intentional_noop\" in \"discard\"."
 				}
 			]
 		},
@@ -4376,9 +4392,9 @@
 				{
 					"id": "b1849d4da06ad60a1a335db4130cbe560cca07c9",
 					"kind": "catch_clause",
-					"line": 115,
+					"line": 131,
 					"column": 5,
-					"endLine": 118,
+					"endLine": 134,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4392,9 +4408,9 @@
 				{
 					"id": "cc0736dba9f571aad4041fc75df6eca719d76f8c",
 					"kind": "catch_clause",
-					"line": 162,
+					"line": 178,
 					"column": 7,
-					"endLine": 162,
+					"endLine": 178,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4408,9 +4424,9 @@
 				{
 					"id": "fb9139a6d2cb569d8add9ab5f591a51912e74ba8",
 					"kind": "catch_clause",
-					"line": 210,
+					"line": 226,
 					"column": 7,
-					"endLine": 210,
+					"endLine": 226,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4424,9 +4440,9 @@
 				{
 					"id": "d2c5a0e1fc9c742ac99b4f3d1222465bcb6b6f57",
 					"kind": "callback_registration",
-					"line": 216,
+					"line": 232,
 					"column": 10,
-					"endLine": 217,
+					"endLine": 233,
 					"endColumn": 77,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4441,9 +4457,9 @@
 				{
 					"id": "583020e9ff297309fac9ab3103ec978b8f578258",
 					"kind": "catch_clause",
-					"line": 256,
+					"line": 272,
 					"column": 9,
-					"endLine": 256,
+					"endLine": 272,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4457,9 +4473,9 @@
 				{
 					"id": "77c270a2c98c0cb8044c4c63239a841b57baa18d",
 					"kind": "catch_clause",
-					"line": 258,
+					"line": 274,
 					"column": 7,
-					"endLine": 258,
+					"endLine": 274,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4473,9 +4489,9 @@
 				{
 					"id": "02d30aaf35ca2a78f76fb8d0ff6af5d3f822aba8",
 					"kind": "catch_clause",
-					"line": 294,
+					"line": 310,
 					"column": 9,
-					"endLine": 294,
+					"endLine": 310,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4489,9 +4505,9 @@
 				{
 					"id": "c04a581b13492243a0d9413282a141b71b77ddaa",
 					"kind": "catch_clause",
-					"line": 296,
+					"line": 312,
 					"column": 7,
-					"endLine": 296,
+					"endLine": 312,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4505,9 +4521,9 @@
 				{
 					"id": "a6feab46737cb53fc91ad9830bea276e7fbabe79",
 					"kind": "callback_registration",
-					"line": 302,
+					"line": 318,
 					"column": 10,
-					"endLine": 307,
+					"endLine": 323,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4522,9 +4538,9 @@
 				{
 					"id": "5a16aa2d52c171db69bf6d63e77bb3e6a66d6155",
 					"kind": "callback_registration",
-					"line": 311,
+					"line": 327,
 					"column": 10,
-					"endLine": 316,
+					"endLine": 332,
 					"endColumn": 90,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4539,9 +4555,9 @@
 				{
 					"id": "2f0bf722fc0331ea188e691cee908425ce8bad5e",
 					"kind": "catch_clause",
-					"line": 354,
+					"line": 370,
 					"column": 6,
-					"endLine": 354,
+					"endLine": 370,
 					"endColumn": 67,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4555,9 +4571,9 @@
 				{
 					"id": "d1a8343202dbde62e42d390f286399b5f39918cb",
 					"kind": "catch_clause",
-					"line": 374,
+					"line": 390,
 					"column": 7,
-					"endLine": 374,
+					"endLine": 390,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4571,9 +4587,9 @@
 				{
 					"id": "1ea6f8d30579f932105353eb6a37abff4617bd77",
 					"kind": "catch_clause",
-					"line": 388,
+					"line": 404,
 					"column": 7,
-					"endLine": 388,
+					"endLine": 404,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4587,9 +4603,9 @@
 				{
 					"id": "1c861cde9436cd3735480f2c1f2f090d33b3bcb3",
 					"kind": "catch_clause",
-					"line": 420,
+					"line": 436,
 					"column": 8,
-					"endLine": 420,
+					"endLine": 436,
 					"endColumn": 61,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4603,9 +4619,9 @@
 				{
 					"id": "d9be817acc7f803c165e58d32db8971394e0ab55",
 					"kind": "catch_clause",
-					"line": 425,
+					"line": 441,
 					"column": 6,
-					"endLine": 425,
+					"endLine": 441,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4619,9 +4635,9 @@
 				{
 					"id": "0cdeed1183023440e70f975cc1ed4bc8216dfa6e",
 					"kind": "catch_clause",
-					"line": 430,
+					"line": 446,
 					"column": 6,
-					"endLine": 430,
+					"endLine": 446,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4635,9 +4651,9 @@
 				{
 					"id": "4f263d7614a4a06c4a043511685cc964b53f8029",
 					"kind": "catch_clause",
-					"line": 478,
+					"line": 494,
 					"column": 5,
-					"endLine": 478,
+					"endLine": 494,
 					"endColumn": 31,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4651,9 +4667,9 @@
 				{
 					"id": "323994a13f104459e75c9c4f955d9ff18b33e4e8",
 					"kind": "catch_clause",
-					"line": 505,
+					"line": 521,
 					"column": 7,
-					"endLine": 505,
+					"endLine": 521,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4667,9 +4683,9 @@
 				{
 					"id": "5171a50f019b5d544f9adffe271a7ac0a939e751",
 					"kind": "catch_clause",
-					"line": 518,
+					"line": 534,
 					"column": 7,
-					"endLine": 518,
+					"endLine": 534,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4683,9 +4699,9 @@
 				{
 					"id": "5a23c551228ea5ea64f1632c0e95124da61fe4ec",
 					"kind": "catch_clause",
-					"line": 532,
+					"line": 548,
 					"column": 5,
-					"endLine": 532,
+					"endLine": 548,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4697,36 +4713,36 @@
 					"reason": "Allowlisted catch_clause: The \"readCursorAll\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"readCursorAll\"."
 				},
 				{
-					"id": "8c78e699af0446cc6fe34120d95f124aeef828e6",
+					"id": "c500a9beda00bde9b6f65e7667a7cbee3753bd54",
 					"kind": "catch_clause",
-					"line": 555,
-					"column": 4,
-					"endLine": 555,
-					"endColumn": 80,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"transaction\"."
-				},
-				{
-					"id": "e2ef0f6bc991b44faa232a0ebc74936d27693c96",
-					"kind": "catch_clause",
-					"line": 560,
-					"column": 6,
-					"endLine": 562,
-					"endColumn": 5,
+					"line": 574,
+					"column": 7,
+					"endLine": 576,
+					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"transaction\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise, and the outer catch of the same method records it on the price_history probe before rethrowing."
 					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
+					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise, and the outer catch of the same method records it on the price_history probe before rethrowing. Verified recovery: \"local_recovery\" in \"transaction\"."
+				},
+				{
+					"id": "7f49f4b87f4d721decc48eeeda23017b52a91106",
+					"kind": "catch_clause",
+					"line": 580,
+					"column": 5,
+					"endLine": 586,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "transaction",
+						"justification": "The \"transaction\" catch is a \"rethrow\" that records the one outcome on the price_history probe, coded timeout when the engine did not answer in time (indexedDbFailureCode), and turns a give-up of withIndexedDbReopen into the store's unavailable error."
+					},
+					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"rethrow\" that records the one outcome on the price_history probe, coded timeout when the engine did not answer in time (indexedDbFailureCode), and turns a give-up of withIndexedDbReopen into the store's unavailable error. Verified recovery: \"rethrow\" in \"transaction\"."
 				}
 			]
 		},
@@ -4925,43 +4941,43 @@
 					"reason": "Allowlisted catch_clause: The \"get\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"get\"."
 				},
 				{
-					"id": "6d5740faf083958deb5d4ce46e1698ebbac065c9",
+					"id": "567a2cac01b616323c32482ea328b3b2cde0578b",
 					"kind": "catch_clause",
-					"line": 88,
+					"line": 127,
 					"column": 4,
-					"endLine": 88,
-					"endColumn": 74,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"transaction\"."
-				},
-				{
-					"id": "22b7e7682889af11aabe65655b78f822ec0307b0",
-					"kind": "catch_clause",
-					"line": 92,
-					"column": 4,
-					"endLine": 92,
+					"endLine": 127,
 					"endColumn": 107,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "seedTransaction",
+						"justification": "The \"seedTransaction\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise with the seed store's own error, which the panel or the bulk refresh that called it records."
 					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
+					"reason": "Allowlisted catch_clause: The \"seedTransaction\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise with the seed store's own error, which the panel or the bulk refresh that called it records. Verified recovery: \"local_recovery\" in \"seedTransaction\"."
+				},
+				{
+					"id": "cd5053f12db2ef126581e9c2592809846df5949d",
+					"kind": "catch_clause",
+					"line": 129,
+					"column": 4,
+					"endLine": 131,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "seedTransaction",
+						"justification": "The \"seedTransaction\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes PriceSeedCacheStoreError unavailable and anything else passes unchanged to the panel or bulk refresh that records it."
+					},
+					"reason": "Allowlisted catch_clause: The \"seedTransaction\" catch is a \"rethrow\": a connection lost even after the one reopen (DU-05) becomes PriceSeedCacheStoreError unavailable and anything else passes unchanged to the panel or bulk refresh that records it. Verified recovery: \"rethrow\" in \"seedTransaction\"."
 				},
 				{
 					"id": "18244d3a74c4b6cdc96a93d7d81bdff885d2c3a3",
 					"kind": "catch_clause",
-					"line": 174,
+					"line": 206,
 					"column": 5,
-					"endLine": 174,
+					"endLine": 206,
 					"endColumn": 37,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4971,38 +4987,6 @@
 						"justification": "The \"get\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"get\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"get\"."
-				},
-				{
-					"id": "34fb422865e19de4ac70f3158c22139d64961f31",
-					"kind": "catch_clause",
-					"line": 207,
-					"column": 4,
-					"endLine": 207,
-					"endColumn": 74,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"transaction\"."
-				},
-				{
-					"id": "d0abd85511796492a03431562b2b4352a419b0c5",
-					"kind": "catch_clause",
-					"line": 211,
-					"column": 4,
-					"endLine": 211,
-					"endColumn": 107,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
 				}
 			]
 		},
@@ -5421,9 +5405,9 @@
 				{
 					"id": "9824a76866a07f67453104468595379b3534fef1",
 					"kind": "catch_clause",
-					"line": 73,
+					"line": 81,
 					"column": 5,
-					"endLine": 76,
+					"endLine": 84,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5435,9 +5419,9 @@
 				{
 					"id": "959fd9c210177a7b8738691232d23e6af641c6b1",
 					"kind": "callback_registration",
-					"line": 93,
+					"line": 101,
 					"column": 22,
-					"endLine": 95,
+					"endLine": 103,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5452,9 +5436,9 @@
 				{
 					"id": "bfa1b9b0e78a953faa4b7eb80eaf22004548499b",
 					"kind": "catch_clause",
-					"line": 111,
+					"line": 119,
 					"column": 5,
-					"endLine": 114,
+					"endLine": 122,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5466,9 +5450,9 @@
 				{
 					"id": "359692b56fce4b450841effae2e597143743c34d",
 					"kind": "catch_clause",
-					"line": 160,
+					"line": 180,
 					"column": 5,
-					"endLine": 160,
+					"endLine": 180,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5482,9 +5466,9 @@
 				{
 					"id": "d9fa4cb98c0f231827d7c0f98f620c2769e542fa",
 					"kind": "catch_clause",
-					"line": 182,
+					"line": 231,
 					"column": 5,
-					"endLine": 186,
+					"endLine": 235,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5496,9 +5480,9 @@
 				{
 					"id": "4a26bfc103153c05d8cc2d51831dc5298155440c",
 					"kind": "catch_clause",
-					"line": 209,
+					"line": 258,
 					"column": 6,
-					"endLine": 215,
+					"endLine": 264,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5512,9 +5496,9 @@
 				{
 					"id": "ef16c675b42dc19a8c198e72eb3f4daf0b6ca98a",
 					"kind": "catch_clause",
-					"line": 249,
+					"line": 298,
 					"column": 43,
-					"endLine": 249,
+					"endLine": 298,
 					"endColumn": 95,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5528,9 +5512,9 @@
 				{
 					"id": "e329d63f082eb63b9254b8ae159f9a8d7f468253",
 					"kind": "catch_clause",
-					"line": 259,
+					"line": 308,
 					"column": 5,
-					"endLine": 261,
+					"endLine": 310,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5857,9 +5841,9 @@
 				{
 					"id": "d452b247e6da341fec5acf1db3c78d55c577044d",
 					"kind": "catch_clause",
-					"line": 152,
+					"line": 159,
 					"column": 5,
-					"endLine": 155,
+					"endLine": 162,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5873,9 +5857,9 @@
 				{
 					"id": "d759a930484ae53ddc4ae3e793b8c6b5b78c55e8",
 					"kind": "catch_clause",
-					"line": 191,
+					"line": 198,
 					"column": 7,
-					"endLine": 191,
+					"endLine": 198,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5889,9 +5873,9 @@
 				{
 					"id": "635071b44b7e01a68fa355c3e337aa74b7317625",
 					"kind": "catch_clause",
-					"line": 206,
+					"line": 213,
 					"column": 7,
-					"endLine": 206,
+					"endLine": 213,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5905,9 +5889,9 @@
 				{
 					"id": "f1967228ef313946aec408c51faf8beacf6f4fce",
 					"kind": "catch_clause",
-					"line": 235,
+					"line": 242,
 					"column": 7,
-					"endLine": 235,
+					"endLine": 242,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5921,9 +5905,9 @@
 				{
 					"id": "2389bda0ccb8406804fa1e718aeef5749b2186a0",
 					"kind": "catch_clause",
-					"line": 254,
+					"line": 261,
 					"column": 9,
-					"endLine": 254,
+					"endLine": 261,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5937,9 +5921,9 @@
 				{
 					"id": "c1f2534f180d440db22d5c5587d232a581360d01",
 					"kind": "catch_clause",
-					"line": 257,
+					"line": 264,
 					"column": 23,
-					"endLine": 257,
+					"endLine": 264,
 					"endColumn": 67,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5953,9 +5937,9 @@
 				{
 					"id": "f78045290d1675f268734e437c33c85a3a4a02e5",
 					"kind": "catch_clause",
-					"line": 280,
+					"line": 287,
 					"column": 7,
-					"endLine": 280,
+					"endLine": 287,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5969,9 +5953,9 @@
 				{
 					"id": "06d1cceb9201018ac093415dff38fd4674c48737",
 					"kind": "catch_clause",
-					"line": 289,
+					"line": 296,
 					"column": 8,
-					"endLine": 289,
+					"endLine": 296,
 					"endColumn": 52,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5985,9 +5969,9 @@
 				{
 					"id": "2c38addc6bcdeadd39c4e645fd068caf0b05e05d",
 					"kind": "catch_clause",
-					"line": 326,
+					"line": 333,
 					"column": 11,
-					"endLine": 326,
+					"endLine": 333,
 					"endColumn": 55,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6001,9 +5985,9 @@
 				{
 					"id": "48a4e5c840749fe2a4c2733558471c0c97139db3",
 					"kind": "catch_clause",
-					"line": 328,
+					"line": 335,
 					"column": 9,
-					"endLine": 328,
+					"endLine": 335,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6017,9 +6001,9 @@
 				{
 					"id": "59b85bcda969fd8184f481b33a46d83ab46a0e2b",
 					"kind": "catch_clause",
-					"line": 331,
+					"line": 338,
 					"column": 23,
-					"endLine": 331,
+					"endLine": 338,
 					"endColumn": 67,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6033,9 +6017,9 @@
 				{
 					"id": "54d9a9d33761ab8e2e62b685b6e72f88ef1f5c7a",
 					"kind": "catch_clause",
-					"line": 353,
+					"line": 360,
 					"column": 7,
-					"endLine": 353,
+					"endLine": 360,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6049,9 +6033,9 @@
 				{
 					"id": "6f8a440b21ba6ce87fcded68abbc3ed0ed0e17e5",
 					"kind": "catch_clause",
-					"line": 379,
+					"line": 386,
 					"column": 8,
-					"endLine": 379,
+					"endLine": 386,
 					"endColumn": 52,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6065,9 +6049,9 @@
 				{
 					"id": "08f753f9ebbadb9fc127d413bda667e25ad51aee",
 					"kind": "catch_clause",
-					"line": 382,
+					"line": 389,
 					"column": 22,
-					"endLine": 382,
+					"endLine": 389,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6081,9 +6065,9 @@
 				{
 					"id": "56297d6dbde2aca1a3da91159fc29fc4170c3057",
 					"kind": "catch_clause",
-					"line": 421,
+					"line": 428,
 					"column": 7,
-					"endLine": 421,
+					"endLine": 428,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6097,9 +6081,9 @@
 				{
 					"id": "77e5da06c5ca478cf71c93d969997c10c57519c0",
 					"kind": "catch_clause",
-					"line": 475,
+					"line": 482,
 					"column": 10,
-					"endLine": 475,
+					"endLine": 482,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6113,9 +6097,9 @@
 				{
 					"id": "b0dcfae9264eb9d454e92f5195f7e72ce55389f2",
 					"kind": "catch_clause",
-					"line": 479,
+					"line": 486,
 					"column": 7,
-					"endLine": 479,
+					"endLine": 486,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6129,9 +6113,9 @@
 				{
 					"id": "1ebe4667afb0d89d82506e6fb6dc65f88d653a0b",
 					"kind": "catch_clause",
-					"line": 496,
+					"line": 503,
 					"column": 7,
-					"endLine": 496,
+					"endLine": 503,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6145,9 +6129,9 @@
 				{
 					"id": "c59b5d5e6d0405d2a272ba44824f223cf538d3f8",
 					"kind": "catch_clause",
-					"line": 556,
+					"line": 563,
 					"column": 7,
-					"endLine": 556,
+					"endLine": 563,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6161,9 +6145,9 @@
 				{
 					"id": "3e68e013b81d48830696d4b77cdf2c5d5bd2ed21",
 					"kind": "catch_clause",
-					"line": 570,
+					"line": 577,
 					"column": 7,
-					"endLine": 570,
+					"endLine": 577,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6177,9 +6161,9 @@
 				{
 					"id": "b4d139d1c6aa3899193af5d510ef0625e110e3e0",
 					"kind": "catch_clause",
-					"line": 587,
+					"line": 594,
 					"column": 7,
-					"endLine": 587,
+					"endLine": 594,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6193,9 +6177,9 @@
 				{
 					"id": "f44ab4707df90fa0d8f5e1c15d5849d559141112",
 					"kind": "catch_clause",
-					"line": 616,
+					"line": 623,
 					"column": 7,
-					"endLine": 616,
+					"endLine": 623,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6209,9 +6193,9 @@
 				{
 					"id": "9dbbd53f4ce01a70b93e826e65bf3b38a38d2a14",
 					"kind": "catch_clause",
-					"line": 640,
+					"line": 647,
 					"column": 7,
-					"endLine": 640,
+					"endLine": 647,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6225,9 +6209,9 @@
 				{
 					"id": "c43c01ee6cbe781a492b2863db939f6a767af6ea",
 					"kind": "catch_clause",
-					"line": 657,
+					"line": 664,
 					"column": 7,
-					"endLine": 657,
+					"endLine": 664,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6241,9 +6225,9 @@
 				{
 					"id": "80eba3fa1404787712bf50d2efaf2625855ae406",
 					"kind": "catch_clause",
-					"line": 673,
+					"line": 680,
 					"column": 7,
-					"endLine": 673,
+					"endLine": 680,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6257,9 +6241,9 @@
 				{
 					"id": "08ebaca091b145618436852b366d5b60d032134c",
 					"kind": "catch_clause",
-					"line": 687,
+					"line": 694,
 					"column": 7,
-					"endLine": 687,
+					"endLine": 694,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6273,9 +6257,9 @@
 				{
 					"id": "53601dfc39ec34bf4d25e6c0873453f412aee71f",
 					"kind": "catch_clause",
-					"line": 704,
+					"line": 711,
 					"column": 7,
-					"endLine": 704,
+					"endLine": 711,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6289,9 +6273,9 @@
 				{
 					"id": "9d26b380adc6fe2eea541f187a7b0a60b7d71edd",
 					"kind": "catch_clause",
-					"line": 721,
+					"line": 728,
 					"column": 7,
-					"endLine": 721,
+					"endLine": 728,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6303,36 +6287,36 @@
 					"reason": "Allowlisted catch_clause: The \"acknowledge\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"acknowledge\"."
 				},
 				{
-					"id": "95de4b2bfa167f8cfd7e0b6e847bc3c1e7dc8a95",
+					"id": "dab3d754b4d6813ca7d2f4d47eadbea2bfb7a11c",
 					"kind": "catch_clause",
-					"line": 751,
-					"column": 4,
-					"endLine": 751,
-					"endColumn": 77,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "run",
-						"justification": "The \"run\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"run\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"run\"."
-				},
-				{
-					"id": "cb77f1a5a5c10ff9bd0bfba554531e08f5b6ba02",
-					"kind": "catch_clause",
-					"line": 756,
-					"column": 6,
-					"endLine": 758,
-					"endColumn": 5,
+					"line": 760,
+					"column": 7,
+					"endLine": 762,
+					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "run",
-						"justification": "The \"run\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"run\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise, and the outer catch of the same method records it on the halloween probe before rethrowing."
 					},
-					"reason": "Allowlisted catch_clause: The \"run\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"run\"."
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"local_recovery\": a throw from the operation body rejects the transaction promise, and the outer catch of the same method records it on the halloween probe before rethrowing. Verified recovery: \"local_recovery\" in \"run\"."
+				},
+				{
+					"id": "dc65543f807bd419a05439311318c50fedf8b0f2",
+					"kind": "catch_clause",
+					"line": 766,
+					"column": 5,
+					"endLine": 772,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "run",
+						"justification": "The \"run\" catch is a \"rethrow\" that records the one outcome on the halloween probe, coded timeout when the engine did not answer in time (indexedDbFailureCode), and turns a give-up of withIndexedDbReopen into HalloweenStoreError unavailable."
+					},
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"rethrow\" that records the one outcome on the halloween probe, coded timeout when the engine did not answer in time (indexedDbFailureCode), and turns a give-up of withIndexedDbReopen into HalloweenStoreError unavailable. Verified recovery: \"rethrow\" in \"run\"."
 				}
 			]
 		},
@@ -8463,9 +8447,9 @@
 				{
 					"id": "d858a63034c30d8045e77c28d8777dc355a34194",
 					"kind": "promise_catch",
-					"line": 873,
+					"line": 876,
 					"column": 11,
-					"endLine": 878,
+					"endLine": 881,
 					"endColumn": 7,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8480,9 +8464,9 @@
 				{
 					"id": "c3e4fa40f86b6e8c74c825df57303c4b7f831995",
 					"kind": "catch_clause",
-					"line": 958,
+					"line": 961,
 					"column": 5,
-					"endLine": 967,
+					"endLine": 970,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -8494,9 +8478,9 @@
 				{
 					"id": "b9dd4a4555940f117aa91f79474e06fbe62fc849",
 					"kind": "catch_clause",
-					"line": 1073,
+					"line": 1076,
 					"column": 7,
-					"endLine": 1075,
+					"endLine": 1078,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8510,9 +8494,9 @@
 				{
 					"id": "9ab67d14d649c97b4e5cba6cccb4052e0240d583",
 					"kind": "catch_clause",
-					"line": 1227,
+					"line": 1230,
 					"column": 7,
-					"endLine": 1233,
+					"endLine": 1236,
 					"endColumn": 6,
 					"classification": "observed",
 					"evidence": {
@@ -8524,9 +8508,9 @@
 				{
 					"id": "ec5f92ef8f7fca865d94cb22b85c586504f84bce",
 					"kind": "catch_clause",
-					"line": 1273,
+					"line": 1276,
 					"column": 7,
-					"endLine": 1275,
+					"endLine": 1278,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8540,9 +8524,9 @@
 				{
 					"id": "c0d6ddc51b54af6b566015a85e2cbaec880e82a7",
 					"kind": "void_expression",
-					"line": 1379,
+					"line": 1382,
 					"column": 21,
-					"endLine": 1379,
+					"endLine": 1382,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8556,9 +8540,9 @@
 				{
 					"id": "bf7d358684d6e3ff708aa412d55f84c1cacf49fa",
 					"kind": "callback_registration",
-					"line": 1379,
+					"line": 1382,
 					"column": 26,
-					"endLine": 1379,
+					"endLine": 1382,
 					"endColumn": 102,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -8573,9 +8557,9 @@
 				{
 					"id": "fe70eae3373782f57876d29a32ea21742964a4bb",
 					"kind": "void_expression",
-					"line": 1385,
+					"line": 1388,
 					"column": 35,
-					"endLine": 1385,
+					"endLine": 1388,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8589,9 +8573,9 @@
 				{
 					"id": "cc21861f11fbd1dace6ac8801eb6f7c22a82ca82",
 					"kind": "void_expression",
-					"line": 1402,
+					"line": 1405,
 					"column": 5,
-					"endLine": 1402,
+					"endLine": 1405,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8605,9 +8589,9 @@
 				{
 					"id": "09863725c53254997fa42639e8c1ed30f985f871",
 					"kind": "void_expression",
-					"line": 1453,
+					"line": 1456,
 					"column": 19,
-					"endLine": 1453,
+					"endLine": 1456,
 					"endColumn": 100,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8621,9 +8605,9 @@
 				{
 					"id": "f05ee0a2b576e9d91cbb9e7ec23113009e009f5c",
 					"kind": "callback_registration",
-					"line": 1453,
+					"line": 1456,
 					"column": 24,
-					"endLine": 1453,
+					"endLine": 1456,
 					"endColumn": 100,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -8638,9 +8622,9 @@
 				{
 					"id": "7597fd7197fd4f3df5915492a396e8b2f6fa4a2e",
 					"kind": "void_expression",
-					"line": 1465,
+					"line": 1469,
 					"column": 83,
-					"endLine": 1465,
+					"endLine": 1469,
 					"endColumn": 125,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8654,9 +8638,9 @@
 				{
 					"id": "8bacfe4308bba0f0ba9dae50ef780cc2d0f15ae7",
 					"kind": "void_expression",
-					"line": 1465,
+					"line": 1469,
 					"column": 127,
-					"endLine": 1465,
+					"endLine": 1469,
 					"endColumn": 161,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8670,9 +8654,9 @@
 				{
 					"id": "f23f96f0352d269c0f5526dd965949fe2ef13d17",
 					"kind": "catch_clause",
-					"line": 1695,
+					"line": 1704,
 					"column": 5,
-					"endLine": 1702,
+					"endLine": 1711,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -8684,9 +8668,9 @@
 				{
 					"id": "a543acfc517baafc598a7a24d467068cb06b7800",
 					"kind": "catch_clause",
-					"line": 1735,
+					"line": 1744,
 					"column": 4,
-					"endLine": 1735,
+					"endLine": 1744,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8700,9 +8684,9 @@
 				{
 					"id": "d4fd3c7c921b4aedcfafe128fd5f0840cd1027cc",
 					"kind": "catch_clause",
-					"line": 1763,
+					"line": 1772,
 					"column": 6,
-					"endLine": 1769,
+					"endLine": 1778,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -8714,9 +8698,9 @@
 				{
 					"id": "1f40e4851a1e017ed7b9a6ecdd8416721c4466b6",
 					"kind": "promise_catch",
-					"line": 1960,
+					"line": 1969,
 					"column": 3,
-					"endLine": 1960,
+					"endLine": 1969,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8731,9 +8715,9 @@
 				{
 					"id": "a0b4d649e014951a88d491bd9b0d8e7a8e327132",
 					"kind": "void_expression",
-					"line": 2049,
+					"line": 2058,
 					"column": 30,
-					"endLine": 2049,
+					"endLine": 2058,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8747,9 +8731,9 @@
 				{
 					"id": "39b977f7aee04b8faa42b51990318eb60078f1f7",
 					"kind": "callback_registration",
-					"line": 2049,
+					"line": 2058,
 					"column": 35,
-					"endLine": 2049,
+					"endLine": 2058,
 					"endColumn": 99,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -8764,9 +8748,9 @@
 				{
 					"id": "5975d1589f5e6b0e0fa022521b5f7dcf7e106db8",
 					"kind": "void_expression",
-					"line": 2098,
+					"line": 2107,
 					"column": 4,
-					"endLine": 2098,
+					"endLine": 2107,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8778,11 +8762,27 @@
 					"reason": "Allowlisted void_expression: The \"perform\" owner explicitly handles \"this.armAssistedDetection\": as a detached arm of assisted detection after every successful connection check; armAssistedDetection owns its own rejection and diagnostics. Verified target: \"this.armAssistedDetection\" in \"perform\"."
 				},
 				{
+					"id": "343676b02d39fb16ceeed226aa9ceb8e4ef7461a",
+					"kind": "catch_clause",
+					"line": 2181,
+					"column": 5,
+					"endLine": 2184,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "toggleTrackedAchievement",
+						"justification": "The \"toggleTrackedAchievement\" owner answers refused with a \"fallback_return\" when the settings save threw; that failure was already recorded by updateSettings under settings_save, and the section says it in its live region."
+					},
+					"reason": "Allowlisted catch_clause: The \"toggleTrackedAchievement\" owner answers refused with a \"fallback_return\" when the settings save threw; that failure was already recorded by updateSettings under settings_save, and the section says it in its live region. Verified recovery: \"fallback_return\" in \"toggleTrackedAchievement\"."
+				},
+				{
 					"id": "7d9989c42855b6725181eb31bcb808695ca53fad",
 					"kind": "callback_registration",
-					"line": 2464,
+					"line": 2494,
 					"column": 18,
-					"endLine": 2464,
+					"endLine": 2494,
 					"endColumn": 99,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -8797,9 +8797,9 @@
 				{
 					"id": "fd4b55f7f40b9b12fbe8ffc4e108900381d12a09",
 					"kind": "catch_clause",
-					"line": 2570,
+					"line": 2600,
 					"column": 5,
-					"endLine": 2573,
+					"endLine": 2603,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -8811,9 +8811,9 @@
 				{
 					"id": "ec54f1f5cbdde49af610fff203e0d46f4f13de2f",
 					"kind": "catch_clause",
-					"line": 2861,
+					"line": 2891,
 					"column": 5,
-					"endLine": 2864,
+					"endLine": 2894,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -8825,9 +8825,9 @@
 				{
 					"id": "d7852047155e353d997b8749bf93041caef9657c",
 					"kind": "catch_clause",
-					"line": 3024,
+					"line": 3054,
 					"column": 6,
-					"endLine": 3026,
+					"endLine": 3056,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8841,9 +8841,9 @@
 				{
 					"id": "39321e3773acf7d499bb0cbef505a02acd15dcf3",
 					"kind": "void_expression",
-					"line": 3423,
+					"line": 3453,
 					"column": 3,
-					"endLine": 3428,
+					"endLine": 3458,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8857,9 +8857,9 @@
 				{
 					"id": "8cf2abd603fb781f240d2def5bc6724352ea55b9",
 					"kind": "catch_clause",
-					"line": 3445,
+					"line": 3475,
 					"column": 5,
-					"endLine": 3458,
+					"endLine": 3488,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -8871,9 +8871,9 @@
 				{
 					"id": "a0afb18ec37aeca81fb00966ff4adf703e714173",
 					"kind": "void_expression",
-					"line": 3479,
+					"line": 3509,
 					"column": 4,
-					"endLine": 3482,
+					"endLine": 3512,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8887,9 +8887,9 @@
 				{
 					"id": "545eefdefa4540c418490a0cf5c1c8588c962ab8",
 					"kind": "catch_clause",
-					"line": 3504,
+					"line": 3534,
 					"column": 6,
-					"endLine": 3510,
+					"endLine": 3540,
 					"endColumn": 7,
 					"classification": "observed",
 					"evidence": {
@@ -8901,9 +8901,9 @@
 				{
 					"id": "55052c2976892632e72260d244efb7195c9b5ea0",
 					"kind": "void_expression",
-					"line": 3576,
+					"line": 3606,
 					"column": 3,
-					"endLine": 3576,
+					"endLine": 3606,
 					"endColumn": 42,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8917,9 +8917,9 @@
 				{
 					"id": "572340b77f88f75859e2a4dedd28434dff621dc9",
 					"kind": "promise_catch",
-					"line": 3586,
+					"line": 3616,
 					"column": 11,
-					"endLine": 3586,
+					"endLine": 3616,
 					"endColumn": 110,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8934,9 +8934,9 @@
 				{
 					"id": "9afef593cac10fa2c8ea564b2f2cc39824890258",
 					"kind": "catch_clause",
-					"line": 3587,
+					"line": 3617,
 					"column": 5,
-					"endLine": 3589,
+					"endLine": 3619,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8950,9 +8950,9 @@
 				{
 					"id": "a8a68ac19b3cc4db8638dc84da86a86411e12c29",
 					"kind": "void_expression",
-					"line": 3596,
+					"line": 3626,
 					"column": 3,
-					"endLine": 3605,
+					"endLine": 3635,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8966,9 +8966,9 @@
 				{
 					"id": "878dfcbeb9f7f83f74738944db42f9a441155fcc",
 					"kind": "void_expression",
-					"line": 3636,
+					"line": 3666,
 					"column": 19,
-					"endLine": 3638,
+					"endLine": 3668,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8982,9 +8982,9 @@
 				{
 					"id": "4b24a19ddcc2db73e24653607bec975bc0df2d4e",
 					"kind": "catch_clause",
-					"line": 3678,
+					"line": 3708,
 					"column": 5,
-					"endLine": 3678,
+					"endLine": 3708,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8998,9 +8998,9 @@
 				{
 					"id": "90c2cd0a8ba42bd2e0227fa74bf7455b4bab4dfd",
 					"kind": "catch_clause",
-					"line": 3685,
+					"line": 3715,
 					"column": 3,
-					"endLine": 3685,
+					"endLine": 3715,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9014,9 +9014,9 @@
 				{
 					"id": "1abf33b79a626dfe7c7430da5f26a0409eef9c1e",
 					"kind": "catch_clause",
-					"line": 3818,
+					"line": 3848,
 					"column": 5,
-					"endLine": 3818,
+					"endLine": 3848,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9030,9 +9030,9 @@
 				{
 					"id": "cf530cf92ec3897aa90a15c08bc7300979d235cd",
 					"kind": "catch_clause",
-					"line": 3984,
+					"line": 4014,
 					"column": 5,
-					"endLine": 3986,
+					"endLine": 4016,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9044,9 +9044,9 @@
 				{
 					"id": "cb0488c2843711d17113c21535bd3e78ce805f13",
 					"kind": "catch_clause",
-					"line": 4034,
+					"line": 4064,
 					"column": 5,
-					"endLine": 4036,
+					"endLine": 4066,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9060,9 +9060,9 @@
 				{
 					"id": "55bd095604828519ea1f6fb157cc3a03bae7ff0e",
 					"kind": "callback_registration",
-					"line": 4051,
+					"line": 4081,
 					"column": 18,
-					"endLine": 4055,
+					"endLine": 4085,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9077,9 +9077,9 @@
 				{
 					"id": "d518c0e4554b41653e0b3a1e58c67caefe7920a1",
 					"kind": "promise_catch",
-					"line": 4051,
+					"line": 4081,
 					"column": 18,
-					"endLine": 4060,
+					"endLine": 4090,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9094,9 +9094,9 @@
 				{
 					"id": "c0f6f743252f0087dab4de14a026e8262cf30660",
 					"kind": "callback_registration",
-					"line": 4051,
+					"line": 4081,
 					"column": 18,
-					"endLine": 4064,
+					"endLine": 4094,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9111,9 +9111,9 @@
 				{
 					"id": "f42302cf0a7c39343c249824059bf5434b859753",
 					"kind": "callback_registration",
-					"line": 4096,
+					"line": 4126,
 					"column": 18,
-					"endLine": 4100,
+					"endLine": 4130,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9128,9 +9128,9 @@
 				{
 					"id": "bb1a3b6e03292fdb478d0f71e674f5f7500511a9",
 					"kind": "promise_catch",
-					"line": 4096,
+					"line": 4126,
 					"column": 18,
-					"endLine": 4108,
+					"endLine": 4138,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9145,9 +9145,9 @@
 				{
 					"id": "94590d89298efef6333db74e297c5071663abbbc",
 					"kind": "callback_registration",
-					"line": 4096,
+					"line": 4126,
 					"column": 18,
-					"endLine": 4112,
+					"endLine": 4142,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9162,9 +9162,9 @@
 				{
 					"id": "11924231863c6eda90628d4bcdb8e302477d6c3e",
 					"kind": "catch_clause",
-					"line": 4192,
+					"line": 4222,
 					"column": 5,
-					"endLine": 4200,
+					"endLine": 4230,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9176,9 +9176,9 @@
 				{
 					"id": "fa46b7738ce47742889194b6520ce6f18fd97b22",
 					"kind": "catch_clause",
-					"line": 4213,
+					"line": 4243,
 					"column": 5,
-					"endLine": 4215,
+					"endLine": 4245,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9192,9 +9192,9 @@
 				{
 					"id": "d52c88483e6bbd1d925e252b91318fbc1298859e",
 					"kind": "catch_clause",
-					"line": 4229,
+					"line": 4259,
 					"column": 5,
-					"endLine": 4231,
+					"endLine": 4261,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9208,9 +9208,9 @@
 				{
 					"id": "c9f4d501ec2cb1dc97113fb49c1c990d270a5dd8",
 					"kind": "callback_registration",
-					"line": 4420,
+					"line": 4450,
 					"column": 18,
-					"endLine": 4451,
+					"endLine": 4481,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9225,9 +9225,9 @@
 				{
 					"id": "d9643cb885a00ea7d9b9681392345e345185d6c7",
 					"kind": "promise_catch",
-					"line": 4420,
+					"line": 4450,
 					"column": 18,
-					"endLine": 4465,
+					"endLine": 4495,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "observed",
@@ -9240,9 +9240,9 @@
 				{
 					"id": "54d9b3a70b55678c113eeb7717854c5d92ae86b2",
 					"kind": "callback_registration",
-					"line": 4420,
+					"line": 4450,
 					"column": 18,
-					"endLine": 4466,
+					"endLine": 4496,
 					"endColumn": 60,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9257,9 +9257,9 @@
 				{
 					"id": "c3ae68566e32c12bb090076de08b7ba3431651cb",
 					"kind": "catch_clause",
-					"line": 4633,
+					"line": 4663,
 					"column": 6,
-					"endLine": 4645,
+					"endLine": 4675,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -9271,9 +9271,9 @@
 				{
 					"id": "fa67a11fad255eba6216837d9c3f67f8d2ae2312",
 					"kind": "catch_clause",
-					"line": 4683,
+					"line": 4713,
 					"column": 5,
-					"endLine": 4685,
+					"endLine": 4715,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9285,9 +9285,9 @@
 				{
 					"id": "81c62c0279eb731d8a288003f470d4dd18b99fbe",
 					"kind": "void_expression",
-					"line": 4712,
+					"line": 4742,
 					"column": 7,
-					"endLine": 4715,
+					"endLine": 4745,
 					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9301,9 +9301,9 @@
 				{
 					"id": "ba040cad1edce89114b19793e7efa7e46a16bd7a",
 					"kind": "callback_registration",
-					"line": 4712,
+					"line": 4742,
 					"column": 12,
-					"endLine": 4715,
+					"endLine": 4745,
 					"endColumn": 8,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9318,9 +9318,9 @@
 				{
 					"id": "f1d8ad9a2b41606a3a04cd653597f21918a0fa95",
 					"kind": "void_expression",
-					"line": 4733,
+					"line": 4763,
 					"column": 22,
-					"endLine": 4733,
+					"endLine": 4763,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9334,9 +9334,9 @@
 				{
 					"id": "6752a7c99052d0a41664dc47536e1a33394d1648",
 					"kind": "promise_catch",
-					"line": 4733,
+					"line": 4763,
 					"column": 27,
-					"endLine": 4733,
+					"endLine": 4763,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9351,9 +9351,9 @@
 				{
 					"id": "37f8e1478029f922cda8f8f9a3794833e1b0bd14",
 					"kind": "void_expression",
-					"line": 4762,
+					"line": 4792,
 					"column": 22,
-					"endLine": 4762,
+					"endLine": 4792,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9367,9 +9367,9 @@
 				{
 					"id": "f71b27614079d8710ac91a84c66ee9bcfd283218",
 					"kind": "void_expression",
-					"line": 4796,
+					"line": 4826,
 					"column": 4,
-					"endLine": 4796,
+					"endLine": 4826,
 					"endColumn": 29,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9383,9 +9383,9 @@
 				{
 					"id": "d4bafd7d3f50ec407381957023f1a066cfd8b82f",
 					"kind": "void_expression",
-					"line": 4797,
+					"line": 4827,
 					"column": 4,
-					"endLine": 4798,
+					"endLine": 4828,
 					"endColumn": 104,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9399,9 +9399,9 @@
 				{
 					"id": "cb6a88f9ec9089bdb29ae287d93edf374c40923f",
 					"kind": "void_expression",
-					"line": 4800,
+					"line": 4830,
 					"column": 3,
-					"endLine": 4800,
+					"endLine": 4830,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9415,9 +9415,9 @@
 				{
 					"id": "bcf5ccc78f836b1a682497bc8aa293348cf4ca3e",
 					"kind": "catch_clause",
-					"line": 4869,
+					"line": 4899,
 					"column": 5,
-					"endLine": 4872,
+					"endLine": 4902,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9431,9 +9431,9 @@
 				{
 					"id": "adfd960861f6e628a65d0a01dabfc7dd5621f1e4",
 					"kind": "catch_clause",
-					"line": 4880,
+					"line": 4910,
 					"column": 5,
-					"endLine": 4882,
+					"endLine": 4912,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9447,9 +9447,9 @@
 				{
 					"id": "c934c4a5ed941b049a6566572c64101fc5fb9547",
 					"kind": "callback_registration",
-					"line": 4909,
+					"line": 4939,
 					"column": 18,
-					"endLine": 4912,
+					"endLine": 4942,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9464,9 +9464,9 @@
 				{
 					"id": "71d14f9ad532611a4703914547606f05430aa766",
 					"kind": "callback_registration",
-					"line": 4909,
+					"line": 4939,
 					"column": 18,
-					"endLine": 4912,
+					"endLine": 4942,
 					"endColumn": 91,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9481,9 +9481,9 @@
 				{
 					"id": "458c5cb85d23c947d97bc5c97cbc13bb21fa4260",
 					"kind": "catch_clause",
-					"line": 5051,
+					"line": 5081,
 					"column": 6,
-					"endLine": 5054,
+					"endLine": 5084,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9497,9 +9497,9 @@
 				{
 					"id": "6c8798075442081f5cc38441def783a0d90182ee",
 					"kind": "catch_clause",
-					"line": 5129,
+					"line": 5159,
 					"column": 6,
-					"endLine": 5133,
+					"endLine": 5163,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9513,9 +9513,9 @@
 				{
 					"id": "c4596e2be8241b08541ac16d08bdb3fa721945c6",
 					"kind": "catch_clause",
-					"line": 5229,
+					"line": 5259,
 					"column": 3,
-					"endLine": 5229,
+					"endLine": 5259,
 					"endColumn": 113,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9529,9 +9529,9 @@
 				{
 					"id": "4cd79f6abd4507a3fe1263dbf8bfa43f8aae6d61",
 					"kind": "catch_clause",
-					"line": 5360,
+					"line": 5390,
 					"column": 6,
-					"endLine": 5368,
+					"endLine": 5398,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -9543,9 +9543,9 @@
 				{
 					"id": "f92cfc661f99537af095df9072843636d2459be7",
 					"kind": "callback_registration",
-					"line": 5393,
+					"line": 5423,
 					"column": 25,
-					"endLine": 5395,
+					"endLine": 5425,
 					"endColumn": 43,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9560,9 +9560,9 @@
 				{
 					"id": "dfbef88f9a59aa09fa4a5f4b2a2c70cc80e4249e",
 					"kind": "void_expression",
-					"line": 5442,
+					"line": 5472,
 					"column": 29,
-					"endLine": 5445,
+					"endLine": 5475,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9576,9 +9576,9 @@
 				{
 					"id": "827aaccbd19a4a18a72e278cdf63fceff093afa9",
 					"kind": "catch_clause",
-					"line": 5449,
+					"line": 5479,
 					"column": 5,
-					"endLine": 5455,
+					"endLine": 5485,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9592,9 +9592,9 @@
 				{
 					"id": "c19166069b7e9019791a8c3c278ca19a43e3c5bc",
 					"kind": "void_expression",
-					"line": 5450,
+					"line": 5480,
 					"column": 55,
-					"endLine": 5453,
+					"endLine": 5483,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9608,9 +9608,9 @@
 				{
 					"id": "4b43d98ed427424ee39a230b519d14f826cf1bce",
 					"kind": "void_expression",
-					"line": 5490,
+					"line": 5520,
 					"column": 3,
-					"endLine": 5490,
+					"endLine": 5520,
 					"endColumn": 97,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9624,9 +9624,9 @@
 				{
 					"id": "35fbd9d3016bb631c068f5279b6ea4359d20506e",
 					"kind": "catch_clause",
-					"line": 5554,
+					"line": 5584,
 					"column": 3,
-					"endLine": 5554,
+					"endLine": 5584,
 					"endColumn": 49,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9640,9 +9640,9 @@
 				{
 					"id": "98700551298dce36e6814d7f2296e45b2cc7032f",
 					"kind": "catch_clause",
-					"line": 5584,
+					"line": 5614,
 					"column": 5,
-					"endLine": 5591,
+					"endLine": 5621,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9654,9 +9654,9 @@
 				{
 					"id": "83015dc52bb0c806baaec29a7150d7e52028ad32",
 					"kind": "callback_registration",
-					"line": 5639,
+					"line": 5669,
 					"column": 25,
-					"endLine": 5639,
+					"endLine": 5669,
 					"endColumn": 89,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9671,9 +9671,9 @@
 				{
 					"id": "36fb5e44ab318e92c1f58e5564cd13f2af8fbe27",
 					"kind": "void_expression",
-					"line": 5646,
+					"line": 5676,
 					"column": 5,
-					"endLine": 5646,
+					"endLine": 5676,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9687,9 +9687,9 @@
 				{
 					"id": "6fae3ba3442df33965cacf181af00eca565bcbb0",
 					"kind": "void_expression",
-					"line": 5667,
+					"line": 5697,
 					"column": 29,
-					"endLine": 5670,
+					"endLine": 5700,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9703,9 +9703,9 @@
 				{
 					"id": "c14be76cd9da0de74cd40fdc59ea20031d60c603",
 					"kind": "catch_clause",
-					"line": 5675,
+					"line": 5705,
 					"column": 7,
-					"endLine": 5675,
+					"endLine": 5705,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9719,9 +9719,9 @@
 				{
 					"id": "cd4916558f29c39ec2c1d980cd15df214208dd32",
 					"kind": "catch_clause",
-					"line": 5679,
+					"line": 5709,
 					"column": 5,
-					"endLine": 5685,
+					"endLine": 5715,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9735,9 +9735,9 @@
 				{
 					"id": "8e6d3371d41b0d7632f747210a17dc8e858bbd70",
 					"kind": "void_expression",
-					"line": 5680,
+					"line": 5710,
 					"column": 55,
-					"endLine": 5683,
+					"endLine": 5713,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9751,9 +9751,9 @@
 				{
 					"id": "334022dc13fbebddb4dcb92f8406d45cf14a62da",
 					"kind": "catch_clause",
-					"line": 5825,
+					"line": 5857,
 					"column": 6,
-					"endLine": 5827,
+					"endLine": 5859,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9767,9 +9767,9 @@
 				{
 					"id": "940a9c8d9c850abd61b99b1ad1b3e9257a808ddc",
 					"kind": "callback_registration",
-					"line": 5911,
+					"line": 5943,
 					"column": 3,
-					"endLine": 5916,
+					"endLine": 5948,
 					"endColumn": 5,
 					"registration": "queueMicrotask",
 					"classification": "allowlisted",
@@ -9784,9 +9784,9 @@
 				{
 					"id": "0d7e0c7a35c65fb6505392e13a9effe0966589da",
 					"kind": "callback_registration",
-					"line": 6268,
+					"line": 6300,
 					"column": 24,
-					"endLine": 6268,
+					"endLine": 6300,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9801,9 +9801,9 @@
 				{
 					"id": "d2ee8524a5c8c1a9fed1cc8ac5aac25a738cbc8f",
 					"kind": "void_expression",
-					"line": 6298,
+					"line": 6330,
 					"column": 19,
-					"endLine": 6298,
+					"endLine": 6330,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9817,9 +9817,9 @@
 				{
 					"id": "e6f8263d0defff98ffc28f3e4fb23e3d00713812",
 					"kind": "callback_registration",
-					"line": 6301,
+					"line": 6333,
 					"column": 24,
-					"endLine": 6301,
+					"endLine": 6333,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9834,9 +9834,9 @@
 				{
 					"id": "81ad1801388c43c7d6e01b667169f43c2580f97e",
 					"kind": "catch_clause",
-					"line": 6302,
+					"line": 6334,
 					"column": 3,
-					"endLine": 6305,
+					"endLine": 6337,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9850,9 +9850,9 @@
 				{
 					"id": "e51617b00c7ebe44c0dec7319946149b61267a78",
 					"kind": "void_expression",
-					"line": 6303,
+					"line": 6335,
 					"column": 20,
-					"endLine": 6303,
+					"endLine": 6335,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9866,9 +9866,9 @@
 				{
 					"id": "4e301aa2861790d20e4f84670ba115cc57c1f6d6",
 					"kind": "void_expression",
-					"line": 6308,
+					"line": 6340,
 					"column": 20,
-					"endLine": 6308,
+					"endLine": 6340,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9882,9 +9882,9 @@
 				{
 					"id": "a1a36a201e12975b613bd5c18752041569de5833",
 					"kind": "void_expression",
-					"line": 6313,
+					"line": 6345,
 					"column": 19,
-					"endLine": 6313,
+					"endLine": 6345,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9898,9 +9898,9 @@
 				{
 					"id": "d3c5cd6b5e8a4e6b3f1791eef863687c40e25aea",
 					"kind": "void_expression",
-					"line": 6334,
+					"line": 6366,
 					"column": 19,
-					"endLine": 6334,
+					"endLine": 6366,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9914,9 +9914,9 @@
 				{
 					"id": "3816ad7643065619f6e0d042d8457255a79130a7",
 					"kind": "callback_registration",
-					"line": 6337,
+					"line": 6369,
 					"column": 24,
-					"endLine": 6337,
+					"endLine": 6369,
 					"endColumn": 93,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9931,9 +9931,9 @@
 				{
 					"id": "ef06b4866c68da37533d51f68cded885e1cda01d",
 					"kind": "catch_clause",
-					"line": 6338,
+					"line": 6370,
 					"column": 3,
-					"endLine": 6341,
+					"endLine": 6373,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9947,9 +9947,9 @@
 				{
 					"id": "8f2439040f04ee35002e2fb486ad1d3744451487",
 					"kind": "void_expression",
-					"line": 6339,
+					"line": 6371,
 					"column": 20,
-					"endLine": 6339,
+					"endLine": 6371,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9963,9 +9963,9 @@
 				{
 					"id": "52c83b19e342b3a71d0c5792ae25242583c53e02",
 					"kind": "void_expression",
-					"line": 6344,
+					"line": 6376,
 					"column": 20,
-					"endLine": 6344,
+					"endLine": 6376,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9979,9 +9979,9 @@
 				{
 					"id": "14661eb16607a543ae29e70347b88869724e4e2d",
 					"kind": "void_expression",
-					"line": 6347,
+					"line": 6379,
 					"column": 19,
-					"endLine": 6347,
+					"endLine": 6379,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9995,9 +9995,9 @@
 				{
 					"id": "3f1d9a42d7bad4594837c36688d9f6a839811106",
 					"kind": "catch_clause",
-					"line": 6481,
+					"line": 6513,
 					"column": 5,
-					"endLine": 6484,
+					"endLine": 6516,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10009,9 +10009,9 @@
 				{
 					"id": "cf2457ea09339a061ccbd73e4e47bce5b13473e5",
 					"kind": "callback_registration",
-					"line": 6882,
+					"line": 6914,
 					"column": 17,
-					"endLine": 6882,
+					"endLine": 6914,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10026,9 +10026,9 @@
 				{
 					"id": "43004c112baf2d083714ed369372095021455d1d",
 					"kind": "promise_catch",
-					"line": 6882,
+					"line": 6914,
 					"column": 17,
-					"endLine": 6882,
+					"endLine": 6914,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10043,9 +10043,9 @@
 				{
 					"id": "5f8e08d4a327890e911dad18d1957e859d216cc2",
 					"kind": "callback_registration",
-					"line": 6883,
+					"line": 6915,
 					"column": 20,
-					"endLine": 6883,
+					"endLine": 6915,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10060,9 +10060,9 @@
 				{
 					"id": "8974d15d4ec4a076f85ec88ad0d8f42f56c90302",
 					"kind": "promise_catch",
-					"line": 6883,
+					"line": 6915,
 					"column": 20,
-					"endLine": 6883,
+					"endLine": 6915,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10077,9 +10077,9 @@
 				{
 					"id": "bd67adc222fe844d703c05617b4d192198d7fbc3",
 					"kind": "catch_clause",
-					"line": 7033,
+					"line": 7065,
 					"column": 5,
-					"endLine": 7033,
+					"endLine": 7065,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10093,9 +10093,9 @@
 				{
 					"id": "ff338dcbd125c5fa78e00e2af469ff2fcecb89db",
 					"kind": "catch_clause",
-					"line": 7063,
+					"line": 7095,
 					"column": 5,
-					"endLine": 7063,
+					"endLine": 7095,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10109,9 +10109,9 @@
 				{
 					"id": "94d6b4776639a6a734379011d2e02de96265a034",
 					"kind": "promise_catch",
-					"line": 7135,
+					"line": 7167,
 					"column": 7,
-					"endLine": 7135,
+					"endLine": 7167,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10126,9 +10126,9 @@
 				{
 					"id": "d27f06a0044e5f3ab79cc19299174127a9de4e5b",
 					"kind": "promise_catch",
-					"line": 7190,
+					"line": 7222,
 					"column": 2,
-					"endLine": 7190,
+					"endLine": 7222,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11195,9 +11195,9 @@
 				{
 					"id": "ef07a7d9e7c49827528eda0389cf0265575889c6",
 					"kind": "catch_clause",
-					"line": 138,
+					"line": 150,
 					"column": 5,
-					"endLine": 138,
+					"endLine": 150,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12585,68 +12585,84 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "22b10c19fa77f6e892c00b53ef558161753bd59a",
+					"id": "f5ac746e59ed87d6128c1ee7fee073dad400c343",
 					"kind": "catch_clause",
-					"line": 95,
+					"line": 114,
+					"column": 6,
+					"endLine": 117,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "constructor",
+						"justification": "The \"constructor\" owner builds the connect callback, which records a failed open on the pending_proposal probe (attempt.failure) and then does a \"rethrow\", so the read or transaction that caused the open fails and records its own outcome."
+					},
+					"reason": "Allowlisted catch_clause: The \"constructor\" owner builds the connect callback, which records a failed open on the pending_proposal probe (attempt.failure) and then does a \"rethrow\", so the read or transaction that caused the open fails and records its own outcome. Verified recovery: \"rethrow\" in \"constructor\"."
+				},
+				{
+					"id": "0d96685483f6222de3420bc544030258fc826cd4",
+					"kind": "catch_clause",
+					"line": 131,
 					"column": 5,
-					"endLine": 98,
+					"endLine": 134,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "read",
-						"justification": "The \"read\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"read\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure), coded timeout when the engine did not answer in time, and hands the caller the same error."
 					},
-					"reason": "Allowlisted catch_clause: The \"read\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"read\"."
+					"reason": "Allowlisted catch_clause: The \"read\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure), coded timeout when the engine did not answer in time, and hands the caller the same error. Verified recovery: \"rethrow\" in \"read\"."
 				},
 				{
-					"id": "4fee5c5a2b5afe027082982485f56e4f99538951",
+					"id": "c57b9c275048744acf89e3016738a5b19f2247b0",
 					"kind": "catch_clause",
-					"line": 127,
-					"column": 7,
-					"endLine": 130,
-					"endColumn": 6,
+					"line": 164,
+					"column": 9,
+					"endLine": 167,
+					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"transaction\" catch is a \"local_recovery\": a mutator that throws aborts the transaction, which rejects as a failed mutation, and the same method records that rejection through attempt.failure."
 					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
+					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"local_recovery\": a mutator that throws aborts the transaction, which rejects as a failed mutation, and the same method records that rejection through attempt.failure. Verified recovery: \"local_recovery\" in \"transaction\"."
 				},
 				{
-					"id": "d965959f1820cbd42acdb825c31f08b58c26c1ac",
+					"id": "85934f319cc6338d984bfb3be503a29d6e9497b0",
 					"kind": "catch_clause",
-					"line": 139,
+					"line": 177,
 					"column": 5,
-					"endLine": 142,
+					"endLine": 180,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "transaction",
-						"justification": "The \"transaction\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"transaction\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure), coded timeout when the engine did not answer in time, and hands the caller the same error."
 					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"transaction\"."
+					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure), coded timeout when the engine did not answer in time, and hands the caller the same error. Verified recovery: \"rethrow\" in \"transaction\"."
 				},
 				{
-					"id": "f0531fa2b1b40140bded5b313611deb5b713bed4",
+					"id": "86cb84f52649dfe95e33f37ac4c6d392bac8b2c3",
 					"kind": "catch_clause",
-					"line": 219,
+					"line": 197,
 					"column": 5,
-					"endLine": 222,
+					"endLine": 200,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
-						"scope": "open",
-						"justification": "The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "run",
+						"justification": "The \"run\" catch is a \"rethrow\": a connection lost after the one reopen or a transaction unanswered past the bound becomes the queue's unavailable error carrying its reason; read and transaction record it through attempt.failure."
 					},
-					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"open\"."
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"rethrow\": a connection lost after the one reopen or a transaction unanswered past the bound becomes the queue's unavailable error carrying its reason; read and transaction record it through attempt.failure. Verified recovery: \"rethrow\" in \"run\"."
 				}
 			]
 		},
@@ -12876,9 +12892,9 @@
 				{
 					"id": "5f95233f429844c2de67279fe27ac1d2b70b6e19",
 					"kind": "promise_catch",
-					"line": 265,
+					"line": 267,
 					"column": 19,
-					"endLine": 265,
+					"endLine": 267,
 					"endColumn": 50,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -12904,9 +12920,9 @@
 				{
 					"id": "127e42121138b9c1525587ee09bb3743ef8aa034",
 					"kind": "catch_clause",
-					"line": 101,
+					"line": 118,
 					"column": 5,
-					"endLine": 101,
+					"endLine": 118,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12920,9 +12936,9 @@
 				{
 					"id": "ce867c8ae26855fc2a01370f5f2ccfd979a36aec",
 					"kind": "catch_clause",
-					"line": 111,
+					"line": 128,
 					"column": 5,
-					"endLine": 111,
+					"endLine": 128,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12936,9 +12952,9 @@
 				{
 					"id": "d8d74f9625cd7fc537fb3b12223f9cb993005235",
 					"kind": "catch_clause",
-					"line": 138,
+					"line": 156,
 					"column": 5,
-					"endLine": 138,
+					"endLine": 156,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12952,9 +12968,9 @@
 				{
 					"id": "f7592d6fe8f13c62c1b65034d1604884b0c858ae",
 					"kind": "catch_clause",
-					"line": 171,
+					"line": 190,
 					"column": 5,
-					"endLine": 171,
+					"endLine": 190,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12968,9 +12984,9 @@
 				{
 					"id": "617ea83cad5df99cbfea41d9639be4fa95740fe6",
 					"kind": "catch_clause",
-					"line": 212,
+					"line": 232,
 					"column": 5,
-					"endLine": 212,
+					"endLine": 232,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12984,9 +13000,9 @@
 				{
 					"id": "2ff331854981e5af435178b2c5dd17f91a4534f0",
 					"kind": "catch_clause",
-					"line": 277,
+					"line": 298,
 					"column": 5,
-					"endLine": 277,
+					"endLine": 298,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13000,9 +13016,9 @@
 				{
 					"id": "cd437dea1350e2a4be0d436c6ce1403f2b966d21",
 					"kind": "catch_clause",
-					"line": 301,
+					"line": 323,
 					"column": 5,
-					"endLine": 301,
+					"endLine": 323,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13014,61 +13030,11 @@
 					"reason": "Allowlisted catch_clause: The \"disable\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"disable\"."
 				},
 				{
-					"id": "10ba2fd5db1b9085426ebac51dfc20b86d0637e5",
-					"kind": "void_expression",
-					"line": 305,
-					"column": 3,
-					"endLine": 305,
-					"endColumn": 82,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.database.then().catch",
-						"scope": "close",
-						"justification": "The \"close\" owner deliberately detaches \"this.database.then().catch\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"close\" owner deliberately detaches \"this.database.then().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.database.then().catch\" in \"close\"."
-				},
-				{
-					"id": "0f4861a7dff6c76428a10d72df51590bea995071",
-					"kind": "callback_registration",
-					"line": 305,
-					"column": 8,
-					"endLine": 305,
-					"endColumn": 59,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "close",
-						"justification": "The \"close\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"close\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"close\"."
-				},
-				{
-					"id": "634883251b9a19b0847d11064ebe1b074f4bb877",
-					"kind": "promise_catch",
-					"line": 305,
-					"column": 8,
-					"endLine": 305,
-					"endColumn": 82,
-					"registration": "catch",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "close",
-						"justification": "The \"close\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted promise_catch: The \"close\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"close\"."
-				},
-				{
 					"id": "66319446b83ba78ee276f3d1a44bd04633eee9dd",
 					"kind": "catch_clause",
-					"line": 350,
+					"line": 372,
 					"column": 5,
-					"endLine": 350,
+					"endLine": 372,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13082,9 +13048,9 @@
 				{
 					"id": "a1bcc0670f29ab460c5ca81bc16639fa9c680962",
 					"kind": "catch_clause",
-					"line": 390,
+					"line": 413,
 					"column": 5,
-					"endLine": 390,
+					"endLine": 413,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13160,53 +13126,53 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "c95b1f0ffb894d117c44598c246319c72033648c",
+					"id": "6ddb681891dcc925f81861466819193e442820af",
 					"kind": "callback_registration",
-					"line": 36,
+					"line": 92,
 					"column": 18,
-					"endLine": 38,
+					"endLine": 94,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "finally",
-						"scope": "initialize",
-						"justification": "The \"initialize\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
+						"scope": "load",
+						"justification": "The \"load\" owner registers \"finally\" only to forget its single in-flight load; the load itself turns every outcome into the recorder state, and the store records it on its probe."
 					},
-					"reason": "Allowlisted callback_registration: The \"initialize\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"initialize\"."
+					"reason": "Allowlisted callback_registration: The \"load\" owner registers \"finally\" only to forget its single in-flight load; the load itself turns every outcome into the recorder state, and the store records it on its probe. Verified registration: \"finally\" in \"load\"."
 				},
 				{
-					"id": "3cc67c066c67e46304a2ba88c90d55ca6bd3c6f5",
+					"id": "76ca4cbb79982ba9ea90dcbc1799b5b87a91d062",
 					"kind": "catch_clause",
-					"line": 86,
+					"line": 103,
 					"column": 5,
-					"endLine": 92,
+					"endLine": 110,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "initializeInternal",
-						"justification": "The \"initializeInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"initializeInternal\" catch turns a load that threw into the unavailable state with a \"fallback_return\", unrecorded: the IndexedDB store answers its own failures (recorded on its probe) and never throws, so this only guards another implementation of the port. The next write loads again."
 					},
-					"reason": "Allowlisted catch_clause: The \"initializeInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"initializeInternal\"."
+					"reason": "Allowlisted catch_clause: The \"initializeInternal\" catch turns a load that threw into the unavailable state with a \"fallback_return\", unrecorded: the IndexedDB store answers its own failures (recorded on its probe) and never throws, so this only guards another implementation of the port. The next write loads again. Verified recovery: \"fallback_return\" in \"initializeInternal\"."
 				},
 				{
-					"id": "cb3665e3379167f71bff4e489f04bfdd3c65187e",
+					"id": "ba8aebe6e3fe609f6400a7e4dbd3fbcb9980661d",
 					"kind": "catch_clause",
-					"line": 115,
+					"line": 144,
 					"column": 5,
-					"endLine": 121,
+					"endLine": 151,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "append",
-						"justification": "The \"append\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"append\" catch turns a write that threw into the unavailable state with a \"fallback_return\", unrecorded: the IndexedDB store answers its own failures (recorded on its probe) and never throws, so this only guards another implementation of the port. The next write asks again."
 					},
-					"reason": "Allowlisted catch_clause: The \"append\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"append\"."
+					"reason": "Allowlisted catch_clause: The \"append\" catch turns a write that threw into the unavailable state with a \"fallback_return\", unrecorded: the IndexedDB store answers its own failures (recorded on its probe) and never throws, so this only guards another implementation of the port. The next write asks again. Verified recovery: \"fallback_return\" in \"append\"."
 				}
 			]
 		},
@@ -13215,84 +13181,68 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "48ed0e7e0b14245707ed40bc6c6e89096fce7f1f",
+					"id": "a11818e25a703b2e425a90179aa729ddcde316e3",
 					"kind": "catch_clause",
-					"line": 91,
+					"line": 188,
+					"column": 6,
+					"endLine": 191,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "constructor",
+						"justification": "The \"constructor\" owner builds the connect callback, which records a failed open on the detection_quality probe (attempt.failure) and then does a \"rethrow\", so the load or append that caused the open fails and records its own outcome."
+					},
+					"reason": "Allowlisted catch_clause: The \"constructor\" owner builds the connect callback, which records a failed open on the detection_quality probe (attempt.failure) and then does a \"rethrow\", so the load or append that caused the open fails and records its own outcome. Verified recovery: \"rethrow\" in \"constructor\"."
+				},
+				{
+					"id": "57d5f72cf1c009d671d9895f4c8f9bade55fb901",
+					"kind": "catch_clause",
+					"line": 212,
 					"column": 5,
-					"endLine": 94,
+					"endLine": 215,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "load",
-						"justification": "The \"load\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"load\" catch records the failure on the detection_quality probe (attempt.failure), coded timeout when the engine did not answer in time, and answers unavailable with a \"fallback_return\"; the recorder asks again on its next write."
 					},
-					"reason": "Allowlisted catch_clause: The \"load\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"load\"."
+					"reason": "Allowlisted catch_clause: The \"load\" catch records the failure on the detection_quality probe (attempt.failure), coded timeout when the engine did not answer in time, and answers unavailable with a \"fallback_return\"; the recorder asks again on its next write. Verified recovery: \"fallback_return\" in \"load\"."
 				},
 				{
-					"id": "942fc1f70e2a23db39566fa101211e7af4033780",
+					"id": "452fd6e16056035dd1d75aff8bdbce9508dc1846",
 					"kind": "catch_clause",
-					"line": 106,
+					"line": 229,
 					"column": 5,
-					"endLine": 109,
+					"endLine": 232,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "append",
-						"justification": "The \"append\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"append\" catch records the failure on the detection_quality probe (attempt.failure), coded timeout when the engine did not answer in time, and answers unavailable with a \"fallback_return\"; the recorder asks again on its next write."
 					},
-					"reason": "Allowlisted catch_clause: The \"append\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"append\"."
+					"reason": "Allowlisted catch_clause: The \"append\" catch records the failure on the detection_quality probe (attempt.failure), coded timeout when the engine did not answer in time, and answers unavailable with a \"fallback_return\"; the recorder asks again on its next write. Verified recovery: \"fallback_return\" in \"append\"."
 				},
 				{
-					"id": "79ba9dd64197fe5b7617b9da4ec0fa26cc6fc414",
+					"id": "b30b8a874b53a4c8a3be066fe49ac2bca541992e",
 					"kind": "catch_clause",
-					"line": 145,
+					"line": 249,
 					"column": 5,
-					"endLine": 148,
+					"endLine": 252,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
-						"scope": "open",
-						"justification": "The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "run",
+						"justification": "The \"run\" catch is a \"rethrow\": a connection lost after the one reopen or a transaction unanswered past the bound becomes the store's unavailable error carrying its reason; load and append record it through attempt.failure."
 					},
-					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"open\"."
-				},
-				{
-					"id": "226f8c3a81b99a8198bdddbc7dc5c5d786cfc21b",
-					"kind": "catch_clause",
-					"line": 159,
-					"column": 6,
-					"endLine": 162,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "getAll",
-						"justification": "The \"getAll\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"getAll\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"getAll\"."
-				},
-				{
-					"id": "361b485d962afdd615d29dfae99c060f6fd0fedb",
-					"kind": "catch_clause",
-					"line": 181,
-					"column": 6,
-					"endLine": 184,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "appendTransaction",
-						"justification": "The \"appendTransaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"appendTransaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"appendTransaction\"."
+					"reason": "Allowlisted catch_clause: The \"run\" catch is a \"rethrow\": a connection lost after the one reopen or a transaction unanswered past the bound becomes the store's unavailable error carrying its reason; load and append record it through attempt.failure. Verified recovery: \"rethrow\" in \"run\"."
 				}
 			]
 		},
@@ -13318,10 +13268,10 @@
 				{
 					"id": "5e8920cb187cca99f66b4a535661449fd24929e7",
 					"kind": "catch_clause",
-					"line": 308,
-					"column": 53,
-					"endLine": 308,
-					"endColumn": 86,
+					"line": 480,
+					"column": 6,
+					"endLine": 480,
+					"endColumn": 39,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -13332,11 +13282,27 @@
 					"reason": "Allowlisted catch_clause: The \"scan\" owner explicitly handles \"control_flow_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"control_flow_recovery\" in \"scan\"."
 				},
 				{
+					"id": "67362c396acd3540c821609fb0fbc901f6a5bff4",
+					"kind": "catch_clause",
+					"line": 484,
+					"column": 6,
+					"endLine": 484,
+					"endColumn": 93,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "control_flow_recovery",
+						"scope": "scan",
+						"justification": "The \"scan\" owner explicitly handles \"control_flow_recovery\" as local recovery: a decoder that throws leaves the note invalid, the scan goes on and logFailure records it; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"scan\" owner explicitly handles \"control_flow_recovery\" as local recovery: a decoder that throws leaves the note invalid, the scan goes on and logFailure records it; its enclosing action owns terminal diagnostics. Verified recovery: \"control_flow_recovery\" in \"scan\"."
+				},
+				{
 					"id": "4f44fce05a01db37cb7e6cbc912c4ae909d0c8e4",
 					"kind": "catch_clause",
-					"line": 329,
+					"line": 499,
 					"column": 5,
-					"endLine": 332,
+					"endLine": 502,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13350,10 +13316,10 @@
 				{
 					"id": "ee642c2378bb20d99369fb59482dfab40bc02d2b",
 					"kind": "catch_clause",
-					"line": 367,
-					"column": 5,
-					"endLine": 367,
-					"endColumn": 105,
+					"line": 543,
+					"column": 6,
+					"endLine": 543,
+					"endColumn": 106,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -13366,9 +13332,9 @@
 				{
 					"id": "8880287b45d549af852cfcd4eb25e16ebd33fc35",
 					"kind": "catch_clause",
-					"line": 378,
+					"line": 560,
 					"column": 5,
-					"endLine": 381,
+					"endLine": 563,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13382,9 +13348,9 @@
 				{
 					"id": "f99fc2d7cb2b844e8cd234475f4b69156753f6a4",
 					"kind": "catch_clause",
-					"line": 397,
+					"line": 579,
 					"column": 5,
-					"endLine": 400,
+					"endLine": 582,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13398,9 +13364,9 @@
 				{
 					"id": "a87850de46cc5bd2bbdc3b792faddb762f710b1e",
 					"kind": "callback_registration",
-					"line": 405,
+					"line": 587,
 					"column": 18,
-					"endLine": 407,
+					"endLine": 589,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -13415,9 +13381,9 @@
 				{
 					"id": "83ba5f30ad4e2a6e8a3b8c304e459b990f8bdd38",
 					"kind": "catch_clause",
-					"line": 424,
+					"line": 606,
 					"column": 5,
-					"endLine": 427,
+					"endLine": 609,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13431,9 +13397,9 @@
 				{
 					"id": "ae813b045a9592e18458609c0d999f321a6f4c0a",
 					"kind": "callback_registration",
-					"line": 446,
+					"line": 626,
 					"column": 18,
-					"endLine": 448,
+					"endLine": 628,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -13448,9 +13414,9 @@
 				{
 					"id": "2daa9840e3c4d0c0bae9c05617c650cc87d99470",
 					"kind": "catch_clause",
-					"line": 467,
+					"line": 647,
 					"column": 5,
-					"endLine": 473,
+					"endLine": 653,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13464,9 +13430,9 @@
 				{
 					"id": "f8ae64acec0af346df65af28acf6f1addf0a7828",
 					"kind": "catch_clause",
-					"line": 489,
+					"line": 669,
 					"column": 7,
-					"endLine": 495,
+					"endLine": 675,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13480,9 +13446,9 @@
 				{
 					"id": "75159cb51ba90c2d79128c631d26178d9a58aaf6",
 					"kind": "catch_clause",
-					"line": 509,
+					"line": 689,
 					"column": 51,
-					"endLine": 509,
+					"endLine": 689,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13496,9 +13462,9 @@
 				{
 					"id": "b2cb49480de55ca45fe5636fec610ba471926d6e",
 					"kind": "catch_clause",
-					"line": 546,
+					"line": 726,
 					"column": 5,
-					"endLine": 549,
+					"endLine": 729,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13512,9 +13478,9 @@
 				{
 					"id": "04b5b9d69ce2d08ec2765d90ffeaa6115e7d1b85",
 					"kind": "catch_clause",
-					"line": 566,
+					"line": 746,
 					"column": 3,
-					"endLine": 573,
+					"endLine": 753,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13528,9 +13494,9 @@
 				{
 					"id": "5dd4765ca86365c74ab6651326387976b01aee80",
 					"kind": "catch_clause",
-					"line": 582,
+					"line": 762,
 					"column": 5,
-					"endLine": 582,
+					"endLine": 762,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13544,9 +13510,9 @@
 				{
 					"id": "6dd084086a7242a18daef4fff8b04e1eda7d467f",
 					"kind": "catch_clause",
-					"line": 794,
+					"line": 975,
 					"column": 4,
-					"endLine": 794,
+					"endLine": 975,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -13560,9 +13526,9 @@
 				{
 					"id": "e3d7530da2c5dfa1853079c48fc22b8c8346652d",
 					"kind": "catch_clause",
-					"line": 929,
+					"line": 1110,
 					"column": 2,
-					"endLine": 929,
+					"endLine": 1110,
 					"endColumn": 24,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14504,9 +14470,9 @@
 				{
 					"id": "207b97e6509e9385eaf995d1676a915962180287",
 					"kind": "callback_registration",
-					"line": 162,
+					"line": 178,
 					"column": 3,
-					"endLine": 162,
+					"endLine": 178,
 					"endColumn": 100,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14520,40 +14486,6 @@
 				},
 				{
 					"id": "86cea44d0fe5f2d35ec493c289ac2014ae37b9ef",
-					"kind": "callback_registration",
-					"line": 169,
-					"column": 3,
-					"endLine": 172,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "mount",
-						"justification": "The \"mount\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"mount\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"mount\"."
-				},
-				{
-					"id": "61133da7d435fdffa7551311c595e4ae79f21842",
-					"kind": "callback_registration",
-					"line": 177,
-					"column": 3,
-					"endLine": 181,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "mount",
-						"justification": "The \"mount\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"mount\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"mount\"."
-				},
-				{
-					"id": "321743dfb15495534330e4442775423130900df6",
 					"kind": "callback_registration",
 					"line": 185,
 					"column": 3,
@@ -14570,11 +14502,45 @@
 					"reason": "Allowlisted callback_registration: The \"mount\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"mount\"."
 				},
 				{
-					"id": "51b0bf2a29aa1c4a189a45ca8c95dc819a3ede2b",
-					"kind": "void_expression",
-					"line": 197,
+					"id": "61133da7d435fdffa7551311c595e4ae79f21842",
+					"kind": "callback_registration",
+					"line": 193,
 					"column": 3,
 					"endLine": 197,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "mount",
+						"justification": "The \"mount\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"mount\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"mount\"."
+				},
+				{
+					"id": "321743dfb15495534330e4442775423130900df6",
+					"kind": "callback_registration",
+					"line": 201,
+					"column": 3,
+					"endLine": 204,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "mount",
+						"justification": "The \"mount\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"mount\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"mount\"."
+				},
+				{
+					"id": "51b0bf2a29aa1c4a189a45ca8c95dc819a3ede2b",
+					"kind": "void_expression",
+					"line": 213,
+					"column": 3,
+					"endLine": 213,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14588,9 +14554,9 @@
 				{
 					"id": "d796cd9f2f8d3a5eee267aad73034e81a38e49cd",
 					"kind": "void_expression",
-					"line": 198,
+					"line": 214,
 					"column": 3,
-					"endLine": 198,
+					"endLine": 214,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14604,9 +14570,9 @@
 				{
 					"id": "1321619345af9aea62e01b068b12f31a35cf093b",
 					"kind": "void_expression",
-					"line": 224,
+					"line": 244,
 					"column": 43,
-					"endLine": 224,
+					"endLine": 244,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14620,9 +14586,9 @@
 				{
 					"id": "7d6cff8371460555450e7ba338aa75993b103b23",
 					"kind": "void_expression",
-					"line": 227,
+					"line": 247,
 					"column": 3,
-					"endLine": 227,
+					"endLine": 247,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14636,9 +14602,9 @@
 				{
 					"id": "1bb995f4a30d15592374e91fb1a438b049e97fbe",
 					"kind": "callback_registration",
-					"line": 308,
+					"line": 329,
 					"column": 19,
-					"endLine": 311,
+					"endLine": 332,
 					"endColumn": 14,
 					"registration": "setTimeout",
 					"classification": "allowlisted",
@@ -14653,9 +14619,9 @@
 				{
 					"id": "fc0524d7d8bd7fce21787b093543d1c594972313",
 					"kind": "void_expression",
-					"line": 310,
+					"line": 331,
 					"column": 4,
-					"endLine": 310,
+					"endLine": 331,
 					"endColumn": 25,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14667,11 +14633,27 @@
 					"reason": "Allowlisted void_expression: The \"scheduleSearch\" owner deliberately detaches \"this.runSearch\": it never rejects (the shared index build and the search answer closed results) and paints the status and the results; nothing is left unobserved. Verified target: \"this.runSearch\" in \"scheduleSearch\"."
 				},
 				{
+					"id": "8b6e8bb2291dc9f785f0c3c54d3a9b2d8902bab6",
+					"kind": "catch_clause",
+					"line": 441,
+					"column": 5,
+					"endLine": 443,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "toggle",
+						"justification": "The \"toggle\" owner turns a rejected core toggle into refused as \"local_recovery\" and says it in the live region; the save failure itself was recorded by the core under settings_save, so nothing is lost here."
+					},
+					"reason": "Allowlisted catch_clause: The \"toggle\" owner turns a rejected core toggle into refused as \"local_recovery\" and says it in the live region; the save failure itself was recorded by the core under settings_save, so nothing is lost here. Verified recovery: \"local_recovery\" in \"toggle\"."
+				},
+				{
 					"id": "ffe57582c5d17a451b79a38a94248d6ce3f29d4d",
 					"kind": "callback_registration",
-					"line": 419,
+					"line": 471,
 					"column": 3,
-					"endLine": 419,
+					"endLine": 471,
 					"endColumn": 70,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14686,9 +14668,9 @@
 				{
 					"id": "a15a99c31e08d3e7105498116ccadd640c0258d3",
 					"kind": "void_expression",
-					"line": 419,
+					"line": 471,
 					"column": 44,
-					"endLine": 419,
+					"endLine": 471,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14702,9 +14684,9 @@
 				{
 					"id": "dc2fdc12f1338e42f45f3e0c5ed989e58aae3e75",
 					"kind": "callback_registration",
-					"line": 447,
+					"line": 499,
 					"column": 4,
-					"endLine": 447,
+					"endLine": 499,
 					"endColumn": 110,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14719,9 +14701,9 @@
 				{
 					"id": "74346dd656af4f5ce9914e50ad53eecdcbc5b877",
 					"kind": "void_expression",
-					"line": 447,
+					"line": 499,
 					"column": 83,
-					"endLine": 447,
+					"endLine": 499,
 					"endColumn": 106,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14735,9 +14717,9 @@
 				{
 					"id": "27589854459a3ea390ff9dc750d11ffb3106b0a2",
 					"kind": "callback_registration",
-					"line": 454,
+					"line": 506,
 					"column": 5,
-					"endLine": 454,
+					"endLine": 506,
 					"endColumn": 84,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14752,9 +14734,9 @@
 				{
 					"id": "6019e233ecc7afe2f944648119bcd79adde14676",
 					"kind": "callback_registration",
-					"line": 466,
+					"line": 518,
 					"column": 5,
-					"endLine": 466,
+					"endLine": 518,
 					"endColumn": 71,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14769,9 +14751,9 @@
 				{
 					"id": "3912ed28304b365c2ba1ea4f7848600c0b746c40",
 					"kind": "void_expression",
-					"line": 466,
+					"line": 518,
 					"column": 45,
-					"endLine": 466,
+					"endLine": 518,
 					"endColumn": 67,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14785,9 +14767,9 @@
 				{
 					"id": "c4b3592f4e6d46f8461f21685a9946ea37381d46",
 					"kind": "callback_registration",
-					"line": 472,
+					"line": 524,
 					"column": 4,
-					"endLine": 472,
+					"endLine": 524,
 					"endColumn": 103,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14802,9 +14784,9 @@
 				{
 					"id": "e32c00c45cc6ef41da2dc62f79fa4f18c39d9d3b",
 					"kind": "callback_registration",
-					"line": 539,
+					"line": 591,
 					"column": 4,
-					"endLine": 539,
+					"endLine": 591,
 					"endColumn": 80,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14819,25 +14801,25 @@
 				{
 					"id": "80b992fd997a0857cabd51d1df5c12e628e3ea61",
 					"kind": "void_expression",
-					"line": 539,
+					"line": 591,
 					"column": 45,
-					"endLine": 539,
+					"endLine": 591,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
 						"target": "this.follow",
 						"scope": "renderResults",
-						"justification": "The \"renderResults\" owner deliberately detaches \"this.follow\": it saves through the core's updateSettings, which records its own outcome, and says a refused save in the live region; nothing is left unobserved."
+						"justification": "The \"renderResults\" owner deliberately detaches \"this.follow\": it never rejects: its toggle catches every rejection of the core (whose save failure is recorded under settings_save), says limit or refused in the live region and re-enables the button in a finally."
 					},
-					"reason": "Allowlisted void_expression: The \"renderResults\" owner deliberately detaches \"this.follow\": it saves through the core's updateSettings, which records its own outcome, and says a refused save in the live region; nothing is left unobserved. Verified target: \"this.follow\" in \"renderResults\"."
+					"reason": "Allowlisted void_expression: The \"renderResults\" owner deliberately detaches \"this.follow\": it never rejects: its toggle catches every rejection of the core (whose save failure is recorded under settings_save), says limit or refused in the live region and re-enables the button in a finally. Verified target: \"this.follow\" in \"renderResults\"."
 				},
 				{
 					"id": "38443bc0d8b84cbc28eddd39ab5f0197a8a543f5",
 					"kind": "callback_registration",
-					"line": 600,
+					"line": 652,
 					"column": 5,
-					"endLine": 603,
+					"endLine": 655,
 					"endColumn": 7,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14852,9 +14834,9 @@
 				{
 					"id": "2270a296942206216664341d1d71428dba500c61",
 					"kind": "callback_registration",
-					"line": 610,
+					"line": 662,
 					"column": 3,
-					"endLine": 610,
+					"endLine": 662,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -14869,18 +14851,18 @@
 				{
 					"id": "0cea2062960fbdefc2590a973d91e31c021d8034",
 					"kind": "void_expression",
-					"line": 610,
+					"line": 662,
 					"column": 46,
-					"endLine": 610,
+					"endLine": 662,
 					"endColumn": 77,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
 						"target": "this.unfollow",
 						"scope": "renderTrackedItem",
-						"justification": "The \"renderTrackedItem\" owner deliberately detaches \"this.unfollow\": it saves through the core's updateSettings, which records its own outcome, and says a refused save in the live region; nothing is left unobserved."
+						"justification": "The \"renderTrackedItem\" owner deliberately detaches \"this.unfollow\": it never rejects: its toggle catches every rejection of the core (whose save failure is recorded under settings_save) and says limit or refused in the live region."
 					},
-					"reason": "Allowlisted void_expression: The \"renderTrackedItem\" owner deliberately detaches \"this.unfollow\": it saves through the core's updateSettings, which records its own outcome, and says a refused save in the live region; nothing is left unobserved. Verified target: \"this.unfollow\" in \"renderTrackedItem\"."
+					"reason": "Allowlisted void_expression: The \"renderTrackedItem\" owner deliberately detaches \"this.unfollow\": it never rejects: its toggle catches every rejection of the core (whose save failure is recorded under settings_save) and says limit or refused in the live region. Verified target: \"this.unfollow\" in \"renderTrackedItem\"."
 				}
 			]
 		},

@@ -14,7 +14,13 @@ import {
 	type PriceHistoryWatchItemV1,
 } from './price-history-model';
 import { buildPriceHistoryDailyAggregates } from './price-history-statistics';
-import { openIndexedDb } from '../core/indexed-db-open';
+import {
+	ReopeningIndexedDbConnection,
+	indexedDbFailureCode,
+	isIndexedDbUnavailable,
+	openIndexedDb,
+	startIndexedDbTransaction,
+} from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
@@ -65,12 +71,23 @@ interface PriceHistoryCompactionDayResult {
 	snapshotTupleCount: number;
 }
 
-/** Dedicated, fail-closed IndexedDB adapter. It never substitutes an in-memory store. */
+/**
+ * Dedicated, fail-closed IndexedDB adapter. It never substitutes an in-memory store.
+ *
+ * Opened through `open`, a connection the engine dropped is replaced on the next operation (DU-05); a store built around
+ * a fixed database has nothing to open again.
+ */
 export class IndexedDbPriceHistoryStore {
+	private readonly connection: ReopeningIndexedDbConnection;
+
 	constructor(
-		private readonly database: IDBDatabase,
+		database: IDBDatabase | ReopeningIndexedDbConnection,
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
-	) {}
+	) {
+		this.connection = database instanceof ReopeningIndexedDbConnection
+			? database
+			: new ReopeningIndexedDbConnection(null, () => new PriceHistoryStoreError('unavailable'), database);
+	}
 
 	static async open(
 		factory: IDBFactory,
@@ -79,7 +96,7 @@ export class IndexedDbPriceHistoryStore {
 		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbPriceHistoryStore> {
 		const attempt = diagnostics.begin('price_history', 'open');
-		const opening = openIndexedDb({
+		const connection = new ReopeningIndexedDbConnection(async (hooks) => await openIndexedDb({
 			factory,
 			databaseName,
 			databaseVersion,
@@ -104,20 +121,19 @@ export class IndexedDbPriceHistoryStore {
 				},
 				{ name: PRICE_HISTORY_META_STORE, keyPath: ['vaultId', 'key'] },
 			],
-			onVersionChange: 'close',
+			...hooks,
 			toError: (reason, error) => new PriceHistoryStoreError(reason === 'blocked'
 				? 'blocked'
 				: error?.name === 'VersionError' ? 'future_schema' : 'unavailable'),
-		});
-		let database: IDBDatabase;
+		}), () => new PriceHistoryStoreError('unavailable'));
 		try {
-			database = await opening;
+			await connection.open();
 		} catch (error) {
 			attempt.failure(localDebugStorageFailureCode(error));
 			throw error;
 		}
 		attempt.success();
-		return new IndexedDbPriceHistoryStore(database, diagnostics);
+		return new IndexedDbPriceHistoryStore(connection, diagnostics);
 	}
 
 	async ensureSeedWatchList(vaultId: string, nowMs: number): Promise<PriceHistoryWatchItemV1[]> {
@@ -490,7 +506,7 @@ export class IndexedDbPriceHistoryStore {
 
 	close(): void {
 		const attempt = this.diagnostics.begin('price_history', 'close');
-		this.database.close();
+		this.connection.close();
 		attempt.success();
 	}
 
@@ -534,7 +550,11 @@ export class IndexedDbPriceHistoryStore {
 		});
 	}
 
-	private transaction<T>(
+	/**
+	 * One transaction on the cached connection; a connection that died before it could start is replaced once (DU-05).
+	 * A dead connection throws before `operation` runs, so running it again on a new one is safe.
+	 */
+	private async transaction<T>(
 		stores: string[],
 		mode: IDBTransactionMode,
 		operation: (transaction: IDBTransaction, resolve: (value: T) => void, reject: (reason: unknown) => void) => void,
@@ -543,24 +563,27 @@ export class IndexedDbPriceHistoryStore {
 			'price_history',
 			mode === 'readonly' ? 'read' : 'transaction',
 		);
-		return new Promise((resolve, reject) => {
-			const resolveObserved = (value: T): void => { attempt.success(); resolve(value); };
-			const rejectObserved = (reason: unknown): void => {
-				const error = reason instanceof Error ? reason : new PriceHistoryStoreError('unavailable');
-				attempt.failure(localDebugStorageFailureCode(error));
-				reject(error);
-			};
-			let transaction: IDBTransaction;
-			try { transaction = this.database.transaction(stores, mode); }
-			catch { rejectObserved(new PriceHistoryStoreError('unavailable')); return; }
-			transaction.onerror = () => rejectObserved(storeFailure(transaction.error));
-			transaction.onabort = () => rejectObserved(storeFailure(transaction.error));
-			try {
-				operation(transaction, resolveObserved, rejectObserved);
-			} catch (error) {
-				rejectObserved(error);
-			}
-		});
+		try {
+			const value = await this.connection.run((database) => new Promise<T>((resolve, reject) => {
+				// A throw here rejects this promise: the executor runs synchronously inside it.
+				const transaction = startIndexedDbTransaction(database, stores, mode);
+				transaction.onerror = () => reject(storeFailure(transaction.error));
+				transaction.onabort = () => reject(storeFailure(transaction.error));
+				try {
+					operation(transaction, resolve, reject);
+				} catch (error) {
+					reject(error instanceof Error ? error : new PriceHistoryStoreError('unavailable'));
+				}
+			}));
+			attempt.success();
+			return value;
+		} catch (reason) {
+			const error = reason instanceof Error && !isIndexedDbUnavailable(reason)
+				? reason : new PriceHistoryStoreError('unavailable');
+			// Coded from what really happened: an engine that did not answer in time stays a `timeout`.
+			attempt.failure(isIndexedDbUnavailable(reason) ? indexedDbFailureCode(reason) : localDebugStorageFailureCode(error));
+			throw error;
+		}
 	}
 }
 

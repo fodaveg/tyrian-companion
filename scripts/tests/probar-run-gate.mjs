@@ -14,6 +14,7 @@ testNoDuplicatedWorkInsideAGroup();
 testManifestCoversDeclaredScripts();
 testTestGroupIsContainedInCheck();
 testHebraBundleTestRunsAfterTheBuild();
+testClosingLintHasNoCache();
 
 if (failures.length > 0) {
 	for (const failure of failures) process.stderr.write(`run gate suite: ${failure}\n`);
@@ -226,6 +227,19 @@ function recordingSpawn(steps, attempted, statusFor) {
 		attempted.push(step.id);
 		return { status: statusFor(step) };
 	};
+}
+
+/**
+ * DE-18: the lint step uses type-checked rules, so a type change in file A can alter the verdict on an
+ * untouched file B. ESLint's `--cache` keys on each file's own content, not on the types it imports, so
+ * it would serve B's old verdict. The closing gate must lint without any cache flag; the cached lint
+ * lives only in `npm run lint`, for development.
+ */
+function testClosingLintHasNoCache() {
+	const lint = GATE_STEPS.find((step) => step.id === 'lint');
+	assert(lint !== undefined, 'the gate manifest has no lint step');
+	const cacheFlags = (lint?.command ?? []).filter((arg) => arg.startsWith('--cache'));
+	assert(cacheFlags.length === 0, `the closing gate lint must not use ESLint's cache, it carries: ${cacheFlags.join(' ')}`);
 }
 
 /** Normalises the resolved binary back to its manifest name (node, bash, or a local .bin entry). */

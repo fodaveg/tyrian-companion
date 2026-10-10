@@ -362,6 +362,61 @@ describe('the boot_timings line (Z26)', () => {
 	}, 30_000);
 });
 
+describe('the first repaint once the runtime is ready (Z20)', () => {
+	it('leaves «starting» before the price history has opened, and repaints again once it has', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const base = neutralHost();
+		const port = base.host.priceHistory;
+		let releaseOpen!: () => void;
+		const openGate = new Promise<void>((resolve) => { releaseOpen = resolve; });
+		const events: string[] = [];
+		const host: TyrianHost = {
+			...base.host,
+			settings: {
+				load: async () => ({ ...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, priceHistoryEnabled: true }),
+				save: async () => undefined,
+			},
+			// The price history's IndexedDB stays closed until the test opens it: the history is what the start waits on.
+			priceHistory: {
+				...port,
+				open: async (diagnostics) => {
+					events.push('priceHistory:open');
+					await openGate;
+					const store = await port.open(diagnostics);
+					events.push('priceHistory:opened');
+					return store;
+				},
+			},
+		};
+		const runtime = createTyrianRuntime(host);
+		const core = runtime as unknown as { runtimeReady: boolean; flushRenderViews(): void; getHalloweenState(): { status: string } };
+		const flush = core.flushRenderViews.bind(core);
+		// One entry per real repaint of the Session panel, with what the panel reads at that moment.
+		vi.spyOn(core, 'flushRenderViews').mockImplementation(() => {
+			events.push(`repaint:${core.runtimeReady ? 'ready' : 'starting'}:halloween=${core.getHalloweenState().status}`);
+			flush();
+		});
+		await runtime.start();
+		base.registered.ready[0]!();
+		await vi.waitFor(() => { expect(events).toContain('priceHistory:open'); }, { timeout: 10_000 });
+		await new Promise((resolve) => { setTimeout(resolve, 0); });
+
+		// The history has not opened, and the panel already repainted as ready, showing Halloween as it will stay.
+		expect(events.slice(events.indexOf('priceHistory:open'))).toEqual(['priceHistory:open', 'repaint:ready:halloween=disabled']);
+
+		releaseOpen();
+		await vi.waitFor(() => { expect(events).toContain('priceHistory:opened'); }, { timeout: 10_000 });
+		// The start's own last repaint still comes once the history is in, and Halloween reads the same as in the early one.
+		await vi.waitFor(() => {
+			expect(new Set(events.slice(events.indexOf('priceHistory:opened')).filter((event) => event.startsWith('repaint:'))))
+				.toEqual(new Set(['repaint:ready:halloween=disabled']));
+		}, { timeout: 10_000 });
+		await runtime.stop();
+	}, 30_000);
+});
+
 /** A recording dropdown for a settings row rendered outside a page, as the host's settings search does. */
 function recordingDropdown() {
 	const state = {

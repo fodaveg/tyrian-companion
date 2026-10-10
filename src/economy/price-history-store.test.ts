@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
 	PRICE_HISTORY_DAILY_STORE,
@@ -364,6 +364,8 @@ describe('IndexedDbPriceHistoryStore', () => {
 		const database = { transaction: () => transaction, close: () => undefined } as unknown as IDBDatabase;
 		const store = new IndexedDbPriceHistoryStore(database);
 		const write = store.observeItems('vault', [1], 1);
+		// DU-05: the transaction starts once the store has its connection, a microtask later.
+		await vi.waitFor(() => { expect(request.onsuccess).toBeTypeOf('function'); });
 		Object.defineProperty(request, 'result', { value: [] });
 		request.onsuccess?.call(request, new Event('success'));
 		transaction.onerror?.call(transaction, new Event('error'));

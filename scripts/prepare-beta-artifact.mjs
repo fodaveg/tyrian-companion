@@ -32,11 +32,12 @@ export function prepareBetaArtifact({ root = process.cwd(), beforeSeal = () => u
 		fail('package-invalid');
 	}
 	const archiveName = `${PLUGIN_ID}-${packageJson.version}.zip`;
-	const files = Object.freeze([archiveName, `${archiveName}.sha256`, 'install-beta.mjs']);
+	const files = Object.freeze([archiveName, `${archiveName}.sha256`, 'install-beta.mjs', 'verify-beta-runtime.mjs']);
 	const sourcePaths = Object.freeze([
 		resolve(repositoryRoot, '.release', archiveName),
 		resolve(repositoryRoot, '.release', `${archiveName}.sha256`),
 		resolve(repositoryRoot, 'scripts/install-beta.mjs'),
+		resolve(repositoryRoot, 'scripts/verify-beta-runtime.mjs'),
 	]);
 	const sources = Object.freeze(sourcePaths.map((path, index) => Object.freeze({
 		bytes: readRegularFile(path),

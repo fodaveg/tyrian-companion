@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { engineIdle, holdNextCommit, trackedIndexedDb } from '../test/indexed-db-connections';
 import { HalloweenPriceAlertRuntime } from './halloween-price-alert-runtime';
 import {
 	HALLOWEEN_DB_NAME,
@@ -69,6 +70,43 @@ describe('Halloween price alert runtime', () => {
 		await runtime.evaluate(port(40, NOW + 5), NOW + 5);
 		expect(onNotice).toHaveBeenCalledOnce();
 		runtime.dispose();
+	});
+
+	// DU-05 review: a commit the engine answers after the 10 s bound is applied all the same. Its notice is in the
+	// store, and the next evaluation sees that capture as already accepted, so nothing used to announce it.
+	it('announces exactly once, on the next attempt, a crossing whose commit was answered too late', async () => {
+		const timers: (() => void)[] = [];
+		vi.stubGlobal('window', {
+			setTimeout: (callback: () => void) => { timers.push(callback); return timers.length; },
+			clearTimeout: () => undefined,
+		});
+		try {
+			const tracked = trackedIndexedDb();
+			const onNotice = vi.fn();
+			const runtime = new HalloweenPriceAlertRuntime({ factory: tracked.factory, vaultId: 'vault', accountRef: () => 'account', onNotice });
+			await runtime.configure({ enabled: true, minimumAboveP90Bps: 0, cooldownHours: 24 }, true);
+			await runtime.evaluate(port(40), NOW);
+			await runtime.evaluate(port(20, NOW + 1), NOW + 1);
+
+			const answer = holdNextCommit(tracked, (name) => name === HALLOWEEN_DB_NAME);
+			const evaluation = runtime.evaluate(port(40, NOW + 2), NOW + 2);
+			await engineIdle(tracked);
+			// Ten seconds go by: every bound armed so far expires.
+			for (const expire of timers.splice(0)) expire();
+			await evaluation;
+			expect(runtime.getState().status).toBe('store_unavailable');
+			expect(onNotice).not.toHaveBeenCalled();
+			answer();
+
+			await runtime.evaluate(port(40, NOW + 2), NOW + 3);
+			expect(onNotice).toHaveBeenCalledOnce();
+			expect(onNotice.mock.calls[0]![0]).toMatchObject({ noticeId: `price:36038:${String(NOW + 2)}` });
+			await runtime.evaluate(port(40, NOW + 2), NOW + 4);
+			expect(onNotice).toHaveBeenCalledOnce();
+			runtime.dispose();
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it('keeps daily suppression across settings changes and competing windows', async () => {

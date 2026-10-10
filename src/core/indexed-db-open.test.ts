@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
 	IndexedDbConnectionLostError,
+	ReopeningIndexedDbConnection,
 	openIndexedDb,
 	startIndexedDbTransaction,
 	withIndexedDbReopen,
@@ -418,5 +419,74 @@ describe('withIndexedDbReopen', () => {
 		expect(runs).toBe(1);
 		expect(tracked.connections).toHaveLength(1);
 		expect(store.discarded).toEqual([]);
+	});
+});
+
+/** DU-05: the cached connection the secondary stores share, on its own. */
+describe('ReopeningIndexedDbConnection', () => {
+	const schema = [{ name: 'records' }];
+	function reopening(tracked: TrackedIndexedDb, name: string): ReopeningIndexedDbConnection {
+		return new ReopeningIndexedDbConnection(async (hooks) => await openIndexedDb({
+			factory: tracked.factory, databaseName: name, databaseVersion: 1, schema, ...hooks,
+			toError: (reason) => new Error(`open: ${reason}`),
+		}), () => new Error('store unavailable'));
+	}
+	const count = async (database: IDBDatabase): Promise<number> => await new Promise((resolve, reject) => {
+		const request = startIndexedDbTransaction(database, 'records', 'readonly').objectStore('records').count();
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error ?? new Error('count failed'));
+	});
+	const remove = async (factory: IDBFactory, name: string): Promise<void> => await new Promise((resolve, reject) => {
+		const request = factory.deleteDatabase(name);
+		request.onsuccess = () => resolve();
+		request.onerror = () => reject(request.error ?? new Error('delete failed'));
+	});
+
+	it('closes the database an open still in course hands over after close(), and never opens again', async () => {
+		const tracked = trackedIndexedDb();
+		const release = holdNextOpen(tracked);
+		const connection = reopening(tracked, databaseName('close-while-opening'));
+		const opening = connection.open();
+		await engineIdle(tracked);
+		connection.close();
+		release();
+
+		await expect(opening).rejects.toThrow('open: refused');
+		expect(tracked.connections).toHaveLength(1);
+		expect(() => tracked.connections[0]!.transaction('records', 'readonly')).toThrow();
+		await expect(connection.open()).rejects.toThrow('store unavailable');
+		await expect(connection.run(count)).rejects.toThrow('store unavailable');
+		expect(tracked.connections).toHaveLength(1);
+		expect(connection.isRetired).toBe(true);
+	});
+
+	it('lets two operations that start together share one open', async () => {
+		const tracked = trackedIndexedDb();
+		const opened = vi.spyOn(tracked.factory, 'open');
+		const connection = reopening(tracked, databaseName('shared-open'));
+
+		await expect(Promise.all([connection.run(count), connection.run(count)])).resolves.toEqual([0, 0]);
+		expect(opened).toHaveBeenCalledOnce();
+		expect(tracked.connections).toHaveLength(1);
+		connection.close();
+	});
+
+	it('opens again after a versionchange that is not an upgrade, and never after a real one', async () => {
+		const tracked = trackedIndexedDb();
+		const name = databaseName('released');
+		const connection = reopening(tracked, name);
+		await expect(connection.run(count)).resolves.toBe(0);
+
+		await remove(tracked.factory, name);
+		expect(connection.isRetired).toBe(false);
+		await expect(connection.run(count)).resolves.toBe(0);
+		expect(tracked.connections).toHaveLength(2);
+
+		const upgraded = await openRaw(tracked.factory, name, 2);
+		expect(connection.isRetired).toBe(true);
+		const before = tracked.connections.length; // the two of the store and the upgrading one
+		await expect(connection.run(count)).rejects.toThrow('store unavailable');
+		expect(tracked.connections).toHaveLength(before);
+		upgraded.close();
 	});
 });

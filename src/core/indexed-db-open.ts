@@ -18,6 +18,8 @@
 import {
 	STORAGE_ANSWER_TIMEOUT_MS, StorageDeadline, StorageUnansweredError, type StorageDeadlineOptions,
 } from '../sessions/storage-deadline';
+import type { LocalDebugCode } from './local-debug-contract';
+import { localDebugStorageFailureCode } from './local-debug-persistence';
 
 /** An index as the upgrade handlers declare it today: name plus key path, nothing else. */
 export interface IndexedDbIndexSchema {
@@ -76,9 +78,11 @@ export interface OpenIndexedDbOptions {
 	 *
 	 * `'close'` closes the connection so another tab's upgrade is not blocked; a
 	 * callback closes first and then runs, which is where a store drops its cached
-	 * handle. OMITTING it installs no handler at all, which is deliberately
-	 * available because the Halloween store has never had one, and quietly giving
-	 * it one would close a database its own methods still hold.
+	 * handle. OMITTING it installs no handler at all: the connection then stays
+	 * open through another context's upgrade, which waits (`blocked`) until its
+	 * owner closes it. No store omits it since DU-05 (the Halloween store, the
+	 * last one without a handler, now gets one from `ReopeningIndexedDbConnection`);
+	 * it stays available for a caller that closes the connection itself right away.
 	 *
 	 * The callback is told which kind it was, so a store can stay closed after a real
 	 * upgrade and still open again after anything else.
@@ -232,6 +236,117 @@ export async function withIndexedDbReopen<T>(
 	} catch (error) {
 		if (error instanceof IndexedDbConnectionLostError) connection.discard(reopened);
 		throw error;
+	}
+}
+
+/**
+ * The two ways `withIndexedDbReopen` gives up on an operation: no live connection even after the one reopen, or no
+ * answer in time. Both mean "storage is unavailable"; each store reports them in its own vocabulary.
+ */
+export function isIndexedDbUnavailable(error: unknown): boolean {
+	return error instanceof IndexedDbConnectionLostError || error instanceof StorageUnansweredError;
+}
+
+/** A store's own "unavailable", keeping what `withIndexedDbReopen` gave up with, so the diagnostic can still name it. */
+export class IndexedDbUnavailableError extends Error {
+	constructor(message: string, readonly reason: unknown) {
+		super(message);
+	}
+}
+
+/**
+ * The diagnostic code of a failed store operation: `timeout` when the engine did not answer in time
+ * (`StorageUnansweredError`, also when a store wrapped it), otherwise the storage code of the engine's own error.
+ */
+export function indexedDbFailureCode(error: unknown): LocalDebugCode {
+	const reason = error instanceof IndexedDbUnavailableError || error instanceof IndexedDbConnectionLostError ? error.reason : error;
+	return reason instanceof StorageUnansweredError ? 'timeout' : localDebugStorageFailureCode(reason);
+}
+
+/** What a reopening connection installs on each open: spread them into the `openIndexedDb` options. */
+export type ReopeningIndexedDbHooks = Required<Pick<OpenIndexedDbOptions, 'accept' | 'onVersionChange' | 'onClose'>>;
+
+/**
+ * The one cached connection of a store, opened again when the engine dropped it (DU-05, 10 Oct 2026).
+ *
+ * The session, coordination and inventory-preferences stores each wrote this out (`connection()`, `discard()`,
+ * `withIndexedDbReopen`). The stores that kept one connection for the whole run failed every transaction after the
+ * engine closed it, until the plugin was reloaded; they share this copy instead of writing a ninth and tenth.
+ *
+ * A connection the engine closed (`onClose`), one released by a `versionchange` that is not an upgrade, and one that no
+ * longer starts transactions are forgotten, and the next operation opens a new one. Two things retire it for good:
+ * `close()`, and a real upgrade from another context (the schema on disk is no longer this build's). Built around a fixed
+ * database, without `connect`, there is nothing to open again: once that database is dropped the store stays unavailable.
+ */
+export class ReopeningIndexedDbConnection implements ReopenableIndexedDb {
+	private opening: Promise<IDBDatabase> | null = null;
+	private retired = false;
+	/** Installed on every connection `connect` opens. */
+	readonly hooks: ReopeningIndexedDbHooks = {
+		accept: () => !this.retired,
+		onVersionChange: (database, kind) => {
+			if (this.database === database) this.database = null;
+			if (kind === 'upgrade') this.retired = true;
+		},
+		onClose: (database) => { this.discard(database); },
+	};
+
+	/**
+	 * `connect` opens one connection with `hooks` installed (null: only `database` is ever used). `unavailable` is the
+	 * error this store's callers already know for a store that cannot answer.
+	 */
+	constructor(
+		private readonly connect: ((hooks: ReopeningIndexedDbHooks) => Promise<IDBDatabase>) | null,
+		private readonly unavailable: () => Error,
+		private database: IDBDatabase | null = null,
+	) {}
+
+	/** The cached connection, or a new one; the store's own `unavailable` error once retired. */
+	async open(): Promise<IDBDatabase> {
+		if (this.retired) throw this.unavailable();
+		if (this.database) return this.database;
+		if (this.opening) return await this.opening;
+		if (this.connect === null) throw this.unavailable();
+		const opening = this.connect(this.hooks);
+		this.opening = opening;
+		try {
+			const database = await opening;
+			// Closed between the engine's answer and this line: `accept` saw it open, so the database is ours to close.
+			if (this.retired) {
+				database.close();
+				throw this.unavailable();
+			}
+			this.database = database;
+			return database;
+		} finally {
+			if (this.opening === opening) this.opening = null;
+		}
+	}
+
+	/** True after `close()` or a real upgrade; nothing opens again from then on. */
+	get isRetired(): boolean { return this.retired; }
+
+	/** Forgets `database` if it is still the cached one, and closes it; the next operation opens anew. */
+	discard(database: IDBDatabase): void {
+		if (this.database === database) this.database = null;
+		try { database.close(); } catch { /* Already gone, which is the reason it is being dropped. */ }
+	}
+
+	/** Retires the connection: the cached database is closed and nothing opens again. */
+	close(): void {
+		this.retired = true;
+		const database = this.database;
+		this.database = null;
+		database?.close();
+	}
+
+	/**
+	 * One operation on the cached connection, with a single reopen when it died underneath (`withIndexedDbReopen`). The
+	 * operation must start its transaction with `startIndexedDbTransaction`, so that a dead connection is told apart from
+	 * a transaction that started and failed.
+	 */
+	async run<T>(operation: (database: IDBDatabase) => Promise<T>): Promise<T> {
+		return await withIndexedDbReopen(this, operation);
 	}
 }
 

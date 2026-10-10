@@ -1,7 +1,7 @@
 # Tyrian Companion
 
 > **Contract update, October 6, 2026:** [live1](docs/SPEC-live-loot.md) supersedes the API-only session
-> design. The 0.6.28 channel is published with its release-tree checks verified; installation and
+> design. The 0.6.29 channel is published with its release-tree checks verified; installation and
 > runtime QA remain pending. H1–H18 descriptions below retain legacy history, not permission to
 > restore automatic authenticated API requests in live sessions.
 
@@ -22,7 +22,7 @@ author takes no responsibility for anything that happens to your account, your g
 computer from using them.
 
 The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
-our Nexus addon as the source of new sessions. **The 0.6.28 channel is published;
+our Nexus addon as the source of new sessions. **The 0.6.29 channel is published;
 installation and runtime QA remain pending.** This does not prove that an installed older addon supplies it.
 Authenticated GW2 API requests are reserved for explicit manual inventory, wallet and achievements
 operations and connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
@@ -46,7 +46,7 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 
 > [!WARNING]
 > `manifest.json` identifies the checkout or installed candidate; it does not by itself prove that
-> version is published or loaded. The [0.6.28 channel](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.28)
+> version is published or loaded. The [0.6.29 channel](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.29)
 > is published; real-client installation/runtime QA remains pending. Use a disposable vault and
 > record the exact Companion and addon versions when testing.
 
@@ -108,7 +108,7 @@ Obsidian plugin assets. Publication does not prove installation or runtime behav
 ## Install the beta
 
 For Obsidian, use desktop `1.11.4` or newer and a disposable vault. BRAT installs published beta
-versions; select the published 0.6.28 release. Game sessions also need the matching Nexus producer.
+versions; select the published 0.6.29 release. Game sessions also need the matching Nexus producer.
 The Nexus addon is required on every platform, Windows included; Blish HUD is frozen at 0.5.0.
 
 1. From **Settings → Community plugins → Browse**, install and enable
@@ -130,14 +130,14 @@ a new release; that delay proves neither installation success nor failure.
 Developers testing an exact unpublished commit use the existing
 [artifact installation procedure](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores).
 The canonical Hebra host uses the matching external-plugin assets, described in the same
-[beta guide](docs/BETA.md). The 0.6.28 channel is a normal release, not a prerelease,
+[beta guide](docs/BETA.md). The 0.6.29 channel is a normal release, not a prerelease,
 because the Hebra installer omits prereleases. In Hebra the plugin's `hebra.json` carries its own icon (the
 monster, `iconImage`) with the Lucide `sword` as fallback; Obsidian keeps the sword. Hebra builds that predate
 the field ignore it and paint the sword. Record installation/loading separately from session QA.
 
 ## First farming session
 
-These steps describe the published 0.6.28 code; they do not certify its behavior in
+These steps describe the published 0.6.29 code; they do not certify its behavior in
 an installed client. The [live QA matrix](docs/QA-MVP.md) records the pending real-client
 checks. Legacy API session controls are not a fallback for missing Nexus observations.
 

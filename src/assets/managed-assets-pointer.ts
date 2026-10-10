@@ -1,4 +1,11 @@
-import { openIndexedDb } from '../core/indexed-db-open';
+import {
+	IndexedDbUnavailableError,
+	ReopeningIndexedDbConnection,
+	indexedDbFailureCode,
+	isIndexedDbUnavailable,
+	openIndexedDb,
+	startIndexedDbTransaction,
+} from '../core/indexed-db-open';
 import { LocalDebugPersistenceProbe, localDebugStorageFailureCode } from '../core/local-debug-persistence';
 
 export const MANAGED_ASSETS_POINTER_DB = 'tyrian-companion-managed-assets';
@@ -20,30 +27,49 @@ export interface ManagedAssetsPointerStore {
 	close(): void;
 }
 
+/**
+ * The durable pointer, opened lazily. A connection the engine dropped, or that a `versionchange` other than an upgrade
+ * released, is replaced on the next operation (DU-05); `close()` and a real upgrade end the store for good.
+ */
 export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerStore {
-	private database: IDBDatabase | null = null;
-	private opening: Promise<IDBDatabase> | null = null;
-	private closed = false;
+	private readonly connection: ReopeningIndexedDbConnection;
 	private readonly key: string;
 	constructor(
-		private readonly factory: IDBFactory,
+		factory: IDBFactory,
 		vaultId: string,
-		private readonly databaseName = MANAGED_ASSETS_POINTER_DB,
+		databaseName = MANAGED_ASSETS_POINTER_DB,
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
 	) {
 		if (!/^[a-f0-9]{64}$/u.test(vaultId)) throw new Error('Managed-assets vault identity is invalid.');
 		this.key = `managed-assets-pointer:${vaultId}`;
+		this.connection = new ReopeningIndexedDbConnection(async (hooks) => {
+			const attempt = this.diagnostics.begin('managed_assets_pointer', 'open');
+			try {
+				const database = await openIndexedDb({
+					factory,
+					databaseName,
+					databaseVersion: 1,
+					schema: [{ name: STORE }],
+					...hooks,
+					toError: () => new Error('Managed-assets pointer could not be opened.'),
+				});
+				attempt.success();
+				return database;
+			} catch (error) {
+				attempt.failure(localDebugStorageFailureCode(error), error);
+				throw error;
+			}
+		}, () => new Error('Managed-assets pointer is closed.'));
 	}
 
 	async read(): Promise<ManagedAssetsPointerState> {
 		const attempt = this.diagnostics.begin('managed_assets_pointer', 'read');
 		try {
-			const database = await this.open();
-			const result = await requestTransaction(database, 'readonly', (store) => store.get(this.key), (value) => parsePointer(value));
+			const result = await this.run((database) => requestTransaction(database, 'readonly', (store) => store.get(this.key), (value) => parsePointer(value)));
 			attempt.success();
 			return result;
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -51,9 +77,9 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 	async compareAndSet(expected: ManagedAssetsPointerState, next: Omit<ManagedAssetsPointerState, 'schemaVersion' | 'generation'>): Promise<ManagedAssetsPointerState | null> {
 		const attempt = this.diagnostics.begin('managed_assets_pointer', 'write');
 		try {
-			const database = await this.open();
-			const result = await new Promise<ManagedAssetsPointerState | null>((resolve, reject) => {
-			const transaction = database.transaction(STORE, 'readwrite');
+			const result = await this.run((database) => new Promise<ManagedAssetsPointerState | null>((resolve, reject) => {
+			// A throw here rejects this promise before the compare ran, so running it again is safe.
+			const transaction = startIndexedDbTransaction(database, STORE, 'readwrite');
 			const store = transaction.objectStore(STORE);
 			const request = store.get(this.key);
 			let result: ManagedAssetsPointerState | null = null;
@@ -70,48 +96,29 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 			transaction.oncomplete = () => resolve(result);
 			transaction.onerror = () => reject(new Error('Managed-assets pointer update failed.'));
 			transaction.onabort = () => reject(new Error('Managed-assets pointer update was aborted.'));
-			});
+			}));
 			if (result === null) attempt.skip('validation_failed');
 			else attempt.success();
 			return result;
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 	}
 
 	close(): void {
 		const attempt = this.diagnostics.begin('managed_assets_pointer', 'close');
-		this.closed = true;
-		this.database?.close();
-		this.database = null;
+		this.connection.close();
 		attempt.success();
 	}
-	private async open(): Promise<IDBDatabase> {
-		if (this.closed) throw new Error('Managed-assets pointer is closed.');
-		if (this.database) return this.database;
-		if (this.opening) return this.opening;
-		const attempt = this.diagnostics.begin('managed_assets_pointer', 'open');
-		const opening = openIndexedDb({
-			factory: this.factory,
-			databaseName: this.databaseName,
-			databaseVersion: 1,
-			schema: [{ name: STORE }],
-			accept: () => !this.closed,
-			onVersionChange: () => { this.database = null; this.closed = true; },
-			toError: () => new Error('Managed-assets pointer could not be opened.'),
-		});
-		this.opening = opening;
+
+	/** One transaction on the cached connection, replacing a dead one once (DU-05); a second dead one is this call's failure. */
+	private async run<T>(operation: (database: IDBDatabase) => Promise<T>): Promise<T> {
 		try {
-			const database = await opening;
-			this.database = database;
-			attempt.success();
-			return database;
+			return await this.connection.run(operation);
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
-			throw error;
-		} finally {
-			if (this.opening === opening) this.opening = null;
+			// The reason stays with the error, so the diagnostic of a transaction left unanswered still says `timeout`.
+			throw isIndexedDbUnavailable(error) ? new IndexedDbUnavailableError('Managed-assets pointer is unavailable.', error) : error;
 		}
 	}
 }
@@ -153,7 +160,7 @@ function nonEmpty(value: unknown): value is string { return typeof value === 'st
 function samePointer(a: ManagedAssetsPointerState, b: ManagedAssetsPointerState): boolean { return JSON.stringify(a) === JSON.stringify(b); }
 async function requestTransaction<T>(database: IDBDatabase, mode: IDBTransactionMode, request: (store: IDBObjectStore) => IDBRequest, map: (value: unknown) => T): Promise<T> {
 	return await new Promise((resolve, reject) => {
-		const transaction = database.transaction(STORE, mode); const operation = request(transaction.objectStore(STORE)); let result: T;
+		const transaction = startIndexedDbTransaction(database, STORE, mode); const operation = request(transaction.objectStore(STORE)); let result: T;
 		operation.onsuccess = () => { try { result = map(operation.result as unknown); } catch { transaction.abort(); } };
 		transaction.oncomplete = () => resolve(result); transaction.onerror = () => reject(new Error('Managed-assets pointer read failed.')); transaction.onabort = () => reject(new Error('Managed-assets pointer read was aborted.'));
 	});

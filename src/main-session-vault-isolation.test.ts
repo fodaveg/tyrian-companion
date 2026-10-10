@@ -7,6 +7,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { compareStorageSnapshots } from './account/storage-delta';
 import { sha256Text } from './assets/managed-asset-hash';
 import { PROPOSAL_QUEUE_DB_NAME, vaultProposalQueueDatabaseName } from './sessions/pending-proposal-store';
+import { DETECTION_QUALITY_DB_NAME, vaultDetectionQualityDatabaseName } from './sessions/session-detection-quality-store';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import { DEFAULT_SETTINGS } from './core/settings';
 import { obsidianPluginCore } from './test/obsidian-host-harness';
@@ -86,6 +87,22 @@ describe('a saved session belongs to the vault that saved it (H18.12)', () => {
 		].sort();
 		await vi.waitFor(async () => { expect(await queues()).toEqual(expected); });
 		expect(await queues()).not.toContain(PROPOSAL_QUEUE_DB_NAME);
+	});
+
+	it('gives each vault its own detection quality database, and creates no common one (DU-08)', async () => {
+		const factory = new IDBFactory();
+		const stores = async (): Promise<string[]> => (await factory.databases())
+			.map((info) => info.name ?? '').filter((name) => name.startsWith(DETECTION_QUALITY_DB_NAME)).sort();
+
+		await vaultPlugin(factory, '/vaults/farming').initializeRuntime();
+		await vaultPlugin(factory, '/vaults/notes').initializeRuntime();
+
+		const expected = [
+			vaultDetectionQualityDatabaseName(await vaultIdOf('/vaults/farming')),
+			vaultDetectionQualityDatabaseName(await vaultIdOf('/vaults/notes')),
+		].sort();
+		await vi.waitFor(async () => { expect(await stores()).toEqual(expected); });
+		expect(await stores()).not.toContain(DETECTION_QUALITY_DB_NAME);
 	});
 
 	it('gives the live journal to a database an earlier release left in version 1, keeping its session (DU-01)', async () => {
