@@ -18,11 +18,13 @@ const frozenSourceTextTests = (JSON.parse(
 
 // GR-17: with `TYRIAN_VITEST_JSON` set to a path (CI sets it on the `check` step), vitest also writes
 // its JSON report there, so every push leaves the duration of each test file. The `default` reporter
-// stays first and explicit: the console output and the verdict are the ones of a run without it.
+// stays first and explicit: the console output and the verdict are the ones of a run without it. Passing
+// `reporters` replaces vitest's own choice, which adds `github-actions` (annotations) on its own only when
+// the list is empty, so it is added back here under `GITHUB_ACTIONS`.
 const jsonReportPath = process.env.TYRIAN_VITEST_JSON;
 const jsonReport = jsonReportPath === undefined || jsonReportPath === ''
 	? {}
-	: { reporters: ['default', 'json'], outputFile: { json: jsonReportPath } };
+	: { reporters: process.env.GITHUB_ACTIONS === 'true' ? ['default', 'github-actions', 'json'] : ['default', 'json'], outputFile: { json: jsonReportPath } };
 
 export default defineConfig({
 	test: {

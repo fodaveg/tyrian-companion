@@ -183,7 +183,8 @@ export function createLocalDebugPersistenceSink(
  * and a lease taken over from a gone owner (`result: taken`) are what tells, from the log alone, whether
  * the lock works. At `debug` they never reached a client on the default `warn` level, and `info` would
  * not either (the default drops it), so they are written at `warn`. They are not anomalies but they are
- * rare: one verdict per instance and one `taken` per takeover, never per tick. `life_lock_unmarked`
+ * rare: one verdict per instance and one `taken` per takeover, never per tick. The log itself is off by
+ * default (`debugLoggingEnabled`), so it must be turned on; the default level is then enough. `life_lock_unmarked`
  * already warns through its own code.
  */
 function isLifeLockVerdict(event: LocalDebugPersistenceEvent): boolean {

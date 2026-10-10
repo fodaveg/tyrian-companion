@@ -42,7 +42,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: vitest-unit-report-${{ github.sha }}
+          name: vitest-unit-report-${{ github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/vitest-unit.json
           if-no-files-found: ignore
           retention-days: 7
