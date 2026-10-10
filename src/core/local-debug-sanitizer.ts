@@ -37,8 +37,14 @@ const COMMON_DETAIL_FIELDS = [
 	'store', 'operation',
 ] as const;
 
+/** Detail fields that carry only `{name: integer}`; see `sanitizeNumericMap`. */
+const NUMERIC_MAP_FIELDS: ReadonlySet<string> = new Set(['bootMs', 'bootCounts']);
+const NUMERIC_MAP_KEY = /^[A-Za-z][A-Za-z0-9]{0,31}$/u;
+
 export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, readonly string[]>> = {
-	plugin: [...COMMON_DETAIL_FIELDS, 'enabled', 'commandCount', 'viewCount'],
+	// `bootMs`/`bootCounts` (the `boot_timings` line, `src/core/boot-trace.ts`): flat maps of phase to
+	// non-negative integer, enforced by `NUMERIC_MAP_FIELDS` below, never a string or a nested object.
+	plugin: [...COMMON_DETAIL_FIELDS, 'enabled', 'commandCount', 'viewCount', 'bootMs', 'bootCounts'],
 	settings: [...COMMON_DETAIL_FIELDS, 'schemaVersion', 'changedKeys', 'language'],
 	connection: [...COMMON_DETAIL_FIELDS, 'permissionCount', 'missingPermissionCount'],
 	// `itemIds` are GW2's own public catalog item ids (e.g. the batch behind a failed
@@ -252,9 +258,32 @@ export function sanitizeDetails(
 		if (!allowed.has(key) || BLOCKED_KEY.test(key)) continue;
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
 		if (descriptor === undefined || !('value' in descriptor)) continue;
+		if (NUMERIC_MAP_FIELDS.has(key)) {
+			const map = sanitizeNumericMap(descriptor.value);
+			if (map !== undefined) result[key] = map;
+			continue;
+		}
 		result[key] = sanitizeUnknown(descriptor.value, seen, 0, vaultBasePath);
 	}
 	return result;
+}
+
+/**
+ * Keeps only the entries of a flat `{name: number}` map whose value is a non-negative safe integer and whose name is a
+ * short identifier; everything else (a string, an object, a negative or fractional number) is dropped, and a value that
+ * is not a map at all drops the whole field. Privacy rail of the boot timings: text cannot ride in under these fields.
+ */
+function sanitizeNumericMap(value: unknown): Readonly<Record<string, number>> | undefined {
+	if (!isRecord(value)) return undefined;
+	const result: Record<string, number> = {};
+	for (const key of Object.keys(value).slice(0, MAX_COLLECTION_ITEMS)) {
+		if (!NUMERIC_MAP_KEY.test(key) || BLOCKED_KEY.test(key)) continue;
+		const descriptor = Object.getOwnPropertyDescriptor(value, key);
+		if (descriptor === undefined || !('value' in descriptor)) continue;
+		const number = safeOptionalNonNegativeInteger(descriptor.value);
+		if (number !== undefined) result[key] = number;
+	}
+	return Object.keys(result).length > 0 ? result : undefined;
 }
 
 /** Converts an untrusted nested value to bounded JSON-safe data without invoking getters. */

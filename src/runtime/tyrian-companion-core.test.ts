@@ -1,7 +1,9 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createBootTrace } from '../core/boot-trace';
 import type { LocalDebugStoragePort } from '../core/local-debug-writer';
+import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION } from '../core/settings';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import type {
@@ -26,6 +28,7 @@ import { SALE_VIEW_TYPE } from '../ui/sale-item-view';
 import { createTyrianRuntime } from './index';
 import {
 	ALERT_INGAME_SECRET_COMMAND_ID,
+	CORE_MODULE_EVALUATED_MS,
 	EXPORT_LEGACY_SESSION_COMMAND_ID,
 	EXPORT_LIVE_SESSION_COMMAND_ID,
 	TYRIAN_MAIN_VIEW_TYPE,
@@ -242,6 +245,91 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 			expect(Object.keys(view).sort()).toEqual(['icon', 'mount', 'placement', 'title', 'type', 'unmount']);
 		}
 	});
+});
+
+describe('the boot_timings line (Z26)', () => {
+	/** A host whose boot clock moves 10 ms per reading, after the module evaluated, and whose log is on or off. */
+	function timedHost(logging: boolean) {
+		const base = neutralHost();
+		let now = CORE_MODULE_EVALUATED_MS;
+		const trace = createBootTrace(() => (now += 10), 0);
+		const host: TyrianHost = {
+			...base.host,
+			bootTrace: trace,
+			settings: {
+				load: async () => ({
+					...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: logging, debugLoggingLevel: 'debug',
+				}),
+				save: async () => undefined,
+			},
+		};
+		return { ...base, host };
+	}
+	afterEach(() => { vi.restoreAllMocks(); });
+	const bootLines = (records: () => Array<Record<string, unknown>>) =>
+		records().filter((record) => record.action === 'plugin_load' && record.state === 'boot_timings');
+
+	it('writes ONE line with every phase of the start, in order, and numbers only', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered, records } = timedHost(true);
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		registered.ready[0]!();
+		await vi.waitFor(() => { expect(bootLines(records)).toHaveLength(1); }, { timeout: 10_000 });
+		await runtime.stop();
+
+		const lines = bootLines(records);
+		expect(lines).toHaveLength(1);
+		const bootMs = (lines[0]!.details as { bootMs: Record<string, number> }).bootMs;
+		expect(Object.keys(bootMs).sort()).toEqual([
+			'diagnostics', 'halloween', 'live', 'mode', 'module', 'onload', 'painted', 'priceHistory', 'ready', 'registered',
+			'runtimeStart', 'sessions', 'settings',
+		]);
+		const values = Object.values(bootMs);
+		expect(values.every((value) => Number.isInteger(value) && value >= 0)).toBe(true);
+		expect(values).toEqual([...values].sort((left, right) => left - right));
+		// The sequence the start walks: runtimeStart..painted are in this order whatever the diagnostics' own timing.
+		const order = Object.keys(bootMs);
+		for (const [earlier, later] of [['module', 'onload'], ['onload', 'settings'], ['settings', 'registered'], ['registered', 'runtimeStart'],
+			['runtimeStart', 'mode'], ['mode', 'sessions'], ['sessions', 'live'], ['live', 'ready'], ['ready', 'priceHistory'],
+			['priceHistory', 'halloween'], ['halloween', 'painted']] as const) {
+			expect(order.indexOf(earlier), `${earlier} before ${later}`).toBeLessThan(order.indexOf(later));
+		}
+		expect(lines[0]).toMatchObject({ component: 'plugin', action: 'plugin_load', state: 'boot_timings', phase: 'success' });
+	}, 30_000);
+
+	it('writes nothing with the debug log off, and the trace is still spent once', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered, records } = timedHost(false);
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		registered.ready[0]!();
+		await vi.waitFor(() => { expect(host.bootTrace?.take()).toBeNull(); }, { timeout: 10_000 });
+		await runtime.stop();
+		expect(records()).toEqual([]);
+	}, 30_000);
+
+	it('a start that breaks halfway leaves the line with the phases it reached and the last one named', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered, records } = timedHost(true);
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		// The live session store refuses to initialize: the start stops after `sessions`.
+		vi.spyOn(LiveSessionLifecycle.prototype, 'initialize').mockRejectedValue(new Error('storage gone'));
+		registered.ready[0]!();
+		await vi.waitFor(() => { expect(bootLines(records)).toHaveLength(1); }, { timeout: 10_000 });
+		const details = bootLines(records)[0]!.details as { bootMs: Record<string, number>; result: string; reason: string };
+		expect(details.result).toBe('incomplete');
+		expect(details.reason).toBe('sessions');
+		expect(Object.keys(details.bootMs)).not.toContain('painted');
+		await runtime.stop();
+	}, 30_000);
 });
 
 /** A recording dropdown for a settings row rendered outside a page, as the host's settings search does. */

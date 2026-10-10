@@ -140,6 +140,23 @@ describe('activateTyrian', () => {
 		for (const close of closes) expect(close).toHaveBeenCalled();
 	});
 
+	it('a host that fails to be created (the first walk of the library) closes the IndexedDB connections of the path index and the local files, and the failure still reaches Hebra', async () => {
+		const test = createTyrianTestApi({ platform: 'ios' });
+		test.library.addFolder('tc', 'root', 'Tyrian Companion');
+		const tracked = trackedIndexedDb();
+		const createRuntime = vi.fn();
+		const env = environment({ indexedDB: tracked.factory, createRuntime });
+		let closes: ReturnType<typeof vi.spyOn>[] = [];
+		vi.spyOn(test.api.vault, 'notesPage').mockImplementation(() => {
+			closes = tracked.connections.filter((connection) => /path-index|local-files/.test(connection.name)).map((connection) => vi.spyOn(connection, 'close'));
+			return Promise.reject(new Error('library unreadable'));
+		});
+		await expect(activateTyrian(test.api, env)).rejects.toThrow('library unreadable');
+		expect(closes.length, 'the path index held an open connection when the host failed').toBeGreaterThan(0);
+		for (const close of closes) expect(close).toHaveBeenCalled();
+		expect(createRuntime).not.toHaveBeenCalled();
+	});
+
 	it('a storage close that fails after a failed start does not hide the start failure, and is reported', async () => {
 		const failures = { report: vi.fn(), subscribe: vi.fn(() => () => undefined) };
 		const env = environment({
