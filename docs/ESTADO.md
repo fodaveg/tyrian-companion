@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.6.36: Hebra arranca antes, copia de las preferencias y ajustes por equipo (11 oct 2026)
+## Canal 0.6.36 publicado: Hebra arranca antes, copia de las preferencias y ajustes por equipo (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.36` sobre el canal 0.6.35 publicado
-(`52fa782c`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.36` = `c594d47e` (atestación; candidato `e17643b5`,
+árbol `d8c9ab89`). Gate local verde (check 9/9 con 7015 tests, guardrails 25/25, BRAT PASS); CI 38084154301 y Release
+38084940883 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.36` sobre el canal
+0.6.35 publicado (`52fa782c`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.36 se ha visto en un Obsidian ni en un Hebra reales.
@@ -36,7 +38,7 @@
 - Incidente: la segunda instancia flatpak reemplazó el socket del CLI de Obsidian de David (CLI y MCP de obsidian sin
   llegar a su instancia desde las 21:28 hasta que lo reactive); evidencia en
   [2026-10-10-obsidian-desechable](evidencia/2026-10-10-obsidian-desechable.md).
-- Pendiente: gate, publicación, verla en un Obsidian y un Hebra reales, Z19 (b) (darse por activado sin recorrer toda la
+- Pendiente: verla en un Obsidian y un Hebra reales, Z19 (b) (darse por activado sin recorrer toda la
   carpeta), la parte de `manual-session-start-service.ts` de DE-07, y la reapertura de RT-03 y RT-15.
 
 ## Canal 0.6.35 publicado: Logros que leen el progreso, iconos de recompensas y carpeta de salida que se crea (10 oct 2026)
