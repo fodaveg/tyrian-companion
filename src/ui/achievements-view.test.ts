@@ -1391,19 +1391,37 @@ describe('AchievementsView: «Temporadas de los dragones» read, and read before
 		expect(counts(h)).toEqual(['Hechos: 1 de 24 · 23 sin leer', 'Sin leer (círculo punteado): pulsa «Actualizar progreso».']);
 	});
 
-	it('the dotted circle is explained also when nothing was read, without pointing to a disabled button when there is no key, and in English', async () => {
+	it('with nothing read at all the bar says it once, and no achievement repeats it', async () => {
 		const none = harness({ ...base(), noReading: true });
 		none.view.mount();
 		await none.settle();
-		expect(counts(none)).toEqual(['24 elementos · sin leer', 'Sin leer (círculo punteado): pulsa «Actualizar progreso».']);
-		const noKey = harness({ ...base(), noReading: true, hasKey: false });
+		expect(none.container.querySelector('.tyrian-achievements__reading')?.textContent).toBe('Progreso sin leer. Pulsa «Actualizar progreso» para leerlo con tu clave.');
+		expect(counts(none)).toEqual(['24 elementos · sin leer']);
+	});
+
+	it('the hint does not point to a disabled button without a key, and speaks English with the quotes of the rest', async () => {
+		const noKey = harness({ ...base(), readingIds: READ_BY_0_6_33, entries: OLD_ENTRIES, hasKey: false });
 		noKey.view.mount();
 		await noKey.settle();
-		expect(counts(noKey)).toEqual(['24 elementos · sin leer', 'Sin leer (círculo punteado): hace falta una clave API.']);
+		expect(counts(noKey)).toEqual(['Hechos: 1 de 24 · 23 sin leer', 'Sin leer (círculo punteado): hace falta una clave API.']);
 		const english = harness({ ...base(), readingIds: READ_BY_0_6_33, entries: OLD_ENTRIES, locale: 'en' });
 		english.view.mount();
 		await english.settle();
-		expect(counts(english)).toEqual(['Done: 1 of 24 · 23 not read', 'Not read (dotted circle): press «Update progress».']);
+		expect(counts(english)).toEqual(['Done: 1 of 24 · 23 not read', 'Not read (dotted circle): press "Update progress".']);
+	});
+
+	it.each([
+		['missing_scope', 'Sin leer (círculo punteado): revisa la clave en Ajustes.'],
+		['key_rejected', 'Sin leer (círculo punteado): revisa la clave en Ajustes.'],
+		['request_failed', 'Sin leer (círculo punteado): pulsa «Actualizar progreso».'],
+	] as const)('after a refresh that failed with %s the hint says %s', async (reason, hint) => {
+		const h = harness({ ...base(), readingIds: READ_BY_0_6_33, entries: OLD_ENTRIES, refresh: { status: 'unavailable', reason } });
+		h.view.mount();
+		await h.settle();
+		h.refreshButton().click();
+		await h.settle();
+		await h.settle();
+		expect(counts(h)).toEqual(['Hechos: 1 de 24 · 23 sin leer', hint]);
 	});
 
 	it('once every element is read there is no hint', async () => {

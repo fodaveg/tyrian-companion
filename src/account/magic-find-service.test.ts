@@ -56,13 +56,22 @@ describe('MagicFindService.deriveMagicFind', () => {
 
 	it('returns a typed missing_scope failure instead of throwing when the key lacks the luck scope (403)', async () => {
 		const operation = fakeOperation({
-			'account/luck': async () => { throw new HttpTransportError('http', 403, null, 'Forbidden.'); },
+			'account/luck': async () => { throw new HttpTransportError('http', 403, null, 'Forbidden.', undefined, 'scope:unlocks'); },
 		});
 		const service = new MagicFindService();
 
 		const result: MagicFindDerivationResult = await service.deriveMagicFind(operation, 'Astra Uno');
 
 		expect(result).toEqual({ status: 'failed', reason: 'missing_scope' });
+	});
+
+	it('a 401/403 whose answer names no scope is request_failed, not missing_scope (the API refuses keys with every permission too)', async () => {
+		for (const apiReason of [null, 'invalid_key', 'other'] as const) {
+			const operation = fakeOperation({
+				'account/luck': async () => { throw new HttpTransportError('http', 403, null, 'Forbidden.', undefined, apiReason); },
+			});
+			expect(await new MagicFindService().deriveMagicFind(operation, 'Astra Uno')).toEqual({ status: 'failed', reason: 'request_failed' });
+		}
 	});
 
 	it('returns a typed request_failed failure instead of throwing when a request times out', async () => {

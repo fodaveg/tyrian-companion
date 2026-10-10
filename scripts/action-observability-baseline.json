@@ -488,11 +488,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "0fcc1a4f9a1c3d718996c2df7b6d0255dea5d7e4",
+					"id": "1808a87ad9ff9da3263f4cc51629166b89bad2c1",
 					"kind": "catch_clause",
-					"line": 84,
+					"line": 85,
 					"column": 5,
-					"endLine": 90,
+					"endLine": 88,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2963,11 +2963,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "41c7383199d8e9c90cbf769d266c008a220c9e3a",
+					"id": "e04f3caaed112cb8e6ba0938d20419cc95123b03",
 					"kind": "catch_clause",
-					"line": 207,
+					"line": 239,
 					"column": 5,
-					"endLine": 229,
+					"endLine": 262,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -2979,9 +2979,9 @@
 				{
 					"id": "0c3dc8f1e80d509cda86aa93093fd3266e9e9c50",
 					"kind": "catch_clause",
-					"line": 252,
+					"line": 285,
 					"column": 5,
-					"endLine": 254,
+					"endLine": 287,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2995,9 +2995,9 @@
 				{
 					"id": "af55548b1fbe19f7ddcfc1bfe96fb46b86fa2637",
 					"kind": "catch_clause",
-					"line": 265,
+					"line": 298,
 					"column": 5,
-					"endLine": 267,
+					"endLine": 300,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3011,9 +3011,9 @@
 				{
 					"id": "ff2e5da92fb758742f652df24d48de547fe0b220",
 					"kind": "catch_clause",
-					"line": 295,
+					"line": 328,
 					"column": 5,
-					"endLine": 297,
+					"endLine": 330,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3027,9 +3027,9 @@
 				{
 					"id": "8989d701f5e8e9dd3942df8c214037a9d80912db",
 					"kind": "catch_clause",
-					"line": 318,
+					"line": 351,
 					"column": 5,
-					"endLine": 327,
+					"endLine": 360,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {

@@ -1,5 +1,6 @@
-import { keyLacksProgression, readAccountAchievements } from '../account/account-achievements';
-import { MissingApiKeyError, type GuildWars2Client } from '../account/guild-wars-2-client';
+import { AUTH_RETRY_STATUSES, readAccountAchievements } from '../account/account-achievements';
+import { readTokenPermissions } from '../account/account-service';
+import { MissingApiKeyError, type GuildWars2Client, type GuildWars2Operation } from '../account/guild-wars-2-client';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { sha256Text } from '../assets/managed-asset-hash';
 import { HttpTransportError } from '../core/http';
@@ -9,12 +10,12 @@ import type { StoredTrackedProgress, TrackedProgressStore } from './achievement-
  * Why a reading could not be made. What was kept before stays as it was in every one of these cases.
  *
  * - `missing_key`: no key selected.
- * - `key_rejected`: `account` answered 401/403, so the key itself is invalid or revoked.
- * - `missing_scope`: `account` answered, `account/achievements` refused (401/403) and `tokeninfo`,
- *   asked with the same key, lists no `progression`.
- * - `request_failed`: network, timeout, any other status, or a 401/403 on `account/achievements`
- *   that `tokeninfo` does not confirm as a missing `progression` (the transport's own diagnostic
- *   keeps the real status of each request).
+ * - `key_rejected`: `account` answered 401/403 twice and `tokeninfo`, asked with the same key,
+ *   refused it too: the key itself is invalid or revoked.
+ * - `missing_scope`: `account` answered, `account/achievements` refused (401/403, twice) and the
+ *   API named `progression` as the missing scope or `tokeninfo` lists no `progression`.
+ * - `request_failed`: network, timeout, any other status, or a 401/403 that `tokeninfo` does not
+ *   confirm (the transport's own diagnostic keeps the real status and `apiReason` of each request).
  * - `invalid_response`: a body that does not parse.
  * - `cancelled`: the key changed while the reading was in flight (`clearProgress`), so the reading
  *   was discarded without being kept: it may be of another account.
@@ -150,18 +151,15 @@ async function readTrackedProgress(
 ): Promise<{ status: 'ok'; reading: StoredTrackedProgress } | { status: 'unavailable'; reason: TrackedProgressFailureReason }> {
 	try {
 		const operation = client.beginOperation();
-		// Settled apart, so a 401/403 is told by the request that got it: on `account` the key is
-		// rejected, on `account/achievements` it lacks the scope. `account` decides when both fail.
+		// Settled apart, so a 401/403 is told by the request that got it: on `account` it may be a
+		// rejected key, on `account/achievements` a missing `progression`; `refusalReason` confirms
+		// either before saying it. `account` decides when both fail. Each 401/403 is retried once.
 		const [accountRead, achievementsRead] = await Promise.allSettled([
-			operation.request(`account?v=${encodeURIComponent(PINNED_SCHEMA)}`),
+			operation.request(`account?v=${encodeURIComponent(PINNED_SCHEMA)}`, AUTH_RETRY_STATUSES),
 			readAccountAchievements(operation),
 		]);
-		if (accountRead.status === 'rejected') return { status: 'unavailable', reason: failureReason(accountRead.reason, 'key_rejected') };
-		if (achievementsRead.status === 'rejected') {
-			const reason = failureReason(achievementsRead.reason, 'missing_scope');
-			// A refusal says «falta progression» only once `tokeninfo`, with the same key, confirms it.
-			return { status: 'unavailable', reason: reason === 'missing_scope' && !await keyLacksProgression(operation) ? 'request_failed' : reason };
-		}
+		if (accountRead.status === 'rejected') return { status: 'unavailable', reason: await refusalReason(operation, accountRead.reason, 'account') };
+		if (achievementsRead.status === 'rejected') return { status: 'unavailable', reason: await refusalReason(operation, achievementsRead.reason, 'achievements') };
 		const accountId = parseAccountId(accountRead.value);
 		const achievements = achievementsRead.value;
 		if (achievements.status !== 'ok' || accountId === null) return { status: 'unavailable', reason: 'invalid_response' };
@@ -181,11 +179,30 @@ async function readTrackedProgress(
 	}
 }
 
-/** `refused` is what a 401/403 means for the request that got it; outside a request there is none. */
-function failureReason(error: unknown, refused: 'key_rejected' | 'missing_scope' | null = null): TrackedProgressFailureReason {
-	if (error instanceof MissingApiKeyError) return 'missing_key';
-	if (refused !== null && error instanceof HttpTransportError && (error.status === 401 || error.status === 403)) return refused;
-	return 'request_failed';
+/** A failure outside the two keyed requests: no 401/403 to confirm. */
+function failureReason(error: unknown): TrackedProgressFailureReason {
+	return error instanceof MissingApiKeyError ? 'missing_key' : 'request_failed';
+}
+
+/**
+ * What the failure of one of the two keyed requests means. A 401/403 (already retried once) is
+ * confirmed before it is said, because the API has refused a key with every permission:
+ * - on `account`, `key_rejected` only when `tokeninfo` refuses the key too;
+ * - on `account/achievements`, `missing_scope` when the API named the scope (`apiReason`
+ *   `scope:progression`) or `tokeninfo` lists no `progression`.
+ * Anything unconfirmed (a `tokeninfo` that answers otherwise or cannot be read) is `request_failed`,
+ * which offers a retry. Never rejects.
+ */
+async function refusalReason(
+	operation: Pick<GuildWars2Operation, 'request'>,
+	error: unknown,
+	request: 'account' | 'achievements',
+): Promise<TrackedProgressFailureReason> {
+	if (!(error instanceof HttpTransportError) || (error.status !== 401 && error.status !== 403)) return failureReason(error);
+	if (request === 'achievements' && error.apiReason === 'scope:progression') return 'missing_scope';
+	const permissions = await readTokenPermissions(operation);
+	if (request === 'account') return permissions === 'rejected' ? 'key_rejected' : 'request_failed';
+	return Array.isArray(permissions) && !permissions.includes('progression') ? 'missing_scope' : 'request_failed';
 }
 
 function parseAccountId(body: unknown): string | null {

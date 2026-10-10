@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
 	ACCOUNT_ACHIEVEMENTS_PATH,
-	keyLacksProgression,
 	parseAccountAchievements,
 	readAccountAchievements,
 } from './account-achievements';
@@ -46,10 +45,10 @@ describe('parseAccountAchievements', () => {
 });
 
 describe('readAccountAchievements', () => {
-	it('requests the pinned path and parses a 200 body', async () => {
+	it('requests the pinned path, retrying a 401/403 once, and parses a 200 body', async () => {
 		const requestDetailed = vi.fn(async () => ({ status: 200, body: [{ id: 3, done: true }] }));
 		const read = await readAccountAchievements({ requestDetailed } as never);
-		expect(requestDetailed).toHaveBeenCalledWith(ACCOUNT_ACHIEVEMENTS_PATH);
+		expect(requestDetailed).toHaveBeenCalledWith(ACCOUNT_ACHIEVEMENTS_PATH, new Set([401, 403]));
 		expect(read).toEqual({ status: 'ok', entries: [{ id: 3, done: true, current: null, max: null, repeated: null, bits: null }] });
 	});
 
@@ -58,24 +57,5 @@ describe('readAccountAchievements', () => {
 			.resolves.toEqual({ status: 'invalid' });
 		await expect(readAccountAchievements({ requestDetailed: async () => ({ status: 206, body: [] }) } as never))
 			.rejects.toThrow('Unexpected status 206.');
-	});
-});
-
-describe('keyLacksProgression', () => {
-	it('asks tokeninfo with the operation and is true only for a list of permissions without progression', async () => {
-		const request = vi.fn(async () => ({ id: 'KEY-ID', name: 'Clave', permissions: ['account', 'wallet'] }));
-		expect(await keyLacksProgression({ request })).toBe(true);
-		expect(request).toHaveBeenCalledWith('tokeninfo');
-		expect(await keyLacksProgression({ request: async () => ({ permissions: ['account', 'progression'] }) })).toBe(false);
-	});
-
-	it('is false, and never rejects, when tokeninfo fails, throws at once or answers something else', async () => {
-		for (const request of [
-			async () => { throw new Error('401'); },
-			() => { throw new Error('sync'); },
-			async () => null, async () => ({}), async () => ({ permissions: 'account' }), async () => ({ permissions: ['account', 7] }),
-		]) {
-			await expect(keyLacksProgression({ request })).resolves.toBe(false);
-		}
 	});
 });

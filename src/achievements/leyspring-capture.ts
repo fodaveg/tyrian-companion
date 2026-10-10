@@ -1,8 +1,9 @@
 import {
-	keyLacksProgression,
+	AUTH_RETRY_STATUSES,
 	readAccountAchievements,
 	type AccountAchievementEntry,
 } from '../account/account-achievements';
+import { readTokenPermissions } from '../account/account-service';
 import { MissingApiKeyError, type GuildWars2Client, type GuildWars2Operation } from '../account/guild-wars-2-client';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { sha256Text } from '../assets/managed-asset-hash';
@@ -56,7 +57,7 @@ export class LeyspringCaptureService {
 			operation = this.client.beginOperation();
 			const ids = [LEYSPRING_MASTERY_ACHIEVEMENT_ID, ...LEYSPRING_TRACKED_ACHIEVEMENTS.map((entry) => entry.id)];
 			const [accountBody, achievements, catalog] = await Promise.all([
-				operation.request(`account?v=${encodeURIComponent(PINNED_SCHEMA)}`),
+				operation.request(`account?v=${encodeURIComponent(PINNED_SCHEMA)}`, AUTH_RETRY_STATUSES),
 				readAccountAchievements(operation),
 				this.publicGateway.requestDetailed(
 					`achievements?ids=${ids.join(',')}&lang=${locale}&v=${encodeURIComponent(PINNED_SCHEMA)}`,
@@ -82,11 +83,8 @@ export class LeyspringCaptureService {
 				},
 			};
 		} catch (error) {
-			const reason = failureReason(error);
-			// A 401/403 (of whichever of the three reads) says «falta progression» only once
-			// `tokeninfo`, with the same key, confirms it; `keyLacksProgression` never rejects.
-			if (reason === 'missing_scope' && (operation === null || !await keyLacksProgression(operation))) return unavailable('request_failed');
-			return unavailable(reason);
+			// `refusalReason` never rejects.
+			return unavailable(operation === null ? failureReason(error) : await refusalReason(operation, error));
 		}
 	}
 }
@@ -96,9 +94,19 @@ function unavailable(reason: LeyspringCaptureFailureReason): LeyspringCaptureRes
 }
 
 function failureReason(error: unknown): LeyspringCaptureFailureReason {
-	if (error instanceof MissingApiKeyError) return 'missing_key';
-	if (error instanceof HttpTransportError && (error.status === 401 || error.status === 403)) return 'missing_scope';
-	return 'request_failed';
+	return error instanceof MissingApiKeyError ? 'missing_key' : 'request_failed';
+}
+
+/**
+ * A 401/403 of whichever of the three reads (already retried once) says «falta progression» only
+ * when the API named that scope (`apiReason`) or `tokeninfo`, with the same key, lists no
+ * `progression`; otherwise it is `request_failed`. Never rejects.
+ */
+async function refusalReason(operation: Pick<GuildWars2Operation, 'request'>, error: unknown): Promise<LeyspringCaptureFailureReason> {
+	if (!(error instanceof HttpTransportError) || (error.status !== 401 && error.status !== 403)) return failureReason(error);
+	if (error.apiReason === 'scope:progression') return 'missing_scope';
+	const permissions = await readTokenPermissions(operation);
+	return Array.isArray(permissions) && !permissions.includes('progression') ? 'missing_scope' : 'request_failed';
 }
 
 function parseAccount(body: unknown): { id: string; name: string } | null {

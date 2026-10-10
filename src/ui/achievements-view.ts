@@ -875,10 +875,11 @@ export class AchievementsView {
 		});
 		if (unknown === 0 && elements.done === elements.total && elements.partial !== true && elements.barUnit === undefined) count.addClass('is-complete');
 		// The dotted circle says «sin leer» only to the eye that knows it: said in words beside the list.
-		if (unknown > 0) {
+		// Not when nothing was read at all: the bar already says «Pulsa «Actualizar progreso»» once.
+		if (unknown > 0 && this.tracked.status === 'ready' && this.tracked.reading !== null) {
 			body.createEl('p', {
 				cls: 'tyrian-achievements__elements-count tyrian-achievements__elements-unread',
-				text: t.t(this.actions.hasConfiguredApiKey() ? 'achievements.tracked.elementsUnreadHint' : 'achievements.tracked.elementsUnreadHintNoKey'),
+				text: t.t(this.unreadHintKey()),
 			});
 		}
 		if (elements.barUnit === 'pieces') body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsPieces') });
@@ -919,6 +920,17 @@ export class AchievementsView {
 	}
 
 	// ----- copy ----------------------------------------------------------------------------------
+
+	/**
+	 * What to do about elements not read: press «Actualizar progreso», except where pressing it cannot
+	 * help. Without a key the button is disabled; after a confirmed `missing_scope` or `key_rejected`
+	 * the key is what has to change.
+	 */
+	private unreadHintKey(): TranslationKey {
+		if (!this.actions.hasConfiguredApiKey()) return 'achievements.tracked.elementsUnreadHintNoKey';
+		const failed = this.refreshState.status === 'failed' ? this.refreshState.reason : null;
+		return failed === 'missing_scope' || failed === 'key_rejected' ? 'achievements.tracked.elementsUnreadHintCheckKey' : 'achievements.tracked.elementsUnreadHint';
+	}
 
 	private nameOf(view: TrackedAchievementView): string {
 		return view.name ?? this.t.t('achievements.tracked.unknownName', { id: view.id });

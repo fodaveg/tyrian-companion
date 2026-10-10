@@ -11,6 +11,7 @@ import {
 	GuildWars2AccountGateway,
 	parseAccountProfile,
 	parseTokenInfo,
+	readTokenPermissions,
 } from './account-service';
 import { GuildWars2Client } from './guild-wars-2-client';
 import { ConnectionService } from './connection-service';
@@ -223,5 +224,28 @@ describe('runtime response validation', () => {
 		[{ ...tokenInfo, expires_at: 'not-a-date' }, parseTokenInfo],
 	])('rejects an invalid payload', (payload, parser) => {
 		expect(() => parser(payload)).toThrow(ConnectionCheckError);
+	});
+});
+
+describe('readTokenPermissions', () => {
+	it('asks tokeninfo with the operation, retrying a 401/403 once, and answers its permissions', async () => {
+		const request = vi.fn(async () => ({ ...tokenInfo, permissions: ['account', 'wallet'] }));
+		expect(await readTokenPermissions({ request })).toEqual(['account', 'wallet']);
+		expect(request).toHaveBeenCalledWith('tokeninfo', new Set([401, 403]));
+	});
+
+	it.each([401, 403])('answers rejected when tokeninfo refuses the key with a %i', async (status) => {
+		expect(await readTokenPermissions({ request: async () => { throw new HttpTransportError('http', status, null, 'denied'); } })).toBe('rejected');
+	});
+
+	it('answers null, and never rejects, when tokeninfo cannot be read: network, another status, a sync throw, a body that does not parse', async () => {
+		for (const request of [
+			async () => { throw new HttpTransportError('network', null, null, 'down'); },
+			async () => { throw new HttpTransportError('http', 503, null, 'unavailable'); },
+			() => { throw new Error('sync'); },
+			async () => null, async () => ({ permissions: ['account'] }), async () => ({ ...tokenInfo, permissions: ['account', 7] }),
+		]) {
+			await expect(readTokenPermissions({ request })).resolves.toBeNull();
+		}
 	});
 });

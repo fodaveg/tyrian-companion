@@ -193,7 +193,9 @@ class MagicFindResponseError extends Error {
 
 function failureReason(error: unknown): MagicFindDerivationFailureReason {
 	if (error instanceof MagicFindResponseError) return error.reason;
-	if (error instanceof HttpTransportError && (error.status === 401 || error.status === 403)) return 'missing_scope';
+	// A 401/403 is a missing scope only when the API named one: it has also refused keys with every
+	// permission (0.6.34, 10 oct 2026), and asking `tokeninfo` here would cost a session start a request.
+	if (error instanceof HttpTransportError && (error.status === 401 || error.status === 403) && error.apiReason?.startsWith('scope:') === true) return 'missing_scope';
 	return 'request_failed';
 }
 

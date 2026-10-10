@@ -96,6 +96,12 @@ describe('LeyspringCaptureService', () => {
 		}
 	});
 
+	it('takes the scope the API named in its 403 as the confirmation, without asking tokeninfo', async () => {
+		const { service, requested } = services({ achievementsError: new HttpTransportError('http', 403, null, 'denied', undefined, 'scope:progression') });
+		expect(await service.capture('es')).toEqual({ status: 'unavailable', reason: 'missing_scope' });
+		expect(requested).not.toContain('tokeninfo');
+	});
+
 	it('rejects bad answers instead of reading them as "nothing done"', async () => {
 		for (const options of [
 			{ achievements: { not: 'a list' } }, { achievements: [{ id: 1, done: 'x' }] }, { catalog: { not: 'a list' } },
