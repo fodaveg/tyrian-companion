@@ -273,7 +273,7 @@ async function activate(test: TyrianTestApi, factory: IDBFactory): Promise<{ cor
 	await new Promise((resolve) => { window.setTimeout(resolve, 50); });
 	expect(live.runtimeFailure, 'the start did not break').toBeNull();
 	expect(live.runtimeReady, 'the start reached the end, unreadable manifest or not').toBe(true);
-	return { core: live, cleanup: async () => { await cleanup(); }, reports };
+	return { core: live, cleanup: async () => { await cleanup(); test.unloadPlugin(); }, reports };
 }
 
 function endpoint(url: string): string {
