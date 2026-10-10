@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 584,
+		"catch_clause": 585,
 		"promise_catch": 60,
 		"void_expression": 127,
 		"callback_registration": 230
@@ -4597,7 +4597,7 @@
 					"reason": "Allowlisted catch_clause: The \"compactDirtyDay\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"compactDirtyDay\"."
 				},
 				{
-					"id": "02d4c42694d87306a9018afd6cc497aeca981334",
+					"id": "4f263d7614a4a06c4a043511685cc964b53f8029",
 					"kind": "catch_clause",
 					"line": 478,
 					"column": 5,
@@ -4608,9 +4608,9 @@
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "pruneByCursor",
-						"justification": "The \"pruneByCursor\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "the unreadable row is retired with the rest of the pruned range and counted once through the store's own probe (price_history / recover / corrupt_tail_recovered); \"pruneByCursor\" owns it as \"local_recovery\""
 					},
-					"reason": "Allowlisted catch_clause: The \"pruneByCursor\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"pruneByCursor\"."
+					"reason": "Allowlisted catch_clause: the unreadable row is retired with the rest of the pruned range and counted once through the store's own probe (price_history / recover / corrupt_tail_recovered); \"pruneByCursor\" owns it as \"local_recovery\" Verified recovery: \"local_recovery\" in \"pruneByCursor\"."
 				},
 				{
 					"id": "323994a13f104459e75c9c4f955d9ff18b33e4e8",
@@ -16706,11 +16706,6 @@
 				}
 			]
 		},
-		"src/ui/live-session-alerts-panel.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
 		"src/ui/live-session-coin-badge.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -16816,9 +16811,9 @@
 				{
 					"id": "e32d8b128697052fb6551899c75fffca8f753a14",
 					"kind": "void_expression",
-					"line": 207,
+					"line": 225,
 					"column": 68,
-					"endLine": 207,
+					"endLine": 225,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16832,9 +16827,9 @@
 				{
 					"id": "6149a2118a8fae9661b982d35ac393a6da53f1bd",
 					"kind": "void_expression",
-					"line": 215,
+					"line": 233,
 					"column": 70,
-					"endLine": 215,
+					"endLine": 233,
 					"endColumn": 92,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16848,9 +16843,9 @@
 				{
 					"id": "cb726164b914d4713903582c1139522e18e2503d",
 					"kind": "callback_registration",
-					"line": 303,
+					"line": 321,
 					"column": 3,
-					"endLine": 303,
+					"endLine": 321,
 					"endColumn": 70,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -16865,9 +16860,9 @@
 				{
 					"id": "dcd5f4d9971b0373815cf75c4e6383f5dbebd1f6",
 					"kind": "void_expression",
-					"line": 310,
+					"line": 328,
 					"column": 74,
-					"endLine": 310,
+					"endLine": 328,
 					"endColumn": 98,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16881,9 +16876,9 @@
 				{
 					"id": "9c1eaa2c0f968add28446b38ac774d9c43e80e47",
 					"kind": "callback_registration",
-					"line": 327,
+					"line": 345,
 					"column": 4,
-					"endLine": 327,
+					"endLine": 345,
 					"endColumn": 175,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -16898,9 +16893,9 @@
 				{
 					"id": "db703e6d749abaf1af5e12ede0e83a580b5b471d",
 					"kind": "void_expression",
-					"line": 327,
+					"line": 345,
 					"column": 124,
-					"endLine": 327,
+					"endLine": 345,
 					"endColumn": 148,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16914,9 +16909,9 @@
 				{
 					"id": "69cd5c32d2d5433d06d9d7490206cd167d022ad9",
 					"kind": "catch_clause",
-					"line": 369,
+					"line": 387,
 					"column": 5,
-					"endLine": 369,
+					"endLine": 387,
 					"endColumn": 45,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16930,9 +16925,9 @@
 				{
 					"id": "2e6cd592bf3385c2947fab83a0f14381da36f4e4",
 					"kind": "void_expression",
-					"line": 372,
+					"line": 390,
 					"column": 61,
-					"endLine": 372,
+					"endLine": 390,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16946,9 +16941,9 @@
 				{
 					"id": "a4b06fdabfd9276c35203a8c3d8170586e4f2baa",
 					"kind": "void_expression",
-					"line": 383,
+					"line": 401,
 					"column": 53,
-					"endLine": 383,
+					"endLine": 401,
 					"endColumn": 77,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16962,9 +16957,9 @@
 				{
 					"id": "679dd62421f5542e49646a144aaba73401c139bc",
 					"kind": "void_expression",
-					"line": 390,
+					"line": 408,
 					"column": 54,
-					"endLine": 390,
+					"endLine": 408,
 					"endColumn": 78,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16978,9 +16973,9 @@
 				{
 					"id": "dbd82876f32590ff80131745c5e63b4defd1baf7",
 					"kind": "void_expression",
-					"line": 393,
+					"line": 411,
 					"column": 4,
-					"endLine": 393,
+					"endLine": 411,
 					"endColumn": 41,
 					"classification": "allowlisted",
 					"evidence": {
@@ -16994,9 +16989,9 @@
 				{
 					"id": "0866ed357ee6ba57fefc3f7a60bb9eefc308f882",
 					"kind": "catch_clause",
-					"line": 403,
+					"line": 421,
 					"column": 5,
-					"endLine": 403,
+					"endLine": 421,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -17010,9 +17005,9 @@
 				{
 					"id": "edacb96a69c53b12c87cb28af0cc6919a55c88f4",
 					"kind": "catch_clause",
-					"line": 571,
+					"line": 589,
 					"column": 5,
-					"endLine": 571,
+					"endLine": 589,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -17026,9 +17021,9 @@
 				{
 					"id": "0019b13a254654f5cc7426828afb0148d6f87153",
 					"kind": "catch_clause",
-					"line": 579,
+					"line": 597,
 					"column": 51,
-					"endLine": 579,
+					"endLine": 597,
 					"endColumn": 86,
 					"classification": "allowlisted",
 					"evidence": {
@@ -17040,11 +17035,27 @@
 					"reason": "Allowlisted catch_clause: In \"discardOld\", \"local_recovery\" shows an alert line and leaves the older session untouched; a failed discard never claims the session was dropped. Verified recovery: \"local_recovery\" in \"discardOld\"."
 				},
 				{
+					"id": "e52a9f9fc5704c7529333549f243e400e3afbdf0",
+					"kind": "catch_clause",
+					"line": 825,
+					"column": 58,
+					"endLine": 825,
+					"endColumn": 154,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "onPlotPointer",
+						"justification": "a pointer that is no longer active cannot be captured (NotFoundError); the cursor keeps following it without capture; \"onPlotPointer\" owns it as \"intentional_noop\""
+					},
+					"reason": "Allowlisted catch_clause: a pointer that is no longer active cannot be captured (NotFoundError); the cursor keeps following it without capture; \"onPlotPointer\" owns it as \"intentional_noop\" Verified recovery: \"intentional_noop\" in \"onPlotPointer\"."
+				},
+				{
 					"id": "36b02e844fdd780d903b84216364bef4841d1f17",
 					"kind": "catch_clause",
-					"line": 887,
+					"line": 925,
 					"column": 6,
-					"endLine": 887,
+					"endLine": 925,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
