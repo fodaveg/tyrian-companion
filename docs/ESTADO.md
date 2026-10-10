@@ -1,5 +1,21 @@
 # Estado
 
+## Candidato 0.6.27: logros de Leyspring, notas de sesión legibles, gráfica con burbuja y Hebra en dos idiomas (10 oct 2026)
+
+**Candidata; no publicada ni etiquetada.** Parte de `ae78f66` (rama de integración de la 0.6.27 sobre el canal 0.6.26
+publicado) y añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.27 se ha ejecutado en un Hebra ni en un Obsidian
+  reales. Todo está medido en tests. En particular, el comando de logros de Leyspring no se ha probado con una clave
+  real con el permiso `progression`, y la gráfica con burbuja (ratón, táctil, teclado) no se ha visto en un cliente.
+- Contenido: comando de logros de Leyspring (también en modo Consulta, excepción explícita), tramos de mapa y nota
+  completa legible en las sesiones en vivo (N7), gráfica de sesión con línea y burbuja (N8), Hebra en castellano e inglés
+  (HP-04, HP-08), una valoración por objeto y una reconstrucción al restaurar (Z34, M4) y reparación de bases de sesión
+  en versión 1 (DU-01). Interno: `hebra-plugin-api` 1.4.0 y guardarraíles de CI y release.
+- Fuera de la candidata: DU-02 (vault renombrado o movido) queda para la 0.6.28.
+- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+
 ## Cinco audits de solo lectura: evidencia en hosts reales, guardarraíles, almacenamiento local, paridad de hosts y deuda estructural (10 oct 2026)
 
 **Nada implementado; solo informes, notas y tareas.** Encargo de David del 10 oct 2026: un metaaudit recomendó cinco
