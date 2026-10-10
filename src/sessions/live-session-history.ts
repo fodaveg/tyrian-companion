@@ -114,7 +114,7 @@ export class LiveSessionHistoryService {
 	/** One note read and inspected: through the shared reads when there are, on its own otherwise. */
 	private async readNote(file: SessionHistoryFile): Promise<{ outcome: NoteOutcome; bytes: number }> {
 		if (this.reads !== undefined) {
-			const read = await this.reads.read(file, 'join');
+			const read = await (await this.reads.read(file, 'join')).inspect();
 			return { outcome: read.live, bytes: read.liveBytes };
 		}
 		return await inspectLiveHistoryNote(await this.vault.read(file));

@@ -252,6 +252,12 @@ export interface SharedNoteRead {
  */
 export type SharedNoteReadPeer = (file: SessionHistoryFile, read: SharedNoteRead, stale: boolean) => void;
 
+/** A note's text, read; `inspect` inspects it for both histories, once however many callers ask, and hands it to the peers. */
+export interface SharedNoteText {
+	readonly content: string;
+	inspect(): Promise<SharedNoteRead>;
+}
+
 /**
  * How a read is shared:
  * - `join`: a read of the same note already under way is reused, and the result is handed to every peer;
@@ -273,7 +279,7 @@ export type SharedNoteReadMode = 'join' | 'fresh' | 'private';
 export class SessionNoteReads {
 	private readonly peers = new Set<SharedNoteReadPeer>();
 	private readonly changeFollowers = new Set<(change: SessionHistoryNoteChange) => void>();
-	private readonly flights = new Map<string, { token: object; read: Promise<SharedNoteRead> }>();
+	private readonly flights = new Map<string, { token: object; read: Promise<SharedNoteText> }>();
 	private stopListening: (() => void) | null = null;
 	/** Counts every change the host has reported; a read compares it when it ends. */
 	private changes = 0;
@@ -282,12 +288,13 @@ export class SessionNoteReads {
 	private pending = 0;
 	/** Moves on every `dispose`: a read that outlives one is handed to nobody. */
 	private generation = 0;
+	private disposed = false;
 
 	constructor(private readonly vault: SessionHistoryVault) {}
 
 	/** True on a host that reports every change, and from the first call on those changes are followed. */
 	listen(): boolean {
-		if (this.vault.onNoteChange === undefined) return false;
+		if (this.disposed || this.vault.onNoteChange === undefined) return false;
 		this.stopListening ??= this.vault.onNoteChange((change) => { this.noteChanged(change); });
 		return true;
 	}
@@ -301,7 +308,11 @@ export class SessionNoteReads {
 	/** `follower` hears every change the host reports while the reads listen. */
 	followChanges(follower: (change: SessionHistoryNoteChange) => void): void { this.changeFollowers.add(follower); }
 
-	read(file: SessionHistoryFile, mode: SharedNoteReadMode): Promise<SharedNoteRead> {
+	/**
+	 * Reads one note. It rejects only when the READ fails; inspecting the text is the caller's next step (`inspect`), so a
+	 * decoder that throws is told apart from a note that could not be read.
+	 */
+	read(file: SessionHistoryFile, mode: SharedNoteReadMode): Promise<SharedNoteText> {
 		if (mode === 'private') return this.readOnce(file, null);
 		const shareable = this.listen();
 		const flying = shareable && mode === 'join' ? this.flights.get(file.path) : undefined;
@@ -313,7 +324,9 @@ export class SessionNoteReads {
 		return read;
 	}
 
+	/** Stops following changes for good: a read or a scan that ends after this neither subscribes again nor hands anything on. */
 	dispose(): void {
+		this.disposed = true;
 		this.generation += 1;
 		this.stopListening?.();
 		this.stopListening = null;
@@ -321,13 +334,40 @@ export class SessionNoteReads {
 		this.lastChange.clear();
 	}
 
-	/** Reads and inspects one note; `token` is null for a private read, which nobody else sees. */
-	private async readOnce(file: SessionHistoryFile, token: { done: boolean } | null): Promise<SharedNoteRead> {
+	/**
+	 * Reads one note; `token` is null for a private read, which nobody else sees. The read counts as under way, for `stale`,
+	 * until its text has been inspected and handed to the peers (`settle`), or until the read itself failed.
+	 */
+	private async readOnce(file: SessionHistoryFile, token: { done: boolean } | null): Promise<SharedNoteText> {
 		const generation = this.generation;
 		const since = this.changes;
 		this.pending += 1;
+		let settled = false;
+		const settle = (): void => {
+			if (settled) return;
+			settled = true;
+			if (token !== null) {
+				token.done = true;
+				if (this.flights.get(file.path)?.token === token) this.flights.delete(file.path);
+			}
+			this.pending -= 1;
+			if (this.pending === 0) this.lastChange.clear();
+		};
+		let handedOver = false;
 		try {
 			const content = await this.vault.read(file);
+			let inspection: Promise<SharedNoteRead> | null = null;
+			handedOver = true;
+			// Inspected on the first ask only, so a caller awaits it as soon as it starts and every joiner shares it.
+			return { content, inspect: () => inspection ??= this.inspectAndShare(file, content, token, generation, since, settle) };
+		} finally {
+			if (!handedOver) settle();
+		}
+	}
+
+	private async inspectAndShare(file: SessionHistoryFile, content: string, token: object | null, generation: number, since: number,
+		settle: () => void): Promise<SharedNoteRead> {
+		try {
 			const read = await inspectNoteForHistories(content);
 			if (token !== null && generation === this.generation) {
 				const stale = (this.lastChange.get(file.path) ?? 0) > since;
@@ -335,12 +375,7 @@ export class SessionNoteReads {
 			}
 			return read;
 		} finally {
-			if (token !== null) {
-				token.done = true;
-				if (this.flights.get(file.path)?.token === token) this.flights.delete(file.path);
-			}
-			this.pending -= 1;
-			if (this.pending === 0) this.lastChange.clear();
+			settle();
 		}
 	}
 
@@ -440,8 +475,13 @@ export class SessionHistoryService {
 				if (decoded === undefined) {
 					// The export reads on its own; the history's loads share the read with the live history, which keeps it too.
 					// What is remembered is decided in `keepRead`, never here.
-					try { decoded = (await this.noteReads.read(file, source === 'vault' ? 'private' : source === 'rebuild' ? 'fresh' : 'join')).durable; }
+					let text: SharedNoteText;
+					try { text = await this.noteReads.read(file, source === 'vault' ? 'private' : source === 'rebuild' ? 'fresh' : 'join'); }
 					catch { invalid += 1; continue; }
+					// A decoder that throws leaves the note invalid, as it blocks the history, and the scan goes on; unlike a read the
+					// host refused, it is a fault of this build, so it reaches the log.
+					try { decoded = (await text.inspect()).durable; }
+					catch (error) { invalid += 1; this.logFailure('vault_read', 'scan', error); continue; }
 				}
 				// The path is where the note is NOW, so it is stamped on the way out and never kept in the index.
 				if (decoded.status === 'ok') sessions.push({ ...decoded.session, notePath: file.path });
@@ -498,11 +538,12 @@ export class SessionHistoryService {
 				let decoded = index?.get(file.path);
 				let content: string | null = null;
 				if (decoded === undefined) {
-					let read: SharedNoteRead;
-					try { read = await this.noteReads.read(file, 'join'); }
+					let text: SharedNoteText;
+					try { text = await this.noteReads.read(file, 'join'); }
 					catch (error) { unreadable = true; this.logFailure('vault_read', 'read_session', error); continue; }
-					decoded = read.durable;
-					content = read.content;
+					// A decoder that throws ends the lookup in the catch below, logged and `unavailable`, as before Z24.
+					decoded = (await text.inspect()).durable;
+					content = text.content;
 				}
 				if (decoded.status !== 'ok' || decoded.session.sessionRef !== sessionRef) continue;
 				matches.push({ file, content });

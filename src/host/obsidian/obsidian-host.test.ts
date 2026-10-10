@@ -7,6 +7,7 @@ import type { TyrianVaultChange } from '../tyrian-host';
 import { labelledVault, sessionHistoryVault } from '../../runtime/vault-ports';
 import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
 import { loadTyrianSettings } from '../../runtime/tyrian-runtime';
+import { LiveSessionHistoryService } from '../../sessions/live-session-history';
 import { SessionHistoryService, type SessionHistoryNoteChange } from '../../sessions/session-history';
 import { setMockLanguage } from '../../test/obsidian-mock';
 import { createObsidianHost } from './obsidian-host';
@@ -361,6 +362,24 @@ describe('host-neutral vault ports', () => {
 
 		history.dispose();
 		expect(offref).toHaveBeenCalledTimes(4);
+	});
+
+	// Z24: the startup lookup and the live list subscribe too, through the shared reads; dispose releases that one subscription.
+	it.each(['readSession', 'live list'] as const)('releases through offref the subscription a %s opened, and does not open another', async (opener) => {
+		const { plugin, registerEvent, offref } = fakePlugin();
+		const port = sessionHistoryVault(createObsidianHost(plugin).vault);
+		const history = new SessionHistoryService(port);
+		const live = new LiveSessionHistoryService(port, undefined, history.noteReads);
+
+		await (opener === 'readSession' ? history.readSession('a'.repeat(64)) : live.list());
+		await history.scan('index');
+		expect(registerEvent).toHaveBeenCalledTimes(4);
+
+		history.dispose();
+		expect(offref).toHaveBeenCalledTimes(4);
+		await history.readSession('a'.repeat(64));
+		await live.list();
+		expect(registerEvent, 'nothing subscribes again after dispose').toHaveBeenCalledTimes(4);
 	});
 });
 
