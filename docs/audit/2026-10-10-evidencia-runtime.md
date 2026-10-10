@@ -36,6 +36,8 @@ Acción: registrar en `ESTADO.md` la instalación medida y cerrar la carga con e
 
 Acción: mover el paso `host-esm` antes de `unit` en `check`, y que el test falle (no se salte) cuando `CI` está definido. Coste: 0,5 a 1 h.
 
+**Resuelto en la 0.6.27 (RT-02, comprobado el 10 oct sobre `1b3ee6b`).** El paso `hebra-bundle` de `scripts/gate-steps.mjs` (grupo `check`) corre justo después de `host-esm` con `vitest.hebra-bundle.config.mts`, que incluye solo `src/host/hebra/bundle.test.ts`; `vitest.config.mts` lo excluye de `unit`. El test ya no lleva `runIf`: un bundle ausente es un fallo. `ci.yml` (job `check`) y `release.yml` (línea 42) ejecutan `npm run check`, así que ambos arrancan el `hebra-main.mjs` recién construido. La evidencia de arriba describe el estado anterior.
+
 ### RT-03 · Alto · La carga y reapertura en Obsidian es automatizable hoy y ya se hizo una vez
 
 - `docs/audit/2026-10-02-h18-29-runtime.md:49-63`: con una bóveda y un perfil de Obsidian desechables (1.13.7 Flatpak, Fedora), un agente instaló la 0.2.17, pasó `verify-beta-runtime`, leyó `core.runtimeReady=true`, abrió el panel, Inventario y Venta, hizo `obsidian restart` y volvió a pasar. Es la única evidencia de carga en Obsidian por el procedimiento de `BETA.md`.
