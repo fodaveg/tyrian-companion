@@ -521,6 +521,12 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 	// GR-13: the clock and the I/O globals are checked by running `load` with every ambient capability and
 	// `Date.now` trapped, not by looking for the names in the AST. The module is imported afresh inside the
 	// trap because the bundle is memoized: that way its evaluation and its first build are covered too.
+	// What GR-13 gives up here: the old check saw a name anywhere in the module, this one only what `load`
+	// executes. A `fetch` or `Date.now` inside an exported function `load` never calls, or an
+	// `import { requestUrl } from 'obsidian'`, is no longer detected by this test. Partly covered elsewhere:
+	// `src/security-boundary.test.ts` (census, lines 245-247) pins which production files mention `requestUrl`,
+	// `fetch` and `WebSocket` (textual, `scripts/security-scan.mjs:122-124`). It does NOT cover
+	// `XMLHttpRequest` or `Date.now`; for those only the ambient trap below remains.
 	it('loads the bundle without reading the clock or reaching any ambient I/O capability', async () => {
 		const clockReads: string[] = [];
 		const now = vi.spyOn(Date, 'now').mockImplementation(() => { clockReads.push('Date.now'); throw new Error('clock read'); });
