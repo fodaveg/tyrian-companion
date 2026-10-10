@@ -38,6 +38,9 @@ describe('GuildWars2PublicCatalogClient', () => {
 		expect(publicCatalogLogicalEndpoint('materials?ids=1')).toBe('material_categories');
 		expect(publicCatalogLogicalEndpoint('commerce/listings?ids=1')).toBe('commerce_listings');
 		expect(publicCatalogLogicalEndpoint('achievements?ids=9417&lang=en')).toBe('achievements');
+		expect(publicCatalogLogicalEndpoint('achievements/groups?ids=all&lang=es')).toBe('achievement_groups');
+		expect(publicCatalogLogicalEndpoint('achievements/categories?ids=all&lang=es&v=2022-03-23T19%3A00%3A00.000Z'))
+			.toBe('achievement_categories');
 		expect(publicCatalogLogicalEndpoint('private/secret?token=value')).toBe('unknown');
 	});
 

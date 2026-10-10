@@ -66,6 +66,11 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	// status of a failed call (401/403 = key without `progression`); the requests it makes go through
 	// the injected `GuildWars2Client` and public gateway, so it opens no transport of its own.
 	'src/achievements/leyspring-capture.ts',
+	// «Logros», tracked progress. Same review as the line above: it imports only the
+	// `HttpTransportError` class to read the status of a failed call (401/403 = key without
+	// `progression`); its two keyed reads go through the injected `GuildWars2Client`, and only from
+	// the explicit `refresh` action (docs/PRODUCT.md:9).
+	'src/achievements/tracked-progress-service.ts',
 	'src/advisor/inventory-advisor-evidence.ts',
 	'src/catalog/public-catalog-client.ts',
 	'src/catalog/public-catalog-service.ts',

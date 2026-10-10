@@ -21,6 +21,7 @@ export const LOCAL_DEBUG_PERSISTENCE_STORES = [
 	'catalog',
 	'inventory_preferences',
 	'managed_assets_pointer',
+	'achievements',
 ] as const;
 export type LocalDebugPersistenceStore = typeof LOCAL_DEBUG_PERSISTENCE_STORES[number];
 
