@@ -168,7 +168,7 @@ import {
 	saleInstantSellNetFor,
 	saleOpenVsSellCopper,
 	saleSourceRowFromAdvisorRow,
-} from './core-sale-helpers';
+} from './core-sale-rules';
 import { CollectorHeartbeat } from './collector-status';
 import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
@@ -436,7 +436,7 @@ type NoticeDiagnosticSource =
 	| 'session_history_note'
 	| 'settings_read_only';
 
-/** The Sale helpers live in `core-sale-helpers.ts`; this module stays the facade its consumers import them from. */
+/** The Sale helpers live in `core-sale-rules.ts`; this module stays the facade its consumers import them from. */
 export {
 	resolveSaleCalendarCandidateSpan,
 	resolveSaleSeasonalInputFor,
@@ -444,7 +444,7 @@ export {
 	saleInstantSellNetFor,
 	saleOpenVsSellCopper,
 	saleSourceRowFromAdvisorRow,
-} from './core-sale-helpers';
+} from './core-sale-rules';
 
 /** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
 export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';

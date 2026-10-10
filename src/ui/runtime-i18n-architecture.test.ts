@@ -6,7 +6,7 @@ import { readModuleSource } from '../test/module-boundary';
 const RUNTIME_UI_FILES = [
 	'src/main.ts',
 	'src/runtime/tyrian-companion-core.ts',
-	'src/runtime/core-sale-helpers.ts',
+	'src/runtime/core-sale-rules.ts',
 	'src/runtime/core-outcomes.ts',
 	'src/ui/companion-view.ts',
 	'src/ui/companion-status-model.ts',
@@ -30,7 +30,7 @@ describe('runtime UI i18n boundary', () => {
 		expect(hasDirectVisibleCopy(source)).toBe(false);
 	});
 
-	it.each(['src/runtime/core-sale-helpers.ts', 'src/runtime/core-outcomes.ts'] as const)(
+	it.each(['src/runtime/core-sale-rules.ts', 'src/runtime/core-outcomes.ts'] as const)(
 		'%s is covered by the guard: a visible literal added to it turns the check red',
 		(path) => {
 			expect(RUNTIME_UI_FILES).toContain(path);
