@@ -83,6 +83,10 @@ function harness(options: {
 	miniItems?: Record<string, number>;
 	/** The public categories, instead of the four of the fixture. */
 	categories?: AchievementCategory[];
+	/** How many of the first `loadCategories` calls fail (the network, then it comes back). */
+	categoriesFailFirst?: number;
+	/** A host without `openExternal`: the links are plain anchors. */
+	noOpenExternal?: boolean;
 	/** The first `loadNames` answers `failed: true` with nothing; the next ones answer normally. */
 	namesFailOnce?: boolean;
 	/** `loadNames` waits until `releaseNames()`. */
@@ -105,11 +109,18 @@ function harness(options: {
 		flush(): void { const run = [...timers.pending.values()]; timers.pending.clear(); for (const callback of run) callback(); },
 	};
 	const calls: string[] = [];
+	let categoryCalls = 0;
 	const buildSignals: AbortSignal[] = [];
 	let indexReady = options.indexKept === true;
 	const catalog: AchievementCatalogPort = {
 		loadGroups: async () => { calls.push('groups'); if (options.holdCatalog) await catalogGate.wait; return options.catalogFails ? { status: 'unavailable', reason: 'request_failed' } : { status: 'ok', value: GROUPS, freshness: fresh(options.stale) }; },
-		loadCategories: async () => { calls.push('categories'); if (options.holdCatalog) await catalogGate.wait; return options.catalogFails ? { status: 'unavailable', reason: 'request_failed' } : { status: 'ok', value: options.categories ?? CATEGORIES, freshness: fresh(options.stale) }; },
+		loadCategories: async () => {
+			calls.push('categories');
+			categoryCalls += 1;
+			if (options.holdCatalog) await catalogGate.wait;
+			if (options.catalogFails || categoryCalls <= (options.categoriesFailFirst ?? 0)) return { status: 'unavailable', reason: 'request_failed' };
+			return { status: 'ok', value: options.categories ?? CATEGORIES, freshness: fresh(options.stale) };
+		},
 		loadIndex: async () => { calls.push('loadIndex'); return indexReady ? { status: 'ready', total: INDEX.length, freshness: fresh() } : { status: 'not_built', done: 0, total: INDEX.length }; },
 		buildIndex: async (_locale, buildOptions: AchievementIndexBuildOptions = {}): Promise<AchievementIndexBuildResult> => {
 			calls.push('buildIndex');
@@ -189,7 +200,7 @@ function harness(options: {
 		getAchievementsServices: () => (starting ? null : services),
 		hasConfiguredApiKey: () => options.hasKey ?? true,
 		openProductSettings: openSettings,
-		openExternal,
+		...(options.noOpenExternal ? {} : { openExternal }),
 	};
 	const container = document.body.appendChild(document.createElement('div'));
 	const view = new AchievementsView(container, actions, { now: () => NOW, timers });
@@ -513,8 +524,11 @@ describe('AchievementsView: each followed achievement', () => {
 		const link = item.querySelector<HTMLAnchorElement>('.tyrian-achievements__item-foot a')!;
 		expect(link.getAttribute('href')).toBe('https://wiki.guildwars2.com/index.php?search=Achievement%201');
 		expect(link.textContent).toBe('Ver en la wiki');
-		link.dispatchEvent(new MouseEvent('click', { cancelable: true, bubbles: true }));
+		const click = new MouseEvent('click', { cancelable: true, bubbles: true });
+		link.dispatchEvent(click);
 		expect(h.openExternal).toHaveBeenCalledWith('https://wiki.guildwars2.com/index.php?search=Achievement%201');
+		// The host opens it; the webview itself must not navigate.
+		expect(click.defaultPrevented).toBe(true);
 		// Read 5 minutes ago, verified.
 		expect(h.container.querySelector('.tyrian-achievements__reading')?.textContent).toBe('Leído hace 5 minutos');
 	});
@@ -928,9 +942,54 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		// The check is the account's, not the player's: no input to toggle, the state in text for the reader.
 		expect(h.container.querySelector('.tyrian-achievements__elements input')).toBeNull();
 		expect(rows(h).map((row) => row.querySelector('.tyrian-visually-hidden')?.textContent)).toEqual(['pendiente: ', 'pendiente: ', 'hecho: ', 'hecho: ']);
-		// The element links open through the host, like the wiki link.
-		rows(h)[0]!.querySelector('a')!.dispatchEvent(new MouseEvent('click', { cancelable: true, bubbles: true }));
+		// The element links open through the host, like the wiki link, and the webview does not navigate.
+		const click = new MouseEvent('click', { cancelable: true, bubbles: true });
+		rows(h)[0]!.querySelector('a')!.dispatchEvent(click);
 		expect(h.openExternal).toHaveBeenLastCalledWith('https://wiki.guildwars2.com/index.php?search=%5B%26AgFNAAAA%5D');
+		expect(click.defaultPrevented).toBe(true);
+		// Each link is described by its state, so tabbing onto it hears «pendiente» or «hecho».
+		const described = rows(h).map((row) => { const link = row.querySelector('a'); return link === null ? null : row.querySelector(`#${link.getAttribute('aria-describedby') ?? ''}`)?.textContent ?? null; });
+		expect(described).toEqual(['pendiente: ', 'pendiente: ', null, 'hecho: ']);
+	});
+
+	it('without a host openExternal the links are plain anchors: the click is not intercepted', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known, noOpenExternal: true, entries: [{ id: 1, done: false, current: 0, max: 4, repeated: null, bits: [] }] });
+		h.view.mount();
+		await h.settle();
+		const link = rows(h)[1]!.querySelector('a')!;
+		expect(link.getAttribute('href')).toBe('https://wiki.guildwars2.com/index.php?search=%5B%26AgFNAAAA%5D');
+		const click = new MouseEvent('click', { cancelable: true, bubbles: true });
+		link.dispatchEvent(click);
+		expect(click.defaultPrevented).toBe(false);
+		const wiki = new MouseEvent('click', { cancelable: true, bubbles: true });
+		h.container.querySelector('.tyrian-achievements__item-foot a')!.dispatchEvent(wiki);
+		expect(wiki.defaultPrevented).toBe(false);
+	});
+
+	it('categories that fail on the first load and arrive on the next bring the members with them: the meta is not stuck with ids', async () => {
+		// Two calls fail: the catalog's own and the one of the first followed-list load.
+		const h = harness({
+			tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], categoriesFailFirst: 2, readingIds: READING,
+			entries: [{ id: 9351, done: false, current: 6, max: 13, repeated: null, bits: null }],
+		});
+		h.view.mount();
+		await h.settle();
+		expect(h.calls.filter((call) => call.startsWith('details:'))).toEqual([`details:${String(META_ID)}`]);
+		// Without categories no category lists the meta: no elements section yet.
+		expect(rows(h)).toEqual([]);
+		expect(counter(h)).toBeUndefined();
+
+		h.view.refresh();
+		await h.settle();
+		expect(h.calls.filter((call) => call.startsWith('details:'))).toEqual([`details:${String(META_ID)}`, 'details:9351,9410,9468']);
+		expect(rows(h).map(describeRow)).toEqual([
+			['pending', 'pendiente: Operación · 6/13 · 6 de 13', 'a', 'https://wiki.guildwars2.com/index.php?search=Achievement%209351#achievement9351'],
+			['pending', 'pendiente: Puzle de la caverna', 'a', 'https://wiki.guildwars2.com/index.php?search=Achievement%209468#achievement9468'],
+		]);
+		// Once loaded, a plain refresh reuses the members' details.
+		h.view.refresh();
+		await h.settle();
+		expect(h.calls.filter((call) => call.startsWith('details:'))).toHaveLength(2);
 	});
 
 	it('a meta of its category (9417) lists the other achievements of the category as elements: pending first with their x/y, done after, anchored to their wiki row; the daily is left out', async () => {
@@ -950,9 +1009,11 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		expect(item.querySelector('.tyrian-achievements__count')?.textContent).toBe('23/36');
 		expect(counter(h)).toBe('Hechos: 1 de 2');
 		expect(rows(h).map(describeRow)).toEqual([
-			['pending', 'pendiente: Operación · 6/13', 'a', 'https://wiki.guildwars2.com/index.php?search=Achievement%209351#achievement9351'],
+			['pending', 'pendiente: Operación · 6/13 · 6 de 13', 'a', 'https://wiki.guildwars2.com/index.php?search=Achievement%209351#achievement9351'],
 			['done', 'hecho: Puzle de la caverna', 'a', 'https://wiki.guildwars2.com/index.php?search=Achievement%209468#achievement9468'],
 		]);
+		// The visible « · 6/13» is hidden from the reader, which hears «6 de 13» instead.
+		expect(rows(h)[0]!.querySelector('.tyrian-achievements__count')?.getAttribute('aria-hidden')).toBe('true');
 		// An achievement element with an icon from the catalog shows it; one without shows only its name.
 		expect(rows(h).map((row) => row.querySelector('img')?.getAttribute('src') ?? null)).toEqual([RENDER, null]);
 		// «Actualizar progreso» asks about the members too (the daily included: the account decides), in ONE reading.
@@ -968,6 +1029,10 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		await unread.settle();
 		expect(counter(unread)).toBe('2 elementos · sin leer');
 		expect(rows(unread).map((row) => row.getAttribute('data-state'))).toEqual(['unknown', 'unknown']);
+		const single = harness({ tracked: [META_ID], details: members, categories: [...CATEGORIES, { ...LEYSPRING, achievementIds: [META_ID, 9468] }], noReading: true });
+		single.view.mount();
+		await single.settle();
+		expect(counter(single)).toBe('1 elemento · sin leer');
 
 		const alone = harness({ tracked: [META_ID], details: members, categories: [...CATEGORIES, { ...LEYSPRING, achievementIds: [META_ID] }] });
 		alone.view.mount();

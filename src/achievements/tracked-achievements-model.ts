@@ -231,12 +231,23 @@ function elementsOf(
 	if (detail.bits.length > 0) return sortedElements('bits', detail.bits.map((bit, index) => bitElement(bit, index, status, entry)));
 	const category = input.category ?? null;
 	if (category === null) return null;
+	// Looked up once for the whole category, not once per member (a category lists some 50).
+	const reading = input.reading === null ? null : {
+		asked: new Set(input.reading.trackedIds),
+		entries: new Map(input.reading.entries.map((entry) => [entry.id, entry])),
+	};
 	const elements: TrackedElement[] = [];
 	for (const id of category.members) {
-		const element = categoryElement(id, category, input.reading);
+		const element = categoryElement(id, category, reading);
 		if (element !== null) elements.push(element);
 	}
 	return sortedElements('category', elements);
+}
+
+/** One reading of the account, indexed for the members of a category. */
+interface IndexedReading {
+	asked: ReadonlySet<number>;
+	entries: ReadonlyMap<number, AccountAchievementEntry>;
 }
 
 function sortedElements(source: TrackedElements['source'], elements: readonly TrackedElement[]): TrackedElements {
@@ -266,10 +277,10 @@ function bitElement(bit: AchievementBit, index: number, status: TrackedAchieveme
  * once found). An achievement whose detail is not loaded is listed by id, so a failed catalog
  * read never empties the list.
  */
-function categoryElement(id: number, category: TrackedCategoryInput, reading: TrackedReadingEntries | null): TrackedElement | null {
+function categoryElement(id: number, category: TrackedCategoryInput, reading: IndexedReading | null): TrackedElement | null {
 	const detail = category.details.get(id) ?? null;
-	const asked = reading !== null && reading.trackedIds.includes(id);
-	const entry = asked ? reading.entries.find((candidate) => candidate.id === id) ?? null : null;
+	const asked = reading !== null && reading.asked.has(id);
+	const entry = asked ? reading.entries.get(id) ?? null : null;
 	if (detail !== null && isPeriodicAchievement(detail)) return null;
 	if (detail?.flags.includes('Hidden') === true && entry === null) return null;
 	const done = entry?.done === true;

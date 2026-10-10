@@ -167,9 +167,15 @@ export class AchievementsView {
 	 * may have forgotten it (the key changed) without any of those three changing.
 	 */
 	private details: AchievementDetailsRead | null = null;
-	/** The details of the members of the tracked metas' categories, cached under the same key as `details`. */
+	/**
+	 * The details of the members of the tracked metas' categories, cached for `elementKey`: the
+	 * member ids themselves (locale, vault and tracked ids are in them through `detailsKey`). The
+	 * members depend on the categories, which may fail on one load and arrive on the next, so a
+	 * read made without them (no members) is never reused once they are there.
+	 */
 	private elementDetails: AchievementDetailsRead | null = null;
 	private detailsKey: string | null = null;
+	private elementKey: string | null = null;
 	/**
 	 * Names (and icons) of the objects, minipets, skins and titles on screen, by
 	 * `achievementNameKey`, for `namesLocale`. Empty until they arrive: what is not here is painted
@@ -348,7 +354,7 @@ export class AchievementsView {
 		const locale = this.actions.getLocale();
 		const key = `${locale}:${ids.join(',')}:${services.vaultId}`;
 		// Details that could not all be loaded are not cached: the next read (a refresh, «Actualizar progreso») asks again.
-		const cached = this.detailsKey === key && this.details !== null && this.elementDetails !== null && !this.details.failed && !this.elementDetails.failed;
+		const cached = this.detailsKey === key && this.details !== null && !this.details.failed;
 		const [details, reading, categoriesRead] = await Promise.all([
 			cached ? this.details! : services.catalog.loadDetails(locale, ids),
 			services.progress.lastReading(services.vaultId),
@@ -358,13 +364,17 @@ export class AchievementsView {
 		if (this.disposed || load !== this.trackedLoad) return;
 		const categories = categoriesRead.status === 'ok' ? categoriesRead.value : [];
 		// The elements of a meta are the other achievements of its category: their details (names,
-		// tiers, flags) are a second public read, cached by the service like the tracked ones.
+		// tiers, flags) are a second public read, cached by the service like the tracked ones. Cached
+		// here by the member ids: categories that failed on this load and arrive on the next change them.
 		const memberIds = trackedReadingIds({ trackedIds: ids, details: details.details, retired: details.retired, categories }).filter((id) => !ids.includes(id));
-		const elementDetails = cached ? this.elementDetails! : memberIds.length === 0 ? NO_DETAILS : await services.catalog.loadDetails(locale, memberIds);
+		const elementKey = `${key}:${memberIds.join(',')}`;
+		const elementsCached = this.elementKey === elementKey && this.elementDetails !== null && !this.elementDetails.failed;
+		const elementDetails = elementsCached ? this.elementDetails! : memberIds.length === 0 ? NO_DETAILS : await services.catalog.loadDetails(locale, memberIds);
 		if (this.disposed || load !== this.trackedLoad) return;
 		this.details = details;
-		this.elementDetails = elementDetails;
 		this.detailsKey = key;
+		this.elementDetails = elementDetails;
+		this.elementKey = elementKey;
 		const views = buildTrackedAchievementsView({
 			trackedIds: ids,
 			details: new Map([...elementDetails.details, ...details.details]),
@@ -428,9 +438,10 @@ export class AchievementsView {
 		if (url === null || slot.querySelector('img') !== null) return;
 		slot.createEl('img', {
 			cls: 'tyrian-achievements__icon',
+			// `loading` and `referrerpolicy` before `src`: a browser may start the request as soon as `src` is set.
 			attr: {
-				src: url, alt: '', 'aria-hidden': 'true', width: String(ACHIEVEMENT_ICON_SIZE), height: String(ACHIEVEMENT_ICON_SIZE),
 				loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer',
+				alt: '', 'aria-hidden': 'true', width: String(ACHIEVEMENT_ICON_SIZE), height: String(ACHIEVEMENT_ICON_SIZE), src: url,
 			},
 		});
 	}
@@ -820,21 +831,24 @@ export class AchievementsView {
 		body.createEl('h4', { text: t.t('achievements.tracked.elements') });
 		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsNone') }); return; }
 		const unread = elements.items.every((element) => element.state === 'unknown');
+		const unreadText = elements.total === 1 ? t.t('achievements.tracked.elementsUnread.one') : t.t('achievements.tracked.elementsUnread.many', { total: elements.total });
 		const count = body.createEl('p', {
 			cls: 'tyrian-achievements__elements-count',
-			text: unread ? t.t('achievements.tracked.elementsUnread', { total: elements.total }) : t.t('achievements.tracked.elementsCount', { done: elements.done, total: elements.total }),
+			text: unread ? unreadText : t.t('achievements.tracked.elementsCount', { done: elements.done, total: elements.total }),
 		});
 		if (!unread && elements.done === elements.total) count.addClass('is-complete');
 		const list = body.createEl('ul', { cls: 'tyrian-achievements__elements' });
 		for (const element of elements.items) {
 			const row = list.createEl('li', { attr: { 'data-state': element.state, 'data-kind': element.kind } });
-			// The state is read aloud but not shown: the mark on the left says it to the eye.
-			row.createSpan({ cls: 'tyrian-visually-hidden', text: `${t.t(`achievements.tracked.objective.${element.state}` as TranslationKey)}: ` });
+			// The state is read aloud but not shown: the mark on the left says it to the eye. It also
+			// describes the link, so tabbing onto it hears «hecho»/«pendiente» and not only the name.
+			const stateId = uniqueId('tyrian-achievements-state');
+			row.createSpan({ cls: 'tyrian-visually-hidden', text: `${t.t(`achievements.tracked.objective.${element.state}` as TranslationKey)}: `, attr: { id: stateId } });
 			const named = element.kind === 'item' || element.kind === 'minipet' || element.kind === 'skin' ? element.kind : null;
 			const slot = named !== null || element.kind === 'achievement' ? row.createSpan({ cls: 'tyrian-achievements__icon-slot' }) : null;
 			// A minipet is linked by its item, which arrives with its name: its anchor waits for the href.
 			const linked = element.wikiUrl !== null || named === 'minipet';
-			const label = linked ? row.createEl('a', { attr: { target: '_blank', rel: 'noopener' } }) : row.createSpan();
+			const label = linked ? row.createEl('a', { attr: { target: '_blank', rel: 'noopener', 'aria-describedby': stateId } }) : row.createSpan();
 			if (element.wikiUrl !== null) label.setAttr('href', element.wikiUrl);
 			const node: NameNode = {
 				el: label,
@@ -851,7 +865,9 @@ export class AchievementsView {
 			this.applyNode(node);
 			if (named !== null) this.nameNodes.push(node);
 			if (element.progress !== null) {
-				row.createSpan({ cls: 'tyrian-achievements__count', text: ` · ${String(element.progress.current)}/${String(element.progress.max)}` });
+				// « · 6/13» to the eye; «6 de 13» to the reader, as the meter of the summary says it.
+				row.createSpan({ cls: 'tyrian-achievements__count', text: ` · ${String(element.progress.current)}/${String(element.progress.max)}`, attr: { 'aria-hidden': 'true' } });
+				row.createSpan({ cls: 'tyrian-visually-hidden', text: ` · ${t.t('achievements.tracked.progress', { current: element.progress.current, max: element.progress.max })}` });
 			}
 		}
 	}
