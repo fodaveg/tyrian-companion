@@ -261,7 +261,11 @@ describe('ActiveSessionLeaseCoordinator', () => {
 		await expect(owner.assertOwned(acquired)).resolves.toEqual({ status: 'lost' });
 		await expect(owner.renew(acquired)).resolves.toEqual({ status: 'lost' });
 		// Not `already_owned` with the handle it has just been told it lost.
-		await expect(owner.acquire('session-1')).resolves.toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		const retaken = await owner.acquire('session-1');
+		expect(retaken).toMatchObject({ status: 'acquired', handle: { fence: 2 } });
+		// The lease taken back through the second transaction is this instance's own too: another step back is no anomaly for it.
+		wall -= 30_000; monotonic += 1_000;
+		await expect(owner.assertOwned(requireHandle(retaken))).resolves.toEqual({ status: 'owned' });
 		owner.dispose();
 	});
 
