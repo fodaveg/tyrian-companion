@@ -476,7 +476,10 @@ export async function buildInventoryVaultPositionCores(
 		throw new Error('inventory_capture_identity_mismatch');
 	}
 	const grouped = new Map<string, {
-		itemId: number; source: InventoryPositionSource; character: string | null; quantity: number; holding: ItemHolding;
+		itemId: number; source: InventoryPositionSource; character: string | null; quantity: number;
+		// Every stack of the row, kept apart: binding (and so tradeability) is a property of the
+		// stack, and the row only values the stacks that can be sold.
+		stacks: { holding: ItemHolding; quantity: number }[];
 	}>();
 	for (const holding of snapshot.holdings) {
 		if (holding.kind !== 'item' || holding.state !== 'loose') continue;
@@ -484,11 +487,15 @@ export async function buildInventoryVaultPositionCores(
 		if (location === null) continue;
 		const groupKey = JSON.stringify([holding.itemId, location.source, location.character]);
 		const current = grouped.get(groupKey);
-		if (current) current.quantity = safeAdd(current.quantity, holding.quantity);
-		// The representative holding only feeds `classifyItemLiquidity`'s state/binding
-		// check; the first stack seen for this item+location is a fine stand-in even
-		// when several stacks are aggregated into one row.
-		else grouped.set(groupKey, { itemId: holding.itemId, ...location, quantity: holding.quantity, holding });
+		if (current) {
+			current.quantity = safeAdd(current.quantity, holding.quantity);
+			current.stacks.push({ holding, quantity: holding.quantity });
+		} else {
+			grouped.set(groupKey, {
+				itemId: holding.itemId, ...location, quantity: holding.quantity,
+				stacks: [{ holding, quantity: holding.quantity }],
+			});
+		}
 	}
 
 	const priceById = new Map(prices.items.map((price) => [price.itemId, price]));
@@ -500,17 +507,26 @@ export async function buildInventoryVaultPositionCores(
 	for (const group of orderedGroups) {
 		const item = catalog.items[String(group.itemId)] ?? null;
 		const price = priceById.get(group.itemId);
-		const liquidity = classifyItemLiquidity(group.holding, item, price === undefined ? 'missing' : 'available');
-		const eligible = liquidity.status === 'ok'
-			&& isTradingPostAccessible(liquidity.classification.tradingPost, tradingPostAccess, price?.whitelisted === true);
-		const untradeable = liquidity.status === 'ok'
-			&& definitelyUntradeable(liquidity.classification.tradingPost, tradingPostAccess, price);
+		// Each stack is classified on its own: one bound and one unbound stack of the same item in
+		// the same place make one row, but only the unbound quantity is sellable.
+		let sellableQuantity = 0;
+		let untradeable = true;
+		for (const stack of group.stacks) {
+			const liquidity = classifyItemLiquidity(stack.holding, item, price === undefined ? 'missing' : 'available');
+			if (liquidity.status === 'ok'
+				&& isTradingPostAccessible(liquidity.classification.tradingPost, tradingPostAccess, price?.whitelisted === true)) {
+				sellableQuantity = safeAdd(sellableQuantity, stack.quantity);
+			}
+			if (!(liquidity.status === 'ok'
+				&& definitelyUntradeable(liquidity.classification.tradingPost, tradingPostAccess, price))) untradeable = false;
+		}
+		const eligible = sellableQuantity > 0;
 		const unitSellCopper = eligible && price !== undefined && price.bid !== null ? price.bid.unitCopper : null;
 		const unitListCopper = eligible && price !== undefined && price.ask !== null ? price.ask.unitCopper : null;
 		const depth = eligible && unitSellCopper !== null ? depthById.get(group.itemId) : undefined;
 		const consumed = consumedByItem.get(group.itemId) ?? 0;
 		const demonstrated = depth?.coverage === 'complete'
-			? valueInstantSellDepth(depth.buys, group.quantity, consumed)
+			? valueInstantSellDepth(depth.buys, sellableQuantity, consumed)
 			: null;
 		if (demonstrated !== null && demonstrated.status !== 'invalid') {
 			consumedByItem.set(group.itemId, safeAdd(consumed, demonstrated.coveredQuantity));
@@ -529,7 +545,8 @@ export async function buildInventoryVaultPositionCores(
 			totalSellCopper,
 			sellDepthStatus,
 			sellCoveredQuantity: demonstrated?.coveredQuantity ?? 0,
-			sellUncoveredQuantity: demonstrated?.uncoveredQuantity ?? group.quantity,
+			// What is not covered includes the stacks that cannot be sold at all.
+			sellUncoveredQuantity: group.quantity - (demonstrated?.coveredQuantity ?? 0),
 			untradeable,
 			unitListCopper,
 			// The best ask is a competing listing, not demonstrated buyer capacity.

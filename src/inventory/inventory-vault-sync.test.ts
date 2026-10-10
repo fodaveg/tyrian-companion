@@ -72,6 +72,46 @@ describe('inventory Vault projection', () => {
 		]);
 	});
 
+	describe('two stacks of one item in one place, one bound and one not', () => {
+		const depth = () => marketDepthFor(42, [{ unitCopper: 100, quantity: 15 }, { unitCopper: 90, quantity: 15 }]);
+		const bound = (quantity: number, slot: number) =>
+			({ ...holding(42, quantity, { source: 'bank', slot }), metadata: { binding: 'Account' as const } });
+		const free = (quantity: number, slot: number) => holding(42, quantity, { source: 'bank', slot });
+		const project = async (holdings: ItemHolding[]) => {
+			const snapshot = snapshotWith(holdings);
+			return (await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 100), 'full', 'es', depth())).positions;
+		};
+
+		it.each([
+			['bound first', () => [bound(5, 0), free(3, 1)]],
+			['free first', () => [free(3, 0), bound(5, 1)]],
+		])('only the sellable quantity counts as sellable (%s)', async (_label, stacks) => {
+			const [reference] = await project([free(3, 0)]);
+			const positions = await project(stacks());
+			expect(positions).toHaveLength(1);
+			expect(positions[0]).toMatchObject({
+				quantity: 8,
+				unitSellCopper: 100,
+				totalSellCopper: reference!.totalSellCopper,
+				sellDepthStatus: 'complete',
+				sellCoveredQuantity: 3,
+				sellUncoveredQuantity: 5,
+			});
+			expect(reference!.totalSellCopper).not.toBeNull();
+		});
+
+		it('the row is the same whatever the order the stacks arrive in', async () => {
+			const [one] = await project([bound(5, 0), free(3, 1)]);
+			const [other] = await project([free(3, 0), bound(5, 1)]);
+			expect(one).toEqual(other);
+		});
+
+		it('a place with only bound stacks stays unvalued', async () => {
+			const [only] = await project([bound(5, 0), bound(2, 1)]);
+			expect(only).toMatchObject({ quantity: 7, unitSellCopper: null, totalSellCopper: null, sellCoveredQuantity: 0, sellUncoveredQuantity: 7 });
+		});
+	});
+
 	it('produces stable portable identifiers without account or character names', async () => {
 		const account = 'account-private-123';
 		const character = 'Áine / NUL:Uno';
