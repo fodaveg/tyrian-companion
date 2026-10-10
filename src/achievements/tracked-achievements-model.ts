@@ -3,6 +3,7 @@ import { knownSetMembersOf } from './known-achievement-sets';
 import {
 	categoryMembersOf,
 	isCategoryMetaAchievement,
+	isPartialCategory,
 	isPeriodicAchievement,
 	plausibleCategoryMembers,
 	type AchievementBit,
@@ -68,6 +69,8 @@ export interface TrackedElements {
 	items: TrackedElement[];
 	done: number;
 	total: number;
+	/** Only set (true) when the list is short of what the bar counts and the API does not give the rest. */
+	partial?: true;
 }
 
 export type TrackedReward =
@@ -243,7 +246,8 @@ function elementsOf(
 		const element = categoryElement(id, category, reading);
 		if (element !== null) elements.push(element);
 	}
-	return sortedElements('category', elements);
+	const sorted = sortedElements('category', elements);
+	return sorted.total > 0 && isPartialCategory(detail, category.members) ? { ...sorted, partial: true } : sorted;
 }
 
 /** One reading of the account, indexed for the members of a category. */

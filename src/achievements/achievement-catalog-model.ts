@@ -103,17 +103,34 @@ export function categoryMembersOf(categories: readonly AchievementCategory[], id
 	return category === undefined ? null : category.achievementIds.filter((member) => member !== id);
 }
 
+/** The least share of a meta's last tier that its category must list to be taken as where the count comes from. */
+export const MIN_CATEGORY_SHARE = 0.4;
+
 /**
  * The members that can be the elements of a category meta, or null when the category cannot be
- * where its count comes from. A meta counts up to its last tier (`tiers`); a category that lists
- * fewer achievements than that cannot be what it counts. Measured on «Temporadas de los dragones»
- * (5790, 10 oct 2026): the bar asks for 24 «Return» metas, but its category «Eventos actuales»
- * lists it with five unrelated achievements, and the API links the real ones (33 «Regreso a …»
- * metas, each in its own category) to it nowhere. Showing those five under a 24 was the bug.
+ * where its count comes from. A meta counts up to its last tier (`tiers`). A category that lists
+ * far fewer achievements than that is not what it counts: «Temporadas de los dragones» (5790,
+ * 10 oct 2026) asks for 24 «Return» metas and its category «Eventos actuales» lists five unrelated
+ * achievements (21 %), as the Rush champions (3 to 9 of 100, 5 of 30) and «The Emperor's New
+ * Wardrobe» (7 of 90) do. A small gap is different: «Code of Creation Mastery» (9354) has 24 of 25,
+ * «Act 2 Mastery» (8908) 18 of 21, «Master of the Four Winds» (4274) 13 of 25. The API then lacks
+ * some of them, but the list is still worth showing (`isPartialCategory` says it is short). Measured
+ * on the 209 metas without bits of the API (10 oct 2026): no meta sits between 21 % and 47 %, so
+ * `MIN_CATEGORY_SHARE` (40 %) separates the two groups.
  */
 export function plausibleCategoryMembers(detail: AchievementDetail, members: readonly number[]): number[] | null {
-	const tierMax = detail.tiers.length === 0 ? null : Math.max(...detail.tiers.map((tier) => tier.count));
-	return tierMax !== null && members.length < tierMax ? null : [...members];
+	const tierMax = lastTierCount(detail);
+	return tierMax !== null && members.length < tierMax * MIN_CATEGORY_SHARE ? null : [...members];
+}
+
+/** True when the category lists fewer achievements than the meta's last tier: the API does not give all of them. */
+export function isPartialCategory(detail: AchievementDetail, members: readonly number[]): boolean {
+	const tierMax = lastTierCount(detail);
+	return tierMax !== null && members.length < tierMax;
+}
+
+function lastTierCount(detail: AchievementDetail): number | null {
+	return detail.tiers.length === 0 ? null : Math.max(...detail.tiers.map((tier) => tier.count));
 }
 
 /** What the search needs of each achievement, and nothing else: about 8,355 of them per language. */

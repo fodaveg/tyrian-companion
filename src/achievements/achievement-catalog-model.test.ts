@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE } from './api-fixtures';
+import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE } from './__fixtures__/api-fixtures';
 import {
 	ACHIEVEMENT_CATEGORIES_SCHEMA,
 	categoryMembersOf,

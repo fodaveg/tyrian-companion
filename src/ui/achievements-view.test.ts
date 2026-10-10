@@ -5,7 +5,8 @@ import type { AccountAchievementEntry } from '../account/account-achievements';
 import { parseAchievementCategories, parseAchievementPage, searchAchievementIndex, toAchievementIndexEntry, type AchievementCategory, type AchievementDetail, type AchievementIndexEntry } from '../achievements/achievement-catalog-model';
 import { achievementNameKey, type AchievementFreshness, type AchievementIndexBuildOptions, type AchievementIndexBuildResult, type AchievementNameEntry, type AchievementNameRef } from '../achievements/achievement-catalog-service';
 import { knownSetMembersOf } from '../achievements/known-achievement-sets';
-import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE, SEASONS_OF_THE_DRAGONS_CATEGORIES, SEASONS_OF_THE_DRAGONS_ID, SEASONS_OF_THE_DRAGONS_PAGE } from '../achievements/api-fixtures';
+import { SWEEP_SAMPLE_CATEGORIES, SWEEP_SAMPLE_PAGE } from '../achievements/__fixtures__/sweep-sample';
+import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE, SEASONS_OF_THE_DRAGONS_CATEGORIES, SEASONS_OF_THE_DRAGONS_ID, SEASONS_OF_THE_DRAGONS_PAGE } from '../achievements/__fixtures__/api-fixtures';
 import type { TrackedProgressRefreshResult } from '../achievements/tracked-progress-service';
 import { installDomHelpers } from '../host/dom-polyfill';
 import { AchievementsView, type AchievementCatalogPort, type AchievementsViewActions, type TrackedProgressPort } from './achievements-view';
@@ -895,8 +896,9 @@ describe('AchievementsView: names of rewards and objectives (L3)', () => {
 
 describe('AchievementsView: the elements of each followed achievement, with checks, links and icons (L4)', () => {
 	const RENDER = 'https://render.guildwars2.com/file/3617A021F32B4BE09D6351A23E1B4B6824742F57/3805888.png';
-	const META_ID = 9417;
-	/** 9417 as the API gives it: `CategoryDisplay`, no bits, the mirror 110148 and a Magic mastery as rewards. */
+	// A synthetic copy of 9417 (the real one has a known set from the wiki, covered by the sweep test): the category rule is what these tests are about.
+	const META_ID = 99417;
+	/** 99417 as the API gives it: `CategoryDisplay`, no bits, the mirror 110148 and a Magic mastery as rewards. */
 	const meta = (): AchievementDetail => detail(META_ID, {
 		name: 'Dominio de las Hondonadas del Manantial de Ley', flags: ['RepairOnLogin', 'CategoryDisplay', 'MoveToTop', 'Permanent'], bits: [],
 		// The real tiers go to 36 of the 47 members of its category; the fixture lists 3, so it asks for 3 (`plausibleCategoryMembers`).
@@ -997,7 +999,7 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		expect(h.calls.filter((call) => call.startsWith('details:'))).toHaveLength(2);
 	});
 
-	it('a meta of its category (9417) lists the other achievements of the category as elements: pending first with their x/y, done after, anchored to their wiki row; the daily is left out', async () => {
+	it('a meta of its category (99417) lists the other achievements of the category as elements: pending first with their x/y, done after, anchored to their wiki row; the daily is left out', async () => {
 		const h = harness({
 			tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], readingIds: READING,
 			entries: [
@@ -1080,7 +1082,7 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		expect(h.container.querySelectorAll('img')).toHaveLength(2);
 	});
 
-	it('the reward «Objeto 110148 ×1» of 9417 comes out as icon + name once the public list answers', async () => {
+	it('the reward «Objeto 110148 ×1» of 99417 comes out as icon + name once the public list answers', async () => {
 		const h = harness({
 			tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], holdNames: true,
 			names: () => ({ [achievementNameKey('item', 110_148)]: 'Espejo mágico de La Niebla' }), icons: { [achievementNameKey('item', 110_148)]: RENDER },
@@ -1154,17 +1156,17 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 	});
 
 	it('«Actualizar progreso» asks about the members of a meta even when the list has not finished loading', async () => {
-		const meta = detail(9417, { name: 'Dominio', flags: ['CategoryDisplay'], bits: [], tiers: [{ count: 2, points: 5 }] });
+		const meta = detail(99417, { name: 'Dominio', flags: ['CategoryDisplay'], bits: [], tiers: [{ count: 2, points: 5 }] });
 		const h = harness({
-			tracked: [9417], details: new Map([[9417, meta], [9351, detail(9351, { bits: [] })], [9468, detail(9468, { bits: [] })]]),
-			categories: [{ id: 486, name: 'Leyspring Hollows', order: 4, icon: null, achievementIds: [9351, 9417, 9468] }], noReading: true,
+			tracked: [99417], details: new Map([[99417, meta], [9351, detail(9351, { bits: [] })], [9468, detail(9468, { bits: [] })]]),
+			categories: [{ id: 486, name: 'Leyspring Hollows', order: 4, icon: null, achievementIds: [9351, 99417, 9468] }], noReading: true,
 		});
 		h.view.mount();
 		// Pressed at once: the first load of the list (and its `this.tracked`) has not arrived.
 		h.refreshButton().click();
 		await h.settle();
 		expect(h.refresh).toHaveBeenCalledTimes(1);
-		expect(h.refresh).toHaveBeenCalledWith(VAULT, [9417, 9351, 9468]);
+		expect(h.refresh).toHaveBeenCalledWith(VAULT, [99417, 9351, 9468]);
 	});
 
 	it('achievements with the same name are all in the results, told apart by category and id, and all followable', async () => {
@@ -1195,5 +1197,46 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 		expect(h.items().map((item) => item.querySelector('.tyrian-achievements__name')?.textContent)).toEqual([
 			'Portero de bar (Litoral del Naufragio · #8903)', 'Portero de bar (Jardín de la Eternidad · #9307)', 'Muerte al Dominio',
 		]);
+	});
+
+	it('a category short by one (9354 «Code of Creation Mastery», 24 of 25 in the API) lists what there is and says the API does not give every element', async () => {
+		// The real data of 9354 under another id, so that the wiki's set does not apply and the category is what is shown.
+		const real = detailsOf(SWEEP_SAMPLE_PAGE);
+		const category = parseAchievementCategories(SWEEP_SAMPLE_CATEGORIES)!.find((each) => each.achievementIds.includes(9354))!;
+		const copy = 909_354;
+		const h = harness({
+			tracked: [copy], details: new Map([...real, [copy, { ...real.get(9354)!, id: copy }]]), noReading: true,
+			categories: [{ ...category, achievementIds: category.achievementIds.map((id) => (id === 9354 ? copy : id)) }],
+		});
+		h.view.mount();
+		await h.settle();
+		expect(rows(h)).toHaveLength(24);
+		expect(h.container.querySelector('.tyrian-achievements__body')?.textContent).toContain('La API no da todos los elementos de este logro: faltan algunos.');
+	});
+
+	it('«Actualizar progreso» does not stay «running» when the public reads behind its ids reject', async () => {
+		const h = harness({ tracked: [1] });
+		h.view.mount();
+		await h.settle();
+		const boom = vi.spyOn(h.view as unknown as { readingIds(): Promise<number[]> }, 'readingIds').mockRejectedValue(new Error('store.readPublic failed'));
+		h.refreshButton().click();
+		await h.settle();
+		expect(boom).toHaveBeenCalledTimes(1);
+		expect(h.refreshButton().disabled).toBe(false);
+		expect(h.refresh).not.toHaveBeenCalled();
+	});
+
+	it('a name shared with a result that is not on the shown page still tells its id', async () => {
+		const first = { id: 8903, name: 'Portero de bar', categoryId: 10, flags: [], tierMax: 10 };
+		const filler = Array.from({ length: 60 }, (_, offset) => ({ id: 1000 + offset, name: `Portero de bar ${String(offset)}`, categoryId: 10, flags: [], tierMax: 1 }));
+		const last = { id: 9307, name: 'Portero de bar', categoryId: 11, flags: [], tierMax: 1 };
+		const h = harness({ index: [first, ...filler, last] });
+		h.view.mount();
+		await h.settle();
+		await h.search('portero de bar');
+		// 62 results, 50 shown: the second «Portero de bar» (index order, after the 60 fillers) is on the next page.
+		expect(h.results()).toHaveLength(50);
+		expect(h.results()[0]!.querySelector('strong')?.textContent).toBe('Portero de bar');
+		expect(h.results()[0]!.querySelector('small')?.textContent).toBe('Exploración · #8903');
 	});
 });

@@ -51,6 +51,7 @@ export const defaultProjectFiles = [
 	'scripts/tests/probar-i18n-copy-length.mjs',
 	'scripts/build-host-esm.mjs',
 	'scripts/tests/probar-build-host-esm.mjs',
+	'scripts/generate-known-achievement-sets.mjs',
 ] as const;
 
 // Raised from 28 to 37 when the gate runner, the source text assertion contract

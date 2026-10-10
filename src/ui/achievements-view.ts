@@ -454,17 +454,23 @@ export class AchievementsView {
 		this.refreshState = { status: 'running' };
 		this.renderBar();
 		this.renderNotice();
-		const ids = await this.readingIds(services);
-		if (this.disposed) return;
-		const result = await services.progress.refresh(services.vaultId, ids);
-		if (this.disposed) return;
-		this.refreshState = result.status === 'ok' ? { status: 'idle' } : { status: 'failed', reason: result.reason };
-		if (result.status === 'ok') {
-			this.announce(this.t.t('achievements.live.refreshed'));
-			await this.loadTracked();
+		try {
+			const ids = await this.readingIds(services);
+			if (this.disposed) return;
+			const result = await services.progress.refresh(services.vaultId, ids);
+			if (this.disposed) return;
+			this.refreshState = result.status === 'ok' ? { status: 'idle' } : { status: 'failed', reason: result.reason };
+			if (result.status === 'ok') {
+				this.announce(this.t.t('achievements.live.refreshed'));
+				await this.loadTracked();
+			}
+		} catch {
+			// The public reads behind the ids (or the list reload) threw: the button must not stay «running».
+			if (this.disposed) return;
+			this.refreshState = { status: 'failed', reason: 'request_failed' };
+		} finally {
+			if (!this.disposed) { this.renderBar(); this.renderNotice(); }
 		}
-		this.renderBar();
-		this.renderNotice();
 	}
 
 	/**
@@ -742,7 +748,7 @@ export class AchievementsView {
 		const results = this.results ?? [];
 		const tracked = new Set(this.actions.getTrackedAchievementIds());
 		const names = this.catalog.status === 'ready' ? this.catalog.categoryNames : new Map<number, string>();
-		const sharedNames = sharedNameKeys(results.slice(0, this.shown).map((entry) => entry.name));
+		const sharedNames = sharedNameKeys(results.map((entry) => entry.name));
 		for (const entry of results.slice(0, this.shown)) {
 			const row = this.resultsList.createEl('li', { cls: 'tyrian-achievements__result' });
 			const text = row.createDiv({ cls: 'tyrian-achievements__result-text' });
@@ -855,7 +861,8 @@ export class AchievementsView {
 			cls: 'tyrian-achievements__elements-count',
 			text: unread ? unreadText : t.t('achievements.tracked.elementsCount', { done: elements.done, total: elements.total }),
 		});
-		if (!unread && elements.done === elements.total) count.addClass('is-complete');
+		if (!unread && elements.done === elements.total && elements.partial !== true) count.addClass('is-complete');
+		if (elements.partial === true) body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsPartial') });
 		const list = body.createEl('ul', { cls: 'tyrian-achievements__elements' });
 		for (const element of elements.items) {
 			const row = list.createEl('li', { attr: { 'data-state': element.state, 'data-kind': element.kind } });

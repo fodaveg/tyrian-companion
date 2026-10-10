@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AccountAchievementEntry } from '../account/account-achievements';
 import { parseAchievementCategories, parseAchievementPage, type AchievementCategory, type AchievementDetail } from './achievement-catalog-model';
 import { knownSetMembersOf } from './known-achievement-sets';
-import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE, SEASONS_OF_THE_DRAGONS_CATEGORIES, SEASONS_OF_THE_DRAGONS_ID, SEASONS_OF_THE_DRAGONS_PAGE } from './api-fixtures';
+import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE, SEASONS_OF_THE_DRAGONS_CATEGORIES, SEASONS_OF_THE_DRAGONS_ID, SEASONS_OF_THE_DRAGONS_PAGE } from './__fixtures__/api-fixtures';
 import {
 	achievementWikiAnchorUrl,
 	achievementWikiSearchUrl,
@@ -140,8 +140,9 @@ describe('the elements of an achievement with bits', () => {
 	});
 });
 
-/** 9417 «Leyspring Hollows Mastery» as the API gives it (10 oct 2026): `CategoryDisplay`, no bits, 36 of the category's achievements. */
-const META_ID = 9417;
+/** 99417 «Leyspring Hollows Mastery» as the API gives it (10 oct 2026): `CategoryDisplay`, no bits, 36 of the category's achievements. */
+// A synthetic copy of 9417 (the real one has a known set from the wiki, covered by the sweep test): the category rule is what these tests are about.
+const META_ID = 99417;
 function meta(overrides: Partial<AchievementDetail> = {}): AchievementDetail {
 	return detail({
 		id: META_ID, name: 'Dominio de las Hondonadas', flags: ['RepairOnLogin', 'CategoryDisplay', 'MoveToTop', 'Permanent'],
@@ -150,7 +151,7 @@ function meta(overrides: Partial<AchievementDetail> = {}): AchievementDetail {
 		rewards: [{ kind: 'item', itemId: 110_148, count: 1 }, { kind: 'mastery', masteryId: 956, region: 'Magic' }], ...overrides,
 	});
 }
-const MEMBERS = [9351, 9410, 9417, 9460, 9468, 9470];
+const MEMBERS = [9351, 9410, 99417, 9460, 9468, 9470];
 const CATEGORIES: AchievementCategory[] = [
 	{ id: 1, name: 'Otra', order: 1, icon: null, achievementIds: [1, 2] },
 	{ id: 486, name: 'Leyspring Hollows', order: 4, icon: null, achievementIds: MEMBERS },
