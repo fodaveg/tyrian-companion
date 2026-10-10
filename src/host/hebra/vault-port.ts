@@ -484,12 +484,15 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 			if (disposed) return;
 			if (!subscribers.has(subscriber)) continue;
 			const { root } = subscriber;
-			const inNew = change.path.startsWith(root);
+			// Folder boundary: root "Tyrian" holds "Tyrian/x.md" (and "Tyrian"), never "Tyrian Old/x.md".
+			const folder = root.endsWith('/') ? root : `${root}/`;
+			const within = (path: string): boolean => root.length === 0 || path === root || path.startsWith(folder);
+			const inNew = within(change.path);
 			if (change.kind !== 'rename') {
 				if (inNew) call(subscriber, change);
 				continue;
 			}
-			const inOld = change.oldPath !== undefined && change.oldPath.startsWith(root);
+			const inOld = change.oldPath !== undefined && within(change.oldPath);
 			if (inNew && inOld) call(subscriber, change);
 			else if (inNew) call(subscriber, { kind: 'create', path: change.path });
 			else if (inOld && change.oldPath !== undefined) call(subscriber, { kind: 'delete', path: change.oldPath });
