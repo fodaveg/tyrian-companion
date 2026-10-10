@@ -2,7 +2,7 @@
 
 ## Release beta 0.6.26 - las sesiones en vivo nuevas guardan notas mucho más pequeñas (formato 2, sin vuelta atrás a la 0.6.24), el hallazgo mágico por logros cuenta las repeticiones, las notas de inventario respetan tus comentarios y el catálogo guarda cada lote de una vez
 
-Candidato; no publicado ni etiquetado. La 0.6.25 nunca se publicó ni se etiquetó: esta versión contiene todo lo suyo,
+La 0.6.25 nunca se publicó ni se etiquetó: esta versión contiene todo lo suyo,
 y se actualiza desde la 0.6.24 publicada. Lo que más se nota es que las sesiones en vivo que empiecen con esta versión
 se guardan en un formato nuevo (formato 2) y no se puede volver a la 0.6.24 sin perder la posibilidad de empezar
 sesiones nuevas (ver «Límites conocidos de lo que venía en la 0.6.25»). Además hay arreglos de datos que salían mal o se
