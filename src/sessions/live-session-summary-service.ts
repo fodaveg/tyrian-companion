@@ -2,7 +2,7 @@ import type { LiveJournalEntryV1, LiveSessionCharacterV1, LiveSessionFormat, Liv
 import { prepareLiveSessionPayload } from './live-session-note-model';
 import { summaryMainMap, summaryNamedEntities, type SummaryEntityIds, type SummaryItemMetaMap } from './live-session-summary-figures';
 import { readComparablePerHour, type SummaryHistoryVault } from './live-session-summary-history';
-import { LiveSessionSummaryWriter, type LiveSessionSummaryVault, type LiveSessionSummaryWriteResult } from './live-session-summary-note';
+import { linkFullNoteToSummary, LiveSessionSummaryWriter, type LiveSessionSummaryVault, type LiveSessionSummaryWriteResult } from './live-session-summary-note';
 import { normalizeSessionOutputFolder } from './session-note-model';
 
 /** At most this many attempts per session, at least this far apart: a failing vault is not hammered. */
@@ -145,7 +145,12 @@ export class LiveSessionSummaryService {
 				displayNames, characters: this.options.characters(), charactersCapped: this.options.charactersCapped(),
 				itemMeta, mapNames, comparablePerHour: comparable.perHour, ...(comparable.capped === true ? { comparablesCapped: true } : {}) });
 			if (result.status === 'written' || result.status === 'unchanged' || result.status === 'kept') {
-				progress.done = true; await this.options.markWritten(); return;
+				progress.done = true; await this.options.markWritten();
+				// The link back goes in right after the summary exists and is marked, because a host that names notes by id knows its id only
+				// now. It is for the full note this session just saved (its receipt): no earlier note is looked up or rewritten. A failure
+				// costs the link and nothing else (the summary is done): `observe` reports it as any unexpected one.
+				await linkFullNoteToSummary(this.options.vault, { fullNotePath: receipt.path, summaryPath: result.path, sessionRef: session.sessionRef, locale });
+				return;
 			}
 			// Invalid input will not heal by itself; a conflict is somebody else's note on our path.
 			if (result.status === 'invalid' || result.status === 'conflict') progress.done = true;

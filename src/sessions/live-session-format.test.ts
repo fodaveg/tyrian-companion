@@ -7,7 +7,7 @@ import { exportLiveSession, liveSessionExportVersion, prepareLiveSessionExportSn
 import { LEGACY_LIVE_SESSION_FORMAT, LIVE_SESSION_FORMAT_KEY, LiveSessionFormatUnreadableError, liveSessionFormatOf } from './live-session-format';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionFormat, type LiveSessionRuntimeRecord } from './live-session-model';
-import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
+import { inspectLiveSessionNote, provenanceJsonLines, renderLiveSessionNote } from './live-session-note-renderer';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import type { SessionHistoryVault } from './session-history';
 import { sha256Text } from './session-note-renderer';
@@ -24,14 +24,19 @@ const iso = (second: number): string => new Date(AT + second * 1000).toISOString
 
 const GROSS: LiveSessionFormat = { noteVersion: 2, priceBasis: 'instant_sell_gross' };
 /**
- * sha256 of the whole note the published 0.6.24 (commit 6fbe77e) writes for the two sequences below, taken on 10 Oct 2026 by
+ * sha256 of the DATA of the note the published 0.6.24 (commit 6fbe77e) writes for the two sequences below, taken on 10 Oct 2026 by
  * playing them, with this same harness, on a copy of that tree: `continued` is `firstStretch`, a restart and `secondStretch`;
- * `pending` is `firstStretch`, a close the vault refuses and the host that comes back.
+ * `pending` is `firstStretch`, a close the vault refuses and the host that comes back. The data is what an earlier plugin reads:
+ * the `tc_*` lines of the frontmatter and the line of the payload (`noteData`). It is not the whole note, which since 0.6.27 also
+ * carries the hours in the machine's local time and each object's id beside its name (presentation, so it follows the machine's
+ * zone and has no byte to pin). Both values were taken from the 0.6.24 tree and the bytes did not change when the pin moved here.
  */
 const NOTE_OF_0_6_24 = {
-	continued: '3d38693bc364ca1cb4eac497d22ac3e8aa8cd6b44b76f9257cbfc4eaa57956bb',
-	pending: 'a5480af396f335557067d8affa4fd065235120f7ea4773cae89d5dc91a180fc5',
+	continued: '7029b52d616bf909092aee86e36c65e2228e10f920ac8ca72857e422ea66003e',
+	pending: '3e5a545cd064869a8292ddae32bb5bf685c39e8b7efb495fda3815b17716daa0',
 };
+/** The frontmatter keys and the payload of a live note: what has to stay byte for byte whatever the presentation does. */
+const noteData = (content: string): string => [...content.split('\n').filter((line) => /^tc_/u.test(line)), ...provenanceJsonLines(content)].join('\n');
 
 interface Closed { record: LiveSessionRuntimeRecord; journal: readonly LiveJournalEntryV1[]; format: LiveSessionFormat; content: string; path: string }
 /** What outlives a host: the runtime store, the clock, the lease fences and session ids handed out, and the notes written so far. */
@@ -167,7 +172,7 @@ describe('a live session keeps the format it started in', () => {
 		expect(note.content).toBe(old.closed[0]!.content);
 		expect(note.path).toBe(old.closed[0]!.path);
 		// And they are the bytes 0.6.24 itself wrote for this sequence.
-		expect(await sha256Text(note.content)).toBe(NOTE_OF_0_6_24.continued);
+		expect(await sha256Text(noteData(note.content))).toBe(NOTE_OF_0_6_24.continued);
 		await after.die(); await second.die();
 	});
 
@@ -181,7 +186,7 @@ describe('a live session keeps the format it started in', () => {
 		expect(after.lifecycle.getRuntime()).toMatchObject({ phase: 'complete', summaryReceipt: { path: w.closed[0]!.path } });
 		expect(w.closed[0]!.format).toEqual(LEGACY_LIVE_SESSION_FORMAT);
 		expect(w.closed[0]!.content).toContain('tc_payload_version: 1\n');
-		expect(await sha256Text(w.closed[0]!.content)).toBe(NOTE_OF_0_6_24.pending);
+		expect(await sha256Text(noteData(w.closed[0]!.content))).toBe(NOTE_OF_0_6_24.pending);
 		const read = await inspectLiveSessionNote(w.closed[0]!.content); if (read.status !== 'ok') throw new Error(read.status);
 		expect(read.session).toMatchObject({ version: 1, sampleCount: 6, valuation: { priceBasis: 'instant_sell_net', prices: [{ itemId: ITEM, unitCopper: 6 }], netItemValueKnownCopper: 1_500 } });
 		expect(read.session.journal).toHaveLength(6);

@@ -5,11 +5,11 @@ import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type 
 import { liveItemValueCopper, reduceLiveInventorySample } from './live-session-reducer';
 import { LEGACY_LIVE_SESSION_FORMAT } from './live-session-format';
 import { knownLiveDisplayNames, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
-import { inspectLiveSessionNote } from './live-session-note-renderer';
+import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
 import { LiveSessionHistoryService } from './live-session-history';
 import { SessionHistoryService, type SessionHistoryVault } from './session-history';
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
-import { LiveSessionSummaryWriter, liveSessionSummaryRelativePath, renderLiveSessionSummary, type LiveSessionSummaryInput } from './live-session-summary-note';
+import { LiveSessionSummaryWriter, linkFullNoteToSummary, liveSessionSummaryRelativePath, renderLiveSessionSummary, type LiveSessionSummaryInput } from './live-session-summary-note';
 import { computeSummaryFigures } from './live-session-summary-figures';
 import { readComparablePerHour } from './live-session-summary-history';
 import { LIVE_SUMMARY_MAX_ATTEMPTS, LIVE_SUMMARY_RETRY_MS, LiveSessionSummaryService } from './live-session-summary-service';
@@ -137,6 +137,13 @@ describe('live session summary: a normal session', () => {
 17:30 Laberinto del Rey Loco → 18:00 Bosque de Caledon
 
 Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente, cuenta en el mapa donde se observó.
+
+## Tramos de mapa
+
+| Mapa | Entrada | Salida | Duración | Valor neto de objetos |
+|---|---:|---:|---:|---:|
+| Laberinto del Rey Loco | 17:30 | 18:00 | 30 min | 1g 95s 0c |
+| Bosque de Caledon | 18:00 | 18:10 | 10 min | 2g 82s 0c |
 
 ## Al cerrar
 
@@ -1466,6 +1473,29 @@ describe('live session summary service', () => {
 		h.setEnabled(true); await h.service.observe();
 		expect(h.vault.creates).toBe(1);
 	});
+	it('links the full note back to the summary right after writing it, by the vault\'s own target, and does not repeat it', async () => {
+		const h = harness();
+		const { note } = await (async () => { const result = await renderLiveSessionNote(h.source); if (result.status !== 'ok') throw new Error(result.reason); return result; })();
+		h.vault.contents.set(FULL_NOTE, note.content);
+		(h.vault as { linkTarget?: (path: string) => string | null }).linkTarget = (path) => path.includes('/summaries/') ? 'id:6a1c0f0e-4c5e-4c61-9d9b-1d2f3a4b5c6d' : 'id:f27d387d-7245-430a-bb8d-ffda023154c4';
+		await h.service.observe();
+		const linked = h.vault.contents.get(FULL_NOTE)!;
+		expect(linked).toContain('\n[[id:6a1c0f0e-4c5e-4c61-9d9b-1d2f3a4b5c6d|Resumen]]\n');
+		expect(h.vault.contents.get(h.summaries()[0]!)).toContain('[[id:f27d387d-7245-430a-bb8d-ffda023154c4|Sesión completa]]');
+		expect(await inspectLiveSessionNote(linked)).toMatchObject({ status: 'ok' });
+		h.setRecord({ ...h.source.record, summaryReceipt: { version: 1, sessionId: h.source.record.sessionId, path: FULL_NOTE, savedAt: AT } });
+		h.tick(LIVE_SUMMARY_RETRY_MS * 2); await h.service.observe();
+		expect(h.vault.contents.get(FULL_NOTE)).toBe(linked);
+	});
+	it('a full note that cannot be linked back does not hold the summary: it is written and reported', async () => {
+		const h = harness();
+		const result = await renderLiveSessionNote(h.source); if (result.status !== 'ok') throw new Error(result.reason);
+		h.vault.contents.set(FULL_NOTE, result.note.content);
+		h.vault.process = async () => { throw new TypeError('locked'); };
+		await h.service.observe();
+		expect(h.summaries()).toHaveLength(1); expect(h.isWritten()).toBe(true);
+		expect(h.failures).toEqual([{ status: 'unexpected', reason: 'TypeError', attempt: 1 }]);
+	});
 	it('is idempotent across repeated state changes', async () => {
 		const h = harness();
 		await Promise.all([h.service.observe(), h.service.observe()]);
@@ -1665,5 +1695,228 @@ describe('live session summary: frontmatter for a Base', () => {
 		const after = await new LiveSessionHistoryService(historyVault(full)).list();
 		expect(after.status).toBe('ok');
 		expect(after.status === 'ok' && before.status === 'ok' && after.sessions).toEqual(before.status === 'ok' && before.sessions);
+	});
+});
+
+describe('the changes of map and the readable full note', () => {
+	const MIN = 60_000;
+	const SUMMARY = 'Tyrian Companion/summaries/2026-10-08 153000Z - 0123456789abcdef - summary.md';
+	/** 80 minutes on three maps: the stack comes in on the first and on the third, and on the second only an item with no bazaar price. */
+	function threeMaps(): LiveSessionNoteInput {
+		const input = fixture({ staple: [0, 12, 12, 20, 20], other: [0, 0, 5, 5, 5] });
+		input.record.mapIntervals = [{ mapId: 866, fromMs: AT, toMs: AT + 20 * MIN }, { mapId: 873, fromMs: AT + 20 * MIN, toMs: AT + 40 * MIN },
+			{ mapId: 1633, fromMs: AT + 40 * MIN, toMs: AT + 80 * MIN }];
+		input.record.prices = [{ itemId: STAPLE, unitCopper: 1500 }, { itemId: OTHER, unitCopper: null }];
+		return { ...input, utcOffsetMinutes: OFFSET };
+	}
+	const MAP_NAMES = { '866': 'Laberinto del Rey Loco', '873': 'Bosque de Caledon' };
+	async function summaryOf(input: LiveSessionNoteInput, locale: 'es' | 'en' = 'es'): Promise<string> {
+		const session = await prepareLiveSessionPayload({ ...input, locale });
+		if (session === null) throw new Error('fixture');
+		const result = await renderLiveSessionSummary({ session, locale, outputFolder: 'Tyrian Companion', fullNotePath: FULL_NOTE, displayNames: NAMES,
+			utcOffsetMinutes: OFFSET, characters: [{ name: 'Alfa', fromAt: iso(0) }], itemMeta: META, mapNames: MAP_NAMES });
+		if (result.status !== 'ok') throw new Error(result.reason);
+		return result.note.content;
+	}
+	async function fullOf(input: LiveSessionNoteInput) {
+		const result = await renderLiveSessionNote(input);
+		if (result.status !== 'ok') throw new Error(result.reason);
+		return result;
+	}
+
+	describe('the summary', () => {
+		it('writes each stretch of a session on three maps with its local hours, its length and its net value, and says so for the one without prices', async () => {
+			const content = await summaryOf(threeMaps());
+			expect(content).toContain(`## Tramos de mapa
+
+| Mapa | Entrada | Salida | Duración | Valor neto de objetos |
+|---|---:|---:|---:|---:|
+| Laberinto del Rey Loco | 17:30 | 17:50 | 20 min | 1g 80s 0c |
+| Bosque de Caledon | 17:50 | 18:10 | 20 min | sin precios de bazar |
+| Mapa 1633 | 18:10 | 18:50 | 40 min | 1g 20s 0c |
+`);
+		});
+		it('is in English too, and a stretch with no item change says so instead of writing 0', async () => {
+			const quiet = fixture({ staple: [0, 12, 12, 12, 12], other: [0, 0, 0, 0, 0] });
+			quiet.record.mapIntervals = threeMaps().record.mapIntervals;
+			const content = await summaryOf({ ...quiet, utcOffsetMinutes: OFFSET }, 'en');
+			expect(content).toContain('## Map stretches\n\n| Map | Entered | Left | Length | Net value of items |\n|---|---:|---:|---:|---:|\n');
+			expect(content).toContain('| Bosque de Caledon | 17:50 | 18:10 | 20 min | no item changes |');
+			expect(content.slice(content.indexOf('## Map stretches'), content.indexOf('## Coverage'))).not.toContain('0g 0s 0c');
+		});
+		it('adds nothing to a session on one map, or on none', async () => {
+			const single = fixture(); single.record.mapIntervals = [{ mapId: 866, fromMs: AT, toMs: AT + 2 * STEP_MS }];
+			expect(await summaryOf(single)).not.toContain('Tramos de mapa');
+			const none = fixture(); none.record.mapIntervals = [];
+			expect(await summaryOf(none)).not.toContain('Tramos de mapa');
+		});
+		it('moves no figure: the frontmatter is the one the same session had, and the section is the only addition', async () => {
+			const three = threeMaps(); const content = await summaryOf(three);
+			const without = content.replace(/\n## Tramos de mapa\n[\s\S]*?\n\n(?=## |[^|\n])/u, '\n');
+			expect(without).not.toContain('Tramos de mapa');
+			expect(content.slice(0, content.indexOf('\n---\n', 4))).toBe(without.slice(0, without.indexOf('\n---\n', 4)));
+			expect(without).toContain('## Mapas');
+		});
+		it('keeps five objects a stretch at most, the most valuable first (figures)', async () => {
+			const base = await payload(fixture({ prices: true }));
+			const extra = [101, 102, 103, 104, 105, 106, 107];
+			const first = base.journal[1]!;
+			const session: StoredLiveSessionPayloadV1 = { ...base,
+				journal: [base.journal[0]!, { ...first, observations: [...first.observations, ...extra.map((id, index) => ({ ...first.observations[0]!, idNumber: id, before: 0, after: index + 1, delta: index + 1 }))] }, ...base.journal.slice(2)],
+				totals: [...base.totals, ...extra.map((id, index) => total('item', id, index + 1))],
+				valuation: { ...base.valuation, prices: [...base.valuation.prices, ...extra.map((id) => ({ itemId: id, unitCopper: 100 }))] } };
+			const stretch = computeSummaryFigures(session, {}, []).mapBreakdown.stretches[0]!;
+			expect(stretch.top).toHaveLength(5);
+			expect(stretch.top.map((row) => row.valueCopper)).toEqual([...stretch.top.map((row) => row.valueCopper)].sort((a, b) => b - a));
+		});
+	});
+
+	describe('the full note', () => {
+		it('writes the same stretches with the objects of most value of each, named with their id, and a stretch without prices says so', async () => {
+			const { note } = await fullOf(threeMaps());
+			expect(note.blocks.results.content).toContain(`### Tramos de mapa
+| Mapa | Entrada | Salida | Duración | Valor neto conocido de objetos |
+|---|---|---|---:|---:|
+| Mapa 866 | 2026-10-08 17:30:00 | 2026-10-08 17:50:00 | 20 min | 18000 c |
+| Mapa 873 | 2026-10-08 17:50:00 | 2026-10-08 18:10:00 | 20 min | sin precios de bazar |
+| Mapa 1633 | 2026-10-08 18:10:00 | 2026-10-08 18:50:00 | 40 min | 12000 c |
+
+- Mapa 866 · objetos de más valor:
+  - Saco grande (36038) ×12 · 18000 c
+- Mapa 1633 · objetos de más valor:
+  - Saco grande (36038) ×8 · 12000 c`);
+		});
+		it('writes nothing new for a session on one map', async () => {
+			const single = fixture(); single.record.mapIntervals = [{ mapId: 866, fromMs: AT, toMs: AT + 2 * STEP_MS }];
+			const { note } = await fullOf({ ...single, utcOffsetMinutes: OFFSET });
+			expect(note.content).not.toContain('Tramos de mapa');
+		});
+		it('writes the hours in local time next to the UTC of the start and the end, and in the timeline, with the zone fixed by the test', async () => {
+			const { note } = await fullOf(threeMaps());
+			expect(note.blocks.summary.content).toContain('- Inicio: 2026-10-08 17:30:00 (2026-10-08T15:30:00.000Z)');
+			expect(note.blocks.summary.content).toContain('- Fin: 2026-10-08 18:50:00 (2026-10-08T16:50:00.000Z)');
+			expect(note.blocks.summary.content).toContain('- Hora local: UTC+02:00');
+			expect(note.blocks.results.content).toContain('| 2026-10-08 17:50:00 | Saco grande (36038) | 0 | 12 | 12 | 18000 c |');
+			const west = await fullOf({ ...threeMaps(), utcOffsetMinutes: () => -300 });
+			expect(west.note.blocks.summary.content).toContain('- Inicio: 2026-10-08 10:30:00 (2026-10-08T15:30:00.000Z)');
+			expect(west.note.blocks.summary.content).toContain('- Hora local: UTC-05:00');
+		});
+		it('keeps the plain fallback for an object nobody named, and writes no id twice', async () => {
+			const unnamed = await fullOf({ ...threeMaps(), displayNames: {} });
+			expect(unnamed.note.blocks.results.content).toContain('Objeto 36038');
+			expect(unnamed.note.blocks.results.content).not.toContain('Objeto 36038 (');
+		});
+		it('puts «Mis notas» before the block of data, in both languages', async () => {
+			for (const locale of ['es', 'en'] as const) {
+				const { note } = await fullOf({ ...threeMaps(), locale });
+				const heading = locale === 'es' ? '## Mis notas' : '## My notes';
+				const at = note.content.indexOf(heading);
+				expect(at).toBeGreaterThan(note.content.indexOf('<!-- tyrian-companion:managed:end:decision -->'));
+				expect(at).toBeLessThan(note.content.indexOf('<!-- tyrian-companion:managed:start:provenance'));
+				expect(note.content.endsWith('<!-- tyrian-companion:managed:end:provenance -->\n')).toBe(true);
+			}
+		});
+		it.each([[1, LEGACY_LIVE_SESSION_FORMAT], [2, { noteVersion: 2, priceBasis: 'instant_sell_gross' } as const]])('writes and reads the format %i', async (version, format) => {
+			const { note, session } = await fullOf({ ...threeMaps(), format });
+			expect(session.version).toBe(version);
+			expect(note.blocks.results.content).toContain('### Tramos de mapa');
+			expect(note.content.indexOf('## Mis notas')).toBeLessThan(note.content.indexOf('managed:start:provenance'));
+			expect(await inspectLiveSessionNote(note.content)).toEqual({ status: 'ok', session });
+		});
+		it('does not touch the frontmatter, the path or the data', async () => {
+			const { note, session } = await fullOf(threeMaps());
+			expect(Object.keys(note.frontmatter)).toEqual(['tc_schema', 'tc_kind', 'tc_source', 'tc_session_ref', 'tc_account_ref', 'tc_locale', 'tc_started_at',
+				'tc_ended_at', 'tc_payload_version', 'tc_payload_sha256', 'descripcion']);
+			expect(note.preferredPath).toBe(`Tyrian Companion/sessions/2026/2026-10-08 153000Z - ${session.sessionRef.slice(0, 16)}.md`);
+			expect(await inspectLiveSessionNote(note.content)).toEqual({ status: 'ok', session });
+		});
+	});
+
+	describe('«Mis notas» when the note is written again', () => {
+		/** The note as the previous plugin wrote it: «Mis notas» after the block of data. */
+		const oldLayout = (content: string, mine: string): string => `${content.replace('## Mis notas\n\n', '')}\n## Mis notas\n${mine}`;
+		it('moves the section of a note in the old layout before the data, with every character the user wrote', async () => {
+			const input = threeMaps(); const { note, session } = await fullOf(input);
+			const mine = '\nLo que apunté a mano.\n\n### Dudas\n- ¿el 873 cuenta?\n\n```\ncódigo\n```\n';
+			const vault = new TestVault(); vault.contents.set(note.preferredPath, oldLayout(note.content, mine).replace('---\n', '---\naliases: [Mía]\n'));
+			const writer = new SessionNoteWriter(vault);
+			expect(await writer.writeLive(input)).toEqual({ status: 'written', path: note.preferredPath });
+			const after = vault.contents.get(note.preferredPath)!;
+			const heading = after.indexOf('## Mis notas'); const data = after.indexOf('<!-- tyrian-companion:managed:start:provenance');
+			expect(heading).toBeGreaterThan(after.indexOf('managed:end:decision')); expect(heading).toBeLessThan(data);
+			expect(after.slice(heading, data)).toBe(`## Mis notas\n${mine.replace(/\n+$/u, '')}\n\n`);
+			expect(after).toContain('aliases: [Mía]');
+			expect(after.endsWith('<!-- tyrian-companion:managed:end:provenance -->\n')).toBe(true);
+			expect(await inspectLiveSessionNote(after)).toEqual({ status: 'ok', session });
+			expect(await writer.writeLive(input)).toEqual({ status: 'unchanged', path: note.preferredPath });
+		});
+		it('moves an empty section too, and an old note whose section was never filled ends up as a new one', async () => {
+			const input = threeMaps(); const { note } = await fullOf(input);
+			const vault = new TestVault(); vault.contents.set(note.preferredPath, oldLayout(note.content, ''));
+			await new SessionNoteWriter(vault).writeLive(input);
+			const body = (content: string): string => content.slice(content.indexOf('\n---\n', 4));
+			expect(body(vault.contents.get(note.preferredPath)!)).toBe(body(note.content));
+		});
+		it('keeps what the user wrote in a note already in the new layout, where it is, when a block changes', async () => {
+			const input = threeMaps(); const { note } = await fullOf(input);
+			const vault = new TestVault(); vault.contents.set(note.preferredPath, note.content.replace('## Mis notas\n', '## Mis notas\n\nMi apunte nuevo.\n'));
+			const writer = new SessionNoteWriter(vault);
+			expect(await writer.writeLive({ ...input, displayNames: { ...NAMES, [`item:${String(STAPLE)}`]: 'Saco enorme' } })).toEqual({ status: 'written', path: note.preferredPath });
+			const after = vault.contents.get(note.preferredPath)!;
+			expect(after).toContain('## Mis notas\n\nMi apunte nuevo.\n\n<!-- tyrian-companion:managed:start:provenance');
+			expect(after).toContain('Saco enorme (36038)');
+		});
+		it('leaves alone text after the data that is not under «Mis notas»', async () => {
+			const input = threeMaps(); const { note } = await fullOf(input);
+			const vault = new TestVault(); vault.contents.set(note.preferredPath, `${note.content}\nOtra cosa mía.\n`);
+			await new SessionNoteWriter(vault).writeLive(input);
+			expect(vault.contents.get(note.preferredPath)!.endsWith('managed:end:provenance -->\n\nOtra cosa mía.\n')).toBe(true);
+		});
+	});
+
+	describe('the link back to the summary', () => {
+		async function written() {
+			const { note, session } = await fullOf(threeMaps());
+			const vault = new TestVault(); vault.contents.set(FULL_NOTE, note.content);
+			return { vault, session };
+		}
+		it('writes it under the title, by the vault path where the host resolves paths (Obsidian), once', async () => {
+			const { vault, session } = await written();
+			const args = { fullNotePath: FULL_NOTE, summaryPath: SUMMARY, sessionRef: session.sessionRef, locale: 'es' } as const;
+			expect(await linkFullNoteToSummary(vault, args)).toBe('linked');
+			const after = vault.contents.get(FULL_NOTE)!;
+			expect(after).toContain(' · Sesión completa\n\n[[Tyrian Companion/summaries/2026-10-08 153000Z - 0123456789abcdef - summary|Resumen]]\n\n<!-- tyrian-companion:managed:start:summary');
+			expect(await linkFullNoteToSummary(vault, args)).toBe('present');
+			expect(vault.contents.get(FULL_NOTE)).toBe(after);
+			expect(await inspectLiveSessionNote(after)).toEqual({ status: 'ok', session });
+		});
+		it('writes it by id where the host names notes by id (Hebra), in English', async () => {
+			const { vault, session } = await written();
+			const asked: string[] = []; (vault as { linkTarget?: (path: string) => string | null }).linkTarget = (path) => { asked.push(path); return 'id:6a1c0f0e-4c5e-4c61-9d9b-1d2f3a4b5c6d'; };
+			expect(await linkFullNoteToSummary(vault, { fullNotePath: FULL_NOTE, summaryPath: SUMMARY, sessionRef: session.sessionRef, locale: 'en' })).toBe('linked');
+			expect(asked).toEqual([SUMMARY]);
+			expect(vault.contents.get(FULL_NOTE)).toContain('\n[[id:6a1c0f0e-4c5e-4c61-9d9b-1d2f3a4b5c6d|Summary]]\n');
+			expect(vault.contents.get(FULL_NOTE)).not.toContain('summaries/');
+		});
+		it('a later write of the same session keeps the link, and «Mis notas» stays where it is', async () => {
+			const input = threeMaps(); const { note, session } = await fullOf(input);
+			const vault = new TestVault(); vault.contents.set(note.preferredPath, note.content);
+			await linkFullNoteToSummary(vault, { fullNotePath: note.preferredPath, summaryPath: SUMMARY, sessionRef: session.sessionRef, locale: 'es' });
+			const writer = new SessionNoteWriter(vault); const link = '[[Tyrian Companion/summaries/2026-10-08 153000Z - 0123456789abcdef - summary|Resumen]]';
+			// The first write of a note made by hand in this test settles the frontmatter order; from then on the same session changes nothing.
+			expect(await writer.writeLive(input)).toEqual({ status: 'written', path: note.preferredPath });
+			const linked = vault.contents.get(note.preferredPath)!;
+			expect(linked).toContain(`\n\n${link}\n\n<!-- tyrian-companion:managed:start:summary`);
+			expect(await writer.writeLive(input)).toEqual({ status: 'unchanged', path: note.preferredPath });
+			expect(vault.contents.get(note.preferredPath)).toBe(linked);
+		});
+		it('does not touch a note of another session, a missing one, or one that is not a live note', async () => {
+			const { vault, session } = await written();
+			expect(await linkFullNoteToSummary(vault, { fullNotePath: FULL_NOTE, summaryPath: SUMMARY, sessionRef: 'f'.repeat(64), locale: 'es' })).toBe('skipped');
+			expect(await linkFullNoteToSummary(vault, { fullNotePath: 'Tyrian Companion/none.md', summaryPath: SUMMARY, sessionRef: session.sessionRef, locale: 'es' })).toBe('skipped');
+			vault.contents.set('Tyrian Companion/plain.md', '# algo\n');
+			expect(await linkFullNoteToSummary(vault, { fullNotePath: 'Tyrian Companion/plain.md', summaryPath: SUMMARY, sessionRef: session.sessionRef, locale: 'es' })).toBe('skipped');
+			expect(vault.contents.get('Tyrian Companion/plain.md')).toBe('# algo\n');
+		});
 	});
 });

@@ -66,6 +66,27 @@ export interface SummaryMapRow {
 /** One step of the session's route: the map entered (null: a stretch observed on no identified map) and when. */
 export interface SummaryMapVisit { mapId: number | null; at: string }
 /**
+ * One stretch of the session on a map: the route's step with its end. A stretch runs from the hour the map was entered up to
+ * the next entry (the session's end for the last one), so the stretches are the route cut at every entry and a return to a
+ * map is a stretch of its own. They are cut from the same pieces as `rows`, and `top` and `netCopper` are the value of
+ * `rows` split by stretch instead of by map (valued like it, in the session's basis).
+ */
+export interface SummaryMapStretch {
+	mapId: number | null; fromAt: string; toAt: string; ms: number;
+	/** Item time observed in it, as `SummaryMapRow.observedMs`. */
+	observedMs: number;
+	/** Net value of the item changes observed in it. Null when the summary has no value to state (`valued` false), and for a stretch where nothing priced moved. */
+	netCopper: number | null;
+	/** How many item changes were observed in it, priced or not: zero says «no item changes», and a value of zero says nothing of it. */
+	changes: number;
+	/** An item of the net value (one with a price) changed in it: false with `changes` above zero is a stretch with no prices. */
+	priced: boolean;
+	/** The items of most value that came in during it, at most `SUMMARY_STRETCH_TOP` of them, best first. */
+	top: { itemId: number; quantity: number; valueCopper: number }[];
+}
+/** How many objects of most value a stretch lists. */
+export const SUMMARY_STRETCH_TOP = 5;
+/**
  * The session by map. The session's length is cut ONCE, into the map intervals and the holes between them, and every figure comes
  * from that one cut, so the table, its last row and the route cannot disagree:
  * - a hole with `SUMMARY_MIN_UNIDENTIFIED_MS` or more observed in it is a stretch on no identified map; one with less is the edge of
@@ -91,6 +112,8 @@ export interface SummaryMapBreakdown {
 	unidentified: SummaryMapRow;
 	/** Every entry in order, returns to a map already visited included; a new interval of the map the session was already on is no entry. */
 	visits: SummaryMapVisit[];
+	/** The stretches in order, one per entry in `visits` and over the same pieces. */
+	stretches: SummaryMapStretch[];
 }
 
 export interface SummaryFigures {
@@ -266,6 +289,15 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 		gapsCurrencyOnlyMs: stretches.reduce((sum, stretch) => sum + stretch.currencyOnlyMs, 0) };
 }
 
+/** «1 h 5 min», «12 min 31 s», «40 s»: a length as the notes of a session write it (seconds only under an hour). */
+export function formatSummaryDuration(ms: number): string {
+	const total = Math.max(0, Math.round(ms / 1000));
+	const hours = Math.floor(total / 3600); const minutes = Math.floor(total % 3600 / 60); const seconds = total % 60;
+	const parts = [...(hours > 0 ? [`${String(hours)} h`] : []), ...(minutes > 0 ? [`${String(minutes)} min`] : []),
+		...(hours === 0 && seconds > 0 || total === 0 ? [`${String(seconds)} s`] : [])];
+	return parts.join(' ');
+}
+
 /** An item that enters the summary's net value: its unit price, its net quantity and what that quantity is worth in the session's basis. */
 interface CountedItem { unitCopper: number; net: number; valueCopper: number }
 
@@ -314,45 +346,90 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 		if (index === intervals.length - 1) hole(interval.to, end, interval, undefined);
 	});
 
-	const rows = new Map<number, SummaryMapRow>(); const visits: SummaryMapVisit[] = [];
+	const rows = new Map<number, SummaryMapRow>(); const visits: SummaryMapVisit[] = []; const stretches: SummaryMapStretch[] = [];
 	const unidentified: SummaryMapRow = { mapId: null, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null };
+	// The stretch each piece belongs to: the pieces of one entry in the route, which is what `visits` lists.
+	const stretchOf: number[] = [];
 	for (const piece of pieces) {
-		if (visits.at(-1)?.mapId !== piece.mapId) visits.push({ mapId: piece.mapId, at: iso(piece.enteredAt) });
+		if (visits.at(-1)?.mapId !== piece.mapId) {
+			visits.push({ mapId: piece.mapId, at: iso(piece.enteredAt) });
+			stretches.push({ mapId: piece.mapId, fromAt: iso(piece.enteredAt), toAt: iso(piece.to), ms: 0, observedMs: 0, netCopper: valued ? 0 : null, changes: 0, priced: false, top: [] });
+		}
+		const stretch = stretches.at(-1)!;
+		stretch.toAt = iso(piece.to); stretch.observedMs += observedIn(piece.from, piece.to); stretchOf.push(stretches.length - 1);
 		const row = piece.mapId === null ? unidentified : rows.get(piece.mapId) ?? { mapId: piece.mapId, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null };
 		row.observedMs += observedIn(piece.from, piece.to);
 		if (piece.mapId !== null) rows.set(piece.mapId, row);
 	}
+	for (const stretch of stretches) stretch.ms = Math.max(0, Date.parse(stretch.toAt) - Date.parse(stretch.fromAt));
+
+	// Where each journal entry was observed: the piece that holds its hour, after the piece's start and up to its end.
+	const placed = session.journal.map((entry) => { const at = Date.parse(entry.observedAt); return pieces.findIndex((piece) => at > piece.from && at <= piece.to); });
+	session.journal.forEach((entry, index) => {
+		const stretch = placed[index]! < 0 ? undefined : stretches[stretchOf[placed[index]!]!];
+		if (stretch !== undefined) stretch.changes += entry.observations.filter((row) => row.kind === 'item' && row.delta !== 0).length;
+	});
 
 	if (valued) {
 		// Units of each counted item by where they were observed. What no entry of the journal accounts for is on no identified map.
-		const units = new Map<number, Map<number | null, number>>();
-		for (const entry of session.journal) {
-			const at = Date.parse(entry.observedAt);
-			const mapId = pieces.find((piece) => at > piece.from && at <= piece.to)?.mapId ?? null;
+		const units = new Map<number, Map<number | null, number>>(); const unitsByStretch = new Map<number, Map<number, number>>();
+		session.journal.forEach((entry, index) => {
+			const piece = placed[index]! < 0 ? undefined : pieces[placed[index]!];
+			const mapId = piece?.mapId ?? null; const stretch = piece === undefined ? UNPLACED_STRETCH : stretchOf[placed[index]!]!;
 			for (const row of entry.observations) {
 				if (row.kind !== 'item' || !counted.has(row.idNumber)) continue;
 				const byMap = units.get(row.idNumber) ?? new Map<number | null, number>();
 				byMap.set(mapId, (byMap.get(mapId) ?? 0) + row.delta); units.set(row.idNumber, byMap);
+				const byStretch = unitsByStretch.get(row.idNumber) ?? new Map<number, number>();
+				byStretch.set(stretch, (byStretch.get(stretch) ?? 0) + row.delta); unitsByStretch.set(row.idNumber, byStretch);
 			}
-		}
+		});
 		const basis = session.valuation.priceBasis;
-		for (const [itemId, item] of counted) {
-			const byMap = units.get(itemId) ?? new Map<number | null, number>();
-			const placed = [...byMap.values()].reduce((sum, quantity) => sum + quantity, 0);
-			if (placed !== item.net) byMap.set(null, (byMap.get(null) ?? 0) + item.net - placed);
-			// Each map's units valued in the session's basis. A net price is per unit, so the parts add up to the item's value; a gross
-			// one takes the commission over each sale's total and they need not: what is left over goes where most units were observed.
-			const parts = [...byMap].map(([mapId, quantity]) => ({ mapId, quantity, copper: basis === 'instant_sell_net' ? item.unitCopper * quantity : liveItemValueCopper(basis, item.unitCopper, quantity) ?? 0 }));
-			const largest = parts.reduce<typeof parts[number] | null>((best, part) => best === null || Math.abs(part.quantity) > Math.abs(best.quantity) ? part : best, null);
-			if (largest !== null) largest.copper += item.valueCopper - parts.reduce((sum, part) => sum + part.copper, 0);
-			for (const part of parts) { const row = part.mapId === null ? unidentified : rows.get(part.mapId)!; row.netCopper = (row.netCopper ?? 0) + part.copper; }
+		for (const [mapId, part] of splitCounted(counted, basis, units, null)) { const row = mapId === null ? unidentified : rows.get(mapId)!; row.netCopper = (row.netCopper ?? 0) + part.copper; }
+		// The same split by stretch. The units no entry accounts for have no stretch to be written in: they are in no row of it.
+		for (const [index, part] of splitCounted(counted, basis, unitsByStretch, UNPLACED_STRETCH)) {
+			const stretch = stretches[index];
+			if (stretch === undefined) continue;
+			const moved = [...part.items].filter(([, item]) => item.quantity !== 0);
+			stretch.netCopper = part.copper; stretch.priced = moved.length > 0;
+			stretch.top = moved.filter(([, item]) => item.quantity > 0).map(([itemId, item]) => ({ itemId, quantity: item.quantity, valueCopper: item.copper }))
+				.sort((a, b) => b.valueCopper - a.valueCopper || b.quantity - a.quantity || a.itemId - b.itemId).slice(0, SUMMARY_STRETCH_TOP);
 		}
 		// The pace of a map is over the time observed on THAT map, under the one rule of every live rate.
 		for (const row of [...rows.values(), unidentified]) {
 			if (liveItemRateEligible({ observedItemsMs: row.observedMs })) row.perHourCopper = Math.round((row.netCopper ?? 0) * 3_600_000 / row.observedMs);
 		}
 	}
-	return { rows: [...rows.values()], unidentified, visits };
+	// A stretch where nothing priced moved has no value to state, however the session's own value stands: zero would claim a price.
+	for (const stretch of stretches) if (!stretch.priced) stretch.netCopper = null;
+	return { rows: [...rows.values()], unidentified, visits, stretches };
+}
+
+/** The key of the units no journal entry places in any stretch. */
+const UNPLACED_STRETCH = -1;
+
+/**
+ * Each place's share of the net value of `counted`, from the units of every item observed there (`units`, by item and place; `unplaced`
+ * is the place of what no entry accounts for). Each place's units are valued in the session's basis. A net price is per unit, so the parts
+ * add up to the item's value; a gross one takes the commission over each sale's total and they need not: what is left over goes where most
+ * units were observed. Maps and stretches both split the value with this one rule.
+ */
+function splitCounted<K>(counted: ReadonlyMap<number, CountedItem>, basis: StoredLiveSessionPayloadV1['valuation']['priceBasis'],
+	units: ReadonlyMap<number, Map<K, number>>, unplaced: K): Map<K, { copper: number; items: Map<number, { quantity: number; copper: number }> }> {
+	const out = new Map<K, { copper: number; items: Map<number, { quantity: number; copper: number }> }>();
+	for (const [itemId, item] of counted) {
+		const byPlace = units.get(itemId) ?? new Map<K, number>();
+		const placed = [...byPlace.values()].reduce((sum, quantity) => sum + quantity, 0);
+		if (placed !== item.net) byPlace.set(unplaced, (byPlace.get(unplaced) ?? 0) + item.net - placed);
+		const parts = [...byPlace].map(([place, quantity]) => ({ place, quantity, copper: basis === 'instant_sell_net' ? item.unitCopper * quantity : liveItemValueCopper(basis, item.unitCopper, quantity) ?? 0 }));
+		const largest = parts.reduce<typeof parts[number] | null>((best, part) => best === null || Math.abs(part.quantity) > Math.abs(best.quantity) ? part : best, null);
+		if (largest !== null) largest.copper += item.valueCopper - parts.reduce((sum, part) => sum + part.copper, 0);
+		for (const part of parts) {
+			const share = out.get(part.place) ?? { copper: 0, items: new Map<number, { quantity: number; copper: number }>() };
+			share.copper += part.copper; share.items.set(itemId, { quantity: part.quantity, copper: part.copper }); out.set(part.place, share);
+		}
+	}
+	return out;
 }
 
 /**
