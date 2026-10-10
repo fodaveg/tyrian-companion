@@ -1,6 +1,12 @@
 # Changelog
 
-## Release beta 0.6.32 - Logros con sus elementos, nombres e iconos, e iconos en el resumen de sesión
+## Release beta 0.6.33 - el icono de Logros se ve en Hebra
+
+Se actualiza desde la 0.6.32 publicada. La sección Logros usa el icono `circle-check`, que Hebra sí pinta; con `trophy`
+la fila salía con un hueco en la pantalla principal de Hebra. Publicada sin el gate local completo, a petición de David;
+la CI de GitHub sí la comprueba.
+
+Logros con sus elementos, nombres e iconos, e iconos en el resumen de sesión
 
 Se actualiza desde la 0.6.31 publicada. Lo que más se nota: cada logro seguido muestra dentro sus elementos con casilla y
 enlace a la wiki, como la nota de Leyspring Hollows, y las recompensas y objetivos salen por su nombre y con su icono en

@@ -292,7 +292,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 			[COMPANION_VIEW_TYPE, 'Tyrian companion', 'sword'],
 			[INVENTORY_ADVISOR_VIEW_TYPE, 'Inventory advisor', 'package-search'],
 			[SALE_VIEW_TYPE, 'Halloween sale', 'candy'],
-			[ACHIEVEMENTS_VIEW_TYPE, 'Achievements', 'trophy'],
+			[ACHIEVEMENTS_VIEW_TYPE, 'Achievements', 'circle-check'],
 		]);
 		// A registration is exactly what `registerView` takes: nothing of the section leaks into it.
 		for (const view of registered.views) {
@@ -601,7 +601,7 @@ describe('the three sections on a host with a main screen', () => {
 		const view = sectionsViews[0]!;
 		expect([view.type, view.title(), view.icon]).toEqual([TYRIAN_MAIN_VIEW_TYPE, 'Tyrian Companion', 'sword']);
 		expect(view.sections.map((section) => [section.id, section.title(), section.icon])).toEqual([
-			['session', 'Session', 'sword'], ['inventory', 'Inventory', 'package-search'], ['sale', 'Sale', 'candy'], ['achievements', 'Achievements', 'trophy'],
+			['session', 'Session', 'sword'], ['inventory', 'Inventory', 'package-search'], ['sale', 'Sale', 'candy'], ['achievements', 'Achievements', 'circle-check'],
 		]);
 		for (const section of view.sections) {
 			// Only Achievements carries a badge (the followed count); the others list none.
@@ -747,7 +747,7 @@ describe('the three sections on a host with a main screen', () => {
 		const runtime = createTyrianRuntime({ ...host, settings: { load: async () => store.value, save: async (value) => { store.value = value; } } });
 		await runtime.start();
 		const section = sectionsViews[0]!.sections[3]!;
-		expect([section.id, section.title(), section.icon, section.badge?.()]).toEqual(['achievements', 'Achievements', 'trophy', 2]);
+		expect([section.id, section.title(), section.icon, section.badge?.()]).toEqual(['achievements', 'Achievements', 'circle-check', 2]);
 
 		registered.ready[0]!();
 		await vi.waitFor(() => {

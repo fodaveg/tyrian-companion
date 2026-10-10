@@ -164,7 +164,7 @@ describe('(b) a Hebra with the main view and the default choice', () => {
 			{ id: 'session', title: 'Sesión', icon: 'sword' },
 			{ id: 'inventory', title: 'Inventario', icon: 'package-search' },
 			{ id: 'sale', title: 'Venta', icon: 'candy' },
-			{ id: 'achievements', title: 'Logros', icon: 'trophy', badge: null },
+			{ id: 'achievements', title: 'Logros', icon: 'circle-check', badge: null },
 		]);
 		expect(test.fake.viewTitle(TYRIAN_MAIN_VIEW_TYPE)).toBe('Tyrian Companion');
 		expect(test.fake.recorded.views).toEqual([]);
@@ -658,7 +658,7 @@ describe('(i) the «Logros» section (L2, 0.6.30)', () => {
 	it('is listed fourth with the followed count as its badge, opening it asks nothing with the key, and following tells Hebra the new count', async () => {
 		const started = await start({ mainView: true });
 		const { hebra, test, core } = started;
-		expect(test.fake.recorded.mainViews[0]!.sections[3]).toEqual({ id: 'achievements', title: 'Logros', icon: 'trophy', badge: null });
+		expect(test.fake.recorded.mainViews[0]!.sections[3]).toEqual({ id: 'achievements', title: 'Logros', icon: 'circle-check', badge: null });
 
 		// Entering the section mounts the view: the search, the followed list, the button; nothing keyed was asked.
 		const main = hebra!.view(TYRIAN_MAIN_VIEW_TYPE);

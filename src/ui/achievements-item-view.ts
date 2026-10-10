@@ -19,7 +19,7 @@ export function achievementsSection(actions: Pick<AchievementsItemViewActions, '
 		id: 'achievements',
 		title: () => createTranslator(actions.getLocale()).t('achievements.view.title'),
 		label: () => createTranslator(actions.getLocale()).t('shell.nav.achievements'),
-		icon: 'trophy',
+		icon: 'circle-check',
 		badge: () => {
 			const count = actions.getTrackedAchievementIds().length;
 			return count === 0 ? null : count;
