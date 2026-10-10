@@ -4,19 +4,22 @@
  * figure and its observed minutes in `tyrian_summary_*` frontmatter keys, and this reads them back.
  */
 
-const MAX_SUMMARIES_READ = 200;
+/** How many of the most recent summaries the average reads; the note says so when the vault holds that many. */
+export const MAX_SUMMARIES_READ = 200;
 
 export interface SummaryHistoryVault {
 	markdownFiles(): readonly { path: string }[];
 	read(file: { path: string }): Promise<string>;
 }
 
-/** Per-hour figures (copper) of earlier summaries on `mainMapId`, newest first; never the session's own. `unreadable` counts files that could not be read. */
+/** Per-hour figures (copper) of earlier summaries on `mainMapId`, newest first; never the session's own. `unreadable` counts files that could not be read; `capped` is set when the vault holds more summaries than the read limit, so the average is of the most recent ones only. */
 export async function readComparablePerHour(vault: SummaryHistoryVault, folder: string, mainMapId: number | null,
-	ownSessionRef: string): Promise<{ perHour: number[]; unreadable: number }> {
+	ownSessionRef: string): Promise<{ perHour: number[]; unreadable: number; capped?: boolean }> {
 	if (mainMapId === null) return { perHour: [], unreadable: 0 };
 	const prefix = `${folder}/summaries/`;
-	const files = vault.markdownFiles().filter((file) => file.path.startsWith(prefix)).sort((a, b) => b.path.localeCompare(a.path)).slice(0, MAX_SUMMARIES_READ);
+	const all = vault.markdownFiles().filter((file) => file.path.startsWith(prefix)).sort((a, b) => b.path.localeCompare(a.path));
+	const capped = all.length > MAX_SUMMARIES_READ;
+	const files = all.slice(0, MAX_SUMMARIES_READ);
 	const found: number[] = []; let unreadable = 0;
 	for (const file of files) {
 		const head = await readHead(vault, file);
@@ -24,7 +27,7 @@ export async function readComparablePerHour(vault: SummaryHistoryVault, folder: 
 		if (head.of === ownSessionRef || head.mainMap !== mainMapId || head.perHour === null) continue;
 		found.push(head.perHour);
 	}
-	return { perHour: found, unreadable };
+	return { perHour: found, unreadable, capped };
 }
 
 type Head = { of: string | null; mainMap: number | null; perHour: number | null };

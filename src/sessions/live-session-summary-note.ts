@@ -5,6 +5,7 @@ import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, SUMMARY_SHORT_GAP_MS, sum
 	type SummaryCharacter, type SummaryItemMetaMap, type SummaryMapRow } from './live-session-summary-figures';
 import { liveSessionLocalTime, liveSessionTitleStamp, systemUtcOffsetMinutes, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { LIVE_RATE_MIN_OBSERVED_MS } from './live-session-model';
+import { MAX_SUMMARIES_READ } from './live-session-summary-history';
 import { normalizeSessionOutputFolder } from './session-note-model';
 import type { SessionNoteVault } from './session-note-writer';
 
@@ -47,6 +48,8 @@ export interface LiveSessionSummaryInput {
 	mapNames?: Readonly<Record<string, string>>;
 	/** «Per hour» of earlier summaries with the same main map; the average is written from three of them. */
 	comparablePerHour?: readonly number[];
+	/** The average was read from the most recent summaries only (the read limit was reached): the line says of how many. */
+	comparablesCapped?: boolean;
 	/** The character list stopped growing at its cap: the line says so. */
 	charactersCapped?: boolean;
 	/** Offset of the machine's time zone from UTC, in minutes, at that instant. Defaults to the system's. */
@@ -137,7 +140,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 						? label('ese objeto vale más que todo el valor neto', 'that item is worth more than the whole net value')
 						: label('ese objeto es todo el valor neto', 'that item is the whole net value')})`);
 			}
-			if (average !== null) balance.push(`- ${label('Tu media en sesiones parecidas', 'Your average in similar sessions')}: ${money(average)}/h (${label(`${String(comparables.length)} sesiones en este mapa`, `${String(comparables.length)} sessions on this map`)})`);
+			if (average !== null) balance.push(`- ${label('Tu media en sesiones parecidas', 'Your average in similar sessions')}: ${money(average)}/h (${label(`${String(comparables.length)} sesiones en este mapa`, `${String(comparables.length)} sessions on this map`)}${input.comparablesCapped === true ? label(`, entre tus ${String(MAX_SUMMARIES_READ)} resúmenes más recientes`, `, among your ${String(MAX_SUMMARIES_READ)} most recent summaries`) : ''})`);
 		}
 		if (gold !== null && !f.salesSession) balance.push(`- ${gold}`);
 		if (f.staple !== null) balance.push(`- ${label('Lo que más entró', 'Most gained')}: ${itemName(f.staple.itemId)} ×${String(f.staple.quantity)} (${label(`entró ${String(f.staple.entries)} veces`, `came in ${String(f.staple.entries)} times`)}${f.staple.perHour !== null ? ` · ${String(f.staple.perHour)}/h` : ''})`);
@@ -271,6 +274,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			`tyrian_summary_net_gold: ${goldText(shownNet)}`, `tyrian_summary_per_hour_gold: ${goldText(shownPerHour)}`, `tyrian_summary_wallet_gold: ${goldText(f.goldCopper)}`,
 			`tyrian_summary_top_item: ${topItem === null ? 'null' : JSON.stringify(raw(topItem.id, 'item'))}`, `tyrian_summary_top_item_count: ${topItem === null ? 'null' : String(topItem.count)}`,
 			`tyrian_summary_top_item_icon: ${topItem === null ? 'null' : iconText(input.itemMeta?.[topItem.id]?.icon)}`,
+			`tyrian_summary_top_item_id: ${topItem === null ? 'null' : String(topItem.id)}`, `tyrian_summary_map_ids: ${JSON.stringify(f.mapBreakdown.rows.flatMap((row) => row.mapId === null ? [] : [row.mapId]))}`,
 			`tyrian_summary_alerts: ${String(f.alerts.length)}`, `tyrian_summary_free_slots: ${session.coverage.freeSlots === null ? 'null' : String(session.coverage.freeSlots)}`,
 			'tags: ["gw2/session-summary"]', '---', ''].join('\n');
 		return { status: 'ok', note: { sessionRef: session.sessionRef, mainMapId: summaryMainMap(session), content: `${fm}${out.join('\n')}\n`,

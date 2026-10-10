@@ -141,7 +141,7 @@ export class LiveSessionSummaryService {
 			const result: LiveSessionSummaryWriteResult = await this.writer.write({ session, locale, outputFolder, fullNotePath: receipt.path,
 				fullNoteLinkTarget: this.options.vault.linkTarget?.(receipt.path) ?? null,
 				displayNames, characters: this.options.characters(), charactersCapped: this.options.charactersCapped(),
-				itemMeta, mapNames, comparablePerHour: comparable.perHour });
+				itemMeta, mapNames, comparablePerHour: comparable.perHour, ...(comparable.capped === true ? { comparablesCapped: true } : {}) });
 			if (result.status === 'written' || result.status === 'unchanged' || result.status === 'kept') {
 				progress.done = true; await this.options.markWritten(); return;
 			}

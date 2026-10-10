@@ -24,8 +24,8 @@ describe('session summaries Base', () => {
 	it('packages one Base per locale in the managed bundle, at its own path', async () => {
 		const assets = await sessionSummariesManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'session-summaries-base', kind: 'base', contentVersion: 2, locale: 'es', relativePath: 'Session summaries.base' },
-			{ id: 'session-summaries-base', kind: 'base', contentVersion: 2, locale: 'en', relativePath: 'Session summaries.base' },
+			{ id: 'session-summaries-base', kind: 'base', contentVersion: 3, locale: 'es', relativePath: 'Session summaries.base' },
+			{ id: 'session-summaries-base', kind: 'base', contentVersion: 3, locale: 'en', relativePath: 'Session summaries.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) expect(bundle).toContainEqual(expected);
@@ -94,13 +94,52 @@ describe('session summaries Base', () => {
 		expect(vault.contents.get(PATH)).toContain('top_item_icon');
 	});
 
+	describe('from the published content version 2 (columns «Neto (oro)» and «Por hora (oro)»)', () => {
+		const installV2 = async (): Promise<{ vault: MemoryBaseVault; bundle: Awaited<ReturnType<typeof managedAssetsBundle>>; v2Bytes: string }> => {
+			const vault = new MemoryBaseVault();
+			const bundle = await managedAssetsBundle();
+			const current = bundle.find((asset) => asset.id === 'session-summaries-base' && asset.locale === 'es')!;
+			const draft = { ...current, contentVersion: 2 };
+			const v2Bytes = `${managedAssetMarker(draft)}\n${current.bytes.slice(current.bytes.indexOf('\n') + 1)
+				.replace('"Valor neto de objetos (oro)"', '"Neto (oro)"').replace('"Objetos por hora (oro)"', '"Por hora (oro)"')}`;
+			expect(v2Bytes).toContain('"Neto (oro)"');
+			const previous = bundle.map((asset) => asset === current ? { ...draft, bytes: v2Bytes, contentHash: '' } : asset);
+			previous.find((asset) => asset.id === 'session-summaries-base' && asset.locale === 'es')!.contentHash = await sha256Text(v2Bytes);
+			expect((await new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 8, locale: 'es', assets: previous }).apply('Tyrian Companion')).status).toBe('applied');
+			return { vault, bundle, v2Bytes };
+		};
+
+		it('moves to version 3 by itself and renames the two columns', async () => {
+			const { vault, bundle } = await installV2();
+			expect(vault.contents.get(PATH)).toContain('"Neto (oro)"');
+			const next = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 8, locale: 'es', assets: bundle });
+			expect(decideManagedAssetsAutoUpdate(await next.inspect('Tyrian Companion'))).toEqual({ action: 'apply' });
+			expect((await next.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
+			expect(vault.contents.get(PATH)).toContain('"Valor neto de objetos (oro)"');
+			expect(vault.contents.get(PATH)).not.toContain('"Neto (oro)"');
+		});
+
+		it('does not overwrite a version 2 Base the user edited', async () => {
+			const { vault, bundle } = await installV2();
+			const edited = vault.contents.get(PATH)!.replace('name: "Sesiones"', 'name: "Mis sesiones"');
+			expect(edited).toContain('Mis sesiones');
+			vault.contents.set(PATH, edited);
+			const next = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 8, locale: 'es', assets: bundle });
+			expect(decideManagedAssetsAutoUpdate(await next.inspect('Tyrian Companion'))).toEqual({ action: 'manual', reasons: ['modified'] });
+			expect((await next.apply('Tyrian Companion', 'upgrade')).status).toBe('conflict');
+			expect(vault.contents.get(PATH)).toBe(edited);
+		});
+	});
+
 	it('names every display property with the canonical Obsidian namespace and translates it', async () => {
 		const [es, en] = (await sessionSummariesManagedAssets()).map((asset) => parse(asset.bytes) as BaseDocument);
 		const keys = Object.keys(es!.properties);
 		expect(keys.filter((key) => !/^(?:note|formula)\./u.test(key))).toEqual([]);
 		expect(Object.keys(en!.properties)).toEqual(keys);
-		expect(es!.properties['note.tyrian_summary_net_gold']!.displayName).toBe('Neto (oro)');
-		expect(en!.properties['note.tyrian_summary_net_gold']!.displayName).toBe('Net (gold)');
+		expect(es!.properties['note.tyrian_summary_net_gold']!.displayName).toBe('Valor neto de objetos (oro)');
+		expect(en!.properties['note.tyrian_summary_net_gold']!.displayName).toBe('Net value of items (gold)');
+		expect(es!.properties['note.tyrian_summary_per_hour_gold']!.displayName).toBe('Objetos por hora (oro)');
+		expect(en!.properties['note.tyrian_summary_per_hour_gold']!.displayName).toBe('Items per hour (gold)');
 	});
 
 	it('references only keys that a real rendered summary note carries', async () => {

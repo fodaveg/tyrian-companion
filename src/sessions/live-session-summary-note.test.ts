@@ -195,6 +195,8 @@ tyrian_summary_wallet_gold: null
 tyrian_summary_top_item: "Objeto 106732"
 tyrian_summary_top_item_count: 1
 tyrian_summary_top_item_icon: null
+tyrian_summary_top_item_id: 106732
+tyrian_summary_map_ids: [1633]
 tyrian_summary_alerts: 0
 tyrian_summary_free_slots: null
 tags: ["gw2/session-summary"]
@@ -1296,6 +1298,38 @@ describe('live session summary: the average of similar sessions', () => {
 		expect((await render({ itemMeta: META, comparablePerHour: [60_000, 70_000, 80_000] })).content).not.toContain('Tu media');
 	});
 
+	it('writes the stable ids of the top item and of the maps, and a summary written before them is still read', async () => {
+		const two: Mutate = (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 30 * 60_000 }, { mapId: 873, fromMs: AT + 30 * 60_000, toMs: AT + 40 * 60_000 }] });
+		const { content } = await render({ itemMeta: META, mutate: two });
+		expect(content).toMatch(/^tyrian_summary_top_item_id: \d+$/mu);
+		expect(content).toContain('tyrian_summary_map_ids: [866,873]');
+		const none = await render({ mutate: (session) => ({ ...session, totals: [], mapIntervals: [] }) });
+		expect(none.content).toContain('tyrian_summary_top_item_id: null');
+		expect(none.content).toContain('tyrian_summary_map_ids: []');
+		const vault = new TestVault();
+		const old = content.replace(/^tyrian_summary_(top_item_id|map_ids): .*\n/gmu, '');
+		expect(old).not.toContain('map_ids');
+		vault.contents.set('Tyrian Companion/summaries/old.md', old);
+		expect((await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).perHour).toHaveLength(1);
+	});
+
+	it('says of how many summaries the average comes when the read limit was reached, and stays as it was when not', async () => {
+		const input = { itemMeta: META, mutate: mainMap, comparablePerHour: [60_000, 70_000, 80_000] };
+		expect((await render({ ...input, comparablesCapped: true })).content)
+			.toContain('(3 sesiones en este mapa, entre tus 200 resúmenes más recientes)');
+		expect((await render({ ...input, comparablesCapped: true, locale: 'en' })).content)
+			.toContain('(3 sessions on this map, among your 200 most recent summaries)');
+		expect((await render({ ...input, comparablesCapped: false })).content).toContain('(3 sesiones en este mapa)');
+	});
+
+	it('reports the read limit as reached only when the vault holds more summaries than that', async () => {
+		const vault = new TestVault();
+		for (let index = 0; index < 200; index += 1) vault.contents.set(`Tyrian Companion/summaries/${String(index).padStart(4, '0')}.md`, '# nada');
+		expect((await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).capped).toBe(false);
+		vault.contents.set('Tyrian Companion/summaries/0200.md', '# nada');
+		expect((await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).capped).toBe(true);
+	});
+
 	it('is read from the earlier summaries of the same main map, never the session itself', async () => {
 		const vault = new TestVault();
 		const put = async (suffix: string, startMinutes: number, map: (session: StoredLiveSessionPayloadV1) => StoredLiveSessionPayloadV1, ref?: string) => {
@@ -1568,7 +1602,7 @@ describe('live session summary service', () => {
 		vault.contents.set('Tyrian Companion/summaries/rota.md', 'x');
 		vault.contents.set('Tyrian Companion/summaries/otra.md', '# nota cualquiera');
 		vi.spyOn(vault, 'read').mockImplementation(async (file) => { if (file.path.endsWith('rota.md')) throw new Error('io'); return '# nota cualquiera'; });
-		expect(await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).toEqual({ perHour: [], unreadable: 1 });
+		expect(await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).toEqual({ perHour: [], unreadable: 1, capped: false });
 	});
 	it('looks the earlier summaries up in the normalized folder the writer uses', async () => {
 		const nfd = 'Tyrian Companion\u0301'.normalize('NFD'); const nfc = nfd.normalize('NFC');
