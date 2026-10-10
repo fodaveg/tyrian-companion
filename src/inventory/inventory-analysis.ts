@@ -12,6 +12,7 @@ import {
 	type InventoryObjectRoute,
 	type InventoryObjectStorageSpaceV1,
 } from '../advisor/inventory-object-result';
+import { createLimiter } from '../core/concurrency';
 import { DEFAULT_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS } from '../core/settings';
 import { buildSlotClearingActions, resolveStorageSpaceState } from './storage-space';
 import type { PositionRecommendationSeasonalInput } from '../advisor/inventory-position-recommendation';
@@ -123,6 +124,9 @@ const DEFAULT_RECOMMENDATION_PORT: InventoryPositionRecommendationPort = {
 
 /** `calculatePriceHistoryPercentile`'s own floor, reused by the Sale tab's hero card (`main.ts`) so both callers ask `recommendPosition` for the same amount of history. */
 export const POSITION_RECOMMENDATION_REQUIRED_DAYS = 42;
+
+/** How many price-history reads (each its own IndexedDB transaction) are in flight at once. */
+const PRICE_HISTORY_READ_CONCURRENCY = 8;
 
 /** Tie-break between two routes covering the same share of one position: act first, doubt last. */
 const ROUTE_PRIORITY: readonly InventoryObjectRoute[] = [
@@ -240,7 +244,9 @@ export class InventoryAnalysisService {
 			try { await this.recommendation.refreshPriceSeeds(watchListItemIds); }
 			catch { /* recorded by the port; never invalidates the analysis */ }
 		}
-		const itemIds = [...new Set(cores.map((core) => core.itemId))];
+		// Only an object with a sale price today reaches the percentile or the seasonal rule
+		// (`recommendPosition` returns `price_unknown` before reading its history otherwise).
+		const itemIds = [...new Set(cores.filter((core) => core.unitSellCopper !== null).map((core) => core.itemId))];
 		// No point reading a store nothing writes to: price history is opt-in, and the moment stage
 		// short-circuits before it ever looks at a percentile when it is off.
 		let dailyByItem = new Map<number, readonly PriceHistoryDailyV1[]>();
@@ -269,7 +275,9 @@ export class InventoryAnalysisService {
 					ref: decision.explanationRef, route: inventoryObjectRoute(decision.action), quantity: allocation.quantity,
 					reasonCodes, protection: protectionOf(decision.action, reasonCodes),
 				});
-				positionsByRef.set(decision.explanationRef, [...(positionsByRef.get(decision.explanationRef) ?? []), positionId]);
+				const covered = positionsByRef.get(decision.explanationRef);
+				if (covered === undefined) positionsByRef.set(decision.explanationRef, [positionId]);
+				else covered.push(positionId);
 			}
 		}
 
@@ -383,11 +391,13 @@ export class InventoryAnalysisService {
 		windowDays: number,
 	): Promise<Map<number, readonly PriceHistoryDailyV1[]>> {
 		const fromDayUtc = new Date(Math.max(0, capturedAtMs - windowDays * 86_400_000)).toISOString().slice(0, 10);
+		// One transaction per read: a bounded number at a time, not one per object (about 2,800 at once).
+		const limit = createLimiter(PRICE_HISTORY_READ_CONCURRENCY);
 		const entries = await Promise.all(
 			itemIds.map(async (itemId) => {
 				const [daily, seed] = await Promise.all([
-					this.recommendation.readDaily(itemId, fromDayUtc),
-					this.recommendation.readCachedSeed(itemId),
+					limit(() => this.recommendation.readDaily(itemId, fromDayUtc)),
+					limit(() => this.recommendation.readCachedSeed(itemId)),
 				]);
 				return [itemId, mergePriceHistoryWithSeed(itemId, daily, seed)] as const;
 			}),
@@ -504,10 +514,18 @@ function coresFromAnalysis(source: InventoryAdvisorContextualPresentationSource)
 	);
 }
 
-/** The advisor degrades a failed catalog request to "every item unavailable"; notes never use that. */
+/**
+ * The advisor degrades a failed catalog request to "unavailable" for its ids; notes never use that.
+ * Not even for a single failed batch: its ids would be written as "Objeto <id>" with no type,
+ * rarity, icon or sale price. An id the catalog says does not exist (`missing`) is legitimate.
+ */
 function catalogUnavailable(source: InventoryAdvisorContextualPresentationSource): boolean {
-	const coverage = Object.values(source.input.catalog.coverage.items);
-	return Object.keys(source.input.snapshot.ownedByItem).length > 0 && coverage.every((entry) => entry.status === 'unavailable');
+	const ownedIds = Object.keys(source.input.snapshot.ownedByItem);
+	if (ownedIds.length === 0) return false;
+	const items = source.input.catalog.coverage.items;
+	const coverage = Object.values(items);
+	return coverage.every((entry) => entry.status === 'unavailable')
+		|| ownedIds.some((id) => items[id]?.status === 'unavailable');
 }
 
 /**
