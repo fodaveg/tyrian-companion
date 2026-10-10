@@ -3258,3 +3258,73 @@
 .tyrian-declared-build button { min-height: 44px; white-space: normal; max-width: 100%; }
 
 .tyrian-live-comparison code { display: block; overflow-wrap: anywhere; white-space: normal; }
+
+/* Sección «Logros» (L2, 0.6.30): buscador arriba, seguidos debajo. Solo variables de la tabla de
+   docs/HEBRA-CSS-VARIABLES.md, para que Hebra la pinte con sus tokens. Una columna: cabe en los
+   288 px del inspector de Hebra y en la columna central de su pantalla principal. */
+.tyrian-achievements { display: grid; gap: var(--size-4-4); min-width: 0; }
+.tyrian-achievements__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2) var(--size-4-3); }
+.tyrian-achievements__bar button { min-height: 44px; }
+.tyrian-achievements__reading { margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-achievements__unverified { color: var(--text-warning); }
+.tyrian-achievements__notice:empty { display: none; }
+.tyrian-achievements__notice p {
+	display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2);
+	margin: 0 0 var(--size-4-2); padding: var(--size-4-2) var(--size-4-3);
+	border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s);
+	background: var(--background-secondary); font-size: var(--font-ui-smaller);
+}
+.tyrian-achievements__notice p[role="alert"] { border-inline-start: 3px solid var(--text-error); }
+.tyrian-achievements__search { display: grid; gap: var(--size-4-2); min-width: 0; }
+.tyrian-achievements__field { display: grid; gap: var(--size-4-1); }
+.tyrian-achievements__field label { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.tyrian-achievements__field input, .tyrian-achievements__field select { width: 100%; min-width: 0; min-height: var(--input-height); box-sizing: border-box; font: inherit; }
+.tyrian-achievements__search-status { margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-achievements__results { display: grid; gap: var(--size-4-1); margin: 0; padding: 0; list-style: none; }
+.tyrian-achievements__result {
+	display: flex; align-items: center; justify-content: space-between; gap: var(--size-4-2);
+	padding: var(--size-4-2) var(--size-4-3); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s);
+	background: var(--background-primary);
+}
+.tyrian-achievements__result-text { display: grid; gap: var(--size-2-2); min-width: 0; }
+.tyrian-achievements__result-text strong { overflow-wrap: anywhere; font-weight: var(--font-semibold); }
+.tyrian-achievements__result-text small { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-achievements__result button { flex: none; min-height: 44px; }
+.tyrian-achievements__result button[aria-pressed="true"] { border-color: var(--interactive-accent); color: var(--text-accent); }
+.tyrian-achievements__more { justify-self: start; min-height: 44px; }
+.tyrian-achievements__more[hidden] { display: none; }
+.tyrian-achievements__tracked { display: grid; gap: var(--size-4-2); min-width: 0; }
+.tyrian-achievements__tracked h3 { margin: 0; font-size: var(--font-ui-medium); line-height: var(--line-height-tight); }
+.tyrian-achievements__tracked h3:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.tyrian-achievements__tracked-status { margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-achievements__list { display: grid; gap: var(--size-4-2); }
+.tyrian-achievements__item { border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); }
+.tyrian-achievements__item > summary {
+	display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-1) var(--size-4-2);
+	min-height: 44px; padding: var(--size-4-2) var(--size-4-3); box-sizing: border-box; cursor: pointer;
+}
+.tyrian-achievements__item > summary:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
+.tyrian-achievements__name { flex: 1 1 12ch; min-width: 0; overflow-wrap: anywhere; font-weight: var(--font-semibold); }
+.tyrian-achievements__count { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-achievements__item progress { flex: 1 1 6ch; min-width: 4ch; max-width: 12ch; height: var(--size-4-2); accent-color: var(--interactive-accent); }
+.tyrian-achievements__state { padding: 0 var(--size-4-2); border-radius: var(--radius-s); background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-smallest); }
+.tyrian-achievements__item[data-status="completed"] .tyrian-achievements__state { color: var(--text-success); }
+.tyrian-achievements__item[data-status="retired"] .tyrian-achievements__state { color: var(--text-error); }
+.tyrian-achievements__body { display: grid; gap: var(--size-4-2); padding: 0 var(--size-4-3) var(--size-4-3); }
+.tyrian-achievements__body h4 { margin: 0; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.tyrian-achievements__body p { margin: 0; }
+.tyrian-achievements__objectives, .tyrian-achievements__rewards { display: grid; gap: var(--size-2-2); margin: 0; padding: 0; list-style: none; }
+.tyrian-achievements__objectives li { padding-inline-start: var(--size-4-4); position: relative; }
+/* La marca va por color y forma; el estado también se lee, en el texto oculto de cada objetivo. */
+.tyrian-achievements__objectives li::before { content: ''; position: absolute; inset-inline-start: 0; top: 0.55em; width: var(--size-4-2); height: var(--size-4-2); border: 1px solid var(--text-faint); border-radius: 50%; }
+.tyrian-achievements__objectives li[data-state="done"]::before { background: var(--text-success); border-color: var(--text-success); }
+.tyrian-achievements__objectives li[data-state="unknown"]::before { border-style: dashed; }
+.tyrian-achievements__item-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--size-4-2); }
+.tyrian-achievements__item-foot button { min-height: 44px; }
+@container (min-width: 600px) {
+	.tyrian-achievements__search { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+	.tyrian-achievements__search-status, .tyrian-achievements__results, .tyrian-achievements__more { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.tyrian-achievements * { transition: none !important; animation: none !important; }
+}
