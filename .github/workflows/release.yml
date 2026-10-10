@@ -41,6 +41,14 @@ jobs:
       - name: Gate
         run: npm run check
 
+      # `check` leaves out the guardrail suites (the frozen architecture tests,
+      # `src/platform`, and the release, BRAT, support, identity and i18n-length
+      # contracts). CI runs them as a separate job, but this workflow has no
+      # `needs` on it and a tag push does not trigger it, so a release would
+      # otherwise publish having proven only the product half.
+      - name: Guardrails
+        run: npm run check:guardrails
+
       - name: Build the release package
         run: npm run release:package
 

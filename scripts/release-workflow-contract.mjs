@@ -11,6 +11,14 @@ const CONTRACT_COMMAND = 'scripts/brat-release-contract.mjs';
 const CONTRACT_FLAG = '--release-json';
 const PUBLISH_COMMAND = 'gh release create';
 /**
+ * The publishing job must run the guardrail suites itself, before it packages
+ * anything. `release.yml` fires on a tag with no `needs` on `ci.yml`, so a green
+ * `check:guardrails` run elsewhere proves nothing about the commit being
+ * published (GR-02).
+ */
+const GUARDRAILS_COMMAND = 'npm run check:guardrails';
+const PACKAGE_COMMAND = 'npm run release:package';
+/**
  * The asset set has to be DERIVED from the staged bytes, not typed into the
  * workflow. A hand-written list is exactly how 0.1.19 shipped incomplete: it
  * cannot notice that a file it never mentions is missing.
@@ -55,6 +63,13 @@ export function validateReleaseWorkflow(root = process.cwd()) {
 
 	if (gateIndex === -1) findings.push('release-missing-brat-gate');
 	else if (publishIndex !== -1 && gateIndex > publishIndex) findings.push('release-gate-after-publication');
+
+	const guardrailsIndex = steps.findIndex((step) => runsCommand(step, GUARDRAILS_COMMAND));
+	const packageIndex = steps.findIndex((step) => runsCommand(step, PACKAGE_COMMAND));
+	if (guardrailsIndex === -1) findings.push('release-missing-guardrails');
+	else if ((packageIndex !== -1 && guardrailsIndex > packageIndex) || (publishIndex !== -1 && guardrailsIndex > publishIndex)) {
+		findings.push('release-guardrails-after-package');
+	}
 
 	for (const source of REQUIRED_ASSET_SOURCES) {
 		if (!steps.some((step) => runsCommand(step, source))) findings.push('release-assets-not-planned');

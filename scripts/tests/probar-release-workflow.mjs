@@ -12,6 +12,7 @@ const releaseSource = readFileSync(resolve(root, workflowDirectory, 'release.yml
 try {
 	testRepositoryIsGreen();
 	testGateMustPrecedePublication();
+	testGuardrailsMustRunBeforePackaging();
 	testMissingGateIsRed();
 	testShellCommentDoesNotSatisfyTheGate();
 	testWriteAccessIsRequiredAndConfined();
@@ -44,6 +45,31 @@ function testGateMustPrecedePublication() {
 	const inverted = moveGateAfterPublication(releaseSource);
 	assert(inverted !== releaseSource, 'the suite could not build the inverted-order workflow, so it proves nothing');
 	assertFinding('a gate placed after the publication', inverted, 'release-gate-after-publication');
+}
+
+/**
+ * GR-02: `check` alone leaves the guardrail suites out, and a tag push does not
+ * trigger `ci.yml`. Removing the step, putting it after the package, or leaving
+ * only a shell comment about it has to be red.
+ */
+function testGuardrailsMustRunBeforePackaging() {
+	const without = removeStep(releaseSource, 'Guardrails');
+	assert(without !== releaseSource, 'the suite could not remove the guardrails step, so it proves nothing');
+	assertFinding('a release that never runs check:guardrails', without, 'release-missing-guardrails');
+
+	const guardrails = extractStep(releaseSource, 'Guardrails');
+	const packaging = extractStep(releaseSource, 'Build the release package');
+	assert(guardrails !== null && packaging !== null, 'the suite could not find the guardrails and packaging steps');
+	const late = releaseSource.replace(guardrails, '@@G@@').replace(packaging, packaging + guardrails).replace('@@G@@', '');
+	assert(late !== releaseSource, 'the suite could not build the late-guardrails workflow, so it proves nothing');
+	assertFinding('guardrails that run after the package is built', late, 'release-guardrails-after-package');
+
+	const commented = releaseSource.replace(
+		'        run: npm run check:guardrails',
+		'        run: |\n          # npm run check:guardrails\n          echo skipped',
+	);
+	assert(commented !== releaseSource, 'the suite could not comment the guardrails out, so it proves nothing');
+	assertFinding('guardrails that only exist inside a shell comment', commented, 'release-missing-guardrails');
 }
 
 /**

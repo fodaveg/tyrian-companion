@@ -94,13 +94,19 @@ plataformas). Los tres van a `.release/<id>/` junto a los de Obsidian, pasan el 
 credenciales y se publican como assets, pero no entran en el ZIP, que sigue siendo la instalación de
 Obsidian. Son generados: no se commitean (`.gitignore`).
 
+`check` cierra con el paso `hebra-bundle` (`vitest.hebra-bundle.config.mts`), que arranca el
+`hebra-main.mjs` que acaba de construir `host-esm` del mismo árbol y falla si falta: no vive en `unit`
+(que lo excluye) ni se salta nunca. Como `ci.yml` y `release.yml` corren `npm run check`, el artefacto
+que descarga Hebra queda probado en los dos.
+
 El workflow `ci.yml` ejecuta `check` y `check:guardrails` en cada push de rama o pull request;
 en `main` añade los benchmarks existentes. Los jobs del helper nativo solo se ejecutan cuando ese
 alcance cambia. Tras los gates prepara el artifact de desarrollo con `release:package` y
 `beta:artifact`. Mantiene permisos `contents: read` y no publica releases.
 
 El workflow `release.yml` es propietario de la publicación al hacer push de un tag. Ejecuta su
-propio `check`, genera el paquete y exige un plan válido de ocho assets antes de crear la release.
+propio `check` y `check:guardrails` (antes de `release:package`; `release-workflow-contract` lo exige,
+porque la publicación no depende del CI del mismo commit), genera el paquete y exige un plan válido de ocho assets antes de crear la release.
 El tag y el título deben coincidir **exactamente** con `manifest.version`, sin prefijo `v`; el cuerpo
 procede de la entrada correspondiente del changelog. Solo ese job tiene `contents: write`.
 Tras subir los assets verifica el contrato contra los metadatos reales de GitHub.
