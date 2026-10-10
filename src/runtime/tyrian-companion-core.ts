@@ -1495,6 +1495,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (this.lateCollectorMode !== null) this.adoptLateCollectorMode();
 		this.startIngameSessionMarking();
 		this.syncAlertIngameServer();
+		// Z20: the panel leaves «starting» now, not after the price history below has opened its store. What it reads from the
+		// price history and the Halloween price alert arrives with their own repaints and the final one. Halloween's runtime is
+		// not activated at boot (`halloweenObservationActive`), so the `disabled` this paint shows is the state it keeps; were
+		// that activation back, its state would have to read `loading` before this line.
+		this.renderViews();
 		if (this.settings.priceHistoryEnabled) {
 			await this.priceHistory.activate(priceHistorySettingsFrom(this.settings));
 			this.priceHistory.setOnline(this.host.environment.isOnline());
