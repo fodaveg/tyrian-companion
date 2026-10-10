@@ -2044,6 +2044,40 @@ export class ConfirmAbandonSessionModal extends TyrianModal {
 	}
 }
 
+/** «Descartar la sesión atascada»: says what is lost and what is not before anything is deleted. Cancel has the focus. */
+export class ConfirmDiscardLiveSessionModal extends TyrianModal {
+	constructor(
+		ui: TyrianModalUi,
+		private readonly onConfirm: () => Promise<void>,
+		private readonly onClosed: () => void = () => undefined,
+		private readonly getLocale: () => Locale = () => 'es',
+	) {
+		super(ui);
+	}
+
+	protected override title(): string {
+		return runtimeText(this.getLocale(), 'modal.discardLiveTitle');
+	}
+
+	onOpen(): void {
+		this.contentEl.createEl('p', { text: runtimeText(this.getLocale(), 'modal.discardLiveDetail') });
+		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepSession'), cls: 'mod-cta' });
+		const discard = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.discardLiveConfirm'), cls: 'mod-warning' });
+		cancel.addEventListener('click', () => this.close());
+		discard.addEventListener('click', () => {
+			discard.disabled = true;
+			cancel.disabled = true;
+			void this.onConfirm().finally(() => this.close());
+		});
+		cancel.focus();
+	}
+
+	override onClose(): void {
+		this.onClosed();
+	}
+}
+
 class DetectionCorrectionModal extends TyrianModal {
 	constructor(
 		ui: TyrianModalUi,

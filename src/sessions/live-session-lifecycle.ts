@@ -38,9 +38,11 @@ export interface LiveSessionSourceInput { sourceInstance: string; epoch: string;
  * it: `initialize` has the session back before the first `live_open`, with nothing changed here. That replaced
  * renewing a lease that ran out and renewing from the data path, no longer planned. Reasoning in SPEC-live-loot §4.
  */
+/** What `discard` did: whether the session left the runtime key, and whether its note was written on the way. */
+export interface LiveSessionDiscard { cleared: boolean; note: 'written' | 'not_written' | 'none' }
 export const LIVE_SESSION_LEASE_TTL_MS = 300_000;
 export interface LiveSessionLifecycleOptions {
-	coordinator: SessionLeaseCoordinator; persistence: LiveSessionPersistence & Pick<SessionRuntimeStore, 'clear'>;
+	coordinator: SessionLeaseCoordinator; persistence: LiveSessionPersistence & Pick<SessionRuntimeStore, 'clear'> & Partial<Pick<SessionRuntimeStore, 'forceClear'>>;
 	/** How long the lease this lifecycle asks the coordinator for lasts (`LIVE_SESSION_LEASE_TTL_MS` when absent). */
 	leaseTtlMs?: number;
 	enabled(): boolean; now(): number; sessionId(): string;
@@ -451,6 +453,43 @@ export class LiveSessionLifecycle {
 			const stopped = sessionId !== undefined && this.record?.sessionId !== sessionId ? this.refuse('other_session') : await this.stopInternal(endedAtMs);
 			if (!stopped && this.stopFailure === null) this.stopFailure = 'unknown';
 			return stopped;
+		});
+	}
+	/**
+	 * The player's way out of a session that cannot finish (a stop the store refuses, a note that cannot be written, a
+	 * record that does not load): it writes the note with what the session has, if it can, releases the reservation and
+	 * takes the session off the runtime key, so the addon is accepted again and a new session starts. Nothing in the vault
+	 * is touched, and the journal stays where it is: when the note could not be written, that journal is the only copy of
+	 * the evidence. `cleared: false` says storage refused even the forced clear, and memory is left as it was.
+	 */
+	async discard(): Promise<LiveSessionDiscard> {
+		return await this.enqueue(async () => {
+			const before = this.record;
+			let note: LiveSessionDiscard['note'] = 'none';
+			if (before !== null && this.options.enabled()) {
+				try {
+					if (before.phase === 'active') await this.stopInternal(this.options.now());
+					else if (before.phase === 'complete') await this.saveCompletedNote();
+				} catch (error) { this.options.onError(error); }
+				note = this.record?.summaryReceipt != null ? 'written' : 'not_written';
+			}
+			const held = this.handle; this.handle = null;
+			if (held !== null) { try { await this.options.coordinator.release(held); } catch { /* the lease runs out by itself */ } }
+			const authority = this.record?.authority ?? before?.authority ?? null;
+			let cleared = false;
+			try {
+				cleared = authority !== null && (await this.options.persistence.clear(authority)).status === 'cleared';
+				if (!cleared) cleared = (await this.options.persistence.forceClear?.())?.status === 'cleared';
+			} catch (error) { this.options.onError(error); }
+			if (!cleared) { this.failure = true; this.options.onStateChange(); return { cleared: false, note }; }
+			const receipt = this.record?.summaryReceipt ?? null;
+			if (this.record !== null && receipt !== null) { this.sealedForPrune.set(this.record.sessionId, receipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
+			this.record = null; this.format = newLiveSessionFormat(); this.journal = []; this.observations = []; this.chart = this.newChart();
+			this.failure = false; this.unsaved = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false;
+			this.lostPresence = null; this.lostGap = null; this.noteNeedsVerification = false; this.summaryState = null;
+			this.unread = false; this.ownStarts.clear(); this.stopFailure = null; this.noteFailure = null;
+			this.options.onStateChange();
+			return { cleared: true, note };
 		});
 	}
 	/** Why the last `stop` answered false (null while none failed): the caller names it in its diagnostic and in what it tells the player. */
@@ -1010,6 +1049,7 @@ function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionL
 		markLiveAlertsProcessed: (sessionId, epoch, cursor) => deadline.bounded(() => options.persistence.markLiveAlertsProcessed(sessionId, epoch, cursor), () => false),
 		replaceLiveJournal: (prior, next, owner) => deadline.bounded(() => options.persistence.replaceLiveJournal(prior, next, owner), () => false),
 		clear: (authority) => deadline.bounded(() => options.persistence.clear(authority), unavailable),
+		forceClear: () => deadline.bounded(async () => await options.persistence.forceClear?.() ?? unavailable(), unavailable),
 		// A store without one of the optional steps answers as the lifecycle already read its absence.
 		readLiveJournalEntry: (sessionId, epoch, cursor) => deadline.bounded(async () => await options.persistence.readLiveJournalEntry?.(sessionId, epoch, cursor) ?? null, rejected),
 		pruneLiveJournal: (sessionId) => deadline.bounded(async () => await options.persistence.pruneLiveJournal?.(sessionId) === true, rejected),

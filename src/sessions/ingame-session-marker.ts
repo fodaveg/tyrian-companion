@@ -179,6 +179,10 @@ export class IngameSessionMarker {
 		if (mark.previous !== null) { this.setLink(mark.previous); return; }
 		this.link = null; this.options.port.saveLink(null);
 	}
+	/** The player dropped the session they had stopped by hand: the addon of this same connection may open the next one. */
+	clearStoppedByPlayer(): void {
+		if (this.link?.stoppedByPlayer === true) this.setLink({ ...this.link, stoppedByPlayer: false });
+	}
 	private markStopped(sessionId: string, presenceId: string): void {
 		if (this.link?.sessionId === sessionId) this.setLink({...this.link,stoppedByPlayer:true});
 		else this.setLink({version:1,presenceId,sessionId,owner:'adopted',labyrinthAt:null,stoppedByPlayer:true,mapCoveragePartial:true});

@@ -37,6 +37,8 @@ export interface LiveSessionControlState {
 	busy: 'start' | 'stop' | null;
 	/** An older session blocks a new one; `canDiscard` says whether an existing action can drop it. */
 	oldSession: { canDiscard: boolean } | null;
+	/** The live session cannot finish by itself and the player may drop it (after a confirmation the host asks). */
+	stuckSession?: boolean;
 }
 
 export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'getLocale' | 'getLiveSessionView' | 'getLiveSessionEntity' | 'listLiveSessionHistory' | 'getLiveSessionSetAside'> {
@@ -549,6 +551,7 @@ export class LiveSessionPanel {
 
 		const startMode = !stopMode && !busy;
 		const oldBlocks = startMode && control.oldSession !== null && !control.consult;
+		const stuck = control.stuckSession === true && !control.consult && !oldBlocks && !busy;
 		let hint = '';
 		if (control.consult) hint = this.copy('hintConsult');
 		else if (startMode && !control.gameConnected) hint = this.copy('hintGameOff');
@@ -561,8 +564,13 @@ export class LiveSessionPanel {
 		this.setText(this.alert, failureCopy === null ? '' : this.copy(failureCopy));
 		this.alert.hidden = failureCopy === null;
 
-		this.oldLine.hidden = !oldBlocks;
-		if (oldBlocks) {
+		this.oldLine.hidden = !oldBlocks && !stuck;
+		if (stuck) {
+			this.setText(this.oldText, this.copy('stuckSession'));
+			this.discard.hidden = false;
+			this.setText(this.discard, this.copy('discardStuck'));
+			this.discard.setAttribute('aria-disabled', String(this.pending === 'discard'));
+		} else if (oldBlocks) {
 			this.setText(this.oldText, this.copy('oldSessionBlocks'));
 			const canDiscard = control.oldSession?.canDiscard === true;
 			this.discard.hidden = !canDiscard;

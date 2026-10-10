@@ -282,6 +282,7 @@ import {
 	COMPANION_VIEW_TYPE,
 	companionSection,
 	ConfirmAbandonSessionModal,
+	ConfirmDiscardLiveSessionModal,
 	ConfirmClearCompletedSessionModal,
 	ConfirmDiscardSessionModal,
 	ConfirmDiscardUnreadableSessionModal,
@@ -654,6 +655,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
 	private clearModal: ConfirmClearCompletedSessionModal | null = null;
 	private abandonModal: ConfirmAbandonSessionModal | null = null;
+	private discardLiveModal: ConfirmDiscardLiveSessionModal | null = null;
 	private sessionCommands!: SessionCommandController;
 	private productActions!: ProductActionController;
 	private sessionDispatch!: SessionCommandDispatch;
@@ -2004,6 +2006,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.discardModal?.close();
 		this.clearModal?.close();
 		this.abandonModal?.close();
+		this.discardLiveModal?.close();
 		this.assistedDetection?.dispose();
 		this.detectionQuality?.dispose();
 		if (this.pilotMetrics) {
@@ -5782,6 +5785,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				this.ingameSessionMarker?.linkReplacement(previous,id,'adopted');
 			});
 			if (id === 'finish-farming-session') return Promise.resolve(async () => { await this.stopManualSession(); });
+			if (id === 'discard-saved-session') return this.prepareDiscardLiveIntent();
 			return Promise.resolve(null);
 		}
 		if (id === 'start-farming-session') return this.prepareStartIntent();
@@ -5800,7 +5804,20 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			canStart:!consulting(this) && !this.unloaded && this.ingameSessionView().canStart && presence.status === 'present'
 				&& (presence.context?.source === 'nexus' || live?.sourceInstance !== null && live?.sourceInstance !== undefined),
 			canFinish:!consulting(this) && !this.unloaded && live !== null && live !== undefined
-				&& (live.phase === 'active' || live.summaryReceipt === null)};
+				&& (live.phase === 'active' || live.summaryReceipt === null),
+			canDiscard:!this.unloaded && !consulting(this) && this.liveSessionIsStuck()};
+	}
+
+	/**
+	 * A live session that cannot get out by itself: in error, finished without its note, or whose last stop was refused.
+	 * The player may drop it («Descartar la sesión atascada»); an ordinary running or sealed one is never offered.
+	 */
+	private liveSessionIsStuck(): boolean {
+		const lifecycle = this.liveSessions;
+		if (lifecycle === null) return false;
+		const live = lifecycle.getRuntime();
+		return lifecycle.getView().phase === 'error' || lifecycle.getStopFailure() !== null
+			|| (live !== null && live.phase === 'complete' && live.summaryReceipt === null);
 	}
 
 	private prepareStartIntent(): Promise<PreparedSessionCommand | null> {
@@ -5834,6 +5851,39 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			);
 			this.discardModal.open();
 		});
+	}
+
+	private prepareDiscardLiveIntent(): Promise<PreparedSessionCommand | null> {
+		if (this.discardLiveModal) return Promise.resolve(null);
+		return new Promise((resolve) => {
+			let confirmed = false;
+			this.discardLiveModal = new ConfirmDiscardLiveSessionModal(
+				this.host.ui,
+				() => { confirmed = true; resolve(() => this.performDiscardLiveSession()); return Promise.resolve(); },
+				() => { this.discardLiveModal = null; if (!confirmed) resolve(null); },
+				() => this.settings.language,
+			);
+			this.discardLiveModal.open();
+		});
+	}
+
+	/** Drops the stuck live session (see `LiveSessionLifecycle.discard`) and leaves its own trace, under codes of its own. */
+	private async performDiscardLiveSession(): Promise<void> {
+		const lifecycle = this.liveSessions;
+		if (lifecycle === null) return;
+		const result = await lifecycle.discard();
+		this.localDebugActions?.event({
+			component: 'session', action: 'session_discard', state: `live_discard_${result.cleared ? result.note : 'refused'}`,
+			level: result.cleared ? 'warn' : 'error', phase: result.cleared ? 'success' : 'failure',
+			code: result.cleared ? 'ok' : 'storage_failure',
+		});
+		if (!result.cleared) throw new Error('Live session discard was refused by storage.');
+		this.ingameSessionMarker?.clearStoppedByPlayer();
+		this.sessionSummarySaveState = 'unknown'; this.savedSessionNotePath = null;
+		const t = createTranslator(this.settings.language);
+		this.emitNotice(translateRuntime(t, result.note === 'not_written' ? 'notices.liveDiscardedNoNote' : 'notices.liveDiscarded'), 'session_command');
+		this.renderViews();
+		void this.ingameSessionMarker?.reconcile();
 	}
 
 	private prepareClearIntent(): Promise<PreparedSessionCommand | null> {

@@ -32,6 +32,8 @@ export interface LiveSessionCommandContext {
 	fence: number | null;
 	canStart: boolean;
 	canFinish: boolean;
+	/** The session cannot finish by itself (error, closed without its note, a stop the store refuses): the player may drop it. */
+	canDiscard: boolean;
 }
 export type SessionCommandInput = SessionCommandContext | LiveSessionCommandContext;
 
@@ -54,7 +56,7 @@ export function projectSessionCommands(context: SessionCommandInput, locale: Loc
 			descriptor('start-farming-session',t('commands.startSession'),context.canStart,'play',false,target),
 			descriptor('finish-farming-session',t('commands.finishSession'),context.canFinish,'square',false,target),
 			descriptor('recover-saved-session',t('commands.recoverSession'),false,'rotate-ccw',false,target),
-			descriptor('discard-saved-session',t('commands.discardSession'),false,'trash-2',true,target),
+			descriptor('discard-saved-session',t('commands.discardLiveSession'),context.canDiscard,'trash-2',true,target),
 			descriptor('clear-completed-session',t('commands.clearSession'),false,'eraser',true,target),
 			descriptor('abandon-farming-session',t('commands.abandonSession'),false,'circle-x',true,target),
 		];

@@ -63,6 +63,7 @@ export function liveSessionControl(
 				canStop: finish?.available === true,
 				busy: start?.state === 'running' ? 'start' : finish?.state === 'running' ? 'stop' : null,
 				oldSession: blocked ? { canDiscard: discard?.available === true } : null,
+				stuckSession: !blocked && view().phase !== 'idle' && discard?.available === true,
 			};
 		},
 		startLiveSession: () => run('start-farming-session'),

@@ -15,7 +15,7 @@ import {
 	registerSessionPalette,
 	type PaletteCommandSpec,
 } from './session-command-adapter';
-import { projectSessionCommands, SESSION_COMMAND_IDS, type SessionCommandContext } from './session-command-model';
+import { projectSessionCommand, projectSessionCommands, SESSION_COMMAND_IDS, type SessionCommandContext } from './session-command-model';
 
 describe('projectSessionCommands', () => {
 	it.each([
@@ -105,6 +105,14 @@ describe('projectSessionCommands', () => {
 		expect(commands.find((command) => command.id === 'start-farming-session')).toMatchObject({
 			id: 'start-farming-session', name: 'Iniciar sesión de farmeo',
 		});
+	});
+});
+
+describe('the live session may be discarded only when it cannot finish', () => {
+	const live = (canDiscard: boolean) => ({ source: 'nexus_inventory' as const, sessionId: 's', phase: 'complete' as const, fence: 1, canStart: false, canFinish: false, canDiscard });
+	it('offers it, named for what it is, only when the core says the session is stuck', () => {
+		expect(projectSessionCommand('discard-saved-session', live(true), 'en')).toMatchObject({ available: true, name: 'Discard the stuck session', destructive: true });
+		expect(projectSessionCommand('discard-saved-session', live(false), 'es')).toMatchObject({ available: false, name: 'Descartar la sesión atascada' });
 	});
 });
 
