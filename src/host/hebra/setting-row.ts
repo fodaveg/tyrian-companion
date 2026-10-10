@@ -349,7 +349,8 @@ export function createSecretControl(
 
 function openNewSecretDialog(deps: SettingRowDeps, onSaved: (name: string) => void): void {
 	const handle = deps.host.openModal((content) => {
-		const { t } = deps.translator();
+		const translator = deps.translator();
+		const t: Translator['t'] = (key, params) => translator.t(key, params);
 		content.classList.add('hebra-module-secret-dialog');
 		const form = createEl('form');
 		const nameInput = createEl('input');

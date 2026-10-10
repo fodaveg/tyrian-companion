@@ -96,7 +96,7 @@ function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistratio
 			run(() => view.unmount(el));
 		},
 	});
-	titles.set(view.type, view.title);
+	titles.set(view.type, () => view.title());
 	return () => {
 		titles.delete(view.type);
 		unregister();
@@ -141,7 +141,7 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 					ui, lane: createLane, report: (error, where) => deps.report(error, where),
 				}, view);
 				setMainView(view.type);
-				mainTitles.set(view.type, view.title);
+				mainTitles.set(view.type, () => view.title());
 				return () => {
 					mainTitles.delete(view.type);
 					unregister();
