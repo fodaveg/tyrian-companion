@@ -1,7 +1,7 @@
 import type { DetectionCorrectionCause, DetectionEvidenceQuality, DetectionPhase } from './session-detection-quality';
 
-const PILOT_METRICS_VERSION = 1 as const;
-const PILOT_PLATFORMS = ['linux_steam_proton', 'macos_crossover', 'windows_beta'] as const;
+export const PILOT_METRICS_VERSION = 1 as const;
+export const PILOT_PLATFORMS = ['linux_steam_proton', 'macos_crossover', 'windows_beta'] as const;
 export const PILOT_METRICS_MAX_OBSERVATIONS = 10_000;
 const PILOT_RECOVERY_KINDS = ['forced_restart', 'organic'] as const;
 const PILOT_SILENT_LOSS_REVIEWS = ['unreviewed', 'none_observed', 'observed'] as const;
