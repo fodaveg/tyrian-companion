@@ -2,14 +2,14 @@
 
 Son dos partes. La primera vale sola. La segunda añade las sesiones y las notas.
 
-Versiones: addon 0.8.4, plugin 0.6.24, Hebra 0.2.3. Esta guía todavía no se ha probado en Windows.
+Versiones: addon 0.8.6, plugin 0.6.24, Hebra 0.2.3. Esta guía todavía no se ha probado en Windows.
 Si un paso no coincide con lo que ves, mira la [guía detallada](INSTALAR-WINDOWS-DETALLE.md).
 
 ## Parte 1. Nexus y el addon
 
 1. Instala Nexus desde [raidcore.gg](https://raidcore.gg/) y abre Guild Wars 2.
 2. Descarga el fichero `.dll` de la
-   [release 0.8.4 del addon](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.4).
+   [release 0.8.6 del addon](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.6).
 3. En el juego, abre la lista de addons de Nexus y pulsa **Abrir carpeta de addons**.
 4. Copia el `.dll` en esa carpeta.
 5. Vuelve al juego. Si el addon no aparece en la lista, pulsa el botón de refrescar o reinicia el

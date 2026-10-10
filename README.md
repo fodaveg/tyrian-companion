@@ -82,9 +82,9 @@ passed its combined checks; real-client installation/runtime QA remains pending.
 
 Live sessions require the matching **Nexus producer**. [Nexus 0.5.0](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.5.0)
 and [Blish HUD 0.5.0](https://github.com/fodaveg/tyrian-companion-blish/releases/tag/0.5.0) were
-published with verified package/checksum assets; Blish HUD stays frozen at 0.5.0. This Nexus addon has no automatic updater:
-with GW2 closed, replace its DLL manually and verify the loaded version after reopening the game.
-Publishing Companion does not update that DLL. Older v3 clients retain their compatible alerts/
+published with verified package/checksum assets; Blish HUD stays frozen at 0.5.0. That 0.5.0 addon had no automatic updater (with GW2 closed, its DLL was replaced manually).
+Since addon 0.8.5, Nexus updates it from the GitHub releases; anyone on 0.8.4 or earlier installs 0.8.5 or later
+by hand once. Verify the loaded version after reopening the game. Publishing Companion does not update that DLL. Older v3 clients retain their compatible alerts/
 panel behavior, but that does not provide the new live source. See the
 [live source contract](docs/SPEC-live-loot.md) and [bridge contract](docs/SPEC-puente-ingame.md).
 

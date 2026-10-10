@@ -45,9 +45,10 @@ una plantilla declarada no acredita build equipada ni equipo/stats.
 
 La entrega 0.5.0 es una release **normal, no prerelease**, disponible para el instalador del Hebra
 canónico. Hebra consume los tres assets de plugin externo de esa misma versión; no se
-infiere carga correcta de la versión que figure en disco. Nexus no ofrece autoactualización para
-este addon: con GW2 cerrado, sustituir manualmente la DLL por el artifact elegido y comprobar la
-versión cargada al reabrir. Publicar Companion no sustituye la DLL local de Nexus.
+infiere carga correcta de la versión que figure en disco. Esto describe el addon de la 0.5.0, que no tenía
+fuente de actualización: con GW2 cerrado, la DLL se sustituía a mano por el artifact elegido y se comprobaba la
+versión cargada al reabrir. Desde el addon 0.8.5 Nexus lo actualiza desde las releases de GitHub; quien tenga la
+0.8.4 o anterior pone la 0.8.5 o posterior a mano una vez. Publicar Companion no sustituye la DLL local de Nexus.
 
 Icono en Hebra (desde la 0.6.11; con borde desde la 0.6.12; desde la 0.6.15, el dibujo a color con un solo contorno; desde la 0.6.17, recorte nuevo desde la acuarela con un borde negro): `hebra.json` lleva el monstruo como `iconImage` (PNG de 128 px versionado en
 `assets/hebra-icon.png`, comprobado en el empaquetado contra los límites de Hebra) y `sword` como respaldo en

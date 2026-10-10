@@ -3,8 +3,8 @@
 La guía corta, con solo los pasos, es [Instalar Tyrian Companion en Windows](INSTALAR-WINDOWS.md).
 Esta es la versión larga: límites, opciones, problemas y lo que aún no está verificado.
 
-Guía para el plugin **0.6.24** y el addon de Nexus **0.8.4**. Las dos versiones ya están
-publicadas (plugin 0.6.24 y addon 0.8.4); publicadas no es instaladas ni verificadas en Windows.
+Guía para el plugin **0.6.24** y el addon de Nexus **0.8.6**. Las dos versiones ya están
+publicadas (plugin 0.6.24 y addon 0.8.6); publicadas no es instaladas ni verificadas en Windows.
 
 ## Qué parte seguir
 
@@ -53,10 +53,10 @@ Obsidian; la conexión se explica en la Parte 2.
 | ------------------------------ | ---------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------- |
 | Guild Wars 2                   | La que tengas instalada      | El juego del que se leen las bolsas | Tu copia del juego                                                                    |
 | Nexus                          | No consta una versión mínima | Carga el addon dentro del juego     | La web de Raidcore (raidcore.gg)                                                      |
-| Addon Tyrian Companion (Nexus) | 0.8.4                        | Lee el juego y pinta el panel       | [Release 0.8.4](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.4) |
+| Addon Tyrian Companion (Nexus) | 0.8.6                        | Lee el juego y pinta el panel       | [Release 0.8.6](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.6) |
 
-El addon 0.8.4 pide un plugin que hable su protocolo. La release 0.8.3 pedía Tyrian Companion 0.6.10
-o posterior; la 0.6.24 lo cumple. Los requisitos de la 0.8.4 están en las notas de su release.
+El addon 0.8.6 pide un plugin que hable su protocolo. La release 0.8.3 pedía Tyrian Companion 0.6.10
+o posterior; la 0.6.24 lo cumple. Los requisitos de la 0.8.6 están en las notas de su release.
 
 ## 1.2. Instalar Nexus
 
@@ -70,7 +70,7 @@ o posterior; la 0.6.24 lo cumple. Los requisitos de la 0.8.4 están en las notas
 
 Instalarlo es copiar un fichero `.dll` a la carpeta de addons de Nexus.
 
-1. Abre la [release 0.8.4 del addon](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.4)
+1. Abre la [release 0.8.6 del addon](https://github.com/fodaveg/tyrian-companion-nexus/releases/tag/0.8.6)
    y descarga el fichero `.dll` adjunto.
 2. Abre Guild Wars 2 y, en Nexus, abre la lista de addons.
 3. Pulsa **Abrir carpeta de addons**, abajo en esa ventana, junto a **Buscar actualizaciones**
@@ -158,7 +158,7 @@ Haz esta parte con la Parte 1 terminada.
 | ------------------------- | ---------- | ------------------------------------------------ |
 | Guild Wars 2              | Sí         | Parte 1, apartado 1.1                            |
 | Nexus                     | Sí         | Parte 1, apartado 1.2                            |
-| Addon 0.8.4               | Sí         | Parte 1, apartado 1.3                            |
+| Addon 0.8.6               | Sí         | Parte 1, apartado 1.3                            |
 | Obsidian y BRAT           | No         | Solo si usas Obsidian en vez de Hebra            |
 | Hebra (escritorio)        | Sí         | Instalar en 2.2. Versión para Windows: 0.2.3     |
 | Plugin Tyrian Companion   | Sí         | Instalar en Hebra en 2.3. Versión 0.6.24         |
@@ -415,7 +415,7 @@ API, rutas locales ni nombres de cuenta o de personaje.
 
 ## C. Lo que aún no está verificado
 
-- La instalación de Nexus, del addon 0.8.4 y del plugin 0.6.24 en Windows nativo, y la lectura del
+- La instalación de Nexus, del addon 0.8.6 y del plugin 0.6.24 en Windows nativo, y la lectura del
   juego allí. Se confirma cargando el addon y viendo la línea `Loaded addon` en el log de Nexus y
   la línea de estado en **connected**.
 - Que el arreglo del tope de hilos de la 0.8.4 funcione en Windows. Se confirma con un Windows con
