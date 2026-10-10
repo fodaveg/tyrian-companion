@@ -4,9 +4,11 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_SETTINGS } from '../../core/settings';
 import { createTyrianTestApi, TYRIAN_KEYCHAIN_ACCOUNT } from '../../test/hebra-plugin-fakes';
 import type { TyrianHost } from '../tyrian-host';
 import { activateTyrian } from './hebra-runtime';
+import { HEBRA_DEVICE_SETTING_KEYS } from './local-storage';
 
 /**
  * The migration of SPEC-PLUGINS-EXTERNOS.md §11.2, which copies NOTHING: data written by Tyrian's
@@ -85,7 +87,9 @@ describe('migration from the module compiled into Hebra (§11.2): nothing is cop
 		if (host === null) throw new Error('the runtime never received a host');
 		const tyrian: TyrianHost = host;
 
-		expect(await tyrian.settings.load()).toEqual({ outputFolder: 'Games/GW2', language: 'es', managedAssetsRoot: 'Games/GW2' });
+		// The device settings the compiled module never saved arrive as the core's defaults.
+		const deviceDefaults = Object.fromEntries(HEBRA_DEVICE_SETTING_KEYS.map((key) => [key, DEFAULT_SETTINGS[key]]));
+		expect(await tyrian.settings.load()).toEqual({ ...deviceDefaults, outputFolder: 'Games/GW2', language: 'es', managedAssetsRoot: 'Games/GW2' });
 		expect(tyrian.localStorage?.load('ingame-session')).toEqual({ ref: 'abc', startedAt: 1 });
 		expect(tyrian.secrets.get('gw2-api')).toBe('KEY-FROM-THE-MODULE');
 		// The saved index is used as it is: the unmarked note keeps its path, with today's mtime.

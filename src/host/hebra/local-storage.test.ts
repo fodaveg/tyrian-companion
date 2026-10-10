@@ -3,6 +3,9 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+	DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA_VERSION, shouldPersistSettingsOnLoad,
+} from '../../core/settings';
 import { VIEW_PLACEMENT_KEY, loadViewPlacement, saveViewPlacement } from '../../runtime/view-placement';
 import { createHebraStorage, hebraDeviceKey, hebraSettingsKey } from '../../test/hebra-plugin-fakes';
 import {
@@ -14,6 +17,9 @@ import {
 	createMemoryFileBackend,
 	createTyrianLocalStoragePort,
 	createTyrianSettingsPort,
+	HEBRA_DEVICE_SETTING_KEYS,
+	HEBRA_DEVICE_SETTINGS_ADOPTED_KEY,
+	hebraDeviceSettingKey,
 	type LocalFileBackend,
 } from './local-storage';
 
@@ -32,16 +38,227 @@ describe('settings over api.storage.settings', () => {
 		const one = createTyrianSettingsPort(createHebraStorage(local, 'tyrian-companion', 'lib-1'));
 		const two = createTyrianSettingsPort(createHebraStorage(local, 'tyrian-companion', 'lib-2'));
 		await one.save({ outputFolder: 'GW2' });
-		expect(await one.load()).toEqual({ outputFolder: 'GW2' });
-		expect(one.latest()).toEqual({ outputFolder: 'GW2' });
+		// The device settings it never saved come back as the core's defaults (see the device describe below).
+		const loaded = await one.load() as Record<string, unknown>;
+		expect(loaded.outputFolder).toBe('GW2');
+		expect(one.latest()).toBe(loaded);
 		expect(await two.load()).toBeNull();
-		expect([...local.keys()]).toEqual(['hebra.library-v1.module.tyrian-companion.settings:lib-1']);
+		// The settings key, plus the mark that says lib-1 on this device holds its own device settings.
+		expect([...local.keys()].sort()).toEqual([
+			'hebra.library-v1.module.tyrian-companion.local:lib-1:tyrian-companion:setting:migrated',
+			'hebra.library-v1.module.tyrian-companion.settings:lib-1',
+		]);
 		expect(hebraSettingsKey('tyrian-companion', 'lib-1')).toBe('hebra.library-v1.module.tyrian-companion.settings:lib-1');
 	});
 
 	it('a corrupt JSON loads null instead of throwing', async () => {
 		const local = new Map([[hebraSettingsKey('tyrian-companion', 'lib-1'), '{broken']]);
 		expect(await createTyrianSettingsPort(createHebraStorage(local, 'tyrian-companion', 'lib-1')).load()).toBeNull();
+	});
+});
+
+describe('settings of this device over api.storage.device', () => {
+	const settingsKey = hebraSettingsKey('tyrian-companion', 'lib-1');
+	const deviceKey = (key: string): string => hebraDeviceKey('tyrian-companion', 'lib-1', hebraDeviceSettingKey(key));
+	const markKey = hebraDeviceKey('tyrian-companion', 'lib-1', HEBRA_DEVICE_SETTINGS_ADOPTED_KEY);
+	const receipt = { finishedAt: 1_700_000_000_000, outcome: 'applied' };
+	/** What an older build saved: every setting, the device ones included, in the shared scope. */
+	const legacy = {
+		schemaVersion: 15,
+		outputFolder: 'GW2',
+		alertWebhookUrl: 'https://hooks.example/abc',
+		alertIngameEnabled: true,
+		alertIngamePort: 47_123,
+		alertIngameSecret: 'tyrian-companion-ingame',
+		debugLoggingEnabled: true,
+		debugLoggingLevel: 'debug',
+		inventorySyncLastRun: receipt,
+	};
+	const shared = (local: Map<string, string>): Record<string, unknown> =>
+		JSON.parse(local.get(settingsKey) ?? 'null') as Record<string, unknown>;
+	const deviceDefaults = (): Record<string, unknown> =>
+		Object.fromEntries(HEBRA_DEVICE_SETTING_KEYS.map((key) => [key, DEFAULT_SETTINGS[key]]));
+	const port = (local: Map<string, string>, report?: (error: unknown, where: string) => void) =>
+		createTyrianSettingsPort(createHebraStorage(local, 'tyrian-companion', 'lib-1'), { report });
+
+	it('adopts the shared values once: copies them to device, sets the mark, and leaves settings exactly as it was', async () => {
+		const local = new Map([[settingsKey, JSON.stringify(legacy)]]);
+
+		expect(await port(local).load()).toEqual(legacy);
+
+		// Frozen: a device on an older build still reads them there.
+		expect(local.get(settingsKey)).toBe(JSON.stringify(legacy));
+		for (const key of HEBRA_DEVICE_SETTING_KEYS) {
+			expect(JSON.parse(local.get(deviceKey(key)) ?? 'null')).toEqual(legacy[key]);
+		}
+		expect(local.has(markKey)).toBe(true);
+		// Once: a second load finds them in device and writes nothing.
+		const before = new Map(local);
+		expect(await port(local).load()).toEqual(legacy);
+		expect(local).toEqual(before);
+	});
+
+	it('reads the device settings from device, the rest as defaults, when settings has none of them', async () => {
+		const local = new Map([[settingsKey, JSON.stringify({ schemaVersion: 15, outputFolder: 'GW2' })]]);
+		local.set(deviceKey('alertIngamePort'), JSON.stringify(47_200));
+		local.set(deviceKey('debugLoggingLevel'), JSON.stringify('info'));
+
+		expect(await port(local).load()).toEqual({
+			...deviceDefaults(),
+			schemaVersion: 15,
+			outputFolder: 'GW2',
+			alertIngamePort: 47_200,
+			debugLoggingLevel: 'info',
+		});
+		expect(shared(local)).toEqual({ schemaVersion: 15, outputFolder: 'GW2' });
+	});
+
+	it('with a value in both, the device one wins and is not overwritten by the shared one', async () => {
+		const local = new Map([[settingsKey, JSON.stringify({ ...legacy, alertIngamePort: 47_123 })]]);
+		local.set(deviceKey('alertIngamePort'), JSON.stringify(47_999));
+
+		const loaded = await port(local).load() as Record<string, unknown>;
+
+		expect(loaded.alertIngamePort).toBe(47_999);
+		expect(JSON.parse(local.get(deviceKey('alertIngamePort')) ?? 'null')).toBe(47_999);
+	});
+
+	it('a copy that fails sets no mark, reports, keeps settings as it was, and the next load adopts it', async () => {
+		const local = new Map([[settingsKey, JSON.stringify(legacy)]]);
+		const storage = createHebraStorage(local, 'tyrian-companion', 'lib-1');
+		const refusal = new Error('quota');
+		const set = storage.device.set.bind(storage.device);
+		storage.device.set = (key, value) => {
+			if (key === hebraDeviceSettingKey('alertIngamePort')) throw refusal;
+			set(key, value);
+		};
+		const report = vi.fn();
+
+		expect(await createTyrianSettingsPort(storage, { report }).load()).toEqual(legacy);
+
+		expect(report).toHaveBeenCalledWith(refusal, 'settings.device-adopt');
+		expect(local.has(markKey)).toBe(false);
+		expect(local.has(deviceKey('alertIngamePort'))).toBe(false);
+		expect(local.get(settingsKey)).toBe(JSON.stringify(legacy));
+
+		storage.device.set = set;
+		expect(await createTyrianSettingsPort(storage).load()).toEqual(legacy);
+		expect(JSON.parse(local.get(deviceKey('alertIngamePort')) ?? 'null')).toBe(47_123);
+		expect(local.has(markKey)).toBe(true);
+	});
+
+	it('with the mark set, a value that reaches settings later (another device) is never adopted', async () => {
+		const local = new Map([[settingsKey, JSON.stringify({ schemaVersion: 15, outputFolder: 'GW2' })]]);
+		local.set(markKey, JSON.stringify(1));
+		local.set(deviceKey('alertIngamePort'), JSON.stringify(47_200));
+		// An older build on another device writes its own receipt, bridge and log switch to the shared scope.
+		local.set(settingsKey, JSON.stringify(legacy));
+		const before = new Map(local);
+
+		const loaded = await port(local).load();
+
+		expect(loaded).toEqual({ ...legacy, ...deviceDefaults(), alertIngamePort: 47_200 });
+		expect(migrateSettings(loaded).inventorySyncLastRun).toBeNull();
+		expect(migrateSettings(loaded).debugLoggingEnabled).toBe(false);
+		expect(local).toEqual(before);
+	});
+
+	it('saves the six only to device; settings keeps their previous values, frozen, and the rest as saved', async () => {
+		const local = new Map([[settingsKey, JSON.stringify(legacy)]]);
+		local.set(deviceKey('inventorySyncLastRun'), JSON.stringify(receipt));
+		const settings = port(local);
+		const saved = { ...legacy, outputFolder: 'Other', alertIngamePort: 47_300, debugLoggingEnabled: false, inventorySyncLastRun: null };
+
+		await settings.save(saved);
+
+		expect(shared(local)).toEqual({ ...legacy, outputFolder: 'Other' });
+		expect(JSON.parse(local.get(deviceKey('alertIngamePort')) ?? 'null')).toBe(47_300);
+		expect(JSON.parse(local.get(deviceKey('debugLoggingEnabled')) ?? 'null')).toBe(false);
+		expect(local.has(deviceKey('inventorySyncLastRun'))).toBe(false);
+		expect(local.has(markKey)).toBe(true);
+		expect(settings.latest()).toEqual(saved);
+		expect(await settings.load()).toEqual(saved);
+	});
+
+	it('a library a new build created keeps the six out of settings: there was nothing there to keep', async () => {
+		const local = new Map<string, string>();
+		await port(local).save({ ...legacy });
+		expect(shared(local)).toEqual({ schemaVersion: 15, outputFolder: 'GW2', alertWebhookUrl: 'https://hooks.example/abc' });
+	});
+
+	it('a full save loads back in migrateSettings order, so the core does not rewrite the settings on load', async () => {
+		const local = new Map<string, string>();
+		const settings = port(local);
+		await settings.save(migrateSettings({ ...legacy, schemaVersion: SETTINGS_SCHEMA_VERSION }));
+
+		const loaded = await settings.load();
+
+		expect(shouldPersistSettingsOnLoad(loaded, migrateSettings(loaded))).toBe(false);
+	});
+
+	it('a save is all or nothing: a device write that throws halfway puts the previous device values back', async () => {
+		const local = new Map([[settingsKey, JSON.stringify(legacy)]]);
+		local.set(deviceKey('alertIngamePort'), JSON.stringify(47_200));
+		local.set(deviceKey('alertIngameEnabled'), JSON.stringify(false));
+		const storage = createHebraStorage(local, 'tyrian-companion', 'lib-1');
+		const refusal = new Error('quota');
+		const set = storage.device.set.bind(storage.device);
+		storage.device.set = (key, value) => {
+			if (key === hebraDeviceSettingKey('debugLoggingEnabled')) throw refusal;
+			set(key, value);
+		};
+		const before = new Map(local);
+
+		await expect(createTyrianSettingsPort(storage).save({ ...legacy, alertIngamePort: 47_300, alertIngameEnabled: true }))
+			.rejects.toBe(refusal);
+
+		expect(local).toEqual(before);
+	});
+
+	it('a save whose shared write fails puts the previous device values back too', async () => {
+		const local = new Map([[settingsKey, JSON.stringify(legacy)]]);
+		local.set(deviceKey('alertIngamePort'), JSON.stringify(47_200));
+		const storage = createHebraStorage(local, 'tyrian-companion', 'lib-1');
+		const refusal = new Error('disk');
+		storage.settings.save = async () => { throw refusal; };
+		const before = new Map(local);
+
+		await expect(createTyrianSettingsPort(storage).save({ ...legacy, alertIngamePort: 47_300 })).rejects.toBe(refusal);
+
+		expect(local).toEqual(before);
+	});
+
+	it('settings of a newer schema (DU-04) are read-only: device laid over, gaps filled, nothing copied, marked or written', async () => {
+		const newer = { ...legacy, schemaVersion: SETTINGS_SCHEMA_VERSION + 1, debugLoggingEnabled: undefined };
+		const local = new Map([[settingsKey, JSON.stringify(newer)]]);
+		local.set(deviceKey('alertIngamePort'), JSON.stringify(47_200));
+		const before = new Map(local);
+
+		const loaded = await port(local).load();
+
+		expect(loaded).toEqual({ ...newer, alertIngamePort: 47_200, debugLoggingEnabled: DEFAULT_SETTINGS.debugLoggingEnabled });
+		expect(local).toEqual(before);
+	});
+
+	it('a device setting in neither scope reaches the core as its default: diagnostic logging off, nothing written to device', async () => {
+		// Settings that came from another device (or that a downgrade left behind): a schema with explicit
+		// debug settings and no device setting anywhere. `migrateSettings` alone reads the absent
+		// `debugLoggingEnabled` of such a schema as on.
+		const local = new Map([[settingsKey, JSON.stringify({ schemaVersion: SETTINGS_SCHEMA_VERSION, outputFolder: 'GW2' })]]);
+		expect(migrateSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION }).debugLoggingEnabled).toBe(true);
+
+		const loaded = await port(local).load();
+
+		expect(migrateSettings(loaded).debugLoggingEnabled).toBe(false);
+		expect(loaded).toEqual({ ...deviceDefaults(), schemaVersion: SETTINGS_SCHEMA_VERSION, outputFolder: 'GW2' });
+		// Only the mark: a default is never written as if it were this device's own value.
+		expect([...local.keys()].sort()).toEqual([markKey, settingsKey].sort());
+		expect(shared(local)).toEqual({ schemaVersion: SETTINGS_SCHEMA_VERSION, outputFolder: 'GW2' });
+	});
+
+	it('a library without settings still loads null, whatever this device holds', async () => {
+		const local = new Map([[deviceKey('alertIngamePort'), JSON.stringify(47_200)]]);
+		expect(await port(local).load()).toBeNull();
 	});
 });
 

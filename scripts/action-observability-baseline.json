@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 604,
+		"catch_clause": 607,
 		"promise_catch": 61,
 		"void_expression": 142,
 		"callback_registration": 250
@@ -6942,11 +6942,59 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "527d152703c7337e7940c886e90faa66716e1808",
+					"kind": "catch_clause",
+					"line": 131,
+					"column": 6,
+					"endLine": 141,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "save",
+						"justification": "The \"save\" catch (\"rethrow\") puts back the device values the save held before it started, then rethrows the save's own error to the core, which reports the failed save: nothing is swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"save\" catch (\"rethrow\") puts back the device values the save held before it started, then rethrows the save's own error to the core, which reports the failed save: nothing is swallowed. Verified recovery: \"rethrow\" in \"save\"."
+				},
+				{
+					"id": "301a3e9dc30604e186031454f65ec36c82eb1c9a",
+					"kind": "catch_clause",
+					"line": 135,
+					"column": 8,
+					"endLine": 138,
+					"endColumn": 7,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "save",
+						"justification": "The \"save\" restore catch (\"local_recovery\") hands a device value that cannot be put back to report, which createHebraHost wires to deps.report as settings.device-restore, and keeps restoring the rest; the save still rejects with its own error."
+					},
+					"reason": "Allowlisted catch_clause: The \"save\" restore catch (\"local_recovery\") hands a device value that cannot be put back to report, which createHebraHost wires to deps.report as settings.device-restore, and keeps restoring the rest; the save still rejects with its own error. Verified recovery: \"local_recovery\" in \"save\"."
+				},
+				{
+					"id": "c9dd50c4a2ad066049773f6aae28388e7db302fd",
+					"kind": "catch_clause",
+					"line": 173,
+					"column": 5,
+					"endLine": 177,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "withDeviceSettings",
+						"justification": "The \"withDeviceSettings\" catch (\"local_recovery\") hands the failed adoption copy to report, which createHebraHost wires to deps.report as settings.device-adopt, and leaves no mark, so the next load adopts again; the values still reach the core and settings is never written."
+					},
+					"reason": "Allowlisted catch_clause: The \"withDeviceSettings\" catch (\"local_recovery\") hands the failed adoption copy to report, which createHebraHost wires to deps.report as settings.device-adopt, and leaves no mark, so the next load adopts again; the values still reach the core and settings is never written. Verified recovery: \"local_recovery\" in \"withDeviceSettings\"."
+				},
+				{
 					"id": "12376db8f3f2a22d0fb7a1558b71c191e1f2876b",
 					"kind": "callback_registration",
-					"line": 96,
+					"line": 259,
 					"column": 13,
-					"endLine": 100,
+					"endLine": 263,
 					"endColumn": 74,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6961,9 +7009,9 @@
 				{
 					"id": "186b5a2e947c400fe948932f6ec097e396b73557",
 					"kind": "promise_catch",
-					"line": 103,
+					"line": 266,
 					"column": 3,
-					"endLine": 103,
+					"endLine": 266,
 					"endColumn": 70,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6978,9 +7026,9 @@
 				{
 					"id": "d03f9608a555c11483c95b728dd9ae5eb96a753b",
 					"kind": "catch_clause",
-					"line": 108,
+					"line": 271,
 					"column": 29,
-					"endLine": 108,
+					"endLine": 271,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6994,9 +7042,9 @@
 				{
 					"id": "9212690ae870c6f0117cee44cc688715d0aa53ec",
 					"kind": "callback_registration",
-					"line": 136,
+					"line": 299,
 					"column": 9,
-					"endLine": 136,
+					"endLine": 299,
 					"endColumn": 53,
 					"registration": "then",
 					"classification": "allowlisted",

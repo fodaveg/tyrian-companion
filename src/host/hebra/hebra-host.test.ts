@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../../core/i18n';
+import { DEFAULT_SETTINGS } from '../../core/settings';
 import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
 import { createTyrianTestApi, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
 import { installDomHelpers } from '../dom-polyfill';
@@ -19,7 +20,7 @@ import {
 	tyrianPlatform,
 	type HebraHostDeps,
 } from './hebra-host';
-import { createMemoryFileBackend } from './local-storage';
+import { createMemoryFileBackend, HEBRA_DEVICE_SETTING_KEYS } from './local-storage';
 import { createMemoryPathIndexKv, type TyrianPathIndexKv } from './path-index-kv';
 import { createMemorySecretsBackend } from './secrets';
 
@@ -70,6 +71,8 @@ afterEach(() => {
 });
 
 describe('createHebraHost: managed assets path', () => {
+	/** What saved settings carry on top once loaded: the device settings this device never saved, as their defaults. */
+	const deviceDefaults = Object.fromEntries(HEBRA_DEVICE_SETTING_KEYS.map((key) => [key, DEFAULT_SETTINGS[key]]));
 	async function loadedSettings(test: TyrianTestApi): Promise<unknown> {
 		const handle = await createHebraHost(deps(test));
 		return await handle.host.settings.load();
@@ -81,7 +84,7 @@ describe('createHebraHost: managed assets path', () => {
 		test.library.addFolder('bases', 'gw2', 'Bases');
 		test.library.addFile('m', 'bases', 'Materials.base', 'views: []\n');
 		saveSettings(test, { outputFolder: 'GW2', language: 'es', managedAssetsRoot: null });
-		expect(await loadedSettings(test)).toEqual({ outputFolder: 'GW2', language: 'es', managedAssetsRoot: 'GW2' });
+		expect(await loadedSettings(test)).toEqual({ ...deviceDefaults, outputFolder: 'GW2', language: 'es', managedAssetsRoot: 'GW2' });
 		// Reading does not write: the core saves it when it installs.
 		expect(JSON.parse(test.local.get(SETTINGS_KEY) ?? '')).toMatchObject({ managedAssetsRoot: null });
 	});
@@ -112,7 +115,7 @@ describe('createHebraHost: managed assets path', () => {
 		expect(await loadedSettings(test)).toEqual({ managedAssetsRoot: 'Tyrian Companion' });
 		for (const saved of [{ managedAssetsRoot: 'Other' }, { legacyManagedAssetsRoot: 'Legacy/Tyrian assets' }]) {
 			saveSettings(test, saved);
-			expect(await loadedSettings(test)).toEqual(saved);
+			expect(await loadedSettings(test)).toEqual({ ...deviceDefaults, ...saved });
 		}
 	});
 });
