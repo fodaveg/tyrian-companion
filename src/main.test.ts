@@ -14,6 +14,7 @@ vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
 
 import TyrianCompanionPlugin from './main';
 import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
+import type { LiveSessionRuntime } from './runtime/live-session-facade';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -604,9 +605,10 @@ describe('abandon session command', () => {
 	function abandonHarness() {
 		const performAbandonSession = vi.fn(async () => undefined);
 		// The real confirmation through the real `ObsidianHost` (`host.ui.openModal`), as in production.
+		// DE-01, step 3c: the abandon itself is `LiveSessionRuntime`'s, the core's `live`.
 		const plugin = withObsidianHost({
 			app: {}, settings: { language: 'es' }, abandonModal: null as ConfirmAbandonSessionModal | null,
-			performAbandonSession,
+			live: { performAbandonSession } satisfies Pick<LiveSessionRuntime, 'performAbandonSession'>,
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
 		const prepare = (TyrianCompanionCore.prototype as unknown as {
@@ -2044,19 +2046,17 @@ interface RuntimeReadyHarness {
 }
 
 describe('deferred runtime boot guard', () => {
+	// DE-01, step 3c: the session state's half moved with `getSessionState` to
+	// `src/runtime/live-session-facade.test.ts`.
 	it('answers connection and session state neutrally instead of touching an unassigned service', () => {
 		const harness: RuntimeReadyHarness = { runtimeReady: false };
 		const getConnectionState = (TyrianCompanionCore.prototype as unknown as {
 			getConnectionState(this: RuntimeReadyHarness): ConnectionState;
 		}).getConnectionState.bind(harness);
-		const getSessionState = (TyrianCompanionCore.prototype as unknown as {
-			getSessionState(this: RuntimeReadyHarness): SessionState;
-		}).getSessionState.bind(harness);
 
-		// A harness with no `connection`/`sessions` field at all would throw if the
-		// getter ever touched them; reaching a neutral value instead proves the guard.
+		// A harness with no `connection` field at all would throw if the
+		// getter ever touched it; reaching a neutral value instead proves the guard.
 		expect(getConnectionState()).toEqual({ status: 'idle' });
-		expect(getSessionState()).toEqual({ version: SESSION_STATE_VERSION, status: 'idle' });
 	});
 
 	it('registers both views and every startup command before the deferred boot ever runs', async () => {
@@ -2755,50 +2755,8 @@ function buildManagedAssetsRootHarness(
 	return harness;
 }
 
-describe('recovery backend failure observability (H15.6)', () => {
-	it('logs session_recover failure with the backend status as its code, never the free-text message', async () => {
-		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
-		const proto = TyrianCompanionCore.prototype as unknown as {
-			performRecoverSession(this: unknown): Promise<void>;
-		};
-		const plugin = {
-			pilotRecoveryIdentity: () => null,
-			requireRuntimeMutationLease: () => ({ release: vi.fn() }),
-			sessions: {
-				recover: vi.fn(async () => ({
-					status: 'failed' as const,
-					message: 'The recovered authority could not be persisted safely.',
-				})),
-			},
-			renderViews: vi.fn(),
-		};
-		const notify = vi.fn();
-		const controller = new SessionCommandController({
-			getContext: () => ({
-				state: { version: 1, status: 'idle' },
-				recovery: { status: 'available', state: { sessionId: 'session-a', authority: { fence: 1 } } } as SessionCommandContext['recovery'],
-				connection: 'connected',
-				stopFailure: null,
-			}),
-			prepare: () => Promise.resolve(() => proto.performRecoverSession.call(plugin)),
-			notify,
-			diagnostics: {
-				createContext: (ctx) => ({ ...ctx, actionId: 'a', correlationId: 'a' }),
-				event: diagnosticsEvent,
-			} satisfies LocalDebugActionPort,
-		} satisfies SessionCommandPorts);
-
-		await expect(controller.runWithOutcome('recover-saved-session')).resolves.toBe('failed');
-
-		expect(notify).toHaveBeenCalledTimes(1);
-		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
-			component: 'session', action: 'session_recover', phase: 'failure',
-		}));
-		const [loggedEvent] = (diagnosticsEvent as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>];
-		expect((loggedEvent.details as Record<string, unknown> | undefined)?.code).toBe('failed');
-		expect(JSON.stringify(loggedEvent)).not.toContain('persisted safely');
-	});
-});
+// DE-01, step 3c: 'recovery backend failure observability (H15.6)' moved with `performRecoverSession` to
+// `src/runtime/live-session-facade.test.ts`.
 
 describe('capture-now failure observability (H15.9)', () => {
 	/**

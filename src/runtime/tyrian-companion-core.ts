@@ -157,7 +157,7 @@ import {
 	vaultSyncActionOutcome,
 	vaultSyncFailureOutcome,
 } from './core-outcomes';
-import { consulting, fireAndForgetLocal, refusedInConsult } from './core-actions';
+import { consulting, fireAndForgetLocal, refusedInConsult, writeSessionNoteWithDiagnostics } from './core-actions';
 import {
 	FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS,
 	liveRulesExpiredAtMsFromLoad,
@@ -165,6 +165,7 @@ import {
 } from './core-sale-rules';
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
+import { LiveSessionRuntime, type LiveSessionRuntimePort } from './live-session-facade';
 import { CollectorHeartbeat } from './collector-status';
 import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
@@ -252,7 +253,6 @@ import {
 	type SessionNoteInput,
 } from '../sessions/session-note-model';
 import {
-	writeSessionNoteBeforeClear,
 	type SessionNoteWriter,
 	type SessionNoteWriteResult,
 } from '../sessions/session-note-writer';
@@ -303,7 +303,6 @@ import {
 } from '../ui/session-command-controller';
 import {
 	createSessionCommandDispatch,
-	hasExactSessionBackendResult,
 	projectSessionMenu,
 	type SessionCommandDispatch,
 } from '../ui/session-command-adapter';
@@ -598,6 +597,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * history's runtime authority, the recovery's pilot hooks and the farming state a start captures.
 	 */
 	private readonly session: SessionRuntime = new SessionRuntime(TyrianCompanionCore.sessionRuntimePort(this));
+	/**
+	 * DE-01, step 3c: the session's state as the views read it and the ways out of a session other
+	 * than its stop (recovery, discard, clear, abandon, a stuck live session). It reads the core's
+	 * fields through `liveSessionRuntimePort`, under their own names, and writes the three summary
+	 * fields back through it; the core keeps the start and the stop, the commands and their modals.
+	 */
+	private readonly live: LiveSessionRuntime = new LiveSessionRuntime(TyrianCompanionCore.liveSessionRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -1373,7 +1379,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 					{ component: 'session', action: 'session_finish', state: 'settlement_due' },
 					() => this.performStopManualSession());
 			},
-			onSessionAutoRecovered: () => this.resumeAutoRecoveredSession(),
+			onSessionAutoRecovered: () => this.live.resumeAutoRecoveredSession(),
 			observedPlayIntervals: () => this.ingameSessionMarker?.observedPlayIntervals() ?? [],
 			onProposalQueueStateChange: () => this.refreshBackgroundIndicators(),
 			onProposalExcluded: (proposalId, reason, resolvedAt) => {
@@ -2111,7 +2117,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	getSessionState(): SessionState {
-		return this.runtimeReady ? this.sessions.getState() : { version: SESSION_STATE_VERSION, status: 'idle' };
+		return this.live.getSessionState();
 	}
 
 	getLocale() {
@@ -3089,6 +3095,41 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		};
 	}
 
+	/**
+	 * What `LiveSessionRuntime` reads from this core and asks of it (DE-01, step 3c). Getters over the
+	 * core's own fields, read as they stand; the three summary fields are setters too, so the ways out
+	 * of a session reset the core's own state, which its note and summary code read.
+	 */
+	private static liveSessionRuntimePort(core: TyrianCompanionCore): LiveSessionRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get localDebugActions() { return core.localDebugActions; },
+			get sessions() { return core.sessions; },
+			get liveSessions() { return core.liveSessions; },
+			get liveSessionLoot() { return core.liveSessionLoot; },
+			get ingameSessionMarker() { return core.ingameSessionMarker; },
+			get sessionNotes() { return core.sessionNotes; },
+			get sessionCommands() { return core.sessionCommands; },
+			get sessionDispatch() { return core.sessionDispatch; },
+			get pilotMetrics() { return core.pilotMetrics; },
+			get sessionSummarySaveState() { return core.sessionSummarySaveState; },
+			set sessionSummarySaveState(value) { core.sessionSummarySaveState = value; },
+			get storedSessionLootSummary() { return core.storedSessionLootSummary; },
+			set storedSessionLootSummary(value) { core.storedSessionLootSummary = value; },
+			get savedSessionNotePath() { return core.savedSessionNotePath; },
+			set savedSessionNotePath(value) { core.savedSessionNotePath = value; },
+			requireRuntimeMutationLease: () => core.requireRuntimeMutationLease(),
+			renderViews: () => { core.renderViews(); },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			armAssistedDetection: () => core.armAssistedDetection(),
+			startLiveObservation: (sessionId, restored) => { core.startLiveObservation(sessionId, restored); },
+			pilotRecoveryIdentity: () => core.pilotRecoveryIdentity(),
+			ensurePilotRecoveryPresented: (recoveryId) => core.ensurePilotRecoveryPresented(recoveryId),
+			sessionNoteInput: (runtime) => core.sessionNoteInput(runtime),
+		};
+	}
+
 	/** The pilot journal's state for the settings panel (`SessionRuntime`). */
 	getPilotMetricsState(): PilotMetricsState {
 		return this.session.getPilotMetricsState();
@@ -3365,16 +3406,16 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	getSessionStartFailure(): SessionStartFailure | null {
-		return this.runtimeReady ? this.sessions.getLastFailure() : null;
+		return this.live.getSessionStartFailure();
 	}
 
 	getSessionStopFailure(): SessionStopFailure | null {
-		return this.runtimeReady ? this.sessions.getLastStopFailure() : null;
+		return this.live.getSessionStopFailure();
 	}
 
-	/** H18.36: the session card's own meta line for a stalled cierre (boceto lámina 2.3). */
+	/** H18.36: the stalled close's retry (`LiveSessionRuntime`). */
 	getSessionAutoRetryAt(): number | null {
-		return this.runtimeReady ? this.sessions.getAutoRetryAt() : null;
+		return this.live.getSessionAutoRetryAt();
 	}
 
 	getProvisionalDelta(): StorageDelta | null {
@@ -4854,8 +4895,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	confirmClearCompletedSession(): void {
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'session', action: 'session_clear' }, () => this.sessionCommands.run('clear-completed-session'));
+		this.live.confirmClearCompletedSession();
 	}
 
 	/**
@@ -4889,13 +4929,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			&& this.sessions.getCompletedSummaryReceipt() !== null;
 	}
 
-	async resetCompletedSession(): Promise<void> {
-		const perform = async () => await this.sessionCommands.run('clear-completed-session');
-		return await (this.localDebugActions?.run({ component: 'session', action: 'session_clear' }, perform) ?? perform());
+	resetCompletedSession(): Promise<void> {
+		return this.live.resetCompletedSession();
 	}
 
 	getSessionRecoveryState(): SessionRecoveryState {
-		return this.runtimeReady ? this.sessions.getRecoveryState() : { status: 'none' };
+		return this.live.getSessionRecoveryState();
 	}
 
 	/** The kind saved for the recovery on screen (`SessionRuntime`), or null. */
@@ -4912,19 +4951,16 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.session.classifyPilotRecovery(recoveryKind);
 	}
 
-	async recoverSession(): Promise<void> {
-		const perform = async () => await this.sessionDispatch.recover();
-		return await (this.localDebugActions?.run({ component: 'session', action: 'session_recover' }, perform) ?? perform());
+	recoverSession(): Promise<void> {
+		return this.live.recoverSession();
 	}
 
-	async discardRecoveredSession(): Promise<void> {
-		const perform = async () => await this.sessionDispatch.discard();
-		return await (this.localDebugActions?.run({ component: 'session', action: 'session_discard' }, perform) ?? perform());
+	discardRecoveredSession(): Promise<void> {
+		return this.live.discardRecoveredSession();
 	}
 
 	confirmDiscardRecoveredSession(): void {
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'session', action: 'session_discard' }, () => this.sessionCommands.run('discard-saved-session'));
+		this.live.confirmDiscardRecoveredSession();
 	}
 
 	async stopManualSession(humanBoundaryAt: string | null = null): Promise<void> {
@@ -4944,9 +4980,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return await (this.localDebugActions?.run({ component: 'session', action: 'session_finish' }, perform) ?? perform());
 	}
 
-	/** Countdown of the grace window the final capture is waiting for; null when nothing waits. */
+	/** Countdown of the grace window the final capture is waiting for (`LiveSessionRuntime`). */
 	getSessionSettlementWait(): SessionSettlementWait | null {
-		return this.sessions.getSettlementWait();
+		return this.live.getSessionSettlementWait();
 	}
 
 	/**
@@ -5795,7 +5831,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (id === 'clear-completed-session') return this.prepareClearIntent();
 		if (id === 'abandon-farming-session') return this.prepareAbandonIntent();
 		if (id === 'finish-farming-session') return Promise.resolve(() => this.performStopManualSession());
-		return Promise.resolve(() => this.performRecoverSession());
+		return Promise.resolve(() => this.live.performRecoverSession());
 	}
 
 	/** Every palette/ribbon action uses the same passive identity and manual-source availability. */
@@ -5810,12 +5846,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			canDiscard:!this.unloaded && !consulting(this) && this.isLiveSessionStuck()};
 	}
 
-	/**
-	 * A live session that cannot get out by itself: in error, finished without its note, or whose last stop was refused.
-	 * The player may drop it («Descartar la sesión atascada»); an ordinary running or sealed one is never offered.
-	 */
+	/** A live session that cannot get out by itself (`LiveSessionRuntime`). */
 	isLiveSessionStuck(): boolean {
-		return this.liveSessions?.isStuck() ?? false;
+		return this.live.isLiveSessionStuck();
 	}
 
 	private prepareStartIntent(): Promise<PreparedSessionCommand | null> {
@@ -5843,7 +5876,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			let confirmed = false;
 			this.discardModal = new ModalClass(
 				this.host.ui,
-				() => { confirmed = true; resolve(() => this.performDiscardRecoveredSession()); return Promise.resolve(); },
+				() => { confirmed = true; resolve(() => this.live.performDiscardRecoveredSession()); return Promise.resolve(); },
 				() => { this.discardModal = null; if (!confirmed) resolve(null); },
 				() => this.settings.language,
 			);
@@ -5857,31 +5890,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			let confirmed = false;
 			this.discardLiveModal = new ConfirmDiscardLiveSessionModal(
 				this.host.ui,
-				() => { confirmed = true; resolve(() => this.performDiscardLiveSession()); return Promise.resolve(); },
+				() => { confirmed = true; resolve(() => this.live.performDiscardLiveSession()); return Promise.resolve(); },
 				() => { this.discardLiveModal = null; if (!confirmed) resolve(null); },
 				() => this.settings.language,
 			);
 			this.discardLiveModal.open();
 		});
-	}
-
-	/** Drops the stuck live session (see `LiveSessionLifecycle.discard`) and leaves its own trace, under codes of its own. */
-	private async performDiscardLiveSession(): Promise<void> {
-		const lifecycle = this.liveSessions;
-		if (lifecycle === null) return;
-		const result = await lifecycle.discard();
-		// A refusal is thrown with its reason and logged ONCE, by the command controller, under the code of that reason.
-		if (!result.cleared) throw new LiveSessionStopError(result.reason ?? 'unknown', 'discard');
-		this.localDebugActions?.event({
-			component: 'session', action: 'session_discard', state: `live_discard_${result.note}`,
-			level: 'warn', phase: 'success', code: 'ok',
-		});
-		this.ingameSessionMarker?.clearStoppedByPlayer();
-		this.sessionSummarySaveState = 'unknown'; this.savedSessionNotePath = null;
-		const t = createTranslator(this.settings.language);
-		this.emitNotice(translateRuntime(t, result.note === 'not_written' ? 'notices.liveDiscardedNoNote' : 'notices.liveDiscarded'), 'session_command');
-		this.renderViews();
-		void this.ingameSessionMarker?.reconcile();
 	}
 
 	private prepareClearIntent(): Promise<PreparedSessionCommand | null> {
@@ -5890,7 +5904,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			let confirmed = false;
 			this.clearModal = new ConfirmClearCompletedSessionModal(
 				this.host.ui,
-				() => { confirmed = true; resolve(() => this.performClearCompletedSession()); return Promise.resolve(); },
+				() => { confirmed = true; resolve(() => this.live.performClearCompletedSession()); return Promise.resolve(); },
 				() => { this.clearModal = null; if (!confirmed) resolve(null); },
 				() => this.settings.language,
 			);
@@ -5904,7 +5918,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			let confirmed = false;
 			this.abandonModal = new ConfirmAbandonSessionModal(
 				this.host.ui,
-				() => { confirmed = true; resolve(() => this.performAbandonSession()); return Promise.resolve(); },
+				() => { confirmed = true; resolve(() => this.live.performAbandonSession()); return Promise.resolve(); },
 				() => { this.abandonModal = null; if (!confirmed) resolve(null); },
 				() => this.settings.language,
 			);
@@ -5912,94 +5926,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 	}
 
-	/**
-	 * Abandons a stopping session whose stop cannot finish (David, 2026-09-24): the session ends
-	 * `abandoned` with no loot, its record and lease are released, its note says it was abandoned
-	 * and why, and detection is armed again so the next session is detectable at once. A note that
-	 * could not be written is reported but does not keep the player stuck in the failed stop.
-	 */
-	private async performAbandonSession(): Promise<void> {
-		const runtimeLease = this.requireRuntimeMutationLease();
-		const result = await this.sessions.abandon().finally(() => runtimeLease.release());
-		if (result.status !== 'abandoned') throw new Error('Abandon failed.');
-		this.sessionSummarySaveState = 'unknown';
-		this.storedSessionLootSummary = null;
-		this.savedSessionNotePath = null;
-		const note = await writeSessionNoteWithDiagnostics(this.localDebugActions, () => this.sessionNotes.writeAbandoned({
-			state: result.state, locale: this.settings.language, outputFolder: this.settings.outputFolder,
-		}));
-		if (note.status === 'written' || note.status === 'unchanged') this.savedSessionNotePath = note.path;
-		else this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'), 'session_command');
-		this.renderViews();
-		if (this.runtimeReady) fireAndForgetLocal(this.localDebugActions,
-			{ component: 'detection', action: 'detection_arm', state: 'session_abandoned' },
-			() => this.armAssistedDetection());
-	}
-
-	/** Whether the card may offer "Abandon session": a stopping session no retry can finish. */
+	/** Whether the card may offer "Abandon session" (`LiveSessionRuntime`). */
 	canAbandonSession(): boolean {
-		return this.runtimeReady && this.sessions.canAbandon();
+		return this.live.canAbandonSession();
 	}
 
-	/** The card's "Abandon session": the confirmation opens first; cancelling it does nothing. */
+	/** The card's "Abandon session": the confirmation opens first (`LiveSessionRuntime`). */
 	confirmAbandonSession(): void {
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'session', action: 'session_finish', state: 'abandon' },
-			() => this.sessionCommands.run('abandon-farming-session'));
-	}
-
-	private async performRecoverSession(): Promise<void> {
-		const recoveryId = this.pilotRecoveryIdentity();
-		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId);
-		const runtimeLease = this.requireRuntimeMutationLease();
-		let result: Awaited<ReturnType<ManualSessionStartService['recover']>>;
-		try { result = await this.sessions.recover().finally(() => runtimeLease.release()); }
-		catch (error) {
-			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
-			throw error;
-		}
-		this.renderViews();
-		if (!hasExactSessionBackendResult('recover', result)) {
-			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
-			throw new SessionRecoveryBackendFailure('recover', result.status === 'busy' ? 'busy' : 'failed');
-		}
-		const recovered = this.sessions.getState();
-		if (recovered.status === 'active') this.startLiveObservation(recovered.sessionId, true);
-		if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'succeeded');
-	}
-
-	/**
-	 * The session service took a session back on its own (H18.7: a lease lost while the machine
-	 * slept, or a saved session another window held when Obsidian started). An `active` session whose
-	 * loot poll is not following it any more gets it back, as after a manual recovery; one the poll
-	 * still follows is left alone, so the running loot is not reset.
-	 */
-	private resumeAutoRecoveredSession(): void {
-		// Never earlier than a timer tick after `initialize()`, so every service below is assigned.
-		const session = this.sessions.getState();
-		const live = this.liveSessionLoot.getState();
-		if (session.status === 'active' && (live.status !== 'observing' || live.sessionId !== session.sessionId)) {
-			this.startLiveObservation(session.sessionId, true);
-		}
-		this.renderViews();
-	}
-
-	private async performDiscardRecoveredSession(): Promise<void> {
-		const recoveryId = this.pilotRecoveryIdentity();
-		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId);
-		const runtimeLease = this.requireRuntimeMutationLease();
-		let result: Awaited<ReturnType<ManualSessionStartService['discardRecovery']>>;
-		try { result = await this.sessions.discardRecovery().finally(() => runtimeLease.release()); }
-		catch (error) {
-			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
-			throw error;
-		}
-		this.renderViews();
-		if (!hasExactSessionBackendResult('discard', result)) {
-			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
-			throw new SessionRecoveryBackendFailure('discard', result.status === 'busy' ? 'busy' : 'failed');
-		}
-		if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'discarded');
+		this.live.confirmAbandonSession();
 	}
 
 	private pilotRecoveryIdentity(): string | null {
@@ -6017,21 +5951,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			if (recoveryKind) this.pilotRecoveryKinds.set(recoveryId, recoveryKind);
 		}
 		return recorded;
-	}
-
-	private async performClearCompletedSession(): Promise<void> {
-		const runtimeLease = this.requireRuntimeMutationLease();
-		try {
-		const runtime = await this.sessions.getCompletedRuntimeRecord();
-		if (!runtime) throw new Error('Completed session evidence is unavailable.');
-		const cleared = await writeSessionNoteBeforeClear(
-			this.sessionNotes,
-			this.sessionNoteInput(runtime),
-			() => this.sessions.resetCompletedSession(),
-		);
-		this.renderViews();
-		if (!hasExactSessionBackendResult('clear', cleared)) throw new Error('Clear failed.');
-		} finally { runtimeLease.release(); }
 	}
 
 	private sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput {
@@ -6225,27 +6144,6 @@ const IDLE_ASSISTED_DETECTION_STATE: AssistedDetectionState = {
 	},
 	lastSnapshotAt: null,
 };
-
-/**
- * Thrown by `performRecoverSession`/`performDiscardRecoveredSession` when the confirmed backend
- * action did not settle on `'recovered'`/`'discarded'` (H15.6, 2026-09-10 audit): carries the
- * backend's own `status` and a `code` own property instead of `result.message`, which stays out of
- * the debug log on purpose (`core/local-debug-error-details.ts` never reads a message or stack).
- * `unmappedErrorLogDetails` picks up any error's own `code` property, so
- * `SessionCommandController`'s catch (`session-command-controller.ts`) now records
- * `session_recover`/`session_discard failure` with `details.code` set to `'busy'`/`'failed'`
- * instead of the opaque `unknown_failure` every other unclassified rejection gets there.
- */
-class SessionRecoveryBackendFailure extends Error {
-	readonly status: 'busy' | 'failed';
-	readonly code: 'busy' | 'failed';
-	constructor(action: 'recover' | 'discard', status: 'busy' | 'failed') {
-		super(`Session ${action} ${status}.`);
-		this.name = 'SessionRecoveryBackendFailure';
-		this.status = status;
-		this.code = status;
-	}
-}
 
 /**
  * Thrown by `performStopManualSession` when `sessions.stop()`/`captureFinalNow()` returns
@@ -6551,30 +6449,4 @@ function sessionInProgress(state: SessionState): boolean {
 /** Consumes a promise whose rejection was already captured by its inner diagnostic action. */
 function consumeRecorded(action: Promise<unknown>): void {
 	action.catch(() => undefined);
-}
-
-/**
- * The session note is the summary's only durable delivery: unlike `session-history.ts`, nothing
- * else records that a close ever happened. Before this (H15.10, 2026-09-10 incident) a failed
- * write surfaced only as the note's own fixed `message` in the UI, and the local debug log never
- * learned `note.status` or the underlying rejection's class, so a disk-full or EACCES vault could
- * silently eat every session for a whole run.
- */
-async function writeSessionNoteWithDiagnostics(
-	actions: LocalDebugActionRunner | null,
-	write: () => Promise<SessionNoteWriteResult>,
-): Promise<SessionNoteWriteResult> {
-	const action = async () => {
-		const note = await write();
-		if (note.status === 'written' || note.status === 'unchanged') return note;
-		return {
-			...note,
-			phase: 'failure' as const,
-			code: 'storage_failure' as const,
-			details: { status: note.status, errorName: 'errorName' in note ? note.errorName : undefined },
-		};
-	};
-	return actions
-		? await actions.run({ component: 'session', action: 'session_finish', state: 'note_write' }, action)
-		: await action();
 }

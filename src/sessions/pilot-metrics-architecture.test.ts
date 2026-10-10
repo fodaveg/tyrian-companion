@@ -46,7 +46,7 @@ describe('pilot metrics architecture', () => {
 		expect(receipts).not.toContain('accepted_workflow_failed');
 		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
 		// `recoveryFinished` is read from what a recovery and a discard hand the journal when they run,
-		// in `src/main-session-recovery-pilot.test.ts` (DE-01).
+		// in `src/runtime/live-session-facade.test.ts` (DE-01).
 		for (const hook of [
 			'proposalPresented', "workflow: 'succeeded'", "workflow: 'failed'", 'sessionStarted',
 			'sessionCompleted', 'recoveryPresented', 'proposalExcluded',
@@ -78,7 +78,7 @@ describe('pilot metrics architecture', () => {
 		const review = classMethodBody(main, 'TyrianCompanionCore', 'reviewPendingProposalOutcome');
 		expect(review).not.toContain('proposalPresented');
 		// That a recovery or a discard never waits for the journal to record it as presented is run,
-		// not matched, in `src/main-session-recovery-pilot.test.ts` (DE-01).
+		// not matched, in `src/runtime/live-session-facade.test.ts` (DE-01).
 	});
 
 	it('scopes the journal by the already-derived vault id and exposes atomic opt-out', () => {
