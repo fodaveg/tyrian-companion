@@ -20,6 +20,7 @@ class MemoryStorage implements LocalDebugStoragePort {
 	readonly files = new Map<string, string>();
 	readonly directories = new Set<string>();
 	readonly writeCalls: string[] = [];
+	readonly readCalls: string[] = [];
 	existsCalls = 0;
 	appendGate: Promise<void> | null = null;
 	failure: Error | null = null;
@@ -31,7 +32,7 @@ class MemoryStorage implements LocalDebugStoragePort {
 	}
 
 	/** Reads a test file or raises the injected failure. */
-	async read(path: string): Promise<string> { this.raise(); return this.files.get(path) ?? ''; }
+	async read(path: string): Promise<string> { this.raise(); this.readCalls.push(path); return this.files.get(path) ?? ''; }
 
 	/** Replaces a test file or raises the injected failure. */
 	async write(path: string, data: string): Promise<void> { this.raise(); this.writeCalls.push(path); this.files.set(path, data); }
@@ -214,6 +215,91 @@ describe('LocalDebugJsonlWriter', () => {
 		await diagnostics.flush();
 		const lines = storage.files.get(`${directory}/debug.jsonl`)?.trim().split('\n') ?? [];
 		expect(lines.map(parseRecord).map((record) => record.sequence)).toEqual([41, 42]);
+	});
+
+	// 10 Oct 2026 (Z22): startup used to read every retained file (up to 5 x 2 MiB) inside `start()`.
+	describe('startup reads only what it needs to keep writing', () => {
+		/** Five retained files, sequences 1..10 from the oldest (`debug.4`) to the active one. */
+		function fullDirectory(): MemoryStorage {
+			const storage = new MemoryStorage();
+			storage.directories.add(TEST_LOG_DIRECTORY);
+			const names = ['debug.jsonl', 'debug.1.jsonl', 'debug.2.jsonl', 'debug.3.jsonl', 'debug.4.jsonl'];
+			names.forEach((name, index) => {
+				const newest = 10 - index * 2;
+				storage.files.set(`${TEST_LOG_DIRECTORY}/${name}`,
+					`${JSON.stringify(baseRecord(newest - 1))}\n${JSON.stringify(baseRecord(newest))}\n`);
+			});
+			return storage;
+		}
+
+		it('reads only the active file and still continues the sequence after a restart', async () => {
+			const storage = fullDirectory();
+			const writer = createWriter(storage);
+			await expect(writer.initialize()).resolves.toMatchObject({ maxSequence: 10, fileCount: 5, recoveredTails: 0 });
+			expect(storage.readCalls).toEqual([`${TEST_LOG_DIRECTORY}/debug.jsonl`]);
+
+			const diagnostics = new LocalDebugLogger({ enabled: true, pluginVersion: '0.1.14', writer, now: () => 1_000 });
+			diagnostics.record(input('after-restart'));
+			await diagnostics.flush();
+			const lines = storage.files.get(`${TEST_LOG_DIRECTORY}/debug.jsonl`)?.trim().split('\n') ?? [];
+			expect(lines.map(parseRecord).map((record) => record.sequence)).toEqual([9, 10, 11]);
+			// A second restart over the same files keeps counting up, never back to 10.
+			const second = createWriter(storage);
+			await expect(second.initialize()).resolves.toMatchObject({ maxSequence: 11 });
+		});
+
+		it('takes the sequence from the newest older file when the active one is missing or empty', async () => {
+			const missing = fullDirectory();
+			missing.files.delete(`${TEST_LOG_DIRECTORY}/debug.jsonl`);
+			await expect(createWriter(missing).initialize()).resolves.toMatchObject({ maxSequence: 8, fileCount: 4 });
+			expect(missing.readCalls).toEqual([`${TEST_LOG_DIRECTORY}/debug.1.jsonl`]);
+
+			const empty = fullDirectory();
+			empty.files.set(`${TEST_LOG_DIRECTORY}/debug.jsonl`, '');
+			await expect(createWriter(empty).initialize()).resolves.toMatchObject({ maxSequence: 8 });
+		});
+
+		it('still recovers a last line cut short, in the file it reads at startup', async () => {
+			const storage = fullDirectory();
+			storage.files.set(`${TEST_LOG_DIRECTORY}/debug.jsonl`, `${JSON.stringify(baseRecord(10))}\n{"sequence":11`);
+			const writer = createWriter(storage);
+			await expect(writer.initialize()).resolves.toMatchObject({ maxSequence: 10, recoveredTails: 1 });
+			expect(storage.files.get(`${TEST_LOG_DIRECTORY}/debug.jsonl`)).toBe(`${JSON.stringify(baseRecord(10))}\n`);
+		});
+
+		it('repairs a cut-short older file and totals every byte once an export needs them', async () => {
+			const storage = fullDirectory();
+			storage.files.set(`${TEST_LOG_DIRECTORY}/debug.2.jsonl`, `${JSON.stringify(baseRecord(6))}\n{"seq`);
+			const writer = createWriter(storage);
+			await writer.initialize();
+			expect(storage.files.get(`${TEST_LOG_DIRECTORY}/debug.2.jsonl`)).toContain('{"seq');
+
+			const contents = await writer.readAll();
+			expect(contents).toHaveLength(5);
+			expect(contents.every((content) => content.endsWith('\n'))).toBe(true);
+			expect(writer.status().recoveredTails).toBe(1);
+			expect(writer.status().bytes).toBe(contents.reduce((total, content) => total + new TextEncoder().encode(content).byteLength, 0));
+		});
+
+		it('rotates at the same size limit and keeps five files after a restart over a full set', async () => {
+			const storage = fullDirectory();
+			const bytes = (value: string): number => new TextEncoder().encode(value).byteLength;
+			const limit = bytes(storage.files.get(`${TEST_LOG_DIRECTORY}/debug.jsonl`) ?? '') + bytes(`${JSON.stringify(baseRecord(11))}\n`);
+			const writer = createWriter(storage, limit);
+			await writer.initialize();
+			await writer.appendRecord(baseRecord(11)); // exactly fills the limit
+			await writer.appendRecord(baseRecord(12)); // no longer fits: rotate first
+			const retained = [...storage.files.keys()].filter((path) => path.includes('/debug')).sort();
+			expect(retained).toHaveLength(5);
+			expect(storage.files.get(`${TEST_LOG_DIRECTORY}/debug.jsonl`)).toBe(`${JSON.stringify(baseRecord(12))}\n`);
+			expect(storage.files.get(`${TEST_LOG_DIRECTORY}/debug.1.jsonl`)?.trim().split('\n')).toHaveLength(3);
+			expect(storage.files.has(`${TEST_LOG_DIRECTORY}/debug.4.jsonl`)).toBe(true);
+			expect(storage.files.get(`${TEST_LOG_DIRECTORY}/debug.4.jsonl`)).toContain('"sequence":3');
+			expect(writer.status().fileCount).toBe(5);
+			const onDisk = [...storage.files.entries()].filter(([path]) => path.includes('/debug'))
+				.reduce((total, [, content]) => total + bytes(content), 0);
+			expect(writer.status().bytes).toBe(onDisk);
+		});
 	});
 
 	// H14.9: every append used to round-trip `storage.exists()` to learn whether the active file

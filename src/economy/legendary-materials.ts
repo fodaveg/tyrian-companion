@@ -385,25 +385,21 @@ const KLOBJARNE_GEIRR_ENTRY: LegendaryMaterialsEntryV1 = {
 };
 
 /**
- * Self-computes its own `sha256` from the table's own content at module load, the same discipline
- * `buildFestivalCalendar` (`src/advisor/inventory-advisor-builtin-bundle.ts`) already uses for the
- * M3 festival calendar: there is no manually-transcribed hash to keep in sync with this literal,
- * only `isLegendaryMaterialsTable`'s own validator, which recomputes it the identical way.
+ * Reviewed content hash of the table below, precomputed like `EQUIPMENT_SALVAGE_POLICY_V1_SHA256`
+ * so that importing this module hashes nothing (the old self-computation cost ~14 ms per plugin
+ * load in both hosts). It is NOT a free-floating literal: `legendary-materials.test.ts` recomputes
+ * it with `sha256LegendaryMaterialsTable` and runs the table through `isLegendaryMaterialsTable`,
+ * so editing the table without updating this constant (or the reverse) turns that test red.
+ * Change the data, re-review its wiki sources, then update this constant in the same commit.
  */
-function buildLegendaryMaterialsTable(
-	table: Omit<LegendaryMaterialsTableV1, 'sha256'>,
-): LegendaryMaterialsTableV1 {
-	const candidate = { ...table, sha256: '' };
-	candidate.sha256 = sha256LegendaryMaterialsTable(candidate);
-	if (!isLegendaryMaterialsTable(candidate)) throw new Error('Invalid built-in legendary materials table.');
-	return Object.freeze(candidate);
-}
+export const LEGENDARY_MATERIALS_TABLE_SHA256 = '3ce461b6ced182637d75e8aa2642598cc2cdb71972b63778419a75928277dfc3' as const;
 
-export const LEGENDARY_MATERIALS_TABLE: LegendaryMaterialsTableV1 = buildLegendaryMaterialsTable({
+export const LEGENDARY_MATERIALS_TABLE: LegendaryMaterialsTableV1 = Object.freeze({
 	version: LEGENDARY_MATERIALS_TABLE_VERSION,
 	publishedAt: '2026-09-11T00:00:00.000Z',
 	reviewedAt: '2026-09-11T18:00:00.000Z',
 	validUntil: '2026-12-10T00:00:00.000Z',
 	sources: KLOBJARNE_GEIRR_SOURCES,
 	entries: [KLOBJARNE_GEIRR_ENTRY],
+	sha256: LEGENDARY_MATERIALS_TABLE_SHA256,
 });

@@ -172,6 +172,83 @@ describe('seedTyrianPathIndex', () => {
 	});
 });
 
+// 10 Oct 2026 (Z19 a): every start called `setUnadopted`, which saved the whole index (a quarter of
+// a megabyte with David's library) even when the walk had changed nothing.
+describe('seedTyrianPathIndex only saves an index that changed', () => {
+	/** A kv that counts its writes over one shared store, and a library with two adopted notes. */
+	async function setup() {
+		const store = createMemoryPathIndexKv();
+		const counter = { sets: 0 };
+		const kv: TyrianPathIndexKv = { get: (key) => store.get(key), set: async (key, value) => { counter.sets += 1; await store.set(key, value); } };
+		const fake = library();
+		note(fake, 'a', 'family=inventory path=Inventory/a.md');
+		note(fake, 'b', 'family=inventory path=Inventory/b.md');
+		await seed(fake, await freshIndex(kv), true);
+		counter.sets = 0;
+		return { kv, fake, counter };
+	}
+
+	it('a start over an index that already says everything writes nothing', async () => {
+		const { kv, fake, counter } = await setup();
+		const restarted = await freshIndex(kv);
+		await seed(fake, restarted, true);
+		await seed(fake, restarted, true);
+		expect(counter.sets).toBe(0);
+	});
+
+	it('a new note is written', async () => {
+		const { kv, fake, counter } = await setup();
+		note(fake, 'c', 'family=inventory path=Inventory/c.md');
+		await seed(fake, await freshIndex(kv), true);
+		expect(counter.sets).toBe(1);
+		expect((await freshIndex(kv)).getIdForPath('Tyrian Companion/Inventory/c.md')).toBe('c');
+	});
+
+	it('a note that was moved out of the folder, or stopped being adopted, is written', async () => {
+		const { kv, fake, counter } = await setup();
+		fake.addFolder('elsewhere', 'root', 'Elsewhere');
+		await fake.noteMove('a', 'elsewhere');
+		await seed(fake, await freshIndex(kv), true);
+		expect(counter.sets).toBe(1);
+
+		await fake.noteTrash('b');
+		await seed(fake, await freshIndex(kv), true);
+		expect(counter.sets).toBe(2);
+		expect((await freshIndex(kv)).size).toBe(0);
+	});
+
+	it('a note that now ends up in the unadopted list is written, and so is its leaving it', async () => {
+		const { kv, fake, counter } = await setup();
+		note(fake, 'dup', 'family=inventory path=Inventory/a.md', 'Duplicate');
+		await seed(fake, await freshIndex(kv), true);
+		expect(counter.sets).toBe(1);
+		expect((await freshIndex(kv)).unadopted().map((entry) => entry.id)).toEqual(['dup']);
+		await seed(fake, await freshIndex(kv), true);
+		expect(counter.sets).toBe(1); // the same list again
+
+		await fake.noteTrash('dup');
+		await seed(fake, await freshIndex(kv), true);
+		expect(counter.sets).toBe(2);
+		expect((await freshIndex(kv)).unadopted()).toEqual([]);
+	});
+
+	it('a failed write is retried by the next one instead of being taken as saved', async () => {
+		const store = createMemoryPathIndexKv();
+		let failing = true;
+		const kv: TyrianPathIndexKv = {
+			get: (key) => store.get(key),
+			set: async (key, value) => { if (failing) throw new Error('disk full'); await store.set(key, value); },
+		};
+		const fake = library();
+		note(fake, 'a', 'family=inventory path=Inventory/a.md');
+		const index = await TyrianPathIndex.load(kv, 'lib-1', () => undefined);
+		await seed(fake, index, true);
+		failing = false;
+		await seed(fake, index, true);
+		expect((await freshIndex(kv)).getIdForPath('Tyrian Companion/Inventory/a.md')).toBe('a');
+	});
+});
+
 // 8 Oct 2026 (Z7): Hebra lists notes newest first (`updated_at DESC`) by keyset. A note the sync
 // edits while the seed is walking jumps to the front, behind the page already served, and the
 // walk never sees it. Reconciling used to purge it from the index as "gone".
