@@ -355,6 +355,54 @@ describe('H5.11 inventory advisor workflow', () => {
 	});
 });
 
+describe('inventory advisor workflow: the ports it reaches', () => {
+	// GR-13: by behaviour, not by listing `this.ports.X(...)` call chains in the AST. Every property read on the
+	// ports object (and on the sub-objects it hands out) while a refresh and a reclassify run is recorded; a new
+	// capability the workflow started to reach (a client, a store, a timer) would be one more entry. A branch these
+	// two runs do not drive (a rejected capture) is not observed here.
+	it('reaches only the declared ports through a refresh and a reclassify', async () => {
+		const reached = new Set<string>();
+		const fixture = reviewedDiscardFixture();
+		const ports = recordingPorts({
+			capture: { capture: async () => ({ status: 'complete' as const, evidence: fixture.evidence }) },
+			preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
+			rules: { current: () => ({ status: 'available', value: fixture.rules }) },
+			now: () => Date.parse('2026-08-14T12:00:00.000Z'),
+			yieldToEventLoop: async () => undefined,
+			objects: {
+				derivedGoals: async () => ({ goals: [], uncertainItemIds: [] }),
+				evaluate: async () => ({ version: 1, results: [] }) as never,
+			},
+		}, reached, 'ports');
+		const workflow = new InventoryAdvisorWorkflow(ports);
+		await workflow.refresh('es');
+		await workflow.reclassify();
+		expect([...reached].sort()).toEqual([
+			'ports.capture', 'ports.capture.capture', 'ports.diagnostics', 'ports.now', 'ports.objects',
+			'ports.objects.derivedGoals', 'ports.objects.evaluate', 'ports.preferences', 'ports.preferences.load',
+			'ports.rules', 'ports.rules.current', 'ports.yieldToEventLoop',
+		]);
+	});
+
+	it('loads the built-in bundle only through the provider it is handed', () => {
+		const reached = new Set<string>();
+		const provider = recordingPorts(inventoryAdvisorBuiltinBundleProvider, reached, 'provider');
+		createInventoryAdvisorBuiltinRulesProvider(provider).current('2026-08-14T12:00:00.000Z');
+		expect([...reached]).toEqual(['provider.load']);
+	});
+});
+
+function recordingPorts<T extends object>(target: T, reached: Set<string>, prefix: string): T {
+	return new Proxy(target, {
+		get: (owner, key, receiver) => {
+			const name = `${prefix}.${String(key)}`;
+			reached.add(name);
+			const value = Reflect.get(owner, key, receiver) as unknown;
+			return typeof value === 'object' && value !== null ? recordingPorts(value, reached, name) : value;
+		},
+	});
+}
+
 describe('inventory advisor workflow: keep exceptions reach the classifier in its own order', () => {
 	const ASOF = '2026-08-14T12:00:00.000Z';
 	const IDS = ['a', 'b', 'c'];
