@@ -25,7 +25,6 @@ import type { PriceHistoryDailyV1 } from './price-history-model';
  * almost no days at all, which is a different statement and is said out loud as
  * `insufficient_reference`.
  */
-export const SELL_SIGNAL_VERSION = 1 as const;
 
 /** Length of the reference window, in days back from today. */
 export const SELL_SIGNAL_REFERENCE_DAYS = 365;
@@ -37,6 +36,8 @@ export const SELL_SIGNAL_REFERENCE_DAYS = 365;
  * in any arrangement. It exists so a fresh install with four days of capture
  * and no seed does not announce an annual maximum it measured over a long
  * weekend.
+ *
+ * Test seed (DE-09): the tests read it as the floor; production passes its own `minimumReferenceDays`.
  */
 export const SELL_SIGNAL_MINIMUM_REFERENCE_DAYS = 30;
 

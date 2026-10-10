@@ -6738,6 +6738,7 @@ function idleInventoryPreferencesEditorSession(notifyRuntimeStarting: () => void
 	});
 }
 
+/** Test seed (DE-09): the command wiring is exercised by `inventory-advisor-integration-architecture.test.ts` only. */
 export function createInventoryAdvisorCommandCallbacks(actions: {
 	open(): void | Promise<void>;
 	refresh(): void | Promise<void>;

@@ -36,8 +36,6 @@
  *   this codebase.
  */
 
-export const SELL_TIMING_EXPERIMENT_VERSION = 1 as const;
-
 export interface SellTimingPriceDay {
 	dayUtc: string;
 	bidCopper: number;

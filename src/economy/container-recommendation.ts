@@ -53,6 +53,7 @@ const MICRO_COPPER = 1_000_000n;
 const BASIS_POINTS = 10_000n;
 const DAY_MS = 86_400_000;
 
+/** Test seed (DE-09): the baseline policy the recommendation tests override field by field; production passes its own. */
 export const DEFAULT_CONTAINER_RECOMMENDATION_POLICY: ContainerRecommendationPolicy = {
 	version: 1,
 	openAdvantageBps: 1_000,
