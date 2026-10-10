@@ -92,8 +92,8 @@ export class TrackedProgressService {
 				this.knownAccount.set(vaultId, read.reading.accountRef);
 				return { ...read, saved: await this.store.writeProgress(vaultId, read.reading) };
 			} finally {
-				// Only this flight: `clearProgress` may already have let a newer one take the slot.
-				if (this.inFlight.get(vaultId) === flight) this.inFlight.delete(vaultId);
+				// Only this flight's slot: after a `clearProgress` the slot is empty or a newer flight's.
+				if ((this.generation.get(vaultId) ?? 0) === generation) this.inFlight.delete(vaultId);
 			}
 		})();
 		this.inFlight.set(vaultId, flight);
