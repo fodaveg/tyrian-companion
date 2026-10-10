@@ -9,7 +9,7 @@ import {
 	applyInventoryDiscardAllowlist, applyInventoryDiscardAllowlistVerified, classifyInventoryAdvisorVerified,
 	inventoryAdvisorContextualInvalidCause, isInventoryDiscardAllowlistResultForInput,
 } from './inventory-advisor-discard';
-import { ambientCapabilityUse } from '../test/ambient-capabilities';
+import { ambientCapabilityUse, NODE_TIMER_CAPABILITIES } from '../test/ambient-capabilities';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import type { InventoryAdvisorRulePackV1, InventoryAdvisorRuleV1 } from './inventory-advisor-model';
 
@@ -22,7 +22,7 @@ describe('inventory discard allowlist H4.16', () => {
 			const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });
 			isInventoryDiscardAllowlistResultForInput(result, { engineInput, producerResult });
 			status = applyInventoryDiscardAllowlistVerified(classifyInventoryAdvisorVerified(engineInput)).result.status;
-		});
+		}, NODE_TIMER_CAPABILITIES);
 		expect({ used, status }).toEqual({ used: [], status: 'ready' });
 	});
 

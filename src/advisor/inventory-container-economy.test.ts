@@ -4,7 +4,7 @@ import {
 	createInventoryAdvisorBuiltinBundleProvider,
 } from './inventory-advisor-builtin-bundle';
 import { sha256InventoryRulePack } from './inventory-advisor-contract';
-import { ambientCapabilityUse } from '../test/ambient-capabilities';
+import { ambientCapabilityUse, NODE_TIMER_CAPABILITIES } from '../test/ambient-capabilities';
 import {
 	evaluateInventoryContainerEconomy,
 	isInventoryContainerEconomyPack,
@@ -359,7 +359,7 @@ describe('H4.19 inventory container economy', () => {
 				sha256InventoryContainerEconomyPack(value.economyPack);
 				isInventoryContainerPriceEvidence(value.prices);
 			}
-		});
+		}, NODE_TIMER_CAPABILITIES);
 		expect({ used, statuses }).toEqual({ used: [], statuses: ['ready', 'ready', 'ready'] });
 	});
 

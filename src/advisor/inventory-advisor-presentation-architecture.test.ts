@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { moduleBoundaryFacts, moduleSpecifiers, propertyCallChains } from '../test/module-boundary';
+import { classMemberNames, moduleBoundaryFacts, moduleSpecifiers, propertyCallChains, referencedNames } from '../test/module-boundary';
 import {
 	InventoryAdvisorPresentationController,
 	type InventoryAdvisorControllerPorts,
@@ -41,7 +41,7 @@ const PRESENTATION_DOMAIN_ALLOWLIST = new Set([
 const PRESENTATION_FILES = INVENTORY_ADVISOR_FILES
 	.filter(({ path }) => PRESENTATION_DOMAIN_ALLOWLIST.has(path));
 
-const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls?: string[] }>([
+const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string[] }>([
 	['src/advisor/inventory-advisor-presentation.ts', {
 		imports: ['../economy/gw2-fees', './inventory-advisor-result', './inventory-advisor-discard',
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard-model', './inventory-advisor-model',
@@ -70,7 +70,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls?: strin
 			'../economy/material-storage-deposit-validation',
 			// The pure sort that puts the record's keep exceptions in the sequence the input contract demands.
 			'./inventory-advisor-contract'],
-		// Its ports are checked by behaviour in `inventory-advisor-workflow.test.ts` ("the ports it reaches").
+		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load',
+			'ports.objects.derivedGoals', 'ports.objects.evaluate'],
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {
 		// R1c: type-only, the host's `setIcon` (`TyrianUiPort`) and the view's registration descriptor;
@@ -143,6 +144,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls?: strin
 	}],
 ]);
 
+const FORBIDDEN_ITEM_OPERATIONS = ['destroyItem', 'deleteItem', 'salvageItem', 'openContainer'];
+const CAPABILITY_STEMS = ['executor', 'gateway', 'client', 'store', 'timer', 'capture'];
+const CAPABILITY_SUFFIXES = ['Executor', 'Gateway', 'Client', 'Store', 'Timer', 'Capture'];
 // `this.ports.X()`/`this.actions.X()`/`this.preferenceSession.X()` only count with the explicit
 // `this.` prefix: a local DOM element a renderer happens to name `actions` is not the actions
 // port. `provider.X()` counts either way, since nothing else in this codebase is named `provider`.
@@ -181,6 +185,12 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			for (const specifier of facts.specifiers) {
 				expect(forbiddenDependency(specifier), `${path} imports forbidden dependency ${specifier}`).toBe(false);
 			}
+			for (const operation of FORBIDDEN_ITEM_OPERATIONS) {
+				expect(facts.names.has(operation), `${path} performs an irreversible item operation ${operation}`).toBe(false);
+			}
+			for (const member of facts.classMemberNames) {
+				expect(isForbiddenCapabilityMemberName(member), `${path} declares a forbidden capability ${member}`).toBe(false);
+			}
 		}
 	});
 
@@ -216,9 +226,10 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 		for (const [path, policy] of BOUNDARY_POLICIES) {
 			const facts = moduleBoundaryFacts(path);
 			expect([...new Set(facts.specifiers)].sort(), `${path} import allowlist`).toEqual([...policy.imports].sort());
-			if (policy.portCalls !== undefined) {
-				expect(knownPortCalls(facts.propertyCallChains).sort(), `${path} capability allowlist`).toEqual([...policy.portCalls].sort());
+			for (const operation of FORBIDDEN_ITEM_OPERATIONS) {
+				expect(facts.names.has(operation), `${path} performs an irreversible item operation ${operation}`).toBe(false);
 			}
+			expect(knownPortCalls(facts.propertyCallChains).sort(), `${path} capability allowlist`).toEqual([...policy.portCalls].sort());
 		}
 	});
 
@@ -244,7 +255,32 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 		expect(moduleSpecifiers(source)).toEqual([expected]);
 		expect(forbiddenDependency(expected)).toBe(true);
 	});
+
+	it.each(['destroyItem(10);', 'deleteItem(10);', 'salvageItem(10);', 'openContainer(10);'])(
+		'turns red for the irreversible operation %s',
+		(source) => expect(FORBIDDEN_ITEM_OPERATIONS.some((operation) => referencedNames(source).has(operation))).toBe(true),
+	);
+
+	it.each([
+		'private readonly executor?: Executor;',
+		'public static gateway(): Gateway { throw new Error(); }',
+		'protected client!: Client;',
+		'readonly store: Store;',
+		'private timer() {}',
+		'public capture?(): void;',
+	])('turns red for capability declaration %s', (source) => {
+		const members = classMemberNames(`class Probe { ${source} }`);
+		expect([...members].some((member) => isForbiddenCapabilityMemberName(member))).toBe(true);
+	});
 });
+
+function isForbiddenCapabilityMemberName(name: string): boolean {
+	for (const stem of CAPABILITY_STEMS) {
+		if (name === stem) return true;
+		if (name.startsWith(stem) && /^[A-Z_$]/u.test(name.charAt(stem.length))) return true;
+	}
+	return CAPABILITY_SUFFIXES.some((suffix) => name.length > suffix.length && name.endsWith(suffix));
+}
 
 function knownPortCalls(chains: readonly string[]): string[] {
 	const result = new Set<string>();

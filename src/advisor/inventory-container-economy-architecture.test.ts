@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { exportedDeclarationNames, moduleBoundaryFacts, moduleSpecifiers } from '../test/module-boundary';
+import { classMemberNames, exportedDeclarationNames, moduleBoundaryFacts, moduleSpecifiers, referencedNames } from '../test/module-boundary';
 
 const BOUNDARY_FILES = [
 	...readdirSync('src/economy').filter((file) => isBoundaryProductionFile('economy', file))
@@ -39,14 +39,18 @@ const ALLOWED_DEPENDENCIES = {
 	]),
 } as const;
 
+const EXACT_SIDE_EFFECT = [
+	'fetch', 'request', 'requestUrl', 'XMLHttpRequest', 'WebSocket', 'EventSource',
+	'indexedDB', 'localStorage', 'sessionStorage', 'setTimeout', 'setInterval', 'queueMicrotask',
+];
+const EXACT_EXECUTION = ['openContainer', 'deleteItem', 'destroyItem', 'salvageItem', 'listItem', 'sellItem', 'vendorItem', 'discardItem'];
+const CAPABILITY_STEMS = ['client', 'gateway', 'store', 'executor', 'transport', 'requester', 'timer', 'capture', 'background'];
+const CAPABILITY_SUFFIXES = ['Client', 'Gateway', 'Store', 'Executor', 'Transport', 'Requester', 'Timer', 'Capture', 'Background'];
 const HOSTILE_EXPORT_SUBSTRINGS = ['client', 'gateway', 'store', 'executor', 'transport', 'request', 'timer', 'capture', 'background'];
 
 type Layer = 'economy' | 'advisor';
-// Ambient side effects (network, storage, timers) and the item operations are not decided here: the
-// modules are run under `ambientCapabilityUse` in `inventory-container-economy.test.ts`. This file
-// keeps what only the import graph and the export surface can show.
-type Violation = 'dependency' | 'capability';
-type Facts = { specifiers: string[]; exportedNames: Set<string> };
+type Violation = 'dependency' | 'side-effect' | 'execution' | 'capability';
+type Facts = { specifiers: string[]; names: Set<string>; exportedNames: Set<string>; classMemberNames: Set<string> };
 
 describe('inventory container economy H4.19 architecture boundary', () => {
 	it('dynamically censuses every production boundary module', () => {
@@ -66,11 +70,11 @@ describe('inventory container economy H4.19 architecture boundary', () => {
 		]);
 	});
 
-	it('keeps every boundary module manual-only and on its exact import allowlist', () => {
+	it('keeps every boundary module pure, manual-only and on its exact import allowlist', () => {
 		for (const path of BOUNDARY_FILES) expect(violations(path, moduleBoundaryFacts(path)), path).toEqual([]);
 	});
 
-	it('turns red for import and capability dependency syntax', () => {
+	it('turns red for import, side-effect and capability dependency syntax', () => {
 		for (const source of [
 			"import type { Session } from './session-valuation';",
 			"export { request } from 'node:http';",
@@ -84,26 +88,51 @@ describe('inventory container economy H4.19 architecture boundary', () => {
 		expect(violations('src/advisor/inventory-container-economy.ts',
 			factsOf("import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';")))
 			.toContain('dependency');
+		for (const source of ["fetch('/v2/commerce/prices');", 'localStorage.setItem("x", "y");',
+			'setTimeout(run, 1);']) expect(violations('src/advisor/inventory-container-economy.ts', factsOf(source))).toContain('side-effect');
+		for (const source of ['client: Client;', 'private readonly executor?: Executor;',
+			'export interface PriceGateway {}']) expect(violations('src/advisor/inventory-container-economy.ts', factsOf(source))).toContain('capability');
 	});
 
-	it('turns red for a hostile export surface', () => {
-		for (const source of ['export interface PriceGateway {}', 'export class GuildWars2Client {}',
-			'export const captureInventory = () => undefined;']) {
-			expect(violations('src/advisor/inventory-container-economy.ts', factsOf(source)), source).toContain('capability');
-		}
+	it('turns red causally for every forbidden item operation', () => {
+		for (const operation of [
+			'openContainer', 'deleteItem', 'destroyItem', 'salvageItem',
+			'listItem', 'sellItem', 'vendorItem', 'discardItem',
+		]) expect(violations('src/advisor/inventory-container-economy.ts', factsOf(`executor.${operation}(itemId);`)), operation)
+			.toContain('execution');
 	});
 });
 
 function factsOf(source: string): Facts {
-	return { specifiers: moduleSpecifiers(source), exportedNames: exportedDeclarationNames(source) };
+	return {
+		specifiers: moduleSpecifiers(source),
+		names: referencedNames(source),
+		exportedNames: exportedDeclarationNames(source),
+		// A capability field is only meaningful at a class-member declaration position; wrapping
+		// the probe in a throwaway class lets classMemberNames see it there. A probe that is not a
+		// member declaration (an import, a top-level `export interface`) simply yields no member
+		// names from this wrapped parse, which is fine: those probes are asserted through the
+		// dependency/exportedNames paths instead.
+		classMemberNames: classMemberNames(`class Probe { ${source} }`),
+	};
 }
 
 function violations(path: string, facts: Facts): Violation[] {
 	const found = new Set<Violation>();
 	const layer: Layer = path.includes('/economy/') ? 'economy' : 'advisor';
 	if (facts.specifiers.some((dependency) => !ALLOWED_DEPENDENCIES[layer].has(dependency))) found.add('dependency');
-	if (hasHostileExport(facts.exportedNames)) found.add('capability');
+	if (EXACT_SIDE_EFFECT.some((name) => facts.names.has(name))) found.add('side-effect');
+	if (EXACT_EXECUTION.some((name) => facts.names.has(name))) found.add('execution');
+	if (hasCapabilityMember(facts.classMemberNames) || hasHostileExport(facts.exportedNames)) found.add('capability');
 	return [...found].sort();
+}
+
+function hasCapabilityMember(members: Set<string>): boolean {
+	for (const name of members) {
+		if (CAPABILITY_STEMS.some((stem) => name === stem || (name.startsWith(stem) && /^[A-Z_$]/u.test(name.charAt(stem.length))))) return true;
+		if (CAPABILITY_SUFFIXES.some((suffix) => name.length > suffix.length && name.endsWith(suffix))) return true;
+	}
+	return false;
 }
 
 function hasHostileExport(exportedNames: Set<string>): boolean {

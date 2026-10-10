@@ -33,6 +33,7 @@ import { applyInventoryDiscardAllowlist, isInventoryDiscardAllowlistResultForInp
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
+import { moduleBoundaryFacts } from '../test/module-boundary';
 import {
 	isInventoryContainerEconomyPack,
 	isInventoryContainerPriceEvidence,
@@ -544,8 +545,14 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 	});
 
 	it('carries no execution capability and decides nothing about Trading Post access in what it loads', () => {
-		// Observed on the loaded bundle itself, not by looking for names in the module's AST. Reaching an
-		// ambient capability is proven by the test above; the item operations are not injectable here.
+		// Still by name: the domain words and the irreversible item operations cannot be observed by running `load`.
+		// The loaded bundle is checked as well, and reaching an ambient capability is proven by the test above.
+		const facts = moduleBoundaryFacts('src/advisor/inventory-advisor-builtin-bundle.ts');
+		expect(facts.names.has('free_to_play')).toBe(false);
+		expect(facts.names.has('whitelist')).toBe(false);
+		for (const name of ['destroyItem', 'deleteItem', 'salvageItem', 'openContainer']) {
+			expect(facts.names.has(name), name).toBe(false);
+		}
 		const result = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
 		expect(JSON.stringify(result)).not.toMatch(/"(?:executor|execution|sideEffects|requiresUserAction)"|free_to_play|whitelist|destroyItem|deleteItem|salvageItem|openContainer/u);
 	});

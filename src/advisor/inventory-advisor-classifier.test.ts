@@ -22,7 +22,7 @@ import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage
 import { isEquipmentSalvagePolicy, isEquipmentSalvagePreferences } from '../economy/equipment-salvage-economy';
 import { isInventoryContainerPriceEvidence } from './inventory-container-economy';
 import { selectInventoryMarketRoute } from './inventory-advisor-market';
-import { ambientCapabilityUse } from '../test/ambient-capabilities';
+import { ambientCapabilityUse, NODE_TIMER_CAPABILITIES } from '../test/ambient-capabilities';
 
 describe('H4.15 inventory advisor classifier', () => {
 	it('classifies, hashes, validates and routes a market slice without reaching any ambient capability', async () => {
@@ -37,7 +37,7 @@ describe('H4.15 inventory advisor classifier', () => {
 				price: input.input.prices.items[0], tradingPostAccess: 'full', quantity: 2, allowSell: true,
 				listingMinimumAdvantageBps: 1_000,
 			});
-		});
+		}, NODE_TIMER_CAPABILITIES);
 		expect({ used, route: route?.action }).toEqual({ used: [], route: 'sell' });
 	});
 
