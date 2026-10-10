@@ -2,7 +2,7 @@
 
 Son dos partes. La primera vale sola. La segunda añade las sesiones y las notas.
 
-Versiones: addon 0.8.6, plugin 0.6.36, Hebra 0.2.3. Esta guía todavía no se ha probado en Windows.
+Versiones: addon 0.8.6, plugin 0.6.37, Hebra 0.2.3. Esta guía todavía no se ha probado en Windows.
 Si un paso no coincide con lo que ves, mira la [guía detallada](INSTALAR-WINDOWS-DETALLE.md).
 
 ## Parte 1. Nexus y el addon

@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.6.37: orden interno del núcleo y copia de preferencias al descargar (11 oct 2026)
+## Canal 0.6.37 publicado: orden interno del núcleo y copia de preferencias al descargar (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.37` sobre el canal 0.6.36 publicado
-(`a252cbfa`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.37` = `18425f9c` (atestación; candidato `2cb68d07`,
+árbol `93f69fb7`). Gate local verde (check 9/9 con 7072 tests, guardrails 25/25, BRAT PASS); CI 38089606480 y Release
+38090381717 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.37` sobre el canal
+0.6.36 publicado (`a252cbfa`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.37 se ha visto en un Obsidian ni en un Hebra reales.
@@ -20,7 +22,7 @@
   piloto movidos a la fachada.
 - Pendiente de DE-01: unos 99 métodos de sesión (ciclo de la sesión en vivo, propuestas, nota y resumen, comandos)
   siguen en el núcleo porque tests congelados del contrato de texto fuente los fijan allí; moverlos exige pasar esos
-  tests a comportamiento. Pendiente también: el gate, la publicación y verla en hosts reales.
+  tests a comportamiento. Pendiente también: verla en hosts reales.
 
 ## Canal 0.6.36 publicado: Hebra arranca antes, copia de las preferencias y ajustes por equipo (11 oct 2026)
 
