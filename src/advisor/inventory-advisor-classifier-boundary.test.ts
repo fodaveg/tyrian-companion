@@ -1,20 +1,12 @@
 import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { exportedDeclarationNames, moduleBoundaryFacts, moduleSpecifiers, referencedNames } from '../test/module-boundary';
+import { exportedDeclarationNames, moduleBoundaryFacts, moduleSpecifiers } from '../test/module-boundary';
 
 const CLASSIFIER_FILES = readdirSync('src/advisor')
 	.filter((file) => /^inventory-advisor-(?:classifier|market).*\.ts$/u.test(file) && !file.endsWith('.test.ts'))
 	.sort();
 
-const FORBIDDEN_NAMES = [
-	'onload', 'Vault', 'vault', 'workspace', 'Notice', 'Modal', 'setViewState', 'createEl',
-	'indexedDB', 'IndexedDB', 'localStorage', 'sessionStorage', 'readFileSync', 'writeFileSync',
-	'fetch', 'request', 'requestUrl', 'execute',
-	'setTimeout', 'setInterval', 'requestAnimationFrame',
-	'deleteItem', 'salvageItem', 'openContainer', 'destroyItem',
-	'client', 'operation', 'http', 'secret', 'store', 'executor', 'transport', 'gateway', 'requester',
-];
 const HOSTILE_EXPORT_SUBSTRINGS = [
 	'execut', 'order', 'request', 'client', 'operation', 'secret', 'store', 'destroy', 'delete', 'salvage', 'opencontainer',
 ];
@@ -31,14 +23,10 @@ describe('inventory advisor H4.15 classifier boundary', () => {
 		}
 	});
 
-	it('turns red for prohibited I/O, UI, persistence, timers and irreversible operations', () => {
+	it('turns red for forbidden imports and hostile exports (ambient and item-operation use is proven by running the code)', () => {
 		for (const source of [
-			'window.onload = () => undefined;', 'indexedDB.open(\'classifier\');',
-			'localStorage.setItem(\'key\', \'value\');', 'fetch(\'/v2/items\');',
-			'setTimeout(() => undefined, 1);', 'vault.deleteItem(itemId);',
-			'gateway.salvageItem(itemId);', 'openContainer(itemId);',
-			'import { GuildWars2Client } from \'../account/guild-wars-2-client\';',
-			'gateway: TradingGateway;', 'export function executeOrder() {}',
+			"import { GuildWars2Client } from '../account/guild-wars-2-client';", "import 'obsidian';",
+			'export function executeOrder() {}',
 		]) expect(boundaryViolation(factsOf(source)), source).toBe(true);
 	});
 
@@ -52,9 +40,10 @@ describe('inventory advisor H4.15 classifier boundary', () => {
 	});
 });
 
-function boundaryViolation(facts: { specifiers: string[]; names: Set<string>; exportedNames: Set<string> }): boolean {
+type Facts = { specifiers: string[]; exportedNames: Set<string> };
+
+function boundaryViolation(facts: Facts): boolean {
 	if (facts.specifiers.some(forbiddenDependency)) return true;
-	if (FORBIDDEN_NAMES.some((name) => facts.names.has(name))) return true;
 	for (const name of facts.exportedNames) {
 		const lower = name.toLowerCase();
 		if (HOSTILE_EXPORT_SUBSTRINGS.some((token) => lower.includes(token))) return true;
@@ -62,8 +51,8 @@ function boundaryViolation(facts: { specifiers: string[]; names: Set<string>; ex
 	return false;
 }
 
-function factsOf(source: string): { specifiers: string[]; names: Set<string>; exportedNames: Set<string> } {
-	return { specifiers: moduleSpecifiers(source), names: referencedNames(source), exportedNames: exportedDeclarationNames(source) };
+function factsOf(source: string): Facts {
+	return { specifiers: moduleSpecifiers(source), exportedNames: exportedDeclarationNames(source) };
 }
 
 function forbiddenDependency(specifier: string): boolean {

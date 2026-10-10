@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
+import { PINNED_SCHEMA, type ItemHolding, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
 import {
 	classifyInventoryAdvisor,
 	isInventoryKnowledgePack, sha256InventoryKnowledgePack,
@@ -21,8 +21,26 @@ import {
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
 import { isEquipmentSalvagePolicy, isEquipmentSalvagePreferences } from '../economy/equipment-salvage-economy';
 import { isInventoryContainerPriceEvidence } from './inventory-container-economy';
+import { selectInventoryMarketRoute } from './inventory-advisor-market';
+import { ambientCapabilityUse } from '../test/ambient-capabilities';
 
 describe('H4.15 inventory advisor classifier', () => {
+	it('classifies, hashes, validates and routes a market slice without reaching any ambient capability', async () => {
+		const input = fixture();
+		let route: ReturnType<typeof selectInventoryMarketRoute> | undefined;
+		const used = await ambientCapabilityUse(() => {
+			classifyInventoryAdvisor(input);
+			sha256InventoryKnowledgePack(input.knowledgePack);
+			isInventoryKnowledgePack(input.knowledgePack);
+			route = selectInventoryMarketRoute({
+				holding: input.input.snapshot.holdings[0] as ItemHolding, item: input.input.catalog.items['10']!,
+				price: input.input.prices.items[0], tradingPostAccess: 'full', quantity: 2, allowSell: true,
+				listingMinimumAdvantageBps: 1_000,
+			});
+		});
+		expect({ used, route: route?.action }).toEqual({ used: [], route: 'sell' });
+	});
+
 	it('partitions every owned loose position into a manual market decision', () => {
 		const input = fixture();
 		const result = classifyInventoryAdvisor(input);

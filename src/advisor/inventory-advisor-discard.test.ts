@@ -5,11 +5,27 @@ import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { isInventoryAdvisorInput, sha256InventoryRulePack } from './inventory-advisor-contract';
 import { classifyInventoryAdvisor, classifyInventoryAdvisorDiagnosed, sha256InventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
-import { applyInventoryDiscardAllowlist, inventoryAdvisorContextualInvalidCause, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
+import {
+	applyInventoryDiscardAllowlist, applyInventoryDiscardAllowlistVerified, classifyInventoryAdvisorVerified,
+	inventoryAdvisorContextualInvalidCause, isInventoryDiscardAllowlistResultForInput,
+} from './inventory-advisor-discard';
+import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import type { InventoryAdvisorRulePackV1, InventoryAdvisorRuleV1 } from './inventory-advisor-model';
 
 describe('inventory discard allowlist H4.16', () => {
+	it('classifies and applies the allowlist, verified and public, without reaching any ambient capability', async () => {
+		const engineInput = fixture();
+		let status: string | undefined;
+		const used = await ambientCapabilityUse(() => {
+			const producerResult = classifyInventoryAdvisor(engineInput);
+			const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });
+			isInventoryDiscardAllowlistResultForInput(result, { engineInput, producerResult });
+			status = applyInventoryDiscardAllowlistVerified(classifyInventoryAdvisorVerified(engineInput)).result.status;
+		});
+		expect({ used, status }).toEqual({ used: [], status: 'ready' });
+	});
+
 	it('converts only the reproduced no-supported-route producer result into a review-only candidate', () => {
 		const engineInput = fixture();
 		const producerResult = classifyInventoryAdvisor(engineInput);
