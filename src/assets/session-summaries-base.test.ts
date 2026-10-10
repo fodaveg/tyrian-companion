@@ -105,14 +105,14 @@ describe('session summaries Base', () => {
 			expect(v2Bytes).toContain('"Neto (oro)"');
 			const previous = bundle.map((asset) => asset === current ? { ...draft, bytes: v2Bytes, contentHash: '' } : asset);
 			previous.find((asset) => asset.id === 'session-summaries-base' && asset.locale === 'es')!.contentHash = await sha256Text(v2Bytes);
-			expect((await new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 7, locale: 'es', assets: previous }).apply('Tyrian Companion')).status).toBe('applied');
+			expect((await new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 8, locale: 'es', assets: previous }).apply('Tyrian Companion')).status).toBe('applied');
 			return { vault, bundle, v2Bytes };
 		};
 
 		it('moves to version 3 by itself and renames the two columns', async () => {
 			const { vault, bundle } = await installV2();
 			expect(vault.contents.get(PATH)).toContain('"Neto (oro)"');
-			const next = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 7, locale: 'es', assets: bundle });
+			const next = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 8, locale: 'es', assets: bundle });
 			expect(decideManagedAssetsAutoUpdate(await next.inspect('Tyrian Companion'))).toEqual({ action: 'apply' });
 			expect((await next.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
 			expect(vault.contents.get(PATH)).toContain('"Valor neto de objetos (oro)"');
@@ -124,7 +124,7 @@ describe('session summaries Base', () => {
 			const edited = vault.contents.get(PATH)!.replace('name: "Sesiones"', 'name: "Mis sesiones"');
 			expect(edited).toContain('Mis sesiones');
 			vault.contents.set(PATH, edited);
-			const next = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 7, locale: 'es', assets: bundle });
+			const next = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 8, locale: 'es', assets: bundle });
 			expect(decideManagedAssetsAutoUpdate(await next.inspect('Tyrian Companion'))).toEqual({ action: 'manual', reasons: ['modified'] });
 			expect((await next.apply('Tyrian Companion', 'upgrade')).status).toBe('conflict');
 			expect(vault.contents.get(PATH)).toBe(edited);

@@ -12,13 +12,13 @@ export interface SummaryHistoryVault {
 	read(file: { path: string }): Promise<string>;
 }
 
-/** Per-hour figures (copper) of earlier summaries on `mainMapId`, newest first; never the session's own. `unreadable` counts files that could not be read; `capped` is set when the vault holds as many summaries as the read limit, so the average is of the most recent ones only. */
+/** Per-hour figures (copper) of earlier summaries on `mainMapId`, newest first; never the session's own. `unreadable` counts files that could not be read; `capped` is set when the vault holds more summaries than the read limit, so the average is of the most recent ones only. */
 export async function readComparablePerHour(vault: SummaryHistoryVault, folder: string, mainMapId: number | null,
 	ownSessionRef: string): Promise<{ perHour: number[]; unreadable: number; capped?: boolean }> {
 	if (mainMapId === null) return { perHour: [], unreadable: 0 };
 	const prefix = `${folder}/summaries/`;
 	const all = vault.markdownFiles().filter((file) => file.path.startsWith(prefix)).sort((a, b) => b.path.localeCompare(a.path));
-	const capped = all.length >= MAX_SUMMARIES_READ;
+	const capped = all.length > MAX_SUMMARIES_READ;
 	const files = all.slice(0, MAX_SUMMARIES_READ);
 	const found: number[] = []; let unreadable = 0;
 	for (const file of files) {

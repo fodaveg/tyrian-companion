@@ -1322,11 +1322,11 @@ describe('live session summary: the average of similar sessions', () => {
 		expect((await render({ ...input, comparablesCapped: false })).content).toContain('(3 sesiones en este mapa)');
 	});
 
-	it('reports the read limit as reached only when the vault holds that many summaries', async () => {
+	it('reports the read limit as reached only when the vault holds more summaries than that', async () => {
 		const vault = new TestVault();
-		for (let index = 0; index < 199; index += 1) vault.contents.set(`Tyrian Companion/summaries/${String(index).padStart(4, '0')}.md`, '# nada');
+		for (let index = 0; index < 200; index += 1) vault.contents.set(`Tyrian Companion/summaries/${String(index).padStart(4, '0')}.md`, '# nada');
 		expect((await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).capped).toBe(false);
-		vault.contents.set('Tyrian Companion/summaries/0199.md', '# nada');
+		vault.contents.set('Tyrian Companion/summaries/0200.md', '# nada');
 		expect((await readComparablePerHour(vault, 'Tyrian Companion', 866, 'y')).capped).toBe(true);
 	});
 
