@@ -2833,8 +2833,42 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	private async recordInventorySyncOutcome(outcome: InventoryVaultSyncLastRun): Promise<void> {
-		this.settings = { ...this.settings, inventorySyncLastRun: outcome };
-		await this.host.settings.save(this.settings);
+		await this.serializeSettingsWrite(async () => {
+			const base = await this.loadSettingsBase();
+			const next = { ...base, inventorySyncLastRun: outcome };
+			await this.host.settings.save(next);
+			this.settings = next;
+		});
+	}
+
+	/** Tail of the settings write chain; every read-merge-save-publish runs after the previous one settled. */
+	private settingsWriteChain: Promise<void> = Promise.resolve();
+
+	/**
+	 * Runs `section` after every earlier settings write, whether that one succeeded or failed: the tail
+	 * each writer leaves is released in `finally`, so it never rejects and a failure poisons nothing.
+	 */
+	private async serializeSettingsWrite<T>(section: () => Promise<T>): Promise<T> {
+		const previous = this.settingsWriteChain;
+		let release: () => void = () => undefined;
+		this.settingsWriteChain = new Promise<void>((resolve) => { release = resolve; });
+		await previous;
+		try {
+			return await section();
+		} finally {
+			release();
+		}
+	}
+
+	/**
+	 * What a save merges over: the persisted settings, migrated like at boot, so a key that arrived from
+	 * another device (Obsidian Sync, Hebra storage) is kept whole. Anything that is not a settings object
+	 * falls back to memory; a rejected read rejects, so nothing is written over what could not be read.
+	 */
+	private async loadSettingsBase(): Promise<TyrianSettings> {
+		const persisted = await this.host.settings.load();
+		if (typeof persisted !== 'object' || persisted === null || Array.isArray(persisted)) return this.settings;
+		return migrateSettings(persisted, this.host.vault.configDir, this.host.locale());
 	}
 
 	/**
@@ -5262,27 +5296,44 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.notifyRuntimeStarting();
 			return { status: 'blocked', reason: 'runtime_starting' };
 		}
-		const previousSecret = this.settings.apiKeySecret;
-		const previousPollingInterval = this.settings.pollingIntervalMinutes;
-		const previousLanguage = this.settings.language;
-		const previousOutputFolder = this.settings.outputFolder;
-		const previousManagedAssetsRoot = this.settings.managedAssetsRoot;
-		const previousLegacyOutputFolder = this.settings.legacyOutputFolder;
-		const previousLegacyManagedAssetsRoot = this.settings.legacyManagedAssetsRoot;
-		const previousPriceHistory = priceHistorySettingsFrom(this.settings);
-		const previousHalloweenEnabled = this.settings.halloweenEnabled;
-		const previousPersonalValuation = JSON.stringify(this.settings.halloweenPersonalValuation);
-		const previousMaterialStorageCapacity = this.settings.materialStorageCapacity;
-		const previousLowStorageSpaceThreshold = this.settings.lowStorageSpaceThresholdFreeSlots;
-		const previousSalvagePreferences = JSON.stringify(resolveEquipmentSalvagePreferences(this.settings));
-		const previousAlertIngameEnabled = this.settings.alertIngameEnabled;
-		const previousAlertIngamePort = this.settings.alertIngamePort;
-		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.host.vault.configDir, this.host.locale());
-		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
-		// Publish the new runtime view only after its durable write succeeds. A rejected
-		// save therefore leaves every subsequent Refresh on the last persisted overlay.
-		await this.host.settings.save(nextSettings);
-		this.settings = nextSettings;
+		// Read, merge, save and publish are one serialized section: a concurrent save waits its turn
+		// and merges over what this one wrote. The reactions below stay outside it, because one of them
+		// (`reconcileManagedAssetsRoot`) calls `updateSettings` again and a non-reentrant queue would deadlock.
+		const {
+			previousPollingInterval, previousLanguage, previousOutputFolder, previousManagedAssetsRoot,
+			previousLegacyOutputFolder, previousLegacyManagedAssetsRoot, previousPriceHistory, previousHalloweenEnabled,
+			previousPersonalValuation, previousMaterialStorageCapacity, previousLowStorageSpaceThreshold,
+			previousSalvagePreferences, previousAlertIngameEnabled, previousAlertIngamePort, nextSettings, secretChanged,
+		} = await this.serializeSettingsWrite(async () => {
+			const base = await this.loadSettingsBase();
+			const previousSecret = this.settings.apiKeySecret;
+			const previousPollingInterval = this.settings.pollingIntervalMinutes;
+			const previousLanguage = this.settings.language;
+			const previousOutputFolder = this.settings.outputFolder;
+			const previousManagedAssetsRoot = this.settings.managedAssetsRoot;
+			const previousLegacyOutputFolder = this.settings.legacyOutputFolder;
+			const previousLegacyManagedAssetsRoot = this.settings.legacyManagedAssetsRoot;
+			const previousPriceHistory = priceHistorySettingsFrom(this.settings);
+			const previousHalloweenEnabled = this.settings.halloweenEnabled;
+			const previousPersonalValuation = JSON.stringify(this.settings.halloweenPersonalValuation);
+			const previousMaterialStorageCapacity = this.settings.materialStorageCapacity;
+			const previousLowStorageSpaceThreshold = this.settings.lowStorageSpaceThresholdFreeSlots;
+			const previousSalvagePreferences = JSON.stringify(resolveEquipmentSalvagePreferences(this.settings));
+			const previousAlertIngameEnabled = this.settings.alertIngameEnabled;
+			const previousAlertIngamePort = this.settings.alertIngamePort;
+			const nextSettings = mergeSettingsUpdate(base, settings, this.host.vault.configDir, this.host.locale());
+			const secretChanged = nextSettings.apiKeySecret !== previousSecret;
+			// Publish the new runtime view only after its durable write succeeds. A rejected
+			// save therefore leaves every subsequent Refresh on the last persisted overlay.
+			await this.host.settings.save(nextSettings);
+			this.settings = nextSettings;
+			return {
+				previousPollingInterval, previousLanguage, previousOutputFolder, previousManagedAssetsRoot,
+				previousLegacyOutputFolder, previousLegacyManagedAssetsRoot, previousPriceHistory, previousHalloweenEnabled,
+				previousPersonalValuation, previousMaterialStorageCapacity, previousLowStorageSpaceThreshold,
+				previousSalvagePreferences, previousAlertIngameEnabled, previousAlertIngamePort, nextSettings, secretChanged,
+			};
+		});
 		// Stale seed copies still waiting for their action to end are dropped with the opt-in: switching
 		// it back on does not bring them back. A pass already downloading stops at its next item.
 		if (!this.settings.priceHistoryEnabled) this.priceSeedDeferredRequest = null;
