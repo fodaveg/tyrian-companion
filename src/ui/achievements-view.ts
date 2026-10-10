@@ -329,7 +329,7 @@ export class AchievementsView {
 	 */
 	private async loadNames(load: number, catalog: AchievementCatalogPort, locale: Locale, views: readonly TrackedAchievementView[]): Promise<void> {
 		const refs = nameRefsOf(views);
-		// Everything on screen is already named (or was already asked for in this language): nothing to ask or repaint.
+		// Every id on screen already has its name in this language: nothing to ask or rewrite. An id the API does not know never gets one, so it asks the service again (store only, no network within 7 days).
 		if (this.namesLocale === locale && refs.every((ref) => this.names.has(achievementNameKey(ref.kind, ref.id)))) return;
 		this.namesAbort?.abort();
 		if (refs.length === 0) { this.namesAbort = null; return; }

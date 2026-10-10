@@ -837,20 +837,24 @@ describe('AchievementsView: names of rewards and objectives (L3)', () => {
 		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known });
 		h.view.mount();
 		await h.settle();
+		const rewrite = vi.spyOn(h.view as unknown as { applyNames(): void }, 'applyNames');
 		h.view.refresh();
 		h.view.refresh();
 		await h.settle();
 		expect(h.nameRequests).toHaveLength(1);
+		expect(rewrite).not.toHaveBeenCalled();
 	});
 
 	it('a read that fails halfway does not take away the names already seen', async () => {
 		let calls = 0;
-		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: (locale) => (++calls === 1 ? known(locale) : {}) });
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: () => (++calls === 1 ? { [achievementNameKey('title', 9)]: 'Titulo 9' } : {}) });
 		h.view.mount();
 		await h.settle();
 		expect(rewards(h)[2]).toBe('Título: Titulo 9');
+		// Other ids stay unnamed, so the refresh asks again; that second read names nothing.
 		h.view.refresh();
 		await h.settle();
+		expect(h.nameRequests).toHaveLength(2);
 		expect(rewards(h)[2]).toBe('Título: Titulo 9');
 	});
 
