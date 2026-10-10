@@ -134,7 +134,8 @@ Si no: si no pasa nada, o sale un error técnico, anota el texto.
 
 Toda la evidencia de almacenamiento y candados de [ESTADO](ESTADO.md) sale de dobles de test (IndexedDB
 falso, gestor de candados en memoria, reloj simulado). Esta lista pone a un motor real a contrastarlos.
-Se rellena una vez por release, en Obsidian y en Hebra. La ejecución es de una persona con la app abierta.
+Es una lista disponible: no es un requisito de release ni una QA que se le pida a David.
+Si alguien la ejecuta, es una vez por release, en Obsidian y en Hebra, con la app abierta.
 
 1. **Activar el registro y el nivel.** En los ajustes, bajo **Registros de diagnóstico**, activa
    **Activar registros de diagnóstico** y en **Nivel mínimo** elige **Depuración**. El nivel por
@@ -199,5 +200,5 @@ Al terminar, vuelve a poner **Nivel mínimo** en **Avisos** y, si no los necesit
   fichero: solo se lee con el extracto o el paquete de soporte de los ajustes.
 - **Instalación en disco.** Hebra deja la versión instalada en su `installed.json` y los ficheros del
   plugin en `plugins/tyrian-companion/<versión>/`; comparar sus hashes con los de `gh release view` es la
-  comprobación de instalación que se puede automatizar (clase a de la matriz de [QA-MVP](QA-MVP.md)). Las
+  comprobación de instalación que se puede automatizar (RT-09 la prepara; ver la matriz de [QA-MVP](QA-MVP.md)). Las
   rutas exactas dependen del sistema y no las verifica este documento.
