@@ -2315,6 +2315,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.sale.getSaleLocale();
 	}
 
+	/** Where the Venta tab registers a failed refresh (`SaleItemView`); null while diagnostics are not up. */
+	getSaleDiagnostics() {
+		return this.localDebugActions ?? undefined;
+	}
+
 	/** The Venta tab (`SaleRuntime.getSaleViewModel`). */
 	getSaleViewModel(): SaleViewModel {
 		return this.sale.getSaleViewModel();

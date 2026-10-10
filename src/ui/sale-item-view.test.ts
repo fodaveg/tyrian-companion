@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { HttpTransportError } from '../core/http';
 import { nextExpiryMs, SALE_REFRESH_DEADLINE_MS, SALE_VIEW_TYPE, SaleItemView, saleView, type SaleViewActions } from './sale-item-view';
 import { ProductActionController } from './product-action-controller';
 import { buildSaleViewModel, type SaleSourceRow, type SaleViewModel, type SaleViewModelInput } from './sale-view-model';
@@ -32,6 +33,9 @@ function baseInput(overrides: Partial<SaleViewModelInput> = {}): SaleViewModelIn
 		...overrides,
 	};
 }
+
+/** Lets the refresh's promise chain (the shared in-flight call, then the view's own end) settle. */
+async function flush(): Promise<void> { for (let i = 0; i < 10; i += 1) await Promise.resolve(); }
 
 function actions(model: () => SaleViewModel, extra: Partial<SaleViewActions> = {}): SaleViewActions {
 	return { getSaleLocale: () => 'es', getSaleViewModel: model, ...extra };
@@ -110,8 +114,8 @@ describe('SaleItemView wiring', () => {
 		button.dispatch('click');
 		expect(refreshed).toBe(1);
 		finish();
-		await Promise.resolve();
-		await Promise.resolve();
+		await flush();
+		await flush();
 	});
 
 	/**
@@ -139,9 +143,9 @@ describe('SaleItemView wiring', () => {
 		const root = view.contentEl as unknown as FakeElement;
 		expect(text(root)).toContain('Leyendo precios del bazar');
 		resolveRefresh();
-		await Promise.resolve();
-		await Promise.resolve();
-		await Promise.resolve();
+		await flush();
+		await flush();
+		await flush();
 		expect(text(root)).not.toContain('Leyendo precios del bazar');
 	});
 
@@ -158,8 +162,8 @@ describe('SaleItemView wiring', () => {
 		view.render();
 		expect(refreshCalls).toBe(1);
 		resolveRefresh();
-		await Promise.resolve();
-		await Promise.resolve();
+		await flush();
+		await flush();
 	});
 
 	it('when the runtime is not ready yet and the refresh leaves the model in loading, ends in a final message with a working Actualizar button', async () => {
@@ -171,8 +175,8 @@ describe('SaleItemView wiring', () => {
 			refreshSale: async () => { refreshCalls += 1; },
 		}));
 		await view.onOpen();
-		await Promise.resolve();
-		await Promise.resolve();
+		await flush();
+		await flush();
 		const root = view.contentEl as unknown as FakeElement;
 		expect(text(root)).not.toContain('Leyendo precios del bazar');
 		expect(text(root)).toContain('No se pudieron leer los precios del bazar');
@@ -200,7 +204,7 @@ describe('SaleItemView wiring', () => {
 		expect(find(root, 'p').filter((p) => p.attributes.get('role') === 'status')).toHaveLength(1);
 		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.disabled).toBe(true);
 		resolveRefresh();
-		await Promise.resolve();
+		await flush();
 	});
 
 	it('a refresh that throws ends in the failure message with a retry, not in an eternal Leyendo', async () => {
@@ -210,8 +214,8 @@ describe('SaleItemView wiring', () => {
 			refreshSale: async () => { calls += 1; throw new Error('network down'); },
 		}));
 		await view.onOpen();
-		await Promise.resolve();
-		await Promise.resolve();
+		await flush();
+		await flush();
 		const root = view.contentEl as unknown as FakeElement;
 		expect(text(root)).toContain('No se pudieron leer los precios del bazar');
 		expect(text(root)).not.toContain('Leyendo precios del bazar');
@@ -238,8 +242,11 @@ describe('SaleItemView wiring', () => {
 			const button = find(root, 'button').find((el) => text(el).includes('Actualizar'))!;
 			expect(button.disabled).toBe(false);
 			button.dispatch('click');
-			expect(calls).toBe(2);
+			// The first call is still in flight: the retry waits for it, it does not start a second one.
+			expect(calls).toBe(1);
 			expect(text(root)).toContain('Leyendo precios del bazar');
+			vi.advanceTimersByTime(SALE_REFRESH_DEADLINE_MS);
+			expect(text(root)).toContain('tardan demasiado');
 			await view.onClose();
 		} finally { vi.useRealTimers(); }
 	});
@@ -253,11 +260,73 @@ describe('SaleItemView wiring', () => {
 			refreshSale: async () => { status = 'blocked'; },
 		}));
 		await view.onOpen();
-		await Promise.resolve();
-		await Promise.resolve();
+		await flush();
+		await flush();
 		const root = view.contentEl as unknown as FakeElement;
 		expect(text(root)).not.toContain('Leyendo precios del bazar');
 	});
+
+	it('registers a failed refresh in the diagnostics (component ui, error, failure) and keeps the cause out of the view', async () => {
+		installDom();
+		const event = vi.fn();
+		const boom = new Error('boom');
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
+			refreshSale: async () => { throw boom; },
+			getSaleDiagnostics: () => ({ event, createContext: vi.fn() }),
+		}));
+		await view.onOpen();
+		await flush();
+		expect(event).toHaveBeenCalledTimes(1);
+		expect(event).toHaveBeenCalledWith({
+			component: 'ui', action: 'view_render', level: 'error', phase: 'failure', code: 'unknown_failure', state: 'sale_refresh', message: boom,
+		});
+	});
+
+	it('tells a transport timeout from a generic failure in the diagnostics code', async () => {
+		installDom();
+		const event = vi.fn();
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
+			refreshSale: async () => { throw new HttpTransportError('timeout', null, null, 'Request timed out.'); },
+			getSaleDiagnostics: () => ({ event, createContext: vi.fn() }),
+		}));
+		await view.onOpen();
+		await flush();
+		expect(event.mock.calls[0]![0]).toMatchObject({ code: 'timeout', level: 'error' });
+	});
+
+	it('an old "unfinished" outcome does not leak into a later loading: data in between clears it', async () => {
+		installDom();
+		let status: 'loading' | 'ready' = 'loading';
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status })), {
+			refreshSale: async () => undefined,
+		}));
+		await view.onOpen();
+		await flush();
+		const root = view.contentEl as unknown as FakeElement;
+		expect(text(root)).toContain('No se pudieron leer');
+		status = 'ready';
+		view.render();
+		status = 'loading';
+		view.render();
+		expect(text(root)).toContain('Leyendo precios del bazar');
+		expect(text(root)).not.toContain('No se pudieron leer');
+		expect(find(root, 'span').some((el) => el.className.includes('tyrian-sale__spinner'))).toBe(true);
+	});
+
+	it('reopening the same instance after a refresh that never ended leaves the button usable', async () => {
+		installDom();
+		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status: 'ready' })), {
+			refreshSale: () => new Promise<void>(() => undefined),
+		}));
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		find(root, 'button').find((el) => text(el).includes('Actualizar'))!.dispatch('click');
+		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.disabled).toBe(true);
+		await view.onClose();
+		await view.onOpen();
+		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.disabled).toBe(false);
+	});
+
 });
 
 /**

@@ -2995,11 +2995,14 @@
 
 @media (prefers-reduced-motion: reduce) {
 	.tyrian-sale * { transition: none !important; animation: none !important; }
+	/*
+	 * Excepción deliberada a la regla de movimiento reducido de más arriba (.tyrian-product-shell *,
+	 * que fija iteration-count 1): un pulso lento de opacidad, sin ningún movimiento, para que la
+	 * carga siga diciendo que trabaja. El shorthand fija ya duración e iteraciones.
+	 */
 	.tyrian-product-shell .tyrian-sale__spinner,
 	.tyrian-sale-page .tyrian-sale__spinner {
 		animation: tyrian-sale-pulse 2s ease-in-out infinite !important;
-		animation-duration: 2s !important;
-		animation-iteration-count: infinite !important;
 	}
 }
 
