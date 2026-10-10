@@ -262,7 +262,7 @@ export class TyrianCompanionSettingTab {
 		if (el === null) return;
 		if (code === null) { el.setAttr('role', 'status'); el.setText(''); return; }
 		el.setAttr('role', 'alert');
-		el.setText(this.t('settings.alerts.ingame.startFailed', { code }));
+		el.setText(code === 'EADDRINUSE' ? this.t('settings.alerts.ingame.portBusy') : this.t('settings.alerts.ingame.startFailed', { code }));
 	}
 
 	refreshSessionHistoryRow(): void {

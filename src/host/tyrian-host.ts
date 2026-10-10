@@ -371,6 +371,12 @@ export interface TyrianUiPort {
 	/** main.ts:4752-4771 `activateView` and siblings (open or focus the view of that type). */
 	revealView(type: string): Promise<void>;
 	/**
+	 * After a language change: tells the host to read again the title of every view registered
+	 * (`TyrianViewRegistration.title`, the sections view's too). Only a host that reads a title once, when
+	 * the view registers, has it (HebraHost); Obsidian reads `getDisplayText` on every paint and leaves it out.
+	 */
+	refreshViewTitles?(): void;
+	/**
 	 * The three methods of a host that declares `capabilities.mainView`, and only of it: the core
 	 * calls none of them on a host that does not, so Obsidian leaves them out.
 	 * `registerSectionsView` registers the one view of the main screen; its disposer unmounts every

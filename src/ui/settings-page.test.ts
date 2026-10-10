@@ -154,6 +154,20 @@ describe('settings page: one list, a closed maintenance block', () => {
 		expect(document.activeElement).toBe(container.querySelector('select'));
 	});
 
+	it('says another app holds the bridge port on EADDRINUSE and keeps the generic text for other codes', () => {
+		let code: string | null = null;
+		const p = { ...plugin(), getAlertIngameServerErrorCode: (): string | null => code };
+		p.settings = { ...p.settings, alertIngameEnabled: true };
+		const { tab, container } = mountPage(p as never);
+		const feedback = (): HTMLElement | null => container.querySelector('[role="alert"], [role="status"]');
+		code = 'EADDRINUSE'; tab.refreshAlertIngameServerRow();
+		expect(container.textContent).toContain('Another app (Obsidian or Hebra?) has the port. The addon will talk to it.');
+		code = 'EACCES'; tab.refreshAlertIngameServerRow();
+		expect(container.textContent).toContain('The server could not start (EACCES).');
+		expect(container.textContent).not.toContain('Another app (Obsidian or Hebra?)');
+		expect(feedback()).not.toBeNull();
+	});
+
 	it('shows the bridge token row right after the bridge toggle, never a port row', () => {
 		const p = plugin();
 		p.settings = { ...p.settings, alertIngameEnabled: true };

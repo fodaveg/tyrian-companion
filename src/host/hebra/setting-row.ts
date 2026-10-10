@@ -13,6 +13,9 @@
  */
 import type { PluginUi } from 'hebra-plugin-api';
 
+import { createTranslator, isLocale, type Locale, type Translator } from '../../core/i18n';
+import { resolveHostLanguage } from '../../core/settings';
+
 import type {
 	TyrianButtonControl,
 	TyrianDropdownControl,
@@ -23,6 +26,33 @@ import type {
 	TyrianToggleControl,
 } from '../tyrian-host';
 
+/**
+ * The adapter's own copy (notices, folder picker, secret dialog, unadopted-notes panel) is in the
+ * core's `es|en` catalogue (`i18n-runtime-catalog.ts`, keys `hebra.*`), read with the core's
+ * translator in the language the plugin is in: the saved `language` setting when there is one, and
+ * otherwise the app's (`api.env.locale()`, `resolveHostLanguage`). It lives here, the adapter's
+ * shared UI module, so every surface reaches it without a cycle.
+ *
+ * Gives the translator of the active language, fresh on every call: a language change is seen by
+ * the next notice or the next paint.
+ */
+export type HebraTranslator = () => Translator;
+
+/** `latest` is the last settings value loaded or saved (`HebraTyrianSettingsPort.latest`). */
+export function createHebraTranslator(latest: () => unknown, hostLocale: () => string): HebraTranslator {
+	return () => {
+		const settings = latest();
+		const saved: unknown = typeof settings === 'object' && settings !== null ? (settings as { language?: unknown }).language : undefined;
+		const locale: Locale = isLocale(saved) ? saved : resolveHostLanguage(hostLocale());
+		return createTranslator(locale);
+	};
+}
+
+/** A whole number in the active language's own format (`12.345` or `12,345`). */
+export function formatCount(translator: Translator, count: number): string {
+	return count.toLocaleString(translator.locale === 'es' ? 'es-ES' : 'en-US');
+}
+
 export type ErrorReporter = (error: unknown) => void;
 
 export interface SettingRowDeps {
@@ -32,6 +62,8 @@ export interface SettingRowDeps {
 	host: Pick<PluginUi, 'openModal'>;
 	/** A control callback of the core that fails: the host's diagnostics. */
 	report: ErrorReporter;
+	/** The active language, read when a control or the dialog is painted. */
+	translator: HebraTranslator;
 }
 
 let idSeq = 0;
@@ -264,7 +296,7 @@ export function createSecretControl(
 	const create = createEl('button');
 	create.type = 'button';
 	create.className = 'hebra-module-setting-button';
-	create.textContent = 'Nuevo secreto…';
+	create.textContent = deps.translator().t('hebra.secret.new');
 	wrapper.append(selectEl, create);
 	parent.append(wrapper);
 
@@ -275,7 +307,7 @@ export function createSecretControl(
 	const repaint = (): void => {
 		const none = createEl('option');
 		none.value = NO_SECRET;
-		none.textContent = 'Ninguno';
+		none.textContent = deps.translator().t('hebra.secret.none');
 		const options: HTMLOptionElement[] = [none];
 		for (const name of new Set([...deps.secrets.list(), ...(value === NO_SECRET ? [] : [value])])) {
 			const option = createEl('option');
@@ -317,32 +349,34 @@ export function createSecretControl(
 
 function openNewSecretDialog(deps: SettingRowDeps, onSaved: (name: string) => void): void {
 	const handle = deps.host.openModal((content) => {
+		const translator = deps.translator();
+		const t: Translator['t'] = (key, params) => translator.t(key, params);
 		content.classList.add('hebra-module-secret-dialog');
 		const form = createEl('form');
 		const nameInput = createEl('input');
 		nameInput.type = 'text';
 		nameInput.required = true;
 		nameInput.className = 'hebra-module-setting-input';
-		nameInput.setAttribute('aria-label', 'Nombre del secreto');
-		nameInput.placeholder = 'Nombre';
+		nameInput.setAttribute('aria-label', t('hebra.secret.nameAria'));
+		nameInput.placeholder = t('hebra.secret.namePlaceholder');
 		const valueInput = createEl('input');
 		valueInput.type = 'password';
 		valueInput.required = true;
 		valueInput.autocomplete = 'off';
 		valueInput.className = 'hebra-module-setting-input';
-		valueInput.setAttribute('aria-label', 'Valor del secreto');
-		valueInput.placeholder = 'Valor';
+		valueInput.setAttribute('aria-label', t('hebra.secret.valueAria'));
+		valueInput.placeholder = t('hebra.secret.valuePlaceholder');
 		const actions = createDiv();
 		actions.className = 'hebra-module-setting-actions';
 		const cancel = createEl('button');
 		cancel.type = 'button';
 		cancel.className = 'hebra-module-setting-button';
-		cancel.textContent = 'Cancelar';
+		cancel.textContent = t('hebra.secret.cancel');
 		cancel.addEventListener('click', () => handle.close());
 		const save = createEl('button');
 		save.type = 'submit';
 		save.className = 'hebra-module-setting-button mod-cta';
-		save.textContent = 'Guardar';
+		save.textContent = t('hebra.secret.save');
 		actions.append(cancel, save);
 		form.append(nameInput, valueInput, actions);
 		form.addEventListener('submit', (event) => {
@@ -356,5 +390,5 @@ function openNewSecretDialog(deps: SettingRowDeps, onSaved: (name: string) => vo
 		});
 		content.append(form);
 		nameInput.focus();
-	}, { title: 'Nuevo secreto' });
+	}, { title: deps.translator().t('hebra.secret.dialogTitle') });
 }

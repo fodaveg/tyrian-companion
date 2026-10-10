@@ -34,6 +34,7 @@ import type { HebraPluginApi } from 'hebra-plugin-api';
 import { browserAlertAudioContextFactory, closeBrowserAlertAudio, playAlertSound } from '../../alerts/alert-sound';
 import { hostSystemNotificationConstructor, showSystemNotification } from '../../alerts/alert-system-notification';
 import { MANAGED_ASSETS_MANIFEST } from '../../assets/managed-assets-model';
+import type { Translator } from '../../core/i18n';
 import { localDebugDirectory } from '../../core/local-debug-contract';
 import { normalizeVaultFolder } from '../../core/settings';
 import { indexedDbPriceHistoryPort } from '../indexed-db-price-history';
@@ -61,6 +62,7 @@ import { TyrianPathIndex } from './path-index';
 import type { TyrianPathIndexKv } from './path-index-kv';
 import { createPreloadedSecrets, type TyrianSecretsBackend } from './secrets';
 import { refreshUnadoptedNotes, seedTyrianPathIndex, type TyrianSeedLibrary, type TyrianSeedResult, type TyrianUnadoptedNote } from './seed';
+import { createHebraTranslator, type HebraTranslator } from './setting-row';
 import { createTcpServerPort, unavailableTcpServerPort } from './tcp-port';
 import { createHebraTyrianVault, HEBRA_TYRIAN_CONFIG_DIR, relativeToOutputFolder } from './vault';
 import { createTyrianVaultPort } from './vault-port';
@@ -166,6 +168,8 @@ export interface HebraHostHandle {
 	/** The Tyrian notes the index left out (of this seeding or an earlier one, minus the resolved
 	 *  ones): shown in the plugin's settings (`unadopted-panel.ts`). */
 	unadopted: readonly TyrianUnadoptedNote[];
+	/** The active language's translator for the adapter's own copy, fresh on every call. */
+	translator: HebraTranslator;
 	/** Waits for the pending keychain writes. */
 	flush(): Promise<void>;
 	/** Drops what this instance left armed (the pending restart, the watch of indexed files, the
@@ -239,13 +243,13 @@ export function pathIndexNamespace(libraryId: string, rootFolderId: string | nul
 }
 
 /** The notice when the plugin restarted because another output folder was chosen. */
-export function outputFolderChangedNotice(folder: string): string {
-	return `Tyrian Companion se ha reiniciado para usar «${folder}».`;
+export function outputFolderChangedNotice(folder: string, translator: Translator): string {
+	return translator.t('hebra.restart.done', { folder });
 }
 
 /** The notice when that restart did not bring the plugin back. */
-export function outputFolderRestartFailedNotice(folder: string): string {
-	return `Tyrian Companion no ha podido reiniciarse con «${folder}». Apágalo y vuelve a encenderlo en los ajustes de Hebra.`;
+export function outputFolderRestartFailedNotice(folder: string, translator: Translator): string {
+	return translator.t('hebra.restart.failed', { folder });
 }
 
 /**
@@ -353,6 +357,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	const libraryId = api.vault.libraryId();
 	const libraryRootId = api.vault.rootFolderId();
 	const storedSettings = createTyrianSettingsPort(api.storage);
+	const translator = createHebraTranslator(() => storedSettings.latest(), () => api.env.locale());
 	const outputFolder = outputFolderFromSettings(await storedSettings.load());
 	deps.bootTrace?.mark('hebraSettings');
 	const rootFolderId = resolveFolderPath(await api.vault.foldersList(), libraryRootId, outputFolder);
@@ -388,7 +393,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		} catch (error) {
 			deps.report(error, 'restart');
 		}
-		api.ui.notice(restarted ? outputFolderChangedNotice(folder) : outputFolderRestartFailedNotice(folder));
+		api.ui.notice(restarted ? outputFolderChangedNotice(folder, translator()) : outputFolderRestartFailedNotice(folder, translator()));
 	};
 	const settings: typeof storedSettings = {
 		...storedSettings,
@@ -539,6 +544,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		ui: createHebraTyrianUi({
 			api,
 			mainView,
+			translator,
 			secrets,
 			folderPaths: async () => libraryFolderPaths(await api.vault.foldersList(), libraryRootId),
 			openNote: (path) => {
@@ -547,7 +553,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 				const saved = relative === null ? undefined : savedNotes.get(relative);
 				if (id !== undefined && index.getKindForId(id) === 'note') api.workspace.openNote(id);
 				else if (saved !== undefined) api.workspace.openNote(saved);
-				else api.ui.notice(`No encuentro «${path}» en la biblioteca.`);
+				else api.ui.notice(translator().t('hebra.openNote.missing', { path }));
 			},
 			report: deps.report,
 			savedFolder: () => outputFolderFromSettings(settings.latest()),
@@ -569,6 +575,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		rootFolderId,
 		seed,
 		unadopted,
+		translator,
 		flush: () => secrets.flush(),
 		dispose: () => {
 			disposed = true;

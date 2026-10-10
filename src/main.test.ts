@@ -2258,7 +2258,8 @@ describe('in-game alert server start diagnostics', () => {
 		const record = vi.fn((_input: LocalDebugRecordInput) => true);
 		const diagnostics = { record } as unknown as LocalDebugLogger;
 		const harness = withObsidianHost({
-			settings: { alertIngamePort: 47_823, alertIngameEnabled: true },
+			settings: { alertIngamePort: 47_823, alertIngameEnabled: true, language: 'en' },
+			emitNotice: vi.fn(),
 			alertIngameServer: null,
 			alertIngameServerPort: null,
 			alertIngameServerFlight: null,
@@ -2281,6 +2282,60 @@ describe('in-game alert server start diagnostics', () => {
 			(input) => input.component === 'notification' && input.action === 'notification_emit' && input.phase === 'failure',
 		);
 		expect(failure).toMatchObject({ code: 'unavailable', state: 'ingame_server_start', details: { code: 'EADDRINUSE' } });
+	});
+
+	// HP-05: two collectors on one machine (Obsidian and Hebra) fight for 47823; the loser says so.
+	const busyPortHarness = (language: 'es' | 'en' = 'en') => {
+		const emitNotice = vi.fn();
+		const harness = withObsidianHost({
+			settings: { alertIngamePort: 47_823, alertIngameEnabled: true, language },
+			alertIngameServer: null, alertIngameServerPort: null, alertIngameServerFlight: null,
+			alertIngameServerErrorCode: null as string | null, alertIngamePortBusyNoticed: false,
+			liveIngamePort: () => ({}),
+			emitNotice,
+			localDebugActions: null,
+			settingTab: { refreshAlertIngameServerRow: vi.fn() },
+		});
+		const ensure = (TyrianCompanionCore.prototype as unknown as {
+			ensureAlertIngameServer(this: typeof harness): Promise<unknown>;
+		}).ensureAlertIngameServer.bind(harness);
+		return { harness, emitNotice, ensure };
+	};
+
+	it('a busy port shows one notice per start and keeps the diagnostic code', async () => {
+		alertIngameServerMocks.start.mockRejectedValue(Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' }));
+		try {
+			const { harness, emitNotice, ensure } = busyPortHarness('en');
+			await expect(ensure()).resolves.toBeNull();
+			await expect(ensure()).resolves.toBeNull();
+			expect(harness.alertIngameServerErrorCode).toBe('EADDRINUSE');
+			expect(emitNotice).toHaveBeenCalledTimes(1);
+			expect(emitNotice).toHaveBeenCalledWith(expect.stringContaining('Port 47823'), 'ingame_port_busy');
+			expect(emitNotice.mock.calls[0]?.[0]).toContain('other Tyrian Companion host');
+		} finally { alertIngameServerMocks.start.mockReset(); }
+	});
+
+	it('the busy-port notice speaks Spanish when the plugin is in Spanish', async () => {
+		alertIngameServerMocks.start.mockRejectedValueOnce(Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' }));
+		const { emitNotice, ensure } = busyPortHarness('es');
+		await ensure();
+		expect(emitNotice).toHaveBeenCalledWith(expect.stringContaining('El puerto 47823'), 'ingame_port_busy');
+	});
+
+	it('a free port shows no notice and no error code', async () => {
+		alertIngameServerMocks.start.mockResolvedValueOnce({ close: async () => undefined } as never);
+		const { harness, emitNotice, ensure } = busyPortHarness();
+		await expect(ensure()).resolves.not.toBeNull();
+		expect(emitNotice).not.toHaveBeenCalled();
+		expect(harness.alertIngameServerErrorCode).toBeNull();
+	});
+
+	it('any other listen error keeps its code and shows no notice', async () => {
+		alertIngameServerMocks.start.mockRejectedValueOnce(Object.assign(new Error('listen EACCES'), { code: 'EACCES' }));
+		const { harness, emitNotice, ensure } = busyPortHarness();
+		await expect(ensure()).resolves.toBeNull();
+		expect(harness.alertIngameServerErrorCode).toBe('EACCES');
+		expect(emitNotice).not.toHaveBeenCalled();
 	});
 });
 

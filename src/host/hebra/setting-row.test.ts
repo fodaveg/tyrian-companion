@@ -2,6 +2,7 @@
 import type { PluginModalOptions, PluginMountFn } from 'hebra-plugin-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createTranslator } from '../../core/i18n';
 import { installDomHelpers } from '../dom-polyfill';
 import { createMemorySecretsBackend, createPreloadedSecrets } from './secrets';
 import { createSettingRow } from './setting-row';
@@ -29,7 +30,7 @@ async function row() {
 	const container = createDiv();
 	document.body.append(container);
 	const report = vi.fn();
-	const setting = createSettingRow(container, { secrets, host: { openModal }, report });
+	const setting = createSettingRow(container, { secrets, host: { openModal }, report, translator: () => createTranslator('es') });
 	return { container, setting, secrets, report };
 }
 

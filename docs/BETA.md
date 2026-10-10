@@ -2,9 +2,9 @@
 
 ## Estado actual
 
-[0.6.26 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.26) como release
+[0.6.27 está publicada](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.27) como release
 normal, sin draft ni prerelease: **canal publicado; instalación/runtime pendiente**. Nombre de
-GitHub Release, tag y `manifest.version` son exactamente `0.6.26`, con ocho assets reales subidos,
+GitHub Release, tag y `manifest.version` son exactamente `0.6.27`, con ocho assets reales subidos,
 no vacíos y verificados. El SHA del tag, gates y workflows están en [ESTADO](ESTADO.md).
 `manifest.json` por sí solo identifica un checkout o instalación; no demuestra carga correcta.
 Para volver a verificar los metadatos de la release:
@@ -68,6 +68,21 @@ exportación y avisos en clientes reales, además de instalación/actualización
 Todo ello permanece pendiente. Las matrices históricas de sesiones API y del helper H8 conservan
 su evidencia de compatibilidad y sus propios límites; no certifican live1 ni requieren activar H8.
 Las condiciones de paquete, ocho assets y verificación BRAT que siguen no cambian.
+
+## Obsidian y Hebra en el mismo equipo: una app a la vez
+
+Usa Obsidian **o** Hebra como recolector, no los dos a la vez en el mismo equipo. Cada app lleva su
+propio almacén, así que no se coordinan: si las dos recolectan, las dos piden datos a la API y
+escriben notas, cada una en lo suyo, y las sesiones quedan partidas entre las dos.
+
+El addon del juego habla con una sola app: la que tenga el puerto 47823. La otra lo intenta cinco
+veces y se rinde. Desde 0.6.28 lo dice: un aviso al arrancar («el puerto 47823 lo tiene otra app») y,
+en Ajustes, bajo la fila del aviso en el juego, «Otra app (¿Obsidian o Hebra?) tiene el puerto. El
+addon hablará con ella.». Si lo ves, no es un fallo del juego: la otra app está recolectando.
+
+Para dejar una en Consulta: en la que no vayas a usar como recolector, abre Ajustes, fila **Modo de esta
+instalación** (en inglés, *This installation's mode*) y elige **Consulta**. Esa app deja de sondear,
+llevar sesiones y avisar, y libera el puerto al reiniciarla.
 
 ## Contrato del paquete
 

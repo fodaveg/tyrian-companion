@@ -452,23 +452,40 @@ export class IndexedDbPriceHistoryStore {
 		);
 	}
 
-	private pruneByCursor(
+	/**
+	 * Deletes every row of `range`. A row that does not pass `parse` is retired like the rest instead of
+	 * aborting the transaction (DU-07): one unreadable row used to block every later prune. Only rows already
+	 * inside the retention cutoff are visited, so no readable row outside it is touched. Returns the count of
+	 * readable rows deleted; retired unreadable rows are reported through the persistence diagnostics.
+	 */
+	private async pruneByCursor(
 		storeName: string,
 		indexName: string,
 		range: IDBKeyRange,
 		parse: (value: unknown) => unknown,
 	): Promise<number> {
-		return this.transaction([storeName], 'readwrite', (transaction, resolve, reject) => {
+		const outcome = await this.transaction<{ deleted: number; unreadable: number }>([storeName], 'readwrite', (transaction, resolve, reject) => {
 			let deleted = 0;
+			let unreadable = 0;
 			const request = transaction.objectStore(storeName).index(indexName).openCursor(range);
 			request.onerror = () => reject(storeFailure(request.error));
 			request.onsuccess = () => {
 				const cursor = request.result;
-				if (cursor === null) { transaction.oncomplete = () => resolve(deleted); return; }
-				try { parse(cursor.value); cursor.delete(); deleted += 1; cursor.continue(); }
-				catch (error) { reject(error); transaction.abort(); }
+				if (cursor === null) { transaction.oncomplete = () => resolve({ deleted, unreadable }); return; }
+				// An unreadable row is retired like a readable one. A throw from `delete`/`continue` is left to
+				// the engine: an exception in this handler aborts the transaction, and `onabort` rejects.
+				try { parse(cursor.value); deleted += 1; }
+				catch { unreadable += 1; }
+				cursor.delete();
+				cursor.continue();
 			};
 		});
+		if (outcome.unreadable > 0) {
+			this.diagnostics.begin('price_history', 'recover').skip('corrupt_tail_recovered', {
+				reason: 'unreadable_row_retired', rows: String(outcome.unreadable), objectStore: storeName,
+			});
+		}
+		return outcome.deleted;
 	}
 
 	close(): void {

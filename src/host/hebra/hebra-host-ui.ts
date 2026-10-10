@@ -29,15 +29,15 @@ import type { HebraPluginApi, PluginMenuEntry } from 'hebra-plugin-api';
 import type { TyrianMenuEntry, TyrianSecretsPort, TyrianUiPort, TyrianViewRegistration } from '../tyrian-host';
 import { attachFolderPicker } from './folder-picker';
 import { registerHebraMainView, revealHebraMainViewSection, updateHebraMainViewSection } from './hebra-main-view';
-import { createSecretControl, createSettingRow } from './setting-row';
-
-export { MISSING_FOLDER_SUFFIX } from './folder-picker';
+import { createSecretControl, createSettingRow, type HebraTranslator } from './setting-row';
 
 /** Prefix of Tyrian's commands in the palette (Obsidian puts the plugin id). */
 export const TYRIAN_COMMAND_PREFIX = 'tyrian-companion:';
 
 export interface HebraTyrianUiDeps {
 	api: Pick<HebraPluginApi, 'ui' | 'editor' | 'env'>;
+	/** The active language, read when a copy is shown (notices, folder picker, secret dialog). */
+	translator: HebraTranslator;
 	secrets: TyrianSecretsPort;
 	/** Paths of the library's folders: the options of `pickFolder`. */
 	folderPaths(): Promise<readonly string[]>;
@@ -77,10 +77,10 @@ function createLane(report: (error: unknown) => void): (step: Step) => void {
 	};
 }
 
-function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistration): () => void {
+function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistration, titles: Map<string, () => string>): () => void {
 	const run = createLane((error) => deps.report(error, `view ${view.type}`));
 	let mounted: HTMLElement | null = null;
-	return deps.api.ui.registerView({
+	const unregister = deps.api.ui.registerView({
 		id: view.type,
 		title: view.title(),
 		icon: view.icon,
@@ -96,6 +96,11 @@ function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistratio
 			run(() => view.unmount(el));
 		},
 	});
+	titles.set(view.type, () => view.title());
+	return () => {
+		titles.delete(view.type);
+		unregister();
+	};
 }
 
 function menuPosition(event: MouseEvent | undefined): { x: number; y: number } {
@@ -117,10 +122,13 @@ function toMenuEntries(entries: readonly TyrianMenuEntry[]): PluginMenuEntry[] {
 
 export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 	const { ui, editor, env } = deps.api;
-	const settingDeps = { secrets: deps.secrets, host: ui, report: (error: unknown) => deps.report(error, 'setting') };
+	const settingDeps = { secrets: deps.secrets, host: ui, translator: deps.translator, report: (error: unknown) => deps.report(error, 'setting') };
 	// The main view registered right now, and what makes each ribbon button again when that changes.
 	let mainViewId: string | null = null;
 	const remakeRibbons = new Set<() => void>();
+	// The title of every view registered right now, read again on a language change (`refreshViewTitles`).
+	const columnTitles = new Map<string, () => string>();
+	const mainTitles = new Map<string, () => string>();
 	const setMainView = (id: string | null): void => {
 		if (mainViewId === id) return;
 		mainViewId = id;
@@ -133,7 +141,9 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 					ui, lane: createLane, report: (error, where) => deps.report(error, where),
 				}, view);
 				setMainView(view.type);
+				mainTitles.set(view.type, () => view.title());
 				return () => {
+					mainTitles.delete(view.type);
 					unregister();
 					if (mainViewId === view.type) setMainView(null);
 				};
@@ -145,7 +155,14 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 		}
 		: {};
 	return {
-		registerView: (view) => registerTyrianView(deps, view),
+		registerView: (view) => registerTyrianView(deps, view, columnTitles),
+		refreshViewTitles: () => {
+			// `ui.updateView` arrived with the main view (API 1.3): before it the method does not exist.
+			// The main view's title only where this Hebra has it (`api.has('ui.view.main')`, asked once).
+			if (typeof ui.updateView !== 'function') return;
+			const pending = [...columnTitles, ...(deps.mainView === true ? mainTitles : [])];
+			for (const [id, title] of pending) ui.updateView(id, { title: title() });
+		},
 		revealView: async (type) => {
 			ui.revealView(type);
 		},
@@ -156,7 +173,7 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 			run: () => {
 				if (command.checkCallback) {
 					if (command.checkCallback(true)) command.checkCallback(false);
-					else ui.notice(command.unavailableReason?.() ?? `«${command.name}» no está disponible ahora.`);
+					else ui.notice(command.unavailableReason?.() ?? deps.translator().t('hebra.command.unavailable', { name: command.name }));
 					return;
 				}
 				command.callback?.();

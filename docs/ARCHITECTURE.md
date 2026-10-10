@@ -23,7 +23,7 @@ Las tres secciones del plugin (Sesión, Inventario, Venta) se describen aparte d
 - **Tres vistas propias** (`'sidebar'`; la única en Obsidian y en un Hebra sin vista principal): `sectionViewRegistration(sección, slot)` deriva la `TyrianViewRegistration` de cada una con el tipo de vista y el `placement` de su slot (`COMPANION_VIEW_SLOT`, `INVENTORY_ADVISOR_VIEW_SLOT`, `SALE_VIEW_SLOT`).
 - **Una vista en la pantalla principal** (`'main'`): `sectionsViewRegistration` deriva UNA `TyrianSectionsViewRegistration` (`TYRIAN_MAIN_VIEW_TYPE`) que lista las tres en ese orden bajo su etiqueta corta, y la composición la registra por `TyrianUiPort.registerSectionsView`. El host monta cada sección en su primera visita y después la oculta en vez de desmontarla; la monta después de que `revealSection` haya vuelto, así que la composición no da ninguna por montada tras pedirla, y qué sección se vio la última vez lo recuerda el host, no el plugin.
 
-`wantedPlacement()` decide: pantalla principal solo si el host declara `mainView`, tiene `registerSectionsView` y este dispositivo no eligió la barra lateral. Al cambiar la opción en Ajustes, `applyViewPlacement()` retira lo registrado y registra lo otro en el mismo tick, sin recargar el plugin y sin abrir nada (en Hebra, abrir sus Ajustes ya sacó de la pantalla principal). Todo lo que abre una sección desde fuera (los tres comandos, el menú del ribbon, el final de un sync) pasa por `revealSection()` del núcleo, que entra en la sección de la vista única (`TyrianUiPort.revealSection`) o abre su vista propia (`revealView`). Tras un cambio de idioma, `relabelListedSections()` le da al host las etiquetas nuevas (`TyrianUiPort.updateSection`).
+`wantedPlacement()` decide: pantalla principal solo si el host declara `mainView`, tiene `registerSectionsView` y este dispositivo no eligió la barra lateral. Al cambiar la opción en Ajustes, `applyViewPlacement()` retira lo registrado y registra lo otro en el mismo tick, sin recargar el plugin y sin abrir nada (en Hebra, abrir sus Ajustes ya sacó de la pantalla principal). Todo lo que abre una sección desde fuera (los tres comandos, el menú del ribbon, el final de un sync) pasa por `revealSection()` del núcleo, que entra en la sección de la vista única (`TyrianUiPort.revealSection`) o abre su vista propia (`revealView`). Tras un cambio de idioma, `relabelListedSections()` le da al host las etiquetas nuevas (`TyrianUiPort.updateSection`). Un host que lee el título de una vista una sola vez, al registrarla (Hebra), implementa además `TyrianUiPort.refreshViewTitles()`: el núcleo lo llama en ese mismo cambio y el adaptador de Hebra repite `ui.updateView(id, { title })` para las tres vistas de columna y, solo si `api.has('ui.view.main')`, para la vista principal.
 
 Una sección oculta sin desmontar no trabaja. Cada controlador lleva la marca «oculta» (`setVisible`) y la consulta donde ya miraba `doc.hidden`: Sesión para su intervalo de 1 s, Venta suelta su temporizador de caducidad e Inventario no pide frames para el progreso de un sync (y si al ocultarse tenía uno pedido, ese progreso queda apuntado). Al recibir «oculta» ninguno mide nada. Un `render()` pedido mientras tanto (los repintados del núcleo recorren los controladores montados, visibles o no) solo se apunta, y al volver a mostrarse se paga UNA vez; Sesión, si no debe ninguno, solo pone al día sus relojes y rearma el intervalo, y Venta repinta siempre una vez porque una cifra pudo caducar. Lo que las acciones compartidas leen del trabajo en curso de Inventario (`setInventorySurfaceBusy`) no se pausa. Los servicios no dependen de que su sección esté montada o visible: la sesión en vivo se construye en `initializeRuntime` con su propio temporizador y solo avisa a las vistas.
 
@@ -46,6 +46,30 @@ En Hebra, `src/host/hebra/hebra-main-view.ts` traduce esa vista a la de su API 1
 - `platform`: contrato H8.1/H8.4, núcleo H8.6, frontera H8.7 y política shadow H8.8 puras con puertos inyectados; no contiene I/O ambiente ni executor host.
 - `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
+
+### Dirección de las capas
+
+Una carpeta de `src/` solo puede importar **valores** de una carpeta de una capa **estrictamente inferior**; nunca de la suya (salvo dentro de ella misma) ni de una superior. `import type` e `import { type X }` no cuentan: el compilador los borra y no acoplan en ejecución. De abajo arriba:
+
+| Capa | Carpetas | Por qué está ahí |
+| --- | --- | --- |
+| 0 | `core`, `performance` | Hojas: `core` es transporte, configuración, secretos y utilidades que todos usan y que no deben conocer ningún dominio; `performance` son contratos H6 sin imports ni consumidores. |
+| 1 | `account` | Cliente y validación de la API de GW2; solo necesita `core`. |
+| 2 | `catalog` | Catálogo público; usa los parsers de `account`. |
+| 3 | `alerts` | Contratos y emisión de avisos; los consumen economía y sesiones. |
+| 4 | `economy` | Contrato monetario, tasas, precios y valoración; puro, sobre `alerts`, `catalog` y `account`. |
+| 5 | `advisor` | Inventory Advisor: razona sobre la economía. |
+| 6 | `assets` | Bases gestionadas; consumen los resultados del advisor. |
+| 7 | `inventory`, `wallet` | Persistencia Vault-only de inventario y de cartera; hermanas, no se importan entre sí. |
+| 8 | `sessions` | Sesión en vivo, historial y persistencia; combina economía, inventario y cartera. |
+| 9 | `halloween`, `achievements` | Funciones de producto que se apoyan en sesiones y no las importa nadie por debajo de `ui`. |
+| 10 | `ui` | Vistas y paneles; ningún dominio importa `ui` (el principio de `:135`). |
+| 11 | `runtime` | La composición: monta servicios y vistas, por eso importa casi todo, `ui` incluida. |
+| 12 | `host` | Adaptadores a Obsidian y a Hebra; son el borde y lo único que arranca la composición. |
+
+Fuera de la escalera: `platform` (la isla H8) no importa nada del resto de `src/` y cualquiera puede importarla; `test` (arneses) importa lo que necesite y solo lo importan los tests; los ficheros sueltos de `src/` (`main.ts`) son puntos de entrada y no son capa. Una carpeta nueva se coloca en esta tabla y en `LAYERS` antes de usarse.
+
+`src/layer-direction-architecture.test.ts` lo hace cumplir leyendo los imports de valor con el compilador de TypeScript. Congela el estado del 10 oct 2026: 12 aristas que hoy suben (listadas con fichero, línea y el movimiento de [DE-02](audit/2026-10-10-deuda-estructural.md) que las elimina: 1 de (1), 1 de (2), 1 de (3), 5 de (4) y 4 que ningún movimiento cubre aún). La lista solo puede encoger: una arista nueva hacia arriba rompe el test, y una excepción cuyo import ya no existe también, hasta que se borra de `LEGACY_EXCEPTIONS`. La línea de cada excepción es indicativa; la identidad es fichero y especificador.
 
 ## Frontera de release H7.4/H7.5
 
@@ -770,7 +794,7 @@ contar casillas.
 
 ## Internacionalización H5.9
 
-`core/i18n.ts` es el único traductor tipado para `es|en`: compone el catálogo base con el fragmento runtime y comprueba en tests la paridad exacta de claves y placeholders. Los textos interpolados se devuelven como texto plano; las incidencias, nombres de cuenta, personajes y otros datos no confiables nunca se convierten en HTML. Los IDs de comandos, enums, marcadores/hash, rutas, frontmatter `tc_*` y propiedades/fórmulas de Bases permanecen neutrales; solo se localizan etiquetas, valores de presentación y contenido Markdown generado. Cambiar idioma repinta ajustes, Companion, menús y assets seleccionados en vivo; Obsidian conserva los nombres de comandos ya registrados, por lo que su paleta adopta el nuevo nombre tras recargar el plugin.
+`core/i18n.ts` es el único traductor tipado para `es|en`: compone el catálogo base con el fragmento runtime y comprueba en tests la paridad exacta de claves y placeholders. Los textos interpolados se devuelven como texto plano; las incidencias, nombres de cuenta, personajes y otros datos no confiables nunca se convierten en HTML. Los IDs de comandos, enums, marcadores/hash, rutas, frontmatter `tc_*` y propiedades/fórmulas de Bases permanecen neutrales; solo se localizan etiquetas, valores de presentación y contenido Markdown generado. El adaptador de Hebra (`src/host/hebra/`) no escribe texto fijo: sus avisos, el selector de carpeta, el diálogo de secretos y el panel de notas no adoptadas salen del mismo catálogo (claves `hebra.*` de `i18n-runtime-catalog.ts`) con el traductor del idioma activo (`settings.language` guardado y, si no hay, `api.env.locale()`), que se relee en cada uso; los números salen con el locale de ese idioma (`formatCount`). Un test (`hebra-language.test.ts`, con el recorrido AST de `src/test/module-boundary.ts`) falla si en los `.ts` de `src/host/hebra/` el argumento de `notice(…)`, `setButtonText(…)` o `setText(…)`, una asignación a `.textContent`, `.placeholder` o `.title`, `setAttribute('aria-label' | 'title' | 'placeholder', …)` o una propiedad `title:`/`name:` es un literal de cadena o una plantilla con texto, en cualquier idioma; no ve un texto fijo que llegue a esos sitios a través de una variable ni otras superficies. Los dos comandos de exportación de sesión dan su `unavailableReason` cuando no hay nada que exportar. Cambiar idioma repinta ajustes, Companion, menús y assets seleccionados en vivo; Obsidian conserva los nombres de comandos ya registrados, por lo que su paleta adopta el nuevo nombre tras recargar el plugin.
 
 ## Historial durable H5.10
 

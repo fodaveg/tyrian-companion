@@ -412,6 +412,7 @@ type NoticeDiagnosticSource =
 	| 'consult_mode'
 	| 'vault_relocation'
 	| 'collector_conflict'
+	| 'ingame_port_busy'
 	| 'session_command'
 	| 'live_observation'
 	| 'valuable_loot'
@@ -658,6 +659,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private alertIngameCloseFlight: Promise<void> | null = null;
 	/** The last start rejection's machine-readable `.code` own property, e.g. `EADDRINUSE`. Null once a start succeeds. */
 	private alertIngameServerErrorCode: string | null = null;
+	/** HP-05: the busy-port notice is shown once per plugin start, however many times the bind is retried. */
+	private alertIngamePortBusyNoticed = false;
 	/** Per-process counter for the `seq` field addons use to dedupe a reconnect. Never persisted. */
 	private alertIngameSeq = 0;
 	/**
@@ -4366,7 +4369,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			})
 			.finally(() => { this.alertIngameServerFlight = null; });
 		this.alertIngameServerFlight = flight;
-		return await flight;
+		const server = await flight;
+		// HP-05: after the bind's own retries, a port held by another app (usually the other host).
+		if (server === null && this.alertIngameServerErrorCode === 'EADDRINUSE' && !this.alertIngamePortBusyNoticed) {
+			this.alertIngamePortBusyNoticed = true;
+			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.ingamePortBusy', { port: String(port) }), 'ingame_port_busy');
+		}
+		return server;
 	}
 
 	/** What the bridge reports about one connection: which producers are here, then the game presence. */
@@ -4589,9 +4598,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const translator = (): Translator => createTranslator(this.settings.language);
 		const specs = [
 			{ id: EXPORT_LIVE_SESSION_COMMAND_ID, name: 'commands.exportLiveSession' as const,
+				unavailable: 'commands.exportLiveUnavailable' as const,
 				available: () => this.runtimeReady && this.liveSessions?.getRuntime() != null,
 				run: () => this.exportLiveSession('timeline', 'csv') },
 			{ id: EXPORT_LEGACY_SESSION_COMMAND_ID, name: 'commands.exportLegacySession' as const,
+				unavailable: 'commands.exportLegacyUnavailable' as const,
 				available: () => this.runtimeReady && this.sessions.getPreservedLegacyRuntime() !== null,
 				run: () => this.exportPreservedLegacySession() },
 		];
@@ -4609,6 +4620,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 					}
 					return available;
 				},
+				unavailableReason: () => (spec.available() ? null : translateRuntime(translator(), spec.unavailable)),
 			});
 		}
 	}
@@ -5732,7 +5744,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 		this.renderViews();
 		if (previousLanguage !== this.settings.language || secretChanged) this.renderInventoryAdvisorViews();
-		if (previousLanguage !== this.settings.language) this.relabelListedSections();
+		if (previousLanguage !== this.settings.language) {
+			this.host.ui.refreshViewTitles?.();
+			this.relabelListedSections();
+		}
 		// An explicit folder change takes Bases/templates with it, so the selector stays the
 		// single source of truth without a separate manual step.
 		if (previousOutputFolder !== this.settings.outputFolder) await this.reconcileManagedAssetsRoot(context);
