@@ -652,6 +652,8 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			}
 		},
 		closeStorage: () => {
+			// The index's saves run in the background and are not waited for: none starts after this, so none reopens the kv.
+			index.stopSaving();
 			deps.pathIndexKv.close?.();
 			deps.fileBackend.close?.();
 		},

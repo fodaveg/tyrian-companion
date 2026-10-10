@@ -97,6 +97,13 @@ function kvKey(namespace: string): string {
 /**
  * Preloaded in memory; each mutation persists the whole index (one write per change, outside
  * `batch`). `namespace` keeps two libraries, or two output folders, of the same device apart.
+ *
+ * The saves run in the background, one at a time, and nobody waits for them (decided 10 Oct 2026,
+ * HP-13): a mutation returns as soon as memory holds it. The copy on disk is only a cache that the
+ * next start reconciles from the notes' markers (`seedTyrianPathIndex`), so one that lags costs
+ * nothing, while waiting on a storage engine that does not answer cost ten seconds per save, the
+ * start's included and every note the core created. A change made while a save is in flight is
+ * saved after it, and only the newest text: the ones in between are never written.
  */
 export class TyrianPathIndex {
 	readonly #kv: TyrianPathIndexKv;
@@ -112,6 +119,14 @@ export class TyrianPathIndex {
 	 * would otherwise rewrite the whole index to say what it already says.
 	 */
 	#saved: string | undefined;
+	/** The text being written now, until its write settles. */
+	#writing: string | undefined;
+	/** The newest text waiting for the write in flight to settle; it replaces any older one still waiting. */
+	#queued: string | undefined;
+	/** The background writer while it runs (`whenSaved`); null when nothing is in flight or waiting. */
+	#drain: Promise<void> | null = null;
+	/** After `stopSaving()`: no save starts any more. */
+	#stopped = false;
 	/** Inside `batch()`: mutations are saved ONCE at the end. */
 	#batchDepth = 0;
 	#batchDirty = false;
@@ -162,24 +177,66 @@ export class TyrianPathIndex {
 		return index;
 	}
 
-	async #persist(): Promise<void> {
+	/** Hands the index as it is now to the background writer; returns at once (see the class). */
+	#persist(): void {
 		if (this.#batchDepth > 0) {
 			this.#batchDirty = true;
 			return;
 		}
+		if (this.#stopped) return;
 		const snapshot: TyrianPathIndexSnapshot = {
 			version: 1,
 			entries: [...this.#byPath.values()],
 			unadopted: this.#unadopted,
 		};
 		const text = JSON.stringify(snapshot);
-		if (text === this.#saved) return;
-		try {
-			await this.#kv.set(kvKey(this.#namespace), text);
-			this.#saved = text;
-		} catch (error) {
-			this.#reportStorageError(error);
+		// Compared with what the disk will say once the writer is done: the newest text waiting, else the one in flight,
+		// else the one last read or written. A write that fails does not update `#saved`, so the next change writes again.
+		if (text === (this.#queued ?? this.#writing ?? this.#saved)) return;
+		this.#queued = text;
+		if (this.#drain !== null) return;
+		const drain = this.#writeQueued();
+		// Kept only while a write is in flight: a kv that throws instead of rejecting finishes the writer before this line,
+		// and a finished writer kept here would never be cleared (`whenSaved` would wait on it for ever).
+		if (this.#writing !== undefined) this.#drain = drain;
+	}
+
+	/**
+	 * The background writer: one write at a time, always the newest text, until nothing waits. It never rejects: a
+	 * failed write goes to `onStorageError` and the writer goes on with what came meanwhile.
+	 */
+	async #writeQueued(): Promise<void> {
+		while (this.#queued !== undefined && !this.#stopped) {
+			const text = this.#queued;
+			this.#queued = undefined;
+			this.#writing = text;
+			try {
+				await this.#kv.set(kvKey(this.#namespace), text);
+				this.#saved = text;
+			} catch (error) {
+				this.#reportStorageError(error);
+			} finally {
+				this.#writing = undefined;
+			}
 		}
+		this.#drain = null;
+	}
+
+	/**
+	 * Resolves once no save is in flight or waiting (at once when none is): for the tests, and for whoever wants the copy on
+	 * disk current. It never rejects; whether the writes succeeded is what `onStorageError` was told.
+	 */
+	async whenSaved(): Promise<void> {
+		while (this.#drain !== null) await this.#drain;
+	}
+
+	/**
+	 * The plugin is closing: no save starts from now on and the one waiting is dropped, so nothing opens the kv again after
+	 * its owner closed it. The one in flight is not waited for. What is lost is reconciled by the next start.
+	 */
+	stopSaving(): void {
+		this.#stopped = true;
+		this.#queued = undefined;
 	}
 
 	#reportStorageError(error: unknown): void {
@@ -189,7 +246,7 @@ export class TyrianPathIndex {
 	/**
 	 * Groups many mutations into ONE kv write (seeding: without it every adopted note saved the
 	 * whole index again, 1,364 times with David's library). If `run` throws, what already changed
-	 * in memory is still saved before the error propagates.
+	 * in memory is still handed to the writer before the error propagates.
 	 */
 	async batch<T>(run: () => Promise<T>): Promise<T> {
 		this.#batchDepth += 1;
@@ -199,7 +256,7 @@ export class TyrianPathIndex {
 			this.#batchDepth -= 1;
 			if (this.#batchDepth === 0 && this.#batchDirty) {
 				this.#batchDirty = false;
-				await this.#persist();
+				this.#persist();
 			}
 		}
 	}
@@ -211,7 +268,7 @@ export class TyrianPathIndex {
 
 	async setUnadopted(notes: readonly TyrianUnadoptedNote[]): Promise<void> {
 		this.#unadopted = [...notes];
-		await this.#persist();
+		this.#persist();
 	}
 
 	has(path: string): boolean {
@@ -246,20 +303,20 @@ export class TyrianPathIndex {
 		this.#dropId(id);
 		this.#byPath.set(path, { path, kind: 'note', id, mtime });
 		this.#byId.set(id, path);
-		await this.#persist();
+		this.#persist();
 	}
 
 	async setFile(path: string, id: string, mtime: number): Promise<void> {
 		this.#dropId(id);
 		this.#byPath.set(path, { path, kind: 'file', id, mtime });
 		this.#byId.set(id, path);
-		await this.#persist();
+		this.#persist();
 	}
 
 	async setFolder(path: string): Promise<void> {
 		if (this.#byPath.get(path)?.kind === 'folder') return;
 		this.#byPath.set(path, { path, kind: 'folder' });
-		await this.#persist();
+		this.#persist();
 	}
 
 	/**
@@ -303,7 +360,7 @@ export class TyrianPathIndex {
 			if (entry.id) this.#byId.delete(entry.id);
 			removed += 1;
 		}
-		if (removed > 0) await this.#persist();
+		if (removed > 0) this.#persist();
 		return removed;
 	}
 
@@ -312,7 +369,7 @@ export class TyrianPathIndex {
 		if (path === undefined) return;
 		this.#byPath.delete(path);
 		this.#byId.delete(id);
-		await this.#persist();
+		this.#persist();
 	}
 
 	#dropId(id: string): void {
