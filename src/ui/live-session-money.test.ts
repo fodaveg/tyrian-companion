@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { formatCopperVisual } from '../core/copper-format';
+import { installDomHelpers } from '../host/dom-polyfill';
 import { COIN_ICON_URLS, CoinFigure, speakCopper, splitCopper } from './live-session-money';
+
+// The figure builds with Obsidian's `createSpan`, which both hosts provide (Hebra through the polyfill).
+beforeAll(() => { installDomHelpers(window); });
 
 const SPOKEN = '{gold} de oro, {silver} de plata, {copper} de cobre';
 const LOSS = 'menos {gold} de oro, {silver} de plata, {copper} de cobre';

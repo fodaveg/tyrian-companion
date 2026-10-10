@@ -1,5 +1,3 @@
-const HTML_NS = 'http://www.w3.org/1999/xhtml';
-
 /**
  * The three official coin icons of the game. They are the `ui_coin_gold`, `ui_coin_silver` and
  * `ui_coin_copper` entries of the public `GET https://api.guildwars2.com/v2/files?ids=all`, on the same
@@ -35,31 +33,25 @@ export class CoinFigure {
 	private readonly numbers: HTMLElement[] = [];
 
 	constructor(document: Document) {
-		const node = (tag: string, className: string): HTMLElement => {
-			const created = document.createElementNS(HTML_NS, tag);
-			created.className = className;
-			return created;
-		};
-		this.element = node('span', 'tyrian-money');
+		// The root has no parent yet (the live panel places it), so only it comes from `document`;
+		// the parts hang from it through Obsidian's helpers (polyfilled in Hebra, `host/dom-polyfill.ts`).
+		this.element = document.createElement('span');
+		this.element.className = 'tyrian-money';
 		this.element.setAttribute('role', 'img');
-		this.sign = node('span', 'tyrian-money__sign');
-		this.element.append(this.sign);
+		this.sign = this.element.createSpan({ cls: 'tyrian-money__sign' });
 		UNITS.forEach(([unit, letter], index) => {
-			const part = node('span', 'tyrian-money__part');
+			if (index > 0) this.element.append(document.createTextNode(' '));
+			const part = this.element.createSpan({ cls: 'tyrian-money__part' });
 			part.dataset.unit = unit;
-			const number = node('span', 'tyrian-money__num');
-			const icon = node('img', 'tyrian-money__icon') as HTMLImageElement;
+			const number = part.createSpan({ cls: 'tyrian-money__num' });
+			const icon = part.createEl('img', { cls: 'tyrian-money__icon' });
 			icon.alt = '';
 			icon.setAttribute('aria-hidden', 'true');
 			icon.addEventListener('load', () => { part.dataset.icon = 'on'; });
 			icon.addEventListener('error', () => { icon.remove(); });
 			icon.src = COIN_ICON_URLS[unit];
-			const letterNode = node('span', 'tyrian-money__letter');
-			letterNode.textContent = letter;
-			part.append(number, icon, letterNode);
+			part.createSpan({ cls: 'tyrian-money__letter', text: letter });
 			this.numbers.push(number);
-			if (index > 0) this.element.append(document.createTextNode(' '));
-			this.element.append(part);
 		});
 	}
 
