@@ -199,8 +199,7 @@ Al terminar, si no necesitas el registro, desactívalo y usa **Limpiar registros
   distinto de `skipped` a `warn`, `cancelled` a `info`, el resto a `debug`; RT-04 (en esta misma release)
   sube `life_lock_proven`, `life_lock_absent` y `taken` a `warn`, así que el nivel por defecto basta.
   Valores por defecto en `src/core/settings.ts` (`debugLoggingEnabled: false`,
-  `debugLoggingLevel: 'warn'`). Esta frase describe el cambio acordado; no lo he comprobado en el código
-  de este árbol, donde esos tres eventos aún se escriben a `debug`.
+  `debugLoggingLevel: 'warn'`).
 - **Hebra guarda el registro en una base IndexedDB** (`src/host/hebra/local-storage.ts`), no en un
   fichero: solo se lee con el extracto o el paquete de soporte de los ajustes.
 - **Instalación en disco.** Hebra deja la versión instalada en su `installed.json` y los ficheros del
