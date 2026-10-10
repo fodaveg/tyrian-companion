@@ -24,7 +24,7 @@ const MICRO_COPPER = 1_000_000n;
 const BASIS_POINTS = 10_000n;
 const DAY_MS = 86_400_000;
 
-export const CONTAINER_DISPOSITION_KERNEL_VERSION = 1 as const;
+const CONTAINER_DISPOSITION_KERNEL_VERSION = 1 as const;
 
 export type ContainerBindingEvidence = 'unbound' | 'account_bound' | 'character_bound' | 'unknown';
 
@@ -33,7 +33,7 @@ export type ContainerBindingEvidence = 'unbound' | 'account_bound' | 'character_
  * asks for the second basis as well, so the comparison is published as data
  * rather than as a version bump nobody can opt out of.
  */
-export type ContainerSaleBasisPolicy = 'immediate' | 'immediate_and_listing';
+type ContainerSaleBasisPolicy = 'immediate' | 'immediate_and_listing';
 
 export interface ContainerDispositionKernelPolicy {
 	version: 1;
@@ -43,7 +43,7 @@ export interface ContainerDispositionKernelPolicy {
 	saleBasis: ContainerSaleBasisPolicy;
 }
 
-export interface ContainerDispositionMarketBatch {
+interface ContainerDispositionMarketBatch {
 	version: 1;
 	batchId: string;
 	capturedAt: string;
@@ -52,7 +52,7 @@ export interface ContainerDispositionMarketBatch {
 	depth: InventoryMarketDepthEvidenceV1 | null;
 }
 
-export interface ContainerDispositionKernelInput {
+interface ContainerDispositionKernelInput {
 	version: typeof CONTAINER_DISPOSITION_KERNEL_VERSION;
 	asOf: string;
 	quantity: number;
@@ -67,7 +67,7 @@ export interface ContainerDispositionKernelInput {
 	policy: ContainerDispositionKernelPolicy;
 }
 
-export type ContainerDispositionKernelReason =
+type ContainerDispositionKernelReason =
 	| 'malformed_input'
 	| 'evidence_mismatch'
 	| 'price_stale'
@@ -84,7 +84,7 @@ export type ContainerDispositionKernelReason =
 	| 'arithmetic_overflow'
 	| 'model_ev_inconsistent';
 
-export type ContainerSaleRoute = 'instant_sell' | 'listing' | 'vendor';
+type ContainerSaleRoute = 'instant_sell' | 'listing' | 'vendor';
 
 export interface ContainerDispositionKernelDecision {
 	action: 'open' | 'sell';
@@ -92,7 +92,7 @@ export interface ContainerDispositionKernelDecision {
 	sellRoute: ContainerSaleRoute;
 }
 
-export interface ContainerDispositionSaleValue {
+interface ContainerDispositionSaleValue {
 	route: ContainerSaleRoute;
 	unitCopper: number;
 	grossCopper: number;
@@ -102,7 +102,7 @@ export interface ContainerDispositionSaleValue {
 	netCopper: number;
 }
 
-export interface ContainerDispositionOpenValue {
+interface ContainerDispositionOpenValue {
 	evPerContainerMicroCopper: number;
 	totalExpectedMicroCopper: string;
 	/**
@@ -122,26 +122,26 @@ export interface ContainerDispositionOpenValue {
 	rareTreatment: ContainerModelV1['uncertainty']['rareDropTreatment'];
 }
 
-export interface ContainerDispositionThreshold {
+interface ContainerDispositionThreshold {
 	marginBps: number;
 	requiredOpenMicroCopper: string;
 }
 
-export interface ContainerDispositionComparison {
+interface ContainerDispositionComparison {
 	differenceMicroCopper: string;
 	advantageBps: number | null;
 	rule: 'open_at_or_above_threshold';
 }
 
 /** Disclosure only. It never moves the recommendation, which stays conservative. */
-export interface ContainerDispositionOpenWithTail {
+interface ContainerDispositionOpenWithTail {
 	evPerContainerMicroCopper: number;
 	totalExpectedMicroCopper: string;
 	deviationPerContainerMicroCopper: number;
 	meetsThreshold: boolean;
 }
 
-export interface ContainerDispositionRoute {
+interface ContainerDispositionRoute {
 	saleBasis: 'immediate' | 'listing';
 	/**
 	 * `guaranteed_buyer` consumed real buy orders level by level.
@@ -174,7 +174,7 @@ export interface ContainerDispositionKernelExplanation {
 	tail: ContainerTailValuationV1 | null;
 }
 
-export type ContainerDispositionKernelResult =
+type ContainerDispositionKernelResult =
 	| { status: 'ready'; decision: ContainerDispositionKernelDecision; explanation: ContainerDispositionKernelExplanation }
 	| { status: 'review'; reason: ContainerDispositionKernelReason }
 	| { status: 'invalid'; reason: ContainerDispositionKernelReason };

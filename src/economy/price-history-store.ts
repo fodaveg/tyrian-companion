@@ -39,17 +39,17 @@ export class PriceHistoryStoreError extends Error {
 	}
 }
 
-export type PriceHistorySlotClaim =
+type PriceHistorySlotClaim =
 	| { status: 'acquired'; lease: PriceHistoryCaptureLeaseV1 }
 	| { status: 'captured'; snapshot: PriceHistorySnapshotV1 }
 	| { status: 'busy' };
 
-export type PriceHistorySlotCommit =
+type PriceHistorySlotCommit =
 	| { status: 'committed'; snapshot: PriceHistorySnapshotV1 }
 	| { status: 'captured'; snapshot: PriceHistorySnapshotV1 }
 	| { status: 'stale_fence' };
 
-export interface PriceHistoryCompactionResult {
+interface PriceHistoryCompactionResult {
 	dailyRecords: number;
 	prunedSnapshots: number;
 	prunedDaily: number;

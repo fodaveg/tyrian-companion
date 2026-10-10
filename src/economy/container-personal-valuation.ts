@@ -1,8 +1,8 @@
 import { isContainerModel } from './container-model';
 
-export const CONTAINER_PERSONAL_VALUATION_VERSION = 1 as const;
+const CONTAINER_PERSONAL_VALUATION_VERSION = 1 as const;
 
-export interface ContainerPersonalValuationValueV1 {
+interface ContainerPersonalValuationValueV1 {
 	outcomeKey: string;
 	unitCopper: number;
 	origin: 'manual';
@@ -14,7 +14,7 @@ export interface ContainerPersonalValuationV1 {
 	values: ContainerPersonalValuationValueV1[];
 }
 
-export interface ContainerPersonalValuationLineV1 {
+interface ContainerPersonalValuationLineV1 {
 	outcomeKey: string;
 	label: string;
 	expectedUnitsMillionths: number;
@@ -24,7 +24,7 @@ export interface ContainerPersonalValuationLineV1 {
 	origin: 'manual';
 }
 
-export interface ContainerPersonalValuationUnvaluedV1 {
+interface ContainerPersonalValuationUnvaluedV1 {
 	outcomeKey: string;
 	label: string;
 	expectedUnitsMillionths: number;
@@ -47,7 +47,7 @@ export interface ContainerPersonalValuationResolutionV1 {
 	origin: 'manual';
 }
 
-export type ContainerPersonalValuationResult =
+type ContainerPersonalValuationResult =
 	| { status: 'ok'; value: ContainerPersonalValuationResolutionV1 }
 	| { status: 'invalid'; reason: 'invalid_model' | 'invalid_overlay' | 'duplicate_outcome'
 		| 'unknown_outcome' | 'ineligible_outcome' | 'arithmetic_overflow' };

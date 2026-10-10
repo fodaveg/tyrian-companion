@@ -2,7 +2,7 @@ import type { ContainerMarketQuote, ContainerTradingAccess } from './container-e
 import { isContainerModel, type ContainerModelV1 } from './container-model';
 import { calculateTradingPostFees } from './gw2-fees';
 
-export const CONTAINER_TAIL_VALUATION_VERSION = 1 as const;
+const CONTAINER_TAIL_VALUATION_VERSION = 1 as const;
 const MICRO_SCALE = 1_000_000n;
 
 /**
@@ -22,7 +22,7 @@ const MICRO_SCALE = 1_000_000n;
  * only becomes a usable prediction after a number of bags nobody opens by
  * hand.
  */
-export interface ContainerTailBasisValuationV1 {
+interface ContainerTailBasisValuationV1 {
 	basis: 'immediate' | 'listing';
 	/** Net expected copper per container from the priced part of the tail, in micro-copper. */
 	evPerContainerMicroCopper: number;
@@ -46,7 +46,7 @@ export interface ContainerTailValuationV1 {
 	listing: ContainerTailBasisValuationV1;
 }
 
-export type ContainerTailValuationResult =
+type ContainerTailValuationResult =
 	| { status: 'ok'; value: ContainerTailValuationV1 }
 	| { status: 'invalid'; reason: 'invalid_input' | 'arithmetic_overflow' };
 

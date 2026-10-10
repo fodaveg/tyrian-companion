@@ -24,7 +24,7 @@ import { safeAddOrThrow } from '../core/safe-add';
 
 export type ReservationPlanResult = { status: 'ok'; plan: ReservationPlan } | { status: 'invalid'; reason: string };
 export type ReservationBalanceResult = { status: 'ok'; balance: ReservationBalance } | { status: 'invalid'; reason: string };
-export type ReservationOverlayResult = { status: 'ok'; overlay: SessionValuationReservationOverlay } | { status: 'invalid'; reason: string };
+type ReservationOverlayResult = { status: 'ok'; overlay: SessionValuationReservationOverlay } | { status: 'invalid'; reason: string };
 
 export function createReservationPlan(input: unknown): ReservationPlanResult {
 	if (!isRecord(input) || !exactKeys(input, ['goals', 'balance']) ||

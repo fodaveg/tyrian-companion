@@ -23,7 +23,7 @@
  *   seed day is never synthesised to bridge a gap: a missing day stays missing
  *   and the rule that consumes the series is the one that tolerates it.
  */
-export const PRICE_SEED_VERSION = 1 as const;
+const PRICE_SEED_VERSION = 1 as const;
 
 /**
  * Newest days kept from the response, for the sell rule (H13.2). A year of

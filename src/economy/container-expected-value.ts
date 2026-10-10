@@ -1,7 +1,7 @@
 import { isContainerModel, type ContainerModelV1 } from './container-model';
 import { createTradingPostValueWithPolicy, GW2_TRADING_POST_FEE_POLICY } from './gw2-fees';
 
-export const CONTAINER_EXPECTED_VALUE_VERSION = 1 as const;
+const CONTAINER_EXPECTED_VALUE_VERSION = 1 as const;
 const MICRO_SCALE = 1_000_000n;
 
 export type ContainerTradingAccess = 'full' | 'free_to_play' | 'unknown';
@@ -13,7 +13,7 @@ export interface ContainerMarketQuote {
 	askUnitCopper: number | null;
 }
 
-export interface ContainerExpectedValueLine {
+interface ContainerExpectedValueLine {
 	key: string;
 	namespace: ContainerModelV1['outcomes'][number]['namespace'];
 	id: number;
@@ -39,7 +39,7 @@ export interface ContainerExpectedValue {
 	excluded: { modeledUnitsMillionths: number; sampleUnits: number };
 }
 
-export type ContainerExpectedValueResult =
+type ContainerExpectedValueResult =
 	| { status: 'ok'; value: ContainerExpectedValue }
 	| { status: 'invalid'; reason: string };
 

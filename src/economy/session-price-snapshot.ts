@@ -8,11 +8,11 @@ import {
 } from './commerce-listings';
 import { captureInventoryMarketDepth } from './commerce-listings-capture';
 
-export const SESSION_PRICE_SNAPSHOT_VERSION = 1 as const;
-export const SESSION_PRICE_SOURCE = 'gw2-commerce-prices' as const;
+const SESSION_PRICE_SNAPSHOT_VERSION = 1 as const;
+const SESSION_PRICE_SOURCE = 'gw2-commerce-prices' as const;
 const MAX_BATCH_SIZE = 200;
 
-export interface TradingPostQuoteSide {
+interface TradingPostQuoteSide {
 	unitCopper: number;
 	quantity: number;
 }

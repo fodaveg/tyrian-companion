@@ -48,7 +48,7 @@ import {
 	type RecommendationEnvelopeV1,
 } from './recommendation-envelope';
 
-export const CONTAINER_RECOMMENDATION_VERSION = 1 as const;
+const CONTAINER_RECOMMENDATION_VERSION = 1 as const;
 const MICRO_COPPER = 1_000_000n;
 const BASIS_POINTS = 10_000n;
 const DAY_MS = 86_400_000;
@@ -63,7 +63,7 @@ export const DEFAULT_CONTAINER_RECOMMENDATION_POLICY: ContainerRecommendationPol
 	saleBasis: 'immediate',
 };
 
-export interface ContainerRecommendationPolicy {
+interface ContainerRecommendationPolicy {
 	version: 1;
 	openAdvantageBps: number;
 	maxPriceAgeMs: number;
@@ -83,7 +83,7 @@ export interface ContainerModelReview {
 	reviewReason: string;
 }
 
-export interface ContainerMarketBatch {
+interface ContainerMarketBatch {
 	version: 1;
 	batchId: string;
 	capturedAt: string;
@@ -121,7 +121,7 @@ export interface ContainerRecommendationInput {
 	policy: ContainerRecommendationPolicy;
 }
 
-export type ContainerRecommendationReasonCode =
+type ContainerRecommendationReasonCode =
 	| 'session_classification_v1'
 	| 'session_estimated'
 	| 'session_contaminated'
@@ -152,7 +152,7 @@ export type ContainerRecommendationReasonCode =
 	| 'arithmetic_overflow'
 	| 'model_ev_inconsistent';
 
-export interface ContainerRecommendationReason {
+interface ContainerRecommendationReason {
 	code: ContainerRecommendationReasonCode;
 }
 
@@ -172,7 +172,7 @@ export interface ReservedContainerAllocation {
 	quantity: number;
 }
 
-export interface HeldContainerAllocation {
+interface HeldContainerAllocation {
 	intentId: string;
 	state: 'holding' | 'price_unavailable';
 	route: 'instant_sell' | 'listing';

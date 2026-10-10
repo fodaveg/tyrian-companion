@@ -24,7 +24,7 @@ import { PriceHistoryStoreError, type PriceHistoryStoreFailure } from './price-h
 
 const DAY_MS = 86_400_000;
 
-export type PriceHistoryRuntimeStatus =
+type PriceHistoryRuntimeStatus =
 	| 'disabled' | 'loading' | 'collecting' | 'ready' | 'partial'
 	| 'offline' | 'backoff' | 'invalid_payload' | 'http_rejected'
 	| 'store_unavailable' | 'store_corrupt' | 'store_future';

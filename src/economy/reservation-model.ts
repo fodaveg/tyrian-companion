@@ -1,7 +1,7 @@
 import type { SessionValuation } from './session-valuation';
 
 export const RESERVATION_SCHEMA_VERSION = 1 as const;
-export type AssetNamespace = 'item' | 'currency';
+type AssetNamespace = 'item' | 'currency';
 /**
  * `legendary` (SPEC-recomendacion-por-objeto.md M4): a target from the plugin's own legendary-goal
  * setting, never inferred from a session drop. Added alongside the three pre-existing reasons
@@ -13,7 +13,7 @@ export type AssetNamespace = 'item' | 'currency';
 export type ReservationReason = 'achievement' | 'purchase' | 'personal' | 'legendary';
 export type IntendedUse = 'hold' | 'open' | 'consume' | 'exchange' | 'spend';
 export type ReservationBasis = 'owned' | 'available';
-export type ReservationCoverage = 'complete' | 'limited' | 'unknown';
+type ReservationCoverage = 'complete' | 'limited' | 'unknown';
 
 export interface ReservationRequirement {
 	key: string;
@@ -97,7 +97,7 @@ export interface ReservationPlan {
 	warnings: ReservationWarning[];
 }
 
-export interface SessionValuationReservationLine {
+interface SessionValuationReservationLine {
 	itemId: number;
 	gainedQuantity: number;
 	protectedFromLiquidation: number | null;

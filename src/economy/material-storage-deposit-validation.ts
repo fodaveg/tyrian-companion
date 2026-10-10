@@ -30,7 +30,7 @@ export function observedMaterialStorageMinimum(storedQuantities: Iterable<number
 }
 
 /** Per-material quantities a snapshot holds in material storage, one entry per item. */
-export function materialStorageStoredQuantities(snapshot: Pick<StorageSnapshot, 'holdings'>): number[] {
+function materialStorageStoredQuantities(snapshot: Pick<StorageSnapshot, 'holdings'>): number[] {
 	const byItem = new Map<number, number>();
 	for (const holding of snapshot.holdings) {
 		if (holding.kind !== 'item' || holding.location.source !== 'materials') continue;
@@ -81,7 +81,7 @@ export function observedMaterialStorageMinimumMatches(
 		|| capacity.quantity === observedMaterialStorageMinimum(materialStorageStoredQuantities(snapshot));
 }
 
-export interface MaterialStorageDepositDecision {
+interface MaterialStorageDepositDecision {
 	action: string;
 	itemId: number;
 	quantity: number;

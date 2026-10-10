@@ -24,7 +24,7 @@ import { PRICE_SEED_CHART_MAX_DAYS, type PriceSeedDayV1, type PriceSeedFailureRe
  * A refresh failure keeps serving the last cached seed rather than blanking
  * the chart; only a first request that fails leaves the item unseeded.
  */
-export type PriceHistoryPanelSeedStatus = 'idle' | 'loading' | 'seeded' | 'no_seed' | 'store_unavailable';
+type PriceHistoryPanelSeedStatus = 'idle' | 'loading' | 'seeded' | 'no_seed' | 'store_unavailable';
 
 export interface PriceHistoryPanelSeedState {
 	status: PriceHistoryPanelSeedStatus;
@@ -36,9 +36,9 @@ export interface PriceHistoryPanelSeedState {
 }
 
 /** A day old cached seed is refreshed on the next load; datawars2 publishes at most one new day per day. */
-export const PRICE_SEED_PANEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const PRICE_SEED_PANEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-export interface PriceHistoryPanelSeedOptions {
+interface PriceHistoryPanelSeedOptions {
 	priceHistory: Pick<TyrianPriceHistoryPort, 'openSeedCache'>;
 	vaultId: string;
 	transport: HttpTransport;

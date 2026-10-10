@@ -1,13 +1,13 @@
-export const COPPER_VALUATION_VERSION = 1 as const;
+const COPPER_VALUATION_VERSION = 1 as const;
 
 export type CopperValueKind = 'gross' | 'instant_sell' | 'listing' | 'vendor' | 'non_liquid';
-export type NonLiquidReason =
+type NonLiquidReason =
 	| 'no_eligible_route'
 	| 'missing_required_data'
 	| 'not_applicable'
 	| 'unknown';
 
-export interface GrossCopperValue {
+interface GrossCopperValue {
 	version: typeof COPPER_VALUATION_VERSION;
 	kind: 'gross';
 	priceSource: 'reference';
@@ -53,7 +53,7 @@ export interface NonLiquidCopperValue {
 	netCopper: null;
 }
 
-export type CopperValue =
+type CopperValue =
 	| GrossCopperValue
 	| TradingPostCopperValue
 	| VendorCopperValue
@@ -66,7 +66,7 @@ export type CopperValueError =
 	| 'arithmetic_overflow'
 	| 'fees_exceed_gross';
 
-export type CopperValueResult<T extends CopperValue = CopperValue> =
+type CopperValueResult<T extends CopperValue = CopperValue> =
 	| { status: 'ok'; value: T }
 	| { status: 'invalid'; reason: CopperValueError };
 

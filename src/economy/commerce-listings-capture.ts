@@ -13,7 +13,7 @@ import {
 
 export const COMMERCE_LISTINGS_BATCH_SIZE = 200;
 /** How many `commerce/listings` batches one capture keeps in flight at once. */
-export const COMMERCE_LISTINGS_MAX_IN_FLIGHT = 2;
+const COMMERCE_LISTINGS_MAX_IN_FLIGHT = 2;
 
 type RateLimitGate = Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>;
 

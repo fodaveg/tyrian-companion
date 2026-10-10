@@ -8,16 +8,16 @@ import {
 	type VendorCopperValue,
 } from './monetary';
 
-export const ITEM_LIQUIDITY_CLASSIFICATION_VERSION = 1 as const;
+const ITEM_LIQUIDITY_CLASSIFICATION_VERSION = 1 as const;
 
-export type TradingPostPriceStatus = 'available' | 'missing' | 'invalid' | 'unavailable';
-export type BindingClassification =
+type TradingPostPriceStatus = 'available' | 'missing' | 'invalid' | 'unavailable';
+type BindingClassification =
 	| { kind: 'unbound'; source: 'holding' }
 	| { kind: 'account_bound'; source: 'holding' | 'catalog' }
 	| { kind: 'character_bound'; source: 'holding' | 'catalog' }
 	| { kind: 'unknown'; source: 'holding' | 'catalog_missing' };
 
-export type TradingPostExclusionReason =
+type TradingPostExclusionReason =
 	| 'current_state_unavailable'
 	| 'account_bound'
 	| 'character_bound'
@@ -27,7 +27,7 @@ export type TradingPostExclusionReason =
 	| 'price_invalid'
 	| 'price_unavailable';
 
-export type VendorExclusionReason =
+type VendorExclusionReason =
 	| 'current_state_unavailable'
 	| 'catalog_missing'
 	| 'vendor_sale_forbidden'
@@ -37,13 +37,13 @@ export type TradingPostEligibility =
 	| { status: 'eligible' }
 	| { status: 'excluded'; reason: TradingPostExclusionReason };
 
-export type VendorEligibility =
+type VendorEligibility =
 	| { status: 'eligible'; value: VendorCopperValue }
 	| { status: 'excluded'; reason: VendorExclusionReason };
 
-export type LiquidGoldRoute = 'trading_post' | 'vendor';
+type LiquidGoldRoute = 'trading_post' | 'vendor';
 
-export type LiquidGoldClassification =
+type LiquidGoldClassification =
 	| {
 		status: 'eligible';
 		routes: LiquidGoldRoute[];
@@ -55,7 +55,7 @@ export type LiquidGoldClassification =
 		value: NonLiquidCopperValue;
 	};
 
-export interface ItemLiquidityClassification {
+interface ItemLiquidityClassification {
 	version: typeof ITEM_LIQUIDITY_CLASSIFICATION_VERSION;
 	itemId: number;
 	quantity: number;
@@ -66,7 +66,7 @@ export interface ItemLiquidityClassification {
 	liquidGold: LiquidGoldClassification;
 }
 
-export type ItemLiquidityClassificationResult =
+type ItemLiquidityClassificationResult =
 	| { status: 'ok'; classification: ItemLiquidityClassification }
 	| {
 		status: 'invalid';

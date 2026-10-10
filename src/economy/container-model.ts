@@ -1,7 +1,7 @@
-export const CONTAINER_MODEL_SCHEMA_VERSION = 1 as const;
-export const EXPECTED_UNITS_SCALE = 1_000_000 as const;
+const CONTAINER_MODEL_SCHEMA_VERSION = 1 as const;
+const EXPECTED_UNITS_SCALE = 1_000_000 as const;
 
-export type ContainerOutcomeNamespace = 'item' | 'currency';
+type ContainerOutcomeNamespace = 'item' | 'currency';
 export type OutcomeValuationPolicy =
 	| 'liquid_market'
 	| 'vendor_only'
@@ -9,7 +9,7 @@ export type OutcomeValuationPolicy =
 	| 'excluded'
 	| 'defer';
 
-export interface ContainerOutcomeModel {
+interface ContainerOutcomeModel {
 	key: string;
 	namespace: ContainerOutcomeNamespace;
 	id: number;
@@ -29,13 +29,13 @@ export interface ContainerOutcomeModel {
  * big it is. `sampleUnits` across the items may cover only part of the bucket,
  * and the gap is reported rather than closed by guessing.
  */
-export interface ContainerExcludedItemModel {
+interface ContainerExcludedItemModel {
 	id: number;
 	label: string;
 	sampleUnits: number;
 }
 
-export interface ContainerExcludedBucketModel {
+interface ContainerExcludedBucketModel {
 	category: string;
 	sampleUnits: number;
 	reason: 'unsupported_long_tail' | 'super_rare_jackpot';
@@ -71,7 +71,7 @@ export interface ContainerModelV1 {
 	createdAt: string;
 }
 
-export type ContainerModelResult =
+type ContainerModelResult =
 	| { status: 'ok'; model: ContainerModelV1 }
 	| { status: 'invalid'; reason: string };
 

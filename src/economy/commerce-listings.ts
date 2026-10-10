@@ -31,7 +31,7 @@ export interface DemonstratedMarketValueV1 {
 	unitCopper: number | null;
 }
 
-export interface DemonstratedExpectedMarketValueV1 {
+interface DemonstratedExpectedMarketValueV1 {
 	status: 'complete' | 'partial' | 'no_market' | 'invalid';
 	requestedUnitsMillionths: bigint;
 	coveredUnitsMillionths: bigint;
