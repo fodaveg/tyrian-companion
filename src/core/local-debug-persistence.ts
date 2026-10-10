@@ -159,7 +159,9 @@ export function createLocalDebugPersistenceSink(
 			// H14.9: a `skip` with its default code, `skipped`, is routine degraded operation (a
 			// cold cache, a store not yet open) and stays at `debug`; only a `skip` carrying a more
 			// specific code (`quota_exceeded`, `corrupt_tail_recovered`, …) is unusual enough to warn on.
+			// `cancelled` (a store's own `close()`) is routine and goes at `info`, as `LocalDebugActionRunner.cancel` does.
 			level: event.phase === 'failure' ? 'error'
+				: event.phase === 'skip' && event.code === 'cancelled' ? 'info'
 				: event.phase === 'skip' && event.code !== 'skipped' ? 'warn' : 'debug',
 			phase: event.phase,
 			code: event.code,
