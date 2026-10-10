@@ -1,5 +1,5 @@
 {
-	"frozenCount": 17,
+	"frozenCount": 16,
 	"frozen": [
 		"src/economy/price-history-architecture.test.ts",
 		"src/economy/recommendation-envelope-architecture.test.ts",
@@ -11,7 +11,6 @@
 		"src/platform/mumble-v2-spike-architecture.test.ts",
 		"src/sessions/pending-proposal-architecture.test.ts",
 		"src/sessions/pilot-metrics-architecture.test.ts",
-		"src/sessions/session-debug-semantics-architecture-source-text.test.ts",
 		"src/ui/companion-status-model-source-text.test.ts",
 		"src/ui/inventory-advisor-integration-source-text.test.ts",
 		"src/ui/product-action-architecture.test.ts",
