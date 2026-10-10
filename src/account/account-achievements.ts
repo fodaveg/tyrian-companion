@@ -77,7 +77,7 @@ function parseFullEntry(value: unknown): AccountAchievementEntry | null {
 	return {
 		id: value.id, done: value.done, current, max,
 		repeated: (value.repeated ?? null) as number | null,
-		bits: value.bits === undefined ? null : [...(value.bits as number[])],
+		bits: value.bits === undefined ? null : [...value.bits],
 	};
 }
 
