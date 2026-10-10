@@ -1,10 +1,16 @@
 /**
  * Sale tab helpers that read no runtime state (DE-01, step 1): the curated festival anchors, the
  * calendar window lookups and the advisor-row mappers the Sale view and `TyrianCompanionCore` share.
- * Moved here unchanged from `tyrian-companion-core.ts`, which re-exports the public ones.
+ * Moved here unchanged from `tyrian-companion-core.ts`, which re-exports the public ones. Step 2
+ * added the curated bundle's fallback price age and live expiry, which `SaleRuntime` and the core
+ * both read.
  */
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
-import { inventoryAdvisorBuiltinBundleProvider } from '../advisor/inventory-advisor-builtin-bundle';
+import {
+	inventoryAdvisorBuiltinBundleProvider,
+	INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL,
+	type InventoryAdvisorBuiltinBundleProvider,
+} from '../advisor/inventory-advisor-builtin-bundle';
 import {
 	POSITION_RECOMMENDATION_REASON_CODES,
 	type PositionRecommendationReasonCode,
@@ -181,4 +187,25 @@ export function saleOpenVsSellCopper(
 	const { explanation } = containerEconomy.liquidOnly;
 	const openMicroCopper = BigInt(explanation.open.totalExpectedMicroCopper);
 	return { openCopper: Number(openMicroCopper / 1_000_000n), sellCopper: explanation.sellNow.netCopper };
+}
+
+/**
+ * `recommendPosition`'s `maxPriceAgeMs` while the curated pack is unavailable or expired.
+ * Mirrors the value the bundle itself ships (`src/advisor/inventory-advisor-builtin-bundle.ts`),
+ * used only as the fallback: the live wiring always prefers the pack's own `policy.maxPriceAgeMs`.
+ */
+export const FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS = 900_000;
+
+/**
+ * H18.35: the one place that turns an `inventoryAdvisorBuiltinBundleProvider.load` result into the
+ * live `rulesExpiredAtMs` both `getSaleViewModel` (H18.34) and `getInventoryAdvisorViewModel`
+ * (H18.35) check on every read, never on a cached advisor result's own `status`. `null` for every
+ * other outcome (`available`, or `unavailable` with `reason: 'invalid'`): only the bundle's own
+ * `validUntil`, past, produces a date.
+ */
+export function liveRulesExpiredAtMsFromLoad(
+	bundleLoad: ReturnType<InventoryAdvisorBuiltinBundleProvider['load']>,
+): number | null {
+	return bundleLoad.status === 'unavailable' && bundleLoad.reason === 'expired'
+		? Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) : null;
 }

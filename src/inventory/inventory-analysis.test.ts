@@ -35,6 +35,7 @@ import type { PriceSeedDayV1, PriceSeedV1 } from '../economy/price-seed-model';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { SeasonalWindowV1 } from '../economy/seasonal-window';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
+import { SaleRuntime, type SaleRuntimePort } from '../runtime/sale-runtime';
 import { TyrianCompanionCore } from '../runtime/tyrian-companion-core';
 import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-controller';
 import type { InventoryAdvisorViewRow } from '../ui/inventory-advisor-view-model';
@@ -723,9 +724,9 @@ describe('inventory value and character scope', () => {
 /**
  * 1 oct 2026. The core's own port closure is built inside `initializeRuntime` and no test reaches
  * it with a real capture, so this is a COMPOSITION: the real analysis, workflow, controller and
- * seed service, joined by the core methods that closure calls (`refreshPriceSeedsForSync` as the
- * analysis port's `refreshPriceSeeds`, `refreshInventoryAdvisor` as the analysis, and
- * `runInventoryVaultSync` as the action whose end starts the stale copies).
+ * seed service, joined by what that closure calls (`SaleRuntime.refreshPriceSeedsForSync` as the
+ * analysis port's `refreshPriceSeeds`, the core's `refreshInventoryAdvisor` as the analysis, and
+ * the core's `runInventoryVaultSync` as the action whose end starts the stale copies).
  */
 describe('seed phases of an inventory sync, by composition of the real analysis, workflow, controller and seed service (not through the core\'s own port closure)', () => {
 	const VAULT = 'vault-phases';
@@ -758,13 +759,11 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 				return { status: 'seeded', seed: seedOf(itemId) };
 			},
 		});
+		let deferredPassPainted!: () => void;
+		/** Resolves when the deferred pass repaints the coverage line, its last step (DE-01: no private read). */
+		const deferredPassEnded = new Promise<void>((resolve) => { deferredPassPainted = resolve; });
 		const harness = {
 			runtimeReady: true, unloaded: false, settings: { language: 'es', priceHistoryEnabled: true },
-			priceSeedBulkRefresh: service, priceSeedQueueCoverage: null as unknown,
-			priceSeedDeferredRequest: null as unknown,
-			priceSeedDeferredPass: null as Promise<void> | null,
-			priceSeedSyncAction: null as unknown,
-			priceSeedSyncGeneration: 0,
 			inventoryAdvisor: null as InventoryAdvisorPresentationController | null,
 			// The one-click controller's place: the whole action is this one analysis.
 			inventoryVaultSyncRun: {
@@ -772,13 +771,28 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 				current: () => ({ status: 'idle', lastRun: null }),
 			},
 			renderInventoryAdvisorViews: vi.fn(),
-			// The Sale hero card is not part of this composition.
-			refreshSaleHeroTiming: async () => undefined,
+			// DE-01, step 2: the seed passes are `SaleRuntime`'s, over a port that reads this harness.
+			sale: null as SaleRuntime | null,
 		};
+		const port = {
+			settings: { language: 'es' as const, priceHistoryEnabled: true, priceHistoryDailyRetentionDays: 180, recommendationCapitalThresholdCopper: 1 },
+			runtimeReady: true, unloaded: false, collectorMode: 'collector' as const, vaultId: VAULT, localDebugActions: null,
+			// The hero card reads no seed in this composition: the Saco is not among these items.
+			host: { priceHistory: { openSeedCache: async () => { throw new Error('No seed cache read in this composition.'); } } },
+			inventoryAdvisor: { analysis: () => harness.inventoryAdvisor?.analysis() ?? null },
+			priceHistory: null, priceSeedBulkRefresh: service, sellSignal: null,
+			notifyConsultMode: () => undefined,
+			getInventoryAdvisorViewModel: () => harness.inventoryAdvisor?.current() ?? { status: 'loading' as const, title: 'x', detail: 'y', groups: [] },
+			// Only the deferred pass paints through the port here: the analysis paints through the harness.
+			renderInventoryAdvisorViews: () => { deferredPassPainted(); },
+			refreshInventoryAdvisor: async () => { await coreMethods.refreshInventoryAdvisor.call(harness); },
+		} satisfies SaleRuntimePort;
+		const sale = new SaleRuntime(port);
+		harness.sale = sale;
 		Object.setPrototypeOf(harness, TyrianCompanionCore.prototype);
 		const analysis = new InventoryAnalysisService(recommendationPort({
 			readCachedSeed: async (itemId) => (await readStore.get(VAULT, itemId))?.seed ?? null,
-			refreshPriceSeeds: async (itemIds) => { await coreMethods.refreshPriceSeedsForSync.call(harness, itemIds); },
+			refreshPriceSeeds: async (itemIds) => { await sale.refreshPriceSeedsForSync(itemIds); },
 		}));
 		const snapshot = snapshotOf([bank(42, 5, 0), bank(43, 5, 1)]);
 		const evidence = evidenceOf(snapshot, { 42: { bid: 200, ask: 210 }, 43: { bid: 200, ask: 210 } });
@@ -798,7 +812,7 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 		harness.inventoryAdvisor = controller;
 		const refresh = coreMethods.runInventoryVaultSync.call(harness);
 		return {
-			harness, calls, started, refresh,
+			harness, calls, started, refresh, deferredPassEnded,
 			maxInFlight: () => maxInFlight,
 			releaseOne: () => { held.shift()?.(); },
 			open: () => { opened = true; for (const release of held.splice(0)) release(); },
@@ -823,7 +837,7 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 			await sync.started();
 			expect(sync.calls).toHaveLength(1);
 			sync.open();
-			await sync.harness.priceSeedDeferredPass;
+			await sync.deferredPassEnded;
 
 			expect([...sync.calls].sort((left, right) => left - right)).toEqual([42, 43]);
 			expect(sync.maxInFlight()).toBe(1);
@@ -842,7 +856,7 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 			expect(sync.reasonOf(42)).toBe('bid_above_reference');
 
 			sync.open();
-			await sync.harness.priceSeedDeferredPass;
+			await sync.deferredPassEnded;
 
 			expect(sync.calls).toEqual([42, 43]);
 			expect(sync.maxInFlight()).toBe(1);
@@ -852,7 +866,6 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 
 const coreMethods = TyrianCompanionCore.prototype as unknown as {
 	refreshInventoryAdvisor(this: object): Promise<void>;
-	refreshPriceSeedsForSync(this: object, itemIds: readonly number[]): Promise<void>;
 	runInventoryVaultSync(this: object): Promise<void>;
 };
 
