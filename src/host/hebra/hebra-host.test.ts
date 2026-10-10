@@ -20,7 +20,7 @@ import {
 	type HebraHostDeps,
 } from './hebra-host';
 import { createMemoryFileBackend } from './local-storage';
-import { createMemoryPathIndexKv } from './path-index-kv';
+import { createMemoryPathIndexKv, type TyrianPathIndexKv } from './path-index-kv';
 import { createMemorySecretsBackend } from './secrets';
 
 // Ported from Hebra's `src/lib/modules/tyrian/hebra-host.test.ts`: the assembly of HebraHost, each
@@ -376,6 +376,68 @@ describe('createHebraHost: output folder and index', () => {
 		await vi.waitFor(() => expect(handle.host.vault.file('Tyrian Companion/Tyrian Companion Assets.json')).toBeNull());
 		handle.dispose();
 		expect(test.library.listenerCount()).toBe(0);
+	});
+});
+
+// HP-13: the path index saves in the background, and `closeStorage` does not wait for those saves. What it guarantees
+// instead is that none STARTS after the kv is closed: a later `set` would open a connection that nobody closes.
+describe('createHebraHost: closing the path index storage', () => {
+	/** A path index kv whose writes answer only when released, oldest first, and that logs every `set` and `close`. */
+	function recordingKv() {
+		const store = createMemoryPathIndexKv();
+		const events: string[] = [];
+		const held: Array<() => Promise<void>> = [];
+		const kv: TyrianPathIndexKv = {
+			get: (key) => store.get(key),
+			set: (key, value) => new Promise<void>((resolve) => {
+				events.push('set');
+				held.push(async () => { await store.set(key, value); resolve(); });
+			}),
+			close: () => { events.push('close'); },
+		};
+		return { kv, events, release: async () => { await held.shift()?.(); } };
+	}
+	/** Long enough for a writer that was going to start another `set` to have started it. */
+	const settle = (): Promise<void> => new Promise((resolve) => { window.setTimeout(resolve, 20); });
+
+	it('starts no save after it, though one was in flight and another waiting', async () => {
+		const test = createTyrianTestApi();
+		test.library.addFolder('tc', 'root', 'Tyrian Companion');
+		note(test, 'tc', 'tyrian:Inventory/Positions/1.md\n# One');
+		const { kv, events, release } = recordingKv();
+		const handle = await createHebraHost(deps(test, { pathIndexKv: kv }));
+		expect(events, 'the seed\'s save is in flight, unanswered').toEqual(['set']);
+		await handle.host.vault.create('Tyrian Companion/Inventory/Positions/2.md', 'tyrian:Inventory/Positions/2.md\n# Two');
+		expect(events, 'the new note\'s save waits behind it').toEqual(['set']);
+
+		handle.closeStorage();
+		await release();
+		await settle();
+		expect(events).toEqual(['set', 'close']);
+		handle.dispose();
+	});
+
+	it('an output folder still being created when the storage closes does not save its new index', async () => {
+		const test = createTyrianTestApi();
+		const { kv, events } = recordingKv();
+		const handle = await createHebraHost(deps(test, { pathIndexKv: kv }));
+		expect(handle.rootFolderId).toBeNull();
+		// The seed of the new folder's index waits on its first page until the test lets it go.
+		let releaseSeed: () => void = () => undefined;
+		const notesPage = test.api.vault.notesPage.bind(test.api.vault);
+		const seeding = vi.spyOn(test.api.vault, 'notesPage').mockImplementationOnce(async (...parameters) => {
+			await new Promise<void>((resolve) => { releaseSeed = resolve; });
+			return await notesPage(...parameters);
+		});
+		const created = handle.host.vault.createOutputFolder?.();
+		await vi.waitFor(() => { expect(seeding).toHaveBeenCalled(); });
+
+		handle.closeStorage();
+		releaseSeed();
+		await expect(created, 'the creation gives up instead of handing over an index that cannot save').resolves.toBe(false);
+		await settle();
+		expect(events).toEqual(['close']);
+		handle.dispose();
 	});
 });
 

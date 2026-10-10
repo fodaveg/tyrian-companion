@@ -126,6 +126,127 @@ describe('TyrianPathIndex with a kv that is down', () => {
 	});
 });
 
+// HP-13 (10 Oct 2026): the saves run in the background, one at a time, and nobody waits for them. A store that does not
+// answer used to cost ten seconds per mutation: the start's seed and every note the core created.
+describe('TyrianPathIndex saves in the background', () => {
+	/** A kv whose writes are answered only when the test releases them, oldest first; `written` is every text it was handed. */
+	function heldKv() {
+		const store = createMemoryPathIndexKv();
+		const written: string[] = [];
+		const held: Array<() => Promise<void>> = [];
+		const kv = {
+			get: (key: string) => store.get(key),
+			set: (key: string, value: string) => new Promise<void>((resolve) => {
+				written.push(value);
+				held.push(async () => { await store.set(key, value); resolve(); });
+			}),
+		};
+		return { kv, written, release: async () => { await held.shift()?.(); } };
+	}
+	const paths = (text: string | undefined): string[] => (JSON.parse(text ?? '{}') as { entries?: { path: string }[] }).entries?.map(({ path }) => path) ?? [];
+
+	it('a mutation resolves while its save is still unanswered', async () => {
+		const { kv, written } = heldKv();
+		const index = await TyrianPathIndex.load(kv, 'lib-1');
+		expect(await settlement(index.setNote('a.md', 'note-a', 1))).toBe('resolved');
+		expect(await settlement(index.setFolder('Inventory'))).toBe('resolved');
+		expect(index.getIdForPath('a.md')).toBe('note-a');
+		expect(written).toHaveLength(1); // the folder waits for the note's save, which has not answered
+	});
+
+	it('changes made during a save are written after it, one at a time, and only the newest', async () => {
+		const { kv, written, release } = heldKv();
+		const index = await TyrianPathIndex.load(kv, 'lib-1');
+		await index.setNote('a.md', 'note-a', 1);
+		await index.setNote('b.md', 'note-b', 1);
+		await index.setNote('c.md', 'note-c', 1);
+		expect(written.map(paths)).toEqual([['a.md']]);
+
+		await release();
+		await vi.waitFor(() => { expect(written).toHaveLength(2); });
+		await release();
+		await index.whenSaved();
+		// `b` alone was never written: the save after `a` already says `b` and `c`.
+		expect(written.map(paths)).toEqual([['a.md'], ['a.md', 'b.md', 'c.md']]);
+		expect(paths(await kv.get('tyrian-path-index:lib-1'))).toEqual(['a.md', 'b.md', 'c.md']);
+	});
+
+	it('a failed save is reported and the change that follows is written', async () => {
+		const reported: unknown[] = [];
+		const store = createMemoryPathIndexKv();
+		let failing = true;
+		const kv = { get: (key: string) => store.get(key), set: async (key: string, value: string) => { if (failing) throw new Error('disk full'); await store.set(key, value); } };
+		const index = await TyrianPathIndex.load(kv, 'lib-1', (error) => reported.push(error));
+		await index.setNote('a.md', 'note-a', 1);
+		await index.whenSaved();
+		expect(reported).toEqual([new Error('disk full')]);
+		failing = false;
+		await index.setNote('b.md', 'note-b', 1);
+		await index.whenSaved();
+		expect(paths(await kv.get('tyrian-path-index:lib-1'))).toEqual(['a.md', 'b.md']);
+	});
+
+	it('a change that goes back to the text on disk while another is in flight is still written (A, B, back to A)', async () => {
+		const { kv, written, release } = heldKv();
+		const index = await TyrianPathIndex.load(kv, 'lib-1');
+		await index.setNote('a.md', 'note-a', 1);
+		await release();
+		await index.whenSaved();
+		await index.setNote('b.md', 'note-b', 1);
+		await index.deleteById('note-b');
+		await release();
+		await vi.waitFor(() => { expect(written).toHaveLength(3); });
+		await release();
+		await index.whenSaved();
+		// The disk said A, then B was being written: A again has to follow it, or B stays on disk.
+		expect(written.map(paths)).toEqual([['a.md'], ['a.md', 'b.md'], ['a.md']]);
+		expect(paths(await kv.get('tyrian-path-index:lib-1'))).toEqual(['a.md']);
+	});
+
+	it('after a failed write the disk is unknown: going back to the text saved before writes it again', async () => {
+		const store = createMemoryPathIndexKv();
+		const reported: unknown[] = [];
+		let failNext = false;
+		// The failure of a transaction past its deadline: the engine applied it, its owner was told it failed.
+		const kv = { get: (key: string) => store.get(key), set: async (key: string, value: string) => {
+			await store.set(key, value);
+			if (failNext) { failNext = false; throw new Error('no answer in time'); }
+		} };
+		const index = await TyrianPathIndex.load(kv, 'lib-1', (error) => reported.push(error));
+		await index.setNote('a.md', 'note-a', 1);
+		await index.whenSaved();
+		failNext = true;
+		await index.setNote('b.md', 'note-b', 1);
+		await index.whenSaved();
+		expect(reported).toHaveLength(1);
+		await index.deleteById('note-b');
+		await index.whenSaved();
+		expect(paths(await kv.get('tyrian-path-index:lib-1'))).toEqual(['a.md']);
+	});
+
+	it('a kv that throws instead of rejecting is reported, and leaves nothing to wait for', async () => {
+		const reported: unknown[] = [];
+		const kv = { get: async () => undefined, set: (): Promise<void> => { throw new Error('thrown'); } };
+		const index = await TyrianPathIndex.load(kv, 'lib-1', (error) => reported.push(error));
+		await index.setNote('a.md', 'note-a', 1);
+		expect(await settlement(index.whenSaved())).toBe('resolved');
+		expect(reported).toEqual([new Error('thrown')]);
+	});
+
+	it('stopSaving drops the save waiting and starts none, so nothing writes after the plugin closed its kv', async () => {
+		const { kv, written, release } = heldKv();
+		const index = await TyrianPathIndex.load(kv, 'lib-1');
+		await index.setNote('a.md', 'note-a', 1);
+		await index.setNote('b.md', 'note-b', 1);
+		index.stopSaving();
+		await release();
+		await index.whenSaved();
+		await index.setNote('c.md', 'note-c', 1);
+		expect(written.map(paths)).toEqual([['a.md']]);
+		expect(index.getIdForPath('c.md'), 'memory still follows every change').toBe('note-c');
+	});
+});
+
 describe('TyrianPathIndex', () => {
 	it('starts empty when the kv holds nothing', async () => {
 		const index = await TyrianPathIndex.load(createMemoryPathIndexKv(), 'lib-1');

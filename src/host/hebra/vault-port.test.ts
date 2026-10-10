@@ -67,6 +67,17 @@ describe('createTyrianVaultPort: create', () => {
 		expect(note?.folderId).toBe(positions?.id);
 	});
 
+	// HP-13: the index's saves run in the background. With a store that never answers, the core's note used to wait for ever
+	// here (ten seconds per save in Hebra, where IndexedDB has a deadline).
+	it('creates a note without waiting for a path index store that never answers', { timeout: 2_000 }, async () => {
+		const library = setupLibrary();
+		const index = await TyrianPathIndex.load({ get: async () => undefined, set: () => new Promise<void>(() => undefined) }, 'lib-1');
+		const vault = createTyrianVaultPort({ library, index, rootFolderId: ROOT });
+		const file = await vault.create('Inventory/a.md', '# A\n');
+		expect(file.path).toBe('Inventory/a.md');
+		expect(index.getIdForPath('Inventory/a.md')).toBeDefined();
+	});
+
 	it('creates a file that is NOT a note (.base) as a library file, readable back as it is', async () => {
 		const library = setupLibrary();
 		const index = await freshIndex();

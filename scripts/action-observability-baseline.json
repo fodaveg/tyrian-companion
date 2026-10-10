@@ -7095,9 +7095,9 @@
 				{
 					"id": "32bae2628713bebbe6e53838de60c235ec0a354f",
 					"kind": "catch_clause",
-					"line": 140,
+					"line": 155,
 					"column": 5,
-					"endLine": 143,
+					"endLine": 158,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7111,9 +7111,9 @@
 				{
 					"id": "8d4539f42d33a00f34290429ee00336337b75afa",
 					"kind": "catch_clause",
-					"line": 149,
+					"line": 164,
 					"column": 5,
-					"endLine": 153,
+					"endLine": 168,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7125,27 +7125,27 @@
 					"reason": "Allowlisted catch_clause: The \"load\" catch (\"fallback_return\") treats a corrupt or half-written path index as empty; seedTyrianPathIndex rebuilds it, so the data is regenerated and nothing is lost. Verified recovery: \"fallback_return\" in \"load\"."
 				},
 				{
-					"id": "f0bbd39653ea8250ddd374e62fa79a307ff2c84b",
+					"id": "6f4ba4263cd52ed3cf32db100990e29260b73c24",
 					"kind": "catch_clause",
-					"line": 180,
-					"column": 5,
-					"endLine": 182,
-					"endColumn": 4,
+					"line": 216,
+					"column": 6,
+					"endLine": 221,
+					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
 						"scope": "<computed>",
-						"justification": "The \"<computed>\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"justification": "The \"<computed>\" owner is the path index background writer (#writeQueued): \"local_recovery\" forgets what the disk holds, reports the failed kv.set through onStorageError and goes on with the newest text queued. The copy on disk is a per-device cache the next start reconciles from the notes' markers, so a lost save loses no data, and the writer never rejects (nobody awaits it)."
 					},
-					"reason": "Allowlisted catch_clause: The \"<computed>\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"<computed>\"."
+					"reason": "Allowlisted catch_clause: The \"<computed>\" owner is the path index background writer (#writeQueued): \"local_recovery\" forgets what the disk holds, reports the failed kv.set through onStorageError and goes on with the newest text queued. The copy on disk is a per-device cache the next start reconciles from the notes' markers, so a lost save loses no data, and the writer never rejects (nobody awaits it). Verified recovery: \"local_recovery\" in \"<computed>\"."
 				},
 				{
 					"id": "a75bff3e5852b7421e2c4de802c9ed4c0591fe1a",
 					"kind": "catch_clause",
-					"line": 186,
+					"line": 248,
 					"column": 42,
-					"endLine": 186,
+					"endLine": 248,
 					"endColumn": 113,
 					"classification": "allowlisted",
 					"evidence": {
