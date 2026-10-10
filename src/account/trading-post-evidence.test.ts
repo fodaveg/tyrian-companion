@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { HttpTransportError } from '../core/http';
 import type { GuildWars2Operation } from './guild-wars-2-client';
 import {
 	captureActiveTradingPostOrders,
@@ -84,6 +85,53 @@ describe('trading post evidence', () => {
 			sell: { status: 'partial', capturedAt: null, reason: 'page_limit' },
 		});
 		expect(requestDetailed).toHaveBeenCalledTimes(20);
+	});
+
+	it.each([
+		['a network failure', () => Promise.reject(new HttpTransportError('network', null, null, 'offline')), 'request_failed'],
+		['a 5xx', () => Promise.reject(new HttpTransportError('http', 503, null, 'unavailable')), 'request_failed'],
+		['a 429', () => Promise.reject(new HttpTransportError('http', 429, 1000, 'limited')), 'request_failed'],
+		['an invalid body', () => Promise.resolve(response({ text: 'nope' })), 'invalid_payload'],
+	] as const)('keeps the orders already read as partial coverage when page 1 fails with %s (Z28)', async (_name, failure, reason) => {
+		const requestDetailed = vi.fn(async (path: string) => {
+			if (page(path) === 1) return await failure();
+			return response(
+				Array.from({ length: 200 }, (_, index) => transaction(path.includes('/buys'), index + 1, 2)),
+				{ 'X-Page-Total': '2' },
+			);
+		});
+		const evidence = await captureActiveTradingPostOrders(operation(requestDetailed), 'account-1', token(), () => NOW);
+
+		expect(evidence.status).toBe('partial');
+		expect(evidence.endpointCoverage).toEqual({
+			buy: { status: 'partial', capturedAt: null, reason },
+			sell: { status: 'partial', capturedAt: null, reason },
+		});
+		expect(evidence.orders).toHaveLength(400);
+		expect(isActiveTradingPostOrdersEvidence(evidence)).toBe(true);
+	});
+
+	it('still reports the side as unavailable, without orders, when page 0 fails (Z28)', async () => {
+		const requestDetailed = vi.fn(async (path: string) => path.includes('/buys')
+			? Promise.reject(new HttpTransportError('http', 503, null, 'unavailable'))
+			: response([transaction(false, 7, 1)]));
+		const evidence = await captureActiveTradingPostOrders(operation(requestDetailed), 'account-1', token(), () => NOW);
+
+		expect(evidence.endpointCoverage.buy).toEqual({ status: 'unavailable', capturedAt: null, reason: 'request_failed' });
+		expect(evidence.orders).toEqual([{ side: 'sell', itemId: 7, quantity: 1 }]);
+		expect(isActiveTradingPostOrdersEvidence(evidence)).toBe(true);
+	});
+
+	// Known gap (Z28): fixing it needs a new `catch` boundary in the action-observability census,
+	// whose baseline entries are reviewed by a person. When fixed, turn `it.fails` into `it`.
+	it.fails('is complete when exactly 200 orders arrive without x-page-total and the next page is a 404 (Z28)', async () => {
+		const requestDetailed = vi.fn(async (path: string) => page(path) === 0
+			? response(Array.from({ length: 200 }, (_, index) => transaction(path.includes('/buys'), index + 1, 1)))
+			: Promise.reject(new HttpTransportError('http', 404, null, 'page out of range')));
+		const evidence = await captureActiveTradingPostOrders(operation(requestDetailed), 'account-1', token(), () => NOW);
+
+		expect(evidence.status).toBe('complete');
+		expect(evidence.orders).toHaveLength(400);
 	});
 
 	it('treats a current order that carries a purchase date as an invalid payload', async () => {

@@ -37,8 +37,10 @@ export async function captureActiveTradingPostOrders(
 ): Promise<ActiveTradingPostOrdersEvidenceV1> {
 	const capturedAt = new Date(now()).toISOString();
 	const [buys, sells] = await Promise.all([
-		capturePages(operation, token, CURRENT_ENDPOINTS.buy, 'buy', capturedAt),
-		capturePages(operation, token, CURRENT_ENDPOINTS.sell, 'sell', capturedAt),
+		capturePages(operation, token, CURRENT_ENDPOINTS.buy, 'buy', capturedAt)
+			.then(keepPagesAlreadyRead),
+		capturePages(operation, token, CURRENT_ENDPOINTS.sell, 'sell', capturedAt)
+			.then(keepPagesAlreadyRead),
 	]);
 	return {
 		version: TRADING_POST_EVIDENCE_VERSION,
@@ -55,6 +57,27 @@ interface CapturedTransaction {
 	side: TradingPostEvidenceSide;
 	itemId: number;
 	quantity: number;
+}
+
+/**
+ * A failure after at least one page was read leaves that side `partial` with its reason and the
+ * orders already read (like `page_limit`), instead of `unavailable`/`invalid`, which the evidence
+ * validator rejects together with orders. A failure on page 0 reads no order and stays as it was.
+ * `capturePages` returns orders only on an incomplete read when page 0 succeeded (invalid pages
+ * come back empty), so their presence is what tells a later page from the first.
+ */
+function keepPagesAlreadyRead(
+	result: { coverage: TradingPostEndpointCoverageV1; transactions: CapturedTransaction[] },
+): { coverage: TradingPostEndpointCoverageV1; transactions: CapturedTransaction[] } {
+	const { coverage, transactions } = result;
+	if (transactions.length === 0) return result;
+	if (coverage.status === 'unavailable' && coverage.reason === 'request_failed') {
+		return { coverage: evidence('partial', null, 'request_failed'), transactions };
+	}
+	if (coverage.status === 'invalid' && coverage.reason === 'invalid_payload') {
+		return { coverage: evidence('partial', null, 'invalid_payload'), transactions };
+	}
+	return result;
 }
 
 async function capturePages(
