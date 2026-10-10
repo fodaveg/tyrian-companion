@@ -41,6 +41,10 @@ describe('GuildWars2PublicCatalogClient', () => {
 		expect(publicCatalogLogicalEndpoint('achievements/groups?ids=all&lang=es')).toBe('achievement_groups');
 		expect(publicCatalogLogicalEndpoint('achievements/categories?ids=all&lang=es&v=2022-03-23T19%3A00%3A00.000Z'))
 			.toBe('achievement_categories');
+		// «Logros» L3: the names of rewards and objectives, from the public lists.
+		expect(publicCatalogLogicalEndpoint('minis?ids=1,2&lang=es')).toBe('minis');
+		expect(publicCatalogLogicalEndpoint('skins?ids=1,2&lang=es')).toBe('skins');
+		expect(publicCatalogLogicalEndpoint('titles?ids=1,2&lang=es')).toBe('titles');
 		expect(publicCatalogLogicalEndpoint('private/secret?token=value')).toBe('unknown');
 	});
 
