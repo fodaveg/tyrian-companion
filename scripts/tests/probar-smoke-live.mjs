@@ -24,6 +24,7 @@ try {
 	testWithoutMarkerCountsEveryError();
 	testErrorsOfOtherVersionsDoNotCount();
 	testRunSmokeLiveIgnoresErrorsOfOlderVersionsAfterAStaleMarker();
+	testErrorsBeforeTheLastLoadOfTheSameVersionDoNotCount();
 	testRunSmokeLiveExitsRedOnInjectedError();
 	testRunSmokeLiveStaysGreenWithoutNewErrors();
 	testCliUnavailableFailsClosed();
@@ -124,6 +125,23 @@ function testRunSmokeLiveIgnoresErrorsOfOlderVersionsAfterAStaleMarker() {
 	writeLog(pluginDir, [{ ...record({ level: 'error', timestampUtc: '2026-02-01T00:00:00.000Z' }), pluginVersion: '0.1.30' }]);
 	const own = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.30' }) });
 	assert(own.newErrorCount === 1, 'an error of the loaded version was not counted');
+}
+
+/** RT-07 (D3): the same version started twice; what the first start logged is not the second's. */
+function testErrorsBeforeTheLastLoadOfTheSameVersionDoNotCount() {
+	const pluginDir = freshPluginDir('same-version-restart');
+	writeMarker(pluginDir, '2026-01-01T00:00:00.000Z');
+	const load = (timestampUtc) => ({ ...record({ level: 'info', timestampUtc }), action: 'plugin_load', phase: 'start' });
+	const error = (timestampUtc) => ({ ...record({ level: 'error', timestampUtc }), action: 'view_render' });
+	writeLog(pluginDir, [
+		load('2026-02-01T00:00:00.000Z'), error('2026-02-01T00:00:05.000Z'),
+		load('2026-02-02T00:00:00.000Z'), error('2026-02-02T00:00:05.000Z'),
+	]);
+	assert(readErrorsSinceReload(pluginDir, '0.1.30').length === 1, 'an error of an earlier start of the same version was counted');
+	const result = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.30' }) });
+	assert(result.newErrorCount === 1, `runSmokeLive counted ${String(result.newErrorCount)} errors, expected the 1 of the last start`);
+	writeLog(pluginDir, [load('2026-02-01T00:00:00.000Z'), error('2026-02-01T00:00:05.000Z')]);
+	assert(readErrorsSinceReload(pluginDir, '0.1.30').length === 1, 'an error after the only load of the version was not counted');
 }
 
 /** The end-to-end case the lote names: `smoke:live` must exit 1 when the injected line is there. */

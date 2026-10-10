@@ -128,18 +128,30 @@ export function readErrorsSinceReload(pluginDir, loadedVersion = null) {
 	if (!existsSync(logPath)) return [];
 	const markerPath = resolve(pluginDir, RELOAD_MARKER);
 	const sinceIso = existsSync(markerPath) ? readFileSync(markerPath, 'utf8').trim() : null;
-	const errors = [];
+	const records = [];
 	for (const line of readFileSync(logPath, 'utf8').split('\n')) {
 		if (line.length === 0) continue;
-		let record;
 		try {
-			record = JSON.parse(line);
+			const record = JSON.parse(line);
+			if (isRecord(record)) records.push(record);
 		} catch {
 			continue;
 		}
-		if (!isRecord(record) || record.level !== 'error') continue;
+	}
+	// RT-07: the cutoff is the start of the LAST load of this version, so errors of an earlier start of
+	// the same version (a crash fixed by a restart) are not this load's. The marker only raises it.
+	let cutoff = sinceIso;
+	if (typeof loadedVersion === 'string') {
+		const loads = records.filter((record) => record.action === 'plugin_load' && record.pluginVersion === loadedVersion && typeof record.timestampUtc === 'string');
+		const starts = loads.filter((record) => record.phase === 'start');
+		const last = (starts.length > 0 ? starts : loads).reduce((latest, record) => (latest === null || record.timestampUtc >= latest ? record.timestampUtc : latest), null);
+		if (last !== null && (cutoff === null || last > cutoff)) cutoff = last;
+	}
+	const errors = [];
+	for (const record of records) {
+		if (record.level !== 'error') continue;
 		if (typeof loadedVersion === 'string' && record.pluginVersion !== loadedVersion) continue;
-		if (sinceIso !== null && typeof record.timestampUtc === 'string' && record.timestampUtc < sinceIso) continue;
+		if (cutoff !== null && typeof record.timestampUtc === 'string' && record.timestampUtc < cutoff) continue;
 		errors.push(record);
 	}
 	return errors;
