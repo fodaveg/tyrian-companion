@@ -3382,6 +3382,9 @@
 .tyrian-achievements__icon-slot { display: inline-flex; flex: none; }
 .tyrian-achievements__icon-slot:empty { display: none; }
 .tyrian-achievements__icon { width: 20px; height: 20px; border-radius: var(--radius-s); object-fit: contain; }
+.tyrian-achievements__reward-mark { color: var(--text-muted); }
+.tyrian-achievements__reward-mark--title { color: var(--color-yellow, var(--text-muted)); }
+.tyrian-achievements__reward-mark--achievement_points { color: var(--color-blue, var(--text-muted)); }
 .tyrian-achievements__item-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--size-4-2); }
 .tyrian-achievements__item-foot button { min-height: 44px; }
 @container (min-width: 600px) {
