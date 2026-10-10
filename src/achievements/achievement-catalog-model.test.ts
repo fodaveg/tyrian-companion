@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	ACHIEVEMENT_CATEGORIES_SCHEMA,
+	categoryMembersOf,
+	isCategoryMetaAchievement,
+	isPeriodicAchievement,
 	normalizeAchievementSearchText,
 	parseAchievementCategories,
 	parseAchievementGroups,
@@ -109,6 +112,7 @@ describe('parseAchievementPage', () => {
 				{ kind: 'title', titleId: 299 },
 			],
 			pointCap: null,
+			icon: null,
 		});
 		expect(page!.details[1]).toMatchObject({ id: 11, flags: ['Repeatable'], pointCap: 10, bits: [], rewards: [], description: '' });
 	});
@@ -127,6 +131,38 @@ describe('parseAchievementPage', () => {
 
 	it('refuses a body that is not a list', () => {
 		expect(parseAchievementPage({ text: 'all ids provided are invalid' })).toBeNull();
+	});
+});
+
+describe('the icon and the meta of a category', () => {
+	it('keeps the icon when the API gives a non-empty string, null otherwise', () => {
+		const page = parseAchievementPage([
+			{ id: 1, name: 'Con icono', icon: 'https://render.guildwars2.com/file/ABC/1.png' },
+			{ id: 2, name: 'Sin icono', icon: null }, { id: 3, name: 'Vacío', icon: '' }, { id: 4, name: 'Raro', icon: 7 },
+		]);
+		expect(page!.details.map((detail) => detail.icon)).toEqual(['https://render.guildwars2.com/file/ABC/1.png', null, null, null]);
+	});
+
+	it('takes for a meta of its category what carries CategoryDisplay and no bits, as 9417 does', () => {
+		const page = parseAchievementPage([
+			{ id: 9417, name: 'Leyspring Hollows Mastery', flags: ['RepairOnLogin', 'CategoryDisplay', 'MoveToTop', 'Permanent'], bits: null, tiers: [{ count: 36, points: 5 }] },
+			{ id: 9468, name: 'Puzle', flags: ['Permanent'], bits: [{ type: 'Text', text: 'Uno' }] },
+			{ id: 1, name: 'Con bits y la marca', flags: ['CategoryDisplay'], bits: [{ type: 'Text', text: 'Uno' }] },
+			{ id: 9410, name: 'Diario', flags: ['Daily'], bits: [] },
+		]);
+		expect(page!.details.map(isCategoryMetaAchievement)).toEqual([true, false, false, false]);
+		expect(page!.details.map(isPeriodicAchievement)).toEqual([false, false, false, true]);
+	});
+
+	it('lists the members of the first category that lists an id, in its order and without the id itself', () => {
+		const categories = parseAchievementCategories([
+			{ id: 1, name: 'Otra', order: 1, achievements: [{ id: 5 }, { id: 9417 }] },
+			{ id: 486, name: 'Leyspring Hollows', order: 4, achievements: [{ id: 9351 }, { id: 9417 }, { id: 9468 }] },
+		])!;
+		expect(categoryMembersOf(categories, 9417)).toEqual([5]);
+		expect(categoryMembersOf(categories, 9468)).toEqual([9351, 9417]);
+		expect(categoryMembersOf(categories, 99)).toBeNull();
+		expect(categoryMembersOf([], 9417)).toBeNull();
 	});
 });
 

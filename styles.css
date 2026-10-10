@@ -3313,12 +3313,24 @@
 .tyrian-achievements__body { display: grid; gap: var(--size-4-2); padding: 0 var(--size-4-3) var(--size-4-3); }
 .tyrian-achievements__body h4 { margin: 0; font-size: var(--font-ui-smaller); color: var(--text-muted); }
 .tyrian-achievements__body p { margin: 0; }
-.tyrian-achievements__objectives, .tyrian-achievements__rewards { display: grid; gap: var(--size-2-2); margin: 0; padding: 0; list-style: none; }
-.tyrian-achievements__objectives li { padding-inline-start: var(--size-4-4); position: relative; }
-/* La marca va por color y forma; el estado también se lee, en el texto oculto de cada objetivo. */
-.tyrian-achievements__objectives li::before { content: ''; position: absolute; inset-inline-start: 0; top: 0.55em; width: var(--size-4-2); height: var(--size-4-2); border: 1px solid var(--text-faint); border-radius: 50%; }
-.tyrian-achievements__objectives li[data-state="done"]::before { background: var(--text-success); border-color: var(--text-success); }
-.tyrian-achievements__objectives li[data-state="unknown"]::before { border-style: dashed; }
+.tyrian-achievements__elements, .tyrian-achievements__rewards { display: grid; gap: var(--size-2-2); margin: 0; padding: 0; list-style: none; }
+.tyrian-achievements__elements li, .tyrian-achievements__rewards li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-2-2); min-width: 0; }
+.tyrian-achievements__elements li { padding-inline-start: calc(var(--size-4-4) + var(--size-2-2)); position: relative; }
+.tyrian-achievements__elements li > a, .tyrian-achievements__elements li > span:not(.tyrian-visually-hidden) { min-width: 0; overflow-wrap: anywhere; }
+/* La casilla es de solo lectura: refleja la cuenta. Va por color y forma; el estado también se lee, en el texto oculto de cada elemento. */
+.tyrian-achievements__elements li::before {
+	content: ''; position: absolute; inset-inline-start: 0; top: 50%; transform: translateY(-50%); box-sizing: border-box;
+	width: var(--size-4-4); height: var(--size-4-4); border: 1px solid var(--text-faint); border-radius: var(--radius-s);
+	font-size: var(--font-smallest); line-height: calc(var(--size-4-4) - 2px); text-align: center; color: var(--text-on-accent);
+}
+.tyrian-achievements__elements li[data-state="done"]::before { content: '✓' / ''; background: var(--interactive-accent); border-color: var(--interactive-accent); }
+.tyrian-achievements__elements li[data-state="done"] > a, .tyrian-achievements__elements li[data-state="done"] > span { color: var(--text-muted); }
+.tyrian-achievements__elements li[data-state="unknown"]::before { border-style: dashed; }
+.tyrian-achievements__elements-count { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-achievements__elements-count.is-complete { color: var(--text-success); }
+.tyrian-achievements__icon-slot { display: inline-flex; flex: none; }
+.tyrian-achievements__icon-slot:empty { display: none; }
+.tyrian-achievements__icon { width: 20px; height: 20px; border-radius: var(--radius-s); object-fit: contain; }
 .tyrian-achievements__item-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--size-4-2); }
 .tyrian-achievements__item-foot button { min-height: 44px; }
 @container (min-width: 600px) {
