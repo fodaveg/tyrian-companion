@@ -866,6 +866,7 @@ function settingsPlugin() {
 		getSessionHistoryView: () => ({ status: 'idle' as const, sessions: 0 }),
 		getConnectionState: () => ({ status: 'idle' as const }),
 		hasManagedAssetsRoot: () => false,
+		hasAlertIngameSecret: () => false,
 		loadLegendaryArmoryOptions: vi.fn<() => Promise<LegendaryArmoryOptionsResult>>(async () => ({ status: 'error' })),
 	};
 	return plugin;

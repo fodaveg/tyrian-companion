@@ -537,7 +537,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		// output folder; the settings show the section and the core adopts and upgrades them.
 		// `mainView` only where this Hebra has it: omitted, the core takes it as not supported.
 		// `remoteImages` always, true or false: omitted, the core would take it as painted, which is Obsidian's default.
-		capabilities: { managedAssets: true, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages, ...(mainView ? { mainView: true } : {}) },
+		capabilities: { managedAssets: true, managedAssetsMove: false, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages, ...(mainView ? { mainView: true } : {}) },
 		vault,
 		http: createTyrianHttpPort(api),
 		secrets,

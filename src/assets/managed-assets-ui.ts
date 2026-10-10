@@ -7,7 +7,13 @@ export type ManagedAssetsMessageCode =
 	| 'not_inspected' | 'legacy_root_retained' | 'inspecting' | 'preview_ready'
 	| 'preview_blocked' | 'inspect_failed' | 'legacy_explicit_only' | 'applying_lifecycle'
 	| 'lifecycle_ready' | 'applying_journal' | 'ownership_detached' | 'assets_ready'
-	| 'no_unowned' | 'operation_busy' | 'operation_conflict' | 'operation_invalid' | 'operation_unavailable';
+	| 'no_unowned' | 'operation_busy' | 'operation_conflict' | 'operation_invalid' | 'operation_unavailable'
+	/** The press did nothing: the plugin is still starting / this device only consults. */
+	| 'runtime_starting' | 'consult_mode'
+	/** The preview found files of the user's that Apply will not touch. */
+	| 'preview_unowned' | 'preview_unowned_no_root'
+	/** Why an operation failed, when the host or the folder says so (`ManagedAssetsFailureCause`). */
+	| 'operation_bytes_not_synced' | 'operation_output_folder_missing' | 'operation_host_refused' | 'operation_only_unowned';
 
 export interface ManagedAssetsView {
 	status: 'idle' | 'working' | 'ready' | 'error';
@@ -38,6 +44,8 @@ export function projectManagedAssetsActions(context: ManagedAssetsActionContext)
 export interface ManagedAssetsRootDivergence {
 	managedAssetsRoot: string;
 	outputFolder: string;
+	/** False on a host that cannot move assets between roots (Hebra): the row says Apply, not Move. */
+	canMove?: boolean;
 }
 
 /**
@@ -48,10 +56,10 @@ export function projectManagedAssetsRootDivergence(settings: {
 	managedAssetsRoot: string | null;
 	outputFolder: string;
 	legacyManagedAssetsRoot: string | null;
-}): ManagedAssetsRootDivergence | null {
+}, canMove = true): ManagedAssetsRootDivergence | null {
 	if (settings.legacyManagedAssetsRoot !== null || settings.managedAssetsRoot === null ||
 		settings.managedAssetsRoot === settings.outputFolder) return null;
-	return { managedAssetsRoot: settings.managedAssetsRoot, outputFolder: settings.outputFolder };
+	return { managedAssetsRoot: settings.managedAssetsRoot, outputFolder: settings.outputFolder, ...(canMove ? {} : { canMove: false }) };
 }
 
 export async function runConfirmedManagedAssetsRemoval(

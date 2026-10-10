@@ -15,6 +15,7 @@
  * the vault is empty and every write refuses. Consultation mode does not write, so it goes unseen.
  */
 import type { LocalDebugStoragePort } from '../../core/local-debug-writer';
+import { vaultFailure, type VaultFailureCause } from '../../core/vault-failure-cause';
 import type { TyrianVault, TyrianVaultFile } from '../tyrian-host';
 import type { TyrianPathIndex } from './path-index';
 import type { TyrianVaultPort } from './vault-port';
@@ -59,8 +60,8 @@ export function createHebraTyrianVault(options: CreateHebraTyrianVaultOptions): 
 	const toVaultFile = (file: TyrianVaultFile): TyrianVaultFile => ({ ...file, path: toVaultPath(file.path) });
 
 	/** Reports the refusal to the host's diagnostics (only the path, no content) and throws it. */
-	function reject(message: string): never {
-		const error = new Error(message);
+	function reject(message: string, cause?: VaultFailureCause): never {
+		const error = cause === undefined ? new Error(message) : vaultFailure(message, cause);
 		options.onReject?.(error);
 		throw error;
 	}
@@ -68,11 +69,11 @@ export function createHebraTyrianVault(options: CreateHebraTyrianVaultOptions): 
 	/** No write leaves while the saved output folder differs from the vault's. */
 	function requireWritable(action: string, path: string): void {
 		const reason = options.writeBlockedReason?.();
-		if (reason) reject(`tyrian vault: ${action} on «${path}» refused: ${reason}`);
+		if (reason) reject(`tyrian vault: ${action} on «${path}» refused: ${reason}`, 'host_refused');
 	}
 
 	function requirePort(action: string, path: string): TyrianVaultPort {
-		if (!port) reject(`tyrian vault: ${action} on «${path}» without an output folder: «${root}» is not in the library.`);
+		if (!port) reject(`tyrian vault: ${action} on «${path}» without an output folder: «${root}» is not in the library.`, 'output_folder_missing');
 		return port;
 	}
 

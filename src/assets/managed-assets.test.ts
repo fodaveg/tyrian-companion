@@ -19,6 +19,7 @@ import {
 	type PackagedAsset,
 } from './managed-assets-model';
 import { MemoryManagedAssetsPointerStore } from './managed-assets-pointer';
+import { vaultFailure } from '../core/vault-failure-cause';
 
 const CONFIG_DIR = 'vault-config';
 
@@ -595,6 +596,120 @@ describe('ManagedAssetsManager', () => {
 
 		expect(await lifecycle.install('Root B')).toMatchObject({ status: 'conflict' });
 		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Root A' });
+	});
+
+	/**
+	 * Hebra, 10 oct 2026: the vault IS the output folder, so after the output folder changes the root the
+	 * pointer names is outside the vault. Its manifest and files are unreachable (the same signature as a
+	 * ghost root) and Move cannot read them, so the only way out is Apply on the new folder, which has no
+	 * manifest yet. That used to answer «Another managed-assets root is active.» for ever.
+	 */
+	it('lets Apply install into an empty root when the pointer names a root that holds nothing the vault can see', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const lifecycle = new ManagedAssetsLifecycle(await manager(vault, 2), pointer);
+		await pointer.compareAndSet(await pointer.read(), { status: 'ready', root: 'Ghost root', targetRoot: null });
+
+		const result = await lifecycle.install('New root');
+
+		expect(result).toMatchObject({ status: 'applied', root: 'New root' });
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'New root', targetRoot: null });
+		expect(vault.contents.has(`New root/${MANAGED_ASSETS_MANIFEST}`)).toBe(true);
+		expect([...vault.contents.keys()].some((path) => path.startsWith('Ghost root/'))).toBe(false);
+	});
+
+	it('keeps the ghost root as the owner when installing into a folder that holds only the user\'s own files', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const instance = await manager(vault, 2);
+		const lifecycle = new ManagedAssetsLifecycle(instance, pointer);
+		await pointer.compareAndSet(await pointer.read(), { status: 'ready', root: 'Ghost root', targetRoot: null });
+		const inspection = await instance.inspect('Foreign root');
+		for (const entry of inspection.assets) vault.contents.set(entry.path, `tcUser: ${entry.asset.id}\n`);
+		const before = new Map(vault.contents);
+
+		expect(await lifecycle.install('Foreign root')).toMatchObject({ status: 'conflict' });
+
+		expect(vault.contents).toEqual(before);
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Ghost root' });
+	});
+
+	/** Hebra, 10 oct 2026: the failures the host can name must not end in the same «not available» / «conflict». */
+	describe('names why a press failed', () => {
+		it('bytes not synced yet: unavailable with its cause and real code, and nothing is written', async () => {
+			const vault = new MemoryAssetVault();
+			const instance = await manager(vault, 2);
+			expect(await instance.apply('Root', 'install')).toMatchObject({ status: 'applied' });
+			const unsynced = (await instance.inspect('Root')).assets[0]!.path;
+			const read = vault.read.bind(vault);
+			vault.read = async (file) => {
+				if (file.path === unsynced) throw vaultFailure('missing blob', 'bytes_not_synced');
+				return await read(file);
+			};
+			const before = new Map(vault.contents);
+			const writes = vault.writeCount;
+
+			expect(await instance.apply('Root', 'upgrade')).toMatchObject({
+				status: 'unavailable', cause: 'bytes_not_synced', details: { code: 'bytes_not_synced' },
+			});
+			expect(vault.contents).toEqual(before);
+			expect(vault.writeCount).toBe(writes);
+		});
+
+		it('output folder missing: the host refusal behind a folder that cannot be created keeps its cause', async () => {
+			const vault = new MemoryAssetVault();
+			vault.createFolder = async () => { throw vaultFailure('no output folder', 'output_folder_missing'); };
+			const instance = await manager(vault, 2);
+
+			expect(await instance.apply('Root', 'install')).toMatchObject({
+				status: 'unavailable', cause: 'output_folder_missing', details: { code: 'output_folder_missing' },
+			});
+			expect(vault.contents.size).toBe(0);
+		});
+
+		it('a create the host refuses is not swallowed as a race', async () => {
+			const vault = new MemoryAssetVault();
+			vault.create = async () => { throw vaultFailure('write blocked', 'host_refused'); };
+			const instance = await manager(vault, 2);
+
+			expect(await instance.apply('Root', 'install')).toMatchObject({ status: 'unavailable', cause: 'host_refused' });
+		});
+
+		it('only files of the user on the managed paths: conflict with its cause', async () => {
+			const vault = new MemoryAssetVault();
+			const instance = await manager(vault, 2);
+			for (const entry of (await instance.inspect('Root')).assets) vault.contents.set(entry.path, `tcUser: ${entry.asset.id}\n`);
+
+			expect(await instance.apply('Root', 'install')).toMatchObject({ status: 'conflict', cause: 'only_unowned_files' });
+		});
+	});
+
+	it('keeps the cause of an inspection the host could not complete when reclaiming a ghost pointer', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const instance = await manager(vault, 2);
+		const lifecycle = new ManagedAssetsLifecycle(instance, pointer);
+		await pointer.compareAndSet(await pointer.read(), { status: 'ready', root: 'Ghost root', targetRoot: null });
+		const unsynced = (await instance.inspect('New root')).assets[0]!.path;
+		vault.contents.set(unsynced, 'tcUser: true\n');
+		vault.read = async () => { throw vaultFailure('missing blob', 'bytes_not_synced'); };
+
+		expect(await lifecycle.install('New root')).toMatchObject({
+			status: 'unavailable', cause: 'bytes_not_synced', details: { code: 'bytes_not_synced' },
+		});
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Ghost root' });
+	});
+
+	it('gives the pointer back to the ghost root when the caller\'s guard refuses the install into a fresh root', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const lifecycle = new ManagedAssetsLifecycle(await manager(vault, 2), pointer);
+		await pointer.compareAndSet(await pointer.read(), { status: 'ready', root: 'Ghost root', targetRoot: null });
+
+		expect(await lifecycle.install('New root', undefined, () => false)).toMatchObject({ status: 'unchanged', root: 'Ghost root' });
+
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Ghost root' });
+		expect([...vault.contents.keys()]).toEqual([]);
 	});
 
 	it('relocates a retained legacy root only through an explicit lifecycle move', async () => {

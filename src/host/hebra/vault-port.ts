@@ -22,6 +22,7 @@
 import type { PluginNote, PluginVault, PluginVaultChange } from 'hebra-plugin-api';
 
 import type { TyrianDisposer, TyrianVault, TyrianVaultChange, TyrianVaultFile, TyrianVaultTrashResult } from '../tyrian-host';
+import { vaultFailure } from '../../core/vault-failure-cause';
 import { ensureFolderPath, folderRelativePaths, folderSegmentsOf } from './folder-path';
 import type { TyrianPathIndex } from './path-index';
 import { decideAdoption } from './seed';
@@ -158,7 +159,7 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 			const row = await library.fileRead(id);
 			if (!row || row.trashedAt !== null) throw new Error(`tyrian vault: no file found for ${path}`);
 			const bytes = await library.blobRead(row.sha256);
-			if (!bytes) throw new Error(`tyrian vault: missing blob for the file ${path}`);
+			if (!bytes) throw vaultFailure(`tyrian vault: missing blob for the file ${path}`, 'bytes_not_synced');
 			const current = new TextDecoder().decode(bytes);
 			const next = update(current);
 			if (next === current) return current;
@@ -615,6 +616,6 @@ async function readFileBytes(library: Pick<PluginVault, 'fileRead' | 'blobRead'>
 	const row = await library.fileRead(fileId);
 	if (!row) throw new Error(`tyrian vault: file not found: ${fileId}`);
 	const bytes = await library.blobRead(row.sha256);
-	if (!bytes) throw new Error(`tyrian vault: missing blob for the file ${fileId}`);
+	if (!bytes) throw vaultFailure(`tyrian vault: missing blob for the file ${fileId}`, 'bytes_not_synced');
 	return bytes;
 }

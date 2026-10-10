@@ -35,7 +35,7 @@ export function projectManagedAssetsDescription(
 	})).join(' · ');
 	const base = steps ? `${message} ${steps}` : message;
 	if (rootDivergence === null) return base;
-	return `${translator.t('settings.assets.rootDiverged', {
+	return `${translator.t(rootDivergence.canMove === false ? 'settings.assets.rootDivergedNoMove' : 'settings.assets.rootDiverged', {
 		managedAssetsRoot: rootDivergence.managedAssetsRoot, outputFolder: rootDivergence.outputFolder,
 	})} ${base}`;
 }
@@ -87,6 +87,9 @@ function managedAssetsMessageKey(code: ManagedAssetsMessageCode): TranslationKey
 		ownership_detached: 'settings.assets.ownershipDetached', assets_ready: 'settings.assets.ready',
 		no_unowned: 'settings.assets.noUnowned', operation_busy: 'settings.assets.operationBusy', operation_conflict: 'settings.assets.operationConflict',
 		operation_invalid: 'settings.assets.operationInvalid', operation_unavailable: 'settings.assets.operationUnavailable',
+		runtime_starting: 'settings.assets.runtimeStarting', consult_mode: 'settings.assets.consultMode', preview_unowned: 'settings.assets.previewUnowned', preview_unowned_no_root: 'settings.assets.previewUnownedNoRoot',
+		operation_bytes_not_synced: 'settings.assets.bytesNotSynced', operation_output_folder_missing: 'settings.assets.outputFolderMissing',
+		operation_host_refused: 'settings.assets.hostRefused', operation_only_unowned: 'settings.assets.onlyUnowned',
 	};
 	return keys[code];
 }
