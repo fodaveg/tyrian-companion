@@ -14,6 +14,16 @@ David autoriza el lector propio y pasivo de Nexus para el alcance completo del a
 
 La [comparación live y build declarada](SPEC-live-loot.md#14-build-declarada-y-comparación-de-sesiones-live) es obligatoria para 0.5.0: incluye sesiones Nexus separadas del historial API, bolsas observadas/netas y tasas sobre tiempo cubierto, con al menos dos completas por grupo comparable; la activa queda provisional. La preparación admite pegar una plantilla GW2 y etiqueta opcional, congeladas al iniciar e identificadas por configuración validada, no por etiqueta ni SHA del ejecutable. No acredita build equipada, equipo/stats ni causalidad. Una entrada inválida permanece visible y la sesión continúa con declaración desconocida, sin fallback a otra válida. Parser, captura, notas, editor y comparador están integrados en 0.5.0 con revisión independiente aprobada; gate y publicación están acreditados en [ESTADO](ESTADO.md), con QA real pendiente.
 
+## Decisión vigente: sección «Logros» (10 oct 2026)
+
+David decidió la cuarta sección del panel, «Logros», bajo Sesión, Inventario y Venta, con el recuento de
+logros seguidos en su fila. Dentro: un buscador por nombre y por categoría para marcar qué logros seguir y,
+debajo, la lista de seguidos, cada uno desplegable con subobjetivos, progreso, recompensa y enlace a la
+wiki. Igual en Obsidian y en Hebra, sin anidar filas en la columna de Hebra. La nota de Leyspring y su
+comando no se tocan. La API autenticada entra solo por «Actualizar progreso», nunca al abrir o repintar la
+sección (la decisión de sesiones de arriba sigue mandando). Implementación en [ARCHITECTURE](ARCHITECTURE.md),
+«Logros».
+
 Las secciones H1–H18 siguientes documentan implementación y decisiones históricas. Sus requisitos API-only de sesiones, calentamiento autenticado automático y condiciones de clave quedan sustituidos por esta decisión. La clasificación API sigue describiendo solo registros legacy; no atribuye causalidad a live1. La frontera específica H8 permanece intacta.
 
 ## Propósito y usuarios

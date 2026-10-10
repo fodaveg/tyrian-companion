@@ -14,7 +14,7 @@
  * - ribbon: live title and pending flag through the `ribbonItem` handle; the click travels so the
  *   menu opens at that point. While the main view is registered the button carries its `viewId`:
  *   Hebra shows it pressed while that view is on screen and still calls `onClick` on every click.
- *   With the three views it carries none, on purpose: a button tied to a column view that is on
+ *   With the views of their own it carries none, on purpose: a button tied to a column view that is on
  *   screen folds the inspector instead of calling `onClick`, and the menu would not open. `viewId`
  *   cannot be patched, so the button is made again when the main view comes or goes;
  * - the main view (`hebra-main-view.ts`) exists only where Hebra has it (`deps.mainView`): on any

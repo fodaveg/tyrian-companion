@@ -457,8 +457,8 @@ export interface TyrianHostCapabilities {
 	 */
 	readonly supportPackageAsNote?: boolean;
 	/**
-	 * The host can show the plugin on its main screen, the three sections (Session, Inventory, Sale)
-	 * together, besides showing it in its sidebar. The REVERSE of `managedAssets`: an omitted flag
+	 * The host can show the plugin on its main screen, the four sections (Session, Inventory, Sale,
+	 * Achievements) together, besides showing it in its sidebar. The REVERSE of `managedAssets`: an omitted flag
 	 * means NOT supported, because this is a screen a host has to build before it can offer it, so
 	 * a host written before the flag existed must not be taken to have it. Only with true does
 	 * Settings show the row where this device picks between the two (`runtime/view-placement.ts`),

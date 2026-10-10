@@ -432,7 +432,7 @@ export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
 export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
 /** Palette command that refreshes the Leyspring Hollows achievements note; manual, also in consult mode. */
 export const UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID = 'update-leyspring-achievements';
-/** The ONE view of a host's main screen that lists the three sections (`TyrianUiPort.registerSectionsView`). */
+/** The ONE view of a host's main screen that lists the four sections (`TyrianUiPort.registerSectionsView`). */
 export const TYRIAN_MAIN_VIEW_TYPE = 'tyrian-main-view';
 
 /** The clock reading when this module finished evaluating: the `module` phase of the boot timings. */
@@ -1794,14 +1794,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/**
 	 * Where the sections go right now: the host's main screen only on a host that has one
 	 * (`capabilities.mainView`, with the port to register it) AND with that choice on this device.
-	 * Anything else is the three views of their own, which is all Obsidian ever gets.
+	 * Anything else is the four views of their own, which is all Obsidian ever gets.
 	 */
 	private wantedPlacement(): ViewPlacement {
 		return this.mainViewSupported() && this.host.ui.registerSectionsView !== undefined && this.getViewPlacement() === 'main'
 			? 'main' : 'sidebar';
 	}
 
-	/** True while the three sections are ONE view of the host's main screen, which lists them itself. */
+	/** True while the four sections are ONE view of the host's main screen, which lists them itself. */
 	hostListsSections(): boolean {
 		return this.registeredPlacement === 'main';
 	}
