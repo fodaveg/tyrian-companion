@@ -199,7 +199,10 @@ procedimiento completo y no necesita nada de esto.
    ```
 
    El artifact de CI trae una copia de `verify-beta-runtime.mjs` del mismo commit: desde su directorio, el
-   comando es `node verify-beta-runtime.mjs --vault "/ruta/a/la-bóveda-probada"`.
+   comando es `node verify-beta-runtime.mjs --vault "/ruta/a/la-bóveda-probada" --no-release-check`.
+   Con el artifact hay que pasar `--no-release-check`: un commit sin release (o cuyos bytes no son los de la
+   release) no tiene `digest` contra el que comparar, y sin la opción el preflight daría `release-unavailable`
+   o `installed-asset-mismatch`. Quien instala por BRAT lo ejecuta sin ella y sí compara con la release.
 
    El preflight lee `manifest.json` del plugin instalado y obtiene desde la instancia viva, mediante
    `obsidian eval`, la bóveda efectiva, el estado activado, el manifest registrado y la versión del
@@ -213,8 +216,10 @@ procedimiento completo y no necesita nada de esto.
    y `--no-release-check` omite la comparación, sin que el `PASS` diga entonces `release-bytes=match`.
    Para Hebra (instalación, no carga): `npm run hebra:verify-install -- --plugins-dir "<datos de Hebra>/plugins"`
    lee `installed.json` y los tres ficheros de `plugins/tyrian-companion/<versión>/` y compara su sha256
-   con el registro y con el `digest` de `gh release view`. En macOS y Linux hay ruta por defecto
-   (la de la SPEC de Hebra, que puede llevar un perfil como `fresh-v1`); en Windows `--plugins-dir` es obligatorio.
+   con el registro (solo `hebra-main.mjs` y `hebra-styles.css`, que son los que lista) y con el `digest` de
+   `gh release view` (los tres). En macOS y Linux hay ruta por defecto, y es un supuesto: en macOS el contenedor
+   del sandbox con el perfil `fresh-v1`, en Linux `$XDG_DATA_HOME` o `~/.local/share`. Si no existe, el error lo
+   dice y hay que pasar `--plugins-dir`; en Windows `--plugins-dir` es obligatorio.
    La QA de instalación o actualización no es válida sin `PASS`, incluso si
    la versión en disco ya es la esperada. Un `runtime-version-mismatch` exige recargar el plugin o
    reiniciar Obsidian y repetir el preflight. En una instalación desde artifact, usa la copia del

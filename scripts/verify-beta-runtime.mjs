@@ -13,6 +13,8 @@ const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u;
 const RUNTIME_EVIDENCE_EXPRESSION = `"${EVIDENCE_PREFIX}" + JSON.stringify({schema:1,vaultPath:app.vault.adapter.getBasePath(),enabled:app.plugins.enabledPlugins.has("${PLUGIN_ID}"),registeredVersion:app.plugins.manifests["${PLUGIN_ID}"]?.version??null,runtimeVersion:app.plugins.plugins["${PLUGIN_ID}"]?.manifest.version??null,runtimeReady:app.plugins.plugins["${PLUGIN_ID}"]?.core?.runtimeReady??null})`;
 /** Installed files that must be the bytes of the release (RT-06). */
 const RELEASE_CHECKED_FILES = ['main.js', 'styles.css'];
+/** `gh` runs from the vault, or from an unpacked CI artifact: neither is a clone, so the repository is always named. */
+const RELEASE_REPOSITORY = 'fodaveg/tyrian-companion';
 
 export class BetaRuntimeError extends Error {
 	constructor(code) {
@@ -125,7 +127,7 @@ function runObsidianCli({ args, cliCommand, cwd }) {
 
 /** `gh release view <tag> --json assets`: the only network call of this script, and read-only. */
 function readGhReleaseAssets({ ghCommand, tag }) {
-	const result = spawnSync(ghCommand, ['release', 'view', tag, '--json', 'assets'], {
+	const result = spawnSync(ghCommand, ['release', 'view', tag, '--repo', RELEASE_REPOSITORY, '--json', 'assets'], {
 		encoding: 'utf8',
 		timeout: 30_000,
 		windowsHide: true,

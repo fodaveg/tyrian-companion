@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
@@ -17,6 +17,13 @@ export const HEBRA_INSTALL_CONTRACT_VERSION = 1;
 
 const PLUGIN_ID = 'tyrian-companion';
 const HEBRA_FILES = ['hebra.json', 'hebra-main.mjs', 'hebra-styles.css'];
+/**
+ * What `installed.json` records per file: Hebra's `record.files` IS `manifest.files`, and a manifest cannot
+ * contain its own hash, so `hebra.json` is not in it. `hebra.json` is checked against the release only.
+ */
+const REGISTRY_HASHED_FILES = ['hebra-main.mjs', 'hebra-styles.css'];
+/** `gh` runs from any directory (an unpacked CI artifact has no git repo), so the repository is always named. */
+const RELEASE_REPOSITORY = 'fodaveg/tyrian-companion';
 const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u;
 /** Hebra itself refuses a registry larger than this (`plugin_store.rs`, `MAX_REGISTRY_BYTES`). */
 const MAX_REGISTRY_BYTES = 1024 * 1024;
@@ -35,9 +42,16 @@ export class HebraInstallError extends Error {
  * (a stated assumption there, and macOS may add a profile such as `fresh-v1`: pass `--plugins-dir`
  * when the registry lives elsewhere). Windows has no default on purpose: it is not guessed.
  */
-export function defaultHebraPluginsDirectory(platform = process.platform, home = homedir()) {
-	if (platform === 'darwin') return resolve(home, 'Library', 'Application Support', HEBRA_APP_ID, 'plugins');
-	if (platform === 'linux') return resolve(home, '.local', 'share', HEBRA_APP_ID, 'plugins');
+export function defaultHebraPluginsDirectory(platform = process.platform, home = homedir(), xdgDataHome = process.env.XDG_DATA_HOME) {
+	// Assumed, not measured here: the sandbox container of the App Store build with the `fresh-v1` profile
+	// (`docs/audit/2026-10-10-evidencia-runtime.md`, RT-01; Hebra's `product_storage.rs` adds `fresh-v1`).
+	if (platform === 'darwin') {
+		return resolve(home, 'Library', 'Containers', HEBRA_APP_ID, 'Data', 'Library', 'Application Support', HEBRA_APP_ID, 'fresh-v1', 'plugins');
+	}
+	if (platform === 'linux') {
+		const dataHome = typeof xdgDataHome === 'string' && isAbsolute(xdgDataHome) ? xdgDataHome : resolve(home, '.local', 'share');
+		return resolve(dataHome, HEBRA_APP_ID, 'plugins');
+	}
 	return null;
 }
 
@@ -45,6 +59,7 @@ export function defaultHebraPluginsDirectory(platform = process.platform, home =
 export function verifyHebraInstall({
 	ghCommand = 'gh',
 	pluginsDir,
+	pluginsDirIsDefault = false,
 	readReleaseAssets = readGhReleaseAssets,
 	releaseCheck = true,
 	releaseTag = null,
@@ -54,7 +69,7 @@ export function verifyHebraInstall({
 		typeof ghCommand !== 'string' || ghCommand.length === 0 || typeof releaseCheck !== 'boolean' ||
 		(releaseTag !== null && (typeof releaseTag !== 'string' || !SEMVER.test(releaseTag)))
 	) fail('invalid-arguments');
-	const root = requireDirectory(resolve(pluginsDir), 'plugins-dir-missing');
+	const root = requireDirectory(resolve(pluginsDir), pluginsDirIsDefault ? 'plugins-dir-default-missing' : 'plugins-dir-missing');
 	const registryPath = resolve(root, 'installed.json');
 	requireRegularFile(registryPath, 'registry-missing');
 	if (lstatSync(registryPath).size > MAX_REGISTRY_BYTES) fail('registry-invalid');
@@ -69,11 +84,16 @@ export function verifyHebraInstall({
 	}
 	const manifest = parseJson(readFileSync(resolve(versionDir, 'hebra.json'), 'utf8'), 'hebra-manifest-invalid');
 	if (!isRecord(manifest) || manifest.version !== record.version) fail('hebra-manifest-version');
-	for (const name of HEBRA_FILES) {
+	const recorded = Object.keys(record.files).sort();
+	if (recorded.length !== REGISTRY_HASHED_FILES.length || !REGISTRY_HASHED_FILES.every((name) => recorded.includes(name))) fail('registry-files-unexpected');
+	for (const name of REGISTRY_HASHED_FILES) {
 		// Hebra writes `sha256:<hex>`; a bare hex digest is read the same way.
 		const declared = record.files[name];
 		if (typeof declared !== 'string' || declared.replace(/^sha256:/u, '') !== actual[name]) fail('registry-hash-mismatch');
 	}
+	// Hebra refuses a record whose `files` differ from its manifest's: so does this.
+	const declaredByManifest = isRecord(manifest.files) ? manifest.files : {};
+	if (Object.keys(declaredByManifest).length !== recorded.length || !recorded.every((name) => declaredByManifest[name] === record.files[name])) fail('registry-manifest-files-mismatch');
 	if (releaseCheck) verifyAgainstRelease(actual, readReleaseAssets({ ghCommand, tag: releaseTag ?? record.version }));
 	return Object.freeze({
 		version: record.version,
@@ -83,7 +103,7 @@ export function verifyHebraInstall({
 	});
 }
 
-export function parseHebraInstallArguments(argv, { platform = process.platform, home = homedir() } = {}) {
+export function parseHebraInstallArguments(argv, { platform = process.platform, home = homedir(), xdgDataHome = process.env.XDG_DATA_HOME } = {}) {
 	if (!Array.isArray(argv)) fail('usage');
 	let pluginsDir = null;
 	let ghCommand = 'gh';
@@ -111,9 +131,10 @@ export function parseHebraInstallArguments(argv, { platform = process.platform, 
 		fail('usage');
 	}
 	if (!releaseCheck && (releaseTag !== null || ghSet)) fail('usage');
-	if (pluginsDir === null) pluginsDir = defaultHebraPluginsDirectory(platform, home);
+	const pluginsDirIsDefault = pluginsDir === null;
+	if (pluginsDirIsDefault) pluginsDir = defaultHebraPluginsDirectory(platform, home, xdgDataHome);
 	if (pluginsDir === null) fail('plugins-dir-required');
-	return Object.freeze({ ghCommand, pluginsDir: resolve(pluginsDir), releaseCheck, releaseTag });
+	return Object.freeze({ ghCommand, pluginsDir: resolve(pluginsDir), pluginsDirIsDefault, releaseCheck, releaseTag });
 }
 
 function findRecord(registry) {
@@ -142,7 +163,7 @@ function verifyAgainstRelease(actual, assets) {
 
 /** `gh release view <tag> --json assets`: the only network call of this script, and read-only. */
 function readGhReleaseAssets({ ghCommand, tag }) {
-	const result = spawnSync(ghCommand, ['release', 'view', tag, '--json', 'assets'], {
+	const result = spawnSync(ghCommand, ['release', 'view', tag, '--repo', RELEASE_REPOSITORY, '--json', 'assets'], {
 		encoding: 'utf8',
 		timeout: 30_000,
 		windowsHide: true,
@@ -189,7 +210,7 @@ if (invokedPath === import.meta.url) {
 		);
 	} catch (error) {
 		const code = error instanceof HebraInstallError ? error.code : 'unexpected-failure';
-		process.stderr.write(`hebra install: ${code}\n${code === 'plugins-dir-required' ? 'Indica el directorio con --plugins-dir <datos de Hebra>/plugins. No hay ruta por defecto en esta plataforma.\n' : ''}`);
+		process.stderr.write(`hebra install: ${code}\n${code === 'plugins-dir-default-missing' ? 'La ruta por defecto es una suposicion (no existe aqui); usa --plugins-dir <datos de Hebra>/plugins.\n' : ''}${code === 'plugins-dir-required' ? 'Indica el directorio con --plugins-dir <datos de Hebra>/plugins. No hay ruta por defecto en esta plataforma.\n' : ''}`);
 		process.exitCode = 1;
 	}
 }
