@@ -694,7 +694,7 @@ export class LiveSessionLifecycle {
 		this.record = recovered;
 		if (recovered.phase === 'complete') {
 			this.noteNeedsVerification = true;
-			this.record = {...this.record,authority:sessionAuthorityFromLease(acquisition.handle),persistedAt:this.options.now()};
+			this.record = {...this.record,authority:sessionAuthorityFromLease(acquisition.handle),persistedAt:Math.max(this.options.now(),this.record.persistedAt)};
 			if ((await this.options.persistence.saveLive(this.record)).status !== 'saved') throw new Error('Completed recovery could not be persisted.');
 			await this.saveCompletedNote(); return false;
 		}

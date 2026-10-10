@@ -790,6 +790,19 @@ describe('passive live session lifecycle', () => {
 			await expect(svc.start('Test')).resolves.not.toBeNull();
 			await svc.dispose();
 		});
+		it('samples that arrive with the wall clock set back are stored, the session stays active and the addon stays connected', async () => {
+			const { f, svc, setNow } = suspended();
+			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0));
+			for (let cursor = 1; cursor <= 3; cursor += 1) { setNow(AT+cursor*1000); await expect(svc.commit(f.sample(cursor,cursor))).resolves.toBe('stored'); }
+			setNow(AT+500);
+			await expect(svc.commit(f.sample(4,4))).resolves.toBe('stored');
+			await expect(svc.commit(f.sample(5,5))).resolves.toBe('stored');
+			await expect(svc.open(f.source), 'the addon is still answered ready').resolves.toBe('ready');
+			expect(svc.getView().phase).toBe('active');
+			expect(svc.getRuntime()?.totals.find((row) => row.idNumber === 12147)?.net, 'every quantity counted').toBe(5);
+			await expect(svc.stop(AT+4000, 'session')).resolves.toBe(true);
+			await svc.dispose();
+		});
 		it('keeps the session running when the game never stopped being linked', async () => {
 			const { f, svc, setNow, beat } = suspended();
 			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true); setNow(AT+2*3_600_000); await svc.presence(true);
