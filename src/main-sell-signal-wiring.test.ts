@@ -7,11 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import { obsidianPluginCore } from './test/obsidian-host-harness';
-import { LocalDebugActionRunner } from './core/local-debug-action-runner';
-import type { LocalDebugRecordInput } from './core/local-debug-contract';
-import type { LocalDebugLogger } from './core/local-debug-logger';
 import { HostRequestTransport } from './core/http';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import { storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
@@ -43,7 +39,8 @@ interface SellSignalWiringHarness {
 	initializeRuntime(): Promise<void>;
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
 	sellSignal: { getState(): SellSignalRuntimeState } | null;
-	evaluateSellSignal(port: { nowMs: number; readDaily: () => Promise<PriceHistoryDailyV1[]> }): Promise<void>;
+	/** DE-01, step 2: the compaction hook lives in `SaleRuntime`; the core hands it `evaluateSellSignal`. */
+	sale: { evaluateSellSignal(port: { nowMs: number; readDaily: () => Promise<PriceHistoryDailyV1[]> }): Promise<void> };
 }
 
 /** Puts the plugin in the only state that is allowed to reach the network. */
@@ -78,7 +75,7 @@ describe('H13.2 sell signal cabling', () => {
 		await plugin.initializeRuntime();
 		activate();
 
-		await plugin.evaluateSellSignal({ nowMs: QUIET_DAY_MS, readDaily: async () => [] });
+		await plugin.sale.evaluateSellSignal({ nowMs: QUIET_DAY_MS, readDaily: async () => [] });
 
 		const seedCalls = send.mock.calls.filter(([request]) => request.endpoint === 'price_history_seed');
 		expect(seedCalls).toHaveLength(1);
@@ -101,7 +98,7 @@ describe('H13.2 sell signal cabling', () => {
 		// harness has observed none, so the quantity is supplied here.
 		vi.spyOn(plugin as unknown as { observedBagQuantity(): number }, 'observedBagQuantity').mockReturnValue(500);
 
-		await plugin.evaluateSellSignal({ nowMs: SELL_DAY_MS, readDaily: async () => [] });
+		await plugin.sale.evaluateSellSignal({ nowMs: SELL_DAY_MS, readDaily: async () => [] });
 
 		await vi.waitFor(() => {
 			expect(plugin.getEmittedAlerts()).toHaveLength(1);
@@ -125,7 +122,7 @@ describe('H13.2 sell signal cabling', () => {
 		activate();
 		vi.spyOn(plugin as unknown as { observedBagQuantity(): number }, 'observedBagQuantity').mockReturnValue(500);
 
-		await plugin.evaluateSellSignal({ nowMs: QUIET_DAY_MS, readDaily: async () => [] });
+		await plugin.sale.evaluateSellSignal({ nowMs: QUIET_DAY_MS, readDaily: async () => [] });
 
 		expect(plugin.getEmittedAlerts()).toHaveLength(0);
 	});
@@ -137,7 +134,7 @@ describe('H13.2 sell signal cabling', () => {
 		await plugin.initializeRuntime();
 		activate();
 
-		await expect(plugin.evaluateSellSignal({ nowMs: SELL_DAY_MS, readDaily: async () => [] }))
+		await expect(plugin.sale.evaluateSellSignal({ nowMs: SELL_DAY_MS, readDaily: async () => [] }))
 			.resolves.toBeUndefined();
 		expect(plugin.sellSignal?.getState()).toMatchObject({ seedStatus: 'no_seed', seedFailure: 'unreachable' });
 		expect(plugin.getEmittedAlerts()).toHaveLength(0);
@@ -153,34 +150,14 @@ describe('H13.2 sell signal cabling', () => {
 		const plugin = sellSignalPlugin(new IDBFactory());
 		await plugin.initializeRuntime();
 
-		await plugin.evaluateSellSignal({ nowMs: SELL_DAY_MS, readDaily: async () => [] });
+		await plugin.sale.evaluateSellSignal({ nowMs: SELL_DAY_MS, readDaily: async () => [] });
 
 		expect(send.mock.calls.filter(([request]) => request.endpoint === 'price_history_seed')).toHaveLength(1);
 		expect(plugin.sellSignal?.getState().seedStatus).toBe('seeded');
 	});
 
-	// H15.18 (2026-09-10 incident): `ensureSeed`/`evaluate` throwing an unexpected error (not the
-	// modeled `unreachable` outcome above) died silently inside the price-history compaction that
-	// calls this, with nothing in the local debug log to say the sell signal had stopped running.
-	it('registers a price_history_compact failure when ensureSeed throws unexpectedly', async () => {
-		const record = vi.fn((_input: LocalDebugRecordInput) => true);
-		const diagnostics = { record } as unknown as LocalDebugLogger;
-		const harness = {
-			sellSignal: { ensureSeed: vi.fn(async () => { throw new Error('indexeddb unavailable'); }), evaluate: vi.fn() },
-			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'sell-signal-compact' }),
-		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const evaluate = (TyrianCompanionCore.prototype as unknown as {
-			evaluateSellSignal(this: typeof harness, port: { nowMs: number; readDaily: () => Promise<PriceHistoryDailyV1[]> }): Promise<void>;
-		}).evaluateSellSignal;
-
-		await expect(evaluate.call(harness, { nowMs: SELL_DAY_MS, readDaily: async () => [] })).resolves.toBeUndefined();
-
-		const failure = record.mock.calls.map(([input]) => input).find(
-			(input) => input.component === 'price_history' && input.action === 'price_history_compact' && input.phase === 'failure',
-		);
-		expect(failure).toMatchObject({ code: 'unknown_failure', state: 'sell_signal' });
-	});
+	// H15.18's isolated case (`ensureSeed` throwing unexpectedly is journaled as a
+	// `price_history_compact` failure) moved with the hook to `src/runtime/sale-runtime.test.ts`.
 });
 
 function sellSignalPlugin(factory: IDBFactory): SellSignalWiringHarness {

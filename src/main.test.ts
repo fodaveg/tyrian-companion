@@ -1064,7 +1064,7 @@ describe('inventory analysis-only action', () => {
 			},
 			renderInventoryAdvisorViews: vi.fn(),
 			notifyRuntimeStarting: vi.fn(),
-			refreshSaleHeroTiming: vi.fn(async () => undefined),
+			sale: { refreshSaleHeroTiming: vi.fn(async () => undefined) },
 			emitNotice,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
@@ -1090,7 +1090,7 @@ describe('inventory analysis-only action', () => {
 			inventoryAdvisor: { refresh },
 			renderInventoryAdvisorViews: render,
 			notifyRuntimeStarting: vi.fn(),
-			refreshSaleHeroTiming: vi.fn(async () => undefined),
+			sale: { refreshSaleHeroTiming: vi.fn(async () => undefined) },
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
 		const invoke = (TyrianCompanionCore.prototype as unknown as {

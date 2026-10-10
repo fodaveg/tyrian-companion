@@ -8,6 +8,8 @@ const RUNTIME_UI_FILES = [
 	'src/runtime/tyrian-companion-core.ts',
 	'src/runtime/core-sale-helpers.ts',
 	'src/runtime/core-outcomes.ts',
+	'src/runtime/core-actions.ts',
+	'src/runtime/sale-runtime.ts',
 	'src/ui/companion-view.ts',
 	'src/ui/companion-status-model.ts',
 	'src/ui/inventory-advisor-view.ts',
@@ -30,7 +32,7 @@ describe('runtime UI i18n boundary', () => {
 		expect(hasDirectVisibleCopy(source)).toBe(false);
 	});
 
-	it.each(['src/runtime/core-sale-helpers.ts', 'src/runtime/core-outcomes.ts'] as const)(
+	it.each(['src/runtime/core-sale-helpers.ts', 'src/runtime/core-outcomes.ts', 'src/runtime/core-actions.ts', 'src/runtime/sale-runtime.ts'] as const)(
 		'%s is covered by the guard: a visible literal added to it turns the check red',
 		(path) => {
 			expect(RUNTIME_UI_FILES).toContain(path);
