@@ -1,5 +1,38 @@
 # Changelog
 
+## Release beta 0.6.26 - el hallazgo mágico por logros cuenta las repeticiones, las notas de inventario respetan tus comentarios y solo valoran lo vendible, y el catálogo guarda cada lote de una vez
+
+Candidato; no publicado ni etiquetado. Va encima de la 0.6.25, que también es candidata y no está publicada, así que
+parte de ella y no de la 0.6.24 publicada. Son arreglos de datos que salían mal o se reescribían de más, más una mejora
+de escritura en el catálogo. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.26 se ha ejecutado en un Hebra ni en un Obsidian
+  reales. Todo lo que sigue está medido en tests.
+- Hallazgo mágico por puntos de logro. Ahora cuenta las repeticiones de los logros repetibles, hasta el tope de puntos
+  de cada logro (`point_cap`). Medido con una cuenta real el 10 oct 2026: el plugin sumaba 19 986 puntos (11 %), el
+  juego muestra 21 369 (13 %), y ahora suma 21 376 (13 %). Los puntos mensuales (`monthly_ap`) no se suman: en esa cuenta
+  valen 0 y no se pudo validar. Sin un tope válido no se cuentan repeticiones.
+- Notas de inventario, comentarios. Un comentario YAML que escribas en la cabecera de una nota de inventario cuenta como
+  contenido tuyo: se conserva al reescribir la nota y evita que vaya a la papelera cuando la posición desaparece.
+  Límites: un `#` suelto sin texto y las líneas en blanco dentro de un bloque de comentarios se pierden; un comentario en
+  línea al final de una clave gestionada se conserva, pero pasa a una línea propia, detrás de las claves del usuario.
+- Notas de inventario, valor. Una fila con pilas de distinta vinculación se valora solo por las pilas que se pueden
+  vender; antes se aplicaba la vinculación de la primera pila a toda la cantidad. `complete` en la profundidad de venta
+  pasa a significar «la parte vendible está cubierta».
+- Notas de inventario, catálogo. Si el catálogo responde con un dato rechazado para un objeto, su nota existente conserva
+  nombre, tipo, rareza e icono y actualiza lo demás (cantidad, estado, precios); antes podía reescribirse con el nombre
+  de reserva. Un objeto así que aún no tiene nota se crea con los datos de reserva. Con esto se cierra el límite
+  conocido 3 de la 0.6.25.
+- Hebra. Un índice de rutas guardado con estructura dañada se descarta y se reconstruye en vez de impedir el arranque.
+- Bazar. Una orden repetida dentro de una misma página ya no se cuenta dos veces.
+- Cartera. Dos aplicaciones simultáneas con planes distintos ya no reciben el mismo resultado.
+- Ajustes, registro de depuración. El tamaño del registro se muestra como «al menos» hasta que se miden los ficheros
+  antiguos, y esa línea solo aparece con el registro activado.
+- Catálogo. Cada lote resuelto (hasta 200 objetos) se guarda en la caché en una sola transacción en vez de una por objeto
+  (200 → 1). Si la escritura falla, el lote entero no se guarda y se vuelve a pedir en la siguiente resolución; la
+  respuesta al usuario no cambia. Medido solo con IndexedDB simulado (mediana de 10,2 ms a 5,0 ms para 200 objetos); no
+  hay medida en un cliente real.
+
 ## Release beta 0.6.25 - las sesiones en vivo nuevas guardan notas mucho más pequeñas y con el precio bruto, el resumen de sesiones y la Base cambian de forma, y varios sitios dejan de reescribir o pisar datos sin motivo
 
 Candidato; no publicado ni etiquetado. Parte de la 0.6.24 publicada y reúne nueve lotes. Lo que más se nota: las

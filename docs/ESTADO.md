@@ -1,5 +1,27 @@
 # Estado
 
+## Candidato 0.6.26: hallazgo mágico con repeticiones, notas de inventario que respetan comentarios y catálogo por lotes (10 oct 2026)
+
+**Candidato; no publicado ni etiquetado.** Va encima de la candidata 0.6.25, que tampoco está publicada: parte de
+`80719eb` (rama de integración que ya contiene la 0.6.25 y estos lotes) y añade los metadatos de versión (`manifest.json`,
+`package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
+[CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.26 se ha ejecutado en un Hebra ni en un Obsidian
+  reales. Todo está medido en tests.
+- Medido con una cuenta real el 10 oct 2026: el hallazgo mágico por logros sumaba 19 986 puntos (11 %), el juego
+  muestra 21 369 (13 %) y ahora suma 21 376 (13 %). Los puntos mensuales no se suman porque en esa cuenta valen 0 y no
+  se pudieron validar.
+- Medido solo con IndexedDB simulado: guardar un lote de 200 objetos del catálogo en una transacción en vez de 200
+  (mediana de 10,2 ms a 5,0 ms). No hay medida en un cliente real.
+- Notas de inventario: los comentarios YAML de la cabecera se conservan, la fila se valora solo por las pilas que se
+  pueden vender y un objeto que el catálogo devuelve mal conserva en su nota nombre, tipo, rareza e icono. Cierra el
+  límite conocido de la 0.6.25 sobre el nombre de reserva. Límites que quedan: un `#` suelto, las líneas en blanco
+  dentro de un bloque de comentarios se pierden, y un comentario en línea al final de una clave gestionada pasa a una
+  línea propia.
+- Pendiente: el gate sobre el commit definitivo, la publicación de ambas y verlas en un
+  cliente real.
+
 ## Candidato 0.6.25: sesiones en formato 2, resumen de sesiones, ajustes que no se pisan y arranque más ligero (10 oct 2026)
 
 **Candidato; no publicado ni etiquetado.** Parte de `6fbe77e` (`main` con el canal 0.6.24 publicado) y reúne nueve lotes
