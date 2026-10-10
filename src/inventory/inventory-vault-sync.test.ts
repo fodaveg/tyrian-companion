@@ -106,6 +106,21 @@ describe('inventory Vault projection', () => {
 			expect(one).toEqual(other);
 		});
 
+		it.each([
+			['bound first', () => [bound(5, 0), free(3, 1)]],
+			['free first', () => [free(3, 0), bound(5, 1)]],
+		])('the mixed row goes through preview and apply, and the next preview is unchanged (%s)', async (_label, stacks) => {
+			const snapshot = snapshotWith(stacks());
+			const input = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 100), 'full', 'es', depth());
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			expect(await service.apply(await service.preview(ROOT, input))).toMatchObject({ status: 'applied', created: 1 });
+			expect(frontmatter([...vault.contents.values()][0]!)).toMatchObject({
+				tc_quantity: 8, tc_sell_depth_status: 'complete', tc_sell_covered_quantity: 3, tc_sell_uncovered_quantity: 5,
+			});
+			expect((await service.preview(ROOT, input)).steps.map((entry) => entry.status)).toEqual(['unchanged']);
+		});
+
 		it('a place with only bound stacks stays unvalued', async () => {
 			const [only] = await project([bound(5, 0), bound(2, 1)]);
 			expect(only).toMatchObject({ quantity: 7, unitSellCopper: null, totalSellCopper: null, sellCoveredQuantity: 0, sellUncoveredQuantity: 7 });

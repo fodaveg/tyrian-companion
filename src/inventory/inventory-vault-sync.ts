@@ -97,6 +97,10 @@ export interface InventoryVaultPosition {
 	quantity: number;
 	unitSellCopper: number | null;
 	totalSellCopper: number | null;
+	/**
+	 * `complete`: the SELLABLE part of the row is covered by the buy levels. Stacks that cannot be
+	 * sold (bound ones) are not part of it, so a `complete` row may still have `sellUncoveredQuantity > 0`.
+	 */
 	sellDepthStatus: 'complete' | 'partial' | 'no_market' | 'unavailable' | 'invalid';
 	sellCoveredQuantity: number;
 	sellUncoveredQuantity: number;
@@ -1451,7 +1455,7 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		['complete', 'partial', 'no_market', 'unavailable', 'invalid'].includes(String(value.sellDepthStatus)) &&
 		nonNegative(value.sellCoveredQuantity) && nonNegative(value.sellUncoveredQuantity) &&
 		value.sellCoveredQuantity + value.sellUncoveredQuantity === value.quantity &&
-		(value.sellDepthStatus === 'complete' ? value.sellUncoveredQuantity === 0 && value.totalSellCopper !== null
+		(value.sellDepthStatus === 'complete' ? value.sellCoveredQuantity > 0 && value.totalSellCopper !== null
 			: value.totalSellCopper === null) &&
 		nullableNonNegative(value.unitListCopper) && nullableNonNegative(value.totalListCopper) && nonEmptyText(value.name) &&
 		(value.type === null || nonEmptyText(value.type)) && (value.rarity === null || nonEmptyText(value.rarity)) &&
@@ -1570,7 +1574,7 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		['complete', 'partial', 'no_market', 'unavailable', 'invalid'].includes(String(value.tc_sell_depth_status)) &&
 		nonNegative(value.tc_sell_covered_quantity) && nonNegative(value.tc_sell_uncovered_quantity) &&
 		value.tc_sell_covered_quantity + value.tc_sell_uncovered_quantity === value.tc_quantity &&
-		(value.tc_sell_depth_status === 'complete' ? value.tc_sell_uncovered_quantity === 0
+		(value.tc_sell_depth_status === 'complete' ? value.tc_sell_covered_quantity > 0
 			: value.tc_total_sell_copper === null) && nullableNonNegative(value.tc_unit_list_copper) &&
 		nullableNonNegative(value.tc_total_list_copper) && typeof value.tc_active === 'boolean' &&
 		value.tc_active === (value.tc_quantity > 0) &&
