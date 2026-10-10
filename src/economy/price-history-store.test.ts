@@ -11,6 +11,7 @@ import {
 	type PriceHistorySnapshotV1,
 } from './price-history-model';
 import { IndexedDbPriceHistoryStore } from './price-history-store';
+import { LocalDebugPersistenceProbe, type LocalDebugPersistenceEvent } from '../core/local-debug-persistence';
 
 describe('IndexedDbPriceHistoryStore', () => {
 	it('creates the four v1 stores and keeps seeds non-evictable', async () => {
@@ -206,6 +207,58 @@ describe('IndexedDbPriceHistoryStore', () => {
 		const second = await store.compactAndPrune('vault', now, 7, 5);
 		expect(second.prunedDaily).toBe(1);
 		expect((await store.compactAndPrune('vault', now, 7, 5)).prunedDaily).toBe(0);
+		store.close();
+	});
+
+	it('retires an unreadable row in the middle of the prune range, keeps going and reports it (DU-07)', async () => {
+		const factory = new IDBFactory();
+		const name = databaseName('prune-unreadable');
+		const events: LocalDebugPersistenceEvent[] = [];
+		const store = await IndexedDbPriceHistoryStore.open(factory, name, undefined, new LocalDebugPersistenceProbe({ sink: (event) => events.push(event) }));
+		const now = Date.parse('2026-08-29T12:00:00.000Z');
+		for (const ageDays of [20, 15, 10, 1]) {
+			const capturedAt = now - ageDays * 86_400_000;
+			const lease = await store.claimSlot('vault', capturedAt, `owner-${String(ageDays)}`, capturedAt);
+			if (lease.status !== 'acquired') throw new Error('lease missing');
+			await store.commitSlot(lease.lease, snapshot('vault', capturedAt, capturedAt));
+		}
+		// Compacts everything once (and marks the store ready) so the corrupt rows below are met only by the prune.
+		await store.compactAndPrune('vault', now - 25 * 86_400_000, 7, 365);
+		store.close();
+		const database = await openRaw(factory, name, 1);
+		const corruptAt = now - 12 * 86_400_000;
+		const writes = database.transaction([PRICE_HISTORY_SNAPSHOT_STORE, PRICE_HISTORY_DAILY_STORE], 'readwrite');
+		writes.objectStore(PRICE_HISTORY_SNAPSHOT_STORE).put({ vaultId: 'vault', slotStartMs: corruptAt, capturedAtMs: corruptAt, bad: true });
+		writes.objectStore(PRICE_HISTORY_DAILY_STORE).put({ vaultId: 'vault', itemId: 1, dayUtc: '2026-08-10', bad: true });
+		await transactionDone(writes);
+		database.close();
+
+		const reopened = await IndexedDbPriceHistoryStore.open(factory, name, undefined, new LocalDebugPersistenceProbe({ sink: (event) => events.push(event) }));
+		const result = await reopened.compactAndPrune('vault', now, 7, 5);
+		expect(result.prunedSnapshots).toBe(3);
+		expect(result.prunedDaily).toBeGreaterThan(0);
+		// Only the readable snapshot inside the retention window is left; the corrupt rows are gone, not stuck.
+		expect(await reopened.readSnapshots('vault')).toHaveLength(1);
+		const retired = events.filter(({ code, phase }) => code === 'corrupt_tail_recovered' && phase === 'skip');
+		expect(retired.map(({ detail }) => detail?.objectStore).sort()).toEqual([PRICE_HISTORY_DAILY_STORE, PRICE_HISTORY_SNAPSHOT_STORE].sort());
+		expect(retired.every(({ detail }) => detail?.rows === '1' && detail.reason === 'unreadable_row_retired')).toBe(true);
+		// A second pass finds nothing left to retire.
+		expect((await reopened.compactAndPrune('vault', now, 7, 5)).prunedSnapshots).toBe(0);
+		reopened.close();
+	});
+
+	it('reports nothing about unreadable rows when the prune range holds none', async () => {
+		const events: LocalDebugPersistenceEvent[] = [];
+		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('prune-clean'), undefined, new LocalDebugPersistenceProbe({ sink: (event) => events.push(event) }));
+		const now = Date.parse('2026-08-29T12:00:00.000Z');
+		for (const ageDays of [10, 1]) {
+			const capturedAt = now - ageDays * 86_400_000;
+			const lease = await store.claimSlot('vault', capturedAt, `owner-${String(ageDays)}`, capturedAt);
+			if (lease.status !== 'acquired') throw new Error('lease missing');
+			await store.commitSlot(lease.lease, snapshot('vault', capturedAt, capturedAt));
+		}
+		expect(await store.compactAndPrune('vault', now, 7, 180)).toMatchObject({ dailyRecords: 2, prunedSnapshots: 1, prunedDaily: 0 });
+		expect(events.some(({ code }) => code === 'corrupt_tail_recovered')).toBe(false);
 		store.close();
 	});
 
