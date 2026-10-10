@@ -191,6 +191,17 @@ describe('the Obsidian plugin started end to end through its own lifecycle', { t
 		expect(started.plugin.core.getSaleViewModel()).toMatchObject({ status: 'empty', consultOnly: true });
 	});
 
+	// GR-04: the loot presentation cache `onload` builds journals its storage under the session's
+	// `session_projection`, never under a gesture's action (was a match over the core's characters).
+	it('journals the loot presentation cache built in onload under session_projection', async () => {
+		const started = await startPlugin();
+		await started.layoutReady();
+
+		const cache = started.records.filter(({ details }) => (details as { store?: unknown } | undefined)?.store === 'loot_presentation');
+		expect(cache.length).toBeGreaterThan(0);
+		expect(cache.map(({ component, action }) => `${component}/${action}`)).toEqual(cache.map(() => 'session/session_projection'));
+	});
+
 	it('answers the session state from the real session service once the runtime is up', async () => {
 		const started = await startPlugin();
 		await started.layoutReady();

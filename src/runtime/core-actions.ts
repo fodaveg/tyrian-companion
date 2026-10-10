@@ -1,11 +1,13 @@
 /**
  * What the core and the runtimes split out of it (DE-01, step 2) ask around an action: whether this
- * device only consults, the refusal of a collector-only action in consult, and the detached run of
- * a callback whose failure goes to the diagnostic log. Moved here unchanged from
- * `tyrian-companion-core.ts`, so `SaleRuntime` reads them without importing the core it serves.
+ * device only consults, the refusal of a collector-only action in consult, the detached run of
+ * a callback whose failure goes to the diagnostic log, and (step 3c) a session note's write under
+ * its own journal line. Moved here unchanged from `tyrian-companion-core.ts`, so `SaleRuntime` and
+ * `LiveSessionRuntime` read them without importing the core they serve.
  */
 import type { LocalDebugActionContext, LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import type { CollectorMode } from '../core/settings';
+import type { SessionNoteWriteResult } from '../sessions/session-note-writer';
 
 /** Captures detached host callbacks without allowing diagnostics to alter their void contract. */
 export function fireAndForgetLocal(
@@ -39,4 +41,30 @@ export function refusedInConsult(plugin: {
 	if (!consulting(plugin)) return false;
 	plugin.notifyConsultMode();
 	return true;
+}
+
+/**
+ * The session note is the summary's only durable delivery: unlike `session-history.ts`, nothing
+ * else records that a close ever happened. Before this (H15.10, 2026-09-10 incident) a failed
+ * write surfaced only as the note's own fixed `message` in the UI, and the local debug log never
+ * learned `note.status` or the underlying rejection's class, so a disk-full or EACCES vault could
+ * silently eat every session for a whole run.
+ */
+export async function writeSessionNoteWithDiagnostics(
+	actions: LocalDebugActionRunner | null,
+	write: () => Promise<SessionNoteWriteResult>,
+): Promise<SessionNoteWriteResult> {
+	const action = async () => {
+		const note = await write();
+		if (note.status === 'written' || note.status === 'unchanged') return note;
+		return {
+			...note,
+			phase: 'failure' as const,
+			code: 'storage_failure' as const,
+			details: { status: note.status, errorName: 'errorName' in note ? note.errorName : undefined },
+		};
+	};
+	return actions
+		? await actions.run({ component: 'session', action: 'session_finish', state: 'note_write' }, action)
+		: await action();
 }

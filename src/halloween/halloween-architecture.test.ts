@@ -66,10 +66,9 @@ describe('H11-A architecture and UI contract', () => {
 			.toMatch(/loadBackfill:[\s\S]*scanHalloweenSessionNotes/u);
 		expect(main).toContain('observeAcceptedHalloweenDelta(delta)');
 		expect(main).toContain("`session:${session.sessionId}`");
-		// The session-final episode key moved into `finishFinalizedSession` (Lote S, 2026-09-09: the
-		// shared step both a live `stop()` and an auto-finalized `provisional` record go through),
-		// which takes the id as its own `sessionId` parameter instead of reading `result.state.sessionId`.
-		expect(main).toContain("`session:${sessionId}`");
+		// The session-final episode key (`finishFinalizedSession`) is read from the call it makes when
+		// it runs: `src/main.test.ts`, 'passes the whole classification and stable delta to
+		// session_final only once finalization already succeeded' (DE-01).
 		// R1a: the plugin subscribes through the host's vault port, and `ObsidianHost` is what turns
 		// that one subscription into Obsidian's `modify` and `rename` (plus create/delete) events.
 		expect(main).toContain("host.vault.onChange('', refreshHalloweenBackfill)");
