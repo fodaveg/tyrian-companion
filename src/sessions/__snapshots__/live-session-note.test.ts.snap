@@ -17,10 +17,11 @@ tags: ["gw2/session"]
 ---
 # 2026-10-06 14.00 · Sesión completa
 
-<!-- tyrian-companion:managed:start:summary sha256=ab3f5fb308bbf4bf605572304a1449dff0914e5ed5e44a7deaf121ca4b939689 -->
+<!-- tyrian-companion:managed:start:summary sha256=84944b5db4b552a7163c7e126344d4ac872f05b7d90f5ac48079965a07723ad4 -->
 ## Resumen
-- Inicio: 2026-10-06T12:00:00.000Z
-- Fin: 2026-10-06T12:00:02.000Z
+- Inicio: 2026-10-06 14:00:00 (2026-10-06T12:00:00.000Z)
+- Fin: 2026-10-06 14:00:02 (2026-10-06T12:00:02.000Z)
+- Hora local: UTC+02:00
 - Ámbito: bolsas del personaje controlado
 - Cambios observados: 2
 - Tiempo con objetos observados: 2 s
@@ -36,16 +37,16 @@ Los cambios entre muestras pueden quedar sin observar. Su causa es desconocida; 
 - Últimos huecos libres observados: 8
 <!-- tyrian-companion:managed:end:evidence -->
 
-<!-- tyrian-companion:managed:start:results sha256=3ed3cebb6d97fb26c5c57ca17d2c5cd28f9911bf75a997713b50c807ca803365 -->
+<!-- tyrian-companion:managed:start:results sha256=1f0a93a628e3a5d666a9b42b7d6d78967a55498725bd76ed1ffbe00bbd09d419 -->
 ## Cronología observada
-| Hora observada | Elemento | Antes | Después | Cambio | Valor estimado |
+| Hora local observada | Elemento | Antes | Después | Cambio | Valor estimado |
 |---|---|---:|---:|---:|---:|
-| 2026-10-06T12:00:01.000Z | Champiñón | 0 | 2 | 2 | 20 c |
-| 2026-10-06T12:00:02.000Z | Champiñón | 2 | 4 | 2 | 20 c |
+| 2026-10-06 14:00:01 | Champiñón (12147) | 0 | 2 | 2 | 20 c |
+| 2026-10-06 14:00:02 | Champiñón (12147) | 2 | 4 | 2 | 20 c |
 ### Suma de cambios
 | Elemento | + | − | Neto |
 |---|---:|---:|---:|
-| Champiñón | 4 | 0 | 4 |
+| Champiñón (12147) | 4 | 0 | 4 |
 <!-- tyrian-companion:managed:end:results -->
 
 <!-- tyrian-companion:managed:start:economy sha256=84970059cf0c38669e8e310913b7022638f5cb5b2684f97e2479ea17d4bba0e5 -->
@@ -64,17 +65,17 @@ El valor de objetos refleja venta inmediata neta estimada; no equivale a benefic
 Ninguna acción en el juego se ejecuta desde esta nota.
 <!-- tyrian-companion:managed:end:decision -->
 
-<!-- tyrian-companion:managed:start:provenance sha256=d2d9416fb35264b68f759f527a5efcb5b86cd7918a851baeddc0abaeb5ed4fd3 -->
+## Mis notas
+
+<!-- tyrian-companion:managed:start:provenance sha256=9517e233bf061024fa01d447ae24b9cc9930bc19bbba4804da5f1a5cacbe4c78 -->
 ## Procedencia
 - Fuente: Nexus · observación de inventario
-- Precios capturados: 2026-10-06T12:00:00.000Z · venta inmediata neta
+- Precios capturados: 2026-10-06 14:00:00 (2026-10-06T12:00:00.000Z) · venta inmediata neta
 El siguiente registro conserva la sesión completa para recuperarla y exportarla en otra instalación.
 \`\`\`json
 {"accountRef":null,"build":"27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c","coverage":{"currencies":"none","currencyIds":[],"freeSlots":8,"items":"complete","lastObservationAt":"2026-10-06T12:00:02.000Z"},"endedAt":"2026-10-06T12:00:02.000Z","farmingGoal":{"kind":"bags","targetBags":500,"version":1},"gaps":[],"groupContext":"without_bosses","journal":[{"breakBefore":false,"cursor":0,"epoch":"AgICAgICAgICAgICAgICAg","observations":[],"observedAt":"2026-10-06T12:00:00.000Z","outbox":[],"version":1},{"breakBefore":false,"cursor":1,"epoch":"AgICAgICAgICAgICAgICAg","observations":[{"after":2,"before":0,"cause":"unknown","coverage":"observed_interval","cursor":1,"delta":2,"epoch":"AgICAgICAgICAgICAgICAg","id":"AgICAgICAgICAgICAgICAg/1/item/12147","idNumber":12147,"kind":"item","observedAt":"2026-10-06T12:00:01.000Z","source":"nexus_inventory","sourceElapsedMs":1000,"version":1,"windowStartAt":"2026-10-06T12:00:00.000Z"}],"observedAt":"2026-10-06T12:00:01.000Z","outbox":[],"version":1},{"breakBefore":false,"cursor":2,"epoch":"AgICAgICAgICAgICAgICAg","observations":[{"after":4,"before":2,"cause":"unknown","coverage":"observed_interval","cursor":2,"delta":2,"epoch":"AgICAgICAgICAgICAgICAg","id":"AgICAgICAgICAgICAgICAg/2/item/12147","idNumber":12147,"kind":"item","observedAt":"2026-10-06T12:00:02.000Z","source":"nexus_inventory","sourceElapsedMs":2000,"version":1,"windowStartAt":"2026-10-06T12:00:01.000Z"}],"observedAt":"2026-10-06T12:00:02.000Z","outbox":[],"version":1}],"magicFind":{"source":"unknown","value":null},"mapCoveragePartial":false,"mapIntervals":[],"observationCount":2,"observedCurrenciesMs":0,"observedItemsMs":2000,"preparation":{"enabled":false,"foodReminderMinutes":null,"manualMagicFindBonus":null,"utilityReminderMinutes":null,"version":1},"profile":"owned-bags-v3","sampleCount":3,"sessionRef":"e1cb9c6c917aef3fb6d1b4870c97482ab2e082d756f27efe343d057953d66457","source":"nexus_inventory","startedAt":"2026-10-06T12:00:00.000Z","totals":[{"idNumber":12147,"kind":"item","negative":0,"net":4,"positive":4}],"valuation":{"capturedAt":"2026-10-06T12:00:00.000Z","coinNetCopper":null,"knownNetValueCopper":null,"netItemValueKnownCopper":40,"positiveItemValueKnownCopper":40,"priceBasis":"instant_sell_net","prices":[{"itemId":12147,"unitCopper":10}],"unpricedItemIds":[]},"version":1}
 \`\`\`
 <!-- tyrian-companion:managed:end:provenance -->
-
-## Mis notas
 "
 `;
 
