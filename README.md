@@ -24,8 +24,8 @@ computer from using them.
 The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
 our Nexus addon as the source of new sessions. **The 0.6.26 channel is published;
 installation and runtime QA remain pending.** This does not prove that an installed older addon supplies it.
-Authenticated GW2 API requests are reserved for explicit manual inventory/wallet operations and
-connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
+Authenticated GW2 API requests are reserved for explicit manual inventory, wallet and achievements
+operations and connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
 is primary. Since October 8, 2026 (David's decision) the Nexus addon is required for the live features on
 every platform; the Blish HUD module is frozen at its published 0.5.0 and receives no new features. Windows
 with Nexus and the same addon is the expected route for Windows players, but the addon's reader has only
@@ -119,7 +119,7 @@ The Nexus addon is required on every platform, Windows included; Blish HUD is fr
 3. Back in **Settings → Community plugins**, enable **Tyrian Companion** and open its settings page.
 4. Open the command palette and run **Open companion**. For a live session, continue with the
    collector/bridge/Nexus setup below. **No GW2 API key or Check connection step is required.**
-5. Only if using manual inventory/wallet features or explicitly checking the account connection,
+5. Only if using manual inventory/wallet/achievements features or explicitly checking the account connection,
    [create an API key](docs/API-KEY.md), select or create a secret in **API key**, and store the
    value in Obsidian Secret Storage. The plugin setting retains only the secret name. Use
    **Check connection** when you want to validate that API connection; it is not session setup.
@@ -529,7 +529,7 @@ remain human QA even when the package and CI gates are green.
 
 For live1, the [current contract](docs/SPEC-live-loot.md) takes precedence over legacy session paths:
 no authenticated API request on load, presence, start, sampling, stop, recovery or live view refresh.
-Inventory/wallet and connection checks remain explicit manual operations. Local live journals are
+Inventory/wallet/achievements and connection checks remain explicit manual operations. Local live journals are
 private observations and must not be included in support reports. HUD messages exclude
 account/character identity, paths and secrets.
 
@@ -623,6 +623,12 @@ is single-flight and opening Settings does not list or read vault notes.
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 
 `account` is required for the initial connection; `characters`, `inventories`, `builds`, `wallet`, `tradingpost`, `progression`, and `unlocks` are recommended capabilities and appear as warnings rather than invalidating a key. URL-limited subtokens work when both connection endpoints are allowed, with a warning that future modules remain restricted.
+
+The **Update Leyspring achievements** command (also available in consult mode) reads `/v2/account` and
+`/v2/account/achievements` with the key, and the public `/v2/achievements?ids=` catalog for the names, and
+rewrites one managed note, `Achievements/Leyspring Hollows.md`, below the output folder. It needs the
+`progression` permission: without it, or without network, the note keeps what it said and the plugin
+tells you it could not update. The wiki links in the note are fixed data; the plugin never requests the wiki.
 
 Rate limits create a real cooldown: both connection controls remain disabled and show a live countdown until retry is allowed. Transient failures preserve the last verified account with an explicit stale-data warning.
 

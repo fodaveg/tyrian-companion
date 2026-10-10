@@ -6,7 +6,7 @@ David autoriza el lector propio y pasivo de Nexus para el alcance completo del a
 
 - La sesión conserva toda la conexión al juego y la gracia de diez minutos. La presencia y la disponibilidad de muestras son independientes; cambiar de mapa o personaje no recorta por sí solo la sesión.
 - Nexus es el único productor. Desde el 8 oct 2026 (decisión de David) Nexus es obligatorio para las funciones en vivo en todas las plataformas, Windows incluido; el módulo de Blish HUD queda congelado en su 0.5.0 publicada y no recibe funciones nuevas. Que Windows nativo funcione con Nexus es una expectativa sin probar (el lector solo está probado en Fedora con Proton). Fuente ausente, parcial, antigua o en conflicto se muestra sin fingir cobertura.
-- La API autenticada queda reservada a acciones manuales de inventario/cartera y comprobación explícita de conexión. La sesión live no requiere clave; no se consulta en carga, presencia, inicio, muestreo, cierre, recovery, comparación, MF o refresco de vista, ni como fallback. Catálogo y precios públicos continúan bajo sus políticas vigentes.
+- La API autenticada queda reservada a acciones manuales de inventario, cartera y logros, y a la comprobación explícita de conexión. La sesión live no requiere clave; no se consulta en carga, presencia, inicio, muestreo, cierre, recovery, comparación, MF o refresco de vista, ni como fallback. Catálogo y precios públicos continúan bajo sus políticas vigentes.
 - Se muestran cambios del inventario observado con causa desconocida. Baselines/rebaselines no son adquisiciones; los huecos no son tiempo medido y lo desconocido no equivale a cero. Un aumento no demuestra un drop; una disminución no demuestra apertura o venta.
 - Timeline, resumen, gráfica y exportación proceden del mismo ledger durable. La UI puede paginar; exportar conserva todas las filas. (Candidato 0.6.0: la pestaña Sesión pinta una gráfica de valor y la cronología plegada, sin pestañas Cronología/Resumen ni control de exportación; la sesión actual y la sesión antigua guardada se exportan con dos comandos, y el historial desde Ajustes → Mantenimiento.) Cantidad positiva observada, neto firmado, subtotal valorado y cobertura monetaria se distinguen. Tasas y objetivos respetan tiempo cubierto y frescura.
 - Monedas y MF siguen dentro del encargo completo. Mientras falte evidencia se muestran sin cobertura/desconocidos; ese estado honesto no cierra su investigación ni el objetivo. La preparación manual declara su procedencia.
@@ -135,6 +135,19 @@ nombre en un ajuste del plugin: ni colecciones ni ascendidos. Los materiales por
 una tabla curada del repo con `sourceIds` y `retrievedAt` (la API pública no tiene recetas de Forja
 Mística, medido ese día), y lo ya conseguido se descuenta con `/v2/account/legendaryarmory`. Las
 cinco decisiones y su spec: `docs/SPEC-recomendacion-por-objeto.md` §7.
+
+**El 2026-10-10 David amplía ese frente a logros.** Pidió reproducir lo que hace a mano en su nota de
+Leyspring Hollows: una lista de casillas con los logros del mapa, hechos y pendientes, y el avance de
+la maestría. La primera entrega es el comando manual «Actualizar logros de Leyspring», que escribe una
+nota gestionada (`Achievements/Leyspring Hollows.md`, carpeta de salida del plugin) con un conjunto fijo
+de 46 logros y sus enlaces a la wiki como datos del código, pendientes arriba y hechos abajo, el
+recuento de la lista (`22 de 46`) y, aparte, el avance que da el juego para la maestría 9417 (`22/36`, o
+«sin dato» si la cuenta no trae esa entrada). Funciona también en modo Consulta, como las acciones manuales
+de inventario y cartera, y nunca se ejecuta sola. Las casillas reflejan la API y se rehacen en cada
+pasada; lo que el usuario escriba fuera del bloque gestionado y sus claves de frontmatter se conservan.
+Si no hay lectura (sin red, sin `progression`, respuesta mala) la nota queda como estaba. Las colecciones
+de objetos y los ascendidos siguen fuera de alcance. La nota que David ya tiene en su vault no se toca ni
+se adopta.
 
 ## Alcance de v1
 

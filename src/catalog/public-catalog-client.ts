@@ -58,5 +58,6 @@ export function publicCatalogLogicalEndpoint(path: string): HttpLogicalEndpoint 
 	if (route === 'commerce/listings') return 'commerce_listings';
 	if (route === 'recipes/search') return 'recipes_search';
 	if (route === 'legendaryarmory') return 'legendaryarmory';
+	if (route === 'achievements') return 'achievements';
 	return 'unknown';
 }

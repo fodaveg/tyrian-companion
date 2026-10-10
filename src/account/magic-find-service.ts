@@ -1,4 +1,5 @@
 import { HttpTransportError } from '../core/http';
+import { ACCOUNT_ACHIEVEMENTS_PATH, parseAccountAchievements } from './account-achievements';
 import type { GuildWars2Operation } from './guild-wars-2-client';
 import {
 	composeMagicFind,
@@ -106,18 +107,14 @@ export class MagicFindService {
 		if (cached !== null && now - cached.storedAt <= ACCOUNT_ACHIEVEMENTS_TTL_MS) return cached;
 
 		const [achievementsBody, accountBody] = await Promise.all([
-			operation.request(`account/achievements?v=${encodeURIComponent(PINNED_SCHEMA)}`),
+			operation.request(ACCOUNT_ACHIEVEMENTS_PATH),
 			operation.request(`account?v=${encodeURIComponent(PINNED_SCHEMA)}`),
 		]);
-		if (!Array.isArray(achievementsBody)) throw new MagicFindResponseError('invalid_response');
-		const entries: AccountAchievementEntry[] = [];
-		const seen = new Set<number>();
-		for (const raw of achievementsBody) {
-			const parsed = parseAccountAchievementEntry(raw);
-			if (parsed === null || seen.has(parsed.id)) throw new MagicFindResponseError('invalid_response');
-			seen.add(parsed.id);
-			entries.push(parsed);
-		}
+		const parsedEntries = parseAccountAchievements(achievementsBody, 'progress');
+		if (parsedEntries === null) throw new MagicFindResponseError('invalid_response');
+		const entries: AccountAchievementEntry[] = parsedEntries.map((entry) => ({
+			id: entry.id, current: entry.current, done: entry.done, repeated: entry.repeated ?? 0,
+		}));
 		if (!isRecord(accountBody) || !nonNegativeInteger(accountBody.daily_ap)) {
 			// `monthly_ap` is not summed: it reads 0 on the account today and cannot be validated.
 			// `daily_ap` requires the `progression` scope; its absence on an otherwise valid
@@ -209,18 +206,6 @@ function parseAchievementCatalogEntry(value: unknown): { id: number; tiers: Achi
 	}
 	// `point_cap` is optional and reads `-1` on repeatables whose tiers award no points: an odd value is no cap, never a malformed entry.
 	return { id: value.id, tiers, pointCap: positiveInteger(value.point_cap) ? value.point_cap : null };
-}
-
-function parseAccountAchievementEntry(value: unknown): AccountAchievementEntry | null {
-	if (!isRecord(value) || !positiveInteger(value.id) || typeof value.done !== 'boolean') return null;
-	if (value.current !== undefined && value.current !== null && !nonNegativeInteger(value.current)) return null;
-	if (value.repeated !== undefined && !nonNegativeInteger(value.repeated)) return null;
-	return {
-		id: value.id,
-		current: value.current === undefined ? null : value.current,
-		done: value.done,
-		repeated: value.repeated === undefined ? 0 : value.repeated,
-	};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

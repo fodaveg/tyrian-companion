@@ -741,6 +741,27 @@ actualización (`properties.file.mtime`), que es la forma canónica que Obsidian
 referencias operativas de filtros, fórmulas, orden y sort siguen usando los campos `tc_*`; las
 propiedades `formula.*` y `file.*` conservan su namespace propio.
 
+## Logros
+
+`src/achievements/` es el módulo del comando manual «Actualizar logros de Leyspring» (10 oct 2026, primera
+entrega del frente «qué me falta para X» ampliado a logros). Cada pieza hace una cosa:
+
+- `leyspring-set.ts`: el conjunto fijo de 46 logros, en el orden de la lista de David, con la página y el ancla de la wiki de cada uno, y el id de la maestría (9417). Son datos: el plugin no consulta la wiki.
+- `leyspring-capture.ts` (`LeyspringCaptureService`): una lectura. `account` y `account/achievements` con la clave, más `achievements?ids=` público (nombres y umbral de la maestría, un lote). Nunca lanza: devuelve `unavailable` con una razón cerrada (`missing_key`, `missing_scope` ante 401/403, `request_failed`, `invalid_response`). Del id de cuenta solo conserva un hash truncado. Se eligió la lectura directa con el cliente público en vez de `PublicCatalogService`: son 47 ids de una acción manual, no hay caché que compartir y se evita un tipo de entidad nuevo en la caché persistente; el nombre lógico `achievements` se añadió a `publicCatalogLogicalEndpoint`.
+- `account/account-achievements.ts`: la lectura y el parseo de `account/achievements`, compartidos con el Inventory Advisor (`inventory-advisor-evidence.ts`, validación `full`) y con Magic Find (`magic-find-service.ts`, validación `progress`); cada uno conserva la validación que tenía.
+- `leyspring-note.ts` (`LeyspringNoteWriter`): construye la vista (pendientes arriba y hechos abajo, en el orden de la lista; avance `· 6/13` de los que van a medias; recuento de la lista aparte del avance de la maestría, «sin dato» si la cuenta no trae entrada para 9417) y escribe la nota `Achievements/Leyspring Hollows.md` bajo la carpeta de salida, por un puerto de vault mínimo (el mismo que satisface `TyrianVault`, así que sirve igual en Obsidian y en Hebra).
+- `leyspring-service.ts`: orquesta lectura y escritura, una a la vez; una lectura fallida no llega al escritor.
+- `leyspring-notice.ts`: el aviso final de cada resultado, en español e inglés.
+
+La nota sigue el patrón de las notas de inventario y de sesión (bloque gestionado entre marcas, con hash,
+más frontmatter gestionado `tc_*`), no el de la cartera. Lo que el usuario escriba fuera del bloque y sus
+claves de frontmatter se conservan byte a byte; el hash del bloque lo calcula con todas las casillas
+leídas como vacías, porque las casillas reflejan la API y cada pasada las rehace (una marcada a mano vuelve
+a su estado real), mientras que texto del usuario dentro del bloque deja la nota intacta y avisa. Una nota
+de otra cuenta (referencia seudónima distinta) tampoco se actualiza, ni un fichero ajeno en esa ruta. Sin
+cambios de datos solo cambia la fecha de la última lectura. El recuento sale siempre de la API, nunca de
+contar casillas.
+
 ## Rutas Vault H5.8
 
 `normalizeVaultRelativePath` es la frontera única para toda ruta creada o aceptada por el plugin. Normaliza a NFC en vez de exigirlo del caller —un NFD como el que produce macOS se acepta y se recompone, no se rechaza—, exige ruta relativa con `/`, segmentos no vacíos ni de navegación, sin controles ni surrogates sin emparejar, sin punto/espacio final, sin nombres reservados de Windows, incluidos COM/LPT con superíndices, y con límites conservadores de 120 caracteres por segmento y 240 por ruta. Settings y notas reservan además el directorio de configuración real del vault y limitan su raíz a 128 caracteres para que las rutas UTC + hash de las sesiones permanezcan portables. Assets reutiliza el mismo contrato antes de aceptar root, manifiesto, journal o ruta empaquetada: cada entrada ready/detached debe usar `neutral|manifest.locale` y, con el bundle actual, coincidir como conjunto exacto por id/kind/locale/path; un bundle anterior compatible se conserva para upgrade o retirada. Un journal solo admite su hash previo registrado, su hash actual o ausencia demostrada. Una raíz legacy queda limitada a Move/Remove explícito, se adopta solo tras manifiesto owned exacto y valida marker y hash antes de tocarla. Las rutas de sesión contienen solo UTC y referencias SHA-256; las de inventario usan item, fuente y hash de personaje. Ninguna incorpora cuenta, nombre de personaje, evento ni ruta local.
