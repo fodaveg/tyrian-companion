@@ -158,31 +158,36 @@ Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el a
 
 ### Imports entre carpetas de `src/`
 
-Medido el 10 oct 2026 (sección 3 de [la auditoría de deuda estructural](audit/2026-10-10-deuda-estructural.md)) con expresiones regulares sobre los `import ... from '...'` relativos de la fuente, sin tests y con los imports de tipo incluidos. Filas: carpeta que importa; columnas: carpeta importada. Es una fotografía, no un contrato: lo que gobierna las direcciones permitidas es `src/layer-direction-architecture.test.ts`.
+Cuenta de imports relativos entre carpetas de primer nivel de `src/`, generada desde el código con el parser de TypeScript (multilínea, `export ... from` y `import()` incluidos; los de tipo cuentan). Se leen los `.ts` que no son `*.test.ts` ni `*.d.ts`, la misma regla que `sourceModulePaths` de `src/test/module-boundary.ts`, así que `src/test` y las fixtures cuentan como fuente (382 ficheros). `main` son los ficheros directamente bajo `src/`. Filas: carpeta que importa; columnas: carpeta importada. Es una fotografía, no un contrato: lo que gobierna las direcciones permitidas es `src/layer-direction-architecture.test.ts`.
 
 ```text
-            acco advi aler asse cata core econ hall host inve plat runt sess test   ui wall
-account        .    .    .    .    .   18    .    .    .    .    .    .    .    .    .    .
-advisor       20    .    .    .   11   14   76    .    .    .    .    .    .    .    .    .
-alerts         .    .    .    .    .    2    1    1    1    .    .    .    .    .    .    .
-assets         .    2    .    .    .    7    .    .    .    .    .    .    .    .    .    .
-catalog        3    .    .    .    .    8    .    .    .    .    .    .    .    .    .    .
-core           .    .    1    .    .    .    4    1    2    .    .    .    3    .    .    .
-economy       14    2    3    .   15   36    .    .    4    .    .    .    2    .    .    .
-halloween      6    .    3    .    4   12   10    .    .    .    .    .    2    .    .    .
-host           .    .    6    2    .   11    4    1    .    1    .    2    3    .    1    1
-inventory      2    7    .    1    1    6   14    .    .    .    .    .    .    .    .    .
-platform       .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
-runtime       14   15   24    7   11   41   22   13    9    5    .    .   72    .   24    2
-sessions      32    .   19    .    5   59   20    .    .    1    2    2    .    .    .    1
-test           1    3    .    2    .    3    .    .    2    .    .    2    2    .    .    .
-ui            14   17    9    5    .   64   31    3   13    5    .    3   63    .    .    1
-wallet         2    .    .    1    3    3    .    .    .    .    .    .    .    .    .    .
+            acco achi advi aler asse cata core econ hall host inve main perf plat runt sess test   ui wall
+account        .    .    .    .    .    .   18    .    .    .    .    .    .    .    .    .    .    .    .
+achievements    3    .    .    .    2    4    6    .    .    .    .    .    .    .    .    .    .    .    .
+advisor       21    .    .    .    .   11   14   76    .    .    .    .    .    .    .    .    .    .    .
+alerts         .    .    .    .    .    .    2    1    1    1    .    .    .    .    .    .    .    .    .
+assets         .    .    2    .    .    .    7    .    .    .    .    .    .    .    .    .    .    .    .
+catalog        3    .    .    .    .    .    8    .    .    .    .    .    .    .    .    .    .    .    .
+core           .    .    .    1    .    .    .    4    1    2    .    .    .    .    .    3    .    .    .
+economy       14    .    2    3    .   15   36    .    .    4    .    .    .    .    .    2    .    .    .
+halloween      6    .    .    3    .    4   12   10    .    .    .    .    .    .    .    2    .    .    .
+host           .    .    .    6    2    .   18    4    1    .    1    .    .    .    2    3    .    1    1
+inventory      2    .    7    .    1    1    7   14    .    .    .    .    .    .    .    .    .    .    .
+main           .    .    .    .    .    .    .    .    .    1    .    .    .    .    1    .    .    .    .
+performance    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+platform       .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+runtime       14    4   17   24    7   11   45   22   13   10    5    .    .    .    .   74    .   24    2
+sessions      32    .    .   19    .    5   58   20    .    .    1    .    .    2    2    .    .    .    1
+test           1    .    3    .    2    .    3    5    .    2    .    2    .    .    2    2    .    .    .
+ui            14    .   17    9    5    .   63   31    3   13    5    .    .    .    3   62    .    .    1
+wallet         2    .    .    .    1    3    3    .    .    .    .    .    .    .    .    .    .    .    .
 ```
 
-- Concentradoras de entrada: `core` (284 imports desde 14 carpetas), `economy` (182, 9), `sessions` (147, 7), `account` (108, 10).
-- Concentradoras de salida: `runtime` (259 hacia 13 carpetas), `ui` (228, 12), `sessions` (141, 9), `advisor` (121, 4).
-- Hojas: `platform` (0 salidas; solo la importan `host` y `sessions`) y, casi, `account` (solo importa `core`).
+Generada el 10 oct 2026 con `node <scratchpad>/folder-imports.mjs <raíz del repo>`, un script de solo lectura que no está versionado en el repositorio (cuenta los imports por AST sobre los 382 ficheros).
+
+- Concentradoras de entrada: `core` (300 imports desde 15 carpetas), `economy` (187, 10), `sessions` (148, 7), `account` (112, 11).
+- Concentradoras de salida: `runtime` (272 hacia 14 carpetas), `ui` (226, 12), `sessions` (140, 9), `advisor` (122, 4).
+- Hojas: `platform` (0 salidas; solo la importa `sessions`, con 2 imports) y `performance` (sin imports entre carpetas en ninguno de los dos sentidos). `account` solo importa `core`.
 
 ## Diagnóstico local H6.17
 
