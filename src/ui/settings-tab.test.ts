@@ -817,6 +817,47 @@ describe('vault relocation row (DU-02)', () => {
 		expect((rowOf(tab) as RenderableSettingDefinition & { desc: string }).desc).not.toBe('Applying…');
 	});
 
+	it('gives both buttons back once the answer ends, also when it fails', async () => {
+		let during: boolean[] = [];
+		let tabRef: TyrianCompanionSettingTab | null = null;
+		const disabledNow = (): boolean[] => {
+			const flags: boolean[] = [];
+			const setting = {
+				addButton: (render: (button: unknown) => unknown) => {
+					const button = {
+						setButtonText: () => button, setCta: () => button, onClick: () => button,
+						setDisabled: (value: boolean) => { flags.push(value); return button; },
+					};
+					render(button);
+					return setting;
+				},
+			};
+			if (tabRef === null) throw new Error('Expected the tab.');
+			rowOf(tabRef).render(setting as never);
+			return flags;
+		};
+		const plugin = Object.assign(settingsPlugin(), {
+			applying: false,
+			getVaultRelocation: () => ({ pending: true }),
+			isApplyingVaultRelocation: () => plugin.applying,
+			resolveVaultRelocation: vi.fn(async () => {
+				plugin.applying = true;
+				during = disabledNow();
+				await Promise.resolve();
+				plugin.applying = false;
+				throw new Error('storage unavailable');
+			}),
+		});
+		const { tab } = tabFor(plugin);
+		tabRef = tab;
+		expect(disabledNow()).toEqual([false, false]);
+
+		await buttonsOf(rowOf(tab))[0]?.click();
+
+		expect(during).toEqual([true, true]);
+		expect(disabledNow()).toEqual([false, false]);
+	});
+
 	it('tells the user when the answer fails and leaves the question for the next click', async () => {
 		const plugin = Object.assign(settingsPlugin(), {
 			getVaultRelocation: () => ({ pending: true }),

@@ -154,7 +154,7 @@ import type { SellSignalRuntime, SellSignalRuntimeState } from '../economy/sell-
 import { SELL_SIGNAL_REFERENCE_DAYS } from '../economy/sell-signal';
 import { assemblePriceHistory } from './assemble-price-history';
 import { CollectorHeartbeat } from './collector-status';
-import { CollectorReadUnansweredError, loadCollectorInstanceId, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
+import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
 import { adoptVaultData, detectVaultRelocation, isVaultToken, rememberedPreviousId, settleVaultRelocation, type VaultIdentityStores, type VaultRelocation } from './vault-relocation';
 import { DEFAULT_VIEW_PLACEMENT, loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
@@ -1560,12 +1560,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			{ component: 'settings', action: 'settings_save', state: 'vault_relocation' }, perform,
 		) ?? perform();
 		this.vaultRelocationResolving = resolving;
-		this.settingTab.refreshForSettingsChange();
-		const release = (): void => {
-			if (this.vaultRelocationResolving === resolving) this.vaultRelocationResolving = null;
-			if (!this.unloaded) this.settingTab.refreshForSettingsChange();
-		};
-		resolving.then(release, release);
+		if (!this.unloaded) this.settingTab.refreshForSettingsChange();
+		// The field is cleared the moment the answer ends (it cannot throw); the refresh that follows is observed, never an
+		// unhandled rejection: the answer's own failure goes to the caller, a failing refresh to the log.
+		const clear = (): void => { if (this.vaultRelocationResolving === resolving) this.vaultRelocationResolving = null; };
+		resolving.then(clear, clear);
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'settings', action: 'settings_save', state: 'vault_relocation' },
+			async () => { await Promise.allSettled([resolving]); if (!this.unloaded) this.settingTab.refreshForSettingsChange(); });
 		return resolving;
 	}
 
@@ -1577,13 +1579,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async performVaultRelocationAnswer(choice: 'adopt' | 'fresh'): Promise<VaultRelocationResult> {
 		const relocation = this.vaultRelocation;
 		const vaultId = this.vaultId;
-		if (relocation === null || vaultId === null || !this.runtimeReady) return { status: 'none' };
+		if (this.unloaded || relocation === null || vaultId === null || !this.runtimeReady) return { status: 'none' };
 		const indexedDB = this.host.kv.indexedDB;
 		// The registry update the start left running must land before this one writes it again; its failure is already
 		// diagnosed where it started.
 		const startWrite = this.vaultRegistryWrite;
 		this.vaultRegistryWrite = null;
 		if (startWrite !== null) await Promise.allSettled([startWrite]);
+		if (this.unloaded) return { status: 'none' };
 		const adoption = choice === 'adopt' ? await adoptVaultData(indexedDB, relocation.previousVaultId, vaultId) : null;
 		if (this.unloaded) return { status: 'none' };
 		// What was copied is read again by the in-memory preferences, which cached the (empty) record of the new id. Always on
@@ -1596,13 +1599,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const mode = own ?? adoptedMode ?? 'consult';
 		// The question is settled in the registry first, then the mode is stored, then the local memory is settled: an
 		// attempt that fails leaves the question pending and no mode that a later attempt could take for the user's choice.
-		await settleVaultRelocation(this.vaultIdentityStores(), vaultId, async () => { await saveCollectorMode(indexedDB, vaultId, mode); });
+		await settleVaultRelocation(this.vaultIdentityStores(), vaultId, {
+			save: async () => { await saveCollectorMode(indexedDB, vaultId, mode); },
+			// Only a mode this attempt wrote anew is undone: one the user had chosen for the new path stays.
+			undo: async () => { if (own === null) await deleteStoredCollectorMode(indexedDB, vaultId); },
+		});
 		if (this.unloaded) return { status: 'none' };
 		this.vaultRelocation = null;
 		this.collectorModeChosen = false;
 		if (mode !== this.collectorMode) {
 			this.collectorMode = mode;
 			await this.applyCollectorModeChange();
+			if (this.unloaded) return { status: 'none' };
 		} else this.settingTab.refreshForSettingsChange();
 		this.renderInventoryAdvisorViews();
 		const translator = createTranslator(this.settings.language);

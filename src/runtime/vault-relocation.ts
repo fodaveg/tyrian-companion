@@ -174,6 +174,10 @@ export async function detectVaultRelocation(stores: VaultIdentityStores, current
 	if (local !== null && local.vaultId === currentId && local.pendingFrom === undefined) {
 		return remember(stores, { vaultId: currentId }, null);
 	}
+	// Back to the original path with the question still open for the other one: nothing moved, whatever the other holds.
+	if (local !== null && local.vaultId !== currentId && local.pendingFrom === currentId) {
+		return remember(stores, { vaultId: currentId }, null);
+	}
 	// A question left open in this copy's own memory is asked again without the registry.
 	if (local !== null && local.vaultId === currentId && local.pendingFrom !== undefined && local.pendingFrom !== currentId) {
 		return { relocation: { previousVaultId: local.pendingFrom }, registryWrite: null };
@@ -198,14 +202,21 @@ export async function detectVaultRelocation(stores: VaultIdentityStores, current
 /**
  * The user answered: the current id is recorded and nothing is pending. In an order that leaves nothing half done: the
  * registry first (if it fails, nothing changed), then `saveMode` (if it fails, the local memory still holds the open
- * question, which it trusts over the registry, so the next start asks again), and the local memory last (synchronous).
+ * question, which it trusts over the registry, so the next start asks again), and the local memory last (synchronous;
+ * if it refuses, `mode.undo` removes the mode this attempt wrote and the error goes on).
  */
 export async function settleVaultRelocation(
-	stores: VaultIdentityStores, currentId: string, saveMode: () => Promise<void>,
+	stores: VaultIdentityStores, currentId: string, mode: { save: () => Promise<void>; undo: () => Promise<void> },
 ): Promise<void> {
 	if (stores.token !== '') await writeRegistry(stores.factory, stores.token, { vaultId: currentId });
-	await saveMode();
-	stores.storage?.save(VAULT_IDENTITY_KEY, { vaultId: currentId });
+	await mode.save();
+	try {
+		stores.storage?.save(VAULT_IDENTITY_KEY, { vaultId: currentId });
+	} catch (error) {
+		// The local memory refused: the question is still open there, so the mode just written must not stay behind.
+		await mode.undo();
+		throw error;
+	}
 }
 
 /** Whether this device kept anything of the vault under `vaultId`. */

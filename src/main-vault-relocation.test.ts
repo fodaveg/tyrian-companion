@@ -633,6 +633,81 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		await back.shutdownRuntime();
 	});
 
+	it('an answer that finds the plugin unloaded when it starts does nothing', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		await savePreferences(world, oldId);
+		const plugin = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		const newId = plugin.vaultId ?? '';
+		await plugin.shutdownRuntime();
+		const noticesAtUnload = world.notices.length;
+
+		expect(await plugin.resolveVaultRelocation('adopt')).toEqual({ status: 'none' });
+
+		const store = new IndexedDbInventoryPreferencesStore(world.factory);
+		expect(await store.read({ vaultId: newId, accountId: ACCOUNT_ID })).toEqual({ status: 'ok', record: null });
+		store.dispose();
+		expect(world.notices).toHaveLength(noticesAtUnload);
+		expect(world.local.get(IDENTITY_KEY)).toMatchObject({ pendingFrom: oldId });
+	});
+
+	it('an answer whose plugin unloads while the mode change is applied renders nothing and announces nothing', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		await first.updateCollectorMode('collector');
+		await first.shutdownRuntime();
+		const plugin = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		const internals = plugin as unknown as { applyCollectorModeChange(): Promise<void>; renderInventoryAdvisorViews(): void };
+		vi.spyOn(internals, 'applyCollectorModeChange').mockImplementation(async () => { await plugin.shutdownRuntime(); });
+		const render = vi.spyOn(internals, 'renderInventoryAdvisorViews');
+		const noticesBefore = world.notices.length;
+
+		expect(await plugin.resolveVaultRelocation('adopt')).toEqual({ status: 'none' });
+
+		expect(render).not.toHaveBeenCalled();
+		expect(world.notices).toHaveLength(noticesBefore);
+	});
+
+	it('going back to the original path with data under the other one, the registry healthy, asks nothing', async () => {
+		const world = device();
+		await (await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' })).shutdownRuntime();
+		const away = await boot(world, '/vaults/b', { apiKeySecret: 'gw2-main' });
+		expect(away.getVaultRelocation()).toEqual({ pending: true });
+		const idB = away.vaultId ?? '';
+		await away.shutdownRuntime();
+		// With the question open the user changed inventory preferences under B.
+		await savePreferences(world, idB);
+
+		const back = await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' });
+
+		expect(back.getVaultRelocation()).toEqual({ pending: false });
+		expect(back.getCollectorMode()).toBe('collector');
+		await back.shutdownRuntime();
+	});
+
+	it('a local storage that refuses the final write leaves no mode behind for the retry to take as chosen', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		const plugin = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		const newId = plugin.vaultId ?? '';
+		await sleep(20);
+		world.failLocalSave = true;
+
+		await expect(plugin.resolveVaultRelocation('fresh')).rejects.toThrow('local storage is full');
+
+		expect(await readStoredCollectorMode(world.factory, newId)).toBeNull();
+		expect(world.local.get(IDENTITY_KEY)).toEqual({ vaultId: newId, pendingFrom: oldId });
+		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
+		world.failLocalSave = false;
+		expect(await plugin.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted', mode: 'collector' });
+		expect(plugin.getCollectorMode()).toBe('collector');
+		await plugin.shutdownRuntime();
+	});
+
 	it('a host without per-device local storage behaves as before', async () => {
 		const world = device();
 		world.local.clear();
@@ -656,6 +731,8 @@ interface Device {
 	readonly notices: string[];
 	/** The plugin's `data.json`: it travels with the folder, so a second device of the same vault starts from a copy. */
 	data: Record<string, unknown> | null;
+	/** Makes the local storage refuse writes, as a full or locked one does. */
+	failLocalSave?: boolean;
 }
 
 /** One computer: the IndexedDB and the per-vault local storage that survive a restart or a rename. */
@@ -742,7 +819,7 @@ async function boot(
 		secretStorage: { listSecrets: () => ['gw2-main'], getSecret: () => 'secret-value', setSecret: vi.fn() },
 		...(withLocalStorage ? {
 			loadLocalStorage: (key: string) => structuredClone(world.local.get(key) ?? null),
-			saveLocalStorage: (key: string, value: unknown) => { if (value === null) world.local.delete(key); else world.local.set(key, structuredClone(value)); },
+			saveLocalStorage: (key: string, value: unknown) => { if (world.failLocalSave === true) throw new Error('local storage is full'); if (value === null) world.local.delete(key); else world.local.set(key, structuredClone(value)); },
 		} : {}),
 	} as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;

@@ -83,6 +83,33 @@ export async function readStoredCollectorMode(factory: IDBFactory, vaultId: stri
 	}
 }
 
+/**
+ * Removes the mode stored for `vaultId`. Only for undoing a write this same attempt just made (DU-02), so a failed
+ * attempt leaves no mode that a later one could take for the user's own choice.
+ */
+export async function deleteStoredCollectorMode(factory: IDBFactory, vaultId: string): Promise<void> {
+	if (!/^[a-f0-9]{64}$/u.test(vaultId)) throw new Error('Collector instance vault identity is invalid.');
+	const database = await openIndexedDb({
+		factory,
+		databaseName: COLLECTOR_INSTANCE_DB,
+		databaseVersion: 1,
+		schema: [{ name: STORE }],
+		onVersionChange: 'close',
+		toError: () => new Error('Collector instance store could not be opened.'),
+	});
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const transaction = database.transaction(STORE, 'readwrite');
+			transaction.objectStore(STORE).delete(`mode:${vaultId}`);
+			transaction.oncomplete = () => { resolve(); };
+			transaction.onerror = () => { reject(new Error('Collector instance value could not be removed.')); };
+			transaction.onabort = () => { reject(new Error('Collector instance value removal was aborted.')); };
+		});
+	} finally {
+		database.close();
+	}
+}
+
 /** Stores this device's mode for `vaultId`; the only way it changes after the seed. */
 export async function saveCollectorMode(factory: IDBFactory, vaultId: string, mode: CollectorMode): Promise<void> {
 	await readOrSeed(factory, `mode:${vaultId}`, vaultId, isCollectorMode, () => mode, true);
