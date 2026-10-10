@@ -62,7 +62,7 @@ import {
  *
  * Pure: data in, data out. It never fetches, reads a store or looks at the clock.
  */
-export const SELL_OR_WAIT_VERSION = 1 as const;
+const SELL_OR_WAIT_VERSION = 1 as const;
 
 /** Same mode on both sides: an instant sale is compared with a later instant sale, a listing with a later listing. */
 export const SELL_OR_WAIT_MODES = ['instant', 'listing'] as const;

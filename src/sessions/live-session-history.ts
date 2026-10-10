@@ -19,7 +19,7 @@ export interface LiveSessionHistoryEntry {
 	/** The session's observed coins (net other than 0): gold first, the rest by id. An unobserved coin is absent, never zero. */
 	currencies: LiveHistoryItem[];
 }
-export interface LiveHistoryItem { idNumber: number; net: number }
+interface LiveHistoryItem { idNumber: number; net: number }
 /** The coins of a saved session: currency rows with a net other than 0, gold (id 1) first and the rest by ascending id. */
 export function liveHistoryCurrencies(totals: readonly LiveTotalV1[]): LiveHistoryItem[] {
 	return totals.filter((row) => row.kind === 'currency' && row.net !== 0)
@@ -40,11 +40,11 @@ export function sortLiveItemsByValue(totals: readonly LiveTotalV1[], prices: rea
 	};
 	return totals.filter((row) => row.kind === 'item' && row.net !== 0).sort((a, b) => rank(b) - rank(a) || b.net - a.net);
 }
-export type LiveSessionHistoryList = { status: 'ok'; sessions: LiveSessionHistoryEntry[]; ignored: number; setAside: LiveSessionSetAside[] }
+type LiveSessionHistoryList = { status: 'ok'; sessions: LiveSessionHistoryEntry[]; ignored: number; setAside: LiveSessionSetAside[] }
 	| { status: 'conflict'; invalid: number; duplicates: number } | { status: 'unavailable' };
-export type LiveSessionComparisonLoad = { status: 'ok'; comparison: LiveSessionComparison; ignored: number; setAside: LiveSessionSetAside[] }
+type LiveSessionComparisonLoad = { status: 'ok'; comparison: LiveSessionComparison; ignored: number; setAside: LiveSessionSetAside[] }
 	| Exclude<LiveSessionHistoryList, { status: 'ok' }>;
-export type LiveSessionHistorySelection = { status: 'found'; session: StoredLiveSessionPayloadV1 }
+type LiveSessionHistorySelection = { status: 'found'; session: StoredLiveSessionPayloadV1 }
 	| { status: 'missing' | 'conflict' | 'unavailable' };
 
 type NoteOutcome = LiveHistoryNoteOutcome;

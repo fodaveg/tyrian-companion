@@ -1,9 +1,9 @@
 import { jsonRoundTrip as isJsonRoundTrip } from '../core/json-round-trip';
 
-export const RECOMMENDATION_ENVELOPE_VERSION = 1 as const;
+const RECOMMENDATION_ENVELOPE_VERSION = 1 as const;
 
-export type RecommendationDecisionAction = 'open' | 'sell' | 'reserve' | 'hold' | 'review' | 'none';
-export type RecommendationDecisionRoute = 'instant_sell' | 'listing' | 'vendor';
+type RecommendationDecisionAction = 'open' | 'sell' | 'reserve' | 'hold' | 'review' | 'none';
+type RecommendationDecisionRoute = 'instant_sell' | 'listing' | 'vendor';
 
 export interface RecommendationDecision {
 	action: RecommendationDecisionAction;

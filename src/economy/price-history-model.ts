@@ -14,7 +14,7 @@ export type PriceHistoryRawRetentionDays = 2 | 7 | 14 | 30;
 export type PriceHistoryDailyRetentionDays = 42 | 90 | 180 | 365;
 export type PriceHistoryWindowDays = 42 | 90 | 180;
 export type PriceHistorySide = 'bid' | 'ask';
-export type PriceHistoryCaptureStatus = 'complete' | 'partial';
+type PriceHistoryCaptureStatus = 'complete' | 'partial';
 
 export interface PriceHistorySettings {
 	enabled: boolean;

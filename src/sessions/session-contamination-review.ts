@@ -20,9 +20,9 @@ import {
 	type SessionApiSettlement,
 } from './session-api-settlement';
 
-export const SESSION_CONTAMINATION_REVIEW_VERSION = 1 as const;
+const SESSION_CONTAMINATION_REVIEW_VERSION = 1 as const;
 
-export const SESSION_ACTIVITY_KEYS = [
+const SESSION_ACTIVITY_KEYS = [
 	'open',
 	'salvage',
 	'consume',
@@ -35,9 +35,9 @@ export const SESSION_ACTIVITY_KEYS = [
 	'other',
 ] as const;
 
-export type SessionActivityKey = typeof SESSION_ACTIVITY_KEYS[number];
+type SessionActivityKey = typeof SESSION_ACTIVITY_KEYS[number];
 
-export interface SessionContaminationAnswers {
+interface SessionContaminationAnswers {
 	certainty: 'confirmed' | 'unsure';
 	activities: Record<SessionActivityKey, boolean>;
 }
@@ -262,7 +262,7 @@ function isClassificationEnvelopeShape(
 	return isSessionDeltaClassification({ ...upgraded, permissions: { ...upgraded.permissions, recommend: false } });
 }
 
-export function isSessionContaminationAnswers(value: unknown): value is SessionContaminationAnswers {
+function isSessionContaminationAnswers(value: unknown): value is SessionContaminationAnswers {
 	if (!isRecord(value) || !hasOnlyKeys(value, ['certainty', 'activities'])) return false;
 	if (value.certainty !== 'confirmed' && value.certainty !== 'unsure') return false;
 	const activities = value.activities;

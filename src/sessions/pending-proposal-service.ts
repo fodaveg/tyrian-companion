@@ -17,29 +17,29 @@ import type { DetectionCorrectionCause } from './session-detection-quality';
 
 export const PENDING_PROPOSAL_STALE_MS = 6 * 60 * 60_000;
 export const PENDING_PROPOSAL_EXPIRES_MS = 24 * 60 * 60_000;
-export const PROPOSAL_RECEIPT_RETENTION_MS = 30 * 24 * 60 * 60_000;
-export const PROPOSAL_CLAIM_MS = 2 * 60_000;
-export const MAX_PENDING_PROPOSALS = 32;
-export const MAX_PROPOSAL_RECEIPTS = 256;
+const PROPOSAL_RECEIPT_RETENTION_MS = 30 * 24 * 60 * 60_000;
+const PROPOSAL_CLAIM_MS = 2 * 60_000;
+const MAX_PENDING_PROPOSALS = 32;
+const MAX_PROPOSAL_RECEIPTS = 256;
 
 export type ProposalQueueState =
 	| { status: 'loading'; pendingCount: 0; next: null }
 	| { status: 'ready'; pendingCount: number; next: PendingProposal | null }
 	| { status: 'unavailable'; pendingCount: 0; next: null; message: string };
 
-export type ProposalEnqueueInput =
+type ProposalEnqueueInput =
 	| { phase: 'start'; proposal: RelevantStartProposal; pollingIntervalMs: number }
 	| { phase: 'stop'; proposal: InactivityStopProposal; pollingIntervalMs: number; sessionId: string; baselineSnapshotId: string };
 
-export type ProposalEnqueueResult =
+type ProposalEnqueueResult =
 	| { status: 'added' | 'duplicate' | 'coalesced'; proposal: PendingProposal }
 	| { status: 'unavailable' };
 
-export type ProposalClaimResult =
+type ProposalClaimResult =
 	| { status: 'claimed' | 'already_claimed'; proposal: PendingProposal }
 	| { status: 'busy' | 'missing' | 'stale' | 'unavailable' };
 
-export interface ProposalReconcileContext {
+interface ProposalReconcileContext {
 	accountId: string | null;
 	session: { status: string; sessionId?: string; baselineSnapshotId?: string };
 	recoveryPending: boolean;

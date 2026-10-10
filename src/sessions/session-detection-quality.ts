@@ -2,7 +2,7 @@ import type { InactivityStopProposal } from './inactivity-stop-detector';
 import type { RelevantStartProposal } from './relevant-item-start-detector';
 import { isRelevantStartProposal } from './pending-proposal-model';
 
-export const DETECTION_QUALITY_EVENT_VERSION = 1 as const;
+const DETECTION_QUALITY_EVENT_VERSION = 1 as const;
 
 export const DETECTION_CORRECTION_CAUSES = [
 	'not_farming',
@@ -22,12 +22,12 @@ export type DetectionDecisionCause =
 	| 'inactivity'
 	| DetectionCorrectionCause;
 
-export interface DetectionBoundaryWindow {
+interface DetectionBoundaryWindow {
 	from: string;
 	to: string;
 }
 
-export interface ManualDetectionBoundary {
+interface ManualDetectionBoundary {
 	mode: 'manual';
 	window: DetectionBoundaryWindow;
 }

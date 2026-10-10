@@ -10,7 +10,7 @@ import { isMaterialStorageCapacity, materialStorageDepositsFit } from './materia
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from './models/equipment-salvage-policy';
 import { EQUIPMENT_SALVAGE_POLICY_V1_SHA256 } from './equipment-salvage-economy';
 
-export const INVENTORY_RECOMMENDATION_ENVELOPE_VERSION = 1 as const;
+const INVENTORY_RECOMMENDATION_ENVELOPE_VERSION = 1 as const;
 
 export interface InventoryRecommendationEnvelopeV1 {
 	version: typeof INVENTORY_RECOMMENDATION_ENVELOPE_VERSION;

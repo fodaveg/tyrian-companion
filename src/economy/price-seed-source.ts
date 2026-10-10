@@ -57,7 +57,7 @@ export const PRICE_SEED_OPERATION_POLICIES = Object.freeze({
 	price_history_seed: Object.freeze({ maxRetries: 0 }),
 }) satisfies HttpOperationPolicies;
 
-export interface PriceSeedSourceOptions {
+interface PriceSeedSourceOptions {
 	transport: HttpTransport;
 	now: () => number;
 	maxDays?: number;

@@ -18,8 +18,8 @@ import {
 } from './pilot-metrics-model';
 import { ReopeningIndexedDbConnection, openIndexedDb, startIndexedDbTransaction } from '../core/indexed-db-open';
 
-export const PILOT_METRICS_DB_NAME = 'tyrian-companion-pilot-metrics';
-export const PILOT_METRICS_DB_VERSION = 2;
+const PILOT_METRICS_DB_NAME = 'tyrian-companion-pilot-metrics';
+const PILOT_METRICS_DB_VERSION = 2;
 export const PILOT_METRICS_PROFILE_STORE = 'profile-v1';
 export const PILOT_METRICS_OBSERVATION_STORE = 'observations-v1';
 export const PILOT_METRICS_VERIFICATION_STORE = 'verification-v1';

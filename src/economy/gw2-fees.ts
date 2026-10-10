@@ -18,7 +18,7 @@ export const GW2_TRADING_POST_FEE_POLICY = {
 	basis: 'total_sale_price',
 } as const;
 
-export interface TradingPostFeeBreakdown {
+interface TradingPostFeeBreakdown {
 	policyVersion: typeof GW2_TRADING_POST_FEE_POLICY.version;
 	grossCopper: number;
 	listingFeeCopper: number;
@@ -26,11 +26,11 @@ export interface TradingPostFeeBreakdown {
 	totalFeesCopper: number;
 }
 
-export type TradingPostFeeResult =
+type TradingPostFeeResult =
 	| { status: 'ok'; fees: TradingPostFeeBreakdown }
 	| { status: 'invalid'; reason: 'invalid_gross' | 'arithmetic_overflow' };
 
-export type TradingPostValueWithPolicyResult =
+type TradingPostValueWithPolicyResult =
 	| {
 		status: 'ok';
 		policyVersion: typeof GW2_TRADING_POST_FEE_POLICY.version;
@@ -38,7 +38,7 @@ export type TradingPostValueWithPolicyResult =
 	}
 	| { status: 'invalid'; reason: CopperValueError | 'invalid_gross' };
 
-export type CatalogVendorValueResult =
+type CatalogVendorValueResult =
 	| { status: 'ok'; value: VendorCopperValue }
 	| { status: 'unavailable'; reason: 'vendor_sale_forbidden' | 'no_vendor_value' }
 	| { status: 'invalid'; reason: 'invalid_catalog_item' | CopperValueError };

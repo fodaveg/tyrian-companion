@@ -1,4 +1,4 @@
-export const INACTIVITY_STOP_PROPOSAL_VERSION = 1 as const;
+const INACTIVITY_STOP_PROPOSAL_VERSION = 1 as const;
 
 export interface InactivitySample {
 	accountId: string;
@@ -24,7 +24,7 @@ export interface InactivityStopProposal {
 	confirmationSample: InactivitySample;
 }
 
-export type InactivityObservation =
+type InactivityObservation =
 	| { status: 'invalid_sample'; proposal: null }
 	| { status: 'activity'; proposal: null }
 	| { status: 'quiet'; quietDurationMs: number; remainingMs: number; proposal: null }

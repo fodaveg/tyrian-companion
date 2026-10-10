@@ -1,6 +1,6 @@
 import { sha256CanonicalValue } from '../core/canonical-sha256';
 
-export const LEGENDARY_MATERIALS_TABLE_VERSION = 1 as const;
+const LEGENDARY_MATERIALS_TABLE_VERSION = 1 as const;
 
 /**
  * One wiki revision this table's numbers came from, exactly the same contract the pre-existing
@@ -9,7 +9,7 @@ export const LEGENDARY_MATERIALS_TABLE_VERSION = 1 as const;
  * rather than the bare date the crawl recorded it as, so it sorts and compares like every other
  * timestamp in the curated packs.
  */
-export interface LegendaryMaterialsSourceV1 {
+interface LegendaryMaterialsSourceV1 {
 	id: string;
 	url: string;
 	retrievedAt: string;
@@ -25,7 +25,7 @@ export interface LegendaryMaterialsSourceV1 {
  * simply never turned into a `ReservationRequirement` (`legendaryResolvableRequirements` below
  * filters them out) and their presence is exactly what makes an entry's coverage `incomplete`.
  */
-export interface LegendaryMaterialLeafV1 {
+interface LegendaryMaterialLeafV1 {
 	itemId: number;
 	quantity: number;
 	resolvable: boolean;
@@ -41,7 +41,7 @@ export interface LegendaryMaterialLeafV1 {
  * to "un `ReservationRequirement` por material hoja" (items only), so these never become a
  * requirement and are not read by `legendaryResolvableRequirements`.
  */
-export interface LegendaryMaterialsEntryV1 {
+interface LegendaryMaterialsEntryV1 {
 	legendaryItemId: number;
 	materials: readonly LegendaryMaterialLeafV1[];
 	currencyIds: readonly number[];
@@ -57,18 +57,18 @@ export interface LegendaryMaterialsTableV1 {
 	sha256: string;
 }
 
-export function isLegendaryMaterialsSource(value: unknown): value is LegendaryMaterialsSourceV1 {
+function isLegendaryMaterialsSource(value: unknown): value is LegendaryMaterialsSourceV1 {
 	return record(value) && exactKeys(value, ['id', 'url', 'retrievedAt'])
 		&& identifier(value.id) && isHttpsUrl(value.url) && isoInstant(value.retrievedAt);
 }
 
-export function isLegendaryMaterialLeaf(value: unknown): value is LegendaryMaterialLeafV1 {
+function isLegendaryMaterialLeaf(value: unknown): value is LegendaryMaterialLeafV1 {
 	return record(value) && exactKeys(value, ['itemId', 'quantity', 'resolvable', 'sourceId'])
 		&& positiveInteger(value.itemId) && positiveInteger(value.quantity)
 		&& typeof value.resolvable === 'boolean' && (value.sourceId === null || identifier(value.sourceId));
 }
 
-export function isLegendaryMaterialsEntry(value: unknown): value is LegendaryMaterialsEntryV1 {
+function isLegendaryMaterialsEntry(value: unknown): value is LegendaryMaterialsEntryV1 {
 	if (!record(value) || !exactKeys(value, ['legendaryItemId', 'materials', 'currencyIds'])
 		|| !positiveInteger(value.legendaryItemId) || !Array.isArray(value.materials)
 		|| !value.materials.every(isLegendaryMaterialLeaf) || !Array.isArray(value.currencyIds)

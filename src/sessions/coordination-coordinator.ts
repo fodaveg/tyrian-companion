@@ -16,7 +16,7 @@ import {
 import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import { monotonicNowMs, StorageDeadline, StorageUnansweredError } from './storage-deadline';
 
-export interface ActiveSessionLeaseCoordinatorOptions {
+interface ActiveSessionLeaseCoordinatorOptions {
 	store?: CoordinationStore;
 	openStore?: () => Promise<CoordinationStore>;
 	indexedDb?: IDBFactory | null;

@@ -74,7 +74,7 @@ export interface SessionLeaseCoordinator {
 	dispose(): void;
 }
 
-export interface SessionBaselineCapture {
+interface SessionBaselineCapture {
 	capture(input: SessionStartInput, startedNotBefore?: number): Promise<SessionStartCaptureResult>;
 	captureFinal?(startedNotBefore?: number): Promise<StorageSnapshot>;
 }
@@ -127,7 +127,7 @@ export type SessionRecoveryState =
 	 */
 	| { status: 'error'; code: 'corrupt' | 'unavailable'; message: string };
 
-export type SessionRecoveryResult =
+type SessionRecoveryResult =
 	| { status: 'recovered'; state: SessionState }
 	| { status: 'discarded' }
 	| { status: 'busy' | 'failed'; message: string };
@@ -151,7 +151,7 @@ class ManualSessionStartError extends Error {
 	}
 }
 
-export type ManualSessionStartResult =
+type ManualSessionStartResult =
 	| { status: 'started'; state: Extract<SessionState, { status: 'active' }> }
 	| { status: 'failed'; failure: SessionStartFailure };
 
@@ -203,17 +203,17 @@ export type ManualSessionStopResult =
  * disagrees with the baseline). Network, rate limit, lease and coordination failures retry on
  * their own and end in a real result, so they never offer the way out.
  */
-export const ABANDONABLE_STOP_FAILURES: readonly SessionAbandonReason[] = SESSION_ABANDON_REASONS;
+const ABANDONABLE_STOP_FAILURES: readonly SessionAbandonReason[] = SESSION_ABANDON_REASONS;
 
 export function isAbandonableStopFailure(code: SessionStopFailure['code']): code is SessionAbandonReason {
 	return (ABANDONABLE_STOP_FAILURES as readonly string[]).includes(code);
 }
 
-export type SessionAbandonResult =
+type SessionAbandonResult =
 	| { status: 'abandoned'; state: Extract<SessionState, { status: 'abandoned' }> }
 	| { status: 'failed'; message: string };
 
-export type SessionContaminationReviewResult =
+type SessionContaminationReviewResult =
 	| {
 			status: 'finalized';
 			review: SessionContaminationReview;
@@ -222,7 +222,7 @@ export type SessionContaminationReviewResult =
 	| { status: 'failed'; message: string };
 
 /** See `takeStartupFinalization()`. */
-export interface StartupFinalization {
+interface StartupFinalization {
 	sessionId: string;
 	delta: StorageDelta;
 	review: Extract<SessionContaminationReviewResult, { status: 'finalized' }>;

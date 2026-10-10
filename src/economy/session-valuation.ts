@@ -22,7 +22,7 @@ import {
 } from './session-price-snapshot';
 import { canonicalJson as canonical } from '../core/canonical-sha256';
 
-export const SESSION_VALUATION_VERSION = 1 as const;
+const SESSION_VALUATION_VERSION = 1 as const;
 export const HALLOWEEN_TOT_BAG_ITEM_ID = 36038;
 
 export type SessionBindingEvidence = 'unbound' | 'account_bound' | 'character_bound' | 'unknown';
@@ -49,7 +49,7 @@ export interface SessionValuationInput {
 	unobservedMs?: number;
 }
 
-export interface SessionValuationLine {
+interface SessionValuationLine {
 	itemId: number;
 	quantity: number;
 	binding: SessionBindingEvidence;
@@ -89,7 +89,7 @@ export interface SessionValuation {
 	warnings: Array<'catalog_missing' | 'binding_unknown' | 'price_incomplete' | 'market_depth_incomplete' | 'item_losses_not_valued'>;
 }
 
-export type SessionValuationResult =
+type SessionValuationResult =
 	| { status: 'ok'; valuation: SessionValuation }
 	| { status: 'invalid'; reason: string };
 

@@ -39,13 +39,13 @@ import {
 export const SESSION_STORAGE_LEGACY_OWNER_KEY = 'legacy-vault-owner';
 
 /** Which vault adopted the unscoped databases an earlier release wrote. */
-export interface SessionStorageLegacyOwner {
+interface SessionStorageLegacyOwner {
 	version: 1;
 	vaultId: string;
 	claimedAt: number;
 }
 
-export interface SessionStorageNames {
+interface SessionStorageNames {
 	runtime: string;
 	coordination: string;
 	/** True only for the one vault that adopted the unscoped pair an earlier release wrote. */
@@ -141,7 +141,7 @@ function claimLegacyStorage(
 	});
 }
 
-export function isSessionStorageLegacyOwner(value: unknown): value is SessionStorageLegacyOwner {
+function isSessionStorageLegacyOwner(value: unknown): value is SessionStorageLegacyOwner {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
 	const candidate = value as Record<string, unknown>;
 	return Object.keys(candidate).length === 3

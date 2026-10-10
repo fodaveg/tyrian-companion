@@ -25,7 +25,7 @@ export type { PriceSeedQueueCoverage } from './price-seed-model';
 export const PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN = 25;
 
 /** Matches the panel's own TTL (`price-seed-panel-service.ts`): one shared cache, one freshness rule. */
-export const PRICE_SEED_BULK_REFRESH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const PRICE_SEED_BULK_REFRESH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * H18.17 (auditoría 24 sep 2026, §3.E): before this, a `no_seed` answer was never cached, so it
@@ -49,7 +49,7 @@ export const PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS = 24 * 60 * 60 * 1000;
  * transport's 10 s timeout), so a pass that sees this many `unreachable` in a row ends there, and each of those items then waits
  * `PRICE_SEED_BULK_REFRESH_UNREACHABLE_WAIT_MS` in memory so the next pass reaches the ones behind them.
  */
-export const PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE = 3;
+const PRICE_SEED_BULK_REFRESH_MAX_CONSECUTIVE_UNREACHABLE = 3;
 
 /**
  * The short, memory-only wait of an item that answered `unreachable`. Without it the cut-off above
@@ -98,11 +98,11 @@ export interface PriceSeedBulkRefreshOutcome {
  * `allowed` is asked before every item: once it answers false the run requests nothing more. The
  * caller uses it for the opt-in the person can switch off while a run is under way.
  */
-export type PriceSeedBulkRefreshPhase =
+type PriceSeedBulkRefreshPhase =
 	| { scope: 'missing'; budget?: number; allowed?: () => boolean }
 	| { scope: 'stale'; budget: number; allowed?: () => boolean };
 
-export interface PriceSeedBulkRefreshOptions {
+interface PriceSeedBulkRefreshOptions {
 	priceHistory: Pick<TyrianPriceHistoryPort, 'openSeedCache' | 'openNoSeedCache'>;
 	vaultId: string;
 	now: () => number;

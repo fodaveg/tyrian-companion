@@ -1,6 +1,6 @@
 import { sha256CanonicalValue } from '../core/canonical-sha256';
 
-export const SEASONAL_WINDOW_VERSION = 1 as const;
+const SEASONAL_WINDOW_VERSION = 1 as const;
 
 /**
  * A recurring festival window declared as data.
@@ -27,7 +27,7 @@ export interface SeasonalWindowV1 {
 	returnsInMonth: number;
 }
 
-export type SeasonalWindowStatus = 'in_season' | 'out_of_season' | 'undecidable';
+type SeasonalWindowStatus = 'in_season' | 'out_of_season' | 'undecidable';
 
 const MONTH_DAY = /^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/u;
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
@@ -159,10 +159,10 @@ function exactKeys(value: Record<string, unknown>, expected: string[]): boolean 
 }
 
 export const FESTIVAL_CALENDAR_VERSION = 1 as const;
-export const FESTIVAL_ANCHORS_VERSION = 1 as const;
+const FESTIVAL_ANCHORS_VERSION = 1 as const;
 
 /** One source citation, same shape every curated pack in this plugin already uses. */
-export interface FestivalAnchorSourceV1 {
+interface FestivalAnchorSourceV1 {
 	id: string;
 	url: string;
 	retrievedAt: string;
@@ -192,12 +192,12 @@ export interface FestivalAnchorsTableV1 {
 	sha256: string;
 }
 
-export function isFestivalAnchorSource(value: unknown): value is FestivalAnchorSourceV1 {
+function isFestivalAnchorSource(value: unknown): value is FestivalAnchorSourceV1 {
 	return record(value) && exactKeys(value, ['id', 'url', 'retrievedAt'])
 		&& identifier(value.id) && isHttpsUrl(value.url) && isoDay(value.retrievedAt);
 }
 
-export function isFestivalAnchorEntry(value: unknown): value is FestivalAnchorEntryV1 {
+function isFestivalAnchorEntry(value: unknown): value is FestivalAnchorEntryV1 {
 	return record(value) && exactKeys(value, ['year', 'startsOn', 'sourceId'])
 		&& festivalYear(value.year) && fullDate(value.startsOn) && identifier(value.sourceId);
 }
@@ -330,7 +330,7 @@ export type FestivalCalendarCandidateV1 =
 	| { kind: 'annual'; window: SeasonalWindowV1; auditRow: string }
 	| { kind: 'festival_relative'; window: FestivalRelativeWindowV1; auditRow: string };
 
-export function isFestivalCalendarCandidate(value: unknown): value is FestivalCalendarCandidateV1 {
+function isFestivalCalendarCandidate(value: unknown): value is FestivalCalendarCandidateV1 {
 	if (!record(value)) return false;
 	if (value.kind === 'annual') {
 		return exactKeys(value, ['kind', 'window', 'auditRow'])
@@ -355,7 +355,7 @@ export interface FestivalCalendarV1 {
 	sha256: string;
 }
 
-export function isFestivalCalendarEntry(value: unknown): value is FestivalCalendarEntryV1 {
+function isFestivalCalendarEntry(value: unknown): value is FestivalCalendarEntryV1 {
 	if (!record(value) || !exactKeys(value, ['itemId', 'candidates'])
 		|| !positiveInteger(value.itemId) || !Array.isArray(value.candidates) || value.candidates.length === 0
 		|| !value.candidates.every(isFestivalCalendarCandidate)) return false;

@@ -1,10 +1,10 @@
 import type { DetectionCorrectionCause, DetectionEvidenceQuality, DetectionPhase } from './session-detection-quality';
 
-export const PILOT_METRICS_VERSION = 1 as const;
-export const PILOT_PLATFORMS = ['linux_steam_proton', 'macos_crossover', 'windows_beta'] as const;
+const PILOT_METRICS_VERSION = 1 as const;
+const PILOT_PLATFORMS = ['linux_steam_proton', 'macos_crossover', 'windows_beta'] as const;
 export const PILOT_METRICS_MAX_OBSERVATIONS = 10_000;
-export const PILOT_RECOVERY_KINDS = ['forced_restart', 'organic'] as const;
-export const PILOT_SILENT_LOSS_REVIEWS = ['unreviewed', 'none_observed', 'observed'] as const;
+const PILOT_RECOVERY_KINDS = ['forced_restart', 'organic'] as const;
+const PILOT_SILENT_LOSS_REVIEWS = ['unreviewed', 'none_observed', 'observed'] as const;
 
 export type PilotPlatform = typeof PILOT_PLATFORMS[number];
 export type PilotJournalHealth = 'ready' | 'unavailable' | 'inconsistent' | 'full';
@@ -12,7 +12,7 @@ export type PilotRecoveryKind = typeof PILOT_RECOVERY_KINDS[number];
 export type PilotSilentLossReview = typeof PILOT_SILENT_LOSS_REVIEWS[number];
 export type PilotProposalMode = 'assisted';
 
-export interface PilotBoundaryWindowV1 {
+interface PilotBoundaryWindowV1 {
 	from: string;
 	to: string;
 	uncertaintyMs: number;

@@ -6,9 +6,9 @@ import {
 } from '../core/local-debug-persistence';
 import type { LocalDebugCode } from '../core/local-debug-contract';
 
-export type LootPresentationRefreshStage = 'source_read' | 'projection' | 'publish';
+type LootPresentationRefreshStage = 'source_read' | 'projection' | 'publish';
 
-export type LootPresentationRefreshResult =
+type LootPresentationRefreshResult =
 	| { status: 'updated' | 'superseded' }
 	| {
 		status: 'failed';

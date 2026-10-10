@@ -7,9 +7,9 @@ export type FarmingGoalV1 =
 export const DEFAULT_FARMING_TARGET_BAGS = 1_000;
 export const DEFAULT_FARMING_TARGET_DURATION_MS = 60 * 60_000;
 /** Three API boundaries over twenty minutes avoid estimating from one cache interval. */
-export const FARMING_GOAL_MIN_SAMPLES = 3;
+const FARMING_GOAL_MIN_SAMPLES = 3;
 export const FARMING_GOAL_MIN_WINDOW_MS = 20 * 60_000;
-export const FARMING_GOAL_MAX_OBSERVATION_AGE_MS = 15 * 60_000;
+const FARMING_GOAL_MAX_OBSERVATION_AGE_MS = 15 * 60_000;
 const MAX_TARGET_BAGS = 1_000_000_000;
 const MAX_TARGET_DURATION_MS = 7 * 24 * 60 * 60_000;
 
@@ -28,7 +28,7 @@ export interface FarmingGoalObservation {
 	maxObservationAgeMs?: number;
 }
 
-export type FarmingGoalEtaUnavailableReason =
+type FarmingGoalEtaUnavailableReason =
 	| 'no_observation' | 'insufficient_sample' | 'stale_observation' | 'invalid_observation' | 'no_rate';
 
 /** JSON-safe evidence shared by the session panel, note and addon projection. */

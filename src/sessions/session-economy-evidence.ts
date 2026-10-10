@@ -25,7 +25,7 @@ import { sessionUnobservedMs } from './session';
 /** Containers the note counts when it publishes `tc_sacks` and `tc_sacks_per_hour_milli`. */
 export const SESSION_SACK_ITEM_IDS: readonly number[] = Object.freeze([HALLOWEEN_TOT_BAG_ITEM_ID]);
 
-export interface SessionEconomyEvidenceInput {
+interface SessionEconomyEvidenceInput {
 	runtime: SessionRuntimeRecord;
 	/** Public catalog entries for the gained items, keyed by their decimal item id. */
 	catalogItems: Record<string, CatalogItem>;

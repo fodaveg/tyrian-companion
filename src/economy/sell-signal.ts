@@ -18,7 +18,7 @@ export const SELL_SIGNAL_REFERENCE_DAYS = 365;
  */
 export const SELL_SIGNAL_MINIMUM_REFERENCE_DAYS = 30;
 
-export interface SellSignalSeriesDay {
+interface SellSignalSeriesDay {
 	dayUtc: string;
 	bidCopper: number;
 }
@@ -30,7 +30,7 @@ export interface SellSignalSeriesDay {
  * its own days and never got the seed. The distinction matters because the
  * reference of an unseeded series covers weeks, not a year.
  */
-export type SellSignalSeriesOrigin = 'seeded' | 'unseeded';
+type SellSignalSeriesOrigin = 'seeded' | 'unseeded';
 
 export interface SellSignalSeries {
 	origin: SellSignalSeriesOrigin;
@@ -50,7 +50,7 @@ export interface SellSignalParameters {
 	minimumReferenceDays: number;
 }
 
-export type SellSignalKind = 'sell' | 'hold' | 'none';
+type SellSignalKind = 'sell' | 'hold' | 'none';
 
 export interface SellSignalDecision {
 	status: 'decided';

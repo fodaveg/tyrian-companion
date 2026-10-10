@@ -32,7 +32,7 @@ import {
 
 export const PROPOSAL_QUEUE_DB_NAME = 'tyrian-companion-confirmation-queue';
 export const PROPOSAL_QUEUE_DB_VERSION = 1;
-export const PROPOSAL_QUEUE_STORE_NAME = 'queue-v1';
+const PROPOSAL_QUEUE_STORE_NAME = 'queue-v1';
 const QUEUE_KEY = 'pending-proposals';
 
 /** DU-03: one vault's queue, `<name>:<vaultId>`, like the session and pilot metrics databases. */
@@ -45,14 +45,14 @@ export function vaultProposalQueueDatabaseName(vaultId: string): string {
  * DU-03: what a vault adopts from the common queue: its pending proposals with no claim, no receipts, revision 0.
  * Nothing (`undefined`) when there is no record, it is not a queue this release can read, or no proposal is pending.
  */
-export function adoptedProposalQueue(raw: unknown): PendingProposalQueueRecord | undefined {
+function adoptedProposalQueue(raw: unknown): PendingProposalQueueRecord | undefined {
 	if (raw === undefined) return undefined;
 	const record = normalizeProposalQueueRecord(raw);
 	if (record === null || record.proposals.length === 0) return undefined;
 	return { version: 1, revision: 0, proposals: record.proposals.map((proposal) => ({ ...proposal, claim: null })), receipts: [] };
 }
 
-export interface ProposalQueueMutation<T> { result: T; next?: PendingProposalQueueRecord }
+interface ProposalQueueMutation<T> { result: T; next?: PendingProposalQueueRecord }
 export interface PendingProposalStore {
 	read(context?: LocalDebugPersistenceContext): Promise<unknown>;
 	transaction<T>(mutator: (current: unknown) => ProposalQueueMutation<T>, context?: LocalDebugPersistenceContext): Promise<T>;
@@ -77,7 +77,7 @@ export class MemoryPendingProposalStore implements PendingProposalStore {
  * or no connection to open any more). The caller gets it as before; the diagnostic records a cancellation, because an
  * orderly unload is not a storage failure. A real upgrade from another context still fails as it did.
  */
-export class ProposalQueueClosedError extends Error {}
+class ProposalQueueClosedError extends Error {}
 
 /**
  * A connection the engine dropped, or that a `versionchange` other than an upgrade released, is replaced on the next

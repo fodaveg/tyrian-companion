@@ -5,7 +5,7 @@ import type { DetectionCorrectionCause } from './session-detection-quality';
 export const PENDING_PROPOSAL_VERSION = 1 as const;
 export const PROPOSAL_RECEIPT_VERSION = 1 as const;
 
-export interface ProposalClaim {
+interface ProposalClaim {
 	operationId: string;
 	instanceId: string;
 	claimedAt: string;
@@ -121,7 +121,7 @@ export function isPendingProposal(value: unknown): value is PendingProposal {
 		isStopProposal(value.proposal) && value.proposalId === value.proposal.proposalId && value.accountId === value.proposal.accountId;
 }
 
-export function isProposalReceipt(value: unknown): value is ProposalReceipt {
+function isProposalReceipt(value: unknown): value is ProposalReceipt {
 	if (!isRecord(value) || !exactKeys(value, [
 		'version', 'proposalId', 'outcome', 'resolvedAt', 'sessionId', 'correctionCause', 'correctionRecorded', 'workflow',
 	])) return false;

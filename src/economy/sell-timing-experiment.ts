@@ -84,10 +84,10 @@ export const SELL_TIMING_TRAIN_YEARS = Object.freeze([2014, 2015, 2016, 2017, 20
 export const SELL_TIMING_TEST_YEARS = Object.freeze([2019, 2020, 2021, 2022, 2023, 2024, 2025]);
 
 /** How many days before the festival's real start the decision is made ("día -19", section 3.D). */
-export const SELL_TIMING_DECISION_OFFSET_DAYS = 19;
+const SELL_TIMING_DECISION_OFFSET_DAYS = 19;
 
 /** Width of the pre-festival wait window ("-18..-1", 18 days ending the day before the festival). */
-export const SELL_TIMING_PRE_FESTIVAL_WINDOW_DAYS = 18;
+const SELL_TIMING_PRE_FESTIVAL_WINDOW_DAYS = 18;
 
 export type SellTimingStrategy = 'sell_now' | 'wait_pre_festival' | 'wait_next_may' | 'wait_annual_window';
 
@@ -333,7 +333,7 @@ export function summarizeOutOfSampleAdvantage(
 	return { strategy: recommendedStrategy, yearsWithData, yearsWon, yearsLost, medianRatio, minRatio, maxRatio, verdict };
 }
 
-export interface SellTimingExperimentResult {
+interface SellTimingExperimentResult {
 	itemId: number;
 	recommendedStrategy: SellTimingStrategy;
 	/** Training-year evaluations, for transparency; not what the acceptance criteria grade. */

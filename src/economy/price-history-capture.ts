@@ -13,7 +13,7 @@ import { PriceHistoryStoreError } from './price-history-store';
 import type { TyrianPriceHistoryStore } from '../host/tyrian-host-storage';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
-export type PriceHistoryCaptureResult =
+type PriceHistoryCaptureResult =
 	| { status: 'complete' | 'partial' | 'already_captured'; snapshot: PriceHistorySnapshotV1 }
 	| { status: 'busy' }
 	| { status: 'rate_limited'; retryAfterMs: number | null }

@@ -34,7 +34,7 @@ export interface SessionHistoryAggregate {
 	readonly sessions: readonly SessionHistorySummaryRow[];
 }
 
-export interface SessionHistoryPerformance {
+interface SessionHistoryPerformance {
 	readonly minimumSessions: typeof SESSION_HISTORY_PERFORMANCE_MINIMUM;
 	readonly missingContextSessions: number;
 	/** Neither a comparable `exact` nor a comparable `estimated` session (in practice: a
@@ -51,7 +51,7 @@ export interface SessionHistoryPerformance {
  * the year): H18.10 stopped treating "no declared event" as "cannot be compared" and gave it its
  * own bucket instead, so a build's normal-year rate has somewhere to live next to its Halloween one.
  */
-export type SessionHistoryPerformanceActivity = 'halloween' | 'general';
+type SessionHistoryPerformanceActivity = 'halloween' | 'general';
 
 /**
  * `exact` is `classification: 'exact'` at `confidence: 'high'`; `estimated` is any
@@ -60,7 +60,7 @@ export type SessionHistoryPerformanceActivity = 'halloween' | 'general';
  * (sacks, keys) is routinely `estimated`, so H18.10 gives it its own comparable bucket instead of
  * excluding it from a comparison that used to require `exact`/`high` and stayed empty in practice.
  */
-export type SessionHistoryPerformanceQuality = 'exact' | 'estimated';
+type SessionHistoryPerformanceQuality = 'exact' | 'estimated';
 
 export interface SessionHistoryPerformanceGroup {
 	readonly activity: SessionHistoryPerformanceActivity;
@@ -82,7 +82,7 @@ export interface SessionHistoryPerformanceGroup {
 }
 
 /** Duration-weighted rate and the range of individual observations, never a causal ranking. */
-export interface SessionHistoryMetricSample {
+interface SessionHistoryMetricSample {
 	readonly eligibleSessions: number;
 	readonly durationMs: number | null;
 	readonly status: 'ready' | 'insufficient_sample' | 'unavailable';
@@ -91,7 +91,7 @@ export interface SessionHistoryMetricSample {
 	readonly maximumRate: number | null;
 }
 
-export type SessionHistoryPerformanceExclusion = 'valuation' | 'metrics';
+type SessionHistoryPerformanceExclusion = 'valuation' | 'metrics';
 
 /** Visible durable facts for one completed session; hashed identity is intentionally absent. */
 export interface SessionHistorySummaryRow {
@@ -114,7 +114,7 @@ export interface SessionHistorySummaryRow {
 }
 
 /** Arithmetic delta between the latest two validated sessions. */
-export interface SessionHistoryComparison {
+interface SessionHistoryComparison {
 	readonly latestEndedAt: string;
 	readonly previousEndedAt: string;
 	readonly durationDeltaMs: number;

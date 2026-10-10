@@ -20,7 +20,7 @@ export interface LiveSessionLootRow {
 	readonly priceStatus: AlertPriceStatus;
 }
 
-export type LiveSessionLootError = 'catalog_unavailable' | 'prices_unavailable' | null;
+type LiveSessionLootError = 'catalog_unavailable' | 'prices_unavailable' | null;
 
 export type LiveSessionLootState =
 	| { readonly status: 'idle' }

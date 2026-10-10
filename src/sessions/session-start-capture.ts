@@ -14,13 +14,13 @@ export interface SessionStartInput {
 	consumablesBonus: number;
 }
 
-export interface BuildSkillSet {
+interface BuildSkillSet {
 	heal: number | null;
 	utilities: Array<number | null>;
 	elite: number | null;
 }
 
-export interface BuildSpecialization {
+interface BuildSpecialization {
 	id: number | null;
 	traits: Array<number | null>;
 }
@@ -53,7 +53,7 @@ export interface SessionStartContext {
 	capturedAt: string;
 }
 
-export type SessionStartCaptureErrorCode =
+type SessionStartCaptureErrorCode =
 	| 'invalid_input'
 	| 'character_not_found'
 	| 'snapshot_not_stable'

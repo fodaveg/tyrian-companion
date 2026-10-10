@@ -23,7 +23,7 @@ import type { SessionNoteVault } from './session-note-writer';
  */
 
 /** Fixed subfolder of the output folder, next to `sessions/` (the repo's subfolders are not localized). */
-export const LIVE_SESSION_SUMMARY_FOLDER = 'summaries';
+const LIVE_SESSION_SUMMARY_FOLDER = 'summaries';
 const TOP_ITEMS = 5;
 /** Below 90 % observed, this many unobserved stretches are written one per line, the longest first; the rest are counted. */
 const MAX_LISTED_GAPS = 5;
@@ -63,7 +63,7 @@ export interface LiveSessionSummaryInput {
 	 */
 	inlineIcons?: boolean;
 }
-export interface RenderedLiveSessionSummary { path: string; content: string; sessionRef: string; mainMapId: number | null }
+interface RenderedLiveSessionSummary { path: string; content: string; sessionRef: string; mainMapId: number | null }
 
 export type LiveSessionSummaryWriteResult =
 	| { status: 'written' | 'unchanged' | 'kept'; path: string }
@@ -75,7 +75,7 @@ export type LiveSessionSummaryVault = Pick<SessionNoteVault, 'file' | 'read' | '
 	& { linkTarget?(path: string): string | null };
 
 /** Minimum comparable sessions before «tu media» is written. */
-export const SUMMARY_MIN_COMPARABLES = 3;
+const SUMMARY_MIN_COMPARABLES = 3;
 
 /** `summaries/2026-10-08 153000Z - 0123456789abcdef - summary.md`: the full note's UTC stamp and ref prefix, no forbidden character. */
 export function liveSessionSummaryRelativePath(startedAt: string, sessionRef: string): string {

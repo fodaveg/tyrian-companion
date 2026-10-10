@@ -35,7 +35,7 @@ import type {
 	SessionState,
 } from './session';
 
-export interface RejectedLegacyArchive { key: string; reason: 'record_invalid' }
+interface RejectedLegacyArchive { key: string; reason: 'record_invalid' }
 
 export const SESSION_RUNTIME_VERSION = 3 as const;
 export const SESSION_RUNTIME_DB_NAME = 'tyrian-companion-session-runtime';
@@ -58,7 +58,7 @@ export const SESSION_RUNTIME_SCHEMA: readonly IndexedDbStoreSchema[] = [
 ];
 
 /** Options of {@link openSessionRuntimeDatabase}: everything `openIndexedDb` takes except what the schema fixes. */
-export type OpenSessionRuntimeDatabaseOptions = Omit<OpenIndexedDbOptions, 'databaseVersion' | 'schema' | 'verifySchema'>;
+type OpenSessionRuntimeDatabaseOptions = Omit<OpenIndexedDbOptions, 'databaseVersion' | 'schema' | 'verifySchema'>;
 
 /**
  * Opens the session runtime database with the complete schema and repairs one that is missing a store.
@@ -132,7 +132,7 @@ export interface SessionSummaryReceipt {
 	savedAt: number;
 }
 
-export type PersistedSessionState =
+type PersistedSessionState =
 	| RecoverableSessionState
 	| CompleteSessionState
 	| (Omit<ErrorSessionState, 'failedState'> & { failedState: RecoverableSessionState });
@@ -322,7 +322,7 @@ const SILENCE_RETRY_AFTER_MS = 2_000;
 /** What an open is refused with while the pause after a silence lasts: the engine was not asked. */
 class SilencePausedError extends StorageUnansweredError {}
 
-export interface SessionStoreDeadlineOptions extends StorageDeadlineOptions {
+interface SessionStoreDeadlineOptions extends StorageDeadlineOptions {
 	/** The clock the silence is measured with (a monotonic one, `performance.now`, when absent). */
 	now?: () => number;
 }
@@ -884,7 +884,7 @@ export function recoverableState(state: PersistedSessionState): RecoverableSessi
 	return state.status === 'error' ? state.failedState : state;
 }
 
-export function runtimeAuthority(state: PersistedSessionState): SessionAuthority {
+function runtimeAuthority(state: PersistedSessionState): SessionAuthority {
 	return state.status === 'complete' ? state.authority : recoverableState(state).authority;
 }
 

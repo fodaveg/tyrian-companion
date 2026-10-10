@@ -16,11 +16,11 @@ import { isPriceSeed, type PriceSeedFailureReason, type PriceSeedV1 } from './pr
  * capture scheduler). Keeping it apart means this file can be reasoned about,
  * and reviewed for the observability census, on its own.
  */
-export const PRICE_SEED_CACHE_DB_NAME = 'tyrian-companion-price-seed-cache';
-export const PRICE_SEED_CACHE_DB_VERSION = 1;
-export const PRICE_SEED_CACHE_STORE = 'seed-v1';
+const PRICE_SEED_CACHE_DB_NAME = 'tyrian-companion-price-seed-cache';
+const PRICE_SEED_CACHE_DB_VERSION = 1;
+const PRICE_SEED_CACHE_STORE = 'seed-v1';
 
-export type PriceSeedCacheStoreFailure = 'unavailable' | 'blocked' | 'future_schema' | 'corrupt' | 'quota';
+type PriceSeedCacheStoreFailure = 'unavailable' | 'blocked' | 'future_schema' | 'corrupt' | 'quota';
 
 export class PriceSeedCacheStoreError extends Error {
 	constructor(readonly failure: PriceSeedCacheStoreFailure) {
@@ -29,7 +29,7 @@ export class PriceSeedCacheStoreError extends Error {
 	}
 }
 
-export interface PriceSeedCacheRecordV1 {
+interface PriceSeedCacheRecordV1 {
 	version: 1;
 	vaultId: string;
 	itemId: number;
@@ -167,11 +167,11 @@ const PRICE_SEED_FAILURE_REASONS: readonly PriceSeedFailureReason[] = ['unreacha
  * `PriceSeedV1` and forcing it through `isPriceSeed`'s validator would either fail closed on
  * every negative record or weaken that validator for the one real seed shape it exists to guard.
  */
-export const PRICE_SEED_NO_SEED_DB_NAME = 'tyrian-companion-price-seed-no-seed-cache';
-export const PRICE_SEED_NO_SEED_DB_VERSION = 1;
-export const PRICE_SEED_NO_SEED_STORE = 'no-seed-v1';
+const PRICE_SEED_NO_SEED_DB_NAME = 'tyrian-companion-price-seed-no-seed-cache';
+const PRICE_SEED_NO_SEED_DB_VERSION = 1;
+const PRICE_SEED_NO_SEED_STORE = 'no-seed-v1';
 
-export interface PriceSeedNoSeedRecordV1 {
+interface PriceSeedNoSeedRecordV1 {
 	version: 1;
 	vaultId: string;
 	itemId: number;

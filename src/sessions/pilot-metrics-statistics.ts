@@ -11,7 +11,7 @@ import type {
 	PilotVerificationV1,
 } from './pilot-metrics-model';
 
-export interface PilotRateMetricV1 {
+interface PilotRateMetricV1 {
 	k: number;
 	n: number;
 	rate: number | null;
@@ -26,14 +26,14 @@ export interface PilotRateMetricV1 {
 	coverage: number | null;
 }
 
-export interface PilotPrecisionMetricV1 {
+interface PilotPrecisionMetricV1 {
 	count: number;
 	intervalCount: number;
 	seconds: { median: number; p90: number; maximum: number } | null;
 	intervalMultiples: { median: number; p90: number; maximum: number } | null;
 }
 
-export interface PilotAggregateV1 {
+interface PilotAggregateV1 {
 	version: 1;
 	scope: { platform: PilotPlatform; versions: Omit<PilotEnvironmentV1, 'version' | 'platform'> | null };
 	falseStart: PilotRateMetricV1;
@@ -51,7 +51,7 @@ export interface PilotAggregateV1 {
 	};
 }
 
-export interface PilotRecoveryCountsV1 {
+interface PilotRecoveryCountsV1 {
 	presented: number;
 	succeeded: number;
 	failed: number;
@@ -59,7 +59,7 @@ export interface PilotRecoveryCountsV1 {
 	rate: number | null;
 }
 
-export interface PilotRecoveryMetricV1 extends PilotRecoveryCountsV1 {
+interface PilotRecoveryMetricV1 extends PilotRecoveryCountsV1 {
 	forcedRestart: PilotRecoveryCountsV1;
 	unclassified: PilotRecoveryCountsV1;
 }

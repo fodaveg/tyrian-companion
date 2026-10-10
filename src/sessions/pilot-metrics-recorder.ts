@@ -21,7 +21,7 @@ export type PilotMetricsState =
 	| { status: 'unconfigured' }
 	| { status: PilotJournalHealth; observations: number; limit: number };
 
-export interface PilotProposalPresentedInput {
+interface PilotProposalPresentedInput {
 	proposalId: string;
 	phase: DetectionPhase;
 	mode: PilotProposalMode;

@@ -4,7 +4,7 @@ import { canonicalJson, sha256Utf8 } from '../core/canonical-sha256';
 import { liveItemRateEligible, type LivePriceBasis, type LiveSessionRuntimeRecord } from './live-session-model';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
 
-export const LIVE_COMPARISON_MINIMUM_SESSIONS = 2;
+const LIVE_COMPARISON_MINIMUM_SESSIONS = 2;
 
 /** Captured conditions describe correlation; an unknown player build is never the reader's hash. */
 export interface LiveComparisonConditions {

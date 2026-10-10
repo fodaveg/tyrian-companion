@@ -1,6 +1,6 @@
 import type { StorageDeltaStatus } from '../account/storage-delta-model';
 
-export const RELEVANT_START_PROPOSAL_VERSION = 1 as const;
+const RELEVANT_START_PROPOSAL_VERSION = 1 as const;
 
 /**
  * Documented ceiling of the Guild Wars 2 account cache chain, «5-10 minutes (nested caches)»
@@ -11,7 +11,7 @@ export const RELEVANT_START_PROPOSAL_VERSION = 1 as const;
 export const RELEVANT_EVIDENCE_CACHE_CEILING_MS = 10 * 60_000;
 
 /** Relevant gains needed inside the trailing evidence before a start is proposed. */
-export const RELEVANT_EVIDENCE_REQUIRED_GAINS = 2;
+const RELEVANT_EVIDENCE_REQUIRED_GAINS = 2;
 
 /**
  * Trailing evidence retained for the two-gain criterion: never fewer than this many contiguous
@@ -22,11 +22,11 @@ export const RELEVANT_EVIDENCE_REQUIRED_GAINS = 2;
  * (`3·P - (10 + 2·P) = P - 10 >= 0`) and the window covers every `P <= 10 min`
  * (`30 >= 10 + 2·P`), so the criterion is reachable at any cadence instead of only at slow ones.
  */
-export const RELEVANT_EVIDENCE_MIN_SAMPLES = 3;
-export const RELEVANT_EVIDENCE_WINDOW_MS = 30 * 60_000;
+const RELEVANT_EVIDENCE_MIN_SAMPLES = 3;
+const RELEVANT_EVIDENCE_WINDOW_MS = 30 * 60_000;
 
 /** Hard cap so a pathological cadence cannot grow the retained evidence without bound. */
-export const RELEVANT_EVIDENCE_MAX_SAMPLES = 64;
+const RELEVANT_EVIDENCE_MAX_SAMPLES = 64;
 
 export interface RelevantItemRuleSet {
 	id: string;
@@ -49,12 +49,12 @@ export interface RelevantItemRuleSet {
 	anchorItemId?: number;
 }
 
-export interface RelevantItemGain {
+interface RelevantItemGain {
 	itemId: number;
 	quantity: number;
 }
 
-export interface RelevantDeltaSignal {
+interface RelevantDeltaSignal {
 	accountId: string;
 	beforeSnapshotId: string;
 	afterSnapshotId: string;

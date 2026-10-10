@@ -29,7 +29,7 @@ export interface StoredLiveSessionPayloadV1 {
 	groupContext: 'with_bosses' | 'without_bosses' | null;
 	mapIntervals: LiveSessionRuntimeRecord['mapIntervals']; mapCoveragePartial: boolean;
 }
-export interface StoredLiveJournalEntryV1 {
+interface StoredLiveJournalEntryV1 {
 	version: 1; epoch: string; cursor: number; observedAt: string;
 	observations: LiveObservationV1[]; breakBefore: boolean; outbox: StoredLiveAlertOutboxV1[];
 }
@@ -47,7 +47,7 @@ export interface LiveSessionNoteInput {
 }
 
 /** Offset from UTC, in minutes, at an instant: what the local day and hour of a session's two notes are written with. */
-export type UtcOffsetMinutes = (atMs: number) => number;
+type UtcOffsetMinutes = (atMs: number) => number;
 export const systemUtcOffsetMinutes: UtcOffsetMinutes = (atMs) => -new Date(atMs).getTimezoneOffset();
 
 /** The local `2026-10-09` and `08:42` of an instant. */
@@ -303,7 +303,7 @@ function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 }
 
 /** Signed arithmetic shared by validation and export; a missing observation is never a zero. */
-export function totalsForObservations(observations: readonly LiveObservationV1[]): LiveTotalV1[] | null {
+function totalsForObservations(observations: readonly LiveObservationV1[]): LiveTotalV1[] | null {
 	const totals = new Map<string, LiveTotalV1>();
 	for (const row of observations) {
 		const key = `${row.kind}:${String(row.idNumber)}`;

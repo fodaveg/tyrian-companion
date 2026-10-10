@@ -36,7 +36,7 @@ export interface FarmingManualReminder {
 	startedAt: string;
 	durationMinutes: number;
 }
-export interface FarmingManualReminderProgress {
+interface FarmingManualReminderProgress {
 	kind: FarmingReminderKind;
 	status: 'running' | 'due' | 'invalid';
 	remainingMs: number | null;

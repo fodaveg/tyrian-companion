@@ -80,7 +80,7 @@ export interface SellSignalRuntimeOptions {
 	diagnostics?: LocalDebugActionPort;
 }
 
-export type SellSignalSeedStatus = 'unseeded' | 'seeded' | 'no_seed';
+type SellSignalSeedStatus = 'unseeded' | 'seeded' | 'no_seed';
 
 export interface SellSignalRuntimeState {
 	seedStatus: SellSignalSeedStatus;

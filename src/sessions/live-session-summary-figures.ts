@@ -3,11 +3,11 @@ import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { liveItemValueCopper } from './live-session-reducer';
 
 /** The main map is the one that holds more than this share of the time spent on known maps. */
-export const SUMMARY_MAIN_MAP_SHARE = 0.7;
+const SUMMARY_MAIN_MAP_SHARE = 0.7;
 /** One item above this share of the sellable value makes the per-hour figure misleading on its own. */
-export const SUMMARY_DOMINANT_VALUE_SHARE = 0.5;
+const SUMMARY_DOMINANT_VALUE_SHARE = 0.5;
 /** An item that came in at least this many separate times and is first by quantity is the session's staple. */
-export const SUMMARY_STAPLE_MIN_ENTRIES = 10;
+const SUMMARY_STAPLE_MIN_ENTRIES = 10;
 /** Below this observed share the unobserved intervals are listed instead of folded into one line. */
 export const SUMMARY_FOLD_COVERAGE = 0.9;
 /** An unobserved stretch shorter than this is a cut: the note counts the cuts together instead of writing each one. */
@@ -16,7 +16,7 @@ export const SUMMARY_SHORT_GAP_MS = 30_000;
  * What lies between two map intervals is time on no identified map from this much OBSERVED time on. Under it, it is the edge of the
  * map next to it: the two ends of an interval and the samples around them are stamped by different reads of the clock.
  */
-export const SUMMARY_MIN_UNIDENTIFIED_MS = 1_000;
+const SUMMARY_MIN_UNIDENTIFIED_MS = 1_000;
 const GOLD_CURRENCY_ID = 1;
 /**
  * `/v2/items` flags that take an item out of «sell now» and out of the value: the ones that forbid TRADING it, which is what the
@@ -27,21 +27,21 @@ const GOLD_CURRENCY_ID = 1;
 const UNSELLABLE_FLAGS = ['AccountBound', 'SoulbindOnAcquire'] as const;
 
 /** What the plugin knows of an item from the public catalog; an absent entry means it does not know. */
-export interface SummaryItemMeta {
+interface SummaryItemMeta {
 	readonly flags: readonly string[]; readonly type: string;
 	/** Icon URL from the same catalog cache record; the note keeps it only if it is on the GW2 render host. */
 	readonly icon?: string;
 }
 export type SummaryItemMetaMap = Readonly<Record<number, SummaryItemMeta | undefined>>;
 
-export interface SummaryItemRow { itemId: number; quantity: number; valueCopper: number | null; container: boolean }
+interface SummaryItemRow { itemId: number; quantity: number; valueCopper: number | null; container: boolean }
 
 /**
  * One unobserved stretch as the note counts and writes it. The session keeps one record per channel, so a cut that
  * took items and currencies at once is two records over the same instants: here it is one stretch, and so are records
  * that touch or overlap. The count and the total are of time nobody observed, never of records.
  */
-export interface SummaryGapStretch {
+interface SummaryGapStretch {
 	fromAt: string; toAt: string; ms: number;
 	/** The reason of the longest record in the stretch: what the stretch is named after. */
 	reason: LiveGapV1['reason'];
@@ -64,7 +64,7 @@ export interface SummaryMapRow {
 	perHourCopper: number | null;
 }
 /** One step of the session's route: the map entered (null: a stretch observed on no identified map) and when. */
-export interface SummaryMapVisit { mapId: number | null; at: string }
+interface SummaryMapVisit { mapId: number | null; at: string }
 /**
  * One stretch of the session on a map: the route's step with its end. A stretch runs from the hour the map was entered up to
  * the next entry (the session's end for the last one), so the stretches are the route cut at every entry and a return to a
@@ -85,7 +85,7 @@ export interface SummaryMapStretch {
 	top: { itemId: number; quantity: number; valueCopper: number }[];
 }
 /** How many objects of most value a stretch lists. */
-export const SUMMARY_STRETCH_TOP = 5;
+const SUMMARY_STRETCH_TOP = 5;
 /**
  * The session by map. The session's length is cut ONCE, into the map intervals and the holes between them, and every figure comes
  * from that one cut, so the table, its last row and the route cannot disagree:
@@ -101,7 +101,7 @@ export const SUMMARY_STRETCH_TOP = 5;
  * - an item change belongs to the piece that holds its hour, after the piece's start and up to its end: a sample stamped at the
  *   instant the map changed is the last one of the map left.
  */
-export interface SummaryMapBreakdown {
+interface SummaryMapBreakdown {
 	/** The identified maps, one row each however many times it was entered, in the order they were first entered. */
 	rows: SummaryMapRow[];
 	/**
@@ -116,7 +116,7 @@ export interface SummaryMapBreakdown {
 	stretches: SummaryMapStretch[];
 }
 
-export interface SummaryFigures {
+interface SummaryFigures {
 	durationMs: number;
 	/** 0..1, observed item time over the session's length. */
 	observedShare: number;

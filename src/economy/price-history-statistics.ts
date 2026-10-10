@@ -60,7 +60,7 @@ export function buildPriceHistoryDailyAggregates(
 		}));
 }
 
-export type PriceHistoryPercentileResult =
+type PriceHistoryPercentileResult =
 	| { status: 'ready'; percentile: number; coveredDays: number; valueCopper: number }
 	| { status: 'insufficient_history'; coveredDays: number; requiredDays: number };
 

@@ -22,7 +22,7 @@ import { sessionUnobservedMs } from './session';
  * - `trading_post_activity`: a Trading Post pick-up or order moved items or coin during the window.
  * - `incomplete_reading`: part of the account could not be read at one of the two ends.
  */
-export type SessionAttributionCauseCode =
+type SessionAttributionCauseCode =
 	| 'start_not_settled'
 	| 'after_end_window'
 	| 'end_not_settled'
@@ -32,7 +32,7 @@ export type SessionAttributionCauseCode =
 	| 'trading_post_activity'
 	| 'incomplete_reading';
 
-export interface SessionAttributionCause {
+interface SessionAttributionCause {
 	code: SessionAttributionCauseCode;
 	/** Whole minutes, rounded up; only on the two time-window causes. */
 	minutes?: number;
@@ -44,7 +44,7 @@ export interface SessionAttributionCause {
  * session can be that any of it came from its own window. A figure the evidence cannot support is
  * null, never zero.
  */
-export interface SessionAttributionSummary {
+interface SessionAttributionSummary {
 	/** Net change of coin in wallet and pick-up, when the classification lets the net be shown. */
 	liquidCopper: number | null;
 	/** Gained items valued at what selling them right now would pay (demonstrated depth or vendor). */

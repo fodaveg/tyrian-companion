@@ -14,7 +14,7 @@ import {
  * advisor workflow joins the result to the user's own goals (`mergeDerivedReservationGoals`) before
  * classifying, so the advisor reserves them like any other goal (H18.14).
  */
-export interface LegendaryGoalsResult {
+interface LegendaryGoalsResult {
 	goals: ReservationGoal[];
 	/** Target ids with no `LegendaryMaterialsTableV1` entry: the settings panel's own concern
 	 * ("sin tabla de materiales"), never a `ReservationRequirement`. */

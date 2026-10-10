@@ -3,12 +3,12 @@ import { canonicalJson as canonical } from '../core/canonical-sha256';
 import { safeAddOrThrow } from '../core/safe-add';
 import { createTradingPostValueWithPolicy } from './gw2-fees';
 
-export const HOLD_INTENT_VERSION = 1 as const;
-export const HOLD_PLAN_VERSION = 1 as const;
+const HOLD_INTENT_VERSION = 1 as const;
+const HOLD_PLAN_VERSION = 1 as const;
 
-export type HoldIntentRoute = 'instant_sell' | 'listing';
-export type HoldIntentCategory = 'seasonal_rebound' | 'market_target' | 'personal';
-export type HoldIntentState = 'holding' | 'target_reached' | 'expired' | 'price_unavailable' | 'cancelled';
+type HoldIntentRoute = 'instant_sell' | 'listing';
+type HoldIntentCategory = 'seasonal_rebound' | 'market_target' | 'personal';
+type HoldIntentState = 'holding' | 'target_reached' | 'expired' | 'price_unavailable' | 'cancelled';
 
 export interface HoldIntentV1 {
 	version: typeof HOLD_INTENT_VERSION;
@@ -24,7 +24,7 @@ export interface HoldIntentV1 {
 	origin: 'user';
 }
 
-export interface HoldProjectedTargetNet {
+interface HoldProjectedTargetNet {
 	policyVersion: 1;
 	route: HoldIntentRoute;
 	quantity: number;
@@ -36,7 +36,7 @@ export interface HoldProjectedTargetNet {
 	netCopper: number;
 }
 
-export interface HoldAllocation {
+interface HoldAllocation {
 	intentId: string;
 	itemId: number;
 	deadlineAt: string;
@@ -51,7 +51,7 @@ export interface HoldAllocation {
 	remainingMs: number;
 }
 
-export interface HoldPlanItem {
+interface HoldPlanItem {
 	itemId: number;
 	inputFreeQuantity: number;
 	heldQuantity: number;
@@ -81,7 +81,7 @@ export interface HoldIntentInput {
 }
 
 /** Quote-only market evidence used by durable user hold intents. */
-export interface HoldIntentMarketBatch {
+interface HoldIntentMarketBatch {
 	version: 1;
 	batchId: string;
 	capturedAt: string;
@@ -89,7 +89,7 @@ export interface HoldIntentMarketBatch {
 	quotes: ContainerMarketQuote[];
 }
 
-export type HoldPlanResult =
+type HoldPlanResult =
 	| { status: 'ok'; plan: HoldPlan }
 	| { status: 'invalid'; reason: 'invalid_input' | 'identity_mismatch' | 'arithmetic_overflow' };
 

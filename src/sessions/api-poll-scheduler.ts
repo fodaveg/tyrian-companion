@@ -13,7 +13,7 @@ export type ApiPollOutcome =
 	| { kind: 'transient_failure' }
 	| { kind: 'fatal' };
 
-export type ApiPollSchedulerStatus =
+type ApiPollSchedulerStatus =
 	| 'idle'
 	| 'scheduled'
 	| 'polling'
