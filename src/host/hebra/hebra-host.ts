@@ -487,6 +487,8 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 
 	/** Notes `vault.saveNote` left outside the path index (the support package), by relative path. */
 	const savedNotes = new Map<string, string>();
+	/** The Settings folder pickers mounted now (`ui.pickFolder`): told when the library's folders change. */
+	const folderListeners = new Set<() => void>();
 	const adapter = createLocalFileStorage(deps.fileBackend, libraryId);
 	const createPort = (folderId: string, pathIndex: TyrianPathIndex) => createTyrianVaultPort({
 		library: api.vault,
@@ -523,6 +525,8 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		// missing output folder, the one this start was bound to, and this start writes there from then on.
 		createOutputFolder: async () => {
 			const folderId = await createLibraryFolderPath(api.vault, libraryRootId, outputFolder);
+			// The folder exists from here on: the Settings picker drops its «does not exist yet» warning.
+			for (const listener of folderListeners) listener();
 			const created = await TyrianPathIndex.load(
 				deps.pathIndexKv,
 				pathIndexNamespace(libraryId, folderId),
@@ -595,6 +599,15 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			translator,
 			secrets,
 			folderPaths: async () => libraryFolderPaths(await api.vault.foldersList(), libraryRootId),
+			// Hebra's own signal (another device, its folder UI) plus the output folder this plugin creates.
+			onFoldersChange: (listener) => {
+				folderListeners.add(listener);
+				const stop = api.workspace.onFoldersChange(() => listener());
+				return () => {
+					folderListeners.delete(listener);
+					stop();
+				};
+			},
 			openNote: (path) => {
 				const relative = relativeToOutputFolder(outputFolder, path);
 				const id = relative === null ? undefined : index.getIdForPath(relative);

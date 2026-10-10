@@ -110,7 +110,13 @@ describe('Tyrian in Hebra: the Assets row explains a press that wrote nothing', 
 		const test = hebra({ outputFolder: 'Games/GW2/Tyrian' });
 		const { core, panel, cleanup } = await start(test);
 		expect(test.library.folders.some((folder) => folder.name === 'Games')).toBe(false);
+		// The output-folder picker of the same panel says it will be created, not to pick another.
+		const pickerNote = panel.querySelector<HTMLElement>('.hebra-module-folder-note');
+		expect(pickerNote?.hidden).toBe(false);
+		expect(pickerNote?.textContent).toBe('«Games/GW2/Tyrian» aún no existe; se creará al aplicar los assets.');
 		await press(panel, 'Aplicar');
+		// …and that warning goes once Apply created it, without reopening Settings.
+		await vi.waitFor(() => expect(pickerNote?.hidden).toBe(true));
 		expect(core.getManagedAssetsView()).toMatchObject({ status: 'ready', message: 'lifecycle_ready' });
 		const games = test.library.folders.find((folder) => folder.name === 'Games');
 		const gw2 = test.library.folders.find((folder) => folder.name === 'GW2' && folder.parentId === games?.id);

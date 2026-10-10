@@ -6411,9 +6411,9 @@
 				{
 					"id": "cd566a1ae16b662946d9f1c2beb1df8f3b0c3695",
 					"kind": "catch_clause",
-					"line": 188,
+					"line": 192,
 					"column": 5,
-					"endLine": 190,
+					"endLine": 194,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6427,9 +6427,9 @@
 				{
 					"id": "85bb7dbbc0f9530216166cf80feb24d57eda82de",
 					"kind": "callback_registration",
-					"line": 197,
+					"line": 201,
 					"column": 3,
-					"endLine": 203,
+					"endLine": 207,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6442,38 +6442,38 @@
 					"reason": "Allowlisted callback_registration: The \"commit\" then (\"then\") settles the picker on success and, on rejection, calls deps.report before settling, so a failed onSelect is reported. Verified registration: \"then\" in \"commit\"."
 				},
 				{
-					"id": "4529ebf536cf68850dc1c8002fa97a38857b2399",
+					"id": "6b38c33d18abf87aa0f19c7be55641ec70cb14ac",
 					"kind": "callback_registration",
-					"line": 276,
-					"column": 2,
-					"endLine": 283,
-					"endColumn": 5,
+					"line": 281,
+					"column": 3,
+					"endLine": 288,
+					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "then",
-						"scope": "attachFolderPicker",
-						"justification": "The \"attachFolderPicker\" then (\"then\") only paints the loaded folder list; a throw in it falls into the .catch that follows and reaches deps.report."
+						"scope": "loadPaths",
+						"justification": "The \"loadPaths\" then (\"then\") only paints the loaded folder list; a throw in it falls into the .catch that follows and reaches deps.report."
 					},
-					"reason": "Allowlisted callback_registration: The \"attachFolderPicker\" then (\"then\") only paints the loaded folder list; a throw in it falls into the .catch that follows and reaches deps.report. Verified registration: \"then\" in \"attachFolderPicker\"."
+					"reason": "Allowlisted callback_registration: The \"loadPaths\" then (\"then\") only paints the loaded folder list; a throw in it falls into the .catch that follows and reaches deps.report. Verified registration: \"then\" in \"loadPaths\"."
 				},
 				{
-					"id": "d63a9e091e249568bd71f590d973487eca115109",
+					"id": "c37c7b55a59828c6bb3ded3aa73673438eeb17d7",
 					"kind": "promise_catch",
-					"line": 276,
-					"column": 2,
-					"endLine": 284,
-					"endColumn": 63,
+					"line": 281,
+					"column": 3,
+					"endLine": 289,
+					"endColumn": 64,
 					"registration": "catch",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
-						"scope": "attachFolderPicker",
-						"justification": "The \"attachFolderPicker\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped."
+						"scope": "loadPaths",
+						"justification": "The \"loadPaths\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped."
 					},
-					"reason": "Allowlisted promise_catch: The \"attachFolderPicker\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"attachFolderPicker\"."
+					"reason": "Allowlisted promise_catch: The \"loadPaths\" boundary (\"intentional_noop\") hands the failure to deps.report, the adapter failure channel that logs it, so nothing is dropped. Verified recovery: \"intentional_noop\" in \"loadPaths\"."
 				}
 			]
 		},
@@ -6484,9 +6484,9 @@
 				{
 					"id": "04cdffa8ed3862bba561c9a8c015c04cc001b7b7",
 					"kind": "promise_catch",
-					"line": 72,
+					"line": 74,
 					"column": 11,
-					"endLine": 72,
+					"endLine": 74,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6501,9 +6501,9 @@
 				{
 					"id": "496e279d8d98145ee6c6b179df47e23a4f2a303f",
 					"kind": "promise_catch",
-					"line": 76,
+					"line": 78,
 					"column": 10,
-					"endLine": 76,
+					"endLine": 78,
 					"endColumn": 39,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6518,9 +6518,9 @@
 				{
 					"id": "eec0fb0475b93bc4c3b46b988a485a56e704d89e",
 					"kind": "promise_catch",
-					"line": 211,
+					"line": 213,
 					"column": 4,
-					"endLine": 212,
+					"endLine": 214,
 					"endColumn": 72,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6535,9 +6535,9 @@
 				{
 					"id": "72d7fe716f25b3937284c22516785174d0628e0f",
 					"kind": "promise_catch",
-					"line": 266,
+					"line": 268,
 					"column": 4,
-					"endLine": 266,
+					"endLine": 268,
 					"endColumn": 86,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6673,9 +6673,9 @@
 				{
 					"id": "ddc98d9be27e55e6560a91f9768bfbb8879eca4c",
 					"kind": "callback_registration",
-					"line": 506,
+					"line": 508,
 					"column": 4,
-					"endLine": 507,
+					"endLine": 509,
 					"endColumn": 91,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6690,9 +6690,9 @@
 				{
 					"id": "e5433d4400c72507a2f6f353c17ad4a5423289b9",
 					"kind": "promise_catch",
-					"line": 506,
+					"line": 508,
 					"column": 4,
-					"endLine": 508,
+					"endLine": 510,
 					"endColumn": 65,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6707,9 +6707,9 @@
 				{
 					"id": "ad564ce1275e5bad9641b146e8159dd770695e6a",
 					"kind": "callback_registration",
-					"line": 610,
+					"line": 623,
 					"column": 23,
-					"endLine": 610,
+					"endLine": 623,
 					"endColumn": 69,
 					"registration": "setTimeout",
 					"classification": "allowlisted",
@@ -6724,9 +6724,9 @@
 				{
 					"id": "fceb459ed603de5e1120026f1341e35ac3900cb5",
 					"kind": "void_expression",
-					"line": 610,
+					"line": 623,
 					"column": 47,
-					"endLine": 610,
+					"endLine": 623,
 					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {

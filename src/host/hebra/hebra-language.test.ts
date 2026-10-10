@@ -155,7 +155,7 @@ describe.each(LOCALES)('folder picker in %s', (locale) => {
 	it('says that no folder matches, how many more there are, and that the saved one is missing', async () => {
 		const many = Array.from({ length: 60 }, (_, i) => `Carpeta ${String(i)}`);
 		const { field, list, note } = await mount(many, 'Otra');
-		expect(note.textContent).toBe(locale === 'es' ? '«Otra» no existe en la biblioteca.' : '"Otra" does not exist in the library.');
+		expect(note.textContent).toBe(locale === 'es' ? '«Otra» aún no existe; se creará al aplicar los assets.' : '"Otra" does not exist yet; it will be created when you apply the assets.');
 		field.focus();
 		field.value = 'Carpeta';
 		field.dispatchEvent(new Event('input', { bubbles: true }));

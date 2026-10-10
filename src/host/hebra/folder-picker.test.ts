@@ -148,11 +148,36 @@ describe('folder picker', () => {
 		expect(onSelect).toHaveBeenCalledWith('Juegos/GW2');
 	});
 
+	// David, 10 Oct 2026: «Aplicar» creates a missing output folder, so its warning must go once the folder exists.
+	it('reads the folders again when they change: the warning goes once the saved folder exists, and the cleanup stops listening', async () => {
+		let paths: readonly string[] = PATHS;
+		let notify: (() => void) | null = null;
+		const stop = vi.fn();
+		const input = createEl('input');
+		input.value = 'Tyrian Companion';
+		document.body.append(input);
+		const off = attachFolderPicker({
+			folderPaths: async () => paths,
+			onFoldersChange: (listener) => { notify = listener; return stop; },
+			report: vi.fn(),
+			translator: () => createTranslator('es'),
+		}, input, vi.fn());
+		const note = (input.nextElementSibling as HTMLElement).querySelector<HTMLElement>('.hebra-module-folder-note')!;
+		await vi.waitFor(() => expect(note.hidden).toBe(false));
+		expect(notify).not.toBeNull();
+		paths = [...PATHS, 'Tyrian Companion'];
+		notify!();
+		await vi.waitFor(() => expect(note.hidden).toBe(true));
+		expect(note.textContent).toBe('');
+		off();
+		expect(stop).toHaveBeenCalledOnce();
+	});
+
 	it('a saved folder that does not exist stays in the field with its warning and never changes on its own', async () => {
 		const { field, note, input, onSelect, options, type } = await mountPicker('Tyrian Companion');
 		await vi.waitFor(() => expect(note.hidden).toBe(false));
 		expect(field.value).toBe('Tyrian Companion');
-		expect(note.textContent).toContain('no existe en la biblioteca');
+		expect(note.textContent).toBe('«Tyrian Companion» aún no existe; se creará al aplicar los assets.');
 		field.focus();
 		expect(options().some((option) => option.getAttribute('aria-selected') === 'true')).toBe(false);
 		type('zzz');
