@@ -170,7 +170,11 @@ function propertyChain(expression: ts.Expression): string | null {
 }
 
 function unwrapNonNull(expression: ts.Expression): ts.Expression {
-	return ts.isNonNullExpression(expression) ? unwrapNonNull(expression.expression) : expression;
+	// A cast, `satisfies`, `!` or parentheses change the type or the grouping, never the receiver.
+	if (ts.isNonNullExpression(expression) || ts.isParenthesizedExpression(expression)
+		|| ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression)
+		|| ts.isTypeAssertionExpression(expression)) return unwrapNonNull(expression.expression);
+	return expression;
 }
 
 /** Every literal static, side-effect, dynamic and `require` specifier of a TypeScript source. */
