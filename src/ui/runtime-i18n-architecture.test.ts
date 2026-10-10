@@ -6,6 +6,8 @@ import { readModuleSource } from '../test/module-boundary';
 const RUNTIME_UI_FILES = [
 	'src/main.ts',
 	'src/runtime/tyrian-companion-core.ts',
+	'src/runtime/core-sale-helpers.ts',
+	'src/runtime/core-outcomes.ts',
 	'src/ui/companion-view.ts',
 	'src/ui/companion-status-model.ts',
 	'src/ui/inventory-advisor-view.ts',
@@ -27,6 +29,14 @@ describe('runtime UI i18n boundary', () => {
 		const source = readModuleSource(path);
 		expect(hasDirectVisibleCopy(source)).toBe(false);
 	});
+
+	it.each(['src/runtime/core-sale-helpers.ts', 'src/runtime/core-outcomes.ts'] as const)(
+		'%s is covered by the guard: a visible literal added to it turns the check red',
+		(path) => {
+			expect(RUNTIME_UI_FILES).toContain(path);
+			expect(hasDirectVisibleCopy(`${readModuleSource(path)}\nsetting.setName('English');`)).toBe(true);
+		},
+	);
 
 	it('turns red for visible literals in properties, setters, aria attributes and templates', () => {
 		expect(hasDirectVisibleCopy("setting.setName('English')")).toBe(true);
