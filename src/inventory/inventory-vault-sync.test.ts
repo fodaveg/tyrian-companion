@@ -1198,6 +1198,66 @@ describe('resync: no rewrite by the clock, managed fields only, the user\'s text
 		expect((await service.preview(ROOT, reduced)).steps.find((entry) => entry.path === bankPath)).toMatchObject({ status: 'unchanged' });
 	});
 
+	describe('a YAML comment the user wrote in the header', () => {
+		// Where a user might put it: before the managed keys, between them, or after the last one.
+		const placements: Array<[string, (content: string) => string]> = [
+			['at the top', (content) => content.replace(/^---\n/u, '---\n# mi nota sobre esto\n')],
+			['between managed keys', (content) => content.replace(/\n(tc_quantity:)/u, '\n# mi nota sobre esto\n$1')],
+			['at the end', (content) => content.replace('\n---\n', '\n# mi nota sobre esto\n---\n')],
+		];
+
+		async function bankWithComment(place: (content: string) => string) {
+			const vault = new MemoryInventoryVault();
+			const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+			const current = await inputWithAllSources();
+			await service.apply(await service.preview(ROOT, current));
+			const bank = (await service.preview(ROOT, current)).steps.find((entry) => entry.positionId.includes('-b-'))!;
+			vault.contents.set(bank.path, place(vault.contents.get(bank.path)!));
+			expect(vault.contents.get(bank.path)).toContain('# mi nota sobre esto');
+			return { vault, service, current, bank };
+		}
+
+		it.each(placements)('%s survives an update', async (_label, place) => {
+			const { vault, service, current, bank } = await bankWithComment(place);
+			const moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+			expect(await service.apply(await service.preview(ROOT, moved))).toMatchObject({ status: 'applied' });
+			expect(vault.contents.get(bank.path)).toContain('# mi nota sobre esto');
+			expect(frontmatter(vault.contents.get(bank.path)!)).toMatchObject({ tc_unit_sell_copper: 11 });
+		});
+
+		it.each(placements)('%s: the rewrite is stable, the next sync costs no write', async (_label, place) => {
+			const { vault, service, current } = await bankWithComment(place);
+			const moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+			await service.apply(await service.preview(ROOT, moved));
+			const mutations = vault.mutations;
+			const plan = await service.preview(ROOT, moved);
+			expect(plan.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+			expect(vault.mutations).toBe(mutations);
+			expect(vault.contents.get(plan.steps[0]!.path)!.split('# mi nota sobre esto').length).toBeLessThanOrEqual(2);
+		});
+
+		it('next to a key of the user, both survive an update', async () => {
+			const { vault, service, current, bank } = await bankWithComment((content) =>
+				content.replace(/^---\n/u, '---\n# mi nota sobre esto\n').replace('\n---\n', '\ntags:\n  - gw2\n---\n'));
+			const moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+			await service.apply(await service.preview(ROOT, moved));
+			expect(vault.contents.get(bank.path)).toContain('# mi nota sobre esto');
+			expect(frontmatter(vault.contents.get(bank.path)!)).toMatchObject({ tags: ['gw2'], tc_unit_sell_copper: 11 });
+		});
+
+		it.each(placements)('%s keeps the note out of the trash when its position leaves', async (_label, place) => {
+			const { vault, service, current, bank } = await bankWithComment(place);
+			const reduced = { ...current, positions: current.positions.filter((position) => position.source !== 'bank') };
+			const plan = await service.preview(ROOT, reduced);
+			const step = plan.steps.find((entry) => entry.path === bank.path);
+			expect(step).toMatchObject({ status: 'deactivate' });
+			expect(step?.after).not.toBeNull();
+			await service.apply(plan);
+			expect(vault.contents.get(bank.path)).toContain('# mi nota sobre esto');
+			expect(frontmatter(vault.contents.get(bank.path)!)).toMatchObject({ tc_active: false });
+		});
+	});
+
 	/** What a host importer does: stamps `title:` on the note's frontmatter. */
 	function withTitle(content: string, title: string): string {
 		return content.replace('\n---\n', `\ntitle: ${JSON.stringify(title)}\n---\n`);

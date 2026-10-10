@@ -1,4 +1,4 @@
-import { parseDocument, stringify as stringifyYaml } from 'yaml';
+import { isMap, isPair, parseDocument, stringify as stringifyYaml } from 'yaml';
 
 import type { ItemHolding, StorageSnapshot } from '../account/storage-snapshot-model';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
@@ -1366,10 +1366,38 @@ function splitInventoryFrontmatter(text: string, positionId: string): { managed:
 		else if (key === 'title' && strayTitle) continue;
 		else userKeys += 1;
 	}
-	if (userKeys === 0) return { managed, userFrontmatter: null };
-	for (const key of MANAGED_OR_RETIRED_KEYS) document.delete(key);
-	if (strayTitle) document.delete('title');
-	return { managed, userFrontmatter: document.toString({ lineWidth: 0 }).trimEnd() };
+	// A YAML comment the user wrote is theirs: it counts as user frontmatter and survives a
+	// rewrite. A comment attached to a key the plugin removes (a managed or stray-title key) would
+	// leave with it, so it is carried over as a comment line of its own.
+	const orphanComments = userKeys === 0 ? documentComments(document) : [];
+	const removed = new Set<string>(MANAGED_OR_RETIRED_KEYS);
+	if (strayTitle) removed.add('title');
+	if (isMap(document.contents)) {
+		for (const pair of document.contents.items) {
+			if (!isPair(pair) || !removed.has(String((pair.key as { value?: unknown } | null)?.value))) continue;
+			orphanComments.push(...nodeComments(pair.key), ...nodeComments(pair.value));
+		}
+	}
+	if (userKeys === 0 && orphanComments.length === 0) return { managed, userFrontmatter: null };
+	for (const key of removed) document.delete(key);
+	if (userKeys === 0) return { managed, userFrontmatter: orphanComments.join('\n') };
+	const kept = document.toString({ lineWidth: 0 }).trimEnd();
+	return { managed, userFrontmatter: orphanComments.length === 0 ? kept : `${kept}\n${orphanComments.join('\n')}` };
+}
+
+/** The comment lines (`# …`) a yaml node carries before and after it. */
+function nodeComments(node: unknown): string[] {
+	if (typeof node !== 'object' || node === null) return [];
+	const { commentBefore, comment } = node as { commentBefore?: string | null; comment?: string | null };
+	return [commentBefore, comment].flatMap((text) => (text ? text.split('\n').map((line) => `#${line}`) : []));
+}
+
+/** Comments that belong to the document or its top-level mapping rather than to one key. */
+function documentComments(document: ReturnType<typeof parseDocument>): string[] {
+	return [
+		...nodeComments(document),
+		...nodeComments(document.contents),
+	];
 }
 
 function step(
