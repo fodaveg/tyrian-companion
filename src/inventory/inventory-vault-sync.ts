@@ -1408,14 +1408,24 @@ function splitInventoryFrontmatter(text: string, positionId: string): { managed:
 	// A YAML comment the user wrote is theirs: it counts as user frontmatter and survives a
 	// rewrite. A comment attached to a key the plugin removes (a managed or stray-title key) would
 	// leave with it, so it is carried over as a comment line of its own.
-	const orphanComments = userKeys === 0 ? documentComments(document) : [];
+	// Order: what the document and its mapping carry before the first key, then the comments of the
+	// removed keys in file order, then what they carry after the last one.
 	const removed = new Set<string>(MANAGED_OR_RETIRED_KEYS);
 	if (strayTitle) removed.add('title');
+	const orphanComments: string[] = userKeys === 0
+		? [...commentLines(document.commentBefore), ...commentLines(nodeComment(document.contents, 'commentBefore'))]
+		: [];
 	if (isMap(document.contents)) {
 		for (const pair of document.contents.items) {
 			if (!isPair(pair) || !removed.has(String((pair.key as { value?: unknown } | null)?.value))) continue;
-			orphanComments.push(...nodeComments(pair.key), ...nodeComments(pair.value));
+			orphanComments.push(
+				...commentLines(nodeComment(pair.key, 'commentBefore')), ...commentLines(nodeComment(pair.key, 'comment')),
+				...commentLines(nodeComment(pair.value, 'commentBefore')), ...commentLines(nodeComment(pair.value, 'comment')),
+			);
 		}
+	}
+	if (userKeys === 0) {
+		orphanComments.push(...commentLines(nodeComment(document.contents, 'comment')), ...commentLines(document.comment));
 	}
 	if (userKeys === 0 && orphanComments.length === 0) return { managed, userFrontmatter: null };
 	for (const key of removed) document.delete(key);
@@ -1424,19 +1434,19 @@ function splitInventoryFrontmatter(text: string, positionId: string): { managed:
 	return { managed, userFrontmatter: orphanComments.length === 0 ? kept : `${kept}\n${orphanComments.join('\n')}` };
 }
 
-/** The comment lines (`# …`) a yaml node carries before and after it. */
-function nodeComments(node: unknown): string[] {
-	if (typeof node !== 'object' || node === null) return [];
-	const { commentBefore, comment } = node as { commentBefore?: string | null; comment?: string | null };
-	return [commentBefore, comment].flatMap((text) => (text ? text.split('\n').map((line) => `#${line}`) : []));
+/** One of the two comment slots of a yaml node, or null. */
+function nodeComment(node: unknown, slot: 'commentBefore' | 'comment'): string | null {
+	if (typeof node !== 'object' || node === null) return null;
+	const text = (node as Record<string, unknown>)[slot];
+	return typeof text === 'string' ? text : null;
 }
 
-/** Comments that belong to the document or its top-level mapping rather than to one key. */
-function documentComments(document: ReturnType<typeof parseDocument>): string[] {
-	return [
-		...nodeComments(document),
-		...nodeComments(document.contents),
-	];
+/**
+ * The `# …` lines of a yaml comment. A blank line inside a block of comments is dropped: it would
+ * come back as an empty `#` line and grow with every rewrite.
+ */
+function commentLines(text: string | null | undefined): string[] {
+	return (text ?? '').split('\n').filter((line) => line.trim().length > 0).map((line) => `#${line}`);
 }
 
 function step(

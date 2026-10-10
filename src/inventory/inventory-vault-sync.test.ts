@@ -1374,7 +1374,6 @@ describe('resync: no rewrite by the clock, managed fields only, the user\'s text
 			await service.apply(await service.preview(ROOT, current));
 			const bank = (await service.preview(ROOT, current)).steps.find((entry) => entry.positionId.includes('-b-'))!;
 			vault.contents.set(bank.path, place(vault.contents.get(bank.path)!));
-			expect(vault.contents.get(bank.path)).toContain('# mi nota sobre esto');
 			return { vault, service, current, bank };
 		}
 
@@ -1395,6 +1394,34 @@ describe('resync: no rewrite by the clock, managed fields only, the user\'s text
 			expect(plan.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
 			expect(vault.mutations).toBe(mutations);
 			expect(vault.contents.get(plan.steps[0]!.path)!.split('# mi nota sobre esto').length).toBeLessThanOrEqual(2);
+		});
+
+		const headerComments = (content: string) => (content.match(/^---\n([\s\S]*?)\n---\n/u)![1]!).split('\n').filter((line) => line.startsWith('#'));
+
+		it('three comments in three places keep their order through the rewrite', async () => {
+			const { vault, service, current, bank } = await bankWithComment((content) => content
+				.replace(/^---\n/u, '---\n# uno\n')
+				.replace(/\n(tc_quantity:)/u, '\n# dos\n$1')
+				.replace('\n---\n', '\n# tres\n---\n'));
+			const moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+			await service.apply(await service.preview(ROOT, moved));
+			expect(headerComments(vault.contents.get(bank.path)!)).toEqual(['# uno', '# dos', '# tres']);
+		});
+
+		it('a blank line inside a comment block does not grow into comment lines, rewrite after rewrite', async () => {
+			const { vault, service, current, bank } = await bankWithComment((content) =>
+				content.replace(/^---\n/u, '---\n# primero\n\n# segundo\n'));
+			let moved = current;
+			const seen: string[] = [];
+			for (const copper of [11, 12, 13]) {
+				moved = { ...current, positions: current.positions.map((position) => ({ ...position, unitSellCopper: copper })) };
+				await service.apply(await service.preview(ROOT, moved));
+				seen.push(headerComments(vault.contents.get(bank.path)!).join('|'));
+			}
+			expect(seen[0]).toContain('# primero');
+			expect(seen[0]).toContain('# segundo');
+			expect(new Set(seen).size).toBe(1);
+			expect(seen[0]!.split('|').every((line) => line === '# primero' || line === '# segundo')).toBe(true);
 		});
 
 		it('next to a key of the user, both survive an update', async () => {
