@@ -67,7 +67,7 @@ function harness(options: {
 	offline?: boolean;
 	omit?: Set<number>;
 	categories?: unknown;
-	store?: MemoryPublicStore;
+	store?: AchievementPublicStore;
 } = {}): Harness {
 	const paths: string[] = [];
 	let inFlight = 0;
@@ -107,7 +107,7 @@ function harness(options: {
 	};
 	const store = options.store ?? new MemoryPublicStore();
 	const service = new AchievementCatalogService(gateway, store, () => clock.now);
-	return { service, store, paths, maxInFlight: () => peak, clock, gate };
+	return { service, store: store as MemoryPublicStore, paths, maxInFlight: () => peak, clock, gate };
 }
 
 function pagePaths(paths: readonly string[]): string[] {
@@ -220,18 +220,30 @@ describe('AchievementCatalogService · search index', () => {
 		expect(pagePaths(paths)).toHaveLength(2);
 	});
 
-	it('fails, resumably, when a page cannot be saved, and keeps no part of that page', async () => {
+	it('goes on in memory when a page cannot be saved, says so, keeps no part of that page, and the next build resumes from it', async () => {
 		const store = new MemoryPublicStore();
 		store.failKeys.add('es:index-page:1');
-		const failing = harness({ store });
-		expect(await failing.service.buildIndex('es')).toEqual({ status: 'failed', reason: 'storage_failed', done: 200, total: 450 });
-		expect(failing.service.search('es', { query: 'logro', categoryId: null })).toBeNull();
-		expect([...store.records.keys()].filter((key) => key.startsWith('es:index-page:'))).toEqual(['es:index-page:0']);
+		const unsaved = harness({ store });
+		expect(await unsaved.service.buildIndex('es')).toMatchObject({ status: 'complete', total: 450, saved: false });
+		// The whole index is searchable this session, saved or not.
+		expect(unsaved.service.search('es', { query: 'logro 3', categoryId: null })).toHaveLength(111);
+		expect([...store.records.keys()].filter((key) => key.startsWith('es:index-page:'))).toEqual(['es:index-page:0', 'es:index-page:2']);
 
 		store.failKeys.clear();
 		const again = harness({ store });
-		expect(await again.service.buildIndex('es')).toMatchObject({ status: 'complete', total: 450 });
-		expect(pagePaths(again.paths).map((path) => idsOf(path)[0])).toEqual([201, 401]);
+		expect(await again.service.buildIndex('es')).toMatchObject({ status: 'complete', total: 450, saved: true });
+		expect(pagePaths(again.paths).map((path) => idsOf(path)[0])).toEqual([201]);
+	});
+
+	it('with storage broken altogether (nothing read, nothing written) still builds the whole index in memory and reports it unsaved', async () => {
+		const broken: AchievementPublicStore = {
+			readPublic: () => Promise.resolve(new Map()),
+			writePublic: () => Promise.resolve(false),
+		};
+		const { service, paths } = harness({ store: broken });
+		expect(await service.buildIndex('es')).toMatchObject({ status: 'complete', total: 450, saved: false });
+		expect(pagePaths(paths)).toHaveLength(3);
+		expect(service.search('es', { query: 'logro 45', categoryId: null })).toHaveLength(2);
 	});
 
 	it('resumes after a failure from the first page it did not save', async () => {

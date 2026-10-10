@@ -59,11 +59,15 @@ export interface AchievementIndexBuildOptions {
 	onProgress?: (progress: AchievementIndexProgress) => void;
 }
 
-/** `storage_failed`: a page could not be saved; the build stops there so it can resume from it. */
-export type AchievementIndexBuildFailureReason = AchievementCatalogFailureReason | 'storage_failed';
+/** Only the network can fail a build: a page that cannot be saved is kept in memory (`saved: false` below). */
+export type AchievementIndexBuildFailureReason = AchievementCatalogFailureReason;
 
 export type AchievementIndexBuildResult =
-	| { status: 'complete'; total: number; freshness: AchievementFreshness }
+	/**
+	 * `saved` is false when some fetched page could not be saved (IndexedDB broken or full): the index is
+	 * whole in memory for this session, and the next build fetches those pages again.
+	 */
+	| { status: 'complete'; total: number; freshness: AchievementFreshness; saved: boolean }
 	| { status: 'cancelled'; done: number; total: number }
 	| { status: 'failed'; reason: AchievementIndexBuildFailureReason; done: number; total: number };
 
@@ -116,7 +120,9 @@ interface SharedIndexBuild {
  * Nothing runs in the constructor. Groups and categories load the first time they are asked for and
  * are kept for the session. The index is built only when `buildIndex` is called: about 42 pages of
  * 200 ids, one after another, each saved as it arrives, so a failed, cancelled or unloaded build
- * resumes from the first page it did not save.
+ * resumes from the first page it did not save. A store that refuses a write never stops a build
+ * (`achievement-store.ts`: "a broken store degrades the section to the network and never breaks
+ * it"): the page stays in memory and the result says it was not saved.
  *
  * Every function keeps at most one request in flight per argument set: a second call while one runs
  * joins it. For `buildIndex`, each caller keeps its own `signal` and `onProgress` (see there).
@@ -176,8 +182,9 @@ export class AchievementCatalogService {
 
 	/**
 	 * Builds the search index, only when asked. Pages younger than 7 days are reused; each page
-	 * fetched is saved before the next one is asked for. Without network, it completes from the
-	 * pages kept up to 30 days, saying how old they are.
+	 * fetched is saved before the next one is asked for, and one that cannot be saved is kept in
+	 * memory and reported with `saved: false`. Without network, it completes from the pages kept
+	 * up to 30 days, saying how old they are.
 	 *
 	 * One build per language at a time, shared: a call while one runs joins it. The build depends on
 	 * no caller's `signal`: an aborted caller gets `cancelled` with the progress so far while the
@@ -256,6 +263,7 @@ export class AchievementCatalogService {
 		let done = 0;
 		let oldest = now;
 		let fetchedAny = false;
+		let saved = true;
 		report(done, total);
 		for (const [index, ids] of pages.entries()) {
 			if (cancelled()) return { status: 'cancelled', done, total };
@@ -281,11 +289,10 @@ export class AchievementCatalogService {
 					break;
 				}
 				const record: IndexPageRecord = { ids, entries: fetched.entries };
-				// One transaction per page: a page is kept whole or not at all, so a build that stops
-				// here resumes from this very page.
-				if (!await this.store.writePublic([{ key: keys[index]!, savedAt: now, value: record }])) {
-					return { status: 'failed', reason: 'storage_failed', done, total };
-				}
+				// One transaction per page: a page is kept whole or not at all, so the next build
+				// fetches again exactly the pages that were not saved. A refused write does not stop
+				// this build: the page goes on in memory and the result says it was not saved.
+				if (!await this.store.writePublic([{ key: keys[index]!, savedAt: now, value: record }])) saved = false;
 				entries.push(...fetched.entries);
 				fetchedAny = true;
 			}
@@ -293,7 +300,7 @@ export class AchievementCatalogService {
 			report(done, total);
 		}
 		this.indexes.set(locale, entries);
-		return { status: 'complete', total, freshness: freshness(fetchedAny ? 'network' : 'cache', oldest, now) };
+		return { status: 'complete', total, freshness: freshness(fetchedAny ? 'network' : 'cache', oldest, now), saved };
 	}
 
 	private async indexPlan(locale: CatalogLocale): Promise<

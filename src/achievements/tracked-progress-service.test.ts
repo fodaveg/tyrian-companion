@@ -131,6 +131,26 @@ describe('TrackedProgressService.refresh', () => {
 			.toEqual({ status: 'unavailable', reason: 'invalid_response' });
 	});
 
+	it('discards a refresh in flight when the key changes meanwhile (clearProgress): nothing is written and the account is not kept', async () => {
+		let release: () => void = () => undefined;
+		const hold = new Promise<void>((resolve) => { release = resolve; });
+		const { service, store, beginOperation } = harness({ hold });
+		const inFlight = service.refresh(VAULT, [10]);
+		await expect(service.clearProgress(VAULT)).resolves.toBe(true);
+		release();
+
+		expect(await inFlight).toEqual({ status: 'unavailable', reason: 'cancelled' });
+		expect(store.records.has(VAULT)).toBe(false);
+		expect(await service.lastReading(VAULT)).toBeNull();
+		// Another vault's reading is its own: a clear of one vault does not touch it.
+		const other = await service.refresh('vault-b', [10]);
+		expect(other.status).toBe('ok');
+		// The next refresh of the cleared vault is a new reading, not the discarded one.
+		expect((await service.refresh(VAULT, [10])).status).toBe('ok');
+		expect(beginOperation).toHaveBeenCalledTimes(3);
+		expect((await service.lastReading(VAULT))?.accountVerified).toBe(true);
+	});
+
 	it('runs one refresh per vault at a time: a second call joins it', async () => {
 		let release: () => void = () => undefined;
 		const hold = new Promise<void>((resolve) => { release = resolve; });

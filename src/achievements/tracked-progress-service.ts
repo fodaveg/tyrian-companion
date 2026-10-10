@@ -14,8 +14,10 @@ import type { StoredTrackedProgress, TrackedProgressStore } from './achievement-
  *   `progression`.
  * - `request_failed`: network, timeout or any other status.
  * - `invalid_response`: a body that does not parse.
+ * - `cancelled`: the key changed while the reading was in flight (`clearProgress`), so the reading
+ *   was discarded without being kept: it may be of another account.
  */
-export type TrackedProgressFailureReason = 'missing_key' | 'key_rejected' | 'missing_scope' | 'request_failed' | 'invalid_response';
+export type TrackedProgressFailureReason = 'missing_key' | 'key_rejected' | 'missing_scope' | 'request_failed' | 'invalid_response' | 'cancelled';
 
 export type TrackedProgressRefreshResult =
 	/** `saved` is false when the store refused the reading; the reading is still good for this view. */
@@ -59,6 +61,12 @@ export class TrackedProgressService {
 	private readonly inFlight = new Map<string, Promise<TrackedProgressRefreshResult>>();
 	/** The account of the last reading made in this session, per vault. */
 	private readonly knownAccount = new Map<string, string>();
+	/**
+	 * Per vault, how many times `clearProgress` has run. A `refresh` notes it when it starts and
+	 * compares when its reading arrives: a different number means the key changed meanwhile, and
+	 * the reading, which may be of another account, is discarded instead of written.
+	 */
+	private readonly generation = new Map<string, number>();
 
 	constructor(
 		private readonly client: Pick<GuildWars2Client, 'beginOperation'>,
@@ -74,14 +82,18 @@ export class TrackedProgressService {
 	refresh(vaultId: string, trackedIds: readonly number[]): Promise<TrackedProgressRefreshResult> {
 		const current = this.inFlight.get(vaultId);
 		if (current !== undefined) return current;
+		const generation = this.generation.get(vaultId) ?? 0;
 		const flight = (async (): Promise<TrackedProgressRefreshResult> => {
 			try {
 				const read = await readTrackedProgress(this.client, trackedIds, this.now);
+				// The key changed while this reading was in flight: what came back may be of another account.
+				if ((this.generation.get(vaultId) ?? 0) !== generation) return { status: 'unavailable', reason: 'cancelled' };
 				if (read.status !== 'ok') return read;
 				this.knownAccount.set(vaultId, read.reading.accountRef);
 				return { ...read, saved: await this.store.writeProgress(vaultId, read.reading) };
 			} finally {
-				this.inFlight.delete(vaultId);
+				// Only this flight: `clearProgress` may already have let a newer one take the slot.
+				if (this.inFlight.get(vaultId) === flight) this.inFlight.delete(vaultId);
 			}
 		})();
 		this.inFlight.set(vaultId, flight);
@@ -103,10 +115,14 @@ export class TrackedProgressService {
 
 	/**
 	 * Forgets the vault's kept reading and the account this session knew for it. Meant for when the
-	 * API key changes (L2 calls it then): the kept progress may be of another account, and nothing
-	 * short of a `refresh` can tell. Never touches the API. `false` when storage failed.
+	 * API key changes (the core calls it then): the kept progress may be of another account, and
+	 * nothing short of a `refresh` can tell. A `refresh` in flight is discarded (`cancelled`) and
+	 * writes nothing; the next `refresh` is a new reading. Never touches the API. `false` when
+	 * storage failed.
 	 */
 	async clearProgress(vaultId: string): Promise<boolean> {
+		this.generation.set(vaultId, (this.generation.get(vaultId) ?? 0) + 1);
+		this.inFlight.delete(vaultId);
 		this.knownAccount.delete(vaultId);
 		return await this.store.clearProgress(vaultId);
 	}
