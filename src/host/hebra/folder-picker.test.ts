@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createTranslator } from '../../core/i18n';
 import { installDomHelpers } from '../dom-polyfill';
 import { attachFolderPicker, filterFolders, FOLDER_SUGGESTION_LIMIT, normalizeForSearch } from './folder-picker';
 
@@ -24,7 +25,7 @@ async function mountPicker(saved = 'Juegos', paths: readonly string[] = PATHS) {
 	document.body.append(input);
 	const onSelect = vi.fn();
 	const report = vi.fn();
-	const off = attachFolderPicker({ folderPaths: async () => paths, report }, input, onSelect);
+	const off = attachFolderPicker({ folderPaths: async () => paths, report, translator: () => createTranslator('es') }, input, onSelect);
 	const root = input.nextElementSibling as HTMLElement;
 	const field = root.querySelector<HTMLInputElement>('input[role="combobox"]') as HTMLInputElement;
 	const list = root.querySelector<HTMLElement>('[role="listbox"]') as HTMLElement;
@@ -184,7 +185,7 @@ describe('folder picker', () => {
 		input.value = 'Juegos';
 		document.body.append(input);
 		const report = vi.fn();
-		attachFolderPicker({ folderPaths: async () => Promise.reject(new Error('no index')), report }, input, vi.fn());
+		attachFolderPicker({ folderPaths: async () => Promise.reject(new Error('no index')), report, translator: () => createTranslator('es') }, input, vi.fn());
 		await vi.waitFor(() => expect(report).toHaveBeenCalledWith(expect.any(Error), 'pickFolder'));
 		expect(document.querySelector<HTMLInputElement>('input[role="combobox"]')?.value).toBe('Juegos');
 	});
@@ -222,7 +223,7 @@ describe('folder picker: exact match and saving', () => {
 		input.value = 'Juegos';
 		document.body.append(input);
 		const report = vi.fn();
-		const off = attachFolderPicker({ folderPaths: async () => PATHS, report, ...(savedFolder ? { savedFolder } : {}) }, input, onSelect);
+		const off = attachFolderPicker({ folderPaths: async () => PATHS, report, translator: () => createTranslator('es'), ...(savedFolder ? { savedFolder } : {}) }, input, onSelect);
 		const field = (input.nextElementSibling as HTMLElement).querySelector<HTMLInputElement>('input[role="combobox"]') as HTMLInputElement;
 		await settle();
 		/** Synchronous on purpose: what the field shows WHILE `onSelect` runs is asserted right after. */

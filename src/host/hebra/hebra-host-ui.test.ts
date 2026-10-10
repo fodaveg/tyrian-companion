@@ -3,9 +3,10 @@ import type { PluginMountFn } from 'hebra-plugin-api';
 import { createFakePluginApi } from 'hebra-plugin-api/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createTranslator } from '../../core/i18n';
 import { installDomHelpers } from '../dom-polyfill';
 import type { TyrianViewRegistration } from '../tyrian-host';
-import { createHebraTyrianUi, MISSING_FOLDER_SUFFIX, TYRIAN_COMMAND_PREFIX } from './hebra-host-ui';
+import { createHebraTyrianUi, TYRIAN_COMMAND_PREFIX } from './hebra-host-ui';
 import { createMemorySecretsBackend, createPreloadedSecrets } from './secrets';
 
 // Ported from Hebra's `src/lib/modules/tyrian/hebra-host-ui.test.ts`. Hebra ran it over its REAL
@@ -19,6 +20,7 @@ async function setup() {
 	const openNote = vi.fn();
 	const ui = createHebraTyrianUi({
 		api: fake.api,
+		translator: () => createTranslator('es'),
 		secrets: await createPreloadedSecrets(createMemorySecretsBackend()),
 		folderPaths: async () => ['Juegos', 'Juegos/GW2'],
 		openNote,
@@ -242,7 +244,7 @@ describe('modal, menu, notice and the rest', () => {
 		ui.pickFolder(missing, vi.fn());
 		const note = (missing.nextElementSibling as HTMLElement).querySelector<HTMLElement>('.hebra-module-folder-note');
 		await vi.waitFor(() => expect(note?.hidden).toBe(false));
-		expect(note?.textContent).toBe(`«Tyrian Companion»${MISSING_FOLDER_SUFFIX}`);
+		expect(note?.textContent).toBe('«Tyrian Companion» no existe en la biblioteca.');
 	});
 
 	it('openSettings, openNote, revealView and openExternal go where they belong; a failing openExternal is reported', async () => {

@@ -110,6 +110,7 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 	// After `start()`: the core's panel stays first in the plugin's settings.
 	registerUnadoptedNotes(api.ui, {
 		notes: handle.unadopted,
+		translator: handle.translator,
 		outputFolder: handle.outputFolder,
 		seededNow: handle.seed !== null,
 		openNote: (id) => api.workspace.openNote(id),
