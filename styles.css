@@ -3191,13 +3191,13 @@
 .tyrian-live-session__plot { position: relative; height: var(--tyrian-chart-h); border-bottom: 1px solid var(--background-modifier-border); touch-action: pan-y; cursor: crosshair; }
 .tyrian-live-session__plot-cursor { position: absolute; top: 0; bottom: 0; left: calc((100% - var(--size-4-1)) * var(--x, 0)); width: 1px; margin-left: -0.5px; background: var(--text-accent); pointer-events: none; }
 .tyrian-live-session__plot-cursor[data-kind="gap"] { width: calc((100% - var(--size-4-1)) * var(--w, 0)); margin-left: 0; background: color-mix(in srgb, var(--text-warning) 24%, transparent); }
-.tyrian-live-session__plot-tip { position: absolute; z-index: 1; box-sizing: border-box; max-width: calc(50% - var(--size-4-2)); padding: var(--size-4-1) var(--size-4-2); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); background: var(--background-primary); color: var(--text-normal); font-size: var(--font-smallest); line-height: var(--line-height-tight); font-variant-numeric: tabular-nums; pointer-events: none; }
+/* The bubble does not jump (David, 10 Oct 2026): a fixed height just under the maximum label, whatever the value; a fixed
+   width (the longest line it can hold, or half the plot in a narrow panel, with an ellipsis) so the text never pushes its
+   edge; and it stays on its side of the line until it no longer fits there (`liveChartTipSide` sets `data-side`). */
+.tyrian-live-session__plot-tip { position: absolute; z-index: 1; top: calc(var(--size-4-1) * 2 + 1.5em); box-sizing: border-box; width: min(14em, calc(50% - var(--size-4-2))); padding: var(--size-4-1) var(--size-4-2); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); background: var(--background-primary); color: var(--text-normal); font-size: var(--font-smallest); line-height: var(--line-height-tight); font-variant-numeric: tabular-nums; pointer-events: none; }
 .tyrian-live-session__plot-tip > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The bubble turns around near the edges: on the start side of the line in the right half, at the top while the reading is low. */
 .tyrian-live-session__plot-tip[data-side="end"] { left: calc((100% - var(--size-4-1)) * var(--x, 0) + var(--size-4-2)); }
 .tyrian-live-session__plot-tip[data-side="start"] { right: calc(100% - (100% - var(--size-4-1)) * var(--x, 0) + var(--size-4-2)); }
-.tyrian-live-session__plot-tip[data-v="top"] { top: var(--size-4-1); }
-.tyrian-live-session__plot-tip[data-v="bottom"] { bottom: var(--size-4-1); }
 .tyrian-live-session__plot-tip-time { color: var(--text-muted); }
 .tyrian-live-session__plot-tip-value { font-weight: var(--font-semibold); }
 .tyrian-live-session__plot-tip-change[data-neg] { color: var(--text-error); }
