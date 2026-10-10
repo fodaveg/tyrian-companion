@@ -1,8 +1,8 @@
 # Estado
 
-## Candidato 0.6.27: logros de Leyspring, notas de sesión legibles, gráfica con burbuja y Hebra en dos idiomas (10 oct 2026)
+## Canal 0.6.27 publicado: logros de Leyspring, notas de sesión legibles, gráfica con burbuja y Hebra en dos idiomas (10 oct 2026)
 
-**Candidata; no publicada ni etiquetada.** Parte de `ae78f66` (rama de integración de la 0.6.27 sobre el canal 0.6.26
+**Canal publicado; instalación/runtime pendiente.** Parte de `ae78f66` (rama de integración de la 0.6.27 sobre el canal 0.6.26
 publicado) y añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
 
@@ -13,8 +13,18 @@ publicado) y añade los metadatos de versión (`manifest.json`, `package.json`, 
   completa legible en las sesiones en vivo (N7), gráfica de sesión con línea y burbuja (N8), Hebra en castellano e inglés
   (HP-04, HP-08), una valoración por objeto y una reconstrucción al restaurar (Z34, M4) y reparación de bases de sesión
   en versión 1 (DU-01). Interno: `hebra-plugin-api` 1.4.0 y guardarraíles de CI y release.
-- Fuera de la candidata: DU-02 (vault renombrado o movido) queda para la 0.6.28.
-- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+- Fuera de esta versión: DU-02 (vault renombrado o movido) queda para la 0.6.28 (decisión de David del 10 oct 2026).
+- Publicación (medida el 10 oct 2026). Tag `0.6.27` sobre `bbad01f` (commit vacío de atestación; árbol
+  `d421f44862e125fe47115cef07b2b6409c6e2b0c`). CI de GitHub sobre `bbad01f`: run `38034885252`, success; `check`
+  «VEREDICTO: VERDE (9/9)», `check-guardrails` «VEREDICTO: VERDE (24/24)» y `release-package` en success; `rust-*` y
+  `h8-spike` saltados. Workflow de release: run `38035547602`, success. «BRAT release contract: PASS (version=0.6.27;
+  assets=8)» sobre la salida real de `gh release view 0.6.27 --json tagName,name,isDraft,isPrerelease,assets`, con
+  `isDraft` false e `isPrerelease` false; assets subidos (bytes): `hebra-main.mjs` 2740011, `hebra-styles.css` 124527,
+  `hebra.json` 29593, `main.js` 2008374, `manifest.json` 237, `styles.css` 98545, `tyrian-companion-0.6.27.zip` 2107466
+  y su `.sha256` 94. Quien verifique una publicación debe pedir `isPrerelease` a GitHub: sin ese campo el contrato
+  da `release-prerelease`.
+- Pendiente: verificar la instalación y la carga de la 0.6.27 en un Obsidian y un Hebra reales. Nada de eso se ha
+  comprobado.
 
 ## Cinco audits de solo lectura: evidencia en hosts reales, guardarraíles, almacenamiento local, paridad de hosts y deuda estructural (10 oct 2026)
 
