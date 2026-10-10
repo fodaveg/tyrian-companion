@@ -282,11 +282,11 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		await plugin.shutdownRuntime();
 	});
 
-	it('a folder moved outside Obsidian (new app id, empty local storage, same token) warns and starts in consult', async () => {
+	it('a folder moved outside Obsidian (new app id, empty local storage, same mark) warns and starts in consult', async () => {
 		const world = device();
 		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
 		await first.shutdownRuntime();
-		expect(world.data?.vaultToken).toMatch(/^[A-Za-z0-9-]{16,64}$/u);
+		expect(world.data?.vaultMark).toMatch(/^[A-Za-z0-9-]{16,64}$/u);
 		world.local.clear();
 		const second = await boot(world, '/vaults/elsewhere', { apiKeySecret: 'gw2-main' });
 
@@ -298,17 +298,17 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		await second.shutdownRuntime();
 	});
 
-	it('a vault with no token gets one and does not warn', async () => {
+	it('a vault with no mark gets one and does not warn', async () => {
 		const world = device();
 		const plugin = await boot(world, '/vaults/brand-new', { apiKeySecret: 'gw2-main' });
 
 		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
-		expect(world.data?.vaultToken).toMatch(/^[A-Za-z0-9-]{16,64}$/u);
+		expect(world.data?.vaultMark).toMatch(/^[A-Za-z0-9-]{16,64}$/u);
 		expect(world.notices).toEqual([]);
 		await plugin.shutdownRuntime();
 	});
 
-	it('another device of the same synced vault (same token, nothing recorded on it) does not warn', async () => {
+	it('another device of the same synced vault (same mark, nothing recorded on it) does not warn', async () => {
 		const first = device();
 		await (await boot(first, '/vaults/shared', { apiKeySecret: 'gw2-main' })).shutdownRuntime();
 		const other = device();
@@ -321,17 +321,17 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		await plugin.shutdownRuntime();
 	});
 
-	it('a host whose identity is not a path creates no token and detects nothing', async () => {
+	it('a host whose identity is not a path creates no mark and detects nothing', async () => {
 		const world = device();
 		const plugin = await boot(world, '/vaults/hebra-like', { apiKeySecret: 'gw2-main' }, true, { pathBoundIdentity: false });
 
 		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
-		expect(world.data?.vaultToken ?? '').toBe('');
+		expect(world.data?.vaultMark ?? '').toBe('');
 		expect(world.local.get(IDENTITY_KEY)).toBeUndefined();
 		await plugin.shutdownRuntime();
 	});
 
-	it('a vault copied whole (same token, own local storage) opened alternately never asks again once the copy is answered', async () => {
+	it('a vault copied whole (same mark, own local storage) opened alternately never asks again once the copy is answered', async () => {
 		const original = device();
 		const first = await boot(original, '/vaults/v1', { apiKeySecret: 'gw2-main' });
 		await first.updateCollectorMode('collector');
@@ -384,14 +384,14 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		]);
 	});
 
-	it('a token that changes under an intact local storage reaches the registry, so a later move outside Obsidian is detected', async () => {
+	it('a mark that changes under an intact local storage reaches the registry, so a later move outside Obsidian is detected', async () => {
 		const world = device();
 		const first = await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' });
 		await first.updateCollectorMode('consult');
 		await first.shutdownRuntime();
-		// What Sync leaves after two devices created their token at once, or an older build stripped it and this one made another.
+		// What Sync leaves after two devices created their mark at once, or an older build stripped it and this one made another.
 		const crossed = crypto.randomUUID();
-		world.data = { ...world.data, vaultToken: crossed };
+		world.data = { ...world.data, vaultMark: crossed };
 		const second = await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' });
 		expect(second.getVaultRelocation()).toEqual({ pending: false });
 		await second.shutdownRuntime();
@@ -515,8 +515,8 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		try {
 			const world = device();
 			await (await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' })).shutdownRuntime();
-			// The local storage still remembers /vaults/a; the token is gone from data.json (an older build stripped it).
-			world.data = { ...world.data, vaultToken: undefined };
+			// The local storage still remembers /vaults/a; the mark is gone from data.json (an older build stripped it).
+			world.data = { ...world.data, vaultMark: undefined };
 			const open = world.factory.open.bind(world.factory);
 			vi.spyOn(world.factory, 'open').mockImplementation((name: string, version?: number) => {
 				if (name !== VAULT_REGISTRY_DB) return open(name, version);
@@ -756,17 +756,17 @@ function preferencesRuntime(plugin: RelocationHarness): { loadCached(): Promise<
 	return (plugin as unknown as { inventoryPreferences: { loadCached(): Promise<unknown> } }).inventoryPreferences;
 }
 
-/** What the per-device registry holds for a token. */
-async function registryEntry(world: Device, token: string): Promise<unknown> {
+/** What the per-device registry holds for a mark. */
+async function registryEntry(world: Device, mark: string): Promise<unknown> {
 	const database = await new Promise<IDBDatabase>((resolve, reject) => {
 		const request = world.factory.open(VAULT_REGISTRY_DB, 1);
-		request.onupgradeneeded = () => { request.result.createObjectStore('tokens-v1'); };
+		request.onupgradeneeded = () => { request.result.createObjectStore('marks-v1'); };
 		request.onsuccess = () => { resolve(request.result); };
 		request.onerror = () => { reject(new Error('registry could not be opened')); };
 	});
 	try {
 		return await new Promise<unknown>((resolve, reject) => {
-			const request = database.transaction('tokens-v1', 'readonly').objectStore('tokens-v1').get(token);
+			const request = database.transaction('marks-v1', 'readonly').objectStore('marks-v1').get(mark);
 			request.onsuccess = () => { resolve(request.result as unknown); };
 			request.onerror = () => { reject(new Error('registry could not be read')); };
 		});

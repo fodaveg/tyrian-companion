@@ -156,7 +156,7 @@ import { assemblePriceHistory } from './assemble-price-history';
 import { CollectorHeartbeat } from './collector-status';
 import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
-import { adoptVaultData, detectVaultRelocation, isVaultToken, rememberedPreviousId, settleVaultRelocation, type VaultIdentityStores, type VaultRelocation } from './vault-relocation';
+import { adoptVaultData, detectVaultRelocation, isVaultMark, rememberedPreviousId, settleVaultRelocation, type VaultIdentityStores, type VaultRelocation } from './vault-relocation';
 import { DEFAULT_VIEW_PLACEMENT, loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import {
@@ -1625,21 +1625,21 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private vaultIdentityStores(): VaultIdentityStores {
 		return {
 			storage: this.host.localStorage, factory: this.host.kv.indexedDB,
-			token: isVaultToken(this.settings.vaultToken) ? this.settings.vaultToken : '',
+			mark: isVaultMark(this.settings.vaultMark) ? this.settings.vaultMark : '',
 		};
 	}
 
 	/**
-	 * DU-02: the vault's token, created on first need and saved in the plugin's data (which travels with the folder). If a
+	 * DU-02: the vault's mark, created on first need and saved in the plugin's data (which travels with the folder). If a
 	 * device that syncs the same vault saved one in the meantime, that one is kept.
 	 */
-	private async ensureVaultToken(): Promise<void> {
-		if (isVaultToken(this.settings.vaultToken)) return;
+	private async ensureVaultMark(): Promise<void> {
+		if (isVaultMark(this.settings.vaultMark)) return;
 		await this.serializeSettingsWrite(async () => {
 			const base = await this.loadSettingsBase();
-			const vaultToken = isVaultToken(base.vaultToken) ? base.vaultToken : crypto.randomUUID();
-			if (base.vaultToken !== vaultToken) await this.host.settings.save({ ...base, vaultToken });
-			this.settings = { ...this.settings, vaultToken };
+			const vaultMark = isVaultMark(base.vaultMark) ? base.vaultMark : crypto.randomUUID();
+			if (base.vaultMark !== vaultMark) await this.host.settings.save({ ...base, vaultMark });
+			this.settings = { ...this.settings, vaultMark };
 		});
 	}
 
@@ -1656,7 +1656,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// The registry update is taken over INSIDE the bounded call: a detection that finishes after the start gave up still
 			// has its failure observed.
 			const detection = await new StorageDeadline().bounded(async () => {
-				await this.ensureVaultToken();
+				await this.ensureVaultMark();
 				const found = await detectVaultRelocation(this.vaultIdentityStores(), vaultId);
 				const write = found.registryWrite;
 				if (write !== null) {

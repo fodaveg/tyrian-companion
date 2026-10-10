@@ -11,7 +11,7 @@
  * - the host's per-device local storage (`TyrianLocalStoragePort`, Obsidian's `loadLocalStorage`). Its key is
  *   anchored to the vault's `appId`, which Obsidian KEEPS when the folder is renamed or moved from its vault
  *   switcher and RENEWS when the folder is moved outside Obsidian and opened again;
- * - a per-device registry `vault token -> last id`, in its own origin-wide IndexedDB. The token
+ * - a per-device registry `vault mark -> last id`, in its own origin-wide IndexedDB. The mark
  *   is a random string kept in the plugin's data (`data.json`, which travels with the folder), so it follows the
  *   folder through any move and identifies the vault, not the device.
  * The local storage is trusted FIRST: it is each copy's own (it goes by the `appId`), so when it says "this id, nothing
@@ -19,11 +19,11 @@
  * it. Otherwise the registry is read and the local storage is the fallback; both are kept up to date.
  *
  * Covered: a rename or move from the vault switcher; a folder moved outside Obsidian (when the vault already had
- * its token, i.e. it ran a version with this module at least once, whatever token it carries now, because every start
- * that finds the local storage intact or empty puts the current token in the registry); a vault COPIED whole, which
- * shares the token with the original: the first opening of the copy asks once (the registry names the original),
+ * its mark, i.e. it ran a version with this module at least once, whatever mark it carries now, because every start
+ * that finds the local storage intact or empty puts the current mark in the registry); a vault COPIED whole, which
+ * shares the mark with the original: the first opening of the copy asks once (the registry names the original),
  * and once answered, each copy's own local storage settles every later opening without a question. NOT covered: a
- * vault from before the token that is moved outside Obsidian on its first start with it (nothing remembers it); a
+ * vault from before the mark that is moved outside Obsidian on its first start with it (nothing remembers it); a
  * copy opened for the first time that is never answered (it asks on every start, in consult, until it is answered); a
  * detection that lost the start deadline and ends after the answer (it can write the old question back into the registry
  * and the local memory); a copy that was answered followed by the ORIGINAL being moved outside Obsidian (the registry then names the copy's id, so
@@ -47,9 +47,9 @@ import type { CollectorMode } from '../core/settings';
 import type { TyrianLocalStoragePort } from '../host/tyrian-host';
 import { readStoredCollectorMode } from './collector-instance';
 
-/** The per-device registry `vault token -> last id`: its own database, so it never shares a transaction queue with the mode. */
+/** The per-device registry `vault mark -> last id`: its own database, so it never shares a transaction queue with the mode. */
 export const VAULT_REGISTRY_DB = 'tyrian-companion-vault-registry';
-const VAULT_REGISTRY_STORE = 'tokens-v1';
+const VAULT_REGISTRY_STORE = 'marks-v1';
 
 function openRegistry(factory: IDBFactory): Promise<IDBDatabase> {
 	return openIndexedDb({
@@ -93,7 +93,7 @@ async function writeRegistry(factory: IDBFactory, key: string, value: unknown): 
 export const VAULT_IDENTITY_KEY = 'tyrian-companion:vault-identity';
 
 const VAULT_ID = /^[a-f0-9]{64}$/u;
-const TOKEN = /^[A-Za-z0-9-]{16,64}$/u;
+const MARK = /^[A-Za-z0-9-]{16,64}$/u;
 
 /** What the device remembers: the last id used and, while the user has not answered, the id the data was under. */
 interface VaultIdentityRecord {
@@ -114,16 +114,16 @@ export interface VaultAdoption {
 	readonly mode: CollectorMode | null;
 }
 
-/** Where the identity is remembered: the host's local storage and, for a vault with a token, the device registry. */
+/** Where the identity is remembered: the host's local storage and, for a vault with a mark, the device registry. */
 export interface VaultIdentityStores {
 	readonly storage: TyrianLocalStoragePort | undefined;
 	readonly factory: IDBFactory;
-	/** The vault's token; empty when the host keeps none. */
-	readonly token: string;
+	/** The vault's mark; empty when the host keeps none. */
+	readonly mark: string;
 }
 
-export function isVaultToken(value: unknown): value is string {
-	return typeof value === 'string' && TOKEN.test(value);
+export function isVaultMark(value: unknown): value is string {
+	return typeof value === 'string' && MARK.test(value);
 }
 
 function parseRecord(raw: unknown): VaultIdentityRecord | null {
@@ -157,7 +157,7 @@ export interface VaultDetection {
 /** Remembers `record` in the local storage now and in the registry in the background. */
 function remember(stores: VaultIdentityStores, record: VaultIdentityRecord, relocation: VaultRelocation | null): VaultDetection {
 	stores.storage?.save(VAULT_IDENTITY_KEY, record);
-	return { relocation, registryWrite: stores.token === '' ? null : writeRegistry(stores.factory, stores.token, record) };
+	return { relocation, registryWrite: stores.mark === '' ? null : writeRegistry(stores.factory, stores.mark, record) };
 }
 
 /**
@@ -167,9 +167,9 @@ function remember(stores: VaultIdentityStores, record: VaultIdentityRecord, relo
  */
 export async function detectVaultRelocation(stores: VaultIdentityStores, currentId: string): Promise<VaultDetection> {
 	const none: VaultDetection = { relocation: null, registryWrite: null };
-	if (stores.storage === undefined && stores.token === '') return none;
+	if (stores.storage === undefined && stores.mark === '') return none;
 	// This copy's own memory first: "this id, nothing pending" settles it without the registry (a vault copied whole
-	// shares the token, so the registry may be naming the other copy).
+	// shares the mark, so the registry may be naming the other copy).
 	const local = stores.storage === undefined ? null : parseRecord(stores.storage.load(VAULT_IDENTITY_KEY));
 	if (local !== null && local.vaultId === currentId && local.pendingFrom === undefined) {
 		return remember(stores, { vaultId: currentId }, null);
@@ -182,7 +182,7 @@ export async function detectVaultRelocation(stores: VaultIdentityStores, current
 	if (local !== null && local.vaultId === currentId && local.pendingFrom !== undefined && local.pendingFrom !== currentId) {
 		return { relocation: { previousVaultId: local.pendingFrom }, registryWrite: null };
 	}
-	const fromRegistry = stores.token === '' ? null : parseRecord(await readRegistry(stores.factory, stores.token));
+	const fromRegistry = stores.mark === '' ? null : parseRecord(await readRegistry(stores.factory, stores.mark));
 	const saved = fromRegistry ?? local;
 	if (saved === null) return remember(stores, { vaultId: currentId }, null);
 	if (saved.vaultId === currentId) {
@@ -208,7 +208,7 @@ export async function detectVaultRelocation(stores: VaultIdentityStores, current
 export async function settleVaultRelocation(
 	stores: VaultIdentityStores, currentId: string, mode: { save: () => Promise<void>; undo: () => Promise<void> },
 ): Promise<void> {
-	if (stores.token !== '') await writeRegistry(stores.factory, stores.token, { vaultId: currentId });
+	if (stores.mark !== '') await writeRegistry(stores.factory, stores.mark, { vaultId: currentId });
 	await mode.save();
 	try {
 		stores.storage?.save(VAULT_IDENTITY_KEY, { vaultId: currentId });

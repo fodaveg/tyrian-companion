@@ -223,9 +223,9 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 			// Stored locally: a later read ignores whatever seed it is offered.
 			const stored = await loadCollectorMode(world.factory, world.plugin.vaultId!, () => 'consult');
 			expect(stored).toBe(expected);
-			// Seeding wrote nothing to data.json but the vault token (DU-02), once.
+			// Seeding wrote nothing to data.json but the vault mark (DU-02), once.
 			expect(world.saved).toHaveLength(1);
-			expect((world.saved[0] as { vaultToken: string }).vaultToken).toMatch(/^[A-Za-z0-9-]{16,64}$/u);
+			expect((world.saved[0] as { vaultMark: string }).vaultMark).toMatch(/^[A-Za-z0-9-]{16,64}$/u);
 			await world.plugin.shutdownRuntime();
 			vi.unstubAllGlobals();
 		}
@@ -245,7 +245,7 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 
 		expect(world.plugin.collectorMode).toBe('consult');
 		await expect(loadCollectorMode(world.factory, world.plugin.vaultId!, () => 'collector')).resolves.toBe('consult');
-		// Only the vault token (DU-02) was ever written, at the start; the mode change wrote nothing.
+		// Only the vault mark (DU-02) was ever written, at the start; the mode change wrote nothing.
 		expect(world.saved).toHaveLength(1);
 		expect(world.plugin.settings).toEqual(settingsBefore);
 		// And it applies without a reload: no heartbeat, no capture.
