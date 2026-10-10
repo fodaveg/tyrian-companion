@@ -1,4 +1,5 @@
-import { inspectLiveSessionNote } from './live-session-note-renderer';
+import { inspectLiveSessionNote, type LiveSessionNoteInspection } from './live-session-note-renderer';
+import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { canonicalJson } from '../core/canonical-sha256';
 import { isFarmingGoal, isFarmingGoalProgress, type FarmingGoalV1, type FarmingGoalProgress } from './farming-goal';
 import { parseDurableSessionComparison, parseSessionSackObservation, type DurableSessionComparisonMetadata, type SessionSackObservation } from './session-comparison-metadata';
@@ -234,6 +235,142 @@ interface ScrubPlanItem {
 	scrubbedContent: string;
 }
 
+/** What the live history makes of one note; `ignored` is a note that is neither a live session nor a broken durable one. */
+export type LiveHistoryNoteOutcome = { kind: 'invalid' } | { kind: 'unsupported' } | { kind: 'ignored' } | { kind: 'live'; session: StoredLiveSessionPayloadV1 };
+
+/** One read of a note, inspected for both histories at once (Z24). `liveBytes` is the text the live history counts against its cache. */
+export interface SharedNoteRead {
+	readonly content: string;
+	readonly durable: DurableSessionNoteInspection;
+	readonly live: LiveHistoryNoteOutcome;
+	readonly liveBytes: number;
+}
+
+/**
+ * Hands a history every note another history of the same run read. `stale` is true when the host named the note in a change
+ * after the read began: the text may already be the old one, and a history that trusts change events must not keep it.
+ */
+export type SharedNoteReadPeer = (file: SessionHistoryFile, read: SharedNoteRead, stale: boolean) => void;
+
+/**
+ * How a read is shared:
+ * - `join`: a read of the same note already under way is reused, and the result is handed to every peer;
+ * - `fresh`: the note is read again even when a read is under way, and the result is still handed to the peers;
+ * - `private`: a plain read, handed to nobody and following no change (the export's whole-vault read).
+ */
+export type SharedNoteReadMode = 'join' | 'fresh' | 'private';
+
+/**
+ * The reads of session notes in one run, shared by the durable history and the live one (Z24). Before it, opening the history
+ * and listing the saved live sessions each read every note of the vault: twice the vault on the first open. Each read is now
+ * inspected for both, and the other history keeps the result under its own rule (the durable one by change events, the live
+ * one by mtime), so neither reads the note again. Nothing here decides which notes count: every listed note is still read
+ * once, wherever it is, and corrupt or duplicated notes are found exactly as before.
+ *
+ * A read under way is only joined on a host that reports every change (`SessionHistoryVault.onNoteChange`), because a change
+ * drops it: a note edited while it was being read is read again by whoever asks next.
+ */
+export class SessionNoteReads {
+	private readonly peers = new Set<SharedNoteReadPeer>();
+	private readonly changeFollowers = new Set<(change: SessionHistoryNoteChange) => void>();
+	private readonly flights = new Map<string, { token: object; read: Promise<SharedNoteRead> }>();
+	private stopListening: (() => void) | null = null;
+	/** Counts every change the host has reported; a read compares it when it ends. */
+	private changes = 0;
+	/** The count at which each note last changed, kept only while some read is under way. */
+	private readonly lastChange = new Map<string, number>();
+	private pending = 0;
+	/** Moves on every `dispose`: a read that outlives one is handed to nobody. */
+	private generation = 0;
+
+	constructor(private readonly vault: SessionHistoryVault) {}
+
+	/** True on a host that reports every change, and from the first call on those changes are followed. */
+	listen(): boolean {
+		if (this.vault.onNoteChange === undefined) return false;
+		this.stopListening ??= this.vault.onNoteChange((change) => { this.noteChanged(change); });
+		return true;
+	}
+
+	/** True while the host's changes are followed: an inspection kept since then is current until a change names its note. */
+	listening(): boolean { return this.stopListening !== null; }
+
+	/** `peer` receives every shared read from now on, its own included. */
+	share(peer: SharedNoteReadPeer): void { this.peers.add(peer); }
+
+	/** `follower` hears every change the host reports while the reads listen. */
+	followChanges(follower: (change: SessionHistoryNoteChange) => void): void { this.changeFollowers.add(follower); }
+
+	read(file: SessionHistoryFile, mode: SharedNoteReadMode): Promise<SharedNoteRead> {
+		if (mode === 'private') return this.readOnce(file, null);
+		const shareable = this.listen();
+		const flying = shareable && mode === 'join' ? this.flights.get(file.path) : undefined;
+		if (flying !== undefined) return flying.read;
+		const token = { done: false };
+		const read = this.readOnce(file, token);
+		// A read that failed before its first await has already finished: it is never offered to a later caller.
+		if (shareable && !token.done) this.flights.set(file.path, { token, read });
+		return read;
+	}
+
+	dispose(): void {
+		this.generation += 1;
+		this.stopListening?.();
+		this.stopListening = null;
+		this.flights.clear();
+		this.lastChange.clear();
+	}
+
+	/** Reads and inspects one note; `token` is null for a private read, which nobody else sees. */
+	private async readOnce(file: SessionHistoryFile, token: { done: boolean } | null): Promise<SharedNoteRead> {
+		const generation = this.generation;
+		const since = this.changes;
+		this.pending += 1;
+		try {
+			const content = await this.vault.read(file);
+			const read = await inspectNoteForHistories(content);
+			if (token !== null && generation === this.generation) {
+				const stale = (this.lastChange.get(file.path) ?? 0) > since;
+				for (const peer of this.peers) peer(file, read, stale);
+			}
+			return read;
+		} finally {
+			if (token !== null) {
+				token.done = true;
+				if (this.flights.get(file.path)?.token === token) this.flights.delete(file.path);
+			}
+			this.pending -= 1;
+			if (this.pending === 0) this.lastChange.clear();
+		}
+	}
+
+	private noteChanged(change: SessionHistoryNoteChange): void {
+		this.changes += 1;
+		for (const path of change.oldPath === undefined ? [change.path] : [change.path, change.oldPath]) {
+			if (this.pending > 0) this.lastChange.set(path, this.changes);
+			this.flights.delete(path);
+		}
+		for (const follower of this.changeFollowers) follower(change);
+	}
+}
+
+/** Both histories' inspection of one note text, the live one computed once and handed to the durable one. */
+async function inspectNoteForHistories(content: string): Promise<SharedNoteRead> {
+	const live = await inspectLiveSessionNote(content);
+	const durable = await inspectDurableSessionNote(content, live);
+	const outcome: LiveHistoryNoteOutcome = live.status === 'invalid' ? { kind: 'invalid' }
+		: live.status === 'unsupported' ? { kind: 'unsupported' }
+			: live.status === 'non_candidate' ? (durable.status === 'invalid' ? { kind: 'invalid' } : { kind: 'ignored' })
+				: { kind: 'live', session: live.session };
+	return { content, durable, live: outcome, liveBytes: outcome.kind === 'live' ? content.length : 0 };
+}
+
+/** The live history's inspection of one note, for a live history that shares no reads. */
+export async function inspectLiveHistoryNote(content: string): Promise<{ outcome: LiveHistoryNoteOutcome; bytes: number }> {
+	const read = await inspectNoteForHistories(content);
+	return { outcome: read.live, bytes: read.liveBytes };
+}
+
 /** Explicit, Vault-wide export of validated durable session notes. */
 export class SessionHistoryService {
 	private exportFlight: Promise<SessionHistoryExportResult> | null = null;
@@ -251,21 +388,22 @@ export class SessionHistoryService {
 	 * an edit made while the host was closed is read on the next start; an edit a running host
 	 * fails to report is the one case it cannot see, and `rebuild` (the explicit "refresh history")
 	 * reads past it.
+	 *
+	 * Since Z24 the index also keeps what the live history read (`noteReads`), under the same rule: a note named in a change
+	 * while it was being read is not kept, and nothing read before a `dispose` is.
 	 */
 	private readonly index = new Map<string, DurableSessionNoteInspection>();
-	private stopListening: (() => void) | null = null;
-	/** Counts every change the host has reported; an index scan compares it around each read. */
-	private noteChanges = 0;
-	/** The count at which each note last changed, kept only while an index scan is reading. */
-	private readonly changedDuringScan = new Map<string, number>();
-	private indexScans = 0;
-	/** Moves on every `dispose`, so a scan still reading across one remembers nothing. */
-	private indexLifetime = 0;
+	/** Every read of a note this history makes, shared with the live history of the same run (Z24). */
+	readonly noteReads: SessionNoteReads;
 
 	constructor(
 		private readonly vault: SessionHistoryVault,
 		private readonly diagnostics?: LocalDebugActionPort,
-	) {}
+	) {
+		this.noteReads = new SessionNoteReads(vault);
+		this.noteReads.followChanges((change) => { this.forgetNote(change); });
+		this.noteReads.share((file, read, stale) => { this.keepRead(file, read, stale); });
+	}
 
 	/**
 	 * Records the only local trace a durable-Vault rejection leaves here: every catch below
@@ -284,11 +422,8 @@ export class SessionHistoryService {
 	 * (`SessionHistoryScanSource`); the answer is the one a scan that reads them all gives.
 	 */
 	async scan(source: SessionHistoryScanSource = 'vault'): Promise<SessionHistoryScan> {
-		let index: Map<string, DurableSessionNoteInspection> | null = null;
-		const lifetime = this.indexLifetime;
 		try {
-			index = source === 'vault' ? null : this.openIndex();
-			if (index !== null) this.indexScans += 1;
+			const index = source === 'vault' ? null : this.openIndex();
 			if (source === 'rebuild') index?.clear();
 			const sessions: DurableSessionHistoryRecord[] = [];
 			let ignored = 0;
@@ -303,15 +438,10 @@ export class SessionHistoryService {
 			for (const file of files) {
 				let decoded = index?.get(file.path);
 				if (decoded === undefined) {
-					const startedAt = this.noteChanges;
-					let content: string;
-					try { content = await this.vault.read(file); } catch { invalid += 1; continue; }
-					decoded = await decodeDurableSession(content);
-					// A note named in a change while it was being read is not remembered: the text
-					// just inspected may already be the old one. Neither is a read that failed, nor one
-					// that outlived a `dispose`, after which nobody was listening.
-					if (index !== null && lifetime === this.indexLifetime
-						&& (this.changedDuringScan.get(file.path) ?? 0) <= startedAt) index.set(file.path, decoded);
+					// The export reads on its own; the history's loads share the read with the live history, which keeps it too.
+					// What is remembered is decided in `keepRead`, never here.
+					try { decoded = (await this.noteReads.read(file, source === 'vault' ? 'private' : source === 'rebuild' ? 'fresh' : 'join')).durable; }
+					catch { invalid += 1; continue; }
 				}
 				// The path is where the note is NOW, so it is stamped on the way out and never kept in the index.
 				if (decoded.status === 'ok') sessions.push({ ...decoded.session, notePath: file.path });
@@ -329,11 +459,6 @@ export class SessionHistoryService {
 		} catch (error) {
 			this.logFailure('vault_read', 'scan', error);
 			return { status: 'conflict', invalid: 1, duplicates: 0 };
-		} finally {
-			if (index !== null) {
-				this.indexScans -= 1;
-				if (this.indexScans === 0) this.changedDuringScan.clear();
-			}
 		}
 	}
 
@@ -342,39 +467,55 @@ export class SessionHistoryService {
 	 * to report them (`SessionHistoryVault.onNoteChange`), where nothing may be kept between scans.
 	 */
 	private openIndex(): Map<string, DurableSessionNoteInspection> | null {
-		if (this.vault.onNoteChange === undefined) return null;
-		this.stopListening ??= this.vault.onNoteChange((change) => { this.forgetNote(change); });
-		return this.index;
+		return this.noteReads.listen() ? this.index : null;
 	}
 
 	/** Drops what is remembered about a changed note. It reads nothing: the next index scan does. */
 	private forgetNote(change: SessionHistoryNoteChange): void {
-		this.noteChanges += 1;
-		for (const path of change.oldPath === undefined ? [change.path] : [change.path, change.oldPath]) {
-			this.index.delete(path);
-			if (this.indexScans > 0) this.changedDuringScan.set(path, this.noteChanges);
-		}
+		for (const path of change.oldPath === undefined ? [change.path] : [change.path, change.oldPath]) this.index.delete(path);
 	}
 
-	/** Looks up one durable note for startup recovery without ever entering a write path. */
+	/**
+	 * Keeps what a shared read decoded, whichever history made it. Only while the host's changes are followed, and never a read
+	 * the host named in a change while it was under way: the text just inspected may already be the old one.
+	 */
+	private keepRead(file: SessionHistoryFile, read: SharedNoteRead, stale: boolean): void {
+		if (stale || !this.noteReads.listening()) return;
+		this.index.set(file.path, read.durable);
+	}
+
+	/**
+	 * Looks up one durable note for startup recovery without ever entering a write path. It goes through the index (Z24): a
+	 * note already inspected in this run is not read again, and what it reads is kept for the history and the live list, so
+	 * their first load after it reads nothing. Every listed note still counts, wherever it is.
+	 */
 	async readSession(sessionRef: string): Promise<DurableSessionLookup> {
 		try {
-			const matches: Extract<DurableSessionLookup, { status: 'found' }>[] = [];
+			const index = this.openIndex();
+			const matches: Array<{ file: SessionHistoryFile; content: string | null }> = [];
 			let unreadable = false;
 			for (const file of this.vault.markdownFiles()) {
-				let content: string;
-				try { content = await this.vault.read(file); }
-				catch (error) { unreadable = true; this.logFailure('vault_read', 'read_session', error); continue; }
-				const decoded = await decodeDurableSession(content);
+				let decoded = index?.get(file.path);
+				let content: string | null = null;
+				if (decoded === undefined) {
+					let read: SharedNoteRead;
+					try { read = await this.noteReads.read(file, 'join'); }
+					catch (error) { unreadable = true; this.logFailure('vault_read', 'read_session', error); continue; }
+					decoded = read.durable;
+					content = read.content;
+				}
 				if (decoded.status !== 'ok' || decoded.session.sessionRef !== sessionRef) continue;
-				matches.push({
-					status: 'found', path: file.path, session: decoded.session,
-					loot: await inspectStoredSessionLootSummary(content),
-				});
+				matches.push({ file, content });
 			}
 			if (matches.length > 1) return { status: 'conflict' };
-			if (matches.length === 1) return matches[0]!;
-			return { status: unreadable ? 'unavailable' : 'missing' };
+			if (matches.length === 0) return { status: unreadable ? 'unavailable' : 'missing' };
+			// An inspection taken from the index carries no text: the one note found is read for its loot summary, and decoded
+			// again from that text so the session and the summary come from the same bytes.
+			const match = matches[0]!;
+			const content = match.content ?? await this.vault.read(match.file);
+			const decoded = await decodeDurableSession(content);
+			if (decoded.status !== 'ok' || decoded.session.sessionRef !== sessionRef) return { status: 'missing' };
+			return { status: 'found', path: match.file.path, session: decoded.session, loot: await inspectStoredSessionLootSummary(content) };
 		} catch (error) {
 			this.logFailure('vault_read', 'read_session', error);
 			return { status: 'unavailable' };
@@ -431,10 +572,8 @@ export class SessionHistoryService {
 
 	dispose(): void {
 		this.scrubPlans.clear();
-		this.stopListening?.();
-		this.stopListening = null;
+		this.noteReads.dispose();
 		this.index.clear();
-		this.indexLifetime += 1;
 	}
 
 	/** Uses only process-local, byte-bound preview capabilities. */
@@ -586,9 +725,10 @@ export class SessionHistoryService {
 }
 
 /** Canonical durable-note inspector shared by history and opt-in feature backfills. */
-export async function inspectDurableSessionNote(content: string): Promise<DurableSessionNoteInspection> {
+/** `live` is the note's live inspection when the caller already has it (`SessionNoteReads`); it is computed here otherwise. */
+export async function inspectDurableSessionNote(content: string, known?: LiveSessionNoteInspection): Promise<DurableSessionNoteInspection> {
 	if (declaresOtherTyrianNoteKind(content)) return { status: 'non_candidate' };
-	const live = await inspectLiveSessionNote(content);
+	const live = known ?? await inspectLiveSessionNote(content);
 	if (live.status === 'ok') return { status: 'non_candidate' };
 	if (live.status === 'invalid') return { status: 'invalid' };
 	// A live note of a newer payload format is none of the durable (API) history's business, and no reason to fail it.

@@ -119,6 +119,8 @@ export function createRuntimeHarness(options: RuntimeHarnessOptions = {}): Runti
 		getMarkdownFiles: vi.fn(() => files()),
 		getFiles: vi.fn(() => files()),
 		on: vi.fn(() => ({ off: () => undefined })),
+		// Obsidian's own pair to `on`: the session history detaches its change listener with it on unload.
+		offref: vi.fn(),
 		read: vi.fn(async (file: TFile) => notes.get(file.path) ?? ''),
 		createFolder: vi.fn(async () => undefined),
 		create: vi.fn(async (path: string, content: string) => {

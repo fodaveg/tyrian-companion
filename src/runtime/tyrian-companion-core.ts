@@ -1441,7 +1441,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
 		this.sessionNotes = sessionServices.sessionNotes;
 		this.sessionHistory = sessionServices.sessionHistory;
-		this.liveHistory = new LiveSessionHistoryService(sessionHistoryVault(host.vault));
+		// Z24: the live list reads through the durable history's reads, so a note is read once per run for both.
+		this.liveHistory = new LiveSessionHistoryService(sessionHistoryVault(host.vault), undefined, this.sessionHistory.noteReads);
 		this.liveSummaries = this.createLiveSummaries(labelledVault(host.vault, 'Session summary note'));
 		this.liveSessions = new LiveSessionLifecycle({
 			coordinator, persistence: sessionServices.runtimeStore, enabled: () => !consulting(this),

@@ -3,8 +3,8 @@ export type { LiveSessionSetAside } from './live-session-comparison';
 import { settlePersistedIngameReceipt } from '../alerts/alert-ingame-receipt';
 import { buildLiveChart, GOLD_CURRENCY_ID, liveItemValueCopper } from './live-session-reducer';
 import type { LivePriceBasis, LiveSessionViewV1, LiveTotalV1 } from './live-session-model';
-import { inspectLiveSessionNote } from './live-session-note-renderer';
-import { inspectDurableSessionNote, type SessionHistoryVault } from './session-history';
+import { inspectLiveHistoryNote, type LiveHistoryNoteOutcome, type SessionHistoryFile, type SessionHistoryVault, type SessionNoteReads,
+	type SharedNoteRead } from './session-history';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { exportLiveSession, type LiveSessionExportFormat, type LiveSessionExportKind, type LiveSessionExportResult, type LiveSessionExportPayload } from './live-session-export';
 
@@ -47,15 +47,27 @@ export type LiveSessionComparisonLoad = { status: 'ok'; comparison: LiveSessionC
 export type LiveSessionHistorySelection = { status: 'found'; session: StoredLiveSessionPayloadV1 }
 	| { status: 'missing' | 'conflict' | 'unavailable' };
 
-type NoteOutcome = { kind: 'invalid' } | { kind: 'unsupported' } | { kind: 'ignored' } | { kind: 'live'; session: StoredLiveSessionPayloadV1 };
+type NoteOutcome = LiveHistoryNoteOutcome;
 
 /** Explicit history actions read synced notes, so a new machine needs no old IDB journal. */
 export class LiveSessionHistoryService {
 	/** What each listed note inspected to, against the mtime it had: an unchanged note is not read again. Never kept for a note without a real mtime. */
 	private readonly inspected = new Map<string,{ mtime: number; outcome: NoteOutcome; bytes: number }>();
 	private inspectedBytes = 0;
-	/** `cacheBytes` bounds the note text behind the remembered session payloads; a note that would exceed it is simply not remembered. */
-	constructor(private readonly vault: SessionHistoryVault, private readonly cacheBytes = 32 * 1024 * 1024) {}
+	/**
+	 * `cacheBytes` bounds the note text behind the remembered session payloads; a note that would exceed it is simply not remembered.
+	 * `reads` are the durable history's shared reads (Z24): this history reads through them, and keeps what the durable history
+	 * reads, so the same note is not read twice in a run. Without them it reads on its own, as before.
+	 */
+	constructor(private readonly vault: SessionHistoryVault, private readonly cacheBytes = 32 * 1024 * 1024,
+		private readonly reads?: SessionNoteReads) {
+		reads?.share((file, read) => { this.keepRead(file, read); });
+	}
+	/** Keeps another history's read of a note under this history's own rule: a real mtime, and the same budget. */
+	private keepRead(file: SessionHistoryFile, read: SharedNoteRead): void {
+		if (file.mtime === undefined || file.mtime <= 0 || this.inspected.get(file.path)?.mtime === file.mtime) return;
+		this.remember(file.path, { mtime: file.mtime, outcome: read.live, bytes: read.liveBytes });
+	}
 	private forget(path: string): void {
 		const known = this.inspected.get(path); if (known === undefined) return;
 		this.inspectedBytes -= known.bytes; this.inspected.delete(path);
@@ -99,12 +111,13 @@ export class LiveSessionHistoryService {
 		return exportLiveSession(this.vault,folder,kind,format,session);
 	}
 
-	private async inspect(content: string): Promise<NoteOutcome> {
-		const live = await inspectLiveSessionNote(content);
-		if (live.status === 'invalid') return { kind: 'invalid' };
-		if (live.status === 'unsupported') return { kind: 'unsupported' };
-		if (live.status === 'non_candidate') return (await inspectDurableSessionNote(content)).status === 'invalid' ? { kind: 'invalid' } : { kind: 'ignored' };
-		return { kind: 'live', session: live.session };
+	/** One note read and inspected: through the shared reads when there are, on its own otherwise. */
+	private async readNote(file: SessionHistoryFile): Promise<{ outcome: NoteOutcome; bytes: number }> {
+		if (this.reads !== undefined) {
+			const read = await this.reads.read(file, 'join');
+			return { outcome: read.live, bytes: read.liveBytes };
+		}
+		return await inspectLiveHistoryNote(await this.vault.read(file));
 	}
 
 	private async scan(): Promise<{ status: 'ok'; sessions: StoredLiveSessionPayloadV1[]; ignored: number; setAside: LiveSessionSetAside[] }
@@ -119,9 +132,8 @@ export class LiveSessionHistoryService {
 				const cacheable = file.mtime !== undefined && file.mtime > 0;
 				let outcome = cacheable ? this.inspected.get(file.path) : undefined;
 				if (outcome === undefined || outcome.mtime !== file.mtime) {
-					const content = await this.vault.read(file);
-					const inspected = await this.inspect(content);
-					outcome = { mtime: file.mtime ?? 0, outcome: inspected, bytes: inspected.kind === 'live' ? content.length : 0 };
+					const inspected = await this.readNote(file);
+					outcome = { mtime: file.mtime ?? 0, outcome: inspected.outcome, bytes: inspected.bytes };
 					if (cacheable) this.remember(file.path, outcome); else this.forget(file.path);
 				}
 				const note = outcome.outcome;
