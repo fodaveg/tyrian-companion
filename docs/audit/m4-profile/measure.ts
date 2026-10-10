@@ -7,7 +7,14 @@
  * IndexedDB, Obsidian's vault I/O, Hebra or the rest of `runtimeReady`. See README.md.
  *
  *   node measure.mjs --variant=1|2 [--samples=10800] [--change-permille=16] [--reps=7] [--prof-reps=5] [--out=DIR]
+ *     [--store=memory|idb] [--marks=1] [--dump-journal=1]
+ *
+ * `--store=idb` keeps the session in the production `IndexedDbSessionRuntimeStore` over fake-indexeddb (still in memory, but
+ * through the real IDB code path: transactions, cursors, structured clone, validation) instead of `MemorySessionRuntimeStore`.
+ * `--marks=1` writes the monotonic window (µs, same clock as a `node --cpu-prof` profile) of every unprofiled A and B, so
+ * `analyze-cpuprofile.mjs` can cut the operation out of a whole-process `.cpuprofile`.
  */
+import { IDBFactory } from "fake-indexeddb";
 import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { Session } from "node:inspector";
 import { performance } from "node:perf_hooks";
@@ -26,7 +33,12 @@ import {
 } from "../../../src/sessions/live-session-model";
 import type { LiveSessionPayloadVersion } from "../../../src/sessions/live-session-note-model";
 import type { SessionLeaseCoordinator } from "../../../src/sessions/manual-session-start-service";
-import { MemorySessionRuntimeStore } from "../../../src/sessions/session-runtime-store";
+import {
+	IndexedDbSessionRuntimeStore,
+	MemorySessionRuntimeStore,
+	SESSION_RUNTIME_DB_VERSION,
+	SESSION_RUNTIME_SCHEMA,
+} from "../../../src/sessions/session-runtime-store";
 import {
 	SessionNoteWriter,
 	type SessionNoteFile,
@@ -41,6 +53,11 @@ const CHANGE_PERMILLE = Number(arg("change-permille", "16")); // real session: 7
 const REPS = Number(arg("reps", "7"));
 const PROF_REPS = Number(arg("prof-reps", "5"));
 const OUT = arg("out", ".");
+const STORE = arg("store", "memory");
+if (STORE !== "memory" && STORE !== "idb") throw new Error(`--store=${STORE}: memory or idb`);
+const MARKS = arg("marks", "0") === "1";
+const idbFactory = new IDBFactory();
+type Persistence = ConstructorParameters<typeof LiveSessionLifecycle>[0]["persistence"];
 /** Realistic default: 40 distinct items, one item changes per sample with change. The audit's heavy shape: --items=400 --drops=5 --change-permille=500. */
 const DISTINCT_ITEMS = Number(arg("items", "40"));
 const DROPS = Number(arg("drops", "1"));
@@ -54,7 +71,7 @@ let now = START_MS;
 let fence = 0;
 
 function makeLifecycle(
-	store: MemorySessionRuntimeStore,
+	store: Persistence,
 	onComplete: (record: never, journal: readonly LiveJournalEntryV1[], format: LiveSessionFormat) => Promise<string | null>,
 ): LiveSessionLifecycle {
 	const handle = (sessionId: string): ActiveSessionLeaseHandle => ({
@@ -95,8 +112,8 @@ class MapVault implements SessionNoteVault {
 }
 
 /** Plays SAMPLES seconds of a session; ~CHANGE_PERMILLE of them loot or sell something. Returns the store left behind. */
-async function buildStore(): Promise<{ store: MemorySessionRuntimeStore; changed: number; journalEntries: number }> {
-	const store = new MemorySessionRuntimeStore();
+async function buildStore(): Promise<{ store: Persistence; changed: number; journalEntries: number }> {
+	const store: Persistence = STORE === "idb" ? new IndexedDbSessionRuntimeStore(idbFactory, "m4-base") : new MemorySessionRuntimeStore();
 	const lifecycle = makeLifecycle(store, async () => null);
 	const source = {
 		sourceInstance: INSTANCE, epoch: EPOCH, build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE,
@@ -138,14 +155,50 @@ async function buildStore(): Promise<{ store: MemorySessionRuntimeStore; changed
 	return { store, changed, journalEntries };
 }
 
-const cloneStore = (store: MemorySessionRuntimeStore): MemorySessionRuntimeStore =>
-	Object.setPrototypeOf(structuredClone(store), MemorySessionRuntimeStore.prototype) as MemorySessionRuntimeStore;
+const openRaw = (name: string, version?: number, upgrade?: (db: IDBDatabase) => void): Promise<IDBDatabase> =>
+	new Promise((resolve, reject) => {
+		const req = version === undefined ? idbFactory.open(name) : idbFactory.open(name, version);
+		req.onupgradeneeded = () => upgrade?.(req.result);
+		req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+	});
+let copies = 0;
+/** A fresh database with every key and value of the base one, so each repetition restores the same saved session. */
+async function cloneIdb(): Promise<Persistence> {
+	const name = `m4-rep-${String(++copies)}`;
+	const source = await openRaw("m4-base");
+	const rows = new Map<string, Array<[IDBValidKey, unknown]>>();
+	for (const store of SESSION_RUNTIME_SCHEMA) {
+		const tx = source.transaction(store.name, "readonly"); const list: Array<[IDBValidKey, unknown]> = [];
+		await new Promise<void>((resolve, reject) => {
+			const cursor = tx.objectStore(store.name).openCursor();
+			cursor.onsuccess = () => { const c = cursor.result; if (!c) { resolve(); return; } list.push([c.primaryKey, c.value]); c.continue(); };
+			cursor.onerror = () => reject(cursor.error);
+		});
+		rows.set(store.name, list);
+	}
+	source.close();
+	const target = await openRaw(name, SESSION_RUNTIME_DB_VERSION, (db) => {
+		for (const store of SESSION_RUNTIME_SCHEMA) {
+			const created = db.createObjectStore(store.name);
+			for (const index of store.indexes ?? []) created.createIndex(index.name, index.keyPath as string);
+		}
+	});
+	for (const [storeName, list] of rows) {
+		const tx = target.transaction(storeName, "readwrite");
+		for (const [key, value] of list) tx.objectStore(storeName).put(value, key);
+		await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
+	}
+	target.close();
+	return new IndexedDbSessionRuntimeStore(idbFactory, name);
+}
+const cloneStore = async (store: Persistence): Promise<Persistence> => STORE === "idb" ? await cloneIdb()
+	: Object.setPrototypeOf(structuredClone(store), MemorySessionRuntimeStore.prototype) as MemorySessionRuntimeStore;
 
 interface Prepared { lifecycle: LiveSessionLifecycle; vault: MapVault }
-function prepare(base: MemorySessionRuntimeStore): Prepared {
+async function prepare(base: Persistence): Promise<Prepared> {
 	const vault = new MapVault();
 	const writer = new SessionNoteWriter(vault);
-	const lifecycle = makeLifecycle(cloneStore(base), async (record, journal, format) => {
+	const lifecycle = makeLifecycle(await cloneStore(base), async (record, journal, format) => {
 		const result = await writer.writeLive({
 			record, journal, format, locale: "es", outputFolder: "Tyrian", displayNames: undefined,
 		} as never);
@@ -225,23 +278,34 @@ async function main(): Promise<void> {
 	mkdirSync(OUT, { recursive: true });
 	const built = await buildStore();
 	const base = built.store;
-	const sizeBytes = JSON.stringify([...(base as never as { liveJournal: Map<string, unknown> }).liveJournal.values()]).length;
+	const sizeBytes = JSON.stringify(await base.readLiveJournal("m4-session")).length;
+	if (arg("dump-journal", "0") === "1") {
+		// The journal as stored, for a probe that loads it into a real engine (`idb-probe.mjs`).
+		writeFileSync(`${OUT}/journal-format${String(VARIANT)}.json`, JSON.stringify(await base.readLiveJournal("m4-session")));
+		return;
+	}
 	const out: string[] = [];
-	out.push(`## Formato ${String(VARIANT)}: ${String(SAMPLES)} muestras (${(SAMPLES / 3600).toFixed(1)} h), ${String(built.changed)} con cambio (${(built.changed * 100 / SAMPLES).toFixed(2)} %), ${String(built.journalEntries)} entradas en el diario (${(sizeBytes / 1048576).toFixed(1)} MiB de JSON), Node ${process.version}, carga de la máquina al empezar ${readFileSync("/proc/loadavg", "utf8").split(" ").slice(0, 3).join(" ")}`);
+	const marks: Array<{ label: "A" | "B"; rep: number; startUs: number; endUs: number }> = [];
+	const clockUs = (): number => Number(process.hrtime.bigint() / 1000n);
+	out.push(`## Formato ${String(VARIANT)}, almacén ${STORE === "idb" ? "IndexedDbSessionRuntimeStore sobre fake-indexeddb" : "MemorySessionRuntimeStore"}: ${String(SAMPLES)} muestras (${(SAMPLES / 3600).toFixed(1)} h), ${String(built.changed)} con cambio (${(built.changed * 100 / SAMPLES).toFixed(2)} %), ${String(built.journalEntries)} entradas en el diario (${(sizeBytes / 1048576).toFixed(1)} MiB de JSON), Node ${process.version}, carga de la máquina al empezar ${readFileSync("/proc/loadavg", "utf8").split(" ").slice(0, 3).join(" ")}`);
 
 	const timeA: number[] = []; const timeB: number[] = []; let noteBytes = 0;
 	const profA: Profile[] = []; const profB: Profile[] = []; const prof = new Prof();
 	for (let rep = 0; rep < REPS + PROF_REPS; rep += 1) {
 		const profiled = rep >= REPS;
-		const { lifecycle, vault } = prepare(base);
+		const { lifecycle, vault } = await prepare(base);
 		now = START_MS + (SAMPLES + 30) * 1000;
 		if (profiled) await prof.start();
+		let m0 = clockUs();
 		let t0 = performance.now(); await lifecycle.initialize(); const a = performance.now() - t0;
+		if (!profiled) marks.push({ label: "A", rep, startUs: m0, endUs: clockUs() });
 		if (profiled) profA.push(await prof.stop());
 		if (lifecycle.getRuntime()?.sampleCount !== SAMPLES + 1 || lifecycle.getRuntime()?.phase !== "active") throw new Error(`restore failed: ${JSON.stringify(lifecycle.getRuntime())}`);
 		now += 1000;
 		if (profiled) await prof.start();
+		m0 = clockUs();
 		t0 = performance.now(); const closed = await lifecycle.stop(now); const b = performance.now() - t0;
+		if (!profiled) marks.push({ label: "B", rep, startUs: m0, endUs: clockUs() });
 		if (profiled) profB.push(await prof.stop());
 		if (!closed || vault.files.size !== 1) throw new Error("close did not save one note");
 		noteBytes = Buffer.byteLength([...vault.files.values()][0]!, "utf8");
@@ -251,6 +315,7 @@ async function main(): Promise<void> {
 	out.push(`\nA. arrancar (LiveSessionLifecycle.initialize): ${fmt(timeA)}`);
 	out.push(`B. cerrar y guardar la nota (stop + SessionNoteWriter.writeLive): ${fmt(timeB)}; nota de ${(noteBytes / 1048576).toFixed(2)} MiB`);
 	for (const [label, profiles] of [["A", profA], ["B", profB]] as const) {
+		if (profiles.length === 0) continue;
 		const { rows, totalUs } = aggregate(profiles);
 		out.push(`\n### Perfil ${label}, formato ${String(VARIANT)} (${String(profiles.length)} repeticiones perfiladas, ${(totalUs / 1000 / profiles.length).toFixed(0)} ms muestreados por repetición con el perfilador encendido)\n`);
 		out.push(table("Top 10 por tiempo propio", rows, totalUs, "selfUs", /^$/));
@@ -258,6 +323,7 @@ async function main(): Promise<void> {
 	}
 	const text = out.join("\n") + "\n";
 	writeFileSync(`${OUT}/${arg("name", "result")}-format${String(VARIANT)}.md`, text);
+	if (MARKS) writeFileSync(`${OUT}/${arg("name", "result")}-format${String(VARIANT)}-marks.json`, JSON.stringify(marks));
 	process.stdout.write(text);
 }
 await main();

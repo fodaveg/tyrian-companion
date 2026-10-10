@@ -28,6 +28,17 @@ del almacén. A = `LiveSessionLifecycle.initialize()`; B = `stop()` + `SessionNo
 Para un `.cpuprofile` completo: `node --cpu-prof --cpu-prof-dir=<dir> <dir de salida>/measure.mjs --variant=1`
 (el `.cpuprofile` no se commitea).
 
+Añadido el 11 oct 2026 (ver `2026-10-11-perfil.md`):
+
+- `--store=idb`: el diario vive en el `IndexedDbSessionRuntimeStore` de producción sobre fake-indexeddb, no en
+  `MemorySessionRuntimeStore`.
+- `--marks=1`: escribe la ventana (µs, mismo reloj que `--cpu-prof`) de cada A y B sin perfilar;
+  `analyze-cpuprofile.mjs <cpuprofile> <marks.json> <measure.mjs> --label=A` recorta esas ventanas del perfil del
+  proceso entero y da tiempo propio y acumulado con líneas de `src/`. Con `--cpu-prof`, pasa `--prof-reps=0`.
+- `--dump-journal=1`: vuelca el diario construido; `idb-probe.mjs <journal.json> <dir> --playwright=<playwright-core>`
+  lo carga en el IndexedDB real de un Chromium headless (perfil en disco, navegador nuevo por lectura) y mide la
+  lectura como la hace `readLiveJournal` y con `index.getAll`. WebKit no arranca en Fedora (faltan dependencias).
+
 ## Resultado (mediana de 7, mín–máx, ms)
 
 | Escenario | Op | Formato 1 | Formato 2 |
