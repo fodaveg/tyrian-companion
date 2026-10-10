@@ -1,9 +1,12 @@
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale } from '../core/i18n';
+import { HttpTransportError } from '../core/http';
+import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
+import type { LocalDebugCode } from '../core/local-debug-contract';
 import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
 import type { ProductActionController } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
-import { renderSaleView } from './sale-view';
+import { renderSaleView, type SaleRefreshOutcome } from './sale-view';
 import type { SaleViewModel } from './sale-view-model';
 
 export const SALE_VIEW_TYPE = 'tyrian-sale-view';
@@ -15,6 +18,8 @@ export interface SaleViewActions {
 	/** The same one-click refresh the Inventory tab already exposes (`refreshInventoryAdvisor`). */
 	refreshSale?(options?: { refreshSeeds: boolean }): Promise<void>;
 	getProductActionController?(): ProductActionController;
+	/** Where a refresh failure is registered; absent in isolated harnesses (fail-open, like the action controller's). */
+	getSaleDiagnostics?(): LocalDebugActionPort | undefined;
 	hasConfiguredApiKey?(): boolean;
 	openProductSettings?(): void;
 	/** True while the host itself lists the sections (its main screen), so the shell builds no bar of tabs. Absent means false. */
@@ -46,6 +51,17 @@ export function saleView(actions: Pick<SaleViewActions, 'getSaleLocale'>): Tyria
 export class SaleItemView {
 	private closed = false;
 	private refreshing = false;
+	/** How the last refresh ended while Venta was still `loading`; null once data arrives or a new one starts. */
+	private refreshOutcome: SaleRefreshOutcome | null = null;
+	/** Identifies the refresh whose end may still touch the view: a retry after the deadline supersedes the old one. */
+	private refreshRun = 0;
+	private refreshDeadlineTimer: number | null = null;
+	/**
+	 * The `refreshSale` call still running, shared by every wait on it. After the deadline the view
+	 * stops waiting but the call goes on; a retry then waits for THAT call (with a new deadline)
+	 * instead of starting a second, concurrent `refreshSale` over the same advisor and seed queue.
+	 */
+	private inFlight: Promise<boolean> | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
 	/** The pending repaint for the next instant a figure on screen stops being "recent". */
@@ -70,7 +86,7 @@ export class SaleItemView {
 		this.render();
 		// H18.38 (David, 0.2.3): opening still only reads the memory snapshot, but a snapshot that
 		// says "loading" because the advisor never analyzed this session needs the SAME one-click
-		// refresh the footer button already offers, fired once, not a silent wait for a click that
+		// refresh the header button already offers, fired once, not a silent wait for a click that
 		// nothing on screen invites. `runRefresh` already no-ops while one is in flight or absent.
 		if (this.actions.getSaleViewModel().status === 'loading') void this.runRefresh(false);
 	}
@@ -97,6 +113,11 @@ export class SaleItemView {
 	cancelExpiryRepaint(): void {
 		this.closed = true;
 		this.clearExpiryTimer();
+		this.clearRefreshDeadline();
+		// Reopening the same instance must not inherit a refresh that never ended: its end is ignored
+		// (the run number moved on) and the button is not left disabled for good.
+		this.refreshing = false;
+		this.refreshRun += 1;
 		this.visibilityCleanup?.();
 		this.visibilityCleanup = null;
 	}
@@ -113,6 +134,8 @@ export class SaleItemView {
 		// Hidden: nothing is painted. Being shown again repaints (`setVisible`).
 		if (this.sectionHidden) return;
 		const model = this.actions.getSaleViewModel();
+		// An outcome is about a `loading` that has ended: once there is data, a later `loading` starts clean.
+		if (model.status !== 'loading') this.refreshOutcome = null;
 		const locale = this.actions.getSaleLocale();
 		const actionController = this.actions.getProductActionController?.();
 		const missingApiKey = !(this.actions.hasConfiguredApiKey?.() ?? true);
@@ -135,6 +158,7 @@ export class SaleItemView {
 		this.productShell?.update();
 		renderSaleView(surface, this.ui, model, createTranslator(locale), {
 			refreshing: this.refreshing,
+			refreshOutcome: model.status === 'loading' ? this.refreshOutcome : null,
 			onRefresh: this.actions.refreshSale === undefined ? undefined : () => this.runRefresh(),
 		});
 		this.scheduleExpiryRepaint(model);
@@ -181,12 +205,73 @@ export class SaleItemView {
 
 	private async runRefresh(refreshSeeds = true): Promise<void> {
 		if (this.closed || this.refreshing || this.actions.refreshSale === undefined) return;
+		const run = ++this.refreshRun;
 		this.refreshing = true;
+		this.refreshOutcome = null;
+		this.armRefreshDeadline(run);
 		this.render();
-		try { await this.actions.refreshSale({ refreshSeeds }); }
-		finally { this.refreshing = false; this.render(); }
+		const failed = await (this.inFlight ?? this.startRefresh(refreshSeeds));
+		// A refresh that passed its deadline already told the view; its late end must not undo a retry.
+		if (run !== this.refreshRun) { this.render(); return; }
+		this.clearRefreshDeadline();
+		this.refreshing = false;
+		// Whether it matters is `render()`'s call: the outcome only reaches the view while the model is `loading`.
+		this.refreshOutcome = failed ? 'failed' : 'unfinished';
+		this.render();
+	}
+
+	/** The one `refreshSale` call; resolves true when it threw, after registering the failure once. */
+	private startRefresh(refreshSeeds: boolean): Promise<boolean> {
+		const call = this.callRefreshSale(refreshSeeds).finally(() => { if (this.inFlight === call) this.inFlight = null; });
+		this.inFlight = call;
+		return call;
+	}
+
+	private async callRefreshSale(refreshSeeds: boolean): Promise<boolean> {
+		try {
+			await this.actions.refreshSale?.({ refreshSeeds });
+			return false;
+		} catch (error) {
+			// Reported, not swallowed: the view shows a retry, the diagnostics keep the cause.
+			this.actions.getSaleDiagnostics?.()?.event({
+				component: 'ui', action: 'view_render', level: 'error', phase: 'failure',
+				code: saleRefreshFailureCode(error), state: 'sale_refresh', message: error,
+			});
+			return true;
+		}
+	}
+
+	/**
+	 * The refresh's own network calls already have deadlines (`HttpTransport`: 10 s each, 30 s the
+	 * character fan-out), but nothing bounds the whole of it. Past `SALE_REFRESH_DEADLINE_MS` the view
+	 * stops waiting: "loading" becomes a timed-out message and the button works again. The refresh is
+	 * not cancelled; if it ends well later, the data simply paints.
+	 */
+	private armRefreshDeadline(run: number): void {
+		this.clearRefreshDeadline();
+		this.refreshDeadlineTimer = this.contentEl.win.setTimeout(() => {
+			this.refreshDeadlineTimer = null;
+			if (this.closed || run !== this.refreshRun || !this.refreshing) return;
+			this.refreshing = false;
+			this.actions.getSaleDiagnostics?.()?.event({
+				component: 'ui', action: 'view_render', level: 'warn', phase: 'failure',
+				code: 'timeout', state: 'sale_refresh', message: new Error('Sale refresh passed its deadline.'),
+			});
+			this.refreshOutcome = 'timed_out';
+			this.refreshRun += 1;
+			this.render();
+		}, SALE_REFRESH_DEADLINE_MS);
+	}
+
+	private clearRefreshDeadline(): void {
+		if (this.refreshDeadlineTimer === null) return;
+		this.contentEl.win.clearTimeout(this.refreshDeadlineTimer);
+		this.refreshDeadlineTimer = null;
 	}
 }
+
+/** How long Venta waits for a whole refresh before it says so and offers a retry. */
+export const SALE_REFRESH_DEADLINE_MS = 60_000;
 
 /** Largest delay a browser timer takes (a 32-bit signed count of milliseconds). */
 const MAX_TIMER_MS = 2_147_483_647;
@@ -208,4 +293,10 @@ export function nextExpiryMs(model: SaleViewModel, afterMs: number = model.nowMs
 		if (next === null || at < next) next = at;
 	}
 	return next;
+}
+
+/** A refresh that failed on the wire says so; anything else stays generic. */
+function saleRefreshFailureCode(error: unknown): LocalDebugCode {
+	if (error instanceof HttpTransportError) return error.kind === 'timeout' ? 'timeout' : 'network_failure';
+	return 'unknown_failure';
 }

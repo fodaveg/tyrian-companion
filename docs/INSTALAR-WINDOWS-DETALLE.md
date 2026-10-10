@@ -220,10 +220,13 @@ plugin.
 1. En los ajustes del plugin, activa la fila **Aviso dentro del juego (opcional)** (en inglés,
    **In-game alert (optional)**) y elige **Activadas** (en inglés, **Enabled**). Está apagada por
    defecto. Hasta que la actives, la fila del token no aparece.
-2. En la fila **Token del addon** (en inglés, **Addon token**), pulsa **Copiar token** (en inglés,
-   **Copy token**). La primera vez crea el token; las siguientes copian el mismo. También puedes
-   usar el comando **Copiar token del puente con el juego** (en inglés, **Copy in-game bridge
-   token**). El token es distinto de la clave de API.
+2. En la fila **Token del addon** (en inglés, **Addon token**), pulsa **Crear token** (en inglés,
+   **Create token**). El plugin crea el token y lo copia: no hay campo donde escribirlo. Cuando ya
+   existe, la fila lo muestra oculto y ofrece **Copiar token** (**Copy token**) para volver a
+   copiarlo y **Crear token nuevo** (**Create new token**), que pide confirmar porque el token
+   anterior deja de valer y el addon necesita el nuevo. También puedes usar el comando **Copiar
+   token del puente con el juego** (en inglés, **Copy in-game bridge token**). El token es
+   distinto de la clave de API.
 3. El puerto es **47823**. El plugin ya no tiene una fila para cambiarlo: usa el valor guardado,
    que por defecto es 47823. Si el servidor no puede arrancar, el plugin lo dice bajo la fila del
    aviso con el texto «El servidor no pudo iniciarse» y un código.

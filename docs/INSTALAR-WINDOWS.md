@@ -32,7 +32,7 @@ Desde el addon 0.8.5 Nexus lo actualiza solo (puede tardar hasta 30 minutos en v
 4. Crea en Hebra una carpeta llamada `Tyrian Companion`. El plugin guarda ahí sus notas.
 5. En la ficha de Tyrian Companion, pulsa **Ajustes…**. En **Aviso dentro del juego (opcional)**,
    elige **Activadas**.
-6. En **Token del addon**, pulsa **Copiar token**.
+6. En **Token del addon**, pulsa **Crear token**. El plugin lo crea y lo copia; no lo escribas tú.
 7. En el juego, abre las opciones de Nexus y entra en **Tyrian Companion**. Pulsa **Paste** junto a
    **Token** y después **Save**.
 8. En esas mismas opciones, en **App to open**, elige **Hebra**.

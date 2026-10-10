@@ -338,6 +338,56 @@ describe('sale view render', () => {
 		expect(find(container, 'li')).toHaveLength(0);
 	});
 
+	it('says "Leyendo" exactly once, in the live region, with a spinner and the body marked busy', () => {
+		const container = render(buildSaleViewModel(baseInput({ status: 'loading' })), 'es');
+		expect(text(container).split('Leyendo precios del bazar').length - 1).toBe(1);
+		const live = find(container, 'p').filter((p) => p.attributes.get('role') === 'status');
+		expect(live).toHaveLength(1);
+		expect(text(live[0]!)).toContain('Leyendo precios del bazar');
+		const spinners = byClass(find(container, 'span'), 'tyrian-sale__spinner');
+		expect(spinners).toHaveLength(1);
+		expect(spinners[0]!.attributes.get('aria-hidden')).toBe('true');
+		expect(find(container, 'div').some((d) => d.attributes.get('aria-busy') === 'true')).toBe(true);
+	});
+
+	it('puts Actualizar in the header toolbar beside the status line, not in the footer, and marks it busy while refreshing', () => {
+		installDom();
+		const model = buildSaleViewModel(baseInput({}));
+		for (const refreshing of [false, true]) {
+			const container = new FakeElement('div', new FakeDocument());
+			renderSaleView(container as unknown as HTMLElement, icons, model, createTranslator('es'), { refreshing, onRefresh: () => undefined });
+			const toolbar = byClass(find(container, 'div'), 'tyrian-sale__toolbar')[0]!;
+			expect(container.children[0]).toBe(toolbar);
+			const buttons = find(toolbar, 'button');
+			expect(buttons).toHaveLength(1);
+			expect(text(buttons[0]!)).toContain('Actualizar');
+			expect(find(toolbar, 'p').some((p) => p.attributes.get('role') === 'status')).toBe(true);
+			expect(buttons[0]!.attributes.get('type')).toBe('button');
+			expect(buttons[0]!.attributes.get('aria-busy')).toBe(String(refreshing));
+			expect(buttons[0]!.disabled).toBe(refreshing);
+			expect(find(byClass(find(container, 'div'), 'tyrian-sale__foot')[0]!, 'button')).toHaveLength(0);
+		}
+	});
+
+	it('offers no Actualizar in the blocked state', () => {
+		const container = render(buildSaleViewModel(baseInput({ status: 'blocked' })), 'es');
+		expect(find(container, 'button')).toHaveLength(0);
+	});
+
+	it('a settled refresh over a still-loading model shows the final message, no spinner and no busy mark', () => {
+		installDom();
+		const model = buildSaleViewModel(baseInput({ status: 'loading' }));
+		for (const [outcome, copy] of [['failed', 'No se pudieron leer'], ['unfinished', 'No se pudieron leer'], ['timed_out', 'tardan demasiado']] as const) {
+			const container = new FakeElement('div', new FakeDocument());
+			renderSaleView(container as unknown as HTMLElement, icons, model, createTranslator('es'), { refreshOutcome: outcome });
+			expect(text(container)).toContain(copy);
+			expect(text(container)).not.toContain('Leyendo precios del bazar');
+			expect(byClass(find(container, 'span'), 'tyrian-sale__spinner')).toHaveLength(0);
+			expect(find(container, 'div').some((d) => d.attributes.get('aria-busy') === 'true')).toBe(false);
+			expect(find(container, 'button')).toHaveLength(1);
+		}
+	});
+
 	/**
 	 * R1b (Hebra's report, 28 sep 2026): a consult device that never captured anything this session
 	 * used to stay on "Leyendo precios del bazar…" forever, because `refreshInventoryAdvisor`/

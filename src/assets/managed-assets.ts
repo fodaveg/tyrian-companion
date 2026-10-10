@@ -2,7 +2,9 @@ import { parseDocument } from 'yaml';
 
 import { sha256Text } from './managed-asset-hash';
 import { PUBLISHED_BASE_FINGERPRINTS, type PublishedBaseFingerprint } from './published-base-hashes';
+import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import { legacyVaultFolder } from '../core/settings';
+import { vaultFailureCause, type VaultFailureCause } from '../core/vault-failure-cause';
 import { ensureFoldersBySegments } from '../core/vault-folders';
 import {
 	hasCompatibleMarker,
@@ -43,7 +45,21 @@ export interface ManagedAssetsVault {
 
 export type ManagedAssetsResult =
 	| { status: 'applied' | 'unchanged' | 'detached'; inspection: ManagedAssetsInspection; ownership: 'created' | 'existing' }
-	| { status: 'busy' | 'conflict' | 'invalid' | 'unavailable'; message: string };
+	| { status: 'busy' | 'conflict' | 'invalid' | 'unavailable'; message: string; cause?: ManagedAssetsFailureCause; details?: Record<string, unknown> };
+
+/**
+ * Why a failure happened, when it is one the Settings row can explain better than «not available» /
+ * «conflict»: the three the vault names (`vault-failure-cause.ts`) and the folder holding only the user's files.
+ */
+export type ManagedAssetsFailureCause = VaultFailureCause | 'only_unowned_files';
+
+/** The cause and the real error code for the diagnostic, read from what was thrown (never its message). */
+export function failureEvidence(error: unknown): { cause?: ManagedAssetsFailureCause; details: Record<string, unknown> } {
+	const cause = vaultFailureCause(error);
+	const details = unmappedErrorLogDetails(error);
+	if (cause !== undefined) details.code = cause;
+	return cause === undefined ? { details } : { cause, details };
+}
 
 interface PackagedEvidence { contentHash: string; semanticHash: string | null }
 
@@ -388,8 +404,8 @@ export class ManagedAssetsManager {
 			const finalized = await this.finalize(journal, adopted.entries);
 			if (!finalized) return { status: 'conflict', message: 'The relocation could not be finalized.' };
 			return { status: finalized.changed ? 'applied' : 'unchanged', inspection: await this.inspect(to), ownership: 'created' };
-		} catch {
-			return { status: 'unavailable', message: 'Managed assets could not be relocated safely.' };
+		} catch (error) {
+			return { status: 'unavailable', message: 'Managed assets could not be relocated safely.', ...failureEvidence(error) };
 		}
 	}
 
@@ -480,7 +496,7 @@ export class ManagedAssetsManager {
 			}
 			if (planManagedAssets(inspection, kind).steps.every((step) => isSettled(step.status))) {
 				// Nothing to adopt or create and no manifest: an all-foreign folder must not become "managed".
-				if (inspection.manifestStatus === 'missing') return { status: 'conflict', message: 'No managed asset can be created or adopted.' };
+				if (inspection.manifestStatus === 'missing') return { status: 'conflict', message: 'No managed asset can be created or adopted.', cause: 'only_unowned_files', details: { code: 'only_unowned_files' } };
 				if (inspection.manifest?.schemaVersion === 1) {
 					const migrated = await this.migrateReadyManifest(inspection);
 					if (!migrated) return { status: 'conflict', message: 'The legacy managed-assets manifest changed.' };
@@ -514,8 +530,8 @@ export class ManagedAssetsManager {
 			if (!finalized) return { status: 'conflict', message: 'The operation could not be finalized.' };
 			inspection = await this.inspect(root);
 			return { status: finalized.changed ? 'applied' : 'unchanged', inspection, ownership };
-		} catch {
-			return { status: 'unavailable', message: 'Managed assets could not be updated safely.' };
+		} catch (error) {
+			return { status: 'unavailable', message: 'Managed assets could not be updated safely.', ...failureEvidence(error) };
 		}
 	}
 
@@ -545,7 +561,7 @@ export class ManagedAssetsManager {
 		const serialized = serializeManifest(manifest);
 		if (!file) {
 			try { await this.vault.create(inspection.manifestPath, serialized); }
-			catch { /* create races are resolved by rereading */ }
+			catch (error) { if (vaultFailureCause(error) !== undefined) throw error; /* create races are resolved by rereading */ }
 			return await this.exactManifest(inspection.manifestPath, operation.operationId);
 		}
 		if (!inspection.manifest) {
@@ -590,7 +606,7 @@ export class ManagedAssetsManager {
 		if (!file) {
 			if (step.beforeHash !== null) return false;
 			try { await this.vault.create(step.path, asset.bytes); }
-			catch { /* create race is checked below */ }
+			catch (error) { if (vaultFailureCause(error) !== undefined) throw error; /* create race is checked below */ }
 			return await this.hashAt(step.path) === step.afterHash;
 		}
 		const expectedContent = normalizeLf(await this.vault.read(file));
@@ -742,7 +758,7 @@ export class ManagedAssetsManager {
 				if (raced?.state !== 'detached') return { status: 'conflict', message: 'Uninstall could not be finalized.' };
 			}
 			return { status: 'detached', inspection: await this.inspectForUninstall(root), ownership: 'existing' };
-		} catch { return { status: 'unavailable', message: 'Managed assets could not be removed safely.' }; }
+		} catch (error) { return { status: 'unavailable', message: 'Managed assets could not be removed safely.', ...failureEvidence(error) }; }
 	}
 
 	private async casManifest(before: ManagedAssetsManifest, after: ManagedAssetsManifest): Promise<ManagedAssetsManifest | null> {

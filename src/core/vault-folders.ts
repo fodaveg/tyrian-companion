@@ -21,7 +21,7 @@ export async function ensureFoldersFromPrefixes(
 		const folder = segments.slice(0, index).join('/');
 		if (vault.file(folder)) continue;
 		try { await vault.createFolder(folder); }
-		catch { if (!vault.file(folder)) throw new Error(unavailableMessage); }
+		catch (error) { if (!vault.file(folder)) throw Object.assign(new Error(unavailableMessage), { cause: error }); }
 	}
 }
 
@@ -40,7 +40,7 @@ export async function ensureFoldersBySegments(
 		current = current ? `${current}/${segment}` : segment;
 		if (!vault.file(current)) {
 			try { await vault.createFolder(current); }
-			catch { if (!vault.file(current)) throw new Error(unavailableMessage); }
+			catch (error) { if (!vault.file(current)) throw Object.assign(new Error(unavailableMessage), { cause: error }); }
 		}
 	}
 }

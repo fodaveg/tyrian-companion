@@ -1,6 +1,5 @@
 import type {
 	TyrianButtonControl,
-	TyrianSecretControl,
 	TyrianSettingDefinition,
 	TyrianSettingRow,
 	TyrianTextControl,
@@ -90,6 +89,9 @@ export interface SettingsPanelHost {
 	readonly vault: Pick<TyrianVault, 'configDir'>;
 }
 
+/** How long "Create new token" waits for its second press before the confirmation lapses. */
+const INGAME_SECRET_CONFIRM_MS = 6000;
+
 /**
  * The plugin's settings panel, rendered into the container the host mounts it in (a
  * `PluginSettingTab`'s `containerEl` in Obsidian, `host/obsidian/obsidian-ui.ts`). `mount` and
@@ -139,6 +141,8 @@ export class TyrianCompanionSettingTab {
 	mount(containerEl: HTMLElement): void {
 		this.containerEl = containerEl;
 		this.maintenanceOpen = false;
+		this.ingameSecretNotice = null;
+		this.ingameSecretConfirming = false;
 		this.renderSettings();
 	}
 
@@ -246,7 +250,7 @@ export class TyrianCompanionSettingTab {
 		const enabled = projectManagedAssetsActions({
 			working: view.status === 'working',
 			hasManagedRoot: this.plugin.hasManagedAssetsRoot(),
-			canMove: this.plugin.hasManagedAssetsRoot() && this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
+			canMove: this.plugin.managedAssetsCanMove?.() !== false && this.plugin.hasManagedAssetsRoot() && this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
 		});
 		for (const [action, button] of this.managedAssetButtons) button.setDisabled(!enabled[action]);
 	}
@@ -453,40 +457,10 @@ export class TyrianCompanionSettingTab {
 			{
 				group: 'main',
 				visible: () => this.plugin.settings.alertIngameEnabled,
-				name: this.t('settings.alerts.ingame.secret.name'), desc: this.t('settings.alerts.ingame.secret.desc'),
-				render: (setting, save) => {
-					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
-					feedback.setAttr('role', 'status');
-					feedback.setAttr('aria-live', 'polite');
-					let selector: TyrianSecretControl | null = null;
-					setting.addSecret((secret) => {
-						selector = secret
-							.setValue(this.plugin.settings.alertIngameSecret)
-							.onChange(async (alertIngameSecret) => {
-								await save({ alertIngameSecret });
-							});
-					});
-					setting.addButton((button) => button.setButtonText(this.t('settings.alerts.ingame.secret.copy'))
-						.onClick(async () => {
-							button.setDisabled(true);
-							try {
-								const outcome = await this.plugin.copyAlertIngameSecret();
-								// A generated secret is now the selected entry; show it without a rerender
-								// that would wipe the confirmation below.
-								selector?.setValue(this.plugin.settings.alertIngameSecret);
-								feedback.setAttr('role', 'status');
-								// `shown`: the clipboard refused and the fallback modal holds the value, so
-								// this row claims nothing was copied.
-								feedback.setText(outcome === 'shown' ? '' : this.t(outcome === 'generated'
-									? 'settings.alerts.ingame.secret.generated' : 'settings.alerts.ingame.secret.copied'));
-							} catch {
-								feedback.setAttr('role', 'alert');
-								feedback.setText(this.t('settings.alerts.ingame.secret.failed'));
-							} finally {
-								button.setDisabled(false);
-							}
-						}));
-				},
+				name: this.t('settings.alerts.ingame.secret.name'),
+				desc: this.t(this.plugin.hasAlertIngameSecret()
+					? 'settings.alerts.ingame.secret.desc.ready' : 'settings.alerts.ingame.secret.desc.none'),
+				render: (setting) => this.renderIngameSecretRow(setting),
 			},
 			{
 				group: 'main',
@@ -841,12 +815,120 @@ export class TyrianCompanionSettingTab {
 		];
 	}
 
+	/**
+	 * The addon token row. The player never types a token: the plugin makes it, so there is no
+	 * field here (it used to be the API key's secret picker, which read as "add a key"). Without a
+	 * token the one action is "Create token"; with one, the value stays hidden and the actions are
+	 * "Copy token" and "Create new token", the latter in two presses because it cuts the addon off
+	 * until the new token is pasted there.
+	 */
+	private renderIngameSecretRow(setting: TyrianSettingRow): void {
+		const hasToken = this.plugin.hasAlertIngameSecret();
+		this.ingameSecretConfirming = false;
+		const details = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+		if (hasToken) {
+			const masked = details.createSpan({ text: this.t('settings.alerts.ingame.secret.masked') });
+			masked.setAttr('role', 'img');
+			masked.setAttr('aria-label', this.t('settings.alerts.ingame.secret.masked.label'));
+		}
+		const presence = this.plugin.getIngamePresence?.();
+		if (hasToken && presence !== undefined) {
+			details.createDiv({
+				text: this.t(presence.status === 'present'
+					? 'settings.alerts.ingame.secret.addon.on' : 'settings.alerts.ingame.secret.addon.off'),
+			});
+		}
+		if (this.ingameSecretConfirmTimer !== null) window.clearTimeout(this.ingameSecretConfirmTimer);
+		this.ingameSecretConfirmTimer = null;
+		// The live region is painted EMPTY and filled afterwards: a region that appears already holding
+		// its text is usually not announced. A press that keeps the same buttons never rebuilds the
+		// row, so the region survives and only its text changes.
+		const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+		feedback.setAttr('role', 'status');
+		feedback.setAttr('aria-live', 'polite');
+		const say = (text: string, role: 'status' | 'alert'): void => {
+			feedback.setAttr('role', role);
+			feedback.setText(text);
+		};
+		const pending = this.ingameSecretNotice;
+		this.ingameSecretNotice = null;
+		if (pending !== null) queueMicrotask(() => { say(pending.text, pending.role); });
+		const buttons: TyrianButtonControl[] = [];
+		const run = async (action: () => Promise<'copied' | 'generated' | 'shown'>): Promise<void> => {
+			resetConfirmation();
+			for (const each of buttons) each.setDisabled(true);
+			let notice: { readonly role: 'status' | 'alert'; readonly text: string } | null;
+			try {
+				const outcome = await action();
+				// `shown`: the clipboard refused and the fallback modal holds the value, so this row
+				// claims nothing was copied.
+				notice = outcome === 'shown' ? null : { role: 'status', text: this.t(outcome === 'generated'
+					? 'settings.alerts.ingame.secret.generated' : 'settings.alerts.ingame.secret.copied') };
+			} catch {
+				notice = { role: 'alert', text: this.t('settings.alerts.ingame.secret.failed') };
+			}
+			for (const each of buttons) each.setDisabled(false);
+			if (hasToken) {
+				resetConfirmation();
+				say(notice?.text ?? '', notice?.role ?? 'status');
+				return;
+			}
+			// The first token changes the buttons, so this one case rebuilds the row.
+			this.ingameSecretNotice = notice;
+			this.refreshForSettingsChange();
+		};
+		let regenerateButton: TyrianButtonControl | null = null;
+		const resetConfirmation = (): void => {
+			if (this.ingameSecretConfirmTimer !== null) window.clearTimeout(this.ingameSecretConfirmTimer);
+			this.ingameSecretConfirmTimer = null;
+			if (!this.ingameSecretConfirming) return;
+			this.ingameSecretConfirming = false;
+			regenerateButton?.setButtonText(this.t('settings.alerts.ingame.secret.regenerate'));
+			say('', 'status');
+		};
+		if (!hasToken) {
+			setting.addButton((button) => {
+				buttons.push(button);
+				button.setButtonText(this.t('settings.alerts.ingame.secret.create')).setCta()
+					.onClick(() => run(() => this.plugin.copyAlertIngameSecret()));
+			});
+			return;
+		}
+		setting.addButton((button) => {
+			buttons.push(button);
+			button.setButtonText(this.t('settings.alerts.ingame.secret.copy')).setCta()
+				.onClick(() => run(() => this.plugin.copyAlertIngameSecret()));
+		});
+		setting.addButton((button) => {
+			buttons.push(button);
+			regenerateButton = button;
+			button.setButtonText(this.t('settings.alerts.ingame.secret.regenerate'));
+			// Losing the focus, tapping another row or waiting 6 s cancels the pending confirmation.
+			button.buttonEl.addEventListener('blur', resetConfirmation);
+			button.onClick(async () => {
+				if (!this.ingameSecretConfirming) {
+					this.ingameSecretConfirming = true;
+					button.setButtonText(this.t('settings.alerts.ingame.secret.regenerate.confirm'));
+					say(this.t('settings.alerts.ingame.secret.regenerate.warn'), 'status');
+					this.ingameSecretConfirmTimer = window.setTimeout(resetConfirmation, INGAME_SECRET_CONFIRM_MS);
+					return;
+				}
+				await run(() => this.plugin.regenerateAlertIngameSecret());
+			});
+		});
+	}
+
+	/** What the token row last said (kept across the re-render a click triggers), and the pending "create new" confirmation. */
+	private ingameSecretNotice: { readonly role: 'status' | 'alert'; readonly text: string } | null = null;
+	private ingameSecretConfirming = false;
+	private ingameSecretConfirmTimer: number | null = null;
+
 	private t(key: TranslationKey, params?: TranslationParams): string {
 		return createTranslator(this.plugin.settings.language).t(key, params);
 	}
 
 	private rootDivergence() {
-		return projectManagedAssetsRootDivergence(this.plugin.settings);
+		return projectManagedAssetsRootDivergence(this.plugin.settings, this.plugin.managedAssetsCanMove?.() !== false);
 	}
 
 	private connectionDescription(state: ConnectionState): string {

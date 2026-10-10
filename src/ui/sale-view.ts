@@ -19,9 +19,17 @@ import type {
  * (translator-only) render layer.
  */
 
+/**
+ * How the last refresh ended while the model is still `loading`: it threw (`failed`), it passed its
+ * deadline (`timed_out`) or it returned without moving the model (`unfinished`, e.g. the runtime was
+ * not ready). Any of them makes "loading" a final, explained state with a retry, never a spinner.
+ */
+export type SaleRefreshOutcome = 'failed' | 'timed_out' | 'unfinished';
+
 export interface SaleViewInteractions {
 	onRefresh?: () => void | Promise<void>;
 	refreshing?: boolean;
+	refreshOutcome?: SaleRefreshOutcome | null;
 }
 
 /** The host's Lucide icons (`TyrianUiPort.setIcon`), the only host capability this render needs. */
@@ -38,7 +46,14 @@ export function renderSaleView(
 ): void {
 	container.empty();
 	container.addClass('tyrian-sale-page');
-	container.append(renderStatusLine(model, translator, ui));
+	const settledLoading = model.status === 'loading' && interactions.refreshing !== true && interactions.refreshOutcome != null;
+	// "Actualizar" lives in the header, next to the status line, not at the end of the page: a host's
+	// floating status bar (Hebra's, bottom right) covered the footer button almost entirely. Same
+	// states as before: every one except consult-only and blocked/invalid.
+	const hasRefresh = model.consultOnly !== true && model.status !== 'blocked' && model.status !== 'invalid';
+	const toolbar = container.createDiv({ cls: 'tyrian-sale__toolbar' });
+	toolbar.append(renderStatusLine(model, translator, ui, settledLoading));
+	if (hasRefresh) toolbar.append(renderRefreshButton(translator, interactions, ui));
 	// R1b: a consult device with nothing captured this session (`TyrianCompanionCore.getSaleViewModel`)
 	// reaches this final state instead of an ordinary `empty` — no refresh button, since a refresh
 	// here is an action only the collector may take (`refusedInConsult`).
@@ -47,12 +62,14 @@ export function renderSaleView(
 		return;
 	}
 	if (model.status === 'loading') {
-		const surface = renderLoading(translator);
+		const surface = settledLoading
+			? renderLoadFailed(interactions.refreshOutcome === 'timed_out' ? 'sale.view.loadTimedOut' : 'sale.view.loadFailed', translator)
+			: renderLoading();
 		// H18.38: a stuck "Leyendo…" with nothing behind it (David, 0.2.3): the auto-triggered
 		// refresh (`sale-item-view.ts`) covers the common case, but if the runtime is not ready yet
 		// or the refresh otherwise leaves the model in `loading`, the same working button the other
 		// states already offer is the escape hatch, not a dead end.
-		surface.append(renderFoot(translator, interactions, ui));
+		surface.append(renderFoot(translator));
 		container.append(surface);
 		return;
 	}
@@ -75,15 +92,21 @@ export function renderSaleView(
 	sale.append(renderGroup('now', model.groups.now, model, translator, ui));
 	sale.append(renderGroup('wait', model.groups.wait, model, translator, ui));
 	sale.append(renderGroup('noData', model.groups.noData, model, translator, ui));
-	sale.append(renderFoot(translator, interactions, ui));
+	sale.append(renderFoot(translator));
 }
 
-function renderStatusLine(model: SaleViewModel, translator: Translator, ui: IconPainter): HTMLElement {
+function renderStatusLine(model: SaleViewModel, translator: Translator, ui: IconPainter, settledLoading: boolean): HTMLElement {
 	const status = createEl('p', { cls: 'tyrian-product-shell__status' });
 	status.setAttribute('role', 'status');
 	if (model.status === 'loading') {
+		// The ONE place "Leyendo precios del bazar…" is written (it used to repeat in the body). The
+		// spinner is the span, not the glyph: Hebra paints only some Lucide icons, and a span turns
+		// whatever it painted (`styles.css`, `.tyrian-sale__spinner`). A settled refresh says nothing
+		// here: the body carries the final message.
+		if (settledLoading) return status;
 		const span = createSpan();
-		const icon = createSpan({ cls: 'is-small' });
+		const icon = createSpan({ cls: 'is-small tyrian-sale__spinner' });
+		icon.setAttribute('aria-hidden', 'true');
 		ui.setIcon(icon, 'loader-2');
 		span.append(icon, createSpan({ text: ` ${translator.t('sale.view.loading')}` }));
 		status.append(span);
@@ -120,9 +143,19 @@ function renderConsultOnly(translator: Translator): HTMLElement {
 	return surface;
 }
 
-function renderLoading(translator: Translator): HTMLElement {
+/** The loading body has no text of its own: the status line says it once; this only marks it busy. */
+function renderLoading(): HTMLElement {
 	const surface = createDiv({ cls: 'tyrian-sale' });
-	surface.createEl('p', { text: translator.t('sale.view.loading') });
+	surface.setAttribute('aria-busy', 'true');
+	return surface;
+}
+
+function renderLoadFailed(key: 'sale.view.loadFailed' | 'sale.view.loadTimedOut', translator: Translator): HTMLElement {
+	const surface = createDiv({ cls: 'tyrian-sale' });
+	surface.setAttribute('aria-busy', 'false');
+	const notice = surface.createEl('p');
+	notice.setAttribute('role', 'alert');
+	notice.textContent = translator.t(key);
 	return surface;
 }
 
@@ -386,16 +419,24 @@ function initialsFor(name: string): string {
 	return words.slice(0, 2).map((word) => word[0]!.toUpperCase()).join('');
 }
 
-function renderFoot(translator: Translator, interactions: SaleViewInteractions, ui: IconPainter): HTMLElement {
+function renderFoot(translator: Translator): HTMLElement {
 	const foot = createDiv({ cls: 'tyrian-sale__foot' });
 	foot.createEl('p', { text: translator.t('sale.foot.note') });
-	const button = foot.createEl('button', { attr: { type: 'button' } });
+	return foot;
+}
+
+/** The refresh action: focusable, disabled and `aria-busy` while a refresh runs. */
+function renderRefreshButton(translator: Translator, interactions: SaleViewInteractions, ui: IconPainter): HTMLElement {
+	const button = createEl('button', { cls: 'tyrian-sale__refresh', attr: { type: 'button' } });
 	const icon = button.createSpan();
+	icon.setAttribute('aria-hidden', 'true');
 	ui.setIcon(icon, 'refresh-cw');
 	button.createSpan({ text: translator.t('sale.foot.refresh') });
-	button.disabled = interactions.refreshing === true;
+	const busy = interactions.refreshing === true;
+	button.disabled = busy;
+	button.setAttribute('aria-busy', String(busy));
 	button.addEventListener('click', () => { void interactions.onRefresh?.(); });
-	return foot;
+	return button;
 }
 
 /** Compact coin units on screen; the complete spoken amount stays available to assistive technology. */

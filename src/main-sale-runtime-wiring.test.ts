@@ -25,6 +25,7 @@ import { PriceHistoryRuntime } from './economy/price-history-runtime';
 import { SellSignalRuntime } from './economy/sell-signal-runtime';
 import { HALLOWEEN_PRICE_ALERT_ITEM_ID } from './halloween/halloween-price-alert';
 import { SaleRuntime } from './runtime/sale-runtime';
+import { SaleItemView } from './ui/sale-item-view';
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';
 import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 
@@ -116,6 +117,28 @@ describe('the core hands the Sale tab to SaleRuntime: facade, advisor refresh, s
 		await core.updateSettings({ priceHistoryEnabled: true });
 
 		expect({ afterOff, afterOn: drop.mock.calls.length }).toEqual({ afterOff: 1, afterOn: 1 });
+	});
+
+	/**
+	 * The Sale view reports a failed refresh through `getSaleDiagnostics`, which the core answers with
+	 * its own `localDebugActions`. The view is built with the real core as its actions (as
+	 * `mountedViews` does) and made to refresh through the core's real `refreshSale`; only the runtime
+	 * underneath throws. No DOM: the refresh call never touches `contentEl`.
+	 */
+	it('a Venta refresh that throws reaches the core\'s diagnostics as sale_refresh', async () => {
+		const { core } = await bootedCore();
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		(core as unknown as { localDebugActions: LocalDebugActionRunner }).localDebugActions = new LocalDebugActionRunner({
+			diagnostics: { record } as unknown as LocalDebugLogger, createId: () => 'sale-refresh-wiring',
+		});
+		vi.spyOn(SaleRuntime.prototype, 'refreshSale').mockRejectedValue(new Error('bazaar down'));
+		const view = new SaleItemView({} as HTMLElement, { setIcon: () => undefined }, core);
+
+		await (view as unknown as { callRefreshSale(refreshSeeds: boolean): Promise<boolean> }).callRefreshSale(false);
+
+		expect(record.mock.calls.map(([input]) => input).find((input) => input.state === 'sale_refresh')).toMatchObject({
+			component: 'ui', action: 'view_render', level: 'error', phase: 'failure', code: 'unknown_failure', state: 'sale_refresh',
+		});
 	});
 
 	it('the real shutdownRuntime disposes SaleRuntime once', async () => {
