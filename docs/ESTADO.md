@@ -1,5 +1,32 @@
 # Estado
 
+## Candidato 0.6.34: Terminar sesión, Descartar sesión, token del addon, Assets en Hebra, Logros y Venta (10 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.34` sobre el canal 0.6.33 publicado
+(`d1d39c0`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.34 se ha visto en un Obsidian ni en un Hebra reales.
+  Todo está medido en tests con relojes y candados inyectados y con el fake de la librería de Hebra. No está medido que
+  el webview de Hebra dé `navigator.locks` a los plugins; sin candados, la reserva huérfana tarda hasta 5 min. Tampoco
+  está confirmado con un log real que el bloqueo de «Terminar sesión» visto en la 0.6.33 fuera el reloj atrasado.
+- Contenido: Terminar sesión con reloj atrasado (sello que no retrocede, reserva por delante vigilada con reloj
+  monótono, `+1` al renovar) y «Descartar sesión»; token del addon con «Crear token»; Assets en Hebra (puntero viejo
+  fuera del vault, mover según la ruta, motivos en la fila); Logros (108 conjuntos de la wiki generados por
+  `scripts/generate-known-achievement-sets.mjs`, duplicados por nombre, textos para listas vacías, casillas por CSS);
+  Venta (animación, plazo de 60 s, «Actualizar» en la cabecera).
+- Cada lote pasó revisión independiente (de dos a cuatro vueltas) con pruebas negativas; el censo de observabilidad se
+  declaró por script en cada fusión.
+- Límite conocido: durante una actualización con dos ventanas de builds distintos y el reloj parado, la nueva puede
+  quitar la reserva a la vieja a los 5 min (sin corrupción, por el fence).
+- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+
+## Canal 0.6.33 publicado: el icono de Logros se ve en Hebra (10 oct 2026)
+
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.33` = `d1d39c0`. Cambia el icono de la sección
+Logros de `trophy` a `circle-check`, que Hebra pinta. Publicada sin el gate local completo, a petición de David; CI y
+Release de GitHub en verde y `release:brat-verify` PASS con 8 assets.
+
 ## Canal 0.6.32 publicado: Logros con elementos, nombres e iconos, iconos en el resumen de sesión y Venta fuera del núcleo (10 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Rama `integracion/0.6.32` sobre el canal 0.6.31 publicado

@@ -1,12 +1,36 @@
 # Changelog
 
+## Release beta 0.6.34 - Terminar sesión sin bloqueos, «Aplicar» de los assets en Hebra y Logros con todos sus elementos
+
+Se actualiza desde la 0.6.33 publicada. Corrige los fallos que se vieron usando la 0.6.33. Nada de esto se ha visto
+todavía en un Obsidian ni en un Hebra reales; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesión en vivo. Con el reloj del equipo atrasado, «Terminar sesión» ya no falla ni deja la reserva bloqueada: la
+  sesión se cierra, se escribe la nota de resumen y el addon de Nexus puede volver a conectarse. Si al recargar queda
+  una reserva de otra instancia ya cerrada, se libera sola en 15 s (o en 5 min como mucho si el host no da candados),
+  y el aviso dice que es el reloj, no «otra ventana». Una instancia abierta nunca pierde su reserva.
+- Sesión en vivo. Nuevo «Descartar sesión» para una sesión que no puede terminar: solo borra si esta instancia tiene la
+  reserva, nunca un registro que no pudo leer ni la sesión manual, y dice por qué cuando no puede.
+- Ajustes. El token del addon de Nexus ya no se pega a mano: un botón «Crear token» lo genera, «Copiar token» lo copia
+  y «Crear token nuevo» pide una segunda pulsación.
+- Assets. En Hebra, «Aplicar» instala en la carpeta de salida nueva tras cambiarla (antes respondía conflicto para
+  siempre), y mover los assets sigue funcionando cuando la carpeta nueva contiene a la vieja. La fila de Assets dice el
+  motivo cuando no escribe nada: modo consulta, plugin arrancando, ficheros aún sin sincronizar, Bases tuyas, carpeta
+  inexistente o escritura bloqueada; el diagnóstico guarda el código real.
+- Logros. Las metas muestran los elementos que cuentan según la wiki (108 metas revisadas una a una contra la API y la
+  wiki, entre ellas «Temporadas de los dragones» con sus 24). Los logros con el mismo nombre salen todos, con su número.
+  Ninguna meta queda sin explicación bajo la barra: lista, «la barra cuenta más», piezas, elementos ocultos,
+  periódicos o «la API no los lista». Las casillas ✓ se pintan con CSS y «Actualizar progreso» ya no se queda en curso.
+- Venta. Mientras carga hay una animación, el texto de carga sale una vez, un fallo o un plazo de 60 s acaban con aviso
+  y «Reintentar», y «Actualizar» queda en la cabecera, por encima de la barra de estado.
+
 ## Release beta 0.6.33 - el icono de Logros se ve en Hebra
 
 Se actualiza desde la 0.6.32 publicada. La sección Logros usa el icono `circle-check`, que Hebra sí pinta; con `trophy`
 la fila salía con un hueco en la pantalla principal de Hebra. Publicada sin el gate local completo, a petición de David;
 la CI de GitHub sí la comprueba.
 
-Logros con sus elementos, nombres e iconos, e iconos en el resumen de sesión
+## Release beta 0.6.32 - Logros con sus elementos, nombres e iconos, e iconos en el resumen de sesión
 
 Se actualiza desde la 0.6.31 publicada. Lo que más se nota: cada logro seguido muestra dentro sus elementos con casilla y
 enlace a la wiki, como la nota de Leyspring Hollows, y las recompensas y objetivos salen por su nombre y con su icono en
