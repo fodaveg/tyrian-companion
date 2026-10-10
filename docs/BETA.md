@@ -206,6 +206,11 @@ procedimiento completo y no necesita nada de esto.
    objeto de plugin cargado. Ese `obsidian` es un CLI externo que el script espera en el `PATH`; si
    se llama de otra forma, indícalo con `--obsidian-cli <ruta>`. Sin ese CLI el preflight no puede
    ejecutarse y la QA se registra como pendiente, no como fallida.
+   El preflight exige además `core.runtimeReady` (el `onload` terminó: `runtime-not-ready` si no) y
+   compara el sha256 de `main.js` y `styles.css` instalados con el `digest` de
+   `gh release view <versión> --json assets` (`installed-asset-mismatch` si difieren). Necesita `gh`
+   autenticado en el `PATH` (`--gh-cli <ruta>` para otro); `--release-tag <versión>` cambia la etiqueta
+   y `--no-release-check` omite la comparación, sin que el `PASS` diga entonces `release-bytes=match`.
    La QA de instalación o actualización no es válida sin `PASS`, incluso si
    la versión en disco ya es la esperada. Un `runtime-version-mismatch` exige recargar el plugin o
    reiniciar Obsidian y repetir el preflight. En una instalación desde artifact, usa la copia del
