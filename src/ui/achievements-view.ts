@@ -285,7 +285,8 @@ export class AchievementsView {
 		const locale = this.actions.getLocale();
 		const key = `${locale}:${ids.join(',')}:${services.vaultId}`;
 		const [details, reading] = await Promise.all([
-			this.detailsKey === key && this.details !== null ? this.details : services.catalog.loadDetails(locale, ids),
+			// Details that could not all be loaded are not cached: the next read (a refresh, «Actualizar progreso») asks again.
+			this.detailsKey === key && this.details !== null && !this.details.failed ? this.details : services.catalog.loadDetails(locale, ids),
 			services.progress.lastReading(services.vaultId),
 		]);
 		if (this.disposed || load !== this.trackedLoad) return;

@@ -72,6 +72,8 @@ function harness(options: {
 	holdCatalog?: boolean;
 	/** The index build waits until `releaseBuild()`. */
 	holdBuild?: boolean;
+	/** The first `loadDetails` answers `failed: true` with nothing; the next ones answer normally. */
+	detailsFailOnce?: boolean;
 	locale?: 'es' | 'en';
 } = {}) {
 	const tracked = [...(options.tracked ?? [])];
@@ -110,6 +112,9 @@ function harness(options: {
 		search: (_locale, filter, limit) => indexReady ? searchAchievementIndex(INDEX, filter, limit) : null,
 		loadDetails: async (_locale, ids) => {
 			calls.push(`details:${ids.join(',')}`);
+			if (options.detailsFailOnce && calls.filter((call) => call.startsWith('details:')).length === 1) {
+				return { details: new Map(), englishNames: new Map(), retired: new Set(), failed: true, savedAt: null, stale: false };
+			}
 			const details = new Map<number, AchievementDetail>();
 			const englishNames = new Map<number, string>();
 			for (const id of ids) {
@@ -593,6 +598,25 @@ describe('AchievementsView: the states of the section', () => {
 		// The details are the catalog's and were cached; the reading was asked again; the key was never used.
 		expect(h.calls.filter((call) => call.startsWith('details:')).length).toBe(detailsBefore);
 		expect(h.refresh).not.toHaveBeenCalled();
+	});
+
+	it('details that could not be loaded are asked again by «Actualizar progreso», and the warning goes once they arrive', async () => {
+		const h = harness({ tracked: [1], detailsFailOnce: true });
+		h.view.mount();
+		await h.settle();
+		expect(h.text()).toContain('No se pudieron cargar los detalles de algún logro seguido.');
+		expect(h.items()[0]!.querySelector('.tyrian-achievements__name')?.textContent).toBe('Logro 1');
+		expect(h.calls.filter((call) => call.startsWith('details:'))).toHaveLength(1);
+
+		h.refreshButton().click();
+		await h.settle();
+		expect(h.calls.filter((call) => call.startsWith('details:'))).toHaveLength(2);
+		expect(h.text()).not.toContain('No se pudieron cargar los detalles');
+		expect(h.items()[0]!.querySelector('.tyrian-achievements__requirement')?.textContent).toBe('Requisito: Requisito 1');
+		// Once loaded, the details are cached: a plain refresh reads the reading again, not the details.
+		h.view.refresh();
+		await h.settle();
+		expect(h.calls.filter((call) => call.startsWith('details:'))).toHaveLength(2);
 	});
 
 	it('a reading kept from before a restart is shown as unverified, and nothing read at all says so', async () => {

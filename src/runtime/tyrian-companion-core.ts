@@ -2165,6 +2165,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * threw: that failure is already in the log under `settings_save`, so it is not rethrown.
 	 */
 	async toggleTrackedAchievement(id: number, follow: boolean): Promise<TrackedAchievementToggleResult> {
+		// At the limit, a new follow is refused before any write: data.json is not rewritten and no reaction runs.
+		const current = this.settings.trackedAchievementIds;
+		if (follow && !current.includes(id) && current.length >= MAX_TRACKED_ACHIEVEMENT_IDS) return 'limit';
 		let limit = false;
 		try {
 			const result = await this.updateSettings({

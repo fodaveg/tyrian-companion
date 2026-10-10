@@ -92,9 +92,11 @@ export class TrackedProgressService {
 				this.knownAccount.set(vaultId, read.reading.accountRef);
 				const saved = await this.store.writeProgress(vaultId, read.reading);
 				// The key changed while the reading was being written: what the write left is of the
-				// old key, so it is cleared again and the reading is not answered as good.
+				// old key, so it is cleared again and the reading is not answered as good. Not when a
+				// newer refresh is in flight: its write is queued behind this one in the store, and a
+				// clear issued now would land after it and take the new reading away.
 				if ((this.generation.get(vaultId) ?? 0) !== generation) {
-					await this.store.clearProgress(vaultId);
+					if (this.inFlight.get(vaultId) === undefined) await this.store.clearProgress(vaultId);
 					return { status: 'unavailable', reason: 'cancelled' };
 				}
 				return { ...read, saved };

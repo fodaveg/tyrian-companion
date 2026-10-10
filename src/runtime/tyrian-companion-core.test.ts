@@ -784,9 +784,17 @@ describe('the three sections on a host with a main screen', () => {
 		// The same id again is idempotent, and the 101st is refused as the limit.
 		expect(await runtime.toggleTrackedAchievement(20, true)).toBe('saved');
 		expect(runtime.settings.trackedAchievementIds).toEqual([20]);
-		store.value = { ...store.value, trackedAchievementIds: Array.from({ length: 100 }, (_, index) => 1000 + index) };
+		// At the limit, a follow is refused before any write: data.json is not rewritten and no reaction runs.
+		const full = Array.from({ length: 100 }, (_, index) => 1000 + index);
+		await runtime.updateSettings({ trackedAchievementIds: full });
+		saves.length = 0;
 		expect(await runtime.toggleTrackedAchievement(7, true)).toBe('limit');
-		expect(runtime.settings.trackedAchievementIds).not.toContain(7);
+		expect(saves).toEqual([]);
+		expect(runtime.settings.trackedAchievementIds).toEqual(full);
+		// One already followed is not a new one: it still saves (idempotent), and unfollowing works at the limit.
+		expect(await runtime.toggleTrackedAchievement(1000, true)).toBe('saved');
+		expect(await runtime.toggleTrackedAchievement(1000, false)).toBe('saved');
+		expect(runtime.settings.trackedAchievementIds).toHaveLength(99);
 
 		fail = true;
 		await expect(runtime.toggleTrackedAchievement(8, true)).resolves.toBe('refused');

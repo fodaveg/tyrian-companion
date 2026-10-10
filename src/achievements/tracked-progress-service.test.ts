@@ -13,6 +13,12 @@ class MemoryProgressStore implements TrackedProgressStore {
 	failWrites = false;
 	/** Every write waits on it, as a slow IndexedDB would. */
 	holdWrites: Promise<void> | null = null;
+	/**
+	 * With `holdEachWrite`, every write and clear waits for its own release in `pendingOps`, in the
+	 * order it was issued: IndexedDB lands readwrite transactions on one store in issue order.
+	 */
+	holdEachWrite = false;
+	readonly pendingOps: Array<{ kind: 'write' | 'clear'; release: () => void }> = [];
 
 	readProgress(vaultId: string, accountRef: string | null): Promise<StoredTrackedProgress | null> {
 		const record = this.records.get(vaultId) ?? null;
@@ -21,14 +27,16 @@ class MemoryProgressStore implements TrackedProgressStore {
 
 	async writeProgress(vaultId: string, progress: StoredTrackedProgress): Promise<boolean> {
 		if (this.holdWrites) await this.holdWrites;
+		if (this.holdEachWrite) await new Promise<void>((release) => { this.pendingOps.push({ kind: 'write', release }); });
 		if (this.failWrites) return false;
 		this.records.set(vaultId, structuredClone(progress));
 		return true;
 	}
 
-	clearProgress(vaultId: string): Promise<boolean> {
+	async clearProgress(vaultId: string): Promise<boolean> {
+		if (this.holdEachWrite) await new Promise<void>((release) => { this.pendingOps.push({ kind: 'clear', release }); });
 		this.records.delete(vaultId);
-		return Promise.resolve(true);
+		return true;
 	}
 }
 
@@ -168,6 +176,36 @@ describe('TrackedProgressService.refresh', () => {
 		expect(await inFlight).toEqual({ status: 'unavailable', reason: 'cancelled' });
 		expect(store.records.has(VAULT)).toBe(false);
 		expect(await service.lastReading(VAULT)).toBeNull();
+	});
+
+	it('an old reading discarded after its write issues no clear while a newer refresh is in flight: its clear would land after the new write', async () => {
+		const store = new MemoryProgressStore();
+		store.holdEachWrite = true;
+		const { service } = harness({ store });
+		const tick = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+		/** Waits until the store has queued `count` operations (the account hash is asynchronous crypto). */
+		const queued = async (count: number) => { while (store.pendingOps.length < count) await tick(); };
+		const land = async (index: number) => { store.pendingOps[index]!.release(); await tick(); await tick(); };
+		const old = service.refresh(VAULT, [10]);
+		await queued(1);
+		// The key changes while the old write is queued; the new refresh queues its write behind it.
+		const cleared = service.clearProgress(VAULT);
+		const fresh = service.refresh(VAULT, [10, 11]);
+		await queued(3);
+		expect(store.pendingOps.map((op) => op.kind)).toEqual(['write', 'clear', 'write']);
+
+		// The old write lands: the old refresh sees the key changed, and the new one still in flight.
+		await land(0);
+		expect(store.pendingOps.map((op) => op.kind)).toEqual(['write', 'clear', 'write']);
+		await land(1);
+		await cleared;
+		await land(2);
+		expect((await fresh).status).toBe('ok');
+		// Everything the old refresh issued has landed; a late clear from it would have taken the new reading away.
+		for (let index = 3; index < store.pendingOps.length; index += 1) await land(index);
+		expect(await old).toEqual({ status: 'unavailable', reason: 'cancelled' });
+		expect(store.records.get(VAULT)?.trackedIds).toEqual([10, 11]);
+		expect((await service.lastReading(VAULT))?.reading.trackedIds).toEqual([10, 11]);
 	});
 
 	it('runs one refresh per vault at a time: a second call joins it', async () => {
