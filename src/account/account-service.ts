@@ -165,6 +165,21 @@ export function parseAccountProfile(value: unknown): AccountProfile {
 	};
 }
 
+/**
+ * The permissions of the key of `operation`, asked to `GET /v2/tokeninfo` with that same key (one
+ * retry of a 401/403, as the connection check does). `'rejected'` when `tokeninfo` refuses the key
+ * (401/403 twice); null when it could not be read (network, timeout, another status, a body that
+ * does not parse), which confirms nothing. Never rejects.
+ */
+export async function readTokenPermissions(operation: Pick<GuildWars2Operation, 'request'>): Promise<string[] | 'rejected' | null> {
+	// `async` so a request that throws synchronously still settles as a rejection here.
+	const ask = async (): Promise<TokenInfo> => parseTokenInfo(await operation.request('tokeninfo', new Set([401, 403])));
+	const [read] = await Promise.allSettled([ask()]);
+	if (read.status === 'fulfilled') return read.value.permissions;
+	const error: unknown = read.reason;
+	return error instanceof HttpTransportError && (error.status === 401 || error.status === 403) ? 'rejected' : null;
+}
+
 export function parseTokenInfo(value: unknown): TokenInfo {
 	if (
 		!isRecord(value) ||

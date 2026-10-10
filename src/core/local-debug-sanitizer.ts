@@ -51,7 +51,9 @@ export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, 
 	// `commerce/prices` call), not player or account data: they name game objects, not the
 	// account that dropped them. `http.ts` already caps how many a single failure carries
 	// before this allowlist ever runs.
-	http: [...COMMON_DETAIL_FIELDS, 'statusCode', 'responseKind', 'endpoint', 'itemIds'],
+	// `apiReason` is the closed name `classifyApiRefusal` gives a 401/403 (`invalid_key`,
+	// `scope:<permission>`, `auth_required`, `other`), never the text of the API's answer.
+	http: [...COMMON_DETAIL_FIELDS, 'statusCode', 'responseKind', 'endpoint', 'itemIds', 'apiReason'],
 	// `archiveKey` is the IndexedDB key of a preserved API archive (`legacy-api-runtime:<sessionId>`): a
 	// local session id, no account data. The sanitizer truncates its value to MAX_STRING_LENGTH.
 	session: [...COMMON_DETAIL_FIELDS, 'phase', 'evidenceQuality', 'itemCount', 'archiveKey'],

@@ -31,6 +31,29 @@ describe('local debug sanitizer: commerce_prices item ids', () => {
 	});
 });
 
+/** 0.6.34: the closed name of a 401/403 (`classifyApiRefusal`) survives the sanitized record; only for http. */
+describe('local debug sanitizer: apiReason of a refused request', () => {
+	it('keeps apiReason on an http failure', () => {
+		const record = sanitizeLocalDebugRecord({
+			level: 'error', component: 'http', action: 'http_request', phase: 'failure', code: 'permission_denied',
+			actionId: 'a1', correlationId: 'c1',
+			details: { endpoint: 'account_achievements', statusCode: 403, responseKind: 'http', apiReason: 'scope:progression' },
+		}, CONTEXT);
+
+		expect(record.details).toEqual({ endpoint: 'account_achievements', statusCode: 403, responseKind: 'http', apiReason: 'scope:progression' });
+	});
+
+	it('drops apiReason for every component that has not reviewed the field', () => {
+		const record = sanitizeLocalDebugRecord({
+			level: 'error', component: 'session', action: 'session_start', phase: 'failure', code: 'internal_failure',
+			actionId: 'a1', correlationId: 'c1',
+			details: { phase: 'observing', apiReason: 'invalid_key' },
+		}, CONTEXT);
+
+		expect(record.details).not.toHaveProperty('apiReason');
+	});
+});
+
 /** A failed vault sync must leave its progress (`written`) in the final record; `errorName` stays blocked by name. */
 describe('local debug sanitizer: failed vault sync details', () => {
 	it.each(['inventory', 'wallet'] as const)('keeps written, and drops errorName, on a %s failure', (component) => {

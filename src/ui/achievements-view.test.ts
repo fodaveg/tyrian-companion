@@ -7,7 +7,8 @@ import { achievementNameKey, type AchievementFreshness, type AchievementIndexBui
 import { knownSetMembersOf } from '../achievements/known-achievement-sets';
 import { SWEEP_SAMPLE_CATEGORIES, SWEEP_SAMPLE_PAGE } from '../achievements/__fixtures__/sweep-sample';
 import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE, SEASONS_OF_THE_DRAGONS_CATEGORIES, SEASONS_OF_THE_DRAGONS_ID, SEASONS_OF_THE_DRAGONS_PAGE } from '../achievements/__fixtures__/api-fixtures';
-import type { TrackedProgressRefreshResult } from '../achievements/tracked-progress-service';
+import type { StoredTrackedProgress, TrackedProgressStore } from '../achievements/achievement-store';
+import { TrackedProgressService, type TrackedProgressRefreshResult } from '../achievements/tracked-progress-service';
 import { installDomHelpers } from '../host/dom-polyfill';
 import { AchievementsView, type AchievementCatalogPort, type AchievementsViewActions, type TrackedProgressPort } from './achievements-view';
 
@@ -96,9 +97,12 @@ function harness(options: {
 	namesFailOnce?: boolean;
 	/** `loadNames` waits until `releaseNames()`. */
 	holdNames?: boolean;
+	/** A real progress port (the service over a store) instead of the scripted one. */
+	progressPort?: TrackedProgressPort;
 } = {}) {
 	const tracked = [...(options.tracked ?? [])];
 	let readingCleared = false;
+	let keyRevision = 0;
 	const gate = () => { let release = () => undefined as void; const wait = new Promise<void>((resolve) => { release = resolve; }); return { wait, release }; };
 	const catalogGate = gate();
 	const namesGate = gate();
@@ -183,7 +187,7 @@ function harness(options: {
 			};
 		},
 	};
-	const services = { catalog, progress, vaultId: VAULT };
+	const services = { catalog, progress: options.progressPort ?? progress, vaultId: VAULT };
 	let starting = options.starting ?? false;
 	const openSettings = vi.fn();
 	const refreshFailure = vi.fn();
@@ -205,6 +209,7 @@ function harness(options: {
 		toggleTrackedAchievement: toggle,
 		getAchievementsServices: () => (starting ? null : services),
 		hasConfiguredApiKey: () => options.hasKey ?? true,
+		getApiKeyRevision: () => keyRevision,
 		openProductSettings: openSettings,
 		localDebugAchievementsRefreshFailure: refreshFailure,
 		...(options.noOpenExternal ? {} : { openExternal }),
@@ -218,6 +223,8 @@ function harness(options: {
 		ready: () => { starting = false; },
 		/** The key changed: the core forgot the kept reading (`clearProgress`); the view is told by `refresh()`. */
 		clearReading: () => { readingCleared = true; },
+		/** Another key selected: the core bumps its revision and forgets the kept reading; the view is told by `refresh()`. */
+		changeKey: () => { keyRevision += 1; readingCleared = true; },
 		releaseCatalog: () => { catalogGate.release(); },
 		releaseBuild: () => { buildGate.release(); },
 		releaseSaves: () => { for (const release of pendingSaves.splice(0)) release(); },
@@ -648,6 +655,40 @@ describe('AchievementsView: the states of the section', () => {
 		// The details are the catalog's and were cached; the reading was asked again; the key was never used.
 		expect(h.calls.filter((call) => call.startsWith('details:')).length).toBe(detailsBefore);
 		expect(h.refresh).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['key_rejected', 'La clave API no es válida o fue revocada. Revísala en Ajustes.'],
+		['missing_scope', 'La clave API necesita el permiso «progression» para leer el progreso.'],
+	] as const)('after %s, choosing another key drops what the failure said of the old one; a repaint with the same key keeps it', async (reason, copy) => {
+		const h = harness({ tracked: [1], refresh: { status: 'unavailable', reason } });
+		h.view.mount();
+		await h.settle();
+		h.refreshButton().click();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__notice')?.textContent).toContain(copy);
+		h.view.refresh();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__notice')?.textContent).toContain(copy);
+
+		h.changeKey();
+		h.view.refresh();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__notice')?.textContent).not.toContain(copy);
+		expect(h.container.querySelector('.tyrian-achievements__notice [role="alert"]')).toBeNull();
+		expect(h.refresh).toHaveBeenCalledOnce();
+	});
+
+	it('without a key and with nothing read, the bar says a key is needed instead of pointing to the disabled button', async () => {
+		const es = harness({ tracked: [1], hasKey: false, noReading: true });
+		es.view.mount();
+		await es.settle();
+		expect(es.container.querySelector('.tyrian-achievements__reading')?.textContent).toBe('Progreso sin leer. Hace falta una clave API para leerlo.');
+		expect(es.refreshButton().disabled).toBe(true);
+		const en = harness({ tracked: [1], hasKey: false, noReading: true, locale: 'en' });
+		en.view.mount();
+		await en.settle();
+		expect(en.container.querySelector('.tyrian-achievements__reading')?.textContent).toBe('Progress not read yet. An API key is needed to read it.');
 	});
 
 	it('details that could not be loaded are asked again by «Actualizar progreso», and the warning goes once they arrive', async () => {
@@ -1316,5 +1357,115 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 		expect(h.refresh).toHaveBeenCalledTimes(1);
 		expect(rows(h)).toHaveLength(1);
 		expect(h.text()).not.toContain('No se pudo cargar la lista de elementos');
+	});
+});
+
+/**
+ * David, 0.6.34 (10 oct 2026), in Hebra: «Temporadas de los dragones» «Completado» with «Hechos: 1 de
+ * 24», 23 dotted circles and only «Fin a las conjeturas» ticked, under the «progression» notice.
+ */
+describe('AchievementsView: «Temporadas de los dragones» read, and read before 0.6.34', () => {
+	const detailsOf = (page: unknown) => new Map(parseAchievementPage(page)!.details.map((each) => [each.id, each]));
+	const states = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll<HTMLElement>('.tyrian-achievements__elements li')).map((row) => row.getAttribute('data-state'));
+	const counts = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll('.tyrian-achievements__elements-count')).map((p) => p.textContent);
+	const wiki = knownSetMembersOf(SEASONS_OF_THE_DRAGONS_ID)!;
+	const base = () => ({
+		tracked: [SEASONS_OF_THE_DRAGONS_ID], details: detailsOf(SEASONS_OF_THE_DRAGONS_PAGE), categories: parseAchievementCategories(SEASONS_OF_THE_DRAGONS_CATEGORIES)!,
+	});
+	/** What 0.6.33 asked: the meta and the five other achievements of its category 137 (no wiki set yet). */
+	const READ_BY_0_6_33 = [SEASONS_OF_THE_DRAGONS_ID, 5823, 5830, 5851, 5960, 5990];
+	const OLD_ENTRIES: AccountAchievementEntry[] = [
+		{ id: SEASONS_OF_THE_DRAGONS_ID, done: true, current: 24, max: 24, repeated: null, bits: null },
+		{ id: 5960, done: true, current: 1, max: 1, repeated: null, bits: null },
+	];
+
+	class MemoryStore implements TrackedProgressStore {
+		record: StoredTrackedProgress | null = null;
+		readProgress(_vaultId: string, accountRef: string | null) { return Promise.resolve(this.record !== null && accountRef !== null && this.record.accountRef !== accountRef ? null : this.record); }
+		writeProgress(_vaultId: string, progress: StoredTrackedProgress) { this.record = structuredClone(progress); return Promise.resolve(true); }
+		clearProgress() { this.record = null; return Promise.resolve(true); }
+	}
+
+	it('a good reading through the real service leaves each of the 24 done or pending, none «sin leer», also after a restart', async () => {
+		const store = new MemoryStore();
+		// The API omits what the account never started: three of the 24 come without an entry.
+		const entries = [
+			{ id: SEASONS_OF_THE_DRAGONS_ID, done: false, current: 20, max: 24 },
+			...wiki.slice(0, 20).map((id) => ({ id, done: true })),
+			{ id: wiki[20]!, done: false, current: 1, max: 3 },
+		];
+		const operation = {
+			request: async () => ({ id: 'ABCD-1234', name: 'Tester.1234' }),
+			requestDetailed: async () => ({ status: 200, headers: {}, body: entries }),
+		};
+		const client = { beginOperation: () => operation as never };
+		const h = harness({ ...base(), progressPort: new TrackedProgressService(client, store, () => NOW) });
+		h.view.mount();
+		await h.settle();
+		expect(states(h)).toEqual(Array.from({ length: 24 }, () => 'unknown'));
+		h.refreshButton().click();
+		await vi.waitFor(() => { expect(states(h)).not.toContain('unknown'); });
+		expect(states(h).filter((state) => state === 'done')).toHaveLength(20);
+		expect(states(h).filter((state) => state === 'pending')).toHaveLength(4);
+		expect(counts(h)).toEqual(['Hechos: 20 de 24']);
+		expect(store.record?.trackedIds).toEqual([SEASONS_OF_THE_DRAGONS_ID, ...wiki]);
+
+		// A restart: a new service over the same store answers the kept reading, members included.
+		const restarted = harness({ ...base(), progressPort: new TrackedProgressService(client, store, () => NOW) });
+		restarted.view.mount();
+		await vi.waitFor(() => { expect(states(restarted)).toHaveLength(24); });
+		expect(states(restarted)).not.toContain('unknown');
+		expect(counts(restarted)).toEqual(['Hechos: 20 de 24']);
+	});
+
+	it('a reading kept from before 0.6.34 counts what it did not read as not read, not as not done, and says what the dotted circle is', async () => {
+		const h = harness({ ...base(), readingIds: READ_BY_0_6_33, entries: OLD_ENTRIES });
+		h.view.mount();
+		await h.settle();
+		// «Completado» is the meta's own entry (`done: true`); the one ticked element is the only one 0.6.33 asked that is among the 24.
+		expect(h.items()[0]!.querySelector('.tyrian-achievements__state')?.textContent).toBe('Completado');
+		expect(states(h).filter((state) => state === 'unknown')).toHaveLength(23);
+		expect(states(h).at(-1)).toBe('done');
+		expect(counts(h)).toEqual(['Hechos: 1 de 24 · 23 sin leer', 'Sin leer (círculo punteado): pulsa «Actualizar progreso».']);
+	});
+
+	it('with nothing read at all the bar says it once, and no achievement repeats it', async () => {
+		const none = harness({ ...base(), noReading: true });
+		none.view.mount();
+		await none.settle();
+		expect(none.container.querySelector('.tyrian-achievements__reading')?.textContent).toBe('Progreso sin leer. Pulsa «Actualizar progreso» para leerlo con tu clave.');
+		expect(counts(none)).toEqual(['24 elementos · sin leer']);
+	});
+
+	it('the hint does not point to a disabled button without a key, and speaks English with the quotes of the rest', async () => {
+		const noKey = harness({ ...base(), readingIds: READ_BY_0_6_33, entries: OLD_ENTRIES, hasKey: false });
+		noKey.view.mount();
+		await noKey.settle();
+		expect(counts(noKey)).toEqual(['Hechos: 1 de 24 · 23 sin leer', 'Sin leer (círculo punteado): hace falta una clave API.']);
+		const english = harness({ ...base(), readingIds: READ_BY_0_6_33, entries: OLD_ENTRIES, locale: 'en' });
+		english.view.mount();
+		await english.settle();
+		expect(counts(english)).toEqual(['Done: 1 of 24 · 23 not read', 'Not read (dotted circle): press "Update progress".']);
+	});
+
+	it.each([
+		['missing_scope', 'Sin leer (círculo punteado): revisa la clave en Ajustes.'],
+		['key_rejected', 'Sin leer (círculo punteado): revisa la clave en Ajustes.'],
+		['request_failed', 'Sin leer (círculo punteado): pulsa «Actualizar progreso».'],
+	] as const)('after a refresh that failed with %s the hint says %s', async (reason, hint) => {
+		const h = harness({ ...base(), readingIds: READ_BY_0_6_33, entries: OLD_ENTRIES, refresh: { status: 'unavailable', reason } });
+		h.view.mount();
+		await h.settle();
+		h.refreshButton().click();
+		await h.settle();
+		await h.settle();
+		expect(counts(h)).toEqual(['Hechos: 1 de 24 · 23 sin leer', hint]);
+	});
+
+	it('once every element is read there is no hint', async () => {
+		const h = harness({ ...base(), readingIds: [SEASONS_OF_THE_DRAGONS_ID, ...wiki], entries: OLD_ENTRIES });
+		h.view.mount();
+		await h.settle();
+		expect(counts(h)).toEqual(['Hechos: 1 de 24']);
 	});
 });

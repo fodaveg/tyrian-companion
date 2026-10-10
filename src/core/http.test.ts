@@ -5,7 +5,7 @@ import type {
 	LocalDebugEventContext,
 	ResolvedLocalDebugActionContext,
 } from './local-debug-action-runner';
-import { HttpTransportError, ResilientHttpTransport, parseRetryAfter } from './http';
+import { HttpTransportError, ResilientHttpTransport, classifyApiRefusal, parseRetryAfter } from './http';
 
 function response(status: number, headers: Record<string, string> = {}, body: unknown = {}): never {
 	return { status, headers, json: body, text: '', arrayBuffer: new ArrayBuffer(0) } as never;
@@ -414,6 +414,54 @@ describe('ObsidianRequestTransport', () => {
 			endpoint: 'character_inventory',
 		})).rejects.toMatchObject({ kind: 'http', status: 503 });
 		expect(request).toHaveBeenCalledOnce();
+	});
+});
+
+/**
+ * 0.6.34 (10 oct 2026): «falta progression» for a key with every permission. The status alone
+ * cannot say why the API refused; its `{"text": …}` can, as a closed name and never the text.
+ */
+describe('the reason of a 401/403, as the API named it', () => {
+	it.each([
+		[{ text: 'Invalid access token' }, 'invalid_key'],
+		[{ text: 'invalid key' }, 'invalid_key'],
+		[{ text: 'requires scope progression' }, 'scope:progression'],
+		[{ text: 'requires scope tradingpost' }, 'scope:tradingpost'],
+		[{ text: 'requires scope secretstuff' }, 'other'],
+		[{ text: 'endpoint requires authentication' }, 'auth_required'],
+		[{ text: 'ErrTimeout' }, 'other'],
+		[{ text: 'Bearer abc-123 is not valid for account Tester.1234' }, 'other'],
+		[{}, null], [null, null], ['Invalid access token', null], [{ text: 7 }, null],
+	])('classifies %j as %s', (body, expected) => {
+		expect(classifyApiRefusal(body)).toBe(expected);
+	});
+
+	it.each([401, 403])('a %i carries it on the error and in the failure diagnostic, without the text', async (status) => {
+		const diagnostics = diagnosticHarness();
+		const transport = new ResilientHttpTransport({
+			request: async () => response(status, {}, { text: 'requires scope progression' }),
+			maxRetries: 0, diagnostics: diagnostics.port, ...inertTimer,
+		});
+
+		await expect(transport.send({ url: 'https://api.guildwars2.com/v2/account/achievements', method: 'GET', endpoint: 'account_achievements' }))
+			.rejects.toMatchObject({ status, apiReason: 'scope:progression' });
+		expect(diagnostics.events.at(-1)).toMatchObject({
+			phase: 'failure', code: 'permission_denied',
+			details: { endpoint: 'account_achievements', statusCode: status, responseKind: 'http', apiReason: 'scope:progression' },
+		});
+		expect(JSON.stringify(diagnostics.events)).not.toContain('requires scope');
+	});
+
+	it('another status keeps no reason, whatever its body says', async () => {
+		const diagnostics = diagnosticHarness();
+		const transport = new ResilientHttpTransport({
+			request: async () => response(404, {}, { text: 'Invalid access token' }),
+			maxRetries: 0, diagnostics: diagnostics.port, ...inertTimer,
+		});
+
+		await expect(transport.send({ url: 'https://api.guildwars2.com/v2/account', method: 'GET', endpoint: 'account' }))
+			.rejects.toMatchObject({ status: 404, apiReason: null });
+		expect(diagnostics.events.at(-1)?.details).not.toHaveProperty('apiReason');
 	});
 });
 

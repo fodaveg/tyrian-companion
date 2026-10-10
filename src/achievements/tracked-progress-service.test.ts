@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { MissingApiKeyError, type GuildWars2Operation } from '../account/guild-wars-2-client';
-import { HttpTransportError } from '../core/http';
+import { GuildWars2Client, MissingApiKeyError, type GuildWars2Operation } from '../account/guild-wars-2-client';
+import { HttpTransportError, type HttpTransport } from '../core/http';
 import type { StoredTrackedProgress, TrackedProgressStore } from './achievement-store';
 import { TrackedProgressService } from './tracked-progress-service';
 
@@ -40,6 +40,8 @@ class MemoryProgressStore implements TrackedProgressStore {
 	}
 }
 
+const ALL_PERMISSIONS = ['account', 'builds', 'characters', 'guilds', 'inventories', 'progression', 'pvp', 'tradingpost', 'unlocks', 'wallet', 'wvw'];
+
 function response(body: unknown, status = 200) { return { status, body, headers: {} } as never; }
 
 function httpError(status: number | null): HttpTransportError {
@@ -54,6 +56,9 @@ function harness(options: {
 	achievementsStatus?: number;
 	accountError?: Error;
 	achievementsError?: Error;
+	/** What `tokeninfo` answers; by default a key with every permission. */
+	tokenInfo?: unknown;
+	tokenInfoError?: Error;
 	noKey?: boolean;
 	hold?: Promise<void>;
 	store?: MemoryProgressStore;
@@ -62,6 +67,10 @@ function harness(options: {
 	const operation: GuildWars2Operation = {
 		request: async (path) => {
 			requested.push(path);
+			if (path === 'tokeninfo') {
+				if (options.tokenInfoError) throw options.tokenInfoError;
+				return 'tokenInfo' in options ? options.tokenInfo : { id: 'KEY-ID', name: 'Todo', permissions: ALL_PERMISSIONS };
+			}
 			if (options.hold) await options.hold;
 			if (options.accountError) throw options.accountError;
 			return 'account' in options ? options.account : { id: 'ABCD-1234', name: 'Tester.1234' };
@@ -116,16 +125,87 @@ describe('TrackedProgressService.refresh', () => {
 		expect(await harness({ noKey: true }).service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'missing_key' });
 	});
 
-	it.each([401, 403])('answers key_rejected to a %i on account: the key itself is invalid or revoked', async (status) => {
-		expect(await harness({ accountError: httpError(status) }).service.refresh(VAULT, [10]))
+	it.each([401, 403])('answers key_rejected to a %i on account only when tokeninfo refuses the key too', async (status) => {
+		expect(await harness({ accountError: httpError(status), tokenInfoError: httpError(status) }).service.refresh(VAULT, [10]))
 			.toEqual({ status: 'unavailable', reason: 'key_rejected' });
-		expect(await harness({ accountError: httpError(status), achievementsError: httpError(status) }).service.refresh(VAULT, [10]))
-			.toEqual({ status: 'unavailable', reason: 'key_rejected' });
+		const both = harness({ accountError: httpError(status), achievementsError: httpError(status), tokenInfoError: httpError(401) });
+		expect(await both.service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'key_rejected' });
+		expect(both.requested.at(-1)).toBe('tokeninfo');
 	});
 
-	it.each([401, 403])('answers missing_scope to a %i on account/achievements: the key lacks progression', async (status) => {
-		expect(await harness({ achievementsError: httpError(status) }).service.refresh(VAULT, [10]))
-			.toEqual({ status: 'unavailable', reason: 'missing_scope' });
+	it.each([401, 403])('a %i on account that tokeninfo does not confirm (it accepts the key, or cannot be read) is a failed reading, not a rejected key', async (status) => {
+		for (const options of [{}, { tokenInfoError: httpError(null) }, { tokenInfoError: httpError(503) }, { tokenInfo: { permissions: ['account'] } }]) {
+			expect(await harness({ accountError: httpError(status), ...options }).service.refresh(VAULT, [10]))
+				.toEqual({ status: 'unavailable', reason: 'request_failed' });
+		}
+	});
+
+	it('takes the scope the API named in its 403 as the confirmation, without asking tokeninfo', async () => {
+		const named = harness({ achievementsError: new HttpTransportError('http', 403, null, 'Forbidden.', undefined, 'scope:progression') });
+		expect(await named.service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'missing_scope' });
+		expect(named.requested).not.toContain('tokeninfo');
+		// «Invalid access token» on account/achievements is not a scope: tokeninfo decides, and here it lists progression.
+		const invalid = harness({ achievementsError: new HttpTransportError('http', 401, null, 'Unauthorized.', undefined, 'invalid_key') });
+		expect(await invalid.service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'request_failed' });
+		expect(invalid.requested).toContain('tokeninfo');
+	});
+
+	it('retries a 401/403 once through the real client: a 403 that passes reads well, with no notice and no tokeninfo', async () => {
+		const sent: string[] = [];
+		let refusals = 0;
+		const transport: HttpTransport = {
+			send: async (request) => {
+				sent.push(request.endpoint ?? 'unknown');
+				if (request.endpoint === 'account_achievements' && refusals === 0) {
+					refusals += 1;
+					throw new HttpTransportError('http', 403, null, 'Forbidden.', undefined, 'other');
+				}
+				return response(request.endpoint === 'account' ? { id: 'ABCD-1234', name: 'Tester.1234' } : [{ id: 10, done: true }]);
+			},
+		};
+		const client = new GuildWars2Client(transport, { hasSelection: () => true, readSelectedApiKey: () => 'not-a-real-key' });
+		const result = await new TrackedProgressService(client, new MemoryProgressStore(), () => NOW).refresh(VAULT, [10]);
+		expect(result).toMatchObject({ status: 'ok', saved: true });
+		expect(sent.filter((endpoint) => endpoint === 'account_achievements')).toHaveLength(2);
+		expect(sent).not.toContain('token_info');
+	});
+
+	it.each([401, 403])('answers missing_scope to a %i on account/achievements only when tokeninfo, with the same key, lists no progression', async (status) => {
+		const { service, requested, beginOperation } = harness({
+			achievementsError: httpError(status), tokenInfo: { id: 'KEY-ID', name: 'Sin progreso', permissions: ['account', 'inventories', 'wallet'] },
+		});
+		expect(await service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'missing_scope' });
+		// One operation, so tokeninfo went with the key that got the refusal, and asked after it.
+		expect(beginOperation).toHaveBeenCalledTimes(1);
+		expect(requested.at(-1)).toBe('tokeninfo');
+	});
+
+	// David, 0.6.34 (10 oct 2026): «falta progression» with a key that has every permission.
+	it.each([401, 403])('a %i on account/achievements for a key whose tokeninfo lists progression is a failed reading, not a missing permission', async (status) => {
+		const { service, requested } = harness({ achievementsError: httpError(status) });
+		expect(await service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'request_failed' });
+		expect(requested).toContain('tokeninfo');
+	});
+
+	it('without a usable tokeninfo nothing confirms the missing permission: request_failed, never missing_scope', async () => {
+		for (const options of [
+			{ tokenInfoError: httpError(401) }, { tokenInfoError: httpError(null) }, { tokenInfo: null },
+			{ tokenInfo: { permissions: 'account' } }, { tokenInfo: { permissions: ['account', 7] } },
+		]) {
+			expect(await harness({ achievementsError: httpError(403), ...options }).service.refresh(VAULT, [10]))
+				.toEqual({ status: 'unavailable', reason: 'request_failed' });
+		}
+	});
+
+	it('asks tokeninfo only after a 401/403 on account/achievements: never on a good reading or another failure', async () => {
+		const good = harness();
+		await good.service.refresh(VAULT, [10]);
+		expect(good.requested).not.toContain('tokeninfo');
+		for (const options of [{ achievementsError: httpError(503) }, { achievementsError: httpError(null) }, { accountError: httpError(null) }]) {
+			const failed = harness(options);
+			await failed.service.refresh(VAULT, [10]);
+			expect(failed.requested).not.toContain('tokeninfo');
+		}
 	});
 
 	it('answers request_failed to a network failure or an unexpected status', async () => {

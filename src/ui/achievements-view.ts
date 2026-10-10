@@ -77,6 +77,8 @@ export interface AchievementsViewActions {
 	/** Null until the runtime has built the services (plugin still starting). */
 	getAchievementsServices(): AchievementsViewServices | null;
 	hasConfiguredApiKey(): boolean;
+	/** An opaque count the core bumps when the selected key changes; absent, the view never sees a change. */
+	getApiKeyRevision?(): number;
 	openProductSettings?(): void;
 	/** Opens the wiki link through the host; without it the link is a plain anchor. */
 	openExternal?(url: string): void;
@@ -155,6 +157,8 @@ export class AchievementsView {
 	private index: IndexState = { status: 'idle' };
 	private tracked: TrackedState = { status: 'loading' };
 	private refreshState: RefreshState = { status: 'idle' };
+	/** The key revision `refreshState` speaks of (`AchievementsViewActions.getApiKeyRevision`). */
+	private keyRevision: number;
 	private query = '';
 	private categoryId: number | null = null;
 	private shown = ACHIEVEMENT_RESULTS_PAGE;
@@ -213,6 +217,7 @@ export class AchievementsView {
 		options: AchievementsViewOptions = {},
 	) {
 		this.now = options.now ?? Date.now;
+		this.keyRevision = actions.getApiKeyRevision?.() ?? 0;
 		this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 		this.timers = options.timers ?? {
 			setTimeout: (callback, ms) => container.win.setTimeout(callback, ms),
@@ -313,6 +318,13 @@ export class AchievementsView {
 	 */
 	refresh(): void {
 		if (this.disposed || this.hidden) return;
+		// Another key: what the last failed reading said («revisa la clave», «falta progression») was of
+		// the key no longer selected. A reading in flight is the service's (`cancelled`), not touched here.
+		const keyRevision = this.actions.getApiKeyRevision?.() ?? 0;
+		if (keyRevision !== this.keyRevision) {
+			this.keyRevision = keyRevision;
+			if (this.refreshState.status === 'failed') this.refreshState = { status: 'idle' };
+		}
 		if (this.catalog.status === 'starting') void this.loadCatalog();
 		this.renderBar();
 		this.renderNotice();
@@ -649,7 +661,8 @@ export class AchievementsView {
 		const reading = this.tracked.status === 'ready' ? this.tracked.reading : null;
 		const line = this.bar.createEl('p', { cls: 'tyrian-achievements__reading' });
 		if (reading === null) {
-			line.setText(t.t('achievements.view.unread'));
+			// Without a key the button is disabled: the line does not send the player to it.
+			line.setText(t.t(this.actions.hasConfiguredApiKey() ? 'achievements.view.unread' : 'achievements.view.unreadNoKey'));
 			return;
 		}
 		const ago = relativeTimeLabel(reading.reading.capturedAt, this.actions.getLocale(), this.now());
@@ -862,13 +875,26 @@ export class AchievementsView {
 		const t = this.t;
 		body.createEl('h4', { text: t.t('achievements.tracked.elements') });
 		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t(elements.loadFailed === true ? (this.actions.hasConfiguredApiKey() ? 'achievements.tracked.elementsLoadFailed' : 'achievements.tracked.elementsLoadFailedNoKey') : elements.hiddenOnly === true ? 'achievements.tracked.elementsHidden' : elements.periodicOnly === true ? 'achievements.tracked.elementsPeriodic' : 'achievements.tracked.elementsNone') }); return; }
-		const unread = elements.items.every((element) => element.state === 'unknown');
+		const unknown = elements.items.filter((element) => element.state === 'unknown').length;
+		const unread = unknown === elements.items.length;
 		const unreadText = elements.total === 1 ? t.t('achievements.tracked.elementsUnread.one') : t.t('achievements.tracked.elementsUnread.many', { total: elements.total });
+		// An element the reading did not ask about is not read, not «not done»: a reading kept from an
+		// older version (that asked other ids) must not pass its gaps off as pending in the count.
 		const count = body.createEl('p', {
 			cls: 'tyrian-achievements__elements-count',
-			text: unread ? unreadText : t.t('achievements.tracked.elementsCount', { done: elements.done, total: elements.total }),
+			text: unread ? unreadText
+				: unknown > 0 ? t.t('achievements.tracked.elementsCountUnread', { done: elements.done, total: elements.total, unread: unknown })
+					: t.t('achievements.tracked.elementsCount', { done: elements.done, total: elements.total }),
 		});
-		if (!unread && elements.done === elements.total && elements.partial !== true && elements.barUnit === undefined) count.addClass('is-complete');
+		if (unknown === 0 && elements.done === elements.total && elements.partial !== true && elements.barUnit === undefined) count.addClass('is-complete');
+		// The dotted circle says «sin leer» only to the eye that knows it: said in words beside the list.
+		// Not when nothing was read at all: the bar already says «Pulsa «Actualizar progreso»» once.
+		if (unknown > 0 && this.tracked.status === 'ready' && this.tracked.reading !== null) {
+			body.createEl('p', {
+				cls: 'tyrian-achievements__elements-count tyrian-achievements__elements-unread',
+				text: t.t(this.unreadHintKey()),
+			});
+		}
 		if (elements.barUnit === 'pieces') body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsPieces') });
 		if (elements.partial === true) body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsPartial') });
 		const list = body.createEl('ul', { cls: 'tyrian-achievements__elements' });
@@ -907,6 +933,17 @@ export class AchievementsView {
 	}
 
 	// ----- copy ----------------------------------------------------------------------------------
+
+	/**
+	 * What to do about elements not read: press «Actualizar progreso», except where pressing it cannot
+	 * help. Without a key the button is disabled; after a confirmed `missing_scope` or `key_rejected`
+	 * the key is what has to change.
+	 */
+	private unreadHintKey(): TranslationKey {
+		if (!this.actions.hasConfiguredApiKey()) return 'achievements.tracked.elementsUnreadHintNoKey';
+		const failed = this.refreshState.status === 'failed' ? this.refreshState.reason : null;
+		return failed === 'missing_scope' || failed === 'key_rejected' ? 'achievements.tracked.elementsUnreadHintCheckKey' : 'achievements.tracked.elementsUnreadHint';
+	}
 
 	private nameOf(view: TrackedAchievementView): string {
 		return view.name ?? this.t.t('achievements.tracked.unknownName', { id: view.id });

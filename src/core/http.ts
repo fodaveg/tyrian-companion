@@ -72,6 +72,34 @@ export interface HttpTransport {
 
 export type HttpErrorKind = 'http' | 'timeout' | 'network';
 
+/** The permissions a Guild Wars 2 API key can grant: the only names `scope:` ever carries. */
+export const GW2_API_PERMISSIONS = [
+	'account', 'builds', 'characters', 'guilds', 'inventories', 'progression', 'pvp', 'tradingpost', 'unlocks', 'wallet', 'wvw',
+] as const;
+export type Gw2ApiPermission = (typeof GW2_API_PERMISSIONS)[number];
+
+/**
+ * What a 401/403 of the API said, as a closed name and never its text: `invalid_key` («Invalid
+ * access token»), `scope:<permission>` («requires scope progression», only for a known permission),
+ * `auth_required` (the route wants a key and got none), `other` for any other text.
+ */
+export type HttpApiReason = 'invalid_key' | 'auth_required' | 'other' | `scope:${Gw2ApiPermission}`;
+
+/** Classifies the `{"text": …}` of a 401/403 body; null without such a text. The text itself goes nowhere. */
+export function classifyApiRefusal(body: unknown): HttpApiReason | null {
+	if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
+	const text = (body as Record<string, unknown>).text;
+	if (typeof text !== 'string') return null;
+	const normalized = text.trim().toLowerCase();
+	if (normalized === 'invalid access token' || normalized === 'invalid key') return 'invalid_key';
+	const scope = /^requires scope ([a-z]+)$/u.exec(normalized)?.[1];
+	if (scope !== undefined) {
+		return (GW2_API_PERMISSIONS as readonly string[]).includes(scope) ? `scope:${scope as Gw2ApiPermission}` : 'other';
+	}
+	if (normalized === 'endpoint requires authentication' || normalized === 'access token required') return 'auth_required';
+	return 'other';
+}
+
 /**
  * A sanitized transport error. Its own `message` never contains request headers, URLs, raw
  * bodies, or anything else pulled from an untrusted lower-level failure (H6.7): an underlying
@@ -92,6 +120,8 @@ export class HttpTransportError extends Error {
 		readonly retryAfterMs: number | null,
 		message: string,
 		cause?: unknown,
+		/** A 401/403's reason as the API named it (`classifyApiRefusal`); null otherwise. */
+		readonly apiReason: HttpApiReason | null = null,
 	) {
 		super(message);
 		this.name = 'HttpTransportError';
@@ -188,6 +218,8 @@ export class ResilientHttpTransport implements HttpTransport {
 						response.status,
 						retryDelayMs,
 						`Request failed with status ${response.status}.`,
+						undefined,
+						response.status === 401 || response.status === 403 ? classifyApiRefusal(response.body) : null,
 					);
 				}
 
@@ -216,6 +248,7 @@ export class ResilientHttpTransport implements HttpTransport {
 					statusCode: transportError?.status ?? null,
 					retryAfterMs: transportError?.retryAfterMs ?? null,
 					responseKind: transportError?.kind ?? 'unknown',
+					...(transportError?.apiReason == null ? {} : { apiReason: transportError.apiReason }),
 					...(request.diagnosticItemIds === undefined ? {} : {
 						itemIds: request.diagnosticItemIds.slice(0, MAX_DIAGNOSTIC_ITEM_IDS),
 					}),

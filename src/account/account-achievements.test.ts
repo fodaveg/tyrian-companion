@@ -45,10 +45,10 @@ describe('parseAccountAchievements', () => {
 });
 
 describe('readAccountAchievements', () => {
-	it('requests the pinned path and parses a 200 body', async () => {
+	it('requests the pinned path, retrying a 401/403 once, and parses a 200 body', async () => {
 		const requestDetailed = vi.fn(async () => ({ status: 200, body: [{ id: 3, done: true }] }));
 		const read = await readAccountAchievements({ requestDetailed } as never);
-		expect(requestDetailed).toHaveBeenCalledWith(ACCOUNT_ACHIEVEMENTS_PATH);
+		expect(requestDetailed).toHaveBeenCalledWith(ACCOUNT_ACHIEVEMENTS_PATH, new Set([401, 403]));
 		expect(read).toEqual({ status: 'ok', entries: [{ id: 3, done: true, current: null, max: null, repeated: null, bits: null }] });
 	});
 

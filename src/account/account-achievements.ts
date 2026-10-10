@@ -48,19 +48,25 @@ export function parseAccountAchievements(
 	return entries;
 }
 
+/** The statuses a keyed read of the account retries once (`GuildWars2Client` retries at once). */
+export const AUTH_RETRY_STATUSES: ReadonlySet<number> = new Set([401, 403]);
+
 export type AccountAchievementsRead =
 	| { status: 'ok'; entries: AccountAchievementEntry[] }
 	| { status: 'invalid' };
 
 /**
- * Requests and parses the account's achievements with `full` validation. A transport failure or a
- * status other than 200 rejects (a key without `progression` answers 403 there); a 200 whose body
- * does not parse is `invalid`.
+ * Requests and parses the account's achievements with `full` validation. A 401/403 is retried once,
+ * as every keyed read of the plugin does: the API has refused a key with every permission and then
+ * accepted it (0.6.34, 10 oct 2026). A transport failure or a status other than 200 rejects; a key
+ * without `progression` answers 403 there, but a 403 alone does not prove it (the callers confirm
+ * with the error's `apiReason` or `readTokenPermissions`). A 200 whose body does not parse is
+ * `invalid`.
  */
 export async function readAccountAchievements(
 	operation: Pick<GuildWars2Operation, 'requestDetailed'>,
 ): Promise<AccountAchievementsRead> {
-	const response = await operation.requestDetailed(ACCOUNT_ACHIEVEMENTS_PATH);
+	const response = await operation.requestDetailed(ACCOUNT_ACHIEVEMENTS_PATH, AUTH_RETRY_STATUSES);
 	if (response.status !== 200) throw new Error(`Unexpected status ${response.status}.`);
 	const entries = parseAccountAchievements(response.body, 'full');
 	return entries === null ? { status: 'invalid' } : { status: 'ok', entries };
