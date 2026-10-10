@@ -280,6 +280,41 @@ describe('ActiveSessionLeaseCoordinator', () => {
 		owner.dispose();
 	});
 
+	// The lease remembered as this instance's is the one a transaction COMMITTED: a renewal or a release whose
+	// mutator ran but whose transaction aborted leaves it as it was.
+	it.each([
+		['renewal', (owner: ActiveSessionLeaseCoordinator, handle: ActiveSessionLeaseHandle) => owner.renew(handle)],
+		['release', (owner: ActiveSessionLeaseCoordinator, handle: ActiveSessionLeaseHandle) => owner.release(handle)],
+	])('keeps the committed lease as its own when a %s aborts after its mutator ran', async (_label, operation) => {
+		const factory = new IDBFactory();
+		const inner = await IndexedDbCoordinationStore.open(factory, databaseName(`aborted ${_label}`));
+		let abortNext = false;
+		const store: CoordinationStore = {
+			read: (context) => inner.read(context),
+			transaction: async (mutator, context) => {
+				if (!abortNext) return await inner.transaction(mutator, context);
+				abortNext = false;
+				mutator(await inner.read(context));
+				throw new Error('aborted');
+			},
+			close: () => { inner.close(); },
+		};
+		let wall = 1_000_000;
+		let monotonic = 0;
+		const owner = createCoordinator(factory, `aborted ${_label}`, {
+			store, clock: () => wall, monotonicClock: () => monotonic, instanceId: 'owner', leaseTtlMs: 300_000,
+		});
+		const acquired = requireHandle(await owner.acquire('session-1'));
+		wall += 10_000; monotonic += 10_000;
+		abortNext = true;
+		await expect(operation(owner, acquired)).resolves.toEqual({ status: 'error', code: 'unavailable' });
+		wall -= 30_000; monotonic += 1_000;
+
+		// Still this instance's own lease, so the wall clock set back is no anomaly for it.
+		await expect(owner.assertOwned(acquired)).resolves.toEqual({ status: 'owned' });
+		owner.dispose();
+	});
+
 	it('answers clock_anomaly when the monotonic clock goes back or is not a number', async () => {
 		const factory = new IDBFactory();
 		let monotonic = 10;

@@ -1421,6 +1421,54 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
+	/**
+	 * DU-09 (10 Oct 2026), end to end: the wall clock set back 30 s under a live session made the next
+	 * heartbeat answer `clock_anomaly`, and `failFromAuthority` put the session in error until the clock
+	 * passed the stored `renewedAt` again. The real coordinator over fake-indexeddb, given both clocks;
+	 * the service reads the same wall clock.
+	 */
+	it('keeps a live session through a wall clock set back 30 s: the heartbeat renews and never fails from authority', async () => {
+		const factory = new IDBFactory();
+		let wall = acquiredAt;
+		let monotonic = 0;
+		let tick: (() => void) | undefined;
+		const leases = new ActiveSessionLeaseCoordinator({
+			indexedDb: factory, databaseName: 'du-09-wall-steps-back', instanceId: 'instance-wall',
+			clock: () => wall, monotonicClock: () => monotonic, sleep: async () => undefined,
+		});
+		const renew = vi.spyOn(leases, 'renew');
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			{
+				now: () => wall,
+				sessionId: () => 'session-wall',
+				runtimeStore: new IndexedDbSessionRuntimeStore(factory, 'du-09-runtime'),
+				setInterval: vi.fn((callback: () => void) => { tick ??= callback; return 17; }),
+				clearInterval: vi.fn(),
+			},
+		);
+		const failFromAuthority = vi.spyOn(service as unknown as { failFromAuthority: (failure: unknown) => void }, 'failFromAuthority');
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'started' });
+
+		wall += 100_000; monotonic += 100_000;
+		tick?.();
+		await vi.waitFor(() => expect(renew).toHaveBeenCalledTimes(1));
+		await expect(renew.mock.results[0]!.value).resolves.toMatchObject({ status: 'renewed' });
+		// The clock is set back 30 s between two beats.
+		wall -= 30_000; monotonic += 100_000;
+		tick?.();
+		await vi.waitFor(() => expect(renew).toHaveBeenCalledTimes(2));
+
+		await expect(renew.mock.results[1]!.value).resolves.toMatchObject({ status: 'renewed' });
+		// One task more, so the heartbeat has acted on that answer before anything is read of it.
+		await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+		expect(failFromAuthority).not.toHaveBeenCalled();
+		expect(service.getState()).toMatchObject({ status: 'active', authority: { instanceId: 'instance-wall' } });
+		await service.dispose();
+	});
+
 	describe('legacy migration of an unfinished API session', () => {
 		/** An API-era session left unfinished in the store, next to a receipt that belongs to an earlier one. */
 		async function seedUnfinishedWithForeignReceipt(factory: IDBFactory, dbName: string): Promise<void> {
