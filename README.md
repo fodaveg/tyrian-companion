@@ -515,7 +515,7 @@ It does not verify semantic change scope or replace the test and CI gates.
 After publishing a GitHub Release, verify the metadata and exact BRAT asset set returned by GitHub:
 
 ```sh
-gh release view "<version>" --json tagName,name,isDraft,assets \
+gh release view "<version>" --json tagName,name,isDraft,isPrerelease,assets \
   | npm run release:brat-verify -- --release-json -
 ```
 

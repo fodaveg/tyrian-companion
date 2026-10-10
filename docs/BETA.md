@@ -11,7 +11,7 @@ Para volver a verificar los metadatos de la release:
 
 ```sh
 version="$(node -p "require('./manifest.json').version")"
-gh release view "$version" --json tagName,name,isDraft,assets
+gh release view "$version" --json tagName,name,isDraft,isPrerelease,assets
 ```
 
 El contrato BRAT (`npm run release:brat-verify`, ver más abajo) debe dar `PASS` con los ocho assets
@@ -116,12 +116,17 @@ La sesión de publicación comprueba además los metadatos que sirve GitHub y el
 `hebra-styles.css`):
 
 ```sh
-gh release view "<versión>" --json tagName,name,isDraft,assets \
+gh release view "<versión>" --json tagName,name,isDraft,isPrerelease,assets \
   | npm run release:brat-verify -- --release-json -
 ```
 
-El verificador rechaza un nombre o tag distinto de `manifest.version`, una release draft y cualquier
-asset ausente, duplicado, extra, no terminado de subir o vacío. GitHub puede tardar entre 5 y 15
+El verificador rechaza un nombre o tag distinto de `manifest.version`, una release draft o prerelease
+(`isPrerelease` debe ser `false`; si el JSON no trae el campo, también falla) y cualquier
+asset ausente, duplicado, extra, no terminado de subir o vacío. Con los assets descargados
+(`gh release download "<versión>" --dir <dir>` y `--release-json - --assets-dir <dir>`) comprueba además que
+`hebra.json` declara la versión de `manifest.json` y el sha256 real de `hebra-main.mjs` y
+`hebra-styles.css`, y que cada asset cuyo `digest` informa GitHub coincide con sus bytes (`release.yml` lo
+hace tras publicar). GitHub puede tardar entre 5 y 15
 minutos en reflejar una release a BRAT. Hasta comprobar instalación y carga desde BRAT en Obsidian
 real, la formulación correcta es «canal publicado; instalación/runtime pendiente».
 
