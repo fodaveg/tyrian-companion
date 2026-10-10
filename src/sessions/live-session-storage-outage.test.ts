@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startAlertIngameServer } from '../alerts/alert-ingame-server';
 import type { TyrianTcpConnection } from '../host/tyrian-host';
 import { fakeLocks, type FakeLockContext, type FakeLocks } from '../test/fake-lock-manager';
-import { hangStorage, holdNextCommitAnswer, killStorage, killStorageAfterNextCommit, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
+import { engineIdle, hangStorage, holdNextCommitAnswer, killStorage, killStorageAfterNextCommit, resumeStorage, reviveStorage, settlement, trackedIndexedDb } from '../test/indexed-db-connections';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveAlertOutboxV1, type LiveInventoryRowV1, type LiveInventorySampleV1, type LiveJournalEntryV1 } from './live-session-model';
@@ -1128,6 +1128,7 @@ describe('live session while storage does not answer', () => {
 	it('a sample storage never answers is told so once its wait runs out: the session shows the outage and reports it', async () => {
 		const f = await hung('unanswered-sample');
 		f.at(2000); const stuck = f.service.commit(f.sample(2, 2000, bags(20)));
+		await engineIdle(f.tracked);
 		expect(await settlement(stuck)).toBe('pending');
 		// Until the wait runs out this is still a slow answer, not an outage.
 		expect(f.service.getView().phase).toBe('active');
@@ -1176,6 +1177,7 @@ describe('live session while storage does not answer', () => {
 		const f = await hung('unanswered-dispose');
 		f.at(2000); const stuck = f.service.commit(f.sample(2, 2000, bags(20)));
 		const disposing = f.service.dispose();
+		await engineIdle(f.tracked);
 		expect(await settlement(disposing)).toBe('pending');
 		// One wait for the sample in course, one for the release of the lease: neither holds the unload for ever.
 		await f.timeout();
