@@ -18,9 +18,25 @@ export type LiveSessionExportFormat = 'csv' | 'json';
 export type LiveSessionExportResult = { status: 'written' | 'unchanged'; path: string }
 	| { status: 'conflict' | 'invalid' | 'unavailable'; message: string };
 
+/**
+ * The version of the exported format: the `version` of the JSON envelope and of every CSV row, and the `-vN` the file name ends
+ * in. There are two families of export, told apart by the file name and by the `captured_at` / `export_state` columns:
+ * - a completed session (`tyrian-companion-live-<ref>-<kind>-vN`): 1 for a session of payload version 1, 2 for one of version 2;
+ * - a snapshot of a session captured at an instant (`tyrian-live-<ref16>-<sha256>-<kind>-vN`): 2 for payload version 1, as it
+ *   always was, and 3 for version 2.
+ * A session of payload version 2 has a `sample` row only for the samples that changed something (how many it took is
+ * `sampleCount`, in the `session` row) and may state gross prices, so it is not what a reader of the earlier number expects: it
+ * gets the next one, and with it a file name of its own. A session of payload version 1 exports the bytes and the name it always did.
+ */
+export function liveSessionExportVersion(session: LiveSessionExportPayload): 1 | 2 | 3 {
+	const sparse = session.version === 2;
+	if ('capturedAt' in session) return sparse ? 3 : 2;
+	return sparse ? 2 : 1;
+}
+
 /** Both views export full portable evidence; UI pagination never limits this boundary. */
 export function serializeLiveSessionExport(session: LiveSessionExportPayload, kind: LiveSessionExportKind, format: LiveSessionExportFormat): string {
-	const snapshot = 'capturedAt' in session; const version = snapshot ? 2 : 1;
+	const snapshot = 'capturedAt' in session; const version = liveSessionExportVersion(session);
 	if (format === 'json') return `${JSON.stringify({ format: 'tyrian-companion-live-session-export', version, kind, session },null,2)}\n`;
 	const columns = ['row_type','version','source','session_ref','account_ref','build','profile','started_at','ended_at',
 		'entity_kind','id_number','before','after','delta','positive','negative','net','observed_at','window_start_at',
@@ -57,8 +73,9 @@ export async function exportLiveSession(vault: SessionHistoryVault, folder: unkn
 		|| !('capturedAt' in session ? isLiveSessionSnapshot(session) : isStoredLiveSessionPayload(session))) return { status: 'invalid',message: 'The live export input is not valid.' };
 	const snapshot = 'capturedAt' in session;
 	const ref = snapshot ? await sha256Text(canonicalJson(session)) : null;
-	const filename = snapshot ? `tyrian-live-${session.sessionRef.slice(0,16)}-${ref!}-${kind}-v2.${format}`
-		: `tyrian-companion-live-${session.sessionRef}-${kind}-v1.${format}`;
+	const version = String(liveSessionExportVersion(session));
+	const filename = snapshot ? `tyrian-live-${session.sessionRef.slice(0,16)}-${ref!}-${kind}-v${version}.${format}`
+		: `tyrian-companion-live-${session.sessionRef}-${kind}-v${version}.${format}`;
 	const path = `${output}/exports/${filename}`;
 	const content = serializeLiveSessionExport(session,kind,format);
 	try {

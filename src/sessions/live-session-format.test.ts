@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import { LiveSessionEconomy } from './live-session-economy';
+import { exportLiveSession, liveSessionExportVersion, prepareLiveSessionExportSnapshot, serializeLiveSessionExport } from './live-session-export';
 import { LEGACY_LIVE_SESSION_FORMAT, LIVE_SESSION_FORMAT_KEY, LiveSessionFormatUnreadableError, liveSessionFormatOf } from './live-session-format';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionFormat, type LiveSessionRuntimeRecord } from './live-session-model';
 import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
+import type { SessionHistoryVault } from './session-history';
 import { sha256Text } from './session-note-renderer';
 import { IndexedDbSessionRuntimeStore, MemorySessionRuntimeStore, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
 
@@ -230,6 +232,90 @@ describe('a live session keeps the format it started in', () => {
 		expect(net.lifecycle.getRuntime()?.prices).toEqual([{ itemId: ITEM, unitCopper: null }]);
 		expect(net.lifecycle.getView().valuation).toMatchObject({ netItemValueKnownCopper: 0, unpricedItemIds: [ITEM] });
 		await net.die();
+	});
+});
+
+describe('the export of a session carries the version of its format', () => {
+	/** The same sequence (two stretches around a restart) in a session that started in `format`; its saved payload. */
+	async function saved(format: LiveSessionFormat) {
+		const w = world(); const first = host(w, { starts: format }); await firstStretch(first); await first.die();
+		const second = host(w, { starts: format }); await second.lifecycle.initialize(); await secondStretch(second, w);
+		w.now = AT + 16_000; expect(await second.lifecycle.stop(w.now)).toBe(true); await second.die();
+		const read = await inspectLiveSessionNote(w.closed[0]!.content); if (read.status !== 'ok') throw new Error(read.status);
+		return read.session;
+	}
+	function exportVault(): SessionHistoryVault & { files: Map<string, string> } {
+		const files = new Map<string, string>();
+		return { files, markdownFiles: () => [], exists: (path) => files.has(path), file: (path) => files.has(path) ? { path } : null,
+			read: async (file) => files.get(file.path)!, createFolder: async () => undefined,
+			create: async (path, content) => { files.set(path, content); return { path }; }, process: async () => undefined };
+	}
+
+	it('a version 1 session exports the bytes and the file names 0.6.24 gives it', async () => {
+		const session = await saved(LEGACY_LIVE_SESSION_FORMAT); const vault = exportVault(); const written: Record<string, string> = {};
+		expect(liveSessionExportVersion(session)).toBe(1);
+		for (const kind of ['timeline', 'summary'] as const) for (const format of ['csv', 'json'] as const) {
+			const result = await exportLiveSession(vault, 'Sessions', kind, format, session); if (result.status !== 'written') throw new Error(result.status);
+			expect(result.path).toBe(`Sessions/exports/tyrian-companion-live-${session.sessionRef}-${kind}-v1.${format}`);
+			written[`${kind}.${format}`] = await sha256Text(vault.files.get(result.path)!);
+		}
+		// sha256 of the four files the published 0.6.24 (commit 6fbe77e) writes for this same session, taken as `NOTE_OF_0_6_24` was.
+		expect(written).toEqual({
+			'timeline.csv': '8fc70fe12754b700339e5d094442b796ba1682bbf2c2c462a76effec272b997b',
+			'timeline.json': '4dcc2415340d8bb10cbfcb37ea939b6bd14408e14836bd01b4f54672bbc3000c',
+			'summary.csv': '8fc70fe12754b700339e5d094442b796ba1682bbf2c2c462a76effec272b997b',
+			'summary.json': 'e746bc28bc489565e20ab34372839421615fcb2e31c421f27a02bb22580f032c',
+		});
+	});
+
+	it('a version 2 session exports as version 2, under a name of its own, with a sample row per kept entry and its count in the session row', async () => {
+		const session = await saved(GROSS); const vault = exportVault();
+		expect(session).toMatchObject({ version: 2, sampleCount: 12 }); expect(session.journal).toHaveLength(4);
+		expect(liveSessionExportVersion(session)).toBe(2);
+		const csv = await exportLiveSession(vault, 'Sessions', 'timeline', 'csv', session); if (csv.status !== 'written') throw new Error(csv.status);
+		expect(csv.path).toBe(`Sessions/exports/tyrian-companion-live-${session.sessionRef}-timeline-v2.csv`);
+		const rows = vault.files.get(csv.path)!.split('\r\n').filter((line) => line !== '');
+		// The columns are the ones of version 1: what changes is what the rows mean.
+		expect(rows[0]).toBe(serializeLiveSessionExport(await saved(LEGACY_LIVE_SESSION_FORMAT), 'timeline', 'csv').split('\r\n')[0]);
+		expect(rows.slice(1).every((row) => row.split(',')[1] === '"2"')).toBe(true);
+		expect(rows.filter((row) => row.startsWith('"sample",'))).toHaveLength(4);
+		expect(rows.filter((row) => row.startsWith('"observation",'))).toHaveLength(2);
+		expect(rows.find((row) => row.startsWith('"session",'))).toContain('""sampleCount"":12');
+		expect(rows.filter((row) => row.startsWith('"price",')).every((row) => row.includes('"instant_sell_gross"') && row.split(',')[31] === '"8"')).toBe(true);
+		const json = await exportLiveSession(vault, 'Sessions', 'summary', 'json', session); if (json.status !== 'written') throw new Error(json.status);
+		expect(json.path).toBe(`Sessions/exports/tyrian-companion-live-${session.sessionRef}-summary-v2.json`);
+		expect(JSON.parse(vault.files.get(json.path)!)).toMatchObject({ format: 'tyrian-companion-live-session-export', version: 2, session: { version: 2, sampleCount: 12 } });
+	});
+
+	it('an earlier version 1 export of the same session is no conflict for its version 2 export, and neither is rewritten', async () => {
+		// The same session id, so the same reference: what an earlier plugin that rewrote the note in format 1 would have exported.
+		const dense = await saved(LEGACY_LIVE_SESSION_FORMAT); const sparse = await saved(GROSS); const vault = exportVault();
+		expect(sparse.sessionRef).toBe(dense.sessionRef);
+		const first = await exportLiveSession(vault, 'Sessions', 'timeline', 'csv', dense); const second = await exportLiveSession(vault, 'Sessions', 'timeline', 'csv', sparse);
+		if (first.status !== 'written' || second.status !== 'written') throw new Error(`${first.status}/${second.status}`);
+		expect(second.path).not.toBe(first.path); expect([...vault.files.keys()]).toEqual([first.path, second.path]);
+		const before = new Map(vault.files);
+		expect(await exportLiveSession(vault, 'Sessions', 'timeline', 'csv', dense)).toEqual({ status: 'unchanged', path: first.path });
+		expect(await exportLiveSession(vault, 'Sessions', 'timeline', 'csv', sparse)).toEqual({ status: 'unchanged', path: second.path });
+		expect(vault.files).toEqual(before);
+	});
+
+	it('a snapshot of a running session is version 2 when the session is of note version 1, as it always was, and 3 when it is of note version 2', async () => {
+		for (const [format, version] of [[LEGACY_LIVE_SESSION_FORMAT, 2], [GROSS, 3]] as const) {
+			const w = world(); const h = host(w, { starts: format }); await firstStretch(h);
+			const capture = await h.lifecycle.capture(); if (capture === null) throw new Error('capture');
+			expect(capture.format).toEqual(format);
+			const snapshot = await prepareLiveSessionExportSnapshot(capture); if (snapshot === null) throw new Error('snapshot');
+			expect(snapshot).toMatchObject({ exportState: 'active_snapshot', version: format.noteVersion, sampleCount: 6, valuation: { priceBasis: format.priceBasis } });
+			expect(snapshot.journal).toHaveLength(format.noteVersion === 2 ? 2 : 6);
+			expect(liveSessionExportVersion(snapshot)).toBe(version);
+			const vault = exportVault(); const result = await exportLiveSession(vault, 'Sessions', 'timeline', 'json', snapshot);
+			if (result.status !== 'written') throw new Error(result.status);
+			expect(result.path).toMatch(new RegExp(`^Sessions/exports/tyrian-live-${snapshot.sessionRef.slice(0, 16)}-[a-f0-9]{64}-timeline-v${String(version)}\\.json$`, 'u'));
+			expect(JSON.parse(vault.files.get(result.path)!)).toMatchObject({ version, session: { exportState: 'active_snapshot' } });
+			expect(serializeLiveSessionExport(snapshot, 'timeline', 'csv').split('\r\n')[1]!.split(',')[1]).toBe(`"${String(version)}"`);
+			await h.die();
+		}
 	});
 });
 
