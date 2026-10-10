@@ -216,7 +216,6 @@ const FESTIVAL_CALENDAR_ENTRIES: FestivalCalendarEntryV1[] = [
 	},
 ];
 
-const FESTIVAL_CALENDAR: FestivalCalendarV1 = buildFestivalCalendar(FESTIVAL_CALENDAR_ENTRIES);
 
 function buildFestivalCalendar(entries: FestivalCalendarEntryV1[]): FestivalCalendarV1 {
 	const candidate = { version: FESTIVAL_CALENDAR_VERSION, entries, sha256: '' };
@@ -225,58 +224,71 @@ function buildFestivalCalendar(entries: FestivalCalendarEntryV1[]): FestivalCale
 	return Object.freeze(candidate);
 }
 
-const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV3 = {
-	version: INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION,
-	policy: {
-		version: 1,
-		maxSnapshotAgeMs: 900_000,
-		maxPriceAgeMs: 900_000,
-		maxCatalogAgeMs: 604_800_000,
-		maxAccountSignalsAgeMs: 86_400_000,
-		// H18.35: 300 days, not the old 90 (7_776_000_000 ms). The oldest instant any freshness
-		// check compares against `maxRulePackAgeMs` is `PUBLISHED_AT` (2026-08-14T18:04:33.000Z) —
-		// both as `rulePack`/`knowledgePack.reviewedAt` proxies (`inventory-advisor-classifier.ts`)
-		// and as every `SOURCES[].retrievedAt` (`inventory-advisor-discard.ts:220,241`); `reviewedAt`
-		// on the rule pack (`HUMAN_REVIEWED_AT`) is two days later, so it never binds first. From
-		// `PUBLISHED_AT` to `VALID_UNTIL` (2027-06-01T00:00:00.000Z) is 290.25 days — the minimum
-		// that keeps the pack fresh for the full window this bundle is meant to serve. 300 days
-		// rounds that up with ~10 days of margin, stays a whole number of days, and sits inside
-		// `bounded(maxRulePackAgeMs, 1 day, 366 days)` (`inventory-advisor-contract.ts`). The bundle
-		// itself still hard-expires at `VALID_UNTIL` regardless (`load()` below), so this only
-		// removes the earlier, narrower staleness cliff — it does not extend `VALID_UNTIL`.
-		maxRulePackAgeMs: 25_920_000_000,
-		maxFutureSkewMs: 300_000,
-		listingMinimumAdvantageBps: 1_000,
-	},
-	rulePack: BUILTIN_RULE_PACK,
-	knowledgePack: {
-		schemaVersion: 1,
-		id: 'tc.inventory-knowledge.curated-v2',
-		version: 2,
-		publishedAt: PUBLISHED_AT,
-		reviewedAt: PUBLISHED_AT,
-		validUntil: VALID_UNTIL,
-		sha256: KNOWLEDGE_PACK_SHA256,
-		sources: SOURCES.map((source) => ({ ...source })),
-		entries: [{
-			itemId: 36038,
-			// `use` excludes `open`; container opening is represented by its own action union member.
-			use: { status: 'not_applicable', assertionId: 'use-excludes-open-v1', sourceIds: ['gw2-api-item-36038', 'gw2-wiki-trick-or-treat-bag'] },
-			open: { status: 'applicable', ruleId: 'open-36038-capability-v1', sourceIds: ['gw2-api-item-36038', 'gw2-wiki-trick-or-treat-bag'] },
-			salvage: { status: 'not_applicable', assertionId: 'no-salvage-36038-v1', sourceIds: ['gw2-api-item-36038', 'gw2-api-items-v2', 'gw2-wiki-trick-or-treat-bag'] },
-		}],
-	},
-	economyPack: enabledHalloweenContainerEconomyPack({
-		rulePack: {
-			id: BUILTIN_RULE_PACK.id,
-			version: BUILTIN_RULE_PACK.version,
-			sha256: BUILTIN_RULE_PACK.sha256,
-			ruleId: BUILTIN_RULE_PACK.rules[0]!.ruleId,
+/**
+ * Memoized on first use, not built at import: the festival calendar and the Halloween economy
+ * pack each hash their own content (SHA-256 over canonical JSON, ~8 ms together), and the module
+ * is evaluated on every plugin load in both hosts whether or not the advisor is ever opened.
+ */
+let builtinBundleMemo: InventoryAdvisorBuiltinBundleV3 | null = null;
+function builtinBundle(): InventoryAdvisorBuiltinBundleV3 {
+	builtinBundleMemo ??= buildBuiltinBundle();
+	return builtinBundleMemo;
+}
+
+function buildBuiltinBundle(): InventoryAdvisorBuiltinBundleV3 {
+	return {
+		version: INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION,
+		policy: {
+			version: 1,
+			maxSnapshotAgeMs: 900_000,
+			maxPriceAgeMs: 900_000,
+			maxCatalogAgeMs: 604_800_000,
+			maxAccountSignalsAgeMs: 86_400_000,
+			// H18.35: 300 days, not the old 90 (7_776_000_000 ms). The oldest instant any freshness
+			// check compares against `maxRulePackAgeMs` is `PUBLISHED_AT` (2026-08-14T18:04:33.000Z) —
+			// both as `rulePack`/`knowledgePack.reviewedAt` proxies (`inventory-advisor-classifier.ts`)
+			// and as every `SOURCES[].retrievedAt` (`inventory-advisor-discard.ts:220,241`); `reviewedAt`
+			// on the rule pack (`HUMAN_REVIEWED_AT`) is two days later, so it never binds first. From
+			// `PUBLISHED_AT` to `VALID_UNTIL` (2027-06-01T00:00:00.000Z) is 290.25 days — the minimum
+			// that keeps the pack fresh for the full window this bundle is meant to serve. 300 days
+			// rounds that up with ~10 days of margin, stays a whole number of days, and sits inside
+			// `bounded(maxRulePackAgeMs, 1 day, 366 days)` (`inventory-advisor-contract.ts`). The bundle
+			// itself still hard-expires at `VALID_UNTIL` regardless (`load()` below), so this only
+			// removes the earlier, narrower staleness cliff — it does not extend `VALID_UNTIL`.
+			maxRulePackAgeMs: 25_920_000_000,
+			maxFutureSkewMs: 300_000,
+			listingMinimumAdvantageBps: 1_000,
 		},
-		knowledgePackSha256: KNOWLEDGE_PACK_SHA256,
-	}, HUMAN_REVIEWED_AT),
-	festivalCalendar: FESTIVAL_CALENDAR,
-};
+		rulePack: BUILTIN_RULE_PACK,
+		knowledgePack: {
+			schemaVersion: 1,
+			id: 'tc.inventory-knowledge.curated-v2',
+			version: 2,
+			publishedAt: PUBLISHED_AT,
+			reviewedAt: PUBLISHED_AT,
+			validUntil: VALID_UNTIL,
+			sha256: KNOWLEDGE_PACK_SHA256,
+			sources: SOURCES.map((source) => ({ ...source })),
+			entries: [{
+				itemId: 36038,
+				// `use` excludes `open`; container opening is represented by its own action union member.
+				use: { status: 'not_applicable', assertionId: 'use-excludes-open-v1', sourceIds: ['gw2-api-item-36038', 'gw2-wiki-trick-or-treat-bag'] },
+				open: { status: 'applicable', ruleId: 'open-36038-capability-v1', sourceIds: ['gw2-api-item-36038', 'gw2-wiki-trick-or-treat-bag'] },
+				salvage: { status: 'not_applicable', assertionId: 'no-salvage-36038-v1', sourceIds: ['gw2-api-item-36038', 'gw2-api-items-v2', 'gw2-wiki-trick-or-treat-bag'] },
+			}],
+		},
+		economyPack: enabledHalloweenContainerEconomyPack({
+			rulePack: {
+				id: BUILTIN_RULE_PACK.id,
+				version: BUILTIN_RULE_PACK.version,
+				sha256: BUILTIN_RULE_PACK.sha256,
+				ruleId: BUILTIN_RULE_PACK.rules[0]!.ruleId,
+			},
+			knowledgePackSha256: KNOWLEDGE_PACK_SHA256,
+		}, HUMAN_REVIEWED_AT),
+		festivalCalendar: buildFestivalCalendar(FESTIVAL_CALENDAR_ENTRIES),
+	};
+}
 
 /**
  * Creates a deterministic provider. The optional source exists only to keep the
@@ -284,13 +296,14 @@ const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV3 = {
  * curated bundle is accepted.
  */
 export function createInventoryAdvisorBuiltinBundleProvider(
-	source: unknown = BUILTIN_BUNDLE,
+	source?: unknown,
 ): InventoryAdvisorBuiltinBundleProvider {
-	const captured = clone(source);
+	// Only an explicit source is captured now; the built-in one is built on the first `load`.
+	const captured = source === undefined ? undefined : clone(source);
 	return Object.freeze({
 		load(asOf: string): InventoryAdvisorBuiltinBundleLoadResult {
 			try {
-				const bundle = clone(captured);
+				const bundle = clone(captured === undefined ? builtinBundle() : captured);
 				if (!isBuiltinBundle(bundle) || !validTimestamp(asOf)) return unavailable('invalid');
 				const effectiveFrom = Math.max(
 					Date.parse(bundle.rulePack.publishedAt),
@@ -331,7 +344,7 @@ function isBuiltinBundle(value: unknown): value is InventoryAdvisorBuiltinBundle
 		&& bundle.rulePack.validUntil === VALID_UNTIL
 		&& bundle.rulePack.sha256 === RULE_PACK_SHA256
 		&& canonical(bundle.rulePack.sources) === canonical(SOURCES)
-		&& canonical(bundle.rulePack.rules) === canonical(BUILTIN_BUNDLE.rulePack.rules)
+		&& canonical(bundle.rulePack.rules) === canonical(builtinBundle().rulePack.rules)
 		&& bundle.knowledgePack.id === 'tc.inventory-knowledge.curated-v2'
 		&& bundle.knowledgePack.version === 2
 		&& bundle.knowledgePack.schemaVersion === 1
@@ -340,13 +353,13 @@ function isBuiltinBundle(value: unknown): value is InventoryAdvisorBuiltinBundle
 		&& bundle.knowledgePack.validUntil === VALID_UNTIL
 		&& bundle.knowledgePack.sha256 === KNOWLEDGE_PACK_SHA256
 		&& canonical(bundle.knowledgePack.sources) === canonical(SOURCES)
-		&& canonical(bundle.knowledgePack.entries) === canonical(BUILTIN_BUNDLE.knowledgePack.entries)
+		&& canonical(bundle.knowledgePack.entries) === canonical(builtinBundle().knowledgePack.entries)
 		&& bundle.economyPack.activation.status === 'enabled'
 		&& bundle.economyPack.activation.activatedAt === HUMAN_REVIEWED_AT
 		&& bundle.economyPack.rulePack.sha256 === RULE_PACK_SHA256
 		&& bundle.economyPack.knowledgePackSha256 === KNOWLEDGE_PACK_SHA256
-		&& canonical(bundle.economyPack) === canonical(BUILTIN_BUNDLE.economyPack)
-		&& canonical(bundle.festivalCalendar) === canonical(BUILTIN_BUNDLE.festivalCalendar);
+		&& canonical(bundle.economyPack) === canonical(builtinBundle().economyPack)
+		&& canonical(bundle.festivalCalendar) === canonical(builtinBundle().festivalCalendar);
 }
 
 function exactPolicy(value: InventoryAdvisorPolicyV1): boolean {

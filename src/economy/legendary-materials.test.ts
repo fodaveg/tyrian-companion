@@ -16,19 +16,20 @@ describe('LEGENDARY_MATERIALS_TABLE (Klobjarne Geirr, M4)', () => {
 	});
 
 	/**
-	 * Test 5 half (docs/SPEC-recomendacion-por-objeto.md): the table's own `sha256` is
-	 * self-computed at module load (`buildLegendaryMaterialsTable`, the same discipline
-	 * `buildFestivalCalendar` uses), so recomputing it here is never a manual transcription that
-	 * could drift from the validator.
+	 * Test 5 half (docs/SPEC-recomendacion-por-objeto.md): the table carries a precomputed
+	 * `LEGENDARY_MATERIALS_TABLE_SHA256` (nothing is hashed at import), so this test is what keeps
+	 * that constant honest: it recomputes the hash with the repo's own function and fails if the
+	 * table content and the constant drift apart.
 	 */
-	it('carries a sha256 matching the repo\'s own hash function, never a manual transcription', () => {
+	it('carries a sha256 matching the repo\'s own hash function, recomputed from the content', () => {
 		const { sha256: _sha256, ...withoutHash } = LEGENDARY_MATERIALS_TABLE;
 		expect(sha256LegendaryMaterialsTable(withoutHash)).toBe(LEGENDARY_MATERIALS_TABLE.sha256);
 	});
 
-	// The self-computed hash above can only ever equal itself, so on its own it cannot notice a
-	// changed quantity. Pinning the value makes any edit to the curated data a deliberate one:
-	// change the data, re-review its wiki sources, then update this literal in the same commit.
+	// The recomputation above ties the constant to the content, but a table and a constant edited
+	// together would still pass it. This second, independent literal makes any edit to the curated
+	// data a deliberate one: change the data, re-review its wiki sources, then update this literal
+	// (and `LEGENDARY_MATERIALS_TABLE_SHA256`) in the same commit.
 	it('pins the curated table content to its reviewed hash', () => {
 		expect(LEGENDARY_MATERIALS_TABLE.sha256).toBe('3ce461b6ced182637d75e8aa2642598cc2cdb71972b63778419a75928277dfc3');
 	});
