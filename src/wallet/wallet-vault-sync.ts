@@ -85,7 +85,6 @@ interface WalletNoteFields {
 	tc_currency_order: number;
 	tc_quantity: number;
 	tc_active: boolean;
-	tc_captured_at: string;
 	tc_currency_name: string;
 	tc_icon: string | null;
 	descripcion: string;
@@ -94,7 +93,16 @@ interface WalletNoteFields {
 interface OwnedWalletNote {
 	fields: WalletNoteFields;
 	content: string;
+	/** True when the note still carries the retired `tc_captured_at` key: rewrite it once without it. */
+	legacy: boolean;
 }
+
+/**
+ * Managed key an older build wrote and the current one drops (Z29): `tc_captured_at` entered the
+ * note hash, so every sync rewrote every currency note even when no balance moved. The Base now
+ * reads `file.mtime`. Same discipline as the inventory notes' `RETIRED_INVENTORY_NOTE_KEYS`.
+ */
+const RETIRED_WALLET_NOTE_KEY = 'tc_captured_at';
 
 const WALLET_FOLDER = 'Wallet/Currencies';
 const MARKER_PREFIX = '<!-- tyrian-companion-wallet';
@@ -175,7 +183,7 @@ export class WalletVaultSyncService {
 		const desired = new Map<number, { position: WalletVaultPosition; path: string; content: string }>();
 		for (const position of input.positions) {
 			const path = `${normalizedRoot}/${walletNoteRelativePath(position.currencyId)}`;
-			const content = await renderWalletNote(position, input.capturedAt, input.locale, true);
+			const content = await renderWalletNote(position, input.locale, true);
 			desired.set(position.currencyId, { position, path, content });
 		}
 
@@ -205,12 +213,13 @@ export class WalletVaultSyncService {
 					content === target.content ? 'unchanged' : 'update', content, target.content));
 				continue;
 			}
-			if (!owned.fields.tc_active) {
+			if (!owned.fields.tc_active && !owned.legacy) {
 				steps.push(step(owned.fields.tc_currency_id, file.path, 'unchanged', content, content));
 				continue;
 			}
-			const inactive = await renderWalletNote(positionFromFields(owned.fields), input.capturedAt, input.locale, false);
-			steps.push(step(owned.fields.tc_currency_id, file.path, 'deactivate', content, inactive));
+			const inactive = await renderWalletNote(positionFromFields(owned.fields), input.locale, false);
+			// An already-inactive note that still carries the retired key is only migrated.
+			steps.push(step(owned.fields.tc_currency_id, file.path, owned.fields.tc_active ? 'deactivate' : 'update', content, inactive));
 		}
 
 		for (const target of desired.values()) {
@@ -337,7 +346,6 @@ function comparePositions(left: WalletVaultPosition, right: WalletVaultPosition)
  */
 function fieldsFor(
 	position: WalletVaultPosition,
-	capturedAt: string,
 	locale: CatalogLocale,
 	active: boolean,
 ): WalletNoteFields {
@@ -349,7 +357,6 @@ function fieldsFor(
 		tc_currency_order: position.order,
 		tc_quantity: position.quantity,
 		tc_active: active,
-		tc_captured_at: capturedAt,
 		tc_currency_name: position.name,
 		tc_icon: position.icon,
 		descripcion: locale === 'es' ? 'Moneda de cartera gestionada por Tyrian Companion.' : 'Wallet currency managed by Tyrian Companion.',
@@ -358,11 +365,10 @@ function fieldsFor(
 
 async function renderWalletNote(
 	position: WalletVaultPosition,
-	capturedAt: string,
 	locale: CatalogLocale,
 	active: boolean,
 ): Promise<string> {
-	const fields = fieldsFor(position, capturedAt, locale, active);
+	const fields = fieldsFor(position, locale, active);
 	const frontmatter = stringifyYaml(fields, { lineWidth: 0 }).trimEnd();
 	const heading = cleanText(position.name).replace(/^[#]/u, '\\$&');
 	const body = `# ${heading}\n\n${fields.descripcion}\n`;
@@ -380,7 +386,7 @@ function markerLine(currencyId: number, hash: string | null): string {
 type WalletMarkerValidation =
 	| { status: 'foreign' }
 	| { status: 'conflict'; currencyId: number | null }
-	| { status: 'valid'; currencyId: number; hash: string; markerText: string; fields: WalletNoteFields };
+	| { status: 'valid'; currencyId: number; hash: string; markerText: string; fields: WalletNoteFields; legacy: boolean };
 
 /**
  * The synchronous checks a currency note's marker text must pass before its currency id can be
@@ -403,8 +409,17 @@ function validateWalletNoteMarker(content: string): WalletMarkerValidation {
 	let parsed: unknown;
 	try { parsed = parseYaml(frontmatter[1]!); }
 	catch { return { status: 'conflict', currencyId }; }
+	// A note an older build wrote carries the retired key: drop it (it must still be a valid
+	// timestamp, as before) and flag the note so the next plan rewrites it once without it.
+	let legacy = false;
+	if (record(parsed) && RETIRED_WALLET_NOTE_KEY in parsed) {
+		if (!iso(parsed[RETIRED_WALLET_NOTE_KEY])) return { status: 'conflict', currencyId };
+		const { [RETIRED_WALLET_NOTE_KEY]: _retired, ...current } = parsed;
+		parsed = current;
+		legacy = true;
+	}
 	if (!isWalletNoteFields(parsed) || parsed.tc_currency_id !== currencyId) return { status: 'conflict', currencyId };
-	return { status: 'valid', currencyId, hash: marker[4], markerText: marker[0], fields: parsed };
+	return { status: 'valid', currencyId, hash: marker[4], markerText: marker[0], fields: parsed, legacy };
 }
 
 async function classifyWalletNote(content: string): Promise<
@@ -414,10 +429,10 @@ async function classifyWalletNote(content: string): Promise<
 > {
 	const validation = validateWalletNoteMarker(content);
 	if (validation.status !== 'valid') return validation;
-	const { currencyId, hash, markerText, fields } = validation;
+	const { currencyId, hash, markerText, fields, legacy } = validation;
 	const unsigned = content.replace(markerText, markerLine(currencyId, null));
 	if (await sha256Text(unsigned) !== hash) return { status: 'conflict', currencyId };
-	return { status: 'owned', note: { fields, content } };
+	return { status: 'owned', note: { fields, content, legacy } };
 }
 
 function positionFromFields(fields: WalletNoteFields): WalletVaultPosition {
@@ -454,11 +469,11 @@ function isWalletPosition(value: unknown): value is WalletVaultPosition {
 function isWalletNoteFields(value: unknown): value is WalletNoteFields {
 	if (!record(value) || !exactKeys(value, [
 		'tc_schema', 'tc_kind', 'tc_marker', 'tc_currency_id', 'tc_currency_order',
-		'tc_quantity', 'tc_active', 'tc_captured_at', 'tc_currency_name', 'tc_icon', 'descripcion',
+		'tc_quantity', 'tc_active', 'tc_currency_name', 'tc_icon', 'descripcion',
 	])) return false;
 	return value.tc_schema === WALLET_NOTE_SCHEMA_VERSION && value.tc_kind === WALLET_NOTE_KIND &&
 		value.tc_marker === WALLET_NOTE_MARKER && positive(value.tc_currency_id) && nonNegative(value.tc_currency_order) &&
-		nonNegative(value.tc_quantity) && typeof value.tc_active === 'boolean' && iso(value.tc_captured_at) &&
+		nonNegative(value.tc_quantity) && typeof value.tc_active === 'boolean' &&
 		nonEmptyText(value.tc_currency_name) && (value.tc_icon === null || nonEmptyText(value.tc_icon)) && nonEmptyText(value.descripcion);
 }
 

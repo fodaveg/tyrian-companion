@@ -1,4 +1,4 @@
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -8,6 +8,7 @@ import {
 	type WalletVaultPort,
 	type WalletVaultSyncInput,
 } from './wallet-vault-sync';
+import { sha256Text } from '../assets/managed-asset-hash';
 import { canonicalPathFor } from '../runtime/canonical-path';
 
 const ROOT = 'Tyrian Companion';
@@ -68,6 +69,78 @@ describe('wallet Vault preview and apply', () => {
 		const writes = vault.mutations;
 		expect(await service.apply(second)).toEqual({ status: 'unchanged', created: 0, updated: 0, deactivated: 0 });
 		expect(vault.mutations).toBe(writes);
+	});
+
+	it('writes zero notes on a second capture with a later hour and the same balances', async () => {
+		const vault = new MemoryWalletVault();
+		const service = new WalletVaultSyncService(vault, CONFIG_DIR);
+		await service.apply(await service.preview(ROOT, threeCurrencyInput()));
+		const writes = vault.mutations;
+		const later = { ...threeCurrencyInput(), capturedAt: '2026-08-25T09:30:00.000Z' };
+		const plan = await service.preview(ROOT, later);
+		expect(plan.steps.map((entry) => entry.status)).toEqual(['unchanged', 'unchanged', 'unchanged']);
+		expect(await service.apply(plan)).toEqual({ status: 'unchanged', created: 0, updated: 0, deactivated: 0 });
+		expect(vault.mutations).toBe(writes);
+		expect(frontmatter(vault.contents.get(`${ROOT}/Wallet/Currencies/1.md`)!)).not.toHaveProperty('tc_captured_at');
+	});
+
+	it('writes only the note whose quantity changed', async () => {
+		const vault = new MemoryWalletVault();
+		const service = new WalletVaultSyncService(vault, CONFIG_DIR);
+		await service.apply(await service.preview(ROOT, threeCurrencyInput()));
+		const input = threeCurrencyInput();
+		const changed = {
+			...input,
+			capturedAt: '2026-08-25T09:30:00.000Z',
+			positions: input.positions.map((position) => position.currencyId === 2 ? { ...position, quantity: 501 } : position),
+		};
+		const plan = await service.preview(ROOT, changed);
+		expect(plan.steps.filter((entry) => entry.status !== 'unchanged').map((entry) => entry.path)).toEqual([`${ROOT}/Wallet/Currencies/2.md`]);
+		expect(await service.apply(plan)).toEqual({ status: 'applied', created: 0, updated: 1, deactivated: 0 });
+	});
+
+	it('migrates notes written with tc_captured_at in one pass and then writes nothing', async () => {
+		const input = threeCurrencyInput();
+		const vault = new MemoryWalletVault();
+		for (const position of input.positions) {
+			vault.contents.set(`${ROOT}/Wallet/Currencies/${String(position.currencyId)}.md`, await legacyNote(position, CAPTURED_AT, true));
+		}
+		const service = new WalletVaultSyncService(vault, CONFIG_DIR);
+		const plan = await service.preview(ROOT, { ...input, capturedAt: '2026-08-25T09:30:00.000Z' });
+		expect(plan.canApply).toBe(true);
+		expect(plan.steps.map((entry) => entry.status)).toEqual(['update', 'update', 'update']);
+		expect(await service.apply(plan)).toEqual({ status: 'applied', created: 0, updated: 3, deactivated: 0 });
+		for (const content of vault.contents.values()) expect(frontmatter(content)).not.toHaveProperty('tc_captured_at');
+		const writes = vault.mutations;
+		const again = await service.preview(ROOT, { ...input, capturedAt: '2026-08-25T10:00:00.000Z' });
+		expect(again.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+		expect(await service.apply(again)).toMatchObject({ status: 'unchanged' });
+		expect(vault.mutations).toBe(writes);
+	});
+
+	it('migrates an inactive legacy note too, keeping its last balance', async () => {
+		const input = threeCurrencyInput();
+		const vault = new MemoryWalletVault();
+		const path = `${ROOT}/Wallet/Currencies/9.md`;
+		vault.contents.set(path, await legacyNote({ currencyId: 9, quantity: 42, order: 9, name: 'Old', icon: null }, CAPTURED_AT, false));
+		const service = new WalletVaultSyncService(vault, CONFIG_DIR);
+		expect(await service.apply(await service.preview(ROOT, input))).toMatchObject({ status: 'applied', created: 3, deactivated: 0 });
+		expect(frontmatter(vault.contents.get(path)!)).toMatchObject({ tc_active: false, tc_quantity: 42 });
+		expect(frontmatter(vault.contents.get(path)!)).not.toHaveProperty('tc_captured_at');
+		expect((await service.preview(ROOT, input)).steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+	});
+
+	it('does not touch a legacy note a person edited', async () => {
+		const input = oneCurrencyInput();
+		const vault = new MemoryWalletVault();
+		const path = `${ROOT}/Wallet/Currencies/1.md`;
+		vault.contents.set(path, `${await legacyNote(input.positions[0]!, CAPTURED_AT, true)}\nhuman edit\n`);
+		const before = new Map(vault.contents);
+		const service = new WalletVaultSyncService(vault, CONFIG_DIR);
+		const plan = await service.preview(ROOT, input);
+		expect(plan.canApply).toBe(false);
+		expect(await service.apply(plan)).toMatchObject({ status: 'invalid' });
+		expect(vault.contents).toEqual(before);
 	});
 
 	it('writes deterministic opaque filenames per currency id without leaking raw account payloads', async () => {
@@ -251,6 +324,25 @@ function oneCurrencyInput(): WalletVaultSyncInput {
 		locale: 'es',
 		positions: [{ currencyId: 1, quantity: 100, order: 1, name: 'Coin', icon: 'https://example.test/coin.png' }],
 	};
+}
+
+/** A currency note exactly as builds before this change wrote it: `tc_captured_at` inside the hashed text. */
+async function legacyNote(
+	position: { currencyId: number; quantity: number; order: number; name: string; icon: string | null },
+	capturedAt: string,
+	active: boolean,
+): Promise<string> {
+	const descripcion = 'Moneda de cartera gestionada por Tyrian Companion.';
+	const fields = {
+		tc_schema: 1, tc_kind: 'gw2_wallet_currency', tc_marker: 'tyrian_companion_wallet_currency',
+		tc_currency_id: position.currencyId, tc_currency_order: position.order, tc_quantity: position.quantity,
+		tc_active: active, tc_captured_at: capturedAt, tc_currency_name: position.name, tc_icon: position.icon, descripcion,
+	};
+	const yaml = stringifyYaml(fields, { lineWidth: 0 }).trimEnd();
+	const base = `<!-- tyrian-companion-wallet schema=1 marker=tyrian_companion_wallet_currency currency=${String(position.currencyId)}`;
+	const body = `# ${position.name}\n\n${descripcion}\n`;
+	const hash = await sha256Text(`---\n${yaml}\n---\n${base} -->\n${body}`);
+	return `---\n${yaml}\n---\n${base} hash=${hash} -->\n${body}`;
 }
 
 function frontmatter(content: string): Record<string, unknown> {
