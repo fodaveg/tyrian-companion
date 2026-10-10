@@ -25,6 +25,8 @@
  * and once answered, each copy's own local storage settles every later opening without a question. NOT covered: a
  * vault from before the token that is moved outside Obsidian on its first start with it (nothing remembers it); a
  * copy opened for the first time that is never answered (it asks on every start, in consult, until it is answered); a
+ * copy that was answered followed by the ORIGINAL being moved outside Obsidian (the registry then names the copy's id, so
+ * the question is about the copy's data and adopting would copy those); a
  * folder moved outside Obsidian AFTER a start in which the registry could not be written; a device that never ran the
  * plugin on that vault (nothing to adopt, no question).
  *
@@ -130,9 +132,15 @@ function parseRecord(raw: unknown): VaultIdentityRecord | null {
 	return typeof pendingFrom === 'string' && VAULT_ID.test(pendingFrom) ? { vaultId, pendingFrom } : { vaultId };
 }
 
-/** The id the host's local storage remembers, for a caller that cannot reach the registry. */
-export function savedVaultId(storage: TyrianLocalStoragePort | undefined): string | null {
-	return storage === undefined ? null : parseRecord(storage.load(VAULT_IDENTITY_KEY))?.vaultId ?? null;
+/**
+ * The id the host's local storage says the data is under when it is not `currentId`: the other id it remembers or, with
+ * a question still open for this id, the one it was asked about. For a caller that could not complete the detection.
+ */
+export function rememberedPreviousId(storage: TyrianLocalStoragePort | undefined, currentId: string): string | null {
+	const local = storage === undefined ? null : parseRecord(storage.load(VAULT_IDENTITY_KEY));
+	if (local === null) return null;
+	if (local.vaultId !== currentId) return local.vaultId;
+	return local.pendingFrom !== undefined && local.pendingFrom !== currentId ? local.pendingFrom : null;
 }
 
 async function writeRecord(stores: VaultIdentityStores, record: VaultIdentityRecord): Promise<void> {
@@ -169,6 +177,10 @@ export async function detectVaultRelocation(stores: VaultIdentityStores, current
 	const local = stores.storage === undefined ? null : parseRecord(stores.storage.load(VAULT_IDENTITY_KEY));
 	if (local !== null && local.vaultId === currentId && local.pendingFrom === undefined) {
 		return remember(stores, { vaultId: currentId }, null);
+	}
+	// A question left open in this copy's own memory is asked again without the registry.
+	if (local !== null && local.vaultId === currentId && local.pendingFrom !== undefined && local.pendingFrom !== currentId) {
+		return { relocation: { previousVaultId: local.pendingFrom }, registryWrite: null };
 	}
 	const fromRegistry = stores.token === '' ? null : parseRecord(await readRegistry(stores.factory, stores.token));
 	const saved = fromRegistry ?? local;

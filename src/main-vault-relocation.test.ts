@@ -15,7 +15,7 @@ import {
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { obsidianPluginCore } from './test/obsidian-host-harness';
-import { loadCollectorMode, saveCollectorMode } from './runtime/collector-instance';
+import { loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './runtime/collector-instance';
 import { VAULT_REGISTRY_DB } from './runtime/vault-relocation';
 import type { SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import type { TyrianHost } from './host/tyrian-host';
@@ -474,6 +474,8 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		await expect(plugin.resolveVaultRelocation('adopt')).rejects.toThrow();
 		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
 
+		// The attempt that was waiting on the muted database fails by itself; only then does the next click start a new one.
+		await sleep(150);
 		mute.mockRestore();
 		expect(await plugin.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted', preferences: 1 });
 		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
@@ -493,6 +495,121 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 
 		expect(reload).toHaveBeenCalledTimes(1);
 		await plugin.shutdownRuntime();
+	});
+
+	it('a question left open stays open on the next start even when the registry cannot be read, and stores no mode for the new path', async () => {
+		const world = device();
+		await (await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' })).shutdownRuntime();
+		const asked = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		const newId = asked.vaultId ?? '';
+		await asked.shutdownRuntime();
+		const open = world.factory.open.bind(world.factory);
+		const broken = vi.spyOn(world.factory, 'open').mockImplementation((name: string, version?: number) => {
+			if (name !== VAULT_REGISTRY_DB) return open(name, version);
+			const request = { result: undefined, error: null } as unknown as IDBOpenDBRequest;
+			globalThis.setTimeout(() => { (request.onerror as (() => void) | null)?.(); }, 0);
+			return request;
+		});
+
+		const second = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		broken.mockRestore();
+
+		expect(second.getVaultRelocation()).toEqual({ pending: true });
+		expect(second.getCollectorMode()).toBe('consult');
+		expect(await readStoredCollectorMode(world.factory, newId)).toBeNull();
+		await second.shutdownRuntime();
+	});
+
+	it('an answer that runs past its deadline is joined by the next click: one adoption, one notice, the real counts', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', {});
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		await savePreferences(world, oldId);
+		const plugin = await boot(world, '/vaults/new', {});
+		fastDeadlines(world);
+		const prefs = preferencesRuntime(plugin);
+		const real = prefs.loadCached.bind(prefs);
+		vi.spyOn(prefs, 'loadCached').mockImplementationOnce(async () => { await sleep(50); return await real(); });
+		const before = world.notices.length;
+
+		await expect(plugin.resolveVaultRelocation('adopt')).rejects.toThrow();
+		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
+		const joined = await plugin.resolveVaultRelocation('adopt');
+
+		expect(joined).toMatchObject({ status: 'adopted', preferences: 1 });
+		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
+		expect(world.notices).toHaveLength(before + 1);
+		expect(world.notices.at(-1)).toMatch(/1 inventory preference/u);
+		await plugin.shutdownRuntime();
+	});
+
+	it('an abandoned answer that finishes later announces its real result once, and the click after it finds nothing pending', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', {});
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		await savePreferences(world, oldId);
+		const plugin = await boot(world, '/vaults/new', {});
+		fastDeadlines(world);
+		const prefs = preferencesRuntime(plugin);
+		const real = prefs.loadCached.bind(prefs);
+		vi.spyOn(prefs, 'loadCached').mockImplementationOnce(async () => { await sleep(120); return await real(); });
+		const before = world.notices.length;
+
+		await expect(plugin.resolveVaultRelocation('adopt')).rejects.toThrow();
+		await sleep(300);
+		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
+		expect(world.notices).toHaveLength(before + 1);
+		expect(world.notices.at(-1)).toMatch(/1 inventory preference/u);
+
+		expect(await plugin.resolveVaultRelocation('fresh')).toEqual({ status: 'none' });
+		expect(world.notices).toHaveLength(before + 1);
+		await plugin.shutdownRuntime();
+	});
+
+	it('a failed reload of the in-memory preferences is retried by the next click, which reloads them again', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', {});
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		await savePreferences(world, oldId);
+		const plugin = await boot(world, '/vaults/new', {});
+		const reload = vi.spyOn(preferencesRuntime(plugin), 'loadCached').mockRejectedValueOnce(new Error('storage hiccup'));
+
+		await expect(plugin.resolveVaultRelocation('adopt')).rejects.toThrow('storage hiccup');
+		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
+		expect(await plugin.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted' });
+
+		expect(reload).toHaveBeenCalledTimes(2);
+		await plugin.shutdownRuntime();
+	});
+
+	it('a registry write that fails after the start gave up waiting for the detection is still observed', async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			const world = device();
+			await (await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' })).shutdownRuntime();
+			// The local storage still remembers /vaults/a; the token is gone from data.json (an older build stripped it).
+			world.data = { ...world.data, vaultToken: undefined };
+			const open = world.factory.open.bind(world.factory);
+			vi.spyOn(world.factory, 'open').mockImplementation((name: string, version?: number) => {
+				if (name !== VAULT_REGISTRY_DB) return open(name, version);
+				const request = { result: undefined, error: null } as unknown as IDBOpenDBRequest;
+				globalThis.setTimeout(() => { (request.onerror as (() => void) | null)?.(); }, 0);
+				return request;
+			});
+
+			const plugin = await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' }, true, undefined, async () => { await sleep(80); });
+			await sleep(300);
+
+			expect(unhandled).toEqual([]);
+			await plugin.shutdownRuntime();
+		} finally {
+			process.off('unhandledRejection', onUnhandled);
+		}
 	});
 
 	it('a host without per-device local storage behaves as before', async () => {
@@ -523,6 +640,22 @@ interface Device {
 /** One computer: the IndexedDB and the per-vault local storage that survive a restart or a rename. */
 function device(): Device {
 	return { factory: new IDBFactory(), local: new Map(), notices: [], data: null };
+}
+
+/** Ten-second storage deadlines fire after 30 ms; everything that answers does so well before. */
+function fastDeadlines(world: Device): void {
+	vi.stubGlobal('window', {
+		indexedDB: world.factory, setInterval: vi.fn(() => 1), clearInterval: vi.fn(),
+		setTimeout: (callback: () => void, delay: number) => globalThis.setTimeout(callback, delay >= 10_000 ? 30 : delay),
+		clearTimeout: (handle: number) => { globalThis.clearTimeout(handle); },
+	});
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => { globalThis.setTimeout(resolve, ms); });
+
+/** The inventory preferences runtime of a booted plugin, to slow or break its reload. */
+function preferencesRuntime(plugin: RelocationHarness): { loadCached(): Promise<unknown> } {
+	return (plugin as unknown as { inventoryPreferences: { loadCached(): Promise<unknown> } }).inventoryPreferences;
 }
 
 /** What the per-device registry holds for a token. */
@@ -566,6 +699,7 @@ async function savePreferences(world: Device, vaultId: string, generation = 3): 
 async function boot(
 	world: Device, basePath: string, overrides: Partial<TyrianSettings>, withLocalStorage = true,
 	capabilities?: { pathBoundIdentity: boolean },
+	slowSave?: () => Promise<void>,
 ): Promise<RelocationHarness> {
 	vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
 	const vault = {
@@ -592,7 +726,7 @@ async function boot(
 	} as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
 	const { core } = obsidianPluginCore(app, manifest, {
-		saveData: vi.fn(async (data: unknown) => { world.data = structuredClone(data) as Record<string, unknown>; }),
+		saveData: vi.fn(async (data: unknown) => { if (slowSave !== undefined) await slowSave(); world.data = structuredClone(data) as Record<string, unknown>; }),
 		loadData: async () => structuredClone(world.data),
 	});
 	const target = core as unknown as RelocationHarness & {
@@ -611,6 +745,7 @@ async function boot(
 		indexedDB: world.factory,
 		setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
 	});
+	if (slowSave !== undefined) fastDeadlines(world);
 	vi.stubGlobal('navigator', { onLine: true });
 	const notice = vi.spyOn(target.host.ui, 'notice').mockImplementation((message: string) => { world.notices.push(message); });
 	void notice;
