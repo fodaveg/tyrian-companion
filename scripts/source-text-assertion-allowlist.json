@@ -11,12 +11,12 @@
 		"src/platform/mumble-v2-spike-architecture.test.ts",
 		"src/sessions/pending-proposal-architecture.test.ts",
 		"src/sessions/pilot-metrics-architecture.test.ts",
-		"src/sessions/session-debug-semantics-architecture.test.ts",
-		"src/ui/companion-status-model.test.ts",
-		"src/ui/inventory-advisor-integration-architecture.test.ts",
+		"src/sessions/session-debug-semantics-architecture-source-text.test.ts",
+		"src/ui/companion-status-model-source-text.test.ts",
+		"src/ui/inventory-advisor-integration-source-text.test.ts",
 		"src/ui/product-action-architecture.test.ts",
-		"src/ui/runtime-i18n-architecture.test.ts",
+		"src/ui/runtime-i18n-architecture-source-text.test.ts",
 		"src/ui/session-history-panel-architecture.test.ts",
-		"src/ui/settings-tab.test.ts"
+		"src/ui/settings-tab-source-text.test.ts"
 	]
 }

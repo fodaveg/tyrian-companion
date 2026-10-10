@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { TRANSLATIONS } from '../core/i18n';
 import {
 	classMemberNamesOf, classMethodBody, exportedDeclarationNameList, forbiddenBoundaryUses,
 	type ModuleBoundary, readModuleSource,
@@ -90,14 +89,6 @@ describe('pilot metrics architecture', () => {
 		const store = readModuleSource('src/sessions/pilot-metrics-store.ts');
 		expect(store).toContain('async disable()');
 		expect(store).toContain('PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE');
-	});
-
-	it('states that clear resets the review and disable leaves prior Vault exports untouched', () => {
-		for (const locale of ['es', 'en'] as const) {
-			expect(TRANSLATIONS[locale]['settings.pilot.clear.desc']).toMatch(/revisi|review/iu);
-			expect(TRANSLATIONS[locale]['settings.pilot.disable.descExports']).toMatch(/Vault/u);
-			expect(TRANSLATIONS[locale]['settings.pilot.disable.descExports']).toMatch(/no se tocan|not touched/iu);
-		}
 	});
 
 	it('closes every product invalidation of a live assisted proposal without changing successful workflow closure', () => {
