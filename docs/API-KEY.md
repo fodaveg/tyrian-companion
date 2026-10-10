@@ -43,7 +43,7 @@ endpoints está en [API:API key](https://wiki.guildwars2.com/wiki/API_key) y
   completa. El modal de revisión puede consultar `history/buys` y `history/sells` dentro de la
   ventana exacta de la sesión, con un máximo de 90 días, y solo propone marcar actividad para que la
   confirmes. Los precios públicos no usan clave.
-- `progression`: logros utilizados como evidencia opcional del Inventory Advisor.
+- `progression`: logros utilizados como evidencia opcional del Inventory Advisor y **necesario** para el comando manual «Actualizar logros de Leyspring», que lee `/v2/account/achievements` para marcar los logros hechos, su avance y el de la maestría. Sin este permiso el comando avisa de que no pudo actualizar y deja la nota como estaba; nunca desmarca nada.
 - `unlocks`: recetas, skins y minis como evidencia opcional del Inventory Advisor y de las alertas de Halloween. Halloween consulta `/v2/account/skins` y `/v2/account/minis` solo al estar activado; cada tipo se evalúa con cobertura independiente y nunca afirma que falte un desbloqueo en una dimensión ausente o fallida.
 
 Los cuatro permisos del perfil mínimo son necesarios para el flujo completo de sesión, aunque una
@@ -74,6 +74,7 @@ valor antiguo para pedir ayuda: revócalo y describe solo el código de error vi
 | Clave inválida o caducada | Revócala si procede, crea otra y sustituye el secreto. |
 | Falta `account` | Crea una clave nueva con `account`; los permisos no se pueden editar. |
 | El inicio pide `builds` | Usa el perfil mínimo funcional, que incluye `builds`. |
+| «Actualizar logros de Leyspring» avisa de que no pudo leer los logros | Falta `progression` (o no hay red): crea una clave con ese permiso. La nota conserva lo último escrito. |
 | La captura indica permisos insuficientes | Comprueba `characters` e `inventories`; para el flujo completo deben acompañar a `account`. |
 | Subtoken limitado por URL | Debe permitir todos los endpoints privados que use el flujo; para la beta se recomienda una clave normal con permisos mínimos. |
 | Límite de peticiones | Espera al contador de cooldown y vuelve a intentarlo; no repitas clics ni regeneres la clave. |

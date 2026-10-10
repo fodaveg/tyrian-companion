@@ -81,6 +81,22 @@ configurada por la persona (ver arriba), no de abrir ninguna vista.
 
 Aprobado por David el 8 oct 2026 («si a las 3»): la nota resumen de una sesión cerrada nombra los mapas con `GET https://api.guildwars2.com/v2/maps?ids=<ids>&lang=<es|en>`, sin clave, mismo host que el resto del catálogo público (no abre ningún host). Pasa por el mismo cliente, caché (TTL de 7 días, copia obsoleta aceptada si la red falla), lotes y límite de peticiones que `items` y `currencies`, y su nombre lógico de diagnóstico es `maps`. Se pide solo tras guardar la nota completa, nunca en la carga ni en el cierre: cerrar una sesión no espera a esta petición ni falla por ella, y sin nombre la nota escribe «Mapa <id>». El segundo dato aprobado, si un objeto está ligado a cuenta, no añade ninguna petición: sale de los `flags` que `/v2/items` ya devuelve al catálogo de la sesión (`AccountBound` y `SoulbindOnAcquire` sacan el objeto; `NoSell` solo prohíbe la venta a comerciante y no lo saca); sin flags en caché el valor se marca como máximo.
 
+## Logros de Leyspring Hollows (10 oct 2026)
+
+Pedido por David el 10 oct 2026 («ponte con los logros»). El comando manual «Actualizar logros de
+Leyspring» usa tres peticiones, todas al host que el plugin ya usa (`api.guildwars2.com`), sin abrir
+ninguno nuevo y solo cuando el usuario lanza el comando (nunca en la carga, al abrir una vista o una nota):
+
+- `GET /v2/account` con la clave: nombre de cuenta y referencia seudónima para no escribir en la nota de otra cuenta.
+- `GET /v2/account/achievements` con la clave (permiso `progression`): qué logros están hechos, su avance y el de la maestría 9417.
+- `GET /v2/achievements?ids=<9417 y los 46 logros>&lang=<es|en>` sin clave, por el cliente público: nombres y umbral de la maestría. Un solo lote (≤200 ids); su nombre lógico de diagnóstico es `achievements`. No pasa por la caché persistente del catálogo: son 47 ids en una acción manual.
+
+La wiki de Guild Wars 2 **no se consulta**: los enlaces de la nota (página y ancla) son datos fijos del
+código (`src/achievements/leyspring-set.ts`). Sin red, sin `progression` o con una respuesta inválida
+no se escribe nada y se avisa; la nota conserva lo último escrito. Funciona igual en Obsidian y en Hebra
+porque escribe por el puerto de vault del host, y también en modo Consulta, como las demás acciones
+manuales de inventario y cartera.
+
 ## Piloto de histórico dentro de la nota de inventario (H9.2)
 
 Aprobado por David el 4 de septiembre de 2026, ampliando H9.1: hasta cuatro objetos fijos muestran la
