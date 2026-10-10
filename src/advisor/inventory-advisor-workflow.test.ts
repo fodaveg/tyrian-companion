@@ -26,6 +26,7 @@ import {
 	EMPTY_INVENTORY_ADVISOR_PREFERENCES,
 	InventoryAdvisorWorkflow,
 	type InventoryAdvisorRules,
+	type InventoryAdvisorWorkflowPorts,
 } from './inventory-advisor-workflow';
 
 describe('H5.11 inventory advisor workflow', () => {
@@ -363,10 +364,10 @@ describe('inventory advisor workflow: the ports it reaches', () => {
 	it('reaches only the declared ports through a refresh and a reclassify', async () => {
 		const reached = new Set<string>();
 		const fixture = reviewedDiscardFixture();
-		const ports = recordingPorts({
+		const ports = recordingPorts<InventoryAdvisorWorkflowPorts>({
 			capture: { capture: async () => ({ status: 'complete' as const, evidence: fixture.evidence }) },
 			preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
-			rules: { current: () => ({ status: 'available', value: fixture.rules }) },
+			rules: { current: () => ({ status: 'available' as const, value: fixture.rules }) },
 			now: () => Date.parse('2026-08-14T12:00:00.000Z'),
 			yieldToEventLoop: async () => undefined,
 			objects: {
