@@ -41,8 +41,11 @@ export interface IndexedDbStoreSchema {
  * own condition: an upgrade blocked by another open tab is a retry, while an
  * `error` may be a `VersionError` from a database written by a newer build.
  * `refused` means the open itself succeeded and `accept` turned it down.
+ * `schema_incomplete` means the open succeeded too, but the database lacks a store or index the schema declares (an
+ * earlier upgrade did not create it, and the migration only creates stores that are absent): opening again at the same
+ * version cannot fix it, and every transaction on it would fail.
  */
-export type IndexedDbOpenFailureReason = 'error' | 'blocked' | 'refused' | 'timeout';
+export type IndexedDbOpenFailureReason = 'error' | 'blocked' | 'refused' | 'timeout' | 'schema_incomplete';
 
 /**
  * Why a connection was asked to step aside.
@@ -65,6 +68,13 @@ export interface OpenIndexedDbOptions {
 	 * declarative form is the whole migration vocabulary in use.
 	 */
 	schema: readonly IndexedDbStoreSchema[];
+	/**
+	 * Whether the open checks, before handing the database over, that every store and index in `schema` exists, and
+	 * rejects as `schema_incomplete` when one is missing (true when absent). Only a caller that inspects the stores
+	 * itself turns it off: the session runtime, which repairs a missing store, and a read of an earlier database that
+	 * treats a missing store as empty.
+	 */
+	verifySchema?: boolean;
 	/** Builds the error this domain rejects with. `error` is the request's own, when there was one. */
 	toError: (reason: IndexedDbOpenFailureReason, error: DOMException | null) => Error;
 	/**
@@ -106,6 +116,8 @@ export interface OpenIndexedDbOptions {
 
 /** The errors `openIndexedDb` rejected with because the engine never answered the open. */
 const openTimeouts = new WeakSet<object>();
+/** The errors `openIndexedDb` rejected with because the database lacked a declared store or index. */
+const incompleteSchemas = new WeakSet<object>();
 
 /**
  * Opens the database, applies the schema and resolves the connection.
@@ -134,7 +146,10 @@ export function openIndexedDb(options: OpenIndexedDbOptions): Promise<IDBDatabas
 			stopTimer();
 			const built = options.toError(reason, error);
 			// The error stays the store's own; this only lets `indexedDbFailureCode` tell that the wait ran out.
-			if (reason === 'timeout' && typeof built === 'object' && built !== null) openTimeouts.add(built);
+			if (typeof built === 'object' && built !== null) {
+				if (reason === 'timeout') openTimeouts.add(built);
+				else if (reason === 'schema_incomplete') incompleteSchemas.add(built);
+			}
 			reject(built);
 		};
 		try { timer = schedule(() => { fail('timeout', null); }, options.timeoutMs ?? STORAGE_ANSWER_TIMEOUT_MS); }
@@ -155,6 +170,24 @@ export function openIndexedDb(options: OpenIndexedDbOptions): Promise<IDBDatabas
 				database.close();
 				fail('refused', null);
 				return;
+			}
+			// DU-06 (10 Oct 2026): the migration skips every store that already exists, so a database an earlier upgrade
+			// left without a store or index opened fine and then failed each transaction as a lost connection. Checked
+			// after `accept`, so a store that turns down what it got keeps its own answer.
+			if (options.verifySchema !== false) {
+				let missing: readonly IndexedDbSchemaGap[];
+				try {
+					missing = missingIndexedDbSchema(database, options.schema);
+				} catch (error) {
+					database.close();
+					fail('error', error instanceof DOMException ? error : null);
+					return;
+				}
+				if (missing.length > 0) {
+					database.close();
+					fail('schema_incomplete', null);
+					return;
+				}
 			}
 			settled = true;
 			stopTimer();
@@ -263,10 +296,12 @@ export class IndexedDbUnavailableError extends Error {
 /**
  * The diagnostic code of a failed store operation: `timeout` when the engine did not answer in time
  * (`StorageUnansweredError`, also when a store wrapped it) or an open ran out of its wait (whatever error `toError`
- * built for `timeout`), otherwise the storage code of the engine's own error.
+ * built for `timeout`), `schema_incomplete` when an open found the database without a declared store or index (whatever
+ * error `toError` built for it), otherwise the storage code of the engine's own error.
  */
 export function indexedDbFailureCode(error: unknown): LocalDebugCode {
 	const reason = error instanceof IndexedDbUnavailableError || error instanceof IndexedDbConnectionLostError ? error.reason : error;
+	if (typeof reason === 'object' && reason !== null && incompleteSchemas.has(reason)) return 'schema_incomplete';
 	return reason instanceof StorageUnansweredError || (typeof reason === 'object' && reason !== null && openTimeouts.has(reason)) ? 'timeout' : localDebugStorageFailureCode(reason);
 }
 
@@ -371,4 +406,37 @@ export function applyIndexedDbSchema(
 			created.createIndex(index.name, index.keyPath as string | string[]);
 		}
 	}
+}
+
+/** One declared store, or one declared index of a store that exists, that the database does not have. */
+export interface IndexedDbSchemaGap {
+	store: string;
+	/** Absent when the whole store is missing. */
+	index?: string;
+}
+
+/**
+ * What `schema` declares and `database` lacks, by name: missing stores, and missing indexes of the stores that exist. Key
+ * paths are not compared. Reading the indexes starts one read-only transaction over the stores that declare any, which
+ * runs nothing and commits on its own; it throws as `transaction()` does on a connection that is closing.
+ */
+export function missingIndexedDbSchema(
+	database: IDBDatabase,
+	schema: readonly IndexedDbStoreSchema[],
+): IndexedDbSchemaGap[] {
+	const missing: IndexedDbSchemaGap[] = [];
+	const indexed: IndexedDbStoreSchema[] = [];
+	for (const store of schema) {
+		if (!database.objectStoreNames.contains(store.name)) missing.push({ store: store.name });
+		else if ((store.indexes ?? []).length > 0) indexed.push(store);
+	}
+	if (indexed.length === 0) return missing;
+	const transaction = database.transaction(indexed.map((store) => store.name), 'readonly');
+	for (const store of indexed) {
+		const present = transaction.objectStore(store.name).indexNames;
+		for (const index of store.indexes ?? []) {
+			if (!present.contains(index.name)) missing.push({ store: store.name, index: index.name });
+		}
+	}
+	return missing;
 }

@@ -9,7 +9,7 @@ import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey,
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
-import { indexedDbFailureCode, openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen, type IndexedDbStoreSchema, type OpenIndexedDbOptions } from '../core/indexed-db-open';
+import { indexedDbFailureCode, missingIndexedDbSchema, openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen, type IndexedDbSchemaGap, type IndexedDbStoreSchema, type OpenIndexedDbOptions } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
@@ -58,7 +58,7 @@ export const SESSION_RUNTIME_SCHEMA: readonly IndexedDbStoreSchema[] = [
 ];
 
 /** Options of {@link openSessionRuntimeDatabase}: everything `openIndexedDb` takes except what the schema fixes. */
-export type OpenSessionRuntimeDatabaseOptions = Omit<OpenIndexedDbOptions, 'databaseVersion' | 'schema'>;
+export type OpenSessionRuntimeDatabaseOptions = Omit<OpenIndexedDbOptions, 'databaseVersion' | 'schema' | 'verifySchema'>;
 
 /**
  * Opens the session runtime database with the complete schema and repairs one that is missing a store.
@@ -68,16 +68,20 @@ export type OpenSessionRuntimeDatabaseOptions = Omit<OpenIndexedDbOptions, 'data
  * `VersionError`, and asking for a higher one would lock out the release that wrote it. Only when a store is still missing
  * (a database an earlier incomplete upgrade damaged, DU-01) is it opened again one version up so `applyIndexedDbSchema`
  * creates what is missing. It is never deleted or recreated, because it holds the saved session.
+ *
+ * That last open checks the schema (DU-06): a store the repair could not create, or a declared index missing from a store
+ * that exists, fails it as `schema_incomplete`. A database with every store and an index missing is opened at its own
+ * version for that check, not one up: the migration cannot add an index to a store that exists, so raising the version
+ * would repair nothing and climb again on every start.
  */
 export async function openSessionRuntimeDatabase(options: OpenSessionRuntimeDatabaseOptions): Promise<IDBDatabase> {
-	const complete = (database: IDBDatabase): boolean => SESSION_RUNTIME_SCHEMA.every((store) => database.objectStoreNames.contains(store.name));
-	const openAt = async (databaseVersion: number, onVersionError?: () => void): Promise<IDBDatabase> => await openIndexedDb({
-		...options, databaseVersion, schema: SESSION_RUNTIME_SCHEMA,
+	const openAt = async (databaseVersion: number, verifySchema: boolean, onVersionError?: () => void): Promise<IDBDatabase> => await openIndexedDb({
+		...options, databaseVersion, schema: SESSION_RUNTIME_SCHEMA, verifySchema,
 		toError: (reason, error) => { if (error?.name === 'VersionError') onVersionError?.(); return options.toError(reason, error); },
 	});
 	let tooLow = false;
 	// `allSettled` rather than try/catch: the only failure absorbed here is "the database is already above the minimum".
-	const [first] = await Promise.allSettled([openAt(SESSION_RUNTIME_DB_VERSION, () => { tooLow = true; })]);
+	const [first] = await Promise.allSettled([openAt(SESSION_RUNTIME_DB_VERSION, false, () => { tooLow = true; })]);
 	if (first.status === 'rejected' && !tooLow) throw first.reason;
 	let database: IDBDatabase | null = first.status === 'fulfilled' ? first.value : null;
 	if (database === null) {
@@ -87,12 +91,17 @@ export async function openSessionRuntimeDatabase(options: OpenSessionRuntimeData
 			request.onsuccess = () => { const { version } = request.result; request.result.close(); resolve(version); };
 			request.onerror = () => { reject(options.toError('error', request.error)); };
 		});
-		database = await openAt(current);
+		database = await openAt(current, false);
 	}
-	if (complete(database)) return database;
-	const repairVersion = database.version + 1;
+	let missing: IndexedDbSchemaGap[] | undefined;
+	// Reading the indexes starts a transaction, which throws on a connection that is closing: that error goes up as it
+	// is, and the connection is not left open behind it.
+	try { missing = missingIndexedDbSchema(database, SESSION_RUNTIME_SCHEMA); }
+	finally { if (missing === undefined) database.close(); }
+	if (missing.length === 0) return database;
+	const repairVersion = missing.some((gap) => gap.index === undefined) ? database.version + 1 : database.version;
 	database.close();
-	return await openAt(repairVersion);
+	return await openAt(repairVersion, true);
 }
 /** Exported so a test can seed a legacy-schema record directly, bypassing `save()`'s current-schema validation. */
 export const SESSION_RUNTIME_KEY = 'active-session';

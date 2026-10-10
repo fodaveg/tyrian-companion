@@ -302,6 +302,8 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 			databaseName: name,
 			databaseVersion: DETECTION_QUALITY_DB_VERSION,
 			schema: [{ name: DETECTION_QUALITY_STORE_NAME }],
+			// An earlier database without the store has nothing to copy: it is read as empty below, not refused.
+			verifySchema: false,
 			onVersionChange: 'close',
 			toError: (reason) => new Error(reason === 'blocked'
 				? 'The earlier detection quality database was blocked.'

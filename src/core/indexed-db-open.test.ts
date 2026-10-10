@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
 	IndexedDbConnectionLostError,
+	IndexedDbUnavailableError,
 	ReopeningIndexedDbConnection,
 	indexedDbFailureCode,
+	missingIndexedDbSchema,
 	openIndexedDb,
 	startIndexedDbTransaction,
 	withIndexedDbReopen,
@@ -274,6 +276,97 @@ describe('openIndexedDb', () => {
 		expect(closed).toEqual([]);
 		emitEngineClose(database);
 		expect(closed).toEqual([database]);
+	});
+});
+
+/**
+ * DU-06 (10 Oct 2026): the migration creates only what is absent, so a database an earlier upgrade left without a store or
+ * an index opened fine, and then every transaction on it failed as a lost connection.
+ */
+describe('openIndexedDb against a database without part of its schema', () => {
+	/** A database at `version` with exactly these stores and indexes, created outside the helper. */
+	async function seed(factory: IDBFactory, name: string, version: number, stores: readonly { name: string; indexes?: readonly string[] }[]): Promise<void> {
+		const database = await new Promise<IDBDatabase>((resolve, reject) => {
+			const request = factory.open(name, version);
+			request.onupgradeneeded = () => {
+				for (const store of stores) {
+					const created = request.result.createObjectStore(store.name, { keyPath: 'id' });
+					for (const index of store.indexes ?? []) created.createIndex(index, 'id');
+				}
+			};
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error ?? new Error('seed failed'));
+		});
+		database.close();
+	}
+	const INDEXED = { name: 'records', keyPath: 'id', indexes: [{ name: 'by-day', keyPath: 'day' }] };
+
+	it('rejects as schema_incomplete, with the store\'s own error, when a declared store is missing, and closes it', async () => {
+		const factory = new IDBFactory(); const name = databaseName('missing-store');
+		await seed(factory, name, 1, [{ name: 'records', indexes: ['by-day'] }]);
+		const reasons: IndexedDbOpenFailureReason[] = [];
+		const error = await openIndexedDb({
+			factory, databaseName: name, databaseVersion: 1, schema: [INDEXED, { name: 'journal' }],
+			toError: (reason) => { reasons.push(reason); return new Error(`store: ${reason}`); },
+		}).then(() => null, (failure: unknown) => failure);
+		expect(reasons).toEqual(['schema_incomplete']);
+		expect(error).toEqual(new Error('store: schema_incomplete'));
+		expect(indexedDbFailureCode(error)).toBe('schema_incomplete');
+		// Also once a store wrapped it as its own "unavailable".
+		expect(indexedDbFailureCode(new IndexedDbUnavailableError('Store is unavailable.', error))).toBe('schema_incomplete');
+		// Control: the same message from a plain error is still a storage failure.
+		expect(indexedDbFailureCode(new Error('store: schema_incomplete'))).toBe('storage_failure');
+		// The refused connection was closed, so a later upgrade is not blocked by it.
+		const upgraded = await openRaw(factory, name, 2);
+		expect(upgraded.version).toBe(2);
+		upgraded.close();
+	});
+
+	it('rejects as schema_incomplete when a store exists without a declared index, even through an upgrade that cannot add it', async () => {
+		const factory = new IDBFactory(); const name = databaseName('missing-index');
+		await seed(factory, name, 1, [{ name: 'records' }]);
+		for (const databaseVersion of [1, 2]) {
+			const reasons: IndexedDbOpenFailureReason[] = [];
+			await expect(openIndexedDb({
+				factory, databaseName: name, databaseVersion, schema: [INDEXED],
+				toError: (reason) => { reasons.push(reason); return new Error(reason); },
+			}), `version ${String(databaseVersion)}`).rejects.toThrow('schema_incomplete');
+			expect(reasons).toEqual(['schema_incomplete']);
+		}
+	});
+
+	it('hands over a database with every declared store and index, and one with more than declared', async () => {
+		const factory = new IDBFactory(); const name = databaseName('complete');
+		await seed(factory, name, 1, [{ name: 'records', indexes: ['by-day', 'by-kind'] }, { name: 'extra' }]);
+		const database = await openIndexedDb({
+			factory, databaseName: name, databaseVersion: 1, schema: [INDEXED], toError: (reason) => new Error(reason),
+		});
+		expect(names(database.objectStoreNames).sort()).toEqual(['extra', 'records']);
+		database.close();
+	});
+
+	it('leaves the check to a caller that turns it off', async () => {
+		const factory = new IDBFactory(); const name = databaseName('unchecked');
+		await seed(factory, name, 1, [{ name: 'records' }]);
+		const database = await openIndexedDb({
+			factory, databaseName: name, databaseVersion: 1, schema: [INDEXED, { name: 'journal' }], verifySchema: false,
+			toError: (reason) => new Error(reason),
+		});
+		expect(missingIndexedDbSchema(database, [INDEXED, { name: 'journal' }])).toEqual([
+			{ store: 'journal' }, { store: 'records', index: 'by-day' },
+		]);
+		database.close();
+	});
+
+	it('lets accept answer first: a store that turns the database down keeps its own refusal', async () => {
+		const factory = new IDBFactory(); const name = databaseName('accept-first');
+		await seed(factory, name, 1, [{ name: 'records' }]);
+		const reasons: IndexedDbOpenFailureReason[] = [];
+		await expect(openIndexedDb({
+			factory, databaseName: name, databaseVersion: 1, schema: [INDEXED], accept: () => false,
+			toError: (reason) => { reasons.push(reason); return new Error(reason); },
+		})).rejects.toThrow('refused');
+		expect(reasons).toEqual(['refused']);
 	});
 });
 

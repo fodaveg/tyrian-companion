@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 604,
+		"catch_clause": 605,
 		"promise_catch": 61,
 		"void_expression": 142,
 		"callback_registration": 250
@@ -3087,6 +3087,22 @@
 						"justification": "The \"openIndexedDb\" catch is a \"local_recovery\": a host with no timer (a unit test under Node) gets the open unbounded, as every open was before, and the open's own events still decide its outcome."
 					},
 					"reason": "Allowlisted catch_clause: The \"openIndexedDb\" catch is a \"local_recovery\": a host with no timer (a unit test under Node) gets the open unbounded, as every open was before, and the open's own events still decide its outcome. Verified recovery: \"local_recovery\" in \"openIndexedDb\"."
+				},
+				{
+					"id": "95321a3d9dc6ae838859f447a78a702484e03c25",
+					"kind": "catch_clause",
+					"line": 181,
+					"column": 7,
+					"endLine": 185,
+					"endColumn": 6,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "openIndexedDb",
+						"justification": "The \"openIndexedDb\" catch is a \"fallback_return\": reading the declared indexes (DU-06) throws only on a connection that is closing, so the database is closed and the open is rejected through fail(\"error\"), which each store records on its own probe as a failed open."
+					},
+					"reason": "Allowlisted catch_clause: The \"openIndexedDb\" catch is a \"fallback_return\": reading the declared indexes (DU-06) throws only on a connection that is closing, so the database is closed and the open is rejected through fail(\"error\"), which each store records on its own probe as a failed open. Verified recovery: \"fallback_return\" in \"openIndexedDb\"."
 				},
 				{
 					"id": "4ba20a6027dd8a98e960483fc1a53b234b48ef36",
