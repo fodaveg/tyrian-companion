@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
@@ -13,6 +14,7 @@ import {
 	isInventoryAdvisorReport,
 	isInventoryAdvisorRulePack,
 	isInventoryPriceSnapshot,
+	sha256CanonicalValue,
 	sha256InventoryAdvisorReport,
 	sha256InventoryRulePack,
 	validDecisionAgainstInput,
@@ -24,6 +26,25 @@ import type {
 	InventoryRecommendationDecisionV1,
 } from './inventory-advisor-model';
 import { isInventoryAdvisorResult, isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+
+describe('legacy V1 digest', () => {
+	// Recorded on 52fa782c, before DE-16 took the non-null assertions out of `legacySha256`. It is NOT
+	// standard SHA-256 (its padding words are array holes); what matters is that it never changes.
+	it('keeps every recorded digest, and differs from standard SHA-256', () => {
+		const inputs = [
+			...Array.from({ length: 300 }, (_, n) => 'a'.repeat(n)),
+			...Array.from({ length: 40 }, (_, n) => 'ñ€😀'.repeat(n)),
+			{ itemId: 19_721, nested: [1, 'two', null, { z: true, a: -0.5 }] },
+		];
+		const joined = inputs.map((input) => sha256CanonicalValue(input)).join('\n');
+		expect(createHash('sha256').update(joined, 'utf8').digest('hex')).toBe('ee1fd88d966031a1cd4628456acf007bbca52337a41bbd6b95f58a1e5cac829c');
+		expect(sha256CanonicalValue('')).toBe('7a754e4d9e54eb806a919b5a18ae00b7424676b406a3e556ca61d3cee5a8a897');
+		expect(sha256CanonicalValue('abc')).toBe('f258c21c200c70d4db7f29c0739637b82c7116bc33084b72ac0cf9b74a6ebab1');
+		expect(sha256CanonicalValue({ itemId: 19_721, nested: [1, 'two', null, { z: true, a: -0.5 }] }))
+			.toBe('0cedd43538fc493f2d02e4a4a719a5c41948455be0225b31c8d39545da1a19c1');
+		expect(sha256CanonicalValue('abc')).not.toBe(createHash('sha256').update('"abc"', 'utf8').digest('hex'));
+	});
+});
 
 describe('inventory advisor H4.13 contract', () => {
 	it('accepts a canonical, identity-bound supported-storage input', () => {
