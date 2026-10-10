@@ -1,5 +1,20 @@
 # Changelog
 
+## Release beta 0.6.31 - Halloween sin esperas al comprobar la conexión, sesión en vivo que aguanta un reloj atrasado y datos locales protegidos
+
+Se actualiza desde la 0.6.30 publicada. Lo que más se nota: «Comprobar conexión» ya no espera a las notas de sesión de
+Halloween, la sesión en vivo no se queda en error si el reloj del sistema retrocede y el plugin pide al navegador que no
+borre sus datos locales. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Halloween. «Comprobar conexión» ya no espera a leer las notas de sesión de Halloween. El primer botín sí espera a esa
+  lectura, para no contarse dos veces. Si la conexión cae mientras se leen, el panel sigue diciendo «sin conexión».
+- Sesión en vivo. Si el reloj del sistema retrocede, la sesión ya no se queda en error: el plugin usa un reloj que no
+  retrocede para su propia reserva.
+- Almacenamiento. Al arrancar, el plugin pide al navegador que no borre sus datos locales cuando falte disco, y el
+  diagnóstico dice si lo concedió.
+- Interno. Parte del núcleo se divide en módulos más pequeños: funciones de venta y de resultados, y el modelo de vista
+  del asesor de inventario. El compilador exige marcar los métodos sobrescritos.
+
 ## Release beta 0.6.30 - sección Logros en Obsidian y en Hebra, historial que solo lee las notas de Tyrian y almacenes locales que se recuperan solos
 
 Se actualiza desde la 0.6.29 publicada. Lo que más se nota: llega la cuarta sección, Logros, con buscador y seguimiento de

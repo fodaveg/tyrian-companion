@@ -1,5 +1,21 @@
 # Estado
 
+## Candidato 0.6.31: Halloween sin esperas, reserva de sesión con reloj monótono y almacenamiento persistente (10 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Parte de `61f8ab7` (rama `integracion/0.6.31` sobre el canal
+0.6.30 publicado, `395d1e0`) y añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de
+`package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.31 se ha visto en un Obsidian ni en un Hebra reales.
+  Todo está medido en tests.
+- Contenido: «Comprobar conexión» no espera al recorrido de notas de sesión de Halloween, el primer botín sí, y la
+  conexión caída durante el recorrido sigue mostrándose como «sin conexión»; la reserva propia de la sesión en vivo se
+  ordena con el reloj monótono, de modo que un reloj de sistema retrasado ya no la deja en error (DU-09); petición única
+  de almacenamiento persistente al cargar, con su respuesta en el diagnóstico (DU-13); división del núcleo en módulos de
+  funciones de venta y de resultados de acciones, y del modelo de vista del Asesor, con el censo y la guarda de i18n al
+  día; `noImplicitOverride` activado con los métodos sobrescritos marcados.
+- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+
 ## Canal 0.6.30 publicado: sección Logros, historial acotado a las notas de Tyrian y almacenes locales que se recuperan solos (10 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Parte de `fe32b78` (rama `integracion/0.6.30` sobre el canal
