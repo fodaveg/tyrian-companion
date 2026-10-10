@@ -1,4 +1,5 @@
 import type { AccountAchievementEntry } from '../account/account-achievements';
+import { knownSetMembersOf } from './known-achievement-sets';
 import {
 	categoryMembersOf,
 	isCategoryMetaAchievement,
@@ -126,10 +127,8 @@ export function buildTrackedAchievementsView(input: {
 }): TrackedAchievementView[] {
 	return input.trackedIds.map((id) => {
 		const detail = input.details.get(id) ?? null;
-		const listed = detail !== null && !input.retired.has(id) && isCategoryMetaAchievement(detail)
-			? categoryMembersOf(input.categories ?? [], id) : null;
-		// A category too small for what the meta counts lists nothing: «La API no lista los elementos de este logro», not a short list under a bigger bar.
-		const members = detail === null || listed === null ? null : plausibleCategoryMembers(detail, listed) ?? [];
+		const members = detail !== null && !input.retired.has(id) && isCategoryMetaAchievement(detail)
+			? metaMembersOf(detail, input.categories ?? []) : null;
 		return buildTrackedAchievementView({
 			id,
 			detail,
@@ -340,8 +339,19 @@ export function trackedReadingIds(input: {
 	for (const id of input.trackedIds) {
 		const detail = input.details.get(id);
 		if (detail === undefined || input.retired.has(id) || !isCategoryMetaAchievement(detail)) continue;
-		const listed = categoryMembersOf(input.categories, id);
-		for (const member of listed === null ? [] : plausibleCategoryMembers(detail, listed) ?? []) ids.add(member);
+		for (const member of metaMembersOf(detail, input.categories) ?? []) ids.add(member);
 	}
 	return [...ids];
+}
+
+/**
+ * The elements of a meta of its category: the wiki's known set when there is one (the API does not
+ * list them), else the members of its category when that can be what the bar counts; a category
+ * too small for it lists nothing («La API no lista los elementos de este logro»). Null: no category.
+ */
+function metaMembersOf(detail: AchievementDetail, categories: readonly AchievementCategory[]): number[] | null {
+	const known = knownSetMembersOf(detail.id);
+	if (known !== null) return known.filter((member) => member !== detail.id);
+	const listed = categoryMembersOf(categories, detail.id);
+	return listed === null ? null : plausibleCategoryMembers(detail, listed) ?? [];
 }

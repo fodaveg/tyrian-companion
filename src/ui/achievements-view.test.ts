@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccountAchievementEntry } from '../account/account-achievements';
 import { parseAchievementCategories, parseAchievementPage, searchAchievementIndex, toAchievementIndexEntry, type AchievementCategory, type AchievementDetail, type AchievementIndexEntry } from '../achievements/achievement-catalog-model';
 import { achievementNameKey, type AchievementFreshness, type AchievementIndexBuildOptions, type AchievementIndexBuildResult, type AchievementNameEntry, type AchievementNameRef } from '../achievements/achievement-catalog-service';
+import { knownSetMembersOf } from '../achievements/known-achievement-sets';
 import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE, SEASONS_OF_THE_DRAGONS_CATEGORIES, SEASONS_OF_THE_DRAGONS_ID, SEASONS_OF_THE_DRAGONS_PAGE } from '../achievements/api-fixtures';
 import type { TrackedProgressRefreshResult } from '../achievements/tracked-progress-service';
 import { installDomHelpers } from '../host/dom-polyfill';
@@ -1133,18 +1134,23 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 	const detailsOf = (page: unknown) => new Map(parseAchievementPage(page)!.details.map((each) => [each.id, each]));
 	const rows = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll<HTMLElement>('.tyrian-achievements__elements li'));
 
-	it('«Temporadas de los dragones» counts 24 and does not list the five achievements of a category that is not its own', async () => {
+	it('«Temporadas de los dragones» counts 24 and lists the 24 of the wiki, not the five achievements of its category', async () => {
+		const wiki = knownSetMembersOf(SEASONS_OF_THE_DRAGONS_ID)!;
 		const h = harness({
 			tracked: [SEASONS_OF_THE_DRAGONS_ID], details: detailsOf(SEASONS_OF_THE_DRAGONS_PAGE), categories: parseAchievementCategories(SEASONS_OF_THE_DRAGONS_CATEGORIES)!,
-			entries: [{ id: SEASONS_OF_THE_DRAGONS_ID, done: false, current: 3, max: 24, repeated: null, bits: null }],
+			readingIds: [SEASONS_OF_THE_DRAGONS_ID, ...wiki],
+			entries: [{ id: SEASONS_OF_THE_DRAGONS_ID, done: false, current: 3, max: 24, repeated: null, bits: null }, { id: 5743, done: true, current: 8, max: 8, repeated: null, bits: null }],
 		});
 		h.view.mount();
 		await h.settle();
 		expect(h.items()[0]!.querySelector('.tyrian-achievements__count')?.textContent).toBe('3/24');
-		expect(rows(h)).toEqual([]);
-		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('La API no lista los elementos de este logro.');
-		// No details of the five were asked for: nothing is shown or read for them.
-		expect(h.calls.filter((call) => call.startsWith('details:'))).toEqual([`details:${String(SEASONS_OF_THE_DRAGONS_ID)}`]);
+		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('Hechos: 1 de 24');
+		expect(rows(h)).toHaveLength(24);
+		expect(rows(h).at(-1)!.getAttribute('data-state')).toBe('done');
+		expect(h.calls.filter((call) => call.startsWith('details:'))).toEqual([`details:${String(SEASONS_OF_THE_DRAGONS_ID)}`, `details:${wiki.join(',')}`]);
+		h.refreshButton().click();
+		await h.settle();
+		expect(h.refresh).toHaveBeenCalledWith(VAULT, [SEASONS_OF_THE_DRAGONS_ID, ...wiki]);
 	});
 
 	it('«Actualizar progreso» asks about the members of a meta even when the list has not finished loading', async () => {

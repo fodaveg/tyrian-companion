@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { AccountAchievementEntry } from '../account/account-achievements';
 import { parseAchievementCategories, parseAchievementPage, type AchievementCategory, type AchievementDetail } from './achievement-catalog-model';
+import { knownSetMembersOf } from './known-achievement-sets';
 import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE, SEASONS_OF_THE_DRAGONS_CATEGORIES, SEASONS_OF_THE_DRAGONS_ID, SEASONS_OF_THE_DRAGONS_PAGE } from './api-fixtures';
 import {
 	achievementWikiAnchorUrl,
@@ -228,27 +229,46 @@ describe('trackedReadingIds', () => {
 	});
 });
 
-describe('a meta whose category cannot be what its bar counts («Temporadas de los dragones», 5790)', () => {
+describe('«Temporadas de los dragones» (5790): the API does not give its 24, the wiki does', () => {
 	// The API as it answered on 10 oct 2026: the bar asks for 24 «Return» metas, its category lists five other achievements.
 	const details = new Map(parseAchievementPage(SEASONS_OF_THE_DRAGONS_PAGE)!.details.map((each) => [each.id, each]));
 	const categories = parseAchievementCategories(SEASONS_OF_THE_DRAGONS_CATEGORIES)!;
-	const read = { trackedIds: [SEASONS_OF_THE_DRAGONS_ID], entries: [entry({ id: SEASONS_OF_THE_DRAGONS_ID, current: 3, max: 24 })] };
+	const build = (reading: TrackedAchievementInput['reading'], detailsOf = details, trackedId = SEASONS_OF_THE_DRAGONS_ID) =>
+		buildTrackedAchievementsView({ trackedIds: [trackedId], details: detailsOf, englishNames: new Map(), retired: new Set(), reading, categories })[0]!;
 
-	it('keeps the bar at 24 and lists no elements instead of the five of a category that is not its own', () => {
-		const [view] = buildTrackedAchievementsView({ trackedIds: [SEASONS_OF_THE_DRAGONS_ID], details, englishNames: new Map(), retired: new Set(), reading: read, categories });
-		expect(view!.status).toEqual({ kind: 'in_progress', current: 3, max: 24 });
-		expect(view!.elements).toEqual({ source: 'category', items: [], done: 0, total: 0 });
+	it('lists the 24 achievements of the wiki (not the five of the category) against the bar of 24', () => {
+		const wiki = knownSetMembersOf(SEASONS_OF_THE_DRAGONS_ID)!;
+		expect(wiki).toHaveLength(24);
+		expect(new Set(wiki).size).toBe(24);
+		const view = build({ trackedIds: [SEASONS_OF_THE_DRAGONS_ID, ...wiki], entries: [entry({ id: SEASONS_OF_THE_DRAGONS_ID, current: 3, max: 24 }), entry({ id: 5743, done: true }), entry({ id: 5960, done: true })] });
+		expect(view.status).toEqual({ kind: 'in_progress', current: 3, max: 24 });
+		expect(view.elements).toMatchObject({ source: 'category', done: 2, total: 24 });
+		expect(elements(view).map((element) => element.refId)).toEqual([...wiki.filter((id) => id !== 5743 && id !== 5960), 5743, 5960]);
+		expect(elements(view).find((element) => element.refId === 5960)).toMatchObject({ text: 'Fin a las conjeturas', state: 'done' });
+		expect(elements(view).some((element) => element.refId === 5823)).toBe(false);
 	});
 
-	it('does not ask the account about the members of that category either', () => {
-		expect(trackedReadingIds({ trackedIds: [SEASONS_OF_THE_DRAGONS_ID], details, retired: new Set(), categories })).toEqual([SEASONS_OF_THE_DRAGONS_ID]);
+	it('asks the account about the 24 and not about the five of the category', () => {
+		const ids = trackedReadingIds({ trackedIds: [SEASONS_OF_THE_DRAGONS_ID], details, retired: new Set(), categories });
+		expect(ids).toEqual([SEASONS_OF_THE_DRAGONS_ID, ...knownSetMembersOf(SEASONS_OF_THE_DRAGONS_ID)!]);
+		expect(ids).not.toContain(5823);
 	});
 
-	it('still lists the category when it can hold what the bar counts', () => {
-		const small = new Map(details);
-		small.set(SEASONS_OF_THE_DRAGONS_ID, { ...details.get(SEASONS_OF_THE_DRAGONS_ID)!, tiers: [{ count: 5, points: 25 }] });
-		const [view] = buildTrackedAchievementsView({ trackedIds: [SEASONS_OF_THE_DRAGONS_ID], details: small, englishNames: new Map(), retired: new Set(), reading: read, categories });
-		expect(view!.elements).toMatchObject({ source: 'category', total: 5 });
+	// A meta with no known set falls back to its category, which must be able to hold what the bar counts.
+	const other = new Map(details);
+	other.set(9999, { ...details.get(SEASONS_OF_THE_DRAGONS_ID)!, id: 9999 });
+	const otherCategories = [{ id: 137, name: 'X', order: 1, icon: null, achievementIds: [9999, 5823, 5830, 5851, 5960, 5990] }];
+
+	it('a meta without a known set whose category is too small for its bar lists nothing and asks for nothing', () => {
+		const view = buildTrackedAchievementsView({ trackedIds: [9999], details: other, englishNames: new Map(), retired: new Set(), reading: null, categories: otherCategories })[0]!;
+		expect(view.elements).toEqual({ source: 'category', items: [], done: 0, total: 0 });
+		expect(trackedReadingIds({ trackedIds: [9999], details: other, retired: new Set(), categories: otherCategories })).toEqual([9999]);
+	});
+
+	it('still lists a category that can hold what the bar counts', () => {
+		other.set(9999, { ...details.get(SEASONS_OF_THE_DRAGONS_ID)!, id: 9999, tiers: [{ count: 5, points: 25 }] });
+		const view = buildTrackedAchievementsView({ trackedIds: [9999], details: other, englishNames: new Map(), retired: new Set(), reading: null, categories: otherCategories })[0]!;
+		expect(view.elements).toMatchObject({ source: 'category', total: 5 });
 	});
 });
 
