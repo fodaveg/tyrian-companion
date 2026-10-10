@@ -72,7 +72,7 @@ describe('Nexus inventory comparison metrics', () => {
 	it('keeps the active provisional separate so one completed plus one active never meets the final minimum', () => {
 		const completed = session();
 		const active = { ...completed, phase: 'active', endedAt: null, prices: [], priceCapturedAt: null, currencyTrackedIds: [] } as unknown as LiveSessionRuntimeRecord;
-		const provisional = provisionalLiveComparison(active, 10_000);
+		const provisional = provisionalLiveComparison(active, 10_000, 'instant_sell_net');
 		expect(provisional).toMatchObject({ endedAt: null, positiveBags: 500, connectionMs: 10_000 });
 		expect(buildLiveSessionComparison([completed]).groups[0]).toMatchObject({ completedSessions: 1, status: 'insufficient_sample', bagsPerHourMilli: null });
 	});

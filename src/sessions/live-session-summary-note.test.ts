@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_FARMING_PREPARATION } from './farming-goal-preparation';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionRuntimeRecord } from './live-session-model';
 import { liveItemValueCopper, reduceLiveInventorySample } from './live-session-reducer';
+import { LEGACY_LIVE_SESSION_FORMAT } from './live-session-format';
 import { knownLiveDisplayNames, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { inspectLiveSessionNote } from './live-session-note-renderer';
 import { LiveSessionHistoryService } from './live-session-history';
@@ -53,7 +54,8 @@ function fixture(options: FixtureOptions = {}): LiveSessionNoteInput {
 	record = { ...record, phase: 'complete', endedAt: iso(staple.length - 1), observedItemsMs: (staple.length - 1) * STEP_MS,
 		prices: priced ? [{ itemId: OTHER, unitCopper: 300 }, { itemId: STAPLE, unitCopper: 1500 }] : [], priceCapturedAt: priced ? iso(0) : null,
 		mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + STEP_MS }, { mapId: 873, fromMs: AT + STEP_MS, toMs: AT + 2 * STEP_MS }] };
-	return { record, journal, locale: 'es', outputFolder: 'Tyrian Companion', displayNames: NAMES };
+	// A session valued in net prices per unit that keeps every sample: the format every figure of these tests was worked out in.
+	return { record, journal, format: { ...LEGACY_LIVE_SESSION_FORMAT }, locale: 'es', outputFolder: 'Tyrian Companion', displayNames: NAMES };
 }
 async function payload(input = fixture()): Promise<StoredLiveSessionPayloadV1> {
 	const session = await prepareLiveSessionPayload(input);
@@ -1414,7 +1416,7 @@ describe('live session summary service', () => {
 			[...wanted.itemIds.map((id) => `item:${String(id)}`), ...wanted.currencyIds.map((id) => `currency:${String(id)}`)].flatMap((key) => from[key] === undefined ? [] : [[key, from[key]]]));
 		let record: LiveSessionRuntimeRecord | null = { ...source.record, summaryReceipt: overrides.receipt === false ? null
 			: { version: 1, sessionId: source.record.sessionId, path: FULL_NOTE, savedAt: AT } };
-		const service = new LiveSessionSummaryService({ vault, runtime: () => record, journal: () => source.journal, locale: () => 'es',
+		const service = new LiveSessionSummaryService({ vault, runtime: () => record, journal: () => source.journal, format: () => source.format, locale: () => 'es',
 			outputFolder: () => 'Tyrian Companion', displayNames: () => overrides.memoryNames ?? { ...source.displayNames }, enabled: () => enabled, now: () => clock,
 			cachedNames: async (wanted) => {
 				nameCalls.push({ itemIds: [...wanted.itemIds], currencyIds: [...wanted.currencyIds] });
@@ -1498,7 +1500,7 @@ describe('live session summary service', () => {
 	it('never throws to the caller even when reading the runtime fails, nor when the diagnostics sink throws', async () => {
 		const h = harness({ onFailure: () => { throw new Error('sink'); } });
 		h.setRecord(null);
-		const broken = new LiveSessionSummaryService({ vault: h.vault, runtime: () => { throw new Error('boom'); }, journal: () => [], locale: () => 'es',
+		const broken = new LiveSessionSummaryService({ vault: h.vault, runtime: () => { throw new Error('boom'); }, journal: () => [], format: () => LEGACY_LIVE_SESSION_FORMAT, locale: () => 'es',
 			outputFolder: () => 'Tyrian Companion', displayNames: () => ({}), cachedNames: async () => ({}), characters: () => [], charactersCapped: () => false, isWritten: () => false, markWritten: async () => undefined,
 			networkAllowed: () => true, itemMeta: async () => ({}), mapNames: async () => ({}), startTimer: realTimer, enabled: () => true, now: () => AT,
 			onFailure: () => { throw new Error('sink'); } });

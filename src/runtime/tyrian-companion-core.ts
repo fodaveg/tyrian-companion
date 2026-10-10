@@ -25,7 +25,8 @@ import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
 import { LiveSessionLifecycle, emptyLiveSessionView } from '../sessions/live-session-lifecycle';
 import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
-import type { LiveSessionViewV1, LiveJournalEntryV1, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
+import type { LiveSessionViewV1, LiveJournalEntryV1, LiveSessionFormat, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
+import { newLiveSessionFormat } from '../sessions/live-session-format';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from '../sessions/live-session-model';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live-session-model';
 import { LiveSessionEconomy } from '../sessions/live-session-economy';
@@ -1410,7 +1411,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			farmingGoal: () => this.settings.farmingGoal, groupContext: () => this.farmingGroupContext,
 			thresholdCopper: () => this.settings.valuableLootThresholdCopper,
 			onCommitted: (entry) => { this.enrichLiveSession(entry); },
-			onComplete: async (record, journal) => await this.saveLiveSessionNote(record, journal),
+			onComplete: async (record, journal, format) => await this.saveLiveSessionNote(record, journal, format),
 		});
 		await this.liveSessions.initialize();
 		this.bootTrace.mark('live');
@@ -3544,7 +3545,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 	/** A saved-note comparison and the real active runtime retain independent sample counts. */
 	getLiveSessionComparison(): LiveSessionComparisonView {
-		return { history: this.liveComparison, provisional: provisionalLiveComparison(this.liveSessions?.getRuntime() ?? null, this.liveSessions?.getView().elapsedMs ?? 0) };
+		const live = this.liveSessions;
+		return { history: this.liveComparison, provisional: live === null ? null : provisionalLiveComparison(live.getRuntime(), live.getView().elapsedMs ?? 0, live.getSessionFormat().priceBasis) };
 	}
 	/** Loads schema7 notes only after an explicit action; comparison performs no account requests. */
 	async loadLiveSessionComparison(): Promise<void> {
@@ -3613,7 +3615,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private createLiveSummaries(vault: ConstructorParameters<typeof LiveSessionSummaryService>[0]['vault']): LiveSessionSummaryService {
 		return new LiveSessionSummaryService({
 			vault, runtime: () => this.liveSessions?.getRuntime() ?? null,
-			journal: () => this.liveSessions?.getJournal() ?? [], characters: () => this.liveSessions?.getCharacters() ?? [],
+			journal: () => this.liveSessions?.getJournal() ?? [], format: () => this.liveSessions?.getSessionFormat() ?? newLiveSessionFormat(),
+			characters: () => this.liveSessions?.getCharacters() ?? [],
 			charactersCapped: () => this.liveSessions?.isCharacterListCapped() ?? false, isWritten: () => this.liveSessions?.isSummaryWritten() ?? false,
 			markWritten: async () => { await this.liveSessions?.markSummaryWritten(); }, networkAllowed: () => this.liveSummaryNetwork, locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
 			displayNames: (record) => knownLiveDisplayNames(record.totals, (kind, id) => this.getLiveSessionEntity(kind, id)?.name),
@@ -3638,10 +3641,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (intent.alert === null || this.alertQueue === null || this.unloaded || consulting(this)) return {delivered:[],failed:[],rejected:true};
 		return await this.buildAlertEmitter(this.alertQueue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
 	}
-	private async saveLiveSessionNote(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[]): Promise<string|null> {
+	/** `format` is the one the lifecycle hands over with the session: the note is written in the format that session started with. */
+	private async saveLiveSessionNote(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[], format: LiveSessionFormat): Promise<string|null> {
 		// An entity nobody has named gets no key: the note then writes «Objeto <id>» / «Moneda <id>», never the bare id.
 		const displayNames = knownLiveDisplayNames(record.totals,(kind,id) => this.getLiveSessionEntity(kind,id)?.name);
-		const result = await this.sessionNotes.writeLive({record,journal,locale:this.settings.language,outputFolder:this.settings.outputFolder,displayNames});
+		const result = await this.sessionNotes.writeLive({record,journal,format,locale:this.settings.language,outputFolder:this.settings.outputFolder,displayNames});
 		const saved = result.status === 'written' || result.status === 'unchanged';
 		if (this.liveSessions?.getRuntime()?.sessionId === record.sessionId) {
 			this.sessionSummarySaveState = saved ? 'saved' : 'failed';

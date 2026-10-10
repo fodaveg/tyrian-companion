@@ -4,7 +4,8 @@ import { TyrianCompanionCore } from './tyrian-companion-core';
 import type { TyrianHost } from '../host/tyrian-host';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { MemorySessionRuntimeStore } from '../sessions/session-runtime-store';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1 } from '../sessions/live-session-model';
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveSessionFormat } from '../sessions/live-session-model';
+import { LEGACY_LIVE_SESSION_FORMAT } from '../sessions/live-session-format';
 import type { LiveSessionSummaryService } from '../sessions/live-session-summary-service';
 import type { ActiveSessionLeaseHandle } from '../sessions/coordination-model';
 import type { SessionLeaseCoordinator } from '../sessions/manual-session-start-service';
@@ -25,7 +26,7 @@ const CURRENCIES = [{ id: 2, name: 'Karma', gain: 2940 }, { id: 23, name: 'Fragm
 const itemJson = (id: number, name: string) => ({ id, name, icon: `https://render.guildwars2.com/file/${String(id)}.png`, type: 'Trophy', rarity: 'Basic', level: 0, vendor_value: 1, flags: [], game_types: [], restrictions: [] });
 const currencyJson = (id: number, name: string) => ({ id, name, description: 'd', icon: `https://render.guildwars2.com/file/c${String(id)}.png`, order: id });
 
-function lifecycleOver(store: MemorySessionRuntimeStore): LiveSessionLifecycle {
+function lifecycleOver(store: MemorySessionRuntimeStore, starts?: LiveSessionFormat): LiveSessionLifecycle {
 	let fence = 0;
 	const handle = (sessionId: string): ActiveSessionLeaseHandle => ({ machineId: 'machine', instanceId: 'host', sessionId, fence: ++fence, acquiredAt: AT, renewedAt: AT, expiresAt: AT + 120_000 });
 	const coordinator: SessionLeaseCoordinator = { instanceId: 'host',
@@ -34,12 +35,15 @@ function lifecycleOver(store: MemorySessionRuntimeStore): LiveSessionLifecycle {
 		assertOwned: async () => ({ status: 'owned' as const }), release: async () => ({ status: 'released' as const }), dispose: () => undefined };
 	return new LiveSessionLifecycle({ coordinator, persistence: store, enabled: () => true, now: () => AT, sessionId: () => 'session', thresholdCopper: () => 1,
 		setInterval: () => 1, clearInterval: () => undefined, onStateChange: () => undefined, onError: (error) => { throw error; }, onCommitted: () => undefined,
-		onComplete: async () => 'Tyrian Companion/sessions/2026/live.md' });
+		sessionFormat: starts, onComplete: async () => 'Tyrian Companion/sessions/2026/live.md' });
 }
 
-/** A session closed and saved by an earlier run of the plugin: its full note has a receipt, its summary was never written. */
+/**
+ * A session closed and saved by an earlier run of the plugin: its full note has a receipt, its summary was never written. It is
+ * the session of 8 Oct 2026, from before a session had a format mark: every sample kept, prices net per unit, and no mark left.
+ */
 async function closedSession(store: MemorySessionRuntimeStore): Promise<void> {
-	const lifecycle = lifecycleOver(store);
+	const lifecycle = lifecycleOver(store, LEGACY_LIVE_SESSION_FORMAT);
 	await lifecycle.start('Rinopopo');
 	const source = { sourceInstance: INSTANCE, epoch: EPOCH, build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE, context: { state: 'gameplay' as const, mapId: 1633, character: 'Rinopopo' } };
 	await lifecycle.open(source);
@@ -52,6 +56,7 @@ async function closedSession(store: MemorySessionRuntimeStore): Promise<void> {
 	await lifecycle.commit(sample(1, true));
 	await lifecycle.stop(AT + 5000);
 	await lifecycle.dispose();
+	store.sessionFormatMark = undefined;
 }
 
 class SummaryVault {

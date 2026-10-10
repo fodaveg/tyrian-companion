@@ -6,21 +6,15 @@ import { LiveSessionEconomy } from './live-session-economy';
 import { serializeLiveSessionExport } from './live-session-export';
 import { LiveSessionHistoryService, liveSessionViewFromStored } from './live-session-history';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionRuntimeRecord } from './live-session-model';
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionFormat, type LiveSessionRuntimeRecord } from './live-session-model';
+import { newLiveSessionFormat } from './live-session-format';
 import { LIVE_SESSION_NOTE_WRITE_VERSION, prepareLiveSessionPayload } from './live-session-note-model';
 import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
 import { createLiveAlertIntent, decideLiveAlert } from './live-session-outbox';
-import { liveRuntimePriceBasis } from './live-session-reducer';
 import { computeSummaryFigures } from './live-session-summary-figures';
 import type { SessionHistoryVault } from './session-history';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import { MemorySessionRuntimeStore } from './session-runtime-store';
-
-// The one constant that turns the version 2 writer on, set to 2 for this file only: every module reads it from the model.
-vi.mock('./live-session-model', async (importOriginal) => ({
-	...await importOriginal<Record<string, unknown>>(),
-	LIVE_SESSION_NOTE_WRITE_VERSION: 2,
-}));
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -31,13 +25,14 @@ const iso = (second: number): string => new Date(AT + second * 1000).toISOString
 /**
  * The real lifecycle, economy and note writer wired as the core wires them: a committed entry goes to the economy, which
  * reads the public price (a best buy order of 8 c), hands it to the lifecycle and decides the alert; the finished session
- * is rendered as its note with nothing asked of the writer, so the format is the one the constant names. `bids` is the best
- * buy order of each item the trading post quotes.
+ * is rendered as its note in the format the lifecycle hands over with it, which is the one the session started in: nothing is
+ * asked of the lifecycle here, so that is the one the constant names for a new session. `bids` is the best buy order of each
+ * item the trading post quotes.
  */
 function harness(bids: Readonly<Record<number, number>> = { [ITEM]: 8 }) {
 	let now = AT; let fence = 0;
 	const store = new MemorySessionRuntimeStore(); const notes: { path: string; content: string }[] = [];
-	const closed: { record: LiveSessionRuntimeRecord; journal: readonly LiveJournalEntryV1[] }[] = [];
+	const closed: { record: LiveSessionRuntimeRecord; journal: readonly LiveJournalEntryV1[]; format: LiveSessionFormat }[] = [];
 	const handle = (sessionId: string): ActiveSessionLeaseHandle => ({ machineId: 'machine', instanceId: 'host', sessionId, fence: ++fence, acquiredAt: now, renewedAt: now, expiresAt: now + 120_000 });
 	const coordinator: SessionLeaseCoordinator = { instanceId: 'host',
 		acquire: vi.fn(async (sessionId: string) => ({ status: 'acquired' as const, handle: handle(sessionId) })),
@@ -51,10 +46,10 @@ function harness(bids: Readonly<Record<number, number>> = { [ITEM]: 8 }) {
 	const lifecycle = new LiveSessionLifecycle({ coordinator, persistence: store, enabled: () => true, now: () => now, sessionId: () => 'session',
 		thresholdCopper: () => 1_600, setInterval: () => 1, clearInterval: () => undefined, onStateChange: vi.fn(), onError: vi.fn(),
 		onCommitted: (entry) => { economy.current?.observe(entry); },
-		onComplete: async (record, journal) => {
-			const rendered = await renderLiveSessionNote({ record, journal, locale: 'en', outputFolder: 'Sessions' });
+		onComplete: async (record, journal, format) => {
+			const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'en', outputFolder: 'Sessions' });
 			if (rendered.status !== 'ok') return null;
-			closed.push({ record, journal }); notes.push({ path: rendered.note.preferredPath, content: rendered.note.content }); return rendered.note.preferredPath;
+			closed.push({ record, journal, format }); notes.push({ path: rendered.note.preferredPath, content: rendered.note.content }); return rendered.note.preferredPath;
 		} });
 	economy.current = new LiveSessionEconomy({ lifecycle, gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now: () => now }), now: () => now,
 		catalog: async () => ({}), cachedItems: async () => ({}), currencies: async () => ({ currencies: {}, coverage: {} }), cachedCurrencies: async () => ({}),
@@ -78,9 +73,9 @@ function vaultOf(notes: readonly { path: string; content: string }[]): SessionHi
 }
 
 describe('with the version 2 writer on, a live session keeps and saves the gross price', () => {
-	it('is on in this file only', () => {
+	it('is on: a session this build starts is of note version 2 and keeps gross prices', () => {
 		expect(LIVE_SESSION_NOTE_WRITE_VERSION).toBe(2);
-		expect(liveRuntimePriceBasis()).toBe('instant_sell_gross');
+		expect(newLiveSessionFormat()).toEqual({ noteVersion: 2, priceBasis: 'instant_sell_gross' });
 	});
 
 	it('shows 250 units at 8 c as 1 700 c while it runs, saves the bid as read and reads the note back to the same totals', async () => {
@@ -135,16 +130,23 @@ describe('with the version 2 writer on, a live session keeps and saves the gross
 		await h.economy.dispose(); await h.lifecycle.dispose();
 	});
 
-	it('a note asked for in version 1 still states net per unit: that format has no other basis, and the writer converts nothing', async () => {
+	it('gives no version 1 note of a session kept in gross prices: the writer converts nothing, and the lifecycle hands over the format the session started in', async () => {
 		const h = harness();
 		await h.lifecycle.start('Test'); await h.lifecycle.open(h.source); await h.lifecycle.commit(h.sample(0, 0));
 		h.at(1); await h.lifecycle.commit(h.sample(1, 250)); await h.economy.drain();
 		h.at(2); await h.lifecycle.stop(AT + 2000);
-		const { record, journal } = h.closed[0]!;
-		// The lifecycle of this file keeps a version 2 journal, and a version 1 note needs an entry per sample: here every sample has one.
+		const { record, journal, format } = h.closed[0]!;
+		expect(format).toEqual({ noteVersion: 2, priceBasis: 'instant_sell_gross' });
+		expect(h.lifecycle.getSessionFormat()).toEqual(format);
+		// A version 1 note needs an entry per sample, and here every sample has one: the journal is not what refuses it.
 		expect(journal.length).toBe(record.sampleCount);
-		const pinned = await prepareLiveSessionPayload({ record, journal, locale: 'en', outputFolder: 'Sessions', payloadVersion: 1 });
-		expect(pinned?.valuation).toMatchObject({ priceBasis: 'instant_sell_net', prices: [{ itemId: ITEM, unitCopper: 8 }], netItemValueKnownCopper: 2_000 });
+		// Version 1 with gross prices is not a format a session can have (a 0.6.16 would read them as net, 2 000 c for this pile).
+		const mislabelled: LiveSessionFormat = { noteVersion: 1, priceBasis: 'instant_sell_gross' };
+		expect(await prepareLiveSessionPayload({ record, journal, format: mislabelled, locale: 'en', outputFolder: 'Sessions' })).toBeNull();
+		expect((await renderLiveSessionNote({ record, journal, format: mislabelled, locale: 'en', outputFolder: 'Sessions' })).status).toBe('invalid');
+		// And a note cannot be asked for without saying the format of its session: there is no default to fall back to.
+		// @ts-expect-error `format` is required, so every caller has to say which session's format it writes.
+		await expect(prepareLiveSessionPayload({ record, journal, locale: 'en', outputFolder: 'Sessions' })).resolves.toBeNull();
 		await h.economy.dispose(); await h.lifecycle.dispose();
 	});
 });

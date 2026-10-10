@@ -24,10 +24,12 @@ import {
 	renderLiveSessionNote,
 } from "../src/sessions/live-session-note-renderer";
 import {
+	livePriceBasisOf,
 	NEXUS_LIVE_BUILD,
 	NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1,
 	type LiveJournalEntryV1,
+	type LiveSessionFormat,
 } from "../src/sessions/live-session-model";
 import type { SessionLeaseCoordinator } from "../src/sessions/manual-session-start-service";
 import { MemorySessionRuntimeStore } from "../src/sessions/session-runtime-store";
@@ -56,8 +58,12 @@ const sabotageJournalClone = process.argv.includes("--sabotage-journal-clone");
 const sabotageSink: number[] = [];
 const SABOTAGE_JOURNAL_COPIES = 3;
 const sampleCount = readLimit("--samples", H6_LIVE_SESSION_SAMPLES_LONG);
-/** `--note-version=1|2` measures the other note format; absent, the one this build writes. */
+/**
+ * `--note-version=1|2` measures a session of the other note format, with the price basis a session of that format starts in;
+ * absent, the format this build starts sessions in.
+ */
 const noteVersion = readNoteVersion();
+const sessionFormat: LiveSessionFormat = { noteVersion, priceBasis: livePriceBasisOf(noteVersion) };
 
 await main();
 
@@ -103,17 +109,17 @@ async function main(): Promise<void> {
 		clearInterval: () => undefined,
 		onStateChange: () => undefined,
 		onError: (error) => errors.push(error),
-		noteVersion,
+		sessionFormat,
 		onCommitted: (entry) => {
 			committed = entry;
 		},
-		onComplete: async (record, journal) => {
+		onComplete: async (record, journal, format) => {
 			const rendered = await renderLiveSessionNote({
 				record,
 				journal,
+				format,
 				locale: "es",
 				outputFolder: "Tyrian",
-				payloadVersion: noteVersion,
 			});
 			if (rendered.status !== "ok") return null;
 			const content = rendered.note.content;

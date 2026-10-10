@@ -1,6 +1,6 @@
 import { sha256CanonicalValue } from '../core/canonical-sha256';
 import { bestSaleNetCopper } from '../economy/gw2-fees';
-import { LIVE_GAP_REASONS, LIVE_SESSION_NOTE_WRITE_VERSION, livePriceBasisOf, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
+import { LIVE_GAP_REASONS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveObservationV1,
 	type LiveSessionRuntimeRecord, type LiveGapV1, type LiveTotalV1,
 	type LiveValuationV1, type LivePriceBasis, type LivePriceV1, type LiveChartPointV1 } from './live-session-model';
@@ -121,12 +121,13 @@ export function isEmptySample(entry: Pick<LiveJournalEntryV1,'cursor' | 'observa
 }
 
 /**
- * One chart point: the cumulative totals revalued with the record's current prices. `priceBasis` is what a saved valuation states;
- * a runtime record has no such field and its prices are in the runtime's basis (`liveRuntimePriceBasis`).
+ * One chart point: the cumulative totals revalued with the record's current prices. `priceBasis` is what those prices are: the one
+ * a saved valuation states, or the one of the session a runtime record belongs to (the record has no such field, so the caller
+ * says it). With no record there are no prices and nothing is valued, whatever the basis.
  */
 export function liveChartPoint(entry: Pick<LiveJournalEntryV1,'observedAt' | 'breakBefore'>, totals: readonly LiveTotalV1[],
-	record: Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> & { priceBasis?: LivePriceBasis } | null): LiveChartPointV1 {
-	const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false, record?.priceBasis);
+	record: Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> & { priceBasis: LivePriceBasis } | null): LiveChartPointV1 {
+	const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false, record?.priceBasis ?? 'instant_sell_net');
 	return { observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
 		netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore };
 }
@@ -223,14 +224,6 @@ export function buildLiveChart(journal: readonly ChartEntry[], record: ChartReco
 export const GOLD_CURRENCY_ID = 1;
 
 /**
- * The basis this build's runtime keeps its prices in: `LiveSessionRuntimeRecord.prices`, the quotes the economy hands to the
- * lifecycle and every figure valued from them before a note exists. The record has no field to say it, so it is the one of the note
- * format this build writes (`LIVE_SESSION_NOTE_WRITE_VERSION`): what the panel shows of a running session is valued exactly like
- * the note it will be saved as.
- */
-export function liveRuntimePriceBasis(): LivePriceBasis { return livePriceBasisOf(LIVE_SESSION_NOTE_WRITE_VERSION); }
-
-/**
  * Copper a signed `quantity` of one item is worth at `unitCopper` under `basis`; null when the arithmetic leaves the safe-integer range.
  * - `instant_sell_net`: the unit price already is what one unit nets, so the value is the plain product, as it always was.
  * - `instant_sell_gross`: the commission is taken once over the total of the sale (`bestSaleNetCopper`, the same function Halloween
@@ -248,10 +241,11 @@ export function liveItemValueCopper(basis: LivePriceBasis, unitCopper: number, q
  * Revalues the whole ledger with one public price snapshot. `goldTracked` says the gold currency (id 1) was ever covered by the
  * session: only then the observed net gold (0 when unchanged) is added; otherwise wallet coverage remains unknown (null).
  * `basis` says what the unit prices are (see `LivePriceBasis`) and is stated back in the result; every price is in that one basis.
- * A caller that values a saved session passes the basis that session states; one that values the runtime record leaves it out.
+ * It has no default on purpose: a caller that values a saved session passes the basis that session states, and one that values a
+ * runtime record passes the basis of the session the record belongs to (`LiveSessionFormat.priceBasis`).
  */
 export function valueLiveTotals(totals: readonly LiveTotalV1[], prices: readonly LivePriceV1[], capturedAt: string | null, goldTracked: boolean,
-	basis: LivePriceBasis = liveRuntimePriceBasis()): LiveValuationV1 {
+	basis: LivePriceBasis): LiveValuationV1 {
 	const quotes = new Map(prices.map((row) => [row.itemId, row.unitCopper]));
 	let positive = 0; let net = 0; const unpricedItemIds: number[] = [];
 	for (const total of totals) {

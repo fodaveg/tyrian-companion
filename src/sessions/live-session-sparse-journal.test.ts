@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { MemorySessionRuntimeStore } from './session-runtime-store';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1 } from './live-session-model';
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionFormat } from './live-session-model';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import { buildLiveSessionComparison } from './live-session-comparison';
 import { LiveSessionHistoryService, liveSessionViewFromStored } from './live-session-history';
 import { SessionHistoryRuntimeAuthority, SessionHistoryService, type SessionHistoryVault } from './session-history';
 import { isEmptySample } from './live-session-reducer';
-import { isStoredLiveSessionPayload, LIVE_SESSION_NOTE_WRITE_VERSION, prepareLiveSessionPayload, prepareLiveSessionSnapshot,
+import { isStoredLiveSessionPayload, prepareLiveSessionPayload, prepareLiveSessionSnapshot,
 	type LiveSessionPayloadVersion, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
@@ -22,7 +22,10 @@ const ITEM = 12147;
 const AT = Date.parse('2026-10-09T12:00:00.000Z');
 const iso = (second: number): string => new Date(AT + second * 1000).toISOString();
 
-/** A lifecycle over an in-memory store whose completed session is rendered as a note of `noteVersion`. */
+/** The format of a session of note `version` whose prices are net per unit: the two versions then differ in the journal alone. */
+const formatOf = (version: LiveSessionPayloadVersion): LiveSessionFormat => ({ noteVersion: version, priceBasis: 'instant_sell_net' });
+
+/** A lifecycle over an in-memory store that starts its sessions in note `noteVersion`; the completed session is rendered in the format it started in. */
 function harness(noteVersion: LiveSessionPayloadVersion, store = new MemorySessionRuntimeStore()) {
 	let now = AT; let fence = 0; let interval: (() => void) | null = null;
 	const written: { path: string; content: string; record: unknown; journal: readonly LiveJournalEntryV1[] }[] = [];
@@ -32,11 +35,11 @@ function harness(noteVersion: LiveSessionPayloadVersion, store = new MemorySessi
 		acquire: vi.fn(async (sessionId: string) => ({ status: 'acquired' as const, handle: handle(sessionId) })),
 		renew: vi.fn(async (prior: ActiveSessionLeaseHandle) => ({ status: 'renewed' as const, handle: { ...prior, renewedAt: now, expiresAt: now + 120_000 } })),
 		assertOwned: vi.fn(async () => ({ status: 'owned' as const })), release: vi.fn(async () => ({ status: 'released' as const })), dispose: vi.fn() };
-	const options = { coordinator, persistence: store, enabled: () => true, now: () => now, sessionId: () => 'session', thresholdCopper: () => 1, noteVersion,
+	const options = { coordinator, persistence: store, enabled: () => true, now: () => now, sessionId: () => 'session', thresholdCopper: () => 1, sessionFormat: formatOf(noteVersion),
 		setInterval: (callback: () => void) => { interval = callback; return 1; }, clearInterval: () => { interval = null; },
 		onStateChange: vi.fn(), onError: vi.fn(), onCommitted,
-		onComplete: async (record: Parameters<typeof renderLiveSessionNote>[0]['record'], journal: readonly LiveJournalEntryV1[]) => {
-			const rendered = await renderLiveSessionNote({ record, journal, locale: 'en', outputFolder: 'Sessions', payloadVersion: noteVersion });
+		onComplete: async (record: Parameters<typeof renderLiveSessionNote>[0]['record'], journal: readonly LiveJournalEntryV1[], format: LiveSessionFormat) => {
+			const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'en', outputFolder: 'Sessions' });
 			if (rendered.status !== 'ok') return null;
 			written.push({ path: rendered.note.preferredPath, content: rendered.note.content, record, journal }); return rendered.note.preferredPath;
 		} };
@@ -177,7 +180,8 @@ describe('the live note payload of version 2 keeps no sample that changed nothin
 		restarted.at(122); expect(await restarted.service.commit(restarted.sample(0, quantityAt(122), 122, EPOCH_2))).toBe('stored');
 		restarted.at(130); expect(await restarted.service.commit(restarted.sample(1, quantityAt(130), 130, EPOCH_2, 8))).toBe('stored');
 		expect(await restarted.service.stop(AT + 130_000)).toBe(true);
-		const payload = await prepareLiveSessionPayload({ record: restarted.written[0]!.record as never, journal: restarted.written[0]!.journal, locale: 'en', outputFolder: 'Sessions', payloadVersion: 2 });
+		const payload = await prepareLiveSessionPayload({ record: restarted.written[0]!.record as never, journal: restarted.written[0]!.journal, format: restarted.service.getSessionFormat(), locale: 'en', outputFolder: 'Sessions' });
+		expect(restarted.service.getSessionFormat()).toEqual(formatOf(2));
 		expect(payload).not.toBeNull(); expect(payload!.journal.every((entry) => !isEmptySample(entry))).toBe(true);
 		expect(payload!.observationCount).toBe(3);
 	});
@@ -271,23 +275,24 @@ describe('which journals a payload of each version accepts', () => {
 	});
 	it('a snapshot of an active session is compacted by the version it is asked for', async () => {
 		const h = harness(1); await playSession(h, 100); const capture = (await h.service.capture())!;
-		const dense = await prepareLiveSessionSnapshot({ record: capture.record, journal: capture.journal, payloadVersion: 1 }, iso(101));
-		const sparse = await prepareLiveSessionSnapshot({ record: capture.record, journal: capture.journal, payloadVersion: 2 }, iso(101));
+		expect(capture.format).toEqual(formatOf(1));
+		const dense = await prepareLiveSessionSnapshot({ record: capture.record, journal: capture.journal, format: formatOf(1) }, iso(101));
+		const sparse = await prepareLiveSessionSnapshot({ record: capture.record, journal: capture.journal, format: formatOf(2) }, iso(101));
 		expect(dense?.journal).toHaveLength(101); expect(sparse?.journal).toHaveLength(4);
 		expect(sparse?.version).toBe(2);
 	});
 });
 
 describe('the note: what is written, what is read, what is set aside', () => {
-	it('writes the format LIVE_SESSION_NOTE_WRITE_VERSION names unless asked otherwise', async () => {
-		const h = harness(1); await playSession(h, 60); const capture = (await h.service.capture())!;
-		const complete = { ...capture.record, phase: 'complete' as const, endedAt: iso(60) };
-		const byDefault = await renderLiveSessionNote({ record: complete, journal: capture.journal, locale: 'en', outputFolder: 'Sessions' });
-		const named = await renderLiveSessionNote({ record: complete, journal: capture.journal, locale: 'en', outputFolder: 'Sessions', payloadVersion: LIVE_SESSION_NOTE_WRITE_VERSION });
-		if (byDefault.status !== 'ok' || named.status !== 'ok') throw new Error('render');
-		expect(byDefault.note.content).toBe(named.note.content);
-		expect(byDefault.note.content).toContain(`tc_payload_version: ${String(LIVE_SESSION_NOTE_WRITE_VERSION)}`);
-		expect(byDefault.session.version).toBe(LIVE_SESSION_NOTE_WRITE_VERSION);
+	it('writes the format it is told, which the lifecycle gives with the session: the note of a capture is the note of its format', async () => {
+		for (const version of [1, 2] as const) {
+			const h = harness(version); await playSession(h, 60); const capture = (await h.service.capture())!;
+			const complete = { ...capture.record, phase: 'complete' as const, endedAt: iso(60) };
+			const written = await renderLiveSessionNote({ record: complete, journal: capture.journal, format: capture.format, locale: 'en', outputFolder: 'Sessions' });
+			if (written.status !== 'ok') throw new Error('render');
+			expect(written.note.content).toContain(`tc_payload_version: ${String(version)}`);
+			expect(written.session.version).toBe(version);
+		}
 	});
 	it('reads a note of each version back, and the header says which', async () => {
 		for (const version of [1, 2] as const) {
@@ -341,7 +346,7 @@ describe('the note: what is written, what is read, what is set aside', () => {
 	});
 	it('does not rewrite, with an older payload, the note of its own session that a newer plugin wrote', async () => {
 		const h = harness(1); await playSession(h, 60); const capture = (await h.service.capture())!;
-		const input = { record: { ...capture.record, phase: 'complete' as const, endedAt: iso(60) }, journal: capture.journal, locale: 'en' as const, outputFolder: 'Sessions', payloadVersion: 1 as const };
+		const input = { record: { ...capture.record, phase: 'complete' as const, endedAt: iso(60) }, journal: capture.journal, format: capture.format, locale: 'en' as const, outputFolder: 'Sessions' };
 		const vault = new MapVault(); const writer = new SessionNoteWriter(vault.asNotes());
 		const first = await writer.writeLive(input); if (first.status !== 'written') throw new Error(JSON.stringify(first));
 		const future = vault.contents.get(first.path)!.replace('tc_payload_version: 1', 'tc_payload_version: 3');

@@ -6,7 +6,8 @@ import { liveSessionViewFromStored, sortLiveItemsByValue } from './live-session-
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, livePriceBasisOf, LIVE_SESSION_NOTE_WRITE_VERSION,
 	type LiveInventorySampleV1, type LiveJournalEntryV1, type LivePriceBasis, type LivePriceV1, type LiveSessionRuntimeRecord } from './live-session-model';
 import { isStoredLiveSessionPayload, prepareLiveSessionPayload, type LiveSessionPayloadVersion, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
-import { liveItemValueCopper, liveRuntimePriceBasis, reduceLiveInventorySample, valueLiveTotals } from './live-session-reducer';
+import { liveItemValueCopper, reduceLiveInventorySample } from './live-session-reducer';
+import { isLiveSessionFormat, LEGACY_LIVE_SESSION_FORMAT, newLiveSessionFormat } from './live-session-format';
 import { computeSummaryFigures } from './live-session-summary-figures';
 
 const AT = Date.parse('2026-10-09T12:00:00.000Z');
@@ -44,11 +45,11 @@ function finished(prices: LivePriceV1[]): { record: LiveSessionRuntimeRecord; jo
 	return { record: { ...record, phase: 'complete', endedAt: iso(2), prices, priceCapturedAt: iso(1) }, journal };
 }
 
-/** The payload a note of `version` carries for that session, its valuation stated in `basis` over `prices`. */
+/** The payload the note of that session carries when its format is note `version` and prices in `basis`: `prices` are stated as they are. */
 async function stored(version: LiveSessionPayloadVersion, basis: LivePriceBasis, prices: LivePriceV1[]): Promise<StoredLiveSessionPayloadV1> {
-	const payload = await prepareLiveSessionPayload({ ...finished(prices), locale: 'en', outputFolder: 'Sessions', payloadVersion: version });
+	const payload = await prepareLiveSessionPayload({ ...finished(prices), format: { noteVersion: version, priceBasis: basis }, locale: 'en', outputFolder: 'Sessions' });
 	if (payload === null) throw new Error('The fixture session did not render.');
-	return { ...payload, valuation: valueLiveTotals(payload.totals, payload.valuation.prices, payload.valuation.capturedAt, false, basis) };
+	return payload;
 }
 
 describe('what a quantity is worth under each price basis', () => {
@@ -71,12 +72,19 @@ describe('what a quantity is worth under each price basis', () => {
 		expect(liveItemValueCopper('instant_sell_gross', Number.MAX_SAFE_INTEGER, 2)).toBeNull();
 		expect(liveItemValueCopper('instant_sell_net', Number.MAX_SAFE_INTEGER, 2)).toBeNull();
 	});
-	it('names net per unit for a build that writes version 1, which is what this build writes, and gross per unit for version 2', () => {
+	it('starts a session of note version 1 in net per unit and one of version 2 in gross per unit; this build starts version 2 sessions', () => {
 		expect(livePriceBasisOf(1)).toBe('instant_sell_net');
 		expect(livePriceBasisOf(2)).toBe('instant_sell_gross');
-		expect(LIVE_SESSION_NOTE_WRITE_VERSION).toBe(1);
-		expect(liveRuntimePriceBasis()).toBe('instant_sell_net');
-		expect(valueLiveTotals([], [], null, false).priceBasis).toBe('instant_sell_net');
+		expect(LIVE_SESSION_NOTE_WRITE_VERSION).toBe(2);
+		expect(newLiveSessionFormat()).toEqual({ noteVersion: 2, priceBasis: 'instant_sell_gross' });
+	});
+	it('has no format for a version 1 session kept in gross prices, and takes a session with no mark for one from before the mark', () => {
+		expect(isLiveSessionFormat({ noteVersion: 1, priceBasis: 'instant_sell_net' })).toBe(true);
+		expect(isLiveSessionFormat({ noteVersion: 2, priceBasis: 'instant_sell_gross' })).toBe(true);
+		expect(isLiveSessionFormat({ noteVersion: 2, priceBasis: 'instant_sell_net' })).toBe(true);
+		expect(isLiveSessionFormat({ noteVersion: 1, priceBasis: 'instant_sell_gross' })).toBe(false);
+		expect(isLiveSessionFormat({ noteVersion: 3, priceBasis: 'instant_sell_gross' })).toBe(false);
+		expect(LEGACY_LIVE_SESSION_FORMAT).toEqual({ noteVersion: 1, priceBasis: 'instant_sell_net' });
 	});
 });
 
@@ -120,7 +128,7 @@ describe('a saved live session is read in the price basis it states', () => {
 	});
 
 	it('writes what it always wrote for a version 1 note: the prices at hand as net per unit', async () => {
-		const written = await prepareLiveSessionPayload({ ...finished(NET), locale: 'en', outputFolder: 'Sessions', payloadVersion: 1 });
+		const written = await prepareLiveSessionPayload({ ...finished(NET), format: LEGACY_LIVE_SESSION_FORMAT, locale: 'en', outputFolder: 'Sessions' });
 		expect(written?.valuation).toEqual({ priceBasis: 'instant_sell_net', capturedAt: iso(1), prices: NET,
 			positiveItemValueKnownCopper: 1_500, netItemValueKnownCopper: 1_494, coinNetCopper: null, knownNetValueCopper: null, unpricedItemIds: [] });
 		expect(written).toEqual(await stored(1, 'instant_sell_net', NET));

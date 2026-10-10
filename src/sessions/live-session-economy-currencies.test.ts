@@ -22,7 +22,7 @@ function harness(answer: (path: string) => Promise<HttpResponse> = async (path) 
 	const cache = new MemoryCatalogCache();
 	const build = () => {
 		const service = new PublicCatalogService(gateway, cache, () => now);
-		const lifecycle = { getRuntime: () => ({ phase: 'active', sessionId: 's1', totals: [], prices: [], priceCapturedAt: null }), updatePrices: vi.fn(async () => {}), updateAlert: vi.fn(async () => null), getAwaitingPriceEntries: () => [] };
+		const lifecycle = { getRuntime: () => ({ phase: 'active', sessionId: 's1', totals: [], prices: [], priceCapturedAt: null }), updatePrices: vi.fn(async () => {}), updateAlert: vi.fn(async () => null), getAwaitingPriceEntries: () => [], getSessionFormat: () => ({ noteVersion: 1, priceBasis: 'instant_sell_net' }) };
 		const onError = vi.fn(); const onChange = vi.fn();
 		const economy = new LiveSessionEconomy({
 			lifecycle: lifecycle as never, gateway, rateLimit: new RateLimitCoordinator({ now: () => now }), now: () => now,

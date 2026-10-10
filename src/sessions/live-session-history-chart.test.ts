@@ -11,7 +11,7 @@ function legacy(payload: StoredLiveSessionPayloadV1): LiveChartPointV1[] {
 	const chart: LiveChartPointV1[] = []; let totals: LiveTotalV1[] = [];
 	for (const entry of payload.journal) {
 		totals = liveObservationTotals(totals, entry.observations);
-		const valuation = valueLiveTotals(totals, payload.valuation.prices, payload.valuation.capturedAt, payload.valuation.coinNetCopper !== null);
+		const valuation = valueLiveTotals(totals, payload.valuation.prices, payload.valuation.capturedAt, payload.valuation.coinNetCopper !== null, payload.valuation.priceBasis);
 		chart.push({ observedAt: entry.observedAt, itemQuantityNet: totals.filter((row) => row.kind === 'item').reduce((sum, row) => sum + row.net, 0),
 			netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper,
 			breakBefore: entry.breakBefore });

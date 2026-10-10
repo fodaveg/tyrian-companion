@@ -7,11 +7,11 @@ import type { SessionRuntimeStore } from './session-runtime-store';
 import { identicalJournal, type LiveSessionPersistence } from './live-session-persistence';
 import { DEFAULT_FARMING_PREPARATION, normalizeFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
 import { LIVE_SOURCE_STALE_MS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
-	type LiveInventorySampleV1, type LiveSessionRuntimeRecord, type LiveJournalEntryV1,
+	type LiveInventorySampleV1, type LiveSessionFormat, type LiveSessionRuntimeRecord, type LiveJournalEntryV1,
 	type LiveSessionViewV1, type LiveGapV1, type LiveChartPointV1 } from './live-session-model';
 import { createLiveChart, isEmptySample, LiveChartBuilder, liveChartPoint, liveObservationTotals,liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
 import type { IngameGameContext } from '../alerts/alert-ingame-protocol';
-import { LIVE_SESSION_NOTE_WRITE_VERSION, type LiveSessionPayloadVersion } from './live-session-note-model';
+import { newLiveSessionFormat } from './live-session-format';
 import { createLiveAlertIntent, settleLiveAlertRestart } from './live-session-outbox';
 import { withCharacter, type LiveSessionSummaryState } from './live-session-summary-state';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } from './live-session-model';
@@ -55,14 +55,18 @@ export interface LiveSessionLifecycleOptions {
 	declaredBuild?(): DeclaredBuildV1 | null;
 	thresholdCopper?(): number;
 	/**
-	 * The note payload format this lifecycle keeps its journal for (`LIVE_SESSION_NOTE_WRITE_VERSION` when absent). With 2 a sample
-	 * that changed nothing is committed in the record (cursor, time, fingerprint) but adds no journal entry.
+	 * The format a session this lifecycle STARTS is kept in (`newLiveSessionFormat()` when absent; tests and the benchmark name
+	 * another). It says nothing about a session that already exists, which keeps the format saved with it. With note version 2 a
+	 * sample that changed nothing is committed in the record (cursor, time, fingerprint) but adds no journal entry.
 	 */
-	noteVersion?: LiveSessionPayloadVersion;
+	sessionFormat?: LiveSessionFormat;
 	/** Receives only newly committed journal entries. Public enrichment cannot block measurement ACK. */
 	onCommitted?(entry: LiveJournalEntryV1): void;
-	/** Durable note writer; a failed write keeps the terminal record and its lease recoverable. */
-	onComplete?(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[]): Promise<string | null>;
+	/**
+	 * Durable note writer; a failed write keeps the terminal record and its lease recoverable. `format` is the one of the session
+	 * `record` belongs to, which is not always the one this build starts sessions in: the note is written in it.
+	 */
+	onComplete?(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[], format: LiveSessionFormat): Promise<string | null>;
 }
 
 /**
@@ -92,6 +96,11 @@ interface UnsavedLiveState {
 /** A passive, fenced session lifecycle sharing the canonical runtime store and existing coordinator. */
 export class LiveSessionLifecycle {
 	private record: LiveSessionRuntimeRecord | null = null;
+	/**
+	 * The format of the session in `record`: the one it started with, read from its mark when the session comes from storage
+	 * (`loadSessionFormat`) and saved with its first record when this host starts it. It only changes together with `record`.
+	 */
+	private format: LiveSessionFormat = newLiveSessionFormat();
 	private journal: LiveJournalEntryV1[] = [];
 	/**
 	 * Sealed sessions (note receipt durable) that left the runtime key, with the path of their note; saved under the prune-queue
@@ -111,7 +120,7 @@ export class LiveSessionLifecycle {
 	 * delivery receipt of an alert that arrives after its session closed. It rewrites the stored journal entry and the note, so
 	 * the journal of these sessions is not pruned while this host runs. A host that starts again has none of this.
 	 */
-	private readonly completed = new Map<string, { record: LiveSessionRuntimeRecord; journal: LiveJournalEntryV1[] }>();
+	private readonly completed = new Map<string, { record: LiveSessionRuntimeRecord; journal: LiveJournalEntryV1[]; format: LiveSessionFormat }>();
 	private observations: LiveSessionViewV1['observations'] = [];
 	private chart = this.newChart();
 	private handle: ActiveSessionLeaseHandle | null = null;
@@ -204,12 +213,18 @@ export class LiveSessionLifecycle {
 			let journal: LiveJournalEntryV1[];
 			try { journal = await this.options.persistence.readLiveJournal(loaded.record.sessionId); }
 			catch (error) { unanswered(error); return; }
+			// Nor is the record the session without the format it started with: its prices and its journal cannot be read without
+			// it, and the record does not say it. A mark that cannot be read is asked for again like the journal; a session with no
+			// mark is one from before the mark, and the store answers with that format.
+			let format: LiveSessionFormat;
+			try { format = await this.options.persistence.loadSessionFormat(loaded.record.sessionId); }
+			catch (error) { unanswered(error); return; }
 			if (this.unread) { this.unread = false; this.failure = false; }
 			const observations = journal.flatMap((entry) => entry.observations);
 			if (observations.length !== loaded.record.observationCount || JSON.stringify(liveObservationTotals([], observations)) !== JSON.stringify(loaded.record.totals)) {
 				throw new Error('Live session journal does not match its committed cursor.');
 			}
-			this.record = loaded.record; this.journal = journal; this.observations = observations; this.rebuildChart();
+			this.record = loaded.record; this.format = format; this.journal = journal; this.observations = observations; this.rebuildChart();
 			this.registryKnown = true;
 			// A session this same process started and storage did not acknowledge is not one left by a host that is gone:
 			// the presence it was started with still holds, so it is taken back as after an outage, not as after a restart
@@ -254,7 +269,7 @@ export class LiveSessionLifecycle {
 				if (this.record.summaryReceipt !== null) { this.sealedForPrune.set(this.record.sessionId,this.record.summaryReceipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
 				const cleared = await this.options.persistence.clear(this.record.authority);
 				if (cleared.status !== 'cleared') return null;
-				this.completed.set(this.record.sessionId, { record: this.record, journal: this.journal });
+				this.completed.set(this.record.sessionId, { record: this.record, journal: this.journal, format: this.format });
 				if (this.completed.size > 8) this.completed.delete(this.completed.keys().next().value!);
 			}
 			await this.pruneSealed();
@@ -272,7 +287,10 @@ export class LiveSessionLifecycle {
 				preparation: normalizeFarmingPreparationSettings(this.options.preparation?.() ?? DEFAULT_FARMING_PREPARATION),
 				farmingGoal: normalizeFarmingGoal(this.options.farmingGoal?.()), groupContext: this.options.groupContext?.() ?? null,
 				mapIntervals: [], mapObservation: null, mapCoveragePartial: true, declaredBuild, summaryReceipt: null };
-			const started = await this.options.persistence.saveLive(next);
+			// The format is fixed here, for the whole life of the session, and saved in the same write as its first record: a
+			// session found later (by this host after an unanswered save, or by the next one) is found with it.
+			const format: LiveSessionFormat = { ...(this.options.sessionFormat ?? newLiveSessionFormat()) };
+			const started = await this.options.persistence.saveLive(next, undefined, undefined, format);
 			if (started.status !== 'saved') {
 				await this.options.coordinator.release(acquired.handle);
 				// Storage that does not say whether it stored the session may have stored it, or may yet (the write is not
@@ -294,7 +312,7 @@ export class LiveSessionLifecycle {
 			this.ownStarts.clear();
 			this.summaryState = { version: 1, sessionId: id, characters: character === null ? [] : [{ name: character, fromAt: at }], capped: false, summaryWritten: false };
 			await this.options.persistence.saveSummaryState?.(this.summaryState);
-			this.handle = acquired.handle; this.record = next; this.journal = []; this.observations = []; this.chart = this.newChart(); this.failure = false; this.registryKnown = true;
+			this.handle = acquired.handle; this.record = next; this.format = format; this.journal = []; this.observations = []; this.chart = this.newChart(); this.failure = false; this.registryKnown = true;
 			this.unsaved = null; this.lostPresence = null; this.lostGap = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false; this.noteNeedsVerification = false;
 			this.armHeartbeat(); this.options.onStateChange(); return id;
 		});
@@ -346,9 +364,10 @@ export class LiveSessionLifecycle {
 			const sessionId = this.record.sessionId;
 			reduced.journal.outbox = reduced.journal.observations.filter((row) => row.kind === 'item' && row.delta > 0)
 				.map((row) => createLiveAlertIntent(sessionId, row, this.options.thresholdCopper?.() ?? 50000));
-			// Version 2 keeps no entry for a sample that changed nothing: the record alone carries it (cursor, fingerprint and
-			// `lastObservationAt`), in the same single write, so a replay and a restart find the same state as with the entry.
-			const unlogged = (this.options.noteVersion ?? LIVE_SESSION_NOTE_WRITE_VERSION) === 2 && isEmptySample(reduced.journal);
+			// A session of note version 2 keeps no entry for a sample that changed nothing: the record alone carries it (cursor,
+			// fingerprint and `lastObservationAt`), in the same single write, so a replay and a restart find the same state as with
+			// the entry. It is the session's own format that says so: one that started keeping every sample goes on keeping them.
+			const unlogged = this.format.noteVersion === 2 && isEmptySample(reduced.journal);
 			const saved = await this.persist(reduced.record, unlogged ? undefined : reduced.journal);
 			if (saved === 'unavailable') { this.sampleLost(); return 'storage_unavailable'; }
 			if (saved !== 'saved') { this.failure = true; this.options.onStateChange(); return 'not_owner'; }
@@ -489,6 +508,13 @@ export class LiveSessionLifecycle {
 	}
 
 	getRuntime(): LiveSessionRuntimeRecord | null { return this.record === null ? null : structuredClone(this.record); }
+	/**
+	 * The format of the session `getRuntime()` gives: what its `prices` mean and how its journal was kept. Everything that values
+	 * that record or writes it down asks here (the panel, the live chart, the alerts, the summary, an export), so a session that
+	 * started in another format than this build starts new ones in is still read as what it is. With no session, the format the
+	 * next one would start in.
+	 */
+	getSessionFormat(): LiveSessionFormat { return { ...(this.record === null ? this.options.sessionFormat ?? newLiveSessionFormat() : this.format) }; }
 	/** Up to `limit` journal entries (copies, oldest first, except `skip`) with an alert still `awaiting_price` whose item `hasQuote`: what a late quote can decide. */
 	getAwaitingPriceEntries(hasQuote: (itemId: number) => boolean, limit: number, skip: Pick<LiveJournalEntryV1,'epoch'|'cursor'>): LiveJournalEntryV1[] {
 		return structuredClone(this.journal.filter((entry) => (entry.epoch !== skip.epoch || entry.cursor !== skip.cursor) && entry.outbox.some((intent) =>
@@ -511,14 +537,14 @@ export class LiveSessionLifecycle {
 	/** Export snapshots copy record and full journal at one durable queue boundary. */
 	async capture(): Promise<LiveSessionCaptureV1 | null> {
 		return await this.enqueue(async () => this.record === null ? null : {record:structuredClone(this.record),
-			journal:structuredClone(this.journal),capturedAt:this.nowIso()});
+			journal:structuredClone(this.journal),capturedAt:this.nowIso(),format:{...this.format}});
 	}
 
 	/** Claims precede effects; receipt-only updates may settle evidence after the session closes. */
 	async updateAlert(outboxId: string, update: (prior: LiveAlertOutboxV1) => LiveAlertOutboxV1, receiptOnly = false, sessionId?: string): Promise<LiveAlertOutboxV1 | null> {
 		return await this.enqueue(async () => {
 			const target = sessionId !== undefined && this.record?.sessionId !== sessionId ? this.completed.get(sessionId)
-				: this.record === null ? undefined : {record:this.record,journal:this.journal};
+				: this.record === null ? undefined : {record:this.record,journal:this.journal,format:this.format};
 			if (!target || !receiptOnly && (!this.options.enabled() || target.record !== this.record || target.record.phase !== 'active' || !await this.owned() || !this.options.enabled())) return null;
 			// Newest first: the intents that get updated are the latest ones (ids are unique, so the order cannot change the match).
 			let entry: LiveJournalEntryV1 | undefined;
@@ -541,7 +567,7 @@ export class LiveSessionLifecycle {
 				if (JSON.stringify(stored) !== JSON.stringify(next)) { Object.assign(entry, stored); this.options.onStateChange(); return null; }
 			}
 			Object.assign(entry, next); this.options.onStateChange();
-			if (target.record.phase === 'complete' && target.record.summaryReceipt !== null && this.options.onComplete) await this.options.onComplete(structuredClone(target.record), structuredClone(target.journal));
+			if (target.record.phase === 'complete' && target.record.summaryReceipt !== null && this.options.onComplete) await this.options.onComplete(structuredClone(target.record), structuredClone(target.journal), { ...target.format });
 			return structuredClone(intent);
 		});
 	}
@@ -565,7 +591,7 @@ export class LiveSessionLifecycle {
 		const row = this.record; const size = Math.max(1, Math.min(200, Number.isSafeInteger(limit) ? limit : 200));
 		const start = Math.max(0, Number.isSafeInteger(offset) ? offset : 0);
 		const all = this.observations;
-		const valuation = valueLiveTotals(row?.totals ?? [], row?.prices ?? [], row?.priceCapturedAt ?? null, row?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
+		const valuation = valueLiveTotals(row?.totals ?? [], row?.prices ?? [], row?.priceCapturedAt ?? null, row?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false, this.getSessionFormat().priceBasis);
 		const at = row?.lastObservationAt ?? null;
 		return { version: 1, sessionId: row?.sessionId ?? null, phase: this.failure ? 'error' : row?.phase ?? 'idle',
 			connection: row?.phase === 'complete' ? 'disconnected' : row?.connection ?? 'disconnected',
@@ -883,7 +909,7 @@ export class LiveSessionLifecycle {
 		}
 		if (!await this.owned()) return false;
 		await this.settleRecovery();
-		const path = await this.options.onComplete(structuredClone(this.record), structuredClone(this.journal));
+		const path = await this.options.onComplete(structuredClone(this.record), structuredClone(this.journal), { ...this.format });
 		if (path === null) return false;
 		const next = { ...this.record, summaryReceipt: { version: 1 as const, sessionId: this.record.sessionId, path, savedAt: this.options.now() }, persistedAt: this.options.now() };
 		if ((await this.options.persistence.saveLive(next)).status !== 'saved') return false;
@@ -901,8 +927,10 @@ export class LiveSessionLifecycle {
 	private appendChart(entry: LiveJournalEntryV1, totals = this.record?.totals ?? []): void {
 		this.chart.push(entry, () => totals);
 	}
-	private newChart(): LiveChartBuilder { return new LiveChartBuilder((entry, totals) => liveChartPoint(entry, totals, this.record)); }
-	private rebuildChart(): void { this.chart = createLiveChart(this.journal, this.record, 600, this.record?.lastObservationAt ?? null).builder; }
+	/** The record as the chart values it: its prices, in the basis of its session. */
+	private chartRecord(): Parameters<typeof liveChartPoint>[2] { return this.record === null ? null : { ...this.record, priceBasis: this.format.priceBasis }; }
+	private newChart(): LiveChartBuilder { return new LiveChartBuilder((entry, totals) => liveChartPoint(entry, totals, this.chartRecord())); }
+	private rebuildChart(): void { this.chart = createLiveChart(this.journal, this.chartRecord(), 600, this.record?.lastObservationAt ?? null).builder; }
 
 	private nowIso(): string { return new Date(this.options.now()).toISOString(); }
 	private enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -941,8 +969,9 @@ function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionL
 	const rejected = (): Promise<never> => Promise.reject(new StorageUnansweredError());
 	const persistence: LiveSessionLifecycleOptions['persistence'] = {
 		loadLive: () => deadline.bounded(() => options.persistence.loadLive(), unavailable),
-		saveLive: (record, journal, expected) => deadline.bounded(() => options.persistence.saveLive(record, journal, expected), unavailable),
+		saveLive: (record, journal, expected, format) => deadline.bounded(() => options.persistence.saveLive(record, journal, expected, format), unavailable),
 		readLiveJournal: (sessionId) => deadline.bounded(() => options.persistence.readLiveJournal(sessionId), rejected),
+		loadSessionFormat: (sessionId) => deadline.bounded(() => options.persistence.loadSessionFormat(sessionId), rejected),
 		markLiveAlertsProcessed: (sessionId, epoch, cursor) => deadline.bounded(() => options.persistence.markLiveAlertsProcessed(sessionId, epoch, cursor), () => false),
 		replaceLiveJournal: (prior, next, owner) => deadline.bounded(() => options.persistence.replaceLiveJournal(prior, next, owner), () => false),
 		clear: (authority) => deadline.bounded(() => options.persistence.clear(authority), unavailable),
@@ -976,16 +1005,16 @@ function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionL
 		if (answer !== null && noteInCourse === note) noteInCourse = null;
 		return answer;
 	};
-	const onComplete: NonNullable<LiveSessionLifecycleOptions['onComplete']> = async (record, journal) => {
+	const onComplete: NonNullable<LiveSessionLifecycleOptions['onComplete']> = async (record, journal, format) => {
 		// The authority and the time of the last save are not in the note (see `live-session-note-model.ts`): a lease
 		// taken again between two attempts does not make it another note.
 		const { authority: _authority, persistedAt: _persistedAt, ...evidence } = record;
-		const content = JSON.stringify([evidence, journal]);
+		const content = JSON.stringify([evidence, journal, format]);
 		// An attempt with other content (an earlier revision of this note, or another session's) is waited for first:
 		// two writers never work at once.
 		if (noteInCourse !== null && noteInCourse.content !== content && await waitedFor(noteInCourse) === null) return null;
 		const write = async (): Promise<NoteAnswer> => {
-			try { return { path: await options.onComplete?.(record, journal) ?? null }; }
+			try { return { path: await options.onComplete?.(record, journal, format) ?? null }; }
 			catch (error) { return { error }; }
 		};
 		noteInCourse ??= { content, answer: write() };
@@ -1017,5 +1046,5 @@ export function emptyLiveSessionView(): LiveSessionViewV1 {
 	return {version:1,sessionId:null,phase:'idle',connection:'disconnected',sourceState:'missing',sourceReason:'source_missing',source:null,
 		startedAt:null,endedAt:null,elapsedMs:null,observedItemsMs:0,observedCurrenciesMs:0,lastObservationAt:null,itemCoverage:'none',currencyCoverage:'none',
 		currencyIds:[],freeSlots:null,observations:[],observationCount:0,observationOffset:0,hasMore:false,gaps:[],totals:[],
-		valuation:valueLiveTotals([],[],null,false),chartPoints:[],magicFind:{value:null,source:'unknown'}};
+		valuation:valueLiveTotals([],[],null,false,newLiveSessionFormat().priceBasis),chartPoints:[],magicFind:{value:null,source:'unknown'}};
 }

@@ -1,5 +1,6 @@
 import { isLiveSessionSummaryState, LIVE_SUMMARY_STATE_KEY, type LiveSessionSummaryState } from './live-session-summary-state';
-import type { LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-session-model';
+import { isLiveSessionFormat, LIVE_SESSION_FORMAT_KEY, liveSessionFormatMark, liveSessionFormatOf } from './live-session-format';
+import type { LiveSessionFormat, LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-session-model';
 import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-validation';
 import { canUpdateLiveOutbox } from './live-session-outbox';
 import { archiveLegacyRuntime, prepareLegacyRuntimeArchive, isLegacyRuntimeArchive, LEGACY_RUNTIME_ARCHIVE_PREFIX, type LegacyRuntimeArchiveV1 } from './live-session-legacy-archive';
@@ -199,8 +200,9 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 		return [...this.legacyArchives.values()].map(legacyRuntimeRecordFromArchive).filter((value): value is SessionRuntimeRecord => value !== null);
 	}
 	async readLegacyRuntimeArchive(sessionId:string):Promise<LegacyRuntimeArchiveV1|null> { return structuredClone(this.legacyArchives.get(sessionId) ?? null); }
-	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
-		if (!isLiveSessionRuntimeRecord(next) || journal && (!isLiveJournalEntry(journal) || journal.sessionId !== next.sessionId || journal.epoch !== next.lastSample?.epoch || journal.cursor !== next.lastSample.cursor)) return { status: 'error', code: 'corrupt' };
+	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord, format?: LiveSessionFormat): Promise<SessionRuntimeMutationResult> {
+		if (!isLiveSessionRuntimeRecord(next) || journal && (!isLiveJournalEntry(journal) || journal.sessionId !== next.sessionId || journal.epoch !== next.lastSample?.epoch || journal.cursor !== next.lastSample.cursor)
+			|| format !== undefined && !isLiveSessionFormat(format)) return { status: 'error', code: 'corrupt' };
 		if (this.value !== undefined && (!isLiveSessionRuntimeRecord(this.value) || !canReplaceLiveRuntime(this.value, next))) return { status: 'stale' };
 		if (expected !== undefined && JSON.stringify(this.value) !== JSON.stringify(expected)) return { status: 'stale' };
 		if (journal) {
@@ -208,8 +210,13 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 			if (current) return identicalJournal(current, journal) ? { status: 'saved' } : { status: 'error', code: 'corrupt' };
 			this.liveJournal.set(key, structuredClone(journal));
 		}
-		this.value = structuredClone(next); return { status: 'saved' };
+		this.value = structuredClone(next);
+		if (format !== undefined) this.sessionFormatMark = liveSessionFormatMark(next.sessionId, format);
+		return { status: 'saved' };
 	}
+	/** What is stored under the format key, as the IndexedDB store keeps it: a test can put there what an earlier or a later plugin would have left. */
+	sessionFormatMark: unknown;
+	async loadSessionFormat(sessionId: string): Promise<LiveSessionFormat> { return liveSessionFormatOf(structuredClone(this.sessionFormatMark), sessionId); }
 	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> {
 		return structuredClone([...this.liveJournal.values()].filter((entry) => entry.sessionId === sessionId));
 	}
@@ -487,9 +494,18 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 		if (!record || runtimeAuthority(record.state).sessionId !== sessionId) throw new Error('Preserved API runtime identity is corrupt.');
 		return structuredClone(value);
 	}
-	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
-		try { return await this.run(async (database) => await commitLiveRuntime(database, next, journal, expected)); }
+	async saveLive(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord, format?: LiveSessionFormat): Promise<SessionRuntimeMutationResult> {
+		try { return await this.run(async (database) => await commitLiveRuntime(database, next, journal, expected, format)); }
 		catch { return { status: 'error', code: 'unavailable' }; }
+	}
+	/**
+	 * A storage failure rejects, and so does a mark of this session that does not validate (`liveSessionFormatOf`): the
+	 * lifecycle then keeps nothing of the session in memory and asks again. The diagnostics say which, without the mark's content.
+	 */
+	async loadSessionFormat(sessionId: string): Promise<LiveSessionFormat> {
+		const stored = await this.read(undefined, LIVE_SESSION_FORMAT_KEY);
+		try { return liveSessionFormatOf(stored, sessionId); }
+		catch (error) { this.diagnostics.begin('session_runtime', 'read').failure('validation_failed'); throw error; }
 	}
 	async readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]> { return await this.run(async (database) => await readLiveJournal(database, sessionId)); }
 	async readLiveJournalEntry(sessionId: string, epoch: string, cursor: number): Promise<LiveJournalEntryV1 | null> {
