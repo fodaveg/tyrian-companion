@@ -703,6 +703,21 @@ describe('passive live session lifecycle', () => {
 			expect(svc.getRuntime()).toMatchObject({phase:'complete',endedAt:new Date(T0).toISOString(),summaryReceipt:{path:'Sessions/live.md'}});
 			await svc.dispose();
 		});
+		it('a wall clock set back under a running session still stops it with its note', async () => {
+			const f = fixture(new IndexedDbSessionRuntimeStore(new IDBFactory(),'live-stepback') as unknown as MemorySessionRuntimeStore); let beat: (() => void) | null = null; let now = AT;
+			const coordinator = new ActiveSessionLeaseCoordinator({ indexedDb: new IDBFactory(), databaseName: 'lease-stepback', clock: () => now, monotonicClock: () => monotonic, sleep: async () => undefined, instanceId: 'host' });
+			let monotonic = 1000;
+			const svc = new LiveSessionLifecycle({...f.options,coordinator,now:() => now,setInterval:(callback) => {beat=callback;return 1;}});
+			const at = (ms: number, tick = true): void => { if (tick) monotonic += Math.max(0, ms - now); now = ms; f.setNow(ms); };
+			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0));
+			for (let cursor = 1; cursor <= 20; cursor += 1) { at(AT+cursor*5_000); beat!(); await svc.capture(); await svc.commit(f.sample(cursor,cursor)); }
+			at(AT+100_000-30_000, false); monotonic += 5_000;
+			for (let cursor = 21; cursor <= 23; cursor += 1) { at(now+5_000); beat!(); await svc.capture(); }
+			await expect(svc.stop(now, 'session')).resolves.toBe(true);
+			expect(svc.getRuntime()).toMatchObject({phase:'complete',summaryReceipt:{path:'Sessions/live.md'}});
+			await expect(svc.start('Test')).resolves.not.toBeNull();
+			await svc.dispose();
+		});
 		it('keeps the session running when the game never stopped being linked', async () => {
 			const { f, svc, setNow, beat } = suspended();
 			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true); setNow(AT+2*3_600_000); await svc.presence(true);

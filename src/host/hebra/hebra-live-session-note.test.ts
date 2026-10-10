@@ -153,10 +153,44 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 		}));
 		await cleanup();
 	}, 30_000);
+
+	it('«Terminar sesión» inside the plugin writes the note, also when the clock went back under the session, and frees the next one', async () => {
+		const test = collectorHebra();
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		core.settings.alertIngameEnabled = true;
+		const tracker = core.ingamePresenceTracker();
+		const source = sourceOf(FIRST_EPOCH);
+		tracker.apply({ kind: 'authenticated', connectionId: 'a', client: 'nexus', instance: INSTANCE, atMs: now });
+		tracker.apply({ kind: 'context', connectionId: 'a', context: source.context, atMs: now });
+		await settle(core);
+		const port = core.liveIngamePort();
+		expect(await port.open(source)).toBe('ready');
+		const readAt = now;
+		now = readAt + HANDSHAKE_MS;
+		expect(await port.commit(sampleOf(source, 0, 0))).toBe('stored');
+		for (let cursor = 1; cursor <= SAMPLES; cursor += 1) {
+			now = readAt + cursor * 1000 + RECEPTION_MS;
+			expect(await port.commit(sampleOf(source, cursor, cursor * 1000))).toBe('stored');
+		}
+		const first = core.getLiveSessionView().sessionId!;
+		// The system clock is set back 20 s (a time sync, a VM resume) and the player presses «Terminar sesión».
+		now -= 20_000;
+		await core.getProductActionController().run('finish-farming-session');
+		await settle(core);
+		expect(core.getLiveSessionView(), 'the session is finished').toMatchObject({ phase: 'complete', sessionId: first });
+		expect(liveNotes(test), 'and its note is in the library').toHaveLength(1);
+		expect(core.liveSessions.getRuntime()?.summaryReceipt).not.toBeNull();
+		// The player stopped it by hand in this presence, so the addon does not reopen it by itself; «Iniciar sesión» does.
+		now += 60_000;
+		await core.getProductActionController().run('start-farming-session');
+		expect(core.getLiveSessionView()).toMatchObject({ phase: 'active' });
+		expect(core.getLiveSessionView().sessionId).not.toBe(first);
+		await cleanup();
+	}, 30_000);
 });
 
 /** The game connects, plays `SAMPLES` seconds with the addon's real timing and exits. Resolves to the session id. */
-async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: string, handshakeMs = HANDSHAKE_MS): Promise<string> {
+async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: string, handshakeMs = HANDSHAKE_MS, ending: 'game_exit' | 'finish_button' = 'game_exit'): Promise<string> {
 	core.settings.alertIngameEnabled = true;
 	const tracker = core.ingamePresenceTracker();
 	const source = sourceOf(epoch);
@@ -176,6 +210,12 @@ async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: st
 	const sessionId = core.getLiveSessionView().sessionId;
 	if (sessionId === null) throw new Error('No live session is running.');
 	now = readAt + SAMPLES * 1000 + 500;
+	if (ending === 'finish_button') {
+		// «Terminar sesión» inside the plugin, while the game stays connected.
+		await core.getProductActionController().run('finish-farming-session');
+		await settle(core);
+		return sessionId;
+	}
 	tracker.apply({ kind: 'closed', connectionId, atMs: now, lastSeenAtMs: now, reason: 'game_exit' });
 	await settle(core);
 	return sessionId;

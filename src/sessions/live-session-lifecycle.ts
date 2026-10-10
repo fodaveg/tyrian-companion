@@ -781,9 +781,16 @@ export class LiveSessionLifecycle {
 		for (const entry of journal) if (!seen.has(`${entry.epoch}/${String(entry.cursor)}`)) this.options.onCommitted?.(structuredClone(entry));
 		return stored.phase === 'active' ? 'current' : 'ended';
 	}
+	/** The stamp of a record never goes back: a clock that did is not the order the store judges writes by. */
+	private keepStampForward(next: LiveSessionRuntimeRecord): void {
+		if (this.record !== null && this.record.sessionId === next.sessionId && next.persistedAt < this.record.persistedAt) next.persistedAt = this.record.persistedAt;
+	}
 	/** One durable write of the session record. A refusal by storage itself is remembered; a stale authority is not its fault. */
 	private async persist(next: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<'saved' | 'stale' | 'unavailable'> {
 		let status: string;
+		// A wall clock set back under a running session must not stamp a record earlier than the one it replaces: the store
+		// refuses that as `stale` for as long as the clock stays behind, and the session could neither take samples nor stop.
+		this.keepStampForward(next);
 		try { status = (await this.options.persistence.saveLive(next, journal, expected)).status; }
 		catch { status = 'error'; }
 		if (status === 'saved' || status === 'stale') return status;
@@ -918,14 +925,14 @@ export class LiveSessionLifecycle {
 				|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') return false;
 			this.handle = acquired.handle;
 			await this.refreshRecovery();
-			this.record = { ...this.record, authority: sessionAuthorityFromLease(acquired.handle), persistedAt: this.options.now() };
+			this.record = { ...this.record, authority: sessionAuthorityFromLease(acquired.handle), persistedAt: Math.max(this.options.now(), this.record.persistedAt) };
 			if ((await this.options.persistence.saveLive(this.record)).status !== 'saved') return false;
 		}
 		if (!await this.owned()) return false;
 		await this.settleRecovery();
 		const path = await this.options.onComplete(structuredClone(this.record), structuredClone(this.journal), { ...this.format });
 		if (path === null) return false;
-		const next = { ...this.record, summaryReceipt: { version: 1 as const, sessionId: this.record.sessionId, path, savedAt: this.options.now() }, persistedAt: this.options.now() };
+		const next = { ...this.record, summaryReceipt: { version: 1 as const, sessionId: this.record.sessionId, path, savedAt: this.options.now() }, persistedAt: Math.max(this.options.now(), this.record.persistedAt) };
 		if ((await this.options.persistence.saveLive(next)).status !== 'saved') return false;
 		// The receipt is durable: a failure flagged by an earlier attempt (`enqueue` sets it when onComplete throws) no longer describes this session.
 		this.record = next; this.noteNeedsVerification = false; this.failure = false; await this.options.coordinator.release(this.handle); this.handle = null;
