@@ -62,10 +62,10 @@ import { TyrianPathIndex } from './path-index';
 import type { TyrianPathIndexKv } from './path-index-kv';
 import { createPreloadedSecrets, type TyrianSecretsBackend } from './secrets';
 import { refreshUnadoptedNotes, seedTyrianPathIndex, type TyrianSeedLibrary, type TyrianSeedResult, type TyrianUnadoptedNote } from './seed';
+import { createHebraTranslator, type HebraTranslator } from './setting-row';
 import { createTcpServerPort, unavailableTcpServerPort } from './tcp-port';
 import { createHebraTyrianVault, HEBRA_TYRIAN_CONFIG_DIR, relativeToOutputFolder } from './vault';
 import { createTyrianVaultPort } from './vault-port';
-import { createHebraTranslator, type HebraTranslator } from './setting-row';
 
 export const TYRIAN_PLUGIN_ID = 'tyrian-companion';
 

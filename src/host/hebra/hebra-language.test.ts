@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { HebraPluginApi } from 'hebra-plugin-api';
@@ -9,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTranslator, TRANSLATIONS, type Locale } from '../../core/i18n';
 import { createTyrianRuntime, EXPORT_LEGACY_SESSION_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, TYRIAN_MAIN_VIEW_TYPE, type TyrianCompanionCore } from '../../runtime/tyrian-companion-core';
 import { createTyrianTestApi, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
+import { fixedCopyIn, fixedCopyOffenders } from '../../test/module-boundary';
 import { withRealHostBehaviour, type RealHost } from '../../test/hebra-real-host';
 import { COMPANION_VIEW_TYPE } from '../../ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from '../../ui/inventory-advisor-item-view';
@@ -46,21 +46,30 @@ const duplicate: TyrianUnadoptedNote = {
 };
 const broken: TyrianUnadoptedNote = { id: 'n-broken', title: '', family: 'collector_status', reason: 'invalid_marker', candidates: [] };
 
-describe('no fixed Spanish text is left in the adapter', () => {
-	// A string or template literal with an accented letter, ¿¡ or one of the words the adapter used to write.
-	const SPANISH = /(['"`])(?:(?!\1).)*(?:[áéíóúñÁÉÍÓÚ¿¡]|\b(?:Cancelar|Guardar|Abrir|Ninguno|Nombre|Valor|Nuevo|Cargando|Notas?|Sin título|disponible)\b)(?:(?!\1).)*\1/u;
+describe('no fixed user-facing text is left in the adapter', () => {
+	it('src/host/hebra/*.ts (tests aside) hands the user only catalogue or variable text', () => {
+		expect(fixedCopyOffenders(join(process.cwd(), 'src/host/hebra'))).toEqual([]);
+	});
 
-	it('src/host/hebra/*.ts (tests aside) reads its copy from the catalogue', () => {
-		const directory = join(process.cwd(), 'src/host/hebra');
-		const offenders: string[] = [];
-		for (const file of readdirSync(directory).filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))) {
-			const code = readFileSync(join(directory, file), 'utf-8').replace(/\/\*[\s\S]*?\*\//gu, '');
-			code.split('\n').forEach((line, index) => {
-				const body = line.replace(/\/\/.*$/u, '');
-				if (SPANISH.test(body)) offenders.push(`${file}:${String(index + 1)}: ${line.trim()}`);
-			});
-		}
-		expect(offenders).toEqual([]);
+	// The detector itself: the ways of writing a fixed text it must catch, and the ones it must let through.
+	it.each([
+		["u.notice('Could not restart the plugin.');", 1],
+		["u.notice('Reinicia el plugin ahora');", 1],
+		["u.notice(`\nEstá roto\n`);", 1],
+		["u.notice('http://x Está');", 1],
+		["u.notice(`Reiniciado: ${folder}`);", 1],
+		["el.textContent = flag ? 'Sí' : t.t('k');", 1],
+		["el.setAttribute('aria-label', 'Nombre');", 1],
+		["openModal(mount, { title: 'Nuevo' });", 1],
+		["el.placeholder = 'Valor' + x;", 1],
+		["u.notice(t.t('hebra.command.unavailable'));", 0],
+		["u.notice(message);", 0],
+		["el.textContent = '';", 0],
+		["el.setAttribute('role', 'presentation');", 0],
+		["el.className = 'hebra-module-setting';", 0],
+		["const r = { title: view.title(), name: command.name };", 0],
+	])('detector: %s -> %i site(s)', (code, count) => {
+		expect(fixedCopyIn(code, 'probe.ts')).toHaveLength(count);
 	});
 });
 

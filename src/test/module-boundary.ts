@@ -5,6 +5,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 
 import ts from 'typescript';
 
@@ -480,4 +481,79 @@ export function isPlainJsonValue(value: unknown): boolean {
 	const prototype = Object.getPrototypeOf(value) as unknown;
 	if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false;
 	return Object.values(value).every((entry) => isPlainJsonValue(entry));
+}
+
+/*
+ * Structural guard for the Hebra adapter's user-facing copy (`hebra-language.test.ts`): finds, with the
+ * TypeScript compiler, where `src/host/hebra/` hands the user a FIXED text (a string literal or a
+ * template with text) instead of catalogue (`translator().t(...)`) or variable text.
+ *
+ * Checked: the argument of `notice(...)`, `setButtonText(...)`, `setText(...)`; assignments to
+ * `.textContent`, `.placeholder`, `.title`; `setAttribute('aria-label' | 'title' | 'placeholder', ...)`;
+ * the `title:` / `name:` properties of object literals (modals, views, commands). NOT seen: a fixed
+ * text reaching those places through a variable, or any other surface.
+ */
+const TEXT_CALLS = new Set(['notice', 'setButtonText', 'setText']);
+const TEXT_PROPERTIES = new Set(['textContent', 'placeholder', 'title']);
+const TEXT_ATTRIBUTES = new Set(['aria-label', 'title', 'placeholder']);
+const TEXT_KEYS = new Set(['title', 'name']);
+
+/** Is this expression a fixed text: a literal, a template with text, or a join/choice of those? */
+function isFixedText(node: ts.Expression): boolean {
+	if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node)) return isFixedText(node.expression);
+	if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text.trim() !== '';
+	if (ts.isTemplateExpression(node)) {
+		return node.head.text.trim() !== '' || node.templateSpans.some((span) => span.literal.text.trim() !== '');
+	}
+	if (ts.isConditionalExpression(node)) return isFixedText(node.whenTrue) || isFixedText(node.whenFalse);
+	if (ts.isBinaryExpression(node)) {
+		const op = node.operatorToken.kind;
+		if (op === ts.SyntaxKind.PlusToken) return isFixedText(node.left) || isFixedText(node.right);
+		if (op === ts.SyntaxKind.QuestionQuestionToken || op === ts.SyntaxKind.BarBarToken) return isFixedText(node.left) || isFixedText(node.right);
+	}
+	return false;
+}
+
+function calleeName(call: ts.CallExpression): string | undefined {
+	const { expression } = call;
+	if (ts.isIdentifier(expression)) return expression.text;
+	if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
+	return undefined;
+}
+
+/** The fixed-copy sites of one source, as `file:line: text`. */
+export function fixedCopyIn(source: string, fileName: string): string[] {
+	const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const found: string[] = [];
+	const report = (node: ts.Node): void => {
+		const { line } = file.getLineAndCharacterOfPosition(node.getStart(file));
+		found.push(`${fileName}:${String(line + 1)}: ${node.getText(file).replace(/\s+/gu, ' ').slice(0, 100)}`);
+	};
+	const visit = (node: ts.Node): void => {
+		if (ts.isCallExpression(node)) {
+			const name = calleeName(node);
+			const first = node.arguments[0];
+			if (name !== undefined && TEXT_CALLS.has(name) && first !== undefined && isFixedText(first)) report(node);
+			const attribute = node.arguments[0];
+			const value = node.arguments[1];
+			if (name === 'setAttribute' && attribute !== undefined && value !== undefined
+				&& (ts.isStringLiteral(attribute) || ts.isNoSubstitutionTemplateLiteral(attribute))
+				&& TEXT_ATTRIBUTES.has(attribute.text) && isFixedText(value)) report(node);
+		}
+		if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+			&& ts.isPropertyAccessExpression(node.left) && TEXT_PROPERTIES.has(node.left.name.text) && isFixedText(node.right)) report(node);
+		if (ts.isPropertyAssignment(node) && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))
+			&& TEXT_KEYS.has(node.name.text) && isFixedText(node.initializer)) report(node);
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return found;
+}
+
+/** Every fixed-copy site in the non-test `.ts` files directly under `directory`. */
+export function fixedCopyOffenders(directory: string): string[] {
+	return readdirSync(directory)
+		.filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts') && !name.endsWith('.d.ts'))
+		.sort()
+		.flatMap((name) => fixedCopyIn(readFileSync(join(directory, name), 'utf8'), name));
 }

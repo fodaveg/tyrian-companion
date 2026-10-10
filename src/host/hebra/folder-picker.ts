@@ -148,7 +148,8 @@ export function attachFolderPicker(
 			const more = createEl('li');
 			more.className = 'hebra-module-folder-empty';
 			more.setAttribute('role', 'presentation');
-			more.textContent = deps.translator().t('hebra.folder.more', { count: formatCount(deps.translator(), matches.length - shown.length) });
+			const translator = deps.translator();
+			more.textContent = translator.t('hebra.folder.more', { count: formatCount(translator, matches.length - shown.length) });
 			items.push(more);
 		}
 		list.replaceChildren(...items);
