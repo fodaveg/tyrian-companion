@@ -349,15 +349,19 @@ Lo que demuestra el código del plugin:
 
 - Los dos usan el puerto **47823** en `127.0.0.1`. Solo uno puede tenerlo.
 - Si el puerto está ocupado, el plugin reintenta cinco veces (a los 250, 500, 1000, 2000 y 5000 ms)
-  y después deja de intentarlo. Entonces escribe bajo la fila del aviso «El servidor no pudo
-  iniciarse» con el código del error. Hebra informa de un puerto ocupado con el mismo código
+  y después deja de intentarlo. Entonces lo avisa una vez al arrancar y escribe bajo la fila del aviso «Otra app
+  (¿Obsidian o Hebra?) tiene el puerto» (con otros errores, «El servidor no pudo iniciarse» y el código). Hebra informa de un puerto ocupado con el mismo código
   (`EADDRINUSE`), así que se comporta igual.
 - El token se guarda en el almacén de secretos de cada app: el de Obsidian y el llavero de Hebra.
   Cada instalación tiene su propio token.
 - El addon se conecta a quien tenga el puerto, y solo acepta el token de esa app.
 
-Recomendación mínima, por confirmar: usa una sola app a la vez. Si cambias de app, copia el token
-de la que vayas a usar y pégalo en el addon. No se ha probado con las dos abiertas.
+Regla: usa una sola app como recolector a la vez en el mismo equipo (detalle en
+[BETA](BETA.md#obsidian-y-hebra-en-el-mismo-equipo-una-app-a-la-vez)). La otra, en **Consulta**
+(Ajustes, **Modo de esta instalación**). Si no lo haces, la que llegue segunda al puerto lo avisa
+(«Otra app (¿Obsidian o Hebra?) tiene el puerto») y el addon habla con la primera. Si cambias de
+app, copia el token de la que vayas a usar y pégalo en el addon. No se ha probado con las dos
+abiertas de verdad; lo que el plugin avisa está comprobado con tests, no a mano.
 
 # Apartados comunes
 

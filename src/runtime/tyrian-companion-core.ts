@@ -407,6 +407,7 @@ type NoticeDiagnosticSource =
 	| 'managed_assets_updated'
 	| 'consult_mode'
 	| 'collector_conflict'
+	| 'ingame_port_busy'
 	| 'session_command'
 	| 'live_observation'
 	| 'valuable_loot'
@@ -653,6 +654,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private alertIngameCloseFlight: Promise<void> | null = null;
 	/** The last start rejection's machine-readable `.code` own property, e.g. `EADDRINUSE`. Null once a start succeeds. */
 	private alertIngameServerErrorCode: string | null = null;
+	/** HP-05: the busy-port notice is shown once per plugin start, however many times the bind is retried. */
+	private alertIngamePortBusyNoticed = false;
 	/** Per-process counter for the `seq` field addons use to dedupe a reconnect. Never persisted. */
 	private alertIngameSeq = 0;
 	/**
@@ -4210,7 +4213,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			})
 			.finally(() => { this.alertIngameServerFlight = null; });
 		this.alertIngameServerFlight = flight;
-		return await flight;
+		const server = await flight;
+		// HP-05: after the bind's own retries, a port held by another app (usually the other host).
+		if (server === null && this.alertIngameServerErrorCode === 'EADDRINUSE' && !this.alertIngamePortBusyNoticed) {
+			this.alertIngamePortBusyNoticed = true;
+			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.ingamePortBusy', { port: String(port) }), 'ingame_port_busy');
+		}
+		return server;
 	}
 
 	/** What the bridge reports about one connection: which producers are here, then the game presence. */
