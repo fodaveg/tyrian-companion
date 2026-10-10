@@ -107,14 +107,21 @@ async function capturePages(
 			return { coverage: evidence('invalid', null, 'invalid_payload'), transactions };
 		}
 		const parsed = response.body.map((entry) => parseTransaction(entry, side));
-		if (parsed.some((entry) => entry === null)
-			|| parsed.some((entry) => seenIds.has(entry!.id))) {
+		// An id seen on an earlier page, or earlier on this one, invalidates the whole side.
+		const pageTransactions: CapturedTransaction[] = [];
+		let valid = true;
+		for (const entry of parsed) {
+			if (entry === null || seenIds.has(entry.id)) {
+				valid = false;
+				break;
+			}
+			seenIds.add(entry.id);
+			pageTransactions.push(entry);
+		}
+		if (!valid) {
 			return { coverage: evidence('invalid', null, 'invalid_payload'), transactions: [] };
 		}
-		for (const entry of parsed) {
-			seenIds.add(entry!.id);
-			transactions.push(entry!);
-		}
+		transactions.push(...pageTransactions);
 		const pageTotal = positiveHeader(response.headers, 'x-page-total');
 		if ((pageTotal !== null && page + 1 >= pageTotal) || parsed.length < PAGE_SIZE) {
 			return { coverage: evidence('complete', capturedAt, null), transactions };
