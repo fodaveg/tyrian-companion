@@ -106,8 +106,6 @@ export function installDomHelpers(scope: DomHelperScope = typeof window === 'und
 
 	const create = (doc: Document, tag: string, options: ElementOptions, callback: ElementCallback): HTMLElement => {
 		const info = elementInfo(options);
-		// This module IS the createEl/createDiv/createSpan polyfill for hosts without Obsidian's DOM helpers, so it cannot call them.
-		// eslint-disable-next-line obsidianmd/prefer-create-el
 		const created = doc.createElement(tag);
 		applyElementInfo(created, info);
 		if (info.parent !== undefined) {
