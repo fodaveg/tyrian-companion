@@ -49,9 +49,10 @@ export type ManagedAssetsResult =
 
 /**
  * Why a failure happened, when it is one the Settings row can explain better than «not available» /
- * «conflict»: the three the vault names (`vault-failure-cause.ts`) and the folder holding only the user's files.
+ * «conflict»: the three the vault names (`vault-failure-cause.ts`), the folder holding only the user's files and a
+ * press of the row that could not create the missing output folder (`output_folder_create_failed`, the core's).
  */
-export type ManagedAssetsFailureCause = VaultFailureCause | 'only_unowned_files';
+export type ManagedAssetsFailureCause = VaultFailureCause | 'only_unowned_files' | 'output_folder_create_failed';
 
 /** The cause and the real error code for the diagnostic, read from what was thrown (never its message). */
 export function failureEvidence(error: unknown): { cause?: ManagedAssetsFailureCause; details: Record<string, unknown> } {

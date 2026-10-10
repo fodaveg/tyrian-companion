@@ -5,9 +5,9 @@
  * which also follows `Error.cause`, because the folder helpers re-throw under their own message.
  *
  * - `bytes_not_synced`: the library lists the file but this device has not received its bytes yet.
- * - `output_folder_missing`: the output folder is not in the library, so there is nowhere to write. A press
- *   of the managed-assets row creates it first (`TyrianVault.createOutputFolder`), so there it means that
- *   creating it failed.
+ * - `output_folder_missing`: the output folder is not in the library, so there is nowhere to write. Only a
+ *   press of Apply, Repair or Replace creates it (`TyrianVault.createOutputFolder`); when that fails the core
+ *   says `output_folder_create_failed` instead (`ManagedAssetsFailureCause`).
  * - `host_refused`: the host blocks every write for now (a restart is pending).
  */
 export const VAULT_FAILURE_CAUSES = ['bytes_not_synced', 'output_folder_missing', 'host_refused'] as const;

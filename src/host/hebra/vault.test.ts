@@ -217,7 +217,7 @@ describe('createHebraTyrianVault createOutputFolder', () => {
 		const seen: string[] = [];
 		vault.onChange('Tyrian Companion', (change) => { seen.push(change.path); });
 		await expect(vault.createFolder('Tyrian Companion')).rejects.toMatchObject({ code: 'output_folder_missing' });
-		await Promise.all([vault.createOutputFolder?.(), vault.createOutputFolder?.()]);
+		expect(await Promise.all([vault.createOutputFolder?.(), vault.createOutputFolder?.()])).toEqual([true, true]);
 		expect(create).toHaveBeenCalledTimes(1);
 		expect(failures).toEqual([]);
 		await vault.createFolder('Tyrian Companion/Bases');
@@ -235,10 +235,10 @@ describe('createHebraTyrianVault createOutputFolder', () => {
 			.mockRejectedValueOnce(Object.assign(new Error('folder_name_taken'), { code: 'folder_name_taken' }))
 			.mockResolvedValueOnce({ port, index });
 		const { vault, failures } = await missingFolderVault(create);
-		await expect(vault.createOutputFolder?.()).resolves.toBeUndefined();
+		await expect(vault.createOutputFolder?.()).resolves.toBe(false);
 		expect(failures).toHaveLength(1);
 		await expect(vault.create('Tyrian Companion/a.md', '#')).rejects.toMatchObject({ code: 'output_folder_missing' });
-		await vault.createOutputFolder?.();
+		await expect(vault.createOutputFolder?.()).resolves.toBe(true);
 		expect(create).toHaveBeenCalledTimes(2);
 		await vault.create('Tyrian Companion/a.md', '#');
 		expect(port.create).toHaveBeenCalledWith('a.md', '#');
@@ -247,8 +247,24 @@ describe('createHebraTyrianVault createOutputFolder', () => {
 	it('creates nothing while the vault is blocked for a restart: the write says why', async () => {
 		const create = vi.fn();
 		const { vault } = await missingFolderVault(create, () => 'the plugin restarts');
-		await vault.createOutputFolder?.();
+		await expect(vault.createOutputFolder?.()).resolves.toBe(true);
 		expect(create).not.toHaveBeenCalled();
 		await expect(vault.createFolder('Tyrian Companion')).rejects.toMatchObject({ code: 'host_refused' });
+	});
+
+	it('still resolves, and lets a later call through, when a waiting subscription fails to attach', async () => {
+		const { port } = fakePort();
+		port.onChange.mockImplementationOnce(() => { throw new Error('attach failed'); });
+		const index = await TyrianPathIndex.load(createMemoryPathIndexKv(), 'lib-1/folder-1');
+		const create = vi.fn(async () => ({ port, index }));
+		const { vault, failures } = await missingFolderVault(create);
+		vault.onChange('Tyrian Companion', () => undefined);
+		await expect(vault.createOutputFolder?.()).resolves.toBe(true);
+		expect(failures).toEqual([expect.objectContaining({ message: 'attach failed' })]);
+		// The folder and its port exist: the writes go there and nothing is created again.
+		await vault.create('Tyrian Companion/a.md', '#');
+		expect(port.create).toHaveBeenCalledWith('a.md', '#');
+		await expect(vault.createOutputFolder?.()).resolves.toBe(true);
+		expect(create).toHaveBeenCalledTimes(1);
 	});
 });

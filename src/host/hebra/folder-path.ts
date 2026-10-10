@@ -66,7 +66,8 @@ export function resolveFolderPath(folders: readonly PluginFolder[], rootFolderId
  * ROOT, as `resolveFolderPath` finds it, creating the segments that are missing (a first-level one with
  * `parentId` null, as the plugin API documents it). Only the explicit managed-assets writes of the
  * Settings row reach it (`vault.createOutputFolder`), with the output folder the user configured.
- * Rejects with what Hebra rejects (`invalid_name`, a name another writer took meanwhile…).
+ * A name another writer took meanwhile (`folder_name_taken`: another press on this device, or sync) is
+ * reused once listed again; anything else Hebra rejects (`invalid_name`…) rejects here.
  */
 export async function createLibraryFolderPath(library: TyrianFolderLibrary, rootFolderId: string, path: string): Promise<string> {
 	const segments = path.split('/').filter((segment) => segment.trim().length > 0);
@@ -79,25 +80,46 @@ export async function createLibraryFolderPath(library: TyrianFolderLibrary, root
 			parentId = existing.id;
 			continue;
 		}
-		const created = await library.folderCreate(parentId, segment);
+		let created: PluginFolder | null = null;
+		try {
+			created = await library.folderCreate(parentId, segment);
+		} catch (error) {
+			// Hebra refuses a sibling whose name it already holds: that folder is the one wanted.
+			if (!isFolderNameTaken(error)) throw error;
+		}
 		// Another writer may have created the same folder meanwhile: list again, as `ensureFolderPath` does.
 		folders = await library.foldersList();
-		parentId = findSegment(folders, rootFolderId, parentId, segment)?.id ?? created.id;
+		const found: string | undefined = findSegment(folders, rootFolderId, parentId, segment)?.id ?? created?.id;
+		if (found === undefined) throw new Error(`tyrian folders: «${segment}» was taken but is not listed.`);
+		parentId = found;
 	}
 	return parentId as string;
+}
+
+/** Hebra's `LibraryError('folder_name_taken')`, by its code or, serialized, by its message. */
+function isFolderNameTaken(error: unknown): boolean {
+	if (typeof error !== 'object' || error === null) return false;
+	const { code, message } = error as { code?: unknown; message?: unknown };
+	return code === 'folder_name_taken' || message === 'folder_name_taken';
+}
+
+/** Hebra's own key for a folder name (`folderNameKey` in its library engine): NFC, trimmed, lower case. */
+function folderNameKey(name: string): string {
+	return name.normalize('NFC').trim().toLowerCase();
 }
 
 /** A folder named `name` under `parentId`; null is the library root, whose children may hang from `rootFolderId` or from nothing. */
 function findSegment(folders: readonly PluginFolder[], rootFolderId: string, parentId: string | null, name: string): PluginFolder | undefined {
 	if (parentId !== null) return findChildByName(folders, parentId, name);
+	const wanted = folderNameKey(name);
 	return findChildByName(folders, rootFolderId, name)
-		?? folders.find((folder) => folder.parentId === null && folder.id !== rootFolderId
-			&& folder.name.trim().toLowerCase() === name.trim().toLowerCase());
+		?? folders.find((folder) => folder.parentId === null && folder.id !== rootFolderId && folderNameKey(folder.name) === wanted);
 }
 
+/** By Hebra's key (`folderNameKey`): a setting typed in NFD finds the folder Hebra keeps in NFC. */
 function findChildByName(folders: readonly PluginFolder[], parentId: string, name: string): PluginFolder | undefined {
-	const wanted = name.trim().toLowerCase();
-	return folders.find((folder) => folder.parentId === parentId && folder.name.trim().toLowerCase() === wanted);
+	const wanted = folderNameKey(name);
+	return folders.find((folder) => folder.parentId === parentId && folderNameKey(folder.name) === wanted);
 }
 
 /**

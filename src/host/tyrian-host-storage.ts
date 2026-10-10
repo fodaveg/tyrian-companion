@@ -58,12 +58,13 @@ export interface TyrianVault {
 	/**
 	 * Optional, for a host whose `createFolder` cannot create the output folder itself (Hebra: its vault IS
 	 * that folder, looked up on start). Creates the output folder the user configured, with the folders that
-	 * contain it, when the library lacks it, so the writes that follow land there. Never rejects: a failure
-	 * goes to the host's diagnostics and those writes refuse with `output_folder_missing`. A vault blocked
-	 * for a pending restart creates nothing (its writes refuse with that reason). Called only by the explicit
-	 * presses of the managed-assets row (David, 10 Oct 2026). Absent: `createFolder` creates it (Obsidian).
+	 * contain it, when the library lacks it, so the writes that follow land there. Never rejects: it resolves
+	 * `false` only when the folder was missing and creating it failed (the failure went to the host's
+	 * diagnostics). A vault blocked for a pending restart creates nothing and resolves `true` (its writes
+	 * refuse with that reason). Called only by the explicit presses of the managed-assets row (David,
+	 * 10 Oct 2026). Absent: `createFolder` creates it (Obsidian).
 	 */
-	createOutputFolder?(): Promise<void>;
+	createOutputFolder?(): Promise<boolean>;
 	/** Every writing port; also non-markdown: pilot-metrics-export.ts:137-140 (.json/.csv), session-history.ts:419 (.csv), managed-assets.ts:375 (.base). */
 	create(path: string, content: string): Promise<TyrianVaultFile>;
 	/**

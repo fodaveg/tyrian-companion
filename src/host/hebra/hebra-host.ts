@@ -511,6 +511,8 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		}
 	});
 	let vaultPort = rootFolderId ? createPort(rootFolderId, index) : null;
+	// Replaced when `createOutputFolder` creates the missing output folder; declared before the vault that does it.
+	let unwatchIndexedFiles = rootFolderId ? watchIndexedFiles(index) : () => undefined;
 	const vault = createHebraTyrianVault({
 		port: vaultPort,
 		index,
@@ -550,7 +552,6 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		onCreateOutputFolderFailure: (error) => deps.report(error, 'vault.output-folder'),
 	});
 	adoptManagedAssetsRoot = await hasManagedAssetsFootprint(vault, outputFolder, (error) => deps.report(error, 'vault.file'));
-	let unwatchIndexedFiles = rootFolderId ? watchIndexedFiles(index) : () => undefined;
 	const secrets = await createPreloadedSecrets(deps.secretsBackend, (error) => deps.report(error, 'keychain.write'));
 	const kv: TyrianKvPort = { indexedDB: deps.indexedDB, locks: deps.locks ?? null, storage: deps.storage ?? null };
 	const background = createBackground(deps);

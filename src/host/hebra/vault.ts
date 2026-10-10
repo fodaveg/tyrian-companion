@@ -56,7 +56,7 @@ export function createHebraTyrianVault(options: CreateHebraTyrianVaultOptions): 
 	const root = options.outputFolder.replace(/^\/+|\/+$/gu, '');
 	/** `onChange` subscriptions made while there was no output folder: attached when it is created. */
 	const waiting = new Set<{ relative: string; listener: (change: TyrianVaultChange) => void; detach: TyrianDisposer | null }>();
-	let creating: Promise<void> | null = null;
+	let creating: Promise<boolean> | null = null;
 
 	/** null: outside the output folder. `''`: the output folder itself. */
 	const toRelative = (path: string): string | null => relativeToOutputFolder(root, path);
@@ -192,19 +192,27 @@ export function createHebraTyrianVault(options: CreateHebraTyrianVaultOptions): 
 			};
 		},
 		createOutputFolder() {
-			if (port || options.createOutputFolder === undefined || options.writeBlockedReason?.()) return Promise.resolve();
+			if (port || options.createOutputFolder === undefined || options.writeBlockedReason?.()) return Promise.resolve(true);
 			const create = options.createOutputFolder;
 			creating ??= create().then(
 				(created) => {
-					if (!port) {
-						({ port, index } = created);
-						for (const entry of waiting) entry.detach = attach(created.port, entry.relative, entry.listener);
+					try {
+						if (!port) {
+							({ port, index } = created);
+							for (const entry of waiting) entry.detach = attach(created.port, entry.relative, entry.listener);
+						}
+					} catch (error) {
+						// The folder and its port exist: only a waiting subscription failed to attach.
+						options.onCreateOutputFolderFailure?.(error);
+					} finally {
+						creating = null;
 					}
-					creating = null;
+					return true;
 				},
 				(error: unknown) => {
 					creating = null;
 					options.onCreateOutputFolderFailure?.(error);
+					return false;
 				},
 			);
 			return creating;

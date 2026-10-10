@@ -15,6 +15,10 @@ import { activateTyrian } from './hebra-runtime';
 interface RowCore {
 	getManagedAssetsView(): { status: string; message: string };
 	previewManagedAssets(): Promise<void>;
+	removeManagedAssets(): Promise<void>;
+	relocateManagedAssets(): Promise<unknown>;
+	/** Private: the automatic apply on load (`true`) and after an inventory sync (`false`). */
+	applyManagedAssetsIfStillDue(requireReady: boolean): Promise<unknown>;
 }
 
 const UNOWNED = 'filters:\n  and:\n    - file.hasTag("x")\nviews:\n  - type: table\n    name: Mine\n';
@@ -148,7 +152,7 @@ describe('Tyrian in Hebra: the Assets row explains a press that wrote nothing', 
 		};
 		const { core, panel, cleanup } = await start(test);
 		await press(panel, 'Aplicar');
-		expect(core.getManagedAssetsView()).toMatchObject({ status: 'error', message: 'operation_output_folder_missing' });
+		expect(core.getManagedAssetsView()).toMatchObject({ status: 'error', message: 'operation_output_folder_create_failed' });
 		expect(rowText(panel)).toContain('No se pudo crear la carpeta de salida');
 		expect(rowText(panel)).toContain('Reintenta');
 		expect(rowText(panel)).not.toContain('Elige otra');
@@ -172,6 +176,40 @@ describe('Tyrian in Hebra: the Assets row explains a press that wrote nothing', 
 		const live = [...test.library.files.values()].filter((file) => file.trashedAt === null);
 		expect(live.some((file) => file.folderId === nope!.id && file.name === 'Tyrian Companion Assets.json')).toBe(true);
 		expect(live.filter((file) => file.name.endsWith('.base')).map((file) => file.name).sort()).toEqual([...BASES].sort());
+		await cleanup();
+	}, 30_000);
+
+	/**
+	 * Review of 0b58af07: Remove and Move never try to create the output folder, so they cannot say that creating it
+	 * failed. They say it is missing and that Apply creates it.
+	 */
+	it.each([
+		['Quitar', (core: RowCore) => core.removeManagedAssets()],
+		['Mover', (core: RowCore) => core.relocateManagedAssets()],
+	])('%s over a missing output folder creates nothing and says that Apply creates it', async (_label, run) => {
+		const test = hebra({ outputFolder: 'Nope', managedAssetsRoot: 'Nope' });
+		const { core, panel, cleanup } = await start(test);
+		await run(core);
+		await settle(100);
+		expect(test.library.writes.filter((write) => write.startsWith('folderCreate'))).toEqual([]);
+		expect(test.library.folders.some((folder) => folder.name === 'Nope')).toBe(false);
+		expect(core.getManagedAssetsView()).toMatchObject({ status: 'error', message: 'operation_output_folder_missing' });
+		expect(rowText(panel)).toContain('pulsa Aplicar para crearla');
+		expect(rowText(panel)).not.toContain('Reintenta');
+		await cleanup();
+	}, 30_000);
+
+	it.each([
+		['on load', true],
+		['after an inventory sync', false],
+	])('the automatic apply %s never creates a missing output folder', async (_case, requireReady) => {
+		const test = hebra({ outputFolder: 'Nope', managedAssetsRoot: 'Nope' });
+		const { core, cleanup } = await start(test);
+		await core.applyManagedAssetsIfStillDue(requireReady);
+		await settle(100);
+		expect(test.library.writes.filter((write) => write.startsWith('folderCreate'))).toEqual([]);
+		expect(test.library.folders.some((folder) => folder.name === 'Nope')).toBe(false);
+		expect(test.library.files.size).toBe(0);
 		await cleanup();
 	}, 30_000);
 

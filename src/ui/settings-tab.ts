@@ -12,6 +12,7 @@ import {
 	projectManagedAssetsRootDivergence,
 	runConfirmedManagedAssetsRemoval,
 	type ManagedAssetsAction,
+	type ManagedAssetsWriteOptions,
 } from '../assets/managed-assets-ui';
 import {
 	alertWebhookDestination,
@@ -91,6 +92,9 @@ export interface SettingsPanelHost {
 
 /** How long "Create new token" waits for its second press before the confirmation lapses. */
 const INGAME_SECRET_CONFIRM_MS = 6000;
+
+/** A press of Apply, Repair or Replace in the Assets row: it may create a missing output folder (David, 10 Oct 2026). */
+const MANAGED_ASSETS_PRESS: ManagedAssetsWriteOptions = { createOutputFolder: true };
 
 /**
  * The plugin's settings panel, rendered into the container the host mounts it in (a
@@ -686,8 +690,8 @@ export class TyrianCompanionSettingTab {
 				render: (setting) => {
 					this.managedAssetsSetting = setting;
 					setting.addButton((button) => { this.managedAssetButtons.set('preview', button); button.setButtonText(this.t('settings.assets.preview')).onClick(async () => { await this.plugin.previewManagedAssets(); }); });
-					setting.addButton((button) => { this.managedAssetButtons.set('apply', button); button.setButtonText(this.t('settings.assets.apply')).setCta().onClick(async () => { await this.plugin.applyManagedAssets(); }); });
-					setting.addButton((button) => { this.managedAssetButtons.set('repair', button); button.setButtonText(this.t('settings.assets.repair')).onClick(async () => { await this.plugin.repairManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('apply', button); button.setButtonText(this.t('settings.assets.apply')).setCta().onClick(async () => { await this.plugin.applyManagedAssets(undefined, MANAGED_ASSETS_PRESS); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('repair', button); button.setButtonText(this.t('settings.assets.repair')).onClick(async () => { await this.plugin.repairManagedAssets(MANAGED_ASSETS_PRESS); }); });
 					setting.addButton((button) => {
 						this.managedAssetButtons.set('replace', button);
 						button.buttonEl.addClass('mod-warning');
@@ -697,7 +701,7 @@ export class TyrianCompanionSettingTab {
 							if (unowned.length === 0) return; // the core already said why in the status row
 							await runConfirmedManagedAssetsRemoval(
 								() => confirmManagedAssetsRemoval(this.host.ui, this.t.bind(this), 'replace', unowned.map((entry) => entry.path)),
-								() => this.plugin.replaceUnownedManagedAssets(unowned.map((entry) => entry.id)),
+								() => this.plugin.replaceUnownedManagedAssets(unowned.map((entry) => entry.id), MANAGED_ASSETS_PRESS),
 							);
 						});
 					});
