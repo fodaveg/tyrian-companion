@@ -11,7 +11,8 @@ import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-no
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import type { SessionHistoryVault } from './session-history';
 import { sha256Text } from './session-note-renderer';
-import { IndexedDbSessionRuntimeStore, MemorySessionRuntimeStore, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
+import { IndexedDbSessionRuntimeStore, MemorySessionRuntimeStore, SESSION_RUNTIME_DB_NAME, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
+import { LIVE_SESSION_JOURNAL_STORE_NAME } from './live-session-persistence';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -427,4 +428,51 @@ describe('the mark that says the format of a session', () => {
 		expect(await store.loadSessionFormat('session')).toEqual(LEGACY_LIVE_SESSION_FORMAT);
 		store.close();
 	});
+});
+
+/**
+ * DU-01: the unscoped session database an earlier release adopted. Whatever version and stores it was left with, opening it the way
+ * production does (the scope decides the name, the store opens it) must give it the live journal and keep what it already held.
+ */
+describe('the live journal of an adopted session database (DU-01)', () => {
+	const SURVIVOR = { version: 1, note: 'a record of the earlier release' };
+	/** The database as some release left it: `version`, with exactly `stores`, and SURVIVOR in the session store. */
+	async function seed(factory: IDBFactory, version: number, stores: readonly string[]): Promise<void> {
+		const database = await new Promise<IDBDatabase>((resolve, reject) => {
+			const request = factory.open(SESSION_RUNTIME_DB_NAME, version);
+			request.onupgradeneeded = () => { for (const name of stores) { const created = request.result.createObjectStore(name); if (name === LIVE_SESSION_JOURNAL_STORE_NAME) created.createIndex('session', 'sessionId'); } };
+			request.onsuccess = () => { resolve(request.result); };
+			request.onerror = () => { reject(new Error('seed')); };
+		});
+		await new Promise<void>((resolve, reject) => {
+			const tx = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readwrite');
+			tx.objectStore(SESSION_RUNTIME_STORE_NAME).put(SURVIVOR, 'survivor');
+			tx.oncomplete = () => { resolve(); }; tx.onerror = () => { reject(new Error('seed put')); };
+		});
+		database.close();
+	}
+	async function firstRecord() {
+		const memory = world(); const h = host(memory, { starts: GROSS }); await firstStretch(h);
+		const started = await memory.store.loadLive(); if (started.status !== 'loaded') throw new Error(started.status);
+		await h.die(); return started.record;
+	}
+	const cases: readonly { name: string; version: number; stores: readonly string[] }[] = [
+		{ name: 'a database left in version 1 with the session store alone', version: 1, stores: [SESSION_RUNTIME_STORE_NAME] },
+		{ name: 'a database already damaged: version 2 without the journal', version: 2, stores: [SESSION_RUNTIME_STORE_NAME] },
+		{ name: 'a healthy database in version 2', version: 2, stores: [SESSION_RUNTIME_STORE_NAME, LIVE_SESSION_JOURNAL_STORE_NAME] },
+	];
+	for (const { name, version, stores } of cases) {
+		it(`saves the live session in ${name} and keeps what it held`, async () => {
+			const factory = new IDBFactory(); await seed(factory, version, stores);
+			const store = new IndexedDbSessionRuntimeStore(factory);
+			const record = await firstRecord();
+			expect(await store.saveLive(record, undefined, undefined, GROSS)).toEqual({ status: 'saved' });
+			expect(await store.loadLive()).toMatchObject({ status: 'loaded', record: { sampleCount: record.sampleCount } });
+			expect(await store.readLiveJournal(record.sessionId)).toEqual([]);
+			store.close();
+			expect(await (async () => { const again = new IndexedDbSessionRuntimeStore(factory); try { return await (again as unknown as { read(key: undefined, name: string): Promise<unknown> }).read(undefined, 'survivor'); } finally { again.close(); } })()).toEqual(SURVIVOR);
+			const names = await new Promise<string[]>((resolve, reject) => { const r = factory.open(SESSION_RUNTIME_DB_NAME); r.onsuccess = () => { const l = Array.from(r.result.objectStoreNames); r.result.close(); resolve(l); }; r.onerror = () => { reject(new Error('open')); }; });
+			expect(names.sort()).toEqual([LIVE_SESSION_JOURNAL_STORE_NAME, SESSION_RUNTIME_STORE_NAME].sort());
+		});
+	}
 });

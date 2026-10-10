@@ -13,6 +13,9 @@ import { createSessionContaminationReview } from './sessions/session-contaminati
 import type { CompleteSessionState, SessionSnapshotReference } from './sessions/session';
 import {
 	IndexedDbSessionRuntimeStore,
+	SESSION_RUNTIME_DB_NAME,
+	SESSION_RUNTIME_KEY,
+	SESSION_RUNTIME_STORE_NAME,
 	createSessionRuntimeRecord,
 	type SessionRuntimeRecord,
 } from './sessions/session-runtime-store';
@@ -65,7 +68,39 @@ describe('a saved session belongs to the vault that saved it (H18.12)', () => {
 			status: 'loaded', record: { state: { status: 'complete', sessionId: 'session-vault-a' } },
 		});
 	});
+
+	it('gives the live journal to a database an earlier release left in version 1, keeping its session (DU-01)', async () => {
+		const factory = new IDBFactory();
+		// What 0.6.2x left in the unscoped database: version 1, the session store alone.
+		await seedVersionOneDatabase(factory, completedSessionRecord());
+
+		const vault = vaultPlugin(factory, '/vaults/farming');
+		await vault.initializeRuntime();
+		expect(vault.getSessionState()).toMatchObject({ status: 'complete', sessionId: 'session-vault-a' });
+
+		const store = new IndexedDbSessionRuntimeStore(factory);
+		await expect(store.readLiveJournal('any-session')).resolves.toEqual([]);
+		await expect(store.load()).resolves.toMatchObject({ status: 'loaded', record: { state: { sessionId: 'session-vault-a' } } });
+		store.close();
+	});
 });
+
+/** The unscoped database exactly as a release before the live journal left it: version 1, one store. */
+async function seedVersionOneDatabase(factory: IDBFactory, record: SessionRuntimeRecord): Promise<void> {
+	const database = await new Promise<IDBDatabase>((resolve, reject) => {
+		const request = factory.open(SESSION_RUNTIME_DB_NAME, 1);
+		request.onupgradeneeded = () => { request.result.createObjectStore(SESSION_RUNTIME_STORE_NAME); };
+		request.onsuccess = () => { resolve(request.result); };
+		request.onerror = () => { reject(new Error('Could not create the version 1 fixture.')); };
+	});
+	await new Promise<void>((resolve, reject) => {
+		const transaction = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readwrite');
+		transaction.objectStore(SESSION_RUNTIME_STORE_NAME).put(record, SESSION_RUNTIME_KEY);
+		transaction.oncomplete = () => { resolve(); };
+		transaction.onerror = () => { reject(new Error('Could not seed the version 1 fixture.')); };
+	});
+	database.close();
+}
 
 /** A complete, current-schema session record: what a release before H18.12 saved for vault A. */
 function completedSessionRecord(): SessionRuntimeRecord {

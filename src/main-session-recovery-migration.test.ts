@@ -14,7 +14,6 @@ import { createSessionContaminationReview } from './sessions/session-contaminati
 import type { CompleteSessionState, SessionSnapshotReference } from './sessions/session';
 import {
 	SESSION_RUNTIME_DB_NAME,
-	SESSION_RUNTIME_DB_VERSION,
 	SESSION_RUNTIME_KEY,
 	SESSION_RUNTIME_STORE_NAME,
 	createSessionRuntimeRecord,
@@ -123,7 +122,7 @@ async function seedLegacyRuntimeRecord(factory: IDBFactory, record: Record<strin
 	const database = await openIndexedDb({
 		factory,
 		databaseName: SESSION_RUNTIME_DB_NAME,
-		databaseVersion: SESSION_RUNTIME_DB_VERSION,
+		databaseVersion: 1,
 		schema: [{ name: SESSION_RUNTIME_STORE_NAME }],
 		accept: () => true,
 		onVersionChange: () => undefined,
