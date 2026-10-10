@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 596,
+		"catch_clause": 597,
 		"promise_catch": 61,
 		"void_expression": 140,
-		"callback_registration": 244
+		"callback_registration": 246
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -8950,9 +8950,9 @@
 				{
 					"id": "3bc9d9cdbb5c136021c31944fb4226973be4a0f8",
 					"kind": "void_expression",
-					"line": 2402,
+					"line": 2407,
 					"column": 3,
-					"endLine": 2402,
+					"endLine": 2407,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8966,9 +8966,9 @@
 				{
 					"id": "58438a4845a2727de4d38c89e1f0238558dbd69c",
 					"kind": "promise_catch",
-					"line": 2402,
+					"line": 2407,
 					"column": 8,
-					"endLine": 2402,
+					"endLine": 2407,
 					"endColumn": 62,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8983,9 +8983,9 @@
 				{
 					"id": "ec54f1f5cbdde49af610fff203e0d46f4f13de2f",
 					"kind": "catch_clause",
-					"line": 2509,
+					"line": 2514,
 					"column": 5,
-					"endLine": 2512,
+					"endLine": 2517,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -8997,9 +8997,9 @@
 				{
 					"id": "d7852047155e353d997b8749bf93041caef9657c",
 					"kind": "catch_clause",
-					"line": 2672,
+					"line": 2677,
 					"column": 6,
-					"endLine": 2674,
+					"endLine": 2679,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9013,9 +9013,9 @@
 				{
 					"id": "39321e3773acf7d499bb0cbef505a02acd15dcf3",
 					"kind": "void_expression",
-					"line": 3071,
+					"line": 3076,
 					"column": 3,
-					"endLine": 3076,
+					"endLine": 3081,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9029,9 +9029,9 @@
 				{
 					"id": "8cf2abd603fb781f240d2def5bc6724352ea55b9",
 					"kind": "catch_clause",
-					"line": 3093,
+					"line": 3098,
 					"column": 5,
-					"endLine": 3106,
+					"endLine": 3111,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9043,9 +9043,9 @@
 				{
 					"id": "a0afb18ec37aeca81fb00966ff4adf703e714173",
 					"kind": "void_expression",
-					"line": 3127,
+					"line": 3132,
 					"column": 4,
-					"endLine": 3130,
+					"endLine": 3135,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9059,9 +9059,9 @@
 				{
 					"id": "545eefdefa4540c418490a0cf5c1c8588c962ab8",
 					"kind": "catch_clause",
-					"line": 3152,
+					"line": 3157,
 					"column": 6,
-					"endLine": 3158,
+					"endLine": 3163,
 					"endColumn": 7,
 					"classification": "observed",
 					"evidence": {
@@ -9073,9 +9073,9 @@
 				{
 					"id": "55052c2976892632e72260d244efb7195c9b5ea0",
 					"kind": "void_expression",
-					"line": 3224,
+					"line": 3229,
 					"column": 3,
-					"endLine": 3224,
+					"endLine": 3229,
 					"endColumn": 42,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9089,9 +9089,9 @@
 				{
 					"id": "572340b77f88f75859e2a4dedd28434dff621dc9",
 					"kind": "promise_catch",
-					"line": 3234,
+					"line": 3239,
 					"column": 11,
-					"endLine": 3234,
+					"endLine": 3239,
 					"endColumn": 110,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9106,9 +9106,9 @@
 				{
 					"id": "9afef593cac10fa2c8ea564b2f2cc39824890258",
 					"kind": "catch_clause",
-					"line": 3235,
+					"line": 3240,
 					"column": 5,
-					"endLine": 3237,
+					"endLine": 3242,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9122,9 +9122,9 @@
 				{
 					"id": "a8a68ac19b3cc4db8638dc84da86a86411e12c29",
 					"kind": "void_expression",
-					"line": 3244,
+					"line": 3249,
 					"column": 3,
-					"endLine": 3253,
+					"endLine": 3258,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9138,9 +9138,9 @@
 				{
 					"id": "878dfcbeb9f7f83f74738944db42f9a441155fcc",
 					"kind": "void_expression",
-					"line": 3284,
+					"line": 3289,
 					"column": 19,
-					"endLine": 3286,
+					"endLine": 3291,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9154,9 +9154,9 @@
 				{
 					"id": "4b24a19ddcc2db73e24653607bec975bc0df2d4e",
 					"kind": "catch_clause",
-					"line": 3326,
+					"line": 3331,
 					"column": 5,
-					"endLine": 3326,
+					"endLine": 3331,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9170,9 +9170,9 @@
 				{
 					"id": "90c2cd0a8ba42bd2e0227fa74bf7455b4bab4dfd",
 					"kind": "catch_clause",
-					"line": 3333,
+					"line": 3338,
 					"column": 3,
-					"endLine": 3333,
+					"endLine": 3338,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9186,9 +9186,9 @@
 				{
 					"id": "1abf33b79a626dfe7c7430da5f26a0409eef9c1e",
 					"kind": "catch_clause",
-					"line": 3466,
+					"line": 3471,
 					"column": 5,
-					"endLine": 3466,
+					"endLine": 3471,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9202,9 +9202,9 @@
 				{
 					"id": "cf530cf92ec3897aa90a15c08bc7300979d235cd",
 					"kind": "catch_clause",
-					"line": 3630,
+					"line": 3635,
 					"column": 5,
-					"endLine": 3632,
+					"endLine": 3637,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9216,9 +9216,9 @@
 				{
 					"id": "cb0488c2843711d17113c21535bd3e78ce805f13",
 					"kind": "catch_clause",
-					"line": 3680,
+					"line": 3685,
 					"column": 5,
-					"endLine": 3682,
+					"endLine": 3687,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9232,9 +9232,9 @@
 				{
 					"id": "55bd095604828519ea1f6fb157cc3a03bae7ff0e",
 					"kind": "callback_registration",
-					"line": 3697,
+					"line": 3702,
 					"column": 18,
-					"endLine": 3701,
+					"endLine": 3706,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9249,9 +9249,9 @@
 				{
 					"id": "d518c0e4554b41653e0b3a1e58c67caefe7920a1",
 					"kind": "promise_catch",
-					"line": 3697,
+					"line": 3702,
 					"column": 18,
-					"endLine": 3706,
+					"endLine": 3711,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9266,9 +9266,9 @@
 				{
 					"id": "c0f6f743252f0087dab4de14a026e8262cf30660",
 					"kind": "callback_registration",
-					"line": 3697,
+					"line": 3702,
 					"column": 18,
-					"endLine": 3710,
+					"endLine": 3715,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9283,9 +9283,9 @@
 				{
 					"id": "f42302cf0a7c39343c249824059bf5434b859753",
 					"kind": "callback_registration",
-					"line": 3742,
+					"line": 3747,
 					"column": 18,
-					"endLine": 3746,
+					"endLine": 3751,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9300,9 +9300,9 @@
 				{
 					"id": "bb1a3b6e03292fdb478d0f71e674f5f7500511a9",
 					"kind": "promise_catch",
-					"line": 3742,
+					"line": 3747,
 					"column": 18,
-					"endLine": 3754,
+					"endLine": 3759,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9317,9 +9317,9 @@
 				{
 					"id": "94590d89298efef6333db74e297c5071663abbbc",
 					"kind": "callback_registration",
-					"line": 3742,
+					"line": 3747,
 					"column": 18,
-					"endLine": 3758,
+					"endLine": 3763,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9334,9 +9334,9 @@
 				{
 					"id": "c9f4d501ec2cb1dc97113fb49c1c990d270a5dd8",
 					"kind": "callback_registration",
-					"line": 4014,
+					"line": 4019,
 					"column": 18,
-					"endLine": 4045,
+					"endLine": 4050,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9351,9 +9351,9 @@
 				{
 					"id": "d9643cb885a00ea7d9b9681392345e345185d6c7",
 					"kind": "promise_catch",
-					"line": 4014,
+					"line": 4019,
 					"column": 18,
-					"endLine": 4059,
+					"endLine": 4064,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "observed",
@@ -9366,9 +9366,9 @@
 				{
 					"id": "54d9b3a70b55678c113eeb7717854c5d92ae86b2",
 					"kind": "callback_registration",
-					"line": 4014,
+					"line": 4019,
 					"column": 18,
-					"endLine": 4060,
+					"endLine": 4065,
 					"endColumn": 60,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9383,9 +9383,9 @@
 				{
 					"id": "d8fcad351b0e3fabc77a7144ea5146c2e4c808a7",
 					"kind": "catch_clause",
-					"line": 4245,
+					"line": 4250,
 					"column": 6,
-					"endLine": 4257,
+					"endLine": 4262,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -9397,9 +9397,9 @@
 				{
 					"id": "9481a982452a2b01ac678cef2ebacfe400c2cc02",
 					"kind": "catch_clause",
-					"line": 4277,
+					"line": 4282,
 					"column": 6,
-					"endLine": 4280,
+					"endLine": 4285,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9413,9 +9413,9 @@
 				{
 					"id": "fa67a11fad255eba6216837d9c3f67f8d2ae2312",
 					"kind": "catch_clause",
-					"line": 4308,
+					"line": 4313,
 					"column": 5,
-					"endLine": 4310,
+					"endLine": 4315,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9427,9 +9427,9 @@
 				{
 					"id": "81c62c0279eb731d8a288003f470d4dd18b99fbe",
 					"kind": "void_expression",
-					"line": 4337,
+					"line": 4342,
 					"column": 7,
-					"endLine": 4340,
+					"endLine": 4345,
 					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9443,9 +9443,9 @@
 				{
 					"id": "ba040cad1edce89114b19793e7efa7e46a16bd7a",
 					"kind": "callback_registration",
-					"line": 4337,
+					"line": 4342,
 					"column": 12,
-					"endLine": 4340,
+					"endLine": 4345,
 					"endColumn": 8,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9460,9 +9460,9 @@
 				{
 					"id": "f1d8ad9a2b41606a3a04cd653597f21918a0fa95",
 					"kind": "void_expression",
-					"line": 4358,
+					"line": 4363,
 					"column": 22,
-					"endLine": 4358,
+					"endLine": 4363,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9476,9 +9476,9 @@
 				{
 					"id": "6752a7c99052d0a41664dc47536e1a33394d1648",
 					"kind": "promise_catch",
-					"line": 4358,
+					"line": 4363,
 					"column": 27,
-					"endLine": 4358,
+					"endLine": 4363,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9493,9 +9493,9 @@
 				{
 					"id": "37f8e1478029f922cda8f8f9a3794833e1b0bd14",
 					"kind": "void_expression",
-					"line": 4387,
+					"line": 4392,
 					"column": 22,
-					"endLine": 4387,
+					"endLine": 4392,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9509,9 +9509,9 @@
 				{
 					"id": "f71b27614079d8710ac91a84c66ee9bcfd283218",
 					"kind": "void_expression",
-					"line": 4421,
+					"line": 4426,
 					"column": 4,
-					"endLine": 4421,
+					"endLine": 4426,
 					"endColumn": 29,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9525,9 +9525,9 @@
 				{
 					"id": "d4bafd7d3f50ec407381957023f1a066cfd8b82f",
 					"kind": "void_expression",
-					"line": 4422,
+					"line": 4427,
 					"column": 4,
-					"endLine": 4423,
+					"endLine": 4428,
 					"endColumn": 104,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9541,9 +9541,9 @@
 				{
 					"id": "cb6a88f9ec9089bdb29ae287d93edf374c40923f",
 					"kind": "void_expression",
-					"line": 4425,
+					"line": 4430,
 					"column": 3,
-					"endLine": 4425,
+					"endLine": 4430,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9557,9 +9557,9 @@
 				{
 					"id": "bcf5ccc78f836b1a682497bc8aa293348cf4ca3e",
 					"kind": "catch_clause",
-					"line": 4494,
+					"line": 4499,
 					"column": 5,
-					"endLine": 4497,
+					"endLine": 4502,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9573,9 +9573,9 @@
 				{
 					"id": "adfd960861f6e628a65d0a01dabfc7dd5621f1e4",
 					"kind": "catch_clause",
-					"line": 4505,
+					"line": 4510,
 					"column": 5,
-					"endLine": 4507,
+					"endLine": 4512,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9589,9 +9589,9 @@
 				{
 					"id": "c934c4a5ed941b049a6566572c64101fc5fb9547",
 					"kind": "callback_registration",
-					"line": 4534,
+					"line": 4539,
 					"column": 18,
-					"endLine": 4537,
+					"endLine": 4542,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9606,9 +9606,9 @@
 				{
 					"id": "71d14f9ad532611a4703914547606f05430aa766",
 					"kind": "callback_registration",
-					"line": 4534,
+					"line": 4539,
 					"column": 18,
-					"endLine": 4537,
+					"endLine": 4542,
 					"endColumn": 91,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9623,9 +9623,9 @@
 				{
 					"id": "458c5cb85d23c947d97bc5c97cbc13bb21fa4260",
 					"kind": "catch_clause",
-					"line": 4676,
+					"line": 4681,
 					"column": 6,
-					"endLine": 4679,
+					"endLine": 4684,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9639,9 +9639,9 @@
 				{
 					"id": "6c8798075442081f5cc38441def783a0d90182ee",
 					"kind": "catch_clause",
-					"line": 4754,
+					"line": 4759,
 					"column": 6,
-					"endLine": 4758,
+					"endLine": 4763,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9655,9 +9655,9 @@
 				{
 					"id": "c4596e2be8241b08541ac16d08bdb3fa721945c6",
 					"kind": "catch_clause",
-					"line": 4854,
+					"line": 4859,
 					"column": 3,
-					"endLine": 4854,
+					"endLine": 4859,
 					"endColumn": 113,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9671,9 +9671,9 @@
 				{
 					"id": "4cd79f6abd4507a3fe1263dbf8bfa43f8aae6d61",
 					"kind": "catch_clause",
-					"line": 4985,
+					"line": 4990,
 					"column": 6,
-					"endLine": 4993,
+					"endLine": 4998,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -9685,9 +9685,9 @@
 				{
 					"id": "f92cfc661f99537af095df9072843636d2459be7",
 					"kind": "callback_registration",
-					"line": 5018,
+					"line": 5023,
 					"column": 25,
-					"endLine": 5020,
+					"endLine": 5025,
 					"endColumn": 43,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9702,9 +9702,9 @@
 				{
 					"id": "dfbef88f9a59aa09fa4a5f4b2a2c70cc80e4249e",
 					"kind": "void_expression",
-					"line": 5067,
+					"line": 5072,
 					"column": 29,
-					"endLine": 5070,
+					"endLine": 5075,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9718,9 +9718,9 @@
 				{
 					"id": "827aaccbd19a4a18a72e278cdf63fceff093afa9",
 					"kind": "catch_clause",
-					"line": 5074,
+					"line": 5079,
 					"column": 5,
-					"endLine": 5080,
+					"endLine": 5085,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9734,9 +9734,9 @@
 				{
 					"id": "c19166069b7e9019791a8c3c278ca19a43e3c5bc",
 					"kind": "void_expression",
-					"line": 5075,
+					"line": 5080,
 					"column": 55,
-					"endLine": 5078,
+					"endLine": 5083,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9750,9 +9750,9 @@
 				{
 					"id": "4b43d98ed427424ee39a230b519d14f826cf1bce",
 					"kind": "void_expression",
-					"line": 5115,
+					"line": 5120,
 					"column": 3,
-					"endLine": 5115,
+					"endLine": 5120,
 					"endColumn": 97,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9766,9 +9766,9 @@
 				{
 					"id": "35fbd9d3016bb631c068f5279b6ea4359d20506e",
 					"kind": "catch_clause",
-					"line": 5179,
+					"line": 5184,
 					"column": 3,
-					"endLine": 5179,
+					"endLine": 5184,
 					"endColumn": 49,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9782,9 +9782,9 @@
 				{
 					"id": "98700551298dce36e6814d7f2296e45b2cc7032f",
 					"kind": "catch_clause",
-					"line": 5209,
+					"line": 5214,
 					"column": 5,
-					"endLine": 5216,
+					"endLine": 5221,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9796,9 +9796,9 @@
 				{
 					"id": "83015dc52bb0c806baaec29a7150d7e52028ad32",
 					"kind": "callback_registration",
-					"line": 5264,
+					"line": 5269,
 					"column": 25,
-					"endLine": 5264,
+					"endLine": 5269,
 					"endColumn": 89,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9813,9 +9813,9 @@
 				{
 					"id": "36fb5e44ab318e92c1f58e5564cd13f2af8fbe27",
 					"kind": "void_expression",
-					"line": 5271,
+					"line": 5276,
 					"column": 5,
-					"endLine": 5271,
+					"endLine": 5276,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9829,9 +9829,9 @@
 				{
 					"id": "6fae3ba3442df33965cacf181af00eca565bcbb0",
 					"kind": "void_expression",
-					"line": 5292,
+					"line": 5297,
 					"column": 29,
-					"endLine": 5295,
+					"endLine": 5300,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9845,9 +9845,9 @@
 				{
 					"id": "c14be76cd9da0de74cd40fdc59ea20031d60c603",
 					"kind": "catch_clause",
-					"line": 5300,
+					"line": 5305,
 					"column": 7,
-					"endLine": 5300,
+					"endLine": 5305,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9861,9 +9861,9 @@
 				{
 					"id": "cd4916558f29c39ec2c1d980cd15df214208dd32",
 					"kind": "catch_clause",
-					"line": 5304,
+					"line": 5309,
 					"column": 5,
-					"endLine": 5310,
+					"endLine": 5315,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9877,9 +9877,9 @@
 				{
 					"id": "8e6d3371d41b0d7632f747210a17dc8e858bbd70",
 					"kind": "void_expression",
-					"line": 5305,
+					"line": 5310,
 					"column": 55,
-					"endLine": 5308,
+					"endLine": 5313,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9893,9 +9893,9 @@
 				{
 					"id": "334022dc13fbebddb4dcb92f8406d45cf14a62da",
 					"kind": "catch_clause",
-					"line": 5454,
+					"line": 5459,
 					"column": 6,
-					"endLine": 5456,
+					"endLine": 5461,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9909,9 +9909,9 @@
 				{
 					"id": "940a9c8d9c850abd61b99b1ad1b3e9257a808ddc",
 					"kind": "callback_registration",
-					"line": 5540,
+					"line": 5545,
 					"column": 3,
-					"endLine": 5545,
+					"endLine": 5550,
 					"endColumn": 5,
 					"registration": "queueMicrotask",
 					"classification": "allowlisted",
@@ -9926,9 +9926,9 @@
 				{
 					"id": "0d7e0c7a35c65fb6505392e13a9effe0966589da",
 					"kind": "callback_registration",
-					"line": 5897,
+					"line": 5902,
 					"column": 24,
-					"endLine": 5897,
+					"endLine": 5902,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9943,9 +9943,9 @@
 				{
 					"id": "d2ee8524a5c8c1a9fed1cc8ac5aac25a738cbc8f",
 					"kind": "void_expression",
-					"line": 5927,
+					"line": 5932,
 					"column": 19,
-					"endLine": 5927,
+					"endLine": 5932,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9959,9 +9959,9 @@
 				{
 					"id": "e6f8263d0defff98ffc28f3e4fb23e3d00713812",
 					"kind": "callback_registration",
-					"line": 5930,
+					"line": 5935,
 					"column": 24,
-					"endLine": 5930,
+					"endLine": 5935,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9976,9 +9976,9 @@
 				{
 					"id": "81ad1801388c43c7d6e01b667169f43c2580f97e",
 					"kind": "catch_clause",
-					"line": 5931,
+					"line": 5936,
 					"column": 3,
-					"endLine": 5934,
+					"endLine": 5939,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9991,22 +9991,6 @@
 				},
 				{
 					"id": "e51617b00c7ebe44c0dec7319946149b61267a78",
-					"kind": "void_expression",
-					"line": 5932,
-					"column": 20,
-					"endLine": 5932,
-					"endColumn": 81,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.pilotMetrics.recoveryFinished",
-						"scope": "performRecoverSession",
-						"justification": "The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performRecoverSession\"."
-				},
-				{
-					"id": "4e301aa2861790d20e4f84670ba115cc57c1f6d6",
 					"kind": "void_expression",
 					"line": 5937,
 					"column": 20,
@@ -10022,11 +10006,27 @@
 					"reason": "Allowlisted void_expression: The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performRecoverSession\"."
 				},
 				{
-					"id": "a1a36a201e12975b613bd5c18752041569de5833",
+					"id": "4e301aa2861790d20e4f84670ba115cc57c1f6d6",
 					"kind": "void_expression",
 					"line": 5942,
-					"column": 19,
+					"column": 20,
 					"endLine": 5942,
+					"endColumn": 81,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.recoveryFinished",
+						"scope": "performRecoverSession",
+						"justification": "The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performRecoverSession\"."
+				},
+				{
+					"id": "a1a36a201e12975b613bd5c18752041569de5833",
+					"kind": "void_expression",
+					"line": 5947,
+					"column": 19,
+					"endLine": 5947,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10040,9 +10040,9 @@
 				{
 					"id": "d3c5cd6b5e8a4e6b3f1791eef863687c40e25aea",
 					"kind": "void_expression",
-					"line": 5963,
+					"line": 5968,
 					"column": 19,
-					"endLine": 5963,
+					"endLine": 5968,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10056,9 +10056,9 @@
 				{
 					"id": "3816ad7643065619f6e0d042d8457255a79130a7",
 					"kind": "callback_registration",
-					"line": 5966,
+					"line": 5971,
 					"column": 24,
-					"endLine": 5966,
+					"endLine": 5971,
 					"endColumn": 93,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10073,9 +10073,9 @@
 				{
 					"id": "ef06b4866c68da37533d51f68cded885e1cda01d",
 					"kind": "catch_clause",
-					"line": 5967,
+					"line": 5972,
 					"column": 3,
-					"endLine": 5970,
+					"endLine": 5975,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10088,22 +10088,6 @@
 				},
 				{
 					"id": "8f2439040f04ee35002e2fb486ad1d3744451487",
-					"kind": "void_expression",
-					"line": 5968,
-					"column": 20,
-					"endLine": 5968,
-					"endColumn": 81,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.pilotMetrics.recoveryFinished",
-						"scope": "performDiscardRecoveredSession",
-						"justification": "The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performDiscardRecoveredSession\"."
-				},
-				{
-					"id": "52c83b19e342b3a71d0c5792ae25242583c53e02",
 					"kind": "void_expression",
 					"line": 5973,
 					"column": 20,
@@ -10119,11 +10103,27 @@
 					"reason": "Allowlisted void_expression: The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performDiscardRecoveredSession\"."
 				},
 				{
+					"id": "52c83b19e342b3a71d0c5792ae25242583c53e02",
+					"kind": "void_expression",
+					"line": 5978,
+					"column": 20,
+					"endLine": 5978,
+					"endColumn": 81,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.recoveryFinished",
+						"scope": "performDiscardRecoveredSession",
+						"justification": "The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performDiscardRecoveredSession\"."
+				},
+				{
 					"id": "14661eb16607a543ae29e70347b88869724e4e2d",
 					"kind": "void_expression",
-					"line": 5976,
+					"line": 5981,
 					"column": 19,
-					"endLine": 5976,
+					"endLine": 5981,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10137,9 +10137,9 @@
 				{
 					"id": "3f1d9a42d7bad4594837c36688d9f6a839811106",
 					"kind": "catch_clause",
-					"line": 6110,
+					"line": 6115,
 					"column": 5,
-					"endLine": 6113,
+					"endLine": 6118,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10151,9 +10151,9 @@
 				{
 					"id": "cf2457ea09339a061ccbd73e4e47bce5b13473e5",
 					"kind": "callback_registration",
-					"line": 6319,
+					"line": 6324,
 					"column": 17,
-					"endLine": 6319,
+					"endLine": 6324,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10168,9 +10168,9 @@
 				{
 					"id": "43004c112baf2d083714ed369372095021455d1d",
 					"kind": "promise_catch",
-					"line": 6319,
+					"line": 6324,
 					"column": 17,
-					"endLine": 6319,
+					"endLine": 6324,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10185,9 +10185,9 @@
 				{
 					"id": "5f8e08d4a327890e911dad18d1957e859d216cc2",
 					"kind": "callback_registration",
-					"line": 6320,
+					"line": 6325,
 					"column": 20,
-					"endLine": 6320,
+					"endLine": 6325,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10202,9 +10202,9 @@
 				{
 					"id": "8974d15d4ec4a076f85ec88ad0d8f42f56c90302",
 					"kind": "promise_catch",
-					"line": 6320,
+					"line": 6325,
 					"column": 20,
-					"endLine": 6320,
+					"endLine": 6325,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10219,9 +10219,9 @@
 				{
 					"id": "bd67adc222fe844d703c05617b4d192198d7fbc3",
 					"kind": "catch_clause",
-					"line": 6416,
+					"line": 6421,
 					"column": 5,
-					"endLine": 6416,
+					"endLine": 6421,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10235,9 +10235,9 @@
 				{
 					"id": "ff338dcbd125c5fa78e00e2af469ff2fcecb89db",
 					"kind": "catch_clause",
-					"line": 6446,
+					"line": 6451,
 					"column": 5,
-					"endLine": 6446,
+					"endLine": 6451,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10251,9 +10251,9 @@
 				{
 					"id": "d27f06a0044e5f3ab79cc19299174127a9de4e5b",
 					"kind": "promise_catch",
-					"line": 6523,
+					"line": 6528,
 					"column": 2,
-					"endLine": 6523,
+					"endLine": 6528,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -18090,25 +18090,25 @@
 				{
 					"id": "3c8bd52710f880e378c9017b5773b44f4b680336",
 					"kind": "void_expression",
-					"line": 75,
+					"line": 91,
 					"column": 61,
-					"endLine": 75,
+					"endLine": 91,
 					"endColumn": 88,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
 						"target": "this.runRefresh",
 						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner deliberately detaches \"this.runRefresh\" with refreshSeeds=false, preventing seed downloads on view-open. runRefresh owns busy/final rendering and the advisor action owns terminal outcomes; the footer remains the explicit retry path."
+						"justification": "The \"onOpen\" owner deliberately detaches \"this.runRefresh\" with refreshSeeds=false, preventing seed downloads on view-open. runRefresh owns busy/final rendering (a failed, unfinished or timed-out refresh ends in a message) and callRefreshSale reports a failure to the diagnostics; the header \"Actualizar\" button remains the explicit retry path."
 					},
-					"reason": "Allowlisted void_expression: The \"onOpen\" owner deliberately detaches \"this.runRefresh\" with refreshSeeds=false, preventing seed downloads on view-open. runRefresh owns busy/final rendering and the advisor action owns terminal outcomes; the footer remains the explicit retry path. Verified target: \"this.runRefresh\" in \"onOpen\"."
+					"reason": "Allowlisted void_expression: The \"onOpen\" owner deliberately detaches \"this.runRefresh\" with refreshSeeds=false, preventing seed downloads on view-open. runRefresh owns busy/final rendering (a failed, unfinished or timed-out refresh ends in a message) and callRefreshSale reports a failure to the diagnostics; the header \"Actualizar\" button remains the explicit retry path. Verified target: \"this.runRefresh\" in \"onOpen\"."
 				},
 				{
 					"id": "684684b736735cf295e0baea2495166fb94b8973",
 					"kind": "callback_registration",
-					"line": 158,
+					"line": 182,
 					"column": 22,
-					"endLine": 161,
+					"endLine": 185,
 					"endColumn": 12,
 					"registration": "setTimeout",
 					"classification": "allowlisted",
@@ -18119,6 +18119,52 @@
 						"justification": "The \"scheduleExpiryRepaint\" owner registers \"setTimeout\" to repaint the Sale tab when a figure on screen expires; the callback only re-reads the memory snapshot and paints it, and the view cancels it on close."
 					},
 					"reason": "Allowlisted callback_registration: The \"scheduleExpiryRepaint\" owner registers \"setTimeout\" to repaint the Sale tab when a figure on screen expires; the callback only re-reads the memory snapshot and paints it, and the view cancels it on close. Verified registration: \"setTimeout\" in \"scheduleExpiryRepaint\"."
+				},
+				{
+					"id": "08fd2b4503b5a6ec895b3b43e5e386ee3adc3c19",
+					"kind": "callback_registration",
+					"line": 225,
+					"column": 16,
+					"endLine": 225,
+					"endColumn": 119,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "startRefresh",
+						"justification": "The \"startRefresh\" owner registers \"finally\" only to clear its in-flight marker once the shared refreshSale call settles; callRefreshSale already catches and reports the failure, so nothing is left to observe here."
+					},
+					"reason": "Allowlisted callback_registration: The \"startRefresh\" owner registers \"finally\" only to clear its in-flight marker once the shared refreshSale call settles; callRefreshSale already catches and reports the failure, so nothing is left to observe here. Verified registration: \"finally\" in \"startRefresh\"."
+				},
+				{
+					"id": "502ee71cb3e78b3486f0b5ced9584e3244d521e3",
+					"kind": "catch_clause",
+					"line": 234,
+					"column": 5,
+					"endLine": 241,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.actions.getSaleDiagnostics().event"
+					},
+					"reason": "Direct observability call \"this.actions.getSaleDiagnostics().event\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "187e75fcdc983e5697f1147ad025311d51c9f9c6",
+					"kind": "callback_registration",
+					"line": 252,
+					"column": 31,
+					"endLine": 263,
+					"endColumn": 31,
+					"registration": "setTimeout",
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.actions.getSaleDiagnostics().event"
+					},
+					"reason": "Direct observability call \"this.actions.getSaleDiagnostics().event\" is present inside this callback_registration boundary."
 				}
 			]
 		},
@@ -18132,37 +18178,37 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "72037c499fbd82fab98f133fbdaa4b778d13e108",
+					"id": "91a2628d7821cd23e364ebd793c966ce90b7d97d",
 					"kind": "callback_registration",
-					"line": 397,
+					"line": 438,
 					"column": 2,
-					"endLine": 397,
+					"endLine": 438,
 					"endColumn": 78,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "addEventListener",
-						"scope": "renderFoot",
-						"justification": "The \"renderFoot\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+						"scope": "renderRefreshButton",
+						"justification": "The \"renderRefreshButton\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
 					},
-					"reason": "Allowlisted callback_registration: The \"renderFoot\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderFoot\"."
+					"reason": "Allowlisted callback_registration: The \"renderRefreshButton\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderRefreshButton\"."
 				},
 				{
-					"id": "19960b28238b840e86dec67b2c67e8cfdb9c28be",
+					"id": "4d14224626cd18ae372ab2b49958ad2018bce7d2",
 					"kind": "void_expression",
-					"line": 397,
+					"line": 438,
 					"column": 43,
-					"endLine": 397,
+					"endLine": 438,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
 						"target": "interactions.onRefresh",
-						"scope": "renderFoot",
-						"justification": "The \"renderFoot\" owner deliberately detaches \"interactions.onRefresh\"; that named operation owns rejection and terminal diagnostics."
+						"scope": "renderRefreshButton",
+						"justification": "The \"renderRefreshButton\" owner deliberately detaches \"interactions.onRefresh\"; that named operation owns rejection and terminal diagnostics."
 					},
-					"reason": "Allowlisted void_expression: The \"renderFoot\" owner deliberately detaches \"interactions.onRefresh\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onRefresh\" in \"renderFoot\"."
+					"reason": "Allowlisted void_expression: The \"renderRefreshButton\" owner deliberately detaches \"interactions.onRefresh\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onRefresh\" in \"renderRefreshButton\"."
 				}
 			]
 		},

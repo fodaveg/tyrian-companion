@@ -704,6 +704,8 @@ const ES = {
 		// significan otra cosa en `inventory.decision.action.*`).
 		'sale.view.title': 'Venta de Halloween',
 		'sale.view.loading': 'Leyendo precios del bazar…',
+		'sale.view.loadFailed': 'No se pudieron leer los precios del bazar. Pulsa «Actualizar» para reintentarlo.',
+		'sale.view.loadTimedOut': 'Los precios del bazar tardan demasiado en llegar. Pulsa «Actualizar» para reintentarlo.',
 		'sale.view.empty': 'No hay objetos de temporada en el inventario todavía.',
 		// R1b: el estado final de Venta en un dispositivo en consulta que no capturó nada esta
 		// sesión (`TyrianCompanionCore.getSaleViewModel`); nunca «Obsidian», host-neutro.
@@ -2022,6 +2024,8 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'advisor.view.storage.materials': 'Materials: {{capacity}} per material ({{source}})',
 	'sale.view.title': 'Halloween sale',
 	'sale.view.loading': 'Reading bazaar prices…',
+	'sale.view.loadFailed': 'Could not read the bazaar prices. Press "Refresh" to try again.',
+	'sale.view.loadTimedOut': 'The bazaar prices are taking too long. Press "Refresh" to try again.',
 	'sale.view.empty': 'No seasonal items in the inventory yet.',
 	'sale.view.consultEmpty': 'This device is in consult mode: refresh the inventory in the advisor to calculate the sale.',
 	'sale.view.blocked': 'The sale tab is not available right now.',
