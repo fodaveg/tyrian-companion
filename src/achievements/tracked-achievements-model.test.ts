@@ -210,10 +210,11 @@ describe('the elements of a meta of its category (CategoryDisplay without bits)'
 		expect(withBits[0]!.elements?.source).toBe('bits');
 		const noFlag = buildTrackedAchievementsView({ trackedIds: [META_ID], details: new Map([[META_ID, meta({ flags: ['Permanent'] })]]), englishNames: ENGLISH, retired: new Set(), reading: null, categories: CATEGORIES });
 		expect(noFlag[0]!.elements).toBeNull();
+		// No category lists it: the section is still there (empty), so the achievement is not left without any text.
 		const unlisted = buildTrackedAchievementsView({ trackedIds: [META_ID], details: MEMBER_DETAILS, englishNames: ENGLISH, retired: new Set(), reading: null, categories: [CATEGORIES[0]!] });
-		expect(unlisted[0]!.elements).toBeNull();
+		expect(unlisted[0]!.elements).toEqual({ source: 'category', items: [], done: 0, total: 0 });
 		const noCategories = buildTrackedAchievementsView({ trackedIds: [META_ID], details: MEMBER_DETAILS, englishNames: ENGLISH, retired: new Set(), reading: null });
-		expect(noCategories[0]!.elements).toBeNull();
+		expect(noCategories[0]!.elements).toEqual({ source: 'category', items: [], done: 0, total: 0 });
 	});
 });
 

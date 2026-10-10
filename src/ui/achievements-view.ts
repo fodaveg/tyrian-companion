@@ -80,6 +80,8 @@ export interface AchievementsViewActions {
 	openProductSettings?(): void;
 	/** Opens the wiki link through the host; without it the link is a plain anchor. */
 	openExternal?(url: string): void;
+	/** Keeps in the diagnostics that «Actualizar progreso» failed outside the reading itself (`stage`); never throws. */
+	localDebugAchievementsRefreshFailure?(stage: 'reading_ids' | 'reload'): void;
 }
 
 export interface AchievementsViewOptions {
@@ -454,6 +456,7 @@ export class AchievementsView {
 		this.refreshState = { status: 'running' };
 		this.renderBar();
 		this.renderNotice();
+		let stage: 'reading_ids' | 'reload' = 'reading_ids';
 		try {
 			const ids = await this.readingIds(services);
 			if (this.disposed) return;
@@ -461,13 +464,16 @@ export class AchievementsView {
 			if (this.disposed) return;
 			this.refreshState = result.status === 'ok' ? { status: 'idle' } : { status: 'failed', reason: result.reason };
 			if (result.status === 'ok') {
+				// The reading went well: from here a failure is the list reload's, and the reading stays good.
+				stage = 'reload';
 				this.announce(this.t.t('achievements.live.refreshed'));
 				await this.loadTracked();
 			}
 		} catch {
 			// The public reads behind the ids (or the list reload) threw: the button must not stay «running».
 			if (this.disposed) return;
-			this.refreshState = { status: 'failed', reason: 'request_failed' };
+			if (stage === 'reading_ids') this.refreshState = { status: 'failed', reason: 'request_failed' };
+			this.actions.localDebugAchievementsRefreshFailure?.(stage);
 		} finally {
 			if (!this.disposed) { this.renderBar(); this.renderNotice(); }
 		}
@@ -854,14 +860,15 @@ export class AchievementsView {
 	private renderElements(body: HTMLElement, elements: TrackedElements): void {
 		const t = this.t;
 		body.createEl('h4', { text: t.t('achievements.tracked.elements') });
-		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsNone') }); return; }
+		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t(elements.hiddenOnly === true ? 'achievements.tracked.elementsHidden' : 'achievements.tracked.elementsNone') }); return; }
 		const unread = elements.items.every((element) => element.state === 'unknown');
 		const unreadText = elements.total === 1 ? t.t('achievements.tracked.elementsUnread.one') : t.t('achievements.tracked.elementsUnread.many', { total: elements.total });
 		const count = body.createEl('p', {
 			cls: 'tyrian-achievements__elements-count',
 			text: unread ? unreadText : t.t('achievements.tracked.elementsCount', { done: elements.done, total: elements.total }),
 		});
-		if (!unread && elements.done === elements.total && elements.partial !== true) count.addClass('is-complete');
+		if (!unread && elements.done === elements.total && elements.partial !== true && elements.barUnit === undefined) count.addClass('is-complete');
+		if (elements.barUnit === 'pieces') body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsPieces') });
 		if (elements.partial === true) body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsPartial') });
 		const list = body.createEl('ul', { cls: 'tyrian-achievements__elements' });
 		for (const element of elements.items) {

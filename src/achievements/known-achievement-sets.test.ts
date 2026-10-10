@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseAchievementCategories, parseAchievementPage, type AchievementDetail } from './achievement-catalog-model';
 import { KNOWN_SETS_API_SNAPSHOT } from './__fixtures__/known-sets-api-snapshot';
 import { SWEEP_SAMPLE_CATEGORIES, SWEEP_SAMPLE_PAGE } from './__fixtures__/sweep-sample';
-import { KNOWN_ACHIEVEMENT_SETS, knownSetMembersOf } from './known-achievement-sets';
+import { KNOWN_ACHIEVEMENT_SETS, knownBarUnitOf, knownSetMembersOf } from './known-achievement-sets';
 import { buildTrackedAchievementsView, trackedReadingIds, type TrackedAchievementView } from './tracked-achievements-model';
 
 describe('the known sets generated from the wiki (coherence)', () => {
@@ -12,7 +12,9 @@ describe('the known sets generated from the wiki (coherence)', () => {
 		expect(new Set(metas).size).toBe(metas.length);
 		expect(metas.length).toBeGreaterThan(100);
 		for (const set of KNOWN_ACHIEVEMENT_SETS) {
-			expect(set.members.length, `${String(set.meta)} ${set.name}`).toBeGreaterThanOrEqual(set.tierMax);
+			// A bar that counts pieces is short of its list on purpose (223: 90 pieces from 7 achievements).
+			if (set.barUnit === undefined) expect(set.members.length, `${String(set.meta)} ${set.name}`).toBeGreaterThanOrEqual(set.tierMax);
+			else expect(set.members.length).toBeGreaterThan(0);
 		}
 	});
 
@@ -92,13 +94,38 @@ describe('a sample of the sweep over the API (10 oct 2026): what each kind of me
 		}
 	});
 
-	it('(a) without a set, a category far below the bar is not its list: 5930 (5 of 30), 223 (7 of 90), 5790 (5 of 24)', () => {
-		for (const id of [5930, 223]) {
+	it('(a) without a set, a category far below the bar is not its list: 5930 (5 of 30) and 5790 (5 of 24)', () => {
+		for (const id of [5930]) {
 			expect(view(id).elements, String(id)).toEqual({ source: 'category', items: [], done: 0, total: 0 });
 			expect(trackedReadingIds({ trackedIds: [id], details, retired: new Set(), categories }), String(id)).toEqual([id]);
 		}
 		const copy = asUnknownMeta(5790);
 		expect(view(copy.id, copy.details, copy.categories).elements).toEqual({ source: 'category', items: [], done: 0, total: 0 });
+	});
+
+	it('(a) 223 «The Emperor\'s New Wardrobe» (bar 90 = pieces): its 7 achievements, flagged as a bar of pieces, never fewer than the 7 of 0.6.33', () => {
+		const shown = view(223).elements!;
+		expect(shown.total).toBe(7);
+		expect(shown.barUnit).toBe('pieces');
+		expect(shown.partial).toBeUndefined();
+		expect(knownBarUnitOf(223)).toBe('pieces');
+		expect(knownBarUnitOf(9417)).toBeNull();
+	});
+
+	it('(a) a meta with neither category nor set (8415 «Return to Season 4», bar 14) has an empty section, not none', () => {
+		expect(view(8415).elements).toEqual({ source: 'category', items: [], done: 0, total: 0 });
+	});
+
+	it('(a) a category whose 12 members are all hidden (1003 «A Sweet Friend», bar 13) says so; once the account has an entry the element shows', () => {
+		const hiddenOnly = view(1003).elements!;
+		expect(hiddenOnly).toMatchObject({ total: 0, hiddenOnly: true });
+		const touched = [...categories.find((each) => each.achievementIds.includes(1003))!.achievementIds].find((id) => id !== 1003)!;
+		const shown = buildTrackedAchievementsView({
+			trackedIds: [1003], details, englishNames: new Map(), retired: new Set(), categories,
+			reading: { trackedIds: [1003, touched], entries: [{ id: touched, done: false, current: 1, max: 2, repeated: null, bits: null }] },
+		})[0]!.elements!;
+		expect(shown.total).toBe(1);
+		expect(shown.hiddenOnly).toBeUndefined();
 	});
 
 	it('(c) achievements with more bits than their bar are listed whole: Text, Minipet and Skin', () => {

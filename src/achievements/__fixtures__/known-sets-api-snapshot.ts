@@ -4,6 +4,11 @@
  * `scripts/generate-known-achievement-sets.mjs --ids-out`. Only tests import this file.
  */
 export const KNOWN_SETS_API_SNAPSHOT: ReadonlyMap<number, number | null> = new Map([
+	[93, 18],
+	[94, 18],
+	[95, 18],
+	[96, 18],
+	[97, 18],
 	[122, 8],
 	[164, 1000],
 	[165, 500],
@@ -21,6 +26,7 @@ export const KNOWN_SETS_API_SNAPSHOT: ReadonlyMap<number, number | null> = new M
 	[190, 4],
 	[191, 4],
 	[192, 4],
+	[223, 90],
 	[546, 3],
 	[547, 7],
 	[548, 1],
@@ -125,6 +131,7 @@ export const KNOWN_SETS_API_SNAPSHOT: ReadonlyMap<number, number | null> = new M
 	[1555, 40],
 	[1556, 75],
 	[1566, 10],
+	[1567, 1000],
 	[1640, 1],
 	[1642, 1],
 	[1643, 1],
@@ -458,6 +465,7 @@ export const KNOWN_SETS_API_SNAPSHOT: ReadonlyMap<number, number | null> = new M
 	[3853, 1],
 	[3879, 1],
 	[3900, 15],
+	[3935, 6],
 	[3955, 1],
 	[3958, 10],
 	[3959, 1],

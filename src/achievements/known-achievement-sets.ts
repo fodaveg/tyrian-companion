@@ -9,12 +9,15 @@
  * `objectives` of the row of each meta on the achievement pages of https://wiki.guildwars2.com/ (`?action=raw`,
  * read on 2026-10-10), each line crossed with `/v2/achievements` (en) by its `#achievement<id>` anchor or, when the
  * line is only a name, by that name on the same page. 209 metas have `CategoryDisplay` and no bits:
- * 107 are here (the wiki's list differs from the API category's, or the API has no category), 62
- * need nothing (the wiki's list is the category's), 40 the wiki does not settle (the category rule applies).
+ * 108 are here (the wiki's list differs from the API category's, or the API has no category), 62
+ * need nothing (the wiki's list is the category's), 39 the wiki does not settle (the category rule applies).
  * A wiki id the API does not serve is replaced by the API's achievement of the same name (e.g. «Return to Siren's
  * Landing»: the wiki says 9991, the API serves 5748); when no name matches it is kept by id (12 ids: hidden,
  * retired or not yet published achievements).
  */
+
+/** What a bar counts when it is not achievements: each element of the list contributes several. */
+export type KnownBarUnit = 'pieces';
 
 export interface KnownAchievementSet {
 	/** The meta achievement. */
@@ -25,6 +28,8 @@ export interface KnownAchievementSet {
 	readonly tierMax: number;
 	/** The wiki says «Complete all N» with N equal to the bar: the set is exactly what the bar counts. */
 	readonly wikiAll: boolean;
+	/** Set when the bar counts something else than achievements (pieces): the list is short of the bar on purpose. */
+	readonly barUnit?: KnownBarUnit;
 	/** The achievements that count, in the wiki's order. */
 	readonly members: readonly number[];
 }
@@ -549,6 +554,12 @@ export const KNOWN_ACHIEVEMENT_SETS: readonly KnownAchievementSet[] = [
 		],
 	},
 	{
+		meta: 223, name: 'The Emperor\'s New Wardrobe', tierMax: 90, wikiAll: false, barUnit: 'pieces',
+		members: [
+			93, 94, 95, 96, 97, 1567, 3935,
+		],
+	},
+	{
 		meta: 8717, name: 'Janthir Wilds: Absolution Mastery', tierMax: 12, wikiAll: false,
 		members: [
 			8726, 8758, 8731, 8757, 8728, 8716, 8759, 8764, 8712, 8760, 8727, 8746,
@@ -803,6 +814,11 @@ export const KNOWN_ACHIEVEMENT_SETS: readonly KnownAchievementSet[] = [
 ];
 
 const BY_META: ReadonlyMap<number, readonly number[]> = new Map(KNOWN_ACHIEVEMENT_SETS.map((set) => [set.meta, set.members]));
+
+/** What the bar of the meta `id` counts when it is not achievements; null otherwise. */
+export function knownBarUnitOf(id: number): KnownBarUnit | null {
+	return KNOWN_ACHIEVEMENT_SETS.find((set) => set.meta === id)?.barUnit ?? null;
+}
 
 /** The ids that count towards the meta `id`, in the wiki's order; null when there is no known set for it. */
 export function knownSetMembersOf(id: number): number[] | null {

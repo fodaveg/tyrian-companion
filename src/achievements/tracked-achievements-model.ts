@@ -1,5 +1,5 @@
 import type { AccountAchievementEntry } from '../account/account-achievements';
-import { knownSetMembersOf } from './known-achievement-sets';
+import { knownBarUnitOf, knownSetMembersOf, type KnownBarUnit } from './known-achievement-sets';
 import {
 	categoryMembersOf,
 	isCategoryMetaAchievement,
@@ -71,6 +71,10 @@ export interface TrackedElements {
 	total: number;
 	/** Only set (true) when the list is short of what the bar counts and the API does not give the rest. */
 	partial?: true;
+	/** Only set when the bar counts pieces (or the like) and each element gives several. */
+	barUnit?: KnownBarUnit;
+	/** Only set (true) when the category has members but every one is hidden until the account advances in one. */
+	hiddenOnly?: true;
 }
 
 export type TrackedReward =
@@ -105,6 +109,8 @@ export interface TrackedCategoryInput {
 	members: readonly number[];
 	details: ReadonlyMap<number, AchievementDetail>;
 	englishNames: ReadonlyMap<number, string>;
+	/** The bar counts something that is not an achievement (pieces): each element contributes several. */
+	barUnit?: KnownBarUnit | null;
 }
 
 export interface TrackedAchievementInput {
@@ -138,7 +144,7 @@ export function buildTrackedAchievementsView(input: {
 			englishName: input.englishNames.get(id) ?? null,
 			retired: input.retired.has(id),
 			reading: input.reading,
-			category: members === null ? null : { members, details: input.details, englishNames: input.englishNames },
+			category: members === null ? null : { members, details: input.details, englishNames: input.englishNames, barUnit: knownBarUnitOf(id) },
 		});
 	});
 }
@@ -247,7 +253,14 @@ function elementsOf(
 		if (element !== null) elements.push(element);
 	}
 	const sorted = sortedElements('category', elements);
-	return sorted.total > 0 && isPartialCategory(detail, category.members) ? { ...sorted, partial: true } : sorted;
+	const hiddenOnly = elements.length === 0 && category.members.length > 0
+		&& category.members.every((id) => category.details.get(id)?.flags.includes('Hidden') === true);
+	return {
+		...sorted,
+		...(sorted.total > 0 && category.barUnit == null && isPartialCategory(detail, category.members) ? { partial: true as const } : {}),
+		...(category.barUnit == null ? {} : { barUnit: category.barUnit }),
+		...(hiddenOnly ? { hiddenOnly: true as const } : {}),
+	};
 }
 
 /** One reading of the account, indexed for the members of a category. */
@@ -351,11 +364,12 @@ export function trackedReadingIds(input: {
 /**
  * The elements of a meta of its category: the wiki's known set when there is one (the API does not
  * list them), else the members of its category when that can be what the bar counts; a category
- * too small for it lists nothing («La API no lista los elementos de este logro»). Null: no category.
+ * too small for it, or none at all, lists nothing: the section is still there and says «La API no lista los
+ * elementos de este logro», instead of leaving the achievement without any text.
  */
-function metaMembersOf(detail: AchievementDetail, categories: readonly AchievementCategory[]): number[] | null {
+function metaMembersOf(detail: AchievementDetail, categories: readonly AchievementCategory[]): number[] {
 	const known = knownSetMembersOf(detail.id);
 	if (known !== null) return known.filter((member) => member !== detail.id);
 	const listed = categoryMembersOf(categories, detail.id);
-	return listed === null ? null : plausibleCategoryMembers(detail, listed) ?? [];
+	return listed === null ? [] : plausibleCategoryMembers(detail, listed) ?? [];
 }

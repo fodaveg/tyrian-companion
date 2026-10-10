@@ -186,6 +186,7 @@ function harness(options: {
 	const services = { catalog, progress, vaultId: VAULT };
 	let starting = options.starting ?? false;
 	const openSettings = vi.fn();
+	const refreshFailure = vi.fn();
 	const openExternal = vi.fn();
 	/** The core's toggle: computes the list from what is saved, in order, as `toggleTrackedAchievement` does. */
 	const toggle = vi.fn(async (id: number, follow: boolean) => {
@@ -205,6 +206,7 @@ function harness(options: {
 		getAchievementsServices: () => (starting ? null : services),
 		hasConfiguredApiKey: () => options.hasKey ?? true,
 		openProductSettings: openSettings,
+		localDebugAchievementsRefreshFailure: refreshFailure,
 		...(options.noOpenExternal ? {} : { openExternal }),
 	};
 	const container = document.body.appendChild(document.createElement('div'));
@@ -212,7 +214,7 @@ function harness(options: {
 	return {
 		view, container, timers, calls, nameRequests,
 		setLocale: (next: 'es' | 'en') => { locale = next; },
-		releaseNames: () => { namesGate.release(); }, refresh, toggle, openSettings, openExternal, buildSignals, tracked,
+		releaseNames: () => { namesGate.release(); }, refresh, toggle, openSettings, openExternal, buildSignals, tracked, refreshFailure,
 		ready: () => { starting = false; },
 		/** The key changed: the core forgot the kept reading (`clearProgress`); the view is told by `refresh()`. */
 		clearReading: () => { readingCleared = true; },
@@ -982,9 +984,9 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		h.view.mount();
 		await h.settle();
 		expect(h.calls.filter((call) => call.startsWith('details:'))).toEqual([`details:${String(META_ID)}`]);
-		// Without categories no category lists the meta: no elements section yet.
+		// Without categories no category lists the meta: the section says the API lists no elements (yet).
 		expect(rows(h)).toEqual([]);
-		expect(counter(h)).toBeUndefined();
+		expect(counter(h)).toBe('La API no lista los elementos de este logro.');
 
 		h.view.refresh();
 		await h.settle();
@@ -1174,20 +1176,21 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 		const plan = parseAchievementCategories(SAME_NAME_CATEGORIES)!;
 		const categoryOf = new Map(plan.flatMap((category) => category.achievementIds.map((id) => [id, category.id] as const)));
 		const index = page.map((each) => toAchievementIndexEntry(each, categoryOf.get(each.id) ?? null));
-		const h = harness({ index, categories: plan });
+		const alone = { id: 9999, name: 'Portero solitario', categoryId: 463, flags: [], tierMax: 1 };
+		const h = harness({ index: [...index, alone], categories: plan });
 		h.view.mount();
 		await h.settle();
 		await h.search('portero');
 		expect(h.results().map((row) => [row.querySelector('strong')?.textContent, row.querySelector('small')?.textContent])).toEqual([
-			['Portero de bar', 'Litoral del Naufragio · #8903'], ['Portero de bar', 'Jardín de la Eternidad · #9307'],
+			['Portero de bar', 'Litoral del Naufragio · #8903'], ['Portero de bar', 'Jardín de la Eternidad · #9307'], ['Portero solitario', 'Litoral del Naufragio'],
 		]);
 		await h.search('muerte al');
 		expect(h.results().map((row) => [row.querySelector('small')?.textContent, row.querySelector('button')?.getAttribute('data-id')])).toEqual([
 			['Jormag desatado · #5403', '5403'], ['Jormag desatado · #5391', '5391'],
 		]);
-		// A name that is alone carries no id.
-		await h.search('portero de bar');
-		expect(h.results()).toHaveLength(2);
+		// A name that is alone carries no id (the third row above).
+		await h.search('solitario');
+		expect(h.results().map((row) => row.querySelector('small')?.textContent)).toEqual(['Litoral del Naufragio']);
 	});
 
 	it('followed achievements with the same name are all listed, each with its category and id', async () => {
@@ -1211,7 +1214,7 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 		h.view.mount();
 		await h.settle();
 		expect(rows(h)).toHaveLength(24);
-		expect(h.container.querySelector('.tyrian-achievements__body')?.textContent).toContain('La API no da todos los elementos de este logro: faltan algunos.');
+		expect(h.container.querySelector('.tyrian-achievements__body')?.textContent).toContain('La barra cuenta más de lo que aparece en esta lista.');
 	});
 
 	it('«Actualizar progreso» does not stay «running» when the public reads behind its ids reject', async () => {
@@ -1222,8 +1225,23 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 		h.refreshButton().click();
 		await h.settle();
 		expect(boom).toHaveBeenCalledTimes(1);
+		expect(h.refreshFailure).toHaveBeenCalledWith('reading_ids');
 		expect(h.refreshButton().disabled).toBe(false);
 		expect(h.refresh).not.toHaveBeenCalled();
+	});
+
+	it('a failure of the list reload AFTER a good reading is not reported as a failed reading: «actualizado», no «falló», and the diagnostics keep the stage', async () => {
+		const h = harness({ tracked: [1] });
+		h.view.mount();
+		await h.settle();
+		vi.spyOn(h.view as unknown as { loadTracked(): Promise<void> }, 'loadTracked').mockRejectedValue(new Error('details read failed'));
+		h.refreshButton().click();
+		await h.settle();
+		expect(h.refresh).toHaveBeenCalledTimes(1);
+		expect(h.live()).toBe('Progreso actualizado.');
+		expect(h.container.querySelector('.tyrian-achievements__notice [role="alert"]')).toBeNull();
+		expect(h.refreshButton().disabled).toBe(false);
+		expect(h.refreshFailure).toHaveBeenCalledWith('reload');
 	});
 
 	it('a name shared with a result that is not on the shown page still tells its id', async () => {
@@ -1238,5 +1256,32 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 		expect(h.results()).toHaveLength(50);
 		expect(h.results()[0]!.querySelector('strong')?.textContent).toBe('Portero de bar');
 		expect(h.results()[0]!.querySelector('small')?.textContent).toBe('Exploración · #8903');
+	});
+
+	it('a meta without category or set (8415 «Return to Season 4», bar 14) still has its section and says the API lists no elements', async () => {
+		const real = detailsOf(SWEEP_SAMPLE_PAGE);
+		const h = harness({ tracked: [8415], details: real, categories: parseAchievementCategories(SWEEP_SAMPLE_CATEGORIES)!, noReading: true });
+		h.view.mount();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__body h4')?.textContent).toBe('Elementos');
+		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('La API no lista los elementos de este logro.');
+	});
+
+	it('a category whose members are all hidden (1003 «A Sweet Friend») says they stay hidden until the player advances, not that the API lists none', async () => {
+		const real = detailsOf(SWEEP_SAMPLE_PAGE);
+		const h = harness({ tracked: [1003], details: real, categories: parseAchievementCategories(SWEEP_SAMPLE_CATEGORIES)!, noReading: true });
+		h.view.mount();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('Los elementos están ocultos hasta que avances en alguno.');
+	});
+
+	it('223 «The Emperor\'s New Wardrobe» lists its 7 achievements and says the bar counts pieces, each achievement giving several', async () => {
+		const real = detailsOf(SWEEP_SAMPLE_PAGE);
+		const h = harness({ tracked: [223], details: real, categories: parseAchievementCategories(SWEEP_SAMPLE_CATEGORIES)!, noReading: true });
+		h.view.mount();
+		await h.settle();
+		expect(rows(h)).toHaveLength(7);
+		expect(h.container.querySelector('.tyrian-achievements__body')?.textContent).toContain('La barra cuenta piezas; cada logro de abajo aporta varias.');
+		expect(h.container.querySelector('.tyrian-achievements__body')?.textContent).not.toContain('La barra cuenta más de lo que aparece');
 	});
 });

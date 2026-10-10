@@ -4,7 +4,7 @@
 // row on the official wiki and crossed with the API ids. The plugin never requests the wiki; this script does,
 // by hand, with a cache.
 //
-// Usage: node scripts/generate-known-achievement-sets.mjs --cache <dir> [--out <file>] [--ids-out <file>] [--date YYYY-MM-DD] [--report <file>]
+// Usage: node scripts/generate-known-achievement-sets.mjs --cache <dir> [--out <file>] [--ids-out <file>] --date YYYY-MM-DD [--report <file>]
 //
 // - `<dir>/ach-en.json`, `<dir>/cats-en.json` and `<dir>/wiki/<title>.txt` are the cache: whatever is there is
 //   not requested again. A missing file is fetched (API: 200 ids per request; wiki: one request at a time,
@@ -20,14 +20,16 @@ import { setTimeout as delay } from 'node:timers/promises';
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i].replace(/^--/u, ''), process.argv[i + 1]);
 const cache = resolve(args.get('cache') ?? '');
-if (!args.has('cache')) { console.error('usage: --cache <dir> [--out f] [--ids-out f] [--date d] [--report f]'); process.exit(2); }
+if (!args.has('cache')) { console.error('usage: --cache <dir> [--out f] [--ids-out f] --date d [--report f]'); process.exit(2); }
 const out = resolve(args.get('out') ?? 'src/achievements/known-achievement-sets.ts');
 const idsOut = args.get('ids-out') === undefined ? null : resolve(args.get('ids-out'));
-const date = args.get('date') ?? new Date().toISOString().slice(0, 10);
+// The date is written into the module: without it the output would change with the day it is run.
+if (!/^\d{4}-\d{2}-\d{2}$/u.test(args.get('date') ?? '')) { console.error('--date YYYY-MM-DD is required (the day the wiki and the API were read)'); process.exit(2); }
+const date = args.get('date');
 
 const USER_AGENT = 'tyrian-companion-known-sets/1.0 (https://github.com/fodaveg/tyrian-companion; one-off cache-first sweep)';
 const API = 'https://api.guildwars2.com/v2';
-const WIKI = 'https://wiki.guildwars2.com/wiki/';
+const WIKI = process.env.KNOWN_SETS_WIKI_BASE ?? 'https://wiki.guildwars2.com/wiki/';
 const sleep = (ms) => delay(ms);
 mkdirSync(join(cache, 'wiki'), { recursive: true });
 
@@ -35,6 +37,7 @@ async function cachedJson(name, load) {
 	const file = join(cache, name);
 	if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8'));
 	const value = await load();
+	if (!Array.isArray(value) || value.length === 0) throw new Error(`${name}: the API answered no list`);
 	writeFileSync(file, JSON.stringify(value));
 	return value;
 }
@@ -70,19 +73,27 @@ for (const a of achievements) {
 }
 
 let lastRequest = 0;
+/** Titles that answered anything but a 200 with a body in this run: asked once, never written to the cache. */
+const missing = new Set();
 async function wikiPage(title) {
 	const file = join(cache, 'wiki', `${encodeURIComponent(title).replace(/[!'()*]/gu, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}.txt`);
-	if (existsSync(file)) return readFileSync(file, 'utf8');
+	if (missing.has(title)) return '';
+	if (existsSync(file)) {
+		const kept = readFileSync(file, 'utf8');
+		if (kept.length > 0 && !kept.startsWith('#ERROR')) return kept;
+	}
 	const wait = lastRequest + 500 - Date.now();
 	if (wait > 0) await sleep(wait);
 	lastRequest = Date.now();
-	let body;
+	let body = '';
 	try {
 		const response = await fetch(`${WIKI}${encodeURIComponent(title.replaceAll(' ', '_')).replaceAll('%28', '(').replaceAll('%29', ')').replaceAll('%27', "'").replaceAll('%3A', ':')}?action=raw`, { headers: { 'User-Agent': USER_AGENT } });
-		body = response.ok ? await response.text() : `#ERROR HTTP ${String(response.status)}`;
-	} catch (error) {
-		body = `#ERROR ${String(error)}`;
+		if (response.ok) body = await response.text();
+	} catch {
+		body = '';
 	}
+	// Only a 200 with a body is kept: an error answer is not the page, and a later run asks again.
+	if (body.length === 0 || body.startsWith('#ERROR')) { missing.add(title); return ''; }
 	writeFileSync(file, body);
 	return body;
 }
@@ -105,6 +116,12 @@ function visibleText(line) {
 		.replace(/'''?/gu, '').replace(/<[^>]*>/gu, '').replace(/&nbsp;/gu, ' '));
 }
 
+/**
+ * Metas whose bar counts something other than achievements. Measured 10 oct 2026: 223 «The Emperor's New Wardrobe»
+ * asks 90 = 5 specialty armors x 18 pieces, and its 7 category achievements each give several; the wiki has no row
+ * for it. They list the API's category with a note that the bar counts pieces.
+ */
+const BAR_UNITS = new Map([[223, 'pieces']]);
 const metas = achievements.filter((a) => (a.bits ?? []).length === 0 && a.flags.includes('CategoryDisplay'));
 const sets = [];
 /** Ids the wiki names by anchor that the API does not serve. */
@@ -115,6 +132,8 @@ const counts = { metas: metas.length, emitted: 0, same: 0, unresolved: 0, unserv
 for (const meta of metas) {
 	const category = categoryOf.get(meta.id) ?? null;
 	const apiMembers = category === null ? [] : category.achievements.map(idOfEntry).filter((id) => id !== meta.id);
+	const unit = BAR_UNITS.get(meta.id);
+	if (unit !== undefined) { sets.push({ meta, members: apiMembers, wikiAll: false, barUnit: unit }); counts.emitted += 1; continue; }
 	const titles = [];
 	if (category !== null) titles.push(`${clean(category.name)} (achievements)`, clean(category.name));
 	titles.push(`${meta.name} (achievements)`, meta.name);
@@ -190,6 +209,9 @@ const moduleText = `/**
  * retired or not yet published achievements).
  */
 
+/** What a bar counts when it is not achievements: each element of the list contributes several. */
+export type KnownBarUnit = 'pieces';
+
 export interface KnownAchievementSet {
 	/** The meta achievement. */
 	readonly meta: number;
@@ -199,15 +221,22 @@ export interface KnownAchievementSet {
 	readonly tierMax: number;
 	/** The wiki says «Complete all N» with N equal to the bar: the set is exactly what the bar counts. */
 	readonly wikiAll: boolean;
+	/** Set when the bar counts something else than achievements (pieces): the list is short of the bar on purpose. */
+	readonly barUnit?: KnownBarUnit;
 	/** The achievements that count, in the wiki's order. */
 	readonly members: readonly number[];
 }
 
 export const KNOWN_ACHIEVEMENT_SETS: readonly KnownAchievementSet[] = [
-${sets.map((set) => `\t{\n\t\tmeta: ${String(set.meta.id)}, name: ${q(set.meta.name)}, tierMax: ${String(tierMax(set.meta))}, wikiAll: ${String(set.wikiAll)},\n\t\tmembers: [\n${wrapIds(set.members)}\n\t\t],\n\t},`).join('\n')}
+${sets.map((set) => `\t{\n\t\tmeta: ${String(set.meta.id)}, name: ${q(set.meta.name)}, tierMax: ${String(tierMax(set.meta))}, wikiAll: ${String(set.wikiAll)},${set.barUnit === undefined ? '' : ` barUnit: ${q(set.barUnit)},`}\n\t\tmembers: [\n${wrapIds(set.members)}\n\t\t],\n\t},`).join('\n')}
 ];
 
 const BY_META: ReadonlyMap<number, readonly number[]> = new Map(KNOWN_ACHIEVEMENT_SETS.map((set) => [set.meta, set.members]));
+
+/** What the bar of the meta \`id\` counts when it is not achievements; null otherwise. */
+export function knownBarUnitOf(id: number): KnownBarUnit | null {
+	return KNOWN_ACHIEVEMENT_SETS.find((set) => set.meta === id)?.barUnit ?? null;
+}
 
 /** The ids that count towards the meta \`id\`, in the wiki's order; null when there is no known set for it. */
 export function knownSetMembersOf(id: number): number[] | null {
