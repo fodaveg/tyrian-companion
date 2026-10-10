@@ -4,13 +4,18 @@ import {
 	type AchievementCatalogService,
 	type AchievementDetailsRead,
 	type AchievementFreshness,
+	type AchievementNameEntry,
 	type AchievementNameKind,
 	type AchievementNameRef,
 } from '../achievements/achievement-catalog-service';
 import {
 	buildTrackedAchievementsView,
+	itemChatLink,
+	trackedReadingIds,
+	wikiChatLinkSearchUrl,
 	type TrackedAchievementView,
-	type TrackedObjective,
+	type TrackedElement,
+	type TrackedElements,
 	type TrackedReward,
 } from '../achievements/tracked-achievements-model';
 import type {
@@ -22,6 +27,7 @@ import { formatCopperVisual } from '../core/copper-format';
 import { createTranslator, type Locale, type TranslationKey, type Translator } from '../core/i18n';
 import { MAX_TRACKED_ACHIEVEMENT_IDS } from '../core/settings';
 import { relativeTimeLabel } from './inventory-advisor-view';
+import { safePublicRenderIconUrl } from './price-history-panel-view';
 
 /**
  * The «Logros» section (David, 10 oct 2026): a search by name and category to pick which
@@ -39,6 +45,9 @@ import { relativeTimeLabel } from './inventory-advisor-view';
 
 /** What the view uses of the catalog service: public data only. */
 export type AchievementCatalogPort = Pick<AchievementCatalogService, 'loadGroups' | 'loadCategories' | 'loadIndex' | 'buildIndex' | 'search' | 'loadDetails' | 'loadNames'>;
+
+/** Icon size of an item, minipet, skin or achievement in the followed list, in CSS pixels. */
+export const ACHIEVEMENT_ICON_SIZE = 20;
 /** What the view uses of the progress service; `refresh` is the only keyed call, behind the button. */
 export type TrackedProgressPort = Pick<TrackedProgressService, 'refresh' | 'lastReading'>;
 
@@ -102,7 +111,34 @@ type IndexState =
 
 type TrackedState =
 	| { status: 'loading' }
-	| { status: 'ready'; views: TrackedAchievementView[]; details: AchievementDetailsRead; reading: TrackedProgressLastReading | null };
+	| {
+		status: 'ready';
+		views: TrackedAchievementView[];
+		/** The catalog reads behind the list: the tracked ids and, apart, the members of their categories. */
+		details: AchievementDetailsRead;
+		elementDetails: AchievementDetailsRead;
+		/** The public categories as read for this list; empty when they could not be loaded. */
+		categories: readonly AchievementCategory[];
+		reading: TrackedProgressLastReading | null;
+	};
+
+/**
+ * A painted node that carries a name: the names arriving rewrite its text, fill its icon slot and
+ * set its link in place, so the list is never rebuilt for them.
+ */
+interface NameNode {
+	el: HTMLElement;
+	text: () => string;
+	/** The span before the name where the icon goes; null for a node without one. */
+	slot: HTMLElement | null;
+	/** The icon URL as the catalog gave it (validated when painted), or null. */
+	icon: () => string | null;
+	/** The link of an anchor whose destination arrives with the names (a minipet, by its item); undefined for the rest. */
+	href?: () => string | null;
+}
+
+/** A catalog read with nothing in it, for a list whose metas have no category members to ask about. */
+const NO_DETAILS: AchievementDetailsRead = { details: new Map(), englishNames: new Map(), retired: new Set(), failed: false, savedAt: null, stale: false };
 
 type RefreshState =
 	| { status: 'idle' }
@@ -131,17 +167,20 @@ export class AchievementsView {
 	 * may have forgotten it (the key changed) without any of those three changing.
 	 */
 	private details: AchievementDetailsRead | null = null;
+	/** The details of the members of the tracked metas' categories, cached under the same key as `details`. */
+	private elementDetails: AchievementDetailsRead | null = null;
 	private detailsKey: string | null = null;
 	/**
-	 * Names of the objects, minipets, skins and titles on screen, by `achievementNameKey`, for
-	 * `namesLocale`. Empty until they arrive: what is not here is painted as its id.
+	 * Names (and icons) of the objects, minipets, skins and titles on screen, by
+	 * `achievementNameKey`, for `namesLocale`. Empty until they arrive: what is not here is painted
+	 * as its id, without icon.
 	 */
-	private names: ReadonlyMap<string, string> = new Map();
+	private names: ReadonlyMap<string, AchievementNameEntry> = new Map();
 	private namesLocale: Locale | null = null;
 	/** The names request in flight; aborted by a newer one and by `dispose`. */
 	private namesAbort: AbortController | null = null;
-	/** The painted nodes that carry a name, with the text they show: names arriving rewrite these and rebuild nothing. */
-	private nameNodes: Array<{ el: HTMLElement; text: () => string }> = [];
+	/** The painted nodes that carry a name: names arriving rewrite these in place and rebuild nothing. */
+	private nameNodes: NameNode[] = [];
 	private readonly now: () => number;
 	private readonly debounceMs: number;
 	private readonly timers: NonNullable<AchievementsViewOptions['timers']>;
@@ -220,6 +259,15 @@ export class AchievementsView {
 		this.trackedHeading = tracked.createEl('h3', { attr: { tabindex: '-1' } });
 		this.trackedStatus = tracked.createEl('p', { cls: 'tyrian-achievements__tracked-status' });
 		this.trackedList = tracked.createDiv({ cls: 'tyrian-achievements__list' });
+		// Every wiki link of the list (the achievement's, its elements') opens through the host when it
+		// has one; registered once here, so repainting an item adds no listener.
+		this.trackedList.addEventListener('click', (event) => {
+			const target = event.target instanceof Element ? event.target : null;
+			const anchor = target?.closest('a[href]') ?? null;
+			if (anchor === null || this.actions.openExternal === undefined) return;
+			event.preventDefault();
+			this.actions.openExternal(anchor.getAttribute('href') ?? '');
+		});
 
 		this.renderCategories();
 		this.renderAll();
@@ -299,22 +347,33 @@ export class AchievementsView {
 		if (this.tracked.status !== 'ready') this.renderTracked();
 		const locale = this.actions.getLocale();
 		const key = `${locale}:${ids.join(',')}:${services.vaultId}`;
-		const [details, reading] = await Promise.all([
-			// Details that could not all be loaded are not cached: the next read (a refresh, «Actualizar progreso») asks again.
-			this.detailsKey === key && this.details !== null && !this.details.failed ? this.details : services.catalog.loadDetails(locale, ids),
+		// Details that could not all be loaded are not cached: the next read (a refresh, «Actualizar progreso») asks again.
+		const cached = this.detailsKey === key && this.details !== null && this.elementDetails !== null && !this.details.failed && !this.elementDetails.failed;
+		const [details, reading, categoriesRead] = await Promise.all([
+			cached ? this.details! : services.catalog.loadDetails(locale, ids),
 			services.progress.lastReading(services.vaultId),
+			// Kept in memory by the service once loaded: the members of a meta's category come from here.
+			services.catalog.loadCategories(locale),
 		]);
 		if (this.disposed || load !== this.trackedLoad) return;
+		const categories = categoriesRead.status === 'ok' ? categoriesRead.value : [];
+		// The elements of a meta are the other achievements of its category: their details (names,
+		// tiers, flags) are a second public read, cached by the service like the tracked ones.
+		const memberIds = trackedReadingIds({ trackedIds: ids, details: details.details, retired: details.retired, categories }).filter((id) => !ids.includes(id));
+		const elementDetails = cached ? this.elementDetails! : memberIds.length === 0 ? NO_DETAILS : await services.catalog.loadDetails(locale, memberIds);
+		if (this.disposed || load !== this.trackedLoad) return;
 		this.details = details;
+		this.elementDetails = elementDetails;
 		this.detailsKey = key;
 		const views = buildTrackedAchievementsView({
 			trackedIds: ids,
-			details: details.details,
-			englishNames: details.englishNames,
+			details: new Map([...elementDetails.details, ...details.details]),
+			englishNames: new Map([...elementDetails.englishNames, ...details.englishNames]),
 			retired: details.retired,
 			reading: reading === null ? null : { trackedIds: reading.reading.trackedIds, entries: reading.reading.entries },
+			categories,
 		});
-		this.tracked = { status: 'ready', views, details, reading };
+		this.tracked = { status: 'ready', views, details, elementDetails, categories, reading };
 		// Names of another language are not shown under this one: ids until the right ones arrive.
 		if (this.namesLocale !== locale) { this.names = new Map(); this.namesLocale = locale; }
 		this.renderBar();
@@ -343,12 +402,37 @@ export class AchievementsView {
 		this.applyNames();
 	}
 
-	/** Rewrites only the text of the painted nodes that carry a name: the list is not rebuilt, so focus, open state and position stay. */
+	/** Rewrites only the painted nodes that carry a name (text, icon, link): the list is not rebuilt, so focus, open state and position stay. */
 	private applyNames(): void {
-		for (const node of this.nameNodes) {
-			const text = node.text();
-			if (node.el.textContent !== text) node.el.setText(text);
+		for (const node of this.nameNodes) this.applyNode(node);
+	}
+
+	/** One node brought up to date in place; also its first paint. */
+	private applyNode(node: NameNode): void {
+		const text = node.text();
+		if (node.el.textContent !== text) node.el.setText(text);
+		if (node.slot !== null) this.applyIcon(node.slot, node.icon());
+		if (node.href !== undefined) {
+			const href = node.href();
+			if (href !== null && node.el.getAttribute('href') !== href) node.el.setAttr('href', href);
 		}
+	}
+
+	/**
+	 * Puts the icon in its slot, once, when it names the GW2 render host and nothing else
+	 * (`safePublicRenderIconUrl`, the UI's one check for third-party images); any other URL leaves
+	 * the slot empty and the name alone. Decorative: the name is right beside it.
+	 */
+	private applyIcon(slot: HTMLElement, icon: string | null): void {
+		const url = safePublicRenderIconUrl(icon);
+		if (url === null || slot.querySelector('img') !== null) return;
+		slot.createEl('img', {
+			cls: 'tyrian-achievements__icon',
+			attr: {
+				src: url, alt: '', 'aria-hidden': 'true', width: String(ACHIEVEMENT_ICON_SIZE), height: String(ACHIEVEMENT_ICON_SIZE),
+				loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer',
+			},
+		});
 	}
 
 	/** The explicit action, and the only call with the key. */
@@ -358,7 +442,7 @@ export class AchievementsView {
 		this.refreshState = { status: 'running' };
 		this.renderBar();
 		this.renderNotice();
-		const result = await services.progress.refresh(services.vaultId, this.actions.getTrackedAchievementIds());
+		const result = await services.progress.refresh(services.vaultId, this.readingIds());
 		if (this.disposed) return;
 		this.refreshState = result.status === 'ok' ? { status: 'idle' } : { status: 'failed', reason: result.reason };
 		if (result.status === 'ok') {
@@ -367,6 +451,17 @@ export class AchievementsView {
 		}
 		this.renderBar();
 		this.renderNotice();
+	}
+
+	/**
+	 * What «Actualizar progreso» asks the account about: the tracked ids and, for a meta of its
+	 * category, the members of the category (so each element gets its done/pending). The same
+	 * one reading as before; only its filter grows.
+	 */
+	private readingIds(): number[] {
+		const ids = this.actions.getTrackedAchievementIds();
+		if (this.tracked.status !== 'ready') return [...ids];
+		return trackedReadingIds({ trackedIds: ids, details: this.tracked.details.details, retired: this.tracked.details.retired, categories: this.tracked.categories });
 	}
 
 	// ----- search --------------------------------------------------------------------------------
@@ -572,12 +667,12 @@ export class AchievementsView {
 		}
 		const stale = [this.catalog.status === 'ready' ? this.catalog.freshness : null, this.index.status === 'ready' ? this.index.freshness : null]
 			.filter((freshness): freshness is AchievementFreshness => freshness !== null && freshness.stale);
-		const staleDetails = this.tracked.status === 'ready' && this.tracked.details.stale && this.tracked.details.savedAt !== null
-			? this.now() - this.tracked.details.savedAt : null;
-		const oldestMs = Math.max(...stale.map((freshness) => freshness.ageMs), staleDetails ?? 0);
+		const reads = this.tracked.status === 'ready' ? [this.tracked.details, this.tracked.elementDetails] : [];
+		const staleDetails = reads.filter((read) => read.stale && read.savedAt !== null).map((read) => this.now() - (read.savedAt ?? 0));
+		const oldestMs = Math.max(...stale.map((freshness) => freshness.ageMs), ...staleDetails, 0);
 		if (oldestMs > 0) say(t.t('achievements.view.catalogStale', { days: Math.floor(oldestMs / DAY_MS) }));
 		if (this.index.status === 'ready' && !this.index.saved) say(t.t('achievements.view.indexUnsaved'));
-		if (this.tracked.status === 'ready' && this.tracked.details.failed) say(t.t('achievements.tracked.detailsFailed'), 'alert');
+		if (reads.some((read) => read.failed)) say(t.t('achievements.tracked.detailsFailed'), 'alert');
 	}
 
 	private renderCategories(): void {
@@ -682,37 +777,29 @@ export class AchievementsView {
 			requirement.createEl('strong', { text: `${t.t('achievements.tracked.requirement')}: ` });
 			requirement.appendText(view.requirement);
 		}
-		if (view.objectives.length > 0) {
-			body.createEl('h4', { text: t.t('achievements.tracked.objectives') });
-			const list = body.createEl('ul', { cls: 'tyrian-achievements__objectives' });
-			for (const objective of view.objectives) {
-				const row = list.createEl('li', { attr: { 'data-state': objective.state } });
-				// The state is read aloud but not shown: the mark on the left says it to the eye.
-				row.createSpan({ cls: 'tyrian-visually-hidden', text: `${t.t(`achievements.tracked.objective.${objective.state}` as TranslationKey)}: ` });
-				const label = row.createSpan({ text: this.objectiveText(objective) });
-				if (objective.kind === 'item' || objective.kind === 'minipet' || objective.kind === 'skin') {
-					this.nameNodes.push({ el: label, text: () => this.objectiveText(objective) });
-				}
-			}
-		}
+		if (view.elements !== null) this.renderElements(body, view.elements);
 		body.createEl('h4', { text: t.t('achievements.tracked.rewards') });
 		if (view.rewards.length === 0) body.createEl('p', { text: t.t('achievements.tracked.noRewards') });
 		else {
 			const rewards = body.createEl('ul', { cls: 'tyrian-achievements__rewards' });
 			for (const reward of view.rewards) {
-				const row = rewards.createEl('li', { text: this.rewardText(reward) });
-				if (reward.kind === 'item' || reward.kind === 'title') this.nameNodes.push({ el: row, text: () => this.rewardText(reward) });
+				const row = rewards.createEl('li');
+				// An item reward carries its icon before the name; the other kinds are text alone.
+				const slot = reward.kind === 'item' ? row.createSpan({ cls: 'tyrian-achievements__icon-slot' }) : null;
+				const label = row.createSpan();
+				const node: NameNode = {
+					el: label,
+					text: () => this.rewardText(reward),
+					slot,
+					icon: () => (reward.kind === 'item' ? this.entryFor('item', reward.itemId)?.icon ?? null : null),
+				};
+				this.applyNode(node);
+				if (reward.kind === 'item' || reward.kind === 'title') this.nameNodes.push(node);
 			}
 		}
 		const foot = body.createDiv({ cls: 'tyrian-achievements__item-foot' });
 		if (view.wikiUrl !== null) {
-			const link = foot.createEl('a', { text: t.t('achievements.tracked.wiki'), attr: { href: view.wikiUrl, target: '_blank', rel: 'noopener' } });
-			if (this.actions.openExternal !== undefined) {
-				link.addEventListener('click', (event) => {
-					event.preventDefault();
-					this.actions.openExternal?.(view.wikiUrl ?? '');
-				});
-			}
+			foot.createEl('a', { text: t.t('achievements.tracked.wiki'), attr: { href: view.wikiUrl, target: '_blank', rel: 'noopener' } });
 		}
 		const unfollow = foot.createEl('button', {
 			text: t.t('achievements.tracked.unfollow'),
@@ -720,6 +807,53 @@ export class AchievementsView {
 		});
 		unfollow.addEventListener('click', () => { void this.unfollow(view, index); });
 		return item;
+	}
+
+	/**
+	 * The elements of a tracked achievement, as the Leyspring note lists them: the «done of N» count,
+	 * then one row per element with its read-only check (the account's state, said in hidden text
+	 * and shown by the mark), its icon when the public list gives one, its name linked to the wiki
+	 * and, for an achievement half done, « · x/y». Pending first, done after (the model's order).
+	 */
+	private renderElements(body: HTMLElement, elements: TrackedElements): void {
+		const t = this.t;
+		body.createEl('h4', { text: t.t('achievements.tracked.elements') });
+		if (elements.total === 0) { body.createEl('p', { cls: 'tyrian-achievements__elements-count', text: t.t('achievements.tracked.elementsNone') }); return; }
+		const unread = elements.items.every((element) => element.state === 'unknown');
+		const count = body.createEl('p', {
+			cls: 'tyrian-achievements__elements-count',
+			text: unread ? t.t('achievements.tracked.elementsUnread', { total: elements.total }) : t.t('achievements.tracked.elementsCount', { done: elements.done, total: elements.total }),
+		});
+		if (!unread && elements.done === elements.total) count.addClass('is-complete');
+		const list = body.createEl('ul', { cls: 'tyrian-achievements__elements' });
+		for (const element of elements.items) {
+			const row = list.createEl('li', { attr: { 'data-state': element.state, 'data-kind': element.kind } });
+			// The state is read aloud but not shown: the mark on the left says it to the eye.
+			row.createSpan({ cls: 'tyrian-visually-hidden', text: `${t.t(`achievements.tracked.objective.${element.state}` as TranslationKey)}: ` });
+			const named = element.kind === 'item' || element.kind === 'minipet' || element.kind === 'skin' ? element.kind : null;
+			const slot = named !== null || element.kind === 'achievement' ? row.createSpan({ cls: 'tyrian-achievements__icon-slot' }) : null;
+			// A minipet is linked by its item, which arrives with its name: its anchor waits for the href.
+			const linked = element.wikiUrl !== null || named === 'minipet';
+			const label = linked ? row.createEl('a', { attr: { target: '_blank', rel: 'noopener' } }) : row.createSpan();
+			if (element.wikiUrl !== null) label.setAttr('href', element.wikiUrl);
+			const node: NameNode = {
+				el: label,
+				text: () => this.elementText(element),
+				slot,
+				icon: () => (named === null ? element.icon : this.entryFor(named, element.refId)?.icon ?? null),
+			};
+			if (named === 'minipet') {
+				node.href = () => {
+					const itemId = this.entryFor('minipet', element.refId)?.itemId ?? null;
+					return itemId === null ? null : wikiChatLinkSearchUrl(itemChatLink(itemId));
+				};
+			}
+			this.applyNode(node);
+			if (named !== null) this.nameNodes.push(node);
+			if (element.progress !== null) {
+				row.createSpan({ cls: 'tyrian-achievements__count', text: ` · ${String(element.progress.current)}/${String(element.progress.max)}` });
+			}
+		}
 	}
 
 	// ----- copy ----------------------------------------------------------------------------------
@@ -734,17 +868,18 @@ export class AchievementsView {
 		return this.t.t(`achievements.status.${status.kind}` as TranslationKey);
 	}
 
-	private objectiveText(objective: TrackedObjective): string {
+	private elementText(element: TrackedElement): string {
 		const t = this.t;
-		if (objective.kind === 'text') return objective.text ?? t.t('achievements.tracked.objective.other', { index: objective.index + 1 });
-		if (objective.kind === 'item' || objective.kind === 'minipet' || objective.kind === 'skin') {
-			const name = this.nameFor(objective.kind, objective.refId);
-			const id = objective.refId ?? 0;
-			if (objective.kind === 'item') return name === null ? t.t('achievements.tracked.objective.item', { id }) : t.t('achievements.tracked.objective.itemNamed', { name });
-			if (objective.kind === 'minipet') return name === null ? t.t('achievements.tracked.objective.minipet', { id }) : t.t('achievements.tracked.objective.minipetNamed', { name });
+		const id = element.refId ?? 0;
+		if (element.kind === 'achievement') return element.text ?? t.t('achievements.tracked.unknownName', { id });
+		if (element.kind === 'text') return element.text ?? t.t('achievements.tracked.objective.other', { index: (element.index ?? 0) + 1 });
+		if (element.kind === 'item' || element.kind === 'minipet' || element.kind === 'skin') {
+			const name = this.nameFor(element.kind, element.refId);
+			if (element.kind === 'item') return name === null ? t.t('achievements.tracked.objective.item', { id }) : t.t('achievements.tracked.objective.itemNamed', { name });
+			if (element.kind === 'minipet') return name === null ? t.t('achievements.tracked.objective.minipet', { id }) : t.t('achievements.tracked.objective.minipetNamed', { name });
 			return name === null ? t.t('achievements.tracked.objective.skin', { id }) : t.t('achievements.tracked.objective.skinNamed', { name });
 		}
-		return t.t('achievements.tracked.objective.other', { index: objective.index + 1 });
+		return t.t('achievements.tracked.objective.other', { index: (element.index ?? 0) + 1 });
 	}
 
 	private rewardText(reward: TrackedReward): string {
@@ -766,6 +901,11 @@ export class AchievementsView {
 
 	/** The loaded name of an object, minipet, skin or title; null when it is not known (the id is shown instead). */
 	private nameFor(kind: AchievementNameKind, id: number | null): string | null {
+		return this.entryFor(kind, id)?.name ?? null;
+	}
+
+	/** The loaded record (name, icon, minipet's item) of an id, or null. */
+	private entryFor(kind: AchievementNameKind, id: number | null): AchievementNameEntry | null {
 		return id === null ? null : this.names.get(achievementNameKey(kind, id)) ?? null;
 	}
 
@@ -786,8 +926,8 @@ function nameRefsOf(views: readonly TrackedAchievementView[]): AchievementNameRe
 		if (id !== null) refs.set(achievementNameKey(kind, id), { kind, id });
 	};
 	for (const view of views) {
-		for (const objective of view.objectives) {
-			if (objective.kind === 'item' || objective.kind === 'minipet' || objective.kind === 'skin') add(objective.kind, objective.refId);
+		for (const element of view.elements?.items ?? []) {
+			if (element.kind === 'item' || element.kind === 'minipet' || element.kind === 'skin') add(element.kind, element.refId);
 		}
 		for (const reward of view.rewards) {
 			if (reward.kind === 'item') add('item', reward.itemId);

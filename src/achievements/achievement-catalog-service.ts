@@ -99,9 +99,17 @@ export interface AchievementNameRef {
 	id: number;
 }
 
+/** What the public list says of one id: its name, its icon (`render.guildwars2.com`, unvalidated here) and, for a minipet, the item that unlocks it. */
+export interface AchievementNameEntry {
+	name: string;
+	icon: string | null;
+	/** `item_id` of `/v2/minis`; null for the other kinds. The view links the minipet to the wiki by it. */
+	itemId: number | null;
+}
+
 export interface AchievementNamesRead {
 	/** By `achievementNameKey`; an id the API does not know, or that could not be asked, is absent. */
-	names: ReadonlyMap<string, string>;
+	names: ReadonlyMap<string, AchievementNameEntry>;
 	/** Some page failed (or the read was stopped): the caller asks again next time instead of keeping this answer. */
 	failed: boolean;
 }
@@ -251,12 +259,15 @@ export class AchievementCatalogService {
 	}
 
 	/**
-	 * The names of the objects, minipets, skins and titles that rewards and objectives show by id.
-	 * Public endpoints only (`/v2/items`, `/v2/minis`, `/v2/skins`, `/v2/titles`), in the language of
-	 * the interface, 200 ids at a time and only the ids asked for. A name kept less than 7 days ago
-	 * is used without the network; a page that fails falls back on a kept name up to 30 days old and
-	 * the answer says `failed`, so the caller asks again next time. An id the API does not know is
-	 * simply not in `names` and is not a failure. Never throws.
+	 * The names (and icons) of the objects, minipets, skins and titles that rewards and objectives
+	 * show by id. Public endpoints only (`/v2/items`, `/v2/minis`, `/v2/skins`, `/v2/titles`), in the
+	 * language of the interface, 200 ids at a time and only the ids asked for. A record kept less
+	 * than 7 days ago is used without the network; a page that fails falls back on a kept record up
+	 * to 30 days old and the answer says `failed`, so the caller asks again next time. An id the API
+	 * does not know is simply not in `names` and is not a failure. Never throws.
+	 *
+	 * The icon lives in the same record as the name (L4): a record kept before icons were stored
+	 * (no `icon` key) is asked again once, as if it were missing.
 	 *
 	 * `signal` (the view closing) and `dispose` stop it before its next page; what it has is returned
 	 * with `failed: true`.
@@ -276,23 +287,21 @@ export class AchievementCatalogService {
 		const recordKey = (kind: AchievementNameKind, id: number): string => achievementPublicKey(locale, NAME_RECORD_KIND[kind], id);
 		const kept = await this.store.readPublic([...wanted].flatMap(([kind, ids]) => [...ids].map((id) => recordKey(kind, id))));
 		const now = this.now();
-		const names = new Map<string, string>();
+		const names = new Map<string, AchievementNameEntry>();
 		let failed = false;
-		/** A kept record: its name, `null` for «the API does not know it» (kept as a negative), `undefined` for none usable. */
-		const keptName = (kind: AchievementNameKind, id: number, rule: AgeRule): string | null | undefined => {
+		/** A kept record: its entry, `null` for «the API does not know it» (kept as a negative), `undefined` for none usable. */
+		const keptEntry = (kind: AchievementNameKind, id: number, rule: AgeRule): AchievementNameEntry | null | undefined => {
 			const record = kept.get(recordKey(kind, id));
 			if (record === undefined || !withinAge(record.savedAt, now, rule)) return undefined;
-			const value = record.value;
-			if (typeof value !== 'object' || value === null || !('name' in value)) return undefined;
-			if (value.name === null) return null;
-			return typeof value.name === 'string' && value.name.length > 0 ? value.name : undefined;
+			return parseKeptNameRecord(record.value);
 		};
+		const unknown = (): NameRecordValue => ({ name: null, icon: null, itemId: null });
 		for (const [kind, ids] of wanted) {
 			const missing: number[] = [];
 			for (const id of ids) {
-				const name = keptName(kind, id, 'fresh');
-				if (name === undefined) missing.push(id);
-				else if (name !== null) names.set(achievementNameKey(kind, id), name);
+				const entry = keptEntry(kind, id, 'fresh');
+				if (entry === undefined) missing.push(id);
+				else if (entry !== null) names.set(achievementNameKey(kind, id), entry);
 			}
 			for (const batch of chunks(missing, ACHIEVEMENT_PAGE_SIZE)) {
 				if (this.disposed || options.signal?.aborted === true) return { names, failed: true };
@@ -300,23 +309,23 @@ export class AchievementCatalogService {
 				// A 404 is the API saying none of these ids exists: unknown names, not a failure. They are
 				// kept as negatives so the next reads within 7 days do not ask for them again.
 				if (fetched.status === 'not_found') {
-					await this.store.writePublic(batch.map((id) => ({ key: recordKey(kind, id), savedAt: now, value: { name: null } })));
+					await this.store.writePublic(batch.map((id) => ({ key: recordKey(kind, id), savedAt: now, value: unknown() })));
 					continue;
 				}
 				const answered = fetched.status === 'ok' ? parseNames(fetched.body) : null;
 				if (answered === null) {
 					failed = true;
 					for (const id of batch) {
-						const name = keptName(kind, id, 'usable');
-						if (typeof name === 'string') names.set(achievementNameKey(kind, id), name);
+						const entry = keptEntry(kind, id, 'usable');
+						if (entry !== undefined && entry !== null) names.set(achievementNameKey(kind, id), entry);
 					}
 					continue;
 				}
 				const writes: AchievementPublicRecord[] = [];
 				for (const id of batch) {
-					const name = answered.get(id);
-					if (name !== undefined) names.set(achievementNameKey(kind, id), name);
-					writes.push({ key: recordKey(kind, id), savedAt: now, value: { name: name ?? null } });
+					const entry = answered.get(id);
+					if (entry !== undefined) names.set(achievementNameKey(kind, id), entry);
+					writes.push({ key: recordKey(kind, id), savedAt: now, value: entry === undefined ? unknown() : { ...entry } });
 				}
 				if (writes.length > 0) await this.store.writePublic(writes);
 			}
@@ -545,17 +554,43 @@ export class AchievementCatalogService {
 	}
 }
 
-/** Reads `[{ id, name }]` as the public lists answer it; null when it is not an array. Entries without a usable id or name are skipped. */
-function parseNames(body: unknown): Map<number, string> | null {
+/** The kept form of one name record: `name: null` is a negative («the API does not know it»). */
+interface NameRecordValue {
+	name: string | null;
+	icon: string | null;
+	itemId: number | null;
+}
+
+/**
+ * Reads `[{ id, name, icon?, item_id? }]` as the public lists answer it; null when it is not an
+ * array. Entries without a usable id or name are skipped; an icon that is not a non-empty string,
+ * or an `item_id` that is not a positive integer, is simply null.
+ */
+function parseNames(body: unknown): Map<number, AchievementNameEntry> | null {
 	if (!Array.isArray(body)) return null;
-	const names = new Map<number, string>();
+	const names = new Map<number, AchievementNameEntry>();
 	for (const raw of body as unknown[]) {
 		if (typeof raw !== 'object' || raw === null || !('id' in raw) || !('name' in raw)) continue;
 		if (typeof raw.id === 'number' && Number.isSafeInteger(raw.id) && typeof raw.name === 'string' && raw.name.trim().length > 0) {
-			names.set(raw.id, raw.name);
+			const icon = 'icon' in raw && typeof raw.icon === 'string' && raw.icon.length > 0 ? raw.icon : null;
+			const itemId = 'item_id' in raw && typeof raw.item_id === 'number' && Number.isSafeInteger(raw.item_id) && raw.item_id > 0 ? raw.item_id : null;
+			names.set(raw.id, { name: raw.name, icon, itemId });
 		}
 	}
 	return names;
+}
+
+/**
+ * A kept name record read back: the entry, `null` for a kept negative, `undefined` when it is not
+ * usable, which includes a record from before icons were kept (no `icon` key) so it is asked again.
+ */
+function parseKeptNameRecord(value: unknown): AchievementNameEntry | null | undefined {
+	if (typeof value !== 'object' || value === null || !('name' in value) || !('icon' in value)) return undefined;
+	if (value.name === null) return null;
+	if (typeof value.name !== 'string' || value.name.length === 0) return undefined;
+	const icon = typeof value.icon === 'string' && value.icon.length > 0 ? value.icon : null;
+	const itemId = 'itemId' in value && typeof value.itemId === 'number' && Number.isSafeInteger(value.itemId) && value.itemId > 0 ? value.itemId : null;
+	return { name: value.name, icon, itemId };
 }
 
 function achievementsPath(ids: readonly number[], locale: CatalogLocale): string {

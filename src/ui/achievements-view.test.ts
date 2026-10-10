@@ -2,8 +2,8 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { AccountAchievementEntry } from '../account/account-achievements';
-import { searchAchievementIndex, type AchievementDetail, type AchievementIndexEntry } from '../achievements/achievement-catalog-model';
-import { achievementNameKey, type AchievementFreshness, type AchievementIndexBuildOptions, type AchievementIndexBuildResult, type AchievementNameRef } from '../achievements/achievement-catalog-service';
+import { searchAchievementIndex, type AchievementCategory, type AchievementDetail, type AchievementIndexEntry } from '../achievements/achievement-catalog-model';
+import { achievementNameKey, type AchievementFreshness, type AchievementIndexBuildOptions, type AchievementIndexBuildResult, type AchievementNameEntry, type AchievementNameRef } from '../achievements/achievement-catalog-service';
 import type { TrackedProgressRefreshResult } from '../achievements/tracked-progress-service';
 import { installDomHelpers } from '../host/dom-polyfill';
 import { AchievementsView, type AchievementCatalogPort, type AchievementsViewActions, type TrackedProgressPort } from './achievements-view';
@@ -32,7 +32,7 @@ function detail(id: number, overrides: Partial<AchievementDetail> = {}): Achieve
 	return {
 		id, name: `Logro ${String(id)}`, description: '', requirement: `Requisito ${String(id)}`, flags: [],
 		tiers: [{ count: 4, points: 5 }], bits: [{ kind: 'text', text: 'Uno', refId: null }, { kind: 'item', text: null, refId: 77 }],
-		rewards: [{ kind: 'coins', copper: 12_345 }, { kind: 'title', titleId: 9 }], pointCap: null, ...overrides,
+		rewards: [{ kind: 'coins', copper: 12_345 }, { kind: 'title', titleId: 9 }], pointCap: null, icon: null, ...overrides,
 	};
 }
 
@@ -77,6 +77,12 @@ function harness(options: {
 	locale?: 'es' | 'en';
 	/** Names the public lists know, by `achievementNameKey`; the language is part of what the test passes. */
 	names?: (locale: 'es' | 'en') => Record<string, string>;
+	/** Icons the public lists give with the names, by `achievementNameKey` (any URL: the view decides what it shows). */
+	icons?: Record<string, string>;
+	/** The `item_id` of each minipet, by `achievementNameKey`. */
+	miniItems?: Record<string, number>;
+	/** The public categories, instead of the four of the fixture. */
+	categories?: AchievementCategory[];
 	/** The first `loadNames` answers `failed: true` with nothing; the next ones answer normally. */
 	namesFailOnce?: boolean;
 	/** `loadNames` waits until `releaseNames()`. */
@@ -103,7 +109,7 @@ function harness(options: {
 	let indexReady = options.indexKept === true;
 	const catalog: AchievementCatalogPort = {
 		loadGroups: async () => { calls.push('groups'); if (options.holdCatalog) await catalogGate.wait; return options.catalogFails ? { status: 'unavailable', reason: 'request_failed' } : { status: 'ok', value: GROUPS, freshness: fresh(options.stale) }; },
-		loadCategories: async () => { calls.push('categories'); if (options.holdCatalog) await catalogGate.wait; return options.catalogFails ? { status: 'unavailable', reason: 'request_failed' } : { status: 'ok', value: CATEGORIES, freshness: fresh(options.stale) }; },
+		loadCategories: async () => { calls.push('categories'); if (options.holdCatalog) await catalogGate.wait; return options.catalogFails ? { status: 'unavailable', reason: 'request_failed' } : { status: 'ok', value: options.categories ?? CATEGORIES, freshness: fresh(options.stale) }; },
 		loadIndex: async () => { calls.push('loadIndex'); return indexReady ? { status: 'ready', total: INDEX.length, freshness: fresh() } : { status: 'not_built', done: 0, total: INDEX.length }; },
 		buildIndex: async (_locale, buildOptions: AchievementIndexBuildOptions = {}): Promise<AchievementIndexBuildResult> => {
 			calls.push('buildIndex');
@@ -124,10 +130,10 @@ function harness(options: {
 			if (options.holdNames) await namesGate.wait;
 			if (options.namesFailOnce && nameRequests.length === 1) return { names: new Map(), failed: true };
 			const known = options.names?.(askedLocale) ?? {};
-			const names = new Map<string, string>();
+			const names = new Map<string, AchievementNameEntry>();
 			for (const ref of refs) {
 				const key = achievementNameKey(ref.kind, ref.id);
-				if (known[key] !== undefined) names.set(key, known[key]);
+				if (known[key] !== undefined) names.set(key, { name: known[key], icon: options.icons?.[key] ?? null, itemId: options.miniItems?.[key] ?? null });
 			}
 			return { names, failed: false };
 		},
@@ -500,11 +506,11 @@ describe('AchievementsView: each followed achievement', () => {
 		expect([meter.getAttribute('value'), meter.getAttribute('max'), meter.getAttribute('aria-valuetext')]).toEqual(['1', '4', '1 de 4']);
 		expect(summary.querySelector('.tyrian-achievements__state')?.textContent).toBe('En curso');
 		expect(item.querySelector('.tyrian-achievements__requirement')?.textContent).toBe('Requisito: Requisito 1');
-		const objectives = Array.from(item.querySelectorAll('.tyrian-achievements__objectives li'));
+		const objectives = Array.from(item.querySelectorAll('.tyrian-achievements__elements li'));
 		expect(objectives.map((row) => [row.getAttribute('data-state'), row.textContent])).toEqual([['pending', 'pendiente: Uno'], ['done', 'hecho: Objeto 77']]);
 		expect(objectives.map((row) => row.querySelector('.tyrian-visually-hidden')?.textContent)).toEqual(['pendiente: ', 'hecho: ']);
 		expect(Array.from(item.querySelectorAll('.tyrian-achievements__rewards li')).map((row) => row.textContent)).toEqual(['Monedas: 1g 23s 45c', 'Título 9', '5 PL']);
-		const link = item.querySelector<HTMLAnchorElement>('a')!;
+		const link = item.querySelector<HTMLAnchorElement>('.tyrian-achievements__item-foot a')!;
 		expect(link.getAttribute('href')).toBe('https://wiki.guildwars2.com/index.php?search=Achievement%201');
 		expect(link.textContent).toBe('Ver en la wiki');
 		link.dispatchEvent(new MouseEvent('click', { cancelable: true, bubbles: true }));
@@ -531,7 +537,7 @@ describe('AchievementsView: each followed achievement', () => {
 		const state = (index: number) => items[index]!.querySelector('.tyrian-achievements__state')?.textContent;
 		expect([state(0), state(1), state(2), state(3), state(4)]).toEqual(['Completado', 'Sin objetivos', 'Repetible · hecho 3 veces', 'Retirado', 'Sin leer']);
 		// Completed: every objective done, no bar. Repeatable: the round's progress and the capped points.
-		const states = (index: number) => Array.from(items[index]!.querySelectorAll('.tyrian-achievements__objectives li')).map((row) => row.getAttribute('data-state'));
+		const states = (index: number) => Array.from(items[index]!.querySelectorAll('.tyrian-achievements__elements li')).map((row) => row.getAttribute('data-state'));
 		expect(states(0)).toEqual(['done', 'done']);
 		expect(items[0]!.querySelector('progress')).toBeNull();
 		expect(items[2]!.querySelector('.tyrian-achievements__count')?.textContent).toBe('2/4');
@@ -697,7 +703,7 @@ describe('AchievementsView: names of rewards and objectives (L3)', () => {
 			[achievementNameKey('title', 9)]: `${word.title} 9`,
 		};
 	};
-	const objectives = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll('.tyrian-achievements__objectives li')).map((row) => row.textContent);
+	const objectives = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll('.tyrian-achievements__elements li')).map((row) => row.textContent);
 	const rewards = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll('.tyrian-achievements__rewards li')).map((row) => row.textContent);
 
 	it('shows the name of the object, minipet, skin and title, and asks only for the ids on screen', async () => {
@@ -866,5 +872,190 @@ describe('AchievementsView: names of rewards and objectives (L3)', () => {
 		await h.settle();
 		expect(h.refresh).not.toHaveBeenCalled();
 		expect(h.calls).not.toContain('REFRESH');
+	});
+});
+
+describe('AchievementsView: the elements of each followed achievement, with checks, links and icons (L4)', () => {
+	const RENDER = 'https://render.guildwars2.com/file/3617A021F32B4BE09D6351A23E1B4B6824742F57/3805888.png';
+	const META_ID = 9417;
+	/** 9417 as the API gives it: `CategoryDisplay`, no bits, the mirror 110148 and a Magic mastery as rewards. */
+	const meta = (): AchievementDetail => detail(META_ID, {
+		name: 'Dominio de las Hondonadas del Manantial de Ley', flags: ['RepairOnLogin', 'CategoryDisplay', 'MoveToTop', 'Permanent'], bits: [],
+		tiers: [{ count: 9, points: 1 }, { count: 18, points: 2 }, { count: 27, points: 2 }, { count: 36, points: 5 }],
+		rewards: [{ kind: 'item', itemId: 110_148, count: 1 }, { kind: 'mastery', masteryId: 956, region: 'Magic' }],
+	});
+	const LEYSPRING: AchievementCategory = { id: 486, name: 'Leyspring Hollows', order: 4, icon: null, achievementIds: [9351, META_ID, 9410, 9468] };
+	const members = new Map<number, AchievementDetail>([
+		[META_ID, meta()],
+		[9351, detail(9351, { name: 'Operación', tiers: [{ count: 13, points: 5 }], bits: [], icon: RENDER })],
+		[9410, detail(9410, { name: 'Diario', flags: ['Daily'], bits: [] })],
+		[9468, detail(9468, { name: 'Puzle de la caverna', tiers: [{ count: 4, points: 10 }], bits: [] })],
+	]);
+	const READING = [META_ID, 9351, 9410, 9468];
+	const rich = (id: number): AchievementDetail => detail(id, {
+		bits: [
+			{ kind: 'text', text: 'Uno', refId: null }, { kind: 'item', text: null, refId: 77 },
+			{ kind: 'minipet', text: null, refId: 88 }, { kind: 'skin', text: null, refId: 99 },
+		],
+		rewards: [{ kind: 'item', itemId: 500, count: 3 }],
+	});
+	const known = () => ({
+		[achievementNameKey('item', 77)]: 'Espada 77', [achievementNameKey('minipet', 88)]: 'Mascota 88',
+		[achievementNameKey('skin', 99)]: 'Piel 99', [achievementNameKey('item', 500)]: 'Espada 500',
+	});
+	const rows = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll<HTMLElement>('.tyrian-achievements__elements li'));
+	const describeRow = (row: HTMLElement) => {
+		const label = row.querySelector<HTMLElement>('a, span:not(.tyrian-visually-hidden):not(.tyrian-achievements__icon-slot):not(.tyrian-achievements__count)')!;
+		return [row.getAttribute('data-state'), row.textContent, label.tagName.toLowerCase(), label.getAttribute('href')];
+	};
+	const counter = (h: ReturnType<typeof harness>) => h.container.querySelector('.tyrian-achievements__elements-count')?.textContent;
+
+	it('bits: a read-only check per element said in hidden text, pending first, each item or skin linked by chat link and the minipet once its item arrives', async () => {
+		const h = harness({
+			tracked: [1], details: new Map([[1, rich(1)]]), names: known, miniItems: { [achievementNameKey('minipet', 88)]: 21_047 },
+			entries: [{ id: 1, done: false, current: 2, max: 4, repeated: null, bits: [0, 3] }],
+		});
+		h.view.mount();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__body h4')?.textContent).toBe('Elementos');
+		expect(counter(h)).toBe('Hechos: 2 de 4');
+		expect(rows(h).map(describeRow)).toEqual([
+			['pending', 'pendiente: Objeto: Espada 77', 'a', 'https://wiki.guildwars2.com/index.php?search=%5B%26AgFNAAAA%5D'],
+			['pending', 'pendiente: Minimascota: Mascota 88', 'a', 'https://wiki.guildwars2.com/index.php?search=%5B%26AgE3UgAA%5D'],
+			['done', 'hecho: Uno', 'span', null],
+			['done', 'hecho: Aspecto: Piel 99', 'a', 'https://wiki.guildwars2.com/index.php?search=%5B%26CmMAAAA%3D%5D'],
+		]);
+		// The check is the account's, not the player's: no input to toggle, the state in text for the reader.
+		expect(h.container.querySelector('.tyrian-achievements__elements input')).toBeNull();
+		expect(rows(h).map((row) => row.querySelector('.tyrian-visually-hidden')?.textContent)).toEqual(['pendiente: ', 'pendiente: ', 'hecho: ', 'hecho: ']);
+		// The element links open through the host, like the wiki link.
+		rows(h)[0]!.querySelector('a')!.dispatchEvent(new MouseEvent('click', { cancelable: true, bubbles: true }));
+		expect(h.openExternal).toHaveBeenLastCalledWith('https://wiki.guildwars2.com/index.php?search=%5B%26AgFNAAAA%5D');
+	});
+
+	it('a meta of its category (9417) lists the other achievements of the category as elements: pending first with their x/y, done after, anchored to their wiki row; the daily is left out', async () => {
+		const h = harness({
+			tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], readingIds: READING,
+			entries: [
+				{ id: META_ID, done: false, current: 23, max: 36, repeated: null, bits: null },
+				{ id: 9351, done: false, current: 6, max: 13, repeated: null, bits: null },
+				{ id: 9468, done: true, current: 4, max: 4, repeated: null, bits: null },
+			],
+		});
+		h.view.mount();
+		await h.settle();
+		// The members' details are a second public read, apart from the tracked ones.
+		expect(h.calls.filter((call) => call.startsWith('details:'))).toEqual([`details:${String(META_ID)}`, 'details:9351,9410,9468']);
+		const item = h.items()[0]!;
+		expect(item.querySelector('.tyrian-achievements__count')?.textContent).toBe('23/36');
+		expect(counter(h)).toBe('Hechos: 1 de 2');
+		expect(rows(h).map(describeRow)).toEqual([
+			['pending', 'pendiente: Operación · 6/13', 'a', 'https://wiki.guildwars2.com/index.php?search=Achievement%209351#achievement9351'],
+			['done', 'hecho: Puzle de la caverna', 'a', 'https://wiki.guildwars2.com/index.php?search=Achievement%209468#achievement9468'],
+		]);
+		// An achievement element with an icon from the catalog shows it; one without shows only its name.
+		expect(rows(h).map((row) => row.querySelector('img')?.getAttribute('src') ?? null)).toEqual([RENDER, null]);
+		// «Actualizar progreso» asks about the members too (the daily included: the account decides), in ONE reading.
+		h.refreshButton().click();
+		await h.settle();
+		expect(h.refresh).toHaveBeenCalledTimes(1);
+		expect(h.refresh).toHaveBeenCalledWith(VAULT, [META_ID, 9351, 9410, 9468]);
+	});
+
+	it('a meta whose members were not read says the elements are not read; one whose category lists nothing else says so; all done is marked', async () => {
+		const unread = harness({ tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], readingIds: [META_ID], entries: [{ id: META_ID, done: false, current: 23, max: 36, repeated: null, bits: null }] });
+		unread.view.mount();
+		await unread.settle();
+		expect(counter(unread)).toBe('2 elementos · sin leer');
+		expect(rows(unread).map((row) => row.getAttribute('data-state'))).toEqual(['unknown', 'unknown']);
+
+		const alone = harness({ tracked: [META_ID], details: members, categories: [...CATEGORIES, { ...LEYSPRING, achievementIds: [META_ID] }] });
+		alone.view.mount();
+		await alone.settle();
+		expect(counter(alone)).toBe('La API no lista los elementos de este logro.');
+		expect(rows(alone)).toEqual([]);
+
+		const complete = harness({
+			tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], readingIds: READING,
+			entries: [{ id: 9351, done: true, current: 13, max: 13, repeated: null, bits: null }, { id: 9468, done: true, current: 4, max: 4, repeated: null, bits: null }],
+		});
+		complete.view.mount();
+		await complete.settle();
+		expect(counter(complete)).toBe('Hechos: 2 de 2');
+		expect(complete.container.querySelector('.tyrian-achievements__elements-count')?.classList.contains('is-complete')).toBe(true);
+	});
+
+	it('shows the icon of an item reward and of item, minipet and skin elements, 20 px and decorative, only from the GW2 render host', async () => {
+		const h = harness({
+			tracked: [1], details: new Map([[1, rich(1)]]), names: known,
+			icons: {
+				[achievementNameKey('item', 500)]: RENDER,
+				[achievementNameKey('item', 77)]: 'https://evil.example/render.guildwars2.com/x.png',
+				[achievementNameKey('minipet', 88)]: 'https://user:pw@render.guildwars2.com/file/A/1.png',
+				[achievementNameKey('skin', 99)]: 'https://render.guildwars2.com/file/B/2.png',
+			},
+		});
+		h.view.mount();
+		await h.settle();
+		const reward = h.container.querySelector('.tyrian-achievements__rewards li')!;
+		const icon = reward.querySelector('img')!;
+		expect(reward.textContent).toBe('Espada 500 ×3');
+		expect([icon.getAttribute('src'), icon.getAttribute('alt'), icon.getAttribute('aria-hidden'), icon.getAttribute('width'), icon.getAttribute('height'), icon.getAttribute('loading'), icon.getAttribute('referrerpolicy')])
+			.toEqual([RENDER, '', 'true', '20', '20', 'lazy', 'no-referrer']);
+		// The icon goes before the name, inside its slot.
+		expect(icon.parentElement?.classList.contains('tyrian-achievements__icon-slot')).toBe(true);
+		expect(icon.parentElement?.nextElementSibling?.textContent).toBe('Espada 500 ×3');
+		// Another host, or credentials in the URL, leave the name alone.
+		expect(rows(h).map((row) => row.querySelector('img')?.getAttribute('src') ?? null)).toEqual([null, null, null, 'https://render.guildwars2.com/file/B/2.png']);
+		expect(h.container.querySelectorAll('img')).toHaveLength(2);
+	});
+
+	it('the reward «Objeto 110148 ×1» of 9417 comes out as icon + name once the public list answers', async () => {
+		const h = harness({
+			tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], holdNames: true,
+			names: () => ({ [achievementNameKey('item', 110_148)]: 'Espejo mágico de La Niebla' }), icons: { [achievementNameKey('item', 110_148)]: RENDER },
+		});
+		h.view.mount();
+		await h.settle();
+		const rewards = () => Array.from(h.container.querySelectorAll('.tyrian-achievements__rewards li')).map((row) => [row.querySelector('img')?.getAttribute('src') ?? null, row.textContent]);
+		expect(rewards()).toEqual([[null, 'Objeto 110148 ×1'], [null, 'Maestría (Magic)'], [null, '10 PL']]);
+		h.releaseNames();
+		await h.settle();
+		expect(rewards()).toEqual([[RENDER, 'Espejo mágico de La Niebla ×1'], [null, 'Maestría (Magic)'], [null, '10 PL']]);
+	});
+
+	it('when the names and icons arrive the list is not rebuilt: the focused element link stays focused and gets its icon and, for a minipet, its link in place', async () => {
+		const h = harness({
+			tracked: [1], details: new Map([[1, rich(1)]]), names: known, holdNames: true,
+			icons: { [achievementNameKey('item', 77)]: RENDER }, miniItems: { [achievementNameKey('minipet', 88)]: 21_047 },
+		});
+		h.view.mount();
+		await h.settle();
+		h.items()[0]!.setAttribute('open', '');
+		// Nothing done: the bits keep their order (the text «Uno» first), so the item is the second row and the minipet the third.
+		const itemLink = rows(h)[1]!.querySelector<HTMLElement>('a')!;
+		const miniLink = rows(h)[2]!.querySelector<HTMLElement>('a')!;
+		expect([itemLink.textContent, miniLink.getAttribute('href')]).toEqual(['Objeto 77', null]);
+		itemLink.focus();
+		expect(document.activeElement).toBe(itemLink);
+		const repaint = vi.spyOn(h.view as unknown as { renderTracked(): void }, 'renderTracked');
+		h.releaseNames();
+		await h.settle();
+		expect(repaint).not.toHaveBeenCalled();
+		expect(itemLink.isConnected).toBe(true);
+		expect(document.activeElement).toBe(itemLink);
+		expect(itemLink.textContent).toBe('Objeto: Espada 77');
+		expect(itemLink.previousElementSibling?.querySelector('img')?.getAttribute('src')).toBe(RENDER);
+		expect(miniLink.getAttribute('href')).toBe('https://wiki.guildwars2.com/index.php?search=%5B%26AgE3UgAA%5D');
+		expect(miniLink.textContent).toBe('Minimascota: Mascota 88');
+	});
+
+	it('speaks English for the elements too', async () => {
+		const h = harness({ locale: 'en', tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], readingIds: READING, entries: [{ id: 9468, done: true, current: 4, max: 4, repeated: null, bits: null }] });
+		h.view.mount();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__body h4')?.textContent).toBe('Elements');
+		expect(counter(h)).toBe('Done: 1 of 2');
+		expect(rows(h).map((row) => row.querySelector('.tyrian-visually-hidden')?.textContent)).toEqual(['pending: ', 'done: ']);
 	});
 });

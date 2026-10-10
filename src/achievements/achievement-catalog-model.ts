@@ -68,6 +68,39 @@ export interface AchievementDetail {
 	rewards: AchievementReward[];
 	/** Most points a repeatable achievement can give; null when the API gives none. */
 	pointCap: number | null;
+	/** The achievement's own icon as the API gives it (most have none); the view validates the host before showing it. */
+	icon: string | null;
+}
+
+/**
+ * The flag of a category's meta achievement («Leyspring Hollows Mastery», 9417: «Complete N map
+ * achievements throughout…»): the game shows it at the top of its category and counts the others.
+ */
+export const CATEGORY_META_FLAG = 'CategoryDisplay';
+
+/** Periodic achievements come and go: they are never elements of a permanent meta. */
+const PERIODIC_FLAGS = new Set(['Daily', 'Weekly', 'Monthly']);
+
+/**
+ * A meta achievement of its category: flagged `CategoryDisplay` and without `bits` of its own. Its
+ * elements are the other achievements the category lists (`categoryMembersOf`). Measured on
+ * 9417 (10 oct 2026): `bits: null`, flags `RepairOnLogin, CategoryDisplay, MoveToTop, Permanent`.
+ */
+export function isCategoryMetaAchievement(detail: AchievementDetail): boolean {
+	return detail.bits.length === 0 && detail.flags.includes(CATEGORY_META_FLAG);
+}
+
+export function isPeriodicAchievement(detail: AchievementDetail): boolean {
+	return detail.flags.some((flag) => PERIODIC_FLAGS.has(flag));
+}
+
+/**
+ * The achievements of the first category that lists `id`, in the category's order and without `id`
+ * itself; null when no category lists it. The same «first category» rule as `planAchievementIndex`.
+ */
+export function categoryMembersOf(categories: readonly AchievementCategory[], id: number): number[] | null {
+	const category = categories.find((candidate) => candidate.achievementIds.includes(id));
+	return category === undefined ? null : category.achievementIds.filter((member) => member !== id);
 }
 
 /** What the search needs of each achievement, and nothing else: about 8,355 of them per language. */
@@ -219,6 +252,7 @@ function parseDetail(raw: Record<string, unknown>): AchievementDetail | null {
 		bits: Array.isArray(raw.bits) ? (raw.bits as unknown[]).map(parseBit) : [],
 		rewards: Array.isArray(raw.rewards) ? (raw.rewards as unknown[]).flatMap(parseReward) : [],
 		pointCap: nonNegative(raw.point_cap) ? raw.point_cap : null,
+		icon: typeof raw.icon === 'string' && raw.icon.length > 0 ? raw.icon : null,
 	};
 }
 

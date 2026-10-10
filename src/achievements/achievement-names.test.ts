@@ -65,7 +65,12 @@ function harness(options: Options = {}) {
 			return Promise.resolve({
 				status: known.length < asked.length ? 206 : 200,
 				headers: {},
-				body: known.map((id) => ({ id, name: `${routeOf(path)} ${lang} ${String(id)}`, ignored: 'x' })),
+				// Icons as the public lists give them (none for titles; an empty one for id 42); minis also name the item that unlocks them.
+				body: known.map((id) => ({
+					id, name: `${routeOf(path)} ${lang} ${String(id)}`, ignored: 'x',
+					...(routeOf(path) === 'titles' ? {} : { icon: id === 42 ? '' : `https://render.guildwars2.com/file/${routeOf(path)}/${String(id)}.png` }),
+					...(routeOf(path) === 'minis' ? { item_id: id + 1000 } : {}),
+				})),
 			});
 		},
 	};
@@ -81,10 +86,10 @@ describe('AchievementCatalogService · names of rewards and objectives', () => {
 		const { service, paths } = harness();
 		const read = await service.loadNames('en', [item(5), { kind: 'minipet', id: 6 }, { kind: 'skin', id: 7 }, { kind: 'title', id: 8 }]);
 		expect(read.failed).toBe(false);
-		expect(read.names.get(achievementNameKey('item', 5))).toBe('items EN 5');
-		expect(read.names.get(achievementNameKey('minipet', 6))).toBe('minis EN 6');
-		expect(read.names.get(achievementNameKey('skin', 7))).toBe('skins EN 7');
-		expect(read.names.get(achievementNameKey('title', 8))).toBe('titles EN 8');
+		expect(read.names.get(achievementNameKey('item', 5))?.name).toBe('items EN 5');
+		expect(read.names.get(achievementNameKey('minipet', 6))?.name).toBe('minis EN 6');
+		expect(read.names.get(achievementNameKey('skin', 7))?.name).toBe('skins EN 7');
+		expect(read.names.get(achievementNameKey('title', 8))?.name).toBe('titles EN 8');
 		expect(paths.map(routeOf).sort()).toEqual(['items', 'minis', 'skins', 'titles']);
 		expect(paths.every((path) => langOf(path) === 'en')).toBe(true);
 	});
@@ -148,7 +153,7 @@ describe('AchievementCatalogService · names of rewards and objectives', () => {
 		const english = await service.loadNames('en', [item(1)]);
 		expect(paths).toHaveLength(2);
 		expect(langOf(paths[1]!)).toBe('en');
-		expect(english.names.get(achievementNameKey('item', 1))).toBe('items EN 1');
+		expect(english.names.get(achievementNameKey('item', 1))?.name).toBe('items EN 1');
 	});
 
 	it('uses a kept name younger than 7 days, asks again past that, and without network uses it up to 30 days', async () => {
@@ -165,7 +170,7 @@ describe('AchievementCatalogService · names of rewards and objectives', () => {
 		for (const [key, record] of store.records) offline.store.records.set(key, { ...record, savedAt: NOW });
 		offline.clock.now = NOW + 20 * DAY;
 		const read = await offline.service.loadNames('es', [item(1)]);
-		expect(read.names.get(achievementNameKey('item', 1))).toBe('items ES 1');
+		expect(read.names.get(achievementNameKey('item', 1))?.name).toBe('items ES 1');
 		expect(read.failed).toBe(true);
 		offline.clock.now = NOW + 40 * DAY;
 		expect((await offline.service.loadNames('es', [item(1)])).names.size).toBe(0);
@@ -195,6 +200,30 @@ describe('AchievementCatalogService · names of rewards and objectives', () => {
 			expect(path).not.toContain('account');
 			expect(path).not.toContain('access_token');
 		}
+	});
+
+	it('answers the icon with the name, the item of a minipet, and null for what the list does not give (L4)', async () => {
+		const { service, store } = harness();
+		const read = await service.loadNames('es', [item(5), item(42), { kind: 'minipet', id: 6 }, { kind: 'title', id: 8 }]);
+		expect(read.names.get(achievementNameKey('item', 5))).toEqual({ name: 'items ES 5', icon: 'https://render.guildwars2.com/file/items/5.png', itemId: null });
+		expect(read.names.get(achievementNameKey('item', 42))).toEqual({ name: 'items ES 42', icon: null, itemId: null });
+		expect(read.names.get(achievementNameKey('minipet', 6))).toEqual({ name: 'minis ES 6', icon: 'https://render.guildwars2.com/file/minis/6.png', itemId: 1006 });
+		expect(read.names.get(achievementNameKey('title', 8))).toEqual({ name: 'titles ES 8', icon: null, itemId: null });
+		// The icon and the item live in the same kept record as the name.
+		expect(store.records.get('es:name-minipet:6')?.value).toEqual({ name: 'minis ES 6', icon: 'https://render.guildwars2.com/file/minis/6.png', itemId: 1006 });
+		expect(store.records.get('es:name-title:8')?.value).toEqual({ name: 'titles ES 8', icon: null, itemId: null });
+	});
+
+	it('asks again, once, for a record kept before icons were stored (no icon key), and keeps the icon from then on', async () => {
+		const store = new MemoryPublicStore();
+		store.records.set('es:name-item:1', { key: 'es:name-item:1', savedAt: NOW, value: { name: 'Espada vieja' } });
+		const { service, paths } = harness({ store });
+		const read = await service.loadNames('es', [item(1)]);
+		expect(paths).toHaveLength(1);
+		expect(read.names.get(achievementNameKey('item', 1))).toEqual({ name: 'items ES 1', icon: 'https://render.guildwars2.com/file/items/1.png', itemId: null });
+		expect(read.failed).toBe(false);
+		await service.loadNames('es', [item(1)]);
+		expect(paths).toHaveLength(1);
 	});
 
 	it('ignores ids that are not positive integers and asks nothing for them', async () => {
