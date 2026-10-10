@@ -681,4 +681,50 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 
 		expect(saves.at(-1)).toMatchObject({ preferredCharacter: 'Kasmeer', inventorySyncLastRun: receipt });
 	});
+
+	it('publishes only the receipt in memory, so a language changed outside still reacts at the next save', async () => {
+		const { runtime, store, saves, patched } = await readyOverStore();
+		store.value = { ...store.value, language: 'es' };
+		const receipt = { at: 1 } as never;
+
+		await (runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome(receipt);
+		expect(saves.at(-1)).toMatchObject({ language: 'es', inventorySyncLastRun: receipt });
+		expect(runtime.settings.language).toBe('en');
+		expect(patched).toEqual([]);
+
+		await runtime.updateSettings({ valuableLootThresholdCopper: 20_000 });
+
+		expect(saves.at(-1)).toMatchObject({ language: 'es', valuableLootThresholdCopper: 20_000 });
+		expect(patched).toEqual(['session', 'inventory', 'sale']);
+	});
+
+	it.each([
+		['an older schema', { schemaVersion: SETTINGS_SCHEMA_VERSION - 1 }],
+		['a newer schema', { schemaVersion: SETTINGS_SCHEMA_VERSION + 1, unknownKey: true }],
+		['an empty object', null],
+	])('keeps its memory as the base when the store holds %s', async (_label, foreign) => {
+		const { runtime, store, saves } = await readyOverStore();
+		await runtime.updateSettings({ pollingIntervalMinutes: 30, apiKeySecret: 'gw2-primary' });
+		saves.length = 0;
+		store.value = foreign === null ? {} : { ...store.value, ...foreign, pollingIntervalMinutes: 60, apiKeySecret: '' };
+		const memory = { ...runtime.settings };
+
+		await runtime.updateSettings({ valuableLootThresholdCopper: 20_000 });
+
+		expect(saves).toHaveLength(1);
+		expect(saves[0]).toMatchObject({ ...memory, valuableLootThresholdCopper: 20_000 });
+		expect(saves[0]).toMatchObject({ pollingIntervalMinutes: 30, apiKeySecret: 'gw2-primary', schemaVersion: SETTINGS_SCHEMA_VERSION });
+	});
+
+	it('leaves the chain usable when a save rejects', async () => {
+		const { runtime, store } = await readyOverStore();
+		const failure = new Error('The store refuses the write.');
+		const host = (runtime as unknown as { host: TyrianHost }).host;
+		vi.spyOn(host.settings, 'save').mockRejectedValueOnce(failure);
+
+		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 20_000 })).rejects.toBe(failure);
+
+		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 30_000 })).resolves.toMatchObject({ status: 'saved' });
+		expect(store.value).toMatchObject({ valuableLootThresholdCopper: 30_000 });
+	});
 });
