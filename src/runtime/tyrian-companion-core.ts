@@ -199,6 +199,7 @@ import {
 	type CollectorMode,
 	mergeSettingsUpdate,
 	migrateSettings,
+	SETTINGS_SCHEMA_VERSION,
 	priceHistoryOptInOffered,
 	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
@@ -2837,7 +2838,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			const base = await this.loadSettingsBase();
 			const next = { ...base, inventorySyncLastRun: outcome };
 			await this.host.settings.save(next);
-			this.settings = next;
+			// Memory takes only the key this method owns. What another device changed stays unpublished,
+			// so the next `updateSettings` still sees it as a difference and reacts to it.
+			this.settings = { ...this.settings, inventorySyncLastRun: outcome };
 		});
 	}
 
@@ -2862,12 +2865,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/**
 	 * What a save merges over: the persisted settings, migrated like at boot, so a key that arrived from
-	 * another device (Obsidian Sync, Hebra storage) is kept whole. Anything that is not a settings object
-	 * falls back to memory; a rejected read rejects, so nothing is written over what could not be read.
+	 * another device (Obsidian Sync, Hebra storage) is kept whole. Only an object written under this very
+	 * settings schema counts: anything else (not an object, empty, no `schemaVersion`, older or newer)
+	 * falls back to memory, because `migrateSettings` would reset values across schemas. A rejected read
+	 * rejects, so nothing is written over what could not be read.
 	 */
 	private async loadSettingsBase(): Promise<TyrianSettings> {
 		const persisted = await this.host.settings.load();
-		if (typeof persisted !== 'object' || persisted === null || Array.isArray(persisted)) return this.settings;
+		if (typeof persisted !== 'object' || persisted === null || Array.isArray(persisted) ||
+			(persisted as { schemaVersion?: unknown }).schemaVersion !== SETTINGS_SCHEMA_VERSION) return this.settings;
 		return migrateSettings(persisted, this.host.vault.configDir, this.host.locale());
 	}
 
