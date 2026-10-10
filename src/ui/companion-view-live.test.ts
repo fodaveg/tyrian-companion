@@ -272,7 +272,7 @@ describe('mounted Companion as a section the host hides without unmounting it', 
   for (const extra of [{ hostListsSections: () => false }, {}]) {
    const own = await opened(extra);
    expect(Array.from(own.content.querySelectorAll('.tyrian-product-shell__nav button:not(.tyrian-product-shell__settings)')).map((tab) => tab.textContent))
-    .toEqual(['Session', 'Inventory', 'Sale']);
+    .toEqual(['Session', 'Inventory', 'Sale', 'Achievements']);
    await own.view.onClose();
   }
  });

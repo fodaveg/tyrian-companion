@@ -713,7 +713,7 @@ describe('InventoryAdvisorItemView as a section the host hides without unmountin
 		for (const extra of [{ hostListsSections: () => false }, {}]) {
 			const nav = await navOf(extra);
 			expect(find(nav!, 'button').filter((tab) => !tab.className.includes('tyrian-product-shell__settings')).map((tab) => tab.textContent))
-				.toEqual(['Sesión', 'Inventario', 'Venta']);
+				.toEqual(['Sesión', 'Inventario', 'Venta', 'Logros']);
 		}
 	});
 });

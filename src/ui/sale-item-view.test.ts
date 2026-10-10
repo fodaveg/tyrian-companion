@@ -417,7 +417,7 @@ describe('SaleItemView where the host lists the sections itself', () => {
 			const { nav } = shellOf(view);
 			const buttons = find(nav!, 'button');
 			expect(buttons.filter((el) => !el.className.includes('tyrian-product-shell__settings')).map((el) => el.textContent))
-				.toEqual(['Sesión', 'Inventario', 'Venta']);
+				.toEqual(['Sesión', 'Inventario', 'Venta', 'Logros']);
 			expect(buttons.filter((el) => el.className.includes('tyrian-product-shell__settings'))).toHaveLength(1);
 		}
 	});
