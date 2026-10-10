@@ -55,6 +55,34 @@ export async function loadCollectorMode(
 	return await readOrSeed(factory, `mode:${vaultId}`, vaultId, isCollectorMode, seed, false, onLate);
 }
 
+/**
+ * The mode this device stored for `vaultId`, or `null` when there is none. Unlike `loadCollectorMode` it
+ * never seeds: it is how DU-02 reads what an OLD vault id kept without leaving an entry behind.
+ */
+export async function readStoredCollectorMode(factory: IDBFactory, vaultId: string): Promise<CollectorMode | null> {
+	if (!/^[a-f0-9]{64}$/u.test(vaultId)) throw new Error('Collector instance vault identity is invalid.');
+	const database = await openIndexedDb({
+		factory,
+		databaseName: COLLECTOR_INSTANCE_DB,
+		databaseVersion: 1,
+		schema: [{ name: STORE }],
+		onVersionChange: 'close',
+		toError: () => new Error('Collector instance store could not be opened.'),
+	});
+	try {
+		return await new Promise<CollectorMode | null>((resolve, reject) => {
+			const request = database.transaction(STORE, 'readonly').objectStore(STORE).get(`mode:${vaultId}`);
+			request.onsuccess = () => {
+				const stored = request.result as unknown;
+				resolve(isCollectorMode(stored) ? stored : null);
+			};
+			request.onerror = () => { reject(new Error('Collector instance value could not be read.')); };
+		});
+	} finally {
+		database.close();
+	}
+}
+
 /** Stores this device's mode for `vaultId`; the only way it changes after the seed. */
 export async function saveCollectorMode(factory: IDBFactory, vaultId: string, mode: CollectorMode): Promise<void> {
 	await readOrSeed(factory, `mode:${vaultId}`, vaultId, isCollectorMode, () => mode, true);

@@ -308,6 +308,20 @@ export class TyrianCompanionSettingTab {
 
 	private definitions(): CategorizedSettingDefinition[] {
 		return [
+			// DU-02: only while the vault changed path and the user has not answered.
+			{
+				group: 'main',
+				visible: () => this.plugin.getVaultRelocation?.().pending === true,
+				name: this.t('settings.vaultRelocation.name'), desc: this.t('settings.vaultRelocation.desc'),
+				render: (setting) => {
+					setting.addButton((button) => button
+						.setButtonText(this.t('settings.vaultRelocation.adopt')).setCta()
+						.onClick(async () => { await this.plugin.resolveVaultRelocation?.('adopt'); this.refreshForSettingsChange(); }));
+					setting.addButton((button) => button
+						.setButtonText(this.t('settings.vaultRelocation.fresh'))
+						.onClick(async () => { await this.plugin.resolveVaultRelocation?.('fresh'); this.refreshForSettingsChange(); }));
+				},
+			},
 			{
 				group: 'main',
 				name: this.t('settings.collectorMode.name'), desc: this.t('settings.collectorMode.desc'),
