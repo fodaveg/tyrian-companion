@@ -607,6 +607,31 @@ describe('HalloweenRuntime', () => {
 		runtime.dispose();
 	});
 
+	// Z21 M1: the connectivity event that arrives while the unawaited walk is in flight must survive it.
+	it('stays offline when connectivity drops mid-walk, and recovers when it returns mid-walk', async () => {
+		let releaseWalk: () => void = () => undefined;
+		const walk = new Promise<void>((resolve) => { releaseWalk = resolve; });
+		const runtime = new HalloweenRuntime(options({ loadBackfill: async () => { await walk; return []; } }));
+		const activation = runtime.activate();
+		runtime.setOnline(false);
+		expect(runtime.getState().status).toBe('offline');
+		releaseWalk();
+		await activation;
+		expect(runtime.getState().status).toBe('offline');
+		runtime.dispose();
+
+		let releaseSecond: () => void = () => undefined;
+		const second = new Promise<void>((resolve) => { releaseSecond = resolve; });
+		const back = new HalloweenRuntime(options({ loadBackfill: async () => { await second; return []; } }));
+		const pending = back.activate();
+		back.setOnline(false);
+		back.setOnline(true);
+		releaseSecond();
+		await pending;
+		expect(back.getState().status).not.toBe('offline');
+		back.dispose();
+	});
+
 	// Z21: the host no longer awaits `activate()` (the note walk); this is the explicit block that
 	// replaces it. A loot observation that arrives mid-walk waits for the walk and is counted once.
 	it('holds a loot observation until the unawaited note walk finishes, then counts it exactly once', async () => {

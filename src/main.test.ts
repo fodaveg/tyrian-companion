@@ -200,9 +200,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 	// Z21: the first connection check of a load used to wait for the whole session-note walk,
 	// because `switchHalloweenAccount` awaited `halloween.activate()` (which drains the backfill).
 	it('checkConnection answers while the Halloween note walk is still running', async () => {
-		let releaseWalk: () => void = () => undefined;
-		const walk = new Promise<void>((resolve) => { releaseWalk = resolve; });
-		const activate = vi.fn(async () => { await walk; });
+		const activate = vi.fn(() => new Promise<void>(() => undefined));
 		const prototype = TyrianCompanionCore.prototype as unknown as {
 			checkConnection(this: unknown): Promise<ConnectionState>;
 			switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
@@ -227,14 +225,50 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			armAssistedDetection: vi.fn(async () => 'unavailable'),
 		});
 
-		const outcome = await Promise.race([
-			prototype.checkConnection.call(harness).then(() => 'answered'),
-			new Promise<string>((resolve) => { setTimeout(() => { resolve('waiting for the walk'); }, 50); }),
-		]);
-		expect(outcome).toBe('answered');
+		// No clock: `activate` never settles, so any await on it hangs the test.
+		await prototype.checkConnection.call(harness);
 		expect(activate).toHaveBeenCalledTimes(1);
-		releaseWalk();
 	});
+	// Z21 B2: a disposed runtime rejects `activate`; the detached call must swallow it.
+	it('checkConnection resolves without an unhandled rejection when the detached activate rejects', async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			// A plain function, not `vi.fn`: vitest attaches a handler to the promises a mock returns,
+			// which would hide the very rejection this test looks for.
+			let activations = 0;
+			const activate = (): Promise<void> => { activations += 1; return Promise.reject(new Error('Halloween runtime is disposed.')); };
+			const prototype = TyrianCompanionCore.prototype as unknown as {
+				checkConnection(this: unknown): Promise<ConnectionState>;
+				switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
+			};
+			const harness = withObsidianHost({
+				runtimeReady: true,
+				connection: { check: async () => ({
+					status: 'connected' as const, details: { account: { id: 'account-1' } },
+				}) },
+				settingTab: { refreshConnectionRow: vi.fn() },
+				renderViews: vi.fn(),
+				localDebugActions: null,
+				reconcilePendingProposals: vi.fn(async () => undefined),
+				alertAccountRef: null as string | null,
+				halloweenAccountRef: null as string | null,
+				halloweenObservationActive: () => true,
+				halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
+				halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
+				settings: DEFAULT_SETTINGS,
+				// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+				switchHalloweenAccount: prototype.switchHalloweenAccount,
+				armAssistedDetection: vi.fn(async () => 'unavailable'),
+			});
+			await expect(prototype.checkConnection.call(harness)).resolves.toMatchObject({ status: 'connected' });
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(activations).toBe(1);
+			expect(unhandled).toEqual([]);
+		} finally { process.off('unhandledRejection', onUnhandled); }
+	});
+
 });
 
 /**

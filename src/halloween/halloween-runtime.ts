@@ -459,7 +459,9 @@ export class HalloweenRuntime {
 	): void {
 		const unreadCount = notices.filter(({ acknowledgedAt }) => acknowledgedAt === null).length;
 		this.setState({ notices, unreadCount, lastObservedAt, comparison,
-			status: evidenceState ?? (unreadCount > 0 ? 'unread' : this.backfillPartial ? 'partial' : this.effectiveLearning() ? 'learning' :
+			// A connectivity event can land while `activate` is still in flight (the host no longer awaits
+			// it), so every projection must honour the current `online`, not only `setOnline` itself.
+			status: evidenceState ?? (this.enabled && !this.online ? 'offline' : unreadCount > 0 ? 'unread' : this.backfillPartial ? 'partial' : this.effectiveLearning() ? 'learning' :
 				notices.length > 0 ? 'ready' : 'empty') });
 	}
 
