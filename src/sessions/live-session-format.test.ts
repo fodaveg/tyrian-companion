@@ -1,4 +1,4 @@
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
@@ -399,5 +399,32 @@ describe('the mark that says the format of a session', () => {
 		database.close();
 		await expect(store.loadSessionFormat('session')).rejects.toBeInstanceOf(LiveSessionFormatUnreadableError);
 		store.close(); await h.die();
+	});
+	it('is one transaction with the first record: when the mark cannot be written, the record is not stored either', async () => {
+		// The first record a real lifecycle saves for a session it starts, before any sample.
+		const memory = world(); const h = host(memory, { starts: GROSS }); expect(await h.lifecycle.start('Test')).toBe('session');
+		const started = await memory.store.loadLive(); if (started.status !== 'loaded') throw new Error(started.status);
+		await h.die();
+		// Control: the store takes that record with its mark.
+		const accepting = new IndexedDbSessionRuntimeStore(new IDBFactory(), 'format-mark-accepted');
+		expect(await accepting.saveLive(started.record, undefined, undefined, GROSS)).toEqual({ status: 'saved' });
+		expect(await accepting.loadLive()).toMatchObject({ status: 'loaded' }); expect(await accepting.loadSessionFormat('session')).toEqual(GROSS);
+		accepting.close();
+		// The engine refuses the write of the mark, and only that one: the record's own write, made just before it, goes through.
+		const store = new IndexedDbSessionRuntimeStore(new IDBFactory(), 'format-mark-refused');
+		const put = Reflect.get(IDBObjectStore.prototype, 'put') as (this: IDBObjectStore, value: unknown, key?: IDBValidKey) => IDBRequest<IDBValidKey>; let refused = 0;
+		const spy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value: unknown, key?: IDBValidKey) {
+			if (key === LIVE_SESSION_FORMAT_KEY) { refused += 1; this.transaction.abort(); throw new DOMException('The mark is refused.', 'AbortError'); }
+			return put.call(this, value, key);
+		});
+		let answer: unknown;
+		try { answer = await store.saveLive(started.record, undefined, undefined, GROSS); } finally { spy.mockRestore(); }
+		expect(refused, 'the mark was attempted').toBe(1);
+		expect(answer).toEqual({ status: 'error', code: 'unavailable' });
+		// Neither the session nor a mark: with the mark in a transaction of its own the record would be there, read as a session
+		// from before the mark.
+		expect(await store.loadLive()).toEqual({ status: 'empty' });
+		expect(await store.loadSessionFormat('session')).toEqual(LEGACY_LIVE_SESSION_FORMAT);
+		store.close();
 	});
 });
