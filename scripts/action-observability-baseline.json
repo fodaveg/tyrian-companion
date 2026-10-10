@@ -14534,17 +14534,7 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
-		"src/test/recommendation-boundary.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
 		"src/test/runtime-harness.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/test/runtime-i18n-source-analysis.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
