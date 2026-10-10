@@ -287,6 +287,7 @@ describe('SaleItemView wiring', () => {
 		const event = vi.fn();
 		const view = new SaleItemView(content(), icons, actions(() => buildSaleViewModel(baseInput({ status: 'loading' })), {
 			refreshSale: async () => { throw new HttpTransportError('timeout', null, null, 'Request timed out.'); },
+			classifySaleRefreshFailure: (error) => (error instanceof HttpTransportError && error.kind === 'timeout' ? 'timeout' : 'unknown_failure'),
 			getSaleDiagnostics: () => ({ event, createContext: vi.fn() }),
 		}));
 		await view.onOpen();

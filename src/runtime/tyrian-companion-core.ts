@@ -107,7 +107,7 @@ import {
 } from '../assets/managed-assets-model';
 import type { ManagedAssetsMessageCode, ManagedAssetsView } from '../assets/managed-assets-ui';
 import { IndexedDbManagedAssetsPointerStore } from '../assets/managed-assets-pointer';
-import { HostRequestTransport } from '../core/http';
+import { HostRequestTransport, HttpTransportError } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { HostApiKeyProvider } from '../core/secret-provider';
 import { SerialTaskQueue } from '../core/serial-task-queue';
@@ -2341,6 +2341,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Where the Venta tab registers a failed refresh (`SaleItemView`); null while diagnostics are not up. */
 	getSaleDiagnostics() {
 		return this.localDebugActions ?? undefined;
+	}
+
+	/** A refresh that failed on the wire says so; anything else stays generic (`SaleItemView` registers the code). */
+	classifySaleRefreshFailure(error: unknown): 'timeout' | 'network_failure' | 'unknown_failure' {
+		if (error instanceof HttpTransportError) return error.kind === 'timeout' ? 'timeout' : 'network_failure';
+		return 'unknown_failure';
 	}
 
 	/** The Venta tab (`SaleRuntime.getSaleViewModel`). */

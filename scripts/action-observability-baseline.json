@@ -18283,9 +18283,9 @@
 				{
 					"id": "3c8bd52710f880e378c9017b5773b44f4b680336",
 					"kind": "void_expression",
-					"line": 91,
+					"line": 94,
 					"column": 61,
-					"endLine": 91,
+					"endLine": 94,
 					"endColumn": 88,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18299,9 +18299,9 @@
 				{
 					"id": "684684b736735cf295e0baea2495166fb94b8973",
 					"kind": "callback_registration",
-					"line": 182,
+					"line": 185,
 					"column": 22,
-					"endLine": 185,
+					"endLine": 188,
 					"endColumn": 12,
 					"registration": "setTimeout",
 					"classification": "allowlisted",
@@ -18316,9 +18316,9 @@
 				{
 					"id": "08fd2b4503b5a6ec895b3b43e5e386ee3adc3c19",
 					"kind": "callback_registration",
-					"line": 225,
+					"line": 228,
 					"column": 16,
-					"endLine": 225,
+					"endLine": 228,
 					"endColumn": 119,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -18331,11 +18331,11 @@
 					"reason": "Allowlisted callback_registration: The \"startRefresh\" owner registers \"finally\" only to clear its in-flight marker once the shared refreshSale call settles; callRefreshSale already catches and reports the failure, so nothing is left to observe here. Verified registration: \"finally\" in \"startRefresh\"."
 				},
 				{
-					"id": "502ee71cb3e78b3486f0b5ced9584e3244d521e3",
+					"id": "3a95f5b100da65fe4ca14248b7c2d798fe2800b6",
 					"kind": "catch_clause",
-					"line": 234,
+					"line": 237,
 					"column": 5,
-					"endLine": 241,
+					"endLine": 244,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -18347,9 +18347,9 @@
 				{
 					"id": "187e75fcdc983e5697f1147ad025311d51c9f9c6",
 					"kind": "callback_registration",
-					"line": 252,
+					"line": 255,
 					"column": 31,
-					"endLine": 263,
+					"endLine": 266,
 					"endColumn": 31,
 					"registration": "setTimeout",
 					"classification": "observed",

@@ -18,6 +18,7 @@ vi.mock('obsidian', async (importOriginal) => ({
 	},
 }));
 
+import { HttpTransportError } from './core/http';
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import type { LocalDebugLogger } from './core/local-debug-logger';
@@ -138,6 +139,22 @@ describe('the core hands the Sale tab to SaleRuntime: facade, advisor refresh, s
 
 		expect(record.mock.calls.map(([input]) => input).find((input) => input.state === 'sale_refresh')).toMatchObject({
 			component: 'ui', action: 'view_render', level: 'error', phase: 'failure', code: 'unknown_failure', state: 'sale_refresh',
+		});
+	});
+
+	it('a transport timeout in a Venta refresh is registered with the code timeout, classified by the core', async () => {
+		const { core } = await bootedCore();
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		(core as unknown as { localDebugActions: LocalDebugActionRunner }).localDebugActions = new LocalDebugActionRunner({
+			diagnostics: { record } as unknown as LocalDebugLogger, createId: () => 'sale-refresh-timeout',
+		});
+		vi.spyOn(SaleRuntime.prototype, 'refreshSale').mockRejectedValue(new HttpTransportError('timeout', null, null, 'Request timed out.'));
+		const view = new SaleItemView({} as HTMLElement, { setIcon: () => undefined }, core);
+
+		await (view as unknown as { callRefreshSale(refreshSeeds: boolean): Promise<boolean> }).callRefreshSale(false);
+
+		expect(record.mock.calls.map(([input]) => input).find((input) => input.state === 'sale_refresh')).toMatchObject({
+			code: 'timeout', state: 'sale_refresh',
 		});
 	});
 

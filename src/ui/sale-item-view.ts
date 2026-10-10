@@ -1,8 +1,6 @@
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale } from '../core/i18n';
-import { HttpTransportError } from '../core/http';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
-import type { LocalDebugCode } from '../core/local-debug-contract';
 import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
 import type { ProductActionController } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
@@ -20,11 +18,16 @@ export interface SaleViewActions {
 	getProductActionController?(): ProductActionController;
 	/** Where a refresh failure is registered; absent in isolated harnesses (fail-open, like the action controller's). */
 	getSaleDiagnostics?(): LocalDebugActionPort | undefined;
+	/** Names a refresh failure for the diagnostics; the host knows the transport, the view does not. Absent: `unknown_failure`. */
+	classifySaleRefreshFailure?(error: unknown): SaleRefreshFailureCode;
 	hasConfiguredApiKey?(): boolean;
 	openProductSettings?(): void;
 	/** True while the host itself lists the sections (its main screen), so the shell builds no bar of tabs. Absent means false. */
 	hostListsSections?(): boolean;
 }
+
+/** The closed set of codes a failed Venta refresh is registered under. */
+export type SaleRefreshFailureCode = 'timeout' | 'network_failure' | 'unknown_failure';
 
 /** The Sale section, wherever a host shows it. */
 export function saleSection(actions: Pick<SaleViewActions, 'getSaleLocale'>): TyrianSectionDescriptor {
@@ -235,7 +238,7 @@ export class SaleItemView {
 			// Reported, not swallowed: the view shows a retry, the diagnostics keep the cause.
 			this.actions.getSaleDiagnostics?.()?.event({
 				component: 'ui', action: 'view_render', level: 'error', phase: 'failure',
-				code: saleRefreshFailureCode(error), state: 'sale_refresh', message: error,
+				code: this.actions.classifySaleRefreshFailure?.(error) ?? 'unknown_failure', state: 'sale_refresh', message: error,
 			});
 			return true;
 		}
@@ -293,10 +296,4 @@ export function nextExpiryMs(model: SaleViewModel, afterMs: number = model.nowMs
 		if (next === null || at < next) next = at;
 	}
 	return next;
-}
-
-/** A refresh that failed on the wire says so; anything else stays generic. */
-function saleRefreshFailureCode(error: unknown): LocalDebugCode {
-	if (error instanceof HttpTransportError) return error.kind === 'timeout' ? 'timeout' : 'network_failure';
-	return 'unknown_failure';
 }
