@@ -169,7 +169,9 @@ export class DetectionQualityRecorder {
 	private trim(): void {
 		const excess = this.events.size - this.maximumEvents;
 		if (excess <= 0) return;
-		for (const event of this.sortedEvents().slice(0, excess)) this.events.delete(event.eventId);
+		// Sorted in place, without the copies `sortedEvents()` hands out: only the ids of the oldest are needed.
+		const oldest = [...this.events.values()].sort(compareDetectionQualityEvents).slice(0, excess);
+		for (const event of oldest) this.events.delete(event.eventId);
 	}
 
 	private sortedEvents(): DetectionQualityEvent[] {

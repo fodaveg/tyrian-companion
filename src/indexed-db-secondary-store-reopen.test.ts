@@ -286,6 +286,24 @@ describe('DU-05: a secondary store the engine stops answering reports a timeout'
 			},
 		},
 		{
+			label: 'managed-assets pointer', store: 'managed_assets_pointer', operation: 'read', unavailable: 'Error: Managed-assets pointer is unavailable.',
+			ask: async (factory, name, probe, hang) => {
+				const store = new IndexedDbManagedAssetsPointerStore(factory, VAULT, name, probe);
+				await store.read();
+				hang();
+				return async () => await settle(store.read());
+			},
+		},
+		{
+			// The catalog hands its caller the engine's own error, as it always did; only the diagnostic code is at stake.
+			label: 'public catalog', store: 'catalog', operation: 'read', unavailable: 'TimeoutError: Storage did not answer in time.',
+			ask: async (factory, name, probe, hang) => {
+				const store = await IndexedDbCatalogRecordStore.open(factory, name, undefined, probe);
+				hang();
+				return async () => await settle(store.get('key'));
+			},
+		},
+		{
 			label: 'confirmation queue', store: 'pending_proposal', operation: 'read', unavailable: 'Error: Confirmation queue is unavailable.',
 			ask: async (factory, name, probe, hang) => {
 				const store = new IndexedDbPendingProposalStore(factory, name, probe);

@@ -14,6 +14,7 @@ import { isCatalogJsonValue, isNormalizedCatalogEntity } from './public-catalog-
 import {
 	IndexedDbConnectionLostError,
 	ReopeningIndexedDbConnection,
+	indexedDbFailureCode,
 	openIndexedDb,
 	startIndexedDbTransaction,
 } from '../core/indexed-db-open';
@@ -368,7 +369,8 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 				throw error;
 			}
 			const reason = error instanceof IndexedDbConnectionLostError ? error.reason : error;
-			attempt.failure(localDebugStorageFailureCode(reason), reason);
+			// Coded from what really happened: an engine that did not answer in time stays a `timeout`.
+			attempt.failure(indexedDbFailureCode(error), reason);
 			throw reason instanceof Error ? reason : new Error('The public catalog cache is unavailable.');
 		}
 	}

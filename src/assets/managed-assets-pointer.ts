@@ -1,5 +1,7 @@
 import {
+	IndexedDbUnavailableError,
 	ReopeningIndexedDbConnection,
+	indexedDbFailureCode,
 	isIndexedDbUnavailable,
 	openIndexedDb,
 	startIndexedDbTransaction,
@@ -67,7 +69,7 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 			attempt.success();
 			return result;
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -99,7 +101,7 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 			else attempt.success();
 			return result;
 		} catch (error) {
-			attempt.failure(localDebugStorageFailureCode(error), error);
+			attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -115,7 +117,8 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 		try {
 			return await this.connection.run(operation);
 		} catch (error) {
-			throw isIndexedDbUnavailable(error) ? new Error('Managed-assets pointer is unavailable.') : error;
+			// The reason stays with the error, so the diagnostic of a transaction left unanswered still says `timeout`.
+			throw isIndexedDbUnavailable(error) ? new IndexedDbUnavailableError('Managed-assets pointer is unavailable.', error) : error;
 		}
 	}
 }
