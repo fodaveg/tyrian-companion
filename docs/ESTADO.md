@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.6.38: diario de sesión en una lectura y ciclo de la sesión en vivo fuera del núcleo (11 oct 2026)
+## Canal 0.6.38 publicado: diario de sesión en una lectura y ciclo de la sesión en vivo fuera del núcleo (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.38` sobre el canal 0.6.37 publicado
-(`e40e2494`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.38` = `123c766b` (atestación; candidato `52a6eb3a`,
+árbol `bced5eae`). Gate local verde (check 9/9 con 7123 tests, guardrails 25/25, BRAT PASS); CI 38095554382 y Release
+38096215471 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.38` sobre el canal
+0.6.37 publicado (`e40e2494`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.38 se ha visto en un Obsidian ni en un Hebra reales.
@@ -20,8 +22,8 @@
     impedían pasan a tests de comportamiento (congelados 17 → 16). Revisión independiente: cuerpos idénticos por AST y
     28 de 30 mutaciones en rojo (una equivalente; la otra cerrada después).
 - Pendiente de DE-01: 74 métodos de sesión (propuestas, comandos, nota y resumen, vista en vivo, farming) y algunas
-  aserciones congeladas que fijan `loadSessionHistory` e `inspectCompletedSessionSummary`. Pendiente también: el gate,
-  la publicación y verla en hosts reales.
+  aserciones congeladas que fijan `loadSessionHistory` e `inspectCompletedSessionSummary`. Pendiente también: verla
+  en hosts reales.
 
 ## Canal 0.6.37 publicado: orden interno del núcleo y copia de preferencias al descargar (11 oct 2026)
 
