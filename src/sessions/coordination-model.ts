@@ -21,7 +21,8 @@ export type ActiveSessionLeaseHandle = ActiveSessionLease;
 
 export type AcquireLeaseResult =
 	| { status: 'acquired' | 'already_owned'; handle: ActiveSessionLeaseHandle }
-	| { status: 'busy'; ownerExpiresAt: number; ownerInstanceId: string; ownerMachineId: string }
+	/** `clockSet`: this is the lease first seen renewed ahead of this clock (the wall clock went back), not an owner shown to be there. */
+	| { status: 'busy'; ownerExpiresAt: number; ownerInstanceId: string; ownerMachineId: string; clockSet?: true }
 	| { status: 'error'; code: 'unavailable' | 'corrupt' | 'clock_anomaly' | 'fence_overflow' | 'disposed' };
 
 export type RenewLeaseResult =

@@ -179,8 +179,8 @@ export class ActiveSessionLeaseCoordinator {
 	 * lease: an older handle, or one another coordinator wrote under the same id, is judged the same way.
 	 */
 	private written: WrittenLease | null = null;
-	/** The lease renewed ahead of this clock that the last acquisition saw, and when (monotonic) it first saw it unchanged. */
-	private aheadSeen: { key: string; at: number } | null = null;
+	/** The other instance's lease the last acquisition found, and when (monotonic) it first saw it unchanged: ahead of this clock or not. */
+	private watched: { key: string; at: number; ahead: boolean } | null = null;
 
 	constructor(options: ActiveSessionLeaseCoordinatorOptions = {}) {
 		this.baseInstanceId = options.instanceId ?? crypto.randomUUID();
@@ -351,6 +351,7 @@ export class ActiveSessionLeaseCoordinator {
 		if (this.life !== 'proven' && hasLifeMark(this.instanceId)) return { status: 'error', code: 'corrupt' };
 		let first: AcquireLeaseResult | TakeableLease;
 		let stamped: WrittenLease | null = null;
+		let foreign: ActiveSessionLease | null = null;
 		const keep = (written: WrittenLease): void => { stamped = written; };
 		try {
 			first = await (await this.getStore()).transaction<AcquireLeaseResult | TakeableLease>((raw) => {
@@ -374,6 +375,7 @@ export class ActiveSessionLeaseCoordinator {
 					// Renewed «in the future» by somebody else: this clock was set back, or the owner's was ahead. The wall clocks
 					// cannot say how long it has been silent, so it is watched by this instance's own monotonic clock (`aheadVerdict`).
 					if (state.lease.instanceId === this.instanceId) return { result: { status: 'error', code: 'clock_anomaly' } };
+					foreign = structuredClone(state.lease);
 					return { result: { status: 'ahead', lease: structuredClone(state.lease) } };
 				}
 				const ranOut = this.ranOut(state.lease, now);
@@ -384,6 +386,7 @@ export class ActiveSessionLeaseCoordinator {
 					return { result: { status: 'already_owned', handle: structuredClone(state.lease) } };
 				}
 				if (!ranOut) {
+					foreign = structuredClone(state.lease);
 					// Somebody else's and not run out. Its owner can only be asked about when it says it holds a
 					// lock, and only by an instance whose own lock showed that the manager answers truthfully.
 					if (this.life === 'proven' && hasLifeMark(state.lease.instanceId)) {
@@ -397,15 +400,33 @@ export class ActiveSessionLeaseCoordinator {
 			});
 		} catch { return { status: 'error', code: 'unavailable' }; }
 		this.keepWritten(first, stamped);
-		if (first.status !== 'ahead') this.aheadSeen = null;
-		if (first.status === 'ahead') {
-			const verdict = await this.aheadVerdict(first.lease, leaseTtlMs);
-			if (verdict !== 'take') return verdict;
-			const takenAhead = await this.confirmAndTake(sessionId, leaseTtlMs, first.lease, true);
-			if (takenAhead.status === 'acquired') this.aheadSeen = null;
-			return takenAhead;
+		const other = foreign as ActiveSessionLease | null;
+		if (other === null) this.watched = null;
+		else {
+			// The same lease of somebody else, unchanged for its whole time to live on this instance's own monotonic clock, has run
+			// out whatever the wall clocks say (a clock that went back keeps it «alive» for the set-back on top of its time to live).
+			// An owner that is alive renews, every renewal changes the lease, and the watch starts over.
+			const elapsed = this.watchedFor(other, first.status === 'ahead');
+			const ttl = other.expiresAt - other.renewedAt;
+			if (first.status === 'ahead') {
+				const verdict = await this.aheadVerdict(other, elapsed, ttl);
+				if (verdict !== 'take') return verdict;
+			} else if (first.status === 'expired' || elapsed < ttl) { /* the ordinary rules below decide */ }
+			else if (first.status === 'busy' || first.status === 'held') {
+				const takenAfterTtl = await this.confirmAndTake(sessionId, leaseTtlMs, other, true);
+				if (takenAfterTtl.status === 'acquired') this.watched = null;
+				return takenAfterTtl;
+			}
+			if (first.status === 'ahead') {
+				const takenAhead = await this.confirmAndTake(sessionId, leaseTtlMs, other, true);
+				if (takenAhead.status === 'acquired') this.watched = null;
+				return takenAhead;
+			}
 		}
-		if (first.status !== 'expired' && first.status !== 'held') return first;
+		if (first.status === 'ahead') return { status: 'error', code: 'clock_anomaly' };
+		// A busy lease that this instance first saw ahead of its clock says so: what the player reads is the clock, not another window.
+		const flagged = (result: AcquireLeaseResult): AcquireLeaseResult => result.status === 'busy' && this.watched?.ahead === true ? { ...result, clockSet: true } : result;
+		if (first.status !== 'expired' && first.status !== 'held') return flagged(first);
 		const observed = first.lease;
 		// Outside any transaction, and not about the store at all. Only «free», said in time, takes this
 		// further; held, no answer, a late one or an error leave the owner where it is until its lease runs out.
@@ -413,14 +434,14 @@ export class ActiveSessionLeaseCoordinator {
 		if (first.status === 'held') {
 			const lock = await this.lifeLockState(lifeLockName(observed.instanceId));
 			// Held is the ordinary case of another window that is alive, and whoever asked already records it.
-			if (lock === 'held') return busyUnder(observed);
-			if (lock === null) { this.reportRefusal(observed, 'unavailable', 'owner_lock_unanswered'); return busyUnder(observed); }
+			if (lock === 'held') return flagged(busyUnder(observed));
+			if (lock === null) { this.reportRefusal(observed, 'unavailable', 'owner_lock_unanswered'); return flagged(busyUnder(observed)); }
 			// Free, and still not enough: an owner that renewed this recently is taken for alive whatever the
 			// manager says of its lock (`DEAD_OWNER_SILENCE_MS`). The next attempt asks again. Recorded, because
 			// seen again and again it is what two live owners that cannot see each other's locks look like.
 			if (first.silentMs < DEAD_OWNER_SILENCE_MS) {
 				this.reportRefusal(observed, 'precondition_failed', 'owner_renewed_recently', String(DEAD_OWNER_SILENCE_MS - first.silentMs));
-				return busyUnder(observed);
+				return flagged(busyUnder(observed));
 			}
 		}
 		const taking = ownerGone ? this.diagnostics.begin('coordination', 'recover') : null;
@@ -432,23 +453,28 @@ export class ActiveSessionLeaseCoordinator {
 		return taken;
 	}
 
-	/**
-	 * A lease somebody else renewed ahead of this clock. It is taken only after this instance has seen the very same lease,
-	 * unchanged, for as long as a dead owner is waited for, counted on its OWN monotonic clock (the wall clocks are what is wrong):
-	 * `DEAD_OWNER_SILENCE_MS` when the owner carries a life mark and its lock is free, the lease's whole time to live
-	 * otherwise (no lock manager, or an owner without the mark). An owner that is alive renews, and every renewal changes the
-	 * lease (`renew` never stores the same `renewedAt`), so it is never taken; one whose lock is held stays the clock anomaly.
-	 */
-	private async aheadVerdict(observed: ActiveSessionLease, leaseTtlMs: number): Promise<AcquireLeaseResult | 'take'> {
-		const anomaly: AcquireLeaseResult = { status: 'error', code: 'clock_anomaly' };
-		const key = JSON.stringify(observed);
+	/** How long this instance has seen `lease` unchanged, on its own monotonic clock (0 when it is a different lease, or the clock cannot be read). */
+	private watchedFor(lease: ActiveSessionLease, ahead: boolean): number {
+		const key = JSON.stringify(lease);
 		let at: number;
-		try { at = this.monotonicClock(); } catch { return anomaly; }
-		if (this.aheadSeen === null || this.aheadSeen.key !== key) { this.aheadSeen = { key, at }; return anomaly; }
-		const elapsed = at - this.aheadSeen.at;
+		try { at = this.monotonicClock(); } catch { return 0; }
+		if (this.watched === null || this.watched.key !== key) { this.watched = { key, at, ahead }; return 0; }
+		// Sticky for as long as the lease is the same one: once seen ahead of this clock, it stays the lease the clock is to blame for.
+		this.watched.ahead ||= ahead;
+		return Math.max(0, at - this.watched.at);
+	}
+
+	/**
+	 * A lease somebody else renewed ahead of this clock. The wall clocks cannot say how long its owner has been silent, so it is
+	 * taken only after `elapsed` (see `watchedFor`) reaches `DEAD_OWNER_SILENCE_MS` with the life lock of a marked owner free, or
+	 * the observed lease's whole time to live otherwise (no lock manager, or an owner without the mark). One whose lock is
+	 * held, or that cannot be asked, stays the clock anomaly it was.
+	 */
+	private async aheadVerdict(observed: ActiveSessionLease, elapsed: number, ttl: number): Promise<AcquireLeaseResult | 'take'> {
+		const anomaly: AcquireLeaseResult = { status: 'error', code: 'clock_anomaly' };
 		const marked = this.life === 'proven' && hasLifeMark(observed.instanceId);
-		if (elapsed < (marked ? DEAD_OWNER_SILENCE_MS : leaseTtlMs)) return anomaly;
-		if (marked) {
+		if (elapsed < (marked ? DEAD_OWNER_SILENCE_MS : ttl)) return anomaly;
+		if (marked && elapsed < ttl) {
 			const lock = await this.lifeLockState(lifeLockName(observed.instanceId));
 			if (lock === 'held') return anomaly;
 			if (lock === null) { this.reportRefusal(observed, 'unavailable', 'owner_lock_unanswered'); return anomaly; }

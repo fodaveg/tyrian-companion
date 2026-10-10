@@ -853,7 +853,7 @@ describe('passive live session lifecycle', () => {
 			now = AT + 30_000; f.setNow(now);
 			const b = new ActiveSessionLeaseCoordinator({ indexedDb: factory, databaseName: 'reload-back', clock: () => now, monotonicClock: () => mono, sleep: async () => undefined, instanceId: 'b', locks: locks.context() });
 			const hostB = new LiveSessionLifecycle({ ...f.options, coordinator: b, now: () => now, setInterval: (callback: () => void) => { beatB = callback; return 1; } });
-			return { f, hostB, store, wait: async (ms: number) => { mono += ms; beatB?.(); await hostB.capture(); } };
+			return { f, hostB, store, setWall: (at: number) => { now = at; f.setNow(at); }, wait: async (ms: number) => { mono += ms; beatB?.(); await hostB.capture(); } };
 		}
 		it('does not take the reservation at the first look, tells the clock apart in a stop, then takes it after 15 s and the addon is accepted', async () => {
 			const { f, hostB, wait } = await reloaded();
@@ -863,6 +863,16 @@ describe('passive live session lifecycle', () => {
 			await wait(15_000);
 			await expect(hostB.open(f.source)).resolves.toBe('ready');
 			expect(hostB.getView().phase).toBe('active');
+			await hostB.dispose();
+		});
+		it('keeps saying the clock, not another instance, while the wall clock catches up with the stamp and the lease has not run out', async () => {
+			const { hostB, wait, setWall } = await reloaded();
+			await hostB.initialize();
+			await wait(1_000);
+			// The wall clock reaches the stamp of the dead host\'s lease: it is no longer ahead, and it has not run out.
+			setWall(AT + 61_000); await wait(1_000);
+			await expect(hostB.stop(AT + 31_000, 'session')).resolves.toBe(false);
+			expect(hostB.getStopFailure()).toBe('clock_anomaly');
 			await hostB.dispose();
 		});
 		it('discards a session whose reservation it can take, with the clock still behind', async () => {

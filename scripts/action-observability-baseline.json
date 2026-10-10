@@ -10732,9 +10732,9 @@
 				{
 					"id": "20d2b88ad4c320a1e7f629afb54ba8546f143e22",
 					"kind": "catch_clause",
-					"line": 398,
+					"line": 401,
 					"column": 5,
-					"endLine": 398,
+					"endLine": 401,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10746,27 +10746,27 @@
 					"reason": "Allowlisted catch_clause: The \"acquireInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"acquireInternal\"."
 				},
 				{
-					"id": "9ca3919725e0a7fd07739a70421fdf13a820c9a3",
+					"id": "c5c2ab7612c8ed5ba626c65a2f37bdfa7b55058d",
 					"kind": "catch_clause",
-					"line": 446,
+					"line": 460,
 					"column": 39,
-					"endLine": 446,
-					"endColumn": 64,
+					"endLine": 460,
+					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
-						"scope": "aheadVerdict",
-						"justification": "The \"aheadVerdict\" catch is a \"fallback_return\": a monotonic clock that throws leaves the lease renewed ahead of this clock as the clock_anomaly it always was, and nothing is taken; the acquisition answers it typed, as for any clock that cannot be read."
+						"scope": "watchedFor",
+						"justification": "The \"watchedFor\" catch is a \"fallback_return\": a monotonic clock that cannot be read counts as nothing watched yet (0 ms), so nothing is taken early and the acquisition answers as it always did for a lease it may not take."
 					},
-					"reason": "Allowlisted catch_clause: The \"aheadVerdict\" catch is a \"fallback_return\": a monotonic clock that throws leaves the lease renewed ahead of this clock as the clock_anomaly it always was, and nothing is taken; the acquisition answers it typed, as for any clock that cannot be read. Verified recovery: \"fallback_return\" in \"aheadVerdict\"."
+					"reason": "Allowlisted catch_clause: The \"watchedFor\" catch is a \"fallback_return\": a monotonic clock that cannot be read counts as nothing watched yet (0 ms), so nothing is taken early and the acquisition answers as it always did for a lease it may not take. Verified recovery: \"fallback_return\" in \"watchedFor\"."
 				},
 				{
 					"id": "429cafa01324e9746fc9e6819aba1915731c2b60",
 					"kind": "catch_clause",
-					"line": 461,
+					"line": 487,
 					"column": 56,
-					"endLine": 461,
+					"endLine": 487,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10780,9 +10780,9 @@
 				{
 					"id": "0e439f51bd6c511a3d55f6bc2c7eb9cbc31e03f2",
 					"kind": "catch_clause",
-					"line": 487,
+					"line": 513,
 					"column": 5,
-					"endLine": 487,
+					"endLine": 513,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10796,9 +10796,9 @@
 				{
 					"id": "c3ddc01fc858aa9ab0ed58e92ffeb014eb5aa231",
 					"kind": "void_expression",
-					"line": 526,
+					"line": 552,
 					"column": 4,
-					"endLine": 526,
+					"endLine": 552,
 					"endColumn": 90,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10812,9 +10812,9 @@
 				{
 					"id": "706d0f31accb2dc8475d29ae042514d300236d66",
 					"kind": "callback_registration",
-					"line": 526,
+					"line": 552,
 					"column": 9,
-					"endLine": 526,
+					"endLine": 552,
 					"endColumn": 90,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10829,9 +10829,9 @@
 				{
 					"id": "4cd79c81072b24d7cafad1e8c471d234ce4e2f7c",
 					"kind": "catch_clause",
-					"line": 527,
+					"line": 553,
 					"column": 5,
-					"endLine": 527,
+					"endLine": 553,
 					"endColumn": 29,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10845,9 +10845,9 @@
 				{
 					"id": "0fbb6867bad128555692bf21aacbcd809825c30b",
 					"kind": "catch_clause",
-					"line": 578,
+					"line": 604,
 					"column": 79,
-					"endLine": 578,
+					"endLine": 604,
 					"endColumn": 101,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10861,9 +10861,9 @@
 				{
 					"id": "e8dc69bf877d2a91ecaa6fd0e35faac86043c8cb",
 					"kind": "promise_catch",
-					"line": 588,
+					"line": 614,
 					"column": 4,
-					"endLine": 588,
+					"endLine": 614,
 					"endColumn": 89,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10878,9 +10878,9 @@
 				{
 					"id": "bedbf04d33c1e0424972813b262f946cfd200544",
 					"kind": "void_expression",
-					"line": 596,
+					"line": 622,
 					"column": 5,
-					"endLine": 596,
+					"endLine": 622,
 					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10894,9 +10894,9 @@
 				{
 					"id": "a0ef73c15c92d91877c6a058f71795a3b5967118",
 					"kind": "callback_registration",
-					"line": 596,
+					"line": 622,
 					"column": 10,
-					"endLine": 596,
+					"endLine": 622,
 					"endColumn": 65,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10911,9 +10911,9 @@
 				{
 					"id": "c97df1d837960e33b4f610522aa817ed1e97ad4e",
 					"kind": "catch_clause",
-					"line": 623,
+					"line": 649,
 					"column": 67,
-					"endLine": 623,
+					"endLine": 649,
 					"endColumn": 100,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10927,9 +10927,9 @@
 				{
 					"id": "5035656c978ac8c71b946ce7b0d56f368b1c3e49",
 					"kind": "callback_registration",
-					"line": 665,
+					"line": 691,
 					"column": 16,
-					"endLine": 665,
+					"endLine": 691,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",

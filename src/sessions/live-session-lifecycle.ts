@@ -522,7 +522,7 @@ export class LiveSessionLifecycle {
 			this.handle = acquired.handle; return 'owned';
 		}
 		if (acquired.status === 'error') return acquired.code === 'clock_anomaly' ? 'clock_anomaly' : 'storage_unavailable';
-		return 'lease_not_owned';
+		return acquired.status === 'busy' && acquired.clockSet === true ? 'clock_anomaly' : 'lease_not_owned';
 	}
 	private resetAfterDiscard(): void {
 		this.record = null; this.format = newLiveSessionFormat(); this.journal = []; this.observations = []; this.chart = this.newChart();
@@ -723,7 +723,7 @@ export class LiveSessionLifecycle {
 		this.reclaimingAs ??= this.hostRestarted ? 'restart' : 'outage';
 		const acquisition = await this.options.coordinator.acquire(this.record.sessionId);
 		// Kept for what a stop reads when there is no handle to ask about: why this host has no reservation.
-		this.leaseClock = acquisition.status === 'error' && acquisition.code === 'clock_anomaly';
+		this.leaseClock = (acquisition.status === 'error' && acquisition.code === 'clock_anomaly') || (acquisition.status === 'busy' && acquisition.clockSet === true);
 		if ((acquisition.status !== 'acquired' && acquisition.status !== 'already_owned') || acquisition.handle.sessionId !== this.record.sessionId
 			|| (await this.options.coordinator.assertOwned(acquisition.handle)).status !== 'owned') return false;
 		// A lease under another fence than the one the session was last saved under means it was free
@@ -1033,7 +1033,7 @@ export class LiveSessionLifecycle {
 			const acquired = await this.options.coordinator.acquire(this.record.sessionId);
 			if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== this.record.sessionId
 				|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') {
-				this.noteFailure = acquired.status === 'error' && acquired.code === 'clock_anomaly' ? 'clock_anomaly' : 'lease_not_owned'; return false;
+				this.noteFailure = (acquired.status === 'error' && acquired.code === 'clock_anomaly') || (acquired.status === 'busy' && acquired.clockSet === true) ? 'clock_anomaly' : 'lease_not_owned'; return false;
 			}
 			this.handle = acquired.handle;
 			await this.refreshRecovery();
