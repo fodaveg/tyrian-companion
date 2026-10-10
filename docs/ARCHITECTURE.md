@@ -47,6 +47,30 @@ En Hebra, `src/host/hebra/hebra-main-view.ts` traduce esa vista a la de su API 1
 - `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
 
+### Dirección de las capas
+
+Una carpeta de `src/` solo puede importar **valores** de una carpeta de una capa **estrictamente inferior**; nunca de la suya (salvo dentro de ella misma) ni de una superior. `import type` e `import { type X }` no cuentan: el compilador los borra y no acoplan en ejecución. De abajo arriba:
+
+| Capa | Carpetas | Por qué está ahí |
+| --- | --- | --- |
+| 0 | `core`, `performance` | Hojas: `core` es transporte, configuración, secretos y utilidades que todos usan y que no deben conocer ningún dominio; `performance` son contratos H6 sin imports ni consumidores. |
+| 1 | `account` | Cliente y validación de la API de GW2; solo necesita `core`. |
+| 2 | `catalog` | Catálogo público; usa los parsers de `account`. |
+| 3 | `alerts` | Contratos y emisión de avisos; los consumen economía y sesiones. |
+| 4 | `economy` | Contrato monetario, tasas, precios y valoración; puro, sobre `alerts`, `catalog` y `account`. |
+| 5 | `advisor` | Inventory Advisor: razona sobre la economía. |
+| 6 | `assets` | Bases gestionadas; consumen los resultados del advisor. |
+| 7 | `inventory`, `wallet` | Persistencia Vault-only de inventario y de cartera; hermanas, no se importan entre sí. |
+| 8 | `sessions` | Sesión en vivo, historial y persistencia; combina economía, inventario y cartera. |
+| 9 | `halloween`, `achievements` | Funciones de producto que se apoyan en sesiones y no las importa nadie por debajo de `ui`. |
+| 10 | `ui` | Vistas y paneles; ningún dominio importa `ui` (el principio de `:135`). |
+| 11 | `runtime` | La composición: monta servicios y vistas, por eso importa casi todo, `ui` incluida. |
+| 12 | `host` | Adaptadores a Obsidian y a Hebra; son el borde y lo único que arranca la composición. |
+
+Fuera de la escalera: `platform` (la isla H8) no importa nada del resto de `src/` y cualquiera puede importarla; `test` (arneses) importa lo que necesite y solo lo importan los tests; los ficheros sueltos de `src/` (`main.ts`) son puntos de entrada y no son capa. Una carpeta nueva se coloca en esta tabla y en `LAYERS` antes de usarse.
+
+`src/layer-direction-architecture.test.ts` lo hace cumplir leyendo los imports de valor con el compilador de TypeScript. Congela el estado del 10 oct 2026: 12 aristas que hoy suben (listadas con fichero, línea y el movimiento de [DE-02](audit/2026-10-10-deuda-estructural.md) que las elimina: 1 de (1), 1 de (2), 1 de (3), 5 de (4) y 4 que ningún movimiento cubre aún). La lista solo puede encoger: una arista nueva hacia arriba rompe el test, y una excepción cuyo import ya no existe también, hasta que se borra de `LEGACY_EXCEPTIONS`. La línea de cada excepción es indicativa; la identidad es fichero y especificador.
+
 ## Frontera de release H7.4/H7.5
 
 `scripts/release-package.mjs` es la única composición del paquete distribuible. Antes de leer el

@@ -204,6 +204,55 @@ export function moduleSpecifiers(source: string): string[] {
 	return discovered.sort((left, right) => left.position - right.position).map(({ specifier }) => specifier);
 }
 
+/** One import or re-export that survives compilation: where it is and what it names. */
+export interface ValueImportSite {
+	readonly specifier: string;
+	readonly line: number;
+}
+
+/**
+ * The imports of `source` that exist at runtime, with their 1-based line: static `import`, `export … from`,
+ * literal dynamic `import()` and `require()`. `import type`, `export type … from` and a clause whose
+ * every named binding is `type` (`import { type X }`) are erased by the compiler, so they do not
+ * couple the two modules at runtime and are left out; a side-effect import (`import 'x'`) stays in.
+ */
+export function valueImportSites(source: string): ValueImportSite[] {
+	const file = ts.createSourceFile('value-import-probe.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const sites: ValueImportSite[] = [];
+	const record = (node: ts.Node, literal: ts.Expression | undefined): void => {
+		if (literal !== undefined && (ts.isStringLiteral(literal) || ts.isNoSubstitutionTemplateLiteral(literal))) {
+			sites.push({ specifier: literal.text, line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1 });
+		}
+	};
+	const onlyTypes = (elements: readonly (ts.ImportSpecifier | ts.ExportSpecifier)[]): boolean =>
+		elements.length > 0 && elements.every((element) => element.isTypeOnly);
+	const visit = (node: ts.Node): void => {
+		if (ts.isImportDeclaration(node)) {
+			const clause = node.importClause;
+			const erased = clause !== undefined && (clause.phaseModifier === ts.SyntaxKind.TypeKeyword
+				|| (clause.name === undefined && clause.namedBindings !== undefined
+					&& ts.isNamedImports(clause.namedBindings) && onlyTypes(clause.namedBindings.elements)));
+			if (!erased) record(node, node.moduleSpecifier);
+		} else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined) {
+			const erased = node.isTypeOnly
+				|| (node.exportClause !== undefined && ts.isNamedExports(node.exportClause) && onlyTypes(node.exportClause.elements));
+			if (!erased) record(node, node.moduleSpecifier);
+		} else if (ts.isCallExpression(node)
+			&& (node.expression.kind === ts.SyntaxKind.ImportKeyword
+				|| (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
+			record(node, node.arguments[0]);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return sites;
+}
+
+/** `valueImportSites` of the module at `path`; the read lives here, outside the suites the source-text contract scans. */
+export function moduleValueImportSites(path: string, root = process.cwd()): ValueImportSite[] {
+	return valueImportSites(readModuleSource(path, root));
+}
+
 /** The objects a module can reach a host global through, besides naming it directly. */
 const GLOBAL_OBJECTS = new Set(['globalThis', 'window', 'self', 'global']);
 /** Node's own globals, which a webview (Hebra) does not have. */
