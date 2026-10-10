@@ -64,8 +64,11 @@ Lo más grave:
   rompería la vista en Hebra, cuyo polyfill no define `win`.
 
 Qué no se hizo: ningún gate, suite completa ni build en esta sesión (el `node_modules` del Mac no sirve para medirlos);
-ningún test en Obsidian ni Hebra reales; no se tocó código. El CI de GitHub es el que valida este commit de
-documentación.
+ningún test en Obsidian ni Hebra reales; no se tocó código. El CI de GitHub sobre el commit de documentación
+  (`6500b843`, run `38029515920`) salió en ROJO por `bench:h6-live-session` («end-of-session p95 113.92ms > 100ms»), el
+  mismo paso y la misma cifra que el CI de `670ead57` (run `38028453458`, «p95 114.43ms»); el último verde es `6fbe77e`.
+  Un commit solo de docs no cambia el bench: el exceso viene de la 0.6.25/0.6.26 o del runner. Tarea `e2e3923b` en el
+  proyecto de guardarraíles.
 
 Dónde seguir: las 25 decisiones están en las secciones «Decisiones de David» de los cinco proyectos de Lumbre. El guion
 humano de 30 minutos para comprobar la carga de la 0.6.24 en el Mac está en el apartado 3 de la nota «Tyrian Companion -
