@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { AccountAchievementEntry } from '../account/account-achievements';
 import { searchAchievementIndex, type AchievementDetail, type AchievementIndexEntry } from '../achievements/achievement-catalog-model';
-import type { AchievementFreshness, AchievementIndexBuildOptions, AchievementIndexBuildResult } from '../achievements/achievement-catalog-service';
+import { achievementNameKey, type AchievementFreshness, type AchievementIndexBuildOptions, type AchievementIndexBuildResult, type AchievementNameRef } from '../achievements/achievement-catalog-service';
 import type { TrackedProgressRefreshResult } from '../achievements/tracked-progress-service';
 import { installDomHelpers } from '../host/dom-polyfill';
 import { AchievementsView, type AchievementCatalogPort, type AchievementsViewActions, type TrackedProgressPort } from './achievements-view';
@@ -75,11 +75,20 @@ function harness(options: {
 	/** The first `loadDetails` answers `failed: true` with nothing; the next ones answer normally. */
 	detailsFailOnce?: boolean;
 	locale?: 'es' | 'en';
+	/** Names the public lists know, by `achievementNameKey`; the language is part of what the test passes. */
+	names?: (locale: 'es' | 'en') => Record<string, string>;
+	/** The first `loadNames` answers `failed: true` with nothing; the next ones answer normally. */
+	namesFailOnce?: boolean;
+	/** `loadNames` waits until `releaseNames()`. */
+	holdNames?: boolean;
 } = {}) {
 	const tracked = [...(options.tracked ?? [])];
 	let readingCleared = false;
 	const gate = () => { let release = () => undefined as void; const wait = new Promise<void>((resolve) => { release = resolve; }); return { wait, release }; };
 	const catalogGate = gate();
+	const namesGate = gate();
+	let locale: 'es' | 'en' = options.locale ?? 'es';
+	const nameRequests: Array<{ locale: string; refs: AchievementNameRef[]; signal: AbortSignal | undefined }> = [];
 	const buildGate = gate();
 	const pendingSaves: Array<() => void> = [];
 	const timers = {
@@ -110,6 +119,18 @@ function harness(options: {
 			return { status: 'complete', total: 450, freshness: fresh(), saved: options.indexSaved ?? true };
 		},
 		search: (_locale, filter, limit) => indexReady ? searchAchievementIndex(INDEX, filter, limit) : null,
+		loadNames: async (askedLocale, refs, namesOptions = {}) => {
+			nameRequests.push({ locale: askedLocale, refs: [...refs], signal: namesOptions.signal });
+			if (options.holdNames) await namesGate.wait;
+			if (options.namesFailOnce && nameRequests.length === 1) return { names: new Map(), failed: true };
+			const known = options.names?.(askedLocale) ?? {};
+			const names = new Map<string, string>();
+			for (const ref of refs) {
+				const key = achievementNameKey(ref.kind, ref.id);
+				if (known[key] !== undefined) names.set(key, known[key]);
+			}
+			return { names, failed: false };
+		},
 		loadDetails: async (_locale, ids) => {
 			calls.push(`details:${ids.join(',')}`);
 			if (options.detailsFailOnce && calls.filter((call) => call.startsWith('details:')).length === 1) {
@@ -156,7 +177,7 @@ function harness(options: {
 		return 'saved' as const;
 	});
 	const actions: AchievementsViewActions = {
-		getLocale: () => options.locale ?? 'es',
+		getLocale: () => locale,
 		getTrackedAchievementIds: () => [...tracked],
 		toggleTrackedAchievement: toggle,
 		getAchievementsServices: () => (starting ? null : services),
@@ -167,7 +188,9 @@ function harness(options: {
 	const container = document.body.appendChild(document.createElement('div'));
 	const view = new AchievementsView(container, actions, { now: () => NOW, timers });
 	return {
-		view, container, timers, calls, refresh, toggle, openSettings, openExternal, buildSignals, tracked,
+		view, container, timers, calls, nameRequests,
+		setLocale: (next: 'es' | 'en') => { locale = next; },
+		releaseNames: () => { namesGate.release(); }, refresh, toggle, openSettings, openExternal, buildSignals, tracked,
 		ready: () => { starting = false; },
 		/** The key changed: the core forgot the kept reading (`clearProgress`); the view is told by `refresh()`. */
 		clearReading: () => { readingCleared = true; },
@@ -655,5 +678,125 @@ describe('AchievementsView: the states of the section', () => {
 		expect(h.container.querySelector('.tyrian-achievements__state')?.textContent).toBe('In progress');
 		expect(h.container.querySelector('progress')?.getAttribute('aria-valuetext')).toBe('1 of 4');
 		expect(h.container.querySelector('.tyrian-achievements__tracked-status')?.textContent).toBe('You follow 1 achievement');
+	});
+});
+
+describe('AchievementsView: names of rewards and objectives (L3)', () => {
+	const rich = (id: number): AchievementDetail => detail(id, {
+		bits: [
+			{ kind: 'text', text: 'Uno', refId: null }, { kind: 'item', text: null, refId: 77 },
+			{ kind: 'minipet', text: null, refId: 88 }, { kind: 'skin', text: null, refId: 99 },
+		],
+		rewards: [{ kind: 'coins', copper: 12_345 }, { kind: 'item', itemId: 500, count: 3 }, { kind: 'title', titleId: 9 }],
+	});
+	const known = (locale: 'es' | 'en') => {
+		const word = locale === 'es' ? { item: 'Objeto', minipet: 'Mascota', skin: 'Piel', title: 'Titulo' } : { item: 'Thing', minipet: 'Pet', skin: 'Look', title: 'Name' };
+		return {
+			[achievementNameKey('item', 77)]: `${word.item} 77`, [achievementNameKey('minipet', 88)]: `${word.minipet} 88`,
+			[achievementNameKey('skin', 99)]: `${word.skin} 99`, [achievementNameKey('item', 500)]: `${word.item} 500`,
+			[achievementNameKey('title', 9)]: `${word.title} 9`,
+		};
+	};
+	const objectives = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll('.tyrian-achievements__objectives li')).map((row) => row.textContent);
+	const rewards = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll('.tyrian-achievements__rewards li')).map((row) => row.textContent);
+
+	it('shows the name of the object, minipet, skin and title, and asks only for the ids on screen', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known });
+		h.view.mount();
+		await h.settle();
+		expect(objectives(h)).toEqual(['pendiente: Uno', 'pendiente: Objeto: Objeto 77', 'pendiente: Minimascota: Mascota 88', 'pendiente: Aspecto: Piel 99']);
+		expect(rewards(h)).toEqual(['Monedas: 1g 23s 45c', 'Objeto 500 ×3', 'Título: Titulo 9', '5 PL']);
+		expect(h.nameRequests).toHaveLength(1);
+		expect(h.nameRequests[0]!.refs).toEqual([
+			{ kind: 'item', id: 77 }, { kind: 'minipet', id: 88 }, { kind: 'skin', id: 99 }, { kind: 'item', id: 500 }, { kind: 'title', id: 9 },
+		]);
+	});
+
+	it('paints first with the ids and swaps in the names when they arrive', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known, holdNames: true });
+		h.view.mount();
+		await h.settle();
+		expect(rewards(h)).toEqual(['Monedas: 1g 23s 45c', 'Objeto 500 ×3', 'Título 9', '5 PL']);
+		expect(objectives(h)[1]).toBe('pendiente: Objeto 77');
+		h.releaseNames();
+		await h.settle();
+		expect(rewards(h)[1]).toBe('Objeto 500 ×3');
+		expect(rewards(h)[2]).toBe('Título: Titulo 9');
+	});
+
+	it('keeps an open achievement open when the names repaint the list', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known, holdNames: true });
+		h.view.mount();
+		await h.settle();
+		h.items()[0]!.open = true;
+		h.releaseNames();
+		await h.settle();
+		expect(h.items()[0]!.open).toBe(true);
+	});
+
+	it('shows the id, with today\'s text, for a name the API does not know or has not answered', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: () => ({ [achievementNameKey('item', 500)]: 'Espada' }) });
+		h.view.mount();
+		await h.settle();
+		expect(objectives(h)).toEqual(['pendiente: Uno', 'pendiente: Objeto 77', 'pendiente: Minimascota 88', 'pendiente: Aspecto 99']);
+		expect(rewards(h)).toEqual(['Monedas: 1g 23s 45c', 'Espada ×3', 'Título 9', '5 PL']);
+		expect(h.container.textContent).not.toMatch(/undefined|\{\{/u);
+	});
+
+	it('after a failed page it shows ids, and the next refresh asks again and shows the names', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known, namesFailOnce: true });
+		h.view.mount();
+		await h.settle();
+		expect(rewards(h)[1]).toBe('Objeto 500 ×3');
+		expect(rewards(h)[2]).toBe('Título 9');
+		h.view.refresh();
+		await h.settle();
+		expect(h.nameRequests).toHaveLength(2);
+		expect(rewards(h)[2]).toBe('Título: Titulo 9');
+	});
+
+	it('asks again, in the new language, when the interface language changes, and drops the old names meanwhile', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known });
+		h.view.mount();
+		await h.settle();
+		expect(rewards(h)[2]).toBe('Título: Titulo 9');
+		h.setLocale('en');
+		h.view.refresh();
+		await h.settle();
+		expect(h.nameRequests.map((request) => request.locale)).toEqual(['es', 'en']);
+		expect(rewards(h)[2]).toBe('Title: Name 9');
+		expect(h.container.textContent).not.toContain('Titulo');
+	});
+
+	it('names every reward of an achievement with more than 200 of them', async () => {
+		const many = detail(1, { bits: [], rewards: Array.from({ length: 250 }, (_, offset) => ({ kind: 'item' as const, itemId: offset + 1, count: 1 })) });
+		const h = harness({ tracked: [1], details: new Map([[1, many]]), names: () => Object.fromEntries(Array.from({ length: 250 }, (_, offset) => [achievementNameKey('item', offset + 1), `Cosa ${String(offset + 1)}`])) });
+		h.view.mount();
+		await h.settle();
+		expect(h.nameRequests[0]!.refs).toHaveLength(250);
+		const shown = rewards(h);
+		expect(shown.slice(0, 250)).toEqual(Array.from({ length: 250 }, (_, offset) => `Cosa ${String(offset + 1)} ×1`));
+	});
+
+	it('closed while the names load: nothing is painted afterwards, the request is told to stop and nothing throws', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known, holdNames: true });
+		h.view.mount();
+		await h.settle();
+		expect(h.nameRequests[0]!.signal?.aborted).toBe(false);
+		h.view.dispose();
+		expect(h.nameRequests[0]!.signal?.aborted).toBe(true);
+		h.releaseNames();
+		await h.settle();
+		expect(h.container.childElementCount).toBe(0);
+	});
+
+	it('never uses the key to name anything', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known });
+		h.view.mount();
+		await h.settle();
+		h.view.refresh();
+		await h.settle();
+		expect(h.refresh).not.toHaveBeenCalled();
+		expect(h.calls).not.toContain('REFRESH');
 	});
 });

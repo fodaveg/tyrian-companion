@@ -91,6 +91,28 @@ export interface AchievementDetailsRead {
 	stale: boolean;
 }
 
+/** What a reward or an objective names by id: an object, a minipet, a skin or a title. */
+export type AchievementNameKind = 'item' | 'minipet' | 'skin' | 'title';
+
+export interface AchievementNameRef {
+	kind: AchievementNameKind;
+	id: number;
+}
+
+export interface AchievementNamesRead {
+	/** By `achievementNameKey`; an id the API does not know, or that could not be asked, is absent. */
+	names: ReadonlyMap<string, string>;
+	/** Some page failed (or the read was stopped): the caller asks again next time instead of keeping this answer. */
+	failed: boolean;
+}
+
+export function achievementNameKey(kind: AchievementNameKind, id: number): string {
+	return `${kind}:${String(id)}`;
+}
+
+const NAME_ENDPOINT: Record<AchievementNameKind, string> = { item: 'items', minipet: 'minis', skin: 'skins', title: 'titles' };
+const NAME_RECORD_KIND = { item: 'name-item', minipet: 'name-minipet', skin: 'name-skin', title: 'name-title' } as const;
+
 type PublicAnswer = { status: 'ok'; body: unknown } | { status: 'not_found' } | { status: 'failed' };
 
 interface IndexPageRecord {
@@ -226,6 +248,74 @@ export class AchievementCatalogService {
 			for (const [id, detail] of english.details) if (detail.name.length > 0) englishNames.set(id, detail.name);
 			return { ...read, englishNames };
 		});
+	}
+
+	/**
+	 * The names of the objects, minipets, skins and titles that rewards and objectives show by id.
+	 * Public endpoints only (`/v2/items`, `/v2/minis`, `/v2/skins`, `/v2/titles`), in the language of
+	 * the interface, 200 ids at a time and only the ids asked for. A name kept less than 7 days ago
+	 * is used without the network; a page that fails falls back on a kept name up to 30 days old and
+	 * the answer says `failed`, so the caller asks again next time. An id the API does not know is
+	 * simply not in `names` and is not a failure. Never throws.
+	 *
+	 * `signal` (the view closing) and `dispose` stop it before its next page; what it has is returned
+	 * with `failed: true`.
+	 */
+	async loadNames(
+		locale: CatalogLocale,
+		refs: readonly AchievementNameRef[],
+		options: { signal?: AbortSignal } = {},
+	): Promise<AchievementNamesRead> {
+		const wanted = new Map<AchievementNameKind, Set<number>>();
+		for (const ref of refs) {
+			if (!Number.isSafeInteger(ref.id) || ref.id <= 0) continue;
+			const ids = wanted.get(ref.kind) ?? new Set<number>();
+			ids.add(ref.id);
+			wanted.set(ref.kind, ids);
+		}
+		const recordKey = (kind: AchievementNameKind, id: number): string => achievementPublicKey(locale, NAME_RECORD_KIND[kind], id);
+		const kept = await this.store.readPublic([...wanted].flatMap(([kind, ids]) => [...ids].map((id) => recordKey(kind, id))));
+		const now = this.now();
+		const names = new Map<string, string>();
+		let failed = false;
+		const keptName = (kind: AchievementNameKind, id: number, rule: AgeRule): string | null => {
+			const record = kept.get(recordKey(kind, id));
+			if (record === undefined || !withinAge(record.savedAt, now, rule)) return null;
+			const value = record.value;
+			return typeof value === 'object' && value !== null && 'name' in value && typeof value.name === 'string' && value.name.length > 0 ? value.name : null;
+		};
+		for (const [kind, ids] of wanted) {
+			const missing: number[] = [];
+			for (const id of ids) {
+				const name = keptName(kind, id, 'fresh');
+				if (name === null) missing.push(id);
+				else names.set(achievementNameKey(kind, id), name);
+			}
+			for (const batch of chunks(missing, ACHIEVEMENT_PAGE_SIZE)) {
+				if (this.disposed || options.signal?.aborted === true) return { names, failed: true };
+				const fetched = await this.requestPublic(`${NAME_ENDPOINT[kind]}?ids=${batch.join(',')}&lang=${locale}`);
+				// A 404 is the API saying none of these ids exists: unknown names, not a failure.
+				if (fetched.status === 'not_found') continue;
+				const answered = fetched.status === 'ok' ? parseNames(fetched.body) : null;
+				if (answered === null) {
+					failed = true;
+					for (const id of batch) {
+						const name = keptName(kind, id, 'usable');
+						if (name !== null) names.set(achievementNameKey(kind, id), name);
+					}
+					continue;
+				}
+				const writes: AchievementPublicRecord[] = [];
+				for (const id of batch) {
+					const name = answered.get(id);
+					if (name === undefined) continue;
+					names.set(achievementNameKey(kind, id), name);
+					writes.push({ key: recordKey(kind, id), savedAt: now, value: { name } });
+				}
+				if (writes.length > 0) await this.store.writePublic(writes);
+			}
+		}
+		return { names, failed };
 	}
 
 	/** The plugin is unloading: a build stops before its next page and none starts again. */
@@ -447,6 +537,19 @@ export class AchievementCatalogService {
 		this.inFlight.set(key, flight);
 		return flight;
 	}
+}
+
+/** Reads `[{ id, name }]` as the public lists answer it; null when it is not an array. Entries without a usable id or name are skipped. */
+function parseNames(body: unknown): Map<number, string> | null {
+	if (!Array.isArray(body)) return null;
+	const names = new Map<number, string>();
+	for (const raw of body as unknown[]) {
+		if (typeof raw !== 'object' || raw === null || !('id' in raw) || !('name' in raw)) continue;
+		if (typeof raw.id === 'number' && Number.isSafeInteger(raw.id) && typeof raw.name === 'string' && raw.name.trim().length > 0) {
+			names.set(raw.id, raw.name);
+		}
+	}
+	return names;
 }
 
 function achievementsPath(ids: readonly number[], locale: CatalogLocale): string {

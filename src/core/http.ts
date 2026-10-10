@@ -21,6 +21,8 @@ export const HTTP_LOGICAL_ENDPOINTS = [
 	'account_luck', 'character_equipmenttabs', 'achievements',
 	// «Logros» section: the public group and category lists (no key) its search is built from.
 	'achievement_groups', 'achievement_categories',
+	// «Logros» L3: the public lists that give a name to the ids of rewards and objectives (no key).
+	'minis', 'skins', 'titles',
 	// The one endpoint that is not ArenaNet's: the once-per-session price-history
 	// seed. It is named here so diagnostics can count it without ever recording
 	// the URL, exactly like every official route above.

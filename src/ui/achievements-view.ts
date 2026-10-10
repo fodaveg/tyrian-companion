@@ -1,8 +1,11 @@
 import type { AchievementCategory, AchievementGroup, AchievementIndexEntry } from '../achievements/achievement-catalog-model';
-import type {
-	AchievementCatalogService,
-	AchievementDetailsRead,
-	AchievementFreshness,
+import {
+	achievementNameKey,
+	type AchievementCatalogService,
+	type AchievementDetailsRead,
+	type AchievementFreshness,
+	type AchievementNameKind,
+	type AchievementNameRef,
 } from '../achievements/achievement-catalog-service';
 import {
 	buildTrackedAchievementsView,
@@ -35,7 +38,7 @@ import { relativeTimeLabel } from './inventory-advisor-view';
  */
 
 /** What the view uses of the catalog service: public data only. */
-export type AchievementCatalogPort = Pick<AchievementCatalogService, 'loadGroups' | 'loadCategories' | 'loadIndex' | 'buildIndex' | 'search' | 'loadDetails'>;
+export type AchievementCatalogPort = Pick<AchievementCatalogService, 'loadGroups' | 'loadCategories' | 'loadIndex' | 'buildIndex' | 'search' | 'loadDetails' | 'loadNames'>;
 /** What the view uses of the progress service; `refresh` is the only keyed call, behind the button. */
 export type TrackedProgressPort = Pick<TrackedProgressService, 'refresh' | 'lastReading'>;
 
@@ -129,6 +132,14 @@ export class AchievementsView {
 	 */
 	private details: AchievementDetailsRead | null = null;
 	private detailsKey: string | null = null;
+	/**
+	 * Names of the objects, minipets, skins and titles on screen, by `achievementNameKey`, for
+	 * `namesLocale`. Empty until they arrive: what is not here is painted as its id.
+	 */
+	private names: ReadonlyMap<string, string> = new Map();
+	private namesLocale: Locale | null = null;
+	/** The names request in flight; aborted by a newer one and by `dispose`. */
+	private namesAbort: AbortController | null = null;
 	private readonly now: () => number;
 	private readonly debounceMs: number;
 	private readonly timers: NonNullable<AchievementsViewOptions['timers']>;
@@ -221,6 +232,8 @@ export class AchievementsView {
 		this.debounce = null;
 		this.buildAbort?.abort();
 		this.buildAbort = null;
+		this.namesAbort?.abort();
+		this.namesAbort = null;
 		this.container.empty();
 	}
 
@@ -300,8 +313,28 @@ export class AchievementsView {
 			reading: reading === null ? null : { trackedIds: reading.reading.trackedIds, entries: reading.reading.entries },
 		});
 		this.tracked = { status: 'ready', views, details, reading };
+		// Names of another language are not shown under this one: ids until the right ones arrive.
+		if (this.namesLocale !== locale) { this.names = new Map(); this.namesLocale = locale; }
 		this.renderBar();
 		this.renderNotice();
+		this.renderTracked();
+		void this.loadNames(load, services.catalog, locale, views);
+	}
+
+	/**
+	 * Names the ids on screen from the public lists (never the key) and repaints. A failed read keeps
+	 * the ids it could not name and the next load asks again. Never rejects: the service does not throw.
+	 */
+	private async loadNames(load: number, catalog: AchievementCatalogPort, locale: Locale, views: readonly TrackedAchievementView[]): Promise<void> {
+		const refs = nameRefsOf(views);
+		this.namesAbort?.abort();
+		if (refs.length === 0) { this.namesAbort = null; return; }
+		const abort = new AbortController();
+		this.namesAbort = abort;
+		const read = await catalog.loadNames(locale, refs, { signal: abort.signal });
+		if (this.disposed || abort.signal.aborted || load !== this.trackedLoad) return;
+		this.namesAbort = null;
+		this.names = read.names;
 		this.renderTracked();
 	}
 
@@ -599,6 +632,7 @@ export class AchievementsView {
 		const t = this.t;
 		const ids = this.actions.getTrackedAchievementIds();
 		this.trackedHeading.setText(`${t.t('achievements.tracked.title')} (${String(ids.length)})`);
+		const open = new Set(Array.from(this.trackedList.querySelectorAll<HTMLDetailsElement>('details.tyrian-achievements__item')).filter((item) => item.open).map((item) => item.dataset.id));
 		this.trackedList.empty();
 		if (ids.length === 0) { this.trackedStatus.setText(t.t('achievements.tracked.none')); return; }
 		this.trackedStatus.setText(ids.length === 1 ? t.t('achievements.tracked.count.one') : t.t('achievements.tracked.count.many', { count: ids.length }));
@@ -606,7 +640,11 @@ export class AchievementsView {
 			this.trackedList.createEl('p', { text: this.catalog.status === 'starting' ? t.t('achievements.view.runtimeStarting') : t.t('achievements.tracked.loading') });
 			return;
 		}
-		this.tracked.views.forEach((view, index) => { this.trackedList.append(this.renderTrackedItem(view, index)); });
+		this.tracked.views.forEach((view, index) => {
+			const item = this.renderTrackedItem(view, index);
+			if (open.has(String(view.id))) item.setAttribute('open', '');
+			this.trackedList.append(item);
+		});
 	}
 
 	private renderTrackedItem(view: TrackedAchievementView, index: number): HTMLElement {
@@ -679,21 +717,36 @@ export class AchievementsView {
 	private objectiveText(objective: TrackedObjective): string {
 		const t = this.t;
 		if (objective.kind === 'text') return objective.text ?? t.t('achievements.tracked.objective.other', { index: objective.index + 1 });
-		if (objective.kind === 'item') return t.t('achievements.tracked.objective.item', { id: objective.refId ?? 0 });
-		if (objective.kind === 'minipet') return t.t('achievements.tracked.objective.minipet', { id: objective.refId ?? 0 });
-		if (objective.kind === 'skin') return t.t('achievements.tracked.objective.skin', { id: objective.refId ?? 0 });
+		if (objective.kind === 'item' || objective.kind === 'minipet' || objective.kind === 'skin') {
+			const name = this.nameFor(objective.kind, objective.refId);
+			const id = objective.refId ?? 0;
+			if (objective.kind === 'item') return name === null ? t.t('achievements.tracked.objective.item', { id }) : t.t('achievements.tracked.objective.itemNamed', { name });
+			if (objective.kind === 'minipet') return name === null ? t.t('achievements.tracked.objective.minipet', { id }) : t.t('achievements.tracked.objective.minipetNamed', { name });
+			return name === null ? t.t('achievements.tracked.objective.skin', { id }) : t.t('achievements.tracked.objective.skinNamed', { name });
+		}
 		return t.t('achievements.tracked.objective.other', { index: objective.index + 1 });
 	}
 
 	private rewardText(reward: TrackedReward): string {
 		const t = this.t;
 		if (reward.kind === 'coins') return t.t('achievements.tracked.reward.coins', { amount: formatCopperVisual(reward.copper) });
-		if (reward.kind === 'item') return t.t('achievements.tracked.reward.item', { id: reward.itemId, count: reward.count });
+		if (reward.kind === 'item') {
+			const name = this.nameFor('item', reward.itemId);
+			return name === null ? t.t('achievements.tracked.reward.item', { id: reward.itemId, count: reward.count }) : t.t('achievements.tracked.reward.itemNamed', { name, count: reward.count });
+		}
 		if (reward.kind === 'mastery') return t.t('achievements.tracked.reward.mastery', { region: reward.region });
-		if (reward.kind === 'title') return t.t('achievements.tracked.reward.title', { id: reward.titleId });
+		if (reward.kind === 'title') {
+			const name = this.nameFor('title', reward.titleId);
+			return name === null ? t.t('achievements.tracked.reward.title', { id: reward.titleId }) : t.t('achievements.tracked.reward.titleNamed', { name });
+		}
 		return reward.pointCap === null
 			? t.t('achievements.tracked.reward.points', { points: reward.points })
 			: t.t('achievements.tracked.reward.pointsCapped', { points: reward.points, cap: reward.pointCap });
+	}
+
+	/** The loaded name of an object, minipet, skin or title; null when it is not known (the id is shown instead). */
+	private nameFor(kind: AchievementNameKind, id: number | null): string | null {
+		return id === null ? null : this.names.get(achievementNameKey(kind, id)) ?? null;
 	}
 
 	private resultsCount(count: number): string {
@@ -704,6 +757,24 @@ export class AchievementsView {
 	private announce(text: string): void {
 		this.live.setText(text);
 	}
+}
+
+/** The objects, minipets, skins and titles the followed achievements name by id, once each, in screen order. */
+function nameRefsOf(views: readonly TrackedAchievementView[]): AchievementNameRef[] {
+	const refs = new Map<string, AchievementNameRef>();
+	const add = (kind: AchievementNameKind, id: number | null): void => {
+		if (id !== null) refs.set(achievementNameKey(kind, id), { kind, id });
+	};
+	for (const view of views) {
+		for (const objective of view.objectives) {
+			if (objective.kind === 'item' || objective.kind === 'minipet' || objective.kind === 'skin') add(objective.kind, objective.refId);
+		}
+		for (const reward of view.rewards) {
+			if (reward.kind === 'item') add('item', reward.itemId);
+			else if (reward.kind === 'title') add('title', reward.titleId);
+		}
+	}
+	return [...refs.values()];
 }
 
 /** The visible n/m of a followed achievement, when it has one. */
