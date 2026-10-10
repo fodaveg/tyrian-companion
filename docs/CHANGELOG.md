@@ -1,5 +1,24 @@
 # Changelog
 
+## Release beta 0.6.35 - Logros que leen el progreso, iconos en las recompensas y carpeta de salida que se crea sola
+
+Se actualiza desde la 0.6.34 publicada. Corrige lo que se vio usando la 0.6.34. Nada de esto se ha visto todavía en un
+Obsidian ni en un Hebra reales; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Logros. Un rechazo de la API al leer el progreso ya no se presenta como «falta el permiso progression»: el plugin lo
+  reintenta una vez y, si sigue, pregunta a la API qué permisos tiene la clave antes de decirlo. Si el permiso está,
+  el aviso es «no se pudo leer» con «Reintentar». El diagnóstico guarda el motivo del rechazo como un código cerrado
+  (clave inválida, falta un permiso, hace falta autenticación u otro), nunca el texto de la API ni la clave.
+- Logros. Los elementos que no se han leído se cuentan aparte («Hechos: 1 de 24 · 23 sin leer») y una línea explica
+  el círculo punteado y qué hacer. Al cambiar de clave desaparece el aviso del fallo anterior, y sin clave la barra
+  pide una en vez de mandar a un botón deshabilitado.
+- Logros. Todas las recompensas llevan icono: el del objeto, la moneda oficial, o una marca propia para título, puntos
+  de logro y maestría, que la API no ilustra.
+- Assets gestionados. En Hebra, si la carpeta de salida no existe, «Aplicar», «Reparar» y «Reemplazar» la crean con
+  sus intermedias y siguen. Las aplicaciones automáticas, la vista previa, «Mover» y «Quitar» no crean nada; estos dos
+  dicen que pulses «Aplicar» para crearla. El selector de carpeta de Ajustes avisa de que se creará y deja de avisar
+  en cuanto existe.
+
 ## Release beta 0.6.34 - Terminar sesión sin bloqueos, «Aplicar» de los assets en Hebra y Logros con todos sus elementos
 
 Se actualiza desde la 0.6.33 publicada. Corrige los fallos que se vieron usando la 0.6.33. Nada de esto se ha visto

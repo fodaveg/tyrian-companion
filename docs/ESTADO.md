@@ -1,5 +1,23 @@
 # Estado
 
+## Candidato 0.6.35: Logros que leen el progreso, iconos de recompensas y carpeta de salida que se crea (10 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.35` sobre el canal 0.6.34 publicado
+(`c9ec5674`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.35 se ha visto en un Obsidian ni en un Hebra reales.
+  No se sabe por qué la API rechazó la lectura de logros de David con una clave con todos los permisos: el plugin no
+  guardaba el motivo; desde esta versión lo guarda como código cerrado. Las redacciones exactas de los rechazos de
+  ArenaNet no están medidas con una clave real; si no coinciden, decide `tokeninfo`. Que Hebra entregue
+  `folder_name_taken` al plugin está leído en su código, no medido.
+- Contenido: confirmación de `progression` con `tokeninfo`, reintento único de 401/403 y `apiReason` en el
+  diagnóstico; elementos sin leer contados y explicados; iconos de todas las recompensas; creación de la carpeta de
+  salida en Hebra solo en las pulsaciones de Aplicar, Reparar y Reemplazar.
+- Riesgo aceptado: dos dispositivos que pulsan «Aplicar» antes de que el sync converja pueden dejar dos carpetas de
+  salida hermanas, sin pérdida de datos.
+- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+
 ## Canal 0.6.34 publicado: Terminar sesión, Descartar sesión, token del addon, Assets en Hebra, Logros y Venta (10 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.34` = `b6ec025a` (atestación; candidato `96c28614`,
