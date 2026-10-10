@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 588,
+		"catch_clause": 591,
 		"promise_catch": 60,
 		"void_expression": 127,
 		"callback_registration": 230
@@ -414,6 +414,55 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/achievements/achievement-catalog-model.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/achievements/achievement-catalog-service.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "7cf57279e631e5fcb13da97541030b81222c6165",
+					"kind": "catch_clause",
+					"line": 351,
+					"column": 5,
+					"endLine": 353,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "requestPublic",
+						"justification": "The \"requestPublic\" owner turns every failed public catalog call into a closed not_found or failed answer with a \"fallback_return\"; its callers answer request_failed or serve what was kept up to 30 days."
+					},
+					"reason": "Allowlisted catch_clause: The \"requestPublic\" owner turns every failed public catalog call into a closed not_found or failed answer with a \"fallback_return\"; its callers answer request_failed or serve what was kept up to 30 days. Verified recovery: \"fallback_return\" in \"requestPublic\"."
+				}
+			]
+		},
+		"src/achievements/achievement-store.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "d8529969c60b0e0cc696c501ee82db8e561e01cd",
+					"kind": "catch_clause",
+					"line": 162,
+					"column": 5,
+					"endLine": 165,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "run",
+						"justification": "The \"run\" owner records the storage failure on its persistence probe and answers null with a \"fallback_return\"; the achievements store reads that as nothing kept and a refused write, and never throws."
+					},
+					"reason": "Allowlisted catch_clause: The \"run\" owner records the storage failure on its persistence probe and answers null with a \"fallback_return\"; the achievements store reads that as nothing kept and a refused write, and never throws. Verified recovery: \"fallback_return\" in \"run\"."
+				}
+			]
+		},
 		"src/achievements/leyspring-capture.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -488,6 +537,33 @@
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
+		},
+		"src/achievements/tracked-achievements-model.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/achievements/tracked-progress-service.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "a7871757ba399b4472095f9d1893193b1b59304f",
+					"kind": "catch_clause",
+					"line": 106,
+					"column": 4,
+					"endLine": 108,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "readTrackedProgress",
+						"justification": "The \"readTrackedProgress\" owner turns every failed keyed reading into a closed unavailable result with a \"fallback_return\"; the refresh action reports it and the kept progress stays untouched."
+					},
+					"reason": "Allowlisted catch_clause: The \"readTrackedProgress\" owner turns every failed keyed reading into a closed unavailable result with a \"fallback_return\"; the refresh action reports it and the kept progress stays untouched. Verified recovery: \"fallback_return\" in \"readTrackedProgress\"."
+				}
+			]
 		},
 		"src/advisor/inventory-advisor-builtin-bundle.ts": {
 			"classification": "production_source",
@@ -10128,6 +10204,28 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/runtime/vault-relocation.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "7cfddb5e29093955f38fd2647c85bc8446805a15",
+					"kind": "catch_clause",
+					"line": 215,
+					"column": 4,
+					"endLine": 219,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "settleVaultRelocation",
+						"justification": "The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending."
+					},
+					"reason": "Allowlisted catch_clause: The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending. Verified recovery: \"rethrow\" in \"settleVaultRelocation\"."
+				}
+			]
+		},
 		"src/runtime/view-placement.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -18309,28 +18407,6 @@
 						"justification": "The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"validateWalletNoteMarker\"."
-				}
-			]
-		},
-		"src/runtime/vault-relocation.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "7cfddb5e29093955f38fd2647c85bc8446805a15",
-					"kind": "catch_clause",
-					"line": 215,
-					"column": 4,
-					"endLine": 219,
-					"endColumn": 3,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "settleVaultRelocation",
-						"justification": "The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending."
-					},
-					"reason": "Allowlisted catch_clause: The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending. Verified recovery: \"rethrow\" in \"settleVaultRelocation\"."
 				}
 			]
 		}
