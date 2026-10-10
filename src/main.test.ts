@@ -32,7 +32,8 @@ import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import { withObsidianHost } from './test/obsidian-host-harness';
 import { createRuntimeHarness } from './test/runtime-harness';
-import { COMPANION_VIEW_TYPE, ConfirmAbandonSessionModal } from './ui/companion-view';
+import { COMPANION_VIEW_TYPE } from './ui/companion-view';
+import { ConfirmAbandonSessionModal } from './ui/companion-modals';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from './ui/sale-item-view';
 import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';

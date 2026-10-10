@@ -13,6 +13,8 @@ const RUNTIME_UI_FILES = [
 	'src/runtime/core-actions.ts',
 	'src/runtime/sale-runtime.ts',
 	'src/ui/companion-view.ts',
+	// DE-07 (10 oct 2026): the view's modals moved here; their copy stays under this guard.
+	'src/ui/companion-modals.ts',
 	'src/ui/companion-status-model.ts',
 	'src/ui/inventory-advisor-view.ts',
 	'src/ui/manual-session-start-modal.ts',
@@ -43,7 +45,7 @@ describe('runtime UI i18n boundary (source text)', () => {
 	);
 
 	it('keeps the real companion view and manual-session modal outside the raw-data flow', () => {
-		for (const path of ['src/ui/companion-view.ts', 'src/ui/manual-session-start-modal.ts'] as const) {
+		for (const path of ['src/ui/companion-view.ts', 'src/ui/companion-modals.ts', 'src/ui/manual-session-start-modal.ts'] as const) {
 			expect(hasUnsafeRuntimeText(readModuleSource(path))).toBe(false);
 		}
 	});

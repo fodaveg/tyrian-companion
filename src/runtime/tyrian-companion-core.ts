@@ -282,13 +282,15 @@ import {
 	COMPANION_VIEW_SLOT,
 	COMPANION_VIEW_TYPE,
 	companionSection,
+	TyrianCompanionView,
+} from '../ui/companion-view';
+import {
 	ConfirmAbandonSessionModal,
 	ConfirmDiscardLiveSessionModal,
 	ConfirmClearCompletedSessionModal,
 	ConfirmDiscardSessionModal,
 	ConfirmDiscardUnreadableSessionModal,
-	TyrianCompanionView,
-} from '../ui/companion-view';
+} from '../ui/companion-modals';
 import { ManualSessionStartModal } from '../ui/manual-session-start-modal';
 import { AlertIngameSecretModal } from '../ui/alert-ingame-secret-modal';
 import {
