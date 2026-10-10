@@ -36,7 +36,6 @@ export const GATE_STEPS = Object.freeze([
 	step('typecheck', 'tsc --noEmit', ['tsc', '--noEmit', '--skipLibCheck'], ['check']),
 	step('unit', 'Suite unitaria de vitest (sin src/platform ni los tests de texto fuente congelados)', ['vitest', 'run', '--configLoader', 'runner'], ['test', 'check']),
 	step('unit-guardrails', 'Suite unitaria de vitest sobre src/platform y los tests de texto fuente congelados', ['vitest', 'run', '--configLoader', 'runner', '--config', 'vitest.guardrails.config.mts'], ['test', 'check:guardrails']),
-	step('h8-crossover-spike', 'Spike H8 de crossover', ['bash', 'scripts/tests/probar-h8-crossover-spike.sh'], ['test', 'check:guardrails']),
 	step('release-preflight', 'Preflight de release', ['bash', 'scripts/tests/probar-release-preflight.sh'], ['test', 'check:guardrails']),
 	step('brat-release-contract', 'Suite del contrato BRAT', ['node', 'scripts/tests/probar-brat-release-contract.mjs'], ['test', 'check:guardrails']),
 	step('brat-release-plan', 'Suite del plan de release BRAT (puerta previa a publicar)', ['node', 'scripts/tests/probar-brat-release-plan.mjs'], ['test', 'check:guardrails']),

@@ -101,7 +101,13 @@ que descarga Hebra queda probado en los dos.
 
 El workflow `ci.yml` ejecuta `check` y `check:guardrails` en cada push de rama o pull request;
 en `main` añade los benchmarks existentes. Los jobs del helper nativo solo se ejecutan cuando ese
-alcance cambia. Tras los gates prepara el artifact de desarrollo con `release:package` y
+alcance cambia, y lo mismo el job `h8-spike` (el spike en C de H8 con ASan/UBSan, que ya no está en
+`check:guardrails`) cuando cambia `spikes/`. Tras `check`, el job `check` repite los tests que abren su
+almacenamiento con `trackedIndexedDb` con `TYRIAN_TEST_ENGINE_LATENCY_MS=30` (motor lento a propósito).
+Todos los `setup-node` de `ci.yml` y `release.yml` leen la versión de `.nvmrc` (`24.12.0`, la línea del
+Node de Electron en Obsidian); `release-workflow-contract` pone en rojo un `node-version:` literal, un
+`.nvmrc` ausente, la pérdida del job `h8-spike` o de su condición, y la pérdida del paso con motor lento.
+Tras los gates prepara el artifact de desarrollo con `release:package` y
 `beta:artifact`. Mantiene permisos `contents: read` y no publica releases.
 
 El workflow `release.yml` es propietario de la publicación al hacer push de un tag. Ejecuta su
